@@ -433,7 +433,7 @@ def test_get_workflow_skills():
         # Verify skill references
         assert 'pm-workflow:plan-init' in result.stdout
         assert 'pm-workflow:phase-refine-outline' in result.stdout
-        assert 'pm-workflow:task-plan' in result.stdout
+        assert 'pm-workflow:phase-refine-plan' in result.stdout
 
 
 def test_get_workflow_skills_output_format():
@@ -485,7 +485,7 @@ def test_resolve_workflow_skill_plan():
         result = run_script(SCRIPT_PATH, 'resolve-workflow-skill', '--phase', 'plan')
 
         assert result.success, f"Should succeed: {result.stderr}"
-        assert 'pm-workflow:task-plan' in result.stdout
+        assert 'pm-workflow:phase-refine-plan' in result.stdout
 
 
 def test_resolve_workflow_skill_execute():

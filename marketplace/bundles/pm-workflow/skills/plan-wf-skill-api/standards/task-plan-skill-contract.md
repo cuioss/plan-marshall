@@ -2,7 +2,7 @@
 
 Workflow skill for plan phase - transforms solution outline deliverables into optimized, committable tasks.
 
-**Implementation**: `pm-workflow:task-plan`
+**Implementation**: `pm-workflow:phase-refine-plan`
 
 ---
 
@@ -34,7 +34,7 @@ Result:
 status: success
 domain: system
 phase: plan
-workflow_skill: pm-workflow:task-plan
+workflow_skill: pm-workflow:phase-refine-plan
 ```
 
 ---
@@ -242,7 +242,7 @@ Task-plan copies skills directly from deliverable(s) to task. No resolution API 
 
 ## Integration
 
-**Callers**: `pm-workflow:task-plan-agent` (thin agent)
+**Callers**: `pm-workflow:phase-refine-plan-agent` (thin agent)
 
 **Data Layer**:
 - `pm-workflow:manage-solution-outline:manage-solution-outline` - Solution outline queries, deliverable skills

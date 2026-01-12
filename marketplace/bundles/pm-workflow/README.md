@@ -87,7 +87,7 @@ Workflow skills are resolved from `system.workflow_skills`:
 |-------|-------|---------|
 | `init` | `pm-workflow:plan-init` | Create plan structure |
 | `outline` | `pm-workflow:phase-refine-outline` | Domain-agnostic solution outline creation |
-| `plan` | `pm-workflow:task-plan` | Domain-agnostic task planning |
+| `plan` | `pm-workflow:phase-refine-plan` | Domain-agnostic task planning |
 | `execute` | `pm-workflow:task-execute` | Domain-agnostic task execution |
 | `finalize` | `pm-workflow:plan-finalize` | Domain-agnostic finalization |
 
@@ -133,7 +133,7 @@ The system domain contains workflow skills in `marshal.json`:
       "workflow_skills": {
         "init": "pm-workflow:plan-init",
         "outline": "pm-workflow:phase-refine-outline",
-        "plan": "pm-workflow:task-plan",
+        "plan": "pm-workflow:phase-refine-plan",
         "execute": "pm-workflow:task-execute",
         "finalize": "pm-workflow:plan-finalize"
       }
@@ -204,7 +204,7 @@ pm-workflow/
     │   ├── SKILL.md
     │   └── standards/           # Contract documents
     ├── phase-refine-outline/    # Solution outline workflow skill
-    ├── task-plan/               # Task planning workflow skill
+    ├── phase-refine-plan/       # Task planning workflow skill
     ├── plan-init/               # Init phase skill
     ├── plan-execute/            # Execute phase coordination
     ├── plan-finalize/           # Finalize phase skill

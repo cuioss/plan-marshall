@@ -175,7 +175,7 @@ AskUserQuestion:
 Only execute this step AFTER user approves in Step 3.
 
 ```
-Task: pm-workflow:task-plan-agent
+Task: pm-workflow:phase-refine-plan-agent
   Input: plan_id={plan_id}
   Output: tasks created with domain, profile, skills
 ```
@@ -350,5 +350,5 @@ If you discover issues or improvements during execution, record them:
 |-------|---------|
 | `pm-workflow:plan-init-agent` | Init phase: creates plan, detects domains, writes config.toon |
 | `pm-workflow:solution-outline-agent` | Refine phase: loads solution-outline skill, creates deliverables |
-| `pm-workflow:task-plan-agent` | Refine phase: loads task-plan skill, creates tasks with skills |
+| `pm-workflow:phase-refine-plan-agent` | Refine phase: loads task-plan skill, creates tasks with skills |
 | `pm-workflow:task-execute-agent` | Execute phase: loads workflow skill based on task.profile |

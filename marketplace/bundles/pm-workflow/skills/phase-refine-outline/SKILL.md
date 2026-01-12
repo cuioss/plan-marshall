@@ -382,7 +382,7 @@ message: {error message if status=error}
 - `plan-marshall:lessons-learned:manage-lesson` - Record lessons on issues
 
 **Consumed By**:
-- `pm-workflow:task-plan` skill (reads deliverables for task creation)
+- `pm-workflow:phase-refine-plan` skill (reads deliverables for task creation)
 
 ---
 

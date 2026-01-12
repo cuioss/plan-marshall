@@ -17,7 +17,7 @@ The system domain contains workflow skills for the 5 execution phases:
 |-------|---------|----------------|
 | `init` | Initialize plan | `pm-workflow:plan-init` |
 | `outline` | Create solution outline | `pm-workflow:phase-refine-outline` |
-| `plan` | Decompose into tasks | `pm-workflow:task-plan` |
+| `plan` | Decompose into tasks | `pm-workflow:phase-refine-plan` |
 | `execute` | Run implementation | `pm-workflow:task-execute` |
 | `finalize` | Commit, PR, quality | `pm-workflow:plan-finalize` |
 
@@ -34,7 +34,7 @@ The system domain contains workflow skills for the 5 execution phases:
       "workflow_skills": {
         "init": "pm-workflow:plan-init",
         "outline": "pm-workflow:phase-refine-outline",
-        "plan": "pm-workflow:task-plan",
+        "plan": "pm-workflow:phase-refine-plan",
         "execute": "pm-workflow:task-execute",
         "finalize": "pm-workflow:plan-finalize"
       }
@@ -275,7 +275,7 @@ python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall
 status: success
 init: pm-workflow:plan-init
 outline: pm-workflow:phase-refine-outline
-plan: pm-workflow:task-plan
+plan: pm-workflow:phase-refine-plan
 execute: pm-workflow:task-execute
 finalize: pm-workflow:plan-finalize
 ```

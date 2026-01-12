@@ -218,7 +218,7 @@ Planning skills call the simplified API:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:logging:manage-log \
-  work my-plan INFO "[ARTIFACT] (pm-workflow:task-plan) Created task: implement auth module"
+  work my-plan INFO "[ARTIFACT] (pm-workflow:phase-refine-plan) Created task: implement auth module"
 ```
 
 ---

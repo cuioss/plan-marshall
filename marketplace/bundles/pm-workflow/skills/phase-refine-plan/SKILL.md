@@ -1,11 +1,11 @@
 ---
-name: task-plan
+name: phase-refine-plan
 description: Domain-agnostic task planning from deliverables with skill resolution and optimization
 allowed-tools: Read, Bash
 implements: pm-workflow:plan-wf-skill-api/task-plan-skill-contract
 ---
 
-# Task Plan Skill
+# Phase Refine Plan Skill
 
 **Role**: Domain-agnostic workflow skill for transforming solution outline deliverables into optimized, executable tasks. Loaded by `pm-workflow:task-plan-agent`.
 
@@ -110,7 +110,7 @@ solution_outline.md                      TASK.toon
 **Log skill inheritance**:
 ```bash
 python3 .plan/execute-script.py plan-marshall:logging:manage-log \
-  work {plan_id} INFO "[SKILL] (pm-workflow:task-plan) Inherited skills for TASK-{N}: [{task.skills}]"
+  work {plan_id} INFO "[SKILL] (pm-workflow:phase-refine-plan) Inherited skills for TASK-{N}: [{task.skills}]"
 ```
 
 **Aggregation Rule**: When aggregating multiple deliverables, merge their skills arrays (union).
@@ -152,7 +152,7 @@ EOF
 **MANDATORY - Log each task creation**:
 ```bash
 python3 .plan/execute-script.py plan-marshall:logging:manage-log \
-  work {plan_id} INFO "[ARTIFACT] (pm-workflow:task-plan) Created TASK-{N}: {title}"
+  work {plan_id} INFO "[ARTIFACT] (pm-workflow:phase-refine-plan) Created TASK-{N}: {title}"
 ```
 
 **Key Fields**:

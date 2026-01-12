@@ -21,7 +21,7 @@ DEFAULT_PROFILES = ['implementation', 'testing', 'quality']
 DEFAULT_SYSTEM_WORKFLOW_SKILLS = {
     "init": "pm-workflow:plan-init",
     "outline": "pm-workflow:phase-refine-outline",
-    "plan": "pm-workflow:task-plan",
+    "plan": "pm-workflow:phase-refine-plan",
     "execute": "pm-workflow:task-execute",
     "finalize": "pm-workflow:plan-finalize"
 }

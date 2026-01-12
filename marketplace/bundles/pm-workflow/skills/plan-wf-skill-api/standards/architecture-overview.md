@@ -122,7 +122,7 @@ Workflow skills are responsible for loading domain knowledge and executing the p
 |-------|----------------|---------------|
 | **init** | `pm-workflow:plan-init` | [plan-init-skill-contract.md](plan-init-skill-contract.md) |
 | **outline** | `pm-workflow:phase-refine-outline` | [solution-outline-skill-contract.md](solution-outline-skill-contract.md) |
-| **plan** | `pm-workflow:task-plan` | [task-plan-skill-contract.md](task-plan-skill-contract.md) |
+| **plan** | `pm-workflow:phase-refine-plan` | [task-plan-skill-contract.md](task-plan-skill-contract.md) |
 | **execute** | `pm-workflow:task-execute` | [task-execution-skill-contract.md](task-execution-skill-contract.md) |
 | **finalize** | `pm-workflow:plan-finalize` | [plan-finalize-skill-contract.md](plan-finalize-skill-contract.md) |
 
