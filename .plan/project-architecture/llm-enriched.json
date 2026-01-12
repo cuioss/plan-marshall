@@ -1,0 +1,7 @@
+{
+  "project": {
+    "description": "Claude Code marketplace bundles providing comprehensive development standards, automation tools, and AI-assisted workflows for CUI OSS projects. Contains 8 production bundles with 95 components (skills, agents, commands).",
+    "description_reasoning": "From README.adoc introduction and overview section"
+  },
+  "modules": {}
+}

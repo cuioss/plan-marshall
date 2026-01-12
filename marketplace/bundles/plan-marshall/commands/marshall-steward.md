@@ -40,7 +40,7 @@ Output this banner directly as text at command start (do NOT use Bash echo - out
 ║         ...              .;:::::::::;.              ...               ║
 ║                              :;:::;:                                  ║
 ║                               .;:;.                                   ║
-║                                 :                          by KIDICAP ║
+║                                 :                                     ║
 ╚═══════════════════════════════════════════════════════════════════════╝
 ```
 

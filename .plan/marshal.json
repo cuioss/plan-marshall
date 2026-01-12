@@ -1,8 +1,8 @@
 {
   "ci": {
-    "repo_url": "https://github.com/cuioss/plan-marshall.git",
     "provider": "github",
-    "detected_at": "2025-12-19T11:30:26Z",
+    "repo_url": "https://github.com/cuioss/plan-marshall.git",
+    "detected_at": "2026-01-12T17:17:14Z",
     "commands": {
       "pr-create": "python3 .plan/execute-script.py ci-operations:github pr create",
       "pr-reviews": "python3 .plan/execute-script.py ci-operations:github pr reviews",
@@ -14,7 +14,7 @@
   "plan": {
     "defaults": {
       "compatibility": "breaking",
-      "commit_strategy": "per_plan",
+      "commit_strategy": "phase-specific",
       "create_pr": false,
       "verification_required": true,
       "branch_strategy": "direct"
@@ -27,110 +27,43 @@
       ],
       "optionals": [
         "plan-marshall:diagnostic-patterns"
-      ]
-    },
-    "java": {
+      ],
       "workflow_skills": {
-        "solution_outline": "pm-workflow:solution-outline",
-        "task_plan": "pm-workflow:task-plan",
-        "implementation": "pm-workflow:task-implementation",
-        "testing": "pm-workflow:task-testing"
-      },
-      "core": {
-        "defaults": [
-          "pm-dev-java:java-core"
-        ],
-        "optionals": [
-          "pm-dev-java:java-null-safety",
-          "pm-dev-java:java-lombok",
-          "pm-dev-java:javadoc"
-        ]
-      },
-      "implementation": {
-        "defaults": [],
-        "optionals": [
-          "pm-dev-java:java-cdi",
-          "pm-dev-java:java-maintenance"
-        ]
-      },
-      "testing": {
-        "defaults": [
-          "pm-dev-java:junit-core"
-        ],
-        "optionals": [
-          "pm-dev-java:junit-integration"
-        ]
-      }
-    },
-    "javascript": {
-      "workflow_skills": {
-        "solution_outline": "pm-workflow:solution-outline",
-        "task_plan": "pm-workflow:task-plan",
-        "implementation": "pm-workflow:task-implementation",
-        "testing": "pm-workflow:task-testing"
-      },
-      "core": {
-        "defaults": [
-          "pm-dev-frontend:cui-javascript"
-        ],
-        "optionals": [
-          "pm-dev-frontend:cui-jsdoc",
-          "pm-dev-frontend:cui-javascript-project"
-        ]
-      },
-      "implementation": {
-        "defaults": [],
-        "optionals": [
-          "pm-dev-frontend:cui-javascript-linting",
-          "pm-dev-frontend:cui-javascript-maintenance"
-        ]
-      },
-      "testing": {
-        "defaults": [
-          "pm-dev-frontend:cui-javascript-unit-testing"
-        ],
-        "optionals": [
-          "pm-dev-frontend:cui-cypress"
-        ]
+        "init": "pm-workflow:plan-init",
+        "outline": "pm-workflow:solution-outline",
+        "plan": "pm-workflow:task-plan",
+        "execute": "pm-workflow:task-execute",
+        "finalize": "pm-workflow:plan-finalize"
       }
     },
     "plan-marshall-plugin-dev": {
-      "workflow_skills": {
-        "solution_outline": "pm-plugin-development:plugin-solution-outline",
-        "task_plan": "pm-plugin-development:plugin-task-plan",
-        "implementation": "pm-plugin-development:plugin-plan-implement"
+      "workflow_skill_extensions": {
+        "outline": "pm-plugin-development:plugin-solution-outline",
+        "triage": "pm-plugin-development:plugin-triage"
       },
       "core": {
         "defaults": [
-          "pm-plugin-development:plugin-architecture",
-          "pm-plugin-development:plugin-script-architecture"
+          "pm-plugin-development:plugin-architecture"
         ],
         "optionals": [
-          "plan-marshall:toon-usage",
-          "plan-marshall:script-executor"
+          "pm-plugin-development:plugin-script-architecture"
         ]
       },
       "implementation": {
         "defaults": [],
         "optionals": []
-      }
-    },
-    "generic": {
-      "workflow_skills": {
-        "solution_outline": "pm-workflow:solution-outline",
-        "task_plan": "pm-workflow:task-plan",
-        "implementation": "pm-workflow:task-implementation"
       },
-      "core": {
+      "testing": {
         "defaults": [],
         "optionals": []
       },
-      "implementation": {
+      "quality": {
         "defaults": [],
         "optionals": []
       }
     }
   },
+  "module_config": {},
   "system": {
     "retention": {
       "logs_days": 1,
@@ -138,7 +71,5 @@
       "memory_days": 5,
       "temp_on_maintenance": true
     }
-  },
-  "modules": {},
-  "build_systems": []
+  }
 }
