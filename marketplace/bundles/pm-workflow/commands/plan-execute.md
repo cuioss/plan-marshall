@@ -57,7 +57,7 @@ For each task:
 ### Finalize Phase
 
 ```
-Skill: pm-workflow:plan-finalize
+Skill: pm-workflow:phase-finalize
 operation: finalize
 plan_id: {plan_id}
 ```
@@ -150,7 +150,7 @@ Executes implementation tasks using DUMB LOOP pattern:
 
 ### Finalize Phase
 
-Completes the plan via `pm-workflow:plan-finalize` skill:
+Completes the plan via `pm-workflow:phase-finalize` skill:
 - Run verification (if configured)
 - Commit changes
 - Push to remote
@@ -168,7 +168,7 @@ Completes the plan via `pm-workflow:plan-finalize` skill:
 |-------|---------|
 | `pm-workflow:manage-lifecycle` | Plan discovery, phase routing, transitions |
 | `pm-workflow:manage-tasks` | Task iteration (next, check) |
-| `pm-workflow:plan-finalize` | Finalize phase execution |
+| `pm-workflow:phase-finalize` | Finalize phase execution |
 
 | Agent | Purpose |
 |-------|---------|

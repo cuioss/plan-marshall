@@ -1,11 +1,11 @@
 ---
-name: plan-finalize
+name: phase-finalize
 description: Complete plan execution with git workflow and PR management
 allowed-tools: Read, Bash, Glob, SlashCommand
 implements: pm-workflow:plan-wf-skill-api/plan-finalize-skill-contract
 ---
 
-# Plan Finalize Skill
+# Phase Finalize Skill
 
 **Role**: Finalize phase skill. Handles git workflow (commit, push, PR) and plan completion. Reads configuration from config.toon written during init phase.
 
@@ -63,7 +63,7 @@ Returns only the required finalize fields in a single call.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:logging:manage-log \
-  work {plan_id} INFO "[STATUS] (pm-workflow:plan-finalize) Starting finalize phase"
+  work {plan_id} INFO "[STATUS] (pm-workflow:phase-finalize) Starting finalize phase"
 ```
 
 ### Step 1: Read Configuration
@@ -89,7 +89,7 @@ Returns: `branch`, `base_branch`, `issue_url`, `build_system`, and file counts i
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:logging:manage-log \
-  work {plan_id} INFO "[DECISION] (pm-workflow:plan-finalize) Finalize strategy: verification={verification_required}, PR={create_pr}, branch={branch_strategy}"
+  work {plan_id} INFO "[DECISION] (pm-workflow:phase-finalize) Finalize strategy: verification={verification_required}, PR={create_pr}, branch={branch_strategy}"
 ```
 
 ### Step 2: Run Verification (if required)
@@ -156,7 +156,7 @@ python3 .plan/execute-script.py pm-workflow:manage-lifecycle:manage-lifecycle tr
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:logging:manage-log \
-  work {plan_id} INFO "[STATUS] (pm-workflow:plan-finalize) Plan completed: commit={commit_hash}, PR={pr_url|skipped}"
+  work {plan_id} INFO "[STATUS] (pm-workflow:phase-finalize) Plan completed: commit={commit_hash}, PR={pr_url|skipped}"
 ```
 
 ---
@@ -197,7 +197,7 @@ On any error, **first log the error** to work-log:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:logging:manage-log \
-  work {plan_id} ERROR "[ERROR] (pm-workflow:plan-finalize) {step} failed - {error_type}: {error_context}"
+  work {plan_id} ERROR "[ERROR] (pm-workflow:phase-finalize) {step} failed - {error_type}: {error_context}"
 ```
 
 ### Verification Failure
@@ -328,7 +328,7 @@ Contains: How lessons inform triage decisions, lesson query before decisions, re
 This skill is invoked when plan is in `finalize` phase:
 
 ```
-pm-workflow:manage-lifecycle route --phase finalize → pm-workflow:plan-finalize
+pm-workflow:manage-lifecycle route --phase finalize → pm-workflow:phase-finalize
 ```
 
 ### Command Integration

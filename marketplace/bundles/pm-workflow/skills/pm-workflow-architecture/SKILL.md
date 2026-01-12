@@ -125,9 +125,10 @@ allowed-tools: Read
 │  ┌─────────────────────────────────────────────────────────────────────┐   │
 │  │  WORKFLOW SKILLS (Phase Logic)                                       │   │
 │  │  ═════════════════════════════                                       │   │
-│  │  plan-init      solution-outline    task-plan                        │   │
-│  │  plan-execute   plan-finalize       task-implementation              │   │
-│  │  task-testing   git-workflow        pr-workflow                      │   │
+│  │  phase-init           phase-refine-outline   phase-refine-plan       │   │
+│  │  phase-execute        phase-finalize                                 │   │
+│  │  phase-execute-implementation  phase-execute-testing                 │   │
+│  │  git-workflow         pr-workflow                                    │   │
 │  └─────────────────────────────────────────────────────────────────────┘   │
 │                                     │                                       │
 │                                     ▼                                       │
@@ -157,11 +158,13 @@ allowed-tools: Read
 | Skill | Purpose |
 |-------|---------|
 | `pm-workflow:plan-wf-skill-api` | Contract definitions for workflow skills |
-| `pm-workflow:plan-init` | Init phase implementation |
+| `pm-workflow:phase-init` | Init phase implementation |
 | `pm-workflow:phase-refine-outline` | Outline phase implementation |
 | `pm-workflow:phase-refine-plan` | Plan phase implementation |
-| `pm-workflow:plan-execute` | Execute phase implementation |
-| `pm-workflow:plan-finalize` | Finalize phase implementation |
+| `pm-workflow:phase-execute` | Execute phase implementation |
+| `pm-workflow:phase-finalize` | Finalize phase implementation |
+| `pm-workflow:phase-execute-implementation` | Implementation profile workflow |
+| `pm-workflow:phase-execute-testing` | Testing profile workflow |
 
 ---
 

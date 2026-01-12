@@ -226,11 +226,11 @@ The defaults template contains only `system` domain. Technical domains (java, ja
       "defaults": ["plan-marshall:general-development-rules"],
       "optionals": ["plan-marshall:diagnostic-patterns"],
       "workflow_skills": {
-        "init": "pm-workflow:plan-init",
+        "init": "pm-workflow:phase-init",
         "outline": "pm-workflow:phase-refine-outline",
         "plan": "pm-workflow:phase-refine-plan",
-        "execute": "pm-workflow:task-execute",
-        "finalize": "pm-workflow:plan-finalize"
+        "execute": "pm-workflow:phase-execute",
+        "finalize": "pm-workflow:phase-finalize"
       }
     },
     "java": {

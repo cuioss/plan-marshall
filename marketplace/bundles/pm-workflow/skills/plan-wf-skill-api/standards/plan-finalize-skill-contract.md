@@ -2,7 +2,7 @@
 
 Workflow skill for finalize phase - verifies work, creates findings, delegates fixes.
 
-**Implementation**: `pm-workflow:plan-finalize`
+**Implementation**: `pm-workflow:phase-finalize`
 
 ---
 
@@ -42,7 +42,7 @@ Result:
 status: success
 domain: system
 phase: finalize
-workflow_skill: pm-workflow:plan-finalize
+workflow_skill: pm-workflow:phase-finalize
 ```
 
 ---
@@ -533,15 +533,15 @@ Every significant interaction MUST have a work-log entry:
 
 | Event | Format |
 |-------|--------|
-| Step boundary | `[STEP] (pm-workflow:plan-finalize) Starting {step}` |
-| Fix applied | `[FIX] (pm-workflow:plan-finalize) Applied: {desc}` |
-| Finding detected | `[FINDING] (pm-workflow:plan-finalize) {type} in {file}` |
-| Task created | `[TASK] (pm-workflow:plan-finalize) Created {task_id}` |
-| Iteration | `[ITERATE] (pm-workflow:plan-finalize) Iteration {n}: {count} findings` |
+| Step boundary | `[STEP] (pm-workflow:phase-finalize) Starting {step}` |
+| Fix applied | `[FIX] (pm-workflow:phase-finalize) Applied: {desc}` |
+| Finding detected | `[FINDING] (pm-workflow:phase-finalize) {type} in {file}` |
+| Task created | `[TASK] (pm-workflow:phase-finalize) Created {task_id}` |
+| Iteration | `[ITERATE] (pm-workflow:phase-finalize) Iteration {n}: {count} findings` |
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:logging:manage-log \
-    work {plan_id} INFO "[TAG] (pm-workflow:plan-finalize) {message}"
+    work {plan_id} INFO "[TAG] (pm-workflow:phase-finalize) {message}"
 ```
 
 ---

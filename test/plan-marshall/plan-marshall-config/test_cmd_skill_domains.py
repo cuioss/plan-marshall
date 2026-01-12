@@ -431,7 +431,7 @@ def test_get_workflow_skills():
         assert 'execute' in result.stdout
         assert 'finalize' in result.stdout
         # Verify skill references
-        assert 'pm-workflow:plan-init' in result.stdout
+        assert 'pm-workflow:phase-init' in result.stdout
         assert 'pm-workflow:phase-refine-outline' in result.stdout
         assert 'pm-workflow:phase-refine-plan' in result.stdout
 
@@ -445,8 +445,8 @@ def test_get_workflow_skills_output_format():
 
         assert result.success, f"Should succeed: {result.stderr}"
         # Verify all 5 workflow skills are returned
-        assert 'pm-workflow:task-execute' in result.stdout
-        assert 'pm-workflow:plan-finalize' in result.stdout
+        assert 'pm-workflow:phase-execute' in result.stdout
+        assert 'pm-workflow:phase-finalize' in result.stdout
 
 
 # =============================================================================
@@ -461,7 +461,7 @@ def test_resolve_workflow_skill_init():
         result = run_script(SCRIPT_PATH, 'resolve-workflow-skill', '--phase', 'init')
 
         assert result.success, f"Should succeed: {result.stderr}"
-        assert 'pm-workflow:plan-init' in result.stdout
+        assert 'pm-workflow:phase-init' in result.stdout
         assert 'phase' in result.stdout
         assert 'workflow_skill' in result.stdout
 
@@ -496,7 +496,7 @@ def test_resolve_workflow_skill_execute():
         result = run_script(SCRIPT_PATH, 'resolve-workflow-skill', '--phase', 'execute')
 
         assert result.success, f"Should succeed: {result.stderr}"
-        assert 'pm-workflow:task-execute' in result.stdout
+        assert 'pm-workflow:phase-execute' in result.stdout
 
 
 def test_resolve_workflow_skill_finalize():
@@ -507,7 +507,7 @@ def test_resolve_workflow_skill_finalize():
         result = run_script(SCRIPT_PATH, 'resolve-workflow-skill', '--phase', 'finalize')
 
         assert result.success, f"Should succeed: {result.stderr}"
-        assert 'pm-workflow:plan-finalize' in result.stdout
+        assert 'pm-workflow:phase-finalize' in result.stdout
 
 
 def test_resolve_workflow_skill_no_system_domain():

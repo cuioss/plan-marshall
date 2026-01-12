@@ -29,11 +29,11 @@
         "plan-marshall:diagnostic-patterns"
       ],
       "workflow_skills": {
-        "init": "pm-workflow:plan-init",
-        "outline": "pm-workflow:solution-outline",
-        "plan": "pm-workflow:task-plan",
-        "execute": "pm-workflow:task-execute",
-        "finalize": "pm-workflow:plan-finalize"
+        "init": "pm-workflow:phase-init",
+        "outline": "pm-workflow:phase-refine-outline",
+        "plan": "pm-workflow:phase-refine-plan",
+        "execute": "pm-workflow:phase-execute",
+        "finalize": "pm-workflow:phase-finalize"
       }
     },
     "plan-marshall-plugin-dev": {
@@ -63,7 +63,7 @@
       }
     }
   },
-  "module_config": {},
+  
   "system": {
     "retention": {
       "logs_days": 1,

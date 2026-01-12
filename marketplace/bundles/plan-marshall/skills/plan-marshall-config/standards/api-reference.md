@@ -319,11 +319,11 @@ plan-marshall-config get-workflow-skills
 **Output:**
 ```toon
 status: success
-init: pm-workflow:plan-init
+init: pm-workflow:phase-init
 outline: pm-workflow:phase-refine-outline
 plan: pm-workflow:phase-refine-plan
-execute: pm-workflow:task-execute
-finalize: pm-workflow:plan-finalize
+execute: pm-workflow:phase-execute
+finalize: pm-workflow:phase-finalize
 ```
 
 ---

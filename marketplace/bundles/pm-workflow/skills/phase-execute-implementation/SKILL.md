@@ -1,10 +1,10 @@
 ---
-name: task-implementation
+name: phase-execute-implementation
 description: Domain-agnostic implementation task execution with two-tier skill loading
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash
 ---
 
-# Task Implementation Skill
+# Phase Execute Implementation Skill
 
 **Role**: Domain-agnostic workflow skill for executing implementation tasks (profile=implementation). Loaded by `pm-workflow:task-execute-agent` when `task.profile` is `implementation`.
 

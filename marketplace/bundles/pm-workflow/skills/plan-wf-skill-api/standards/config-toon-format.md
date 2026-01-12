@@ -90,10 +90,10 @@ python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall
 
 ```bash
 # Resolve workflow skill for each phase
-resolve-workflow-skill --phase init       # → pm-workflow:plan-init
+resolve-workflow-skill --phase init       # → pm-workflow:phase-init
 resolve-workflow-skill --phase outline    # → pm-workflow:phase-refine-outline
 resolve-workflow-skill --phase plan       # → pm-workflow:phase-refine-plan
-resolve-workflow-skill --phase finalize   # → pm-workflow:plan-finalize
+resolve-workflow-skill --phase finalize   # → pm-workflow:phase-finalize
 
 # Execute phase uses domain and profile from task
 resolve-workflow-skill --domain java --phase implementation  # → system fallback or domain override

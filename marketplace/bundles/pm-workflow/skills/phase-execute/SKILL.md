@@ -1,11 +1,11 @@
 ---
-name: plan-execute
+name: phase-execute
 description: Execute phase skill for plan management. DUMB TASK RUNNER that executes tasks from TASK-*.toon files sequentially for execute and finalize phases.
 allowed-tools: Read, Write, Edit, Bash, Skill, Task, AskUserQuestion
 implements: pm-workflow:plan-wf-skill-api/task-execution-skill-contract
 ---
 
-# Plan Execute Skill
+# Phase Execute Skill
 
 **Role**: DUMB TASK RUNNER that executes tasks from TASK-*.toon files sequentially.
 
@@ -75,7 +75,7 @@ Returns:
 status: success
 plan_id: {plan_id}
 current_phase: execute
-skill: pm-workflow:plan-execute
+skill: pm-workflow:phase-execute
 skill_description: Execute phase skill for task implementation
 total_phases: 4
 completed_phases: 2
@@ -94,7 +94,7 @@ At the start of execute or finalize phase:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:logging:manage-log \
-  work {plan_id} INFO "[STATUS] (pm-workflow:plan-execute) Starting {phase} phase"
+  work {plan_id} INFO "[STATUS] (pm-workflow:phase-execute) Starting {phase} phase"
 ```
 
 For each task in current phase:
@@ -131,7 +131,7 @@ After each task completes:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:logging:manage-log \
-  work {plan_id} INFO "[OUTCOME] (pm-workflow:plan-execute) Completed {task_id}: {task_title} ({steps_completed} steps)"
+  work {plan_id} INFO "[OUTCOME] (pm-workflow:phase-execute) Completed {task_id}: {task_title} ({steps_completed} steps)"
 ```
 
 ### Step 4: Next Task or Phase
@@ -144,7 +144,7 @@ python3 .plan/execute-script.py plan-marshall:logging:manage-log \
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:logging:manage-log \
-  work {plan_id} INFO "[STATUS] (pm-workflow:plan-execute) Completed {phase} phase: {tasks_completed} tasks"
+  work {plan_id} INFO "[STATUS] (pm-workflow:phase-execute) Completed {phase} phase: {tasks_completed} tasks"
 ```
 
 ---
@@ -196,7 +196,7 @@ On any error, **first log the error** to work-log:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:logging:manage-log \
-  work {plan_id} ERROR "[ERROR] (pm-workflow:plan-execute) {task_id} failed - {error_type}: {error_context}"
+  work {plan_id} ERROR "[ERROR] (pm-workflow:phase-execute) {task_id} failed - {error_type}: {error_context}"
 ```
 
 ### Script Failure (Lessons-Learned Capture)

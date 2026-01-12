@@ -1,10 +1,10 @@
 ---
-name: task-testing
+name: phase-execute-testing
 description: Domain-agnostic testing task execution with two-tier skill loading
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash
 ---
 
-# Task Testing Skill
+# Phase Execute Testing Skill
 
 **Role**: Domain-agnostic workflow skill for executing testing tasks (profile=testing). Loaded by `pm-workflow:task-execute-agent` when `task.profile` is `testing`.
 

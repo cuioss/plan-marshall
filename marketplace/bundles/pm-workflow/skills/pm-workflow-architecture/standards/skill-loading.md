@@ -184,8 +184,8 @@ The pm-workflow bundle uses a two-tier skill loading pattern for domain-agnostic
 │  │   │  Step 3: Load Workflow Skill                               │    │  │
 │  │   │                                                            │    │  │
 │  │   │  Based on task.profile:                                    │    │  │
-│  │   │    implementation → pm-workflow:task-implementation        │    │  │
-│  │   │    testing → pm-workflow:task-testing                      │    │  │
+│  │   │    implementation → pm-workflow:phase-execute-implementation │    │  │
+│  │   │    testing → pm-workflow:phase-execute-testing             │    │  │
 │  │   │                                                            │    │  │
 │  │   │  • Determines HOW to execute                               │    │  │
 │  │   │  • Applies domain skill patterns                           │    │  │

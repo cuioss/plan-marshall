@@ -282,14 +282,14 @@ Each agent follows the same pattern:
 │  │  │ Step 3: Resolve Workflow Skill                                 │ │  │
 │  │  │                                                                │ │  │
 │  │  │ resolve-workflow-skill --domain java --phase implementation    │ │  │
-│  │  │ → pm-workflow:task-implementation                              │ │  │
+│  │  │ → pm-workflow:phase-execute-implementation                     │ │  │
 │  │  └────────────────────────────────────────────────────────────────┘ │  │
 │  │                              │                                       │  │
 │  │                              ▼                                       │  │
 │  │  ┌────────────────────────────────────────────────────────────────┐ │  │
 │  │  │ Step 4: Load and Execute Workflow Skill                        │ │  │
 │  │  │                                                                │ │  │
-│  │  │ Skill: pm-workflow:task-implementation                         │ │  │
+│  │  │ Skill: pm-workflow:phase-execute-implementation                │ │  │
 │  │  │                                                                │ │  │
 │  │  │ The skill:                                                     │ │  │
 │  │  │  • Reads affected files                                        │ │  │

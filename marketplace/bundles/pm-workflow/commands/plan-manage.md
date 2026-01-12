@@ -60,7 +60,7 @@ This command handles **init** and **refine** phases. Use `/plan-execute` for exe
 The init phase uses a single agent:
 
 ```
-Task: pm-workflow:plan-init-agent
+Task: pm-workflow:phase-init-agent
   Input: description OR issue OR lesson_id
   Output: plan_id, domains array
 ```
@@ -276,7 +276,7 @@ Lessons Learned:
    Date: 2025-11-27
 
 2. [improvement] Add retry logic for transient failures
-   Component: pm-workflow:plan-execute
+   Component: pm-workflow:phase-execute
    Date: 2025-11-26
 
 0. Back to main menu
@@ -338,7 +338,7 @@ If you discover issues or improvements during execution, record them:
 | Skill | Purpose |
 |-------|---------|
 | `pm-workflow:manage-lifecycle` | Plan discovery, phase routing, transitions |
-| `pm-workflow:plan-init` | Initialize new plans (creates request.md, goals, config) |
+| `pm-workflow:phase-init` | Initialize new plans (creates request.md, goals, config) |
 | `pm-workflow:plan-wf-skill-api` | API contracts for workflow skills and plan artifacts |
 
 | Script | Purpose |
@@ -348,7 +348,7 @@ If you discover issues or improvements during execution, record them:
 
 | Agent | Purpose |
 |-------|---------|
-| `pm-workflow:plan-init-agent` | Init phase: creates plan, detects domains, writes config.toon |
+| `pm-workflow:phase-init-agent` | Init phase: creates plan, detects domains, writes config.toon |
 | `pm-workflow:solution-outline-agent` | Refine phase: loads solution-outline skill, creates deliverables |
 | `pm-workflow:phase-refine-plan-agent` | Refine phase: loads task-plan skill, creates tasks with skills |
 | `pm-workflow:task-execute-agent` | Execute phase: loads workflow skill based on task.profile |

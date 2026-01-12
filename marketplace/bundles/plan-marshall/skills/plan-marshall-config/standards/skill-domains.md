@@ -15,11 +15,11 @@ The system domain contains workflow skills for the 5 execution phases:
 
 | Phase | Purpose | Workflow Skill |
 |-------|---------|----------------|
-| `init` | Initialize plan | `pm-workflow:plan-init` |
+| `init` | Initialize plan | `pm-workflow:phase-init` |
 | `outline` | Create solution outline | `pm-workflow:phase-refine-outline` |
 | `plan` | Decompose into tasks | `pm-workflow:phase-refine-plan` |
-| `execute` | Run implementation | `pm-workflow:task-execute` |
-| `finalize` | Commit, PR, quality | `pm-workflow:plan-finalize` |
+| `execute` | Run implementation | `pm-workflow:phase-execute` |
+| `finalize` | Commit, PR, quality | `pm-workflow:phase-finalize` |
 
 ## Structure
 
@@ -32,11 +32,11 @@ The system domain contains workflow skills for the 5 execution phases:
       "defaults": ["plan-marshall:general-development-rules"],
       "optionals": ["plan-marshall:diagnostic-patterns"],
       "workflow_skills": {
-        "init": "pm-workflow:plan-init",
+        "init": "pm-workflow:phase-init",
         "outline": "pm-workflow:phase-refine-outline",
         "plan": "pm-workflow:phase-refine-plan",
-        "execute": "pm-workflow:task-execute",
-        "finalize": "pm-workflow:plan-finalize"
+        "execute": "pm-workflow:phase-execute",
+        "finalize": "pm-workflow:phase-finalize"
       }
     }
   }
@@ -273,11 +273,11 @@ python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall
 **Output**:
 ```toon
 status: success
-init: pm-workflow:plan-init
+init: pm-workflow:phase-init
 outline: pm-workflow:phase-refine-outline
 plan: pm-workflow:phase-refine-plan
-execute: pm-workflow:task-execute
-finalize: pm-workflow:plan-finalize
+execute: pm-workflow:phase-execute
+finalize: pm-workflow:phase-finalize
 ```
 
 ### Aggregation Logic

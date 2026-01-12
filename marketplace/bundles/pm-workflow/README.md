@@ -85,11 +85,11 @@ Workflow skills are resolved from `system.workflow_skills`:
 
 | Phase | Skill | Purpose |
 |-------|-------|---------|
-| `init` | `pm-workflow:plan-init` | Create plan structure |
+| `init` | `pm-workflow:phase-init` | Create plan structure |
 | `outline` | `pm-workflow:phase-refine-outline` | Domain-agnostic solution outline creation |
 | `plan` | `pm-workflow:phase-refine-plan` | Domain-agnostic task planning |
-| `execute` | `pm-workflow:task-execute` | Domain-agnostic task execution |
-| `finalize` | `pm-workflow:plan-finalize` | Domain-agnostic finalization |
+| `execute` | `pm-workflow:phase-execute` | Domain-agnostic task execution |
+| `finalize` | `pm-workflow:phase-finalize` | Domain-agnostic finalization |
 
 ### Workflow Skill Extensions
 
@@ -131,11 +131,11 @@ The system domain contains workflow skills in `marshal.json`:
   "skill_domains": {
     "system": {
       "workflow_skills": {
-        "init": "pm-workflow:plan-init",
+        "init": "pm-workflow:phase-init",
         "outline": "pm-workflow:phase-refine-outline",
         "plan": "pm-workflow:phase-refine-plan",
-        "execute": "pm-workflow:task-execute",
-        "finalize": "pm-workflow:plan-finalize"
+        "execute": "pm-workflow:phase-execute",
+        "finalize": "pm-workflow:phase-finalize"
       }
     }
   }
@@ -205,9 +205,11 @@ pm-workflow/
     │   └── standards/           # Contract documents
     ├── phase-refine-outline/    # Solution outline workflow skill
     ├── phase-refine-plan/       # Task planning workflow skill
-    ├── plan-init/               # Init phase skill
-    ├── plan-execute/            # Execute phase coordination
-    ├── plan-finalize/           # Finalize phase skill
+    ├── phase-init/              # Init phase skill
+    ├── phase-execute/           # Execute phase coordination
+    ├── phase-finalize/          # Finalize phase skill
+    ├── phase-execute-implementation/  # Implementation profile
+    ├── phase-execute-testing/   # Testing profile
     ├── manage-plan-documents/   # Request/Solution document CRUD
     ├── manage-solution-outline/ # Solution outline queries
     ├── manage-tasks/            # Tasks + steps CRUD

@@ -99,10 +99,10 @@ python3 .plan/execute-script.py plan-marshall:logging:manage-log \
 
 # Write: Work logging (include [TAG] (caller) prefix)
 python3 .plan/execute-script.py plan-marshall:logging:manage-log \
-  work my-plan INFO "[ARTIFACT] (pm-workflow:plan-init) Created deliverable: auth module"
+  work my-plan INFO "[ARTIFACT] (pm-workflow:phase-init) Created deliverable: auth module"
 
 python3 .plan/execute-script.py plan-marshall:logging:manage-log \
-  work my-plan WARN "[STATUS] (pm-workflow:plan-execute) Skipped validation step"
+  work my-plan WARN "[STATUS] (pm-workflow:phase-execute) Skipped validation step"
 
 # Read: All work log entries
 python3 .plan/execute-script.py plan-marshall:logging:manage-log \
@@ -139,9 +139,9 @@ Since entries go to separate files (`script-execution.log` vs `work.log`), redun
 
 **work.log**:
 ```
-[2025-12-11T11:14:30Z] [INFO] [STATUS] (pm-workflow:plan-init) Starting init phase
-[2025-12-11T11:14:48Z] [INFO] [DECISION] (pm-workflow:plan-init) Detected domain: java (pom.xml found)
-[2025-12-11T11:15:20Z] [INFO] [ARTIFACT] (pm-workflow:plan-init) Created deliverable: auth module
+[2025-12-11T11:14:30Z] [INFO] [STATUS] (pm-workflow:phase-init) Starting init phase
+[2025-12-11T11:14:48Z] [INFO] [DECISION] (pm-workflow:phase-init) Detected domain: java (pom.xml found)
+[2025-12-11T11:15:20Z] [INFO] [ARTIFACT] (pm-workflow:phase-init) Created deliverable: auth module
 ```
 
 ### Log Levels

@@ -55,7 +55,7 @@ The pm-workflow bundle implements a 5-phase execution model for structured task 
 │  └─────────────────────────────────────────────────────────────────────┘   │
 │                                                                             │
 │  AGENT: plan-init-agent                                                     │
-│  SKILL: pm-workflow:plan-init                                               │
+│  SKILL: pm-workflow:phase-init                                              │
 │                                                                             │
 │  STEPS:                                                                     │
 │  ──────                                                                     │
@@ -197,7 +197,7 @@ The pm-workflow bundle implements a 5-phase execution model for structured task 
 │  └─────────────────────────────────────────────────────────────────────┘   │
 │                                                                             │
 │  AGENT: task-execute-agent                                                  │
-│  SKILL: pm-workflow:task-implementation (or task-testing)                   │
+│  SKILL: pm-workflow:phase-execute-implementation (or phase-execute-testing) │
 │                                                                             │
 │  EXECUTION LOOP:                                                            │
 │  ───────────────                                                            │
@@ -248,7 +248,7 @@ The pm-workflow bundle implements a 5-phase execution model for structured task 
 │  │                                                                     │   │
 │  └─────────────────────────────────────────────────────────────────────┘   │
 │                                                                             │
-│  SKILL: pm-workflow:plan-finalize                                           │
+│  SKILL: pm-workflow:phase-finalize                                          │
 │                                                                             │
 │  FINALIZE FLOW:                                                             │
 │  ──────────────                                                             │

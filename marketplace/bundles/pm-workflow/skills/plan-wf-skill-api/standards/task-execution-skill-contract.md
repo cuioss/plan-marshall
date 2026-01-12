@@ -2,7 +2,7 @@
 
 Workflow skill for execute phase - implements tasks using two-tier skill loading.
 
-**Implementation**: `pm-workflow:plan-execute`
+**Implementation**: `pm-workflow:phase-execute`
 
 ---
 
@@ -51,7 +51,7 @@ Result (no domain override, system fallback):
 status: success
 domain: system
 phase: implementation
-workflow_skill: pm-workflow:task-implementation
+workflow_skill: pm-workflow:phase-execute-implementation
 fallback: true
 ```
 
@@ -157,10 +157,10 @@ When domain doesn't define a workflow skill override:
 │                         │                                   │
 │                         ▼                                   │
 │  2. Fallback: system.workflow_skills.implementation         │
-│     → pm-workflow:task-implementation                       │
+│     → pm-workflow:phase-execute-implementation                       │
 │                         │                                   │
 │                         ▼                                   │
-│  Return: { workflow_skill: pm-workflow:task-implementation, │
+│  Return: { workflow_skill: pm-workflow:phase-execute-implementation, │
 │            fallback: true }                                 │
 │                                                             │
 └─────────────────────────────────────────────────────────────┘
