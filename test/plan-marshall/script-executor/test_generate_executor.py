@@ -262,6 +262,88 @@ def test_paths_help():
 
 
 # =============================================================================
+# TESTS: _resolve_plan_marshall_path
+# =============================================================================
+
+def test_resolve_finds_versioned_path():
+    """Resolves path in versioned cache structure (any version)."""
+    module = load_module()
+
+    with tempfile.TemporaryDirectory() as tmp:
+        base = Path(tmp)
+
+        # Create versioned structure: plan-marshall/0.1-BETA/skills/...
+        versioned_path = base / "plan-marshall" / "0.1-BETA" / "skills" / "test-skill" / "scripts"
+        versioned_path.mkdir(parents=True)
+        script = versioned_path / "test.py"
+        script.write_text("# test")
+
+        result = module._resolve_plan_marshall_path(base, "skills/test-skill/scripts/test.py")
+
+        assert result.exists(), f"Should find versioned path, got {result}"
+        assert "0.1-BETA" in str(result), f"Should include version dir, got {result}"
+
+
+def test_resolve_finds_any_version():
+    """Resolves path regardless of version string (1.0.0, 0.1-BETA, etc)."""
+    module = load_module()
+
+    with tempfile.TemporaryDirectory() as tmp:
+        base = Path(tmp)
+
+        # Create structure with arbitrary version
+        versioned_path = base / "plan-marshall" / "2.5.0-RC1" / "skills" / "my-skill"
+        versioned_path.mkdir(parents=True)
+        (versioned_path / "SKILL.md").write_text("# skill")
+
+        result = module._resolve_plan_marshall_path(base, "skills/my-skill/SKILL.md")
+
+        assert result.exists(), f"Should find path with any version, got {result}"
+        assert "2.5.0-RC1" in str(result)
+
+
+def test_resolve_falls_back_to_non_versioned():
+    """Falls back to non-versioned path (marketplace structure)."""
+    module = load_module()
+
+    with tempfile.TemporaryDirectory() as tmp:
+        base = Path(tmp)
+
+        # Create non-versioned structure: plan-marshall/skills/...
+        non_versioned = base / "plan-marshall" / "skills" / "test-skill"
+        non_versioned.mkdir(parents=True)
+        (non_versioned / "SKILL.md").write_text("# skill")
+
+        result = module._resolve_plan_marshall_path(base, "skills/test-skill/SKILL.md")
+
+        assert result.exists(), f"Should find non-versioned path, got {result}"
+        assert "skills/test-skill/SKILL.md" in str(result)
+
+
+def test_resolve_skips_hidden_dirs():
+    """Skips hidden directories (starting with .)."""
+    module = load_module()
+
+    with tempfile.TemporaryDirectory() as tmp:
+        base = Path(tmp)
+
+        # Create hidden dir with matching structure (should be skipped)
+        hidden = base / "plan-marshall" / ".git" / "skills" / "test"
+        hidden.mkdir(parents=True)
+        (hidden / "script.py").write_text("# hidden")
+
+        # Create real versioned path
+        real = base / "plan-marshall" / "1.0.0" / "skills" / "test"
+        real.mkdir(parents=True)
+        (real / "script.py").write_text("# real")
+
+        result = module._resolve_plan_marshall_path(base, "skills/test/script.py")
+
+        assert ".git" not in str(result), f"Should skip hidden dirs, got {result}"
+        assert "1.0.0" in str(result), f"Should find real version, got {result}"
+
+
+# =============================================================================
 # TESTS: discover_scripts_fallback
 # =============================================================================
 
@@ -362,6 +444,10 @@ if __name__ == '__main__':
         test_paths_requires_executor,
         test_drift_help,
         test_paths_help,
+        test_resolve_finds_versioned_path,
+        test_resolve_finds_any_version,
+        test_resolve_falls_back_to_non_versioned,
+        test_resolve_skips_hidden_dirs,
         test_discovers_scripts_from_directory_structure,
         test_skips_test_files,
         test_skips_private_modules,

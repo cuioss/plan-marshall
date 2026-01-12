@@ -114,15 +114,20 @@ def get_base_path(use_marketplace: bool = False) -> Path:
 def _resolve_plan_marshall_path(base_path: Path, subpath: str) -> Path:
     """Resolve path within plan-marshall bundle, handling versioned cache structure.
 
-    Tries versioned path first (plugin-cache with 1.0.0/), then non-versioned (marketplace).
+    Tries versioned path first (plugin-cache with version dir), then non-versioned (marketplace).
     """
-    # Try versioned path first (plugin-cache structure: plan-marshall/1.0.0/...)
-    versioned = base_path / "plan-marshall/1.0.0" / subpath
-    if versioned.exists():
-        return versioned
+    plan_marshall_dir = base_path / "plan-marshall"
+
+    # Try versioned path first (plugin-cache structure: plan-marshall/{version}/...)
+    if plan_marshall_dir.is_dir():
+        for version_dir in plan_marshall_dir.iterdir():
+            if version_dir.is_dir() and not version_dir.name.startswith('.'):
+                versioned = version_dir / subpath
+                if versioned.exists():
+                    return versioned
 
     # Fall back to non-versioned (marketplace structure: plan-marshall/...)
-    return base_path / "plan-marshall" / subpath
+    return plan_marshall_dir / subpath
 
 
 def get_inventory_script(base_path: Path) -> Path:
