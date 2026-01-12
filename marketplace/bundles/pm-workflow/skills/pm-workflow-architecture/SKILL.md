@@ -158,7 +158,7 @@ allowed-tools: Read
 |-------|---------|
 | `pm-workflow:plan-wf-skill-api` | Contract definitions for workflow skills |
 | `pm-workflow:plan-init` | Init phase implementation |
-| `pm-workflow:solution-outline` | Outline phase implementation |
+| `pm-workflow:phase-refine-outline` | Outline phase implementation |
 | `pm-workflow:task-plan` | Plan phase implementation |
 | `pm-workflow:plan-execute` | Execute phase implementation |
 | `pm-workflow:plan-finalize` | Finalize phase implementation |

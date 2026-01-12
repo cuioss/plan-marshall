@@ -208,14 +208,14 @@ Each agent follows the same pattern:
 │  │  │ Step 1b: Resolve workflow skill                                │ │  │
 │  │  │                                                                │ │  │
 │  │  │ resolve-workflow-skill --domain java --phase outline           │ │  │
-│  │  │ → pm-workflow:solution-outline                                 │ │  │
+│  │  │ → pm-workflow:phase-refine-outline                                 │ │  │
 │  │  └────────────────────────────────────────────────────────────────┘ │  │
 │  │                              │                                       │  │
 │  │                              ▼                                       │  │
 │  │  ┌────────────────────────────────────────────────────────────────┐ │  │
 │  │  │ Step 1c: Load resolved skill                                   │ │  │
 │  │  │                                                                │ │  │
-│  │  │ Skill: pm-workflow:solution-outline                            │ │  │
+│  │  │ Skill: pm-workflow:phase-refine-outline                            │ │  │
 │  │  └────────────────────────────────────────────────────────────────┘ │  │
 │  │                              │                                       │  │
 │  │                              ▼                                       │  │

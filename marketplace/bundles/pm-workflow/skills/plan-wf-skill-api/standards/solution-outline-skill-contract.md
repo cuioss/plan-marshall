@@ -2,7 +2,7 @@
 
 Workflow skill for outline phase - transforms requests into solution outlines with deliverables using architecture-driven module selection.
 
-**Implementation**: `pm-workflow:solution-outline`
+**Implementation**: `pm-workflow:phase-refine-outline`
 
 ---
 
@@ -36,7 +36,7 @@ Result:
 status: success
 domain: system
 phase: outline
-workflow_skill: pm-workflow:solution-outline
+workflow_skill: pm-workflow:phase-refine-outline
 ```
 
 ---

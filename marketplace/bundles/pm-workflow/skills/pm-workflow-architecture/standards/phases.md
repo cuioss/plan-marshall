@@ -101,7 +101,7 @@ The pm-workflow bundle implements a 5-phase execution model for structured task 
 │  └─────────────────────────────────────────────────────────────────────┘   │
 │                                                                             │
 │  AGENT: solution-outline-agent                                              │
-│  SKILL: pm-workflow:solution-outline (or domain-specific extension)        │
+│  SKILL: pm-workflow:phase-refine-outline (or domain-specific extension)        │
 │                                                                             │
 │  STEPS:                                                                     │
 │  ──────                                                                     │

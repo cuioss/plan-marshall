@@ -432,7 +432,7 @@ def test_get_workflow_skills():
         assert 'finalize' in result.stdout
         # Verify skill references
         assert 'pm-workflow:plan-init' in result.stdout
-        assert 'pm-workflow:solution-outline' in result.stdout
+        assert 'pm-workflow:phase-refine-outline' in result.stdout
         assert 'pm-workflow:task-plan' in result.stdout
 
 
@@ -474,7 +474,7 @@ def test_resolve_workflow_skill_outline():
         result = run_script(SCRIPT_PATH, 'resolve-workflow-skill', '--phase', 'outline')
 
         assert result.success, f"Should succeed: {result.stderr}"
-        assert 'pm-workflow:solution-outline' in result.stdout
+        assert 'pm-workflow:phase-refine-outline' in result.stdout
 
 
 def test_resolve_workflow_skill_plan():

@@ -291,5 +291,5 @@ The pm-workflow bundle uses a two-tier skill loading pattern for domain-agnostic
 | [agents.md](agents.md) | Agent skill loading steps |
 | [phases.md](phases.md) | When each skill type is used |
 | `plan-marshall:analyze-project-architecture` | Source of module.skills_by_profile |
-| `pm-workflow:solution-outline` | Where module/skills are selected |
+| `pm-workflow:phase-refine-outline` | Where module/skills are selected |
 | `pm-workflow:plan-wf-skill-api` | Contract definitions |

@@ -22,7 +22,7 @@ The extension API allows domains to **extend** system workflow skills without **
 │                                                                              │
 │  ┌──────────────────────────────────────────────────────────────────────┐   │
 │  │  SYSTEM WORKFLOW SKILL (owns process)                                 │   │
-│  │  pm-workflow:solution-outline                                         │   │
+│  │  pm-workflow:phase-refine-outline                                         │   │
 │  │                                                                       │   │
 │  │  Process:                                                             │   │
 │  │  1. Load extensions for all configured domains                        │   │
@@ -135,7 +135,7 @@ Instructions for this extension point...
 
 ### Phase Overview
 
-**System Skill**: `pm-workflow:solution-outline`
+**System Skill**: `pm-workflow:phase-refine-outline`
 
 **Purpose**: Transform user request into solution outline with deliverables.
 

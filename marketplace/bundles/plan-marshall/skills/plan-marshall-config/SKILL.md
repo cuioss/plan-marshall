@@ -227,7 +227,7 @@ The defaults template contains only `system` domain. Technical domains (java, ja
       "optionals": ["plan-marshall:diagnostic-patterns"],
       "workflow_skills": {
         "init": "pm-workflow:plan-init",
-        "outline": "pm-workflow:solution-outline",
+        "outline": "pm-workflow:phase-refine-outline",
         "plan": "pm-workflow:task-plan",
         "execute": "pm-workflow:task-execute",
         "finalize": "pm-workflow:plan-finalize"

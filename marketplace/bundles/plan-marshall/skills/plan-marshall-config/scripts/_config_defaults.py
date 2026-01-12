@@ -20,7 +20,7 @@ DEFAULT_PROFILES = ['implementation', 'testing', 'quality']
 # System workflow skills (always from system domain)
 DEFAULT_SYSTEM_WORKFLOW_SKILLS = {
     "init": "pm-workflow:plan-init",
-    "outline": "pm-workflow:solution-outline",
+    "outline": "pm-workflow:phase-refine-outline",
     "plan": "pm-workflow:task-plan",
     "execute": "pm-workflow:task-execute",
     "finalize": "pm-workflow:plan-finalize"

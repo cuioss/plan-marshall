@@ -16,7 +16,7 @@ The skill domains configuration uses a 5-phase workflow model with profile-based
       "optionals": ["bundle:skill"],
       "workflow_skills": {
         "init": "pm-workflow:plan-init",
-        "outline": "pm-workflow:solution-outline",
+        "outline": "pm-workflow:phase-refine-outline",
         "plan": "pm-workflow:task-plan",
         "execute": "pm-workflow:task-execute",
         "finalize": "pm-workflow:plan-finalize"
@@ -55,7 +55,7 @@ The `system` domain is required and contains:
 {
   "workflow_skills": {
     "init": "pm-workflow:plan-init",
-    "outline": "pm-workflow:solution-outline",
+    "outline": "pm-workflow:phase-refine-outline",
     "plan": "pm-workflow:task-plan",
     "execute": "pm-workflow:task-execute",
     "finalize": "pm-workflow:plan-finalize"
@@ -66,7 +66,7 @@ The `system` domain is required and contains:
 | Phase | Purpose | Workflow Skill |
 |-------|---------|----------------|
 | `init` | Initialize plan, detect artifacts | `pm-workflow:plan-init` |
-| `outline` | Create solution outline with deliverables | `pm-workflow:solution-outline` |
+| `outline` | Create solution outline with deliverables | `pm-workflow:phase-refine-outline` |
 | `plan` | Transform deliverables into executable tasks | `pm-workflow:task-plan` |
 | `execute` | Execute individual tasks | `pm-workflow:task-execute` |
 | `finalize` | Verify, document, commit | `pm-workflow:plan-finalize` |
@@ -134,7 +134,7 @@ Each profile contains defaults and optionals:
 ```bash
 # Always resolves from system domain
 plan-marshall-config resolve-workflow-skill --phase outline
-# Returns: pm-workflow:solution-outline
+# Returns: pm-workflow:phase-refine-outline
 ```
 
 ### Workflow Extension Resolution

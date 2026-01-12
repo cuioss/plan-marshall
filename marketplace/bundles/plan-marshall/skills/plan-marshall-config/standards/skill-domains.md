@@ -16,7 +16,7 @@ The system domain contains workflow skills for the 5 execution phases:
 | Phase | Purpose | Workflow Skill |
 |-------|---------|----------------|
 | `init` | Initialize plan | `pm-workflow:plan-init` |
-| `outline` | Create solution outline | `pm-workflow:solution-outline` |
+| `outline` | Create solution outline | `pm-workflow:phase-refine-outline` |
 | `plan` | Decompose into tasks | `pm-workflow:task-plan` |
 | `execute` | Run implementation | `pm-workflow:task-execute` |
 | `finalize` | Commit, PR, quality | `pm-workflow:plan-finalize` |
@@ -33,7 +33,7 @@ The system domain contains workflow skills for the 5 execution phases:
       "optionals": ["plan-marshall:diagnostic-patterns"],
       "workflow_skills": {
         "init": "pm-workflow:plan-init",
-        "outline": "pm-workflow:solution-outline",
+        "outline": "pm-workflow:phase-refine-outline",
         "plan": "pm-workflow:task-plan",
         "execute": "pm-workflow:task-execute",
         "finalize": "pm-workflow:plan-finalize"
@@ -205,7 +205,7 @@ python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall
 ```toon
 status: success
 phase: outline
-workflow_skill: pm-workflow:solution-outline
+workflow_skill: pm-workflow:phase-refine-outline
 ```
 
 **Error Cases**:
@@ -274,7 +274,7 @@ python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall
 ```toon
 status: success
 init: pm-workflow:plan-init
-outline: pm-workflow:solution-outline
+outline: pm-workflow:phase-refine-outline
 plan: pm-workflow:task-plan
 execute: pm-workflow:task-execute
 finalize: pm-workflow:plan-finalize

@@ -250,7 +250,7 @@ plan-marshall-config resolve-workflow-skill --phase outline
 ```toon
 status: success
 phase: outline
-workflow_skill: pm-workflow:solution-outline
+workflow_skill: pm-workflow:phase-refine-outline
 ```
 
 ### resolve-workflow-skill-extension
@@ -320,7 +320,7 @@ plan-marshall-config get-workflow-skills
 ```toon
 status: success
 init: pm-workflow:plan-init
-outline: pm-workflow:solution-outline
+outline: pm-workflow:phase-refine-outline
 plan: pm-workflow:task-plan
 execute: pm-workflow:task-execute
 finalize: pm-workflow:plan-finalize

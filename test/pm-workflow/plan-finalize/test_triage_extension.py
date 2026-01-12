@@ -39,7 +39,7 @@ def test_resolve_triage_extension_java():
                     "defaults": ["plan-marshall:general-development-rules"],
                     "workflow_skills": {
                         "init": "pm-workflow:plan-init",
-                        "outline": "pm-workflow:solution-outline",
+                        "outline": "pm-workflow:phase-refine-outline",
                         "plan": "pm-workflow:task-plan",
                         "execute": "pm-workflow:task-execute",
                         "finalize": "pm-workflow:plan-finalize"
@@ -80,7 +80,7 @@ def test_resolve_triage_extension_javascript():
                     "defaults": ["plan-marshall:general-development-rules"],
                     "workflow_skills": {
                         "init": "pm-workflow:plan-init",
-                        "outline": "pm-workflow:solution-outline",
+                        "outline": "pm-workflow:phase-refine-outline",
                         "plan": "pm-workflow:task-plan",
                         "execute": "pm-workflow:task-execute",
                         "finalize": "pm-workflow:plan-finalize"
@@ -119,7 +119,7 @@ def test_resolve_triage_extension_plugin_dev():
                     "defaults": ["plan-marshall:general-development-rules"],
                     "workflow_skills": {
                         "init": "pm-workflow:plan-init",
-                        "outline": "pm-workflow:solution-outline",
+                        "outline": "pm-workflow:phase-refine-outline",
                         "plan": "pm-workflow:task-plan",
                         "execute": "pm-workflow:task-execute",
                         "finalize": "pm-workflow:plan-finalize"
@@ -158,7 +158,7 @@ def test_resolve_triage_extension_null_for_missing():
                     "defaults": ["plan-marshall:general-development-rules"],
                     "workflow_skills": {
                         "init": "pm-workflow:plan-init",
-                        "outline": "pm-workflow:solution-outline",
+                        "outline": "pm-workflow:phase-refine-outline",
                         "plan": "pm-workflow:task-plan",
                         "execute": "pm-workflow:task-execute",
                         "finalize": "pm-workflow:plan-finalize"
@@ -199,7 +199,7 @@ def test_resolve_triage_extension_null_for_unknown_domain():
                     "defaults": ["plan-marshall:general-development-rules"],
                     "workflow_skills": {
                         "init": "pm-workflow:plan-init",
-                        "outline": "pm-workflow:solution-outline",
+                        "outline": "pm-workflow:phase-refine-outline",
                         "plan": "pm-workflow:task-plan",
                         "execute": "pm-workflow:task-execute",
                         "finalize": "pm-workflow:plan-finalize"
