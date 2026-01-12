@@ -1,7 +1,224 @@
 {
   "project": {
-    "description": "Claude Code marketplace bundles providing comprehensive development standards, automation tools, and AI-assisted workflows for CUI OSS projects. Contains 8 production bundles with 95 components (skills, agents, commands).",
-    "description_reasoning": "From README.adoc introduction and overview section"
+    "description": "Claude Code marketplace bundles providing comprehensive development standards and automation for CUI OSS projects, including Java/JavaScript development, documentation, requirements engineering, and plugin development tooling.",
+    "description_reasoning": "From README.adoc introduction and bundle overview section"
   },
-  "modules": {}
+  "modules": {
+    "default": {
+      "responsibility": "Marketplace root module providing installation entry point, bundle overview documentation, and repository-level configuration for the CUI development standards marketplace.",
+      "responsibility_reasoning": "From README.adoc introduction and bundle overview table",
+      "purpose": "parent",
+      "purpose_reasoning": "Root module with marketplace.json and bundle index",
+      "key_packages": {},
+      "internal_dependencies": [],
+      "key_dependencies": [],
+      "key_dependencies_reasoning": "",
+      "skills_by_profile": {
+        "implementation": [
+          "pm-plugin-development:plugin-architecture",
+          "pm-plugin-development:plugin-script-architecture"
+        ],
+        "unit-testing": [
+          "pm-plugin-development:plugin-architecture",
+          "pm-plugin-development:plugin-script-architecture"
+        ]
+      },
+      "skills_by_profile_reasoning": "All modules are marketplace plugin bundles using plan-marshall-plugin-dev domain",
+      "tips": [],
+      "insights": [],
+      "best_practices": []
+    },
+    "plan-marshall": {
+      "responsibility": "Foundational infrastructure providing environment setup, permission management, extension API for domain bundle discovery, and cross-cutting utilities that other bundles depend on.",
+      "responsibility_reasoning": "From bundle README.md Purpose section",
+      "purpose": "library",
+      "purpose_reasoning": "Infrastructure bundle providing shared utilities and APIs",
+      "key_packages": {},
+      "internal_dependencies": [],
+      "key_dependencies": [],
+      "key_dependencies_reasoning": "",
+      "skills_by_profile": {
+        "implementation": [
+          "pm-plugin-development:plugin-architecture",
+          "pm-plugin-development:plugin-script-architecture"
+        ],
+        "unit-testing": [
+          "pm-plugin-development:plugin-architecture",
+          "pm-plugin-development:plugin-script-architecture"
+        ]
+      },
+      "skills_by_profile_reasoning": "All modules are marketplace plugin bundles using plan-marshall-plugin-dev domain",
+      "tips": [],
+      "insights": [],
+      "best_practices": []
+    },
+    "pm-dev-frontend": {
+      "responsibility": "Frontend development expertise aggregating JavaScript, CSS, and web component standards with integrated automation workflows for npm builds, Jest testing, JSDoc documentation, and ESLint enforcement.",
+      "responsibility_reasoning": "From bundle README.md Purpose and Components sections",
+      "purpose": "library",
+      "purpose_reasoning": "Domain knowledge bundle with skills and automation scripts",
+      "key_packages": {},
+      "internal_dependencies": [],
+      "key_dependencies": [],
+      "key_dependencies_reasoning": "",
+      "skills_by_profile": {
+        "implementation": [
+          "pm-plugin-development:plugin-architecture",
+          "pm-plugin-development:plugin-script-architecture"
+        ],
+        "unit-testing": [
+          "pm-plugin-development:plugin-architecture",
+          "pm-plugin-development:plugin-script-architecture"
+        ]
+      },
+      "skills_by_profile_reasoning": "All modules are marketplace plugin bundles using plan-marshall-plugin-dev domain",
+      "tips": [],
+      "insights": [],
+      "best_practices": []
+    },
+    "pm-dev-java": {
+      "responsibility": "Comprehensive Java development expertise with agent-first architecture providing autonomous code implementation, testing, and standards compliance through 9 specialized agents and 12 domain skills.",
+      "responsibility_reasoning": "From bundle README.md Purpose and Architecture sections",
+      "purpose": "library",
+      "purpose_reasoning": "Domain knowledge bundle with agents and skills",
+      "key_packages": {},
+      "internal_dependencies": [],
+      "key_dependencies": [],
+      "key_dependencies_reasoning": "",
+      "skills_by_profile": {
+        "implementation": [
+          "pm-plugin-development:plugin-architecture",
+          "pm-plugin-development:plugin-script-architecture"
+        ],
+        "unit-testing": [
+          "pm-plugin-development:plugin-architecture",
+          "pm-plugin-development:plugin-script-architecture"
+        ]
+      },
+      "skills_by_profile_reasoning": "All modules are marketplace plugin bundles using plan-marshall-plugin-dev domain",
+      "tips": [],
+      "insights": [],
+      "best_practices": []
+    },
+    "pm-dev-java-cui": {
+      "responsibility": "CUI-specific Java development standards providing opinionated patterns for CuiLogger, LogRecord-based logging, test data generation with Generators, and HTTP client patterns that complement general Java standards.",
+      "responsibility_reasoning": "From bundle README.md Overview and Skills sections",
+      "purpose": "library",
+      "purpose_reasoning": "Domain-specific extension bundle for CUI Java projects",
+      "key_packages": {},
+      "internal_dependencies": [],
+      "key_dependencies": [],
+      "key_dependencies_reasoning": "",
+      "skills_by_profile": {
+        "implementation": [
+          "pm-plugin-development:plugin-architecture",
+          "pm-plugin-development:plugin-script-architecture"
+        ],
+        "unit-testing": [
+          "pm-plugin-development:plugin-architecture",
+          "pm-plugin-development:plugin-script-architecture"
+        ]
+      },
+      "skills_by_profile_reasoning": "All modules are marketplace plugin bundles using plan-marshall-plugin-dev domain",
+      "tips": [],
+      "insights": [],
+      "best_practices": []
+    },
+    "pm-documents": {
+      "responsibility": "AsciiDoc and documentation standards enforcement providing goal-based commands for creating, diagnosing, and maintaining technical documentation with ADR and interface specification management.",
+      "responsibility_reasoning": "From bundle README.md Purpose section",
+      "purpose": "library",
+      "purpose_reasoning": "Documentation domain bundle with workflows and templates",
+      "key_packages": {},
+      "internal_dependencies": [],
+      "key_dependencies": [],
+      "key_dependencies_reasoning": "",
+      "skills_by_profile": {
+        "implementation": [
+          "pm-plugin-development:plugin-architecture",
+          "pm-plugin-development:plugin-script-architecture"
+        ],
+        "unit-testing": [
+          "pm-plugin-development:plugin-architecture",
+          "pm-plugin-development:plugin-script-architecture"
+        ]
+      },
+      "skills_by_profile_reasoning": "All modules are marketplace plugin bundles using plan-marshall-plugin-dev domain",
+      "tips": [],
+      "insights": [],
+      "best_practices": []
+    },
+    "pm-plugin-development": {
+      "responsibility": "Complete toolchain for marketplace component lifecycle management providing goal-based commands to create, diagnose, fix, and maintain Claude Code marketplace components (commands, skills, bundles).",
+      "responsibility_reasoning": "From bundle README.md Purpose section",
+      "purpose": "library",
+      "purpose_reasoning": "Plugin development toolkit with skills and commands",
+      "key_packages": {},
+      "internal_dependencies": [],
+      "key_dependencies": [],
+      "key_dependencies_reasoning": "",
+      "skills_by_profile": {
+        "implementation": [
+          "pm-plugin-development:plugin-architecture",
+          "pm-plugin-development:plugin-script-architecture"
+        ],
+        "unit-testing": [
+          "pm-plugin-development:plugin-architecture",
+          "pm-plugin-development:plugin-script-architecture"
+        ]
+      },
+      "skills_by_profile_reasoning": "All modules are marketplace plugin bundles using plan-marshall-plugin-dev domain",
+      "tips": [],
+      "insights": [],
+      "best_practices": []
+    },
+    "pm-requirements": {
+      "responsibility": "Requirements engineering standards covering the complete documentation lifecycle from project setup through implementation with SMART requirements principles, specification management, and bidirectional traceability.",
+      "responsibility_reasoning": "From bundle README.md Overview section",
+      "purpose": "library",
+      "purpose_reasoning": "Requirements domain bundle with skills and standards",
+      "key_packages": {},
+      "internal_dependencies": [],
+      "key_dependencies": [],
+      "key_dependencies_reasoning": "",
+      "skills_by_profile": {
+        "implementation": [
+          "pm-plugin-development:plugin-architecture",
+          "pm-plugin-development:plugin-script-architecture"
+        ],
+        "unit-testing": [
+          "pm-plugin-development:plugin-architecture",
+          "pm-plugin-development:plugin-script-architecture"
+        ]
+      },
+      "skills_by_profile_reasoning": "All modules are marketplace plugin bundles using plan-marshall-plugin-dev domain",
+      "tips": [],
+      "insights": [],
+      "best_practices": []
+    },
+    "pm-workflow": {
+      "responsibility": "Plan-based task management system that transforms high-level task descriptions into executable action sequences through progressive 5-phase refinement using thin agents and domain-agnostic workflow skills.",
+      "responsibility_reasoning": "From bundle README.md header and Architecture section",
+      "purpose": "library",
+      "purpose_reasoning": "Workflow orchestration bundle with agents and manage skills",
+      "key_packages": {},
+      "internal_dependencies": [],
+      "key_dependencies": [],
+      "key_dependencies_reasoning": "",
+      "skills_by_profile": {
+        "implementation": [
+          "pm-plugin-development:plugin-architecture",
+          "pm-plugin-development:plugin-script-architecture"
+        ],
+        "unit-testing": [
+          "pm-plugin-development:plugin-architecture",
+          "pm-plugin-development:plugin-script-architecture"
+        ]
+      },
+      "skills_by_profile_reasoning": "All modules are marketplace plugin bundles using plan-marshall-plugin-dev domain",
+      "tips": [],
+      "insights": [],
+      "best_practices": []
+    }
+  }
 }

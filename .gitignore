@@ -19,8 +19,9 @@ target/
 # Claude Code files
 .claude/*
 
-# But allow project skills and run configuration to be shared
+# But allow project skills, commands, and run configuration to be shared
 !.claude/skills/
+!.claude/commands/
 !.claude/run-configuration.json
 
 # Ignore user-specific settings

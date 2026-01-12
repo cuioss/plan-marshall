@@ -228,12 +228,13 @@ def parse_resource_types(resource_types_str: str) -> tuple[dict, Optional[str]]:
 def _extract_bundle_name(bundle_dir: Path) -> str:
     """Extract bundle name, handling versioned plugin-cache structure.
 
-    For versioned structure (plugin-cache): .../plan-marshall/1.0.0/ -> "plan-marshall"
+    For versioned structure (plugin-cache): .../plan-marshall/0.1-BETA/ -> "plan-marshall"
     For non-versioned structure (marketplace): .../plan-marshall/ -> "plan-marshall"
     """
     name = bundle_dir.name
-    # If name looks like a semver version (e.g., "1.0.0", "0.9.0"), use parent name
-    if re.match(r'^\d+\.\d+\.\d+$', name):
+    # If name looks like a version (e.g., "1.0.0", "0.1-BETA", "2.0.0-rc1"), use parent name
+    # Pattern: starts with digit.digit, optionally followed by more version info
+    if re.match(r'^\d+\.\d+', name):
         return bundle_dir.parent.name
     return name
 

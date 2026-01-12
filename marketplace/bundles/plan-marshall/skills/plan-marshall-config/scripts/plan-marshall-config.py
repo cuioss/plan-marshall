@@ -7,8 +7,6 @@ Manages .plan/marshal.json with noun-verb subcommand pattern.
 Usage:
     plan-marshall-config.py skill-domains list
     plan-marshall-config.py skill-domains get --domain java
-    plan-marshall-config.py modules detect
-    plan-marshall-config.py build-systems detect
     plan-marshall-config.py system retention get
     plan-marshall-config.py plan defaults list
     plan-marshall-config.py init
@@ -28,8 +26,6 @@ from _cmd_skill_domains import (
     cmd_resolve_workflow_skill_extension,
     cmd_get_skills_by_profile,
 )
-from _cmd_modules import cmd_modules
-from _cmd_build_systems import cmd_build_systems
 from _cmd_system_plan import cmd_system, cmd_plan
 from _cmd_ci import cmd_ci
 from _cmd_init import cmd_init
@@ -87,64 +83,6 @@ def main():
 
     sd_configure = sd_sub.add_parser('configure', help='Configure selected domains')
     sd_configure.add_argument('--domains', required=True, help='Comma-separated domain names to enable')
-
-    # --- modules ---
-    # NOTE: Module facts (name, path, build_systems) come from raw-project-data.json
-    # Command configuration uses module_config section of marshal.json
-    p_mod = subparsers.add_parser('modules', help='Manage project modules and commands')
-    mod_sub = p_mod.add_subparsers(dest='verb', help='Operation')
-
-    mod_sub.add_parser('list', help='List all modules from raw-project-data.json')
-
-    mod_get = mod_sub.add_parser('get', help='Get module info and available commands')
-    mod_get.add_argument('--module', required=True, help='Module name')
-
-    mod_get_bs = mod_sub.add_parser('get-build-systems', help='Get module build systems')
-    mod_get_bs.add_argument('--module', required=True, help='Module name')
-
-    mod_get_cmd = mod_sub.add_parser('get-command', help='Get command for module with fallback chain')
-    mod_get_cmd.add_argument('--module', required=True, help='Module name')
-    mod_get_cmd.add_argument('--label', required=True, help='Command label')
-    mod_get_cmd.add_argument('--build-system', help='Build system filter for hybrid modules')
-
-    mod_list_cmd = mod_sub.add_parser('list-commands', help='List available commands for module')
-    mod_list_cmd.add_argument('--module', required=True, help='Module name')
-
-    mod_set_cmd = mod_sub.add_parser('set-command', help='Set command for module')
-    mod_set_cmd.add_argument('--module', required=True, help='Module name')
-    mod_set_cmd.add_argument('--label', required=True, help='Command label')
-    mod_set_cmd.add_argument('--command', required=True, help='Full command string')
-    mod_set_cmd.add_argument('--build-system', help='Build system for hybrid modules')
-
-    mod_set_def_cmd = mod_sub.add_parser('set-default-command', help='Set default command for all modules')
-    mod_set_def_cmd.add_argument('--label', required=True, help='Command label')
-    mod_set_def_cmd.add_argument('--command', required=True, help='Full command string')
-
-    mod_persist = mod_sub.add_parser('persist-all', help='Persist full module_config (from project-structure)')
-    mod_persist.add_argument('--modules-json', required=True, help='Full module_config as JSON')
-
-    mod_infer = mod_sub.add_parser('infer-domains', help='Infer domains from build_systems for all modules')
-    mod_infer.add_argument('--force', action='store_true', help='Overwrite existing domains')
-
-    # --- build-systems ---
-    p_bs = subparsers.add_parser('build-systems', help='Manage build system configuration')
-    bs_sub = p_bs.add_subparsers(dest='verb', help='Operation')
-
-    bs_sub.add_parser('list', help='List build systems')
-    bs_sub.add_parser('detect', help='Auto-detect build systems')
-
-    bs_get = bs_sub.add_parser('get', help='Get build system config')
-    bs_get.add_argument('--system', required=True, help='Build system name')
-
-    bs_get_cmd = bs_sub.add_parser('get-command', help='Get command for label')
-    bs_get_cmd.add_argument('--system', required=True, help='Build system name')
-    bs_get_cmd.add_argument('--label', required=True, help='Command label')
-
-    bs_add = bs_sub.add_parser('add', help='Add build system')
-    bs_add.add_argument('--system', required=True, help='Build system name')
-
-    bs_rem = bs_sub.add_parser('remove', help='Remove build system')
-    bs_rem.add_argument('--system', required=True, help='Build system name')
 
     # --- system ---
     p_sys = subparsers.add_parser('system', help='Manage system settings')
@@ -245,16 +183,6 @@ def main():
             p_sd.print_help()
             return EXIT_ERROR
         return cmd_skill_domains(args)
-    elif args.noun == 'modules':
-        if not args.verb:
-            p_mod.print_help()
-            return EXIT_ERROR
-        return cmd_modules(args)
-    elif args.noun == 'build-systems':
-        if not args.verb:
-            p_bs.print_help()
-            return EXIT_ERROR
-        return cmd_build_systems(args)
     elif args.noun == 'system':
         if not args.sub_noun or not args.verb:
             p_sys.print_help()

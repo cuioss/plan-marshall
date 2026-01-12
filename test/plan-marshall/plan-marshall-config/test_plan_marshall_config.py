@@ -5,8 +5,6 @@ Happy-path tests verifying the monolithic CLI API.
 Detailed variant and corner case tests are in:
 - test_cmd_init.py
 - test_cmd_skill_domains.py
-- test_cmd_modules.py
-- test_cmd_build_systems.py
 - test_cmd_system_plan.py
 """
 
@@ -54,52 +52,6 @@ def test_skill_domains_get():
 
         assert result.success, f"Should succeed: {result.stderr}"
         assert 'pm-dev-java:java-core' in result.stdout
-
-
-def test_modules_list():
-    """Test modules list."""
-    with PlanTestContext() as ctx:
-        create_marshal_json(ctx.fixture_dir)
-
-        result = run_script(SCRIPT_PATH, 'modules', 'list')
-
-        assert result.success, f"Should succeed: {result.stderr}"
-        assert 'my-core' in result.stdout
-
-
-def test_modules_get():
-    """Test modules get returns module facts from raw-project-data.json."""
-    with PlanTestContext() as ctx:
-        create_marshal_json(ctx.fixture_dir)
-
-        result = run_script(SCRIPT_PATH, 'modules', 'get', '--module', 'my-core')
-
-        assert result.success, f"Should succeed: {result.stderr}"
-        # build_systems come from raw-project-data.json
-        assert 'maven' in result.stdout.lower()
-
-
-def test_build_systems_list():
-    """Test build-systems list."""
-    with PlanTestContext() as ctx:
-        create_marshal_json(ctx.fixture_dir)
-
-        result = run_script(SCRIPT_PATH, 'build-systems', 'list')
-
-        assert result.success, f"Should succeed: {result.stderr}"
-        assert 'maven' in result.stdout.lower()
-
-
-def test_build_systems_get():
-    """Test build-systems get."""
-    with PlanTestContext() as ctx:
-        create_marshal_json(ctx.fixture_dir)
-
-        result = run_script(SCRIPT_PATH, 'build-systems', 'get', '--system', 'maven')
-
-        assert result.success, f"Should succeed: {result.stderr}"
-        # Build systems now reference domain-specific extension plugins
-        assert 'pm-dev-java:plan-marshall-plugin' in result.stdout
 
 
 def test_system_retention_get():
@@ -168,8 +120,6 @@ def test_help_output():
 
     assert result.success, "Help should succeed"
     assert 'skill-domains' in result.stdout
-    assert 'modules' in result.stdout
-    assert 'build-systems' in result.stdout
     assert 'ci' in result.stdout
 
 
@@ -248,10 +198,6 @@ if __name__ == '__main__':
         test_init_creates_marshal_json,
         test_skill_domains_list,
         test_skill_domains_get,
-        test_modules_list,
-        test_modules_get,
-        test_build_systems_list,
-        test_build_systems_get,
         test_system_retention_get,
         test_plan_defaults_list,
         test_resolve_domain_skills,

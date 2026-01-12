@@ -2,6 +2,989 @@
   "project": {
     "name": "plan-marshall"
   },
-  "modules": {},
-  "extensions_used": []
+  "modules": {
+    "default": {
+      "name": "default",
+      "build_systems": [
+        "marshall-plugin"
+      ],
+      "paths": {
+        "module": ".",
+        "descriptor": "marketplace/.claude-plugin/marketplace.json",
+        "sources": [
+          "marketplace/bundles"
+        ],
+        "tests": [
+          "test"
+        ],
+        "readme": "README.adoc"
+      },
+      "metadata": {
+        "description": "Plan Marshall marketplace root module"
+      },
+      "packages": {},
+      "dependencies": [],
+      "stats": {
+        "bundle_count": 8
+      },
+      "commands": {
+        "module-tests": "python3 test/run-tests.py",
+        "quality-gate": "/plugin-doctor marketplace"
+      }
+    },
+    "plan-marshall": {
+      "name": "plan-marshall",
+      "build_systems": [
+        "marshall-plugin"
+      ],
+      "paths": {
+        "module": "marketplace/bundles/plan-marshall",
+        "descriptor": "marketplace/bundles/plan-marshall/.claude-plugin/plugin.json",
+        "sources": [
+          "marketplace/bundles/plan-marshall/skills",
+          "marketplace/bundles/plan-marshall/agents",
+          "marketplace/bundles/plan-marshall/commands"
+        ],
+        "tests": [
+          "test/plan-marshall"
+        ],
+        "readme": "marketplace/bundles/plan-marshall/README.md"
+      },
+      "metadata": {
+        "bundle_name": "plan-marshall",
+        "version": "0.1-BETA",
+        "description": "Environment setup, permission management, and cross-cutting utilities",
+        "author": "CUI OSS Project"
+      },
+      "packages": {
+        "skill:analyze-project-architecture": {
+          "path": "skills/analyze-project-architecture",
+          "type": "skill",
+          "description": "LLM-based architectural analysis that transforms raw project data into meaningful structure"
+        },
+        "skill:ci-operations": {
+          "path": "skills/ci-operations",
+          "type": "skill",
+          "description": "CI provider abstraction with unified API for GitHub and GitLab operations (PR, issues, CI status)"
+        },
+        "skill:diagnostic-patterns": {
+          "path": "skills/diagnostic-patterns",
+          "type": "skill",
+          "description": "Tool usage patterns for non-prompting file operations - use Glob, Read, Grep instead of Bash commands to avoid user interruptions in all agents and commands"
+        },
+        "skill:extension-api": {
+          "path": "skills/extension-api",
+          "type": "skill",
+          "description": "Extension API for domain bundle discovery, module detection, and canonical command generation"
+        },
+        "skill:file-operations-base": {
+          "path": "skills/file-operations-base",
+          "type": "skill",
+          "description": "Base module providing reusable file operations patterns for CUI workflow scripts"
+        },
+        "skill:general-development-rules": {
+          "path": "skills/general-development-rules",
+          "type": "skill",
+          "description": "Core development principles for CUI projects - when to ask users, research best practices, tool usage, and dependency management"
+        },
+        "skill:json-file-operations": {
+          "path": "skills/json-file-operations",
+          "type": "skill",
+          "description": "Generic JSON file CRUD operations with path notation support"
+        },
+        "skill:lessons-learned": {
+          "path": "skills/lessons-learned",
+          "type": "skill",
+          "description": "Manage lessons learned with global scope"
+        },
+        "skill:logging": {
+          "path": "skills/logging",
+          "type": "skill",
+          "description": "Unified logging infrastructure for script execution and work progress tracking"
+        },
+        "skill:manage-memories": {
+          "path": "skills/manage-memories",
+          "type": "skill",
+          "description": "Memory layer operations for persistent session storage"
+        },
+        "skill:marketplace-inventory": {
+          "path": "skills/marketplace-inventory",
+          "type": "skill",
+          "description": "Scans and reports complete marketplace inventory (bundles, agents, commands, skills, scripts)"
+        },
+        "skill:marketplace-sync": {
+          "path": "skills/marketplace-sync",
+          "type": "skill",
+          "description": "Synchronize marketplace permissions - generate wildcards, manage executor permissions, and migrate to executor pattern."
+        },
+        "skill:permission-doctor": {
+          "path": "skills/permission-doctor",
+          "type": "skill",
+          "description": "Diagnose permission issues across settings files (read-only analysis)"
+        },
+        "skill:permission-fix": {
+          "path": "skills/permission-fix",
+          "type": "skill",
+          "description": "Write operations for fixing and managing Claude Code permissions - add, remove, consolidate, ensure, apply-fixes."
+        },
+        "skill:marshall-steward": {
+          "path": "skills/marshall-steward",
+          "type": "skill",
+          "description": "Project configuration wizard for planning system. Manages executor generation, health checks, build systems, and skill domains."
+        },
+        "skill:plan-marshall-config": {
+          "path": "skills/plan-marshall-config",
+          "type": "skill",
+          "description": "Project-level infrastructure configuration for marshal.json"
+        },
+        "skill:run-config": {
+          "path": "skills/run-config",
+          "type": "skill",
+          "description": "Run configuration handling for persistent command configuration storage"
+        },
+        "skill:script-executor": {
+          "path": "skills/script-executor",
+          "type": "skill",
+          "description": "Universal script execution pattern via execute-script.py proxy"
+        },
+        "skill:toon-usage": {
+          "path": "skills/toon-usage",
+          "type": "skill",
+          "description": "TOON format knowledge and usage patterns for agent communication and memory persistence in plan-marshall marketplace"
+        },
+        "skill:web-permissions": {
+          "path": "skills/web-permissions",
+          "type": "skill",
+          "description": "Trusted domains, security assessment patterns, and domain research standards for WebFetch permissions"
+        },
+        "agent:research-best-practices": {
+          "path": "agents/research-best-practices.md",
+          "type": "agent",
+          "description": "Performs comprehensive web research to find best practices, recommendations, and information about a specified topic using multiple online sources."
+        },
+        "command:marshall-steward": {
+          "path": "commands/marshall-steward.md",
+          "type": "command",
+          "description": "Project configuration wizard for planning system"
+        },
+        "command:tools-fix-intellij-diagnostics": {
+          "path": "commands/tools-fix-intellij-diagnostics.md",
+          "type": "command",
+          "description": "Retrieve and fix IDE diagnostics automatically, suppressing only when no reasonable fix is available"
+        },
+        "command:tools-manage-web-permissions": {
+          "path": "commands/tools-manage-web-permissions.md",
+          "type": "command",
+          "description": "Analyze and consolidate WebFetch domain permissions across projects with security research and validation"
+        },
+        "command:tools-sync-agents-file": {
+          "path": "commands/tools-sync-agents-file.md",
+          "type": "command",
+          "description": "Create or update project-specific agents.md file following OpenAI specification"
+        },
+        "command:tools-verify-architecture-diagrams": {
+          "path": "commands/tools-verify-architecture-diagrams.md",
+          "type": "command",
+          "description": "Analyze and update PlantUML diagrams to reflect current codebase state and regenerate PNG images"
+        }
+      },
+      "dependencies": [],
+      "stats": {
+        "skill_count": 20,
+        "agent_count": 1,
+        "command_count": 5
+      },
+      "commands": {
+        "module-tests": "python3 test/run-tests.py test/plan-marshall",
+        "quality-gate": "/plugin-doctor --bundle plan-marshall"
+      }
+    },
+    "pm-dev-frontend": {
+      "name": "pm-dev-frontend",
+      "build_systems": [
+        "marshall-plugin"
+      ],
+      "paths": {
+        "module": "marketplace/bundles/pm-dev-frontend",
+        "descriptor": "marketplace/bundles/pm-dev-frontend/.claude-plugin/plugin.json",
+        "sources": [
+          "marketplace/bundles/pm-dev-frontend/skills",
+          "marketplace/bundles/pm-dev-frontend/commands"
+        ],
+        "tests": [
+          "test/pm-dev-frontend"
+        ],
+        "readme": "marketplace/bundles/pm-dev-frontend/README.md"
+      },
+      "metadata": {
+        "bundle_name": "pm-dev-frontend",
+        "version": "0.1-BETA",
+        "description": "JavaScript, CSS, and web component standards for CUI applications",
+        "author": "CUI OSS Project"
+      },
+      "packages": {
+        "skill:cui-css": {
+          "path": "skills/cui-css",
+          "type": "skill",
+          "description": "Modern CSS standards covering essentials, responsive design, quality practices, and tooling for CUI projects"
+        },
+        "skill:cui-cypress": {
+          "path": "skills/cui-cypress",
+          "type": "skill",
+          "description": "Cypress E2E testing standards including framework adaptations, test organization, and best practices"
+        },
+        "skill:cui-javascript": {
+          "path": "skills/cui-javascript",
+          "type": "skill",
+          "description": "Core JavaScript development standards covering ES modules, modern patterns, code quality, async programming, and tooling"
+        },
+        "skill:cui-javascript-linting": {
+          "path": "skills/cui-javascript-linting",
+          "type": "skill",
+          "description": "ESLint, Prettier, and StyleLint configuration standards for JavaScript code quality and formatting, including flat config setup, rule management, and build integration"
+        },
+        "skill:cui-javascript-maintenance": {
+          "path": "skills/cui-javascript-maintenance",
+          "type": "skill",
+          "description": "Standards for identifying, prioritizing, and verifying JavaScript code maintenance and refactoring work"
+        },
+        "skill:cui-javascript-project": {
+          "path": "skills/cui-javascript-project",
+          "type": "skill",
+          "description": "JavaScript project structure, package.json configuration, dependency management, and Maven integration standards for consistent project setup and builds"
+        },
+        "skill:cui-javascript-unit-testing": {
+          "path": "skills/cui-javascript-unit-testing",
+          "type": "skill",
+          "description": "Jest unit testing standards covering configuration, test structure, testing patterns, and coverage requirements"
+        },
+        "skill:cui-jsdoc": {
+          "path": "skills/cui-jsdoc",
+          "type": "skill",
+          "description": "JSDoc documentation standards for JavaScript functions, classes, modules, and web components"
+        },
+        "skill:javascript-triage": {
+          "path": "skills/javascript-triage",
+          "type": "skill",
+          "description": "Triage extension for JavaScript/TypeScript findings during plan-finalize phase"
+        },
+        "skill:plan-marshall-plugin": {
+          "path": "skills/plan-marshall-plugin",
+          "type": "skill",
+          "description": "JavaScript domain extension with npm build operations and workflow integration"
+        },
+        "command:js-enforce-eslint": {
+          "path": "commands/js-enforce-eslint.md",
+          "type": "command",
+          "description": "Enforce ESLint standards by fixing violations systematically"
+        },
+        "command:js-refactor-code": {
+          "path": "commands/js-refactor-code.md",
+          "type": "command",
+          "description": "Execute systematic JavaScript refactoring with standards compliance verification"
+        },
+        "command:js-maintain-tests": {
+          "path": "commands/js-maintain-tests.md",
+          "type": "command",
+          "description": "Execute systematic JavaScript test quality improvement with NO production code changes"
+        },
+        "command:js-fix-jsdoc": {
+          "path": "commands/js-fix-jsdoc.md",
+          "type": "command",
+          "description": "Fix JSDoc errors and warnings from build/lint with content preservation"
+        },
+        "command:js-generate-coverage": {
+          "path": "commands/js-generate-coverage.md",
+          "type": "command",
+          "description": "Self-contained command for coverage generation and analysis"
+        },
+        "command:js-implement-code": {
+          "path": "commands/js-implement-code.md",
+          "type": "command",
+          "description": "Self-contained command for JavaScript code implementation with verification and iteration"
+        },
+        "command:js-implement-tests": {
+          "path": "commands/js-implement-tests.md",
+          "type": "command",
+          "description": "Self-contained command for JavaScript test implementation with verification and iteration"
+        }
+      },
+      "dependencies": [],
+      "stats": {
+        "skill_count": 10,
+        "agent_count": 0,
+        "command_count": 7
+      },
+      "commands": {
+        "module-tests": "python3 test/run-tests.py test/pm-dev-frontend",
+        "quality-gate": "/plugin-doctor --bundle pm-dev-frontend"
+      }
+    },
+    "pm-dev-java": {
+      "name": "pm-dev-java",
+      "build_systems": [
+        "marshall-plugin"
+      ],
+      "paths": {
+        "module": "marketplace/bundles/pm-dev-java",
+        "descriptor": "marketplace/bundles/pm-dev-java/.claude-plugin/plugin.json",
+        "sources": [
+          "marketplace/bundles/pm-dev-java/skills",
+          "marketplace/bundles/pm-dev-java/agents",
+          "marketplace/bundles/pm-dev-java/commands"
+        ],
+        "tests": [
+          "test/pm-dev-java"
+        ],
+        "readme": "marketplace/bundles/pm-dev-java/README.md"
+      },
+      "metadata": {
+        "bundle_name": "pm-dev-java",
+        "version": "0.1-BETA",
+        "description": "Comprehensive Java development expertise bundle with agent-first architecture for autonomous code implementation, testing, and standards compliance",
+        "author": "CUI OSS Project"
+      },
+      "packages": {
+        "skill:java-core": {
+          "path": "skills/java-core",
+          "type": "skill",
+          "description": "Core Java development patterns including code organization, modern features, performance patterns, and implementation verification"
+        },
+        "skill:java-null-safety": {
+          "path": "skills/java-null-safety",
+          "type": "skill",
+          "description": "JSpecify null safety annotations with @NullMarked, @Nullable, and package-level configuration"
+        },
+        "skill:java-lombok": {
+          "path": "skills/java-lombok",
+          "type": "skill",
+          "description": "Lombok patterns including @Delegate, @Builder, @Value, @UtilityClass for reducing boilerplate"
+        },
+        "skill:java-cdi": {
+          "path": "skills/java-cdi",
+          "type": "skill",
+          "description": "Core CDI patterns including constructor injection, scopes, producers, and container configuration"
+        },
+        "skill:java-cdi-quarkus": {
+          "path": "skills/java-cdi-quarkus",
+          "type": "skill",
+          "description": "Quarkus-specific CDI patterns including @QuarkusTest, native image support, and reflection registration"
+        },
+        "skill:junit-core": {
+          "path": "skills/junit-core",
+          "type": "skill",
+          "description": "JUnit 5 core testing patterns with AAA structure, test organization, and coverage standards"
+        },
+        "skill:junit-integration": {
+          "path": "skills/junit-integration",
+          "type": "skill",
+          "description": "Maven integration testing with Failsafe plugin, IT naming conventions, and profile configuration"
+        },
+        "skill:javadoc": {
+          "path": "skills/javadoc",
+          "type": "skill",
+          "description": "JavaDoc documentation standards including class, method, and code example patterns"
+        },
+        "skill:java-maintenance": {
+          "path": "skills/java-maintenance",
+          "type": "skill",
+          "description": "Java code maintenance standards including prioritization, refactoring triggers, and compliance verification"
+        },
+        "skill:java-triage": {
+          "path": "skills/java-triage",
+          "type": "skill",
+          "description": "Triage extension for Java findings during plan-finalize phase"
+        },
+        "skill:plan-marshall-plugin": {
+          "path": "skills/plan-marshall-plugin",
+          "type": "skill",
+          "description": "Java domain extension with Maven/Gradle build operations and workflow integration"
+        },
+        "skill:maven-profile-management": {
+          "path": "skills/maven-profile-management",
+          "type": "skill",
+          "description": "Maven build profile classification and user workflow for unmatched profiles"
+        },
+        "agent:java-implement-agent": {
+          "path": "agents/java-implement-agent.md",
+          "type": "agent",
+          "description": "Implement Java features autonomously with standards compliance."
+        },
+        "agent:java-implement-tests-agent": {
+          "path": "agents/java-implement-tests-agent.md",
+          "type": "agent",
+          "description": "Implement unit tests with coverage verification."
+        },
+        "agent:java-fix-build-agent": {
+          "path": "agents/java-fix-build-agent.md",
+          "type": "agent",
+          "description": "Fix Java compilation errors autonomously."
+        },
+        "agent:java-fix-tests-agent": {
+          "path": "agents/java-fix-tests-agent.md",
+          "type": "agent",
+          "description": "Fix failing unit tests autonomously."
+        },
+        "agent:java-fix-javadoc-agent": {
+          "path": "agents/java-fix-javadoc-agent.md",
+          "type": "agent",
+          "description": "Fix JavaDoc errors autonomously with content-preserving fixes."
+        },
+        "agent:java-refactor-agent": {
+          "path": "agents/java-refactor-agent.md",
+          "type": "agent",
+          "description": "Refactor Java code with standards compliance."
+        },
+        "agent:java-coverage-agent": {
+          "path": "agents/java-coverage-agent.md",
+          "type": "agent",
+          "description": "Analyze test coverage and identify gaps (read-only)."
+        },
+        "agent:java-quality-agent": {
+          "path": "agents/java-quality-agent.md",
+          "type": "agent",
+          "description": "Analyze code quality and standards compliance (read-only)."
+        },
+        "agent:java-verify-agent": {
+          "path": "agents/java-verify-agent.md",
+          "type": "agent",
+          "description": "Verify Java code standards compliance (read-only)."
+        },
+        "command:java-analyze-all": {
+          "path": "commands/java-analyze-all.md",
+          "type": "command",
+          "description": "Run parallel analysis agents for quality, coverage, and standards compliance"
+        },
+        "command:java-full-workflow": {
+          "path": "commands/java-full-workflow.md",
+          "type": "command",
+          "description": "Execute complete implement-test-verify workflow with coordinated agents"
+        },
+        "command:java-create": {
+          "path": "commands/java-create.md",
+          "type": "command",
+          "description": "Interactive wizard for creating Java components with standards compliance"
+        },
+        "command:java-enforce-logrecords": {
+          "path": "commands/java-enforce-logrecords.md",
+          "type": "command",
+          "description": "Enforce CUI logging standards by validating LogRecord usage, testing coverage, and identifier organization"
+        },
+        "command:java-maintain-logger": {
+          "path": "commands/java-maintain-logger.md",
+          "type": "command",
+          "description": "Execute systematic logging standards maintenance with plan tracking and comprehensive test coverage"
+        },
+        "command:java-optimize-quarkus-native": {
+          "path": "commands/java-optimize-quarkus-native.md",
+          "type": "command",
+          "description": "Systematic Quarkus native image optimization with reflection registration and performance improvements"
+        }
+      },
+      "dependencies": [],
+      "stats": {
+        "skill_count": 12,
+        "agent_count": 9,
+        "command_count": 6
+      },
+      "commands": {
+        "module-tests": "python3 test/run-tests.py test/pm-dev-java",
+        "quality-gate": "/plugin-doctor --bundle pm-dev-java"
+      }
+    },
+    "pm-dev-java-cui": {
+      "name": "pm-dev-java-cui",
+      "build_systems": [
+        "marshall-plugin"
+      ],
+      "paths": {
+        "module": "marketplace/bundles/pm-dev-java-cui",
+        "descriptor": "marketplace/bundles/pm-dev-java-cui/.claude-plugin/plugin.json",
+        "sources": [
+          "marketplace/bundles/pm-dev-java-cui/skills"
+        ],
+        "tests": [
+          "test/pm-dev-java-cui"
+        ],
+        "readme": "marketplace/bundles/pm-dev-java-cui/README.md"
+      },
+      "metadata": {
+        "bundle_name": "pm-dev-java-cui",
+        "version": "0.1-BETA",
+        "description": "CUI-specific Java development standards covering CuiLogger, test generators, value object contracts, and HTTP client patterns",
+        "author": "CUI OSS Project"
+      },
+      "packages": {
+        "skill:cui-logging": {
+          "path": "skills/cui-logging",
+          "type": "skill",
+          "description": "CUI logging standards with CuiLogger, LogRecord patterns, and DSL-style LogMessages classes"
+        },
+        "skill:cui-testing": {
+          "path": "skills/cui-testing",
+          "type": "skill",
+          "description": "CUI test library standards for test data generation, value object contracts, and JUL log testing"
+        },
+        "skill:cui-http": {
+          "path": "skills/cui-http",
+          "type": "skill",
+          "description": "CUI HTTP client standards with HttpHandler, HttpResult pattern, and async-first adapters"
+        },
+        "skill:cui-testing-http": {
+          "path": "skills/cui-testing-http",
+          "type": "skill",
+          "description": "CUI MockWebServer standards for HTTP client testing with JUnit 5 integration"
+        },
+        "skill:plan-marshall-plugin": {
+          "path": "skills/plan-marshall-plugin",
+          "type": "skill",
+          "description": "CUI Java domain manifest for plan-marshall workflow integration"
+        }
+      },
+      "dependencies": [],
+      "stats": {
+        "skill_count": 5,
+        "agent_count": 0,
+        "command_count": 0
+      },
+      "commands": {
+        "module-tests": "python3 test/run-tests.py test/pm-dev-java-cui",
+        "quality-gate": "/plugin-doctor --bundle pm-dev-java-cui"
+      }
+    },
+    "pm-documents": {
+      "name": "pm-documents",
+      "build_systems": [
+        "marshall-plugin"
+      ],
+      "paths": {
+        "module": "marketplace/bundles/pm-documents",
+        "descriptor": "marketplace/bundles/pm-documents/.claude-plugin/plugin.json",
+        "sources": [
+          "marketplace/bundles/pm-documents/skills",
+          "marketplace/bundles/pm-documents/commands"
+        ],
+        "tests": [
+          "test/pm-documents"
+        ],
+        "readme": "marketplace/bundles/pm-documents/README.md"
+      },
+      "metadata": {
+        "bundle_name": "pm-documents",
+        "version": "0.1-BETA",
+        "description": "AsciiDoc and documentation standards enforcement for CUI projects",
+        "author": "CUI OSS Project"
+      },
+      "packages": {
+        "skill:cui-documentation": {
+          "path": "skills/cui-documentation",
+          "type": "skill",
+          "description": "General documentation standards for README, AsciiDoc, and technical documentation with validation, formatting, link verification, and content review workflows"
+        },
+        "skill:adr-management": {
+          "path": "skills/adr-management",
+          "type": "skill",
+          "description": "Manage Architectural Decision Records (ADRs) with CRUD operations, automatic numbering, and AsciiDoc formatting"
+        },
+        "skill:interface-management": {
+          "path": "skills/interface-management",
+          "type": "skill",
+          "description": "Manage Interface specifications with CRUD operations, automatic numbering, and AsciiDoc formatting"
+        },
+        "command:doc-doctor": {
+          "path": "commands/doc-doctor.md",
+          "type": "command",
+          "description": "Diagnose documentation issues (format, links, content)"
+        },
+        "command:doc-create": {
+          "path": "commands/doc-create.md",
+          "type": "command",
+          "description": "Create new documentation from templates"
+        },
+        "command:doc-maintain": {
+          "path": "commands/doc-maintain.md",
+          "type": "command",
+          "description": "Maintain documentation (sync, cleanup, update)"
+        }
+      },
+      "dependencies": [],
+      "stats": {
+        "skill_count": 3,
+        "agent_count": 0,
+        "command_count": 3
+      },
+      "commands": {
+        "module-tests": "python3 test/run-tests.py test/pm-documents",
+        "quality-gate": "/plugin-doctor --bundle pm-documents"
+      }
+    },
+    "pm-plugin-development": {
+      "name": "pm-plugin-development",
+      "build_systems": [
+        "marshall-plugin"
+      ],
+      "paths": {
+        "module": "marketplace/bundles/pm-plugin-development",
+        "descriptor": "marketplace/bundles/pm-plugin-development/.claude-plugin/plugin.json",
+        "sources": [
+          "marketplace/bundles/pm-plugin-development/skills",
+          "marketplace/bundles/pm-plugin-development/agents",
+          "marketplace/bundles/pm-plugin-development/commands"
+        ],
+        "tests": [
+          "test/pm-plugin-development"
+        ],
+        "readme": "marketplace/bundles/pm-plugin-development/README.md"
+      },
+      "metadata": {
+        "bundle_name": "pm-plugin-development",
+        "version": "0.1-BETA",
+        "description": "Complete toolchain for creating, diagnosing, fixing, and maintaining Claude Code marketplace components",
+        "author": "CUI OSS Project"
+      },
+      "packages": {
+        "skill:plugin-architecture": {
+          "path": "skills/plugin-architecture",
+          "type": "skill",
+          "description": "Architecture principles, skill patterns, and design guidance for building goal-based Claude Code marketplace components"
+        },
+        "skill:plugin-create": {
+          "path": "skills/plugin-create",
+          "type": "skill",
+          "description": "Create new marketplace components (agents, commands, skills, bundles) with proper structure and standards compliance"
+        },
+        "skill:plugin-doctor": {
+          "path": "skills/plugin-doctor",
+          "type": "skill",
+          "description": "Diagnose and fix quality issues in marketplace components with automated safe fixes and prompted risky fixes"
+        },
+        "skill:plugin-maintain": {
+          "path": "skills/plugin-maintain",
+          "type": "skill",
+          "description": "Comprehensive maintenance skill for marketplace components - update components, manage knowledge, maintain READMEs, restructure, and apply orchestration compliance"
+        },
+        "skill:plugin-plan-implement": {
+          "path": "skills/plugin-plan-implement",
+          "type": "skill",
+          "description": "Implement plugin tasks from plan with step iteration and progress tracking"
+        },
+        "skill:plugin-script-architecture": {
+          "path": "skills/plugin-script-architecture",
+          "type": "skill",
+          "description": "Script development standards covering implementation patterns, testing, and output contracts"
+        },
+        "skill:plugin-solution-outline": {
+          "path": "skills/plugin-solution-outline",
+          "type": "skill",
+          "description": "Analyze plugin codebase and create solution outline with deliverables"
+        },
+        "skill:plugin-task-plan": {
+          "path": "skills/plugin-task-plan",
+          "type": "skill",
+          "description": "Create implementation tasks from deliverables using skill delegation"
+        },
+        "skill:plugin-triage": {
+          "path": "skills/plugin-triage",
+          "type": "skill",
+          "description": "Triage extension for marketplace plugin findings during plan-finalize phase"
+        },
+        "skill:verification": {
+          "path": "skills/verification",
+          "type": "skill",
+          "description": "Verification mode that stops and analyzes on failures, workarounds, or resolution issues"
+        },
+        "skill:plan-marshall-plugin": {
+          "path": "skills/plan-marshall-plugin",
+          "type": "skill",
+          "description": "Plugin development domain manifest with module discovery for plan-marshall workflow integration"
+        },
+        "agent:tool-coverage-agent": {
+          "path": "agents/tool-coverage-agent.md",
+          "type": "agent",
+          "description": "Analyze tool declarations vs actual usage in a component file"
+        },
+        "command:plugin-create": {
+          "path": "commands/plugin-create.md",
+          "type": "command",
+          "description": "Create new marketplace component (agent, command, skill, or bundle)"
+        },
+        "command:plugin-doctor": {
+          "path": "commands/plugin-doctor.md",
+          "type": "command",
+          "description": "Diagnose and fix quality issues in marketplace components"
+        },
+        "command:plugin-maintain": {
+          "path": "commands/plugin-maintain.md",
+          "type": "command",
+          "description": "Maintain marketplace health through updates and refactoring"
+        },
+        "command:tools-analyze-user-prompted": {
+          "path": "commands/tools-analyze-user-prompted.md",
+          "type": "command",
+          "description": "Analyze permission prompts to identify source and provide solutions"
+        }
+      },
+      "dependencies": [],
+      "stats": {
+        "skill_count": 11,
+        "agent_count": 1,
+        "command_count": 4
+      },
+      "commands": {
+        "module-tests": "python3 test/run-tests.py test/pm-plugin-development",
+        "quality-gate": "/plugin-doctor --bundle pm-plugin-development"
+      }
+    },
+    "pm-requirements": {
+      "name": "pm-requirements",
+      "build_systems": [
+        "marshall-plugin"
+      ],
+      "paths": {
+        "module": "marketplace/bundles/pm-requirements",
+        "descriptor": "marketplace/bundles/pm-requirements/.claude-plugin/plugin.json",
+        "sources": [
+          "marketplace/bundles/pm-requirements/skills",
+          "marketplace/bundles/pm-requirements/commands"
+        ],
+        "tests": [
+          "test/pm-requirements"
+        ],
+        "readme": "marketplace/bundles/pm-requirements/README.md"
+      },
+      "metadata": {
+        "bundle_name": "pm-requirements",
+        "version": "0.1-BETA",
+        "description": "Requirements engineering and specification standards for CUI projects",
+        "author": "CUI OSS Project"
+      },
+      "packages": {
+        "skill:planning": {
+          "path": "skills/planning",
+          "type": "skill",
+          "description": "Standards for creating and maintaining project planning documentation with task tracking, status indicators, and traceability to requirements"
+        },
+        "skill:requirements-authoring": {
+          "path": "skills/requirements-authoring",
+          "type": "skill",
+          "description": "Comprehensive standards for creating and maintaining requirements and specification documents with SMART principles, proper structure, integrity, and traceability"
+        },
+        "skill:setup": {
+          "path": "skills/setup",
+          "type": "skill",
+          "description": "Standards for setting up requirements and specification documentation in new CUI projects with proper directory structure and initial documents"
+        },
+        "skill:traceability": {
+          "path": "skills/traceability",
+          "type": "skill",
+          "description": "Standards for linking specifications to implementation code and maintaining bidirectional traceability between documentation and source code"
+        },
+        "skill:plan-marshall-plugin": {
+          "path": "skills/plan-marshall-plugin",
+          "type": "skill",
+          "description": "Requirements domain manifest for plan-marshall workflow integration"
+        },
+        "command:cui-maintain-requirements": {
+          "path": "commands/cui-maintain-requirements.md",
+          "type": "command",
+          "description": "Maintain and synchronize requirements and specifications with comprehensive validation"
+        }
+      },
+      "dependencies": [],
+      "stats": {
+        "skill_count": 5,
+        "agent_count": 0,
+        "command_count": 1
+      },
+      "commands": {
+        "module-tests": "python3 test/run-tests.py test/pm-requirements",
+        "quality-gate": "/plugin-doctor --bundle pm-requirements"
+      }
+    },
+    "pm-workflow": {
+      "name": "pm-workflow",
+      "build_systems": [
+        "marshall-plugin"
+      ],
+      "paths": {
+        "module": "marketplace/bundles/pm-workflow",
+        "descriptor": "marketplace/bundles/pm-workflow/.claude-plugin/plugin.json",
+        "sources": [
+          "marketplace/bundles/pm-workflow/skills",
+          "marketplace/bundles/pm-workflow/agents",
+          "marketplace/bundles/pm-workflow/commands"
+        ],
+        "tests": [
+          "test/pm-workflow"
+        ],
+        "readme": "marketplace/bundles/pm-workflow/README.md"
+      },
+      "metadata": {
+        "bundle_name": "pm-workflow",
+        "version": "0.1-BETA",
+        "description": "Solution-based development workflow from task implementation to PR quality verification",
+        "author": "CUI OSS Project"
+      },
+      "packages": {
+        "skill:git-workflow": {
+          "path": "skills/git-workflow",
+          "type": "skill",
+          "description": "Git commit workflow with conventional commits, artifact cleanup, and optional push/PR creation"
+        },
+        "skill:pr-workflow": {
+          "path": "skills/pr-workflow",
+          "type": "skill",
+          "description": "PR review response workflow - fetch comments, triage, and respond to review feedback"
+        },
+        "skill:sonar-workflow": {
+          "path": "skills/sonar-workflow",
+          "type": "skill",
+          "description": "Sonar issue workflow - fetch issues, triage, and fix or suppress based on context"
+        },
+        "skill:pm-workflow-architecture": {
+          "path": "skills/pm-workflow-architecture",
+          "type": "skill",
+          "description": "Centralized architecture documentation for the pm-workflow bundle with visual diagrams"
+        },
+        "skill:plan-wf-skill-api": {
+          "path": "skills/plan-wf-skill-api",
+          "type": "skill",
+          "description": "Defines the unified API contracts for workflow skills. Workflow skills provide domain-agnostic operations that load domain knowledge from marshal.json."
+        },
+        "skill:solution-outline": {
+          "path": "skills/solution-outline",
+          "type": "skill",
+          "description": "Domain-agnostic solution outline creation for thin agent workflow pattern"
+        },
+        "skill:phase-refine-outline": {
+          "path": "skills/phase-refine-outline",
+          "type": "skill",
+          "description": "Architecture-driven solution outline creation with intelligent module selection and Skills by Profile assignment"
+        },
+        "skill:task-plan": {
+          "path": "skills/task-plan",
+          "type": "skill",
+          "description": "Domain-agnostic task planning from deliverables with skill resolution and optimization"
+        },
+        "skill:task-implementation": {
+          "path": "skills/task-implementation",
+          "type": "skill",
+          "description": "Domain-agnostic implementation task execution with two-tier skill loading"
+        },
+        "skill:task-testing": {
+          "path": "skills/task-testing",
+          "type": "skill",
+          "description": "Domain-agnostic testing task execution with two-tier skill loading"
+        },
+        "skill:plan-init": {
+          "path": "skills/plan-init",
+          "type": "skill",
+          "description": "Init phase skill. Creates plan directory, request.md, config, and status. Complete initialization in a single agent call."
+        },
+        "skill:plan-execute": {
+          "path": "skills/plan-execute",
+          "type": "skill",
+          "description": "Execute phase skill for plan management. DUMB TASK RUNNER that executes tasks from TASK-*.toon files sequentially for execute and finalize phases."
+        },
+        "skill:plan-finalize": {
+          "path": "skills/plan-finalize",
+          "type": "skill",
+          "description": "Complete plan execution with git workflow and PR management"
+        },
+        "skill:manage-tasks": {
+          "path": "skills/manage-tasks",
+          "type": "skill",
+          "description": "Manage implementation tasks with sequential sub-steps within a plan"
+        },
+        "skill:manage-files": {
+          "path": "skills/manage-files",
+          "type": "skill",
+          "description": "Generic file I/O operations for plan directories"
+        },
+        "skill:manage-plan-documents": {
+          "path": "skills/manage-plan-documents",
+          "type": "skill",
+          "description": "Manage request documents within plan directories with schema validation and template-based creation"
+        },
+        "skill:manage-solution-outline": {
+          "path": "skills/manage-solution-outline",
+          "type": "skill",
+          "description": "Manage solution outline documents - standards, examples, validation, and deliverable extraction"
+        },
+        "skill:manage-config": {
+          "path": "skills/manage-config",
+          "type": "skill",
+          "description": "Manage per-plan configuration with schema validation"
+        },
+        "skill:manage-references": {
+          "path": "skills/manage-references",
+          "type": "skill",
+          "description": "Manage references.toon files with field-level access and list management"
+        },
+        "skill:manage-lifecycle": {
+          "path": "skills/manage-lifecycle",
+          "type": "skill",
+          "description": "Manage plan lifecycle with status.toon and phase operations"
+        },
+        "skill:planning-inventory": {
+          "path": "skills/planning-inventory",
+          "type": "skill",
+          "description": "Scans and reports all planning-related components across marketplace bundles"
+        },
+        "agent:plan-init-agent": {
+          "path": "agents/plan-init-agent.md",
+          "type": "agent",
+          "description": "Initialize a plan with artifacts, detect domains, write config.toon"
+        },
+        "agent:solution-outline-agent": {
+          "path": "agents/solution-outline-agent.md",
+          "type": "agent",
+          "description": "Create solution outline with deliverables, each assigned a single domain from config.toon"
+        },
+        "agent:task-plan-agent": {
+          "path": "agents/task-plan-agent.md",
+          "type": "agent",
+          "description": "Transform deliverables into optimized tasks with explicit domain skills"
+        },
+        "agent:task-execute-agent": {
+          "path": "agents/task-execute-agent.md",
+          "type": "agent",
+          "description": "Execute a single task with two-tier skill loading and profile-based workflow routing"
+        },
+        "command:task-implement": {
+          "path": "commands/task-implement.md",
+          "type": "command",
+          "description": "Implement GitHub issues or standalone tasks with full verification"
+        },
+        "command:pr-doctor": {
+          "path": "commands/pr-doctor.md",
+          "type": "command",
+          "description": "Diagnose and fix PR issues (build, reviews, Sonar)"
+        },
+        "command:plan-manage": {
+          "path": "commands/plan-manage.md",
+          "type": "command",
+          "description": "Manage task plans - list, create, refine, and cleanup persisted plans"
+        },
+        "command:plan-execute": {
+          "path": "commands/plan-execute.md",
+          "type": "command",
+          "description": "Execute task plans - execute and finalize phases"
+        }
+      },
+      "dependencies": [],
+      "stats": {
+        "skill_count": 21,
+        "agent_count": 4,
+        "command_count": 4
+      },
+      "commands": {
+        "module-tests": "python3 test/run-tests.py test/pm-workflow",
+        "quality-gate": "/plugin-doctor --bundle pm-workflow"
+      }
+    }
+  },
+  "extensions_used": [
+    "pm-plugin-development"
+  ]
 }

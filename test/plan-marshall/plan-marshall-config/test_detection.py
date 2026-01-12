@@ -2,12 +2,7 @@
 """Tests for project detection in plan-marshall-config.
 
 Tests auto-detection of build systems and domains from project files.
-Module detection is now handled by project-structure skill creating raw-project-data.json.
-
-Architecture:
-- raw-project-data.json: Single source of truth for module facts (from project-structure skill)
-- marshal.json: Contains module_config for command configuration
-- plan-marshall-config: Reads module facts from raw-project-data.json
+Domain detection uses skill-domains detect to find build files at project root.
 """
 
 import json
@@ -41,11 +36,6 @@ def cleanup_project_files(fixture_dir: Path) -> None:
         module_dir = fixture_dir / module_name
         if module_dir.exists():
             shutil.rmtree(module_dir)
-
-    # Remove raw-project-data.json if exists
-    raw_data = fixture_dir / 'raw-project-data.json'
-    if raw_data.exists():
-        raw_data.unlink()
 
 
 # =============================================================================
@@ -150,231 +140,12 @@ def create_minimal_marshal_json(fixture_dir: Path) -> Path:
                 "optionals": []
             }
         },
-        "module_config": {},
         "system": {"retention": {"logs_days": 1}},
         "plan": {"defaults": {}}
     }
     marshal_path = fixture_dir / 'marshal.json'
     marshal_path.write_text(json.dumps(config, indent=2))
     return marshal_path
-
-
-def create_raw_project_data_multi_module_maven(fixture_dir: Path) -> Path:
-    """Create raw-project-data.json for multi-module Maven project (Java only)."""
-    raw_data = {
-        "project": {"name": "multi-module-app"},
-        "modules": [
-            {"name": "core", "path": "core", "parent": None, "build_systems": ["maven"], "packaging": "jar"},
-            {"name": "api", "path": "api", "parent": None, "build_systems": ["maven"], "packaging": "jar"},
-            {"name": "web", "path": "web", "parent": None, "build_systems": ["maven"], "packaging": "jar"}
-        ]
-    }
-    raw_path = fixture_dir / 'raw-project-data.json'
-    raw_path.write_text(json.dumps(raw_data, indent=2))
-    return raw_path
-
-
-def create_raw_project_data_mixed(fixture_dir: Path) -> Path:
-    """Create raw-project-data.json for mixed multi-module project.
-
-    - core, api: Maven only (Java)
-    - ui, e2e: Maven + npm (Java + JavaScript)
-    """
-    raw_data = {
-        "project": {"name": "mixed-multi-module"},
-        "modules": [
-            {"name": "core", "path": "core", "parent": None, "build_systems": ["maven"], "packaging": "jar"},
-            {"name": "api", "path": "api", "parent": None, "build_systems": ["maven"], "packaging": "jar"},
-            {"name": "ui", "path": "ui", "parent": None, "build_systems": ["maven", "npm"], "packaging": "war"},
-            {"name": "e2e", "path": "e2e", "parent": None, "build_systems": ["maven", "npm"], "packaging": "pom"}
-        ]
-    }
-    raw_path = fixture_dir / 'raw-project-data.json'
-    raw_path.write_text(json.dumps(raw_data, indent=2))
-    return raw_path
-
-
-# =============================================================================
-# Build Systems Detection Tests
-# =============================================================================
-
-def test_detect_build_systems_maven_only():
-    """Test detecting Maven as build system."""
-    with PlanTestContext() as ctx:
-        cleanup_project_files(ctx.fixture_dir)
-        create_simple_maven_project(ctx.fixture_dir)
-        create_minimal_marshal_json(ctx.fixture_dir)
-
-        result = run_script(SCRIPT_PATH, 'build-systems', 'detect', cwd=ctx.fixture_dir)
-
-        assert result.success, f"Should succeed: {result.stderr}"
-        assert 'maven' in result.stdout.lower()
-        assert 'npm' not in result.stdout.lower()
-
-
-def test_detect_build_systems_npm_only():
-    """Test detecting npm as build system."""
-    with PlanTestContext() as ctx:
-        cleanup_project_files(ctx.fixture_dir)
-        create_simple_npm_project(ctx.fixture_dir)
-        create_minimal_marshal_json(ctx.fixture_dir)
-
-        result = run_script(SCRIPT_PATH, 'build-systems', 'detect', cwd=ctx.fixture_dir)
-
-        assert result.success, f"Should succeed: {result.stderr}"
-        assert 'npm' in result.stdout.lower()
-        assert 'maven' not in result.stdout.lower()
-
-
-def test_detect_build_systems_multi_module_maven_no_npm():
-    """Test that multi-module Maven project with nested package.json does NOT detect npm at root."""
-    with PlanTestContext() as ctx:
-        cleanup_project_files(ctx.fixture_dir)
-        create_mixed_multi_module_project(ctx.fixture_dir)
-        create_minimal_marshal_json(ctx.fixture_dir)
-
-        result = run_script(SCRIPT_PATH, 'build-systems', 'detect', cwd=ctx.fixture_dir)
-
-        assert result.success, f"Should succeed: {result.stderr}"
-        # Should detect maven (root pom.xml)
-        assert 'maven' in result.stdout.lower()
-        # Should NOT detect npm (no root package.json, only nested in modules)
-        assert 'npm' not in result.stdout.lower(), \
-            "Should not detect npm - package.json is nested in modules, not at root"
-
-
-# =============================================================================
-# Module Reading Tests (from raw-project-data.json)
-# =============================================================================
-
-def test_modules_list_from_raw_project_data():
-    """Test modules list reads from raw-project-data.json."""
-    with PlanTestContext() as ctx:
-        cleanup_project_files(ctx.fixture_dir)
-        create_minimal_marshal_json(ctx.fixture_dir)
-        create_raw_project_data_multi_module_maven(ctx.fixture_dir)
-
-        result = run_script(SCRIPT_PATH, 'modules', 'list', cwd=ctx.fixture_dir)
-
-        assert result.success, f"Should succeed: {result.stderr}"
-        assert 'core' in result.stdout
-        assert 'api' in result.stdout
-        assert 'web' in result.stdout
-
-
-def test_modules_get_build_systems_maven_only():
-    """Test that Java-only modules only have maven build system."""
-    with PlanTestContext() as ctx:
-        cleanup_project_files(ctx.fixture_dir)
-        create_minimal_marshal_json(ctx.fixture_dir)
-        create_raw_project_data_mixed(ctx.fixture_dir)
-
-        # Verify core module only has maven build system
-        result = run_script(SCRIPT_PATH, 'modules', 'get-build-systems', '--module', 'core', cwd=ctx.fixture_dir)
-
-        assert result.success, f"Should succeed: {result.stderr}"
-        assert 'maven' in result.stdout.lower()
-        assert 'npm' not in result.stdout.lower(), \
-            "Module without package.json should not have npm build system"
-
-
-def test_modules_get_build_systems_hybrid():
-    """Test that hybrid modules have both maven and npm build systems."""
-    with PlanTestContext() as ctx:
-        cleanup_project_files(ctx.fixture_dir)
-        create_minimal_marshal_json(ctx.fixture_dir)
-        create_raw_project_data_mixed(ctx.fixture_dir)
-
-        # Verify ui module has both build systems
-        result = run_script(SCRIPT_PATH, 'modules', 'get-build-systems', '--module', 'ui', cwd=ctx.fixture_dir)
-
-        assert result.success, f"Should succeed: {result.stderr}"
-        assert 'maven' in result.stdout.lower()
-        assert 'npm' in result.stdout.lower(), \
-            "Module with package.json should have npm build system"
-
-
-# =============================================================================
-# Domain Inference Tests (modules infer-domains)
-# =============================================================================
-
-def test_infer_domains_from_maven():
-    """Test that Maven modules get java domain inferred."""
-    with PlanTestContext() as ctx:
-        cleanup_project_files(ctx.fixture_dir)
-        create_minimal_marshal_json(ctx.fixture_dir)
-        create_raw_project_data_multi_module_maven(ctx.fixture_dir)
-
-        # Infer domains from build_systems
-        result = run_script(SCRIPT_PATH, 'modules', 'infer-domains', cwd=ctx.fixture_dir)
-
-        assert result.success, f"Should succeed: {result.stderr}"
-        assert 'java' in result.stdout.lower()
-        assert 'core' in result.stdout
-
-
-def test_infer_domains_from_npm():
-    """Test that npm modules get javascript domain inferred."""
-    with PlanTestContext() as ctx:
-        cleanup_project_files(ctx.fixture_dir)
-        create_minimal_marshal_json(ctx.fixture_dir)
-
-        # Create raw-project-data with npm-only module
-        raw_data = {
-            "project": {"name": "npm-project"},
-            "modules": [
-                {"name": "frontend", "path": "frontend", "parent": None, "build_systems": ["npm"], "packaging": None}
-            ]
-        }
-        (ctx.fixture_dir / 'raw-project-data.json').write_text(json.dumps(raw_data, indent=2))
-
-        # Infer domains
-        result = run_script(SCRIPT_PATH, 'modules', 'infer-domains', cwd=ctx.fixture_dir)
-
-        assert result.success, f"Should succeed: {result.stderr}"
-        assert 'javascript' in result.stdout.lower()
-
-
-def test_infer_domains_hybrid_module():
-    """Test that hybrid modules get both java and javascript domains."""
-    with PlanTestContext() as ctx:
-        cleanup_project_files(ctx.fixture_dir)
-        create_minimal_marshal_json(ctx.fixture_dir)
-        create_raw_project_data_mixed(ctx.fixture_dir)
-
-        # Infer domains
-        result = run_script(SCRIPT_PATH, 'modules', 'infer-domains', cwd=ctx.fixture_dir)
-
-        assert result.success, f"Should succeed: {result.stderr}"
-        # UI module should have both domains inferred
-        assert 'ui' in result.stdout
-
-        # Read marshal.json to verify domains were persisted
-        marshal = json.loads((ctx.fixture_dir / 'marshal.json').read_text())
-        ui_config = marshal.get('module_config', {}).get('ui', {})
-        domains = ui_config.get('domains', [])
-
-        assert 'java' in domains, "UI module should have java domain"
-        assert 'javascript' in domains, "UI module should have javascript domain"
-
-
-def test_infer_domains_java_only_module():
-    """Test that Java-only modules don't have javascript domain."""
-    with PlanTestContext() as ctx:
-        cleanup_project_files(ctx.fixture_dir)
-        create_minimal_marshal_json(ctx.fixture_dir)
-        create_raw_project_data_mixed(ctx.fixture_dir)
-
-        # Infer domains
-        run_script(SCRIPT_PATH, 'modules', 'infer-domains', cwd=ctx.fixture_dir)
-
-        # Read marshal.json to verify domains
-        marshal = json.loads((ctx.fixture_dir / 'marshal.json').read_text())
-        core_config = marshal.get('module_config', {}).get('core', {})
-        domains = core_config.get('domains', [])
-
-        assert 'java' in domains, "Core module should have java domain"
-        assert 'javascript' not in domains, "Core module should not have javascript domain"
 
 
 # =============================================================================
@@ -441,19 +212,6 @@ def test_detect_domains_multi_module_maven_no_javascript():
 if __name__ == '__main__':
     runner = TestRunner()
     runner.add_tests([
-        # Build systems detection
-        test_detect_build_systems_maven_only,
-        test_detect_build_systems_npm_only,
-        test_detect_build_systems_multi_module_maven_no_npm,
-        # Module reading (from raw-project-data.json)
-        test_modules_list_from_raw_project_data,
-        test_modules_get_build_systems_maven_only,
-        test_modules_get_build_systems_hybrid,
-        # Domain inference (modules infer-domains)
-        test_infer_domains_from_maven,
-        test_infer_domains_from_npm,
-        test_infer_domains_hybrid_module,
-        test_infer_domains_java_only_module,
         # Domain detection (skill-domains detect)
         test_detect_domains_maven_project,
         test_detect_domains_npm_project,

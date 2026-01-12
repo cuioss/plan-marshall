@@ -6,7 +6,7 @@
     "name": "CUI OSS Project",
     "email": "contact@cuioss.de"
   },
-  "license": "Apache-2.0",
+  "license": "FSL-1.1-ALv2",
   "homepage": "https://github.com/cuioss/plan-marshall",
   "repository": "https://github.com/cuioss/plan-marshall.git",
   "keywords": ["java", "cdi", "quarkus", "testing", "standards", "patterns", "agents"],

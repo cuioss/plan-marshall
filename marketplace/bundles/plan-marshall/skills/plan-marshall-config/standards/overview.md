@@ -7,10 +7,9 @@ Project-level infrastructure configuration for Claude Code marketplace projects.
 The `plan-marshall-config` skill manages `.plan/marshal.json`, providing a centralized configuration for:
 
 - **Skill Domains**: Which implementation skills to load per development domain
-- **Modules**: Project module structure with domain and build system mappings
-- **Build Systems**: Available build systems with command configurations
 - **System Settings**: Retention and cleanup configuration
 - **Plan Defaults**: Default values applied to new plans
+- **CI Configuration**: Provider settings and authenticated tools
 
 ## Design Principles
 
@@ -24,8 +23,8 @@ All operations follow the `{noun} {verb}` pattern:
 
 ```bash
 plan-marshall-config skill-domains list
-plan-marshall-config modules get --module my-core
-plan-marshall-config build-systems detect
+plan-marshall-config system retention get
+plan-marshall-config ci get-provider
 ```
 
 ### 3. TOON Output Format
@@ -50,10 +49,9 @@ The configuration file contains **only project-specific infrastructure**:
 | Section | Purpose |
 |---------|---------|
 | `skill_domains` | Implementation skill defaults/optionals per domain |
-| `modules` | Project modules with domain/build-system mappings |
-| `build_systems` | Build system commands and skills |
 | `system` | Retention settings for cleanup |
 | `plan` | Default values for new plans |
+| `ci` | CI provider configuration |
 
 ## What Does NOT Belong in marshal.json
 
@@ -76,7 +74,7 @@ Created by `/marshall-steward` wizard or `plan-marshall-config init`.
 
 The wizard uses this skill to:
 - Initialize marshal.json
-- Detect build systems
+- Detect and configure skill domains
 - Configure retention settings
 
 ### With Implementation Agents
@@ -86,15 +84,6 @@ Agents query skill domains to load appropriate skills:
 ```bash
 # Get skills to load for Java core domain
 plan-marshall-config skill-domains get-defaults --domain java-core
-```
-
-### With Build Commands
-
-Build commands resolve module-specific commands:
-
-```bash
-# Get verify command for a module (with override resolution)
-plan-marshall-config modules get-command --module my-ui --system npm --label verify
 ```
 
 ### With Cleanup Scripts
@@ -109,6 +98,4 @@ plan-marshall-config system retention get
 
 - [data-model.md](data-model.md) - JSON structure and field definitions
 - [api-reference.md](api-reference.md) - Complete API with examples
-- [modules.md](modules.md) - Module configuration details
 - [skill-domains.md](skill-domains.md) - Skill domain management
-- [build-systems.md](build-systems.md) - Build system configuration

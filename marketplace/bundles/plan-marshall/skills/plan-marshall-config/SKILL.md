@@ -11,8 +11,6 @@ Manages project-level infrastructure configuration in `.plan/marshal.json`.
 ## What This Skill Provides
 
 - **Skill Domains**: Implementation skill defaults and optionals per domain
-- **Modules**: Project module configuration with domain/build-system mappings
-- **Build Systems**: Build system detection and command configuration
 - **System Settings**: Retention and cleanup configuration
 - **Plan Defaults**: Default values for new plans
 
@@ -21,7 +19,6 @@ Manages project-level infrastructure configuration in `.plan/marshal.json`.
 Activate this skill when:
 - Initializing project configuration (`/marshall-steward` wizard)
 - Querying implementation skills for a domain
-- Resolving build commands for a module
 - Managing retention settings
 - Configuring plan defaults
 
@@ -31,24 +28,10 @@ Activate this skill when:
 
 **Pattern**: Script Automation
 
-Initialize marshal.json with defaults and auto-detection.
-
-### Step 1: Initialize
+Initialize marshal.json with defaults.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall-config init
-```
-
-### Step 2: Detect Build Systems
-
-```bash
-python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall-config build-systems detect
-```
-
-### Step 3: Detect Modules
-
-```bash
-python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall-config modules detect
 ```
 
 ---
@@ -87,73 +70,6 @@ python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall
 python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall-config \
   skill-domains validate --domain java-core --skill pm-dev-java:java-lombok
 ```
-
----
-
-## Workflow: Query Module Configuration
-
-**Pattern**: Read-Process-Write
-
-Get module-specific configuration including domain and build system mappings.
-
-### List All Modules
-
-```bash
-python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall-config \
-  modules list
-```
-
-### Get Module Domains
-
-```bash
-python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall-config \
-  modules get-domains --module my-module
-```
-
-### Get Build Command (Static Routing)
-
-```bash
-python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall-config \
-  modules get-command --module my-module --label verify
-```
-
-**Output**:
-```toon
-status: success
-module: my-module
-label: verify
-command: python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --targets "clean verify" --module my-module
-source: module
-```
-
-Command resolution order:
-1. Module-specific command (if defined in `modules.{name}.commands`)
-2. Default module command (fallback to `modules.default.commands`)
-
-### Set Build Command
-
-```bash
-python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall-config \
-  modules set-command --module my-module --label verify \
-  --command 'python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --targets "clean verify" --module my-module'
-```
-
----
-
-## Workflow: Query Build Systems
-
-**Pattern**: Read-Process-Write
-
-Get build system detection reference. Commands are resolved via `modules get-command`.
-
-### List Build Systems
-
-```bash
-python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall-config \
-  build-systems list
-```
-
-**Note**: Build commands are not stored in `build_systems` section. Use `modules get-command --module {module} --label {label}` to resolve executable commands.
 
 ---
 
@@ -257,33 +173,6 @@ Returns null (not error) if extension doesn't exist for the domain.
 |------------|---------|
 | (none) | Get all workflow skills from system domain (5-phase model: init, outline, plan, execute, finalize) |
 
-### Noun: modules
-
-| Verb | Parameters | Purpose |
-|------|------------|---------|
-| `list` | (none) | List all modules with domains |
-| `get` | `--module` | Get full module config |
-| `get-domains` | `--module` | Get skill domains for module |
-| `get-build-systems` | `--module` | Get available build systems for module |
-| `get-command` | `--module --label` | Get command (static routing with default fallback) |
-| `set-command` | `--module --label --command` | Set full command string for module |
-| `add` | `--module --path --domains --build-systems` | Add new module |
-| `set` | `--module [--domains] [--build-systems]` | Update module config |
-| `remove` | `--module` | Remove module |
-| `detect` | (none) | Auto-detect modules from pom.xml/build.gradle/package.json |
-
-### Noun: build-systems
-
-| Verb | Parameters | Purpose |
-|------|------------|---------|
-| `list` | (none) | List configured systems (detection reference only) |
-| `get` | `--system` | Get specific build system config |
-| `add` | `--system` | Add build system |
-| `remove` | `--system` | Remove build system |
-| `detect` | (none) | Auto-detect from project |
-
-**Note**: `build_systems` section is for detection reference only. Commands are stored in `modules.{name}.commands` using static routing.
-
 ### Noun: system
 
 | Verb | Parameters | Purpose |
@@ -367,36 +256,6 @@ The defaults template contains only `system` domain. Technical domains (java, ja
       }
     }
   },
-  "module_config": {
-    "default": {
-      "path": ".",
-      "domains": ["java"],
-      "build_systems": ["maven"],
-      "type": "jar",
-      "commands": {
-        "module-tests": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --goals \"clean test\"",
-        "verify": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --goals \"clean verify\"",
-        "install": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --goals \"clean install\"",
-        "quality-gate": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --goals \"clean install\" --profile pre-commit"
-      }
-    },
-    "my-module": {
-      "path": "my-module",
-      "domains": ["java"],
-      "build_systems": ["maven"],
-      "type": "jar",
-      "commands": {
-        "module-tests": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --goals \"clean test\" --module my-module",
-        "verify": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --goals \"clean verify\" --module my-module"
-      }
-    }
-  },
-  "build_systems": [
-    {
-      "system": "maven",
-      "skill": "pm-dev-java:plan-marshall-plugin"
-    }
-  ],
   "system": {
     "retention": {
       "logs_days": 1,
@@ -456,19 +315,6 @@ Use `resolve-domain-skills --domain {domain} --profile {profile}` to get aggrega
 
 ---
 
-## Standard Command Labels
-
-| Label | Purpose | Maven | Gradle | npm |
-|-------|---------|-------|--------|-----|
-| `compile` | Compile source | `compile` | `compileJava` | `run build` |
-| `test` | Run unit tests | `clean test` | `clean test` | `run test` |
-| `verify` | Full verification | `clean verify` | `clean check` | `run test && run lint` |
-| `install` | Install artifacts | `clean install` | `publishToMavenLocal` | - |
-| `pre-commit` | Pre-commit checks | `-Ppre-commit clean install` | `preCommit` | - |
-| `coverage` | Coverage analysis | `-Pcoverage clean verify` | `jacocoTestReport` | `run test:coverage` |
-
----
-
 ## Scripts
 
 | Script | Notation |
@@ -493,11 +339,6 @@ Script characteristics:
 - `skill-domains get-defaults` provides skills to load
 - `skill-domains get-optionals` provides available optionals
 
-### With Build Commands
-- `modules get-command` resolves build commands using static routing
-- `modules set-command` allows custom command configuration
-- Commands are generated by `plan-marshall:extension-api:build_env persist`
-
 ### With Cleanup
 - `system retention get` provides retention settings
 
@@ -516,5 +357,3 @@ Standard error conditions:
 - `marshal.json not found` - Run `/marshall-steward` first
 - `skill_domains not configured` - Run `/marshall-steward` first
 - `Unknown domain: {name}` - Domain doesn't exist
-- `Unknown module: {name}` - Module doesn't exist
-- `Build system not found: {name}` - Build system not configured

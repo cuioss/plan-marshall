@@ -59,7 +59,7 @@ BUILD_SYSTEM_DEFAULTS = {
         "skill": "pm-dev-java:plan-marshall-plugin"
     },
     "npm": {
-        "skill": "pm-dev-java:plan-marshall-plugin"
+        "skill": "pm-dev-frontend:plan-marshall-plugin"
     }
 }
 

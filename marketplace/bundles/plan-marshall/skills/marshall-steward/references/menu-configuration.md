@@ -1,6 +1,6 @@
 # Menu Option: Configuration
 
-Sub-menu for build systems and skill domains configuration.
+Sub-menu for skill domains and project structure configuration.
 
 ---
 
@@ -10,82 +10,24 @@ Sub-menu for build systems and skill domains configuration.
 AskUserQuestion:
   question: "What would you like to configure?"
   options:
-    - label: "Build Systems"
-      description: "Detect and configure Maven/Gradle/npm"
-      value: "build"
     - label: "Skill Domains"
       description: "Configure implementation skills per domain"
       value: "skill-domains"
-    - label: "Modules"
-      description: "Define module structure (path, domains, build-systems)"
-      value: "modules"
     - label: "Project Structure"
-      description: "Manage module metadata, placement rules, conventions"
+      description: "View, regenerate, and enrich architecture data"
       value: "structure"
-    - label: "Manage Commands"
-      description: "Configure build commands per module (test, verify, etc.)"
-      value: "commands"
     - label: "Full Reconfigure"
       description: "Run first-run wizard again"
       value: "wizard"
 ```
 
-**Note**: Menu limited to 4 options per AskUserQuestion. Use nested menus if needed.
-
 ## Routing
 
 | Selection | Action |
 |-----------|--------|
-| build | Execute "Configuration: Build System" below |
 | skill-domains | Execute "Configuration: Skill Domains" below |
-| modules | Execute "Configuration: Modules" below |
 | structure | Execute "Configuration: Project Structure" below |
-| commands | Execute "Configuration: Manage Commands" below |
 | wizard | Load and execute: `Read references/wizard-flow.md` |
-
----
-
-## Configuration: Build System
-
-### Detect Build Systems
-
-Build systems are auto-detected during project architecture discovery.
-
-```bash
-python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture discover --force
-```
-
-### Auto-Configure Detected Systems
-
-```bash
-python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall-config build-systems detect
-```
-
-This detects build systems from project files and adds them with default commands.
-
-### Build System Mappings
-
-| Detected | Domain Bundle | Build Script |
-|----------|---------------|--------------|
-| Maven | `pm-dev-java` | `pm-dev-java:plan-marshall-plugin:maven` |
-| Gradle | `pm-dev-java` | `pm-dev-java:plan-marshall-plugin:gradle` |
-| npm | `pm-dev-frontend` | `pm-dev-frontend:plan-marshall-plugin:npm` |
-
-### View Configured Build Systems
-
-```bash
-python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall-config build-systems list
-```
-
-### Add/Remove Build System
-
-```bash
-# Add Gradle with defaults
-python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall-config build-systems add --system gradle
-
-# Remove unused build system
-python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall-config build-systems remove --system gradle
-```
 
 ---
 
@@ -173,34 +115,6 @@ python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall
   --profile implementation \
   --defaults "pm-dev-java:java-core" \
   --optionals "pm-dev-java:java-cdi,pm-dev-java:java-maintenance"
-```
-
----
-
-## Configuration: Modules
-
-Modules define project structure with domain and build system mappings.
-
-### Detect Modules
-
-```bash
-python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall-config modules detect
-```
-
-### List Modules
-
-```bash
-python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall-config modules list
-```
-
-### Add Module
-
-```bash
-python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall-config modules add \
-  --module my-module \
-  --path path/to/module \
-  --domains "java,java-testing" \
-  --build-systems "maven"
 ```
 
 ---
@@ -317,230 +231,38 @@ If user chose "Reset enrichment" or no enrichment existed:
 python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture init --force
 ```
 
-**Step 4: Prompt for enrichment (if modules found)**
+**Step 4: LLM Architectural Analysis (automatic)**
 
-If `modules_discovered > 0`, offer interactive enrichment:
+Invoke the analysis skill to auto-populate enrichment with semantic descriptions:
+
+```
+Skill: plan-marshall:analyze-project-architecture
+```
+
+The LLM reads discovered data, samples documentation and source code, then enriches with:
+- Semantic module responsibilities
+- Module purpose classification (infrastructure, domain-standards, tooling, etc.)
+- Key packages per module with descriptions
+
+**Step 5: Offer refinement (optional)**
+
+After automatic analysis completes, offer user the option to refine:
 
 ```yaml
 AskUserQuestion:
-  question: "Found {N} modules. Would you like to add descriptions now?"
-  header: "Enrichment"
+  question: "LLM analysis complete. Would you like to refine any descriptions?"
+  header: "Refinement"
   options:
-    - label: "Yes - Guide me"
-      description: "Walk through each module for description"
-    - label: "Skip for now"
-      description: "Add descriptions later via Edit Module"
+    - label: "Accept all"
+      description: "Use LLM-generated descriptions as-is"
+    - label: "Refine"
+      description: "Review and adjust specific modules"
   multiSelect: false
 ```
 
-If user chooses "Yes - Guide me":
-
-1. List modules with `architecture modules`
-2. For each module, show current info with `architecture module --name "{module}"`
-3. Ask user for responsibility description
-4. Save with `architecture enrich module --name "{module}" --responsibility "{user input}"`
+If user chooses "Refine", use the "Edit Module" operation flow.
 
 This regenerates `.plan/project-architecture/derived-data.json` from current build file definitions.
-
----
-
-## Configuration: Manage Commands
-
-Manage canonical commands for project modules. Allows adding profile-based commands, removing unused commands, or resetting to defaults.
-
-### Step 1: Select Module
-
-```yaml
-AskUserQuestion:
-  question: "Which module do you want to configure?"
-  header: "Module"
-  options:
-    - label: "default"
-      description: "Root project (N commands)"
-    - label: "{module-name}"
-      description: "{module-type} (N commands)"
-    - label: "All modules"
-      description: "Reconfigure all module commands"
-  multiSelect: false
-```
-
-Build options dynamically from marshal.json module_config.
-
-### Step 2: Select Operation
-
-```yaml
-AskUserQuestion:
-  question: "What do you want to do with '{module}' commands?"
-  header: "Operation"
-  options:
-    - label: "View"
-      description: "Show current command configuration"
-    - label: "Add"
-      description: "Add new commands from detected profiles"
-    - label: "Profile Mappings"
-      description: "Map unclassified profiles to commands or skip"
-    - label: "Reset"
-      description: "Reset to auto-detected defaults"
-  multiSelect: false
-```
-
-### Operation: View
-
-Show current commands for the module from project architecture:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture module \
-  --name "{module}"
-```
-
-Display output shows module with commands section.
-
-### Operation: Add
-
-First, detect available profiles not yet configured:
-
-```bash
-python3 .plan/execute-script.py pm-dev-java:maven-profile-management:profiles list
-```
-
-Then present multi-select for profiles to add:
-
-```yaml
-AskUserQuestion:
-  question: "Select profiles to add as commands:"
-  header: "Add Commands"
-  multiSelect: true
-  options:
-    - label: "integration-tests → integration-tests"
-      description: "mvn verify -Pintegration-tests"
-    - label: "benchmark → performance"
-      description: "mvn verify -Pbenchmark"
-```
-
-Profile-to-command mapping is managed via run-config profile-mapping.
-
-### Operation: Profile Mappings
-
-Manage user decisions for profiles that can't be auto-classified. Mappings are stored in `run-configuration.json` and applied during command generation.
-
-**Step 1: View current mappings**
-
-```bash
-python3 .plan/execute-script.py plan-marshall:run-config:run_config profile-mapping list
-```
-
-**Output (JSON)**:
-```json
-{
-  "success": true,
-  "count": 3,
-  "mappings": {
-    "jfr": "skip",
-    "quick": "skip",
-    "benchmark": "performance"
-  }
-}
-```
-
-**Step 2: Check for unmapped profiles**
-
-Check for profiles that need classification:
-
-```bash
-python3 .plan/execute-script.py pm-dev-java:maven-profile-management:profiles unmatched
-```
-
-If output contains unmatched profiles, present them to user:
-
-```yaml
-AskUserQuestion:
-  question: "Profile '{profile_id}' can't be auto-classified. What is it?"
-  header: "Profile"
-  options:
-    - label: "Skip (internal/unused)"
-      description: "Exclude from command generation"
-    - label: "Integration tests"
-      description: "Integration or E2E test execution"
-    - label: "Coverage"
-      description: "Code coverage analysis"
-    - label: "Benchmark"
-      description: "Benchmark or performance testing"
-  multiSelect: false
-```
-
-**Step 3: Save mapping**
-
-```bash
-# Single mapping
-python3 .plan/execute-script.py plan-marshall:run-config:run_config profile-mapping set \
-  --profile-id "{profile_id}" --canonical "{canonical}"
-
-# Batch mappings
-python3 .plan/execute-script.py plan-marshall:run-config:run_config profile-mapping batch-set \
-  --mappings-json '{"jfr": "skip", "quick": "skip"}'
-```
-
-**Valid canonicals**: `integration-tests`, `coverage`, `performance`, `quality-gate`, `skip`
-
-Profile mappings are persisted to `run-configuration.json` and used during command execution.
-
-**Remove a mapping**:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:run-config:run_config profile-mapping remove \
-  --profile-id "{profile_id}"
-```
-
-### Operation: Remove
-
-Present multi-select of current commands:
-
-```yaml
-AskUserQuestion:
-  question: "Select commands to remove from '{module}':"
-  header: "Remove Commands"
-  multiSelect: true
-  options:
-    - label: "coverage"
-      description: "mvn verify -Pcoverage"
-    - label: "performance"
-      description: "mvn verify -Pbenchmark"
-```
-
-Remove selected commands by editing marshal.json directly:
-
-```bash
-# Read current config, remove selected commands, write back
-python3 .plan/execute-script.py plan-marshall:json-file-operations:manage-json-file delete-field \
-  .plan/marshal.json --field "module_config.{module}.commands.{canonical}"
-```
-
-### Operation: Reset
-
-Reset module to auto-detected defaults:
-
-```yaml
-AskUserQuestion:
-  question: "Reset '{module}' commands to defaults?"
-  header: "Confirm Reset"
-  options:
-    - label: "Yes - Auto-detect"
-      description: "Use smart defaults based on module type and profiles"
-    - label: "Yes - Minimal"
-      description: "Only required commands (module-tests, quality-gate, verify)"
-    - label: "Cancel"
-      description: "Keep current configuration"
-  multiSelect: false
-```
-
-Execute reset by re-running architecture discovery:
-
-```bash
-# Re-discover modules and commands from project structure
-python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture discover --force
-```
-
-Commands are automatically derived from detected build files and profiles.
 
 ---
 
