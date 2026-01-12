@@ -1,0 +1,60 @@
+{
+  "name": "plan-marshall",
+  "owner": {
+    "name": "CUI OSS Project"
+  },
+  "metadata": {
+    "description": "Comprehensive marketplace of development standards, skills, and best practices for AI-assisted development",
+    "version": "0.1-BETA"
+  },
+  "plugins": [
+    {
+      "name": "pm-dev-java",
+      "description": "Comprehensive Java development expertise bundle aggregating core Java patterns, CDI/Quarkus, and unit testing standards",
+      "source": "./bundles/pm-dev-java",
+      "strict": false
+    },
+    {
+      "name": "pm-dev-java-cui",
+      "description": "CUI-specific Java development standards for CuiLogger, test generators, and HTTP client patterns",
+      "source": "./bundles/pm-dev-java-cui",
+      "strict": false
+    },
+    {
+      "name": "pm-dev-frontend",
+      "description": "JavaScript, CSS, and web component standards for applications",
+      "source": "./bundles/pm-dev-frontend",
+      "strict": false
+    },
+    {
+      "name": "pm-documents",
+      "description": "AsciiDoc and documentation standards enforcement for projects",
+      "source": "./bundles/pm-documents",
+      "strict": false
+    },
+    {
+      "name": "pm-plugin-development",
+      "description": "Complete toolchain for creating and diagnosing Claude Code plugins",
+      "source": "./bundles/pm-plugin-development",
+      "strict": false
+    },
+    {
+      "name": "plan-marshall",
+      "description": "Environment setup, permission management, and cross-cutting utilities",
+      "source": "./bundles/plan-marshall",
+      "strict": false
+    },
+    {
+      "name": "pm-workflow",
+      "description": "Complete development workflow from issue implementation to PR review and quality verification",
+      "source": "./bundles/pm-workflow",
+      "strict": false
+    },
+    {
+      "name": "pm-requirements",
+      "description": "Requirements engineering and specification standards for projects",
+      "source": "./bundles/pm-requirements",
+      "strict": false
+    }
+  ]
+}

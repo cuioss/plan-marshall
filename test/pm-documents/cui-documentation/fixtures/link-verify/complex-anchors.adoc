@@ -1,0 +1,30 @@
+= Complex Anchors
+:toc: left
+:toclevels: 3
+:toc-title: Table of Contents
+:sectnums:
+:source-highlighter: highlight.js
+
+== Code Section with `backticks` here
+
+Link to it: <<code-section-with-here>>
+
+== URL Section with https://url.com[link] embedded
+
+Link to it: <<url-section-with-embedded>>
+
+== CrossRef Section with special chars !@# inside
+
+Link to it: <<crossref-section-with-special-chars-inside>>
+
+== Section-With-Dashes-Already
+
+Link to it: <<section-with-dashes-already>>
+
+== Section   With   Multiple   Spaces
+
+Link to it: <<section-with-multiple-spaces>>
+
+== Section_With_Underscores
+
+Link to it: <<section_with_underscores>>

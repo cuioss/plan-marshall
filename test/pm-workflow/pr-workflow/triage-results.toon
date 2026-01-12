@@ -1,0 +1,16 @@
+pr_number: 123
+
+triage_results[5]{comment_id,action,reason,suggested_implementation,priority,effort}:
+RC_001,code_change,Valid refactoring suggestion - method exceeds 50 lines and has multiple responsibilities,"Extract lines 145-175 into validateRequest() method, lines 176-200 into processRequest() method",medium,small
+RC_002,code_change,Security concern - input sanitization required for database queries,"Add parameter validation using StringUtils.sanitize() before SQL query construction. Consider using parameterized queries.",high,small
+RC_003,explain,Question about design decision - explanation needed no code change required,"Respond with explanation: Records provide immutable data holders with auto-generated equals/hashCode/toString, reducing boilerplate and ensuring thread safety.",low,minimal
+RC_004,ignore,Automated bot comment - no action required,,none,none
+RC_005,code_change,Valid naming improvement suggestion - improves code readability,Rename variable 'x' to 'tokenIndex' or 'currentPosition' based on its purpose,low,minimal
+
+summary:
+  code_changes: 3
+  explanations: 1
+  ignored: 1
+  high_priority: 1
+  medium_priority: 1
+  low_priority: 2

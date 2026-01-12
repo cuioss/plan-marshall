@@ -1,0 +1,6 @@
+{
+  "name": "test-agent",
+  "description": "Test agent for validation",
+  "model": "sonnet",
+  "tools": ["Read", "Write", "Edit"]
+}

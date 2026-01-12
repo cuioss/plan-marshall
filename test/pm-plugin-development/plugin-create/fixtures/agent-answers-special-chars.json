@@ -1,0 +1,5 @@
+{
+  "name": "test-agent",
+  "description": "Test agent with \"quotes\" and 'apostrophes'",
+  "tools": ["Read"]
+}

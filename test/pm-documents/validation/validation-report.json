@@ -1,0 +1,102 @@
+{
+  "status": "success",
+  "data": {
+    "files_validated": 3,
+    "total_violations": 12,
+    "violations": [
+      {
+        "file": "missing-headers.adoc",
+        "line": 1,
+        "rule": "DOC001",
+        "severity": "warning",
+        "message": "Missing :toc: attribute in document header"
+      },
+      {
+        "file": "missing-headers.adoc",
+        "line": 1,
+        "rule": "DOC002",
+        "severity": "warning",
+        "message": "Missing :toclevels: attribute in document header"
+      },
+      {
+        "file": "missing-headers.adoc",
+        "line": 1,
+        "rule": "DOC003",
+        "severity": "warning",
+        "message": "Missing :sectnums: attribute in document header"
+      },
+      {
+        "file": "missing-headers.adoc",
+        "line": 13,
+        "rule": "DOC010",
+        "severity": "error",
+        "message": "Code block missing language specification"
+      },
+      {
+        "file": "missing-headers.adoc",
+        "line": 21,
+        "rule": "DOC020",
+        "severity": "error",
+        "message": "Missing blank line before list"
+      },
+      {
+        "file": "invalid-xrefs.adoc",
+        "line": 14,
+        "rule": "DOC030",
+        "severity": "error",
+        "message": "Deprecated <<anchor>> syntax, use xref:anchor[]"
+      },
+      {
+        "file": "invalid-xrefs.adoc",
+        "line": 16,
+        "rule": "DOC030",
+        "severity": "error",
+        "message": "Deprecated <<anchor,label>> syntax, use xref:anchor[label]"
+      },
+      {
+        "file": "invalid-xrefs.adoc",
+        "line": 20,
+        "rule": "DOC031",
+        "severity": "warning",
+        "message": "Cross-reference target file does not exist"
+      },
+      {
+        "file": "invalid-xrefs.adoc",
+        "line": 22,
+        "rule": "DOC031",
+        "severity": "warning",
+        "message": "Cross-reference target file does not exist"
+      },
+      {
+        "file": "invalid-xrefs.adoc",
+        "line": 26,
+        "rule": "DOC032",
+        "severity": "error",
+        "message": "Anchor 'undefined-anchor' not found in document"
+      },
+      {
+        "file": "invalid-xrefs.adoc",
+        "line": 28,
+        "rule": "DOC032",
+        "severity": "error",
+        "message": "Anchor 'missing-section' not found in document"
+      },
+      {
+        "file": "valid-structure.adoc",
+        "line": 0,
+        "rule": "NONE",
+        "severity": "info",
+        "message": "Document passes all validation checks"
+      }
+    ],
+    "summary": {
+      "errors": 6,
+      "warnings": 5,
+      "info": 1
+    }
+  },
+  "metrics": {
+    "execution_time_ms": 127,
+    "lines_analyzed": 156
+  }
+}

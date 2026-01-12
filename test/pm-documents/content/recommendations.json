@@ -1,0 +1,76 @@
+{
+  "status": "success",
+  "data": {
+    "file": "needs-improvement.adoc",
+    "recommendations": [
+      {
+        "priority": 1,
+        "category": "tone",
+        "title": "Remove Marketing Language",
+        "description": "Replace promotional adjectives with factual descriptions",
+        "affected_lines": [1, 4, 8, 14, 18, 24, 28, 36],
+        "examples": [
+          {
+            "current": "Our powerful JWT validation library provides best-in-class security features!",
+            "suggested": "This JWT validation module provides security features following RFC 7519."
+          },
+          {
+            "current": "This incredible module seamlessly handles all your JWT validation needs",
+            "suggested": "This module validates JWT tokens against configured issuers and audiences."
+          }
+        ]
+      },
+      {
+        "priority": 2,
+        "category": "correctness",
+        "title": "Remove Unverified Claims",
+        "description": "Delete or substantiate performance and adoption claims",
+        "affected_lines": [8, 37, 52],
+        "action": "Either provide RFC citations, benchmark data, or usage statistics - or remove claims entirely"
+      },
+      {
+        "priority": 3,
+        "category": "completeness",
+        "title": "Remove Transitional Markers",
+        "description": "Delete TODO sections and status indicators",
+        "affected_lines": [45, 46, 47, 48],
+        "action": "Remove the entire TODO section and any ✅ markers"
+      },
+      {
+        "priority": 4,
+        "category": "structure",
+        "title": "Replace Promotional Sections",
+        "description": "Rewrite 'Why Choose Us?' as factual feature comparison or remove",
+        "affected_lines": [36, 37, 38, 39, 40, 41, 42],
+        "action": "Remove promotional section or convert to objective feature list"
+      },
+      {
+        "priority": 5,
+        "category": "consistency",
+        "title": "Standardize Section Headers",
+        "description": "Use descriptive headers instead of marketing headers",
+        "affected_lines": [12, 22],
+        "examples": [
+          {
+            "current": "== Awesome Features",
+            "suggested": "== Features"
+          },
+          {
+            "current": "=== Lightning-Fast Validation",
+            "suggested": "=== Token Validation"
+          },
+          {
+            "current": "=== Magical Multi-Issuer Support",
+            "suggested": "=== Multi-Issuer Support"
+          }
+        ]
+      }
+    ],
+    "summary": {
+      "estimated_fixes": 25,
+      "complexity": "medium",
+      "recommended_approach": "iterative",
+      "notes": "Focus on tone fixes first as they are most critical, then address completeness issues"
+    }
+  }
+}

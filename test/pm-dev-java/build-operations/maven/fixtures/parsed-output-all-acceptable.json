@@ -1,0 +1,25 @@
+{
+  "status": "success",
+  "data": {
+    "build_status": "SUCCESS",
+    "issues": [
+      {
+        "type": "other",
+        "message": "The POM for com.example:transitive-dep:jar:1.0.0 is missing",
+        "severity": "WARNING"
+      },
+      {
+        "type": "openrewrite_info",
+        "message": "Changes have been made to the source files",
+        "severity": "WARNING"
+      }
+    ],
+    "summary": {
+      "other_warnings": 1,
+      "total_issues": 2
+    }
+  },
+  "metrics": {
+    "duration_ms": 18234
+  }
+}

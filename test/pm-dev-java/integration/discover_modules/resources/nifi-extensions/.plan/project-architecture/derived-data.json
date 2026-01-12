@@ -1,0 +1,950 @@
+{
+  "project": {
+    "name": "nifi-extensions"
+  },
+  "modules": {
+    "nifi-extensions": {
+      "name": "nifi-extensions",
+      "build_systems": [
+        "maven"
+      ],
+      "paths": {
+        "module": ".",
+        "descriptor": "pom.xml",
+        "sources": [],
+        "tests": [],
+        "readme": "README.adoc"
+      },
+      "metadata": {
+        "artifact_id": "nifi-extensions",
+        "group_id": "de.cuioss.nifi",
+        "packaging": "pom",
+        "description": "Some extensions for apache nifi",
+        "parent": "org.apache.nifi:nifi-extension-bundles",
+        "profiles": [
+          {
+            "id": "coverage",
+            "canonical": "coverage"
+          },
+          {
+            "id": "apache-release",
+            "canonical": "NO-MATCH-FOUND"
+          },
+          {
+            "id": "use-apache-snapshots",
+            "canonical": "NO-MATCH-FOUND"
+          },
+          {
+            "id": "pre-commit",
+            "canonical": "quality-gate"
+          },
+          {
+            "id": "local-integration-tests",
+            "canonical": "NO-MATCH-FOUND"
+          },
+          {
+            "id": "integration-tests",
+            "canonical": "integration-tests"
+          },
+          {
+            "id": "nar-packaging",
+            "canonical": "NO-MATCH-FOUND"
+          },
+          {
+            "id": "skip-unit-tests",
+            "canonical": "NO-MATCH-FOUND"
+          },
+          {
+            "id": "contrib-check",
+            "canonical": "NO-MATCH-FOUND"
+          },
+          {
+            "id": "war-packaging",
+            "canonical": "NO-MATCH-FOUND"
+          }
+        ]
+      },
+      "packages": {},
+      "dependencies": [
+        "jakarta.servlet:jakarta.servlet-api:provided",
+        "org.eclipse.jetty.toolchain:jetty-schemas:provided",
+        "org.eclipse.jetty:jetty-server:provided",
+        "org.eclipse.jetty:jetty-http:provided",
+        "org.eclipse.jetty:jetty-io:provided",
+        "org.eclipse.jetty.ee10:jetty-ee10-servlet:provided",
+        "org.eclipse.jetty:jetty-security:provided",
+        "org.eclipse.jetty:jetty-session:provided",
+        "org.eclipse.jetty.ee10:jetty-ee10-webapp:provided",
+        "org.eclipse.jetty:jetty-xml:provided",
+        "org.eclipse.jetty:jetty-deploy:provided",
+        "org.eclipse.jetty.ee10:jetty-ee10-servlets:provided",
+        "org.eclipse.jetty:jetty-util:provided",
+        "org.eclipse.jetty.ee10:jetty-ee10-annotations:provided",
+        "jakarta.annotation:jakarta.annotation-api:provided",
+        "org.eclipse.jetty.ee10:jetty-ee10-plus:provided",
+        "jakarta.enterprise:jakarta.enterprise.cdi-api:provided",
+        "jakarta.inject:jakarta.inject-api:provided",
+        "jakarta.enterprise:jakarta.enterprise.lang-model:provided",
+        "jakarta.interceptor:jakarta.interceptor-api:provided",
+        "jakarta.transaction:jakarta.transaction-api:provided",
+        "org.eclipse.jetty:jetty-jndi:provided",
+        "org.eclipse.jetty:jetty-plus:provided",
+        "org.ow2.asm:asm:provided",
+        "org.ow2.asm:asm-commons:provided",
+        "org.ow2.asm:asm-tree:provided",
+        "org.eclipse.jetty.ee10:jetty-ee10-apache-jsp:provided",
+        "org.mortbay.jasper:apache-jsp:provided",
+        "org.mortbay.jasper:apache-el:provided",
+        "jakarta.el:jakarta.el-api:provided",
+        "jakarta.servlet.jsp:jakarta.servlet.jsp-api:provided",
+        "org.eclipse.jdt:ecj:provided",
+        "org.eclipse.jetty.ee10:jetty-ee10-glassfish-jstl:provided",
+        "jakarta.servlet.jsp.jstl:jakarta.servlet.jsp.jstl-api:provided",
+        "org.glassfish.web:jakarta.servlet.jsp.jstl:provided",
+        "org.eclipse.jetty:jetty-alpn-server:provided",
+        "org.eclipse.jetty:jetty-alpn-java-server:provided",
+        "org.eclipse.jetty.http2:jetty-http2-server:provided",
+        "org.eclipse.jetty.http2:jetty-http2-common:provided",
+        "org.eclipse.jetty.http2:jetty-http2-hpack:provided",
+        "org.apache.nifi:nifi-mock:test",
+        "org.apache.nifi:nifi-api:provided",
+        "org.apache.nifi:nifi-properties:provided",
+        "org.apache.nifi:nifi-property-utils:provided",
+        "org.slf4j:jcl-over-slf4j:provided",
+        "org.slf4j:log4j-over-slf4j:provided",
+        "org.slf4j:jul-to-slf4j:provided",
+        "org.slf4j:slf4j-api:provided",
+        "org.junit.jupiter:junit-jupiter-api:test",
+        "org.junit.jupiter:junit-jupiter-engine:test",
+        "org.junit.jupiter:junit-jupiter-params:test",
+        "org.mockito:mockito-core:test",
+        "org.mockito:mockito-junit-jupiter:test",
+        "org.junit.platform:junit-platform-commons:test",
+        "org.slf4j:slf4j-simple:test"
+      ],
+      "stats": {
+        "source_files": 0,
+        "test_files": 0
+      },
+      "commands": {
+        "clean": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"clean\"",
+        "quality-gate": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -Ppre-commit\"",
+        "verify": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify\"",
+        "install": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"install\"",
+        "coverage": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -Pcoverage\"",
+        "integration-tests": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -Pintegration-tests\""
+      }
+    },
+    "e-2-e-playwright": {
+      "name": "e-2-e-playwright",
+      "build_systems": [
+        "maven",
+        "npm"
+      ],
+      "paths": {
+        "module": "e-2-e-playwright",
+        "sources": [],
+        "tests": [
+          "e-2-e-playwright/tests"
+        ],
+        "descriptors": [
+          "e-2-e-playwright/package.json",
+          "e-2-e-playwright/pom.xml"
+        ],
+        "readme": "e-2-e-playwright/README.adoc"
+      },
+      "metadata": {
+        "parent": "de.cuioss.nifi:nifi-extensions",
+        "description": "End-to-End Playwright tests for NiFi Extensions - Implements centralized JavaScript/ESLint standards",
+        "profiles": [
+          {
+            "id": "coverage",
+            "canonical": "coverage"
+          },
+          {
+            "id": "apache-release",
+            "canonical": "NO-MATCH-FOUND"
+          },
+          {
+            "id": "use-apache-snapshots",
+            "canonical": "NO-MATCH-FOUND"
+          },
+          {
+            "id": "pre-commit",
+            "canonical": "quality-gate"
+          },
+          {
+            "id": "local-integration-tests",
+            "canonical": "NO-MATCH-FOUND"
+          },
+          {
+            "id": "integration-tests",
+            "canonical": "integration-tests"
+          },
+          {
+            "id": "nar-packaging",
+            "canonical": "NO-MATCH-FOUND"
+          },
+          {
+            "id": "skip-unit-tests",
+            "canonical": "NO-MATCH-FOUND"
+          },
+          {
+            "id": "contrib-check",
+            "canonical": "NO-MATCH-FOUND"
+          },
+          {
+            "id": "war-packaging",
+            "canonical": "NO-MATCH-FOUND"
+          }
+        ],
+        "artifact_id": "e-2-e-playwright",
+        "group_id": "de.cuioss.nifi",
+        "packaging": "pom"
+      },
+      "packages": {},
+      "dependencies": [
+        "npm:@playwright/test:compile",
+        "npm:axe-playwright:compile",
+        "npm:eslint-config-prettier:compile",
+        "npm:eslint-plugin-jsdoc:compile",
+        "npm:eslint-plugin-prettier:compile",
+        "npm:eslint-plugin-security:compile",
+        "npm:eslint-plugin-sonarjs:compile",
+        "npm:eslint-plugin-unicorn:compile",
+        "npm:eslint:compile",
+        "npm:jwt-decode:compile",
+        "npm:prettier:compile",
+        "jakarta.servlet:jakarta.servlet-api:provided",
+        "org.eclipse.jetty.toolchain:jetty-schemas:provided",
+        "org.eclipse.jetty:jetty-server:provided",
+        "org.eclipse.jetty:jetty-http:provided",
+        "org.eclipse.jetty:jetty-io:provided",
+        "org.eclipse.jetty.ee10:jetty-ee10-servlet:provided",
+        "org.eclipse.jetty:jetty-security:provided",
+        "org.eclipse.jetty:jetty-session:provided",
+        "org.eclipse.jetty.ee10:jetty-ee10-webapp:provided",
+        "org.eclipse.jetty:jetty-xml:provided",
+        "org.eclipse.jetty:jetty-deploy:provided",
+        "org.eclipse.jetty.ee10:jetty-ee10-servlets:provided",
+        "org.eclipse.jetty:jetty-util:provided",
+        "org.eclipse.jetty.ee10:jetty-ee10-annotations:provided",
+        "jakarta.annotation:jakarta.annotation-api:provided",
+        "org.eclipse.jetty.ee10:jetty-ee10-plus:provided",
+        "jakarta.enterprise:jakarta.enterprise.cdi-api:provided",
+        "jakarta.inject:jakarta.inject-api:provided",
+        "jakarta.enterprise:jakarta.enterprise.lang-model:provided",
+        "jakarta.interceptor:jakarta.interceptor-api:provided",
+        "jakarta.transaction:jakarta.transaction-api:provided",
+        "org.eclipse.jetty:jetty-jndi:provided",
+        "org.eclipse.jetty:jetty-plus:provided",
+        "org.ow2.asm:asm:provided",
+        "org.ow2.asm:asm-commons:provided",
+        "org.ow2.asm:asm-tree:provided",
+        "org.eclipse.jetty.ee10:jetty-ee10-apache-jsp:provided",
+        "org.mortbay.jasper:apache-jsp:provided",
+        "org.mortbay.jasper:apache-el:provided",
+        "jakarta.el:jakarta.el-api:provided",
+        "jakarta.servlet.jsp:jakarta.servlet.jsp-api:provided",
+        "org.eclipse.jdt:ecj:provided",
+        "org.eclipse.jetty.ee10:jetty-ee10-glassfish-jstl:provided",
+        "jakarta.servlet.jsp.jstl:jakarta.servlet.jsp.jstl-api:provided",
+        "org.glassfish.web:jakarta.servlet.jsp.jstl:provided",
+        "org.eclipse.jetty:jetty-alpn-server:provided",
+        "org.eclipse.jetty:jetty-alpn-java-server:provided",
+        "org.eclipse.jetty.http2:jetty-http2-server:provided",
+        "org.eclipse.jetty.http2:jetty-http2-common:provided",
+        "org.eclipse.jetty.http2:jetty-http2-hpack:provided",
+        "org.apache.nifi:nifi-mock:test",
+        "org.apache.nifi:nifi-api:provided",
+        "org.apache.nifi:nifi-properties:provided",
+        "org.apache.nifi:nifi-property-utils:provided",
+        "org.slf4j:jcl-over-slf4j:provided",
+        "org.slf4j:log4j-over-slf4j:provided",
+        "org.slf4j:jul-to-slf4j:provided",
+        "org.slf4j:slf4j-api:provided",
+        "org.junit.jupiter:junit-jupiter-api:test",
+        "org.junit.jupiter:junit-jupiter-engine:test",
+        "org.junit.jupiter:junit-jupiter-params:test",
+        "org.mockito:mockito-core:test",
+        "org.mockito:mockito-junit-jupiter:test",
+        "org.junit.platform:junit-platform-commons:test",
+        "org.slf4j:slf4j-simple:test"
+      ],
+      "stats": {
+        "source_files": 0,
+        "test_files": 20
+      },
+      "commands": {
+        "quality-gate": {
+          "npm": "python3 .plan/execute-script.py pm-dev-frontend:plan-marshall-plugin:npm run --commandArgs \"--prefix e-2-e-playwright run lint\"",
+          "maven": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -Ppre-commit -pl e-2-e-playwright\""
+        },
+        "clean": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"clean -pl e-2-e-playwright\"",
+        "coverage": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -Pcoverage -pl e-2-e-playwright\"",
+        "verify": {
+          "npm": "python3 .plan/execute-script.py pm-dev-frontend:plan-marshall-plugin:npm run --commandArgs \"--prefix e-2-e-playwright test\"",
+          "maven": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -pl e-2-e-playwright\""
+        },
+        "install": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"install -pl e-2-e-playwright\"",
+        "module-tests": "python3 .plan/execute-script.py pm-dev-frontend:plan-marshall-plugin:npm run --commandArgs \"--prefix e-2-e-playwright test\"",
+        "integration-tests": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -Pintegration-tests -pl e-2-e-playwright\""
+      }
+    },
+    "integration-testing": {
+      "name": "integration-testing",
+      "build_systems": [
+        "maven"
+      ],
+      "paths": {
+        "module": "integration-testing",
+        "descriptor": "integration-testing/pom.xml",
+        "sources": [
+          "integration-testing/src/main/resources"
+        ],
+        "tests": [],
+        "readme": "integration-testing/README.adoc"
+      },
+      "metadata": {
+        "artifact_id": "integration-testing",
+        "group_id": "de.cuioss.nifi",
+        "packaging": "jar",
+        "description": "Module for integration testing with Docker",
+        "parent": "de.cuioss.nifi:nifi-extensions",
+        "profiles": [
+          {
+            "id": "coverage",
+            "canonical": "coverage"
+          },
+          {
+            "id": "apache-release",
+            "canonical": "NO-MATCH-FOUND"
+          },
+          {
+            "id": "use-apache-snapshots",
+            "canonical": "NO-MATCH-FOUND"
+          },
+          {
+            "id": "pre-commit",
+            "canonical": "quality-gate"
+          },
+          {
+            "id": "local-integration-tests",
+            "canonical": "NO-MATCH-FOUND"
+          },
+          {
+            "id": "integration-tests",
+            "canonical": "integration-tests"
+          },
+          {
+            "id": "nar-packaging",
+            "canonical": "NO-MATCH-FOUND"
+          },
+          {
+            "id": "skip-unit-tests",
+            "canonical": "NO-MATCH-FOUND"
+          },
+          {
+            "id": "contrib-check",
+            "canonical": "NO-MATCH-FOUND"
+          },
+          {
+            "id": "war-packaging",
+            "canonical": "NO-MATCH-FOUND"
+          }
+        ]
+      },
+      "packages": {},
+      "dependencies": [
+        "jakarta.servlet:jakarta.servlet-api:provided",
+        "org.eclipse.jetty.toolchain:jetty-schemas:provided",
+        "org.eclipse.jetty:jetty-server:provided",
+        "org.eclipse.jetty:jetty-http:provided",
+        "org.eclipse.jetty:jetty-io:provided",
+        "org.eclipse.jetty.ee10:jetty-ee10-servlet:provided",
+        "org.eclipse.jetty:jetty-security:provided",
+        "org.eclipse.jetty:jetty-session:provided",
+        "org.eclipse.jetty.ee10:jetty-ee10-webapp:provided",
+        "org.eclipse.jetty:jetty-xml:provided",
+        "org.eclipse.jetty:jetty-deploy:provided",
+        "org.eclipse.jetty.ee10:jetty-ee10-servlets:provided",
+        "org.eclipse.jetty:jetty-util:provided",
+        "org.eclipse.jetty.ee10:jetty-ee10-annotations:provided",
+        "jakarta.annotation:jakarta.annotation-api:provided",
+        "org.eclipse.jetty.ee10:jetty-ee10-plus:provided",
+        "jakarta.enterprise:jakarta.enterprise.cdi-api:provided",
+        "jakarta.inject:jakarta.inject-api:provided",
+        "jakarta.enterprise:jakarta.enterprise.lang-model:provided",
+        "jakarta.interceptor:jakarta.interceptor-api:provided",
+        "jakarta.transaction:jakarta.transaction-api:provided",
+        "org.eclipse.jetty:jetty-jndi:provided",
+        "org.eclipse.jetty:jetty-plus:provided",
+        "org.ow2.asm:asm:provided",
+        "org.ow2.asm:asm-commons:provided",
+        "org.ow2.asm:asm-tree:provided",
+        "org.eclipse.jetty.ee10:jetty-ee10-apache-jsp:provided",
+        "org.mortbay.jasper:apache-jsp:provided",
+        "org.mortbay.jasper:apache-el:provided",
+        "jakarta.el:jakarta.el-api:provided",
+        "jakarta.servlet.jsp:jakarta.servlet.jsp-api:provided",
+        "org.eclipse.jdt:ecj:provided",
+        "org.eclipse.jetty.ee10:jetty-ee10-glassfish-jstl:provided",
+        "jakarta.servlet.jsp.jstl:jakarta.servlet.jsp.jstl-api:provided",
+        "org.glassfish.web:jakarta.servlet.jsp.jstl:provided",
+        "org.eclipse.jetty:jetty-alpn-server:provided",
+        "org.eclipse.jetty:jetty-alpn-java-server:provided",
+        "org.eclipse.jetty.http2:jetty-http2-server:provided",
+        "org.eclipse.jetty.http2:jetty-http2-common:provided",
+        "org.eclipse.jetty.http2:jetty-http2-hpack:provided",
+        "org.apache.nifi:nifi-mock:test",
+        "org.apache.nifi:nifi-api:provided",
+        "org.apache.nifi:nifi-properties:provided",
+        "org.apache.nifi:nifi-property-utils:provided",
+        "org.slf4j:jcl-over-slf4j:provided",
+        "org.slf4j:log4j-over-slf4j:provided",
+        "org.slf4j:jul-to-slf4j:provided",
+        "org.slf4j:slf4j-api:provided",
+        "org.junit.jupiter:junit-jupiter-api:test",
+        "org.junit.jupiter:junit-jupiter-engine:test",
+        "org.junit.jupiter:junit-jupiter-params:test",
+        "org.mockito:mockito-core:test",
+        "org.mockito:mockito-junit-jupiter:test",
+        "org.junit.platform:junit-platform-commons:test",
+        "org.slf4j:slf4j-simple:test"
+      ],
+      "stats": {
+        "source_files": 0,
+        "test_files": 0
+      },
+      "commands": {
+        "clean": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"clean -pl integration-testing\"",
+        "quality-gate": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -Ppre-commit -pl integration-testing\"",
+        "verify": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -pl integration-testing\"",
+        "install": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"install -pl integration-testing\"",
+        "clean-install": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"clean install -pl integration-testing\"",
+        "package": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"package -pl integration-testing\"",
+        "coverage": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -Pcoverage -pl integration-testing\"",
+        "integration-tests": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -Pintegration-tests -pl integration-testing\""
+      }
+    },
+    "nifi-cuioss-nar": {
+      "name": "nifi-cuioss-nar",
+      "build_systems": [
+        "maven"
+      ],
+      "paths": {
+        "module": "nifi-cuioss-nar",
+        "descriptor": "nifi-cuioss-nar/pom.xml",
+        "sources": [],
+        "tests": [],
+        "readme": null
+      },
+      "metadata": {
+        "artifact_id": "nifi-cuioss-nar",
+        "group_id": "de.cuioss.nifi",
+        "packaging": "nar",
+        "description": null,
+        "parent": "de.cuioss.nifi:nifi-extensions",
+        "profiles": [
+          {
+            "id": "coverage",
+            "canonical": "coverage"
+          },
+          {
+            "id": "apache-release",
+            "canonical": "NO-MATCH-FOUND"
+          },
+          {
+            "id": "use-apache-snapshots",
+            "canonical": "NO-MATCH-FOUND"
+          },
+          {
+            "id": "pre-commit",
+            "canonical": "quality-gate"
+          },
+          {
+            "id": "local-integration-tests",
+            "canonical": "NO-MATCH-FOUND"
+          },
+          {
+            "id": "integration-tests",
+            "canonical": "integration-tests"
+          },
+          {
+            "id": "nar-packaging",
+            "canonical": "NO-MATCH-FOUND"
+          },
+          {
+            "id": "skip-unit-tests",
+            "canonical": "NO-MATCH-FOUND"
+          },
+          {
+            "id": "contrib-check",
+            "canonical": "NO-MATCH-FOUND"
+          },
+          {
+            "id": "war-packaging",
+            "canonical": "NO-MATCH-FOUND"
+          }
+        ]
+      },
+      "packages": {},
+      "dependencies": [
+        "de.cuioss.nifi:nifi-cuioss-processors:compile",
+        "de.cuioss.nifi:nifi-cuioss-ui:compile",
+        "org.apache.nifi:nifi-standard-services-api-nar:compile",
+        "jakarta.servlet:jakarta.servlet-api:provided",
+        "org.eclipse.jetty.toolchain:jetty-schemas:provided",
+        "org.eclipse.jetty:jetty-server:provided",
+        "org.eclipse.jetty:jetty-http:provided",
+        "org.eclipse.jetty:jetty-io:provided",
+        "org.eclipse.jetty.ee10:jetty-ee10-servlet:provided",
+        "org.eclipse.jetty:jetty-security:provided",
+        "org.eclipse.jetty:jetty-session:provided",
+        "org.eclipse.jetty.ee10:jetty-ee10-webapp:provided",
+        "org.eclipse.jetty:jetty-xml:provided",
+        "org.eclipse.jetty:jetty-deploy:provided",
+        "org.eclipse.jetty.ee10:jetty-ee10-servlets:provided",
+        "org.eclipse.jetty:jetty-util:provided",
+        "org.eclipse.jetty.ee10:jetty-ee10-annotations:provided",
+        "jakarta.annotation:jakarta.annotation-api:provided",
+        "org.eclipse.jetty.ee10:jetty-ee10-plus:provided",
+        "jakarta.enterprise:jakarta.enterprise.cdi-api:provided",
+        "jakarta.inject:jakarta.inject-api:provided",
+        "jakarta.enterprise:jakarta.enterprise.lang-model:provided",
+        "jakarta.interceptor:jakarta.interceptor-api:provided",
+        "jakarta.transaction:jakarta.transaction-api:provided",
+        "org.eclipse.jetty:jetty-jndi:provided",
+        "org.eclipse.jetty:jetty-plus:provided",
+        "org.ow2.asm:asm:provided",
+        "org.ow2.asm:asm-commons:provided",
+        "org.ow2.asm:asm-tree:provided",
+        "org.eclipse.jetty.ee10:jetty-ee10-apache-jsp:provided",
+        "org.mortbay.jasper:apache-jsp:provided",
+        "org.mortbay.jasper:apache-el:provided",
+        "jakarta.el:jakarta.el-api:provided",
+        "jakarta.servlet.jsp:jakarta.servlet.jsp-api:provided",
+        "org.eclipse.jdt:ecj:provided",
+        "org.eclipse.jetty.ee10:jetty-ee10-glassfish-jstl:provided",
+        "jakarta.servlet.jsp.jstl:jakarta.servlet.jsp.jstl-api:provided",
+        "org.glassfish.web:jakarta.servlet.jsp.jstl:provided",
+        "org.eclipse.jetty:jetty-alpn-server:provided",
+        "org.eclipse.jetty:jetty-alpn-java-server:provided",
+        "org.eclipse.jetty.http2:jetty-http2-server:provided",
+        "org.eclipse.jetty.http2:jetty-http2-common:provided",
+        "org.eclipse.jetty.http2:jetty-http2-hpack:provided",
+        "org.apache.nifi:nifi-mock:test",
+        "org.apache.nifi:nifi-api:provided",
+        "org.apache.nifi:nifi-properties:provided",
+        "org.apache.nifi:nifi-property-utils:provided",
+        "org.slf4j:jcl-over-slf4j:provided",
+        "org.slf4j:log4j-over-slf4j:provided",
+        "org.slf4j:jul-to-slf4j:provided",
+        "org.slf4j:slf4j-api:provided",
+        "org.junit.jupiter:junit-jupiter-api:test",
+        "org.junit.jupiter:junit-jupiter-engine:test",
+        "org.junit.jupiter:junit-jupiter-params:test",
+        "org.mockito:mockito-core:test",
+        "org.mockito:mockito-junit-jupiter:test",
+        "org.junit.platform:junit-platform-commons:test",
+        "org.slf4j:slf4j-simple:test"
+      ],
+      "stats": {
+        "source_files": 0,
+        "test_files": 0
+      },
+      "commands": {
+        "clean": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"clean -pl nifi-cuioss-nar\"",
+        "quality-gate": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -Ppre-commit -pl nifi-cuioss-nar\"",
+        "verify": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -pl nifi-cuioss-nar\"",
+        "install": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"install -pl nifi-cuioss-nar\"",
+        "clean-install": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"clean install -pl nifi-cuioss-nar\"",
+        "package": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"package -pl nifi-cuioss-nar\"",
+        "coverage": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -Pcoverage -pl nifi-cuioss-nar\"",
+        "integration-tests": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -Pintegration-tests -pl nifi-cuioss-nar\""
+      }
+    },
+    "nifi-cuioss-processors": {
+      "name": "nifi-cuioss-processors",
+      "build_systems": [
+        "maven"
+      ],
+      "paths": {
+        "module": "nifi-cuioss-processors",
+        "descriptor": "nifi-cuioss-processors/pom.xml",
+        "sources": [
+          "nifi-cuioss-processors/src/main/java",
+          "nifi-cuioss-processors/src/main/resources"
+        ],
+        "tests": [
+          "nifi-cuioss-processors/src/test/java",
+          "nifi-cuioss-processors/src/test/resources"
+        ],
+        "readme": "nifi-cuioss-processors/README.md"
+      },
+      "metadata": {
+        "artifact_id": "nifi-cuioss-processors",
+        "group_id": "de.cuioss.nifi",
+        "packaging": "jar",
+        "description": null,
+        "parent": "de.cuioss.nifi:nifi-extensions",
+        "profiles": [
+          {
+            "id": "coverage",
+            "canonical": "coverage"
+          },
+          {
+            "id": "apache-release",
+            "canonical": "NO-MATCH-FOUND"
+          },
+          {
+            "id": "use-apache-snapshots",
+            "canonical": "NO-MATCH-FOUND"
+          },
+          {
+            "id": "pre-commit",
+            "canonical": "quality-gate"
+          },
+          {
+            "id": "local-integration-tests",
+            "canonical": "NO-MATCH-FOUND"
+          },
+          {
+            "id": "integration-tests",
+            "canonical": "integration-tests"
+          },
+          {
+            "id": "nar-packaging",
+            "canonical": "NO-MATCH-FOUND"
+          },
+          {
+            "id": "skip-unit-tests",
+            "canonical": "NO-MATCH-FOUND"
+          },
+          {
+            "id": "contrib-check",
+            "canonical": "NO-MATCH-FOUND"
+          },
+          {
+            "id": "war-packaging",
+            "canonical": "NO-MATCH-FOUND"
+          }
+        ]
+      },
+      "packages": {
+        "de.cuioss.nifi.processors.auth": {
+          "path": "nifi-cuioss-processors/src/main/java/de/cuioss/nifi/processors/auth"
+        },
+        "de.cuioss.nifi.processors.auth.util": {
+          "path": "nifi-cuioss-processors/src/main/java/de/cuioss/nifi/processors/auth/util"
+        },
+        "de.cuioss.nifi.processors.auth.config": {
+          "path": "nifi-cuioss-processors/src/main/java/de/cuioss/nifi/processors/auth/config"
+        },
+        "de.cuioss.nifi.processors.auth.i18n": {
+          "path": "nifi-cuioss-processors/src/main/java/de/cuioss/nifi/processors/auth/i18n"
+        }
+      },
+      "dependencies": [
+        "org.projectlombok:lombok:provided",
+        "de.cuioss:cui-java-tools:compile",
+        "de.cuioss.sheriff.oauth:oauth-sheriff-core:compile",
+        "org.eclipse.parsson:parsson:runtime",
+        "org.yaml:snakeyaml:compile",
+        "org.apache.nifi:nifi-api:provided",
+        "org.apache.nifi:nifi-mock:test",
+        "org.slf4j:slf4j-simple:test",
+        "org.junit.jupiter:junit-jupiter-api:test",
+        "org.junit.jupiter:junit-jupiter-engine:test",
+        "jakarta.servlet:jakarta.servlet-api:provided",
+        "org.eclipse.jetty.toolchain:jetty-schemas:provided",
+        "org.eclipse.jetty:jetty-server:provided",
+        "org.eclipse.jetty:jetty-http:provided",
+        "org.eclipse.jetty:jetty-io:provided",
+        "org.eclipse.jetty.ee10:jetty-ee10-servlet:provided",
+        "org.eclipse.jetty:jetty-security:provided",
+        "org.eclipse.jetty:jetty-session:provided",
+        "org.eclipse.jetty.ee10:jetty-ee10-webapp:provided",
+        "org.eclipse.jetty:jetty-xml:provided",
+        "org.eclipse.jetty:jetty-deploy:provided",
+        "org.eclipse.jetty.ee10:jetty-ee10-servlets:provided",
+        "org.eclipse.jetty:jetty-util:provided",
+        "org.eclipse.jetty.ee10:jetty-ee10-annotations:provided",
+        "jakarta.annotation:jakarta.annotation-api:provided",
+        "org.eclipse.jetty.ee10:jetty-ee10-plus:provided",
+        "jakarta.enterprise:jakarta.enterprise.cdi-api:provided",
+        "jakarta.inject:jakarta.inject-api:provided",
+        "jakarta.enterprise:jakarta.enterprise.lang-model:provided",
+        "jakarta.interceptor:jakarta.interceptor-api:provided",
+        "jakarta.transaction:jakarta.transaction-api:provided",
+        "org.eclipse.jetty:jetty-jndi:provided",
+        "org.eclipse.jetty:jetty-plus:provided",
+        "org.ow2.asm:asm:provided",
+        "org.ow2.asm:asm-commons:provided",
+        "org.ow2.asm:asm-tree:provided",
+        "org.eclipse.jetty.ee10:jetty-ee10-apache-jsp:provided",
+        "org.mortbay.jasper:apache-jsp:provided",
+        "org.mortbay.jasper:apache-el:provided",
+        "jakarta.el:jakarta.el-api:provided",
+        "jakarta.servlet.jsp:jakarta.servlet.jsp-api:provided",
+        "org.eclipse.jdt:ecj:provided",
+        "org.eclipse.jetty.ee10:jetty-ee10-glassfish-jstl:provided",
+        "jakarta.servlet.jsp.jstl:jakarta.servlet.jsp.jstl-api:provided",
+        "org.glassfish.web:jakarta.servlet.jsp.jstl:provided",
+        "org.eclipse.jetty:jetty-alpn-server:provided",
+        "org.eclipse.jetty:jetty-alpn-java-server:provided",
+        "org.eclipse.jetty.http2:jetty-http2-server:provided",
+        "org.eclipse.jetty.http2:jetty-http2-common:provided",
+        "org.eclipse.jetty.http2:jetty-http2-hpack:provided",
+        "org.apache.nifi:nifi-properties:provided",
+        "org.apache.nifi:nifi-property-utils:provided",
+        "org.slf4j:jcl-over-slf4j:provided",
+        "org.slf4j:log4j-over-slf4j:provided",
+        "org.slf4j:jul-to-slf4j:provided",
+        "org.slf4j:slf4j-api:provided",
+        "org.junit.jupiter:junit-jupiter-params:test",
+        "org.mockito:mockito-core:test",
+        "org.mockito:mockito-junit-jupiter:test",
+        "org.junit.platform:junit-platform-commons:test"
+      ],
+      "stats": {
+        "source_files": 15,
+        "test_files": 13
+      },
+      "commands": {
+        "clean": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"clean -pl nifi-cuioss-processors\"",
+        "quality-gate": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -Ppre-commit -pl nifi-cuioss-processors\"",
+        "verify": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -pl nifi-cuioss-processors\"",
+        "install": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"install -pl nifi-cuioss-processors\"",
+        "clean-install": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"clean install -pl nifi-cuioss-processors\"",
+        "package": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"package -pl nifi-cuioss-processors\"",
+        "compile": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"compile -pl nifi-cuioss-processors\"",
+        "test-compile": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"test-compile -pl nifi-cuioss-processors\"",
+        "module-tests": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"test -pl nifi-cuioss-processors\"",
+        "coverage": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -Pcoverage -pl nifi-cuioss-processors\"",
+        "integration-tests": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -Pintegration-tests -pl nifi-cuioss-processors\""
+      }
+    },
+    "nifi-cuioss-ui": {
+      "name": "nifi-cuioss-ui",
+      "build_systems": [
+        "maven",
+        "npm"
+      ],
+      "paths": {
+        "module": "nifi-cuioss-ui",
+        "sources": [
+          "nifi-cuioss-ui/src",
+          "nifi-cuioss-ui/src/main/java"
+        ],
+        "tests": [
+          "nifi-cuioss-ui/src/test/java"
+        ],
+        "descriptors": [
+          "nifi-cuioss-ui/package.json",
+          "nifi-cuioss-ui/pom.xml"
+        ]
+      },
+      "metadata": {
+        "parent": "de.cuioss.nifi:nifi-extensions",
+        "type": "module",
+        "group_id": "de.cuioss.nifi",
+        "packaging": "war",
+        "description": "Provides custom UI components for NiFi CU Boulder CUIOSS extensions.",
+        "profiles": [
+          {
+            "id": "coverage",
+            "canonical": "coverage"
+          },
+          {
+            "id": "apache-release",
+            "canonical": "NO-MATCH-FOUND"
+          },
+          {
+            "id": "use-apache-snapshots",
+            "canonical": "NO-MATCH-FOUND"
+          },
+          {
+            "id": "pre-commit",
+            "canonical": "quality-gate"
+          },
+          {
+            "id": "local-integration-tests",
+            "canonical": "NO-MATCH-FOUND"
+          },
+          {
+            "id": "integration-tests",
+            "canonical": "integration-tests"
+          },
+          {
+            "id": "nar-packaging",
+            "canonical": "NO-MATCH-FOUND"
+          },
+          {
+            "id": "skip-unit-tests",
+            "canonical": "NO-MATCH-FOUND"
+          },
+          {
+            "id": "contrib-check",
+            "canonical": "NO-MATCH-FOUND"
+          },
+          {
+            "id": "war-packaging",
+            "canonical": "NO-MATCH-FOUND"
+          }
+        ],
+        "artifact_id": "nifi-cuioss-ui"
+      },
+      "packages": {
+        "test": {
+          "path": "nifi-cuioss-ui/src/test"
+        },
+        "main": {
+          "path": "nifi-cuioss-ui/src/main"
+        },
+        "de.cuioss.nifi.ui.util": {
+          "path": "nifi-cuioss-ui/src/main/java/de/cuioss/nifi/ui/util",
+          "package_info": "nifi-cuioss-ui/src/main/java/de/cuioss/nifi/ui/util/package-info.java"
+        },
+        "de.cuioss.nifi.ui.servlets": {
+          "path": "nifi-cuioss-ui/src/main/java/de/cuioss/nifi/ui/servlets"
+        },
+        "de.cuioss.nifi.ui.service": {
+          "path": "nifi-cuioss-ui/src/main/java/de/cuioss/nifi/ui/service"
+        }
+      },
+      "dependencies": [
+        "npm:@babel/core:compile",
+        "npm:@babel/preset-env:compile",
+        "npm:@popperjs/core:compile",
+        "npm:@testing-library/jest-dom:compile",
+        "npm:babel-jest:compile",
+        "npm:babel-loader:compile",
+        "npm:cash-dom:compile",
+        "npm:eslint-config-airbnb-base:compile",
+        "npm:eslint-config-prettier:compile",
+        "npm:eslint-plugin-import:compile",
+        "npm:eslint-plugin-jest:compile",
+        "npm:eslint-plugin-jquery:compile",
+        "npm:eslint-plugin-prettier:compile",
+        "npm:eslint:compile",
+        "npm:jest-environment-jsdom:compile",
+        "npm:jest:compile",
+        "npm:prettier:compile",
+        "npm:stylelint-config-standard:compile",
+        "npm:stylelint-declaration-strict-value:compile",
+        "npm:stylelint-order:compile",
+        "npm:stylelint:compile",
+        "npm:tippy.js:compile",
+        "npm:vite:compile",
+        "npm:whatwg-fetch:compile",
+        "de.cuioss.nifi:nifi-cuioss-processors:provided",
+        "org.apache.nifi:nifi-api:provided",
+        "de.cuioss.sheriff.oauth:oauth-sheriff-core:compile",
+        "de.cuioss:cui-java-tools:compile",
+        "de.cuioss:cui-http:compile",
+        "jakarta.json:jakarta.json-api:compile",
+        "org.eclipse.parsson:parsson:runtime",
+        "jakarta.servlet:jakarta.servlet-api:provided",
+        "org.webjars:requirejs:compile",
+        "org.webjars:font-awesome:compile",
+        "org.webjars.npm:cash-dom:compile",
+        "org.webjars.npm:tippy.js:compile",
+        "org.webjars.npm:popperjs__core:compile",
+        "org.junit.jupiter:junit-jupiter:test",
+        "org.easymock:easymock:test",
+        "de.cuioss.test:cui-test-generator:test",
+        "io.rest-assured:rest-assured:test",
+        "io.rest-assured:json-schema-validator:test",
+        "org.hamcrest:hamcrest:test",
+        "de.cuioss.test:cui-test-mockwebserver-junit5:test",
+        "org.eclipse.jetty.toolchain:jetty-schemas:provided",
+        "org.eclipse.jetty:jetty-server:provided",
+        "org.eclipse.jetty:jetty-http:provided",
+        "org.eclipse.jetty:jetty-io:provided",
+        "org.eclipse.jetty.ee10:jetty-ee10-servlet:provided",
+        "org.eclipse.jetty:jetty-security:provided",
+        "org.eclipse.jetty:jetty-session:provided",
+        "org.eclipse.jetty.ee10:jetty-ee10-webapp:provided",
+        "org.eclipse.jetty:jetty-xml:provided",
+        "org.eclipse.jetty:jetty-deploy:provided",
+        "org.eclipse.jetty.ee10:jetty-ee10-servlets:provided",
+        "org.eclipse.jetty:jetty-util:provided",
+        "org.eclipse.jetty.ee10:jetty-ee10-annotations:provided",
+        "jakarta.annotation:jakarta.annotation-api:provided",
+        "org.eclipse.jetty.ee10:jetty-ee10-plus:provided",
+        "jakarta.enterprise:jakarta.enterprise.cdi-api:provided",
+        "jakarta.inject:jakarta.inject-api:provided",
+        "jakarta.enterprise:jakarta.enterprise.lang-model:provided",
+        "jakarta.interceptor:jakarta.interceptor-api:provided",
+        "jakarta.transaction:jakarta.transaction-api:provided",
+        "org.eclipse.jetty:jetty-jndi:provided",
+        "org.eclipse.jetty:jetty-plus:provided",
+        "org.ow2.asm:asm:provided",
+        "org.ow2.asm:asm-commons:provided",
+        "org.ow2.asm:asm-tree:provided",
+        "org.eclipse.jetty.ee10:jetty-ee10-apache-jsp:provided",
+        "org.mortbay.jasper:apache-jsp:provided",
+        "org.mortbay.jasper:apache-el:provided",
+        "jakarta.el:jakarta.el-api:provided",
+        "jakarta.servlet.jsp:jakarta.servlet.jsp-api:provided",
+        "org.eclipse.jdt:ecj:provided",
+        "org.eclipse.jetty.ee10:jetty-ee10-glassfish-jstl:provided",
+        "jakarta.servlet.jsp.jstl:jakarta.servlet.jsp.jstl-api:provided",
+        "org.glassfish.web:jakarta.servlet.jsp.jstl:provided",
+        "org.eclipse.jetty:jetty-alpn-server:provided",
+        "org.eclipse.jetty:jetty-alpn-java-server:provided",
+        "org.eclipse.jetty.http2:jetty-http2-server:provided",
+        "org.eclipse.jetty.http2:jetty-http2-common:provided",
+        "org.eclipse.jetty.http2:jetty-http2-hpack:provided",
+        "org.apache.nifi:nifi-mock:test",
+        "org.apache.nifi:nifi-properties:provided",
+        "org.apache.nifi:nifi-property-utils:provided",
+        "org.slf4j:jcl-over-slf4j:provided",
+        "org.slf4j:log4j-over-slf4j:provided",
+        "org.slf4j:jul-to-slf4j:provided",
+        "org.slf4j:slf4j-api:provided",
+        "org.junit.jupiter:junit-jupiter-api:test",
+        "org.junit.jupiter:junit-jupiter-engine:test",
+        "org.junit.jupiter:junit-jupiter-params:test",
+        "org.mockito:mockito-core:test",
+        "org.mockito:mockito-junit-jupiter:test",
+        "org.junit.platform:junit-platform-commons:test",
+        "org.slf4j:slf4j-simple:test"
+      ],
+      "stats": {
+        "source_files": 80,
+        "test_files": 7
+      },
+      "commands": {
+        "quality-gate": {
+          "npm": "python3 .plan/execute-script.py pm-dev-frontend:plan-marshall-plugin:npm run --commandArgs \"--prefix nifi-cuioss-ui run lint\"",
+          "maven": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -Ppre-commit -pl nifi-cuioss-ui\""
+        },
+        "compile": {
+          "npm": "python3 .plan/execute-script.py pm-dev-frontend:plan-marshall-plugin:npm run --commandArgs \"--prefix nifi-cuioss-ui run build\"",
+          "maven": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"compile -pl nifi-cuioss-ui\""
+        },
+        "clean": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"clean -pl nifi-cuioss-ui\"",
+        "test-compile": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"test-compile -pl nifi-cuioss-ui\"",
+        "coverage": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -Pcoverage -pl nifi-cuioss-ui\"",
+        "package": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"package -pl nifi-cuioss-ui\"",
+        "verify": {
+          "npm": "python3 .plan/execute-script.py pm-dev-frontend:plan-marshall-plugin:npm run --commandArgs \"--prefix nifi-cuioss-ui run build && npm test\"",
+          "maven": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -pl nifi-cuioss-ui\""
+        },
+        "install": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"install -pl nifi-cuioss-ui\"",
+        "module-tests": {
+          "npm": "python3 .plan/execute-script.py pm-dev-frontend:plan-marshall-plugin:npm run --commandArgs \"--prefix nifi-cuioss-ui test\"",
+          "maven": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"test -pl nifi-cuioss-ui\""
+        },
+        "clean-install": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"clean install -pl nifi-cuioss-ui\"",
+        "integration-tests": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -Pintegration-tests -pl nifi-cuioss-ui\""
+      }
+    }
+  },
+  "extensions_used": [
+    "pm-dev-frontend",
+    "pm-dev-java"
+  ]
+}

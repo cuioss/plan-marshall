@@ -1,0 +1,36 @@
+{
+  "fixable_issues": [
+    {
+      "id": "issue-1",
+      "type": "missing-frontmatter",
+      "severity": "high",
+      "file": "agents/no-frontmatter.md",
+      "line": 1,
+      "message": "File has no YAML frontmatter"
+    },
+    {
+      "id": "issue-2",
+      "type": "array-syntax-tools",
+      "severity": "medium",
+      "file": "agents/array-tools.md",
+      "line": 4,
+      "message": "Tools declared with array syntax",
+      "details": {
+        "current": "tools: [Read, Edit]",
+        "expected": "tools: Read, Edit"
+      }
+    },
+    {
+      "id": "issue-3",
+      "type": "trailing-whitespace",
+      "severity": "low",
+      "file": "commands/messy.md",
+      "line": null,
+      "message": "Trailing whitespace detected",
+      "details": {
+        "affected_lines": [10, 25, 30]
+      }
+    }
+  ],
+  "total_count": 3
+}

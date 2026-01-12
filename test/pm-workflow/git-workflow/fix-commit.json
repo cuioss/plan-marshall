@@ -1,0 +1,22 @@
+{
+  "input": {
+    "files_changed": [
+      "src/main/java/de/cuioss/service/UserService.java",
+      "src/test/java/de/cuioss/service/UserServiceTest.java"
+    ],
+    "diff_summary": {
+      "files": 2,
+      "insertions": 12,
+      "deletions": 3
+    },
+    "diff_content": "Fix NPE by adding null check and returning Optional.empty() for non-existent users"
+  },
+  "expected_output": {
+    "type": "fix",
+    "scope": "service",
+    "subject": "handle non-existent user in findById gracefully",
+    "body": "Return Optional.empty() instead of throwing NPE when user not found.\n\nPreviously, findById() would throw NullPointerException when the\nuser ID did not exist in the database.",
+    "footer": "Fixes #3",
+    "formatted_message": "fix(service): handle non-existent user in findById gracefully\n\nReturn Optional.empty() instead of throwing NPE when user not found.\n\nPreviously, findById() would throw NullPointerException when the\nuser ID did not exist in the database.\n\nFixes #3\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>"
+  }
+}

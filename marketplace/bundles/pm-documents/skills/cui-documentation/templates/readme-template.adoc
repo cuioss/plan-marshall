@@ -1,0 +1,47 @@
+= {{PROJECT_NAME}}
+
+{{SHORT_DESCRIPTION}}
+
+== Features
+
+// Key features of this project
+
+== Getting Started
+
+=== Prerequisites
+
+// List prerequisites
+
+=== Installation
+
+// Installation instructions
+
+[source,bash]
+----
+# Installation commands
+----
+
+=== Usage
+
+// Basic usage examples
+
+[source,bash]
+----
+# Usage examples
+----
+
+== Documentation
+
+// Links to detailed documentation
+
+== Configuration
+
+// Configuration options
+
+== Contributing
+
+// Contribution guidelines
+
+== License
+
+// License information

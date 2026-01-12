@@ -1,0 +1,87 @@
+> pretest
+> npm run lint && npm run build
+
+
+> lint
+> eslint
+
+
+> build
+> tsc --build
+
+
+> test
+> npm run test:only
+
+
+> test:only
+> node --test --enable-source-maps "packages/*/dist/test/**/*.js"
+
+TAP version 13
+# Subtest: <App />
+    # Subtest: renders without throwing on the server
+    ok 1 - renders without throwing on the server
+      ---
+      duration_ms: 4.585334
+      type: 'test'
+      ...
+    # Subtest: renders provided text
+    ok 2 - renders provided text
+      ---
+      duration_ms: 0.320708
+      type: 'test'
+      ...
+    1..2
+ok 1 - <App />
+  ---
+  duration_ms: 5.621458
+  type: 'suite'
+  ...
+# Subtest: sub folder test
+    # Subtest: simply works
+    ok 1 - simply works
+      ---
+      duration_ms: 0.582042
+      type: 'test'
+      ...
+    1..1
+ok 2 - sub folder test
+  ---
+  duration_ms: 1.33175
+  type: 'suite'
+  ...
+# Subtest: test
+    # Subtest: works
+    ok 1 - works
+      ---
+      duration_ms: 0.431833
+      type: 'test'
+      ...
+    1..1
+ok 3 - test
+  ---
+  duration_ms: 1.022875
+  type: 'suite'
+  ...
+# Subtest: server
+    # Subtest: works
+    ok 1 - works
+      ---
+      duration_ms: 0.434917
+      type: 'test'
+      ...
+    1..1
+ok 4 - server
+  ---
+  duration_ms: 1.020708
+  type: 'suite'
+  ...
+1..4
+# tests 5
+# suites 4
+# pass 5
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 132.214875

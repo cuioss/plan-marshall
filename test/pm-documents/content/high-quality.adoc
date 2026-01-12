@@ -1,0 +1,71 @@
+= JWT Validation Module
+:toc: left
+:toclevels: 3
+:sectnums:
+:source-highlighter: highlight.js
+
+This module provides JWT token validation following RFC 7519 specifications.
+
+== Overview
+
+The JWT validation module validates JSON Web Tokens against configured issuers and audiences. It supports RS256 and ES256 signature algorithms.
+
+== Features
+
+=== Token Validation
+
+The module validates:
+
+* Signature verification using public keys
+* Expiration time (exp claim) checking
+* Not-before time (nbf claim) verification
+* Issuer (iss claim) matching against allowed list
+* Audience (aud claim) validation
+
+=== Multi-Issuer Support
+
+Configure multiple trusted issuers with their respective JWKS endpoints:
+
+[source,yaml]
+----
+jwt:
+  issuers:
+    - name: keycloak
+      jwks-uri: https://auth.example.com/realms/main/protocol/openid-connect/certs
+    - name: auth0
+      jwks-uri: https://example.auth0.com/.well-known/jwks.json
+----
+
+== Usage
+
+=== Basic Validation
+
+[source,java]
+----
+@Inject
+JwtValidator validator;
+
+public void validateToken(String token) {
+    ValidationResult result = validator.validate(token);
+    if (result.isValid()) {
+        Claims claims = result.getClaims();
+        String subject = claims.getSubject();
+    }
+}
+----
+
+== Configuration
+
+Configure validation parameters in application.properties:
+
+[source,properties]
+----
+jwt.validation.clock-skew=30
+jwt.validation.require-exp=true
+jwt.validation.require-iat=false
+----
+
+== References
+
+* https://datatracker.ietf.org/doc/html/rfc7519[RFC 7519 - JSON Web Token]
+* https://datatracker.ietf.org/doc/html/rfc7517[RFC 7517 - JSON Web Key]

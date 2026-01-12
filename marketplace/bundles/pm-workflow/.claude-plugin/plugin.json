@@ -1,0 +1,48 @@
+{
+  "name": "pm-workflow",
+  "version": "0.1-BETA",
+  "description": "Solution-based development workflow from task implementation to PR quality verification",
+  "author": {
+    "name": "CUI OSS Project",
+    "email": "contact@cuioss.de"
+  },
+  "license": "Apache-2.0",
+  "homepage": "https://github.com/cuioss/plan-marshall",
+  "repository": "https://github.com/cuioss/plan-marshall.git",
+  "keywords": ["workflow", "task", "pr", "implementation", "quality", "orchestration"],
+  "agents": [
+    "./agents/plan-init-agent.md",
+    "./agents/solution-outline-agent.md",
+    "./agents/task-plan-agent.md",
+    "./agents/task-execute-agent.md"
+  ],
+  "commands": [
+    "./commands/task-implement.md",
+    "./commands/pr-doctor.md",
+    "./commands/plan-manage.md",
+    "./commands/plan-execute.md"
+  ],
+  "skills": [
+    "./skills/git-workflow",
+    "./skills/pr-workflow",
+    "./skills/sonar-workflow",
+    "./skills/pm-workflow-architecture",
+    "./skills/plan-wf-skill-api",
+    "./skills/solution-outline",
+    "./skills/phase-refine-outline",
+    "./skills/task-plan",
+    "./skills/task-implementation",
+    "./skills/task-testing",
+    "./skills/plan-init",
+    "./skills/plan-execute",
+    "./skills/plan-finalize",
+    "./skills/manage-tasks",
+    "./skills/manage-files",
+    "./skills/manage-plan-documents",
+    "./skills/manage-solution-outline",
+    "./skills/manage-config",
+    "./skills/manage-references",
+    "./skills/manage-lifecycle",
+    "./skills/planning-inventory"
+  ]
+}

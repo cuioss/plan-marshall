@@ -1,0 +1,367 @@
+{
+  "project": {
+    "description": "A comprehensive library for validating JWT tokens in multi-issuer environments with focus on offline validation, providing sub-millisecond performance, automatic JWKS key management, and Quarkus extension for seamless integration.",
+    "description_reasoning": "From README.adoc 'What is it?' section and Core Features list"
+  },
+  "modules": {
+    "oauth-sheriff-parent": {
+      "responsibility": "Root POM that coordinates build configuration, dependency management, and quality profiles for all child modules in the OAuth Sheriff project.",
+      "responsibility_reasoning": "packaging=pom, root position, contains shared build configuration",
+      "purpose": "parent",
+      "purpose_reasoning": "packaging=pom at project root level",
+      "key_packages": {},
+      "internal_dependencies": [],
+      "key_dependencies": [],
+      "key_dependencies_reasoning": "",
+      "skills_by_profile": {},
+      "skills_by_profile_reasoning": "Parent POM module with no source files - no skill profiles needed",
+      "tips": [],
+      "insights": [],
+      "best_practices": []
+    },
+    "benchmarking": {
+      "responsibility": "Parent module for benchmarking that coordinates configuration for JMH micro-benchmarks and WRK integration benchmarks.",
+      "responsibility_reasoning": "From pom.xml description, parent of benchmark modules",
+      "purpose": "parent",
+      "purpose_reasoning": "packaging=pom, parent module for benchmark children",
+      "key_packages": {},
+      "internal_dependencies": [],
+      "key_dependencies": [],
+      "key_dependencies_reasoning": "",
+      "skills_by_profile": {},
+      "skills_by_profile_reasoning": "Parent POM module with no source files - no skill profiles needed",
+      "tips": [],
+      "insights": [],
+      "best_practices": []
+    },
+    "benchmark-core": {
+      "responsibility": "Executes JMH micro-benchmarks for JWT token validation performance measuring throughput, latency, and memory allocation.",
+      "responsibility_reasoning": "From pom.xml description and package structure with benchmark classes",
+      "purpose": "benchmark",
+      "purpose_reasoning": "Contains JMH benchmark annotations and benchmark execution code",
+      "key_packages": {},
+      "internal_dependencies": [
+        "oauth-sheriff-core",
+        "benchmarking-common"
+      ],
+      "key_dependencies": [
+        "org.openjdk.jmh:jmh-core",
+        "io.jsonwebtoken:jjwt-api",
+        "org.hdrhistogram:HdrHistogram"
+      ],
+      "key_dependencies_reasoning": "JMH for benchmarking, JJWT for comparison baseline, HdrHistogram for latency. Internal: core library and shared benchmark infrastructure",
+      "skills_by_profile": {
+        "implementation": [
+          "pm-dev-java:java-core",
+          "pm-dev-java:java-lombok"
+        ],
+        "benchmark-testing": [
+          "pm-dev-java:java-core",
+          "pm-dev-java:java-lombok",
+          "pm-dev-java:junit-core"
+        ]
+      },
+      "skills_by_profile_reasoning": "Benchmark module - minimal skills, focus on JMH patterns",
+      "tips": [],
+      "insights": [],
+      "best_practices": []
+    },
+    "benchmark-integration-wrk": {
+      "responsibility": "Executes WRK-based HTTP load testing benchmarks against Quarkus endpoints to measure real-world JWT validation performance under load.",
+      "responsibility_reasoning": "From pom.xml description mentioning WRK HTTP benchmarks with integration test infrastructure",
+      "purpose": "benchmark",
+      "purpose_reasoning": "Contains WRK load testing integration and HTTP benchmark execution",
+      "key_packages": {},
+      "internal_dependencies": [
+        "benchmarking-common"
+      ],
+      "key_dependencies": [
+        "com.google.code.gson:gson",
+        "commons-io:commons-io"
+      ],
+      "key_dependencies_reasoning": "Gson for WRK JSON output parsing, commons-io for file handling. Uses shared benchmark infrastructure.",
+      "skills_by_profile": {
+        "implementation": [
+          "pm-dev-java:java-core",
+          "pm-dev-java:java-lombok"
+        ],
+        "benchmark-testing": [
+          "pm-dev-java:java-core",
+          "pm-dev-java:java-lombok",
+          "pm-dev-java:junit-core"
+        ]
+      },
+      "skills_by_profile_reasoning": "WRK integration benchmark module - minimal skills",
+      "tips": [],
+      "insights": [],
+      "best_practices": []
+    },
+    "benchmarking-common": {
+      "responsibility": "Provides shared JMH benchmarking infrastructure including base classes, metrics collection, report generation, and artifact publishing during benchmark execution.",
+      "responsibility_reasoning": "From pom.xml description and 15 packages covering base, metrics, runner, report, model",
+      "purpose": "library",
+      "purpose_reasoning": "packaging=jar, shared by benchmark-core and benchmark-integration-wrk",
+      "key_packages": {
+        "de.cuioss.benchmarking.common": {
+          "description": "Root package providing benchmark infrastructure entry points and common utilities."
+        },
+        "de.cuioss.benchmarking.common.runner": {
+          "description": "Provides benchmark runner implementations for executing JMH benchmarks with configurable options."
+        },
+        "de.cuioss.benchmarking.common.report": {
+          "description": "Generates benchmark reports and publishes results to artifact repository."
+        }
+      },
+      "internal_dependencies": [],
+      "key_dependencies": [
+        "org.openjdk.jmh:jmh-core",
+        "de.cuioss:cui-java-tools",
+        "org.hdrhistogram:HdrHistogram",
+        "com.google.code.gson:gson"
+      ],
+      "key_dependencies_reasoning": "JMH core for benchmarking, CUI tools for utilities, HdrHistogram for latency measurements, Gson for JSON output",
+      "skills_by_profile": {
+        "implementation": [
+          "pm-dev-java:java-core",
+          "pm-dev-java:java-null-safety",
+          "pm-dev-java:java-lombok",
+          "pm-dev-java:java-maintenance"
+        ],
+        "unit-testing": [
+          "pm-dev-java:java-core",
+          "pm-dev-java:java-null-safety",
+          "pm-dev-java:java-lombok",
+          "pm-dev-java:junit-core"
+        ],
+        "benchmark-testing": [
+          "pm-dev-java:java-core",
+          "pm-dev-java:java-null-safety",
+          "pm-dev-java:java-lombok",
+          "pm-dev-java:junit-core"
+        ]
+      },
+      "skills_by_profile_reasoning": "JMH benchmark library - removed java-cdi (no CDI), added benchmark-testing profile",
+      "tips": [],
+      "insights": [],
+      "best_practices": []
+    },
+    "oauth-sheriff-bom": {
+      "responsibility": "Provides a Bill of Materials (BOM) for dependency version management across OAuth Sheriff modules.",
+      "responsibility_reasoning": "packaging=pom, name indicates BOM purpose",
+      "purpose": "parent",
+      "purpose_reasoning": "packaging=pom, BOM for dependency management",
+      "key_packages": {},
+      "internal_dependencies": [],
+      "key_dependencies": [],
+      "key_dependencies_reasoning": "",
+      "skills_by_profile": {},
+      "skills_by_profile_reasoning": "BOM module with no source files - no skill profiles needed",
+      "tips": [],
+      "insights": [],
+      "best_practices": []
+    },
+    "oauth-sheriff-core": {
+      "responsibility": "Provides the core JWT token validation library with multi-issuer support, JWKS key management, validation pipelines, and domain models for tokens, claims, and validation contexts.",
+      "responsibility_reasoning": "From package-info.java and module structure with 19 packages covering pipeline, jwks, domain, cache",
+      "purpose": "library",
+      "purpose_reasoning": "packaging=jar, no runtime deps, no main class, used as compile dependency",
+      "key_packages": {
+        "de.cuioss.sheriff.oauth.core": {
+          "description": "Main entry point providing TokenValidator for creating and validating tokens, IssuerConfig for issuer setup, and ParserConfig for parsing configuration."
+        },
+        "de.cuioss.sheriff.oauth.core.pipeline": {
+          "description": "Implements the validation pipeline with pluggable validators for signature verification, claim validation, and expiration checking."
+        },
+        "de.cuioss.sheriff.oauth.core.jwks": {
+          "description": "Handles JWKS (JSON Web Key Set) operations including key parsing, HTTP fetching, caching, and rotation support."
+        },
+        "de.cuioss.sheriff.oauth.core.domain": {
+          "description": "Contains domain models for tokens (AccessToken, IdToken, RefreshToken), claims, validation contexts, and authorization results."
+        }
+      },
+      "internal_dependencies": [],
+      "key_dependencies": [
+        "de.cuioss:cui-java-tools",
+        "de.cuioss:cui-http",
+        "jakarta.json:jakarta.json-api",
+        "com.dslplatform:dsl-json",
+        "org.jspecify:jspecify"
+      ],
+      "key_dependencies_reasoning": "cui-java-tools and cui-http for core utilities and HTTP, jakarta.json for JSON processing, dsl-json for high-perf JSON, jspecify for null-safety",
+      "skills_by_profile": {
+        "implementation": [
+          "pm-dev-java:java-core",
+          "pm-dev-java:java-null-safety",
+          "pm-dev-java:java-lombok",
+          "pm-dev-java:java-maintenance",
+          "pm-dev-java-cui:cui-logging"
+        ],
+        "unit-testing": [
+          "pm-dev-java:java-core",
+          "pm-dev-java:java-null-safety",
+          "pm-dev-java:java-lombok",
+          "pm-dev-java:junit-core",
+          "pm-dev-java-cui:cui-testing"
+        ]
+      },
+      "skills_by_profile_reasoning": "Core library uses Lombok, JSpecify null-safety, CUI logging. Removed java-cdi (no CDI annotations). Added CUI-specific skills for logging and testing.",
+      "tips": [],
+      "insights": [],
+      "best_practices": []
+    },
+    "oauth-sheriff-quarkus-parent": {
+      "responsibility": "Parent module for Quarkus extension that provides shared Quarkus dependencies (core, arc, micrometer, security) and configuration for runtime and deployment modules.",
+      "responsibility_reasoning": "packaging=pom with Quarkus deps defined, parent of quarkus runtime and deployment",
+      "purpose": "parent",
+      "purpose_reasoning": "packaging=pom, parent for quarkus child modules",
+      "key_packages": {},
+      "internal_dependencies": [],
+      "key_dependencies": [],
+      "key_dependencies_reasoning": "",
+      "skills_by_profile": {},
+      "skills_by_profile_reasoning": "Parent POM module with no source files - no skill profiles needed",
+      "tips": [],
+      "insights": [],
+      "best_practices": []
+    },
+    "oauth-sheriff-quarkus": {
+      "responsibility": "Provides Quarkus runtime integration for JWT validation including CDI producers for token injection, @BearerAuth interceptors, Micrometer metrics integration, SmallRye health checks, and YAML configuration support.",
+      "responsibility_reasoning": "From pom.xml description and packages: producer, interceptor, metrics, health, config",
+      "purpose": "extension",
+      "purpose_reasoning": "Quarkus extension runtime with CDI producers and annotations",
+      "key_packages": {
+        "de.cuioss.sheriff.oauth.quarkus.producer": {
+          "description": "CDI producers for injecting validated BearerTokenResult into application code with scope configuration."
+        },
+        "de.cuioss.sheriff.oauth.quarkus.interceptor": {
+          "description": "Provides @BearerAuth interceptor for declarative security on JAX-RS endpoints with automatic error responses."
+        },
+        "de.cuioss.sheriff.oauth.quarkus.config": {
+          "description": "Quarkus configuration bindings for issuer setup, JWKS endpoints, and validation parameters."
+        },
+        "de.cuioss.sheriff.oauth.quarkus.metrics": {
+          "description": "Micrometer metrics integration for JWT validation monitoring including validation counts, latencies, and error rates."
+        }
+      },
+      "internal_dependencies": [
+        "oauth-sheriff-core"
+      ],
+      "key_dependencies": [
+        "io.quarkus:quarkus-core",
+        "io.quarkus:quarkus-arc",
+        "io.quarkus:quarkus-micrometer",
+        "io.quarkus:quarkus-smallrye-health",
+        "io.quarkus:quarkus-resteasy"
+      ],
+      "key_dependencies_reasoning": "Core Quarkus runtime deps for CDI, metrics, health, and REST. Depends on core validation library.",
+      "skills_by_profile": {
+        "implementation": [
+          "pm-dev-java:java-core",
+          "pm-dev-java:java-null-safety",
+          "pm-dev-java:java-lombok",
+          "pm-dev-java:java-cdi",
+          "pm-dev-java:java-cdi-quarkus",
+          "pm-dev-java:java-maintenance",
+          "pm-dev-java-cui:cui-logging"
+        ],
+        "unit-testing": [
+          "pm-dev-java:java-core",
+          "pm-dev-java:java-null-safety",
+          "pm-dev-java:java-lombok",
+          "pm-dev-java:junit-core",
+          "pm-dev-java-cui:cui-testing"
+        ]
+      },
+      "skills_by_profile_reasoning": "Quarkus extension with heavy CDI usage - added java-cdi and java-cdi-quarkus, CUI logging/testing",
+      "tips": [],
+      "insights": [],
+      "best_practices": []
+    },
+    "oauth-sheriff-quarkus-devui": {
+      "responsibility": "Quarkus deployment module providing DevUI components for the OAuth Sheriff extension using Lit web components, with @BuildStep processors for build-time extension registration.",
+      "responsibility_reasoning": "Hybrid Maven+npm, contains deployment package with @BuildStep, Lit web components in src/main",
+      "purpose": "deployment",
+      "purpose_reasoning": "Contains @BuildStep annotations for Quarkus build-time processing, -deployment artifact convention",
+      "key_packages": {
+        "de.cuioss.sheriff.oauth.quarkus.deployment": {
+          "description": "Quarkus deployment processors with @BuildStep annotations for extension registration and DevUI card configuration."
+        }
+      },
+      "internal_dependencies": [
+        "oauth-sheriff-quarkus"
+      ],
+      "key_dependencies": [
+        "io.quarkus:quarkus-core-deployment",
+        "io.quarkus:quarkus-arc-deployment",
+        "io.quarkus:quarkus-devui-deployment-spi",
+        "npm:lit"
+      ],
+      "key_dependencies_reasoning": "Quarkus deployment SPIs for build-time processing and DevUI integration. Lit for web components. Depends on runtime module.",
+      "skills_by_profile": {
+        "implementation": {
+          "java": [
+            "pm-dev-java:java-core",
+            "pm-dev-java:java-cdi-quarkus"
+          ],
+          "javascript": [
+            "pm-dev-frontend:cui-javascript",
+            "pm-dev-frontend:cui-jsdoc",
+            "pm-dev-frontend:cui-javascript-linting"
+          ]
+        },
+        "unit-testing": {
+          "java": [
+            "pm-dev-java:java-core",
+            "pm-dev-java:junit-core"
+          ],
+          "javascript": [
+            "pm-dev-frontend:cui-javascript",
+            "pm-dev-frontend:cui-javascript-unit-testing"
+          ]
+        }
+      },
+      "skills_by_profile_reasoning": "Hybrid module: Java for @BuildStep deployment code, JavaScript for Lit web components. Removed cypress (not used).",
+      "tips": [],
+      "insights": [],
+      "best_practices": []
+    },
+    "oauth-sheriff-quarkus-integration-tests": {
+      "responsibility": "Provides integration tests for the OAuth Sheriff Quarkus extension, testing against real Keycloak containers with HTTPS support, DevUI components, and native image builds.",
+      "responsibility_reasoning": "From pom.xml description mentioning native container testing with HTTPS",
+      "purpose": "integration-tests",
+      "purpose_reasoning": "Contains *IT.java test files, test-only packaging, integration-tests profile",
+      "key_packages": {
+        "de.cuioss.sheriff.oauth.integration": {
+          "description": "Integration test infrastructure and test application setup for Quarkus testing."
+        },
+        "de.cuioss.sheriff.oauth.integration.endpoint": {
+          "description": "JAX-RS test endpoints demonstrating @BearerAuth interceptor and token injection patterns."
+        }
+      },
+      "internal_dependencies": [
+        "oauth-sheriff-quarkus",
+        "oauth-sheriff-quarkus-devui"
+      ],
+      "key_dependencies": [
+        "io.quarkus:quarkus-junit5",
+        "io.rest-assured:rest-assured",
+        "io.quarkus:quarkus-devui-test-spi"
+      ],
+      "key_dependencies_reasoning": "Quarkus test framework, REST-assured for HTTP testing, DevUI test SPI. Tests runtime and deployment modules.",
+      "skills_by_profile": {
+        "integration-testing": [
+          "pm-dev-java:java-core",
+          "pm-dev-java:java-null-safety",
+          "pm-dev-java:java-lombok",
+          "pm-dev-java:java-cdi-quarkus",
+          "pm-dev-java:junit-core",
+          "pm-dev-java:junit-integration"
+        ]
+      },
+      "skills_by_profile_reasoning": "Integration test module - only integration-testing profile. Quarkus CDI for test app, junit-integration for IT patterns.",
+      "tips": [],
+      "insights": [],
+      "best_practices": []
+    }
+  }
+}

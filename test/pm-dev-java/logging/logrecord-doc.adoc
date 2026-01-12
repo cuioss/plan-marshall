@@ -1,0 +1,46 @@
+= Sample Module Log Messages
+:toc: left
+:toclevels: 2
+:sectnums:
+
+This document describes all log messages for the Sample module.
+
+== INFO Level (001-099)
+
+[cols="1,1,2,2", options="header"]
+|===
+|ID |Component |Message |Description
+
+|SAMPLE-001 |SAMPLE |User processing started for user %s |Logged when user processing begins
+|SAMPLE-002 |SAMPLE |User processing completed for user %s |Logged when user processing completes successfully
+|SAMPLE-003 |SAMPLE |Data synchronization started for %s records |Logged when data synchronization begins
+|===
+
+== WARN Level (100-199)
+
+[cols="1,1,2,2", options="header"]
+|===
+|ID |Component |Message |Description
+
+|SAMPLE-100 |SAMPLE |Unusual condition triggered |Logged when an unusual condition is detected
+|SAMPLE-101 |SAMPLE |Operation failed, retry %d of %d |Logged when retry is needed
+|===
+
+== ERROR Level (200-299)
+
+[cols="1,1,2,2", options="header"]
+|===
+|ID |Component |Message |Description
+
+|SAMPLE-200 |SAMPLE |User processing failed for user %s: %s |Logged when user processing fails
+|SAMPLE-201 |SAMPLE |Database connection failed: %s |Logged when database connection fails
+|===
+
+== FATAL Level (300-399)
+
+[cols="1,1,2,2", options="header"]
+|===
+|ID |Component |Message |Description
+
+|SAMPLE-300 |SAMPLE |System startup failed: %s |Logged when system cannot start
+|===

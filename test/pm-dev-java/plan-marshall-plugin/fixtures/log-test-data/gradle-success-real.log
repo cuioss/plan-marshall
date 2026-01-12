@@ -1,0 +1,101 @@
+Starting a Gradle Daemon (subsequent builds will be faster)
+> Task :buildSrc:extractPluginRequests UP-TO-DATE
+> Task :buildSrc:generatePluginAdapters UP-TO-DATE
+> Task :buildSrc:spotlessInternalRegisterDependencies UP-TO-DATE
+> Task :buildSrc:spotlessGroovyGradle UP-TO-DATE
+> Task :buildSrc:compileJava UP-TO-DATE
+> Task :buildSrc:pluginDescriptors UP-TO-DATE
+> Task :buildSrc:processResources UP-TO-DATE
+> Task :buildSrc:classes UP-TO-DATE
+> Task :buildSrc:jar UP-TO-DATE
+> Task :lib-mrlonis-testing:clean
+> Task :api-honkai-star-rail:clean
+> Task :lib-mrlonis-types:clean
+> Task :api-genshin-impact:clean
+> Task :gateway:clean
+> Task :playground:clean
+> Task :spotlessInternalRegisterDependencies
+> Task :gateway:generateEffectiveLombokConfig
+> Task :playground:generateEffectiveLombokConfig
+> Task :gateway:spotlessFlexmark
+> Task :lib-mrlonis-types:spotlessFlexmark
+> Task :lib-mrlonis-testing:spotlessFlexmark
+> Task :lib-mrlonis-types:spotlessFlexmarkApply
+> Task :lib-mrlonis-testing:spotlessFlexmarkApply
+> Task :gateway:spotlessFlexmarkApply
+> Task :lib-mrlonis-types:spotlessGroovyGradle
+
+> Task :lib-mrlonis-testing:spotlessGroovyGradle
+Missing required bundle org.eclipse.jdt.debug needed by [org.eclipse.jdt.launching, org.eclipse.jdt.launching.macosx]
+Recommend setting osgi.configuration.area to a directory, getDataFile will return null
+Starting Groovy-Eclipse compiler resolver. Specified compiler level: unspecified
+ 20 org.codehaus.groovy_5.0.0.v202503311943-e2503 RESOLVED
+
+> Task :lib-mrlonis-testing:spotlessGroovyGradleApply
+> Task :lib-mrlonis-types:spotlessGroovyGradleApply
+> Task :lib-mrlonis-types:spotlessJava
+> Task :gateway:spotlessJava
+> Task :lib-mrlonis-types:spotlessJavaApply
+> Task :gateway:spotlessJavaApply
+> Task :lib-mrlonis-types:spotlessApply
+> Task :gateway:spotlessApply
+> Task :lib-mrlonis-types:compileJava
+> Task :lib-mrlonis-types:classes
+> Task :lib-mrlonis-types:jar
+> Task :lib-mrlonis-types:bootJar
+> Task :lib-mrlonis-types:assemble
+> Task :lib-mrlonis-types:test NO-SOURCE
+> Task :lib-mrlonis-types:check
+> Task :lib-mrlonis-types:build
+> Task :gateway:compileJava
+> Task :gateway:processResources
+> Task :gateway:classes
+> Task :gateway:bootJar
+> Task :gateway:jar
+> Task :gateway:assemble
+> Task :lib-mrlonis-testing:compileJava
+> Task :lib-mrlonis-testing:classes
+> Task :lib-mrlonis-testing:jar
+> Task :lib-mrlonis-testing:bootJar
+> Task :lib-mrlonis-testing:assemble
+> Task :lib-mrlonis-testing:test NO-SOURCE
+> Task :lib-mrlonis-testing:check
+> Task :lib-mrlonis-testing:build
+> Task :playground:compileJava
+> Task :playground:classes
+> Task :api-genshin-impact:compileJava
+> Task :api-genshin-impact:classes
+> Task :api-honkai-star-rail:compileJava
+> Task :api-honkai-star-rail:classes
+> Task :gateway:compileTestJava
+> Task :gateway:processTestResources
+> Task :gateway:testClasses
+OpenJDK 64-Bit Server VM warning: Sharing is only supported for boot loader classes because bootstrap classpath has been appended
+> Task :gateway:test
+> Task :gateway:jacocoTestReport
+> Task :gateway:jacocoTestCoverageVerification
+> Task :gateway:check
+> Task :gateway:build
+OpenJDK 64-Bit Server VM warning: Sharing is only supported for boot loader classes because bootstrap classpath has been appended
+2026-01-06T14:50:06.417+01:00  INFO 17721 --- [playground] [ionShutdownHook] j.LocalContainerEntityManagerFactoryBean : Closing JPA EntityManagerFactory for persistence unit 'default'
+2026-01-06T14:50:06.419+01:00  INFO 17721 --- [playground] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Shutdown initiated...
+2026-01-06T14:50:06.421+01:00  INFO 17721 --- [playground] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Shutdown completed.
+> Task :playground:test
+> Task :playground:jacocoTestReport
+> Task :playground:jacocoTestCoverageVerification
+> Task :playground:check
+> Task :playground:build
+> Task :api-honkai-star-rail:test
+> Task :api-honkai-star-rail:jacocoTestReport
+> Task :api-honkai-star-rail:jacocoTestCoverageVerification
+> Task :api-honkai-star-rail:check
+> Task :api-honkai-star-rail:build
+> Task :api-genshin-impact:test
+> Task :api-genshin-impact:jacocoTestReport
+> Task :api-genshin-impact:jacocoTestCoverageVerification
+> Task :api-genshin-impact:check
+> Task :api-genshin-impact:build
+
+BUILD SUCCESSFUL in 1m 11s
+131 actionable tasks: 117 executed, 4 from cache, 10 up-to-date
+Consider enabling configuration cache to speed up this build: https://docs.gradle.org/9.2.0/userguide/configuration_cache_enabling.html

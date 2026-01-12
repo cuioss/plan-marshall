@@ -1,0 +1,30 @@
+[INFO] Scanning for projects...
+[INFO]
+[INFO] ----------------------< com.example:my-app >----------------------
+[INFO] Building My Application 1.0.0
+[INFO]   from pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO]
+[INFO] --- help:3.5.1:all-profiles (default-cli) @ my-app ---
+[INFO] Listing Profiles for Project: com.example:my-app:jar:1.0.0
+  Profile Id: pre-commit (Active: false, Source: pom)
+  Profile Id: coverage (Active: false, Source: pom)
+  Profile Id: integration-tests (Active: false, Source: pom)
+  Profile Id: jdk17 (Active: true, Source: pom)
+  Profile Id: release (Active: false, Source: pom)
+  Profile Id: native (Active: false, Source: settings.xml)
+
+[INFO]
+[INFO] ----------------------< com.example:my-app >----------------------
+[INFO] Building My Application 1.0.0
+[INFO]   from pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO]
+[INFO] --- dependency:3.9.0:tree (default-cli) @ my-app ---
+[INFO] com.example:my-app:jar:1.0.0
+[INFO] +- org.junit.jupiter:junit-jupiter:jar:5.10.0:test
+[INFO] +- com.google.guava:guava:jar:32.1.3-jre:compile
+[INFO] +- org.projectlombok:lombok:jar:1.18.30:provided
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD SUCCESS
+[INFO] ------------------------------------------------------------------------

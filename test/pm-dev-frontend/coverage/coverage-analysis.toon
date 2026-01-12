@@ -1,0 +1,27 @@
+status: success
+
+data:
+  overall_coverage:
+    lines: 70
+    statements: 70
+    functions: 71.11
+    branches: 60
+
+  by_file[4]{file,lines,statements,functions,branches,status}:
+  /src/utils/validator.js,87.5,88.89,100,80,good
+  /src/utils/formatter.js,80,80,87.5,66.67,acceptable
+  /src/services/api.js,70,70,68.42,70,acceptable
+  /src/components/Button.js,50,50,50,33.33,needs_attention
+
+  low_coverage_files[1]{file,coverage,missing_lines}:
+  /src/components/Button.js,50,30
+
+  uncovered_functions[3]{file,functions_list}:
+  /src/components/Button.js,"handleClick,handleHover,handleFocus,handleBlur,renderIcon,renderLabel"
+  /src/utils/formatter.js,formatCurrency
+  /src/services/api.js,"retryRequest,handleTimeout,parseError,logRequest,logResponse,buildUrl"
+
+metrics:
+  files_analyzed: 4
+  files_with_low_coverage: 1
+  threshold: 80

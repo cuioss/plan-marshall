@@ -1,0 +1,25 @@
+{
+  "input": {
+    "files_changed": [
+      "src/main/java/de/cuioss/http/HttpClient.java",
+      "src/main/java/de/cuioss/http/HttpClientBuilder.java",
+      "src/test/java/de/cuioss/http/HttpClientTest.java"
+    ],
+    "diff_summary": {
+      "files": 3,
+      "insertions": 89,
+      "deletions": 45
+    },
+    "diff_content": "Refactor HttpClient to use builder pattern, removing old constructor",
+    "breaking": true,
+    "breaking_description": "HttpClient constructor is removed. Use HttpClient.builder() instead."
+  },
+  "expected_output": {
+    "type": "refactor",
+    "scope": "http",
+    "subject": "migrate HttpClient to builder pattern",
+    "body": "Replace direct constructor with builder pattern for HttpClient.\n\nThis provides better configuration flexibility and follows\nthe established pattern in the codebase.",
+    "footer": "BREAKING CHANGE: HttpClient constructor is removed. Use HttpClient.builder() instead.\n\nMigration:\n- Old: new HttpClient(url, timeout)\n- New: HttpClient.builder().url(url).timeout(timeout).build()",
+    "formatted_message": "refactor(http)!: migrate HttpClient to builder pattern\n\nReplace direct constructor with builder pattern for HttpClient.\n\nThis provides better configuration flexibility and follows\nthe established pattern in the codebase.\n\nBREAKING CHANGE: HttpClient constructor is removed. Use HttpClient.builder() instead.\n\nMigration:\n- Old: new HttpClient(url, timeout)\n- New: HttpClient.builder().url(url).timeout(timeout).build()\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>"
+  }
+}

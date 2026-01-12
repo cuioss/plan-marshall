@@ -1,0 +1,39 @@
+= Document with Invalid Cross-References
+:toc: left
+:toclevels: 3
+
+This document contains invalid cross-reference syntax.
+
+== Introduction
+
+This section has links with issues.
+
+== Cross Reference Issues
+
+=== Deprecated Syntax
+
+Uses old anchor syntax: <<old-style-link>>
+
+Uses old syntax with label: <<another-old-link,Click Here>>
+
+=== Invalid Paths
+
+Reference to non-existent file: xref:does-not-exist.adoc[Missing File]
+
+Reference with wrong path: xref:../wrong/path/file.adoc[Wrong Path]
+
+=== Missing Anchors
+
+Reference to undefined anchor: <<undefined-anchor>>
+
+Another undefined: <<missing-section>>
+
+== Valid References
+
+This is a valid reference format example:
+
+* xref:valid-file.adoc[Valid Link]
+
+== Conclusion
+
+Fix all cross-reference issues.

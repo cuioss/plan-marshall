@@ -1,0 +1,98 @@
+{
+  "status": "success",
+  "data": {
+    "total_statements": 12,
+    "violations": [
+      {
+        "file": "test/pm-dev-java/logging/violation-examples.java",
+        "line": 17,
+        "level": "INFO",
+        "violation_type": "MISSING_LOG_RECORD",
+        "current_usage": "direct_string",
+        "expected_usage": "log_record",
+        "code_snippet": "LOGGER.info(\"User %s started processing\", userId);"
+      },
+      {
+        "file": "test/pm-dev-java/logging/violation-examples.java",
+        "line": 20,
+        "level": "WARN",
+        "violation_type": "MISSING_LOG_RECORD",
+        "current_usage": "direct_string",
+        "expected_usage": "log_record",
+        "code_snippet": "LOGGER.warn(\"Warning: unusual activity detected for %s\", userId);"
+      },
+      {
+        "file": "test/pm-dev-java/logging/violation-examples.java",
+        "line": 23,
+        "level": "ERROR",
+        "violation_type": "MISSING_LOG_RECORD",
+        "current_usage": "direct_string",
+        "expected_usage": "log_record",
+        "code_snippet": "LOGGER.error(\"Error processing user %s\", userId);"
+      },
+      {
+        "file": "test/pm-dev-java/logging/violation-examples.java",
+        "line": 28,
+        "level": "DEBUG",
+        "violation_type": "INCORRECT_LOG_RECORD_USAGE",
+        "current_usage": "log_record",
+        "expected_usage": "direct_string",
+        "code_snippet": "LOGGER.debug(INFO.USER_PROCESSING_STARTED, \"test\");"
+      },
+      {
+        "file": "test/pm-dev-java/logging/violation-examples.java",
+        "line": 31,
+        "level": "TRACE",
+        "violation_type": "INCORRECT_LOG_RECORD_USAGE",
+        "current_usage": "log_record",
+        "expected_usage": "direct_string",
+        "code_snippet": "LOGGER.trace(INFO.USER_PROCESSING_COMPLETED, \"test\");"
+      },
+      {
+        "file": "test/pm-dev-java/logging/violation-examples.java",
+        "line": 38,
+        "level": "INFO",
+        "violation_type": "MISSING_LOG_RECORD",
+        "current_usage": "direct_string",
+        "expected_usage": "log_record",
+        "code_snippet": "LOGGER.info(\"Operation started\");"
+      },
+      {
+        "file": "test/pm-dev-java/logging/violation-examples.java",
+        "line": 41,
+        "level": "ERROR",
+        "violation_type": "MISSING_LOG_RECORD",
+        "current_usage": "direct_string",
+        "expected_usage": "log_record",
+        "code_snippet": "LOGGER.error(\"Operation failed for data: %s\", data);"
+      },
+      {
+        "file": "test/pm-dev-java/logging/violation-examples.java",
+        "line": 49,
+        "level": "ERROR",
+        "violation_type": "MISSING_LOG_RECORD",
+        "current_usage": "direct_string",
+        "expected_usage": "log_record",
+        "code_snippet": "LOGGER.error(e, \"Exception occurred: %s\", e.getMessage());"
+      },
+      {
+        "file": "test/pm-dev-java/logging/violation-examples.java",
+        "line": 52,
+        "level": "WARN",
+        "violation_type": "MISSING_LOG_RECORD",
+        "current_usage": "direct_string",
+        "expected_usage": "log_record",
+        "code_snippet": "LOGGER.warn(e, \"Warning with exception\");"
+      }
+    ],
+    "summary": {
+      "missing_log_record": 7,
+      "incorrect_log_record": 2,
+      "compliant": 3
+    }
+  },
+  "metrics": {
+    "files_analyzed": 1,
+    "analysis_time_ms": 32
+  }
+}

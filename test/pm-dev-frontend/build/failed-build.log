@@ -1,0 +1,32 @@
+> my-project@1.0.0 build
+> npm run clean && npm run lint && npm run test && npm run compile
+
+> my-project@1.0.0 clean
+> rimraf dist
+
+> my-project@1.0.0 lint
+> eslint src --ext .js,.ts
+
+/Users/dev/project/src/utils/formatter.js
+  12:5  error  'unusedVar' is defined but never used  no-unused-vars
+  25:1  error  Missing semicolon                       semi
+  34:10 warning  Unexpected console statement          no-console
+
+/Users/dev/project/src/services/api.js
+  8:1   error  'axios' is defined but never used      no-unused-vars
+  45:23 error  Missing trailing comma                  comma-dangle
+  67:5  error  Expected indentation of 4 spaces       indent
+
+✖ 6 problems (5 errors, 1 warning)
+  2 errors and 0 warnings potentially fixable with the `--fix` option.
+
+npm ERR! code ELIFECYCLE
+npm ERR! errno 1
+npm ERR! my-project@1.0.0 lint: `eslint src --ext .js,.ts`
+npm ERR! Exit status 1
+npm ERR!
+npm ERR! Failed at the my-project@1.0.0 lint script.
+npm ERR! This is probably not a problem with npm. There is likely additional logging output above.
+
+npm ERR! A complete log of this run can be found in:
+npm ERR!     /Users/dev/.npm/_logs/2024-01-15T10_30_45_123Z-debug.log

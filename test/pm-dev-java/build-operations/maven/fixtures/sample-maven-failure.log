@@ -1,0 +1,60 @@
+[INFO] Scanning for projects...
+[INFO]
+[INFO] ---------------------< com.example:sample-project >---------------------
+[INFO] Building Sample Project 1.0.0-SNAPSHOT
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO]
+[INFO] --- maven-clean-plugin:3.2.0:clean (default-clean) @ sample-project ---
+[INFO] Deleting /Users/test/sample-project/target
+[INFO]
+[INFO] --- maven-resources-plugin:3.3.0:resources (default-resources) @ sample-project ---
+[WARNING] Using platform encoding (UTF-8 actually) to copy filtered resources, i.e. build is platform dependent!
+[INFO] Copying 2 resources
+[INFO]
+[INFO] --- maven-compiler-plugin:3.11.0:compile (default-compile) @ sample-project ---
+[INFO] Changes detected - recompiling the module!
+[INFO] Compiling 15 source files to /Users/test/sample-project/target/classes
+[ERROR] /Users/test/sample-project/src/main/java/com/example/SampleService.java:[45,20] cannot find symbol
+[ERROR]   symbol:   class MissingClass
+[ERROR]   location: class com.example.SampleService
+[ERROR] /Users/test/sample-project/src/main/java/com/example/Repository.java:[78,15] incompatible types: String cannot be converted to Integer
+[WARNING] /Users/test/sample-project/src/main/java/com/example/OldService.java:[12,5] [deprecation] deprecated method used
+[INFO]
+[INFO] --- maven-resources-plugin:3.3.0:testResources (default-testResources) @ sample-project ---
+[INFO] Using 'UTF-8' encoding to copy filtered resources.
+[INFO]
+[INFO] --- maven-compiler-plugin:3.11.0:testCompile (default-testCompile) @ sample-project ---
+[INFO] Compiling 10 test source files to /Users/test/sample-project/target/test-classes
+[INFO]
+[INFO] --- maven-surefire-plugin:3.0.0:test (default-test) @ sample-project ---
+[INFO] Using auto detected provider org.apache.maven.surefire.junitplatform.JUnitPlatformProvider
+[INFO]
+[INFO] -------------------------------------------------------
+[INFO]  T E S T S
+[INFO] -------------------------------------------------------
+[INFO] Running com.example.SampleServiceTest
+[ERROR] Tests run: 5, Failures: 2, Errors: 0, Skipped: 0, Time elapsed: 0.432 s <<< FAILURE! - in com.example.SampleServiceTest
+[ERROR] com.example.SampleServiceTest.testValidation:34 expected: <true> but was: <false>
+[ERROR] com.example.SampleServiceTest.testProcessing:56 NullPointerException
+[INFO] Running com.example.RepositoryTest
+[INFO] Tests run: 8, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.156 s - in com.example.RepositoryTest
+[INFO]
+[INFO] Results:
+[INFO]
+[ERROR] Failures:
+[ERROR]   SampleServiceTest.testValidation:34 expected: <true> but was: <false>
+[ERROR]   SampleServiceTest.testProcessing:56 NullPointerException
+[INFO]
+[ERROR] Tests run: 13, Failures: 2, Errors: 0, Skipped: 0
+[INFO]
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD FAILURE
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time: 15.234 s
+[INFO] Finished at: 2025-11-25T10:35:12+01:00
+[INFO] ------------------------------------------------------------------------
+[ERROR] Failed to execute goal org.apache.maven.plugins:maven-surefire-plugin:3.0.0:test (default-test) on project sample-project: There are test failures.
+[ERROR]
+[ERROR] Please refer to /Users/test/sample-project/target/surefire-reports for the individual test results.
+[ERROR] Please refer to dump files (if any exist) [date].dump, [date]-jvmRun[N].dump and [date].dumpstream.
+[ERROR] -> [Help 1]

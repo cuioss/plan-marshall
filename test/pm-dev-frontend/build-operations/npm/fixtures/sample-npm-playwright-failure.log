@@ -1,0 +1,44 @@
+
+Running 8 tests using 4 workers
+
+  ✓  tests/login.spec.js:15:5 › should login successfully (1234ms)
+  ✓  tests/login.spec.js:42:5 › should show validation errors (567ms)
+
+  ✘  tests/login.spec.js:58:5 › should logout correctly (30245ms)
+
+    Error: page.goto: Timeout 30000ms exceeded
+    Call log:
+      - navigating to "http://localhost:3000/logout", waiting until "load"
+
+      55 |   test('should logout correctly', async ({ page }) => {
+      56 |     await page.goto('/login');
+    > 57 |     await page.goto('/logout');
+         |               ^
+      58 |   });
+
+    at tests/login.spec.js:57:15
+
+  ✓  tests/dashboard.spec.js:10:5 › should display dashboard (890ms)
+  ✓  tests/dashboard.spec.js:25:5 › should load user data (1122ms)
+
+  ✘  tests/profile.spec.js:15:5 › should update profile (5122ms)
+
+    Error: locator.click: Timeout 5000ms exceeded
+    Locator: button#save-profile
+    Selector: button#save-profile not found
+
+      15 |   test('should update profile', async ({ page }) => {
+      16 |     await page.fill('#name', 'New Name');
+    > 17 |     await page.click('#save-profile');
+         |               ^
+      18 |   });
+
+    at tests/profile.spec.js:17:15
+
+  ✓  tests/settings.spec.js:20:5 › should save settings (445ms)
+  ✓  tests/settings.spec.js:35:5 › should reset defaults (302ms)
+
+  6 passed (9.2s)
+  2 failed
+    tests/login.spec.js:58:5 › should logout correctly
+    tests/profile.spec.js:15:5 › should update profile

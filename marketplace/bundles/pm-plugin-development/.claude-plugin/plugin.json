@@ -1,0 +1,35 @@
+{
+  "name": "pm-plugin-development",
+  "version": "0.1-BETA",
+  "description": "Complete toolchain for creating, diagnosing, fixing, and maintaining Claude Code marketplace components",
+  "author": {
+    "name": "CUI OSS Project",
+    "email": "contact@cuioss.de"
+  },
+  "license": "Apache-2.0",
+  "homepage": "https://github.com/cuioss/plan-marshall",
+  "repository": "https://github.com/cuioss/plan-marshall.git",
+  "keywords": ["plugin", "development", "tools", "doctor", "create", "maintain"],
+  "commands": [
+    "./commands/plugin-create.md",
+    "./commands/plugin-doctor.md",
+    "./commands/plugin-maintain.md",
+    "./commands/tools-analyze-user-prompted.md"
+  ],
+  "skills": [
+    "./skills/plugin-architecture",
+    "./skills/plugin-create",
+    "./skills/plugin-doctor",
+    "./skills/plugin-maintain",
+    "./skills/plugin-plan-implement",
+    "./skills/plugin-script-architecture",
+    "./skills/plugin-solution-outline",
+    "./skills/plugin-task-plan",
+    "./skills/plugin-triage",
+    "./skills/verification",
+    "./skills/plan-marshall-plugin"
+  ],
+  "agents": [
+    "./agents/tool-coverage-agent.md"
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "input": {
+    "files_changed": [
+      "src/main/java/de/cuioss/http/RetryConfig.java",
+      "src/test/java/de/cuioss/http/RetryConfigTest.java"
+    ],
+    "diff_summary": {
+      "files": 2,
+      "insertions": 145,
+      "deletions": 0
+    },
+    "diff_content": "New RetryConfig record with builder pattern, validation, and unit tests"
+  },
+  "expected_output": {
+    "type": "feat",
+    "scope": "http",
+    "subject": "add retry configuration record with builder pattern",
+    "body": "Add RetryConfig record for configuring HTTP retry behavior:\n- maxAttempts: Maximum retry attempts\n- initialDelay: Initial delay before first retry\n- multiplier: Backoff multiplier for subsequent retries\n\nIncludes comprehensive unit tests.",
+    "footer": null,
+    "formatted_message": "feat(http): add retry configuration record with builder pattern\n\nAdd RetryConfig record for configuring HTTP retry behavior:\n- maxAttempts: Maximum retry attempts\n- initialDelay: Initial delay before first retry\n- multiplier: Backoff multiplier for subsequent retries\n\nIncludes comprehensive unit tests.\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>"
+  }
+}

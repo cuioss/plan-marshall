@@ -1,0 +1,23 @@
+
+> test-project@1.0.0 lint
+> eslint src/
+
+/path/to/project/src/components/Button.js
+  15:3   error    'PropTypes' is defined but never used                      no-unused-vars
+  42:10  error    Unexpected console statement                                no-console
+  56:1   warning  Line exceeds 100 characters (found 105, max 100)            max-len
+
+/path/to/project/src/utils/helpers.js
+  23:1   warning  Line exceeds 100 characters (found 112, max 100)            max-len
+  45:5   error    Missing return statement in function with multiple paths    consistent-return
+  67:10  error    'unusedVar' is assigned a value but never used              no-unused-vars
+
+/path/to/project/src/services/api.js
+  12:3   error    Unexpected console statement                                no-console
+  89:15  warning  Expected '===' and instead saw '=='                         eqeqeq
+
+✖ 8 problems (5 errors, 3 warnings)
+  2 errors and 1 warning potentially fixable with the `--fix` option.
+
+npm ERR! code ELIFECYCLE
+npm ERR! errno 1

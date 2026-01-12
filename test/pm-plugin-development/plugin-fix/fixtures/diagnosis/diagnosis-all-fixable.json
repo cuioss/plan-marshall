@@ -1,0 +1,61 @@
+{
+  "source": "plugin-diagnose",
+  "bundle": "pm-plugin-development",
+  "timestamp": "2025-11-21T10:00:00Z",
+  "issues": [
+    {
+      "id": "issue-1",
+      "type": "missing-frontmatter",
+      "severity": "high",
+      "file": "agents/no-frontmatter.md",
+      "line": 1,
+      "message": "File has no YAML frontmatter",
+      "fixable": true
+    },
+    {
+      "id": "issue-2",
+      "type": "array-syntax-tools",
+      "severity": "medium",
+      "file": "agents/array-tools.md",
+      "line": 4,
+      "message": "Tools declared with array syntax",
+      "details": {
+        "current": "tools: [Read, Edit]",
+        "expected": "tools: Read, Edit"
+      },
+      "fixable": true
+    },
+    {
+      "id": "issue-3",
+      "type": "missing-name-field",
+      "severity": "medium",
+      "file": "commands/nameless.md",
+      "line": 2,
+      "message": "Frontmatter missing required 'name' field",
+      "fixable": true
+    },
+    {
+      "id": "issue-4",
+      "type": "trailing-whitespace",
+      "severity": "low",
+      "file": "skills/messy-skill/SKILL.md",
+      "line": null,
+      "message": "File contains trailing whitespace on multiple lines",
+      "details": {
+        "affected_lines": [15, 23, 45, 67]
+      },
+      "fixable": true
+    }
+  ],
+  "summary": {
+    "total_issues": 4,
+    "fixable_count": 4,
+    "non_fixable_count": 0,
+    "by_severity": {
+      "critical": 0,
+      "high": 1,
+      "medium": 2,
+      "low": 1
+    }
+  }
+}

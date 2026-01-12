@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!DOCTYPE report PUBLIC "-//JACOCO//DTD Report 1.1//EN" "report.dtd">
+<report name="no-coverage-module">
+  <sessioninfo id="no-coverage-session" start="1700000000000" dump="1700000100000"/>
+  <package name="de/cuioss/portal/untested">
+    <class name="de/cuioss/portal/untested/UntestedClass" sourcefilename="UntestedClass.java">
+      <method name="untestedMethod" desc="()V" line="10">
+        <counter type="INSTRUCTION" missed="30" covered="0"/>
+        <counter type="BRANCH" missed="4" covered="0"/>
+        <counter type="LINE" missed="8" covered="0"/>
+        <counter type="METHOD" missed="1" covered="0"/>
+      </method>
+      <counter type="INSTRUCTION" missed="30" covered="0"/>
+      <counter type="BRANCH" missed="4" covered="0"/>
+      <counter type="LINE" missed="8" covered="0"/>
+      <counter type="METHOD" missed="1" covered="0"/>
+      <counter type="CLASS" missed="1" covered="0"/>
+    </class>
+    <counter type="INSTRUCTION" missed="30" covered="0"/>
+    <counter type="BRANCH" missed="4" covered="0"/>
+    <counter type="LINE" missed="8" covered="0"/>
+    <counter type="METHOD" missed="1" covered="0"/>
+    <counter type="CLASS" missed="1" covered="0"/>
+  </package>
+  <counter type="INSTRUCTION" missed="30" covered="0"/>
+  <counter type="BRANCH" missed="4" covered="0"/>
+  <counter type="LINE" missed="8" covered="0"/>
+  <counter type="METHOD" missed="1" covered="0"/>
+  <counter type="CLASS" missed="1" covered="0"/>
+</report>

@@ -1,0 +1,20 @@
+{
+  "status": "success",
+  "data": {
+    "generated_files": [
+      "doc/LogMessages.adoc"
+    ],
+    "documentation": {
+      "holder_class": "de.cuioss.portal.sample.SampleLogMessages",
+      "prefix": "SAMPLE",
+      "info_messages": 3,
+      "warn_messages": 2,
+      "error_messages": 2,
+      "fatal_messages": 1,
+      "total_messages": 8
+    },
+    "tables_generated": 4,
+    "rows_updated": 8
+  },
+  "errors": []
+}

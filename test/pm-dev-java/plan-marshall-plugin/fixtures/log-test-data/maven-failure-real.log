@@ -1,0 +1,57 @@
+[INFO] Scanning for projects...
+[INFO] Inspecting build with total of 1 modules
+[INFO]
+[INFO] -------------------------< de.cuioss:cui-http >-------------------------
+[INFO] Building CUI HTTP 1.0-SNAPSHOT
+[INFO]   from pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO]
+[INFO] --- clean:3.5.0:clean (default-clean) @ cui-http ---
+[INFO] Deleting /Users/oliver/git/cui-http/target
+[INFO]
+[INFO] --- compiler:3.14.1:compile (default-compile) @ cui-http ---
+[INFO] Recompiling the module because of changed source code.
+[INFO] Compiling 56 source files with javac [debug release 21 module-path] to target/classes
+[ERROR] COMPILATION ERROR :
+[INFO] -------------------------------------------------------------
+[ERROR] /Users/oliver/git/cui-http/src/main/java/de/cuioss/http/security/core/HttpSecurityValidator.java:[45,20] cannot find symbol
+[ERROR]   symbol:   class MissingImport
+[ERROR]   location: class de.cuioss.http.security.core.HttpSecurityValidator
+[ERROR] /Users/oliver/git/cui-http/src/main/java/de/cuioss/http/client/handler/HttpHandler.java:[78,15] incompatible types: String cannot be converted to Integer
+[WARNING] /Users/oliver/git/cui-http/src/main/java/de/cuioss/http/client/adapter/HttpAdapter.java:[12,5] [deprecation] deprecated method oldValidate() in Validator has been deprecated
+[INFO] -------------------------------------------------------------
+[ERROR] COMPILATION ERROR :
+[INFO] -------------------------------------------------------------
+[ERROR] Found 2 errors and 1 warning.
+[INFO]
+[INFO] --- surefire:3.5.4:test (default-test) @ cui-http ---
+[INFO] Using auto detected provider org.apache.maven.surefire.junitplatform.JUnitPlatformProvider
+[INFO]
+[INFO] -------------------------------------------------------
+[INFO]  T E S T S
+[INFO] -------------------------------------------------------
+[INFO] Running de.cuioss.http.security.core.HttpSecurityValidatorTest
+[ERROR] Tests run: 19, Failures: 2, Errors: 0, Skipped: 0, Time elapsed: 0.009 s <<< FAILURE! - in de.cuioss.http.security.core.HttpSecurityValidatorTest
+[ERROR] de.cuioss.http.security.core.HttpSecurityValidatorTest.testValidation:34 expected: <true> but was: <false>
+[ERROR] de.cuioss.http.security.core.HttpSecurityValidatorTest.testProcessing:56 NullPointerException
+[INFO] Running de.cuioss.http.client.handler.HttpHandlerTest
+[INFO] Tests run: 32, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.371 s - in de.cuioss.http.client.handler.HttpHandlerTest
+[INFO]
+[INFO] Results:
+[INFO]
+[ERROR] Failures:
+[ERROR]   HttpSecurityValidatorTest.testValidation:34 expected: <true> but was: <false>
+[ERROR]   HttpSecurityValidatorTest.testProcessing:56 NullPointerException
+[INFO]
+[ERROR] Tests run: 51, Failures: 2, Errors: 0, Skipped: 0
+[INFO]
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD FAILURE
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time: 8.234 s
+[INFO] Finished at: 2026-01-06T14:55:12+01:00
+[INFO] ------------------------------------------------------------------------
+[ERROR] Failed to execute goal org.apache.maven.plugins:maven-surefire-plugin:3.5.4:test (default-test) on project cui-http: There are test failures.
+[ERROR]
+[ERROR] Please refer to /Users/oliver/git/cui-http/target/surefire-reports for the individual test results.
+[ERROR] -> [Help 1]

@@ -1,0 +1,37 @@
+= Missing Headers Document
+
+This document is missing required AsciiDoc header attributes.
+
+== Introduction
+Content without proper document setup.
+* Missing :toc: attribute
+* Missing :toclevels: attribute
+* Missing :sectnums: attribute
+
+== Code Section
+
+Code block:
+----
+public class NoLanguage {
+    // Missing language specification
+}
+----
+
+== Lists Without Blank Lines
+This list has no blank line before it:
+* Item one
+* Item two
+
+== Section Hierarchy Issue
+
+=== Level 3 Header
+
+==== Level 4 Header
+
+=== Another Level 3
+
+Content here.
+
+== Conclusion
+
+Document needs header fixes.

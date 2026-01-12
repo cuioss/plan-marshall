@@ -1,0 +1,57 @@
+= Amazing JWT Library
+:toc: left
+:toclevels: 3
+
+Our powerful JWT validation library provides best-in-class security features!
+
+== Overview
+
+This incredible module seamlessly handles all your JWT validation needs with blazing-fast performance. It's the most robust solution available today.
+
+== Awesome Features
+
+=== Lightning-Fast Validation
+
+Our revolutionary validation engine is incredibly fast and super easy to use. It provides enterprise-grade security that's battle-tested in production.
+
+Benefits:
+
+* Powerful caching mechanisms
+* Amazing performance optimizations
+* World-class security features
+
+=== Magical Multi-Issuer Support
+
+The library effortlessly supports multiple issuers with zero configuration needed. Just add your issuers and watch the magic happen!
+
+== Getting Started
+
+It's ridiculously simple to get started:
+
+[source,java]
+----
+// This amazing code validates tokens
+validator.validate(token);
+----
+
+== Why Choose Us?
+
+* Production-proven in thousands of deployments
+* Extensively tested with 100+ test cases
+* Used by leading companies worldwide
+* HIGH confidence in security
+* WELL established in the community
+
+== TODO
+
+* Add more awesome features
+* Make it even faster
+* ✅ Initial release complete
+
+== Performance
+
+Sub-millisecond validation times guaranteed! Our benchmarks show 10x faster than competitors.
+
+== Conclusion
+
+Choose our incredible library for all your JWT needs!

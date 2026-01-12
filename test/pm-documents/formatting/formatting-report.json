@@ -1,0 +1,51 @@
+{
+  "status": "success",
+  "data": {
+    "files_processed": 1,
+    "files_modified": 1,
+    "issues_found": 6,
+    "issues_fixed": 6,
+    "changes": [
+      {
+        "file": "needs-formatting.adoc",
+        "line": 9,
+        "type": "missing_blank_line",
+        "description": "Added blank line before list"
+      },
+      {
+        "file": "needs-formatting.adoc",
+        "line": 24,
+        "type": "deprecated_xref",
+        "description": "Converted <<old-anchor-style>> to xref:old-anchor-style[]"
+      },
+      {
+        "file": "needs-formatting.adoc",
+        "line": 26,
+        "type": "deprecated_xref",
+        "description": "Converted <<another-anchor,Link Text>> to xref:another-anchor[Link Text]"
+      },
+      {
+        "file": "needs-formatting.adoc",
+        "line": 30,
+        "type": "missing_blank_line",
+        "description": "Added blank line before list"
+      },
+      {
+        "file": "needs-formatting.adoc",
+        "line": 38,
+        "type": "trailing_whitespace",
+        "description": "Removed trailing whitespace"
+      },
+      {
+        "file": "needs-formatting.adoc",
+        "line": 40,
+        "type": "trailing_whitespace",
+        "description": "Removed trailing tabs"
+      }
+    ]
+  },
+  "metrics": {
+    "execution_time_ms": 45,
+    "files_scanned": 1
+  }
+}

@@ -1,0 +1,5 @@
+{
+  "name": "test-agent",
+  "description": "Test agent",
+  "tools": ["Read", "Grep"]
+}

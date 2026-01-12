@@ -1,0 +1,35 @@
+number: {NUMBER}
+title: {TITLE}
+status: pending
+phase: {PHASE}
+created: {TIMESTAMP}
+updated: {TIMESTAMP}
+
+deliverables[{DELIVERABLE_COUNT}]:
+- {DELIVERABLE_1}
+- {DELIVERABLE_2}
+
+depends_on: {DEPENDS_ON}
+
+description: |
+  {DESCRIPTION}
+
+delegation:
+  skill: {BUNDLE}:{SKILL}
+  workflow: {WORKFLOW}
+  domain: {DOMAIN}
+  context_skills:
+  - {CONTEXT_SKILL_1}
+
+steps[{STEP_COUNT}]{number,title,status}:
+1,{STEP_1_TITLE},pending
+2,{STEP_2_TITLE},pending
+3,{STEP_3_TITLE},pending
+
+verification:
+  commands[{CMD_COUNT}]:
+  - {VERIFICATION_COMMAND}
+  criteria: {SUCCESS_CRITERIA}
+  manual: false
+
+current_step: 1

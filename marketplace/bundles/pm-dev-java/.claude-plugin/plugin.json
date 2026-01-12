@@ -1,0 +1,46 @@
+{
+  "name": "pm-dev-java",
+  "version": "0.1-BETA",
+  "description": "Comprehensive Java development expertise bundle with agent-first architecture for autonomous code implementation, testing, and standards compliance",
+  "author": {
+    "name": "CUI OSS Project",
+    "email": "contact@cuioss.de"
+  },
+  "license": "Apache-2.0",
+  "homepage": "https://github.com/cuioss/plan-marshall",
+  "repository": "https://github.com/cuioss/plan-marshall.git",
+  "keywords": ["java", "cdi", "quarkus", "testing", "standards", "patterns", "agents"],
+  "commands": [
+    "./commands/java-analyze-all.md",
+    "./commands/java-full-workflow.md",
+    "./commands/java-create.md",
+    "./commands/java-enforce-logrecords.md",
+    "./commands/java-maintain-logger.md",
+    "./commands/java-optimize-quarkus-native.md"
+  ],
+  "agents": [
+    "./agents/java-implement-agent.md",
+    "./agents/java-implement-tests-agent.md",
+    "./agents/java-fix-build-agent.md",
+    "./agents/java-fix-tests-agent.md",
+    "./agents/java-fix-javadoc-agent.md",
+    "./agents/java-refactor-agent.md",
+    "./agents/java-coverage-agent.md",
+    "./agents/java-quality-agent.md",
+    "./agents/java-verify-agent.md"
+  ],
+  "skills": [
+    "./skills/java-core",
+    "./skills/java-null-safety",
+    "./skills/java-lombok",
+    "./skills/java-cdi",
+    "./skills/java-cdi-quarkus",
+    "./skills/junit-core",
+    "./skills/junit-integration",
+    "./skills/javadoc",
+    "./skills/java-maintenance",
+    "./skills/java-triage",
+    "./skills/plan-marshall-plugin",
+    "./skills/maven-profile-management"
+  ]
+}

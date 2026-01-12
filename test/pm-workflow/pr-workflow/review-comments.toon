@@ -1,0 +1,11 @@
+pr_number: 123
+
+comments[5]{id,author,body,path,line,resolved,type}:
+RC_001,senior-dev,This method is too long. Please extract the validation logic into a separate private method.,src/main/java/de/cuioss/http/HttpClient.java,145,false,code_change
+RC_002,security-reviewer,"Consider adding input validation here to prevent SQL injection. The userId parameter should be sanitized.",src/main/java/de/cuioss/service/UserService.java,67,false,code_change
+RC_003,maintainer,Why did you choose to use a record here instead of a class? Can you explain the reasoning?,src/main/java/de/cuioss/http/RetryConfig.java,15,false,explanation
+RC_004,bot,This PR has been approved for merge.,,,true,ignore
+RC_005,team-lead,"Looks good overall! Just a minor nit: the variable name `x` should be more descriptive.",src/main/java/de/cuioss/util/Parser.java,89,false,code_change
+
+total_comments: 5
+unresolved_comments: 4

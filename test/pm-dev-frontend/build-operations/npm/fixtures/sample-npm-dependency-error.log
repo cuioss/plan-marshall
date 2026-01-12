@@ -1,0 +1,22 @@
+
+> test-project@1.0.0 build
+> vite build
+
+failed to load config from /path/to/vite.config.js
+error during build:
+Error: Cannot find module '@vitejs/plugin-react'
+Require stack:
+- /path/to/vite.config.js
+- /path/to/node_modules/vite/dist/node/chunks/dep-hash.js
+    at Function.Module._resolveFilename (node:internal/modules/cjs/loader:995:15)
+    at Function.Module._load (node:internal/modules/cjs/loader:841:27)
+    at Module.require (node:internal/modules/cjs/loader:1061:19)
+    at require (node:internal/modules/cjs/helpers:103:18)
+
+npm ERR! code ELIFECYCLE
+npm ERR! errno 1
+npm ERR! test-project@1.0.0 build: `vite build`
+npm ERR! Exit status 1
+npm ERR!
+npm ERR! Failed at the test-project@1.0.0 build script.
+npm ERR! This is probably not a problem with npm. There is likely additional logging output above.

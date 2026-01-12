@@ -1,0 +1,57 @@
+{
+  "project": {
+    "description": "Security-focused HTTP utilities library providing validation pipelines for detecting attack patterns (path traversal, injection, protocol violations), SSL/TLS context management, and HTTP client handlers for secure web communication.",
+    "description_reasoning": "From README.adoc 'What is it?' section"
+  },
+  "modules": {
+    "cui-http": {
+      "responsibility": "Provides security-focused HTTP utilities including validation pipelines for detecting attack patterns (path traversal, injection, XSS), async-first HTTP client adapters with ETag caching and retry resilience, and SSL/TLS context management for secure web communication.",
+      "responsibility_reasoning": "From README.adoc 'What is it?' section and package-info.java files for security, client, and adapter packages",
+      "purpose": "library",
+      "purpose_reasoning": "packaging=jar, provides reusable HTTP utilities, no main class or runtime entry point",
+      "key_packages": {
+        "de.cuioss.http.security.pipeline": {
+          "description": "Validation pipelines combining multiple stages for URL paths, parameters, and headers. Includes URLPathValidationPipeline, URLParameterValidationPipeline, HTTPHeaderValidationPipeline, and PipelineFactory for creating configured validators."
+        },
+        "de.cuioss.http.client.adapter": {
+          "description": "Async-first HTTP adapter API with composable decorators. ETagAwareHttpAdapter provides caching, ResilientHttpAdapter adds retry with exponential backoff. All methods return CompletableFuture with HttpResult for type-safe error handling."
+        },
+        "de.cuioss.http.security.validation": {
+          "description": "Individual validation stages for HTTP security checking including LengthValidationStage, CharacterValidationStage, DecodingStage, NormalizationStage, and PatternMatchingStage. Immutable, thread-safe, and composable."
+        },
+        "de.cuioss.http.client.handler": {
+          "description": "HTTP client utilities with HttpHandler builder, SecureSSLContextProvider for TLS 1.2+ contexts, and HttpStatusFamily for RFC 7231 status classification. Provides secure defaults for HTTPS operations."
+        }
+      },
+      "internal_dependencies": [],
+      "key_dependencies": [
+        "de.cuioss:cui-java-tools",
+        "org.jspecify:jspecify"
+      ],
+      "key_dependencies_reasoning": "cui-java-tools provides core CUI utilities and CuiLogger; jspecify defines null-safety contract used throughout the module",
+      "skills_by_profile": {
+        "implementation": [
+          "pm-dev-java:java-core",
+          "pm-dev-java:java-null-safety",
+          "pm-dev-java:java-lombok",
+          "pm-dev-java:java-maintenance",
+          "pm-dev-java-cui:cui-logging",
+          "pm-dev-java-cui:cui-http"
+        ],
+        "unit-testing": [
+          "pm-dev-java:java-core",
+          "pm-dev-java:java-null-safety",
+          "pm-dev-java:java-lombok",
+          "pm-dev-java:junit-core",
+          "pm-dev-java-cui:cui-logging",
+          "pm-dev-java-cui:cui-testing",
+          "pm-dev-java-cui:cui-testing-http"
+        ]
+      },
+      "skills_by_profile_reasoning": "Removed java-cdi (no CDI annotations), removed integration-testing and benchmark-testing profiles (no *IT.java or *Benchmark.java files). Added cui-http and cui-testing-http based on MockWebServer test dependency.",
+      "tips": [],
+      "insights": [],
+      "best_practices": []
+    }
+  }
+}

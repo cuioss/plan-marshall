@@ -1,0 +1,25 @@
+status: failure
+
+data:
+  exit_code: 1
+  phase: lint
+
+  errors[6]{category,rule,severity,file,line,column,message}:
+  lint,no-unused-vars,error,/Users/dev/project/src/utils/formatter.js,12,5,'unusedVar' is defined but never used
+  lint,semi,error,/Users/dev/project/src/utils/formatter.js,25,1,Missing semicolon
+  lint,no-console,warning,/Users/dev/project/src/utils/formatter.js,34,10,Unexpected console statement
+  lint,no-unused-vars,error,/Users/dev/project/src/services/api.js,8,1,'axios' is defined but never used
+  lint,comma-dangle,error,/Users/dev/project/src/services/api.js,45,23,Missing trailing comma
+  lint,indent,error,/Users/dev/project/src/services/api.js,67,5,Expected indentation of 4 spaces
+
+  summary:
+    total_errors: 5
+    total_warnings: 1
+    fixable_errors: 2
+    fixable_warnings: 0
+
+metrics:
+  phases_completed[1]: clean
+  phases_failed[1]: lint
+  phases_skipped[2]: test,compile
+  duration_ms: 1234

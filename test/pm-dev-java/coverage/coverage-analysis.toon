@@ -1,0 +1,27 @@
+status: success
+
+data:
+  overall_coverage:
+    line_coverage: 82.35
+    branch_coverage: 75.0
+    instruction_coverage: 79.69
+    method_coverage: 83.33
+    class_coverage: 100.0
+
+  by_package[1]{package,line_coverage,branch_coverage,classes}:
+  de.cuioss.portal.sample,82.35,75.0,2
+
+  low_coverage_classes[1]{class,line_coverage,uncovered_methods}:
+  de.cuioss.portal.sample.UserService,66.67,deleteUser
+
+  uncovered_lines[3]{file,line,missed_instructions,missed_branches}:
+  TokenValidator.java,22,5,1
+  UserService.java,25,4,0
+  UserService.java,26,4,0
+
+metrics:
+  files_analyzed: 2
+  total_classes: 2
+  total_methods: 6
+  total_lines: 17
+  execution_time_ms: 45

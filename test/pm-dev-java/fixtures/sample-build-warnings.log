@@ -1,0 +1,17 @@
+[INFO] Scanning for projects...
+[INFO]
+[INFO] -------------------< de.cuioss:cui-java-tools >--------------------
+[INFO] Building CUI Java Tools 1.0.0-SNAPSHOT
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO]
+[INFO] --- maven-compiler-plugin:3.11.0:compile (default-compile) @ cui-java-tools ---
+[INFO] Changes detected - recompiling the module!
+[INFO] Compiling 25 source files to /Users/oliver/project/target/classes
+[WARNING] /Users/oliver/project/src/main/java/de/cuioss/tools/TokenValidator.java:[25,8] unused import java.util.Optional
+[WARNING] /Users/oliver/project/src/main/java/de/cuioss/tools/UserService.java:[15,5] redundant cast to java.lang.String
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD SUCCESS
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  4.567 s
+[INFO] Finished at: 2025-01-15T10:30:45Z
+[INFO] ------------------------------------------------------------------------

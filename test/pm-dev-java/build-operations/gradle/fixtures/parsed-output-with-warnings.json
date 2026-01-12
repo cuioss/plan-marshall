@@ -1,0 +1,47 @@
+{
+  "warnings": [
+    {
+      "type": "javadoc_warning",
+      "message": "warning: no @param for name",
+      "severity": "WARNING",
+      "file": "src/main/java/Service.java",
+      "line": 30
+    },
+    {
+      "type": "javadoc_warning",
+      "message": "warning: no @return",
+      "severity": "WARNING",
+      "file": "src/main/java/Service.java",
+      "line": 45
+    },
+    {
+      "type": "deprecation_warning",
+      "message": "[deprecation] method() is deprecated",
+      "severity": "WARNING",
+      "file": "src/main/java/Handler.java",
+      "line": 20
+    },
+    {
+      "type": "unchecked_warning",
+      "message": "[unchecked] unchecked conversion",
+      "severity": "WARNING",
+      "file": "src/main/java/Utils.java",
+      "line": 55
+    },
+    {
+      "type": "other",
+      "message": "Using platform encoding UTF-8",
+      "severity": "WARNING"
+    },
+    {
+      "type": "other",
+      "message": "Could not resolve com.example:some-lib:1.0",
+      "severity": "WARNING"
+    },
+    {
+      "type": "openrewrite_info",
+      "message": "[INFO] Running recipe org.openrewrite.java.cleanup",
+      "severity": "INFO"
+    }
+  ]
+}

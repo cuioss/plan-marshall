@@ -1,0 +1,119 @@
+{
+  "status": "success",
+  "data": {
+    "violations": [
+      {
+        "file": "missing-jsdoc.js",
+        "line": 1,
+        "type": "MISSING_FILEOVERVIEW",
+        "severity": "WARNING",
+        "message": "Missing @fileoverview tag at file level"
+      },
+      {
+        "file": "missing-jsdoc.js",
+        "line": 5,
+        "type": "MISSING_CLASS_DOC",
+        "severity": "CRITICAL",
+        "message": "Class 'DataProcessor' is missing JSDoc documentation"
+      },
+      {
+        "file": "missing-jsdoc.js",
+        "line": 7,
+        "type": "MISSING_CONSTRUCTOR_DOC",
+        "severity": "CRITICAL",
+        "message": "Constructor is missing JSDoc documentation"
+      },
+      {
+        "file": "missing-jsdoc.js",
+        "line": 13,
+        "type": "MISSING_METHOD_DOC",
+        "severity": "CRITICAL",
+        "message": "Method 'processData' is missing JSDoc documentation"
+      },
+      {
+        "file": "missing-jsdoc.js",
+        "line": 19,
+        "type": "MISSING_RETURNS",
+        "severity": "WARNING",
+        "message": "Method 'transform' is missing @returns tag"
+      },
+      {
+        "file": "missing-jsdoc.js",
+        "line": 26,
+        "type": "MISSING_METHOD_DOC",
+        "severity": "CRITICAL",
+        "message": "Method 'validate' is missing JSDoc documentation"
+      },
+      {
+        "file": "missing-jsdoc.js",
+        "line": 34,
+        "type": "MISSING_PARAM_TYPE",
+        "severity": "WARNING",
+        "message": "Parameter 'criteria' is missing type annotation"
+      },
+      {
+        "file": "missing-jsdoc.js",
+        "line": 41,
+        "type": "MISSING_FUNCTION_DOC",
+        "severity": "CRITICAL",
+        "message": "Function 'calculateSum' is missing JSDoc documentation"
+      },
+      {
+        "file": "missing-jsdoc.js",
+        "line": 46,
+        "type": "MISSING_EXAMPLE",
+        "severity": "SUGGESTION",
+        "message": "Function 'formatDate' is missing @example tag"
+      },
+      {
+        "file": "missing-jsdoc.js",
+        "line": 54,
+        "type": "MISSING_TYPEDEF",
+        "severity": "SUGGESTION",
+        "message": "Complex object 'defaultConfig' should have @typedef"
+      },
+      {
+        "file": "missing-jsdoc.js",
+        "line": 61,
+        "type": "MISSING_FUNCTION_DOC",
+        "severity": "CRITICAL",
+        "message": "Arrow function 'multiply' is missing JSDoc documentation"
+      },
+      {
+        "file": "missing-jsdoc.js",
+        "line": 64,
+        "type": "MISSING_CALLBACK_DOC",
+        "severity": "WARNING",
+        "message": "Callback handlers should have @callback documentation"
+      },
+      {
+        "file": "missing-jsdoc.js",
+        "line": 70,
+        "type": "PARAM_NAME_MISMATCH",
+        "severity": "CRITICAL",
+        "message": "JSDoc @param 'itemId' doesn't match function parameter 'id'"
+      },
+      {
+        "file": "missing-jsdoc.js",
+        "line": 77,
+        "type": "MISSING_THROWS",
+        "severity": "WARNING",
+        "message": "Function 'parseJson' throws but is missing @throws tag"
+      },
+      {
+        "file": "missing-jsdoc.js",
+        "line": 89,
+        "type": "MISSING_ASYNC",
+        "severity": "SUGGESTION",
+        "message": "Async function 'fetchUser' is missing @async tag"
+      }
+    ]
+  },
+  "metrics": {
+    "files_analyzed": 1,
+    "total_violations": 15,
+    "critical": 7,
+    "warnings": 5,
+    "suggestions": 3
+  }
+}

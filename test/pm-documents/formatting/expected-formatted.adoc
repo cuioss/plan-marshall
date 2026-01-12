@@ -1,0 +1,49 @@
+= Document Needs Formatting
+:toc: left
+:toclevels: 3
+
+This document has formatting issues.
+
+== Introduction
+
+Missing blank line before this list:
+
+* Item one
+* Item two
+* Item three
+
+== Code Section
+
+Code block without language specification:
+
+[source]
+----
+public class BadExample {
+    // No language specified
+}
+----
+
+== Cross References
+
+Uses deprecated syntax: xref:old-anchor-style[]
+
+Also uses: xref:another-anchor[Link Text]
+
+== Nested Lists
+
+Missing blank line:
+
+* Main item
+** Nested item
+*** Deep nested
+* Another item
+
+== Whitespace Issues
+
+Line with trailing whitespace:
+
+Another line with tabs:
+
+== Conclusion
+
+This document needs formatting fixes.

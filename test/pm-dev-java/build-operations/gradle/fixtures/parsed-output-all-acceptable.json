@@ -1,0 +1,14 @@
+{
+  "warnings": [
+    {
+      "type": "other",
+      "message": "Using platform encoding UTF-8",
+      "severity": "WARNING"
+    },
+    {
+      "type": "openrewrite_info",
+      "message": "[INFO] Running recipe org.openrewrite.java.cleanup",
+      "severity": "INFO"
+    }
+  ]
+}

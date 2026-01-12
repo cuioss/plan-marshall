@@ -1,0 +1,56 @@
+= Portal Log Messages
+:toc: left
+:toclevels: 2
+:sectnums:
+
+This document describes all log messages across portal modules.
+
+== AUTH Messages
+
+=== INFO Level (001-099)
+
+[cols="1,1,2,2", options="header"]
+|===
+|ID |Component |Message |Description
+
+|AUTH-001 |AUTH |User %s logged in successfully |Logged when user login succeeds
+|AUTH-002 |AUTH |User %s logged out |Logged when user logout occurs
+|===
+
+=== ERROR Level (200-299)
+
+[cols="1,1,2,2", options="header"]
+|===
+|ID |Component |Message |Description
+
+|AUTH-200 |AUTH |Authentication failed for user %s |Logged when authentication fails
+|===
+
+== TOKEN Messages
+
+=== INFO Level (001-099)
+
+[cols="1,1,2,2", options="header"]
+|===
+|ID |Component |Message |Description
+
+|TOKEN-001 |TOKEN |Token validated for user %s |Logged when token validation succeeds
+|===
+
+=== WARN Level (100-199)
+
+[cols="1,1,2,2", options="header"]
+|===
+|ID |Component |Message |Description
+
+|TOKEN-100 |TOKEN |Token expiring soon for user %s |Logged when token is near expiration
+|===
+
+=== ERROR Level (200-299)
+
+[cols="1,1,2,2", options="header"]
+|===
+|ID |Component |Message |Description
+
+|TOKEN-200 |TOKEN |Token validation failed: %s |Logged when token validation fails
+|===

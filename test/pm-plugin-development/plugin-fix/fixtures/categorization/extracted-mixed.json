@@ -1,0 +1,52 @@
+{
+  "fixable_issues": [
+    {
+      "id": "issue-1",
+      "type": "missing-frontmatter",
+      "severity": "high",
+      "file": "agents/no-frontmatter.md",
+      "line": 1,
+      "message": "File has no YAML frontmatter"
+    },
+    {
+      "id": "issue-2",
+      "type": "rule-6-violation",
+      "severity": "critical",
+      "file": "agents/task-agent.md",
+      "line": 5,
+      "message": "Agent declares Task tool which violates Rule 6"
+    },
+    {
+      "id": "issue-3",
+      "type": "array-syntax-tools",
+      "severity": "medium",
+      "file": "agents/array-tools.md",
+      "line": 4,
+      "message": "Tools declared with array syntax",
+      "details": {
+        "current": "tools: [Read, Edit]",
+        "expected": "tools: Read, Edit"
+      }
+    },
+    {
+      "id": "issue-4",
+      "type": "unused-tool-declared",
+      "severity": "low",
+      "file": "agents/over-tooled.md",
+      "line": 6,
+      "message": "Tool declared but not used",
+      "details": {
+        "unused_tools": ["WebSearch", "NotebookEdit"]
+      }
+    },
+    {
+      "id": "issue-5",
+      "type": "missing-description-field",
+      "severity": "medium",
+      "file": "commands/undescribed.md",
+      "line": 2,
+      "message": "Frontmatter missing 'description' field"
+    }
+  ],
+  "total_count": 5
+}

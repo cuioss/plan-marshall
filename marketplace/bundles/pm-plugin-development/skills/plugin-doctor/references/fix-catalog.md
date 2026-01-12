@@ -1,0 +1,356 @@
+# Fix Catalog Reference
+
+Comprehensive catalog of all fixable issue types, their categorization, and fix strategies.
+
+## Fixable Issue Types Overview
+
+This catalog documents all issues that can be fixed by the plugin-fix skill, organized by category.
+
+## Safe Fix Types
+
+Safe fixes can be auto-applied without user confirmation. They are mechanical fixes that don't risk losing information or changing behavior.
+
+### 1. missing-frontmatter
+
+**Description**: File has no YAML frontmatter block.
+
+**Detection**: File doesn't start with `---`
+
+**Fix Strategy**:
+- Determine component type from path (agents/, commands/, skills/)
+- Generate appropriate frontmatter with defaults
+- Prepend to file content
+
+**Template (Agent)**:
+```yaml
+---
+name: {filename}
+description: [Description needed]
+tools: Read, Write, Edit
+model: sonnet
+---
+```
+
+**Template (Command)**:
+```yaml
+---
+name: {filename}
+description: [Description needed]
+---
+```
+
+**Why Safe**: Adding metadata doesn't change behavior, only improves documentation.
+
+### 2. invalid-yaml
+
+**Description**: YAML frontmatter has syntax errors.
+
+**Detection**: YAML parsing fails between `---` markers
+
+**Fix Strategy**:
+- Common fixes: unclosed quotes, improper indentation
+- Fix specific syntax errors
+- Preserve all content
+
+**Why Safe**: Fixing syntax doesn't change meaning.
+
+### 3. missing-name-field
+
+**Description**: Frontmatter exists but lacks `name` field.
+
+**Detection**: Frontmatter present but no `^name:` line
+
+**Fix Strategy**:
+- Extract filename without extension
+- Insert `name: {filename}` after opening `---`
+
+**Why Safe**: Name is derived from filename, no judgment needed.
+
+### 4. missing-description-field
+
+**Description**: Frontmatter lacks `description` field.
+
+**Detection**: Frontmatter present but no `^description:` line
+
+**Fix Strategy**:
+- Insert `description: [Description needed]` after name field
+- Placeholder clearly indicates manual update needed
+
+**Why Safe**: Placeholder doesn't claim false information.
+
+### 5. missing-tools-field
+
+**Description**: Agent/command frontmatter lacks `tools` field.
+
+**Detection**: Frontmatter present but no `^tools:` line
+
+**Fix Strategy**:
+- Insert `tools: Read` as minimal default
+- Actual tools should be added based on usage
+
+**Why Safe**: Minimal default doesn't over-promise capabilities.
+
+### 6. array-syntax-tools
+
+**Description**: Tools declared with array syntax `[A, B]` instead of comma-separated.
+
+**Detection**: `^tools:\s*\[` pattern in frontmatter
+
+**Fix Strategy**:
+- Convert `tools: [A, B, C]` to `tools: A, B, C`
+- Preserve tool list
+
+**Why Safe**: Purely syntactic change, same meaning.
+
+### 7. trailing-whitespace
+
+**Description**: Lines end with whitespace characters.
+
+**Detection**: Lines matching `[[:space:]]$`
+
+**Fix Strategy**:
+- Strip trailing whitespace from all lines
+- Preserve line endings
+
+**Why Safe**: Whitespace at end of lines has no meaning.
+
+### 8. improper-indentation
+
+**Description**: Inconsistent indentation in YAML or lists.
+
+**Detection**: Mixed tabs/spaces or inconsistent indent levels
+
+**Fix Strategy**:
+- Normalize to 2-space indentation for YAML
+- Fix list item alignment
+
+**Why Safe**: Indentation normalization is mechanical.
+
+### 9. missing-blank-line-before-list
+
+**Description**: List items immediately follow paragraph (AsciiDoc requirement).
+
+**Detection**: Non-blank line followed by `* ` or `- ` list marker
+
+**Fix Strategy**:
+- Insert blank line before list
+- Preserve content
+
+**Why Safe**: Adding whitespace doesn't change content.
+
+## Risky Fix Types
+
+Risky fixes require user confirmation because they involve judgment calls or may change behavior.
+
+### 1. unused-tool-declared
+
+**Description**: Tool declared in frontmatter but never referenced in content.
+
+**Detection**: Tool in frontmatter not found in body text
+
+**Fix Strategy**:
+- Remove tool from declaration
+- Present user with which tools will be removed
+
+**Why Risky**:
+- Tool may be intentionally declared for future use
+- Tool may be referenced in ways not detected (dynamic invocation)
+- User should confirm intent
+
+### 2. tool-not-declared
+
+**Description**: Tool used in content but not declared in frontmatter.
+
+**Detection**: Common tool names found in body but not in frontmatter
+
+**Fix Strategy**:
+- Add missing tool to declaration
+- Present user with which tools will be added
+
+**Why Risky**:
+- Adding tools changes component capabilities
+- May indicate accidental tool usage that should be removed instead
+- User should confirm desired tools
+
+### 3. rule-6-violation
+
+**Description**: Agent declares Task tool (prohibited by Rule 6).
+
+**Detection**: `Task` in agent's tools declaration
+
+**Fix Strategy**:
+- Remove Task from tools list
+- If Task was only tool, replace with Read
+
+**Why Risky**:
+- Removal changes agent design fundamentally
+- Agent may need restructuring to work without Task
+- User should understand implications
+
+### 4. rule-7-violation
+
+**Description**: Component uses Maven directly instead of builder-maven skill.
+
+**Detection**: Direct `mvn`, `maven`, or `./mvnw` usage in commands/skills/agents (excluding builder-maven bundle)
+
+**Fix Strategy**:
+- Replace direct Maven invocations with builder-maven skill calls
+- Use workflow: `Skill: pm-dev-builder:builder-maven-rules` with appropriate workflow name
+- Example: Replace `mvn clean compile` with workflow: Execute Maven Build
+
+**Why Risky**:
+- Changes build execution mechanism
+- May break functionality if not properly migrated
+- User should verify build still works
+- Requires builder-maven skill to be available
+
+### 5. rule-8-violation
+
+**Description**: Component uses hardcoded script paths instead of the executor pattern.
+
+**Detection**: Direct script invocations with hardcoded paths (e.g., `python3 /path/to/script.py`, `bash {bundle}/scripts/foo.sh`)
+
+**Fix Strategy**:
+- Replace hardcoded paths with executor pattern
+- Use notation: `python3 .plan/execute-script.py {bundle}:{skill}:{script} {subcommand} {args}`
+- Example: Replace `python3 marketplace/.../scripts/verify.py --input x` with `python3 .plan/execute-script.py pm-dev-java:java-core:java-core verify --input x`
+
+**Why Risky**:
+- Changes script resolution mechanism
+- May break if executor is not generated (run `/marshall-steward` first)
+- User should verify script notation and subcommands
+
+### 6. rule-9-violation
+
+**Description**: Skill workflow step contains action verbs without explicit script call.
+
+**Detection**: Workflow steps (### Step N:) containing action verbs like "read the", "display the", "check the", "validate the" without a bash code block containing `execute-script.py`
+
+**Fix Strategy**:
+- Add explicit bash code block with the correct script call
+- Example: If step says "Display the solution outline for review", add:
+  ```bash
+  python3 .plan/execute-script.py pm-workflow:manage-solution-outline:manage-solution-outline read \
+    --plan-id {plan_id}
+  ```
+
+**Why Risky**:
+- Requires knowledge of correct script notation and subcommand
+- May need to identify which manage-* script handles the operation
+- User should verify the correct script and parameters
+
+**Exempt Patterns** (no violation):
+- Steps using `Task:` (agent delegation)
+- Steps using `Skill:` (skill loading)
+- Steps using Claude Code tools (`Read:`, `Glob:`, `Grep:`)
+- Steps that already have `execute-script.py` bash blocks
+
+### 7. pattern-22-violation
+
+**Description**: Agent uses self-update pattern instead of caller reporting.
+
+**Detection**: `/plugin-update-agent` or `/plugin-update-command` in agent content
+
+**Fix Strategy**:
+- Replace self-update commands with "report to caller" language
+- Update CONTINUOUS IMPROVEMENT section
+
+**Why Risky**:
+- Structural change to agent behavior
+- May require rethinking improvement workflow
+- User should understand new pattern
+
+### 8. backup-file-pattern
+
+**Description**: Content references backup file patterns (.bak, .backup, etc.).
+
+**Detection**: `.backup`, `.bak`, `.old`, `.orig` patterns in content
+
+**Fix Strategy**:
+- Remove backup file references
+- Or document them properly
+
+**Why Risky**:
+- May be intentional documentation of backup strategy
+- Removal might lose important information
+- User should decide if references are needed
+
+### 9. ci-rule-self-update
+
+**Description**: CONTINUOUS IMPROVEMENT section uses prohibited self-update.
+
+**Detection**: CI section with self-update commands
+
+**Fix Strategy**:
+- Rewrite CI section to use caller-reporting pattern
+- Preserve improvement intent
+
+**Why Risky**:
+- Significant content change
+- User should review new wording
+- May affect how improvements are communicated
+
+## Non-Fixable Issue Types
+
+These issues are detected but cannot be automatically fixed:
+
+### bloat-critical / bloat-high
+
+**Why Not Fixable**: Requires human judgment about what content to extract or remove.
+
+**Recommendation**: Manual refactoring, potentially extracting to skill.
+
+### architectural-restructure-needed
+
+**Why Not Fixable**: Requires creating new components and reorganizing structure.
+
+**Recommendation**: Create refactoring plan, execute manually.
+
+### external-dependency-issue
+
+**Why Not Fixable**: Requires code changes to remove external dependencies.
+
+**Recommendation**: Replace with stdlib alternatives.
+
+## Categorization Algorithm
+
+```python
+def categorize(issue_type):
+    SAFE = {
+        "missing-frontmatter", "invalid-yaml", "missing-name-field",
+        "missing-description-field", "missing-tools-field",
+        "array-syntax-tools", "trailing-whitespace",
+        "improper-indentation", "missing-blank-line-before-list"
+    }
+    RISKY = {
+        "unused-tool-declared", "tool-not-declared",
+        "rule-6-violation", "rule-7-violation", "rule-8-violation",
+        "pattern-22-violation", "backup-file-pattern",
+        "ci-rule-self-update"
+    }
+
+    if issue_type in SAFE:
+        return "safe"
+    elif issue_type in RISKY:
+        return "risky"
+    else:
+        return "risky"  # Default to risky for unknown types
+```
+
+## Fix Priority Order
+
+When multiple fixes needed for same file:
+
+1. **missing-frontmatter** (must exist for other fixes)
+2. **invalid-yaml** (must be valid for field fixes)
+3. **missing-*-field** (complete frontmatter)
+4. **array-syntax-tools** (syntax normalization)
+5. **trailing-whitespace** (cleanup)
+6. **Rule violations** (architectural)
+7. **Pattern violations** (behavioral)
+
+## See Also
+
+- `safe-fixes-guide.md` - Detailed safe fix strategies
+- `risky-fixes-guide.md` - Risky fix handling
+- `verification-guide.md` - Verifying fixes worked

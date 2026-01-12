@@ -1,0 +1,94 @@
+{
+  "templates": {
+    "missing-frontmatter": {
+      "agent": "---\nname: {name}\ndescription: {description}\ntools: Read, Write, Edit\nmodel: sonnet\n---\n\n",
+      "command": "---\nname: {name}\ndescription: {description}\n---\n\n",
+      "skill": "---\nname: {name}\ndescription: {description}\nallowed-tools: Read, Glob, Grep\n---\n\n",
+      "defaults": {
+        "name": "{filename}",
+        "description": "[Description needed]"
+      }
+    },
+    "array-syntax-tools": {
+      "pattern": "^tools:\\s*\\[([^\\]]+)\\]",
+      "replacement": "tools: $1",
+      "description": "Convert array syntax [A, B] to comma-separated A, B"
+    },
+    "missing-name-field": {
+      "template": "name: {value}\n",
+      "default_value": "{filename}",
+      "insert_after": "^---$"
+    },
+    "missing-description-field": {
+      "template": "description: {value}\n",
+      "default_value": "[Description needed]",
+      "insert_after": "^name:"
+    },
+    "missing-tools-field": {
+      "template": "tools: {value}\n",
+      "default_value": "Read",
+      "insert_after": "^description:"
+    },
+    "trailing-whitespace": {
+      "pattern": "[\\t ]+$",
+      "replacement": "",
+      "description": "Remove trailing whitespace from all lines"
+    },
+    "rule-6-violation": {
+      "patterns": [
+        {
+          "match": ",\\s*Task\\b",
+          "replace": ""
+        },
+        {
+          "match": "\\bTask,\\s*",
+          "replace": ""
+        },
+        {
+          "match": "^tools:\\s*Task$",
+          "replace": "tools: Read"
+        }
+      ],
+      "description": "Remove Task tool from agent's tools declaration"
+    },
+    "unused-tool-declared": {
+      "strategy": "remove_from_comma_list",
+      "description": "Remove unused tools from declaration"
+    },
+    "pattern-22-violation": {
+      "replacements": [
+        {
+          "pattern": "/plugin-update-agent",
+          "replacement": "report improvements to the caller"
+        },
+        {
+          "pattern": "/plugin-update-command",
+          "replacement": "report improvements to the caller"
+        }
+      ],
+      "description": "Replace self-update commands with caller reporting"
+    }
+  },
+  "categorization": {
+    "safe": [
+      "missing-frontmatter",
+      "invalid-yaml",
+      "missing-name-field",
+      "missing-description-field",
+      "missing-tools-field",
+      "array-syntax-tools",
+      "trailing-whitespace",
+      "improper-indentation",
+      "missing-blank-line-before-list"
+    ],
+    "risky": [
+      "unused-tool-declared",
+      "tool-not-declared",
+      "rule-6-violation",
+      "rule-7-violation",
+      "pattern-22-violation",
+      "backup-file-pattern",
+      "ci-rule-self-update"
+    ]
+  }
+}

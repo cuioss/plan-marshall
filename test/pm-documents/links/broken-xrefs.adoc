@@ -1,0 +1,40 @@
+= Document with Broken Cross-References
+:toc: left
+:toclevels: 3
+
+This document has broken internal cross-references.
+
+== Introduction
+
+[#valid-anchor]
+This section has a valid anchor.
+
+== Broken Internal References
+
+=== Undefined Anchors
+
+Reference to undefined: <<undefined-anchor-id>>
+
+Another undefined: <<missing-section-anchor>>
+
+Reference that looks valid: <<almost-valid>>
+
+=== Typos in Anchor Names
+
+Reference with typo: <<validanchor>> (should be valid-anchor)
+
+Reference misspelled: <<introduction>> (should be intro)
+
+== Valid References
+
+Reference to valid anchor: <<valid-anchor>>
+
+== Missing Target Sections
+
+Reference to planned section: <<future-section>>
+
+Reference to removed section: <<deprecated-section>>
+
+== Conclusion
+
+All internal cross-references need fixing.

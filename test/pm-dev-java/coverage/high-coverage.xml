@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!DOCTYPE report PUBLIC "-//JACOCO//DTD Report 1.1//EN" "report.dtd">
+<report name="high-coverage-module">
+  <sessioninfo id="high-session" start="1700000000000" dump="1700000100000"/>
+  <package name="de/cuioss/portal/auth">
+    <class name="de/cuioss/portal/auth/AuthService" sourcefilename="AuthService.java">
+      <method name="authenticate" desc="(Ljava/lang/String;Ljava/lang/String;)Z" line="20">
+        <counter type="INSTRUCTION" missed="2" covered="48"/>
+        <counter type="BRANCH" missed="0" covered="4"/>
+        <counter type="LINE" missed="0" covered="12"/>
+        <counter type="COMPLEXITY" missed="0" covered="3"/>
+        <counter type="METHOD" missed="0" covered="1"/>
+      </method>
+      <counter type="INSTRUCTION" missed="2" covered="48"/>
+      <counter type="BRANCH" missed="0" covered="4"/>
+      <counter type="LINE" missed="0" covered="12"/>
+      <counter type="COMPLEXITY" missed="0" covered="3"/>
+      <counter type="METHOD" missed="0" covered="1"/>
+      <counter type="CLASS" missed="0" covered="1"/>
+    </class>
+    <counter type="INSTRUCTION" missed="2" covered="48"/>
+    <counter type="BRANCH" missed="0" covered="4"/>
+    <counter type="LINE" missed="0" covered="12"/>
+    <counter type="COMPLEXITY" missed="0" covered="3"/>
+    <counter type="METHOD" missed="0" covered="1"/>
+    <counter type="CLASS" missed="0" covered="1"/>
+  </package>
+  <counter type="INSTRUCTION" missed="2" covered="48"/>
+  <counter type="BRANCH" missed="0" covered="4"/>
+  <counter type="LINE" missed="0" covered="12"/>
+  <counter type="COMPLEXITY" missed="0" covered="3"/>
+  <counter type="METHOD" missed="0" covered="1"/>
+  <counter type="CLASS" missed="0" covered="1"/>
+</report>

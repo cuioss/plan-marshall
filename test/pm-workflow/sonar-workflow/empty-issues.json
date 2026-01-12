@@ -1,0 +1,12 @@
+{
+  "project_key": "cuioss_cui-http-client",
+  "pull_request_id": "456",
+  "issues": [],
+  "statistics": {
+    "total_issues_fetched": 0,
+    "issues_after_filtering": 0,
+    "by_severity": {},
+    "by_type": {}
+  },
+  "message": "No Sonar issues found for this PR - code quality is excellent!"
+}

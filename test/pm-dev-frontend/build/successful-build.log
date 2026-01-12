@@ -1,0 +1,37 @@
+> my-project@1.0.0 build
+> npm run clean && npm run lint && npm run test && npm run compile
+
+> my-project@1.0.0 clean
+> rimraf dist
+
+> my-project@1.0.0 lint
+> eslint src --ext .js,.ts
+
+> my-project@1.0.0 test
+> jest --coverage
+
+PASS src/utils/formatter.test.js
+PASS src/utils/validator.test.js
+PASS src/components/Button.test.js
+PASS src/services/api.test.js
+
+Test Suites: 4 passed, 4 total
+Tests:       25 passed, 25 total
+Snapshots:   0 total
+Time:        3.456 s, estimated 4 s
+Ran all test suites.
+
+----------------------|---------|----------|---------|---------|-------------------
+File                  | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s
+----------------------|---------|----------|---------|---------|-------------------
+All files             |   85.71 |    72.22 |   88.89 |   85.71 |
+ src/utils/formatter  |   91.67 |    83.33 |   100   |   91.67 | 45
+ src/utils/validator  |   100   |    100   |   100   |   100   |
+ src/components       |   66.67 |    50    |   66.67 |   66.67 | 23,34,56
+ src/services         |   85.71 |    71.43 |   85.71 |   85.71 | 67,89
+----------------------|---------|----------|---------|---------|-------------------
+
+> my-project@1.0.0 compile
+> tsc --build
+
+Build completed successfully.

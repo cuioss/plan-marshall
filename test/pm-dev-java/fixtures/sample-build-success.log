@@ -1,0 +1,22 @@
+[INFO] Scanning for projects...
+[INFO]
+[INFO] -------------------< de.cuioss:cui-java-tools >--------------------
+[INFO] Building CUI Java Tools 1.0.0-SNAPSHOT
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO]
+[INFO] --- maven-clean-plugin:3.2.0:clean (default-clean) @ cui-java-tools ---
+[INFO] Deleting /Users/oliver/project/target
+[INFO]
+[INFO] --- maven-resources-plugin:3.3.0:resources (default-resources) @ cui-java-tools ---
+[INFO] Using 'UTF-8' encoding to copy filtered resources.
+[INFO] Copying 3 resources
+[INFO]
+[INFO] --- maven-compiler-plugin:3.11.0:compile (default-compile) @ cui-java-tools ---
+[INFO] Changes detected - recompiling the module!
+[INFO] Compiling 25 source files to /Users/oliver/project/target/classes
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD SUCCESS
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  5.123 s
+[INFO] Finished at: 2025-01-15T10:30:45Z
+[INFO] ------------------------------------------------------------------------

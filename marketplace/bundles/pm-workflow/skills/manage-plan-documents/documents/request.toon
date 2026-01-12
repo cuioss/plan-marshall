@@ -1,0 +1,17 @@
+# Request document type definition
+name: request
+file: request.md
+template: templates/request.md
+
+fields[5]{name,type,required,default}:
+title,string,true,
+source,enum(description|lesson|issue),true,
+source_id,string,false,
+body,text,true,
+context,text,false,
+
+sections[4]{name,heading,order}:
+title,# Request: {title},1
+metadata,source: {source},2
+body,## Original Input,3
+context,## Context,4

@@ -1,0 +1,25 @@
+{
+  "input": {
+    "files_changed": [
+      "src/main/java/de/cuioss/http/HttpClient.java",
+      "src/main/java/de/cuioss/util/StringUtils.java",
+      "src/test/java/de/cuioss/http/HttpClientTest.java",
+      "README.md"
+    ],
+    "diff_summary": {
+      "files": 4,
+      "insertions": 67,
+      "deletions": 12
+    },
+    "diff_content": "Fix bug in HttpClient, refactor StringUtils, add tests, update docs",
+    "categories": ["fix", "refactor", "test", "docs"]
+  },
+  "expected_output": {
+    "type": "fix",
+    "scope": "http",
+    "subject": "correct timeout handling in HttpClient",
+    "body": "Fix incorrect timeout calculation that caused premature request\ntermination. Also includes:\n- Refactor StringUtils for better null handling\n- Add comprehensive test coverage\n- Update README with new usage examples",
+    "footer": null,
+    "comment": "Type 'fix' chosen because it takes priority over refactor/docs/test per multi-type rules"
+  }
+}

@@ -1,0 +1,129 @@
+{
+  "project": {
+    "name": "cui-http"
+  },
+  "modules": {
+    "cui-http": {
+      "name": "cui-http",
+      "build_systems": [
+        "maven"
+      ],
+      "paths": {
+        "module": ".",
+        "descriptor": "pom.xml",
+        "sources": [
+          "src/main/java"
+        ],
+        "tests": [
+          "src/test/java"
+        ],
+        "readme": "README.adoc"
+      },
+      "metadata": {
+        "artifact_id": "cui-http",
+        "group_id": "de.cuioss",
+        "packaging": "jar",
+        "description": "Provides a number of http-related utilities .",
+        "parent": "de.cuioss:cui-java-parent",
+        "profiles": [
+          {
+            "id": "coverage",
+            "canonical": "coverage"
+          },
+          {
+            "id": "javadoc",
+            "canonical": "javadoc"
+          },
+          {
+            "id": "pre-commit",
+            "canonical": "quality-gate"
+          }
+        ]
+      },
+      "packages": {
+        "de.cuioss.http.security": {
+          "path": "src/main/java/de/cuioss/http/security",
+          "package_info": "src/main/java/de/cuioss/http/security/package-info.java"
+        },
+        "de.cuioss.http.client": {
+          "path": "src/main/java/de/cuioss/http/client",
+          "package_info": "src/main/java/de/cuioss/http/client/package-info.java"
+        },
+        "de.cuioss.http.client.handler": {
+          "path": "src/main/java/de/cuioss/http/client/handler",
+          "package_info": "src/main/java/de/cuioss/http/client/handler/package-info.java"
+        },
+        "de.cuioss.http.client.result": {
+          "path": "src/main/java/de/cuioss/http/client/result",
+          "package_info": "src/main/java/de/cuioss/http/client/result/package-info.java"
+        },
+        "de.cuioss.http.client.converter": {
+          "path": "src/main/java/de/cuioss/http/client/converter",
+          "package_info": "src/main/java/de/cuioss/http/client/converter/package-info.java"
+        },
+        "de.cuioss.http.client.adapter": {
+          "path": "src/main/java/de/cuioss/http/client/adapter",
+          "package_info": "src/main/java/de/cuioss/http/client/adapter/package-info.java"
+        },
+        "de.cuioss.http.security.pipeline": {
+          "path": "src/main/java/de/cuioss/http/security/pipeline",
+          "package_info": "src/main/java/de/cuioss/http/security/pipeline/package-info.java"
+        },
+        "de.cuioss.http.security.core": {
+          "path": "src/main/java/de/cuioss/http/security/core",
+          "package_info": "src/main/java/de/cuioss/http/security/core/package-info.java"
+        },
+        "de.cuioss.http.security.config": {
+          "path": "src/main/java/de/cuioss/http/security/config",
+          "package_info": "src/main/java/de/cuioss/http/security/config/package-info.java"
+        },
+        "de.cuioss.http.security.exceptions": {
+          "path": "src/main/java/de/cuioss/http/security/exceptions",
+          "package_info": "src/main/java/de/cuioss/http/security/exceptions/package-info.java"
+        },
+        "de.cuioss.http.security.monitoring": {
+          "path": "src/main/java/de/cuioss/http/security/monitoring",
+          "package_info": "src/main/java/de/cuioss/http/security/monitoring/package-info.java"
+        },
+        "de.cuioss.http.security.data": {
+          "path": "src/main/java/de/cuioss/http/security/data",
+          "package_info": "src/main/java/de/cuioss/http/security/data/package-info.java"
+        },
+        "de.cuioss.http.security.validation": {
+          "path": "src/main/java/de/cuioss/http/security/validation",
+          "package_info": "src/main/java/de/cuioss/http/security/validation/package-info.java"
+        }
+      },
+      "dependencies": [
+        "de.cuioss:cui-java-tools:compile",
+        "org.projectlombok:lombok:provided",
+        "org.jspecify:jspecify:compile",
+        "de.cuioss.test:cui-test-generator:test",
+        "org.junit.jupiter:junit-jupiter-api:test",
+        "de.cuioss.test:cui-test-mockwebserver-junit5:test",
+        "de.cuioss.test:cui-test-value-objects:test",
+        "de.cuioss.test:cui-test-juli-logger:test",
+        "org.awaitility:awaitility:test"
+      ],
+      "stats": {
+        "source_files": 56,
+        "test_files": 145
+      },
+      "commands": {
+        "clean": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"clean\"",
+        "quality-gate": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -Ppre-commit\"",
+        "verify": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify\"",
+        "install": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"install\"",
+        "clean-install": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"clean install\"",
+        "package": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"package\"",
+        "compile": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"compile\"",
+        "test-compile": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"test-compile\"",
+        "module-tests": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"test\"",
+        "coverage": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -Pcoverage\""
+      }
+    }
+  },
+  "extensions_used": [
+    "pm-dev-java"
+  ]
+}

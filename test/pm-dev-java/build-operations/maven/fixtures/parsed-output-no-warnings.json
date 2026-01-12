@@ -1,0 +1,18 @@
+{
+  "status": "success",
+  "data": {
+    "build_status": "SUCCESS",
+    "issues": [],
+    "summary": {
+      "compilation_errors": 0,
+      "test_failures": 0,
+      "javadoc_warnings": 0,
+      "total_issues": 0
+    }
+  },
+  "metrics": {
+    "duration_ms": 15432,
+    "tests_run": 25,
+    "tests_failed": 0
+  }
+}

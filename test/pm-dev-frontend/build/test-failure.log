@@ -1,0 +1,53 @@
+> my-project@1.0.0 build
+> npm run clean && npm run lint && npm run test && npm run compile
+
+> my-project@1.0.0 clean
+> rimraf dist
+
+> my-project@1.0.0 lint
+> eslint src --ext .js,.ts
+
+> my-project@1.0.0 test
+> jest --coverage
+
+PASS src/utils/formatter.test.js
+FAIL src/utils/validator.test.js
+  ● validateEmail › should reject invalid emails
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: false
+    Received: true
+
+      12 |   it('should reject invalid emails', () => {
+      13 |     const invalidEmail = 'not-an-email';
+    > 14 |     expect(validateEmail(invalidEmail)).toBe(false);
+         |                                         ^
+      15 |   });
+      16 | });
+
+      at Object.<anonymous> (src/utils/validator.test.js:14:41)
+
+FAIL src/services/api.test.js
+  ● API client › should handle network errors
+
+    TypeError: Cannot read properties of undefined (reading 'json')
+
+      at Object.<anonymous> (src/services/api.test.js:45:28)
+
+  ● API client › should retry failed requests
+
+    Timeout - Async callback was not invoked within the 5000 ms timeout specified by jest.setTimeout.
+
+      at Object.<anonymous> (src/services/api.test.js:60:1)
+
+Test Suites: 2 failed, 2 passed, 4 total
+Tests:       3 failed, 22 passed, 25 total
+Snapshots:   0 total
+Time:        8.234 s
+Ran all test suites.
+
+npm ERR! code ELIFECYCLE
+npm ERR! errno 1
+npm ERR! my-project@1.0.0 test: `jest --coverage`
+npm ERR! Exit status 1

@@ -1,0 +1,19 @@
+> sample-app@1.0.0 lint
+> eslint src/
+
+/Users/dev/sample-app/src/components/Button.tsx
+   5:10  error    'useState' is defined but never used     no-unused-vars
+  12:5   error    Missing return type on function          @typescript-eslint/explicit-function-return-type
+  18:15  warning  Unexpected any. Specify a different type @typescript-eslint/no-explicit-any
+
+/Users/dev/sample-app/src/utils/helpers.ts
+   3:7   error    'config' is assigned a value but never used  no-unused-vars
+  15:1   error    Expected indentation of 2 spaces but found 4 indent
+  22:35  warning  Prefer using nullish coalescing operator     @typescript-eslint/prefer-nullish-coalescing
+
+/Users/dev/sample-app/src/App.tsx
+   8:1   error    'React' must be in scope when using JSX  react/react-in-jsx-scope
+  45:10  error    img elements must have an alt prop       jsx-a11y/alt-text
+
+✖ 8 problems (6 errors, 2 warnings)
+  2 errors and 0 warnings potentially fixable with the `--fix` option.

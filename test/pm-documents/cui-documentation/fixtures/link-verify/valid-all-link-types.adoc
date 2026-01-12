@@ -1,0 +1,46 @@
+= Valid All Link Types
+:toclevels: 3
+:toc-title: Table of Contents
+:sectnums:
+:source-highlighter: highlight.js
+:toc: left
+
+== Introduction
+
+This file contains all valid link types.
+
+== Cross-References
+
+[[explicit-anchor]]
+=== Explicit Anchor
+
+Link to explicit anchor: <<explicit-anchor>>
+
+Link to section header: <<introduction>>
+
+Link with label: xref:#explicit-anchor[See the anchor]
+
+[#modern-anchor]
+=== Modern Anchor Syntax
+
+Link to modern anchor: <<modern-anchor>>
+
+== Inter-Document References
+
+See xref:target-file.adoc[Target File]
+
+See xref:target-file.adoc#section-one[Section One in Target]
+
+See xref:#explicit-anchor[Same file anchor]
+
+== External Links
+
+Visit https://example.com for more info.
+
+Check https://github.com[GitHub]
+
+Read the docs at http://docs.example.org
+
+== Section with Special Characters!
+
+This has special chars: <<section-with-special-characters>>

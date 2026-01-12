@@ -1,0 +1,32 @@
+> Task :compileJava
+> Task :processResources
+> Task :classes
+> Task :compileTestJava
+> Task :processTestResources
+> Task :testClasses
+
+> Task :test
+
+GenshinServiceTest > testGetCharacterById() FAILED
+    org.opentest4j.AssertionFailedError: expected: <Diluc> but was: <null>
+        at app//org.junit.jupiter.api.AssertionFailureBuilder.build(AssertionFailureBuilder.java:151)
+        at app//org.junit.jupiter.api.AssertEquals.failNotEqual(AssertEquals.java:212)
+        at app//org.junit.jupiter.api.AssertEquals.assertEquals(AssertEquals.java:148)
+        at app//com.example.api.GenshinServiceTest.testGetCharacterById(GenshinServiceTest.java:45)
+
+GenshinServiceTest > testCalculateDamage() FAILED
+    java.lang.NullPointerException: Cannot invoke method on null object
+        at com.example.api.GenshinServiceTest.testCalculateDamage(GenshinServiceTest.java:67)
+
+5 tests completed, 2 failed
+
+> Task :test FAILED
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':test'.
+> There were failing tests. See the report at: file:///Users/dev/project/build/reports/tests/test/index.html
+
+BUILD FAILED in 15s
+5 actionable tasks: 5 executed

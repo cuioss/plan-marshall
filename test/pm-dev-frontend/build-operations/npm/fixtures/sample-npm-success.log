@@ -1,0 +1,25 @@
+
+> test-project@1.0.0 test
+> jest
+
+PASS  src/utils/validator.test.js
+  ✓ validates email format (3ms)
+  ✓ validates phone format (2ms)
+  ✓ rejects invalid email (1ms)
+  ✓ handles null input (1ms)
+
+PASS  src/components/Button.test.js
+  ✓ renders button correctly (15ms)
+  ✓ handles click events (5ms)
+  ✓ supports disabled state (3ms)
+  ✓ applies custom classes (2ms)
+
+PASS  src/services/api.test.js
+  ✓ makes GET requests (8ms)
+  ✓ handles errors (4ms)
+
+Test Suites: 3 passed, 3 total
+Tests:       10 passed, 10 total
+Snapshots:   0 total
+Time:        3.456 s
+Ran all test suites.

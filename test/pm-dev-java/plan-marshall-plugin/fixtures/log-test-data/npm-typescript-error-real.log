@@ -1,0 +1,21 @@
+> sample-monorepo@1.0.0 build
+> tsc --build
+
+packages/ui/src/components/Button.tsx(15,3): error TS2741: Property 'onClick' is missing in type '{ children: string; }' but required in type 'ButtonProps'.
+
+packages/ui/src/components/Button.tsx:8:3
+    8   onClick: () => void;
+        ~~~~~~~
+    'onClick' is declared here.
+
+packages/core/src/utils/validator.ts(42,10): error TS2322: Type 'string | null' is not assignable to type 'string'.
+  Type 'null' is not assignable to type 'string'.
+
+packages/core/src/index.ts(5,1): error TS2307: Cannot find module './missing' or its corresponding type declarations.
+
+Found 3 errors in 3 files.
+
+Errors  Files
+     1  packages/ui/src/components/Button.tsx:15
+     1  packages/core/src/utils/validator.ts:42
+     1  packages/core/src/index.ts:5

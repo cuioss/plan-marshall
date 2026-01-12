@@ -1,0 +1,32 @@
+{
+  "fixable_issues": [
+    {
+      "id": "issue-1",
+      "type": "rule-6-violation",
+      "severity": "critical",
+      "file": "agents/task-agent.md",
+      "line": 5,
+      "message": "Agent declares Task tool which violates Rule 6"
+    },
+    {
+      "id": "issue-2",
+      "type": "unused-tool-declared",
+      "severity": "low",
+      "file": "agents/over-tooled.md",
+      "line": 6,
+      "message": "Tool declared but not used",
+      "details": {
+        "unused_tools": ["WebSearch"]
+      }
+    },
+    {
+      "id": "issue-3",
+      "type": "pattern-22-violation",
+      "severity": "critical",
+      "file": "agents/self-updating.md",
+      "line": 50,
+      "message": "Agent uses self-update pattern"
+    }
+  ],
+  "total_count": 3
+}

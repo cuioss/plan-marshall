@@ -1,0 +1,23 @@
+project_key: cuioss_cui-http-client
+pull_request_id: 123
+
+issues[5]{key,type,severity,file,line,rule,message,effort}:
+AX-001,BUG,BLOCKER,src/main/java/de/cuioss/http/HttpClient.java,145,java:S2095,"Use try-with-resources or close this 'InputStream' in a 'finally' clause.",10min
+AX-002,CODE_SMELL,MAJOR,src/main/java/de/cuioss/http/HttpClient.java,89,java:S1192,"Define a constant instead of duplicating this literal 'application/json' 4 times.",5min
+AX-003,VULNERABILITY,CRITICAL,src/main/java/de/cuioss/service/UserService.java,67,java:S3649,"Make sure that string concatenation is required here and is done safely.",30min
+AX-004,CODE_SMELL,MINOR,src/main/java/de/cuioss/util/Parser.java,23,java:S1068,"Remove this unused 'logger' private field.",2min
+AX-005,CODE_SMELL,INFO,src/main/java/de/cuioss/config/ConfigLoader.java,45,java:S1135,"Complete the task associated to this 'TODO' comment.",15min
+
+statistics:
+  total_issues_fetched: 5
+  issues_after_filtering: 5
+  by_severity:
+    BLOCKER: 1
+    CRITICAL: 1
+    MAJOR: 1
+    MINOR: 1
+    INFO: 1
+  by_type:
+    BUG: 1
+    VULNERABILITY: 1
+    CODE_SMELL: 3

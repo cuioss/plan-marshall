@@ -1,0 +1,43 @@
+> sample-app@1.0.0 test
+> jest
+
+ FAIL  src/components/__tests__/Button.test.tsx
+  ● Button › should call onClick when clicked
+
+    expect(received).toHaveBeenCalledTimes(expected)
+
+    Expected number of calls: 1
+    Received number of calls: 0
+
+      15 |     fireEvent.click(button);
+      16 |
+    > 17 |     expect(mockOnClick).toHaveBeenCalledTimes(1);
+         |                         ^
+      18 |   });
+      19 | });
+
+      at Object.<anonymous> (src/components/__tests__/Button.test.tsx:17:25)
+
+ FAIL  src/utils/__tests__/validator.test.ts
+  ● validator › should validate email format
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: true
+    Received: false
+
+      12 |   it('should validate email format', () => {
+    > 13 |     expect(validateEmail('test@example')).toBe(true);
+         |                                           ^
+      14 |   });
+      15 | });
+
+      at Object.<anonymous> (src/utils/__tests__/validator.test.ts:13:43)
+
+ PASS  src/services/__tests__/api.test.ts
+
+Test Suites: 2 failed, 1 passed, 3 total
+Tests:       2 failed, 5 passed, 7 total
+Snapshots:   0 total
+Time:        3.456 s
+Ran all test suites.

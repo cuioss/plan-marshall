@@ -1,0 +1,63 @@
+{
+  "categories": {
+    "code_change": {
+      "description": "Comment requires code modification",
+      "examples": [
+        "Please fix this bug",
+        "Add null check here",
+        "Rename this variable",
+        "Extract this method",
+        "Add missing import"
+      ],
+      "action": "Modify code as suggested, then reply with commit hash"
+    },
+    "explain": {
+      "description": "Comment asks for explanation or clarification",
+      "examples": [
+        "Why did you choose this approach?",
+        "Can you explain the reasoning?",
+        "What's the benefit of this change?",
+        "How does this work?"
+      ],
+      "action": "Reply with explanation, no code changes"
+    },
+    "ignore": {
+      "description": "Comment does not require response",
+      "examples": [
+        "LGTM",
+        "Approved",
+        "Bot/automated comments",
+        "Already resolved",
+        "Outdated comments on deleted code"
+      ],
+      "action": "No action required"
+    }
+  },
+  "triage_rules": [
+    {
+      "pattern": "security|vulnerability|injection|xss|csrf",
+      "priority": "high",
+      "category": "code_change"
+    },
+    {
+      "pattern": "bug|error|fix|broken|crash",
+      "priority": "high",
+      "category": "code_change"
+    },
+    {
+      "pattern": "rename|variable|naming",
+      "priority": "low",
+      "category": "code_change"
+    },
+    {
+      "pattern": "why|explain|reasoning|rationale",
+      "priority": "low",
+      "category": "explain"
+    },
+    {
+      "pattern": "lgtm|approved|merged|bot",
+      "priority": "none",
+      "category": "ignore"
+    }
+  ]
+}

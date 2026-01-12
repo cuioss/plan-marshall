@@ -1,0 +1,26 @@
+> Task :rewriteRun
+Validating active recipes...
+All active recipes validated successfully
+Running recipe(s)...
+[INFO] Running recipe org.openrewrite.java.cleanup.CommonStaticAnalysis
+[INFO] Applying recipe org.openrewrite.java.cleanup.UnnecessaryParentheses
+[INFO] Modified: src/main/java/com/example/Service.java
+[INFO] Applying recipe org.openrewrite.java.cleanup.SimplifyBooleanReturn
+[INFO] Modified: src/main/java/com/example/Handler.java
+[INFO] rewrite-maven-plugin:5.4.0:run took 3.2s
+
+> Task :compileJava
+> Task :processResources
+> Task :classes
+> Task :jar
+> Task :assemble
+> Task :compileTestJava
+> Task :test
+
+13 tests completed, 0 failed
+
+> Task :check
+> Task :build
+
+BUILD SUCCESSFUL in 30s
+12 actionable tasks: 12 executed

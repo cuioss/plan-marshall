@@ -1,0 +1,92 @@
+{
+  "source": "plugin-diagnose",
+  "bundle": "pm-plugin-development",
+  "timestamp": "2025-11-21T10:00:00Z",
+  "issues": [
+    {
+      "id": "issue-1",
+      "type": "missing-frontmatter",
+      "severity": "high",
+      "file": "agents/broken-agent.md",
+      "line": 1,
+      "message": "File has no YAML frontmatter",
+      "fixable": true
+    },
+    {
+      "id": "issue-2",
+      "type": "array-syntax-tools",
+      "severity": "medium",
+      "file": "agents/old-style-agent.md",
+      "line": 4,
+      "message": "Tools declared with array syntax [Read, Write] instead of comma-separated",
+      "details": {
+        "current": "tools: [Read, Write]",
+        "expected": "tools: Read, Write"
+      },
+      "fixable": true
+    },
+    {
+      "id": "issue-3",
+      "type": "unused-tool-declared",
+      "severity": "low",
+      "file": "agents/over-tooled-agent.md",
+      "line": 5,
+      "message": "Tool declared but never used in content",
+      "details": {
+        "unused_tools": ["WebSearch", "NotebookEdit"]
+      },
+      "fixable": true
+    },
+    {
+      "id": "issue-4",
+      "type": "rule-6-violation",
+      "severity": "critical",
+      "file": "agents/task-using-agent.md",
+      "line": 6,
+      "message": "Agent declares Task tool which violates Rule 6",
+      "fixable": true
+    },
+    {
+      "id": "issue-5",
+      "type": "bloat-critical",
+      "severity": "high",
+      "file": "commands/huge-command.md",
+      "line": null,
+      "message": "Command exceeds 800 lines (current: 1250 lines)",
+      "details": {
+        "line_count": 1250,
+        "threshold": 800
+      },
+      "fixable": false
+    },
+    {
+      "id": "issue-6",
+      "type": "pattern-22-violation",
+      "severity": "critical",
+      "file": "agents/self-updating-agent.md",
+      "line": 45,
+      "message": "Agent uses self-update pattern which violates Pattern 22",
+      "fixable": true
+    },
+    {
+      "id": "issue-7",
+      "type": "missing-description-field",
+      "severity": "medium",
+      "file": "commands/undescribed-command.md",
+      "line": 2,
+      "message": "Frontmatter missing required 'description' field",
+      "fixable": true
+    }
+  ],
+  "summary": {
+    "total_issues": 7,
+    "fixable_count": 6,
+    "non_fixable_count": 1,
+    "by_severity": {
+      "critical": 2,
+      "high": 2,
+      "medium": 2,
+      "low": 1
+    }
+  }
+}

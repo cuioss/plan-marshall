@@ -1,0 +1,93 @@
+[INFO] Scanning for projects...
+[INFO] Inspecting build with total of 1 modules
+[INFO] Installing Central Publishing features
+[INFO]
+[INFO] -------------------------< de.cuioss:cui-http >-------------------------
+[INFO] Building CUI HTTP 1.0-SNAPSHOT
+[INFO]   from pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO]
+[INFO] --- clean:3.5.0:clean (default-clean) @ cui-http ---
+[INFO] Deleting /Users/oliver/git/cui-http/target
+[INFO]
+[INFO] --- enforcer:3.5.0:enforce (mojo-enforcer-rules) @ cui-http ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.RequirePluginVersions passed
+[INFO] Rule 1: org.apache.maven.enforcer.rules.version.RequireMavenVersion passed
+[INFO] Rule 2: org.apache.maven.enforcer.rules.version.RequireJavaVersion passed
+[INFO] Rule 3: org.codehaus.mojo.extraenforcer.model.RequirePropertyDiverges passed
+[INFO] Rule 4: org.codehaus.mojo.extraenforcer.model.RequirePropertyDiverges passed
+[INFO] Rule 5: org.apache.maven.enforcer.rules.RequireSameVersions passed
+[INFO]
+[INFO] --- resources:3.3.1:resources (default-resources) @ cui-http ---
+[INFO] skip non existing resourceDirectory /Users/oliver/git/cui-http/src/main/resources
+[INFO]
+[INFO] --- compiler:3.14.1:compile (default-compile) @ cui-http ---
+[INFO] Recompiling the module because of changed source code.
+[INFO] Compiling 56 source files with javac [debug release 21 module-path] to target/classes
+[INFO] JDK-8318913 workaround: patched module-info.class requires version from [21.0.7] to [21] on 2 JDK modules [java.base, java.net.http]
+[INFO]
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ cui-http ---
+[INFO] skip non existing resourceDirectory /Users/oliver/git/cui-http/src/test/resources
+[INFO]
+[INFO] --- compiler:3.14.1:testCompile (default-testCompile) @ cui-http ---
+[INFO] Recompiling the module because of changed dependency.
+[INFO] Compiling 145 source files with javac [debug release 21 module-path] to target/test-classes
+[INFO]
+[INFO] --- surefire:3.5.4:test (default-test) @ cui-http ---
+[INFO] Using auto detected provider org.apache.maven.surefire.junitplatform.JUnitPlatformProvider
+[INFO]
+[INFO] -------------------------------------------------------
+[INFO]  T E S T S
+[INFO] -------------------------------------------------------
+[INFO] Running de.cuioss.http.security.pipeline.URLParameterValidationPipelineTest
+[INFO] Running de.cuioss.http.security.pipeline.URLParameterValidationPipelineTest$PipelineBehavior
+[INFO] Tests run: 9, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.078 s -- in de.cuioss.http.security.pipeline.URLParameterValidationPipelineTest$PipelineBehavior
+[INFO] Running de.cuioss.http.security.pipeline.URLParameterValidationPipelineTest$ParameterSpecificScenarios
+[INFO] Tests run: 8, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.018 s -- in de.cuioss.http.security.pipeline.URLParameterValidationPipelineTest$ParameterSpecificScenarios
+[INFO] Running de.cuioss.http.security.pipeline.URLParameterValidationPipelineTest$SecurityValidation
+[INFO] Tests run: 22, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.044 s -- in de.cuioss.http.security.pipeline.URLParameterValidationPipelineTest$SecurityValidation
+[INFO] Running de.cuioss.http.security.pipeline.URLParameterValidationPipelineTest$ValidInputHandling
+[INFO] Tests run: 12, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.013 s -- in de.cuioss.http.security.pipeline.URLParameterValidationPipelineTest$ValidInputHandling
+[INFO] Running de.cuioss.http.security.core.ValidationTypeTest
+[INFO] Tests run: 20, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.009 s -- in de.cuioss.http.security.core.ValidationTypeTest
+[INFO] Running de.cuioss.http.security.core.UrlSecurityFailureTypeTest
+[INFO] Tests run: 149, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.073 s -- in de.cuioss.http.security.core.UrlSecurityFailureTypeTest
+[INFO] Running de.cuioss.http.security.core.HttpSecurityValidatorTest
+[INFO] Tests run: 19, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.009 s -- in de.cuioss.http.security.core.HttpSecurityValidatorTest
+[INFO] Running de.cuioss.http.client.handler.HttpHandlerTest
+[INFO] Running de.cuioss.http.client.handler.HttpHandlerTest$asBuilder Tests
+[INFO] Tests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.203 s -- in de.cuioss.http.client.handler.HttpHandlerTest$asBuilder Tests
+[INFO] Running de.cuioss.http.client.handler.HttpHandlerTest$URL/URI Conversion Tests
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.006 s -- in de.cuioss.http.client.handler.HttpHandlerTest$URL/URI Conversion Tests
+[INFO] Running de.cuioss.http.client.handler.HttpHandlerTest$Ping Tests
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.098 s -- in de.cuioss.http.client.handler.HttpHandlerTest$Ping Tests
+[INFO] Running de.cuioss.http.client.adapter.ResilientHttpAdapterTest
+[INFO] Tests run: 18, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 5.349 s -- in de.cuioss.http.client.adapter.ResilientHttpAdapterTest
+[INFO]
+[INFO] Results:
+[INFO]
+[INFO] Tests run: 4892, Failures: 0, Errors: 0, Skipped: 0
+[INFO]
+[INFO]
+[INFO] --- jar:3.4.4:jar (default-jar) @ cui-http ---
+[INFO] Building jar: /Users/oliver/git/cui-http/target/cui-http-1.0-SNAPSHOT.jar
+[INFO]
+[INFO] --- source:3.3.1:jar-no-fork (attach-sources) @ cui-http ---
+[INFO] Building jar: /Users/oliver/git/cui-http/target/cui-http-1.0-SNAPSHOT-sources.jar
+[INFO]
+[INFO] --- javadoc:3.11.2:jar (attach-javadocs) @ cui-http ---
+[INFO] Building jar: /Users/oliver/git/cui-http/target/cui-http-1.0-SNAPSHOT-javadoc.jar
+[INFO]
+[INFO] --- failsafe:3.5.4:integration-test (default) @ cui-http ---
+[INFO] No tests to run.
+[INFO]
+[INFO] --- failsafe:3.5.4:verify (default) @ cui-http ---
+[INFO]
+[INFO] --- central-publishing:0.7.0:publish (publish-to-central) @ cui-http ---
+[INFO] Publishing to Central Portal disabled
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD SUCCESS
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  21.547 s
+[INFO] Finished at: 2026-01-06T14:52:15+01:00
+[INFO] ------------------------------------------------------------------------

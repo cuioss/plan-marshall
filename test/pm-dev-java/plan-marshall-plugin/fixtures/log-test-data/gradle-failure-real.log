@@ -1,0 +1,33 @@
+> Task :compileJava FAILED
+
+/Users/dev/project/src/main/java/com/example/api/GenshinService.java:45: error: cannot find symbol
+    private Logger logger = LoggerFactory.getLogger(GenshinService.class);
+            ^
+  symbol:   class Logger
+  location: class com.example.api.GenshinService
+
+/Users/dev/project/src/main/java/com/example/api/GenshinService.java:50: error: incompatible types: String cannot be converted to int
+    int count = "abc";
+                ^
+  required: int
+  found:    String
+
+/Users/dev/project/src/main/java/com/example/api/Repository.java:78: warning: [deprecation] oldMethod() in BaseRepository has been deprecated
+    baseRepo.oldMethod();
+            ^
+2 errors
+1 warning
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':compileJava'.
+> Compilation failed; see the compiler error output for details.
+
+* Try:
+> Run with --stacktrace option to get the stack trace.
+> Run with --info or --debug option to get more log output.
+> Run with --scan to get full insights.
+
+BUILD FAILED in 5s
+3 actionable tasks: 3 executed

@@ -1,0 +1,55 @@
+= Valid Document Structure
+:toc: left
+:toclevels: 3
+:sectnums:
+:source-highlighter: highlight.js
+
+This document has valid structure.
+
+== Introduction
+
+This section introduces the document.
+
+== Core Concepts
+
+=== Concept One
+
+First concept details.
+
+* Feature A
+* Feature B
+* Feature C
+
+=== Concept Two
+
+Second concept details.
+
+== Implementation
+
+=== Basic Usage
+
+[source,java]
+----
+public class Example {
+    public void method() {
+        System.out.println("Hello");
+    }
+}
+----
+
+=== Configuration
+
+[source,properties]
+----
+app.name=Example
+app.version=1.0.0
+----
+
+== Conclusion
+
+Summary and next steps.
+
+== References
+
+* https://example.com[External Reference]
+* xref:related-document.adoc[Related Document]

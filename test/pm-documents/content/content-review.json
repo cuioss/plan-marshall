@@ -1,0 +1,145 @@
+{
+  "status": "success",
+  "data": {
+    "files_reviewed": 2,
+    "quality_scores": {
+      "high-quality.adoc": {
+        "overall": 95,
+        "correctness": 100,
+        "clarity": 95,
+        "tone": 95,
+        "consistency": 90,
+        "completeness": 95
+      },
+      "needs-improvement.adoc": {
+        "overall": 25,
+        "correctness": 20,
+        "clarity": 40,
+        "tone": 10,
+        "consistency": 30,
+        "completeness": 25
+      }
+    },
+    "issues": [
+      {
+        "file": "needs-improvement.adoc",
+        "line": 1,
+        "type": "tone",
+        "severity": "critical",
+        "message": "Marketing language in title: 'Amazing'",
+        "suggestion": "Use descriptive title: 'JWT Validation Module'"
+      },
+      {
+        "file": "needs-improvement.adoc",
+        "line": 4,
+        "type": "tone",
+        "severity": "critical",
+        "message": "Promotional language: 'powerful', 'best-in-class'",
+        "suggestion": "Remove subjective qualifiers"
+      },
+      {
+        "file": "needs-improvement.adoc",
+        "line": 8,
+        "type": "tone",
+        "severity": "critical",
+        "message": "Marketing language: 'incredible', 'seamlessly', 'blazing-fast'",
+        "suggestion": "Use factual descriptions"
+      },
+      {
+        "file": "needs-improvement.adoc",
+        "line": 8,
+        "type": "correctness",
+        "severity": "high",
+        "message": "Unverified claim: 'most robust solution available'",
+        "suggestion": "Remove comparative claim or provide evidence"
+      },
+      {
+        "file": "needs-improvement.adoc",
+        "line": 14,
+        "type": "tone",
+        "severity": "critical",
+        "message": "Marketing language: 'revolutionary', 'incredibly fast', 'super easy'",
+        "suggestion": "Describe specific capabilities objectively"
+      },
+      {
+        "file": "needs-improvement.adoc",
+        "line": 14,
+        "type": "tone",
+        "severity": "high",
+        "message": "Qualification patterns: 'enterprise-grade', 'battle-tested'",
+        "suggestion": "Remove qualification buzzwords"
+      },
+      {
+        "file": "needs-improvement.adoc",
+        "line": 18,
+        "type": "tone",
+        "severity": "high",
+        "message": "Self-praise: 'Powerful', 'Amazing', 'World-class'",
+        "suggestion": "List specific features instead"
+      },
+      {
+        "file": "needs-improvement.adoc",
+        "line": 24,
+        "type": "tone",
+        "severity": "high",
+        "message": "Marketing language: 'effortlessly', 'zero configuration', 'magic'",
+        "suggestion": "Describe actual configuration requirements"
+      },
+      {
+        "file": "needs-improvement.adoc",
+        "line": 28,
+        "type": "tone",
+        "severity": "high",
+        "message": "Marketing language: 'ridiculously simple'",
+        "suggestion": "Use neutral language: 'To get started:'"
+      },
+      {
+        "file": "needs-improvement.adoc",
+        "line": 36,
+        "type": "tone",
+        "severity": "critical",
+        "message": "Promotional section 'Why Choose Us?' with qualification patterns",
+        "suggestion": "Remove entire section or rewrite with factual information"
+      },
+      {
+        "file": "needs-improvement.adoc",
+        "line": 37,
+        "type": "correctness",
+        "severity": "high",
+        "message": "Unverified claim: 'Production-proven in thousands of deployments'",
+        "suggestion": "Provide source or remove claim"
+      },
+      {
+        "file": "needs-improvement.adoc",
+        "line": 45,
+        "type": "completeness",
+        "severity": "high",
+        "message": "TODO marker found in documentation",
+        "suggestion": "Remove TODO section from published documentation"
+      },
+      {
+        "file": "needs-improvement.adoc",
+        "line": 48,
+        "type": "completeness",
+        "severity": "high",
+        "message": "Status marker found: '✅ Initial release complete'",
+        "suggestion": "Remove status indicators from documentation"
+      },
+      {
+        "file": "needs-improvement.adoc",
+        "line": 52,
+        "type": "correctness",
+        "severity": "critical",
+        "message": "Unverified performance claim: 'Sub-millisecond' and '10x faster'",
+        "suggestion": "Provide benchmark data or remove claim"
+      }
+    ]
+  },
+  "metrics": {
+    "total_issues": 14,
+    "critical": 5,
+    "high": 8,
+    "medium": 1,
+    "execution_time_ms": 234
+  }
+}

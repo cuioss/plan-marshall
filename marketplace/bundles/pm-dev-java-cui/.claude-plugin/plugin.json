@@ -1,0 +1,22 @@
+{
+  "name": "pm-dev-java-cui",
+  "version": "0.1-BETA",
+  "description": "CUI-specific Java development standards covering CuiLogger, test generators, value object contracts, and HTTP client patterns",
+  "author": {
+    "name": "CUI OSS Project",
+    "email": "contact@cuioss.de"
+  },
+  "license": "Apache-2.0",
+  "homepage": "https://github.com/cuioss/plan-marshall",
+  "repository": "https://github.com/cuioss/plan-marshall.git",
+  "keywords": ["java", "cui", "logging", "testing", "generators", "http-client"],
+  "commands": [],
+  "agents": [],
+  "skills": [
+    "./skills/cui-logging",
+    "./skills/cui-testing",
+    "./skills/cui-http",
+    "./skills/cui-testing-http",
+    "./skills/plan-marshall-plugin"
+  ]
+}

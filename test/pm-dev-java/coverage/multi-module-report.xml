@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!DOCTYPE report PUBLIC "-//JACOCO//DTD Report 1.1//EN" "report.dtd">
+<report name="cui-multi-module-project">
+  <sessioninfo id="multi-module-session" start="1700000000000" dump="1700000100000"/>
+  <package name="de/cuioss/portal/core">
+    <class name="de/cuioss/portal/core/CoreService" sourcefilename="CoreService.java">
+      <method name="process" desc="()V" line="10">
+        <counter type="INSTRUCTION" missed="0" covered="20"/>
+        <counter type="BRANCH" missed="0" covered="2"/>
+        <counter type="LINE" missed="0" covered="5"/>
+        <counter type="METHOD" missed="0" covered="1"/>
+      </method>
+      <counter type="INSTRUCTION" missed="0" covered="20"/>
+      <counter type="BRANCH" missed="0" covered="2"/>
+      <counter type="LINE" missed="0" covered="5"/>
+      <counter type="METHOD" missed="0" covered="1"/>
+      <counter type="CLASS" missed="0" covered="1"/>
+    </class>
+    <counter type="INSTRUCTION" missed="0" covered="20"/>
+    <counter type="BRANCH" missed="0" covered="2"/>
+    <counter type="LINE" missed="0" covered="5"/>
+    <counter type="METHOD" missed="0" covered="1"/>
+    <counter type="CLASS" missed="0" covered="1"/>
+  </package>
+  <package name="de/cuioss/portal/api">
+    <class name="de/cuioss/portal/api/ApiController" sourcefilename="ApiController.java">
+      <method name="handleRequest" desc="()V" line="15">
+        <counter type="INSTRUCTION" missed="5" covered="25"/>
+        <counter type="BRANCH" missed="1" covered="3"/>
+        <counter type="LINE" missed="1" covered="7"/>
+        <counter type="METHOD" missed="0" covered="1"/>
+      </method>
+      <counter type="INSTRUCTION" missed="5" covered="25"/>
+      <counter type="BRANCH" missed="1" covered="3"/>
+      <counter type="LINE" missed="1" covered="7"/>
+      <counter type="METHOD" missed="0" covered="1"/>
+      <counter type="CLASS" missed="0" covered="1"/>
+    </class>
+    <counter type="INSTRUCTION" missed="5" covered="25"/>
+    <counter type="BRANCH" missed="1" covered="3"/>
+    <counter type="LINE" missed="1" covered="7"/>
+    <counter type="METHOD" missed="0" covered="1"/>
+    <counter type="CLASS" missed="0" covered="1"/>
+  </package>
+  <counter type="INSTRUCTION" missed="5" covered="45"/>
+  <counter type="BRANCH" missed="1" covered="5"/>
+  <counter type="LINE" missed="1" covered="12"/>
+  <counter type="METHOD" missed="0" covered="2"/>
+  <counter type="CLASS" missed="0" covered="2"/>
+</report>

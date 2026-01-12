@@ -1,0 +1,33 @@
+> project-root@1.0.0 build:all
+> npm run build --workspaces
+
+> @project/core@1.0.0 build
+> tsc --build
+
+> @project/ui@1.0.0 build
+> tsc --build && npm run bundle
+
+src/components/Button.tsx(23,5): error TS2322: Type 'string' is not assignable to type 'number'.
+src/components/Modal.tsx(45,10): error TS2345: Argument of type 'null' is not assignable to parameter of type 'ReactNode'.
+
+npm ERR! code ELIFECYCLE
+npm ERR! errno 2
+npm ERR! @project/ui@1.0.0 build: `tsc --build && npm run bundle`
+npm ERR! Exit status 2
+
+> @project/api@1.0.0 build
+> tsc --build
+
+Build completed successfully.
+
+npm ERR! code ELIFECYCLE
+npm ERR! errno 2
+npm ERR! project-root@1.0.0 build:all: `npm run build --workspaces`
+npm ERR! Exit status 2
+npm ERR!
+npm ERR! This is probably not a problem with npm. There is likely additional logging output above.
+
+Workspace build summary:
+  @project/core: SUCCESS
+  @project/ui: FAILED (TypeScript errors)
+  @project/api: SUCCESS

@@ -1,0 +1,63 @@
+{
+  "status": "success",
+  "data": {
+    "build_status": "SUCCESS",
+    "issues": [
+      {
+        "type": "javadoc_warning",
+        "file": "src/main/java/com/example/Service.java",
+        "line": 45,
+        "message": "no @param for userId",
+        "severity": "WARNING"
+      },
+      {
+        "type": "javadoc_warning",
+        "file": "src/main/java/com/example/Service.java",
+        "line": 45,
+        "message": "no @return",
+        "severity": "WARNING"
+      },
+      {
+        "type": "deprecation_warning",
+        "file": "src/main/java/com/example/Handler.java",
+        "line": 23,
+        "message": "method doSomething() is deprecated",
+        "severity": "WARNING"
+      },
+      {
+        "type": "unchecked_warning",
+        "file": "src/main/java/com/example/Util.java",
+        "line": 89,
+        "message": "unchecked cast",
+        "severity": "WARNING"
+      },
+      {
+        "type": "other",
+        "message": "Using platform encoding UTF-8",
+        "severity": "WARNING"
+      },
+      {
+        "type": "other",
+        "message": "The POM for com.example:some-lib:jar:1.0.0 is missing",
+        "severity": "WARNING"
+      },
+      {
+        "type": "openrewrite_info",
+        "message": "Changes have been made to the source files",
+        "severity": "WARNING"
+      }
+    ],
+    "summary": {
+      "javadoc_warnings": 2,
+      "deprecation_warnings": 1,
+      "unchecked_warnings": 1,
+      "other_warnings": 2,
+      "total_issues": 7
+    }
+  },
+  "metrics": {
+    "duration_ms": 21635,
+    "tests_run": 13,
+    "tests_failed": 0
+  }
+}

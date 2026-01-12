@@ -1,0 +1,144 @@
+{
+  "ci": {
+    "repo_url": "https://github.com/cuioss/plan-marshall.git",
+    "provider": "github",
+    "detected_at": "2025-12-19T11:30:26Z",
+    "commands": {
+      "pr-create": "python3 .plan/execute-script.py ci-operations:github pr create",
+      "pr-reviews": "python3 .plan/execute-script.py ci-operations:github pr reviews",
+      "ci-status": "python3 .plan/execute-script.py ci-operations:github ci status",
+      "ci-wait": "python3 .plan/execute-script.py ci-operations:github ci wait",
+      "issue-create": "python3 .plan/execute-script.py ci-operations:github issue create"
+    }
+  },
+  "plan": {
+    "defaults": {
+      "compatibility": "breaking",
+      "commit_strategy": "per_plan",
+      "create_pr": false,
+      "verification_required": true,
+      "branch_strategy": "direct"
+    }
+  },
+  "skill_domains": {
+    "system": {
+      "defaults": [
+        "plan-marshall:general-development-rules"
+      ],
+      "optionals": [
+        "plan-marshall:diagnostic-patterns"
+      ]
+    },
+    "java": {
+      "workflow_skills": {
+        "solution_outline": "pm-workflow:solution-outline",
+        "task_plan": "pm-workflow:task-plan",
+        "implementation": "pm-workflow:task-implementation",
+        "testing": "pm-workflow:task-testing"
+      },
+      "core": {
+        "defaults": [
+          "pm-dev-java:java-core"
+        ],
+        "optionals": [
+          "pm-dev-java:java-null-safety",
+          "pm-dev-java:java-lombok",
+          "pm-dev-java:javadoc"
+        ]
+      },
+      "implementation": {
+        "defaults": [],
+        "optionals": [
+          "pm-dev-java:java-cdi",
+          "pm-dev-java:java-maintenance"
+        ]
+      },
+      "testing": {
+        "defaults": [
+          "pm-dev-java:junit-core"
+        ],
+        "optionals": [
+          "pm-dev-java:junit-integration"
+        ]
+      }
+    },
+    "javascript": {
+      "workflow_skills": {
+        "solution_outline": "pm-workflow:solution-outline",
+        "task_plan": "pm-workflow:task-plan",
+        "implementation": "pm-workflow:task-implementation",
+        "testing": "pm-workflow:task-testing"
+      },
+      "core": {
+        "defaults": [
+          "pm-dev-frontend:cui-javascript"
+        ],
+        "optionals": [
+          "pm-dev-frontend:cui-jsdoc",
+          "pm-dev-frontend:cui-javascript-project"
+        ]
+      },
+      "implementation": {
+        "defaults": [],
+        "optionals": [
+          "pm-dev-frontend:cui-javascript-linting",
+          "pm-dev-frontend:cui-javascript-maintenance"
+        ]
+      },
+      "testing": {
+        "defaults": [
+          "pm-dev-frontend:cui-javascript-unit-testing"
+        ],
+        "optionals": [
+          "pm-dev-frontend:cui-cypress"
+        ]
+      }
+    },
+    "plan-marshall-plugin-dev": {
+      "workflow_skills": {
+        "solution_outline": "pm-plugin-development:plugin-solution-outline",
+        "task_plan": "pm-plugin-development:plugin-task-plan",
+        "implementation": "pm-plugin-development:plugin-plan-implement"
+      },
+      "core": {
+        "defaults": [
+          "pm-plugin-development:plugin-architecture",
+          "pm-plugin-development:plugin-script-architecture"
+        ],
+        "optionals": [
+          "plan-marshall:toon-usage",
+          "plan-marshall:script-executor"
+        ]
+      },
+      "implementation": {
+        "defaults": [],
+        "optionals": []
+      }
+    },
+    "generic": {
+      "workflow_skills": {
+        "solution_outline": "pm-workflow:solution-outline",
+        "task_plan": "pm-workflow:task-plan",
+        "implementation": "pm-workflow:task-implementation"
+      },
+      "core": {
+        "defaults": [],
+        "optionals": []
+      },
+      "implementation": {
+        "defaults": [],
+        "optionals": []
+      }
+    }
+  },
+  "system": {
+    "retention": {
+      "logs_days": 1,
+      "archived_plans_days": 5,
+      "memory_days": 5,
+      "temp_on_maintenance": true
+    }
+  },
+  "modules": {},
+  "build_systems": []
+}

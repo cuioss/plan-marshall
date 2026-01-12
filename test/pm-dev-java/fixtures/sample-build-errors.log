@@ -1,0 +1,33 @@
+[INFO] Scanning for projects...
+[INFO]
+[INFO] -------------------< de.cuioss:cui-java-tools >--------------------
+[INFO] Building CUI Java Tools 1.0.0-SNAPSHOT
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO]
+[INFO] --- maven-compiler-plugin:3.11.0:compile (default-compile) @ cui-java-tools ---
+[INFO] Changes detected - recompiling the module!
+[INFO] Compiling 25 source files to /Users/oliver/project/target/classes
+[INFO] -------------------------------------------------------------
+[ERROR] COMPILATION ERROR :
+[INFO] -------------------------------------------------------------
+[ERROR] /Users/oliver/project/src/main/java/de/cuioss/tools/TokenValidator.java:[42,25] cannot find symbol
+  symbol:   class InvalidTokenException
+  location: class de.cuioss.tools.TokenValidator
+[ERROR] /Users/oliver/project/src/main/java/de/cuioss/tools/TokenValidator.java:[58,12] incompatible types: java.lang.String cannot be converted to java.time.Duration
+[ERROR] /Users/oliver/project/src/main/java/de/cuioss/tools/UserService.java:[30,5] method does not override or implement a method from a supertype
+[INFO] 3 errors
+[INFO] -------------------------------------------------------------
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD FAILURE
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  3.456 s
+[INFO] Finished at: 2025-01-15T10:30:45Z
+[INFO] ------------------------------------------------------------------------
+[ERROR] Failed to execute goal org.apache.maven.plugins:maven-compiler-plugin:3.11.0:compile (default-compile) on project cui-java-tools: Compilation failure: Compilation failure:
+[ERROR] /Users/oliver/project/src/main/java/de/cuioss/tools/TokenValidator.java:[42,25] cannot find symbol
+[ERROR]   symbol:   class InvalidTokenException
+[ERROR]   location: class de.cuioss.tools.TokenValidator
+[ERROR] /Users/oliver/project/src/main/java/de/cuioss/tools/TokenValidator.java:[58,12] incompatible types: java.lang.String cannot be converted to java.time.Duration
+[ERROR] /Users/oliver/project/src/main/java/de/cuioss/tools/UserService.java:[30,5] method does not override or implement a method from a supertype
+[ERROR] -> [Help 1]
+[INFO] ------------------------------------------------------------------------

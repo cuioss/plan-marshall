@@ -1,0 +1,14 @@
+triage_results[5]{issue_key,action,reason,suggested_implementation,command_to_use,priority,suppression_string}:
+AX-001,fix,Resource leak is a critical bug that can cause memory issues,Wrap InputStream in try-with-resources block or use InputStreamUtils.close() in finally clause,/java-implement-code,high,
+AX-002,fix,String duplication is easy to fix and improves maintainability,"Extract 'application/json' to private static final String CONTENT_TYPE_JSON = ""application/json"";",/java-implement-code,medium,
+AX-003,fix,Potential SQL injection vulnerability - security critical,Replace string concatenation with parameterized query or use PreparedStatement,/java-implement-code,critical,
+AX-004,fix,Unused field is trivial to remove,Delete the unused 'logger' field declaration,/java-implement-code,low,
+AX-005,suppress,TODO comment is intentional placeholder for future work documented in issue #45,,,,"// NOSONAR java:S1135 - TODO tracked in issue #45"
+
+summary:
+  to_fix: 4
+  to_suppress: 1
+  critical_priority: 1
+  high_priority: 1
+  medium_priority: 1
+  low_priority: 1

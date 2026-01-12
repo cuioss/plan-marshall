@@ -1,0 +1,194 @@
+{
+  "project": {
+    "description": "Custom Apache NiFi extensions by CUI-OSS, providing JWT token authentication from multiple issuers with a comprehensive E2E testing framework using Playwright and Docker.",
+    "description_reasoning": "From README.adoc overview and components sections"
+  },
+  "modules": {
+    "nifi-extensions": {
+      "responsibility": "Parent POM coordinating build configuration, dependency management, and plugin settings for all NiFi extension child modules.",
+      "responsibility_reasoning": "packaging=pom with multiple child modules visible in derived data",
+      "purpose": "parent",
+      "purpose_reasoning": "packaging=pom at project root, manages child modules",
+      "key_packages": {},
+      "internal_dependencies": [],
+      "key_dependencies": [],
+      "key_dependencies_reasoning": "",
+      "skills_by_profile": {
+        "implementation": [
+          "pm-dev-java:java-core",
+          "pm-dev-java:java-maintenance"
+        ]
+      },
+      "skills_by_profile_reasoning": "Parent POM module, only build configuration management applies",
+      "tips": [],
+      "insights": [],
+      "best_practices": []
+    },
+    "e-2-e-playwright": {
+      "responsibility": "Comprehensive Playwright-based end-to-end testing framework with WCAG accessibility checks, Docker integration, and automated CI/CD workflows for testing NiFi processors in realistic environments.",
+      "responsibility_reasoning": "From README.adoc and npm dependencies showing playwright, axe-playwright for accessibility",
+      "purpose": "integration-tests",
+      "purpose_reasoning": "packaging=pom, contains only test files, Playwright E2E tests",
+      "key_packages": {},
+      "internal_dependencies": [],
+      "key_dependencies": [
+        "npm:@playwright/test",
+        "npm:axe-playwright",
+        "npm:jwt-decode"
+      ],
+      "key_dependencies_reasoning": "Playwright for E2E testing, axe-playwright for accessibility testing, jwt-decode for token validation in tests",
+      "skills_by_profile": {
+        "implementation": [
+          "pm-dev-frontend:cui-javascript",
+          "pm-dev-frontend:cui-jsdoc",
+          "pm-dev-frontend:cui-javascript-linting"
+        ],
+        "integration-testing": [
+          "pm-dev-frontend:cui-javascript",
+          "pm-dev-frontend:cui-cypress"
+        ]
+      },
+      "skills_by_profile_reasoning": "JavaScript E2E test module, Playwright tests map to integration-testing profile",
+      "tips": [],
+      "insights": [],
+      "best_practices": []
+    },
+    "integration-testing": {
+      "responsibility": "Docker-based integration testing infrastructure providing container configurations for NiFi and Keycloak to enable local and CI integration test execution.",
+      "responsibility_reasoning": "From pom.xml description and module purpose as test infrastructure",
+      "purpose": "integration-tests",
+      "purpose_reasoning": "Module name and description indicate Docker-based test infrastructure",
+      "key_packages": {},
+      "internal_dependencies": [],
+      "key_dependencies": [],
+      "key_dependencies_reasoning": "",
+      "skills_by_profile": {
+        "implementation": [
+          "pm-dev-java:java-core"
+        ]
+      },
+      "skills_by_profile_reasoning": "Docker configuration module, minimal Java skills for infrastructure setup",
+      "tips": [],
+      "insights": [],
+      "best_practices": []
+    },
+    "nifi-cuioss-nar": {
+      "responsibility": "NiFi Archive (NAR) packaging module that bundles nifi-cuioss-processors and nifi-cuioss-ui into a deployable NiFi extension archive.",
+      "responsibility_reasoning": "packaging=nar with dependencies on processors and ui modules",
+      "purpose": "deployment",
+      "purpose_reasoning": "packaging=nar, bundles other modules for NiFi deployment",
+      "key_packages": {},
+      "internal_dependencies": [
+        "nifi-cuioss-processors",
+        "nifi-cuioss-ui"
+      ],
+      "key_dependencies": [
+        "org.apache.nifi:nifi-standard-services-api-nar"
+      ],
+      "key_dependencies_reasoning": "NiFi services NAR for runtime API, bundles processors and UI modules",
+      "skills_by_profile": {
+        "implementation": [
+          "pm-dev-java:java-core"
+        ]
+      },
+      "skills_by_profile_reasoning": "NAR packaging module, minimal skills needed for build configuration",
+      "tips": [],
+      "insights": [],
+      "best_practices": []
+    },
+    "nifi-cuioss-processors": {
+      "responsibility": "Core NiFi processor implementations including MultiIssuerJWTTokenAuthenticator for validating JWT tokens from multiple identity providers using oauth-sheriff-core library.",
+      "responsibility_reasoning": "From README.md and package structure showing auth processing packages",
+      "purpose": "library",
+      "purpose_reasoning": "packaging=jar, processor library consumed by nifi-cuioss-nar",
+      "key_packages": {
+        "de.cuioss.nifi.processors.auth": {
+          "description": "Core processor implementations including MultiIssuerJWTTokenAuthenticator for JWT validation from multiple identity providers"
+        },
+        "de.cuioss.nifi.processors.auth.config": {
+          "description": "Configuration handling for processor properties including issuer settings and validation parameters"
+        },
+        "de.cuioss.nifi.processors.auth.util": {
+          "description": "Utility classes for token parsing, YAML/JSON processing, and common authentication helpers"
+        },
+        "de.cuioss.nifi.processors.auth.i18n": {
+          "description": "Internationalization support with localized messages and log record identifiers"
+        }
+      },
+      "internal_dependencies": [],
+      "key_dependencies": [
+        "org.apache.nifi:nifi-api",
+        "de.cuioss.sheriff.oauth:oauth-sheriff-core",
+        "de.cuioss:cui-java-tools",
+        "org.yaml:snakeyaml"
+      ],
+      "key_dependencies_reasoning": "NiFi API defines processor contract, oauth-sheriff-core provides JWT validation, cui-java-tools for utilities, snakeyaml for YAML config parsing",
+      "skills_by_profile": {
+        "implementation": [
+          "pm-dev-java:java-core",
+          "pm-dev-java:java-null-safety",
+          "pm-dev-java:java-lombok",
+          "pm-dev-java:java-maintenance"
+        ],
+        "unit-testing": [
+          "pm-dev-java:java-core",
+          "pm-dev-java:java-null-safety",
+          "pm-dev-java:java-lombok",
+          "pm-dev-java:junit-core"
+        ]
+      },
+      "skills_by_profile_reasoning": "Java module without CDI annotations, removed java-cdi; standard JUnit testing without integration",
+      "tips": [],
+      "insights": [],
+      "best_practices": []
+    },
+    "nifi-cuioss-ui": {
+      "responsibility": "Web UI components providing configuration interfaces for NiFi processors, including JavaScript components with ESLint/Jest testing and Java servlets for backend services.",
+      "responsibility_reasoning": "From package structure showing servlets, service, util packages, and npm dependencies for JS dev",
+      "purpose": "library",
+      "purpose_reasoning": "packaging=war, provides UI components to be packaged in NAR",
+      "key_packages": {
+        "de.cuioss.nifi.ui.servlets": {
+          "description": "HTTP servlets providing REST endpoints for UI component configuration and processor interaction"
+        },
+        "de.cuioss.nifi.ui.service": {
+          "description": "Service layer providing business logic for UI operations and processor configuration management"
+        },
+        "de.cuioss.nifi.ui.util": {
+          "description": "Utility classes for common UI operations, request/response handling, and data transformation"
+        }
+      },
+      "internal_dependencies": [
+        "nifi-cuioss-processors"
+      ],
+      "key_dependencies": [
+        "org.apache.nifi:nifi-api",
+        "jakarta.servlet:jakarta.servlet-api",
+        "de.cuioss:cui-http",
+        "de.cuioss.sheriff.oauth:oauth-sheriff-core"
+      ],
+      "key_dependencies_reasoning": "NiFi API for processor integration, Servlet API for HTTP handling, cui-http for HTTP client, oauth-sheriff for token operations, depends on processors module",
+      "skills_by_profile": {
+        "implementation": [
+          "pm-dev-java:java-core",
+          "pm-dev-java:java-null-safety",
+          "pm-dev-java:java-lombok",
+          "pm-dev-java:java-maintenance",
+          "pm-dev-frontend:cui-javascript",
+          "pm-dev-frontend:cui-jsdoc",
+          "pm-dev-frontend:cui-javascript-linting"
+        ],
+        "unit-testing": [
+          "pm-dev-java:java-core",
+          "pm-dev-java:junit-core",
+          "pm-dev-frontend:cui-javascript",
+          "pm-dev-frontend:cui-javascript-unit-testing"
+        ]
+      },
+      "skills_by_profile_reasoning": "Hybrid module with Java servlets and JavaScript UI; both domains apply; no CDI",
+      "tips": [],
+      "insights": [],
+      "best_practices": []
+    }
+  }
+}

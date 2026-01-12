@@ -1,0 +1,5 @@
+fixes[4]{issue_key,rule,file,line,fix_type,description}:
+AX-001,java:S2095,src/main/java/de/cuioss/http/HttpClient.java,145,try_with_resources,"Original: InputStream input = connection.getInputStream(); String response = readStream(input); input.close(); | Fixed: try (InputStream input = connection.getInputStream()) { String response = readStream(input); }"
+AX-002,java:S1192,src/main/java/de/cuioss/http/HttpClient.java,89,extract_constant,"Constant: private static final String CONTENT_TYPE_JSON = ""application/json""; | Replace at lines 89,112,156,201"
+AX-003,java:S3649,src/main/java/de/cuioss/service/UserService.java,67,parameterized_query,"Original: String sql = ""SELECT * FROM users WHERE id = '"" + userId + ""'""; | Fixed: String sql = ""SELECT * FROM users WHERE id = ?""; PreparedStatement stmt = connection.prepareStatement(sql); stmt.setString(1, userId);"
+AX-004,java:S1068,src/main/java/de/cuioss/util/Parser.java,23,delete_line,"Delete: private static final Logger logger = LoggerFactory.getLogger(Parser.class);"

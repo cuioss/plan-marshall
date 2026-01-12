@@ -1,0 +1,38 @@
+= ADR-{{NUMBER}}: {{TITLE}}
+:toc: left
+:toclevels: 2
+:sectnums:
+
+== Status
+
+{{STATUS}}
+
+== Context
+
+{{CONTEXT}}
+
+== Decision
+
+{{DECISION}}
+
+== Consequences
+
+=== Positive
+
+{{POSITIVE_CONSEQUENCES}}
+
+=== Negative
+
+{{NEGATIVE_CONSEQUENCES}}
+
+=== Risks
+
+{{RISKS}}
+
+== Alternatives Considered
+
+{{ALTERNATIVES}}
+
+== References
+
+{{REFERENCES}}

@@ -1,0 +1,45 @@
+{
+  "name": "plan-marshall",
+  "version": "0.1-BETA",
+  "description": "Environment setup, permission management, and cross-cutting utilities",
+  "author": {
+    "name": "CUI OSS Project",
+    "email": "contact@cuioss.de"
+  },
+  "license": "Apache-2.0",
+  "homepage": "https://github.com/cuioss/plan-marshall",
+  "repository": "https://github.com/cuioss/plan-marshall.git",
+  "keywords": ["environment", "permissions", "utilities", "configuration", "workflow"],
+  "skills": [
+    "./skills/analyze-project-architecture",
+    "./skills/ci-operations",
+    "./skills/diagnostic-patterns",
+    "./skills/extension-api",
+    "./skills/file-operations-base",
+    "./skills/general-development-rules",
+    "./skills/json-file-operations",
+    "./skills/lessons-learned",
+    "./skills/logging",
+    "./skills/manage-memories",
+    "./skills/marketplace-inventory",
+    "./skills/marketplace-sync",
+    "./skills/permission-doctor",
+    "./skills/permission-fix",
+    "./skills/marshall-steward",
+    "./skills/plan-marshall-config",
+    "./skills/run-config",
+    "./skills/script-executor",
+    "./skills/toon-usage",
+    "./skills/web-permissions"
+  ],
+  "agents": [
+    "./agents/research-best-practices.md"
+  ],
+  "commands": [
+    "./commands/marshall-steward.md",
+    "./commands/tools-fix-intellij-diagnostics.md",
+    "./commands/tools-manage-web-permissions.md",
+    "./commands/tools-sync-agents-file.md",
+    "./commands/tools-verify-architecture-diagrams.md"
+  ]
+}

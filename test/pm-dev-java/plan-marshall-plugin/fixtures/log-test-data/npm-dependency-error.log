@@ -1,0 +1,27 @@
+npm ERR! code ERESOLVE
+npm ERR! ERESOLVE unable to resolve dependency tree
+npm ERR!
+npm ERR! While resolving: sample-app@1.0.0
+npm ERR! Found: react@18.2.0
+npm ERR! node_modules/react
+npm ERR!   react@"^18.2.0" from the root project
+npm ERR!
+npm ERR! Could not resolve dependency:
+npm ERR! peer react@"^16.8.0 || ^17.0.0" from react-router-dom@5.3.4
+npm ERR! node_modules/react-router-dom
+npm ERR!   react-router-dom@"^5.3.4" from the root project
+npm ERR!
+npm ERR! Conflicting peer dependency: react@17.0.2
+npm ERR! node_modules/react
+npm ERR!   peer react@"^16.8.0 || ^17.0.0" from react-router-dom@5.3.4
+npm ERR!   node_modules/react-router-dom
+npm ERR!     react-router-dom@"^5.3.4" from the root project
+npm ERR!
+npm ERR! Fix the upstream dependency conflict, or retry
+npm ERR! this command with --force or --legacy-peer-deps
+npm ERR! to accept an incorrect (and potentially broken) dependency resolution.
+npm ERR!
+npm ERR! See /Users/dev/.npm/eresolve-report.txt for a full report.
+
+npm ERR! A complete log of this run can be found in:
+npm ERR!     /Users/dev/.npm/_logs/2026-01-06T14_30_00_000Z-debug.log

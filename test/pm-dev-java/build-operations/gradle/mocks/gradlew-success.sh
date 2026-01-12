@@ -1,0 +1,24 @@
+#!/bin/bash
+# Mock gradlew that simulates a successful build
+
+cat << 'EOF'
+> Task :compileJava
+> Task :processResources
+> Task :classes
+> Task :jar
+> Task :assemble
+> Task :compileTestJava
+> Task :processTestResources NO-SOURCE
+> Task :testClasses
+> Task :test
+
+13 tests completed, 0 failed
+
+> Task :check
+> Task :build
+
+BUILD SUCCESSFUL in 21s
+8 actionable tasks: 8 executed
+EOF
+
+exit 0

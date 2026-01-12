@@ -1,0 +1,49 @@
+{
+  "source": "plugin-diagnose",
+  "bundle": "pm-plugin-development",
+  "timestamp": "2025-11-21T10:00:00Z",
+  "issues": [
+    {
+      "id": "issue-1",
+      "type": "bloat-critical",
+      "severity": "high",
+      "file": "commands/massive-command.md",
+      "line": null,
+      "message": "Command exceeds 800 lines (current: 2500 lines)",
+      "details": {
+        "line_count": 2500,
+        "threshold": 800
+      },
+      "fixable": false
+    },
+    {
+      "id": "issue-2",
+      "type": "architectural-restructure-needed",
+      "severity": "high",
+      "file": "skills/monolithic-skill/",
+      "line": null,
+      "message": "Skill structure needs major refactoring",
+      "fixable": false
+    },
+    {
+      "id": "issue-3",
+      "type": "external-dependency-issue",
+      "severity": "medium",
+      "file": "scripts/broken-script.py",
+      "line": 15,
+      "message": "Script uses external package not in stdlib",
+      "fixable": false
+    }
+  ],
+  "summary": {
+    "total_issues": 3,
+    "fixable_count": 0,
+    "non_fixable_count": 3,
+    "by_severity": {
+      "critical": 0,
+      "high": 2,
+      "medium": 1,
+      "low": 0
+    }
+  }
+}

@@ -1,0 +1,27 @@
+[INFO] Scanning for projects...
+[INFO]
+[INFO] ---------------------< com.example:sample-project >---------------------
+[INFO] Building Sample Project 1.0.0-SNAPSHOT
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO]
+[INFO] --- rewrite-maven-plugin:5.15.0:run (default-cli) @ sample-project ---
+[INFO] Using active recipe(s) [org.openrewrite.java.cleanup.CommonStaticAnalysis]
+[INFO] Validating active recipes...
+[WARNING] org.openrewrite: Some warnings from OpenRewrite recipe execution
+[INFO] Running recipe org.openrewrite.java.cleanup.CommonStaticAnalysis
+[WARNING] org.openrewrite.java.cleanup.UnnecessaryParentheses: File modified but not saved
+[INFO]
+[INFO] --- maven-compiler-plugin:3.11.0:compile (default-compile) @ sample-project ---
+[INFO] Changes detected - recompiling the module!
+[WARNING] /Users/test/sample-project/src/main/java/com/example/Service.java:[50,10] [unchecked] unchecked cast
+[ERROR] /Users/test/sample-project/src/main/java/com/example/Handler.java:[90,25] cannot find symbol
+[INFO]
+[INFO] --- maven-surefire-plugin:3.0.0:test (default-test) @ sample-project ---
+[INFO] Tests run: 13, Failures: 0, Errors: 0, Skipped: 0
+[INFO]
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD FAILURE
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time: 12.345 s
+[INFO] Finished at: 2025-11-25T10:45:00+01:00
+[INFO] ------------------------------------------------------------------------

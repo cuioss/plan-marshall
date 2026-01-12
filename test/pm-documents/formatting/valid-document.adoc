@@ -1,0 +1,48 @@
+= Valid Document
+:toc: left
+:toclevels: 3
+:sectnums:
+
+A properly formatted AsciiDoc document.
+
+== Introduction
+
+This document demonstrates correct AsciiDoc formatting.
+
+=== List Example
+
+The following list has correct formatting:
+
+* Item one
+* Item two
+* Item three
+
+=== Nested List Example
+
+Properly formatted nested list:
+
+* Main item one
+** Nested item one
+** Nested item two
+* Main item two
+
+== Code Examples
+
+Properly formatted code block:
+
+[source,java]
+----
+public class Example {
+    public void method() {
+        // Implementation
+    }
+}
+----
+
+== Cross-References
+
+Use xref:other-document.adoc[proper xref syntax] for links.
+
+== Conclusion
+
+This document passes all format validation.

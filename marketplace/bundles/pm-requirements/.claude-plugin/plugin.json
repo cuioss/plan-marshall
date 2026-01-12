@@ -1,0 +1,24 @@
+{
+  "name": "pm-requirements",
+  "version": "0.1-BETA",
+  "description": "Requirements engineering and specification standards for CUI projects",
+  "author": {
+    "name": "CUI OSS Project",
+    "email": "contact@cuioss.de"
+  },
+  "license": "Apache-2.0",
+  "homepage": "https://github.com/cuioss/plan-marshall",
+  "repository": "https://github.com/cuioss/plan-marshall.git",
+  "keywords": ["requirements", "specifications", "planning", "traceability", "setup"],
+  "agents": [],
+  "commands": [
+    "./commands/cui-maintain-requirements.md"
+  ],
+  "skills": [
+    "./skills/planning",
+    "./skills/requirements-authoring",
+    "./skills/setup",
+    "./skills/traceability",
+    "./skills/plan-marshall-plugin"
+  ]
+}

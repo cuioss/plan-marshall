@@ -1,0 +1,25 @@
+[INFO] Scanning for projects...
+[INFO]
+[INFO] ---------------------< com.example:sample-project >---------------------
+[INFO] Building Sample Project 1.0.0-SNAPSHOT
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO]
+[INFO] --- maven-javadoc-plugin:3.5.0:javadoc (default) @ sample-project ---
+[WARNING] Javadoc Warnings
+[WARNING] /Users/test/sample-project/src/main/java/com/example/SampleService.java:25: warning: no @param for value
+[WARNING] /Users/test/sample-project/src/main/java/com/example/SampleService.java:30: warning: no @return
+[WARNING] /Users/test/sample-project/src/main/java/com/example/Repository.java:45: warning: @param name not found
+[WARNING] 3 warnings
+[INFO]
+[INFO] --- maven-compiler-plugin:3.11.0:compile (default-compile) @ sample-project ---
+[INFO] Nothing to compile - all classes are up to date
+[INFO]
+[INFO] --- maven-surefire-plugin:3.0.0:test (default-test) @ sample-project ---
+[INFO] Tests run: 13, Failures: 0, Errors: 0, Skipped: 0
+[INFO]
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD SUCCESS
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time: 8.456 s
+[INFO] Finished at: 2025-11-25T10:40:00+01:00
+[INFO] ------------------------------------------------------------------------

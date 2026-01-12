@@ -1,0 +1,33 @@
+= Document with Broken Links
+:toc: left
+:toclevels: 3
+
+This document has broken file links.
+
+== Introduction
+
+This section contains broken cross-references.
+
+== Broken File References
+
+=== Non-existent Files
+
+Reference to missing file: xref:non-existent-file.adoc[Missing File]
+
+Another missing: xref:../missing/path/document.adoc[Missing Path]
+
+Deep missing: xref:../../very/deep/missing.adoc[Deep Missing]
+
+=== Invalid Paths
+
+Reference with wrong extension: xref:document.txt[Wrong Extension]
+
+Reference with extra dots: xref:../path/../other/file.adoc[Complex Path]
+
+== Possibly Valid
+
+This might exist: xref:related-document.adoc[Related Doc]
+
+== Conclusion
+
+Fix all broken file references.

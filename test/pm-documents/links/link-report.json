@@ -1,0 +1,148 @@
+{
+  "status": "success",
+  "data": {
+    "files_verified": 3,
+    "valid_links": [
+      {
+        "file": "all-links-valid.adoc",
+        "line": 16,
+        "type": "internal_anchor",
+        "target": "intro-section",
+        "status": "valid"
+      },
+      {
+        "file": "all-links-valid.adoc",
+        "line": 18,
+        "type": "internal_anchor",
+        "target": "code-examples",
+        "status": "valid"
+      },
+      {
+        "file": "all-links-valid.adoc",
+        "line": 22,
+        "type": "internal_anchor",
+        "target": "conclusion",
+        "status": "valid"
+      },
+      {
+        "file": "all-links-valid.adoc",
+        "line": 36,
+        "type": "external_url",
+        "target": "https://docs.oracle.com/javase/specs/",
+        "status": "valid"
+      },
+      {
+        "file": "all-links-valid.adoc",
+        "line": 37,
+        "type": "external_url",
+        "target": "https://maven.apache.org/guides/",
+        "status": "valid"
+      },
+      {
+        "file": "broken-xrefs.adoc",
+        "line": 27,
+        "type": "internal_anchor",
+        "target": "valid-anchor",
+        "status": "valid"
+      }
+    ],
+    "broken_links": [
+      {
+        "file": "broken-links.adoc",
+        "line": 14,
+        "type": "file_reference",
+        "target": "non-existent-file.adoc",
+        "status": "broken",
+        "reason": "File not found"
+      },
+      {
+        "file": "broken-links.adoc",
+        "line": 16,
+        "type": "file_reference",
+        "target": "../missing/path/document.adoc",
+        "status": "broken",
+        "reason": "File not found"
+      },
+      {
+        "file": "broken-links.adoc",
+        "line": 18,
+        "type": "file_reference",
+        "target": "../../very/deep/missing.adoc",
+        "status": "broken",
+        "reason": "File not found"
+      },
+      {
+        "file": "broken-links.adoc",
+        "line": 22,
+        "type": "file_reference",
+        "target": "document.txt",
+        "status": "broken",
+        "reason": "Invalid file extension"
+      },
+      {
+        "file": "broken-xrefs.adoc",
+        "line": 15,
+        "type": "internal_anchor",
+        "target": "undefined-anchor-id",
+        "status": "broken",
+        "reason": "Anchor not defined"
+      },
+      {
+        "file": "broken-xrefs.adoc",
+        "line": 17,
+        "type": "internal_anchor",
+        "target": "missing-section-anchor",
+        "status": "broken",
+        "reason": "Anchor not defined"
+      },
+      {
+        "file": "broken-xrefs.adoc",
+        "line": 19,
+        "type": "internal_anchor",
+        "target": "almost-valid",
+        "status": "broken",
+        "reason": "Anchor not defined"
+      },
+      {
+        "file": "broken-xrefs.adoc",
+        "line": 23,
+        "type": "internal_anchor",
+        "target": "validanchor",
+        "status": "broken",
+        "reason": "Anchor not defined",
+        "suggestion": "Did you mean 'valid-anchor'?"
+      },
+      {
+        "file": "broken-xrefs.adoc",
+        "line": 31,
+        "type": "internal_anchor",
+        "target": "future-section",
+        "status": "broken",
+        "reason": "Anchor not defined"
+      },
+      {
+        "file": "broken-xrefs.adoc",
+        "line": 33,
+        "type": "internal_anchor",
+        "target": "deprecated-section",
+        "status": "broken",
+        "reason": "Anchor not defined"
+      }
+    ],
+    "suggestions": [
+      {
+        "file": "broken-xrefs.adoc",
+        "line": 23,
+        "current": "validanchor",
+        "suggested": "valid-anchor",
+        "reason": "Similar anchor exists"
+      }
+    ]
+  },
+  "metrics": {
+    "total_links": 16,
+    "valid_count": 6,
+    "broken_count": 10,
+    "execution_time_ms": 89
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "name": "pm-dev-frontend",
+  "version": "0.1-BETA",
+  "description": "JavaScript, CSS, and web component standards for CUI applications",
+  "author": {
+    "name": "CUI OSS Project",
+    "email": "contact@cuioss.de"
+  },
+  "license": "Apache-2.0",
+  "homepage": "https://github.com/cuioss/plan-marshall",
+  "repository": "https://github.com/cuioss/plan-marshall.git",
+  "keywords": ["javascript", "css", "frontend", "web-components", "testing", "standards"],
+  "commands": [
+    "./commands/js-enforce-eslint.md",
+    "./commands/js-refactor-code.md",
+    "./commands/js-maintain-tests.md",
+    "./commands/js-fix-jsdoc.md",
+    "./commands/js-generate-coverage.md",
+    "./commands/js-implement-code.md",
+    "./commands/js-implement-tests.md"
+  ],
+  "skills": [
+    "./skills/cui-css",
+    "./skills/cui-cypress",
+    "./skills/cui-javascript",
+    "./skills/cui-javascript-linting",
+    "./skills/cui-javascript-maintenance",
+    "./skills/cui-javascript-project",
+    "./skills/cui-javascript-unit-testing",
+    "./skills/cui-jsdoc",
+    "./skills/javascript-triage",
+    "./skills/plan-marshall-plugin"
+  ]
+}

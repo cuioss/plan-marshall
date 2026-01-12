@@ -1,0 +1,56 @@
+> sample-monorepo@1.0.0 test
+> node --test --enable-source-maps "packages/*/dist/test/**/*.js"
+
+TAP version 13
+# Subtest: <App />
+    # Subtest: renders without throwing on the server
+    ok 1 - renders without throwing on the server
+      ---
+      duration_ms: 4.585334
+      type: 'test'
+      ...
+    # Subtest: renders provided text
+    not ok 2 - renders provided text
+      ---
+      duration_ms: 0.320708
+      type: 'test'
+      location: '/Users/dev/sample-monorepo/packages/ui/dist/test/App.test.js:15:5'
+      failureType: 'testCodeFailure'
+      error: 'Expected "Hello" but got "Goodbye"'
+      code: 'ERR_TEST_FAILURE'
+      stack: |
+        at TestContext.<anonymous> (file:///Users/dev/sample-monorepo/packages/ui/dist/test/App.test.js:15:5)
+        at async Test.run (node:internal/test_runner/test:632:9)
+      ...
+    1..2
+not ok 1 - <App />
+  ---
+  duration_ms: 5.621458
+  type: 'suite'
+  ...
+# Subtest: validator
+    # Subtest: validates email format
+    not ok 1 - validates email format
+      ---
+      duration_ms: 0.582042
+      type: 'test'
+      location: '/Users/dev/sample-monorepo/packages/core/dist/test/validator.test.js:25:5'
+      failureType: 'testCodeFailure'
+      error: 'AssertionError: expected true to be false'
+      code: 'ERR_TEST_FAILURE'
+      ...
+    1..1
+not ok 2 - validator
+  ---
+  duration_ms: 1.33175
+  type: 'suite'
+  ...
+1..2
+# tests 3
+# suites 2
+# pass 1
+# fail 2
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 132.214875

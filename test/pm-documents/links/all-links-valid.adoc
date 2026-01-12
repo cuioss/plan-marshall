@@ -1,0 +1,45 @@
+= Document with Valid Links
+:toc: left
+:toclevels: 3
+:sectnums:
+
+This document has all valid links.
+
+== Introduction
+
+[#intro-section]
+Introduction content.
+
+== Cross-References
+
+=== Internal Anchors
+
+Reference to intro: <<intro-section>>
+
+Reference to code section: <<code-examples>>
+
+=== Valid Section References
+
+See the <<conclusion>> for summary.
+
+[#code-examples]
+== Code Examples
+
+[source,java]
+----
+public class ValidExample {
+    public void method() {
+        // Implementation
+    }
+}
+----
+
+== External Links
+
+* https://docs.oracle.com/javase/specs/[Java Specification]
+* https://maven.apache.org/guides/[Maven Guides]
+
+[#conclusion]
+== Conclusion
+
+All links in this document are valid.
