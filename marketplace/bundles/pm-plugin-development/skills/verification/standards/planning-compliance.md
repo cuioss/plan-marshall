@@ -658,7 +658,7 @@ python3 .plan/execute-script.py plan-marshall:logging:manage-log read --plan-id 
 
 ### Phase 4: Tasks Created
 
-**Contract Reference**: [plan-wf-skill-api/standards/task-contract.md](../../../pm-workflow/skills/plan-wf-skill-api/standards/task-contract.md)
+**Contract Reference**: [manage-tasks/standards/task-contract.md](../../../pm-workflow/skills/manage-tasks/standards/task-contract.md)
 
 **Verification**:
 ```bash

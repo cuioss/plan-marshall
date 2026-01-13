@@ -767,7 +767,7 @@ def parse_stdin_task(stdin_content: str) -> dict:
         raise ValueError(
             "Task contract violation - steps must be file paths:\n" +
             "\n".join(step_errors) +
-            "\n\nContract reference: pm-workflow:plan-wf-skill-api/standards/task-contract.md"
+            "\n\nContract reference: pm-workflow:manage-tasks/standards/task-contract.md"
         )
 
     return result

@@ -35,7 +35,7 @@ See [pm-workflow-architecture:phases](../pm-workflow-architecture/standards/phas
 | **Task Execution Skill** | Task execution with two-tier skill loading | [standards/task-execution-skill-contract.md](standards/task-execution-skill-contract.md) |
 | **Plan-Finalize Skill** | Verification, findings triage, commit/PR | [standards/plan-finalize-skill-contract.md](standards/plan-finalize-skill-contract.md) |
 | **Deliverable Contract** | Deliverable structure in solution outline | `pm-workflow:manage-solution-outline/standards/deliverable-contract.md` |
-| **Task Contract** | Task structure with domain, profile, skills | [standards/task-contract.md](standards/task-contract.md) |
+| **Task Contract** | Task structure with domain, profile, skills | `pm-workflow:manage-tasks/standards/task-contract.md` |
 | **Extension API** | Domain-specific extensions for outline and triage | [standards/extension-api.md](standards/extension-api.md) |
 | **Config TOON Format** | config.toon structure with domains and settings | `pm-workflow:manage-config/standards/config-toon-format.md` |
 | **User Review Protocol** | Mandatory review before task creation | [standards/user-review-protocol.md](standards/user-review-protocol.md) |

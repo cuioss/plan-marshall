@@ -167,5 +167,5 @@ recoverable: {true|false}
 - [plan-finalize-skill-contract.md](plan-finalize-skill-contract.md) - Finalize phase contract
 - [extension-api.md](extension-api.md) - Extension mechanism
 - [deliverable-contract.md](../../manage-solution-outline/standards/deliverable-contract.md) - Deliverable structure
-- [task-contract.md](task-contract.md) - Task structure
+- [task-contract.md](../../manage-tasks/standards/task-contract.md) - Task structure
 - [pm-workflow-architecture:artifacts](../../pm-workflow-architecture/standards/artifacts.md) - Artifact formats (TOON)

@@ -17,7 +17,7 @@ implements: pm-workflow:plan-wf-skill-api/task-plan-skill-contract
 
 | Contract | Location | Purpose |
 |----------|----------|---------|
-| Task Contract | `pm-workflow:plan-wf-skill-api/standards/task-contract.md` | Required task structure and optimization workflow |
+| Task Contract | `pm-workflow:manage-tasks/standards/task-contract.md` | Required task structure and optimization workflow |
 | Task-Plan Skill Contract | `pm-workflow:plan-wf-skill-api/standards/task-plan-skill-contract.md` | Skill responsibilities |
 
 **CRITICAL - Steps Field**:

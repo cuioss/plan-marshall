@@ -17,7 +17,7 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash
 | Contract | Location | Purpose |
 |----------|----------|---------|
 | Task Execution Skill Contract | `pm-workflow:plan-wf-skill-api/standards/task-execution-skill-contract.md` | Skill responsibilities |
-| Task Contract | `pm-workflow:plan-wf-skill-api/standards/task-contract.md` | Task structure |
+| Task Contract | `pm-workflow:manage-tasks/standards/task-contract.md` | Task structure |
 
 ## Two-Tier Skill Loading
 
