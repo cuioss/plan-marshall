@@ -47,7 +47,7 @@ For visual diagrams of component interactions, see:
 
 | Phase | Workflow Skill | Specification |
 |-------|----------------|---------------|
-| **init** | `pm-workflow:phase-init` | [phase-init-contract.md](phase-init-contract.md) |
+| **init** | `pm-workflow:phase-init` | `pm-workflow:phase-init/SKILL.md` |
 | **outline** | `pm-workflow:phase-refine-outline` | [phase-outline-contract.md](phase-outline-contract.md) |
 | **plan** | `pm-workflow:phase-refine-plan` | [phase-plan-contract.md](phase-plan-contract.md) |
 | **execute** | `pm-workflow:phase-execute` | [phase-execute-contract.md](phase-execute-contract.md) |
@@ -160,7 +160,7 @@ recoverable: {true|false}
 
 ## Related Documents
 
-- [phase-init-contract.md](phase-init-contract.md) - Init phase contract
+- `pm-workflow:phase-init/SKILL.md` - Init phase skill
 - [phase-outline-contract.md](phase-outline-contract.md) - Outline phase contract
 - [phase-plan-contract.md](phase-plan-contract.md) - Plan phase contract
 - [phase-execute-contract.md](phase-execute-contract.md) - Execute phase contract

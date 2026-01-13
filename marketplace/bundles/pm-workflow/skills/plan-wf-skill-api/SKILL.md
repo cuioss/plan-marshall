@@ -29,7 +29,7 @@ See [pm-workflow-architecture:phases](../pm-workflow-architecture/standards/phas
 | Contract | Purpose | Document |
 |----------|---------|----------|
 | **Architecture Overview** | 5-phase model, component responsibilities, domain flow | [standards/architecture-overview.md](standards/architecture-overview.md) |
-| **Plan-Init Skill** | Initialize plan and write config.toon | [standards/phase-init-contract.md](standards/phase-init-contract.md) |
+| **Plan-Init Skill** | Initialize plan and write config.toon | `pm-workflow:phase-init/SKILL.md` |
 | **Solution Outline Skill** | Request → Solution Outline with deliverables | [standards/phase-outline-contract.md](standards/phase-outline-contract.md) |
 | **Task Plan Skill** | Solution Outline → Tasks with domain/profile | [standards/phase-plan-contract.md](standards/phase-plan-contract.md) |
 | **Task Execution Skill** | Task execution with two-tier skill loading | [standards/phase-execute-contract.md](standards/phase-execute-contract.md) |

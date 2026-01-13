@@ -194,6 +194,6 @@ branch_strategy: feature
 
 ## Related Documents
 
-- [phase-init-contract.md](../../plan-wf-skill-api/standards/phase-init-contract.md) - Init phase creates config.toon
+- `pm-workflow:phase-init/SKILL.md` - Init phase creates config.toon
 - [phase-outline-contract.md](../../plan-wf-skill-api/standards/phase-outline-contract.md) - Outline phase sets domains
 - [architecture-overview.md](../../plan-wf-skill-api/standards/architecture-overview.md) - 5-phase workflow overview
