@@ -62,7 +62,7 @@ The skill handles:
 5. Detecting domains
 6. Writing config.toon (domains + settings, NOT workflow_skills)
 7. Creating status.toon
-8. Transitioning to refine phase
+8. Transitioning to 2-outline phase
 
 Note: workflow_skills are resolved at runtime from marshal.json via `resolve-workflow-skill`, not stored in config.toon.
 
@@ -76,7 +76,7 @@ Return the skill's output in TOON format:
 status: success
 plan_id: {plan_id}
 domains: [{detected_domains}]
-next_phase: refine
+next_phase: 2-outline
 
 source:
   type: {source}

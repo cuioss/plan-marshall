@@ -52,12 +52,12 @@ This command handles **1-init**, **2-outline**, and **3-plan** phases. Use `/pla
 2. **Route based on action**:
    - `list` → List all plans via manage-lifecycle
    - `cleanup` → Remove completed plans
-   - `init` → Run init phase, then **automatically continue to refine** (unless `stop-after-init=true`)
-   - `refine` → Run refine phase only
+   - `init` → Run 1-init phase, then **automatically continue to refine** (unless `stop-after-init=true`)
+   - `refine` → Run 2-outline and 3-plan phases only
 
-### Init Phase
+### 1-Init Phase
 
-The init phase uses a single agent:
+The 1-init phase uses a single agent:
 
 ```
 Task: pm-workflow:phase-init-agent
@@ -69,16 +69,16 @@ Task: pm-workflow:phase-init-agent
 
 ### Automatic Continuation to Refine
 
-After init phase completes successfully:
+After 1-init phase completes successfully:
 1. **Check** `stop-after-init` parameter
-2. **If false (default)**: Automatically invoke refine phase with the new plan_id
+2. **If false (default)**: Automatically invoke refine (2-outline + 3-plan phases) with the new plan_id
 3. **If true**: Stop and display plan summary
 
 This provides a seamless flow from task description to actionable tasks in a single command invocation.
 
-### Refine Phase
+### Refine (2-Outline + 3-Plan Phases)
 
-The refine phase uses **thin agents** that load workflow skills from marshal.json based on domain.
+The refine action runs **thin agents** that load workflow skills from marshal.json based on domain.
 
 **CRITICAL**: This phase has 4 steps. Step 3 is a MANDATORY user review gate. Do NOT skip from Step 2 to Step 4.
 
@@ -212,8 +212,8 @@ Shows:
 ```
 Available Plans:
 
-1. jwt-authentication [implement] - 3/12 tasks complete
-2. user-profile-api [refine] - Requirements analysis
+1. jwt-authentication [4-execute] - 3/12 tasks complete
+2. user-profile-api [2-outline] - Requirements analysis
 
 0. Create new plan
 
@@ -222,7 +222,7 @@ Select plan (number) or action (c/n/q):
 
 ### init
 
-Create a new plan and automatically continue to refine phase.
+Create a new plan and automatically continue to 2-outline/3-plan phases.
 
 ```
 /plan-manage action=init task="Implement JWT authentication"
@@ -230,11 +230,11 @@ Create a new plan and automatically continue to refine phase.
 /plan-manage action=init task="Add feature" stop-after-init=true
 ```
 
-**Default behavior**: After init completes, automatically runs refine phase to create tasks from goals. The command completes when the plan is ready for `/plan-execute`.
+**Default behavior**: After 1-init completes, automatically runs 2-outline and 3-plan phases to create tasks from deliverables. The command completes when the plan is ready for `/plan-execute`.
 
-**With `stop-after-init=true`**: Stops after init phase, useful when you want to review/edit goals before refining.
+**With `stop-after-init=true`**: Stops after 1-init phase, useful when you want to review/edit the request before continuing to 2-outline.
 
-If init-phase plans exist, offers to continue existing or create new.
+If 1-init-phase plans exist, offers to continue existing or create new.
 
 ### refine
 

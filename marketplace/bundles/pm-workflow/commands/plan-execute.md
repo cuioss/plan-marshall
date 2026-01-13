@@ -14,7 +14,7 @@ Execute task plans through the execute phase (task implementation) and finalize 
 1-init → 2-outline → 3-plan → 4-execute → 5-finalize
 ```
 
-This command handles **4-execute** and **5-finalize** phases. Use `/plan-manage` for init and refine.
+This command handles **4-execute** and **5-finalize** phases. Use `/plan-manage` for 1-init, 2-outline, and 3-plan phases.
 
 ## PARAMETERS
 
@@ -94,12 +94,12 @@ Execute specific plan from its current phase:
 /plan-execute plan="jwt-auth"
 ```
 
-If plan is in init or refine phase:
+If plan is in 1-init, 2-outline, or 3-plan phase:
 ```
-Plan 'jwt-auth' is in 'refine' phase.
+Plan 'jwt-auth' is in '2-outline' phase.
 
-This command handles execute/finalize phases only.
-Use /plan-manage to complete init/refine phases first.
+This command handles 4-execute/5-finalize phases only.
+Use /plan-manage to complete 1-init/2-outline/3-plan phases first.
 ```
 
 ### With action parameter

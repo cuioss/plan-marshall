@@ -49,8 +49,8 @@ When you need users to either select from options OR provide custom input.
 ```markdown
 Question: "Select a plan, or use 'Type something' to enter a new task description:"
 Options:
-1. existing-plan-1 - [execute] in_progress
-2. existing-plan-2 - [refine] pending
+1. existing-plan-1 - [4-execute] in_progress
+2. existing-plan-2 - [2-outline] pending
 3. Cleanup completed plans - Remove finished plans
 [Auto-added: Type something.]
 ```
