@@ -200,4 +200,4 @@ Before completing requirements/specification work:
 **External:**
 - cui-documentation:cui-documentation - AsciiDoc formatting
 - pm-dev-java:javadoc - JavaDoc requirement references
-- pm-workflow:git-workflow - Committing requirement changes
+- pm-workflow:wf-tool-git - Committing requirement changes

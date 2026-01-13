@@ -1,5 +1,5 @@
 ---
-name: sonar-workflow
+name: wf-tool-sonar
 description: Sonar issue workflow - fetch issues, triage, and fix or suppress based on context
 allowed-tools: Read, Edit, Write, Bash(gh:*), Grep, Glob, mcp__sonarqube__search_sonar_issues_in_projects, mcp__sonarqube__change_sonar_issue_status
 ---
@@ -61,10 +61,10 @@ Handles Sonar issue workflows - fetching issues from SonarQube, triaging them, a
 
    Or use script for structure:
 
-   Script: `pm-workflow:sonar-workflow`
+   Script: `pm-workflow:wf-tool-sonar`
 
    ```bash
-   python3 .plan/execute-script.py pm-workflow:sonar-workflow:sonar fetch --project {key} [--pr {id}]
+   python3 .plan/execute-script.py pm-workflow:wf-tool-sonar:sonar fetch --project {key} [--pr {id}]
    ```
 
 3. **Return Structured List**
@@ -109,10 +109,10 @@ Handles Sonar issue workflows - fetching issues from SonarQube, triaging them, a
 2. **Triage Each Issue**
    For each issue:
 
-   Script: `pm-workflow:sonar-workflow`
+   Script: `pm-workflow:wf-tool-sonar`
 
    ```bash
-   python3 .plan/execute-script.py pm-workflow:sonar-workflow:sonar triage --issue '{json}'
+   python3 .plan/execute-script.py pm-workflow:wf-tool-sonar:sonar triage --issue '{json}'
    ```
 
    Script outputs decision:
@@ -169,7 +169,7 @@ Handles Sonar issue workflows - fetching issues from SonarQube, triaging them, a
 
 ## Scripts
 
-Script: `pm-workflow:sonar-workflow` → `sonar.py`
+Script: `pm-workflow:wf-tool-sonar` → `sonar.py`
 
 ### sonar.py fetch
 
@@ -177,7 +177,7 @@ Script: `pm-workflow:sonar-workflow` → `sonar.py`
 
 **Usage:**
 ```bash
-python3 .plan/execute-script.py pm-workflow:sonar-workflow:sonar fetch --project <key> [--pr <id>] [--severities <list>]
+python3 .plan/execute-script.py pm-workflow:wf-tool-sonar:sonar fetch --project <key> [--pr <id>] [--severities <list>]
 ```
 
 **Output:** JSON with MCP instruction and expected structure
@@ -188,7 +188,7 @@ python3 .plan/execute-script.py pm-workflow:sonar-workflow:sonar fetch --project
 
 **Usage:**
 ```bash
-python3 .plan/execute-script.py pm-workflow:sonar-workflow:sonar triage --issue '{"key":"...", "rule":"...", ...}'
+python3 .plan/execute-script.py pm-workflow:wf-tool-sonar:sonar triage --issue '{"key":"...", "rule":"...", ...}'
 ```
 
 **Output:** JSON with action decision

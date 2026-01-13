@@ -1,5 +1,5 @@
 ---
-name: git-workflow
+name: wf-tool-git
 description: Git commit workflow with conventional commits, artifact cleanup, and optional push/PR creation
 allowed-tools: Read, Glob, Bash(git:*), Bash(rm:*), Bash(gh:*), Skill
 ---
@@ -91,7 +91,7 @@ If no message:
 - Analyze diff using script:
 
   ```bash
-  python3 .plan/execute-script.py pm-workflow:git-workflow:git-workflow analyze-diff --file <diff-file>
+  python3 .plan/execute-script.py pm-workflow:wf-tool-git:git-workflow analyze-diff --file <diff-file>
   ```
 - Generate message following standards
 
@@ -146,7 +146,7 @@ EOF
 
 ## Scripts
 
-**Script**: `pm-workflow:git-workflow:git-workflow`
+**Script**: `pm-workflow:wf-tool-git:git-workflow`
 
 | Command | Parameters | Description |
 |---------|------------|-------------|
@@ -158,7 +158,7 @@ EOF
 Format commit message following conventional commits.
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:git-workflow:git-workflow format-commit \
+python3 .plan/execute-script.py pm-workflow:wf-tool-git:git-workflow format-commit \
   --type feat \
   --scope http \
   --subject "add retry config" \
@@ -192,7 +192,7 @@ python3 .plan/execute-script.py pm-workflow:git-workflow:git-workflow format-com
 Analyze diff file to suggest commit message parameters.
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:git-workflow:git-workflow analyze-diff \
+python3 .plan/execute-script.py pm-workflow:wf-tool-git:git-workflow analyze-diff \
   --file changes.diff
 ```
 

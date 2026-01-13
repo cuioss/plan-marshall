@@ -73,7 +73,7 @@ Task:
 **Trigger**: "commit", "create commit"
 
 ```
-Skill: pm-workflow:git-workflow
+Skill: pm-workflow:wf-tool-git
 operation: commit
 message: {from task title}
 push: true
