@@ -93,7 +93,7 @@ python3 .plan/execute-script.py plan-marshall:logging:manage-log \
 Load the resolved workflow skill:
 
 ```
-Skill: {workflow_skill}  # e.g., pm-workflow:phase-execute-implementation
+Skill: {workflow_skill}  # e.g., pm-workflow:task-implementation
 ```
 
 The skill handles:

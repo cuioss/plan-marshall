@@ -32,7 +32,7 @@ See [pm-workflow-architecture:phases](../pm-workflow-architecture/standards/phas
 | **Plan-Init Skill** | Initialize plan and write config.toon | `pm-workflow:phase-init/SKILL.md` |
 | **Solution Outline Skill** | Request → Solution Outline with deliverables | [standards/phase-outline-contract.md](standards/phase-outline-contract.md) |
 | **Task Plan Skill** | Solution Outline → Tasks with domain/profile | [standards/phase-plan-contract.md](standards/phase-plan-contract.md) |
-| **Task Execution Skill** | Task execution with two-tier skill loading | [standards/phase-execute-contract.md](standards/phase-execute-contract.md) |
+| **Task Execution Contract** | Task execution with two-tier skill loading | `pm-workflow:manage-tasks/standards/task-execution-contract.md` |
 | **Plan-Finalize Skill** | Verification, findings triage, commit/PR | [standards/phase-finalize-contract.md](standards/phase-finalize-contract.md) |
 | **Deliverable Contract** | Deliverable structure in solution outline | `pm-workflow:manage-solution-outline/standards/deliverable-contract.md` |
 | **Task Contract** | Task structure with domain, profile, skills | `pm-workflow:manage-tasks/standards/task-contract.md` |

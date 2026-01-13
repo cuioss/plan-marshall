@@ -50,7 +50,7 @@ For visual diagrams of component interactions, see:
 | **init** | `pm-workflow:phase-init` | `pm-workflow:phase-init/SKILL.md` |
 | **outline** | `pm-workflow:phase-refine-outline` | [phase-outline-contract.md](phase-outline-contract.md) |
 | **plan** | `pm-workflow:phase-refine-plan` | [phase-plan-contract.md](phase-plan-contract.md) |
-| **execute** | `pm-workflow:phase-execute` | [phase-execute-contract.md](phase-execute-contract.md) |
+| **execute** | `pm-workflow:phase-execute` | `pm-workflow:manage-tasks/standards/task-execution-contract.md` |
 | **finalize** | `pm-workflow:phase-finalize` | [phase-finalize-contract.md](phase-finalize-contract.md) |
 
 ---
@@ -163,7 +163,7 @@ recoverable: {true|false}
 - `pm-workflow:phase-init/SKILL.md` - Init phase skill
 - [phase-outline-contract.md](phase-outline-contract.md) - Outline phase contract
 - [phase-plan-contract.md](phase-plan-contract.md) - Plan phase contract
-- [phase-execute-contract.md](phase-execute-contract.md) - Execute phase contract
+- `pm-workflow:manage-tasks/standards/task-execution-contract.md` - Task execution contract
 - [phase-finalize-contract.md](phase-finalize-contract.md) - Finalize phase contract
 - [extension-api.md](extension-api.md) - Extension mechanism
 - [deliverable-contract.md](../../manage-solution-outline/standards/deliverable-contract.md) - Deliverable structure

@@ -208,8 +208,8 @@ pm-workflow/
     ├── phase-init/              # Init phase skill
     ├── phase-execute/           # Execute phase coordination
     ├── phase-finalize/          # Finalize phase skill
-    ├── phase-execute-implementation/  # Implementation profile
-    ├── phase-execute-testing/   # Testing profile
+    ├── task-implementation/     # Implementation profile workflow
+    ├── task-testing/            # Testing profile workflow
     ├── manage-plan-documents/   # Request/Solution document CRUD
     ├── manage-solution-outline/ # Solution outline queries
     ├── manage-tasks/            # Tasks + steps CRUD

@@ -255,7 +255,7 @@ Task-plan copies skills directly from deliverable(s) to task. No resolution API 
 ## Related Documents
 
 - [phase-outline-contract.md](phase-outline-contract.md) - Previous phase (outline)
-- [phase-execute-contract.md](phase-execute-contract.md) - Next phase (execute)
+- `pm-workflow:manage-tasks/standards/task-execution-contract.md` - Next phase (execute)
 - [task-contract.md](../../manage-tasks/standards/task-contract.md) - Task structure and optimization rules
 - [deliverable-contract.md](../../manage-solution-outline/standards/deliverable-contract.md) - Deliverable structure
 - [user-review-protocol.md](user-review-protocol.md) - Approval gate before plan phase

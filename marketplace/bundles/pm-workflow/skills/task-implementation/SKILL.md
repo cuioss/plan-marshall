@@ -1,10 +1,10 @@
 ---
-name: phase-execute-implementation
+name: task-implementation
 description: Domain-agnostic implementation task execution with two-tier skill loading
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash
 ---
 
-# Phase Execute Implementation Skill
+# Task Implementation Skill
 
 **Role**: Domain-agnostic workflow skill for executing implementation tasks (profile=implementation). Loaded by `pm-workflow:task-execute-agent` when `task.profile` is `implementation`.
 
@@ -16,7 +16,7 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash
 
 | Contract | Location | Purpose |
 |----------|----------|---------|
-| Task Execution Skill Contract | `pm-workflow:plan-wf-skill-api/standards/phase-execute-contract.md` | Skill responsibilities |
+| Task Execution Contract | `pm-workflow:manage-tasks/standards/task-execution-contract.md` | Skill responsibilities |
 | Task Contract | `pm-workflow:manage-tasks/standards/task-contract.md` | Task structure |
 
 ## Two-Tier Skill Loading

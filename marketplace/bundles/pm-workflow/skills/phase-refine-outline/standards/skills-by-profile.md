@@ -111,8 +111,8 @@ When task-plan creates tasks from deliverables, each task has a single profile:
 
 | Profile | Description | Files | Workflow Skill |
 |---------|-------------|-------|----------------|
-| `implementation` | Production code | `src/main/**/*.java` | `pm-workflow:phase-execute-implementation` |
-| `testing` | Unit/integration tests | `*Test.java`, `*IT.java` | `pm-workflow:phase-execute-testing` |
+| `implementation` | Production code | `src/main/**/*.java` | `pm-workflow:task-implementation` |
+| `testing` | Unit/integration tests | `*Test.java`, `*IT.java` | `pm-workflow:task-testing` |
 
 ---
 
@@ -199,5 +199,5 @@ TASK-{N+1}.toon:
 ```
 Load: {skill-1}
 Load: {skill-2}
-Execute with workflow skill: pm-workflow:phase-execute-implementation
+Execute with workflow skill: pm-workflow:task-implementation
 ```

@@ -197,7 +197,7 @@ The pm-workflow bundle implements a 5-phase execution model for structured task 
 │  └─────────────────────────────────────────────────────────────────────┘   │
 │                                                                             │
 │  AGENT: task-execute-agent                                                  │
-│  SKILL: pm-workflow:phase-execute-implementation (or phase-execute-testing) │
+│  SKILL: pm-workflow:task-implementation (or task-testing)                   │
 │                                                                             │
 │  EXECUTION LOOP:                                                            │
 │  ───────────────                                                            │

@@ -130,7 +130,7 @@ allowed-tools: Read
 │  │  ═════════════════════════════                                       │   │
 │  │  phase-init           phase-refine-outline   phase-refine-plan       │   │
 │  │  phase-execute        phase-finalize                                 │   │
-│  │  phase-execute-implementation  phase-execute-testing                 │   │
+│  │  task-implementation           task-testing                          │   │
 │  │  git-workflow         pr-workflow                                    │   │
 │  └─────────────────────────────────────────────────────────────────────┘   │
 │                                     │                                       │
@@ -166,8 +166,8 @@ allowed-tools: Read
 | `pm-workflow:phase-refine-plan` | Plan phase implementation |
 | `pm-workflow:phase-execute` | Execute phase implementation |
 | `pm-workflow:phase-finalize` | Finalize phase implementation |
-| `pm-workflow:phase-execute-implementation` | Implementation profile workflow |
-| `pm-workflow:phase-execute-testing` | Testing profile workflow |
+| `pm-workflow:task-implementation` | Implementation profile workflow |
+| `pm-workflow:task-testing` | Testing profile workflow |
 
 ---
 

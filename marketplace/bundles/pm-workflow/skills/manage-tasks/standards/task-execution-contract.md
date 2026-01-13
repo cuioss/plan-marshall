@@ -51,7 +51,7 @@ Result (no domain override, system fallback):
 status: success
 domain: system
 phase: implementation
-workflow_skill: pm-workflow:phase-execute-implementation
+workflow_skill: pm-workflow:task-implementation
 fallback: true
 ```
 
@@ -157,10 +157,10 @@ When domain doesn't define a workflow skill override:
 │                         │                                   │
 │                         ▼                                   │
 │  2. Fallback: system.workflow_skills.implementation         │
-│     → pm-workflow:phase-execute-implementation                       │
+│     → pm-workflow:task-implementation                       │
 │                         │                                   │
 │                         ▼                                   │
-│  Return: { workflow_skill: pm-workflow:phase-execute-implementation, │
+│  Return: { workflow_skill: pm-workflow:task-implementation, │
 │            fallback: true }                                 │
 │                                                             │
 └─────────────────────────────────────────────────────────────┘
