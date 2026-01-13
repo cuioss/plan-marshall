@@ -23,9 +23,9 @@
     "./commands/plan-execute.md"
   ],
   "skills": [
-    "./skills/wf-tool-git",
-    "./skills/wf-tool-pr",
-    "./skills/wf-tool-sonar",
+    "./skills/workflow-integration-git",
+    "./skills/workflow-integration-github",
+    "./skills/workflow-integration-sonar",
     "./skills/workflow-architecture",
     "./skills/workflow-extension-api",
     "./skills/phase-1-init",

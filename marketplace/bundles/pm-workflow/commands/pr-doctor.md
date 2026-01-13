@@ -24,8 +24,8 @@ Record improvements: `Skill: plan-marshall:lessons-learned` with component `{typ
 
 Load required skills:
 ```
-Skill: pm-workflow:wf-tool-pr
-Skill: pm-workflow:wf-tool-sonar
+Skill: pm-workflow:workflow-integration-github
+Skill: pm-workflow:workflow-integration-sonar
 Skill: pm-workflow:workflow-patterns
 Skill: git-workflow
 ```

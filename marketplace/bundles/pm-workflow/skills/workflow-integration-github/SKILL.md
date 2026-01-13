@@ -1,5 +1,5 @@
 ---
-name: wf-tool-pr
+name: workflow-integration-github
 description: PR review response workflow - fetch comments, triage, and respond to review feedback
 allowed-tools: Read, Edit, Write, Bash(gh:*), Grep, Glob
 ---
@@ -47,10 +47,10 @@ Handles PR review comment workflows - fetching comments, triaging them, and gene
 
 2. **Fetch Comments**
 
-   Script: `pm-workflow:wf-tool-pr`
+   Script: `pm-workflow:workflow-integration-github`
 
    ```bash
-   python3 .plan/execute-script.py pm-workflow:wf-tool-pr:pr fetch-comments [--pr {number}]
+   python3 .plan/execute-script.py pm-workflow:workflow-integration-github:pr fetch-comments [--pr {number}]
    ```
 
    Script outputs JSON:
@@ -92,10 +92,10 @@ Handles PR review comment workflows - fetching comments, triaging them, and gene
 2. **Triage Each Comment**
    For each unresolved comment:
 
-   Script: `pm-workflow:wf-tool-pr`
+   Script: `pm-workflow:workflow-integration-github`
 
    ```bash
-   python3 .plan/execute-script.py pm-workflow:wf-tool-pr:pr triage --comment '{json}'
+   python3 .plan/execute-script.py pm-workflow:workflow-integration-github:pr triage --comment '{json}'
    ```
 
    Script outputs decision:
@@ -151,7 +151,7 @@ Handles PR review comment workflows - fetching comments, triaging them, and gene
 
 ## Scripts
 
-Script: `pm-workflow:wf-tool-pr` → `pr.py`
+Script: `pm-workflow:workflow-integration-github` → `pr.py`
 
 ### pr.py fetch-comments
 
@@ -159,7 +159,7 @@ Script: `pm-workflow:wf-tool-pr` → `pr.py`
 
 **Usage:**
 ```bash
-python3 .plan/execute-script.py pm-workflow:wf-tool-pr:pr fetch-comments [--pr <number>]
+python3 .plan/execute-script.py pm-workflow:workflow-integration-github:pr fetch-comments [--pr <number>]
 ```
 
 **Requirements:** gh CLI installed and authenticated
@@ -172,7 +172,7 @@ python3 .plan/execute-script.py pm-workflow:wf-tool-pr:pr fetch-comments [--pr <
 
 **Usage:**
 ```bash
-python3 .plan/execute-script.py pm-workflow:wf-tool-pr:pr triage --comment '{"id":"...", "body":"...", ...}'
+python3 .plan/execute-script.py pm-workflow:workflow-integration-github:pr triage --comment '{"id":"...", "body":"...", ...}'
 ```
 
 **Output:** JSON with action decision

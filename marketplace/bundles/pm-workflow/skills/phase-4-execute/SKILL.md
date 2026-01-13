@@ -229,7 +229,7 @@ python3 .plan/execute-script.py plan-marshall:logging:manage-log \
 | `pm-workflow:manage-tasks` | `next --include-context` | Task with goal context |
 | `plan-marshall:logging:manage-log` | `work` | Work log entries |
 | `pm-workflow:manage-references` | - | Reference file CRUD |
-| `pm-workflow:wf-tool-git` | - | Commit operations |
+| `pm-workflow:workflow-integration-git` | - | Commit operations |
 
 ### Related Skills
 - **plan-init** - Creates plan structure (request.md, config, status)

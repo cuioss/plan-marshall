@@ -27,7 +27,7 @@ Activate when:
 | `pm-workflow:manage-references:manage-references` | Reference file CRUD |
 | `pm-workflow:manage-lifecycle:manage-lifecycle` | Phase transitions |
 | `plan-marshall:logging:manage-log` | Work log entries |
-| `pm-workflow:wf-tool-git:git-workflow` | Commit, push, PR creation |
+| `pm-workflow:workflow-integration-git:git-workflow` | Commit, push, PR creation |
 
 ---
 
@@ -111,7 +111,7 @@ If verification fails, report error and allow retry.
 Load the git-workflow skill for commit operations:
 
 ```
-Skill: pm-workflow:wf-tool-git
+Skill: pm-workflow:workflow-integration-git
 ```
 
 The git-workflow skill handles:
@@ -316,7 +316,7 @@ Contains: How lessons inform triage decisions, lesson query before decisions, re
 | `pm-workflow:manage-references:manage-references` | `get-context` | Read branch, issue info |
 | `pm-workflow:manage-lifecycle:manage-lifecycle` | `transition` | Phase transition |
 | `plan-marshall:logging:manage-log` | `work` | Log completion |
-| `pm-workflow:wf-tool-git:git-workflow` | `format-commit`, `analyze-diff` | Commit message generation |
+| `pm-workflow:workflow-integration-git:git-workflow` | `format-commit`, `analyze-diff` | Commit message generation |
 
 ---
 

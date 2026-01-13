@@ -139,7 +139,7 @@ def test_core_has_workflow_skills():
     skill_names = [s['name'] for s in core_skills]
 
     # Should have task-* skills for workflow execution
-    # Note: wf-tool-* skills exist but aren't matched by inventory patterns
+    # Note: workflow-integration-* skills exist but aren't matched by inventory patterns
     task_skills = [s for s in skill_names if s.startswith('task-')]
     assert len(task_skills) >= 2, f"Should have at least 2 task-* skills, found {len(task_skills)}"
 
