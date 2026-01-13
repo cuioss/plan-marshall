@@ -211,9 +211,22 @@ class ExtensionBase(ABC):
                     "core": {"defaults": [...], "optionals": [...]},
                     "implementation": {"defaults": [...], "optionals": [...]},
                     "testing": {"defaults": [...], "optionals": [...]},
-                    "quality": {"defaults": [...], "optionals": [...]}
+                    "quality": {"defaults": [...], "optionals": [...]},
+                    "documentation": {"defaults": [...], "optionals": [...]}  # Optional
                 }
             }
+
+        Standard Profiles:
+            - core: Skills loaded for all profiles (foundation skills)
+            - implementation: Code implementation skills
+            - testing: Unit test skills (maps to unit-testing, integration-testing, benchmark-testing)
+            - quality: Quality/lint/format skills
+
+        Cross-Domain Profile:
+            - documentation: Documentation task skills (AsciiDoc, ADRs, interfaces).
+              This profile is detected per-module during architecture enrichment
+              when module has doc/*.adoc files. It represents a separate task type
+              (like testing), not a variant of implementation.
         """
         pass
 

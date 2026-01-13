@@ -10,7 +10,7 @@ from pathlib import Path
 def get_script_path():
     """Get the path to pr.py."""
     return Path(__file__).parent.parent.parent.parent / \
-           "marketplace/bundles/pm-workflow/skills/pr-workflow/scripts/pr.py"
+           "marketplace/bundles/pm-workflow/skills/wf-tool-pr/scripts/pr.py"
 
 
 def run_script(args: list) -> tuple:

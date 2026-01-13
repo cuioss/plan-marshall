@@ -11,7 +11,7 @@ from pathlib import Path
 def get_script_path():
     """Get the path to sonar.py."""
     return Path(__file__).parent.parent.parent.parent / \
-           "marketplace/bundles/pm-workflow/skills/sonar-workflow/scripts/sonar.py"
+           "marketplace/bundles/pm-workflow/skills/wf-tool-sonar/scripts/sonar.py"
 
 
 def run_script(args: list) -> tuple:

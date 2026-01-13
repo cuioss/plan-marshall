@@ -6,11 +6,15 @@ Contract for domain-specific outline extensions loaded by `phase-2-outline`.
 
 ## Purpose
 
-Outline extensions provide domain-specific knowledge for:
+Outline extensions are **knowledge documents** (not workflow replacements) that provide domain-specific information for deliverable creation. They are loaded as context and applied naturally during the standard workflow.
 
-1. **Domain Detection** - How to detect if this domain is relevant
-2. **Codebase Analysis** - Domain-specific analysis patterns
-3. **Deliverable Patterns** - How to structure deliverables for this domain
+**Key Principle**: Extensions are just skills with a specific structure. They provide information that Claude uses when creating deliverables - no special processing needed.
+
+Outline extensions provide domain-specific knowledge through three section types:
+
+1. **Domain Constraints** - Rules/restrictions for deliverables (component rules, dependency rules)
+2. **Deliverable Patterns** - Grouping strategies, file structures, verification commands
+3. **Impact Analysis Patterns** - Discovery commands for cross-cutting changes
 
 ---
 
@@ -47,9 +51,10 @@ extension: pm-dev-java:java-outline-ext
 
 | Section | Purpose | Required |
 |---------|---------|----------|
-| `## Domain Detection` | Determine if domain is relevant | No |
-| `## Codebase Analysis` | Domain-specific analysis patterns | No |
-| `## Deliverable Patterns` | How to structure deliverables | No |
+| `## Domain Detection` | When this domain is relevant | No |
+| `## Domain Constraints` | Rules for deliverable creation | No |
+| `## Deliverable Patterns` | Grouping strategies and file structures | No |
+| `## Impact Analysis Patterns` | Discovery commands for cross-cutting changes | No |
 
 All sections are optional - the system skill has defaults for each.
 
@@ -64,71 +69,92 @@ All sections are optional - the system skill has defaults for each.
 ## Domain Detection
 
 This domain is relevant when:
-1. {Condition 1 - e.g., pom.xml exists}
-2. {Condition 2 - e.g., src/main/java directory exists}
-3. {Condition 3 - e.g., request mentions Java/Maven/Spring}
-
-Detection commands:
-- Check for: {file pattern}
-- Grep for: {code pattern}
+1. {Condition 1 - e.g., marketplace/bundles directory exists}
+2. {Condition 2 - e.g., request mentions "skill", "command", "agent"}
+3. {Condition 3 - e.g., files being modified are in marketplace/bundles/}
 ```
 
-**Default Behavior**: Domain is assumed relevant if configured in marshal.json.
+**Default Behavior**: Domain is assumed relevant if configured in plan's config.toon.
 
 ---
 
-## Section: Codebase Analysis
+## Section: Domain Constraints
 
-**Purpose**: Provide domain-specific instructions for analyzing the codebase.
+**Purpose**: Define rules and restrictions that apply to deliverables in this domain.
 
 **Expected Content**:
 ```markdown
-## Codebase Analysis
+## Domain Constraints
 
-When analyzing {domain} codebases:
+### Component Rules
+- {Rule 1 - e.g., Skills MUST have SKILL.md in skills/skill-name/}
+- {Rule 2 - e.g., Documentation changes do NOT require unit tests}
 
-### Project Structure
-1. {What to look for - e.g., Maven modules, package structure}
-2. {Patterns to identify - e.g., layered architecture, microservices}
+### Dependency Rules
+- {Rule 1 - e.g., Agents must not depend on commands}
+- {Rule 2 - e.g., Skills should be self-contained}
 
-### Key Files
-- {Important file 1}: {What it tells us}
-- {Important file 2}: {What it tells us}
-
-### Architecture Patterns
-- Identify: {pattern 1}
-- Look for: {pattern 2}
+### Verification Rules
+- Standard verification: `{command template}`
+- {Additional verification guidance}
 ```
 
-**Default Behavior**: Generic file/directory analysis.
+**Default Behavior**: Standard deliverable contract rules apply.
 
 ---
 
 ## Section: Deliverable Patterns
 
-**Purpose**: Define how to structure deliverables for this domain.
+**Purpose**: Define how to structure and group deliverables for this domain.
 
 **Expected Content**:
 ```markdown
 ## Deliverable Patterns
 
-When creating deliverables for {domain}:
-
 ### Grouping Strategy
-- {How to group work - e.g., by module, by feature}
+| Scenario | Grouping |
+|----------|----------|
+| {Scenario 1} | {How to group} |
+| {Scenario 2} | {How to group} |
 
-### Deliverable Structure
-Each deliverable should:
-- {Guideline 1 - e.g., represent a cohesive unit}
-- {Guideline 2 - e.g., be independently testable}
+### Change Type Mappings
+| Request Pattern | change_type | execution_mode |
+|-----------------|-------------|----------------|
+| "add", "create" | create | automated |
+| "fix", "update" | modify | automated |
 
-### Profile Assignment
-- Implementation work: profile = `implementation`
-- Test work: profile = `testing`
-- {Domain-specific guidance}
+### Standard File Structures
+{Domain-specific file path patterns}
 ```
 
-**Default Behavior**: One deliverable per component/file with generic structure.
+**Default Behavior**: One deliverable per module with generic structure.
+
+---
+
+## Section: Impact Analysis Patterns
+
+**Purpose**: Provide discovery commands for analyzing cross-cutting changes.
+
+**Expected Content**:
+```markdown
+## Impact Analysis Patterns
+
+### Detection Commands
+| Change Type | Discovery Command | Result Interpretation |
+|-------------|-------------------|----------------------|
+| {Change type} | `{grep or glob}` | {What matches mean} |
+
+### Discovery Script (if domain has inventory script)
+```bash
+python3 .plan/execute-script.py {notation} {args}
+```
+
+### Batch Analysis Guidelines
+- Batch size: {recommended batch size}
+- {Additional guidance for large-scale changes}
+```
+
+**Default Behavior**: Standard glob/grep patterns for file discovery.
 
 ---
 
@@ -136,7 +162,7 @@ Each deliverable should:
 
 ```markdown
 ---
-name: {domain}-outline-ext
+name: ext-outline-{domain}
 description: Outline extension for {domain} domain
 allowed-tools: Read
 ---
@@ -151,94 +177,155 @@ This domain is relevant when:
 1. {Condition 1}
 2. {Condition 2}
 
-Detection commands:
-- Glob: `{pattern}`
+## Domain Constraints
 
-## Codebase Analysis
+### Component Rules
+- {Rule 1}
+- {Rule 2}
 
-When analyzing {domain} codebases:
+### Dependency Rules
+- {Rule 1}
 
-### Project Structure
-{...}
-
-### Key Files
-{...}
-
-### Architecture Patterns
-{...}
+### Verification Rules
+- Standard verification: `{command}`
 
 ## Deliverable Patterns
 
-When creating deliverables for {domain}:
-
 ### Grouping Strategy
-{...}
+| Scenario | Grouping |
+|----------|----------|
+| {Scenario 1} | {How to group} |
 
-### Deliverable Structure
-{...}
+### Standard File Structures
+{Domain file patterns}
 
-### Profile Assignment
-{...}
+## Impact Analysis Patterns
+
+### Detection Commands
+| Change Type | Discovery Command |
+|-------------|-------------------|
+| {Type 1} | `{command}` |
+
+### Discovery Script
+```bash
+python3 .plan/execute-script.py {notation} {args}
+```
 ```
 
 ---
 
-## Example: Java Outline Extension
+## Example: Plugin Development Outline Extension
 
 ```markdown
-# Java Outline Extension
+# Plugin Development Outline Extension
 
-> Extension for phase-2-outline in Java domain.
+> Extension for phase-2-outline in plugin development domain.
 
 ## Domain Detection
 
 This domain is relevant when:
-1. `pom.xml` or `build.gradle` exists at project root
-2. `src/main/java` directory exists
-3. Request mentions Java, Maven, Gradle, Spring, Quarkus, or Jakarta EE
+1. `marketplace/bundles` directory exists
+2. Request mentions "skill", "command", "agent", "bundle"
+3. Files being modified are in `marketplace/bundles/*/` paths
 
-Detection commands:
-- Glob: `**/pom.xml`, `**/build.gradle`
-- Glob: `**/src/main/java/**/*.java`
+## Domain Constraints
 
-## Codebase Analysis
+### Component Rules
+- Skills MUST have `SKILL.md` in `skills/{skill-name}/`
+- Commands MUST be single `.md` files in `commands/`
+- Agents MUST be single `.md` files in `agents/`
+- All components require YAML frontmatter
 
-When analyzing Java codebases:
+### Dependency Rules
+- Agents delegate to skills (skill loading via `Skill:` directive)
+- Commands orchestrate agents or execute skills directly
 
-### Project Structure
-1. Check for multi-module Maven project (parent pom.xml with modules)
-2. Identify package structure under src/main/java
-3. Look for module-info.java (Java modules)
-
-### Key Files
-- `pom.xml`: Dependencies, plugins, module structure
-- `application.properties/yaml`: Runtime configuration
-- `module-info.java`: Module boundaries and exports
-
-### Architecture Patterns
-- Layered: controller/service/repository packages
-- Hexagonal: adapter/port/domain packages
-- CDI: Look for @Inject, @ApplicationScoped annotations
+### Verification Rules
+- Standard verification: `/plugin-doctor --component {path}`
 
 ## Deliverable Patterns
 
-When creating deliverables for Java:
+### Grouping Strategy
+| Scenario | Grouping |
+|----------|----------|
+| Creating 1-3 components in single bundle | One deliverable per component |
+| Cross-bundle pattern change | One deliverable per bundle affected |
+| Script changes | Include script + tests in same deliverable |
+
+### Standard File Structures
+- Skills: `marketplace/bundles/{bundle}/skills/{skill-name}/SKILL.md`
+- Commands: `marketplace/bundles/{bundle}/commands/{command-name}.md`
+- Agents: `marketplace/bundles/{bundle}/agents/{agent-name}.md`
+
+## Impact Analysis Patterns
+
+### Detection Commands
+| Change Type | Discovery Command |
+|-------------|-------------------|
+| Script notation rename | `grep -r "old:notation" marketplace/bundles/` |
+| Output format change | `grep -r '```json' marketplace/bundles/*/agents/` |
+
+### Discovery Script
+```bash
+python3 .plan/execute-script.py plan-marshall:marketplace-inventory:scan-marketplace-inventory \
+  --trace-plan-id {plan_id} --include-descriptions
+```
+```
+
+---
+
+## Example: Documentation Outline Extension
+
+```markdown
+# Documentation Outline Extension
+
+> Extension for phase-2-outline in documentation domain.
+
+## Domain Detection
+
+This domain is relevant when:
+1. `doc/` or `docs/` directory exists
+2. Request mentions "AsciiDoc", "ADR", "interface specification"
+3. Files have `.adoc` extension
+
+## Domain Constraints
+
+### Component Rules
+- AsciiDoc files MUST have blank line before lists
+- Cross-references MUST use `xref:` syntax
+- ADRs MUST follow numbered naming: `ADR-NNN-title.adoc`
+- Interface specs MUST follow numbered naming: `IF-NNN-title.adoc`
+
+### Dependency Rules
+- Documentation changes do NOT require unit tests
+- Changes to doc/ do NOT trigger build verification
+- ADR changes require review of supersedes/superseded-by links
+
+### Verification Rules
+- AsciiDoc validation: `docs validate {path}`
+- Link verification: `docs verify-links --directory {path}`
+
+## Deliverable Patterns
 
 ### Grouping Strategy
-- Group by Maven module for multi-module projects
-- Group by feature/component for single-module projects
-- Separate API packages from implementation packages
+| Scenario | Grouping |
+|----------|----------|
+| Single document update | One deliverable |
+| ADR creation with related updates | One deliverable for all related ADRs |
+| Documentation sync with code | Doc deliverable depends on code deliverable |
 
-### Deliverable Structure
-Each deliverable should:
-- Represent a cohesive unit of functionality
-- Include both production code and test code locations
-- Be bounded by package/module boundaries
+### Standard File Structures
+- ADRs: `doc/adr/ADR-NNN-{title}.adoc`
+- Interfaces: `doc/interfaces/IF-NNN-{title}.adoc`
+- General: `doc/{topic}/`
 
-### Profile Assignment
-- New classes, modifications: profile = `implementation`
-- New test classes: profile = `testing`
-- Build/config changes: profile = `implementation`
+## Impact Analysis Patterns
+
+### Detection Commands
+| Change Type | Discovery Command |
+|-------------|-------------------|
+| Broken xrefs | `grep -r 'xref:' doc/*.adoc` |
+| ADR supersedes | `grep -r 'Superseded by' doc/adr/` |
 ```
 
 ---

@@ -40,7 +40,7 @@ def cleanup(temp_dir):
 
 
 def build_task_toon(title='Test task', deliverables=None, domain='java',
-                    description='Task description', steps=None, phase='execute',
+                    description='Task description', steps=None, phase='4-execute',
                     depends_on='none', delegation_skill='', delegation_workflow='',
                     context_skills=None, verification_commands=None,
                     verification_criteria=''):
@@ -293,14 +293,14 @@ def test_add_with_phase():
             title='Init task',
             deliverables=[1],
             domain='java',
-            phase='init',
+            phase='1-init',
             description='Init phase task',
             steps=['src/main/java/Component.java']
         )
         result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
 
         assert result.returncode == 0
-        assert 'phase: init' in result.stdout
+        assert 'phase: 1-init' in result.stdout
     finally:
         cleanup(temp_dir)
 
@@ -527,8 +527,8 @@ def test_list_with_tasks():
         assert 'total: 2' in result.stdout
         assert 'tasks[2]' in result.stdout
         # Format: {number,title,domain,profile,phase,deliverables,status,progress}
-        assert '1,First,java,implementation,execute,[1],pending,0/1' in result.stdout
-        assert '2,Second,java,implementation,execute,[2],pending,0/2' in result.stdout
+        assert '1,First,java,implementation,4-execute,[1],pending,0/1' in result.stdout
+        assert '2,Second,java,implementation,4-execute,[2],pending,0/2' in result.stdout
     finally:
         cleanup(temp_dir)
 
@@ -577,16 +577,16 @@ def test_list_filter_by_phase():
     try:
         toon_init = build_task_toon(
             title='Init Task', deliverables=[1], domain='java',
-            phase='init', description='D1', steps=['src/main/java/File.java']
+            phase='1-init', description='D1', steps=['src/main/java/File.java']
         )
         toon_exec = build_task_toon(
             title='Execute Task', deliverables=[2], domain='java',
-            phase='execute', description='D2', steps=['src/main/java/File.java']
+            phase='4-execute', description='D2', steps=['src/main/java/File.java']
         )
         run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon_init)
         run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon_exec)
 
-        result = run_script(SCRIPT_PATH, 'list', '--plan-id', 'test-plan', '--phase', 'init')
+        result = run_script(SCRIPT_PATH, 'list', '--plan-id', 'test-plan', '--phase', '1-init')
 
         assert result.returncode == 0
         assert 'Init Task' in result.stdout
@@ -762,16 +762,16 @@ def test_next_filter_by_phase():
     try:
         toon_init = build_task_toon(
             title='Init Task', deliverables=[1], domain='java',
-            phase='init', description='D1', steps=['src/main/java/File.java']
+            phase='1-init', description='D1', steps=['src/main/java/File.java']
         )
         toon_exec = build_task_toon(
             title='Execute Task', deliverables=[2], domain='java',
-            phase='execute', description='D2', steps=['src/main/java/File.java']
+            phase='4-execute', description='D2', steps=['src/main/java/File.java']
         )
         run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon_init)
         run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon_exec)
 
-        result = run_script(SCRIPT_PATH, 'next', '--plan-id', 'test-plan', '--phase', 'execute')
+        result = run_script(SCRIPT_PATH, 'next', '--plan-id', 'test-plan', '--phase', '4-execute')
 
         assert result.returncode == 0
         assert 'Execute Task' in result.stdout
@@ -1136,7 +1136,7 @@ def test_file_contains_new_fields():
             title='Test task',
             deliverables=[1, 2],
             domain='java',
-            phase='execute',
+            phase='4-execute',
             description='Test description',
             steps=['src/main/java/File1.java', 'src/main/java/File2.java'],
             depends_on='none',
@@ -1153,7 +1153,7 @@ def test_file_contains_new_fields():
 
         assert 'number: 1' in content
         assert 'status: pending' in content
-        assert 'phase: execute' in content
+        assert 'phase: 4-execute' in content
         assert 'deliverables[2]:' in content
         assert '- 1' in content
         assert '- 2' in content

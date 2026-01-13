@@ -359,7 +359,7 @@ For single-module projects or leaf modules with no internal dependencies, omit `
 
 ### Step 6e: Determine Skills by Profile
 
-Assign skills organized by execution profile (implementation, unit-testing, integration-testing, benchmark-testing).
+Assign skills organized by execution profile (implementation, unit-testing, integration-testing, benchmark-testing, documentation).
 
 **Step 6e.1: List Available Domains**
 
@@ -401,6 +401,7 @@ Based on the module analysis from Steps 6a-6d, determine which domain applies.
 | JavaScript/TypeScript sources | `javascript` |
 | plugin.json, marketplace structure | `plan-marshall-plugin-dev` |
 | Quarkus dependencies | `java` + CUI-specific if CUI deps present |
+| `doc/` or `docs/` with `.adoc` files | `documentation` (as additional profile) |
 
 **Step 6e.3: Get Skills by Profile**
 
@@ -453,6 +454,36 @@ Optionally filter the skills based on module signals:
 | No integration tests (*IT.java) | Remove integration-testing profile entirely |
 | No benchmarks (*Benchmark.java) | Remove benchmark-testing profile entirely |
 
+**Step 6e.4b: Add Documentation Profile (Cross-Domain)**
+
+If module has AsciiDoc documentation, add `documentation` profile from `documentation` domain:
+
+**Detection**: Check if module has `doc/` or `docs/` directory with `.adoc` files.
+
+```bash
+# Check for AsciiDoc docs in module
+ls {module-path}/doc/*.adoc 2>/dev/null || ls {module-path}/docs/*.adoc 2>/dev/null
+```
+
+**If `.adoc` files found**:
+
+1. Get documentation skills:
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall-config \
+  get-skills-by-profile --domain documentation
+```
+
+2. Add `documentation` profile to the module's `skills_by_profile`:
+```json
+{
+  "implementation": [...],
+  "unit-testing": [...],
+  "documentation": ["pm-documents:cui-documentation", "pm-documents:adr-management", ...]
+}
+```
+
+**Key principle**: Documentation is a separate task type (like testing), not a variant of implementation. A module can have both `implementation` AND `documentation` profiles.
+
 **Step 6e.5: Apply Skills by Profile**
 
 **Include reasoning** about filtering decisions:
@@ -468,6 +499,7 @@ python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:archi
 - "Base java domain, no filtering applied"
 - "Removed java-cdi (no CDI annotations), removed integration-testing (no *IT.java files)"
 - "Added cui-testing-http based on MockWebServer test dependency"
+- "Added documentation profile (module has doc/*.adoc files)"
 
 The `skills_by_profile` structure flows to:
 1. **solution-outline**: Copies to deliverable as `skills-implementation`, `skills-testing`, etc.

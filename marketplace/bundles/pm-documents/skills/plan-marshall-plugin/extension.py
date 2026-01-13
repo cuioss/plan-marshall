@@ -14,6 +14,10 @@ class Extension(ExtensionBase):
         """Return triage skill reference."""
         return "pm-documents:ext-triage-docs"
 
+    def provides_outline(self) -> str | None:
+        """Return outline skill reference for documentation domain."""
+        return "pm-documents:ext-outline-docs"
+
     def get_skill_domains(self) -> dict:
         """Domain metadata for skill loading."""
         return {
@@ -38,6 +42,10 @@ class Extension(ExtensionBase):
                 "quality": {
                     "defaults": [],
                     "optionals": []
+                },
+                "documentation": {
+                    "defaults": ["pm-documents:cui-documentation"],
+                    "optionals": ["pm-documents:adr-management", "pm-documents:interface-management"]
                 }
             }
         }

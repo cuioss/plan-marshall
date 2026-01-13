@@ -48,7 +48,7 @@ def build_task_toon_with_new_fields(
     origin='plan',
     description='Task description',
     steps=None,
-    phase='execute',
+    phase='4-execute',
     depends_on='none'
 ):
     """Build TOON content for task with new fields."""
@@ -195,6 +195,7 @@ def test_add_with_arbitrary_profile():
 deliverables: [1]
 domain: java
 profile: architecture
+phase: 4-execute
 description: Desc
 skills:
   - pm-dev-java:java-core
@@ -216,6 +217,7 @@ def test_add_with_planning_profile():
 deliverables: [1]
 domain: java
 profile: planning
+phase: 4-execute
 description: Desc
 skills:
   - pm-dev-java:java-core
@@ -237,6 +239,7 @@ def test_add_with_custom_profile():
 deliverables: [1]
 domain: java
 profile: my-custom-profile
+phase: 4-execute
 description: Desc
 skills:
   - pm-dev-java:java-core
@@ -258,6 +261,7 @@ def test_add_fails_with_invalid_skill_format():
 deliverables: [1]
 domain: java
 profile: implementation
+phase: 4-execute
 description: Desc
 skills:
   - invalid-skill-no-colon
@@ -677,7 +681,7 @@ def test_backward_compat_old_file_without_new_fields():
         old_format = """number: 1
 title: Old task
 status: pending
-phase: execute
+phase: 4-execute
 created: 2025-01-01T00:00:00Z
 updated: 2025-01-01T00:00:00Z
 
@@ -766,14 +770,14 @@ def test_file_contains_all_new_fields():
 # =============================================================================
 
 def test_add_with_outline_phase():
-    """Add accepts 'outline' phase (5-phase model)."""
+    """Add accepts '2-outline' phase (5-phase model)."""
     temp_dir = setup_plan_dir()
     try:
         toon = """title: Outline task
 deliverables: [1]
 domain: java
 profile: architecture
-phase: outline
+phase: 2-outline
 description: Desc
 skills:
   - pm-dev-java:java-core
@@ -782,20 +786,20 @@ steps:
         result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
 
         assert result.returncode == 0, f"Failed: {result.stderr}"
-        assert 'phase: outline' in result.stdout
+        assert 'phase: 2-outline' in result.stdout
     finally:
         cleanup(temp_dir)
 
 
 def test_add_with_plan_phase():
-    """Add accepts 'plan' phase (5-phase model)."""
+    """Add accepts '3-plan' phase (5-phase model)."""
     temp_dir = setup_plan_dir()
     try:
         toon = """title: Plan task
 deliverables: [1]
 domain: java
 profile: planning
-phase: plan
+phase: 3-plan
 description: Desc
 skills:
   - pm-dev-java:java-core
@@ -804,7 +808,7 @@ steps:
         result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
 
         assert result.returncode == 0, f"Failed: {result.stderr}"
-        assert 'phase: plan' in result.stdout
+        assert 'phase: 3-plan' in result.stdout
     finally:
         cleanup(temp_dir)
 
@@ -821,6 +825,7 @@ def test_add_with_arbitrary_domain():
 deliverables: [1]
 domain: requirements
 profile: implementation
+phase: 4-execute
 description: Desc
 skills:
   - pm-requirements:req-core
@@ -842,6 +847,7 @@ def test_add_with_custom_domain():
 deliverables: [1]
 domain: my-custom-domain
 profile: implementation
+phase: 4-execute
 description: Desc
 skills:
   - pm-dev-java:java-core
@@ -882,6 +888,7 @@ def test_add_with_impl_type():
 deliverables: [1]
 domain: java
 profile: implementation
+phase: 4-execute
 type: IMPL
 description: Desc
 skills:
@@ -904,6 +911,7 @@ def test_add_with_fix_type():
 deliverables: [1]
 domain: java
 profile: implementation
+phase: 4-execute
 type: FIX
 origin: fix
 description: Desc
@@ -927,6 +935,7 @@ def test_add_with_sonar_type():
 deliverables: [1]
 domain: java
 profile: quality
+phase: 4-execute
 type: SONAR
 origin: fix
 description: Desc
@@ -954,6 +963,7 @@ def test_task_file_uses_type_suffix():
 deliverables: [1]
 domain: java
 profile: implementation
+phase: 4-execute
 type: IMPL
 description: Desc
 skills:
@@ -977,6 +987,7 @@ def test_fix_task_file_uses_fix_suffix():
 deliverables: [1]
 domain: java
 profile: testing
+phase: 4-execute
 type: FIX
 origin: fix
 description: Desc

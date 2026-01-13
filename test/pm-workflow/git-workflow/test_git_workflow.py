@@ -11,7 +11,7 @@ from pathlib import Path
 def get_script_path():
     """Get the path to git-workflow.py."""
     return Path(__file__).parent.parent.parent.parent / \
-           "marketplace/bundles/pm-workflow/skills/git-workflow/scripts/git-workflow.py"
+           "marketplace/bundles/pm-workflow/skills/wf-tool-git/scripts/git-workflow.py"
 
 
 def run_script(args: list) -> tuple:

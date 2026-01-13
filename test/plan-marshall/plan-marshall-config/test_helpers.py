@@ -124,11 +124,11 @@ def create_nested_marshal_json(fixture_dir: Path) -> Path:
                 "defaults": ["plan-marshall:general-development-rules"],
                 "optionals": ["plan-marshall:diagnostic-patterns"],
                 "workflow_skills": {
-                    "1-init": "pm-workflow:phase-1-init",
-                    "2-outline": "pm-workflow:phase-2-outline",
-                    "3-plan": "pm-workflow:phase-3-plan",
-                    "4-execute": "pm-workflow:phase-4-execute",
-                    "5-finalize": "pm-workflow:phase-5-finalize"
+                    "init": "pm-workflow:phase-1-init",
+                    "outline": "pm-workflow:phase-2-outline",
+                    "plan": "pm-workflow:phase-3-plan",
+                    "execute": "pm-workflow:phase-4-execute",
+                    "finalize": "pm-workflow:phase-5-finalize"
                 }
             },
             "java": {

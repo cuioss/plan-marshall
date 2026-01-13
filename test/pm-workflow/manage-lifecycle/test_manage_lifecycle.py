@@ -126,7 +126,7 @@ def test_get_routing_context():
         run_script(SCRIPT_PATH, 'create',
             '--plan-id', 'routing-plan',
             '--title', 'Routing Test',
-            '--phases', 'init,outline,plan,execute,finalize'
+            '--phases', '1-init,2-outline,3-plan,4-execute,5-finalize'
         )
         result = run_script(SCRIPT_PATH, 'get-routing-context',
             '--plan-id', 'routing-plan'
@@ -135,7 +135,7 @@ def test_get_routing_context():
         data = parse_toon(result.stdout)
         assert data['status'] == 'success'
         # Should have current phase
-        assert data['current_phase'] == 'init'
+        assert data['current_phase'] == '1-init'
         # Should have skill routing
         assert data['skill'] == 'plan-init'
         # Should have progress
@@ -151,18 +151,18 @@ def test_get_routing_context_after_transition():
         run_script(SCRIPT_PATH, 'create',
             '--plan-id', 'transition-routing',
             '--title', 'Transition Test',
-            '--phases', 'init,outline,plan,execute,finalize'
+            '--phases', '1-init,2-outline,3-plan,4-execute,5-finalize'
         )
         run_script(SCRIPT_PATH, 'transition',
             '--plan-id', 'transition-routing',
-            '--completed', 'init'
+            '--completed', '1-init'
         )
         result = run_script(SCRIPT_PATH, 'get-routing-context',
             '--plan-id', 'transition-routing'
         )
         assert result.success, f"Script failed: {result.stderr}"
         data = parse_toon(result.stdout)
-        assert data['current_phase'] == 'outline'
+        assert data['current_phase'] == '2-outline'
         assert data['skill'] == 'solution-outline'
         assert data['completed_phases'] == 1
 

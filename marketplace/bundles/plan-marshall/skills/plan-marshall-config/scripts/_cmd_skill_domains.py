@@ -628,6 +628,7 @@ def cmd_get_skills_by_profile(args) -> int:
         'unit-testing': 'testing',
         'integration-testing': 'testing',
         'benchmark-testing': 'testing',
+        'documentation': 'documentation',
     }
 
     skills_by_profile = {}

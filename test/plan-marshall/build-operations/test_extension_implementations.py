@@ -28,7 +28,7 @@ from conftest import TestRunner, PROJECT_ROOT, MARKETPLACE_ROOT
 REQUIRED_CANONICAL_COMMANDS = ['module-tests', 'verify']
 
 # Valid domain profile categories
-VALID_PROFILE_CATEGORIES = ['core', 'implementation', 'testing', 'quality']
+VALID_PROFILE_CATEGORIES = ['core', 'implementation', 'testing', 'quality', 'documentation']
 
 
 def load_extension(bundle_name: str):
@@ -401,6 +401,15 @@ def test_plugin_dev_extension_outline_reference():
     assert skill_exists(outline), f"Outline skill '{outline}' should exist"
 
 
+def test_documents_extension_outline_reference():
+    """Test pm-documents provides_outline returns valid reference."""
+    ext = load_extension('pm-documents')
+
+    outline = ext.provides_outline()
+    assert outline is not None, "Should provide outline skill"
+    assert skill_exists(outline), f"Outline skill '{outline}' should exist"
+
+
 # =============================================================================
 # Cross-Bundle Validation Tests
 # =============================================================================
@@ -471,6 +480,7 @@ if __name__ == '__main__':
         test_documents_extension_skill_domains_structure,
         test_documents_extension_skill_references_exist,
         test_documents_extension_triage_reference,
+        test_documents_extension_outline_reference,
         # pm-dev-java-cui tests
         test_java_cui_extension_skill_domains_structure,
         test_java_cui_extension_skill_references_exist,

@@ -100,7 +100,7 @@ def test_get_workflow_skills():
 
         assert result.success, f"Should succeed: {result.stderr}"
         # Verify 5-phase model output
-        assert '2-outline' in result.stdout
+        assert 'outline' in result.stdout
         assert 'pm-workflow:phase-2-outline' in result.stdout
 
 

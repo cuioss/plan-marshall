@@ -36,6 +36,10 @@ allowed-tools: Read, Glob, Grep, Bash
 │  Step 2: Load and understand requirements                        │
 │          → manage-plan-documents read --type request             │
 │                                                                  │
+│  Step 2.5: Load outline extension skills (if domain has one)     │
+│          → resolve-workflow-skill-extension --type outline       │
+│          → Extensions provide Domain Constraints, Patterns       │
+│                                                                  │
 │  Step 3: Assess complexity (simple vs complex)                   │
 │          → Decompose if multi-module                             │
 │                                                                  │
@@ -104,6 +108,45 @@ python3 .plan/execute-script.py pm-workflow:manage-config:manage-config read \
 Output format: `pm-workflow:manage-config`
 
 Extract `domains` array - each deliverable will be assigned a single domain from this array.
+
+---
+
+## Step 2.5: Load Outline Extension Skills
+
+For each domain in config.toon, check if an outline extension exists and load it as context.
+
+**Purpose**: Outline extensions provide domain-specific knowledge (Domain Constraints, Deliverable Patterns) that augment the standard workflow. They are skills loaded as context, not workflow replacements.
+
+**For each domain** from Step 2:
+
+**EXECUTE**:
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall-config \
+  resolve-workflow-skill-extension --domain {domain} --type outline
+```
+
+**Output (TOON)**:
+```toon
+status: success
+domain: {domain}
+type: outline
+extension: pm-plugin-development:ext-outline-plugin  # or null if no extension
+```
+
+**If extension exists (not null)**, load it as context:
+
+```
+Skill: {resolved_extension}
+```
+
+The extension skill provides:
+- **Domain Constraints**: Rules for deliverable creation (component rules, dependency rules)
+- **Deliverable Patterns**: Grouping strategies, file structures, verification commands
+- **Impact Analysis Patterns**: Discovery commands for cross-cutting changes
+
+These are applied naturally during deliverable creation (Steps 4-6) - no special processing needed.
+
+**If no extension exists**: Continue with standard workflow. Most domains (java, javascript) don't need outline extensions.
 
 ---
 

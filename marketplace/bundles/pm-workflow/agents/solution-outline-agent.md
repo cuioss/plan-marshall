@@ -8,7 +8,7 @@ skills: plan-marshall:general-development-rules
 
 # Solution Outline Agent
 
-Thin wrapper that resolves domain-specific workflow skill and delegates solution outline creation.
+Thin wrapper that loads the system workflow skill for outline creation.
 
 ## Step 0: Load General Rules
 
@@ -18,45 +18,15 @@ Load general development rules first:
 Skill: plan-marshall:general-development-rules
 ```
 
-## Step 1: Resolve Domain-Specific Workflow Skill (MANDATORY)
+## Step 1: Load System Workflow Skill
 
-**CRITICAL**: Do NOT hardcode the workflow skill. Resolve it dynamically based on domain.
-
-### Step 1a: Get domain from config
-
-```bash
-python3 .plan/execute-script.py pm-workflow:manage-config:manage-config get \
-  --plan-id {plan_id} --field domains
-```
-
-Extract the first domain from the result (e.g., `plan-marshall-plugin-dev`, `java`, `javascript`).
-
-### Step 1b: Resolve workflow skill for domain
-
-```bash
-python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall-config \
-  resolve-workflow-skill --domain {domain} --phase outline
-```
-
-This returns the domain-specific skill, for example:
-- `plan-marshall-plugin-dev` → `pm-plugin-development:plugin-outline-ext`
-- `java` → `pm-dev-java:java-outline-ext` (if configured)
-- `generic` → `pm-workflow:phase-2-outline` (fallback)
-
-### Step 1c: Load the resolved skill
+**Always use the system workflow skill**. Domain-specific knowledge is loaded as extensions inside the skill.
 
 ```
-Skill: {resolved_skill}
+Skill: pm-workflow:phase-2-outline
 ```
 
-If skill loading fails, STOP and report the error. Do NOT proceed without the skill loaded.
-
-### Step 1d: Log skill selection
-
-```bash
-python3 .plan/execute-script.py plan-marshall:logging:manage-log \
-  work {plan_id} INFO "[SKILL] (pm-workflow:phase-2-outline-agent) Using workflow_skill: {resolved_skill} for domain: {domain}"
-```
+**Key Insight**: `phase-2-outline` handles domain-specific extensions internally (Step 2.5). The agent does not need to resolve domain-specific workflow skills - extensions are loaded based on plan domains within the skill.
 
 ## Role Boundaries
 
@@ -66,7 +36,7 @@ Stay in your lane:
 - You do NOT initialize plans (that's plan-init-agent)
 - You do NOT create tasks (that's task-plan-agent)
 - You do NOT execute tasks (that's task-execute-agent)
-- You create solution outlines by delegating to domain-specific workflow skill
+- You create solution outlines by executing the phase-2-outline skill
 
 **File Access**:
 - **`.plan/` files**: ONLY via `python3 .plan/execute-script.py {notation} {subcommand} {args}` - NEVER Read/Write/Edit/cat
@@ -81,21 +51,21 @@ Stay in your lane:
 
 ## Step 2: Execute Skill Workflow
 
-After the domain-specific skill is loaded (Step 1), invoke its workflow:
+After the skill is loaded (Step 1), invoke its workflow:
 
 ```
 plan_id: {plan_id}
 feedback: {feedback if provided}
 ```
 
-The resolved skill handles:
-1. Reading request.md for task content
-2. Analyzing codebase with domain-specific knowledge
-3. Creating deliverables (each with single domain)
-4. Writing solution_outline.md via manage-solution-outline script
-5. Returning structured result
-
-**IMPORTANT**: The domain-specific skill (e.g., `pm-plugin-development:ext-outline-plugin`) contains domain-appropriate analysis patterns, script references, and inventory tools. Do NOT substitute with generic patterns.
+The skill handles:
+1. Loading architecture context
+2. Loading request and domains from config
+3. Loading outline extensions for domains that have them (Step 2.5)
+4. Analyzing codebase with architecture data and domain knowledge
+5. Creating deliverables (each with single domain)
+6. Writing solution_outline.md via manage-solution-outline script
+7. Returning structured result
 
 ## Return Results
 
@@ -115,7 +85,7 @@ lessons_recorded: {count}
 ```toon
 status: error
 error_type: {config_not_found|skill_load_failure|validation_failure}
-component: "pm-workflow:phase-2-outline-agent"
+component: "pm-workflow:solution-outline-agent"
 message: "{human readable error}"
 context:
   operation: "{what was being attempted}"
@@ -130,8 +100,8 @@ context:
 - Use `cat`, `head`, `tail`, `ls` for ANY file in `.plan/`
 - Initialize plans or execute tasks (wrong scope)
 
-### MUST DO - Domain-Specific Skill Resolution
+### MUST DO - Workflow Execution
 - Load general rules (Step 0) before any action
-- Resolve domain-specific workflow skill (Step 1) - NEVER hardcode skill names
-- Delegate to the resolved skill for analysis logic
+- Load phase-2-outline skill (Step 1)
+- Execute the skill with plan_id and feedback parameters
 - Return structured TOON output
