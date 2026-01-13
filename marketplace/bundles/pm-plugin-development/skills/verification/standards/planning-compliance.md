@@ -17,7 +17,7 @@ Planning operations MUST use the official manage-* APIs for all .plan directory 
 
 ## MANDATORY: Post-Phase Verification Protocol
 
-**CRITICAL**: Execute this protocol after EVERY phase transition (init→refine, refine→execute, execute→finalize). This is NOT optional.
+**CRITICAL**: Execute this protocol after EVERY phase transition (1-init→2-outline, 3-plan→4-execute, 4-execute→5-finalize). This is NOT optional.
 
 ### Step 1: Chat History Error Check
 
@@ -67,14 +67,14 @@ Skill: pm-workflow:plan-wf-skill-api
 
 | Completed Phase | Contract to Verify |
 |-----------------|-------------------|
-| init | domain-frontmatter-contract.md |
-| refine (solution) | deliverable-contract.md |
-| refine (tasks) | task-contract.md |
-| execute | task verification criteria |
+| 1-init | domain-frontmatter-contract.md |
+| 2-outline | deliverable-contract.md |
+| 3-plan | task-contract.md |
+| 4-execute | task verification criteria |
 
 **Exact Verification Commands** (copy-paste ready):
 
-**Init Phase** - Verify config.toon:
+**1-Init Phase** - Verify config.toon:
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-config:manage-config read --plan-id {plan_id}
 ```
@@ -97,7 +97,7 @@ python3 .plan/execute-script.py plan-marshall:logging:manage-log read --plan-id 
 # Check output contains "[ARTIFACT]" entries for each TASK-N created
 ```
 
-**Execute Phase** - Run task verification commands:
+**4-Execute Phase** - Run task verification commands:
 ```bash
 # Get task to retrieve verification.commands
 python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks get --plan-id {plan_id} --number {N}
@@ -583,9 +583,9 @@ Actively scan execution logs to detect script issues:
 | Field | Expected | Actual | Status |
 |-------|----------|--------|--------|
 | current_phase | {phase} | {actual} | Pass/Fail |
-| phases[init] | done | {actual} | Pass/Fail |
-| phases[refine] | done | {actual} | Pass/Fail |
-| phases[execute] | in_progress | {actual} | Pass/Fail |
+| phases[1-init] | done | {actual} | Pass/Fail |
+| phases[2-outline] | done | {actual} | Pass/Fail |
+| phases[4-execute] | in_progress | {actual} | Pass/Fail |
 | updated | recent | {timestamp} | Pass/Fail |
 
 ### Assessment
@@ -747,10 +747,10 @@ When `/plan-manage` executes, verify after each action:
 
 | Action | Expected Work-Log Entry | Expected Status Change |
 |--------|------------------------|----------------------|
-| `init` | type=artifact, summary=plan created | phases[init]=in_progress |
-| configure complete | type=progress, summary=configuration complete | phases[init]=done, current_phase=refine |
-| `refine` | type=artifact per GOAL/TASK created | phases[refine] progress updates |
-| refine complete | type=outcome, summary=refine complete | phases[refine]=done, current_phase=execute |
+| `1-init` | type=artifact, summary=plan created | phases[1-init]=in_progress |
+| configure complete | type=progress, summary=configuration complete | phases[1-init]=done, current_phase=2-outline |
+| `2-outline` | type=artifact per deliverable created | phases[2-outline] progress updates |
+| outline complete | type=outcome, summary=2-outline complete | phases[2-outline]=done, current_phase=3-plan |
 
 ### plan-execute Command
 
@@ -763,7 +763,7 @@ When `/plan-execute` executes, verify after each task:
 | Task completed | type=outcome, summary=task completion | task status=done |
 | Build verified | type=outcome, summary=verification passed | - |
 | Error occurred | type=error, detail=error info | may set blocked state |
-| All tasks done | type=progress, summary=execute phase complete | current_phase=finalize |
+| All tasks done | type=progress, summary=4-execute phase complete | current_phase=5-finalize |
 
 ## Common Violations
 
@@ -790,9 +790,9 @@ Work-log: No entry found for artifact creation
 ### Violation 3: Stale Status After Transition
 
 ```
-Operation: Completed all execute phase tasks
-Expected: current_phase=finalize
-Actual: current_phase=execute (not updated)
+Operation: Completed all 4-execute phase tasks
+Expected: current_phase=5-finalize
+Actual: current_phase=4-execute (not updated)
 ```
 
 **Why It Matters**: Phase routing will execute wrong phase, plan lifecycle is broken.

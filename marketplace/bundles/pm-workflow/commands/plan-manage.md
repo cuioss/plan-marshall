@@ -105,7 +105,7 @@ Task: pm-workflow:solution-outline-agent
 ```
 
 The agent:
-1. Resolves workflow skill via `resolve-workflow-skill --phase outline` (returns system workflow skill)
+1. Resolves workflow skill via `resolve-workflow-skill --phase 2-outline` (returns system workflow skill)
 2. Optionally loads domain extensions via `resolve-workflow-skill-extension --domain {domain} --type outline`
 3. Executes the workflow skill
 4. Returns deliverables (each with single `domain` field)

@@ -339,7 +339,7 @@ When `scope: planning` is specified, apply these additional checks for planning 
 
 ### After Each Phase Completes (MANDATORY)
 
-**CRITICAL**: Execute the **Post-Phase Verification Protocol** after EVERY phase transition (init→refine, refine→execute, execute→finalize). This is NOT optional.
+**CRITICAL**: Execute the **Post-Phase Verification Protocol** after EVERY phase transition (1-init→2-outline, 3-plan→4-execute, 4-execute→5-finalize). This is NOT optional.
 
 Load and follow the protocol from `standards/planning-compliance.md`:
 
@@ -370,24 +370,24 @@ python3 .plan/execute-script.py pm-workflow:manage-lifecycle:manage-lifecycle re
 
 | Completed Phase | Contract |
 |-----------------|----------|
-| init | domain-frontmatter-contract.md |
-| refine (solution) | deliverable-contract.md |
-| refine (tasks) | task-contract.md |
-| execute | task verification criteria |
+| 1-init | domain-frontmatter-contract.md |
+| 2-outline | deliverable-contract.md |
+| 3-plan | task-contract.md |
+| 4-execute | task verification criteria |
 
 **Exact Verification Commands** (copy-paste ready):
 
-**Init Phase** - Verify config.toon:
+**1-Init Phase** - Verify config.toon:
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-config:manage-config read --plan-id {plan_id}
 ```
 
-**Refine (solution)** - Validate solution outline:
+**2-Outline Phase** - Validate solution outline:
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-solution-outline:manage-solution-outline validate --plan-id {plan_id}
 ```
 
-**Refine (tasks)** - List and verify each task:
+**3-Plan Phase** - List and verify each task:
 ```bash
 # List all tasks
 python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks list --plan-id {plan_id}
@@ -479,12 +479,13 @@ entries[1]{timestamp,type,phase,summary}:
 
 ### Status Check
 ```toon
-current_phase: execute
-phases[4]{name,status}:
-init,done
-refine,done
-execute,in_progress
-finalize,pending
+current_phase: 4-execute
+phases[5]{name,status}:
+1-init,done
+2-outline,done
+3-plan,done
+4-execute,in_progress
+5-finalize,pending
 ```
 
 ### Verification Result
@@ -492,9 +493,9 @@ finalize,pending
 |-------|--------|-------|
 | Work-log entry exists | Pass | Entry within last 5 seconds |
 | Correct type | Pass | outcome matches task completion |
-| Correct phase | Pass | execute phase |
+| Correct phase | Pass | 4-execute phase |
 | Meaningful summary | Pass | Describes completed task |
-| Status consistent | Pass | execute phase in_progress |
+| Status consistent | Pass | 4-execute phase in_progress |
 
 ### Assessment
 PASS - All audit trail and status checks verified

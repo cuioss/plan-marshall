@@ -325,10 +325,10 @@ Contains: How lessons inform triage decisions, lesson query before decisions, re
 
 ### Phase Routing
 
-This skill is invoked when plan is in `finalize` phase:
+This skill is invoked when plan is in `5-finalize` phase:
 
 ```
-pm-workflow:manage-lifecycle route --phase finalize → pm-workflow:phase-5-finalize
+pm-workflow:manage-lifecycle route --phase 5-finalize → pm-workflow:phase-5-finalize
 ```
 
 ### Command Integration

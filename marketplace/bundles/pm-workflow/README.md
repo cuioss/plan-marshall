@@ -40,7 +40,7 @@ Execute task plans - implement, verify, finalize.
 
 ```bash
 /plan-execute                         # Continue current plan
-/plan-execute phase=execute           # Execute specific phase
+/plan-execute phase=4-execute         # Execute specific phase
 ```
 
 ### /pr-doctor
@@ -176,7 +176,7 @@ Task execution uses two-tier skill loading:
 
 | Tier | Source | Purpose |
 |------|--------|---------|
-| **Tier 1** | `resolve-workflow-skill --phase execute` | System workflow skill |
+| **Tier 1** | `resolve-workflow-skill --phase 4-execute` | System workflow skill |
 | **Tier 2** | `task.skills` array | Domain-specific skills (resolved by task-plan) |
 
 Task-plan inherits skills from deliverables (selected during outline from module.skills_by_profile):

@@ -18,7 +18,7 @@ This document defines the standard log entry format used by the unified logging 
 | `level` | Log severity level | `INFO`, `WARN`, `ERROR` |
 | `category` | Entry categorization | `SCRIPT`, `DECISION`, `ARTIFACT` |
 | `message` | Primary log message | `pm-workflow:manage-files add (0.15s)` |
-| `field: value` | Additional data (indented) | `phase: init` |
+| `field: value` | Additional data (indented) | `phase: 1-init` |
 
 ---
 
@@ -48,7 +48,7 @@ Additional data is provided as indented key-value pairs:
 ```
 [2025-12-11T12:14:26Z] [ERROR] [SCRIPT] pm-workflow:manage-log add (0.16s)
   exit_code: 2
-  args: add --plan-id test --phase refine
+  args: add --plan-id test --phase 2-outline
   stderr: error: invalid argument
 ```
 
@@ -89,7 +89,7 @@ Additional data is provided as indented key-value pairs:
 ```
 [2025-12-11T12:17:50Z] [ERROR] [SCRIPT] pm-workflow:manage-log:manage-work-log add (0.16s)
   exit_code: 2
-  args: add --plan-id test --phase refine --type milestone
+  args: add --plan-id test --phase 2-outline --type milestone
   stderr: error: argument --type: invalid choice: 'milestone'
 ```
 
@@ -124,15 +124,15 @@ Additional data is provided as indented key-value pairs:
 #### PROGRESS
 
 ```
-[2025-12-11T11:14:30Z] [INFO] [PROGRESS] Starting init phase
-  phase: init
+[2025-12-11T11:14:30Z] [INFO] [PROGRESS] Starting 1-init phase
+  phase: 1-init
 ```
 
 #### DECISION
 
 ```
 [2025-12-11T11:14:48Z] [INFO] [DECISION] Detected domain: plan-marshall-plugin-dev
-  phase: init
+  phase: 1-init
   detail: marketplace/bundles structure detected
 ```
 
@@ -140,7 +140,7 @@ Additional data is provided as indented key-value pairs:
 
 ```
 [2025-12-11T11:15:24Z] [INFO] [ARTIFACT] Created plan: Migrate agent outputs to TOON
-  phase: init
+  phase: 1-init
   detail: Source: description, domain: plan-marshall-plugin-dev
 ```
 
@@ -148,7 +148,7 @@ Additional data is provided as indented key-value pairs:
 
 ```
 [2025-12-11T11:17:50Z] [ERROR] [ERROR] Skill load failed
-  phase: refine
+  phase: 2-outline
   detail: plugin-solution-outline skill not found in config.toon
 ```
 
@@ -156,7 +156,7 @@ Additional data is provided as indented key-value pairs:
 
 ```
 [2025-12-11T11:17:55Z] [INFO] [OUTCOME] Impact analysis complete: 19 agents identified
-  phase: refine
+  phase: 2-outline
   detail: Categories: 3 builder, 9 Java, 2 JS, 3 plan-marshall-plugin-dev, 2 workflow
 ```
 
@@ -164,7 +164,7 @@ Additional data is provided as indented key-value pairs:
 
 ```
 [2025-12-11T11:17:48Z] [INFO] [FINDING] Affected: gradle-builder.md
-  phase: refine
+  phase: 2-outline
   detail: Agent returns JSON output in Step 4. Should be migrated to TOON format.
 ```
 

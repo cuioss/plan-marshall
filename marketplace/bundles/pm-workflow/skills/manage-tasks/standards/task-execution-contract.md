@@ -24,11 +24,11 @@ Task execution skills:
 
 ## Invocation
 
-**Phase**: `execute`
+**Phase**: `4-execute`
 
 **Agent invocation**:
 ```bash
-plan-phase-agent plan_id={plan_id} phase=execute task_number={task_number}
+plan-phase-agent plan_id={plan_id} phase=4-execute task_number={task_number}
 ```
 
 **Skill resolution**:
