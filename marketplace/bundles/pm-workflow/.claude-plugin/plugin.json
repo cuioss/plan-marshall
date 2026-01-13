@@ -26,7 +26,7 @@
     "./skills/wf-tool-git",
     "./skills/wf-tool-pr",
     "./skills/wf-tool-sonar",
-    "./skills/pm-workflow-architecture",
+    "./skills/workflow-architecture",
     "./skills/workflow-extension-api",
     "./skills/phase-1-init",
     "./skills/phase-2-outline",

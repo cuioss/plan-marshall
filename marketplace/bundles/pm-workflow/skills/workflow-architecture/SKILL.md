@@ -1,5 +1,5 @@
 ---
-name: pm-workflow-architecture
+name: workflow-architecture
 description: Centralized architecture documentation for the pm-workflow bundle with visual diagrams
 allowed-tools: Read
 ---

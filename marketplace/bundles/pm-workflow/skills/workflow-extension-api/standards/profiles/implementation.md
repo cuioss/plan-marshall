@@ -68,7 +68,7 @@ fallback: true
 
 ## Two-Tier Skill Loading
 
-See [pm-workflow-architecture:skill-loading](../../pm-workflow-architecture/standards/skill-loading.md) for complete visual diagrams.
+See [workflow-architecture:skill-loading](../../workflow-architecture/standards/skill-loading.md) for complete visual diagrams.
 
 | Tier | Source | Purpose | Loaded By |
 |------|--------|---------|-----------|

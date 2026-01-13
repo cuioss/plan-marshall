@@ -21,7 +21,7 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash
 
 ## Two-Tier Skill Loading
 
-See [pm-workflow-architecture:skill-loading](../pm-workflow-architecture/standards/skill-loading.md) for the complete two-tier skill loading pattern with visual diagrams.
+See [workflow-architecture:skill-loading](../workflow-architecture/standards/skill-loading.md) for the complete two-tier skill loading pattern with visual diagrams.
 
 **Summary**: Agent loads Tier 1 (system skills) automatically, then Tier 2 (domain skills from `task.skills`). This workflow skill defines HOW the agent executes.
 

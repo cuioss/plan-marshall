@@ -2,7 +2,7 @@
 
 Contract specification for the 5-phase workflow execution model.
 
-**Visual diagrams and detailed explanations**: See [pm-workflow-architecture](../../pm-workflow-architecture/SKILL.md). This document provides **API contracts** only.
+**Visual diagrams and detailed explanations**: See [workflow-architecture](../../workflow-architecture/SKILL.md). This document provides **API contracts** only.
 
 ---
 
@@ -32,7 +32,7 @@ Contract specification for the 5-phase workflow execution model.
 ## Component Responsibilities
 
 For visual diagrams of component interactions, see:
-- [pm-workflow-architecture:agents](../../pm-workflow-architecture/standards/agents.md) - Orchestrator and agent responsibilities
+- [workflow-architecture:agents](../../workflow-architecture/standards/agents.md) - Orchestrator and agent responsibilities
 
 ### Agent Input Contract
 
@@ -58,8 +58,8 @@ For visual diagrams of component interactions, see:
 ## Domain Flow
 
 For visual diagrams of domain propagation through phases, see:
-- [pm-workflow-architecture:skill-loading](../../pm-workflow-architecture/standards/skill-loading.md) - Domain resolution and skill loading
-- [pm-workflow-architecture:phases](../../pm-workflow-architecture/standards/phases.md) - Phase transitions
+- [workflow-architecture:skill-loading](../../workflow-architecture/standards/skill-loading.md) - Domain resolution and skill loading
+- [workflow-architecture:phases](../../workflow-architecture/standards/phases.md) - Phase transitions
 
 ### Domain Source by Phase
 
@@ -168,4 +168,4 @@ recoverable: {true|false}
 - [extension-api.md](extension-api.md) - Extension mechanism
 - [deliverable-contract.md](../../manage-solution-outline/standards/deliverable-contract.md) - Deliverable structure
 - [task-contract.md](../../manage-tasks/standards/task-contract.md) - Task structure
-- [pm-workflow-architecture:artifacts](../../pm-workflow-architecture/standards/artifacts.md) - Artifact formats (TOON)
+- [workflow-architecture:artifacts](../../workflow-architecture/standards/artifacts.md) - Artifact formats (TOON)

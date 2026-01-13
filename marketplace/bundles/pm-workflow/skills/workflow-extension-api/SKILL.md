@@ -208,4 +208,4 @@ Domain skills are NOT extensions of the workflow - they are knowledge loaded by 
 - `plan-marshall:plan-marshall-config resolve-workflow-skill-extension` - Resolves extensions
 
 **Visual Overview**:
-- [pm-workflow-architecture](../pm-workflow-architecture/SKILL.md) - High-level diagrams
+- [workflow-architecture](../workflow-architecture/SKILL.md) - High-level diagrams

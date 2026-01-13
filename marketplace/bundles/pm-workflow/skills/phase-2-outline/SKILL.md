@@ -447,6 +447,6 @@ The workflow skill MUST validate that each deliverable contains all required fie
 
 - `pm-workflow:workflow-extension-api/standards/extensions/outline-extension.md` - Outline extension contract
 - `pm-workflow:manage-solution-outline/standards/deliverable-contract.md` - Deliverable structure
-- `pm-workflow:pm-workflow-architecture` - Workflow architecture overview
+- `pm-workflow:workflow-architecture` - Workflow architecture overview
 - `plan-marshall:analyze-project-architecture` - Architecture API documentation
 - `plan-marshall:analyze-project-architecture/standards/module-graph-format.md` - Module dependency graph format
