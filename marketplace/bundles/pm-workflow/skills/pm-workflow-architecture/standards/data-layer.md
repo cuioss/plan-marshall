@@ -230,7 +230,7 @@ The pm-workflow bundle uses manage-* skills as the data access layer for all pla
 │  ┌──────────────────────────────────────────────────────────────────────┐  │
 │  │                                                                      │  │
 │  │  title: Implement JWT Authentication                                 │  │
-│  │  current_phase: execute                                              │  │
+│  │  current_phase: 4-execute                                            │  │
 │  │                                                                      │  │
 │  │  phases[5]{name,status}:                                             │  │
 │  │  1-init,done                                                         │  │

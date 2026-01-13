@@ -138,14 +138,14 @@ Plan lifecycle status with phase tracking.
 
 ```toon
 title: Implement JWT Authentication
-current_phase: execute
+current_phase: 4-execute
 
 phases[5]{name,status}:
-init,done
-outline,done
-plan,done
-execute,in_progress
-finalize,pending
+1-init,done
+2-outline,done
+3-plan,done
+4-execute,in_progress
+5-finalize,pending
 
 created: 2025-12-02T10:00:00Z
 updated: 2025-12-02T14:30:00Z

@@ -245,8 +245,8 @@ python3 .plan/execute-script.py pm-workflow:manage-lifecycle:manage-lifecycle tr
 ```toon
 status: success
 plan_id: my-feature
-completed_phase: init
-next_phase: refine
+completed_phase: 1-init
+next_phase: 2-outline
 ```
 
 ### archive
