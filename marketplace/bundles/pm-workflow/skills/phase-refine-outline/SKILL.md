@@ -2,7 +2,7 @@
 name: phase-refine-outline
 description: Architecture-driven solution outline creation with intelligent module selection and Skills by Profile assignment
 allowed-tools: Read, Glob, Grep, Bash
-implements: pm-workflow:plan-wf-skill-api/solution-outline-skill-contract
+implements: pm-workflow:plan-wf-skill-api/phase-outline-contract
 ---
 
 # Phase Refine Outline Skill
@@ -403,7 +403,7 @@ The workflow skill MUST validate that each deliverable contains all required fie
 
 ## Related Documents
 
-- `pm-workflow:plan-wf-skill-api/standards/solution-outline-skill-contract.md` - Contract this skill implements
+- `pm-workflow:plan-wf-skill-api/standards/phase-outline-contract.md` - Contract this skill implements
 - `pm-workflow:manage-solution-outline/standards/deliverable-contract.md` - Deliverable structure
 - `pm-workflow:pm-workflow-architecture` - Workflow architecture overview
 - `plan-marshall:analyze-project-architecture` - Architecture API documentation

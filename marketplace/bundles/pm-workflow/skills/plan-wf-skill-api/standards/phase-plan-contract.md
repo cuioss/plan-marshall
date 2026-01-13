@@ -248,14 +248,14 @@ Task-plan copies skills directly from deliverable(s) to task. No resolution API 
 - `pm-workflow:manage-solution-outline:manage-solution-outline` - Solution outline queries, deliverable skills
 - `pm-workflow:manage-tasks:manage-tasks` - Task creation with deliverable references
 
-**Prerequisites**: [Solution Outline Skill](solution-outline-skill-contract.md) completion and [User Review Protocol](user-review-protocol.md) approval
+**Prerequisites**: [Solution Outline Skill](phase-outline-contract.md) completion and [User Review Protocol](user-review-protocol.md) approval
 
 ---
 
 ## Related Documents
 
-- [solution-outline-skill-contract.md](solution-outline-skill-contract.md) - Previous phase (outline)
-- [task-execution-skill-contract.md](task-execution-skill-contract.md) - Next phase (execute)
+- [phase-outline-contract.md](phase-outline-contract.md) - Previous phase (outline)
+- [phase-execute-contract.md](phase-execute-contract.md) - Next phase (execute)
 - [task-contract.md](../../manage-tasks/standards/task-contract.md) - Task structure and optimization rules
 - [deliverable-contract.md](../../manage-solution-outline/standards/deliverable-contract.md) - Deliverable structure
 - [user-review-protocol.md](user-review-protocol.md) - Approval gate before plan phase

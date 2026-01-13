@@ -29,11 +29,11 @@ See [pm-workflow-architecture:phases](../pm-workflow-architecture/standards/phas
 | Contract | Purpose | Document |
 |----------|---------|----------|
 | **Architecture Overview** | 5-phase model, component responsibilities, domain flow | [standards/architecture-overview.md](standards/architecture-overview.md) |
-| **Plan-Init Skill** | Initialize plan and write config.toon | [standards/plan-init-skill-contract.md](standards/plan-init-skill-contract.md) |
-| **Solution Outline Skill** | Request → Solution Outline with deliverables | [standards/solution-outline-skill-contract.md](standards/solution-outline-skill-contract.md) |
-| **Task Plan Skill** | Solution Outline → Tasks with domain/profile | [standards/task-plan-skill-contract.md](standards/task-plan-skill-contract.md) |
-| **Task Execution Skill** | Task execution with two-tier skill loading | [standards/task-execution-skill-contract.md](standards/task-execution-skill-contract.md) |
-| **Plan-Finalize Skill** | Verification, findings triage, commit/PR | [standards/plan-finalize-skill-contract.md](standards/plan-finalize-skill-contract.md) |
+| **Plan-Init Skill** | Initialize plan and write config.toon | [standards/phase-init-contract.md](standards/phase-init-contract.md) |
+| **Solution Outline Skill** | Request → Solution Outline with deliverables | [standards/phase-outline-contract.md](standards/phase-outline-contract.md) |
+| **Task Plan Skill** | Solution Outline → Tasks with domain/profile | [standards/phase-plan-contract.md](standards/phase-plan-contract.md) |
+| **Task Execution Skill** | Task execution with two-tier skill loading | [standards/phase-execute-contract.md](standards/phase-execute-contract.md) |
+| **Plan-Finalize Skill** | Verification, findings triage, commit/PR | [standards/phase-finalize-contract.md](standards/phase-finalize-contract.md) |
 | **Deliverable Contract** | Deliverable structure in solution outline | `pm-workflow:manage-solution-outline/standards/deliverable-contract.md` |
 | **Task Contract** | Task structure with domain, profile, skills | `pm-workflow:manage-tasks/standards/task-contract.md` |
 | **Extension API** | Domain-specific extensions for outline and triage | [standards/extension-api.md](standards/extension-api.md) |

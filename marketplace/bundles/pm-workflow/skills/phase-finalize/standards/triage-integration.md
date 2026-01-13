@@ -196,7 +196,7 @@ python3 .plan/execute-script.py plan-marshall:logging:manage-log \
 
 ## Related Documents
 
-- [pm-workflow:plan-wf-skill-api/standards/triage-extension-contract.md](../../plan-wf-skill-api/standards/triage-extension-contract.md) - Extension contract
+- [pm-workflow:plan-wf-skill-api/standards/extension-triage-contract.md](../../plan-wf-skill-api/standards/extension-triage-contract.md) - Extension contract
 - [pm-workflow:plan-wf-skill-api/standards/extension-api.md](../../plan-wf-skill-api/standards/extension-api.md) - Extension API
 - [pm-dev-java:java-triage](../../../pm-dev-java/skills/java-triage/SKILL.md) - Java triage
 - [pm-dev-frontend:javascript-triage](../../../pm-dev-frontend/skills/javascript-triage/SKILL.md) - JavaScript triage

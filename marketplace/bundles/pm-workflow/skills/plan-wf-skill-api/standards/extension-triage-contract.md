@@ -160,7 +160,7 @@ Triage decisions can be informed by lessons learned:
 3. If new situation, make decision and optionally record lesson
 4. Lessons are stored per domain for context-aware decisions
 
-See: [plan-finalize-skill-contract.md](plan-finalize-skill-contract.md) for lessons integration details.
+See: [phase-finalize-contract.md](phase-finalize-contract.md) for lessons integration details.
 
 ## Validation Checklist
 

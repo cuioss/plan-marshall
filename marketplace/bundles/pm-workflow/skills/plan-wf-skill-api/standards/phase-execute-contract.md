@@ -437,7 +437,7 @@ If verification fails:
 
 ## Related Documents
 
-- [task-plan-skill-contract.md](task-plan-skill-contract.md) - Previous phase (plan)
-- [plan-finalize-skill-contract.md](plan-finalize-skill-contract.md) - Next phase (finalize)
+- [phase-plan-contract.md](phase-plan-contract.md) - Previous phase (plan)
+- [phase-finalize-contract.md](phase-finalize-contract.md) - Next phase (finalize)
 - [task-contract.md](../../manage-tasks/standards/task-contract.md) - Task structure with domain, profile, skills
 - [config-toon-format.md](../../manage-config/standards/config-toon-format.md) - Workflow skill configuration

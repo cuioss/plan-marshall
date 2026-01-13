@@ -2,7 +2,7 @@
 name: phase-execute
 description: Execute phase skill for plan management. DUMB TASK RUNNER that executes tasks from TASK-*.toon files sequentially for execute and finalize phases.
 allowed-tools: Read, Write, Edit, Bash, Skill, Task, AskUserQuestion
-implements: pm-workflow:plan-wf-skill-api/task-execution-skill-contract
+implements: pm-workflow:plan-wf-skill-api/phase-execute-contract
 ---
 
 # Phase Execute Skill

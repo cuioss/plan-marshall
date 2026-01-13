@@ -168,5 +168,5 @@ Triage lessons include:
 ## Related Documents
 
 - [triage-integration.md](triage-integration.md) - How triage extensions are loaded and applied
-- [pm-workflow:plan-wf-skill-api/standards/triage-extension-contract.md](../../plan-wf-skill-api/standards/triage-extension-contract.md) - Extension contract
+- [pm-workflow:plan-wf-skill-api/standards/extension-triage-contract.md](../../plan-wf-skill-api/standards/extension-triage-contract.md) - Extension contract
 - `plan-marshall:manage-lessons-learned` - Lessons storage and query skill

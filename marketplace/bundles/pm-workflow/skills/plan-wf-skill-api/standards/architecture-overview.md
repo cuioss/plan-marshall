@@ -47,11 +47,11 @@ For visual diagrams of component interactions, see:
 
 | Phase | Workflow Skill | Specification |
 |-------|----------------|---------------|
-| **init** | `pm-workflow:phase-init` | [plan-init-skill-contract.md](plan-init-skill-contract.md) |
-| **outline** | `pm-workflow:phase-refine-outline` | [solution-outline-skill-contract.md](solution-outline-skill-contract.md) |
-| **plan** | `pm-workflow:phase-refine-plan` | [task-plan-skill-contract.md](task-plan-skill-contract.md) |
-| **execute** | `pm-workflow:phase-execute` | [task-execution-skill-contract.md](task-execution-skill-contract.md) |
-| **finalize** | `pm-workflow:phase-finalize` | [plan-finalize-skill-contract.md](plan-finalize-skill-contract.md) |
+| **init** | `pm-workflow:phase-init` | [phase-init-contract.md](phase-init-contract.md) |
+| **outline** | `pm-workflow:phase-refine-outline` | [phase-outline-contract.md](phase-outline-contract.md) |
+| **plan** | `pm-workflow:phase-refine-plan` | [phase-plan-contract.md](phase-plan-contract.md) |
+| **execute** | `pm-workflow:phase-execute` | [phase-execute-contract.md](phase-execute-contract.md) |
+| **finalize** | `pm-workflow:phase-finalize` | [phase-finalize-contract.md](phase-finalize-contract.md) |
 
 ---
 
@@ -160,11 +160,11 @@ recoverable: {true|false}
 
 ## Related Documents
 
-- [plan-init-skill-contract.md](plan-init-skill-contract.md) - Init phase contract
-- [solution-outline-skill-contract.md](solution-outline-skill-contract.md) - Outline phase contract
-- [task-plan-skill-contract.md](task-plan-skill-contract.md) - Plan phase contract
-- [task-execution-skill-contract.md](task-execution-skill-contract.md) - Execute phase contract
-- [plan-finalize-skill-contract.md](plan-finalize-skill-contract.md) - Finalize phase contract
+- [phase-init-contract.md](phase-init-contract.md) - Init phase contract
+- [phase-outline-contract.md](phase-outline-contract.md) - Outline phase contract
+- [phase-plan-contract.md](phase-plan-contract.md) - Plan phase contract
+- [phase-execute-contract.md](phase-execute-contract.md) - Execute phase contract
+- [phase-finalize-contract.md](phase-finalize-contract.md) - Finalize phase contract
 - [extension-api.md](extension-api.md) - Extension mechanism
 - [deliverable-contract.md](../../manage-solution-outline/standards/deliverable-contract.md) - Deliverable structure
 - [task-contract.md](../../manage-tasks/standards/task-contract.md) - Task structure

@@ -367,8 +367,8 @@ outline ──user approval gate──▶ plan
 
 ## Related Documents
 
-- [plan-init-skill-contract.md](plan-init-skill-contract.md) - Previous phase (init)
-- [task-plan-skill-contract.md](task-plan-skill-contract.md) - Next phase (plan)
+- [phase-init-contract.md](phase-init-contract.md) - Previous phase (init)
+- [phase-plan-contract.md](phase-plan-contract.md) - Next phase (plan)
 - [deliverable-contract.md](../../manage-solution-outline/standards/deliverable-contract.md) - Deliverable structure
 - [user-review-protocol.md](user-review-protocol.md) - Approval gate after outline
 - `plan-marshall:analyze-project-architecture` - Architecture API documentation

@@ -2,7 +2,7 @@
 name: phase-finalize
 description: Complete plan execution with git workflow and PR management
 allowed-tools: Read, Bash, Glob, SlashCommand
-implements: pm-workflow:plan-wf-skill-api/plan-finalize-skill-contract
+implements: pm-workflow:plan-wf-skill-api/phase-finalize-contract
 ---
 
 # Phase Finalize Skill
