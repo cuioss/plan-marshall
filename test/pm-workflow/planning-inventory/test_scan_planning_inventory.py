@@ -109,10 +109,10 @@ def test_core_has_plan_skills():
     core_skills = data.get('core', {}).get('skills', [])
     skill_names = [s['name'] for s in core_skills]
 
-    # Should have at least some plan-* skills
-    # (plan-init, plan-execute, plan-finalize, plan-wf-skill-api)
-    plan_skills = [s for s in skill_names if s.startswith('plan-')]
-    assert len(plan_skills) >= 4, f"Should have at least 4 plan-* skills, found {len(plan_skills)}"
+    # Should have at least some phase-* skills
+    # (phase-1-init, phase-2-outline, phase-3-plan, phase-4-execute, phase-5-finalize)
+    phase_skills = [s for s in skill_names if s.startswith('phase-')]
+    assert len(phase_skills) >= 5, f"Should have at least 5 phase-* skills, found {len(phase_skills)}"
 
 
 def test_core_has_manage_skills():

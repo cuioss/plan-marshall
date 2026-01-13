@@ -16,9 +16,9 @@ allowed-tools: Read
 │  ┌───────────────────────────────────────────────────────────────────────┐  │
 │  │                      5-PHASE EXECUTION MODEL                          │  │
 │  │                                                                       │  │
-│  │   ┌──────┐   ┌─────────┐   ┌──────┐   ┌─────────┐   ┌──────────┐     │  │
-│  │   │ init │──▶│ outline │──▶│ plan │──▶│ execute │──▶│ finalize │     │  │
-│  │   └──────┘   └─────────┘   └──────┘   └─────────┘   └──────────┘     │  │
+│  │   ┌────────┐ ┌───────────┐ ┌────────┐ ┌───────────┐ ┌────────────┐   │  │
+│  │   │ 1-init │▶│ 2-outline │▶│ 3-plan │▶│ 4-execute │▶│ 5-finalize │   │  │
+│  │   └────────┘ └───────────┘ └────────┘ └───────────┘ └────────────┘   │  │
 │  │       │           │            │            │             │          │  │
 │  │       ▼           ▼            ▼            ▼             ▼          │  │
 │  │   config      solution      TASK-*      project       commit        │  │
@@ -120,7 +120,7 @@ allowed-tools: Read
 │  ┌─────────────────────────────────────────────────────────────────────┐   │
 │  │  AGENTS (Single Parameterized Agent)                                 │   │
 │  │  ═══════════════════════════════════                                 │   │
-│  │  plan-phase-agent phase=init | outline | plan | execute | finalize   │   │
+│  │  plan-phase-agent phase=1-init | 2-outline | 3-plan | 4-execute | 5-finalize │
 │  │  (One agent, 5 invocation modes)                                     │   │
 │  └─────────────────────────────────────────────────────────────────────┘   │
 │                                     │                                       │
@@ -128,8 +128,8 @@ allowed-tools: Read
 │  ┌─────────────────────────────────────────────────────────────────────┐   │
 │  │  WORKFLOW SKILLS (Phase Logic)                                       │   │
 │  │  ═════════════════════════════                                       │   │
-│  │  phase-init           phase-refine-outline   phase-refine-plan       │   │
-│  │  phase-execute        phase-finalize                                 │   │
+│  │  phase-1-init         phase-2-outline        phase-3-plan            │   │
+│  │  phase-4-execute      phase-5-finalize                               │   │
 │  │  task-implementation           task-testing                          │   │
 │  │  git-workflow         pr-workflow                                    │   │
 │  └─────────────────────────────────────────────────────────────────────┘   │
@@ -161,11 +161,11 @@ allowed-tools: Read
 | Skill | Purpose |
 |-------|---------|
 | `pm-workflow:plan-wf-skill-api` | Contract definitions for workflow skills |
-| `pm-workflow:phase-init` | Init phase implementation |
-| `pm-workflow:phase-refine-outline` | Outline phase implementation |
-| `pm-workflow:phase-refine-plan` | Plan phase implementation |
-| `pm-workflow:phase-execute` | Execute phase implementation |
-| `pm-workflow:phase-finalize` | Finalize phase implementation |
+| `pm-workflow:phase-1-init` | Init phase implementation |
+| `pm-workflow:phase-2-outline` | Outline phase implementation |
+| `pm-workflow:phase-3-plan` | Plan phase implementation |
+| `pm-workflow:phase-4-execute` | Execute phase implementation |
+| `pm-workflow:phase-5-finalize` | Finalize phase implementation |
 | `pm-workflow:task-implementation` | Implementation profile workflow |
 | `pm-workflow:task-testing` | Testing profile workflow |
 

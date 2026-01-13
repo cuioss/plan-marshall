@@ -92,7 +92,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_list.add_argument('--plan-id', required=True, help='Plan identifier')
     p_list.add_argument('--status', choices=['pending', 'in_progress', 'done', 'blocked', 'all'],
                         default='all', help='Filter by status')
-    p_list.add_argument('--phase', choices=['init', 'outline', 'plan', 'execute', 'finalize'],
+    p_list.add_argument('--phase', choices=['1-init', '2-outline', '3-plan', '4-execute', '5-finalize'],
                         help='Filter by phase')
     p_list.add_argument('--deliverable', type=int, help='Filter by deliverable number')
     p_list.add_argument('--ready', action='store_true',
@@ -106,7 +106,7 @@ def build_parser() -> argparse.ArgumentParser:
     # next
     p_next = subparsers.add_parser('next', help='Get next pending task/step')
     p_next.add_argument('--plan-id', required=True, help='Plan identifier')
-    p_next.add_argument('--phase', choices=['init', 'outline', 'plan', 'execute', 'finalize'],
+    p_next.add_argument('--phase', choices=['1-init', '2-outline', '3-plan', '4-execute', '5-finalize'],
                         help='Filter by phase')
     p_next.add_argument('--include-context', action='store_true',
                         help='Include deliverable details in output')

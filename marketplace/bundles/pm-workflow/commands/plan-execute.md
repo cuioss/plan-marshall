@@ -8,13 +8,13 @@ tools: Read, Skill, Bash, AskUserQuestion, Task
 
 Execute task plans through the execute phase (task implementation) and finalize phase (commit, PR).
 
-## 4-Phase Model
+## 5-Phase Model
 
 ```
-init → refine → execute → finalize
+1-init → 2-outline → 3-plan → 4-execute → 5-finalize
 ```
 
-This command handles **execute** and **finalize** phases. Use `/plan-manage` for init and refine.
+This command handles **4-execute** and **5-finalize** phases. Use `/plan-manage` for init and refine.
 
 ## PARAMETERS
 
@@ -57,7 +57,7 @@ For each task:
 ### Finalize Phase
 
 ```
-Skill: pm-workflow:phase-finalize
+Skill: pm-workflow:phase-5-finalize
 operation: finalize
 plan_id: {plan_id}
 ```
@@ -150,7 +150,7 @@ Executes implementation tasks using DUMB LOOP pattern:
 
 ### Finalize Phase
 
-Completes the plan via `pm-workflow:phase-finalize` skill:
+Completes the plan via `pm-workflow:phase-5-finalize` skill:
 - Run verification (if configured)
 - Commit changes
 - Push to remote
@@ -168,7 +168,7 @@ Completes the plan via `pm-workflow:phase-finalize` skill:
 |-------|---------|
 | `pm-workflow:manage-lifecycle` | Plan discovery, phase routing, transitions |
 | `pm-workflow:manage-tasks` | Task iteration (next, check) |
-| `pm-workflow:phase-finalize` | Finalize phase execution |
+| `pm-workflow:phase-5-finalize` | Finalize phase execution |
 
 | Agent | Purpose |
 |-------|---------|

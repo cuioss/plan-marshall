@@ -15,11 +15,11 @@ JSON structure and field definitions for project configuration.
       "defaults": ["plan-marshall:general-development-rules"],
       "optionals": ["plan-marshall:diagnostic-patterns"],
       "workflow_skills": {
-        "init": "pm-workflow:phase-init",
-        "outline": "pm-workflow:phase-refine-outline",
-        "plan": "pm-workflow:phase-refine-plan",
-        "execute": "pm-workflow:phase-execute",
-        "finalize": "pm-workflow:phase-finalize"
+        "1-init": "pm-workflow:phase-1-init",
+        "2-outline": "pm-workflow:phase-2-outline",
+        "3-plan": "pm-workflow:phase-3-plan",
+        "4-execute": "pm-workflow:phase-4-execute",
+        "5-finalize": "pm-workflow:phase-5-finalize"
       }
     },
     "java": {
@@ -89,11 +89,11 @@ The `system` domain contains workflow skills and base skills applied globally.
       "defaults": ["bundle:skill", ...],
       "optionals": ["bundle:skill", ...],
       "workflow_skills": {
-        "init": "pm-workflow:phase-init",
-        "outline": "pm-workflow:phase-refine-outline",
-        "plan": "pm-workflow:phase-refine-plan",
-        "execute": "pm-workflow:phase-execute",
-        "finalize": "pm-workflow:phase-finalize"
+        "1-init": "pm-workflow:phase-1-init",
+        "2-outline": "pm-workflow:phase-2-outline",
+        "3-plan": "pm-workflow:phase-3-plan",
+        "4-execute": "pm-workflow:phase-4-execute",
+        "5-finalize": "pm-workflow:phase-5-finalize"
       }
     }
   }

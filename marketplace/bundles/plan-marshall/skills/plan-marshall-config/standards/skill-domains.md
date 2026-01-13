@@ -15,11 +15,11 @@ The system domain contains workflow skills for the 5 execution phases:
 
 | Phase | Purpose | Workflow Skill |
 |-------|---------|----------------|
-| `init` | Initialize plan | `pm-workflow:phase-init` |
-| `outline` | Create solution outline | `pm-workflow:phase-refine-outline` |
-| `plan` | Decompose into tasks | `pm-workflow:phase-refine-plan` |
-| `execute` | Run implementation | `pm-workflow:phase-execute` |
-| `finalize` | Commit, PR, quality | `pm-workflow:phase-finalize` |
+| `1-init` | Initialize plan | `pm-workflow:phase-1-init` |
+| `2-outline` | Create solution outline | `pm-workflow:phase-2-outline` |
+| `3-plan` | Decompose into tasks | `pm-workflow:phase-3-plan` |
+| `4-execute` | Run implementation | `pm-workflow:phase-4-execute` |
+| `5-finalize` | Commit, PR, quality | `pm-workflow:phase-5-finalize` |
 
 ## Structure
 
@@ -32,11 +32,11 @@ The system domain contains workflow skills for the 5 execution phases:
       "defaults": ["plan-marshall:general-development-rules"],
       "optionals": ["plan-marshall:diagnostic-patterns"],
       "workflow_skills": {
-        "init": "pm-workflow:phase-init",
-        "outline": "pm-workflow:phase-refine-outline",
-        "plan": "pm-workflow:phase-refine-plan",
-        "execute": "pm-workflow:phase-execute",
-        "finalize": "pm-workflow:phase-finalize"
+        "1-init": "pm-workflow:phase-1-init",
+        "2-outline": "pm-workflow:phase-2-outline",
+        "3-plan": "pm-workflow:phase-3-plan",
+        "4-execute": "pm-workflow:phase-4-execute",
+        "5-finalize": "pm-workflow:phase-5-finalize"
       }
     }
   }
@@ -199,18 +199,18 @@ python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `--phase` | string | Yes | Phase name (init, outline, plan, execute, finalize) |
+| `--phase` | string | Yes | Phase name (1-init, 2-outline, 3-plan, 4-execute, 5-finalize) |
 
 **Output**:
 ```toon
 status: success
-phase: outline
-workflow_skill: pm-workflow:phase-refine-outline
+phase: 2-outline
+workflow_skill: pm-workflow:phase-2-outline
 ```
 
 **Error Cases**:
 - System domain missing → `error: System domain not configured. Run /marshall-steward to initialize.`
-- Unknown phase → `error: Unknown phase: {phase}. Available: init, outline, plan, execute, finalize`
+- Unknown phase → `error: Unknown phase: {phase}. Available: 1-init, 2-outline, 3-plan, 4-execute, 5-finalize`
 
 ### resolve-workflow-skill-extension Command
 
@@ -273,11 +273,11 @@ python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall
 **Output**:
 ```toon
 status: success
-init: pm-workflow:phase-init
-outline: pm-workflow:phase-refine-outline
-plan: pm-workflow:phase-refine-plan
-execute: pm-workflow:phase-execute
-finalize: pm-workflow:phase-finalize
+1-init: pm-workflow:phase-1-init
+2-outline: pm-workflow:phase-2-outline
+3-plan: pm-workflow:phase-3-plan
+4-execute: pm-workflow:phase-4-execute
+5-finalize: pm-workflow:phase-5-finalize
 ```
 
 ### Aggregation Logic

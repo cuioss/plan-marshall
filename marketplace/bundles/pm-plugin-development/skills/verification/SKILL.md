@@ -272,7 +272,7 @@ This skill is designed to be loaded alongside other skills:
 
 ```
 Skill: pm-plugin-development:verification
-Skill: pm-workflow:phase-refine-outline
+Skill: pm-workflow:phase-2-outline
 ```
 
 When both are loaded, verification mode applies to all solution-outline operations.

@@ -41,7 +41,7 @@ python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall
 This returns the domain-specific skill, for example:
 - `plan-marshall-plugin-dev` → `pm-plugin-development:plugin-outline-ext`
 - `java` → `pm-dev-java:java-outline-ext` (if configured)
-- `generic` → `pm-workflow:phase-refine-outline` (fallback)
+- `generic` → `pm-workflow:phase-2-outline` (fallback)
 
 ### Step 1c: Load the resolved skill
 
@@ -55,7 +55,7 @@ If skill loading fails, STOP and report the error. Do NOT proceed without the sk
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:logging:manage-log \
-  work {plan_id} INFO "[SKILL] (pm-workflow:phase-refine-outline-agent) Using workflow_skill: {resolved_skill} for domain: {domain}"
+  work {plan_id} INFO "[SKILL] (pm-workflow:phase-2-outline-agent) Using workflow_skill: {resolved_skill} for domain: {domain}"
 ```
 
 ## Role Boundaries
@@ -115,7 +115,7 @@ lessons_recorded: {count}
 ```toon
 status: error
 error_type: {config_not_found|skill_load_failure|validation_failure}
-component: "pm-workflow:phase-refine-outline-agent"
+component: "pm-workflow:phase-2-outline-agent"
 message: "{human readable error}"
 context:
   operation: "{what was being attempted}"

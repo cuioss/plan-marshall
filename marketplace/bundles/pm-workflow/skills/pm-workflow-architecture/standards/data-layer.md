@@ -15,7 +15,7 @@ The pm-workflow bundle uses manage-* skills as the data access layer for all pla
 │  │                                                                      │  │
 │  │   WORKFLOW SKILLS                                                    │  │
 │  │   ═══════════════                                                    │  │
-│  │   plan-init  solution-outline  task-plan  plan-execute  plan-finalize│  │
+│  │   phase-1-init  phase-2-outline  phase-3-plan  phase-4-execute  phase-5-finalize │
 │  │       │           │               │            │             │       │  │
 │  │       │           │               │            │             │       │  │
 │  │       ▼           ▼               ▼            ▼             ▼       │  │
@@ -152,7 +152,7 @@ The pm-workflow bundle uses manage-* skills as the data access layer for all pla
 │  │  # Transition phase                                                  │  │
 │  │  python3 .plan/execute-script.py \                                   │  │
 │  │    pm-workflow:manage-lifecycle:manage-lifecycle \                   │  │
-│  │    transition --plan-id my-feature --completed init                  │  │
+│  │    transition --plan-id my-feature --completed 1-init                │  │
 │  │                                                                      │  │
 │  └──────────────────────────────────────────────────────────────────────┘  │
 │                                                                             │
@@ -233,11 +233,11 @@ The pm-workflow bundle uses manage-* skills as the data access layer for all pla
 │  │  current_phase: execute                                              │  │
 │  │                                                                      │  │
 │  │  phases[5]{name,status}:                                             │  │
-│  │  init,done                                                           │  │
-│  │  outline,done                                                        │  │
-│  │  plan,done                                                           │  │
-│  │  execute,in_progress                                                 │  │
-│  │  finalize,pending                                                    │  │
+│  │  1-init,done                                                         │  │
+│  │  2-outline,done                                                      │  │
+│  │  3-plan,done                                                         │  │
+│  │  4-execute,in_progress                                               │  │
+│  │  5-finalize,pending                                                  │  │
 │  │                                                                      │  │
 │  │  created: 2025-12-02T10:00:00Z                                       │  │
 │  │  updated: 2025-12-02T14:30:00Z                                       │  │

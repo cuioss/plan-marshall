@@ -75,5 +75,5 @@ Possible errors:
 
 This standard is implemented by:
 - `pm-workflow:manage-files:manage-files delete-plan` - Script command
-- `pm-workflow:phase-init` - Skill workflow (Step 3)
-- `pm-workflow:phase-init-agent` - Agent implementation
+- `pm-workflow:phase-1-init` - Skill workflow (Step 3)
+- `pm-workflow:phase-1-init-agent` - Agent implementation

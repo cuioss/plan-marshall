@@ -99,10 +99,10 @@ python3 .plan/execute-script.py plan-marshall:logging:manage-log \
 
 # Write: Work logging (include [TAG] (caller) prefix)
 python3 .plan/execute-script.py plan-marshall:logging:manage-log \
-  work my-plan INFO "[ARTIFACT] (pm-workflow:phase-init) Created deliverable: auth module"
+  work my-plan INFO "[ARTIFACT] (pm-workflow:phase-1-init) Created deliverable: auth module"
 
 python3 .plan/execute-script.py plan-marshall:logging:manage-log \
-  work my-plan WARN "[STATUS] (pm-workflow:phase-execute) Skipped validation step"
+  work my-plan WARN "[STATUS] (pm-workflow:phase-4-execute) Skipped validation step"
 
 # Read: All work log entries
 python3 .plan/execute-script.py plan-marshall:logging:manage-log \
@@ -112,9 +112,9 @@ python3 .plan/execute-script.py plan-marshall:logging:manage-log \
 python3 .plan/execute-script.py plan-marshall:logging:manage-log \
   read --plan-id my-plan --type work --limit 5
 
-# Read: Work log entries for init phase only
+# Read: Work log entries for 1-init phase only
 python3 .plan/execute-script.py plan-marshall:logging:manage-log \
-  read --plan-id my-plan --type work --phase init
+  read --plan-id my-plan --type work --phase 1-init
 ```
 
 ---
@@ -139,9 +139,9 @@ Since entries go to separate files (`script-execution.log` vs `work.log`), redun
 
 **work.log**:
 ```
-[2025-12-11T11:14:30Z] [INFO] [STATUS] (pm-workflow:phase-init) Starting init phase
-[2025-12-11T11:14:48Z] [INFO] [DECISION] (pm-workflow:phase-init) Detected domain: java (pom.xml found)
-[2025-12-11T11:15:20Z] [INFO] [ARTIFACT] (pm-workflow:phase-init) Created deliverable: auth module
+[2025-12-11T11:14:30Z] [INFO] [STATUS] (pm-workflow:phase-1-init) Starting init phase
+[2025-12-11T11:14:48Z] [INFO] [DECISION] (pm-workflow:phase-1-init) Detected domain: java (pom.xml found)
+[2025-12-11T11:15:20Z] [INFO] [ARTIFACT] (pm-workflow:phase-1-init) Created deliverable: auth module
 ```
 
 ### Log Levels
@@ -218,7 +218,7 @@ Planning skills call the simplified API:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:logging:manage-log \
-  work my-plan INFO "[ARTIFACT] (pm-workflow:phase-refine-plan) Created task: implement auth module"
+  work my-plan INFO "[ARTIFACT] (pm-workflow:phase-3-plan) Created task: implement auth module"
 ```
 
 ---

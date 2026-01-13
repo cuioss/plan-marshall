@@ -1,5 +1,5 @@
 ---
-name: phase-execute
+name: phase-4-execute
 description: Execute phase skill for plan management. DUMB TASK RUNNER that executes tasks from TASK-*.toon files sequentially for execute and finalize phases.
 allowed-tools: Read, Write, Edit, Bash, Skill, Task, AskUserQuestion
 ---
@@ -74,7 +74,7 @@ Returns:
 status: success
 plan_id: {plan_id}
 current_phase: execute
-skill: pm-workflow:phase-execute
+skill: pm-workflow:phase-4-execute
 skill_description: Execute phase skill for task implementation
 total_phases: 4
 completed_phases: 2
@@ -93,7 +93,7 @@ At the start of execute or finalize phase:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:logging:manage-log \
-  work {plan_id} INFO "[STATUS] (pm-workflow:phase-execute) Starting {phase} phase"
+  work {plan_id} INFO "[STATUS] (pm-workflow:phase-4-execute) Starting {phase} phase"
 ```
 
 For each task in current phase:
@@ -130,7 +130,7 @@ After each task completes:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:logging:manage-log \
-  work {plan_id} INFO "[OUTCOME] (pm-workflow:phase-execute) Completed {task_id}: {task_title} ({steps_completed} steps)"
+  work {plan_id} INFO "[OUTCOME] (pm-workflow:phase-4-execute) Completed {task_id}: {task_title} ({steps_completed} steps)"
 ```
 
 ### Step 4: Next Task or Phase
@@ -143,7 +143,7 @@ python3 .plan/execute-script.py plan-marshall:logging:manage-log \
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:logging:manage-log \
-  work {plan_id} INFO "[STATUS] (pm-workflow:phase-execute) Completed {phase} phase: {tasks_completed} tasks"
+  work {plan_id} INFO "[STATUS] (pm-workflow:phase-4-execute) Completed {phase} phase: {tasks_completed} tasks"
 ```
 
 ---
@@ -195,7 +195,7 @@ On any error, **first log the error** to work-log:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:logging:manage-log \
-  work {plan_id} ERROR "[ERROR] (pm-workflow:phase-execute) {task_id} failed - {error_type}: {error_context}"
+  work {plan_id} ERROR "[ERROR] (pm-workflow:phase-4-execute) {task_id} failed - {error_type}: {error_context}"
 ```
 
 ### Script Failure (Lessons-Learned Capture)

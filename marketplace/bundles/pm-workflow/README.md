@@ -13,16 +13,16 @@ User Request → [Thin Agents] → Workflow Skills (from system domain) → Doma
 ### 5-Phase Execution Model
 
 ```
-init → outline → plan → execute → finalize
+1-init → 2-outline → 3-plan → 4-execute → 5-finalize
 ```
 
 | Phase | Purpose | Output |
 |-------|---------|--------|
-| `init` | Initialize plan | config.toon, status.toon, request.md |
-| `outline` | Create solution outline | solution_outline.md |
-| `plan` | Decompose into tasks | TASK-*.toon |
-| `execute` | Run implementation | Modified project files |
-| `finalize` | Commit, PR, quality | Git commit, PR |
+| `1-init` | Initialize plan | config.toon, status.toon, request.md |
+| `2-outline` | Create solution outline | solution_outline.md |
+| `3-plan` | Decompose into tasks | TASK-*.toon |
+| `4-execute` | Run implementation | Modified project files |
+| `5-finalize` | Commit, PR, quality | Git commit, PR |
 
 ## Commands
 
@@ -66,10 +66,10 @@ All agents are domain-agnostic wrappers that load skills via system domain resol
 | Agent | Skill Resolution | Purpose |
 |-------|-----------------|---------|
 | `plan-init-agent` | System defaults only | Creates plan, detects domains |
-| `solution-outline-agent` | `resolve-workflow-skill --phase outline` | Creates deliverables from request |
-| `task-plan-agent` | `resolve-workflow-skill --phase plan` | Creates tasks from deliverables |
-| `task-execute-agent` | `resolve-workflow-skill --phase execute` + `task.skills` | Executes single task |
-| `plan-finalize-agent` | `resolve-workflow-skill --phase finalize` | Commit, PR, triage |
+| `solution-outline-agent` | `resolve-workflow-skill --phase 2-outline` | Creates deliverables from request |
+| `task-plan-agent` | `resolve-workflow-skill --phase 3-plan` | Creates tasks from deliverables |
+| `task-execute-agent` | `resolve-workflow-skill --phase 4-execute` + `task.skills` | Executes single task |
+| `plan-finalize-agent` | `resolve-workflow-skill --phase 5-finalize` | Commit, PR, triage |
 
 ## Skills
 
@@ -85,11 +85,11 @@ Workflow skills are resolved from `system.workflow_skills`:
 
 | Phase | Skill | Purpose |
 |-------|-------|---------|
-| `init` | `pm-workflow:phase-init` | Create plan structure |
-| `outline` | `pm-workflow:phase-refine-outline` | Domain-agnostic solution outline creation |
-| `plan` | `pm-workflow:phase-refine-plan` | Domain-agnostic task planning |
-| `execute` | `pm-workflow:phase-execute` | Domain-agnostic task execution |
-| `finalize` | `pm-workflow:phase-finalize` | Domain-agnostic finalization |
+| `1-init` | `pm-workflow:phase-1-init` | Create plan structure |
+| `2-outline` | `pm-workflow:phase-2-outline` | Domain-agnostic solution outline creation |
+| `3-plan` | `pm-workflow:phase-3-plan` | Domain-agnostic task planning |
+| `4-execute` | `pm-workflow:phase-4-execute` | Domain-agnostic task execution |
+| `5-finalize` | `pm-workflow:phase-5-finalize` | Domain-agnostic finalization |
 
 ### Workflow Skill Extensions
 
@@ -131,11 +131,11 @@ The system domain contains workflow skills in `marshal.json`:
   "skill_domains": {
     "system": {
       "workflow_skills": {
-        "init": "pm-workflow:phase-init",
-        "outline": "pm-workflow:phase-refine-outline",
-        "plan": "pm-workflow:phase-refine-plan",
-        "execute": "pm-workflow:phase-execute",
-        "finalize": "pm-workflow:phase-finalize"
+        "1-init": "pm-workflow:phase-1-init",
+        "2-outline": "pm-workflow:phase-2-outline",
+        "3-plan": "pm-workflow:phase-3-plan",
+        "4-execute": "pm-workflow:phase-4-execute",
+        "5-finalize": "pm-workflow:phase-5-finalize"
       }
     }
   }
@@ -203,11 +203,11 @@ pm-workflow/
     ├── plan-wf-skill-api/       # API contract for workflow skills
     │   ├── SKILL.md
     │   └── standards/           # Contract documents
-    ├── phase-refine-outline/    # Solution outline workflow skill
-    ├── phase-refine-plan/       # Task planning workflow skill
-    ├── phase-init/              # Init phase skill
-    ├── phase-execute/           # Execute phase coordination
-    ├── phase-finalize/          # Finalize phase skill
+    ├── phase-1-init/            # Init phase skill
+    ├── phase-2-outline/         # Solution outline workflow skill
+    ├── phase-3-plan/            # Task planning workflow skill
+    ├── phase-4-execute/         # Execute phase coordination
+    ├── phase-5-finalize/        # Finalize phase skill
     ├── task-implementation/     # Implementation profile workflow
     ├── task-testing/            # Testing profile workflow
     ├── manage-plan-documents/   # Request/Solution document CRUD

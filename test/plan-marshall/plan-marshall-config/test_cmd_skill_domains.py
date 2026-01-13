@@ -425,15 +425,15 @@ def test_get_workflow_skills():
 
         assert result.success, f"Should succeed: {result.stderr}"
         # Verify all 5 phases are returned
-        assert 'init' in result.stdout
-        assert 'outline' in result.stdout
-        assert 'plan' in result.stdout
-        assert 'execute' in result.stdout
-        assert 'finalize' in result.stdout
+        assert '1-init' in result.stdout
+        assert '2-outline' in result.stdout
+        assert '3-plan' in result.stdout
+        assert '4-execute' in result.stdout
+        assert '5-finalize' in result.stdout
         # Verify skill references
-        assert 'pm-workflow:phase-init' in result.stdout
-        assert 'pm-workflow:phase-refine-outline' in result.stdout
-        assert 'pm-workflow:phase-refine-plan' in result.stdout
+        assert 'pm-workflow:phase-1-init' in result.stdout
+        assert 'pm-workflow:phase-2-outline' in result.stdout
+        assert 'pm-workflow:phase-3-plan' in result.stdout
 
 
 def test_get_workflow_skills_output_format():
@@ -445,8 +445,8 @@ def test_get_workflow_skills_output_format():
 
         assert result.success, f"Should succeed: {result.stderr}"
         # Verify all 5 workflow skills are returned
-        assert 'pm-workflow:phase-execute' in result.stdout
-        assert 'pm-workflow:phase-finalize' in result.stdout
+        assert 'pm-workflow:phase-4-execute' in result.stdout
+        assert 'pm-workflow:phase-5-finalize' in result.stdout
 
 
 # =============================================================================
@@ -454,60 +454,60 @@ def test_get_workflow_skills_output_format():
 # =============================================================================
 
 def test_resolve_workflow_skill_init():
-    """Test resolve-workflow-skill for init phase returns system workflow skill."""
+    """Test resolve-workflow-skill for 1-init phase returns system workflow skill."""
     with PlanTestContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
 
-        result = run_script(SCRIPT_PATH, 'resolve-workflow-skill', '--phase', 'init')
+        result = run_script(SCRIPT_PATH, 'resolve-workflow-skill', '--phase', '1-init')
 
         assert result.success, f"Should succeed: {result.stderr}"
-        assert 'pm-workflow:phase-init' in result.stdout
+        assert 'pm-workflow:phase-1-init' in result.stdout
         assert 'phase' in result.stdout
         assert 'workflow_skill' in result.stdout
 
 
 def test_resolve_workflow_skill_outline():
-    """Test resolve-workflow-skill for outline phase returns system workflow skill."""
+    """Test resolve-workflow-skill for 2-outline phase returns system workflow skill."""
     with PlanTestContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
 
-        result = run_script(SCRIPT_PATH, 'resolve-workflow-skill', '--phase', 'outline')
+        result = run_script(SCRIPT_PATH, 'resolve-workflow-skill', '--phase', '2-outline')
 
         assert result.success, f"Should succeed: {result.stderr}"
-        assert 'pm-workflow:phase-refine-outline' in result.stdout
+        assert 'pm-workflow:phase-2-outline' in result.stdout
 
 
 def test_resolve_workflow_skill_plan():
-    """Test resolve-workflow-skill for plan phase returns system workflow skill."""
+    """Test resolve-workflow-skill for 3-plan phase returns system workflow skill."""
     with PlanTestContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
 
-        result = run_script(SCRIPT_PATH, 'resolve-workflow-skill', '--phase', 'plan')
+        result = run_script(SCRIPT_PATH, 'resolve-workflow-skill', '--phase', '3-plan')
 
         assert result.success, f"Should succeed: {result.stderr}"
-        assert 'pm-workflow:phase-refine-plan' in result.stdout
+        assert 'pm-workflow:phase-3-plan' in result.stdout
 
 
 def test_resolve_workflow_skill_execute():
-    """Test resolve-workflow-skill for execute phase returns system workflow skill."""
+    """Test resolve-workflow-skill for 4-execute phase returns system workflow skill."""
     with PlanTestContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
 
-        result = run_script(SCRIPT_PATH, 'resolve-workflow-skill', '--phase', 'execute')
+        result = run_script(SCRIPT_PATH, 'resolve-workflow-skill', '--phase', '4-execute')
 
         assert result.success, f"Should succeed: {result.stderr}"
-        assert 'pm-workflow:phase-execute' in result.stdout
+        assert 'pm-workflow:phase-4-execute' in result.stdout
 
 
 def test_resolve_workflow_skill_finalize():
-    """Test resolve-workflow-skill for finalize phase returns system workflow skill."""
+    """Test resolve-workflow-skill for 5-finalize phase returns system workflow skill."""
     with PlanTestContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
 
-        result = run_script(SCRIPT_PATH, 'resolve-workflow-skill', '--phase', 'finalize')
+        result = run_script(SCRIPT_PATH, 'resolve-workflow-skill', '--phase', '5-finalize')
 
         assert result.success, f"Should succeed: {result.stderr}"
-        assert 'pm-workflow:phase-finalize' in result.stdout
+        assert 'pm-workflow:phase-5-finalize' in result.stdout
 
 
 def test_resolve_workflow_skill_no_system_domain():

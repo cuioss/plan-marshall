@@ -194,7 +194,7 @@ error: plan_not_found
 message: Plan directory does not exist: /path/to/.plan/plans/my-feature
 ```
 
-**Use case**: Called by plan-init when user selects "Replace" to delete existing plan before creating new one. See `pm-workflow:phase-init/standards/plan-overwrite.md` for the full workflow.
+**Use case**: Called by plan-init when user selects "Replace" to delete existing plan before creating new one. See `pm-workflow:phase-1-init/standards/plan-overwrite.md` for the full workflow.
 
 ---
 

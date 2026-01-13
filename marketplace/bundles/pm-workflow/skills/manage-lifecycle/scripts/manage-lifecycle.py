@@ -6,7 +6,7 @@ Replaces plan.md and absorbs phase-management functionality.
 
 Usage:
     python3 manage-lifecycle.py read --plan-id my-plan
-    python3 manage-lifecycle.py create --plan-id my-plan --title "Title" --phases init,outline,plan,execute,finalize
+    python3 manage-lifecycle.py create --plan-id my-plan --title "Title" --phases 1-init,2-outline,3-plan,4-execute,5-finalize
     python3 manage-lifecycle.py set-phase --plan-id my-plan --phase execute
     python3 manage-lifecycle.py list
     python3 manage-lifecycle.py transition --plan-id my-plan --completed init
@@ -25,11 +25,11 @@ from plan_logging import log_entry  # type: ignore[import-not-found]
 
 # Phase routing maps phase names to skills (for route command)
 PHASE_ROUTING = {
-    'init': ('plan-init', 'Initialize plan structure'),
-    'outline': ('solution-outline', 'Create solution outline with deliverables'),
-    'plan': ('task-plan', 'Create tasks from deliverables'),
-    'execute': ('plan-execute', 'Execute implementation tasks'),
-    'finalize': ('plan-finalize', 'Finalize with commit/PR'),
+    '1-init': ('plan-init', 'Initialize plan structure'),
+    '2-outline': ('solution-outline', 'Create solution outline with deliverables'),
+    '3-plan': ('task-plan', 'Create tasks from deliverables'),
+    '4-execute': ('plan-execute', 'Execute implementation tasks'),
+    '5-finalize': ('plan-finalize', 'Finalize with commit/PR'),
 }
 
 
@@ -538,7 +538,7 @@ def main():
     create_parser.add_argument('--plan-id', required=True, help='Plan identifier')
     create_parser.add_argument('--title', required=True, help='Plan title')
     create_parser.add_argument('--phases', required=True,
-                               help='Comma-separated phase names (e.g., init,outline,plan,execute,finalize)')
+                               help='Comma-separated phase names (e.g., 1-init,2-outline,3-plan,4-execute,5-finalize)')
     create_parser.add_argument('--force', action='store_true',
                                help='Overwrite existing status')
     create_parser.set_defaults(func=cmd_create)

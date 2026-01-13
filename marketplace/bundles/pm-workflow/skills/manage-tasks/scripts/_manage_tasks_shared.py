@@ -23,7 +23,7 @@ from file_ops import atomic_write_file, base_path  # type: ignore[import-not-fou
 # =============================================================================
 
 # Domains are arbitrary strings - defined in marshal.json, not hardcoded
-VALID_PHASES = ['init', 'outline', 'plan', 'execute', 'finalize']
+VALID_PHASES = ['1-init', '2-outline', '3-plan', '4-execute', '5-finalize']
 # Profiles are arbitrary strings - defined in marshal.json per-domain, not hardcoded
 VALID_ORIGINS = ['plan', 'fix']
 # Task types per target architecture

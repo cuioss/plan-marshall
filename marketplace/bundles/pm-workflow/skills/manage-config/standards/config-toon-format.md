@@ -38,7 +38,7 @@ branch_strategy: feature
 | Field | Type | Description |
 |-------|------|-------------|
 | `plan_id` | string | Unique plan identifier |
-| `phase` | string | Current phase: init, outline, plan, execute, finalize |
+| `phase` | string | Current phase: 1-init, 2-outline, 3-plan, 4-execute, 5-finalize |
 | `domains` | list | Array of detected domains (set during outline phase) |
 | `commit_strategy` | string | per_task, per_plan, or none |
 | `create_pr` | boolean | Whether to create PR on finalize |
@@ -50,11 +50,11 @@ branch_strategy: feature
 
 | Phase | Description | Sets |
 |-------|-------------|------|
-| `init` | Plan initialization | `plan_id`, `phase=init` |
-| `outline` | Solution outline creation | `domains`, `phase=outline` |
-| `plan` | Task planning | `phase=plan` |
-| `execute` | Task execution | `phase=execute` |
-| `finalize` | Verification and commit | `phase=finalize` |
+| `1-init` | Plan initialization | `plan_id`, `phase=1-init` |
+| `2-outline` | Solution outline creation | `domains`, `phase=2-outline` |
+| `3-plan` | Task planning | `phase=3-plan` |
+| `4-execute` | Task execution | `phase=4-execute` |
+| `5-finalize` | Verification and commit | `phase=5-finalize` |
 
 ## Domains Array
 
@@ -90,10 +90,10 @@ python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall
 
 ```bash
 # Resolve workflow skill for each phase
-resolve-workflow-skill --phase init       # → pm-workflow:phase-init
-resolve-workflow-skill --phase outline    # → pm-workflow:phase-refine-outline
-resolve-workflow-skill --phase plan       # → pm-workflow:phase-refine-plan
-resolve-workflow-skill --phase finalize   # → pm-workflow:phase-finalize
+resolve-workflow-skill --phase 1-init       # → pm-workflow:phase-1-init
+resolve-workflow-skill --phase 2-outline    # → pm-workflow:phase-2-outline
+resolve-workflow-skill --phase 3-plan       # → pm-workflow:phase-3-plan
+resolve-workflow-skill --phase 5-finalize   # → pm-workflow:phase-5-finalize
 
 # Execute phase uses domain and profile from task
 resolve-workflow-skill --domain java --phase implementation  # → system fallback or domain override
@@ -103,11 +103,11 @@ resolve-workflow-skill --domain java --phase implementation  # → system fallba
 
 | Phase | Operation | Purpose |
 |-------|-----------|---------|
-| Init | Creates config.toon | Stores plan_id, initializes phase |
-| Outline | Sets domains | Analyzes request, sets domains |
-| Plan | Reads domains | Creates tasks with domain/profile |
-| Execute | Reads domains | Executes tasks using task.skills |
-| Finalize | Reads settings | Runs verification, creates PR |
+| 1-Init | Creates config.toon | Stores plan_id, initializes phase |
+| 2-Outline | Sets domains | Analyzes request, sets domains |
+| 3-Plan | Reads domains | Creates tasks with domain/profile |
+| 4-Execute | Reads domains | Executes tasks using task.skills |
+| 5-Finalize | Reads settings | Runs verification, creates PR |
 
 ## Commit Strategy
 
@@ -194,6 +194,6 @@ branch_strategy: feature
 
 ## Related Documents
 
-- `pm-workflow:phase-init/SKILL.md` - Init phase creates config.toon
+- `pm-workflow:phase-1-init/SKILL.md` - Init phase creates config.toon
 - [phase-outline-contract.md](../../plan-wf-skill-api/standards/phase-outline-contract.md) - Outline phase sets domains
 - [architecture-overview.md](../../plan-wf-skill-api/standards/architecture-overview.md) - 5-phase workflow overview

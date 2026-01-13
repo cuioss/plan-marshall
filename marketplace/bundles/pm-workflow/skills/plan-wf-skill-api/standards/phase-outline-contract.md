@@ -2,7 +2,7 @@
 
 Workflow skill for outline phase - transforms requests into solution outlines with deliverables using architecture-driven module selection.
 
-**Implementation**: `pm-workflow:phase-refine-outline`
+**Implementation**: `pm-workflow:phase-2-outline`
 
 ---
 
@@ -36,7 +36,7 @@ Result:
 status: success
 domain: system
 phase: outline
-workflow_skill: pm-workflow:phase-refine-outline
+workflow_skill: pm-workflow:phase-2-outline
 ```
 
 ---
@@ -367,7 +367,7 @@ outline ──user approval gate──▶ plan
 
 ## Related Documents
 
-- `pm-workflow:phase-init/SKILL.md` - Previous phase (init)
+- `pm-workflow:phase-1-init/SKILL.md` - Previous phase (1-init)
 - [phase-plan-contract.md](phase-plan-contract.md) - Next phase (plan)
 - [deliverable-contract.md](../../manage-solution-outline/standards/deliverable-contract.md) - Deliverable structure
 - [user-review-protocol.md](user-review-protocol.md) - Approval gate after outline

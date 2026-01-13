@@ -53,11 +53,11 @@ title: Implement JWT Authentication
 current_phase: execute
 
 phases[5]{name,status}:
-init,done
-outline,done
-plan,done
-execute,in_progress
-finalize,pending
+1-init,done
+2-outline,done
+3-plan,done
+4-execute,in_progress
+5-finalize,pending
 
 created: 2025-12-02T10:00:00Z
 updated: 2025-12-02T14:30:00Z
@@ -122,7 +122,7 @@ Initialize status.toon for a new plan.
 python3 .plan/execute-script.py pm-workflow:manage-lifecycle:manage-lifecycle create \
   --plan-id {plan_id} \
   --title "Feature Title" \
-  --phases init,outline,plan,execute,finalize \
+  --phases 1-init,2-outline,3-plan,4-execute,5-finalize \
   [--force]
 ```
 
@@ -169,7 +169,7 @@ Update a specific phase status.
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-lifecycle:manage-lifecycle update-phase \
   --plan-id {plan_id} \
-  --phase init \
+  --phase 1-init \
   --status done
 ```
 
@@ -177,7 +177,7 @@ python3 .plan/execute-script.py pm-workflow:manage-lifecycle:manage-lifecycle up
 ```toon
 status: success
 plan_id: my-feature
-phase: init
+phase: 1-init
 phase_status: done
 ```
 

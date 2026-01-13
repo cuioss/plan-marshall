@@ -1,5 +1,5 @@
 ---
-name: phase-init
+name: phase-1-init
 description: Init phase skill. Creates plan directory, request.md, config, and status. Complete initialization in a single agent call.
 allowed-tools: Read, Bash, Skill, AskUserQuestion
 ---
@@ -73,7 +73,7 @@ Parse the TOON output. The `action` field indicates:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:logging:manage-log \
-  work {plan_id} INFO "[STATUS] (pm-workflow:phase-init) Starting init phase"
+  work {plan_id} INFO "[STATUS] (pm-workflow:phase-1-init) Starting init phase"
 ```
 
 If `action: exists`, use AskUserQuestion:
@@ -98,7 +98,7 @@ python3 .plan/execute-script.py pm-workflow:manage-files:manage-files create-or-
 3. Log the replacement (directory now exists for logging):
 ```bash
 python3 .plan/execute-script.py plan-marshall:logging:manage-log \
-  work {plan_id} INFO "[ACTION] (pm-workflow:phase-init) Replaced existing plan - deleted previous version"
+  work {plan_id} INFO "[ACTION] (pm-workflow:phase-1-init) Replaced existing plan - deleted previous version"
 ```
 
 4. Continue with Step 4 (Get Task Content)
@@ -157,7 +157,7 @@ python3 .plan/execute-script.py pm-workflow:manage-plan-documents:manage-plan-do
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:logging:manage-log \
-  work {plan_id} INFO "[ARTIFACT] (pm-workflow:phase-init) Created request.md from {source_type}"
+  work {plan_id} INFO "[ARTIFACT] (pm-workflow:phase-1-init) Created request.md from {source_type}"
 ```
 
 ### Step 6: Initialize References
@@ -206,7 +206,7 @@ python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:logging:manage-log \
-  work {plan_id} INFO "[DECISION] (pm-workflow:phase-init) Detected domain: {domain} - {reasoning}"
+  work {plan_id} INFO "[DECISION] (pm-workflow:phase-1-init) Detected domain: {domain} - {reasoning}"
 ```
 
 ### Step 8: Create Status
@@ -217,7 +217,7 @@ Create status.toon with phases (5-phase model):
 python3 .plan/execute-script.py pm-workflow:manage-lifecycle:manage-lifecycle create \
   --plan-id {plan_id} \
   --title "{title_from_task_md}" \
-  --phases init,outline,plan,execute,finalize
+  --phases 1-init,2-outline,3-plan,4-execute,5-finalize
 ```
 
 **Note**: Domain information is stored in `config.toon` (as a `domains` array), not in `status.toon`. All plans use the standard 5-phase model.
@@ -245,7 +245,7 @@ Log the plan creation as an artifact:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:logging:manage-log \
-  work {plan_id} INFO "[ARTIFACT] (pm-workflow:phase-init) Created plan: {derived_title} (source: {source_type}, domain: {domain})"
+  work {plan_id} INFO "[ARTIFACT] (pm-workflow:phase-1-init) Created plan: {derived_title} (source: {source_type}, domain: {domain})"
 ```
 
 ### Step 11: Transition Phase
@@ -262,7 +262,7 @@ python3 .plan/execute-script.py pm-workflow:manage-lifecycle:manage-lifecycle tr
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:logging:manage-log \
-  work {plan_id} INFO "[STATUS] (pm-workflow:phase-init) Init phase complete - plan created with {domain} domain"
+  work {plan_id} INFO "[STATUS] (pm-workflow:phase-1-init) Init phase complete - plan created with {domain} domain"
 ```
 
 ### Step 12: Return Result
@@ -294,7 +294,7 @@ On any error, **first log the error** to work-log (if plan directory exists):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:logging:manage-log \
-  work {plan_id} ERROR "[ERROR] (pm-workflow:phase-init) {error_type}: {full error context and message}"
+  work {plan_id} ERROR "[ERROR] (pm-workflow:phase-1-init) {error_type}: {full error context and message}"
 ```
 
 ### Invalid Lesson ID
@@ -330,7 +330,7 @@ recovery: Use --plan-id to specify different ID, or resume existing
 
 ### Agent Integration
 
-This skill is called by `pm-workflow:phase-init-agent`. The agent completes the full init phase in a single call.
+This skill is called by `pm-workflow:phase-1-init-agent`. The agent completes the full init phase in a single call.
 
 ### Command Integration
 

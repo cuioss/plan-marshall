@@ -1,5 +1,5 @@
 ---
-name: phase-refine-outline
+name: phase-2-outline
 description: Architecture-driven solution outline creation with intelligent module selection and Skills by Profile assignment
 allowed-tools: Read, Glob, Grep, Bash
 implements: pm-workflow:plan-wf-skill-api/phase-outline-contract
@@ -335,7 +335,7 @@ This is an **intelligent decision output** - not a copy of marshal.json domains,
 ```bash
 python3 .plan/execute-script.py plan-marshall:lessons-learned:manage-lesson add \
   --component-type skill \
-  --component-name phase-refine-outline \
+  --component-name phase-2-outline \
   --category observation \
   --title "{issue summary}" \
   --detail "{context and resolution approach}"
@@ -382,7 +382,7 @@ message: {error message if status=error}
 - `plan-marshall:lessons-learned:manage-lesson` - Record lessons on issues
 
 **Consumed By**:
-- `pm-workflow:phase-refine-plan` skill (reads deliverables for task creation)
+- `pm-workflow:phase-3-plan` skill (reads deliverables for task creation)
 
 ---
 

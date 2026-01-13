@@ -3,7 +3,7 @@ name: plan-init-agent
 description: Initialize a plan with artifacts, detect domains, write config.toon
 tools: Read, Glob, Bash, AskUserQuestion, Skill
 model: sonnet
-skills: pm-workflow:phase-init, plan-marshall:general-development-rules
+skills: pm-workflow:phase-1-init, plan-marshall:general-development-rules
 ---
 
 # Plan Init Agent
@@ -16,7 +16,7 @@ Load these skills using the Skill tool BEFORE any other action:
 
 ```
 Skill: plan-marshall:general-development-rules
-Skill: pm-workflow:phase-init
+Skill: pm-workflow:phase-1-init
 ```
 
 If skill loading fails, STOP and report the error. Do NOT proceed without skills loaded.
@@ -94,7 +94,7 @@ artifacts:
 ```toon
 status: error
 error_type: {validation_failure|script_failure|resolution_failure}
-component: "pm-workflow:phase-init-agent"
+component: "pm-workflow:phase-1-init-agent"
 message: "{human readable error}"
 context:
   operation: "{what was being attempted}"

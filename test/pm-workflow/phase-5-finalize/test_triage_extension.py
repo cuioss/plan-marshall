@@ -38,11 +38,11 @@ def test_resolve_triage_extension_java():
                 "system": {
                     "defaults": ["plan-marshall:general-development-rules"],
                     "workflow_skills": {
-                        "init": "pm-workflow:phase-init",
-                        "outline": "pm-workflow:phase-refine-outline",
-                        "plan": "pm-workflow:phase-refine-plan",
-                        "execute": "pm-workflow:phase-execute",
-                        "finalize": "pm-workflow:phase-finalize"
+                        "1-init": "pm-workflow:phase-1-init",
+                        "2-outline": "pm-workflow:phase-2-outline",
+                        "3-plan": "pm-workflow:phase-3-plan",
+                        "4-execute": "pm-workflow:phase-4-execute",
+                        "5-finalize": "pm-workflow:phase-5-finalize"
                     }
                 },
                 "java": {
@@ -79,11 +79,11 @@ def test_resolve_triage_extension_javascript():
                 "system": {
                     "defaults": ["plan-marshall:general-development-rules"],
                     "workflow_skills": {
-                        "init": "pm-workflow:phase-init",
-                        "outline": "pm-workflow:phase-refine-outline",
-                        "plan": "pm-workflow:phase-refine-plan",
-                        "execute": "pm-workflow:phase-execute",
-                        "finalize": "pm-workflow:phase-finalize"
+                        "1-init": "pm-workflow:phase-1-init",
+                        "2-outline": "pm-workflow:phase-2-outline",
+                        "3-plan": "pm-workflow:phase-3-plan",
+                        "4-execute": "pm-workflow:phase-4-execute",
+                        "5-finalize": "pm-workflow:phase-5-finalize"
                     }
                 },
                 "javascript": {
@@ -118,11 +118,11 @@ def test_resolve_triage_extension_plugin_dev():
                 "system": {
                     "defaults": ["plan-marshall:general-development-rules"],
                     "workflow_skills": {
-                        "init": "pm-workflow:phase-init",
-                        "outline": "pm-workflow:phase-refine-outline",
-                        "plan": "pm-workflow:phase-refine-plan",
-                        "execute": "pm-workflow:phase-execute",
-                        "finalize": "pm-workflow:phase-finalize"
+                        "1-init": "pm-workflow:phase-1-init",
+                        "2-outline": "pm-workflow:phase-2-outline",
+                        "3-plan": "pm-workflow:phase-3-plan",
+                        "4-execute": "pm-workflow:phase-4-execute",
+                        "5-finalize": "pm-workflow:phase-5-finalize"
                     }
                 },
                 "plan-marshall-plugin-dev": {
@@ -157,11 +157,11 @@ def test_resolve_triage_extension_null_for_missing():
                 "system": {
                     "defaults": ["plan-marshall:general-development-rules"],
                     "workflow_skills": {
-                        "init": "pm-workflow:phase-init",
-                        "outline": "pm-workflow:phase-refine-outline",
-                        "plan": "pm-workflow:phase-refine-plan",
-                        "execute": "pm-workflow:phase-execute",
-                        "finalize": "pm-workflow:phase-finalize"
+                        "1-init": "pm-workflow:phase-1-init",
+                        "2-outline": "pm-workflow:phase-2-outline",
+                        "3-plan": "pm-workflow:phase-3-plan",
+                        "4-execute": "pm-workflow:phase-4-execute",
+                        "5-finalize": "pm-workflow:phase-5-finalize"
                     }
                 },
                 "documentation": {
@@ -198,11 +198,11 @@ def test_resolve_triage_extension_null_for_unknown_domain():
                 "system": {
                     "defaults": ["plan-marshall:general-development-rules"],
                     "workflow_skills": {
-                        "init": "pm-workflow:phase-init",
-                        "outline": "pm-workflow:phase-refine-outline",
-                        "plan": "pm-workflow:phase-refine-plan",
-                        "execute": "pm-workflow:phase-execute",
-                        "finalize": "pm-workflow:phase-finalize"
+                        "1-init": "pm-workflow:phase-1-init",
+                        "2-outline": "pm-workflow:phase-2-outline",
+                        "3-plan": "pm-workflow:phase-3-plan",
+                        "4-execute": "pm-workflow:phase-4-execute",
+                        "5-finalize": "pm-workflow:phase-5-finalize"
                     }
                 }
             }

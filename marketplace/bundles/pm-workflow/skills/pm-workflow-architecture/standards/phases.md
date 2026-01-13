@@ -13,9 +13,9 @@ The pm-workflow bundle implements a 5-phase execution model for structured task 
 │                                                                             │
 │  ┌──────────────────────────────────────────────────────────────────────┐  │
 │  │                                                                      │  │
-│  │   ┌────────┐    ┌─────────┐    ┌────────┐    ┌─────────┐    ┌──────┐│  │
-│  │   │  INIT  │───▶│ OUTLINE │───▶│  PLAN  │───▶│ EXECUTE │───▶│FINAL ││  │
-│  │   └────────┘    └─────────┘    └────────┘    └─────────┘    └──────┘│  │
+│  │   ┌────────┐   ┌───────────┐   ┌────────┐   ┌───────────┐   ┌───────┐│  │
+│  │   │ 1-INIT │──▶│ 2-OUTLINE │──▶│ 3-PLAN │──▶│ 4-EXECUTE │──▶│5-FINAL││  │
+│  │   └────────┘   └───────────┘   └────────┘   └───────────┘   └───────┘│  │
 │  │       │              │              │              │            │    │  │
 │  │       │              │              │              │            │    │  │
 │  │   ┌───▼───┐     ┌────▼────┐    ┌────▼────┐   ┌────▼────┐   ┌───▼───┐│  │
@@ -33,12 +33,12 @@ The pm-workflow bundle implements a 5-phase execution model for structured task 
 
 ## Phase Details
 
-### Phase 1: INIT
+### Phase 1: 1-INIT
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                                                                             │
-│  PHASE: INIT                                                                │
+│  PHASE: 1-INIT                                                              │
 │  ═══════════                                                                │
 │                                                                             │
 │  ┌─────────────────────────────────────────────────────────────────────┐   │
@@ -55,7 +55,7 @@ The pm-workflow bundle implements a 5-phase execution model for structured task 
 │  └─────────────────────────────────────────────────────────────────────┘   │
 │                                                                             │
 │  AGENT: plan-init-agent                                                     │
-│  SKILL: pm-workflow:phase-init                                              │
+│  SKILL: pm-workflow:phase-1-init                                            │
 │                                                                             │
 │  STEPS:                                                                     │
 │  ──────                                                                     │
@@ -68,19 +68,19 @@ The pm-workflow bundle implements a 5-phase execution model for structured task 
 │  7. Detect domain                                                           │
 │  8. Create status.toon (5-phase model)                                      │
 │  9. Create config.toon (with domains)                                       │
-│  10. Transition to outline phase                                            │
+│  10. Transition to 2-outline phase                                          │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-### Phase 2: OUTLINE
+### Phase 2: 2-OUTLINE
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                                                                             │
-│  PHASE: OUTLINE                                                             │
+│  PHASE: 2-OUTLINE                                                           │
 │  ══════════════                                                             │
 │                                                                             │
 │  ┌─────────────────────────────────────────────────────────────────────┐   │
@@ -101,7 +101,7 @@ The pm-workflow bundle implements a 5-phase execution model for structured task 
 │  └─────────────────────────────────────────────────────────────────────┘   │
 │                                                                             │
 │  AGENT: solution-outline-agent                                              │
-│  SKILL: pm-workflow:phase-refine-outline (or domain-specific extension)        │
+│  SKILL: pm-workflow:phase-2-outline (or domain-specific extension)          │
 │                                                                             │
 │  STEPS:                                                                     │
 │  ──────                                                                     │
@@ -113,7 +113,7 @@ The pm-workflow bundle implements a 5-phase execution model for structured task 
 │  6. Write solution_outline.md                                               │
 │  7. ──────────────────────────────────────────────────                      │
 │     │  ** USER REVIEW GATE **                                               │
-│     │  User must approve before proceeding to plan phase                    │
+│     │  User must approve before proceeding to 3-plan phase                  │
 │     └──────────────────────────────────────────────────                     │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
@@ -123,12 +123,12 @@ The pm-workflow bundle implements a 5-phase execution model for structured task 
 
 ---
 
-### Phase 3: PLAN
+### Phase 3: 3-PLAN
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                                                                             │
-│  PHASE: PLAN                                                                │
+│  PHASE: 3-PLAN                                                              │
 │  ═══════════                                                                │
 │                                                                             │
 │  ┌─────────────────────────────────────────────────────────────────────┐   │
@@ -153,7 +153,7 @@ The pm-workflow bundle implements a 5-phase execution model for structured task 
 │  └─────────────────────────────────────────────────────────────────────┘   │
 │                                                                             │
 │  AGENT: task-plan-agent                                                     │
-│  SKILL: pm-workflow:phase-refine-plan                                               │
+│  SKILL: pm-workflow:phase-3-plan                                            │
 │                                                                             │
 │  STEPS:                                                                     │
 │  ──────                                                                     │
@@ -170,12 +170,12 @@ The pm-workflow bundle implements a 5-phase execution model for structured task 
 
 ---
 
-### Phase 4: EXECUTE
+### Phase 4: 4-EXECUTE
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                                                                             │
-│  PHASE: EXECUTE                                                             │
+│  PHASE: 4-EXECUTE                                                           │
 │  ══════════════                                                             │
 │                                                                             │
 │  ┌─────────────────────────────────────────────────────────────────────┐   │
@@ -224,12 +224,12 @@ The pm-workflow bundle implements a 5-phase execution model for structured task 
 
 ---
 
-### Phase 5: FINALIZE
+### Phase 5: 5-FINALIZE
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                                                                             │
-│  PHASE: FINALIZE                                                            │
+│  PHASE: 5-FINALIZE                                                          │
 │  ═══════════════                                                            │
 │                                                                             │
 │  ┌─────────────────────────────────────────────────────────────────────┐   │
@@ -248,7 +248,7 @@ The pm-workflow bundle implements a 5-phase execution model for structured task 
 │  │                                                                     │   │
 │  └─────────────────────────────────────────────────────────────────────┘   │
 │                                                                             │
-│  SKILL: pm-workflow:phase-finalize                                          │
+│  SKILL: pm-workflow:phase-5-finalize                                        │
 │                                                                             │
 │  FINALIZE FLOW:                                                             │
 │  ──────────────                                                             │
@@ -286,9 +286,9 @@ The pm-workflow bundle implements a 5-phase execution model for structured task 
 │                                                                             │
 │                          PHASE TRANSITIONS                                  │
 │                                                                             │
-│  ┌────────┐     ┌─────────┐     ┌────────┐     ┌─────────┐     ┌────────┐  │
-│  │  INIT  │────▶│ OUTLINE │────▶│  PLAN  │────▶│ EXECUTE │────▶│FINALIZE│  │
-│  └────────┘     └─────────┘     └────────┘     └─────────┘     └────────┘  │
+│  ┌────────┐    ┌───────────┐    ┌────────┐    ┌───────────┐   ┌──────────┐ │
+│  │ 1-INIT │───▶│ 2-OUTLINE │───▶│ 3-PLAN │───▶│ 4-EXECUTE │──▶│5-FINALIZE│ │
+│  └────────┘    └───────────┘    └────────┘    └───────────┘   └──────────┘ │
 │       │              │               │              │               │       │
 │       │              │               │              │               │       │
 │       │         ┌────┴────┐          │              │               │       │
@@ -309,16 +309,16 @@ The pm-workflow bundle implements a 5-phase execution model for structured task 
 TRANSITION TRIGGERS:
 ═══════════════════
 
-┌───────────┬────────────┬─────────────────────────────────────────────────┐
-│ From      │ To         │ Trigger                                         │
-├───────────┼────────────┼─────────────────────────────────────────────────┤
-│ init      │ outline    │ Auto-continue (config/status created)           │
-│ outline   │ plan       │ USER APPROVAL of solution outline               │
-│ plan      │ execute    │ Auto-continue (tasks created)                   │
-│ execute   │ finalize   │ All tasks completed                             │
-│ finalize  │ COMPLETE   │ Commit/PR done (or no findings)                 │
-│ finalize  │ execute    │ Findings detected → create fix tasks            │
-└───────────┴────────────┴─────────────────────────────────────────────────┘
+┌───────────────┬──────────────┬───────────────────────────────────────────┐
+│ From          │ To           │ Trigger                                   │
+├───────────────┼──────────────┼───────────────────────────────────────────┤
+│ 1-init        │ 2-outline    │ Auto-continue (config/status created)     │
+│ 2-outline     │ 3-plan       │ USER APPROVAL of solution outline         │
+│ 3-plan        │ 4-execute    │ Auto-continue (tasks created)             │
+│ 4-execute     │ 5-finalize   │ All tasks completed                       │
+│ 5-finalize    │ COMPLETE     │ Commit/PR done (or no findings)           │
+│ 5-finalize    │ 4-execute    │ Findings detected → create fix tasks      │
+└───────────────┴──────────────┴───────────────────────────────────────────┘
 ```
 
 ---

@@ -18,18 +18,18 @@ See [pm-workflow-architecture:phases](../pm-workflow-architecture/standards/phas
 
 | Phase | Agent | Purpose | Output |
 |-------|-------|---------|--------|
-| **init** | `plan-phase-agent phase=init` | Initialize plan | config.toon, status.toon, request.md |
-| **outline** | `plan-phase-agent phase=outline` | Create solution outline | solution_outline.md |
-| **plan** | `plan-phase-agent phase=plan` | Decompose into tasks | TASK-*.toon |
-| **execute** | `plan-phase-agent phase=execute` | Run implementation | Modified project files |
-| **finalize** | `plan-phase-agent phase=finalize` | Verify, commit, PR | Git commit, PR |
+| **1-init** | `plan-phase-agent phase=1-init` | Initialize plan | config.toon, status.toon, request.md |
+| **2-outline** | `plan-phase-agent phase=2-outline` | Create solution outline | solution_outline.md |
+| **3-plan** | `plan-phase-agent phase=3-plan` | Decompose into tasks | TASK-*.toon |
+| **4-execute** | `plan-phase-agent phase=4-execute` | Run implementation | Modified project files |
+| **5-finalize** | `plan-phase-agent phase=5-finalize` | Verify, commit, PR | Git commit, PR |
 
 ## Contract Standards
 
 | Contract | Purpose | Document |
 |----------|---------|----------|
 | **Architecture Overview** | 5-phase model, component responsibilities, domain flow | [standards/architecture-overview.md](standards/architecture-overview.md) |
-| **Plan-Init Skill** | Initialize plan and write config.toon | `pm-workflow:phase-init/SKILL.md` |
+| **Plan-Init Skill** | Initialize plan and write config.toon | `pm-workflow:phase-1-init/SKILL.md` |
 | **Solution Outline Skill** | Request → Solution Outline with deliverables | [standards/phase-outline-contract.md](standards/phase-outline-contract.md) |
 | **Task Plan Skill** | Solution Outline → Tasks with domain/profile | [standards/phase-plan-contract.md](standards/phase-plan-contract.md) |
 | **Task Execution Contract** | Task execution with two-tier skill loading | `pm-workflow:manage-tasks/standards/task-execution-contract.md` |
@@ -44,18 +44,18 @@ See [pm-workflow-architecture:phases](../pm-workflow-architecture/standards/phas
 ## Routing Flow
 
 ```
-Request → [init] → [outline] → User Review → [plan] → Tasks → [execute] → [finalize]
+Request → [1-init] → [2-outline] → User Review → [3-plan] → Tasks → [4-execute] → [5-finalize]
               ↓          ↓            ↓            ↓            ↓            ↓
          config.toon  solution     approval     TASK-*.toon   project    commit/PR
          status.toon  outline.md    gate        files         files
 ```
 
-1. `plan-phase-agent phase=init` creates plan, writes config.toon and status.toon
-2. `plan-phase-agent phase=outline` analyzes request, determines domains, creates deliverables
+1. `plan-phase-agent phase=1-init` creates plan, writes config.toon and status.toon
+2. `plan-phase-agent phase=2-outline` analyzes request, determines domains, creates deliverables
 3. User approves solution outline (mandatory gate)
-4. `plan-phase-agent phase=plan` creates tasks with domain, profile, skills fields
-5. `plan-phase-agent phase=execute` executes tasks with two-tier skill loading
-6. `plan-phase-agent phase=finalize` runs verification, triages findings, commits/creates PR
+4. `plan-phase-agent phase=3-plan` creates tasks with domain, profile, skills fields
+5. `plan-phase-agent phase=4-execute` executes tasks with two-tier skill loading
+6. `plan-phase-agent phase=5-finalize` runs verification, triages findings, commits/creates PR
 
 ## Thin Agent Pattern
 
@@ -65,11 +65,11 @@ All phases use a single parameterized agent (`plan-phase-agent`) with different 
 
 | Agent Call | Purpose | Skill Loading |
 |------------|---------|---------------|
-| `plan-phase-agent phase=init` | Initialize plan | `resolve-workflow-skill --phase init` |
-| `plan-phase-agent phase=outline` | Create deliverables | `resolve-workflow-skill --phase outline` + extensions |
-| `plan-phase-agent phase=plan` | Create tasks | `resolve-workflow-skill --phase plan` |
-| `plan-phase-agent phase=execute` | Execute task | `resolve-workflow-skill --phase execute` + `task.skills` |
-| `plan-phase-agent phase=finalize` | Verify and commit | `resolve-workflow-skill --phase finalize` + triage extensions |
+| `plan-phase-agent phase=1-init` | Initialize plan | `resolve-workflow-skill --phase 1-init` |
+| `plan-phase-agent phase=2-outline` | Create deliverables | `resolve-workflow-skill --phase 2-outline` + extensions |
+| `plan-phase-agent phase=3-plan` | Create tasks | `resolve-workflow-skill --phase 3-plan` |
+| `plan-phase-agent phase=4-execute` | Execute task | `resolve-workflow-skill --phase 4-execute` + `task.skills` |
+| `plan-phase-agent phase=5-finalize` | Verify and commit | `resolve-workflow-skill --phase 5-finalize` + triage extensions |
 
 ## Domain Flow
 

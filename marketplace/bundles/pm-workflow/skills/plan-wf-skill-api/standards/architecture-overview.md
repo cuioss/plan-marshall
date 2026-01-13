@@ -10,22 +10,22 @@ Contract specification for the 5-phase workflow execution model.
 
 | Phase | Agent Call | Purpose | Output |
 |-------|------------|---------|--------|
-| **init** | `plan-phase-agent phase=init` | Initialize plan | config.toon, status.toon, request.md |
-| **outline** | `plan-phase-agent phase=outline` | Create solution outline | solution_outline.md |
-| **plan** | `plan-phase-agent phase=plan` | Decompose into tasks | TASK-*.toon |
-| **execute** | `plan-phase-agent phase=execute task_id=TASK-001` | Run implementation | Modified project files |
-| **finalize** | `plan-phase-agent phase=finalize` | Commit, PR, quality | Git commit, PR |
+| **1-init** | `plan-phase-agent phase=1-init` | Initialize plan | config.toon, status.toon, request.md |
+| **2-outline** | `plan-phase-agent phase=2-outline` | Create solution outline | solution_outline.md |
+| **3-plan** | `plan-phase-agent phase=3-plan` | Decompose into tasks | TASK-*.toon |
+| **4-execute** | `plan-phase-agent phase=4-execute task_id=TASK-001` | Run implementation | Modified project files |
+| **5-finalize** | `plan-phase-agent phase=5-finalize` | Commit, PR, quality | Git commit, PR |
 
 ### Phase Transitions
 
 | From | To | Trigger |
 |------|------|---------|
-| init | outline | Auto-continue (unless `stop-after=init`) |
-| outline | plan | User approval of solution outline |
-| plan | execute | Auto-continue (unless `stop-after=plan`) |
-| execute | finalize | All tasks completed |
-| finalize | execute | Findings detected → create fix tasks |
-| finalize | COMPLETE | No findings |
+| 1-init | 2-outline | Auto-continue (unless `stop-after=1-init`) |
+| 2-outline | 3-plan | User approval of solution outline |
+| 3-plan | 4-execute | Auto-continue (unless `stop-after=3-plan`) |
+| 4-execute | 5-finalize | All tasks completed |
+| 5-finalize | 4-execute | Findings detected → create fix tasks |
+| 5-finalize | COMPLETE | No findings |
 
 ---
 
@@ -39,7 +39,7 @@ For visual diagrams of component interactions, see:
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `plan_id` | string | Yes | Plan identifier |
-| `phase` | string | Yes | Phase: init, outline, plan, execute, finalize |
+| `phase` | string | Yes | Phase: 1-init, 2-outline, 3-plan, 4-execute, 5-finalize |
 | `task_id` | string | Execute only | Task identifier (required when phase=execute), format: `TASK-{SEQ}` |
 | `deliverable_id` | integer | Plan only | Deliverable sequence number (required when phase=plan), e.g., `1`, `2`, `3` |
 
@@ -47,11 +47,11 @@ For visual diagrams of component interactions, see:
 
 | Phase | Workflow Skill | Specification |
 |-------|----------------|---------------|
-| **init** | `pm-workflow:phase-init` | `pm-workflow:phase-init/SKILL.md` |
-| **outline** | `pm-workflow:phase-refine-outline` | [phase-outline-contract.md](phase-outline-contract.md) |
-| **plan** | `pm-workflow:phase-refine-plan` | [phase-plan-contract.md](phase-plan-contract.md) |
-| **execute** | `pm-workflow:phase-execute` | `pm-workflow:manage-tasks/standards/task-execution-contract.md` |
-| **finalize** | `pm-workflow:phase-finalize` | [phase-finalize-contract.md](phase-finalize-contract.md) |
+| **1-init** | `pm-workflow:phase-1-init` | `pm-workflow:phase-1-init/SKILL.md` |
+| **2-outline** | `pm-workflow:phase-2-outline` | [phase-outline-contract.md](phase-outline-contract.md) |
+| **3-plan** | `pm-workflow:phase-3-plan` | [phase-plan-contract.md](phase-plan-contract.md) |
+| **4-execute** | `pm-workflow:phase-4-execute` | `pm-workflow:manage-tasks/standards/task-execution-contract.md` |
+| **5-finalize** | `pm-workflow:phase-5-finalize` | [phase-finalize-contract.md](phase-finalize-contract.md) |
 
 ---
 
@@ -160,7 +160,7 @@ recoverable: {true|false}
 
 ## Related Documents
 
-- `pm-workflow:phase-init/SKILL.md` - Init phase skill
+- `pm-workflow:phase-1-init/SKILL.md` - Init phase skill
 - [phase-outline-contract.md](phase-outline-contract.md) - Outline phase contract
 - [phase-plan-contract.md](phase-plan-contract.md) - Plan phase contract
 - `pm-workflow:manage-tasks/standards/task-execution-contract.md` - Task execution contract
