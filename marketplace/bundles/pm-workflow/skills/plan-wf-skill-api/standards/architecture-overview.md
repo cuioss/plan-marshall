@@ -1,14 +1,12 @@
 # Architecture Overview
 
-Comprehensive architecture contract for the 5-phase workflow execution model.
+Contract specification for the 5-phase workflow execution model.
 
-**Visual Overview**: For high-level visual diagrams, see [pm-workflow-architecture](../../pm-workflow-architecture/SKILL.md). This document provides detailed contract specifications.
+**Visual diagrams and detailed explanations**: See [pm-workflow-architecture](../../pm-workflow-architecture/SKILL.md). This document provides **API contracts** only.
 
 ---
 
 ## 5-Phase Execution Model
-
-See [pm-workflow-architecture:phases](../../pm-workflow-architecture/standards/phases.md) for visual diagrams.
 
 | Phase | Agent Call | Purpose | Output |
 |-------|------------|---------|--------|
@@ -33,79 +31,10 @@ See [pm-workflow-architecture:phases](../../pm-workflow-architecture/standards/p
 
 ## Component Responsibilities
 
-```
-Orchestrator ──────────────────────────────────────────────────────────┐
-     │                                                                 │
-     │  Task: plan-phase-agent                                         │
-     │    plan_id: {plan_id}                                           │
-     │    phase: {init|outline|plan|execute|finalize}                  │
-     │                                                                 │
-     └─► plan-phase-agent ─────────┬─ 1. System Skills (general rules) │
-              │                    │                                   │
-              │                    └─ 2. Workflow Skill (by phase)     │
-              │                               │                        │
-              │                               ├─ 3. Domain-Knowledge   │
-              │                               │                        │
-              │                               └─ 4. Utility Skills     │
-              │                                                        │
-              └─ Context isolation                                     │
-                                                                       │
-───────────────────────────────────────────────────────────────────────┘
-```
+For visual diagrams of component interactions, see:
+- [pm-workflow-architecture:agents](../../pm-workflow-architecture/standards/agents.md) - Orchestrator and agent responsibilities
 
-**Agent loads**: System defaults + Workflow skill (resolved by phase)
-**Workflow skill loads**: Domain knowledge + Utility skills
-
-### Orchestrator
-
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                         ORCHESTRATOR SKILL                              │
-│                    (plan-orchestrator/SKILL.md)                         │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│  Responsibilities:                                                      │
-│  ─────────────────                                                      │
-│  1. Determine domains for each phase                                    │
-│  2. Iterate over items (deliverables/tasks) when needed                 │
-│  3. Call agent with explicit parameters                                 │
-│  4. Handle phase transitions                                            │
-│  5. Manage auto-continue logic                                          │
-│                                                                         │
-│  Does NOT:                                                              │
-│  ──────────                                                             │
-│  - Load domain knowledge (agent's job)                                  │
-│  - Execute workflows (agent + skill's job)                              │
-│  - Spawn nested agents (flat structure)                                 │
-│                                                                         │
-└─────────────────────────────────────────────────────────────────────────┘
-```
-
-### Agent (Thin)
-
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                           PHASE AGENT (THIN)                            │
-│                      (plan-phase-agent.md)                              │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│  Responsibilities:                                                      │
-│  ─────────────────                                                      │
-│  1. Load system defaults                                                │
-│  2. Resolve and load workflow skill (phase-based only)                  │
-│  3. Execute workflow                                                    │
-│                                                                         │
-│  Does NOT:                                                              │
-│  ──────────                                                             │
-│  - Load domain knowledge (workflow skill's job)                         │
-│  - Determine which items to process (orchestrator's job)                │
-│  - Iterate over multiple items (one call = one item)                    │
-│  - Spawn other agents or commands                                       │
-│                                                                         │
-└─────────────────────────────────────────────────────────────────────────┘
-```
-
-### Agent Input
+### Agent Input Contract
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -115,8 +44,6 @@ Orchestrator ──────────────────────�
 | `deliverable_id` | integer | Plan only | Deliverable sequence number (required when phase=plan), e.g., `1`, `2`, `3` |
 
 ### Workflow Skills
-
-Workflow skills are responsible for loading domain knowledge and executing the phase work.
 
 | Phase | Workflow Skill | Specification |
 |-------|----------------|---------------|
@@ -130,47 +57,9 @@ Workflow skills are responsible for loading domain knowledge and executing the p
 
 ## Domain Flow
 
-```
-┌──────────────────────────────────────────────────────────────────────────┐
-│                                                                          │
-│  marshal.json                                                            │
-│  ────────────                                                            │
-│  skill_domains: [java, javascript, plan-marshall-plugin-dev, requirements] │
-│                      │                                                   │
-│                      │ all possible domains (project-level)              │
-│                      ▼                                                   │
-│  ┌────────────────────────────────────────────────────────────────────┐  │
-│  │  OUTLINE (decides which domains are relevant)                      │  │
-│  │                                                                    │  │
-│  │  Output: solution_outline.md, config.toon.domains=[java]           │  │
-│  └────────────────────────────────────────────────────────────────────┘  │
-│                      │                                                   │
-│                      │ for each deliverable                              │
-│                      ▼                                                   │
-│  ┌────────────────────────────────────────────────────────────────────┐  │
-│  │  PLAN (reads domain from deliverable)                              │  │
-│  │                                                                    │  │
-│  │  Output: TASK-*.toon (inherits domain from deliverable)            │  │
-│  └────────────────────────────────────────────────────────────────────┘  │
-│                      │                                                   │
-│                      │ for each task                                     │
-│                      ▼                                                   │
-│  ┌────────────────────────────────────────────────────────────────────┐  │
-│  │  EXECUTE (reads domain + profile from task)                        │  │
-│  │                                                                    │  │
-│  │  Output: Modified project files                                    │  │
-│  └────────────────────────────────────────────────────────────────────┘  │
-│                      │                                                   │
-│                      │ all tasks completed                               │
-│                      ▼                                                   │
-│  ┌────────────────────────────────────────────────────────────────────┐  │
-│  │  FINALIZE (reads domains from config.toon)                         │  │
-│  │                                                                    │  │
-│  │  Output: Git commit, PR (or fix tasks)                             │  │
-│  └────────────────────────────────────────────────────────────────────┘  │
-│                                                                          │
-└──────────────────────────────────────────────────────────────────────────┘
-```
+For visual diagrams of domain propagation through phases, see:
+- [pm-workflow-architecture:skill-loading](../../pm-workflow-architecture/standards/skill-loading.md) - Domain resolution and skill loading
+- [pm-workflow-architecture:phases](../../pm-workflow-architecture/standards/phases.md) - Phase transitions
 
 ### Domain Source by Phase
 
@@ -182,57 +71,13 @@ Workflow skills are responsible for loading domain knowledge and executing the p
 | **execute** | From task | Script reads `task.domain`, `task.profile` |
 | **finalize** | From config.toon | Script reads `config.toon.domains` |
 
-### config.toon.domains: Intelligent Decision Output
-
-`config.toon.domains` is the OUTPUT of outline's intelligent decision, not a blind copy from marshal.json.
-
-```
-marshal.json (project-level)
-─────────────────────────────
-skill_domains: [java, javascript, plan-marshall-plugin-dev, requirements, docs]
-      │
-      │ all possible domains
-      ▼
-┌───────────────────────────────────────────────────────────────────┐
-│  OUTLINE analyzes request:                                        │
-│  "Add user authentication to the Java backend"                    │
-│                                                                   │
-│  Decision: Only java is relevant for this task                    │
-│  (javascript, plan-marshall-plugin-dev, requirements, docs not needed) │
-└───────────────────────────────────────────────────────────────────┘
-      │
-      │ writes intelligent subset
-      ▼
-config.toon (plan-level)
-─────────────────────────
-domains: [java]  ← OUTPUT of outline's analysis
-```
-
-**System domain exclusion**: The `system` domain is **never** included in `config.toon.domains`:
-- `system` provides base/default skills loaded by agents (Tier 1)
-- `config.toon.domains` contains only user-facing domains (java, javascript, etc.)
-- System skills are loaded implicitly via `skill_domains_get_defaults("system")`
-
----
-
-## Skill Resolution
-
-### System vs Domain Skills
+### Skill Resolution
 
 | Skill Type | Resolution | When Loaded |
 |------------|------------|-------------|
 | **System workflow** | `resolve-workflow-skill --phase {phase}` | Always (phase-based) |
 | **Domain knowledge** | `module.skills_by_profile` (from architecture) | Outline → deliverable → task |
 | **Extensions** | `resolve-workflow-skill-extension --domain {domain} --type {type}` | By workflow skill |
-
-### Two-Tier Skill Loading (Execute Phase)
-
-See [pm-workflow-architecture:skill-loading](../../pm-workflow-architecture/standards/skill-loading.md) for detailed visual diagrams of skill resolution flow.
-
-| Tier | Source | When Loaded |
-|------|--------|-------------|
-| **Tier 1** | System skills | Agent loads automatically |
-| **Tier 2** | `task.skills` array | Agent loads from task file |
 
 ---
 
@@ -323,3 +168,4 @@ recoverable: {true|false}
 - [extension-api.md](extension-api.md) - Extension mechanism
 - [deliverable-contract.md](../../manage-solution-outline/standards/deliverable-contract.md) - Deliverable structure
 - [task-contract.md](task-contract.md) - Task structure
+- [pm-workflow-architecture:artifacts](../../pm-workflow-architecture/standards/artifacts.md) - Artifact formats (TOON)

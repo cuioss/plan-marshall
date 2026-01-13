@@ -39,6 +39,7 @@ See [pm-workflow-architecture:phases](../pm-workflow-architecture/standards/phas
 | **Extension API** | Domain-specific extensions for outline and triage | [standards/extension-api.md](standards/extension-api.md) |
 | **Config TOON Format** | config.toon structure with domains and settings | [standards/config-toon-format.md](standards/config-toon-format.md) |
 | **User Review Protocol** | Mandatory review before task creation | [standards/user-review-protocol.md](standards/user-review-protocol.md) |
+| **Artifact Formats** | TOON file structures for plan artifacts | `pm-workflow-architecture:artifacts` |
 
 ## Routing Flow
 
@@ -60,7 +61,7 @@ Request → [init] → [outline] → User Review → [plan] → Tasks → [execu
 
 See [pm-workflow-architecture:agents](../pm-workflow-architecture/standards/agents.md) for visual diagrams of agent structure and delegation.
 
-All phases use the same parameterized agent. The agent loads system defaults + phase-specific workflow skill.
+All phases use a single parameterized agent (`plan-phase-agent`) with different `phase` parameters. This results in 5 distinct invocation modes sharing one implementation. The agent loads system defaults + phase-specific workflow skill.
 
 | Agent Call | Purpose | Skill Loading |
 |------------|---------|---------------|

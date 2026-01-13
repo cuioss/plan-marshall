@@ -61,6 +61,7 @@ allowed-tools: Read
 | [standards/data-layer.md](standards/data-layer.md) | manage-* skills | File operations, TOON format |
 | [standards/skill-loading.md](standards/skill-loading.md) | Two-tier loading | System vs domain skills |
 | [standards/artifacts.md](standards/artifacts.md) | Plan file formats | config.toon, status.toon, TASK-*.toon |
+| `pm-workflow:plan-wf-skill-api:extension-api` | Extension mechanism | Domain extensions for outline/triage |
 
 ---
 
@@ -80,7 +81,9 @@ allowed-tools: Read
 │                                                                             │
 │  2. THIN AGENT PATTERN                                                      │
 │     ═══════════════════                                                     │
-│     Agents are minimal wrappers that:                                       │
+│     A single parameterized agent (plan-phase-agent) with different          │
+│     `phase` parameters results in 5 invocation modes, all sharing           │
+│     one implementation. Agents are minimal wrappers that:                   │
 │     • Resolve skills from marshal.json                                      │
 │     • Load resolved skills                                                  │
 │     • Delegate to skills for actual work                                    │
@@ -115,10 +118,10 @@ allowed-tools: Read
 │                                     │                                       │
 │                                     ▼                                       │
 │  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │  AGENTS (Thin Wrappers)                                              │   │
-│  │  ══════════════════════                                              │   │
-│  │  plan-init-agent       solution-outline-agent                        │   │
-│  │  task-plan-agent       task-execute-agent                            │   │
+│  │  AGENTS (Single Parameterized Agent)                                 │   │
+│  │  ═══════════════════════════════════                                 │   │
+│  │  plan-phase-agent phase=init | outline | plan | execute | finalize   │   │
+│  │  (One agent, 5 invocation modes)                                     │   │
 │  └─────────────────────────────────────────────────────────────────────┘   │
 │                                     │                                       │
 │                                     ▼                                       │
