@@ -582,4 +582,4 @@ python3 .plan/execute-script.py plan-marshall:logging:manage-log \
 - [task-execution-skill-contract.md](task-execution-skill-contract.md) - Previous phase (execute)
 - [task-contract.md](task-contract.md) - Task structure including fix tasks
 - [extension-api.md](extension-api.md) - Triage extension mechanism
-- [config-toon-format.md](config-toon-format.md) - Plan configuration
+- [config-toon-format.md](../../manage-config/standards/config-toon-format.md) - Plan configuration

@@ -38,36 +38,7 @@ Configuration is stored in the plan directory:
 
 ## File Format
 
-TOON format with typed fields:
-
-```toon
-# Plan Configuration
-
-domains[1]:
-- java
-
-commit_strategy: per_task
-create_pr: true
-verification_required: true
-verification_command: /pm-dev-builder:builder-build-and-fix
-branch_strategy: feature
-```
-
-### Required Fields
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `domains` | array | List of domains (e.g., java, javascript, plan-marshall-plugin-dev, generic) |
-| `commit_strategy` | enum | `per_task`, `per_plan`, `none` |
-
-### Optional Fields
-
-| Field | Values | Default | Description |
-|-------|--------|---------|-------------|
-| `create_pr` | true, false | true | Create PR on finalize |
-| `verification_required` | true, false | true | Require verification before finalize |
-| `verification_command` | string | - | Command to run for verification |
-| `branch_strategy` | feature, direct | feature | Feature branch or direct-to-main |
+See [standards/config-toon-format.md](standards/config-toon-format.md) for complete format specification including field definitions, phase values, and examples.
 
 ---
 

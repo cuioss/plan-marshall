@@ -214,4 +214,4 @@ message: "Plan '{plan_id}' already exists"
 
 - [solution-outline-skill-contract.md](solution-outline-skill-contract.md) - Next phase (outline)
 - [architecture-overview.md](architecture-overview.md) - Phase flow overview
-- [config-toon-format.md](config-toon-format.md) - Config.toon structure
+- [config-toon-format.md](../../manage-config/standards/config-toon-format.md) - Config.toon structure

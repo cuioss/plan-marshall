@@ -37,7 +37,7 @@ See [pm-workflow-architecture:phases](../pm-workflow-architecture/standards/phas
 | **Deliverable Contract** | Deliverable structure in solution outline | `pm-workflow:manage-solution-outline/standards/deliverable-contract.md` |
 | **Task Contract** | Task structure with domain, profile, skills | [standards/task-contract.md](standards/task-contract.md) |
 | **Extension API** | Domain-specific extensions for outline and triage | [standards/extension-api.md](standards/extension-api.md) |
-| **Config TOON Format** | config.toon structure with domains and settings | [standards/config-toon-format.md](standards/config-toon-format.md) |
+| **Config TOON Format** | config.toon structure with domains and settings | `pm-workflow:manage-config/standards/config-toon-format.md` |
 | **User Review Protocol** | Mandatory review before task creation | [standards/user-review-protocol.md](standards/user-review-protocol.md) |
 | **Artifact Formats** | TOON file structures for plan artifacts | `pm-workflow-architecture:artifacts` |
 

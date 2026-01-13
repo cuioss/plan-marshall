@@ -440,4 +440,4 @@ If verification fails:
 - [task-plan-skill-contract.md](task-plan-skill-contract.md) - Previous phase (plan)
 - [plan-finalize-skill-contract.md](plan-finalize-skill-contract.md) - Next phase (finalize)
 - [task-contract.md](task-contract.md) - Task structure with domain, profile, skills
-- [config-toon-format.md](config-toon-format.md) - Workflow skill configuration
+- [config-toon-format.md](../../manage-config/standards/config-toon-format.md) - Workflow skill configuration
