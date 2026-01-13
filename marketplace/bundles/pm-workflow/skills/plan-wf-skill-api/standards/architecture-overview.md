@@ -48,10 +48,10 @@ For visual diagrams of component interactions, see:
 | Phase | Workflow Skill | Specification |
 |-------|----------------|---------------|
 | **1-init** | `pm-workflow:phase-1-init` | `pm-workflow:phase-1-init/SKILL.md` |
-| **2-outline** | `pm-workflow:phase-2-outline` | [phase-outline-contract.md](phase-outline-contract.md) |
-| **3-plan** | `pm-workflow:phase-3-plan` | [phase-plan-contract.md](phase-plan-contract.md) |
+| **2-outline** | `pm-workflow:phase-2-outline` | [phase-2-outline-contract.md](phase-2-outline-contract.md) |
+| **3-plan** | `pm-workflow:phase-3-plan` | [phase-3-plan-contract.md](phase-3-plan-contract.md) |
 | **4-execute** | `pm-workflow:phase-4-execute` | `pm-workflow:manage-tasks/standards/task-execution-contract.md` |
-| **5-finalize** | `pm-workflow:phase-5-finalize` | [phase-finalize-contract.md](phase-finalize-contract.md) |
+| **5-finalize** | `pm-workflow:phase-5-finalize` | [phase-5-finalize-contract.md](phase-5-finalize-contract.md) |
 
 ---
 
@@ -161,10 +161,10 @@ recoverable: {true|false}
 ## Related Documents
 
 - `pm-workflow:phase-1-init/SKILL.md` - Init phase skill
-- [phase-outline-contract.md](phase-outline-contract.md) - Outline phase contract
-- [phase-plan-contract.md](phase-plan-contract.md) - Plan phase contract
+- [phase-2-outline-contract.md](phase-2-outline-contract.md) - Outline phase contract
+- [phase-3-plan-contract.md](phase-3-plan-contract.md) - Plan phase contract
 - `pm-workflow:manage-tasks/standards/task-execution-contract.md` - Task execution contract
-- [phase-finalize-contract.md](phase-finalize-contract.md) - Finalize phase contract
+- [phase-5-finalize-contract.md](phase-5-finalize-contract.md) - Finalize phase contract
 - [extension-api.md](extension-api.md) - Extension mechanism
 - [deliverable-contract.md](../../manage-solution-outline/standards/deliverable-contract.md) - Deliverable structure
 - [task-contract.md](../../manage-tasks/standards/task-contract.md) - Task structure

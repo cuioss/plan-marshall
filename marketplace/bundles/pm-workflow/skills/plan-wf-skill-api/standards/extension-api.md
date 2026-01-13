@@ -450,7 +450,7 @@ At extension point "Deliverable Patterns":
 
 ## Related Documents
 
-- [phase-outline-contract.md](phase-outline-contract.md) - Outline phase skill contract
-- [phase-finalize-contract.md](phase-finalize-contract.md) - Finalize phase skill contract
+- [phase-2-outline-contract.md](phase-2-outline-contract.md) - Outline phase skill contract
+- [phase-5-finalize-contract.md](phase-5-finalize-contract.md) - Finalize phase skill contract
 - [extension-triage-contract.md](extension-triage-contract.md) - Triage extension requirements
 - [deliverable-contract.md](../../manage-solution-outline/standards/deliverable-contract.md) - Deliverable structure

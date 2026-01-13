@@ -368,7 +368,7 @@ After completion, the orchestrator triggers [User Review Protocol](user-review-p
 ## Related Documents
 
 - `pm-workflow:phase-1-init/SKILL.md` - Previous phase (1-init)
-- [phase-plan-contract.md](phase-plan-contract.md) - Next phase (3-plan)
+- [phase-3-plan-contract.md](phase-3-plan-contract.md) - Next phase (3-plan)
 - [deliverable-contract.md](../../manage-solution-outline/standards/deliverable-contract.md) - Deliverable structure
 - [user-review-protocol.md](user-review-protocol.md) - Approval gate after 2-outline
 - `plan-marshall:analyze-project-architecture` - Architecture API documentation

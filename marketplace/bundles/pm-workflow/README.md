@@ -1,6 +1,6 @@
 # CUI Task Workflow
 
-Plan-based task management system that transforms high-level task descriptions into executable action sequences through progressive refinement using thin agents and domain-agnostic workflow skills.
+Plan-based task management system that transforms high-level task descriptions into executable action sequences through progressive 5-phase workflow using thin agents and domain-agnostic workflow skills.
 
 ## Architecture
 
@@ -27,12 +27,12 @@ User Request → [Thin Agents] → Workflow Skills (from system domain) → Doma
 ## Commands
 
 ### /plan-manage
-Manage task plans - list, create, refine.
+Manage task plans - list, create, outline.
 
 ```bash
 /plan-manage action=list              # List active plans
-/plan-manage action=init task="..."   # Create new plan and refine
-/plan-manage action=refine            # Refine specific plan
+/plan-manage action=init task="..."   # Create new plan and outline
+/plan-manage action=outline           # Outline specific plan
 ```
 
 ### /plan-execute
@@ -195,7 +195,7 @@ pm-workflow/
 │   ├── task-plan-agent.md       # Creates tasks
 │   └── task-execute-agent.md    # Executes single task
 ├── commands/
-│   ├── plan-manage.md           # Init + refine phases
+│   ├── plan-manage.md           # 1-init + 2-outline + 3-plan phases
 │   ├── plan-execute.md          # Execute + finalize phases
 │   ├── pr-doctor.md
 │   └── task-implement.md

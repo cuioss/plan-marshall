@@ -94,6 +94,6 @@ Command: Invokes task plan agent
 
 **Implements**: Command responsibility in [Solution Outline Agent Contract](solution-outline-agent-contract.md)
 
-**Callers**: `/plan-manage action=refine` command
+**Callers**: `/plan-manage action=outline` command
 
 **Next Step**: [Task Plan Agent](task-plan-agent-contract.md) invocation after approval

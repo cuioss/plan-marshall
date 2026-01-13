@@ -1,14 +1,14 @@
 ---
 name: plan-manage
-description: Manage task plans - list, create, refine, and cleanup persisted plans
+description: Manage task plans - list, create, outline, and cleanup persisted plans
 tools: Read, Skill, Bash, AskUserQuestion, Task
 ---
 
 # Plan Manage Command
 
-Manage plan lifecycle: list all plans, create new plans, refine requirements, and cleanup completed plans.
+Manage plan lifecycle: list all plans, create new plans, outline requirements, and cleanup completed plans.
 
-**CRITICAL CONSTRAINT**: This command creates and manages **plans only**. NEVER implement tasks directly. All task descriptions MUST result in plans - not actual implementation. After completing init AND refine phases, STOP and wait for `/plan-execute`.
+**CRITICAL CONSTRAINT**: This command creates and manages **plans only**. NEVER implement tasks directly. All task descriptions MUST result in plans - not actual implementation. After completing 1-init AND 2-outline/3-plan phases, STOP and wait for `/plan-execute`.
 
 **CRITICAL: DO NOT USE CLAUDE CODE'S BUILT-IN PLAN MODE**
 
@@ -33,12 +33,12 @@ This command handles **1-init**, **2-outline**, and **3-plan** phases. Use `/pla
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `action` | optional | Explicit action: `list`, `cleanup`, `init`, `refine`, `lessons` (default: list) |
+| `action` | optional | Explicit action: `list`, `cleanup`, `init`, `outline`, `lessons` (default: list) |
 | `task` | optional | Task description for creating new plan |
 | `issue` | optional | GitHub issue URL for creating new plan |
 | `lesson` | optional | Lesson ID to convert to plan |
 | `plan` | optional | Plan name for specific operations (e.g., `jwt-auth`, not path) |
-| `stop-after-init` | optional | If true, stop after init phase without continuing to refine (default: false) |
+| `stop-after-init` | optional | If true, stop after 1-init phase without continuing to 2-outline (default: false) |
 
 **Note**: The `plan` parameter accepts the plan **name** (plan_id) only, not the full path.
 
@@ -52,8 +52,8 @@ This command handles **1-init**, **2-outline**, and **3-plan** phases. Use `/pla
 2. **Route based on action**:
    - `list` → List all plans via manage-lifecycle
    - `cleanup` → Remove completed plans
-   - `init` → Run 1-init phase, then **automatically continue to refine** (unless `stop-after-init=true`)
-   - `refine` → Run 2-outline and 3-plan phases only
+   - `init` → Run 1-init phase, then **automatically continue to 2-outline** (unless `stop-after-init=true`)
+   - `outline` → Run 2-outline and 3-plan phases only
 
 ### 1-Init Phase
 
@@ -67,18 +67,18 @@ Task: pm-workflow:phase-init-agent
 
 **plan-init-agent**: Creates plan directory, writes request.md, detects domains, creates config.toon
 
-### Automatic Continuation to Refine
+### Automatic Continuation to 2-Outline
 
 After 1-init phase completes successfully:
 1. **Check** `stop-after-init` parameter
-2. **If false (default)**: Automatically invoke refine (2-outline + 3-plan phases) with the new plan_id
+2. **If false (default)**: Automatically invoke 2-outline and 3-plan phases with the new plan_id
 3. **If true**: Stop and display plan summary
 
 This provides a seamless flow from task description to actionable tasks in a single command invocation.
 
-### Refine (2-Outline + 3-Plan Phases)
+### Outline Action (2-Outline + 3-Plan Phases)
 
-The refine action runs **thin agents** that load workflow skills from marshal.json based on domain.
+The outline action runs **thin agents** that load workflow skills from marshal.json based on domain.
 
 **CRITICAL**: This phase has 4 steps. Step 3 is a MANDATORY user review gate. Do NOT skip from Step 2 to Step 4.
 
@@ -236,18 +236,18 @@ Create a new plan and automatically continue to 2-outline/3-plan phases.
 
 If 1-init-phase plans exist, offers to continue existing or create new.
 
-### refine
+### outline
 
-Create tasks from goals for a plan. Uses thin agent pattern with workflow skills from marshal.json.
+Create deliverables and tasks for a plan. Uses thin agent pattern with workflow skills from marshal.json.
 
 ```
-/plan-manage action=refine
-/plan-manage action=refine plan="jwt-auth"
+/plan-manage action=outline
+/plan-manage action=outline plan="jwt-auth"
 ```
 
 **Routing**: Agents resolve workflow skills from marshal.json based on domain.
 
-If no plan specified, shows plans in init/refine phase for selection.
+If no plan specified, shows plans in 1-init/2-outline phase for selection.
 
 ### cleanup
 
@@ -296,20 +296,20 @@ When a lesson is selected:
 # List all plans (interactive selection)
 /plan-manage
 
-# Create new plan from task description (auto-continues to refine)
+# Create new plan from task description (auto-continues to 2-outline)
 /plan-manage action=init task="Add user authentication"
 
-# Create new plan from GitHub issue (auto-continues to refine)
+# Create new plan from GitHub issue (auto-continues to 2-outline)
 /plan-manage action=init issue="https://github.com/org/repo/issues/42"
 
-# Create plan but stop after init (to review goals first)
+# Create plan but stop after 1-init (to review request first)
 /plan-manage action=init task="Complex feature" stop-after-init=true
 
-# Refine specific plan (if stopped after init or needs re-refining)
-/plan-manage action=refine plan="user-auth"
+# Outline specific plan (if stopped after 1-init or needs re-outlining)
+/plan-manage action=outline plan="user-auth"
 
-# Refine (select from list)
-/plan-manage action=refine
+# Outline (select from list)
+/plan-manage action=outline
 
 # Cleanup completed plans
 /plan-manage action=cleanup
