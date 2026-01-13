@@ -1,5 +1,5 @@
 ---
-name: javascript-triage
+name: ext-triage-js
 description: Triage extension for JavaScript/TypeScript findings during plan-finalize phase
 allowed-tools: Read
 ---
@@ -38,7 +38,7 @@ Registered in marshal.json under the javascript domain:
 ```json
 "javascript": {
   "workflow_skill_extensions": {
-    "triage": "pm-dev-frontend:javascript-triage"
+    "triage": "pm-dev-frontend:ext-triage-js"
   }
 }
 ```
@@ -72,5 +72,5 @@ Registered in marshal.json under the javascript domain:
 
 ## Related Documents
 
-- [pm-workflow:plan-wf-skill-api](../../../pm-workflow/skills/plan-wf-skill-api/SKILL.md) - Triage extension contract
+- [workflow-extension-api:triage-extension](../../../pm-workflow/skills/workflow-extension-api/standards/extensions/triage-extension.md) - Triage extension contract
 - [pm-dev-frontend:cui-javascript](../cui-javascript/SKILL.md) - Core JavaScript patterns

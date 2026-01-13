@@ -77,7 +77,7 @@ All agents are domain-agnostic wrappers that load skills via system domain resol
 
 | Skill | Purpose |
 |-------|---------|
-| `plan-wf-skill-api` | **API contract** for all workflow skills |
+| `workflow-extension-api` | **Extension points** for domain-specific workflow customization |
 
 ### Workflow Skills (System Domain)
 
@@ -150,7 +150,7 @@ Technical domains have profile-based skills and workflow extensions:
     "java": {
       "workflow_skill_extensions": {
         "outline": "pm-dev-java:java-outline-ext",
-        "triage": "pm-dev-java:java-triage"
+        "triage": "pm-dev-java:ext-triage-java"
       },
       "core": {
         "defaults": ["pm-dev-java:java-core"],
@@ -200,9 +200,9 @@ pm-workflow/
 │   ├── pr-doctor.md
 │   └── task-implement.md
 └── skills/
-    ├── plan-wf-skill-api/       # API contract for workflow skills
+    ├── workflow-extension-api/  # Extension points for domain customization
     │   ├── SKILL.md
-    │   └── standards/           # Contract documents
+    │   └── standards/           # Extension and profile contracts
     ├── phase-1-init/            # Init phase skill
     ├── phase-2-outline/         # Solution outline workflow skill
     ├── phase-3-plan/            # Task planning workflow skill

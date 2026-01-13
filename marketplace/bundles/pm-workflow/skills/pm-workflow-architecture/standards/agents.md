@@ -371,4 +371,4 @@ Each agent follows the same pattern:
 |----------|---------|
 | [skill-loading.md](skill-loading.md) | Two-tier skill loading pattern |
 | [phases.md](phases.md) | 5-phase execution model |
-| `pm-workflow:plan-wf-skill-api` | Contract definitions |
+| `pm-workflow:workflow-extension-api` | Extension points |

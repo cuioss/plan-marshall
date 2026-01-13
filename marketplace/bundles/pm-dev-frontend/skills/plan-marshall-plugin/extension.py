@@ -55,7 +55,7 @@ class Extension(ExtensionBase):
 
     def provides_triage(self) -> str | None:
         """Return triage skill reference."""
-        return "pm-dev-frontend:javascript-triage"
+        return "pm-dev-frontend:ext-triage-js"
 
     # =========================================================================
     # discover_modules() Implementation

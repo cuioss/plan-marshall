@@ -1,5 +1,5 @@
 ---
-name: plugin-triage
+name: ext-triage-plugin
 description: Triage extension for marketplace plugin findings during plan-finalize phase
 allowed-tools: Read
 ---
@@ -37,7 +37,7 @@ Registered in marshal.json under the plugin development domain:
 ```json
 "plan-marshall-plugin-dev": {
   "workflow_skill_extensions": {
-    "triage": "pm-plugin-development:plugin-triage"
+    "triage": "pm-plugin-development:ext-triage-plugin"
   }
 }
 ```
@@ -71,5 +71,5 @@ Registered in marshal.json under the plugin development domain:
 
 ## Related Documents
 
-- [pm-workflow:plan-wf-skill-api](../../../pm-workflow/skills/plan-wf-skill-api/SKILL.md) - Triage extension contract
+- [workflow-extension-api:triage-extension](../../../pm-workflow/skills/workflow-extension-api/standards/extensions/triage-extension.md) - Triage extension contract
 - [pm-plugin-development:plugin-architecture](../plugin-architecture/SKILL.md) - Plugin patterns

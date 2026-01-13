@@ -17,7 +17,6 @@ allowed-tools: Read, Bash
 | Contract | Location | Purpose |
 |----------|----------|---------|
 | Task Contract | `pm-workflow:manage-tasks/standards/task-contract.md` | Task structure and optimization workflow |
-| Agent Contract | `pm-workflow:plan-wf-skill-api/standards/task-plan-agent-contract.md` | Agent responsibilities |
 
 **Non-compliant tasks will be rejected by validation.**
 

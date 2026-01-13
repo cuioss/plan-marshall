@@ -15,10 +15,11 @@
     "./commands/cui-maintain-requirements.md"
   ],
   "skills": [
+    "./skills/ext-triage-reqs",
+    "./skills/plan-marshall-plugin",
     "./skills/planning",
     "./skills/requirements-authoring",
     "./skills/setup",
-    "./skills/traceability",
-    "./skills/plan-marshall-plugin"
+    "./skills/traceability"
   ]
 }

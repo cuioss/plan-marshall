@@ -59,7 +59,7 @@ class Extension(ExtensionBase):
 
     def provides_triage(self) -> str | None:
         """Return triage skill reference."""
-        return "pm-dev-java:java-triage"
+        return "pm-dev-java:ext-triage-java"
 
     def discover_modules(self, project_root: str) -> list:
         """Discover all modules with complete metadata.

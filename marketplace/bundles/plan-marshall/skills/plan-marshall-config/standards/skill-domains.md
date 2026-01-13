@@ -51,7 +51,7 @@ The system domain contains workflow skills for the 5 execution phases:
     "java": {
       "workflow_skill_extensions": {
         "outline": "pm-dev-java:java-outline-ext",
-        "triage": "pm-dev-java:java-triage"
+        "triage": "pm-dev-java:ext-triage-java"
       },
       "core": {
         "defaults": ["pm-dev-java:java-core"],
@@ -124,7 +124,7 @@ Java development with CDI, JUnit, and standard patterns.
 | Type | Skill |
 |------|-------|
 | outline | `pm-dev-java:java-outline-ext` |
-| triage | `pm-dev-java:java-triage` |
+| triage | `pm-dev-java:ext-triage-java` |
 
 **core**:
 | Field | Skills |
@@ -164,7 +164,7 @@ JavaScript/Frontend development with Jest and Cypress testing.
 | Type | Skill |
 |------|-------|
 | outline | `pm-dev-frontend:js-outline-ext` |
-| triage | `pm-dev-frontend:javascript-triage` |
+| triage | `pm-dev-frontend:ext-triage-js` |
 
 **core**:
 | Field | Skills |
@@ -233,7 +233,7 @@ python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall
 status: success
 domain: java
 type: triage
-extension: pm-dev-java:java-triage
+extension: pm-dev-java:ext-triage-java
 ```
 
 ### resolve-domain-skills Command

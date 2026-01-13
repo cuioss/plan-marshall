@@ -1,5 +1,5 @@
 ---
-name: java-triage
+name: ext-triage-java
 description: Triage extension for Java findings during plan-finalize phase
 allowed-tools: Read
 ---
@@ -37,7 +37,7 @@ Registered in marshal.json under the java domain:
 ```json
 "java": {
   "workflow_skill_extensions": {
-    "triage": "pm-dev-java:java-triage"
+    "triage": "pm-dev-java:ext-triage-java"
   }
 }
 ```
@@ -74,5 +74,5 @@ Registered in marshal.json under the java domain:
 
 ## Related Documents
 
-- [pm-workflow:plan-wf-skill-api](../../../pm-workflow/skills/plan-wf-skill-api/SKILL.md) - Triage extension contract
+- [workflow-extension-api:triage-extension](../../../pm-workflow/skills/workflow-extension-api/standards/extensions/triage-extension.md) - Triage extension contract
 - [pm-dev-java:java-core](../java-core/SKILL.md) - Core Java patterns

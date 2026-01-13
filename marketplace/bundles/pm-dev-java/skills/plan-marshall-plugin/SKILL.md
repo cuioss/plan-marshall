@@ -22,7 +22,7 @@ Configuration in `extension.py` implements the Extension API contract:
 | Function | Purpose |
 |----------|---------|
 | `get_skill_domains()` | Domain metadata with profiles |
-| `provides_triage()` | Returns `pm-dev-java:java-triage` |
+| `provides_triage()` | Returns `pm-dev-java:ext-triage-java` |
 | `discover_modules(project_root)` | Discover Maven/Gradle modules with metadata, commands |
 
 ---

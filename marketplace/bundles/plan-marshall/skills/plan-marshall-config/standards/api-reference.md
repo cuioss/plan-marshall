@@ -163,7 +163,7 @@ status: success
 domain: java
 extensions:
   outline: pm-dev-java:java-outline-ext
-  triage: pm-dev-java:java-triage
+  triage: pm-dev-java:ext-triage-java
 ```
 
 ### set-extensions

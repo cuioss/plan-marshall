@@ -51,7 +51,7 @@ Process components in batches of **10-15 files** per bundle. After each batch:
 ```bash
 # After each batch of 10-15 components
 python3 .plan/execute-script.py plan-marshall:logging:manage-log \
-  work {plan_id} INFO "[STATUS] (pm-plugin-development:plugin-solution-outline) Analyzed batch {N} of {bundle}: {X} affected, {Y} not affected"
+  work {plan_id} INFO "[STATUS] (pm-plugin-development:ext-outline-plugin) Analyzed batch {N} of {bundle}: {X} affected, {Y} not affected"
 ```
 
 ### Per-Component Analysis
@@ -75,7 +75,7 @@ For each **affected** file, log immediately:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:logging:manage-log \
-  work {plan_id} INFO "[FINDING] (pm-plugin-development:plugin-solution-outline) Affected: {file_path} - {reason}"
+  work {plan_id} INFO "[FINDING] (pm-plugin-development:ext-outline-plugin) Affected: {file_path} - {reason}"
 ```
 
 **Build affected files list** as you analyze:
@@ -94,7 +94,7 @@ After all batches complete, log the summary:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:logging:manage-log \
-  work {plan_id} INFO "[MILESTONE] (pm-plugin-development:plugin-solution-outline) Impact analysis complete: {total_affected} of {total_analyzed} affected"
+  work {plan_id} INFO "[MILESTONE] (pm-plugin-development:ext-outline-plugin) Impact analysis complete: {total_affected} of {total_analyzed} affected"
 ```
 
 ## Step 3b.3: Build Deliverables Section with Enumeration

@@ -134,7 +134,7 @@ def create_nested_marshal_json(fixture_dir: Path) -> Path:
             "java": {
                 "workflow_skill_extensions": {
                     "outline": "pm-dev-java:java-outline-ext",
-                    "triage": "pm-dev-java:java-triage"
+                    "triage": "pm-dev-java:ext-triage-java"
                 },
                 "core": {
                     "defaults": ["pm-dev-java:java-core"],
@@ -177,7 +177,7 @@ def create_nested_marshal_json(fixture_dir: Path) -> Path:
             "plan-marshall-plugin-dev": {
                 "workflow_skill_extensions": {
                     "outline": "pm-plugin-development:plugin-outline-ext",
-                    "triage": "pm-plugin-development:plugin-triage"
+                    "triage": "pm-plugin-development:ext-triage-plugin"
                 },
                 "core": {
                     "defaults": ["pm-plugin-development:plugin-architecture"],

@@ -2,7 +2,6 @@
 name: phase-3-plan
 description: Domain-agnostic task planning from deliverables with skill resolution and optimization
 allowed-tools: Read, Bash
-implements: pm-workflow:plan-wf-skill-api/phase-plan-contract
 ---
 
 # Phase Refine Plan Skill
@@ -18,7 +17,6 @@ implements: pm-workflow:plan-wf-skill-api/phase-plan-contract
 | Contract | Location | Purpose |
 |----------|----------|---------|
 | Task Contract | `pm-workflow:manage-tasks/standards/task-contract.md` | Required task structure and optimization workflow |
-| Task-Plan Skill Contract | `pm-workflow:plan-wf-skill-api/standards/phase-plan-contract.md` | Skill responsibilities |
 
 **CRITICAL - Steps Field**:
 - The `steps` field MUST contain file paths from the deliverable's `Affected files` section

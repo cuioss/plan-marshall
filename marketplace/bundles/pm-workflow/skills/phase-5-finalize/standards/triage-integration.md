@@ -36,7 +36,7 @@ python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall
 status: success
 domain: java
 type: triage
-extension: pm-dev-java:java-triage
+extension: pm-dev-java:ext-triage-java
 ```
 
 If `extension` is `null`, no domain-specific triage is available - use default severity rules.
@@ -49,7 +49,7 @@ When extension is found:
 Skill: {extension}
 ```
 
-Example: `Skill: pm-dev-java:java-triage`
+Example: `Skill: pm-dev-java:ext-triage-java`
 
 ## Triage Decision Flow
 
@@ -120,7 +120,7 @@ If MAX_ITERATIONS reached:
 
 ```
 1. Domain: java (from *.java file)
-2. Load: pm-dev-java:java-triage
+2. Load: pm-dev-java:ext-triage-java
 3. Apply severity.md:
    - BLOCKER → Fix (mandatory)
 4. Decision: FIX
@@ -133,7 +133,7 @@ If MAX_ITERATIONS reached:
 
 ```
 1. Domain: javascript (from *.js file)
-2. Load: pm-dev-frontend:javascript-triage
+2. Load: pm-dev-frontend:ext-triage-js
 3. Apply severity.md:
    - warn → Fix or suppress
 4. Apply context: New code
@@ -147,7 +147,7 @@ If MAX_ITERATIONS reached:
 
 ```
 1. Domain: java (from *.java file)
-2. Load: pm-dev-java:java-triage
+2. Load: pm-dev-java:ext-triage-java
 3. Apply severity.md:
    - Test failure → Fix
 4. Decision: FIX
@@ -180,7 +180,7 @@ If no triage extension exists for a domain, apply default rules:
 ```json
 "java": {
   "workflow_skill_extensions": {
-    "triage": "pm-dev-java:java-triage"
+    "triage": "pm-dev-java:ext-triage-java"
   }
 }
 ```
@@ -196,8 +196,8 @@ python3 .plan/execute-script.py plan-marshall:logging:manage-log \
 
 ## Related Documents
 
-- [pm-workflow:plan-wf-skill-api/standards/extension-triage-contract.md](../../plan-wf-skill-api/standards/extension-triage-contract.md) - Extension contract
-- [pm-workflow:plan-wf-skill-api/standards/extension-api.md](../../plan-wf-skill-api/standards/extension-api.md) - Extension API
-- [pm-dev-java:java-triage](../../../pm-dev-java/skills/java-triage/SKILL.md) - Java triage
-- [pm-dev-frontend:javascript-triage](../../../pm-dev-frontend/skills/javascript-triage/SKILL.md) - JavaScript triage
-- [pm-plugin-development:plugin-triage](../../../pm-plugin-development/skills/plugin-triage/SKILL.md) - Plugin triage
+- [pm-workflow:workflow-extension-api/standards/extensions/triage-extension.md](../../workflow-extension-api/standards/extensions/triage-extension.md) - Triage extension contract
+- [pm-workflow:workflow-extension-api/standards/extensions/extension-mechanism.md](../../workflow-extension-api/standards/extensions/extension-mechanism.md) - Extension mechanism
+- [pm-dev-java:ext-triage-java](../../../pm-dev-java/skills/java-triage/SKILL.md) - Java triage
+- [pm-dev-frontend:ext-triage-js](../../../pm-dev-frontend/skills/javascript-triage/SKILL.md) - JavaScript triage
+- [pm-plugin-development:ext-triage-plugin](../../../pm-plugin-development/skills/plugin-triage/SKILL.md) - Plugin triage

@@ -12,7 +12,7 @@ class Extension(ExtensionBase):
 
     def provides_triage(self) -> str | None:
         """Return triage skill reference."""
-        return "pm-requirements:requirements-triage"
+        return "pm-requirements:ext-triage-reqs"
 
     def get_skill_domains(self) -> dict:
         """Domain metadata for skill loading."""

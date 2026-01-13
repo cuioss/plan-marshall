@@ -24,7 +24,7 @@ python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall
 status: success
 domain: java
 type: triage
-extension: pm-dev-java:java-triage
+extension: pm-dev-java:ext-triage-java
 ```
 
 If no triage extension exists for a domain, `extension` returns `null`.
@@ -145,7 +145,7 @@ Registered in marshal.json:
 \`\`\`json
 "java": {
   "workflow_skill_extensions": {
-    "triage": "pm-dev-java:java-triage"
+    "triage": "pm-dev-java:ext-triage-java"
   }
 }
 \`\`\`

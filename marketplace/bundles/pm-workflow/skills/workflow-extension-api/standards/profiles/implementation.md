@@ -437,7 +437,9 @@ If verification fails:
 
 ## Related Documents
 
-- [phase-plan-contract.md](phase-plan-contract.md) - Previous phase (plan)
-- [phase-finalize-contract.md](phase-finalize-contract.md) - Next phase (finalize)
-- [task-contract.md](../../manage-tasks/standards/task-contract.md) - Task structure with domain, profile, skills
-- [config-toon-format.md](../../manage-config/standards/config-toon-format.md) - Workflow skill configuration
+- [phase-3-plan SKILL.md](../../../phase-3-plan/SKILL.md) - Previous phase (plan)
+- [phase-5-finalize SKILL.md](../../../phase-5-finalize/SKILL.md) - Next phase (finalize)
+- [testing.md](testing.md) - Testing profile contract
+- [profile-mechanism.md](profile-mechanism.md) - How profile overrides work
+- [task-contract.md](../../../manage-tasks/standards/task-contract.md) - Task structure with domain, profile, skills
+- [config-toon-format.md](../../../manage-config/standards/config-toon-format.md) - Workflow skill configuration

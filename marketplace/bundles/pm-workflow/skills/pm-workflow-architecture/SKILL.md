@@ -61,7 +61,7 @@ allowed-tools: Read
 | [standards/data-layer.md](standards/data-layer.md) | manage-* skills | File operations, TOON format |
 | [standards/skill-loading.md](standards/skill-loading.md) | Two-tier loading | System vs domain skills |
 | [standards/artifacts.md](standards/artifacts.md) | Plan file formats | config.toon, status.toon, TASK-*.toon |
-| `pm-workflow:plan-wf-skill-api:extension-api` | Extension mechanism | Domain extensions for outline/triage |
+| `pm-workflow:workflow-extension-api` | Extension mechanism | Domain extensions for outline/triage |
 
 ---
 
@@ -160,7 +160,7 @@ allowed-tools: Read
 
 | Skill | Purpose |
 |-------|---------|
-| `pm-workflow:plan-wf-skill-api` | Contract definitions for workflow skills |
+| `pm-workflow:workflow-extension-api` | Extension points for domain customization |
 | `pm-workflow:phase-1-init` | Init phase implementation |
 | `pm-workflow:phase-2-outline` | Outline phase implementation |
 | `pm-workflow:phase-3-plan` | Plan phase implementation |

@@ -1,5 +1,5 @@
 ---
-name: plugin-solution-outline
+name: ext-outline-plugin
 description: Analyze plugin codebase and create solution outline with deliverables
 allowed-tools: Read, Glob, Grep, Bash
 ---
@@ -17,7 +17,7 @@ allowed-tools: Read, Glob, Grep, Bash
 | Contract | Location | Purpose |
 |----------|----------|---------|
 | Deliverable Contract | `pm-workflow:manage-solution-outline/standards/deliverable-contract.md` | Required deliverable structure |
-| Agent Contract | `pm-workflow:plan-wf-skill-api/standards/solution-outline-agent-contract.md` | Agent responsibilities |
+| Outline Extension Contract | `pm-workflow:workflow-extension-api/standards/extensions/outline-extension.md` | Outline extension pattern |
 
 **Non-compliant deliverables will be rejected by validation.**
 
@@ -125,7 +125,7 @@ Analyze the request to determine the impact scope:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:logging:manage-log \
-  work {plan_id} INFO "[DECISION] (pm-plugin-development:plugin-solution-outline) Impact path: {Single|Multi} - {reasoning}"
+  work {plan_id} INFO "[DECISION] (pm-plugin-development:ext-outline-plugin) Impact path: {Single|Multi} - {reasoning}"
 ```
 
 ---
@@ -302,7 +302,7 @@ Each script-related deliverable MUST include a **Script Verification** section p
 
 ## Integration
 
-**Caller**: `pm-plugin-development:plugin-solution-outline-agent`
+**Caller**: `pm-plugin-development:ext-outline-plugin-agent`
 
 **Script Notations** (use EXACTLY as shown):
 - `pm-workflow:manage-solution-outline:manage-solution-outline` - Write and validate solution document (write, validate, read, list-deliverables, exists) - validation is automatic on write

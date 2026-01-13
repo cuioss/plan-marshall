@@ -39,7 +39,7 @@
     "./skills/junit-integration",
     "./skills/javadoc",
     "./skills/java-maintenance",
-    "./skills/java-triage",
+    "./skills/ext-triage-java",
     "./skills/plan-marshall-plugin",
     "./skills/maven-profile-management"
   ]

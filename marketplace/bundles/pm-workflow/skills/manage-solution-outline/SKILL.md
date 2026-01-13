@@ -224,7 +224,7 @@ python3 .plan/execute-script.py pm-workflow:manage-solution-outline:manage-solut
 
 **Loaded by**:
 - `pm-workflow:solution-outline-agent` (thin agent that loads domain skills from config.toon)
-- Domain skills: `pm-plugin-development:plugin-solution-outline`, etc.
+- Domain skills: `pm-plugin-development:ext-outline-plugin`, etc.
 
 **Data Sources** (via skills):
 - `plan-marshall:analyze-project-architecture` - Project architecture knowledge (modules, responsibilities, packages)

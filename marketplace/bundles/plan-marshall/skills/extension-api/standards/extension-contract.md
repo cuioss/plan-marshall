@@ -138,7 +138,7 @@ def provides_triage(self) -> str | None:
     """Return triage skill reference if available.
 
     Returns:
-        Skill reference as 'bundle:skill' (e.g., 'pm-dev-java:java-triage')
+        Skill reference as 'bundle:skill' (e.g., 'pm-dev-java:ext-triage-java')
         or None if no triage capability.
 
     Default: None
@@ -234,7 +234,7 @@ class Extension(ExtensionBase):
         }
 
     def provides_triage(self) -> str | None:
-        return "pm-dev-java:java-triage"
+        return "pm-dev-java:ext-triage-java"
 
     def discover_modules(self, project_root: str) -> list:
         # Delegate to script in scripts/ directory
@@ -275,7 +275,7 @@ Some domain bundles are **additive** - they extend a base domain bundle rather t
 **Example**: `pm-dev-java-cui` is additive to `pm-dev-java`:
 - Applies when pom.xml contains CUI dependencies
 - Provides CUI-specific logging/testing skills
-- Relies on `pm-dev-java:java-triage` for triage (no `provides_triage()` override)
+- Relies on `pm-dev-java:ext-triage-java` for triage (no `provides_triage()` override)
 
 ---
 

@@ -62,7 +62,7 @@ This indicates an agent silently retried after failure. Investigate WHY the firs
 Load the contract skill and verify artifacts for the **completed phase**:
 
 ```
-Skill: pm-workflow:plan-wf-skill-api
+Skill: pm-workflow:workflow-extension-api
 ```
 
 | Completed Phase | Contract to Verify |
@@ -594,11 +594,11 @@ Actively scan execution logs to detect script issues:
 
 ## Workflow Skill API Contract Verification
 
-After each planning phase completes, verify artifacts comply with the workflow skill API contracts. Reference: [pm-workflow:plan-wf-skill-api](../../../pm-workflow/skills/plan-wf-skill-api/SKILL.md)
+After each planning phase completes, verify artifacts comply with the workflow skill API contracts. Reference: [pm-workflow:workflow-extension-api](../../../pm-workflow/skills/workflow-extension-api/SKILL.md)
 
 ### Phase 1: Init Complete
 
-**Contract Reference**: [plan-wf-skill-api/standards/domain-frontmatter-contract.md](../../../pm-workflow/skills/plan-wf-skill-api/standards/domain-frontmatter-contract.md)
+**Contract Reference**: Phase skills are self-documenting. See `pm-workflow:phase-1-init/SKILL.md`
 
 **Verification**:
 ```bash
@@ -646,7 +646,7 @@ python3 .plan/execute-script.py pm-workflow:manage-solution-outline:manage-solut
 
 ### Phase 3: User Review (Mandatory)
 
-**Contract Reference**: [plan-wf-skill-api/standards/user-review-protocol.md](../../../pm-workflow/skills/plan-wf-skill-api/standards/user-review-protocol.md)
+**Contract Reference**: [workflow-extension-api/standards/protocols/user-review.md](../../../pm-workflow/skills/workflow-extension-api/standards/protocols/user-review.md)
 
 **Verification**: Check work.log for user approval entry
 

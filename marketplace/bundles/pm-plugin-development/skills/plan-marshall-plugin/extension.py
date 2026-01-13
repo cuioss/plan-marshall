@@ -49,11 +49,11 @@ class Extension(ExtensionBase):
 
     def provides_triage(self) -> str | None:
         """Return triage skill reference."""
-        return "pm-plugin-development:plugin-triage"
+        return "pm-plugin-development:ext-triage-plugin"
 
     def provides_outline(self) -> str | None:
         """Return outline skill reference."""
-        return "pm-plugin-development:plugin-solution-outline"
+        return "pm-plugin-development:ext-outline-plugin"
 
     def discover_modules(self, project_root: str) -> list:
         """Discover plugin bundles as modules.

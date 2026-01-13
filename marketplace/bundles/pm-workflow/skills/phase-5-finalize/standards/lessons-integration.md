@@ -138,7 +138,7 @@ Finding: S3776 - Cognitive complexity too high (method: parseComplexExpression)
 
 4. Record lesson:
    python3 .plan/execute-script.py plan-marshall:manage-lessons-learned:manage-lessons-learned add \
-     --component "pm-dev-java:java-triage" \
+     --component "pm-dev-java:ext-triage-java" \
      --category triage \
      --summary "S3776: Complex parser methods acceptable if decomposition artificial" \
      --detail "Parser methods that handle grammar rules are inherently complex. Splitting into smaller methods just for metrics often obscures the algorithm."
@@ -168,5 +168,5 @@ Triage lessons include:
 ## Related Documents
 
 - [triage-integration.md](triage-integration.md) - How triage extensions are loaded and applied
-- [pm-workflow:plan-wf-skill-api/standards/extension-triage-contract.md](../../plan-wf-skill-api/standards/extension-triage-contract.md) - Extension contract
+- [pm-workflow:workflow-extension-api/standards/extensions/triage-extension.md](../../workflow-extension-api/standards/extensions/triage-extension.md) - Extension contract
 - `plan-marshall:manage-lessons-learned` - Lessons storage and query skill

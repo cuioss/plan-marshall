@@ -18,6 +18,8 @@
   "skills": [
     "./skills/cui-documentation",
     "./skills/adr-management",
-    "./skills/interface-management"
+    "./skills/ext-triage-docs",
+    "./skills/interface-management",
+    "./skills/plan-marshall-plugin"
   ]
 }

@@ -389,4 +389,4 @@ TRANSITION TRIGGERS:
 | [agents.md](agents.md) | Thin agent pattern details |
 | [skill-loading.md](skill-loading.md) | How skills are resolved |
 | [artifacts.md](artifacts.md) | Plan file formats |
-| `pm-workflow:plan-wf-skill-api` | Contract definitions |
+| `pm-workflow:workflow-extension-api` | Extension points |

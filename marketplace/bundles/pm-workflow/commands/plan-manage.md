@@ -339,7 +339,7 @@ If you discover issues or improvements during execution, record them:
 |-------|---------|
 | `pm-workflow:manage-lifecycle` | Plan discovery, phase routing, transitions |
 | `pm-workflow:phase-1-init` | Initialize new plans (creates request.md, goals, config) |
-| `pm-workflow:plan-wf-skill-api` | API contracts for workflow skills and plan artifacts |
+| `pm-workflow:workflow-extension-api` | Extension points for domain customization |
 
 | Script | Purpose |
 |--------|---------|

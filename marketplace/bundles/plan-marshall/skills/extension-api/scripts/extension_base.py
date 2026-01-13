@@ -289,7 +289,7 @@ class ExtensionBase(ABC):
         """Return triage skill reference if available.
 
         Returns:
-            Skill reference as 'bundle:skill' (e.g., 'pm-dev-java:java-triage')
+            Skill reference as 'bundle:skill' (e.g., 'pm-dev-java:ext-triage-java')
             or None if no triage capability.
 
         Purpose:

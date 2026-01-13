@@ -48,7 +48,7 @@ def test_resolve_triage_extension_java():
                 "java": {
                     "workflow_skill_extensions": {
                         "outline": "pm-dev-java:java-outline-ext",
-                        "triage": "pm-dev-java:java-triage"
+                        "triage": "pm-dev-java:ext-triage-java"
                     },
                     "core": {
                         "defaults": ["pm-dev-java:java-core"],
@@ -68,7 +68,7 @@ def test_resolve_triage_extension_java():
         assert data['status'] == 'success'
         assert data['domain'] == 'java'
         assert data['type'] == 'triage'
-        assert data['extension'] == 'pm-dev-java:java-triage'
+        assert data['extension'] == 'pm-dev-java:ext-triage-java'
 
 
 def test_resolve_triage_extension_javascript():
@@ -89,7 +89,7 @@ def test_resolve_triage_extension_javascript():
                 "javascript": {
                     "workflow_skill_extensions": {
                         "outline": "pm-dev-frontend:js-outline-ext",
-                        "triage": "pm-dev-frontend:javascript-triage"
+                        "triage": "pm-dev-frontend:ext-triage-js"
                     },
                     "core": {
                         "defaults": ["pm-dev-frontend:cui-javascript"],
@@ -107,7 +107,7 @@ def test_resolve_triage_extension_javascript():
         assert result.success, f"Script failed: {result.stderr}"
         data = parse_toon(result.stdout)
         assert data['status'] == 'success'
-        assert data['extension'] == 'pm-dev-frontend:javascript-triage'
+        assert data['extension'] == 'pm-dev-frontend:ext-triage-js'
 
 
 def test_resolve_triage_extension_plugin_dev():
@@ -127,7 +127,7 @@ def test_resolve_triage_extension_plugin_dev():
                 },
                 "plan-marshall-plugin-dev": {
                     "workflow_skill_extensions": {
-                        "triage": "pm-plugin-development:plugin-triage"
+                        "triage": "pm-plugin-development:ext-triage-plugin"
                     },
                     "core": {
                         "defaults": ["pm-plugin-development:plugin-architecture"],
@@ -145,7 +145,7 @@ def test_resolve_triage_extension_plugin_dev():
         assert result.success, f"Script failed: {result.stderr}"
         data = parse_toon(result.stdout)
         assert data['status'] == 'success'
-        assert data['extension'] == 'pm-plugin-development:plugin-triage'
+        assert data['extension'] == 'pm-plugin-development:ext-triage-plugin'
 
 
 def test_resolve_triage_extension_null_for_missing():

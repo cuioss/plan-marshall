@@ -95,7 +95,7 @@ The resolved skill handles:
 4. Writing solution_outline.md via manage-solution-outline script
 5. Returning structured result
 
-**IMPORTANT**: The domain-specific skill (e.g., `pm-plugin-development:plugin-solution-outline`) contains domain-appropriate analysis patterns, script references, and inventory tools. Do NOT substitute with generic patterns.
+**IMPORTANT**: The domain-specific skill (e.g., `pm-plugin-development:ext-outline-plugin`) contains domain-appropriate analysis patterns, script references, and inventory tools. Do NOT substitute with generic patterns.
 
 ## Return Results
 

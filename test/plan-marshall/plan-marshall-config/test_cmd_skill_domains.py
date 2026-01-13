@@ -560,7 +560,7 @@ def test_resolve_workflow_skill_extension_java_triage():
             '--domain', 'java', '--type', 'triage')
 
         assert result.success, f"Should succeed: {result.stderr}"
-        assert 'pm-dev-java:java-triage' in result.stdout
+        assert 'pm-dev-java:ext-triage-java' in result.stdout
 
 
 def test_resolve_workflow_skill_extension_javascript_outline():

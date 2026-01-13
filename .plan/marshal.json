@@ -38,8 +38,8 @@
     },
     "plan-marshall-plugin-dev": {
       "workflow_skill_extensions": {
-        "outline": "pm-plugin-development:plugin-solution-outline",
-        "triage": "pm-plugin-development:plugin-triage"
+        "outline": "pm-plugin-development:ext-outline-plugin",
+        "triage": "pm-plugin-development:ext-triage-plugin"
       },
       "core": {
         "defaults": [

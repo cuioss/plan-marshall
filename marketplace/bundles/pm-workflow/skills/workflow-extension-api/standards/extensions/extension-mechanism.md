@@ -101,7 +101,7 @@ extension: pm-dev-java:java-outline-ext
 "java": {
   "workflow_skill_extensions": {
     "outline": "pm-dev-java:java-outline-ext",
-    "triage": "pm-dev-java:java-triage"
+    "triage": "pm-dev-java:ext-triage-java"
   }
 }
 ```
@@ -450,7 +450,8 @@ At extension point "Deliverable Patterns":
 
 ## Related Documents
 
-- [phase-2-outline-contract.md](phase-2-outline-contract.md) - Outline phase skill contract
-- [phase-5-finalize-contract.md](phase-5-finalize-contract.md) - Finalize phase skill contract
-- [extension-triage-contract.md](extension-triage-contract.md) - Triage extension requirements
-- [deliverable-contract.md](../../manage-solution-outline/standards/deliverable-contract.md) - Deliverable structure
+- [phase-2-outline SKILL.md](../../../phase-2-outline/SKILL.md) - Outline phase skill (self-documenting)
+- [phase-5-finalize SKILL.md](../../../phase-5-finalize/SKILL.md) - Finalize phase skill (self-documenting)
+- [triage-extension.md](triage-extension.md) - Triage extension contract
+- [outline-extension.md](outline-extension.md) - Outline extension contract
+- [deliverable-contract.md](../../../manage-solution-outline/standards/deliverable-contract.md) - Deliverable structure

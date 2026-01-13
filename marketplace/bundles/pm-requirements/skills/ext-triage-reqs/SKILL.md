@@ -1,5 +1,5 @@
 ---
-name: requirements-triage
+name: ext-triage-reqs
 description: Triage extension for requirements findings during plan-finalize phase
 allowed-tools: Read
 ---
@@ -37,7 +37,7 @@ Registered in marshal.json under the requirements domain:
 ```json
 "requirements": {
   "workflow_skill_extensions": {
-    "triage": "pm-requirements:requirements-triage"
+    "triage": "pm-requirements:ext-triage-reqs"
   }
 }
 ```
@@ -70,5 +70,5 @@ Registered in marshal.json under the requirements domain:
 
 ## Related Documents
 
-- [pm-workflow:plan-wf-skill-api](../../../pm-workflow/skills/plan-wf-skill-api/SKILL.md) - Triage extension contract
+- [workflow-extension-api:triage-extension](../../../pm-workflow/skills/workflow-extension-api/standards/extensions/triage-extension.md) - Triage extension contract
 - [pm-requirements:requirements-authoring](../requirements-authoring/SKILL.md) - Requirements authoring standards

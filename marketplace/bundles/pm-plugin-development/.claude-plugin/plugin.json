@@ -23,9 +23,9 @@
     "./skills/plugin-maintain",
     "./skills/plugin-plan-implement",
     "./skills/plugin-script-architecture",
-    "./skills/plugin-solution-outline",
+    "./skills/ext-outline-plugin",
     "./skills/plugin-task-plan",
-    "./skills/plugin-triage",
+    "./skills/ext-triage-plugin",
     "./skills/verification",
     "./skills/plan-marshall-plugin"
   ],

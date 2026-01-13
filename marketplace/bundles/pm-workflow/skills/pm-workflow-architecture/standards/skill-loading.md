@@ -275,7 +275,7 @@ The pm-workflow bundle uses a two-tier skill loading pattern for domain-agnostic
 │  │    --domain java                                                     │  │
 │  │    --type triage                                                     │  │
 │  │                                                                      │  │
-│  │  → pm-dev-java:java-triage                                           │  │
+│  │  → pm-dev-java:ext-triage-java                                           │  │
 │  │                                                                      │  │
 │  └──────────────────────────────────────────────────────────────────────┘  │
 │                                                                             │
@@ -292,4 +292,4 @@ The pm-workflow bundle uses a two-tier skill loading pattern for domain-agnostic
 | [phases.md](phases.md) | When each skill type is used |
 | `plan-marshall:analyze-project-architecture` | Source of module.skills_by_profile |
 | `pm-workflow:phase-2-outline` | Where module/skills are selected |
-| `pm-workflow:plan-wf-skill-api` | Contract definitions |
+| `pm-workflow:workflow-extension-api` | Extension points |

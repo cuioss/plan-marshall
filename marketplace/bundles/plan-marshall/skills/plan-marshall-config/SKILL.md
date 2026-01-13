@@ -236,7 +236,7 @@ The defaults template contains only `system` domain. Technical domains (java, ja
     "java": {
       "workflow_skill_extensions": {
         "outline": "pm-dev-java:java-outline-ext",
-        "triage": "pm-dev-java:java-triage"
+        "triage": "pm-dev-java:ext-triage-java"
       },
       "core": {
         "defaults": ["pm-dev-java:java-core"],

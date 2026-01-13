@@ -27,7 +27,7 @@
     "./skills/pr-workflow",
     "./skills/sonar-workflow",
     "./skills/pm-workflow-architecture",
-    "./skills/plan-wf-skill-api",
+    "./skills/workflow-extension-api",
     "./skills/phase-1-init",
     "./skills/phase-2-outline",
     "./skills/phase-3-plan",

@@ -22,7 +22,7 @@ Configuration in `extension.py` implements the Extension API contract:
 | Function | Purpose |
 |----------|---------|
 | `get_skill_domains()` | Domain metadata with profiles |
-| `provides_triage()` | Returns `pm-dev-frontend:javascript-triage` |
+| `provides_triage()` | Returns `pm-dev-frontend:ext-triage-js` |
 | `discover_modules(project_root)` | Discover npm modules with metadata, commands |
 
 ---
