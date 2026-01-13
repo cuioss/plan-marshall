@@ -63,16 +63,16 @@ The extension API allows domains to **extend** system workflow skills without **
 
 | Extension Key | Phase | Purpose |
 |---------------|-------|---------|
-| `outline` | outline | Domain detection, codebase analysis, deliverable patterns |
-| `triage` | finalize | Decision-making knowledge for findings (suppression syntax, severity rules) |
+| `outline` | 2-outline | Domain detection, codebase analysis, deliverable patterns |
+| `triage` | 5-finalize | Decision-making knowledge for findings (suppression syntax, severity rules) |
 
 **Phases without extensions:**
 
 | Phase | Knowledge Source |
 |-------|------------------|
-| init | No domain knowledge needed |
-| plan | `planning` profile - task decomposition patterns |
-| execute | `task.profile` - implementation guidance |
+| 1-init | No domain knowledge needed |
+| 3-plan | `planning` profile - task decomposition patterns |
+| 4-execute | `task.profile` - implementation guidance |
 
 ---
 
@@ -225,7 +225,7 @@ Each deliverable should:
 ```markdown
 # Java Outline Extension
 
-> Extension for outline phase in Java domain.
+> Extension for 2-outline phase in Java domain.
 
 ## Domain Detection
 

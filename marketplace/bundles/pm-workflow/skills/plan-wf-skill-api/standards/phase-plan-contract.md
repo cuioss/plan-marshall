@@ -1,6 +1,6 @@
 # Task Plan Skill Contract
 
-Workflow skill for plan phase - transforms solution outline deliverables into optimized, committable tasks.
+Workflow skill for 3-plan phase - transforms solution outline deliverables into optimized, committable tasks.
 
 **Implementation**: `pm-workflow:phase-3-plan`
 
@@ -16,24 +16,24 @@ Task plan skills analyze solution outline deliverables and create optimized task
 
 ## Invocation
 
-**Phase**: `plan`
+**Phase**: `3-plan`
 
 **Agent invocation**:
 ```bash
-plan-phase-agent plan_id={plan_id} phase=plan
+plan-phase-agent plan_id={plan_id} phase=3-plan
 ```
 
 **Skill resolution**:
 ```bash
 python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall-config \
-  resolve-workflow-skill --phase plan
+  resolve-workflow-skill --phase 3-plan
 ```
 
 Result:
 ```toon
 status: success
 domain: system
-phase: plan
+phase: 3-plan
 workflow_skill: pm-workflow:phase-3-plan
 ```
 
@@ -175,7 +175,7 @@ profile: {profile}
 skills:
   - {bundle}:{skill1}
   - {bundle}:{skill2}
-phase: execute
+phase: 4-execute
 description: |
   {combined description}
 
@@ -184,7 +184,7 @@ steps:
   - {file_2}
   - {file_3}
 
-origin: plan
+origin: 3-plan
 depends_on: TASK-001, TASK-002
 
 verification:
@@ -258,4 +258,4 @@ Task-plan copies skills directly from deliverable(s) to task. No resolution API 
 - `pm-workflow:manage-tasks/standards/task-execution-contract.md` - Next phase (execute)
 - [task-contract.md](../../manage-tasks/standards/task-contract.md) - Task structure and optimization rules
 - [deliverable-contract.md](../../manage-solution-outline/standards/deliverable-contract.md) - Deliverable structure
-- [user-review-protocol.md](user-review-protocol.md) - Approval gate before plan phase
+- [user-review-protocol.md](user-review-protocol.md) - Approval gate before 3-plan phase

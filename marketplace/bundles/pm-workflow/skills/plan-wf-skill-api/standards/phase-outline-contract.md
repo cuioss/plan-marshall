@@ -1,6 +1,6 @@
 # Solution Outline Skill Contract
 
-Workflow skill for outline phase - transforms requests into solution outlines with deliverables using architecture-driven module selection.
+Workflow skill for 2-outline phase - transforms requests into solution outlines with deliverables using architecture-driven module selection.
 
 **Implementation**: `pm-workflow:phase-2-outline`
 
@@ -18,24 +18,24 @@ Solution outline skills analyze a request and produce a structured solution outl
 
 ## Invocation
 
-**Phase**: `outline`
+**Phase**: `2-outline`
 
 **Agent invocation**:
 ```bash
-plan-phase-agent plan_id={plan_id} phase=outline
+plan-phase-agent plan_id={plan_id} phase=2-outline
 ```
 
 **Skill resolution**:
 ```bash
 python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall-config \
-  resolve-workflow-skill --phase outline
+  resolve-workflow-skill --phase 2-outline
 ```
 
 Result:
 ```toon
 status: success
 domain: system
-phase: outline
+phase: 2-outline
 workflow_skill: pm-workflow:phase-2-outline
 ```
 
@@ -360,7 +360,7 @@ message: {error message if status=error}
 After completion, the orchestrator triggers [User Review Protocol](user-review-protocol.md).
 
 ```
-outline ──user approval gate──▶ plan
+2-outline ──user approval gate──▶ 3-plan
 ```
 
 ---
@@ -368,7 +368,7 @@ outline ──user approval gate──▶ plan
 ## Related Documents
 
 - `pm-workflow:phase-1-init/SKILL.md` - Previous phase (1-init)
-- [phase-plan-contract.md](phase-plan-contract.md) - Next phase (plan)
+- [phase-plan-contract.md](phase-plan-contract.md) - Next phase (3-plan)
 - [deliverable-contract.md](../../manage-solution-outline/standards/deliverable-contract.md) - Deliverable structure
-- [user-review-protocol.md](user-review-protocol.md) - Approval gate after outline
+- [user-review-protocol.md](user-review-protocol.md) - Approval gate after 2-outline
 - `plan-marshall:analyze-project-architecture` - Architecture API documentation

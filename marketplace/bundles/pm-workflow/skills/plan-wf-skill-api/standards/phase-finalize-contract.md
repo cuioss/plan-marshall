@@ -1,6 +1,6 @@
 # Plan Finalize Skill Contract
 
-Workflow skill for finalize phase - verifies work, creates findings, delegates fixes.
+Workflow skill for 5-finalize phase - verifies work, creates findings, delegates fixes.
 
 **Implementation**: `pm-workflow:phase-5-finalize`
 
@@ -24,24 +24,24 @@ The finalize skill:
 
 ## Invocation
 
-**Phase**: `finalize`
+**Phase**: `5-finalize`
 
 **Agent invocation**:
 ```bash
-plan-phase-agent plan_id={plan_id} phase=finalize
+plan-phase-agent plan_id={plan_id} phase=5-finalize
 ```
 
 **Skill resolution**:
 ```bash
 python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall-config \
-  resolve-workflow-skill --phase finalize
+  resolve-workflow-skill --phase 5-finalize
 ```
 
 Result:
 ```toon
 status: success
 domain: system
-phase: finalize
+phase: 5-finalize
 workflow_skill: pm-workflow:phase-5-finalize
 ```
 
@@ -58,7 +58,7 @@ workflow_skill: pm-workflow:phase-5-finalize
 ## Pipeline Overview
 
 ```
-    execute phase complete
+    4-execute phase complete
            │
            ▼
     ┌─────────────────────────────────────────────────────┐
@@ -114,7 +114,7 @@ Finalize Phase Workflow:
 │ 5. If findings detected:                                         │
 │    a. Create TASK-{SEQ}.toon per finding (determine skills)      │
 │    b. Return status=findings_detected                            │
-│    c. Back to execute phase (next iteration)                     │
+│    c. Back to 4-execute phase (next iteration)                     │
 │ 6. If no findings:                                               │
 │    a. Return status=success                                      │
 │    b. Plan complete                                              │
@@ -144,7 +144,7 @@ python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall
 - Quality gate thresholds
 - PR creation workflow
 
-**Finalize delegates** (to execute phase):
+**Finalize delegates** (to 4-execute phase):
 - How to fix specific issues
 - Root cause analysis
 
@@ -249,7 +249,7 @@ Finalize does NOT decide:
 - How should this be fixed?
 - What's the root cause?
 
-Instead, delegates to execute phase via fix tasks.
+Instead, delegates to 4-execute phase via fix tasks.
 
 ---
 
@@ -560,7 +560,7 @@ python3 .plan/execute-script.py plan-marshall:logging:manage-log \
 ## Integration
 
 **Callers**:
-- `plan-phase-agent` → after execute phase completes
+- `plan-phase-agent` → after 4-execute phase completes
 
 **Dependencies**:
 - `manage-config` → Read domains

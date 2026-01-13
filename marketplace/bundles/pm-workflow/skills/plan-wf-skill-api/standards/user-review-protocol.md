@@ -49,7 +49,7 @@ while not approved:
     if feedback == "Proceed":
         approved = true
     else:
-        invoke outline phase agent with feedback parameter
+        invoke 2-outline phase agent with feedback parameter
         display updated outline
 ```
 

@@ -40,8 +40,8 @@ For visual diagrams of component interactions, see:
 |-----------|------|----------|-------------|
 | `plan_id` | string | Yes | Plan identifier |
 | `phase` | string | Yes | Phase: 1-init, 2-outline, 3-plan, 4-execute, 5-finalize |
-| `task_id` | string | Execute only | Task identifier (required when phase=execute), format: `TASK-{SEQ}` |
-| `deliverable_id` | integer | Plan only | Deliverable sequence number (required when phase=plan), e.g., `1`, `2`, `3` |
+| `task_id` | string | 4-execute only | Task identifier (required when phase=4-execute), format: `TASK-{SEQ}` |
+| `deliverable_id` | integer | 3-plan only | Deliverable sequence number (required when phase=3-plan), e.g., `1`, `2`, `3` |
 
 ### Workflow Skills
 
@@ -87,8 +87,8 @@ Extensions add domain-specific knowledge without replacing workflow skills.
 
 | Extension Type | Phase | Purpose |
 |----------------|-------|---------|
-| `outline` | outline | Domain detection, deliverable patterns |
-| `triage` | finalize | Finding decision-making (fix/suppress/accept) |
+| `outline` | 2-outline | Domain detection, deliverable patterns |
+| `triage` | 5-finalize | Finding decision-making (fix/suppress/accept) |
 
 ### Extension Loading
 
