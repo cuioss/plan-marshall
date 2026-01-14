@@ -134,7 +134,7 @@ def test_analyze_nonexistent_file():
 
 def test_analyze_valid_agent():
     """Test analyze with a valid agent file."""
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False, dir='/tmp') as f:
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False, dir='/tmp'):
         # Create in a path that looks like agents/
         agent_dir = Path('/tmp/test_agents')
         agent_dir.mkdir(exist_ok=True)

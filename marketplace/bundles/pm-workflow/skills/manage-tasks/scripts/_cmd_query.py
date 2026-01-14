@@ -65,7 +65,7 @@ def cmd_list(args) -> int:
 
     # Build table data
     table = []
-    for path, task in filtered_tasks:
+    for _path, task in filtered_tasks:
         completed, total = calculate_progress(task)
         deliverables = task.get('deliverables', [])
         table.append({
@@ -172,14 +172,14 @@ def cmd_next(args) -> int:
     blocked_tasks = []
 
     # First, look for in_progress tasks
-    for path, task in filtered_tasks:
+    for _path, task in filtered_tasks:
         if task.get('status') == 'in_progress':
             next_task = task
             break
 
     # If no in_progress, find first pending with satisfied deps
     if not next_task:
-        for path, task in filtered_tasks:
+        for _path, task in filtered_tasks:
             if task.get('status') == 'pending':
                 if deps_satisfied(task):
                     next_task = task
@@ -300,7 +300,7 @@ def cmd_tasks_by_domain(args) -> int:
 
     # Build table data
     table = []
-    for path, task in filtered_tasks:
+    for _path, task in filtered_tasks:
         completed, total = calculate_progress(task)
         table.append({
             'number': task['number'],
@@ -350,7 +350,7 @@ def cmd_tasks_by_profile(args) -> int:
 
     # Build table data
     table = []
-    for path, task in filtered_tasks:
+    for _path, task in filtered_tasks:
         completed, total = calculate_progress(task)
         table.append({
             'number': task['number'],
@@ -399,7 +399,7 @@ def cmd_next_tasks(args) -> int:
     ready_tasks = []
     blocked_tasks = []
 
-    for path, task in all_tasks:
+    for _path, task in all_tasks:
         if task.get('status') != 'pending':
             continue
 
@@ -428,7 +428,7 @@ def cmd_next_tasks(args) -> int:
 
     # Also include in_progress tasks
     in_progress_tasks = []
-    for path, task in all_tasks:
+    for _path, task in all_tasks:
         if task.get('status') == 'in_progress':
             completed, total = calculate_progress(task)
             in_progress_tasks.append({

@@ -446,8 +446,8 @@ def test_all_extensions_have_required_functions():
             for func_name in required:
                 assert hasattr(ext, func_name), f"{bundle}: missing required function {func_name}"
                 assert callable(getattr(ext, func_name)), f"{bundle}: {func_name} is not callable"
-        except FileNotFoundError:
-            raise AssertionError(f"{bundle}: extension.py not found")
+        except FileNotFoundError as err:
+            raise AssertionError(f"{bundle}: extension.py not found") from err
 
 
 # =============================================================================

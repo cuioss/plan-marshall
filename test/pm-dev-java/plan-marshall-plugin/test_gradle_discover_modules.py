@@ -29,7 +29,7 @@ PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 EXTENSION_DIR = PROJECT_ROOT / 'marketplace' / 'bundles' / 'pm-dev-java' / 'skills' / 'plan-marshall-plugin'
 sys.path.insert(0, str(EXTENSION_DIR))
 
-import importlib.util
+import importlib.util  # noqa: E402
 
 spec = importlib.util.spec_from_file_location("java_extension", EXTENSION_DIR / "extension.py")
 java_extension = importlib.util.module_from_spec(spec)

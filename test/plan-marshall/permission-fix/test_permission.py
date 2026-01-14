@@ -695,9 +695,15 @@ if __name__ == '__main__':
         test_ensure_help,
     ]
 
-    simple_runner = TestRunner()
-    simple_runner.add_tests(simple_tests)
-    simple_result = simple_runner.run()
+    # Run simple function tests
+    simple_failures = 0
+    for test_fn in simple_tests:
+        try:
+            test_fn()
+            print(f"  PASS: {test_fn.__name__}")
+        except AssertionError as e:
+            print(f"  FAIL: {test_fn.__name__}: {e}")
+            simple_failures += 1
 
     # Exit with combined result
-    sys.exit(0 if result.wasSuccessful() and simple_result == 0 else 1)
+    sys.exit(0 if result.wasSuccessful() and simple_failures == 0 else 1)

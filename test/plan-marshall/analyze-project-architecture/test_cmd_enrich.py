@@ -396,7 +396,7 @@ def test_enrich_skills_by_profile_overwrites():
         enrich_skills_by_profile("module-a", {"implementation": ["skill-1"]}, tmpdir)
 
         # Second call should overwrite
-        result = enrich_skills_by_profile("module-a", {"implementation": ["skill-2"]}, tmpdir)
+        enrich_skills_by_profile("module-a", {"implementation": ["skill-2"]}, tmpdir)
 
         enriched = load_llm_enriched(tmpdir)
         assert enriched["modules"]["module-a"]["skills_by_profile"]["implementation"] == ["skill-2"]

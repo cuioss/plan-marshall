@@ -17,9 +17,9 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent.parent
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from extension import discover_project_modules
+from extension import discover_project_modules  # noqa: E402
 
-from integration_common import (
+from integration_common import (  # noqa: E402
     INTEGRATION_TEST_OUTPUT_DIR,
     IntegrationContext,
     ProjectFixture,

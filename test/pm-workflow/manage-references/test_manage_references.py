@@ -12,7 +12,7 @@ from conftest import PlanContext, get_script_path, run_script
 SCRIPT_PATH = get_script_path('pm-workflow', 'manage-references', 'manage-references.py')
 
 # Import toon_parser - conftest sets up PYTHONPATH
-from toon_parser import parse_toon  # type: ignore[import-not-found]
+from toon_parser import parse_toon  # type: ignore[import-not-found]  # noqa: E402
 
 # Alias for backward compatibility
 TestContext = PlanContext
@@ -32,7 +32,7 @@ def test_create_references():
         assert result.success, f"Script failed: {result.stderr}"
         data = parse_toon(result.stdout)
         assert data['status'] == 'success'
-        assert data['created'] == True
+        assert data['created'] is True
 
 
 def test_create_with_issue_url():

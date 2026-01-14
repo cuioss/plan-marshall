@@ -161,7 +161,7 @@ class TestManageInterface(unittest.TestCase):
     def test_valid_interface_types(self):
         """Test all valid interface types."""
         valid_types = ["REST_API", "Event", "gRPC", "Database", "File", "Other"]
-        for i, itype in enumerate(valid_types):
+        for itype in valid_types:
             result = self.run_iface(
                 "create", "--title", f"Test {itype}", "--type", itype
             )

@@ -40,7 +40,7 @@ def test_default_produces_valid_json():
     try:
         parse_json(result.stdout)
     except Exception as e:
-        raise AssertionError(f"Default mode should produce valid JSON: {e}")
+        raise AssertionError(f"Default mode should produce valid JSON: {e}") from e
 
 
 # =============================================================================

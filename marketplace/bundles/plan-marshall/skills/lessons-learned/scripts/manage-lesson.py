@@ -69,12 +69,10 @@ def read_lesson(lesson_id: str) -> tuple[dict, str]:
 
     # Extract title and body
     lines = content.split('\n')
-    title = ""
     body_start = 0
 
     for i, line in enumerate(lines):
         if line.startswith('# '):
-            title = line[2:].strip()
             body_start = i + 1
             break
 

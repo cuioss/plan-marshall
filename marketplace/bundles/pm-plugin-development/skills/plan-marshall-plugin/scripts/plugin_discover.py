@@ -33,7 +33,7 @@ EXTENSION_API_DIR = (
 if str(EXTENSION_API_DIR) not in sys.path:
     sys.path.insert(0, str(EXTENSION_API_DIR))
 
-from _build_discover import find_readme
+from _build_discover import find_readme  # noqa: E402
 
 # =============================================================================
 # Constants

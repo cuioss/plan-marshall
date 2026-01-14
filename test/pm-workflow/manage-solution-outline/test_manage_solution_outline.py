@@ -16,7 +16,7 @@ from conftest import PlanContext, get_script_path, run_script
 SCRIPT_PATH = get_script_path('pm-workflow', 'manage-solution-outline', 'manage-solution-outline.py')
 
 # Import toon_parser - conftest sets up PYTHONPATH
-from toon_parser import parse_toon  # type: ignore[import-not-found]
+from toon_parser import parse_toon  # type: ignore[import-not-found]  # noqa: E402
 
 # Alias for backward compatibility
 TestContext = PlanContext
@@ -214,7 +214,7 @@ Some text but no ### N. Title items
 
 def test_validate_document_not_found():
     """Test validation fails when document doesn't exist."""
-    with TestContext(plan_id='no-solution') as ctx:
+    with TestContext(plan_id='no-solution'):
         result = run_script(SCRIPT_PATH,
             'validate',
             '--plan-id', 'no-solution'
@@ -311,7 +311,7 @@ def test_read_raw():
 
 def test_read_not_found():
     """Test read fails when document doesn't exist."""
-    with TestContext(plan_id='no-solution') as ctx:
+    with TestContext(plan_id='no-solution'):
         result = run_script(SCRIPT_PATH,
             'read',
             '--plan-id', 'no-solution'
@@ -342,7 +342,7 @@ def test_exists_present():
 
 def test_exists_absent():
     """Test exists returns false when document doesn't exist."""
-    with TestContext(plan_id='no-solution') as ctx:
+    with TestContext(plan_id='no-solution'):
         result = run_script(SCRIPT_PATH,
             'exists',
             '--plan-id', 'no-solution'
@@ -421,7 +421,7 @@ def test_write_with_force():
 
 def test_invalid_plan_id_uppercase():
     """Test that uppercase plan IDs are rejected."""
-    with TestContext() as ctx:
+    with TestContext():
         result = run_script(SCRIPT_PATH,
             'validate',
             '--plan-id', 'My-Plan'
@@ -433,7 +433,7 @@ def test_invalid_plan_id_uppercase():
 
 def test_invalid_plan_id_underscore():
     """Test that underscores in plan IDs are rejected."""
-    with TestContext() as ctx:
+    with TestContext():
         result = run_script(SCRIPT_PATH,
             'validate',
             '--plan-id', 'my_plan'

@@ -28,7 +28,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 FIXTURES_DIR = Path(__file__).parent / 'fixtures'
 
 # Direct imports - conftest sets up PYTHONPATH
-from _maven_cmd_discover import (
+from _maven_cmd_discover import (  # noqa: E402
     _build_commands,
     _classify_profile,
     _filter_command_line_profiles,

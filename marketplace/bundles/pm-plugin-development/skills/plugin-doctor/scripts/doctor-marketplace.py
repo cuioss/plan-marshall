@@ -24,9 +24,8 @@ Usage:
 import argparse
 import json
 import sys
+from datetime import datetime
 from pathlib import Path
-
-SCRIPT_DIR = Path(__file__).parent
 
 from _doctor_analysis import analyze_component
 from _doctor_fixes import apply_safe_fixes
@@ -40,6 +39,8 @@ from _doctor_shared import (
     get_report_dir,
     get_report_filename,
 )
+
+SCRIPT_DIR = Path(__file__).parent
 
 # =============================================================================
 # Subcommands
@@ -249,7 +250,6 @@ def cmd_report(args) -> int:
     report = generate_report(scan_results, all_analysis)
 
     # Determine output directory and filename
-    from datetime import datetime
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
 
     # Determine scope for filename

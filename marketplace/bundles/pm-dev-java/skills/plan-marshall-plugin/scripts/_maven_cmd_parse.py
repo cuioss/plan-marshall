@@ -109,15 +109,24 @@ def generate_summary(issues: list) -> dict:
     summary = {"compilation_errors": 0, "test_failures": 0, "javadoc_warnings": 0, "deprecation_warnings": 0, "unchecked_warnings": 0, "dependency_errors": 0, "openrewrite_info": 0, "other_warnings": 0, "other_errors": 0, "total_issues": len(issues)}
     for issue in issues:
         t, s = issue["type"], issue["severity"]
-        if t == "compilation_error": summary["compilation_errors"] += 1
-        elif t == "test_failure": summary["test_failures"] += 1
-        elif t == "javadoc_warning": summary["javadoc_warnings"] += 1
-        elif t == "deprecation_warning": summary["deprecation_warnings"] += 1
-        elif t == "unchecked_warning": summary["unchecked_warnings"] += 1
-        elif t == "dependency_error": summary["dependency_errors"] += 1
-        elif t == "openrewrite_info": summary["openrewrite_info"] += 1
-        elif s == "ERROR": summary["other_errors"] += 1
-        else: summary["other_warnings"] += 1
+        if t == "compilation_error":
+            summary["compilation_errors"] += 1
+        elif t == "test_failure":
+            summary["test_failures"] += 1
+        elif t == "javadoc_warning":
+            summary["javadoc_warnings"] += 1
+        elif t == "deprecation_warning":
+            summary["deprecation_warnings"] += 1
+        elif t == "unchecked_warning":
+            summary["unchecked_warnings"] += 1
+        elif t == "dependency_error":
+            summary["dependency_errors"] += 1
+        elif t == "openrewrite_info":
+            summary["openrewrite_info"] += 1
+        elif s == "ERROR":
+            summary["other_errors"] += 1
+        else:
+            summary["other_warnings"] += 1
     return summary
 
 

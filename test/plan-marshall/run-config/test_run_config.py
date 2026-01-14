@@ -8,9 +8,9 @@ Consolidated from:
 Tests run-configuration.json initialization and validation.
 """
 
+import json
 import shutil
 
-# Import shared infrastructure (conftest.py sets up PYTHONPATH)
 from conftest import PLAN_DIR_NAME, PlanContext, get_script_path, run_script
 
 # Script under test
@@ -53,7 +53,6 @@ def test_init_skip_existing():
 def test_init_force_overwrite():
     """Test init with --force overwrites existing file."""
     with PlanContext() as ctx:
-        import json
         # Create existing file with old content
         plan_dir = ctx.fixture_dir / PLAN_DIR_NAME
         plan_dir.mkdir(parents=True)
@@ -72,7 +71,6 @@ def test_init_force_overwrite():
 def test_init_correct_structure():
     """Test init creates file with correct structure."""
     with PlanContext() as ctx:
-        import json
         run_script(SCRIPT_PATH, 'init')
 
         config_file = ctx.fixture_dir / PLAN_DIR_NAME / 'run-configuration.json'
@@ -108,7 +106,7 @@ def test_init_creates_plan_dir():
 
 def test_init_output_includes_path():
     """Test init output includes path."""
-    with PlanContext() as ctx:
+    with PlanContext():
         result = run_script(SCRIPT_PATH, 'init')
         data = result.json()
 
@@ -117,7 +115,7 @@ def test_init_output_includes_path():
 
 def test_init_output_includes_structure():
     """Test init output includes structure when created."""
-    with PlanContext() as ctx:
+    with PlanContext():
         result = run_script(SCRIPT_PATH, 'init')
         data = result.json()
 
@@ -325,7 +323,6 @@ def test_timeout_get_default_when_no_persisted():
 
 def test_timeout_get_with_safety_margin():
     """Test timeout get applies safety margin to persisted value."""
-    import json
     with PlanContext() as ctx:
         plan_dir = ctx.fixture_dir / PLAN_DIR_NAME
         plan_dir.mkdir(parents=True)
@@ -352,7 +349,6 @@ def test_timeout_get_with_safety_margin():
 
 def test_timeout_get_enforces_minimum_on_persisted():
     """Test timeout get enforces minimum bound when persisted value is too low."""
-    import json
     with PlanContext() as ctx:
         plan_dir = ctx.fixture_dir / PLAN_DIR_NAME
         plan_dir.mkdir(parents=True)
@@ -394,7 +390,6 @@ def test_timeout_get_enforces_minimum_on_default():
 
 def test_timeout_set_initial_value():
     """Test timeout set writes directly when no existing value."""
-    import json
     with PlanContext() as ctx:
         plan_dir = ctx.fixture_dir / PLAN_DIR_NAME
         plan_dir.mkdir(parents=True)
@@ -416,7 +411,6 @@ def test_timeout_set_initial_value():
 
 def test_timeout_set_weighted_update():
     """Test timeout set computes weighted value when existing."""
-    import json
     with PlanContext() as ctx:
         plan_dir = ctx.fixture_dir / PLAN_DIR_NAME
         plan_dir.mkdir(parents=True)
@@ -447,7 +441,6 @@ def test_timeout_set_weighted_update():
 
 def test_timeout_set_weighted_favors_higher():
     """Test timeout set weighted calculation favors higher value regardless of order."""
-    import json
     with PlanContext() as ctx:
         plan_dir = ctx.fixture_dir / PLAN_DIR_NAME
         plan_dir.mkdir(parents=True)
@@ -476,7 +469,6 @@ def test_timeout_set_weighted_favors_higher():
 
 def test_timeout_set_same_value():
     """Test timeout set with same value returns same value."""
-    import json
     with PlanContext() as ctx:
         plan_dir = ctx.fixture_dir / PLAN_DIR_NAME
         plan_dir.mkdir(parents=True)
@@ -531,7 +523,6 @@ def test_timeout_set_help():
 
 def test_warning_add_pattern():
     """Test warning add adds pattern to acceptable list."""
-    import json
     with PlanContext() as ctx:
         plan_dir = ctx.fixture_dir / PLAN_DIR_NAME
         plan_dir.mkdir(parents=True)
@@ -555,7 +546,6 @@ def test_warning_add_pattern():
 
 def test_warning_add_duplicate_skips():
     """Test warning add skips duplicate pattern."""
-    import json
     with PlanContext() as ctx:
         plan_dir = ctx.fixture_dir / PLAN_DIR_NAME
         plan_dir.mkdir(parents=True)
@@ -585,7 +575,7 @@ def test_warning_add_duplicate_skips():
 
 def test_warning_add_invalid_category():
     """Test warning add rejects invalid category."""
-    with PlanContext() as ctx:
+    with PlanContext():
         run_script(SCRIPT_PATH, 'init')
 
         result = run_script(SCRIPT_PATH, 'warning', 'add',
@@ -598,7 +588,6 @@ def test_warning_add_invalid_category():
 
 def test_warning_list_all_categories():
     """Test warning list returns all categories."""
-    import json
     with PlanContext() as ctx:
         plan_dir = ctx.fixture_dir / PLAN_DIR_NAME
         plan_dir.mkdir(parents=True)
@@ -628,7 +617,6 @@ def test_warning_list_all_categories():
 
 def test_warning_list_single_category():
     """Test warning list with category filter."""
-    import json
     with PlanContext() as ctx:
         plan_dir = ctx.fixture_dir / PLAN_DIR_NAME
         plan_dir.mkdir(parents=True)
@@ -657,7 +645,6 @@ def test_warning_list_single_category():
 
 def test_warning_remove_pattern():
     """Test warning remove removes pattern from list."""
-    import json
     with PlanContext() as ctx:
         plan_dir = ctx.fixture_dir / PLAN_DIR_NAME
         plan_dir.mkdir(parents=True)
@@ -692,7 +679,6 @@ def test_warning_remove_pattern():
 
 def test_warning_remove_nonexistent_skips():
     """Test warning remove skips non-existent pattern."""
-    import json
     with PlanContext() as ctx:
         plan_dir = ctx.fixture_dir / PLAN_DIR_NAME
         plan_dir.mkdir(parents=True)
@@ -758,7 +744,6 @@ def test_warning_list_empty_config():
 
 def test_profile_mapping_set():
     """Test profile-mapping set adds mapping."""
-    import json
     with PlanContext() as ctx:
         plan_dir = ctx.fixture_dir / PLAN_DIR_NAME
         plan_dir.mkdir(parents=True)
@@ -783,7 +768,6 @@ def test_profile_mapping_set():
 
 def test_profile_mapping_set_skip():
     """Test profile-mapping set with skip canonical."""
-    import json
     with PlanContext() as ctx:
         plan_dir = ctx.fixture_dir / PLAN_DIR_NAME
         plan_dir.mkdir(parents=True)
@@ -805,7 +789,6 @@ def test_profile_mapping_set_skip():
 
 def test_profile_mapping_set_update_existing():
     """Test profile-mapping set updates existing mapping."""
-    import json
     with PlanContext() as ctx:
         plan_dir = ctx.fixture_dir / PLAN_DIR_NAME
         plan_dir.mkdir(parents=True)
@@ -836,7 +819,7 @@ def test_profile_mapping_set_update_existing():
 
 def test_profile_mapping_set_invalid_canonical():
     """Test profile-mapping set rejects invalid canonical."""
-    with PlanContext() as ctx:
+    with PlanContext():
         run_script(SCRIPT_PATH, 'init')
 
         result = run_script(SCRIPT_PATH, 'profile-mapping', 'set',
@@ -849,7 +832,6 @@ def test_profile_mapping_set_invalid_canonical():
 
 def test_profile_mapping_get_mapped():
     """Test profile-mapping get returns mapping."""
-    import json
     with PlanContext() as ctx:
         plan_dir = ctx.fixture_dir / PLAN_DIR_NAME
         plan_dir.mkdir(parents=True)
@@ -875,7 +857,6 @@ def test_profile_mapping_get_mapped():
 
 def test_profile_mapping_get_unmapped():
     """Test profile-mapping get returns unmapped for unknown profile."""
-    import json
     with PlanContext() as ctx:
         plan_dir = ctx.fixture_dir / PLAN_DIR_NAME
         plan_dir.mkdir(parents=True)
@@ -899,7 +880,6 @@ def test_profile_mapping_get_unmapped():
 
 def test_profile_mapping_list_all():
     """Test profile-mapping list returns all mappings."""
-    import json
     with PlanContext() as ctx:
         plan_dir = ctx.fixture_dir / PLAN_DIR_NAME
         plan_dir.mkdir(parents=True)
@@ -929,7 +909,6 @@ def test_profile_mapping_list_all():
 
 def test_profile_mapping_list_filter_by_canonical():
     """Test profile-mapping list with canonical filter."""
-    import json
     with PlanContext() as ctx:
         plan_dir = ctx.fixture_dir / PLAN_DIR_NAME
         plan_dir.mkdir(parents=True)
@@ -957,7 +936,6 @@ def test_profile_mapping_list_filter_by_canonical():
 
 def test_profile_mapping_remove():
     """Test profile-mapping remove removes mapping."""
-    import json
     with PlanContext() as ctx:
         plan_dir = ctx.fixture_dir / PLAN_DIR_NAME
         plan_dir.mkdir(parents=True)
@@ -988,7 +966,6 @@ def test_profile_mapping_remove():
 
 def test_profile_mapping_remove_nonexistent_skips():
     """Test profile-mapping remove skips non-existent mapping."""
-    import json
     with PlanContext() as ctx:
         plan_dir = ctx.fixture_dir / PLAN_DIR_NAME
         plan_dir.mkdir(parents=True)
@@ -1010,7 +987,6 @@ def test_profile_mapping_remove_nonexistent_skips():
 
 def test_profile_mapping_batch_set():
     """Test profile-mapping batch-set sets multiple mappings."""
-    import json
     with PlanContext() as ctx:
         plan_dir = ctx.fixture_dir / PLAN_DIR_NAME
         plan_dir.mkdir(parents=True)
@@ -1037,7 +1013,6 @@ def test_profile_mapping_batch_set():
 
 def test_profile_mapping_batch_set_with_updates():
     """Test profile-mapping batch-set handles updates and adds."""
-    import json
     with PlanContext() as ctx:
         plan_dir = ctx.fixture_dir / PLAN_DIR_NAME
         plan_dir.mkdir(parents=True)
@@ -1062,7 +1037,7 @@ def test_profile_mapping_batch_set_with_updates():
 
 def test_profile_mapping_batch_set_invalid_canonical():
     """Test profile-mapping batch-set rejects invalid canonical."""
-    with PlanContext() as ctx:
+    with PlanContext():
         run_script(SCRIPT_PATH, 'init')
 
         result = run_script(SCRIPT_PATH, 'profile-mapping', 'batch-set',
@@ -1074,7 +1049,7 @@ def test_profile_mapping_batch_set_invalid_canonical():
 
 def test_profile_mapping_batch_set_invalid_json():
     """Test profile-mapping batch-set rejects invalid JSON."""
-    with PlanContext() as ctx:
+    with PlanContext():
         run_script(SCRIPT_PATH, 'init')
 
         result = run_script(SCRIPT_PATH, 'profile-mapping', 'batch-set',
@@ -1097,7 +1072,6 @@ def test_profile_mapping_help():
 
 def test_init_includes_profile_mappings():
     """Test init creates profile_mappings section."""
-    import json
     with PlanContext() as ctx:
         run_script(SCRIPT_PATH, 'init')
 
@@ -1110,7 +1084,6 @@ def test_init_includes_profile_mappings():
 
 def test_init_includes_extension_defaults():
     """Test init creates extension_defaults section."""
-    import json
     with PlanContext() as ctx:
         run_script(SCRIPT_PATH, 'init')
 
@@ -1127,7 +1100,6 @@ def test_init_includes_extension_defaults():
 
 def test_ext_defaults_set_adds_value():
     """Test extension-defaults set adds a new value."""
-    import json
     with PlanContext() as ctx:
         plan_dir = ctx.fixture_dir / PLAN_DIR_NAME
         plan_dir.mkdir(parents=True)
@@ -1151,7 +1123,6 @@ def test_ext_defaults_set_adds_value():
 
 def test_ext_defaults_set_updates_existing():
     """Test extension-defaults set updates existing value."""
-    import json
     with PlanContext() as ctx:
         plan_dir = ctx.fixture_dir / PLAN_DIR_NAME
         plan_dir.mkdir(parents=True)
@@ -1179,7 +1150,7 @@ def test_ext_defaults_set_updates_existing():
 
 def test_ext_defaults_set_json_array():
     """Test extension-defaults set with JSON array value."""
-    with PlanContext() as ctx:
+    with PlanContext():
         run_script(SCRIPT_PATH, 'init')
 
         result = run_script(SCRIPT_PATH, 'extension-defaults', 'set',
@@ -1193,7 +1164,7 @@ def test_ext_defaults_set_json_array():
 
 def test_ext_defaults_set_json_object():
     """Test extension-defaults set with JSON object value."""
-    with PlanContext() as ctx:
+    with PlanContext():
         run_script(SCRIPT_PATH, 'init')
 
         result = run_script(SCRIPT_PATH, 'extension-defaults', 'set',
@@ -1207,7 +1178,7 @@ def test_ext_defaults_set_json_object():
 
 def test_ext_defaults_set_plain_string():
     """Test extension-defaults set with plain string (non-JSON) value."""
-    with PlanContext() as ctx:
+    with PlanContext():
         run_script(SCRIPT_PATH, 'init')
 
         result = run_script(SCRIPT_PATH, 'extension-defaults', 'set',
@@ -1221,7 +1192,6 @@ def test_ext_defaults_set_plain_string():
 
 def test_ext_defaults_get_existing():
     """Test extension-defaults get returns existing value."""
-    import json
     with PlanContext() as ctx:
         plan_dir = ctx.fixture_dir / PLAN_DIR_NAME
         plan_dir.mkdir(parents=True)
@@ -1247,7 +1217,7 @@ def test_ext_defaults_get_existing():
 
 def test_ext_defaults_get_nonexistent():
     """Test extension-defaults get returns exists=false for missing key."""
-    with PlanContext() as ctx:
+    with PlanContext():
         run_script(SCRIPT_PATH, 'init')
 
         result = run_script(SCRIPT_PATH, 'extension-defaults', 'get',
@@ -1262,7 +1232,7 @@ def test_ext_defaults_get_nonexistent():
 
 def test_ext_defaults_set_default_adds_new():
     """Test extension-defaults set-default adds value when key doesn't exist."""
-    with PlanContext() as ctx:
+    with PlanContext():
         run_script(SCRIPT_PATH, 'init')
 
         result = run_script(SCRIPT_PATH, 'extension-defaults', 'set-default',
@@ -1277,7 +1247,6 @@ def test_ext_defaults_set_default_adds_new():
 
 def test_ext_defaults_set_default_skips_existing():
     """Test extension-defaults set-default skips when key already exists (write-once)."""
-    import json
     with PlanContext() as ctx:
         plan_dir = ctx.fixture_dir / PLAN_DIR_NAME
         plan_dir.mkdir(parents=True)
@@ -1308,7 +1277,6 @@ def test_ext_defaults_set_default_skips_existing():
 
 def test_ext_defaults_list_all():
     """Test extension-defaults list returns all extension defaults."""
-    import json
     with PlanContext() as ctx:
         plan_dir = ctx.fixture_dir / PLAN_DIR_NAME
         plan_dir.mkdir(parents=True)
@@ -1335,7 +1303,7 @@ def test_ext_defaults_list_all():
 
 def test_ext_defaults_list_empty():
     """Test extension-defaults list with empty extension_defaults."""
-    with PlanContext() as ctx:
+    with PlanContext():
         run_script(SCRIPT_PATH, 'init')
 
         result = run_script(SCRIPT_PATH, 'extension-defaults', 'list')
@@ -1348,7 +1316,6 @@ def test_ext_defaults_list_empty():
 
 def test_ext_defaults_remove_existing():
     """Test extension-defaults remove removes existing key."""
-    import json
     with PlanContext() as ctx:
         plan_dir = ctx.fixture_dir / PLAN_DIR_NAME
         plan_dir.mkdir(parents=True)
@@ -1379,7 +1346,7 @@ def test_ext_defaults_remove_existing():
 
 def test_ext_defaults_remove_nonexistent_skips():
     """Test extension-defaults remove skips non-existent key."""
-    with PlanContext() as ctx:
+    with PlanContext():
         run_script(SCRIPT_PATH, 'init')
 
         result = run_script(SCRIPT_PATH, 'extension-defaults', 'remove',

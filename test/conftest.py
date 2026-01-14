@@ -344,7 +344,7 @@ class ScriptTestCase(TestCase):
 # Pytest Fixtures
 # =============================================================================
 
-import pytest
+import pytest  # noqa: E402
 
 
 @pytest.fixture

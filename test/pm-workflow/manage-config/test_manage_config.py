@@ -16,7 +16,7 @@ from conftest import PlanContext, get_script_path, run_script
 SCRIPT_PATH = get_script_path('pm-workflow', 'manage-config', 'manage-config.py')
 
 # Import toon_parser - conftest sets up PYTHONPATH
-from toon_parser import parse_toon  # type: ignore[import-not-found]
+from toon_parser import parse_toon  # type: ignore[import-not-found]  # noqa: E402
 
 # Alias for backward compatibility
 TestContext = PlanContext
@@ -83,8 +83,8 @@ def test_create_config_with_all_options():
         assert result.success, f"Script failed: {result.stderr}"
         data = parse_toon(result.stdout)
         assert data['config']['commit_strategy'] == 'per_plan'
-        assert data['config']['create_pr'] == False
-        assert data['config']['verification_required'] == True
+        assert data['config']['create_pr'] is False
+        assert data['config']['verification_required'] is True
         assert data['config']['verification_command'] == '/pm-dev-builder:builder-build-and-fix'
         assert data['config']['branch_strategy'] == 'direct'
 

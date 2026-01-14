@@ -386,7 +386,7 @@ def generate_wildcard(parsed_permissions: list[dict]) -> str:
     perm_type = first["type"]
     base_name = first["base_name"]
     extension = first["extension"]
-    path_prefixes = set(p["path_prefix"] for p in parsed_permissions)
+    path_prefixes = {p["path_prefix"] for p in parsed_permissions}
 
     if len(path_prefixes) == 1:
         path_prefix = first["path_prefix"]
@@ -418,7 +418,7 @@ def cmd_consolidate(args) -> int:
     wildcards_to_add = []
     permissions_to_remove = []
 
-    for key, group in timestamped_groups.items():
+    for _key, group in timestamped_groups.items():
         if len(group) >= 1:
             wildcard = generate_wildcard(group)
             wildcards_to_add.append(wildcard)

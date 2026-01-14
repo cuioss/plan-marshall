@@ -138,7 +138,7 @@ def test_multiple_entries():
 
 def test_read_work_log():
     """Test read subcommand returns work log entries."""
-    with PlanContext(plan_id='log-read-work') as ctx:
+    with PlanContext(plan_id='log-read-work'):
         # Write some entries first
         run_script(SCRIPT_PATH, 'work', 'log-read-work', 'INFO', 'Test entry one')
         run_script(SCRIPT_PATH, 'work', 'log-read-work', 'INFO', 'Test entry two')
@@ -154,7 +154,7 @@ def test_read_work_log():
 
 def test_read_work_log_with_limit():
     """Test read subcommand with --limit returns limited entries."""
-    with PlanContext(plan_id='log-read-limit') as ctx:
+    with PlanContext(plan_id='log-read-limit'):
         # Write multiple entries
         run_script(SCRIPT_PATH, 'work', 'log-read-limit', 'INFO', 'Entry 1')
         run_script(SCRIPT_PATH, 'work', 'log-read-limit', 'INFO', 'Entry 2')
@@ -174,7 +174,7 @@ def test_read_work_log_with_limit():
 
 def test_read_empty_log():
     """Test read subcommand on plan with no log entries."""
-    with PlanContext(plan_id='log-read-empty') as ctx:
+    with PlanContext(plan_id='log-read-empty'):
         result = run_script(SCRIPT_PATH, 'read', '--plan-id', 'log-read-empty', '--type', 'work')
         assert result.success, f"Read failed: {result.stderr}"
         assert 'status: success' in result.stdout
@@ -183,7 +183,7 @@ def test_read_empty_log():
 
 def test_read_script_log():
     """Test read subcommand for script type logs."""
-    with PlanContext(plan_id='log-read-script') as ctx:
+    with PlanContext(plan_id='log-read-script'):
         # Write script log entry
         run_script(SCRIPT_PATH, 'script', 'log-read-script', 'INFO', 'test:skill:script (0.1s)')
 

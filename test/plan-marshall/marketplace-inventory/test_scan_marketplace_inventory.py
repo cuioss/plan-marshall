@@ -208,7 +208,7 @@ def test_default_produces_valid_json():
     try:
         parse_json(result.stdout)
     except Exception as e:
-        raise AssertionError(f"Default mode should produce valid JSON: {e}")
+        raise AssertionError(f"Default mode should produce valid JSON: {e}") from e
 
 
 def test_with_descriptions_produces_valid_json():
@@ -219,7 +219,7 @@ def test_with_descriptions_produces_valid_json():
     try:
         parse_json(result.stdout)
     except Exception as e:
-        raise AssertionError(f"With descriptions should produce valid JSON: {e}")
+        raise AssertionError(f"With descriptions should produce valid JSON: {e}") from e
 
 
 def test_filtered_produces_valid_json():
@@ -230,7 +230,7 @@ def test_filtered_produces_valid_json():
     try:
         parse_json(result.stdout)
     except Exception as e:
-        raise AssertionError(f"Filtered mode should produce valid JSON: {e}")
+        raise AssertionError(f"Filtered mode should produce valid JSON: {e}") from e
 
 
 # =============================================================================
@@ -270,7 +270,7 @@ def test_script_count_matches_filesystem():
         text=True
     )
     # Filter out underscore-prefixed files (private modules per PEP 8)
-    all_files = [l for l in find_result.stdout.strip().split('\n') if l]
+    all_files = [line for line in find_result.stdout.strip().split('\n') if line]
     public_files = [f for f in all_files if not Path(f).name.startswith('_')]
     expected_count = len(public_files)
 

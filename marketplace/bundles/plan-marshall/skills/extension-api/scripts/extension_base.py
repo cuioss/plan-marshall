@@ -265,7 +265,7 @@ class ExtensionBase(ABC):
     # Configuration Callback (override to set project defaults)
     # =========================================================================
 
-    def config_defaults(self, project_root: str) -> None:
+    def config_defaults(self, project_root: str) -> None:  # noqa: B027
         """Configure project-specific defaults in run-configuration.json.
 
         Called by marshall-steward during initialization, after extension loading

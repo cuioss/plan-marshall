@@ -11,13 +11,18 @@ ALWAYS_FIXABLE_TYPES = ["javadoc_warning", "compilation_error", "deprecation_war
 
 def match_pattern(message: str, pattern: str) -> bool:
     """Check if message matches pattern."""
-    if message == pattern: return True
-    if pattern.endswith("*") and message.startswith(pattern[:-1]): return True
-    if pattern.startswith("*") and pattern.endswith("*") and pattern[1:-1] in message: return True
-    if pattern.startswith("*") and message.endswith(pattern[1:]): return True
+    if message == pattern:
+        return True
+    if pattern.endswith("*") and message.startswith(pattern[:-1]):
+        return True
+    if pattern.startswith("*") and pattern.endswith("*") and pattern[1:-1] in message:
+        return True
+    if pattern.startswith("*") and message.endswith(pattern[1:]):
+        return True
     if pattern.startswith("^"):
         try:
-            if re.match(pattern, message): return True
+            if re.match(pattern, message):
+                return True
         except re.error:
             pass
     return False

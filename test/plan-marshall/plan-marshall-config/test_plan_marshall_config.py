@@ -104,7 +104,7 @@ def test_get_workflow_skills():
 
 def test_error_without_marshal_json():
     """Test operations fail gracefully without marshal.json."""
-    with PlanContext() as ctx:
+    with PlanContext():
         # Don't create marshal.json
 
         result = run_script(SCRIPT_PATH, 'skill-domains', 'list')

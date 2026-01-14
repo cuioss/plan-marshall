@@ -23,11 +23,11 @@ EXTENSION_DIR = PROJECT_ROOT / "marketplace" / "bundles" / "pm-dev-java" / "skil
 sys.path.insert(0, str(EXTENSION_DIR))
 
 # Direct imports - conftest sets up PYTHONPATH for cross-skill imports
-from _architecture_core import save_derived_data
-from _cmd_client import get_module_graph
-from extension import Extension
+from _architecture_core import save_derived_data  # noqa: E402
+from _cmd_client import get_module_graph  # noqa: E402
+from extension import Extension  # noqa: E402
 
-from integration_common import (
+from integration_common import (  # noqa: E402
     INTEGRATION_TEST_OUTPUT_DIR,
     IntegrationContext,
     ProjectFixture,

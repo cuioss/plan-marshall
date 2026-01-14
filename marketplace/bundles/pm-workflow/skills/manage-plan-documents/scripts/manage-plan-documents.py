@@ -381,7 +381,7 @@ def cmd_update(doc_type: str, args) -> int:
     section_found = False
     section_heading = f"## {section.replace('_', ' ').title()}"
 
-    for i, line in enumerate(lines):
+    for line in lines:
         if line.lower().startswith('## '):
             current_heading = line[3:].strip().lower().replace(' ', '_')
             if current_heading == section:

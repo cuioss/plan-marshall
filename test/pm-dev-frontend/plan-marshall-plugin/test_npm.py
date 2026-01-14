@@ -13,7 +13,7 @@ from conftest import BuildContext, get_script_path
 SCRIPT_PATH = get_script_path('pm-dev-frontend', 'plan-marshall-plugin', 'npm.py')
 
 # Import modules under test (PYTHONPATH set by conftest)
-from npm import detect_command_type, execute_direct, get_bash_timeout
+from npm import detect_command_type, execute_direct, get_bash_timeout  # noqa: E402
 
 # =============================================================================
 # Test: API functions (via import)

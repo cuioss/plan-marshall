@@ -513,7 +513,7 @@ def validate_extension(extension_path: Path, deep: bool = True) -> dict[str, Any
                     # Validate skill references
                     if marketplace_root:
                         ref_issues = validate_skill_references(domains, marketplace_root)
-                        for issue in ref_issues:
+                        if ref_issues:
                             result['valid'] = False
                         issues.extend(ref_issues)
 
@@ -527,7 +527,7 @@ def validate_extension(extension_path: Path, deep: bool = True) -> dict[str, Any
             # Validate provides_triage() and provides_outline() references
             if marketplace_root:
                 triage_outline_issues = validate_triage_outline_references(module, marketplace_root)
-                for issue in triage_outline_issues:
+                if triage_outline_issues:
                     result['valid'] = False
                 issues.extend(triage_outline_issues)
 

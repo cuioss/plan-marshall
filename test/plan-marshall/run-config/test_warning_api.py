@@ -52,7 +52,7 @@ def test_warning_add_creates_entry():
 
 def test_warning_add_skips_duplicate():
     """Test warning add skips duplicate pattern."""
-    with PlanContext() as ctx:
+    with PlanContext() as _:
         run_script(SCRIPT_PATH, 'init')
 
         # Add same pattern twice
@@ -74,7 +74,7 @@ def test_warning_add_skips_duplicate():
 
 def test_warning_add_invalid_category():
     """Test warning add rejects invalid category."""
-    with PlanContext() as ctx:
+    with PlanContext() as _:
         run_script(SCRIPT_PATH, 'init')
 
         result = run_script(
@@ -93,7 +93,7 @@ def test_warning_add_invalid_category():
 
 def test_warning_list_all_categories():
     """Test warning list returns all categories."""
-    with PlanContext() as ctx:
+    with PlanContext() as _:
         run_script(SCRIPT_PATH, 'init')
 
         # Add patterns to different categories
@@ -123,7 +123,7 @@ def test_warning_list_all_categories():
 
 def test_warning_list_single_category():
     """Test warning list with --category filter."""
-    with PlanContext() as ctx:
+    with PlanContext() as _:
         run_script(SCRIPT_PATH, 'init')
 
         run_script(
@@ -146,7 +146,7 @@ def test_warning_list_single_category():
 
 def test_warning_list_empty():
     """Test warning list on empty config."""
-    with PlanContext() as ctx:
+    with PlanContext() as _:
         run_script(SCRIPT_PATH, 'init')
 
         result = run_script(
@@ -192,7 +192,7 @@ def test_warning_remove_existing():
 
 def test_warning_remove_nonexistent():
     """Test warning remove skips non-existent pattern."""
-    with PlanContext() as ctx:
+    with PlanContext() as _:
         run_script(SCRIPT_PATH, 'init')
 
         result = run_script(

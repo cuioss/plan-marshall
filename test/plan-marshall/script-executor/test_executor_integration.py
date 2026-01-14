@@ -389,7 +389,7 @@ def test_log_format_error_multi_line():
 
     # Error entries should span multiple lines
     lines = log_content.strip().split('\n')
-    error_lines = [l for l in lines if 'pm-workflow:manage-config' in l or l.startswith('  ')]
+    error_lines = [line for line in lines if 'pm-workflow:manage-config' in line or line.startswith('  ')]
 
     # Should have at least the main entry line + args line
     assert len(error_lines) >= 2, f"Expected multi-line error entry, got: {error_lines}"
@@ -398,7 +398,7 @@ def test_log_format_error_multi_line():
     assert '[ERROR]' in error_lines[0], f"First line should have [ERROR]: {error_lines[0]}"
 
     # Should have indented detail lines
-    indented_lines = [l for l in error_lines if l.startswith('  ')]
+    indented_lines = [line for line in error_lines if line.startswith('  ')]
     assert len(indented_lines) >= 1, f"Expected indented detail lines: {error_lines}"
 
 

@@ -171,7 +171,7 @@ def test_api_init_missing_derived():
 def test_api_get_derived_returns_data():
     """api_get_derived returns derived data."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        test_data = create_test_derived_data(tmpdir)
+        create_test_derived_data(tmpdir)
 
         result = api_get_derived(tmpdir)
 

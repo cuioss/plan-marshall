@@ -6,9 +6,6 @@ projects in the local git directory.
 """
 
 import json
-import os
-import shutil
-from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -233,7 +230,6 @@ def assert_npm_module_structure(modules: list[dict]) -> list[str]:
             if not isinstance(dep, str):
                 errors.append(f"{name}: dependency should be string, got {type(dep).__name__}")
                 continue
-            parts = dep.split(":")
             # npm dependencies: name:scope (scoped packages like @org/pkg count as one name part)
             # Split from right to handle scoped packages: "@testing-library/dom:test" -> ["@testing-library/dom", "test"]
             if dep.count(":") < 1:

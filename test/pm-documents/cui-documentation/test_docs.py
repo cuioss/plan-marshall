@@ -308,7 +308,7 @@ def test_classify_links_with_files():
         output_file = Path(f.name)
 
     try:
-        result = run_script(
+        run_script(
             SCRIPT_PATH, 'classify-links',
             '--input', str(input_file),
             '--output', str(output_file),
@@ -382,7 +382,7 @@ Used by thousands of companies worldwide.
         output_file = Path(f.name)
 
     try:
-        result = run_script(
+        run_script(
             SCRIPT_PATH, 'analyze-tone',
             '--file', str(sample_file),
             '--output', str(output_file),

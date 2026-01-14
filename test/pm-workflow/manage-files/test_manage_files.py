@@ -14,7 +14,7 @@ from conftest import PlanContext, get_script_path, get_test_fixture_dir, run_scr
 SCRIPT_PATH = get_script_path('pm-workflow', 'manage-files', 'manage-files.py')
 
 # Import toon_parser - conftest sets up PYTHONPATH
-from toon_parser import parse_toon  # type: ignore[import-not-found]
+from toon_parser import parse_toon  # type: ignore[import-not-found]  # noqa: E402
 
 # Alias for backward compatibility
 TestContext = PlanContext
@@ -269,7 +269,7 @@ def test_delete_plan_success():
 
 def test_delete_plan_not_found():
     """Test deleting a plan that doesn't exist."""
-    with EmptyPlanContext() as ctx:
+    with EmptyPlanContext():
         result = run_script(SCRIPT_PATH, 'delete-plan',
             '--plan-id', 'nonexistent-plan'
         )

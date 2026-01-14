@@ -11,7 +11,8 @@ def find_settings_file(root: Path) -> Path | None:
     """Find settings.gradle or settings.gradle.kts."""
     for name in ["settings.gradle.kts", "settings.gradle"]:
         settings_path = root / name
-        if settings_path.exists(): return settings_path
+        if settings_path.exists():
+            return settings_path
     return None
 
 

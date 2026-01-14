@@ -209,7 +209,7 @@ def _validate_skills_for_technology(skills_by_profile: dict, technology: str) ->
         return warnings  # Unknown technology, skip validation
 
     # Check each skill
-    for profile, skills in skills_by_profile.items():
+    for _profile, skills in skills_by_profile.items():
         for skill in skills:
             # Check if skill matches expected patterns
             matches = any(skill.startswith(pattern) for pattern in expected_patterns)

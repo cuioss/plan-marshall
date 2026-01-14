@@ -67,7 +67,7 @@ def _extract_issues(content: str) -> list[Issue]:
     collecting_stack = False
     stack_lines = []
 
-    for i, line in enumerate(lines):
+    for _i, line in enumerate(lines):
         # Check for FAIL marker
         fail_match = FAIL_PATTERN.match(line)
         if fail_match:
@@ -94,7 +94,7 @@ def _extract_issues(content: str) -> list[Issue]:
                 stack_lines.append(line)
             elif not stripped:
                 # Empty line might end the stack trace
-                if stack_lines and any("at " in l for l in stack_lines) and current_test:
+                if stack_lines and any("at " in sl for sl in stack_lines) and current_test:
                     _add_issue(issues, current_file, current_test, stack_lines)
                     stack_lines = []
                     collecting_stack = False

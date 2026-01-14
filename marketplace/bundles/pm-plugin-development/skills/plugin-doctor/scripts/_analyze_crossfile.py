@@ -163,7 +163,7 @@ def find_similarity_candidates(
         if section1.get('content_hash') in exact_hashes:
             continue
 
-        for j, section2 in enumerate(all_sections[i + 1:], i + 1):
+        for _j, section2 in enumerate(all_sections[i + 1:], i + 1):
             if section1['file'] == section2['file']:
                 continue
 
@@ -252,7 +252,7 @@ def extract_terminology(all_sections: list[dict]) -> dict[str, dict[str, int]]:
         file_path = section['file']
         text = section.get('text', '')
 
-        for term_type, pattern in TERM_PATTERNS.items():
+        for _term_type, pattern in TERM_PATTERNS.items():
             matches = re.findall(pattern, text, re.MULTILINE)
             for match in matches:
                 term = match.strip().lower()

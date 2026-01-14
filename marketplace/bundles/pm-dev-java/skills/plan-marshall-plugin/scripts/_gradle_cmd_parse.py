@@ -36,17 +36,23 @@ UNCHECKED_PATTERNS = [r"\[unchecked\]", r"unchecked conversion", r"unchecked cal
 def categorize_line(line: str) -> str | None:
     """Categorize a log line by issue type."""
     for pattern in COMPILATION_PATTERNS:
-        if re.search(pattern, line, re.IGNORECASE): return "compilation_error"
+        if re.search(pattern, line, re.IGNORECASE):
+            return "compilation_error"
     for pattern in TEST_FAILURE_PATTERNS:
-        if re.search(pattern, line, re.IGNORECASE): return "test_failure"
+        if re.search(pattern, line, re.IGNORECASE):
+            return "test_failure"
     for pattern in DEPENDENCY_PATTERNS:
-        if re.search(pattern, line, re.IGNORECASE): return "dependency_error"
+        if re.search(pattern, line, re.IGNORECASE):
+            return "dependency_error"
     for pattern in JAVADOC_PATTERNS:
-        if re.search(pattern, line, re.IGNORECASE): return "javadoc_warning"
+        if re.search(pattern, line, re.IGNORECASE):
+            return "javadoc_warning"
     for pattern in DEPRECATION_PATTERNS:
-        if re.search(pattern, line, re.IGNORECASE): return "deprecation_warning"
+        if re.search(pattern, line, re.IGNORECASE):
+            return "deprecation_warning"
     for pattern in UNCHECKED_PATTERNS:
-        if re.search(pattern, line, re.IGNORECASE): return "unchecked_warning"
+        if re.search(pattern, line, re.IGNORECASE):
+            return "unchecked_warning"
     return None
 
 
@@ -61,8 +67,10 @@ def extract_file_location(line: str) -> tuple[str, int, int]:
 def parse_build_status(lines: list[str]) -> str:
     """Determine overall build status from log lines."""
     for line in reversed(lines[-50:]):
-        if "BUILD SUCCESSFUL" in line: return "SUCCESS"
-        if "BUILD FAILED" in line: return "FAILURE"
+        if "BUILD SUCCESSFUL" in line:
+            return "SUCCESS"
+        if "BUILD FAILED" in line:
+            return "FAILURE"
     return "UNKNOWN"
 
 
@@ -75,7 +83,8 @@ def parse_metrics(lines: list[str]) -> dict:
             hours, minutes, seconds = int(duration_match.group(1) or 0), int(duration_match.group(2) or 0), int(duration_match.group(3) or 0)
             metrics["duration_ms"] = (hours * 3600 + minutes * 60 + seconds) * 1000
         tasks_match = re.search(r"(\d+) actionable tasks?: (\d+) executed", line)
-        if tasks_match: metrics["tasks_executed"] = int(tasks_match.group(2))
+        if tasks_match:
+            metrics["tasks_executed"] = int(tasks_match.group(2))
         test_match = re.search(r"(\d+) tests? completed(?:, (\d+) failed)?(?:, (\d+) skipped)?", line)
         if test_match:
             metrics["tests_run"] = int(test_match.group(1))
@@ -225,7 +234,8 @@ def cmd_parse(args):
             file_path, file_line, file_col = extract_file_location(line)
             message = line.strip()
             dedup_key = f"{issue_type}:{file_path}:{file_line}:{message[:100]}"
-            if dedup_key in seen: continue
+            if dedup_key in seen:
+                continue
             seen.add(dedup_key)
             severity = "ERROR" if "error" in issue_type else "WARNING"
             issues.append({"type": issue_type, "file": file_path, "line": file_line, "column": file_col, "message": message[:500], "severity": severity, "log_line": line_num})

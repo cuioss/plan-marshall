@@ -76,11 +76,9 @@ def cmd_step_done(args) -> int:
 
     steps = task.get('steps', [])
     step_found = None
-    step_index = -1
-    for i, step in enumerate(steps):
+    for step in steps:
         if step['number'] == args.step:
             step_found = step
-            step_index = i
             break
 
     if not step_found:
