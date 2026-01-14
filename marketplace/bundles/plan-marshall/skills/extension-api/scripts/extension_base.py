@@ -26,7 +26,6 @@ Usage:
 """
 
 from abc import ABC, abstractmethod
-from pathlib import Path
 
 # Re-export module discovery utilities from private implementation
 from _build_discover import (  # noqa: F401
@@ -38,7 +37,6 @@ from _build_discover import (  # noqa: F401
     discover_descriptors,
     find_readme,
 )
-
 
 # =============================================================================
 # Canonical Command Constants
