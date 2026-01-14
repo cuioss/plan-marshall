@@ -26,13 +26,9 @@ def create_run_config(fixture_dir: Path, config: dict | None = None) -> Path:
     """
     if config is None:
         config = {
-            "version": 1,
-            "commands": {},
-            "ci": {
-                "git_present": True,
-                "authenticated_tools": ["git", "gh"],
-                "verified_at": "2025-01-15T10:30:00Z"
-            }
+            'version': 1,
+            'commands': {},
+            'ci': {'git_present': True, 'authenticated_tools': ['git', 'gh'], 'verified_at': '2025-01-15T10:30:00Z'},
         }
     run_config_path = fixture_dir / 'run-configuration.json'
     run_config_path.write_text(json.dumps(config, indent=2))
@@ -46,63 +42,52 @@ def create_marshal_json(fixture_dir: Path, config: dict | None = None) -> Path:
     """
     if config is None:
         config = {
-            "skill_domains": {
-                "java": {
-                    "defaults": ["pm-dev-java:java-core"],
-                    "optionals": ["pm-dev-java:java-cdi"]
-                },
-                "java-testing": {
-                    "defaults": ["pm-dev-java:junit-core"],
-                    "optionals": []
-                }
+            'skill_domains': {
+                'java': {'defaults': ['pm-dev-java:java-core'], 'optionals': ['pm-dev-java:java-cdi']},
+                'java-testing': {'defaults': ['pm-dev-java:junit-core'], 'optionals': []},
             },
-            "module_config": {
-                "default": {
-                    "commands": {
-                        "test": "python3 .plan/execute-script.py plan-marshall:build-operations:maven run --targets \"clean test\"",
-                        "verify": "python3 .plan/execute-script.py plan-marshall:build-operations:maven run --targets \"clean verify\""
+            'module_config': {
+                'default': {
+                    'commands': {
+                        'test': 'python3 .plan/execute-script.py plan-marshall:build-operations:maven run --targets "clean test"',
+                        'verify': 'python3 .plan/execute-script.py plan-marshall:build-operations:maven run --targets "clean verify"',
                     }
                 },
-                "my-ui": {
-                    "commands": {
-                        "test": "python3 .plan/execute-script.py plan-marshall:build-operations:npm execute --command \"run test\"",
-                        "build": "python3 .plan/execute-script.py plan-marshall:build-operations:npm execute --command \"run build\""
+                'my-ui': {
+                    'commands': {
+                        'test': 'python3 .plan/execute-script.py plan-marshall:build-operations:npm execute --command "run test"',
+                        'build': 'python3 .plan/execute-script.py plan-marshall:build-operations:npm execute --command "run build"',
                     }
+                },
+            },
+            'system': {
+                'retention': {'logs_days': 1, 'archived_plans_days': 5, 'memory_days': 5, 'temp_on_maintenance': True}
+            },
+            'plan': {
+                'defaults': {
+                    'compatibility': 'deprecations',
+                    'commit_strategy': 'phase-specific',
+                    'create_pr': False,
+                    'verification_required': True,
+                    'branch_strategy': 'direct',
                 }
             },
-            "system": {
-                "retention": {
-                    "logs_days": 1,
-                    "archived_plans_days": 5,
-                    "memory_days": 5,
-                    "temp_on_maintenance": True
-                }
+            'ci': {
+                'repo_url': 'https://github.com/test/repo',
+                'provider': 'github',
+                'detected_at': '2025-01-15T10:30:00Z',
             },
-            "plan": {
-                "defaults": {
-                    "compatibility": "deprecations",
-                    "commit_strategy": "phase-specific",
-                    "create_pr": False,
-                    "verification_required": True,
-                    "branch_strategy": "direct"
-                }
-            },
-            "ci": {
-                "repo_url": "https://github.com/test/repo",
-                "provider": "github",
-                "detected_at": "2025-01-15T10:30:00Z"
-            }
         }
     marshal_path = fixture_dir / 'marshal.json'
     marshal_path.write_text(json.dumps(config, indent=2))
 
     # Also create raw-project-data.json with module facts (source of truth)
     raw_data = {
-        "project": {"name": "test-project"},
-        "modules": [
-            {"name": "my-core", "path": "my-core", "parent": None, "build_systems": ["maven"], "packaging": "jar"},
-            {"name": "my-ui", "path": "my-ui", "parent": None, "build_systems": ["maven", "npm"], "packaging": "war"}
-        ]
+        'project': {'name': 'test-project'},
+        'modules': [
+            {'name': 'my-core', 'path': 'my-core', 'parent': None, 'build_systems': ['maven'], 'packaging': 'jar'},
+            {'name': 'my-ui', 'path': 'my-ui', 'parent': None, 'build_systems': ['maven', 'npm'], 'packaging': 'war'},
+        ],
     }
     raw_data_path = fixture_dir / 'raw-project-data.json'
     raw_data_path.write_text(json.dumps(raw_data, indent=2))
@@ -121,67 +106,56 @@ def create_nested_marshal_json(fixture_dir: Path) -> Path:
     in marshal.json - they are loaded from extension.py at runtime.
     """
     config = {
-        "skill_domains": {
-            "system": {
-                "defaults": ["plan-marshall:general-development-rules"],
-                "optionals": ["plan-marshall:diagnostic-patterns"],
-                "workflow_skills": {
-                    "1-init": "pm-workflow:phase-1-init",
-                    "2-outline": "pm-workflow:phase-2-outline",
-                    "3-plan": "pm-workflow:phase-3-plan",
-                    "4-execute": "pm-workflow:phase-4-execute",
-                    "5-finalize": "pm-workflow:phase-5-finalize"
+        'skill_domains': {
+            'system': {
+                'defaults': ['plan-marshall:general-development-rules'],
+                'optionals': ['plan-marshall:diagnostic-patterns'],
+                'workflow_skills': {
+                    '1-init': 'pm-workflow:phase-1-init',
+                    '2-outline': 'pm-workflow:phase-2-outline',
+                    '3-plan': 'pm-workflow:phase-3-plan',
+                    '4-execute': 'pm-workflow:phase-4-execute',
+                    '5-finalize': 'pm-workflow:phase-5-finalize',
                 },
-                "task_executors": {
-                    "implementation": "pm-workflow:task-implementation",
-                    "module_testing": "pm-workflow:task-module_testing",
-                    "integration_testing": "pm-workflow:task-integration_testing"
-                }
+                'task_executors': {
+                    'implementation': 'pm-workflow:task-implementation',
+                    'module_testing': 'pm-workflow:task-module_testing',
+                    'integration_testing': 'pm-workflow:task-integration_testing',
+                },
             },
-            "java": {
-                "bundle": "pm-dev-java",
-                "workflow_skill_extensions": {
-                    "outline": "pm-dev-java:ext-outline-java",
-                    "triage": "pm-dev-java:ext-triage-java"
-                }
+            'java': {
+                'bundle': 'pm-dev-java',
+                'workflow_skill_extensions': {
+                    'outline': 'pm-dev-java:ext-outline-java',
+                    'triage': 'pm-dev-java:ext-triage-java',
+                },
             },
-            "javascript": {
-                "bundle": "pm-dev-frontend",
-                "workflow_skill_extensions": {
-                    "outline": "pm-dev-frontend:ext-outline-frontend"
-                }
+            'javascript': {
+                'bundle': 'pm-dev-frontend',
+                'workflow_skill_extensions': {'outline': 'pm-dev-frontend:ext-outline-frontend'},
             },
-            "plan-marshall-plugin-dev": {
-                "bundle": "pm-plugin-development",
-                "workflow_skill_extensions": {
-                    "outline": "pm-plugin-development:ext-outline-plugin",
-                    "triage": "pm-plugin-development:ext-triage-plugin"
-                }
+            'plan-marshall-plugin-dev': {
+                'bundle': 'pm-plugin-development',
+                'workflow_skill_extensions': {
+                    'outline': 'pm-plugin-development:ext-outline-plugin',
+                    'triage': 'pm-plugin-development:ext-triage-plugin',
+                },
+            },
+        },
+        'modules': {},
+        'system': {
+            'retention': {'logs_days': 1, 'archived_plans_days': 5, 'memory_days': 5, 'temp_on_maintenance': True}
+        },
+        'plan': {
+            'defaults': {
+                'compatibility': 'breaking',
+                'commit_strategy': 'phase-specific',
+                'create_pr': False,
+                'verification_required': True,
+                'branch_strategy': 'direct',
             }
         },
-        "modules": {},
-        "system": {
-            "retention": {
-                "logs_days": 1,
-                "archived_plans_days": 5,
-                "memory_days": 5,
-                "temp_on_maintenance": True
-            }
-        },
-        "plan": {
-            "defaults": {
-                "compatibility": "breaking",
-                "commit_strategy": "phase-specific",
-                "create_pr": False,
-                "verification_required": True,
-                "branch_strategy": "direct"
-            }
-        },
-        "ci": {
-            "repo_url": None,
-            "provider": "unknown",
-            "detected_at": None
-        }
+        'ci': {'repo_url': None, 'provider': 'unknown', 'detected_at': None},
     }
     marshal_path = fixture_dir / 'marshal.json'
     marshal_path.write_text(json.dumps(config, indent=2))

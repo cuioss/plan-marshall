@@ -22,6 +22,7 @@ SCRIPT_PATH = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'marketplace-sync'
 # Tests for generate-wildcards subcommand
 # =============================================================================
 
+
 class TestGenerateWildcards(ScriptTestCase):
     """Test marketplace-sync.py generate-wildcards subcommand."""
 
@@ -32,20 +33,16 @@ class TestGenerateWildcards(ScriptTestCase):
     def test_generates_skill_wildcards(self):
         """Should generate Skill() wildcards from inventory."""
         inventory = {
-            "bundles": [
+            'bundles': [
                 {
-                    "name": "builder",
-                    "skills": [{"name": "builder-gradle-rules"}, {"name": "builder-maven-rules"}],
-                    "commands": []
+                    'name': 'builder',
+                    'skills': [{'name': 'builder-gradle-rules'}, {'name': 'builder-maven-rules'}],
+                    'commands': [],
                 }
             ]
         }
 
-        result = run_script(
-            SCRIPT_PATH,
-            'generate-wildcards',
-            input_data=json.dumps(inventory)
-        )
+        result = run_script(SCRIPT_PATH, 'generate-wildcards', input_data=json.dumps(inventory))
         self.assert_success(result)
         data = result.json()
 
@@ -56,20 +53,12 @@ class TestGenerateWildcards(ScriptTestCase):
     def test_generates_command_wildcards(self):
         """Should generate SlashCommand() wildcards from inventory."""
         inventory = {
-            "bundles": [
-                {
-                    "name": "pm-workflow",
-                    "skills": [],
-                    "commands": [{"name": "plan-manage"}, {"name": "task-implement"}]
-                }
+            'bundles': [
+                {'name': 'pm-workflow', 'skills': [], 'commands': [{'name': 'plan-manage'}, {'name': 'task-implement'}]}
             ]
         }
 
-        result = run_script(
-            SCRIPT_PATH,
-            'generate-wildcards',
-            input_data=json.dumps(inventory)
-        )
+        result = run_script(SCRIPT_PATH, 'generate-wildcards', input_data=json.dumps(inventory))
         self.assert_success(result)
         data = result.json()
 
@@ -80,20 +69,10 @@ class TestGenerateWildcards(ScriptTestCase):
     def test_includes_statistics(self):
         """Should include statistics in output."""
         inventory = {
-            "bundles": [
-                {
-                    "name": "test-bundle",
-                    "skills": [{"name": "skill1"}],
-                    "commands": [{"name": "cmd1"}]
-                }
-            ]
+            'bundles': [{'name': 'test-bundle', 'skills': [{'name': 'skill1'}], 'commands': [{'name': 'cmd1'}]}]
         }
 
-        result = run_script(
-            SCRIPT_PATH,
-            'generate-wildcards',
-            input_data=json.dumps(inventory)
-        )
+        result = run_script(SCRIPT_PATH, 'generate-wildcards', input_data=json.dumps(inventory))
         self.assert_success(result)
         data = result.json()
 
@@ -104,6 +83,7 @@ class TestGenerateWildcards(ScriptTestCase):
 # =============================================================================
 # Tests for executor pattern subcommands
 # =============================================================================
+
 
 class TestExecutorPattern(ScriptTestCase):
     """Test marketplace-sync.py executor pattern subcommands."""
@@ -117,20 +97,9 @@ class TestExecutorPattern(ScriptTestCase):
         claude_dir = self.temp_dir / '.claude'
         claude_dir.mkdir()
         settings_file = claude_dir / 'settings.json'
-        settings_file.write_text(json.dumps({
-            "permissions": {
-                "allow": ["Bash(git:*)"],
-                "deny": [],
-                "ask": []
-            }
-        }))
+        settings_file.write_text(json.dumps({'permissions': {'allow': ['Bash(git:*)'], 'deny': [], 'ask': []}}))
 
-        result = run_script(
-            SCRIPT_PATH,
-            'ensure-executor',
-            '--target', 'project',
-            cwd=self.temp_dir
-        )
+        result = run_script(SCRIPT_PATH, 'ensure-executor', '--target', 'project', cwd=self.temp_dir)
         self.assert_success(result)
         data = result.json()
 
@@ -145,20 +114,11 @@ class TestExecutorPattern(ScriptTestCase):
         claude_dir = self.temp_dir / '.claude'
         claude_dir.mkdir()
         settings_file = claude_dir / 'settings.json'
-        settings_file.write_text(json.dumps({
-            "permissions": {
-                "allow": ["Bash(python3 .plan/execute-script.py *)"],
-                "deny": [],
-                "ask": []
-            }
-        }))
-
-        result = run_script(
-            SCRIPT_PATH,
-            'ensure-executor',
-            '--target', 'project',
-            cwd=self.temp_dir
+        settings_file.write_text(
+            json.dumps({'permissions': {'allow': ['Bash(python3 .plan/execute-script.py *)'], 'deny': [], 'ask': []}})
         )
+
+        result = run_script(SCRIPT_PATH, 'ensure-executor', '--target', 'project', cwd=self.temp_dir)
         self.assert_success(result)
         data = result.json()
 
@@ -170,24 +130,23 @@ class TestExecutorPattern(ScriptTestCase):
         claude_dir = self.temp_dir / '.claude'
         claude_dir.mkdir()
         settings_file = claude_dir / 'settings.json'
-        settings_file.write_text(json.dumps({
-            "permissions": {
-                "allow": [
-                    "Bash(git:*)",
-                    "Bash(python3 /path/to/marketplace/bundles/test/skills/foo/scripts/*:*)",
-                    "Bash(python3 /path/to/marketplace/bundles/test/skills/bar/scripts/*:*)"
-                ],
-                "deny": [],
-                "ask": []
-            }
-        }))
-
-        result = run_script(
-            SCRIPT_PATH,
-            'cleanup-scripts',
-            '--target', 'project',
-            cwd=self.temp_dir
+        settings_file.write_text(
+            json.dumps(
+                {
+                    'permissions': {
+                        'allow': [
+                            'Bash(git:*)',
+                            'Bash(python3 /path/to/marketplace/bundles/test/skills/foo/scripts/*:*)',
+                            'Bash(python3 /path/to/marketplace/bundles/test/skills/bar/scripts/*:*)',
+                        ],
+                        'deny': [],
+                        'ask': [],
+                    }
+                }
+            )
         )
+
+        result = run_script(SCRIPT_PATH, 'cleanup-scripts', '--target', 'project', cwd=self.temp_dir)
         self.assert_success(result)
         data = result.json()
 
@@ -203,23 +162,22 @@ class TestExecutorPattern(ScriptTestCase):
         claude_dir = self.temp_dir / '.claude'
         claude_dir.mkdir()
         settings_file = claude_dir / 'settings.json'
-        settings_file.write_text(json.dumps({
-            "permissions": {
-                "allow": [
-                    "Bash(git:*)",
-                    "Bash(python3 /path/to/marketplace/bundles/test/skills/foo/scripts/*:*)"
-                ],
-                "deny": [],
-                "ask": []
-            }
-        }))
-
-        result = run_script(
-            SCRIPT_PATH,
-            'migrate-executor',
-            '--target', 'project',
-            cwd=self.temp_dir
+        settings_file.write_text(
+            json.dumps(
+                {
+                    'permissions': {
+                        'allow': [
+                            'Bash(git:*)',
+                            'Bash(python3 /path/to/marketplace/bundles/test/skills/foo/scripts/*:*)',
+                        ],
+                        'deny': [],
+                        'ask': [],
+                    }
+                }
+            )
         )
+
+        result = run_script(SCRIPT_PATH, 'migrate-executor', '--target', 'project', cwd=self.temp_dir)
         self.assert_success(result)
         data = result.json()
 
@@ -238,9 +196,10 @@ class TestExecutorPattern(ScriptTestCase):
 # Simple function-based tests for quick validation
 # =============================================================================
 
+
 def test_script_exists():
     """Verify the script exists."""
-    assert SCRIPT_PATH.exists(), f"Script not found: {SCRIPT_PATH}"
+    assert SCRIPT_PATH.exists(), f'Script not found: {SCRIPT_PATH}'
 
 
 def test_help_works():

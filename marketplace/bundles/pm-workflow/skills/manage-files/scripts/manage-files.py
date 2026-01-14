@@ -49,18 +49,18 @@ def get_plan_dir(plan_id: str) -> Path:
 def cmd_read(args):
     """Read file content from plan directory."""
     if not validate_plan_id(args.plan_id):
-        print(f"Error: Invalid plan_id format: {args.plan_id}", file=sys.stderr)
+        print(f'Error: Invalid plan_id format: {args.plan_id}', file=sys.stderr)
         sys.exit(1)
 
     if not validate_file_path(args.file):
-        print(f"Error: Invalid file path: {args.file}", file=sys.stderr)
+        print(f'Error: Invalid file path: {args.file}', file=sys.stderr)
         sys.exit(1)
 
     plan_dir = get_plan_dir(args.plan_id)
     file_path = plan_dir / args.file
 
     if not file_path.exists():
-        print(f"Error: File not found: {file_path}", file=sys.stderr)
+        print(f'Error: File not found: {file_path}', file=sys.stderr)
         sys.exit(1)
 
     print(file_path.read_text(encoding='utf-8'), end='')
@@ -69,11 +69,11 @@ def cmd_read(args):
 def cmd_write(args):
     """Write content to file in plan directory."""
     if not validate_plan_id(args.plan_id):
-        print(f"Error: Invalid plan_id format: {args.plan_id}", file=sys.stderr)
+        print(f'Error: Invalid plan_id format: {args.plan_id}', file=sys.stderr)
         sys.exit(1)
 
     if not validate_file_path(args.file):
-        print(f"Error: Invalid file path: {args.file}", file=sys.stderr)
+        print(f'Error: Invalid file path: {args.file}', file=sys.stderr)
         sys.exit(1)
 
     plan_dir = get_plan_dir(args.plan_id)
@@ -85,11 +85,11 @@ def cmd_write(args):
     elif args.content:
         content = args.content
     else:
-        print("Error: Must provide --content or --stdin", file=sys.stderr)
+        print('Error: Must provide --content or --stdin', file=sys.stderr)
         sys.exit(1)
 
     if not content:
-        print("Error: Content cannot be empty", file=sys.stderr)
+        print('Error: Content cannot be empty', file=sys.stderr)
         sys.exit(1)
 
     # Ensure plan directory exists
@@ -98,54 +98,54 @@ def cmd_write(args):
     # Write atomically
     atomic_write_file(file_path, content)
     log_entry('work', args.plan_id, 'INFO', f'[MANAGE-FILES] Created {args.file}')
-    print(f"Created: {file_path}", file=sys.stderr)
+    print(f'Created: {file_path}', file=sys.stderr)
 
 
 def cmd_remove(args):
     """Remove file from plan directory."""
     if not validate_plan_id(args.plan_id):
-        print(f"Error: Invalid plan_id format: {args.plan_id}", file=sys.stderr)
+        print(f'Error: Invalid plan_id format: {args.plan_id}', file=sys.stderr)
         sys.exit(1)
 
     if not validate_file_path(args.file):
-        print(f"Error: Invalid file path: {args.file}", file=sys.stderr)
+        print(f'Error: Invalid file path: {args.file}', file=sys.stderr)
         sys.exit(1)
 
     plan_dir = get_plan_dir(args.plan_id)
     file_path = plan_dir / args.file
 
     if not file_path.exists():
-        print(f"Error: File not found: {file_path}", file=sys.stderr)
+        print(f'Error: File not found: {file_path}', file=sys.stderr)
         sys.exit(1)
 
     file_path.unlink()
     log_entry('work', args.plan_id, 'INFO', f'[MANAGE-FILES] Removed {args.file}')
-    print(f"Removed: {file_path}", file=sys.stderr)
+    print(f'Removed: {file_path}', file=sys.stderr)
 
 
 def cmd_list(args):
     """List files in plan directory."""
     if not validate_plan_id(args.plan_id):
-        print(f"Error: Invalid plan_id format: {args.plan_id}", file=sys.stderr)
+        print(f'Error: Invalid plan_id format: {args.plan_id}', file=sys.stderr)
         sys.exit(1)
 
     plan_dir = get_plan_dir(args.plan_id)
 
     if args.dir:
         if not validate_file_path(args.dir):
-            print(f"Error: Invalid directory path: {args.dir}", file=sys.stderr)
+            print(f'Error: Invalid directory path: {args.dir}', file=sys.stderr)
             sys.exit(1)
         target_dir = plan_dir / args.dir
     else:
         target_dir = plan_dir
 
     if not target_dir.exists():
-        print(f"Error: Directory not found: {target_dir}", file=sys.stderr)
+        print(f'Error: Directory not found: {target_dir}', file=sys.stderr)
         sys.exit(1)
 
     for item in sorted(target_dir.iterdir()):
         if item.is_dir():
-            print(f"{item.name}/")
+            print(f'{item.name}/')
         else:
             print(item.name)
 
@@ -153,11 +153,11 @@ def cmd_list(args):
 def cmd_exists(args):
     """Check if file exists in plan directory."""
     if not validate_plan_id(args.plan_id):
-        print(f"Error: Invalid plan_id format: {args.plan_id}", file=sys.stderr)
+        print(f'Error: Invalid plan_id format: {args.plan_id}', file=sys.stderr)
         sys.exit(1)
 
     if not validate_file_path(args.file):
-        print(f"Error: Invalid file path: {args.file}", file=sys.stderr)
+        print(f'Error: Invalid file path: {args.file}', file=sys.stderr)
         sys.exit(1)
 
     plan_dir = get_plan_dir(args.plan_id)
@@ -172,18 +172,18 @@ def cmd_exists(args):
 def cmd_mkdir(args):
     """Create subdirectory in plan directory."""
     if not validate_plan_id(args.plan_id):
-        print(f"Error: Invalid plan_id format: {args.plan_id}", file=sys.stderr)
+        print(f'Error: Invalid plan_id format: {args.plan_id}', file=sys.stderr)
         sys.exit(1)
 
     if not validate_file_path(args.dir):
-        print(f"Error: Invalid directory path: {args.dir}", file=sys.stderr)
+        print(f'Error: Invalid directory path: {args.dir}', file=sys.stderr)
         sys.exit(1)
 
     plan_dir = get_plan_dir(args.plan_id)
     target_dir = plan_dir / args.dir
 
     target_dir.mkdir(parents=True, exist_ok=True)
-    print(f"Created: {target_dir}/", file=sys.stderr)
+    print(f'Created: {target_dir}/', file=sys.stderr)
 
 
 def cmd_create_or_reference(args):
@@ -197,7 +197,7 @@ def cmd_create_or_reference(args):
             'status': 'error',
             'plan_id': args.plan_id,
             'error': 'invalid_plan_id',
-            'message': f"Invalid plan_id format: {args.plan_id}"
+            'message': f'Invalid plan_id format: {args.plan_id}',
         }
         print(serialize_toon(result))
         sys.exit(1)
@@ -206,12 +206,7 @@ def cmd_create_or_reference(args):
 
     if plan_dir.exists():
         # Plan already exists - gather info about it
-        result = {
-            'status': 'success',
-            'plan_id': args.plan_id,
-            'action': 'exists',
-            'path': str(plan_dir)
-        }
+        result = {'status': 'success', 'plan_id': args.plan_id, 'action': 'exists', 'path': str(plan_dir)}
 
         # Check if status.toon exists to get phase info
         status_path = plan_dir / 'status.toon'
@@ -228,12 +223,7 @@ def cmd_create_or_reference(args):
         # Create the plan directory
         plan_dir.mkdir(parents=True, exist_ok=True)
 
-        result = {
-            'status': 'success',
-            'plan_id': args.plan_id,
-            'action': 'created',
-            'path': str(plan_dir)
-        }
+        result = {'status': 'success', 'plan_id': args.plan_id, 'action': 'created', 'path': str(plan_dir)}
         print(serialize_toon(result))
 
 
@@ -252,7 +242,7 @@ def cmd_delete_plan(args):
             'status': 'error',
             'plan_id': args.plan_id,
             'error': 'invalid_plan_id',
-            'message': f"Invalid plan_id format: {args.plan_id}"
+            'message': f'Invalid plan_id format: {args.plan_id}',
         }
         print(serialize_toon(result))
         sys.exit(1)
@@ -264,7 +254,7 @@ def cmd_delete_plan(args):
             'status': 'error',
             'plan_id': args.plan_id,
             'error': 'plan_not_found',
-            'message': f"Plan directory does not exist: {plan_dir}"
+            'message': f'Plan directory does not exist: {plan_dir}',
         }
         print(serialize_toon(result))
         sys.exit(1)
@@ -280,7 +270,7 @@ def cmd_delete_plan(args):
             'plan_id': args.plan_id,
             'action': 'deleted',
             'path': str(plan_dir),
-            'files_removed': files_removed
+            'files_removed': files_removed,
         }
         print(serialize_toon(result))
     except PermissionError as e:
@@ -288,7 +278,7 @@ def cmd_delete_plan(args):
             'status': 'error',
             'plan_id': args.plan_id,
             'error': 'permission_denied',
-            'message': f"Permission denied: {e}"
+            'message': f'Permission denied: {e}',
         }
         print(serialize_toon(result))
         sys.exit(1)
@@ -297,16 +287,14 @@ def cmd_delete_plan(args):
             'status': 'error',
             'plan_id': args.plan_id,
             'error': 'delete_failed',
-            'message': f"Failed to delete plan directory: {e}"
+            'message': f'Failed to delete plan directory: {e}',
         }
         print(serialize_toon(result))
         sys.exit(1)
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description='Generic file I/O operations for plan directories'
-    )
+    parser = argparse.ArgumentParser(description='Generic file I/O operations for plan directories')
     subparsers = parser.add_subparsers(dest='command', required=True)
 
     # read
@@ -348,14 +336,14 @@ def main():
     mkdir_parser.set_defaults(func=cmd_mkdir)
 
     # create-or-reference
-    create_ref_parser = subparsers.add_parser('create-or-reference',
-        help='Create plan directory or reference existing one')
+    create_ref_parser = subparsers.add_parser(
+        'create-or-reference', help='Create plan directory or reference existing one'
+    )
     create_ref_parser.add_argument('--plan-id', required=True, help='Plan identifier')
     create_ref_parser.set_defaults(func=cmd_create_or_reference)
 
     # delete-plan
-    delete_plan_parser = subparsers.add_parser('delete-plan',
-        help='Delete entire plan directory')
+    delete_plan_parser = subparsers.add_parser('delete-plan', help='Delete entire plan directory')
     delete_plan_parser.add_argument('--plan-id', required=True, help='Plan identifier')
     delete_plan_parser.set_defaults(func=cmd_delete_plan)
 

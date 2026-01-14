@@ -46,24 +46,21 @@ Examples:
 
   # Validate skill
   %(prog)s validate --file ./skills/my-skill/SKILL.md --type skill
-"""
+""",
     )
 
     subparsers = parser.add_subparsers(dest='command', help='Operation to perform')
 
     # generate command
     p_generate = subparsers.add_parser('generate', help='Generate YAML frontmatter')
-    p_generate.add_argument('--type', required=True, choices=['agent', 'command', 'skill'],
-                           help='Component type')
-    p_generate.add_argument('--config', required=True,
-                           help='JSON string with component configuration')
+    p_generate.add_argument('--type', required=True, choices=['agent', 'command', 'skill'], help='Component type')
+    p_generate.add_argument('--config', required=True, help='JSON string with component configuration')
     p_generate.set_defaults(func=cmd_generate)
 
     # validate command
     p_validate = subparsers.add_parser('validate', help='Validate component structure')
     p_validate.add_argument('--file', required=True, help='Path to component file')
-    p_validate.add_argument('--type', required=True, choices=['agent', 'command', 'skill'],
-                           help='Component type')
+    p_validate.add_argument('--type', required=True, choices=['agent', 'command', 'skill'], help='Component type')
     p_validate.set_defaults(func=cmd_validate)
 
     args = parser.parse_args()

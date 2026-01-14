@@ -25,27 +25,18 @@ def detect_build_systems() -> list:
 
     # Maven
     if (project_root / 'pom.xml').exists():
-        defaults = BUILD_SYSTEM_DEFAULTS["maven"]
-        detected.append({
-            "system": "maven",
-            "skill": defaults["skill"]
-        })
+        defaults = BUILD_SYSTEM_DEFAULTS['maven']
+        detected.append({'system': 'maven', 'skill': defaults['skill']})
 
     # Gradle
     if (project_root / 'build.gradle').exists() or (project_root / 'build.gradle.kts').exists():
-        defaults = BUILD_SYSTEM_DEFAULTS["gradle"]
-        detected.append({
-            "system": "gradle",
-            "skill": defaults["skill"]
-        })
+        defaults = BUILD_SYSTEM_DEFAULTS['gradle']
+        detected.append({'system': 'gradle', 'skill': defaults['skill']})
 
     # npm
     if (project_root / 'package.json').exists():
-        defaults = BUILD_SYSTEM_DEFAULTS["npm"]
-        detected.append({
-            "system": "npm",
-            "skill": defaults["skill"]
-        })
+        defaults = BUILD_SYSTEM_DEFAULTS['npm']
+        detected.append({'system': 'npm', 'skill': defaults['skill']})
 
     return detected
 
@@ -62,9 +53,11 @@ def detect_domains() -> list:
     project_root = Path('.')
 
     # Java detection: pom.xml or build.gradle
-    if (project_root / 'pom.xml').exists() or \
-       (project_root / 'build.gradle').exists() or \
-       (project_root / 'build.gradle.kts').exists():
+    if (
+        (project_root / 'pom.xml').exists()
+        or (project_root / 'build.gradle').exists()
+        or (project_root / 'build.gradle.kts').exists()
+    ):
         detected.append('java')
 
     # JavaScript detection: package.json
@@ -107,11 +100,7 @@ def _parse_pom_modules(pom_path: Path) -> list:
     return []
 
 
-def _discover_maven_modules_recursive(
-    base_path: Path,
-    parent_name: str | None = None,
-    path_prefix: str = ""
-) -> list:
+def _discover_maven_modules_recursive(base_path: Path, parent_name: str | None = None, path_prefix: str = '') -> list:
     """Recursively discover Maven modules starting from a directory.
 
     Args:
@@ -137,25 +126,20 @@ def _discover_maven_modules_recursive(
             continue
 
         # Build the full relative path from project root
-        full_path = f"{path_prefix}{mod_dir}" if path_prefix else mod_dir
+        full_path = f'{path_prefix}{mod_dir}' if path_prefix else mod_dir
 
         # Use directory name as module name
         mod_name = mod_dir
 
-        module_info = {
-            "name": mod_name,
-            "path": full_path
-        }
+        module_info = {'name': mod_name, 'path': full_path}
         if parent_name:
-            module_info["parent"] = parent_name
+            module_info['parent'] = parent_name
 
         modules.append(module_info)
 
         # Recursively discover nested modules
         nested = _discover_maven_modules_recursive(
-            base_path=mod_path,
-            parent_name=mod_name,
-            path_prefix=f"{full_path}/"
+            base_path=mod_path, parent_name=mod_name, path_prefix=f'{full_path}/'
         )
         modules.extend(nested)
 
@@ -217,7 +201,7 @@ def _expand_workspace_pattern(base_path: Path, pattern: str) -> list:
         if entry.is_dir() and fnmatch.fnmatch(entry.name, glob_part):
             # Check if it has a package.json
             if (entry / 'package.json').exists():
-                rel_path = f"{prefix}/{entry.name}" if prefix else entry.name
+                rel_path = f'{prefix}/{entry.name}' if prefix else entry.name
                 matches.append(rel_path)
 
     return matches
@@ -276,11 +260,6 @@ def detect_npm_workspaces() -> list:
             else:
                 name = rel_path.split('/')[-1]
 
-            modules.append({
-                "name": name,
-                "path": rel_path
-            })
+            modules.append({'name': name, 'path': rel_path})
 
     return modules
-
-

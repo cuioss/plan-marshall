@@ -29,9 +29,7 @@ def cmd_system(args) -> int:
         retention = system_config.get('retention', {})
 
         if args.verb == 'get':
-            return success_exit({
-                "retention": retention
-            })
+            return success_exit({'retention': retention})
 
         elif args.verb == 'set':
             field = args.field
@@ -49,10 +47,7 @@ def cmd_system(args) -> int:
             system_config['retention'] = retention
             config['system'] = system_config
             save_config(config)
-            return success_exit({
-                "field": field,
-                "value": value
-            })
+            return success_exit({'field': field, 'value': value})
 
     return EXIT_ERROR
 
@@ -71,23 +66,16 @@ def cmd_plan(args) -> int:
         defaults = plan_config.get('defaults', {})
 
         if args.verb == 'list':
-            return success_exit({
-                "defaults": defaults
-            })
+            return success_exit({'defaults': defaults})
 
         elif args.verb == 'get':
             field = getattr(args, 'field', None)
             if not field:
                 # No field specified - return all defaults
-                return success_exit({
-                    "defaults": defaults
-                })
+                return success_exit({'defaults': defaults})
             if field not in defaults:
-                return error_exit(f"Unknown default field: {field}")
-            return success_exit({
-                "field": field,
-                "value": defaults[field]
-            })
+                return error_exit(f'Unknown default field: {field}')
+            return success_exit({'field': field, 'value': defaults[field]})
 
         elif args.verb == 'set':
             field = args.field
@@ -103,9 +91,6 @@ def cmd_plan(args) -> int:
             plan_config['defaults'] = defaults
             config['plan'] = plan_config
             save_config(config)
-            return success_exit({
-                "field": field,
-                "value": value
-            })
+            return success_exit({'field': field, 'value': value})
 
     return EXIT_ERROR

@@ -48,18 +48,18 @@ def determine_mode(plan_dir: Path) -> tuple[str, str]:
     Returns:
         Tuple of (mode, reason) where mode is 'wizard' or 'menu'
     """
-    executor_path = plan_dir / "execute-script.py"
-    marshal_path = plan_dir / "marshal.json"
+    executor_path = plan_dir / 'execute-script.py'
+    marshal_path = plan_dir / 'marshal.json'
 
     executor_exists = executor_path.exists()
     marshal_exists = marshal_path.exists()
 
     if not executor_exists:
-        return "wizard", "executor_missing"
+        return 'wizard', 'executor_missing'
     elif not marshal_exists:
-        return "wizard", "marshal_missing"
+        return 'wizard', 'marshal_missing'
     else:
-        return "menu", "both_exist"
+        return 'menu', 'both_exist'
 
 
 def check_structure(plan_dir: Path) -> tuple[str, Path]:
@@ -72,13 +72,13 @@ def check_structure(plan_dir: Path) -> tuple[str, Path]:
     Returns:
         Tuple of (status, path) where status is 'exists' or 'missing'
     """
-    arch_dir = plan_dir / "project-architecture"
-    derived_path = arch_dir / "derived-data.json"
+    arch_dir = plan_dir / 'project-architecture'
+    derived_path = arch_dir / 'derived-data.json'
 
     if derived_path.exists():
-        return "exists", arch_dir
+        return 'exists', arch_dir
     else:
-        return "missing", arch_dir
+        return 'missing', arch_dir
 
 
 def check_docs(project_root: Path) -> tuple[str, list[str]]:
@@ -91,8 +91,8 @@ def check_docs(project_root: Path) -> tuple[str, list[str]]:
     Returns:
         Tuple of (status, list of files needing update)
     """
-    docs_to_check = ["CLAUDE.md", "agents.md"]
-    pattern = ".plan/temp"
+    docs_to_check = ['CLAUDE.md', 'agents.md']
+    pattern = '.plan/temp'
     missing = []
 
     for doc_name in docs_to_check:
@@ -103,9 +103,9 @@ def check_docs(project_root: Path) -> tuple[str, list[str]]:
                 missing.append(doc_name)
 
     if missing:
-        return "needs_update", missing
+        return 'needs_update', missing
     else:
-        return "ok", []
+        return 'ok', []
 
 
 def cmd_mode(args: argparse.Namespace) -> int:
@@ -113,8 +113,8 @@ def cmd_mode(args: argparse.Namespace) -> int:
     plan_dir = Path(args.plan_dir)
     mode, reason = determine_mode(plan_dir)
 
-    print(f"mode\t{mode}")
-    print(f"reason\t{reason}")
+    print(f'mode\t{mode}')
+    print(f'reason\t{reason}')
     return 0
 
 
@@ -123,10 +123,10 @@ def cmd_check_docs(args: argparse.Namespace) -> int:
     project_root = Path(args.project_root)
     status, missing = check_docs(project_root)
 
-    print(f"status\t{status}")
-    print(f"files_needing_update\t{len(missing)}")
+    print(f'status\t{status}')
+    print(f'files_needing_update\t{len(missing)}')
     if missing:
-        print(f"missing\t{','.join(missing)}")
+        print(f'missing\t{",".join(missing)}')
     return 0
 
 
@@ -135,65 +135,39 @@ def cmd_check_structure(args: argparse.Namespace) -> int:
     plan_dir = Path(args.plan_dir)
     status, path = check_structure(plan_dir)
 
-    print(f"status\t{status}")
-    print(f"path\t{path}")
+    print(f'status\t{status}')
+    print(f'path\t{path}')
     return 0
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(
-        description="Plan-marshall helper for mode detection and documentation checks"
-    )
-    subparsers = parser.add_subparsers(dest="command", required=True)
+    parser = argparse.ArgumentParser(description='Plan-marshall helper for mode detection and documentation checks')
+    subparsers = parser.add_subparsers(dest='command', required=True)
 
     # mode subcommand
-    mode_parser = subparsers.add_parser(
-        "mode",
-        help="Determine wizard vs menu mode"
-    )
-    mode_parser.add_argument(
-        "--plan-dir",
-        type=str,
-        default=".plan",
-        help="Directory to check (default: .plan)"
-    )
+    mode_parser = subparsers.add_parser('mode', help='Determine wizard vs menu mode')
+    mode_parser.add_argument('--plan-dir', type=str, default='.plan', help='Directory to check (default: .plan)')
 
     # check-docs subcommand
-    docs_parser = subparsers.add_parser(
-        "check-docs",
-        help="Check if project docs need .plan/temp documentation"
-    )
-    docs_parser.add_argument(
-        "--project-root",
-        type=str,
-        default=".",
-        help="Project root directory (default: .)"
-    )
+    docs_parser = subparsers.add_parser('check-docs', help='Check if project docs need .plan/temp documentation')
+    docs_parser.add_argument('--project-root', type=str, default='.', help='Project root directory (default: .)')
 
     # check-structure subcommand
-    structure_parser = subparsers.add_parser(
-        "check-structure",
-        help="Check if project-architecture directory exists"
-    )
-    structure_parser.add_argument(
-        "--plan-dir",
-        type=str,
-        default=".plan",
-        help="Directory to check (default: .plan)"
-    )
+    structure_parser = subparsers.add_parser('check-structure', help='Check if project-architecture directory exists')
+    structure_parser.add_argument('--plan-dir', type=str, default='.plan', help='Directory to check (default: .plan)')
 
     args = parser.parse_args()
 
-    if args.command == "mode":
+    if args.command == 'mode':
         return cmd_mode(args)
-    elif args.command == "check-docs":
+    elif args.command == 'check-docs':
         return cmd_check_docs(args)
-    elif args.command == "check-structure":
+    elif args.command == 'check-structure':
         return cmd_check_structure(args)
     else:
         parser.print_help()
         return 1
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     sys.exit(main())

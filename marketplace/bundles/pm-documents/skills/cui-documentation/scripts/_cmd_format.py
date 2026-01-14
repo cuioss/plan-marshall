@@ -32,12 +32,22 @@ def fix_lists(content: str) -> tuple[str, int]:
 
         starts_new_list = False
         if not in_code_block:
-            if re.match(r'^[\*\-\+] ', line) or re.match(r'^[0-9]+\. ', line) or re.match(r'^[^:]+::', line) or (re.match(r'^\. ', line) and not in_list):
+            if (
+                re.match(r'^[\*\-\+] ', line)
+                or re.match(r'^[0-9]+\. ', line)
+                or re.match(r'^[^:]+::', line)
+                or (re.match(r'^\. ', line) and not in_list)
+            ):
                 starts_new_list = True
 
         continuing_list = False
         if not in_code_block and in_list:
-            if re.match(r'^[\*\-\+] ', line) or re.match(r'^\*\* ', line) or re.match(r'^[0-9]+\. ', line) or current_is_blank:
+            if (
+                re.match(r'^[\*\-\+] ', line)
+                or re.match(r'^\*\* ', line)
+                or re.match(r'^[0-9]+\. ', line)
+                or current_is_blank
+            ):
                 continuing_list = True
 
         if starts_new_list and not prev_was_blank and i > 0 and not in_list:
@@ -109,7 +119,7 @@ def cmd_format(args):
             if not args.no_backup:
                 shutil.copy2(file_path, file_path.with_suffix(file_path.suffix + '.bak'))
             file_path.write_text(content, encoding='utf-8')
-            print(f"{GREEN}Fixed: {file_path}{NC}")
+            print(f'{GREEN}Fixed: {file_path}{NC}')
 
     if target_path.is_file():
         if target_path.suffix == '.adoc':
@@ -119,7 +129,9 @@ def cmd_format(args):
             process_file(file_path)
 
     if files_modified > 0:
-        log_entry('script', 'global', 'INFO', f'[DOCS-FORMAT] Formatted {files_modified} files, fixed {issues_fixed} issues')
+        log_entry(
+            'script', 'global', 'INFO', f'[DOCS-FORMAT] Formatted {files_modified} files, fixed {issues_fixed} issues'
+        )
 
-    print(f"\nSummary: {files_processed} processed, {files_modified} modified, {issues_fixed} issues fixed")
+    print(f'\nSummary: {files_processed} processed, {files_modified} modified, {issues_fixed} issues fixed')
     return EXIT_SUCCESS

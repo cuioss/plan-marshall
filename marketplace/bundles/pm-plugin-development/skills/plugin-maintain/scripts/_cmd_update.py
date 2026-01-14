@@ -59,7 +59,7 @@ def apply_frontmatter_update(content: str, field: str, value: str) -> str:
 def apply_section_update(content: str, section: str, new_content: str) -> str:
     """Update or add a section."""
     # Find section header
-    pattern = rf'^(#{1,4})\s+{re.escape(section)}\s*$'
+    pattern = rf'^(#{1, 4})\s+{re.escape(section)}\s*$'
     match = re.search(pattern, content, re.MULTILINE | re.IGNORECASE)
 
     if match:
@@ -89,11 +89,7 @@ def apply_updates(component_path: str, updates: list) -> dict:
     path = Path(component_path)
 
     if not path.exists():
-        return {
-            'error': f'File not found: {component_path}',
-            'component_path': component_path,
-            'success': False
-        }
+        return {'error': f'File not found: {component_path}', 'component_path': component_path, 'success': False}
 
     # Create backup
     backup_path = create_backup(path)
@@ -146,18 +142,13 @@ def apply_updates(component_path: str, updates: list) -> dict:
             'success': True,
             'changes': changes,
             'backup_created': backup_path,
-            'validation_errors': []
+            'validation_errors': [],
         }
 
     except Exception as e:
         # Restore backup on error
         restore_backup(path, backup_path)
-        return {
-            'component_path': component_path,
-            'success': False,
-            'error': str(e),
-            'backup_restored': True
-        }
+        return {'component_path': component_path, 'success': False, 'error': str(e), 'backup_restored': True}
 
 
 def cmd_update(args) -> int:

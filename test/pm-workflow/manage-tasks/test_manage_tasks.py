@@ -18,6 +18,7 @@ SCRIPT_PATH = get_script_path('pm-workflow', 'manage-tasks', 'manage-tasks.py')
 # Test Helpers
 # =============================================================================
 
+
 def setup_plan_dir():
     """Create temp plan directory and set PLAN_BASE_DIR."""
     temp_dir = create_temp_dir()
@@ -39,11 +40,20 @@ def cleanup(temp_dir):
     shutil.rmtree(temp_dir, ignore_errors=True)
 
 
-def build_task_toon(title='Test task', deliverables=None, domain='java',
-                    description='Task description', steps=None, phase='4-execute',
-                    depends_on='none', delegation_skill='', delegation_workflow='',
-                    context_skills=None, verification_commands=None,
-                    verification_criteria=''):
+def build_task_toon(
+    title='Test task',
+    deliverables=None,
+    domain='java',
+    description='Task description',
+    steps=None,
+    phase='4-execute',
+    depends_on='none',
+    delegation_skill='',
+    delegation_workflow='',
+    context_skills=None,
+    verification_commands=None,
+    verification_criteria='',
+):
     """Build TOON content for task definition via stdin.
 
     Steps MUST be file paths per task contract (plan-type-api/standards/task-contract.md).
@@ -67,7 +77,7 @@ def build_task_toon(title='Test task', deliverables=None, domain='java',
         f'domain: {domain}',
         f'phase: {phase}',
         f'description: {description}',
-        'steps:'
+        'steps:',
     ]
 
     for step in steps:
@@ -98,17 +108,18 @@ def build_task_toon(title='Test task', deliverables=None, domain='java',
     return '\n'.join(lines)
 
 
-def add_basic_task(plan_id='test-plan', title='Test task', deliverables=None,
-                   domain='java', description='Task description', steps=None):
+def add_basic_task(
+    plan_id='test-plan', title='Test task', deliverables=None, domain='java', description='Task description', steps=None
+):
     """Helper to add a task with minimal required params."""
-    toon = build_task_toon(title=title, deliverables=deliverables,
-                           domain=domain, description=description, steps=steps)
+    toon = build_task_toon(title=title, deliverables=deliverables, domain=domain, description=description, steps=steps)
     return run_script(SCRIPT_PATH, 'add', '--plan-id', plan_id, input_data=toon)
 
 
 # =============================================================================
 # Tests: add command with stdin-based API
 # =============================================================================
+
 
 def test_add_first_task():
     """Add first task creates TASK-001."""
@@ -119,11 +130,11 @@ def test_add_first_task():
             deliverables=[1],
             domain='java',
             description='Task description',
-            steps=['src/main/java/First.java', 'src/main/java/Second.java']  # File paths per contract
+            steps=['src/main/java/First.java', 'src/main/java/Second.java'],  # File paths per contract
         )
         result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
 
-        assert result.returncode == 0, f"Failed: {result.stderr}"
+        assert result.returncode == 0, f'Failed: {result.stderr}'
         assert 'status: success' in result.stdout
         assert 'TASK-001' in result.stdout
         assert 'total_tasks: 1' in result.stdout
@@ -131,7 +142,7 @@ def test_add_first_task():
         # Verify file exists
         task_dir = Path(os.environ['PLAN_BASE_DIR']) / 'plans' / 'test-plan' / 'tasks'
         files = list(task_dir.glob('TASK-001-*.toon'))
-        assert len(files) == 1, f"Expected 1 file, got {files}"
+        assert len(files) == 1, f'Expected 1 file, got {files}'
     finally:
         cleanup(temp_dir)
 
@@ -141,7 +152,9 @@ def test_add_sequential_numbering():
     temp_dir = setup_plan_dir()
     try:
         add_basic_task(title='First', deliverables=[1], steps=['src/main/java/First.java'])
-        result = add_basic_task(title='Second', deliverables=[2], steps=['src/main/java/Second.java', 'src/test/java/SecondTest.java'])
+        result = add_basic_task(
+            title='Second', deliverables=[2], steps=['src/main/java/Second.java', 'src/test/java/SecondTest.java']
+        )
 
         assert result.returncode == 0
         assert 'TASK-002' in result.stdout
@@ -174,11 +187,11 @@ def test_add_multiple_deliverables():
             deliverables=[1, 2, 3],
             domain='java',
             description='Task covers multiple deliverables',
-            steps=['src/main/java/Test.java']
+            steps=['src/main/java/Test.java'],
         )
         result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
 
-        assert result.returncode == 0, f"Failed: {result.stderr}"
+        assert result.returncode == 0, f'Failed: {result.stderr}'
         assert 'status: success' in result.stdout
         assert 'deliverables: [1, 2, 3]' in result.stdout
     finally:
@@ -223,7 +236,7 @@ def test_add_fails_with_invalid_deliverable():
             deliverables=[0],  # Must be positive
             domain='java',
             description='Desc',
-            steps=['src/main/java/Component.java']
+            steps=['src/main/java/Component.java'],
         )
         result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
 
@@ -259,7 +272,7 @@ def test_add_accepts_arbitrary_domain():
             deliverables=[1],
             domain='python',  # Arbitrary domain - now accepted
             description='Desc',
-            steps=['src/main/python/script.py']
+            steps=['src/main/python/script.py'],
         )
         result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
 
@@ -295,7 +308,7 @@ def test_add_with_phase():
             domain='java',
             phase='1-init',
             description='Init phase task',
-            steps=['src/main/java/Component.java']
+            steps=['src/main/java/Component.java'],
         )
         result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
 
@@ -319,7 +332,7 @@ def test_add_with_dependencies():
             domain='java',
             description='Depends on first',
             steps=['src/main/java/Component.java'],
-            depends_on='TASK-1'
+            depends_on='TASK-1',
         )
         result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
 
@@ -341,7 +354,7 @@ def test_add_with_delegation():
             steps=['src/main/java/Component.java'],
             delegation_skill='pm-dev-java:java-implement',
             delegation_workflow='implement',
-            context_skills=['pm-dev-java:java-cdi']
+            context_skills=['pm-dev-java:java-cdi'],
         )
         result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
 
@@ -363,7 +376,7 @@ def test_add_with_verification():
             description='Task with verification',
             steps=['src/main/java/Component.java'],
             verification_commands=['mvn test', 'mvn verify'],
-            verification_criteria='Build passes'
+            verification_criteria='Build passes',
         )
         result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
 
@@ -386,11 +399,11 @@ def test_add_with_shell_metacharacters_in_verification():
             delegation_skill='pm-plugin-development:plugin-maintain',
             delegation_workflow='update-component',
             verification_commands=["grep -l '```json' marketplace/bundles/*.md | wc -l"],
-            verification_criteria='All grep commands return 0'
+            verification_criteria='All grep commands return 0',
         )
         result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
 
-        assert result.returncode == 0, f"Failed: {result.stderr}"
+        assert result.returncode == 0, f'Failed: {result.stderr}'
         assert 'status: success' in result.stdout
 
         # Verify the verification commands were stored correctly
@@ -407,6 +420,7 @@ def test_add_with_shell_metacharacters_in_verification():
 # Tests: get
 # =============================================================================
 
+
 def test_get_existing_task():
     """Get returns full task details."""
     temp_dir = setup_plan_dir()
@@ -416,7 +430,7 @@ def test_get_existing_task():
             deliverables=[1, 2],
             domain='java',
             description='Test description',
-            steps=['src/main/java/One.java', 'src/main/java/Two.java', 'src/main/java/Three.java']
+            steps=['src/main/java/One.java', 'src/main/java/Two.java', 'src/main/java/Three.java'],
         )
         run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
 
@@ -459,7 +473,7 @@ def test_get_returns_delegation_block():
             steps=['src/main/java/Component.java'],
             delegation_skill='pm-plugin-development:plugin-create',
             delegation_workflow='create-skill',
-            context_skills=['pm-plugin-development:plugin-architecture']
+            context_skills=['pm-plugin-development:plugin-architecture'],
         )
         run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
 
@@ -485,7 +499,7 @@ def test_get_returns_verification_block():
             description='Task with verification',
             steps=['src/main/java/Component.java'],
             verification_commands=['mvn test'],
-            verification_criteria='Tests pass'
+            verification_criteria='Tests pass',
         )
         run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
 
@@ -501,6 +515,7 @@ def test_get_returns_verification_block():
 # =============================================================================
 # Tests: list
 # =============================================================================
+
 
 def test_list_empty():
     """List with no tasks shows zero counts."""
@@ -576,12 +591,20 @@ def test_list_filter_by_phase():
     temp_dir = setup_plan_dir()
     try:
         toon_init = build_task_toon(
-            title='Init Task', deliverables=[1], domain='java',
-            phase='1-init', description='D1', steps=['src/main/java/File.java']
+            title='Init Task',
+            deliverables=[1],
+            domain='java',
+            phase='1-init',
+            description='D1',
+            steps=['src/main/java/File.java'],
         )
         toon_exec = build_task_toon(
-            title='Execute Task', deliverables=[2], domain='java',
-            phase='4-execute', description='D2', steps=['src/main/java/File.java']
+            title='Execute Task',
+            deliverables=[2],
+            domain='java',
+            phase='4-execute',
+            description='D2',
+            steps=['src/main/java/File.java'],
         )
         run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon_init)
         run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon_exec)
@@ -604,8 +627,12 @@ def test_list_filter_ready():
 
         # Second task - depends on first
         toon = build_task_toon(
-            title='Second', deliverables=[2], domain='java',
-            description='D2', steps=['src/main/java/File.java'], depends_on='TASK-1'
+            title='Second',
+            deliverables=[2],
+            domain='java',
+            description='D2',
+            steps=['src/main/java/File.java'],
+            depends_on='TASK-1',
         )
         run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
 
@@ -623,13 +650,17 @@ def test_list_filter_ready():
 # Tests: next with dependency checking
 # =============================================================================
 
+
 def test_next_returns_first_pending():
     """Next returns first pending task and step."""
     temp_dir = setup_plan_dir()
     try:
         toon = build_task_toon(
-            title='First Task', deliverables=[1], domain='java',
-            description='D1', steps=['src/main/java/One.java', 'src/main/java/Two.java']
+            title='First Task',
+            deliverables=[1],
+            domain='java',
+            description='D1',
+            steps=['src/main/java/One.java', 'src/main/java/Two.java'],
         )
         run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
 
@@ -699,8 +730,12 @@ def test_next_respects_dependencies():
 
         # Second task - depends on first (blocked)
         toon = build_task_toon(
-            title='Second', deliverables=[2], domain='java',
-            description='D2', steps=['src/main/java/File.java'], depends_on='TASK-1'
+            title='Second',
+            deliverables=[2],
+            domain='java',
+            description='D2',
+            steps=['src/main/java/File.java'],
+            depends_on='TASK-1',
         )
         run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
 
@@ -720,8 +755,12 @@ def test_next_shows_blocked_tasks():
     try:
         # Create only task with dependency on non-existent task
         toon = build_task_toon(
-            title='Blocked', deliverables=[1], domain='java',
-            description='D1', steps=['src/main/java/File.java'], depends_on='TASK-99'
+            title='Blocked',
+            deliverables=[1],
+            domain='java',
+            description='D1',
+            steps=['src/main/java/File.java'],
+            depends_on='TASK-99',
         )
         run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
 
@@ -741,8 +780,12 @@ def test_next_ignore_deps():
     try:
         # Only task with unmet dependency
         toon = build_task_toon(
-            title='Blocked', deliverables=[1], domain='java',
-            description='D1', steps=['src/main/java/File.java'], depends_on='TASK-99'
+            title='Blocked',
+            deliverables=[1],
+            domain='java',
+            description='D1',
+            steps=['src/main/java/File.java'],
+            depends_on='TASK-99',
         )
         run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
 
@@ -761,12 +804,20 @@ def test_next_filter_by_phase():
     temp_dir = setup_plan_dir()
     try:
         toon_init = build_task_toon(
-            title='Init Task', deliverables=[1], domain='java',
-            phase='1-init', description='D1', steps=['src/main/java/File.java']
+            title='Init Task',
+            deliverables=[1],
+            domain='java',
+            phase='1-init',
+            description='D1',
+            steps=['src/main/java/File.java'],
         )
         toon_exec = build_task_toon(
-            title='Execute Task', deliverables=[2], domain='java',
-            phase='4-execute', description='D2', steps=['src/main/java/File.java']
+            title='Execute Task',
+            deliverables=[2],
+            domain='java',
+            phase='4-execute',
+            description='D2',
+            steps=['src/main/java/File.java'],
         )
         run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon_init)
         run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon_exec)
@@ -785,14 +836,17 @@ def test_next_include_context():
     temp_dir = setup_plan_dir()
     try:
         toon = build_task_toon(
-            title='Feature task', deliverables=[1, 2], domain='java',
-            description='Task description', steps=['src/main/java/One.java', 'src/main/java/Two.java']
+            title='Feature task',
+            deliverables=[1, 2],
+            domain='java',
+            description='Task description',
+            steps=['src/main/java/One.java', 'src/main/java/Two.java'],
         )
         run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
 
         result = run_script(SCRIPT_PATH, 'next', '--plan-id', 'test-plan', '--include-context')
 
-        assert result.returncode == 0, f"Failed: {result.stderr}"
+        assert result.returncode == 0, f'Failed: {result.stderr}'
         assert 'task_number: 1' in result.stdout
         assert 'deliverables_found: true' in result.stdout
         assert 'deliverable_count: 2' in result.stdout
@@ -804,14 +858,14 @@ def test_next_include_context():
 # Tests: step-start
 # =============================================================================
 
+
 def test_step_start_marks_in_progress():
     """Step-start marks step and task as in_progress."""
     temp_dir = setup_plan_dir()
     try:
         add_basic_task(title='Task', deliverables=[1], steps=['src/main/java/FileA.java', 'src/main/java/FileB.java'])
 
-        result = run_script(SCRIPT_PATH, 'step-start', '--plan-id', 'test-plan',
-                            '--task', '1', '--step', '1')
+        result = run_script(SCRIPT_PATH, 'step-start', '--plan-id', 'test-plan', '--task', '1', '--step', '1')
 
         assert result.returncode == 0
         assert 'task_status: in_progress' in result.stdout
@@ -826,8 +880,7 @@ def test_step_start_invalid_step():
     try:
         add_basic_task(title='Task', deliverables=[1], steps=['src/main/java/File.java'])
 
-        result = run_script(SCRIPT_PATH, 'step-start', '--plan-id', 'test-plan',
-                            '--task', '1', '--step', '99')
+        result = run_script(SCRIPT_PATH, 'step-start', '--plan-id', 'test-plan', '--task', '1', '--step', '99')
 
         assert result.returncode == 1
         assert 'Step 99 not found' in result.stderr
@@ -839,14 +892,14 @@ def test_step_start_invalid_step():
 # Tests: step-done
 # =============================================================================
 
+
 def test_step_done_marks_completed():
     """Step-done marks step as done."""
     temp_dir = setup_plan_dir()
     try:
         add_basic_task(title='Task', deliverables=[1], steps=['src/main/java/FileA.java', 'src/main/java/FileB.java'])
 
-        result = run_script(SCRIPT_PATH, 'step-done', '--plan-id', 'test-plan',
-                            '--task', '1', '--step', '1')
+        result = run_script(SCRIPT_PATH, 'step-done', '--plan-id', 'test-plan', '--task', '1', '--step', '1')
 
         assert result.returncode == 0
         assert 'step_status: done' in result.stdout
@@ -861,8 +914,7 @@ def test_step_done_completes_task():
     try:
         add_basic_task(title='Task', deliverables=[1], steps=['src/main/java/File.java'])
 
-        result = run_script(SCRIPT_PATH, 'step-done', '--plan-id', 'test-plan',
-                            '--task', '1', '--step', '1')
+        result = run_script(SCRIPT_PATH, 'step-done', '--plan-id', 'test-plan', '--task', '1', '--step', '1')
 
         assert result.returncode == 0
         assert 'task_status: done' in result.stdout
@@ -876,14 +928,16 @@ def test_step_done_completes_task():
 # Tests: step-skip
 # =============================================================================
 
+
 def test_step_skip_marks_skipped():
     """Step-skip marks step as skipped."""
     temp_dir = setup_plan_dir()
     try:
         add_basic_task(title='Task', deliverables=[1], steps=['src/main/java/FileA.java', 'src/main/java/FileB.java'])
 
-        result = run_script(SCRIPT_PATH, 'step-skip', '--plan-id', 'test-plan',
-                            '--task', '1', '--step', '1', '--reason', 'Already done')
+        result = run_script(
+            SCRIPT_PATH, 'step-skip', '--plan-id', 'test-plan', '--task', '1', '--step', '1', '--reason', 'Already done'
+        )
 
         assert result.returncode == 0
         assert 'step_status: skipped' in result.stdout
@@ -898,8 +952,7 @@ def test_step_skip_completes_task():
     try:
         add_basic_task(title='Task', deliverables=[1], steps=['src/main/java/File.java'])
 
-        result = run_script(SCRIPT_PATH, 'step-skip', '--plan-id', 'test-plan',
-                            '--task', '1', '--step', '1')
+        result = run_script(SCRIPT_PATH, 'step-skip', '--plan-id', 'test-plan', '--task', '1', '--step', '1')
 
         assert result.returncode == 0
         assert 'task_status: done' in result.stdout
@@ -911,14 +964,14 @@ def test_step_skip_completes_task():
 # Tests: add-step
 # =============================================================================
 
+
 def test_add_step_appends():
     """Add-step appends to end by default."""
     temp_dir = setup_plan_dir()
     try:
         add_basic_task(title='Task', deliverables=[1], steps=['src/main/java/FileA.java', 'src/main/java/FileB.java'])
 
-        result = run_script(SCRIPT_PATH, 'add-step', '--plan-id', 'test-plan',
-                            '--task', '1', '--title', 'New Step')
+        result = run_script(SCRIPT_PATH, 'add-step', '--plan-id', 'test-plan', '--task', '1', '--title', 'New Step')
 
         assert result.returncode == 0
         assert 'step: 3' in result.stdout
@@ -937,8 +990,18 @@ def test_add_step_after():
         add_basic_task(title='Task', deliverables=[1], steps=['src/main/java/FileA.java', 'src/main/java/FileC.java'])
 
         # Add-step uses the title as-is (no validation on added steps)
-        result = run_script(SCRIPT_PATH, 'add-step', '--plan-id', 'test-plan',
-                            '--task', '1', '--title', 'src/main/java/FileB.java', '--after', '1')
+        result = run_script(
+            SCRIPT_PATH,
+            'add-step',
+            '--plan-id',
+            'test-plan',
+            '--task',
+            '1',
+            '--title',
+            'src/main/java/FileB.java',
+            '--after',
+            '1',
+        )
 
         assert result.returncode == 0
         assert 'step: 2' in result.stdout
@@ -956,14 +1019,18 @@ def test_add_step_after():
 # Tests: remove-step
 # =============================================================================
 
+
 def test_remove_step():
     """Remove-step removes and renumbers."""
     temp_dir = setup_plan_dir()
     try:
-        add_basic_task(title='Task', deliverables=[1], steps=['src/main/java/FileA.java', 'src/main/java/FileB.java', 'src/main/java/FileC.java'])
+        add_basic_task(
+            title='Task',
+            deliverables=[1],
+            steps=['src/main/java/FileA.java', 'src/main/java/FileB.java', 'src/main/java/FileC.java'],
+        )
 
-        result = run_script(SCRIPT_PATH, 'remove-step', '--plan-id', 'test-plan',
-                            '--task', '1', '--step', '2')
+        result = run_script(SCRIPT_PATH, 'remove-step', '--plan-id', 'test-plan', '--task', '1', '--step', '2')
 
         assert result.returncode == 0
         assert 'Step 2 removed' in result.stdout
@@ -983,8 +1050,7 @@ def test_remove_step_last_fails():
     try:
         add_basic_task(title='Task', deliverables=[1], steps=['src/main/java/File.java'])
 
-        result = run_script(SCRIPT_PATH, 'remove-step', '--plan-id', 'test-plan',
-                            '--task', '1', '--step', '1')
+        result = run_script(SCRIPT_PATH, 'remove-step', '--plan-id', 'test-plan', '--task', '1', '--step', '1')
 
         assert result.returncode == 1
         assert 'Cannot remove the last step' in result.stderr
@@ -996,6 +1062,7 @@ def test_remove_step_last_fails():
 # Tests: update
 # =============================================================================
 
+
 def test_update_title_keeps_filename():
     """Updating title does NOT rename file (TASK-SEQ-TYPE format is stable)."""
     temp_dir = setup_plan_dir()
@@ -1005,10 +1072,9 @@ def test_update_title_keeps_filename():
         # Verify initial filename uses TYPE suffix, not slug
         task_dir = Path(os.environ['PLAN_BASE_DIR']) / 'plans' / 'test-plan' / 'tasks'
         initial_files = list(task_dir.glob('TASK-001-IMPL.toon'))
-        assert len(initial_files) == 1, "Should have TASK-001-IMPL.toon"
+        assert len(initial_files) == 1, 'Should have TASK-001-IMPL.toon'
 
-        result = run_script(SCRIPT_PATH, 'update', '--plan-id', 'test-plan',
-                            '--number', '1', '--title', 'New Title')
+        result = run_script(SCRIPT_PATH, 'update', '--plan-id', 'test-plan', '--number', '1', '--title', 'New Title')
 
         assert result.returncode == 0
         # Filename stays the same (TASK-SEQ-TYPE format)
@@ -1016,7 +1082,7 @@ def test_update_title_keeps_filename():
 
         # File still exists with same name
         final_files = list(task_dir.glob('TASK-001-IMPL.toon'))
-        assert len(final_files) == 1, "File should still be TASK-001-IMPL.toon"
+        assert len(final_files) == 1, 'File should still be TASK-001-IMPL.toon'
     finally:
         cleanup(temp_dir)
 
@@ -1027,8 +1093,9 @@ def test_update_depends_on():
     try:
         add_basic_task(title='Task', deliverables=[1], steps=['src/main/java/File.java'])
 
-        result = run_script(SCRIPT_PATH, 'update', '--plan-id', 'test-plan',
-                            '--number', '1', '--depends-on', 'TASK-5', 'TASK-6')
+        result = run_script(
+            SCRIPT_PATH, 'update', '--plan-id', 'test-plan', '--number', '1', '--depends-on', 'TASK-5', 'TASK-6'
+        )
 
         assert result.returncode == 0
 
@@ -1044,13 +1111,16 @@ def test_update_clear_depends_on():
     temp_dir = setup_plan_dir()
     try:
         toon = build_task_toon(
-            title='Task', deliverables=[1], domain='java',
-            description='D', steps=['src/main/java/File.java'], depends_on='TASK-1'
+            title='Task',
+            deliverables=[1],
+            domain='java',
+            description='D',
+            steps=['src/main/java/File.java'],
+            depends_on='TASK-1',
         )
         run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
 
-        result = run_script(SCRIPT_PATH, 'update', '--plan-id', 'test-plan',
-                            '--number', '1', '--depends-on', 'none')
+        result = run_script(SCRIPT_PATH, 'update', '--plan-id', 'test-plan', '--number', '1', '--depends-on', 'none')
 
         assert result.returncode == 0
 
@@ -1064,6 +1134,7 @@ def test_update_clear_depends_on():
 # =============================================================================
 # Tests: remove
 # =============================================================================
+
 
 def test_remove_deletes_file():
     """Remove deletes the task file."""
@@ -1108,11 +1179,16 @@ def test_remove_preserves_gaps():
 # Tests: progress tracking
 # =============================================================================
 
+
 def test_progress_calculation():
     """Progress is correctly calculated in list output."""
     temp_dir = setup_plan_dir()
     try:
-        add_basic_task(title='Task', deliverables=[1], steps=['src/main/java/FileA.java', 'src/main/java/FileB.java', 'src/main/java/FileC.java'])
+        add_basic_task(
+            title='Task',
+            deliverables=[1],
+            steps=['src/main/java/FileA.java', 'src/main/java/FileB.java', 'src/main/java/FileC.java'],
+        )
         run_script(SCRIPT_PATH, 'step-done', '--plan-id', 'test-plan', '--task', '1', '--step', '1')
         run_script(SCRIPT_PATH, 'step-skip', '--plan-id', 'test-plan', '--task', '1', '--step', '2')
 
@@ -1127,6 +1203,7 @@ def test_progress_calculation():
 # =============================================================================
 # Tests: file content verification
 # =============================================================================
+
 
 def test_file_contains_new_fields():
     """Created file contains all new fields."""
@@ -1143,7 +1220,7 @@ def test_file_contains_new_fields():
             delegation_skill='pm-dev-java:java-implement',
             delegation_workflow='implement',
             verification_commands=['mvn test'],
-            verification_criteria='Tests pass'
+            verification_criteria='Tests pass',
         )
         run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
 
@@ -1176,6 +1253,7 @@ def test_file_contains_new_fields():
 # Tests: type-based filename format
 # =============================================================================
 
+
 def test_type_filename_ignores_title_special_chars():
     """Filename uses TYPE suffix regardless of special characters in title."""
     temp_dir = setup_plan_dir()
@@ -1185,7 +1263,7 @@ def test_type_filename_ignores_title_special_chars():
         task_dir = Path(os.environ['PLAN_BASE_DIR']) / 'plans' / 'test-plan' / 'tasks'
         # Filename uses TYPE (IMPL), not slugified title
         files = list(task_dir.glob('TASK-001-IMPL.toon'))
-        assert len(files) == 1, f"Expected TASK-001-IMPL.toon, found: {list(task_dir.glob('TASK-*.toon'))}"
+        assert len(files) == 1, f'Expected TASK-001-IMPL.toon, found: {list(task_dir.glob("TASK-*.toon"))}'
     finally:
         cleanup(temp_dir)
 
@@ -1200,7 +1278,7 @@ def test_type_filename_ignores_title_length():
         task_dir = Path(os.environ['PLAN_BASE_DIR']) / 'plans' / 'test-plan' / 'tasks'
         # Filename uses TYPE (IMPL), not truncated title
         files = list(task_dir.glob('TASK-001-IMPL.toon'))
-        assert len(files) == 1, f"Expected TASK-001-IMPL.toon, found: {list(task_dir.glob('TASK-*.toon'))}"
+        assert len(files) == 1, f'Expected TASK-001-IMPL.toon, found: {list(task_dir.glob("TASK-*.toon"))}'
     finally:
         cleanup(temp_dir)
 
@@ -1208,6 +1286,7 @@ def test_type_filename_ignores_title_length():
 # =============================================================================
 # Tests: domain validation
 # =============================================================================
+
 
 def test_arbitrary_domains_accepted():
     """Arbitrary domain strings are accepted (config-driven, not hardcoded)."""
@@ -1221,10 +1300,10 @@ def test_arbitrary_domains_accepted():
                 deliverables=[i],
                 domain=domain,
                 description=f'Test {domain}',
-                steps=['src/main/java/File.java']
+                steps=['src/main/java/File.java'],
             )
             result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
-            assert result.returncode == 0, f"Domain {domain} failed: {result.stderr}"
+            assert result.returncode == 0, f'Domain {domain} failed: {result.stderr}'
     finally:
         cleanup(temp_dir)
 

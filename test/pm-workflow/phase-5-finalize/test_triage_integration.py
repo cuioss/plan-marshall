@@ -9,6 +9,7 @@ Tests domain routing logic and triage decision workflow.
 # Helper Functions (Implementation)
 # =============================================================================
 
+
 def route_file_to_domain(file_path: str):
     """
     Route a file path to the appropriate triage domain.
@@ -66,82 +67,90 @@ def get_default_triage_decision(severity: str) -> str:
 # Test: Domain Routing by File Extension
 # =============================================================================
 
+
 def test_java_file_routes_to_java_domain():
     """Java files route to java domain."""
-    assert route_file_to_domain("src/main/java/MyClass.java") == "java"
-    assert route_file_to_domain("src/test/java/MyClassTest.java") == "java"
-    assert route_file_to_domain("module/Service.java") == "java"
+    assert route_file_to_domain('src/main/java/MyClass.java') == 'java'
+    assert route_file_to_domain('src/test/java/MyClassTest.java') == 'java'
+    assert route_file_to_domain('module/Service.java') == 'java'
 
 
 def test_javascript_files_route_to_javascript_domain():
     """JavaScript/TypeScript files route to javascript domain."""
-    assert route_file_to_domain("src/components/Button.js") == "javascript"
-    assert route_file_to_domain("src/utils/helper.ts") == "javascript"
-    assert route_file_to_domain("src/app/page.tsx") == "javascript"
-    assert route_file_to_domain("src/styles.css") == "javascript"  # Frontend domain
+    assert route_file_to_domain('src/components/Button.js') == 'javascript'
+    assert route_file_to_domain('src/utils/helper.ts') == 'javascript'
+    assert route_file_to_domain('src/app/page.tsx') == 'javascript'
+    assert route_file_to_domain('src/styles.css') == 'javascript'  # Frontend domain
 
 
 def test_python_in_marketplace_routes_to_plugin_domain():
     """Python files in marketplace route to plugin-dev domain."""
-    assert route_file_to_domain("marketplace/bundles/my-bundle/scripts/tool.py") == "plan-marshall-plugin-dev"
-    assert route_file_to_domain("marketplace/bundles/pm-dev-java/skills/java-core/scripts/helper.py") == "plan-marshall-plugin-dev"
+    assert route_file_to_domain('marketplace/bundles/my-bundle/scripts/tool.py') == 'plan-marshall-plugin-dev'
+    assert (
+        route_file_to_domain('marketplace/bundles/pm-dev-java/skills/java-core/scripts/helper.py')
+        == 'plan-marshall-plugin-dev'
+    )
 
 
 def test_markdown_in_marketplace_routes_to_plugin_domain():
     """Markdown files in marketplace route to plugin-dev domain."""
-    assert route_file_to_domain("marketplace/bundles/my-bundle/skills/skill-name/SKILL.md") == "plan-marshall-plugin-dev"
-    assert route_file_to_domain("marketplace/bundles/my-bundle/commands/my-command.md") == "plan-marshall-plugin-dev"
+    assert (
+        route_file_to_domain('marketplace/bundles/my-bundle/skills/skill-name/SKILL.md') == 'plan-marshall-plugin-dev'
+    )
+    assert route_file_to_domain('marketplace/bundles/my-bundle/commands/my-command.md') == 'plan-marshall-plugin-dev'
 
 
 def test_python_outside_marketplace_returns_none():
     """Python files outside marketplace return None (generic)."""
-    assert route_file_to_domain("scripts/util.py") is None
-    assert route_file_to_domain("test/conftest.py") is None
+    assert route_file_to_domain('scripts/util.py') is None
+    assert route_file_to_domain('test/conftest.py') is None
 
 
 def test_unknown_extension_returns_none():
     """Unknown file types return None."""
-    assert route_file_to_domain("README.txt") is None
-    assert route_file_to_domain("config.yaml") is None
+    assert route_file_to_domain('README.txt') is None
+    assert route_file_to_domain('config.yaml') is None
 
 
 # =============================================================================
 # Test: Triage Decision Matrix
 # =============================================================================
 
+
 def test_blocker_severity_requires_fix():
     """BLOCKER severity always requires fix."""
-    decision = get_default_triage_decision("BLOCKER")
-    assert decision == "fix"
+    decision = get_default_triage_decision('BLOCKER')
+    assert decision == 'fix'
 
 
 def test_critical_severity_requires_fix():
     """CRITICAL severity always requires fix."""
-    decision = get_default_triage_decision("CRITICAL")
-    assert decision == "fix"
+    decision = get_default_triage_decision('CRITICAL')
+    assert decision == 'fix'
 
 
 def test_major_severity_fix_if_reasonable():
     """MAJOR severity: fix if low effort."""
-    decision = get_default_triage_decision("MAJOR")
-    assert decision == "fix"  # Default to fix
+    decision = get_default_triage_decision('MAJOR')
+    assert decision == 'fix'  # Default to fix
 
 
 def test_minor_severity_defaults_to_fix():
     """MINOR severity: defaults to fix."""
-    decision = get_default_triage_decision("MINOR")
-    assert decision == "fix"
+    decision = get_default_triage_decision('MINOR')
+    assert decision == 'fix'
 
 
 def test_info_severity_can_accept():
     """INFO severity: can accept unless obvious fix."""
-    decision = get_default_triage_decision("INFO")
-    assert decision == "accept"
+    decision = get_default_triage_decision('INFO')
+    assert decision == 'accept'
 
 
 # =============================================================================
 # Test: Iteration Loop
 # =============================================================================
+
 
 def test_max_iterations_constant():
     """MAX_ITERATIONS should be 5."""

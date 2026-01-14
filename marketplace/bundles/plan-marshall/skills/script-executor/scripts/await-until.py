@@ -28,12 +28,12 @@ def finish(status, start, polls, command_key, error=None):
     duration = int(time.time() - start)
     timeout_set(command_key, duration)
 
-    output = {"status": status, "duration_seconds": duration, "polls": polls, "command_key": command_key}
+    output = {'status': status, 'duration_seconds': duration, 'polls': polls, 'command_key': command_key}
     if error:
-        output["error"] = error
+        output['error'] = error
 
     print(serialize_toon(output))
-    sys.exit(0 if status == "success" else 1)
+    sys.exit(0 if status == 'success' else 1)
 
 
 def main():
@@ -56,13 +56,13 @@ def main():
         if result.returncode == 0:
             parsed = parse_toon(result.stdout)
             if args.failure_field and match(parsed, args.failure_field):
-                finish("failure", start, polls, args.command_key, "Permanent failure")
+                finish('failure', start, polls, args.command_key, 'Permanent failure')
             if match(parsed, args.success_field):
-                finish("success", start, polls, args.command_key)
+                finish('success', start, polls, args.command_key)
 
         time.sleep(args.interval)
 
-    finish("timeout", start, polls, args.command_key, f"Timeout after {timeout}s")
+    finish('timeout', start, polls, args.command_key, f'Timeout after {timeout}s')
 
 
 if __name__ == '__main__':

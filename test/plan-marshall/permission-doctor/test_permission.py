@@ -21,6 +21,7 @@ SCRIPT_PATH = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'permission-doctor
 # Tests for detect-redundant subcommand
 # =============================================================================
 
+
 class TestDetectRedundant(ScriptTestCase):
     """Test permission-doctor.py detect-redundant subcommand."""
 
@@ -31,28 +32,19 @@ class TestDetectRedundant(ScriptTestCase):
     def test_detect_exact_duplicate(self):
         """Should detect when same permission exists in both global and local."""
         global_file = self.temp_dir / 'global.json'
-        global_file.write_text(json.dumps({
-            "permissions": {
-                "allow": ["Bash(git:*)", "Bash(npm:*)", "Read(//~/git/**)"],
-                "deny": [],
-                "ask": []
-            }
-        }))
+        global_file.write_text(
+            json.dumps(
+                {'permissions': {'allow': ['Bash(git:*)', 'Bash(npm:*)', 'Read(//~/git/**)'], 'deny': [], 'ask': []}}
+            )
+        )
 
         local_file = self.temp_dir / 'local.json'
-        local_file.write_text(json.dumps({
-            "permissions": {
-                "allow": ["Bash(git:*)", "Edit(.plan/**)"],
-                "deny": [],
-                "ask": []
-            }
-        }))
+        local_file.write_text(
+            json.dumps({'permissions': {'allow': ['Bash(git:*)', 'Edit(.plan/**)'], 'deny': [], 'ask': []}})
+        )
 
         result = run_script(
-            SCRIPT_PATH,
-            'detect-redundant',
-            '--global-settings', str(global_file),
-            '--local-settings', str(local_file)
+            SCRIPT_PATH, 'detect-redundant', '--global-settings', str(global_file), '--local-settings', str(local_file)
         )
         self.assert_success(result)
         data = result.json()
@@ -65,24 +57,15 @@ class TestDetectRedundant(ScriptTestCase):
     def test_detect_marketplace_in_local(self):
         """Should flag marketplace permissions in local as belonging in global."""
         global_file = self.temp_dir / 'global.json'
-        global_file.write_text(json.dumps({
-            "permissions": {"allow": ["Skill(builder:*)"], "deny": [], "ask": []}
-        }))
+        global_file.write_text(json.dumps({'permissions': {'allow': ['Skill(builder:*)'], 'deny': [], 'ask': []}}))
 
         local_file = self.temp_dir / 'local.json'
-        local_file.write_text(json.dumps({
-            "permissions": {
-                "allow": ["Skill(pm-dev-java:*)", "Edit(.plan/**)"],
-                "deny": [],
-                "ask": []
-            }
-        }))
+        local_file.write_text(
+            json.dumps({'permissions': {'allow': ['Skill(pm-dev-java:*)', 'Edit(.plan/**)'], 'deny': [], 'ask': []}})
+        )
 
         result = run_script(
-            SCRIPT_PATH,
-            'detect-redundant',
-            '--global-settings', str(global_file),
-            '--local-settings', str(local_file)
+            SCRIPT_PATH, 'detect-redundant', '--global-settings', str(global_file), '--local-settings', str(local_file)
         )
         self.assert_success(result)
         data = result.json()
@@ -117,28 +100,32 @@ This is a project-local command.
 """)
 
         global_file = self.temp_dir / 'global.json'
-        global_file.write_text(json.dumps({
-            "permissions": {"allow": ["Bash(git:*)"], "deny": [], "ask": []}
-        }))
+        global_file.write_text(json.dumps({'permissions': {'allow': ['Bash(git:*)'], 'deny': [], 'ask': []}}))
 
         local_file = claude_dir / 'settings.local.json'
-        local_file.write_text(json.dumps({
-            "permissions": {
-                "allow": [
-                    "SlashCommand(/my-local-command)",  # Project-local - should NOT be flagged
-                    "Skill(pm-dev-java:*)"  # Marketplace - SHOULD be flagged
-                ],
-                "deny": [],
-                "ask": []
-            }
-        }))
+        local_file.write_text(
+            json.dumps(
+                {
+                    'permissions': {
+                        'allow': [
+                            'SlashCommand(/my-local-command)',  # Project-local - should NOT be flagged
+                            'Skill(pm-dev-java:*)',  # Marketplace - SHOULD be flagged
+                        ],
+                        'deny': [],
+                        'ask': [],
+                    }
+                }
+            )
+        )
 
         result = run_script(
             SCRIPT_PATH,
             'detect-redundant',
-            '--global-settings', str(global_file),
-            '--local-settings', str(local_file),
-            cwd=self.temp_dir
+            '--global-settings',
+            str(global_file),
+            '--local-settings',
+            str(local_file),
+            cwd=self.temp_dir,
         )
         self.assert_success(result)
         data = result.json()
@@ -155,20 +142,15 @@ This is a project-local command.
     def test_output_includes_summary(self):
         """Output should include summary counts."""
         global_file = self.temp_dir / 'global.json'
-        global_file.write_text(json.dumps({
-            "permissions": {"allow": ["Bash(git:*)"], "deny": [], "ask": []}
-        }))
+        global_file.write_text(json.dumps({'permissions': {'allow': ['Bash(git:*)'], 'deny': [], 'ask': []}}))
 
         local_file = self.temp_dir / 'local.json'
-        local_file.write_text(json.dumps({
-            "permissions": {"allow": ["Bash(git:*)", "Skill(builder:*)"], "deny": [], "ask": []}
-        }))
+        local_file.write_text(
+            json.dumps({'permissions': {'allow': ['Bash(git:*)', 'Skill(builder:*)'], 'deny': [], 'ask': []}})
+        )
 
         result = run_script(
-            SCRIPT_PATH,
-            'detect-redundant',
-            '--global-settings', str(global_file),
-            '--local-settings', str(local_file)
+            SCRIPT_PATH, 'detect-redundant', '--global-settings', str(global_file), '--local-settings', str(local_file)
         )
         self.assert_success(result)
         data = result.json()
@@ -182,6 +164,7 @@ This is a project-local command.
 # Tests for detect-suspicious subcommand
 # =============================================================================
 
+
 class TestDetectSuspicious(ScriptTestCase):
     """Test permission-doctor.py detect-suspicious subcommand."""
 
@@ -192,19 +175,9 @@ class TestDetectSuspicious(ScriptTestCase):
     def test_detect_sudo_permission(self):
         """Should flag sudo permissions as suspicious."""
         settings_file = self.temp_dir / 'settings.json'
-        settings_file.write_text(json.dumps({
-            "permissions": {
-                "allow": ["Bash(sudo:*)"],
-                "deny": [],
-                "ask": []
-            }
-        }))
+        settings_file.write_text(json.dumps({'permissions': {'allow': ['Bash(sudo:*)'], 'deny': [], 'ask': []}}))
 
-        result = run_script(
-            SCRIPT_PATH,
-            'detect-suspicious',
-            '--settings', str(settings_file)
-        )
+        result = run_script(SCRIPT_PATH, 'detect-suspicious', '--settings', str(settings_file))
         self.assert_success(result)
         data = result.json()
 
@@ -215,19 +188,9 @@ class TestDetectSuspicious(ScriptTestCase):
     def test_detect_system_path_access(self):
         """Should flag system path access as suspicious."""
         settings_file = self.temp_dir / 'settings.json'
-        settings_file.write_text(json.dumps({
-            "permissions": {
-                "allow": ["Write(/etc/**)"],
-                "deny": [],
-                "ask": []
-            }
-        }))
+        settings_file.write_text(json.dumps({'permissions': {'allow': ['Write(/etc/**)'], 'deny': [], 'ask': []}}))
 
-        result = run_script(
-            SCRIPT_PATH,
-            'detect-suspicious',
-            '--settings', str(settings_file)
-        )
+        result = run_script(SCRIPT_PATH, 'detect-suspicious', '--settings', str(settings_file))
         self.assert_success(result)
         data = result.json()
 
@@ -237,19 +200,9 @@ class TestDetectSuspicious(ScriptTestCase):
     def test_output_includes_severity(self):
         """Suspicious permissions should include severity."""
         settings_file = self.temp_dir / 'settings.json'
-        settings_file.write_text(json.dumps({
-            "permissions": {
-                "allow": ["Bash(rm:-rf:*)"],
-                "deny": [],
-                "ask": []
-            }
-        }))
+        settings_file.write_text(json.dumps({'permissions': {'allow': ['Bash(rm:-rf:*)'], 'deny': [], 'ask': []}}))
 
-        result = run_script(
-            SCRIPT_PATH,
-            'detect-suspicious',
-            '--settings', str(settings_file)
-        )
+        result = run_script(SCRIPT_PATH, 'detect-suspicious', '--settings', str(settings_file))
         self.assert_success(result)
         data = result.json()
 
@@ -261,6 +214,7 @@ class TestDetectSuspicious(ScriptTestCase):
 # =============================================================================
 # Tests for --scope option
 # =============================================================================
+
 
 class TestScopeOption(ScriptTestCase):
     """Test permission-doctor.py --scope option."""
@@ -275,12 +229,7 @@ class TestScopeOption(ScriptTestCase):
         # Note: This test uses the actual home directory's settings
         # For proper isolation, we'd need to mock Path.home()
         # Here we just verify the command works with --scope both
-        result = run_script(
-            SCRIPT_PATH,
-            'detect-redundant',
-            '--scope', 'both',
-            cwd=self.temp_dir
-        )
+        result = run_script(SCRIPT_PATH, 'detect-redundant', '--scope', 'both', cwd=self.temp_dir)
         # May succeed or fail depending on whether settings exist
         # Just verify it doesn't crash with unexpected error
         self.assertIn(result.returncode, [0, 1])
@@ -290,20 +239,9 @@ class TestScopeOption(ScriptTestCase):
         claude_dir = self.temp_dir / '.claude'
         claude_dir.mkdir()
         settings_file = claude_dir / 'settings.json'
-        settings_file.write_text(json.dumps({
-            "permissions": {
-                "allow": ["Bash(sudo:*)"],
-                "deny": [],
-                "ask": []
-            }
-        }))
+        settings_file.write_text(json.dumps({'permissions': {'allow': ['Bash(sudo:*)'], 'deny': [], 'ask': []}}))
 
-        result = run_script(
-            SCRIPT_PATH,
-            'detect-suspicious',
-            '--scope', 'project',
-            cwd=self.temp_dir
-        )
+        result = run_script(SCRIPT_PATH, 'detect-suspicious', '--scope', 'project', cwd=self.temp_dir)
         self.assert_success(result)
         data = result.json()
 
@@ -313,12 +251,7 @@ class TestScopeOption(ScriptTestCase):
 
     def test_scope_and_settings_mutually_exclusive(self):
         """--scope and --settings should be mutually exclusive."""
-        result = run_script(
-            SCRIPT_PATH,
-            'detect-suspicious',
-            '--scope', 'project',
-            '--settings', '/tmp/test.json'
-        )
+        result = run_script(SCRIPT_PATH, 'detect-suspicious', '--scope', 'project', '--settings', '/tmp/test.json')
         # Should fail due to mutual exclusivity
         self.assertEqual(result.returncode, 2)
 
@@ -327,9 +260,10 @@ class TestScopeOption(ScriptTestCase):
 # Simple function-based tests for quick validation
 # =============================================================================
 
+
 def test_script_exists():
     """Verify the script exists."""
-    assert SCRIPT_PATH.exists(), f"Script not found: {SCRIPT_PATH}"
+    assert SCRIPT_PATH.exists(), f'Script not found: {SCRIPT_PATH}'
 
 
 def test_help_works():
@@ -359,7 +293,7 @@ if __name__ == '__main__':
 
     # Check if script exists first
     if not SCRIPT_PATH.exists():
-        print(f"ERROR: Script not found: {SCRIPT_PATH}")
+        print(f'ERROR: Script not found: {SCRIPT_PATH}')
         sys.exit(1)
 
     # Run unittest-based tests
@@ -374,9 +308,9 @@ if __name__ == '__main__':
     result = runner.run(suite)
 
     # Also run simple function tests
-    print("\n" + "=" * 50)
-    print("Running simple function tests...")
-    print("=" * 50)
+    print('\n' + '=' * 50)
+    print('Running simple function tests...')
+    print('=' * 50)
 
     simple_tests = [
         test_script_exists,
@@ -390,9 +324,9 @@ if __name__ == '__main__':
     for test_fn in simple_tests:
         try:
             test_fn()
-            print(f"  PASS: {test_fn.__name__}")
+            print(f'  PASS: {test_fn.__name__}')
         except AssertionError as e:
-            print(f"  FAIL: {test_fn.__name__}: {e}")
+            print(f'  FAIL: {test_fn.__name__}: {e}')
             simple_failures += 1
 
     # Exit with combined result

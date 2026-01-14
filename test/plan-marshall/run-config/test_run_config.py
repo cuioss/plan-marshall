@@ -21,18 +21,19 @@ SCRIPT_PATH = get_script_path('plan-marshall', 'run-config', 'run_config.py')
 # Init Subcommand Tests
 # =============================================================================
 
+
 def test_init_create_new_config():
     """Test init creates new run-configuration.json."""
     with PlanContext() as ctx:
         result = run_script(SCRIPT_PATH, 'init')
         data = result.json()
 
-        assert data.get('success') is True, "Should succeed"
+        assert data.get('success') is True, 'Should succeed'
         assert data.get('action') == 'created', "Action should be 'created'"
 
         # Verify file exists (uses .plan)
         config_file = ctx.fixture_dir / PLAN_DIR_NAME / 'run-configuration.json'
-        assert config_file.exists(), "Config file should be created"
+        assert config_file.exists(), 'Config file should be created'
 
 
 def test_init_skip_existing():
@@ -46,7 +47,7 @@ def test_init_skip_existing():
         result = run_script(SCRIPT_PATH, 'init')
         data = result.json()
 
-        assert data.get('success') is True, "Should succeed"
+        assert data.get('success') is True, 'Should succeed'
         assert data.get('action') == 'skipped', "Action should be 'skipped'"
 
 
@@ -61,11 +62,11 @@ def test_init_force_overwrite():
         result = run_script(SCRIPT_PATH, 'init', '--force')
         data = result.json()
 
-        assert data.get('success') is True, "Should succeed"
+        assert data.get('success') is True, 'Should succeed'
 
         # Verify old command entry is gone
         content = json.loads((plan_dir / 'run-configuration.json').read_text())
-        assert 'old' not in content.get('commands', {}), "Old command should be removed"
+        assert 'old' not in content.get('commands', {}), 'Old command should be removed'
 
 
 def test_init_correct_structure():
@@ -77,17 +78,17 @@ def test_init_correct_structure():
         content = json.loads(config_file.read_text())
 
         # Check version
-        assert content.get('version') == 1, "Version should be 1"
+        assert content.get('version') == 1, 'Version should be 1'
 
         # Check commands is empty object
-        assert content.get('commands') == {}, "Commands should be empty object"
+        assert content.get('commands') == {}, 'Commands should be empty object'
 
         # Check maven section with acceptable_warnings
         maven = content.get('maven', {})
         aw = maven.get('acceptable_warnings', {})
-        assert 'transitive_dependency' in aw, "Should have transitive_dependency category"
-        assert 'plugin_compatibility' in aw, "Should have plugin_compatibility category"
-        assert 'platform_specific' in aw, "Should have platform_specific category"
+        assert 'transitive_dependency' in aw, 'Should have transitive_dependency category'
+        assert 'plugin_compatibility' in aw, 'Should have plugin_compatibility category'
+        assert 'platform_specific' in aw, 'Should have platform_specific category'
 
 
 def test_init_creates_plan_dir():
@@ -100,8 +101,8 @@ def test_init_creates_plan_dir():
 
         run_script(SCRIPT_PATH, 'init')
 
-        assert plan_dir.exists(), ".plan directory should be created"
-        assert (plan_dir / 'run-configuration.json').exists(), "Config file should be created"
+        assert plan_dir.exists(), '.plan directory should be created'
+        assert (plan_dir / 'run-configuration.json').exists(), 'Config file should be created'
 
 
 def test_init_output_includes_path():
@@ -110,7 +111,7 @@ def test_init_output_includes_path():
         result = run_script(SCRIPT_PATH, 'init')
         data = result.json()
 
-        assert 'path' in data, "Output should include path field"
+        assert 'path' in data, 'Output should include path field'
 
 
 def test_init_output_includes_structure():
@@ -119,18 +120,19 @@ def test_init_output_includes_structure():
         result = run_script(SCRIPT_PATH, 'init')
         data = result.json()
 
-        assert data.get('action') == 'created', "Should be created"
-        assert 'structure' in data, "Output should include structure field"
+        assert data.get('action') == 'created', 'Should be created'
+        assert 'structure' in data, 'Output should include structure field'
 
 
 # =============================================================================
 # Validate Subcommand Tests
 # =============================================================================
 
+
 def test_validate_valid_run_config():
     """Test validate valid run-configuration.json."""
     with PlanContext() as ctx:
-        (ctx.fixture_dir / 'run-configuration.json').write_text('''{
+        (ctx.fixture_dir / 'run-configuration.json').write_text("""{
   "version": 1,
   "commands": {
     "test-cmd": {
@@ -140,64 +142,64 @@ def test_validate_valid_run_config():
       }
     }
   }
-}''')
+}""")
 
         result = run_script(SCRIPT_PATH, 'validate', '--file', str(ctx.fixture_dir / 'run-configuration.json'))
         data = result.json()
 
-        assert data.get('success') is True, "Should succeed"
-        assert data.get('valid') is True, "Valid config should be valid"
+        assert data.get('success') is True, 'Should succeed'
+        assert data.get('valid') is True, 'Valid config should be valid'
 
 
 def test_validate_missing_version():
     """Test validate detects missing version."""
     with PlanContext() as ctx:
-        (ctx.fixture_dir / 'missing-version.json').write_text('''{
+        (ctx.fixture_dir / 'missing-version.json').write_text("""{
   "commands": {
     "test-cmd": {}
   }
-}''')
+}""")
 
         result = run_script(SCRIPT_PATH, 'validate', '--file', str(ctx.fixture_dir / 'missing-version.json'))
         data = result.json()
 
-        assert data.get('success') is True, "Should succeed"
-        assert data.get('valid') is False, "Missing version should be invalid"
+        assert data.get('success') is True, 'Should succeed'
+        assert data.get('valid') is False, 'Missing version should be invalid'
 
 
 def test_validate_missing_commands():
     """Test validate detects missing commands."""
     with PlanContext() as ctx:
-        (ctx.fixture_dir / 'missing-commands.json').write_text('''{
+        (ctx.fixture_dir / 'missing-commands.json').write_text("""{
   "version": 1
-}''')
+}""")
 
         result = run_script(SCRIPT_PATH, 'validate', '--file', str(ctx.fixture_dir / 'missing-commands.json'))
         data = result.json()
 
-        assert data.get('success') is True, "Should succeed"
-        assert data.get('valid') is False, "Missing commands should be invalid"
+        assert data.get('success') is True, 'Should succeed'
+        assert data.get('valid') is False, 'Missing commands should be invalid'
 
 
 def test_validate_wrong_version_type():
     """Test validate detects wrong version type."""
     with PlanContext() as ctx:
-        (ctx.fixture_dir / 'wrong-version-type.json').write_text('''{
+        (ctx.fixture_dir / 'wrong-version-type.json').write_text("""{
   "version": "1",
   "commands": {}
-}''')
+}""")
 
         result = run_script(SCRIPT_PATH, 'validate', '--file', str(ctx.fixture_dir / 'wrong-version-type.json'))
         data = result.json()
 
-        assert data.get('success') is True, "Should succeed"
-        assert data.get('valid') is False, "Wrong version type should be invalid"
+        assert data.get('success') is True, 'Should succeed'
+        assert data.get('valid') is False, 'Wrong version type should be invalid'
 
 
 def test_validate_with_maven():
     """Test validate with maven section."""
     with PlanContext() as ctx:
-        (ctx.fixture_dir / 'with-maven.json').write_text('''{
+        (ctx.fixture_dir / 'with-maven.json').write_text("""{
   "version": 1,
   "commands": {},
   "maven": {
@@ -207,19 +209,19 @@ def test_validate_with_maven():
       }
     }
   }
-}''')
+}""")
 
         result = run_script(SCRIPT_PATH, 'validate', '--file', str(ctx.fixture_dir / 'with-maven.json'))
         data = result.json()
 
-        assert data.get('success') is True, "Should succeed"
-        assert data.get('valid') is True, "Config with maven section should be valid"
+        assert data.get('success') is True, 'Should succeed'
+        assert data.get('valid') is True, 'Config with maven section should be valid'
 
 
 def test_validate_with_agent_decisions():
     """Test validate with agent_decisions section."""
     with PlanContext() as ctx:
-        (ctx.fixture_dir / 'with-agent-decisions.json').write_text('''{
+        (ctx.fixture_dir / 'with-agent-decisions.json').write_text("""{
   "version": 1,
   "commands": {},
   "agent_decisions": {
@@ -228,44 +230,44 @@ def test_validate_with_agent_decisions():
       "decision_date": "2025-11-25"
     }
   }
-}''')
+}""")
 
         result = run_script(SCRIPT_PATH, 'validate', '--file', str(ctx.fixture_dir / 'with-agent-decisions.json'))
         data = result.json()
 
-        assert data.get('success') is True, "Should succeed"
-        assert data.get('valid') is True, "Config with agent_decisions should be valid"
+        assert data.get('success') is True, 'Should succeed'
+        assert data.get('valid') is True, 'Config with agent_decisions should be valid'
 
 
 def test_validate_invalid_json_syntax():
     """Test validate detects invalid JSON syntax."""
     with PlanContext() as ctx:
-        (ctx.fixture_dir / 'invalid-json.json').write_text('''{
+        (ctx.fixture_dir / 'invalid-json.json').write_text("""{
   "broken": true,
   missing-quotes: "value"
-}''')
+}""")
 
         result = run_script(SCRIPT_PATH, 'validate', '--file', str(ctx.fixture_dir / 'invalid-json.json'))
         data = result.json()
 
-        assert data.get('success') is True, "Should succeed (validation ran)"
-        assert data.get('valid') is False, "Invalid JSON should be invalid"
+        assert data.get('success') is True, 'Should succeed (validation ran)'
+        assert data.get('valid') is False, 'Invalid JSON should be invalid'
 
 
 def test_validate_checks_array():
     """Test validate output includes checks array."""
     with PlanContext() as ctx:
-        (ctx.fixture_dir / 'run-configuration.json').write_text('''{
+        (ctx.fixture_dir / 'run-configuration.json').write_text("""{
   "version": 1,
   "commands": {}
-}''')
+}""")
 
         result = run_script(SCRIPT_PATH, 'validate', '--file', str(ctx.fixture_dir / 'run-configuration.json'))
         data = result.json()
 
-        assert data.get('success') is True, "Should succeed"
+        assert data.get('success') is True, 'Should succeed'
         checks = data.get('checks', [])
-        assert len(checks) > 0, "Should include checks array with items"
+        assert len(checks) > 0, 'Should include checks array with items'
 
 
 def test_validate_file_not_found():
@@ -275,16 +277,16 @@ def test_validate_file_not_found():
         # Script may output to stderr for errors
         data = result.json_or_error()
 
-        assert data.get('success') is False, "Should fail for non-existent file"
+        assert data.get('success') is False, 'Should fail for non-existent file'
 
 
 def test_validate_format_is_run_config():
     """Test validate format is run-config."""
     with PlanContext() as ctx:
-        (ctx.fixture_dir / 'run-configuration.json').write_text('''{
+        (ctx.fixture_dir / 'run-configuration.json').write_text("""{
   "version": 1,
   "commands": {}
-}''')
+}""")
 
         result = run_script(SCRIPT_PATH, 'validate', '--file', str(ctx.fixture_dir / 'run-configuration.json'))
         data = result.json()
@@ -295,6 +297,7 @@ def test_validate_format_is_run_config():
 # =============================================================================
 # Timeout Subcommand Tests
 # =============================================================================
+
 
 def parse_toon(output: str) -> dict:
     """Parse TOON output into dict."""
@@ -312,11 +315,9 @@ def test_timeout_get_default_when_no_persisted():
         # Create .plan directory
         (ctx.fixture_dir / PLAN_DIR_NAME).mkdir(parents=True)
 
-        result = run_script(SCRIPT_PATH, 'timeout', 'get',
-                          '--command', 'ci:pr_checks',
-                          '--default', '300')
+        result = run_script(SCRIPT_PATH, 'timeout', 'get', '--command', 'ci:pr_checks', '--default', '300')
 
-        assert result.success, f"Should succeed: {result.stderr}"
+        assert result.success, f'Should succeed: {result.stderr}'
         # Plain number output
         assert result.stdout.strip() == '300'
 
@@ -328,21 +329,12 @@ def test_timeout_get_with_safety_margin():
         plan_dir.mkdir(parents=True)
 
         # Create config with persisted timeout
-        config = {
-            "version": 1,
-            "commands": {
-                "ci:pr_checks": {
-                    "timeout_seconds": 240
-                }
-            }
-        }
+        config = {'version': 1, 'commands': {'ci:pr_checks': {'timeout_seconds': 240}}}
         (plan_dir / 'run-configuration.json').write_text(json.dumps(config))
 
-        result = run_script(SCRIPT_PATH, 'timeout', 'get',
-                          '--command', 'ci:pr_checks',
-                          '--default', '300')
+        result = run_script(SCRIPT_PATH, 'timeout', 'get', '--command', 'ci:pr_checks', '--default', '300')
 
-        assert result.success, f"Should succeed: {result.stderr}"
+        assert result.success, f'Should succeed: {result.stderr}'
         # 240 * 1.25 = 300 (plain number output)
         assert result.stdout.strip() == '300'
 
@@ -355,20 +347,18 @@ def test_timeout_get_enforces_minimum_on_persisted():
 
         # Create config with very low persisted timeout (e.g., from warm JVM run)
         config = {
-            "version": 1,
-            "commands": {
-                "maven:discover": {
-                    "timeout_seconds": 15  # Very short from warm run
+            'version': 1,
+            'commands': {
+                'maven:discover': {
+                    'timeout_seconds': 15  # Very short from warm run
                 }
-            }
+            },
         }
         (plan_dir / 'run-configuration.json').write_text(json.dumps(config))
 
-        result = run_script(SCRIPT_PATH, 'timeout', 'get',
-                          '--command', 'maven:discover',
-                          '--default', '60')
+        result = run_script(SCRIPT_PATH, 'timeout', 'get', '--command', 'maven:discover', '--default', '60')
 
-        assert result.success, f"Should succeed: {result.stderr}"
+        assert result.success, f'Should succeed: {result.stderr}'
         # 15 * 1.25 = 18.75 -> 18, but minimum is 120
         assert result.stdout.strip() == '120'
 
@@ -379,11 +369,11 @@ def test_timeout_get_enforces_minimum_on_default():
         # Create .plan directory
         (ctx.fixture_dir / PLAN_DIR_NAME).mkdir(parents=True)
 
-        result = run_script(SCRIPT_PATH, 'timeout', 'get',
-                          '--command', 'quick:command',
-                          '--default', '30')  # Very low default
+        result = run_script(
+            SCRIPT_PATH, 'timeout', 'get', '--command', 'quick:command', '--default', '30'
+        )  # Very low default
 
-        assert result.success, f"Should succeed: {result.stderr}"
+        assert result.success, f'Should succeed: {result.stderr}'
         # Default 30 is below minimum 120
         assert result.stdout.strip() == '120'
 
@@ -394,11 +384,9 @@ def test_timeout_set_initial_value():
         plan_dir = ctx.fixture_dir / PLAN_DIR_NAME
         plan_dir.mkdir(parents=True)
 
-        result = run_script(SCRIPT_PATH, 'timeout', 'set',
-                          '--command', 'ci:pr_checks',
-                          '--duration', '180')
+        result = run_script(SCRIPT_PATH, 'timeout', 'set', '--command', 'ci:pr_checks', '--duration', '180')
 
-        assert result.success, f"Should succeed: {result.stderr}"
+        assert result.success, f'Should succeed: {result.stderr}'
         data = parse_toon(result.stdout)
         assert data.get('status') == 'success'
         assert data.get('timeout_seconds') == '180'
@@ -416,21 +404,12 @@ def test_timeout_set_weighted_update():
         plan_dir.mkdir(parents=True)
 
         # Create config with existing timeout
-        config = {
-            "version": 1,
-            "commands": {
-                "ci:pr_checks": {
-                    "timeout_seconds": 240
-                }
-            }
-        }
+        config = {'version': 1, 'commands': {'ci:pr_checks': {'timeout_seconds': 240}}}
         (plan_dir / 'run-configuration.json').write_text(json.dumps(config))
 
-        result = run_script(SCRIPT_PATH, 'timeout', 'set',
-                          '--command', 'ci:pr_checks',
-                          '--duration', '180')
+        result = run_script(SCRIPT_PATH, 'timeout', 'set', '--command', 'ci:pr_checks', '--duration', '180')
 
-        assert result.success, f"Should succeed: {result.stderr}"
+        assert result.success, f'Should succeed: {result.stderr}'
         data = parse_toon(result.stdout)
         assert data.get('status') == 'success'
         # 0.8 * 240 + 0.2 * 180 = 192 + 36 = 228
@@ -446,22 +425,13 @@ def test_timeout_set_weighted_favors_higher():
         plan_dir.mkdir(parents=True)
 
         # Create config with lower existing timeout
-        config = {
-            "version": 1,
-            "commands": {
-                "ci:pr_checks": {
-                    "timeout_seconds": 180
-                }
-            }
-        }
+        config = {'version': 1, 'commands': {'ci:pr_checks': {'timeout_seconds': 180}}}
         (plan_dir / 'run-configuration.json').write_text(json.dumps(config))
 
         # Set higher duration
-        result = run_script(SCRIPT_PATH, 'timeout', 'set',
-                          '--command', 'ci:pr_checks',
-                          '--duration', '240')
+        result = run_script(SCRIPT_PATH, 'timeout', 'set', '--command', 'ci:pr_checks', '--duration', '240')
 
-        assert result.success, f"Should succeed: {result.stderr}"
+        assert result.success, f'Should succeed: {result.stderr}'
         data = parse_toon(result.stdout)
         # Higher=240, Lower=180: 0.8 * 240 + 0.2 * 180 = 228
         assert data.get('timeout_seconds') == '228'
@@ -473,21 +443,12 @@ def test_timeout_set_same_value():
         plan_dir = ctx.fixture_dir / PLAN_DIR_NAME
         plan_dir.mkdir(parents=True)
 
-        config = {
-            "version": 1,
-            "commands": {
-                "ci:pr_checks": {
-                    "timeout_seconds": 300
-                }
-            }
-        }
+        config = {'version': 1, 'commands': {'ci:pr_checks': {'timeout_seconds': 300}}}
         (plan_dir / 'run-configuration.json').write_text(json.dumps(config))
 
-        result = run_script(SCRIPT_PATH, 'timeout', 'set',
-                          '--command', 'ci:pr_checks',
-                          '--duration', '300')
+        result = run_script(SCRIPT_PATH, 'timeout', 'set', '--command', 'ci:pr_checks', '--duration', '300')
 
-        assert result.success, f"Should succeed: {result.stderr}"
+        assert result.success, f'Should succeed: {result.stderr}'
         data = parse_toon(result.stdout)
         # 0.8 * 300 + 0.2 * 300 = 300
         assert data.get('timeout_seconds') == '300'
@@ -496,7 +457,7 @@ def test_timeout_set_same_value():
 def test_timeout_help():
     """Test timeout subcommand shows help."""
     result = run_script(SCRIPT_PATH, 'timeout', '--help')
-    assert result.success, f"Should succeed: {result.stderr}"
+    assert result.success, f'Should succeed: {result.stderr}'
     assert 'get' in result.stdout
     assert 'set' in result.stdout
 
@@ -504,7 +465,7 @@ def test_timeout_help():
 def test_timeout_get_help():
     """Test timeout get subcommand shows help."""
     result = run_script(SCRIPT_PATH, 'timeout', 'get', '--help')
-    assert result.success, f"Should succeed: {result.stderr}"
+    assert result.success, f'Should succeed: {result.stderr}'
     assert '--command' in result.stdout
     assert '--default' in result.stdout
 
@@ -512,7 +473,7 @@ def test_timeout_get_help():
 def test_timeout_set_help():
     """Test timeout set subcommand shows help."""
     result = run_script(SCRIPT_PATH, 'timeout', 'set', '--help')
-    assert result.success, f"Should succeed: {result.stderr}"
+    assert result.success, f'Should succeed: {result.stderr}'
     assert '--command' in result.stdout
     assert '--duration' in result.stdout
 
@@ -520,6 +481,7 @@ def test_timeout_set_help():
 # =============================================================================
 # Warning Subcommand Tests
 # =============================================================================
+
 
 def test_warning_add_pattern():
     """Test warning add adds pattern to acceptable list."""
@@ -530,9 +492,15 @@ def test_warning_add_pattern():
         # Initialize config
         run_script(SCRIPT_PATH, 'init')
 
-        result = run_script(SCRIPT_PATH, 'warning', 'add',
-                          '--category', 'transitive_dependency',
-                          '--pattern', 'uses transitive dependency')
+        result = run_script(
+            SCRIPT_PATH,
+            'warning',
+            'add',
+            '--category',
+            'transitive_dependency',
+            '--pattern',
+            'uses transitive dependency',
+        )
 
         data = result.json()
         assert data.get('success') is True
@@ -552,21 +520,21 @@ def test_warning_add_duplicate_skips():
 
         # Create config with existing pattern
         config = {
-            "version": 1,
-            "commands": {},
-            "maven": {
-                "acceptable_warnings": {
-                    "transitive_dependency": ["existing pattern"],
-                    "plugin_compatibility": [],
-                    "platform_specific": []
+            'version': 1,
+            'commands': {},
+            'maven': {
+                'acceptable_warnings': {
+                    'transitive_dependency': ['existing pattern'],
+                    'plugin_compatibility': [],
+                    'platform_specific': [],
                 }
-            }
+            },
         }
         (plan_dir / 'run-configuration.json').write_text(json.dumps(config))
 
-        result = run_script(SCRIPT_PATH, 'warning', 'add',
-                          '--category', 'transitive_dependency',
-                          '--pattern', 'existing pattern')
+        result = run_script(
+            SCRIPT_PATH, 'warning', 'add', '--category', 'transitive_dependency', '--pattern', 'existing pattern'
+        )
 
         data = result.json()
         assert data.get('success') is True
@@ -578,9 +546,7 @@ def test_warning_add_invalid_category():
     with PlanContext():
         run_script(SCRIPT_PATH, 'init')
 
-        result = run_script(SCRIPT_PATH, 'warning', 'add',
-                          '--category', 'invalid_category',
-                          '--pattern', 'test')
+        result = run_script(SCRIPT_PATH, 'warning', 'add', '--category', 'invalid_category', '--pattern', 'test')
 
         # argparse will fail with invalid choice
         assert result.returncode != 0
@@ -594,15 +560,15 @@ def test_warning_list_all_categories():
 
         # Create config with patterns
         config = {
-            "version": 1,
-            "commands": {},
-            "maven": {
-                "acceptable_warnings": {
-                    "transitive_dependency": ["pattern1", "pattern2"],
-                    "plugin_compatibility": ["pattern3"],
-                    "platform_specific": []
+            'version': 1,
+            'commands': {},
+            'maven': {
+                'acceptable_warnings': {
+                    'transitive_dependency': ['pattern1', 'pattern2'],
+                    'plugin_compatibility': ['pattern3'],
+                    'platform_specific': [],
                 }
-            }
+            },
         }
         (plan_dir / 'run-configuration.json').write_text(json.dumps(config))
 
@@ -622,20 +588,19 @@ def test_warning_list_single_category():
         plan_dir.mkdir(parents=True)
 
         config = {
-            "version": 1,
-            "commands": {},
-            "maven": {
-                "acceptable_warnings": {
-                    "transitive_dependency": ["pattern1", "pattern2"],
-                    "plugin_compatibility": ["pattern3"],
-                    "platform_specific": []
+            'version': 1,
+            'commands': {},
+            'maven': {
+                'acceptable_warnings': {
+                    'transitive_dependency': ['pattern1', 'pattern2'],
+                    'plugin_compatibility': ['pattern3'],
+                    'platform_specific': [],
                 }
-            }
+            },
         }
         (plan_dir / 'run-configuration.json').write_text(json.dumps(config))
 
-        result = run_script(SCRIPT_PATH, 'warning', 'list',
-                          '--category', 'transitive_dependency')
+        result = run_script(SCRIPT_PATH, 'warning', 'list', '--category', 'transitive_dependency')
 
         data = result.json()
         assert data.get('success') is True
@@ -650,21 +615,21 @@ def test_warning_remove_pattern():
         plan_dir.mkdir(parents=True)
 
         config = {
-            "version": 1,
-            "commands": {},
-            "maven": {
-                "acceptable_warnings": {
-                    "transitive_dependency": ["pattern1", "pattern2"],
-                    "plugin_compatibility": [],
-                    "platform_specific": []
+            'version': 1,
+            'commands': {},
+            'maven': {
+                'acceptable_warnings': {
+                    'transitive_dependency': ['pattern1', 'pattern2'],
+                    'plugin_compatibility': [],
+                    'platform_specific': [],
                 }
-            }
+            },
         }
         (plan_dir / 'run-configuration.json').write_text(json.dumps(config))
 
-        result = run_script(SCRIPT_PATH, 'warning', 'remove',
-                          '--category', 'transitive_dependency',
-                          '--pattern', 'pattern1')
+        result = run_script(
+            SCRIPT_PATH, 'warning', 'remove', '--category', 'transitive_dependency', '--pattern', 'pattern1'
+        )
 
         data = result.json()
         assert data.get('success') is True
@@ -684,21 +649,21 @@ def test_warning_remove_nonexistent_skips():
         plan_dir.mkdir(parents=True)
 
         config = {
-            "version": 1,
-            "commands": {},
-            "maven": {
-                "acceptable_warnings": {
-                    "transitive_dependency": ["pattern1"],
-                    "plugin_compatibility": [],
-                    "platform_specific": []
+            'version': 1,
+            'commands': {},
+            'maven': {
+                'acceptable_warnings': {
+                    'transitive_dependency': ['pattern1'],
+                    'plugin_compatibility': [],
+                    'platform_specific': [],
                 }
-            }
+            },
         }
         (plan_dir / 'run-configuration.json').write_text(json.dumps(config))
 
-        result = run_script(SCRIPT_PATH, 'warning', 'remove',
-                          '--category', 'transitive_dependency',
-                          '--pattern', 'nonexistent')
+        result = run_script(
+            SCRIPT_PATH, 'warning', 'remove', '--category', 'transitive_dependency', '--pattern', 'nonexistent'
+        )
 
         data = result.json()
         assert data.get('success') is True
@@ -742,6 +707,7 @@ def test_warning_list_empty_config():
 # Profile Mapping Subcommand Tests
 # =============================================================================
 
+
 def test_profile_mapping_set():
     """Test profile-mapping set adds mapping."""
     with PlanContext() as ctx:
@@ -751,9 +717,7 @@ def test_profile_mapping_set():
         # Initialize config
         run_script(SCRIPT_PATH, 'init')
 
-        result = run_script(SCRIPT_PATH, 'profile-mapping', 'set',
-                          '--profile-id', 'jfr',
-                          '--canonical', 'benchmark')
+        result = run_script(SCRIPT_PATH, 'profile-mapping', 'set', '--profile-id', 'jfr', '--canonical', 'benchmark')
 
         data = result.json()
         assert data.get('success') is True
@@ -774,9 +738,7 @@ def test_profile_mapping_set_skip():
 
         run_script(SCRIPT_PATH, 'init')
 
-        result = run_script(SCRIPT_PATH, 'profile-mapping', 'set',
-                          '--profile-id', 'quick',
-                          '--canonical', 'skip')
+        result = run_script(SCRIPT_PATH, 'profile-mapping', 'set', '--profile-id', 'quick', '--canonical', 'skip')
 
         data = result.json()
         assert data.get('success') is True
@@ -794,18 +756,10 @@ def test_profile_mapping_set_update_existing():
         plan_dir.mkdir(parents=True)
 
         # Create config with existing mapping
-        config = {
-            "version": 1,
-            "commands": {},
-            "profile_mappings": {
-                "jfr": "skip"
-            }
-        }
+        config = {'version': 1, 'commands': {}, 'profile_mappings': {'jfr': 'skip'}}
         (plan_dir / 'run-configuration.json').write_text(json.dumps(config))
 
-        result = run_script(SCRIPT_PATH, 'profile-mapping', 'set',
-                          '--profile-id', 'jfr',
-                          '--canonical', 'benchmark')
+        result = run_script(SCRIPT_PATH, 'profile-mapping', 'set', '--profile-id', 'jfr', '--canonical', 'benchmark')
 
         data = result.json()
         assert data.get('success') is True
@@ -822,9 +776,9 @@ def test_profile_mapping_set_invalid_canonical():
     with PlanContext():
         run_script(SCRIPT_PATH, 'init')
 
-        result = run_script(SCRIPT_PATH, 'profile-mapping', 'set',
-                          '--profile-id', 'jfr',
-                          '--canonical', 'invalid_canonical')
+        result = run_script(
+            SCRIPT_PATH, 'profile-mapping', 'set', '--profile-id', 'jfr', '--canonical', 'invalid_canonical'
+        )
 
         # argparse will fail with invalid choice
         assert result.returncode != 0
@@ -836,17 +790,10 @@ def test_profile_mapping_get_mapped():
         plan_dir = ctx.fixture_dir / PLAN_DIR_NAME
         plan_dir.mkdir(parents=True)
 
-        config = {
-            "version": 1,
-            "commands": {},
-            "profile_mappings": {
-                "jfr": "benchmark"
-            }
-        }
+        config = {'version': 1, 'commands': {}, 'profile_mappings': {'jfr': 'benchmark'}}
         (plan_dir / 'run-configuration.json').write_text(json.dumps(config))
 
-        result = run_script(SCRIPT_PATH, 'profile-mapping', 'get',
-                          '--profile-id', 'jfr')
+        result = run_script(SCRIPT_PATH, 'profile-mapping', 'get', '--profile-id', 'jfr')
 
         data = result.json()
         assert data.get('success') is True
@@ -861,15 +808,10 @@ def test_profile_mapping_get_unmapped():
         plan_dir = ctx.fixture_dir / PLAN_DIR_NAME
         plan_dir.mkdir(parents=True)
 
-        config = {
-            "version": 1,
-            "commands": {},
-            "profile_mappings": {}
-        }
+        config = {'version': 1, 'commands': {}, 'profile_mappings': {}}
         (plan_dir / 'run-configuration.json').write_text(json.dumps(config))
 
-        result = run_script(SCRIPT_PATH, 'profile-mapping', 'get',
-                          '--profile-id', 'unknown')
+        result = run_script(SCRIPT_PATH, 'profile-mapping', 'get', '--profile-id', 'unknown')
 
         data = result.json()
         assert data.get('success') is True
@@ -885,13 +827,9 @@ def test_profile_mapping_list_all():
         plan_dir.mkdir(parents=True)
 
         config = {
-            "version": 1,
-            "commands": {},
-            "profile_mappings": {
-                "jfr": "skip",
-                "quick": "skip",
-                "benchmark": "benchmark"
-            }
+            'version': 1,
+            'commands': {},
+            'profile_mappings': {'jfr': 'skip', 'quick': 'skip', 'benchmark': 'benchmark'},
         }
         (plan_dir / 'run-configuration.json').write_text(json.dumps(config))
 
@@ -900,11 +838,7 @@ def test_profile_mapping_list_all():
         data = result.json()
         assert data.get('success') is True
         assert data.get('count') == 3
-        assert data.get('mappings') == {
-            "jfr": "skip",
-            "quick": "skip",
-            "benchmark": "benchmark"
-        }
+        assert data.get('mappings') == {'jfr': 'skip', 'quick': 'skip', 'benchmark': 'benchmark'}
 
 
 def test_profile_mapping_list_filter_by_canonical():
@@ -914,24 +848,19 @@ def test_profile_mapping_list_filter_by_canonical():
         plan_dir.mkdir(parents=True)
 
         config = {
-            "version": 1,
-            "commands": {},
-            "profile_mappings": {
-                "jfr": "skip",
-                "quick": "skip",
-                "benchmark": "benchmark"
-            }
+            'version': 1,
+            'commands': {},
+            'profile_mappings': {'jfr': 'skip', 'quick': 'skip', 'benchmark': 'benchmark'},
         }
         (plan_dir / 'run-configuration.json').write_text(json.dumps(config))
 
-        result = run_script(SCRIPT_PATH, 'profile-mapping', 'list',
-                          '--canonical', 'skip')
+        result = run_script(SCRIPT_PATH, 'profile-mapping', 'list', '--canonical', 'skip')
 
         data = result.json()
         assert data.get('success') is True
         assert data.get('filter') == 'skip'
         assert data.get('count') == 2
-        assert data.get('mappings') == {"jfr": "skip", "quick": "skip"}
+        assert data.get('mappings') == {'jfr': 'skip', 'quick': 'skip'}
 
 
 def test_profile_mapping_remove():
@@ -940,18 +869,10 @@ def test_profile_mapping_remove():
         plan_dir = ctx.fixture_dir / PLAN_DIR_NAME
         plan_dir.mkdir(parents=True)
 
-        config = {
-            "version": 1,
-            "commands": {},
-            "profile_mappings": {
-                "jfr": "skip",
-                "quick": "skip"
-            }
-        }
+        config = {'version': 1, 'commands': {}, 'profile_mappings': {'jfr': 'skip', 'quick': 'skip'}}
         (plan_dir / 'run-configuration.json').write_text(json.dumps(config))
 
-        result = run_script(SCRIPT_PATH, 'profile-mapping', 'remove',
-                          '--profile-id', 'jfr')
+        result = run_script(SCRIPT_PATH, 'profile-mapping', 'remove', '--profile-id', 'jfr')
 
         data = result.json()
         assert data.get('success') is True
@@ -970,15 +891,10 @@ def test_profile_mapping_remove_nonexistent_skips():
         plan_dir = ctx.fixture_dir / PLAN_DIR_NAME
         plan_dir.mkdir(parents=True)
 
-        config = {
-            "version": 1,
-            "commands": {},
-            "profile_mappings": {}
-        }
+        config = {'version': 1, 'commands': {}, 'profile_mappings': {}}
         (plan_dir / 'run-configuration.json').write_text(json.dumps(config))
 
-        result = run_script(SCRIPT_PATH, 'profile-mapping', 'remove',
-                          '--profile-id', 'nonexistent')
+        result = run_script(SCRIPT_PATH, 'profile-mapping', 'remove', '--profile-id', 'nonexistent')
 
         data = result.json()
         assert data.get('success') is True
@@ -993,8 +909,13 @@ def test_profile_mapping_batch_set():
 
         run_script(SCRIPT_PATH, 'init')
 
-        result = run_script(SCRIPT_PATH, 'profile-mapping', 'batch-set',
-                          '--mappings-json', '{"jfr": "skip", "quick": "skip", "benchmark": "benchmark"}')
+        result = run_script(
+            SCRIPT_PATH,
+            'profile-mapping',
+            'batch-set',
+            '--mappings-json',
+            '{"jfr": "skip", "quick": "skip", "benchmark": "benchmark"}',
+        )
 
         data = result.json()
         assert data.get('success') is True
@@ -1004,11 +925,7 @@ def test_profile_mapping_batch_set():
 
         # Verify file was updated
         config = json.loads((plan_dir / 'run-configuration.json').read_text())
-        assert config['profile_mappings'] == {
-            "jfr": "skip",
-            "quick": "skip",
-            "benchmark": "benchmark"
-        }
+        assert config['profile_mappings'] == {'jfr': 'skip', 'quick': 'skip', 'benchmark': 'benchmark'}
 
 
 def test_profile_mapping_batch_set_with_updates():
@@ -1017,17 +934,12 @@ def test_profile_mapping_batch_set_with_updates():
         plan_dir = ctx.fixture_dir / PLAN_DIR_NAME
         plan_dir.mkdir(parents=True)
 
-        config = {
-            "version": 1,
-            "commands": {},
-            "profile_mappings": {
-                "jfr": "skip"
-            }
-        }
+        config = {'version': 1, 'commands': {}, 'profile_mappings': {'jfr': 'skip'}}
         (plan_dir / 'run-configuration.json').write_text(json.dumps(config))
 
-        result = run_script(SCRIPT_PATH, 'profile-mapping', 'batch-set',
-                          '--mappings-json', '{"jfr": "benchmark", "quick": "skip"}')
+        result = run_script(
+            SCRIPT_PATH, 'profile-mapping', 'batch-set', '--mappings-json', '{"jfr": "benchmark", "quick": "skip"}'
+        )
 
         data = result.json()
         assert data.get('success') is True
@@ -1040,8 +952,7 @@ def test_profile_mapping_batch_set_invalid_canonical():
     with PlanContext():
         run_script(SCRIPT_PATH, 'init')
 
-        result = run_script(SCRIPT_PATH, 'profile-mapping', 'batch-set',
-                          '--mappings-json', '{"jfr": "invalid"}')
+        result = run_script(SCRIPT_PATH, 'profile-mapping', 'batch-set', '--mappings-json', '{"jfr": "invalid"}')
 
         data = result.json_or_error()
         assert data.get('success') is False
@@ -1052,8 +963,7 @@ def test_profile_mapping_batch_set_invalid_json():
     with PlanContext():
         run_script(SCRIPT_PATH, 'init')
 
-        result = run_script(SCRIPT_PATH, 'profile-mapping', 'batch-set',
-                          '--mappings-json', 'not valid json')
+        result = run_script(SCRIPT_PATH, 'profile-mapping', 'batch-set', '--mappings-json', 'not valid json')
 
         data = result.json_or_error()
         assert data.get('success') is False
@@ -1078,8 +988,8 @@ def test_init_includes_profile_mappings():
         config_file = ctx.fixture_dir / PLAN_DIR_NAME / 'run-configuration.json'
         content = json.loads(config_file.read_text())
 
-        assert 'profile_mappings' in content, "Should have profile_mappings section"
-        assert content['profile_mappings'] == {}, "profile_mappings should be empty object"
+        assert 'profile_mappings' in content, 'Should have profile_mappings section'
+        assert content['profile_mappings'] == {}, 'profile_mappings should be empty object'
 
 
 def test_init_includes_extension_defaults():
@@ -1090,13 +1000,14 @@ def test_init_includes_extension_defaults():
         config_file = ctx.fixture_dir / PLAN_DIR_NAME / 'run-configuration.json'
         content = json.loads(config_file.read_text())
 
-        assert 'extension_defaults' in content, "Should have extension_defaults section"
-        assert content['extension_defaults'] == {}, "extension_defaults should be empty object"
+        assert 'extension_defaults' in content, 'Should have extension_defaults section'
+        assert content['extension_defaults'] == {}, 'extension_defaults should be empty object'
 
 
 # =============================================================================
 # Extension Defaults Subcommand Tests (Generic key-value in extension_defaults)
 # =============================================================================
+
 
 def test_ext_defaults_set_adds_value():
     """Test extension-defaults set adds a new value."""
@@ -1106,9 +1017,15 @@ def test_ext_defaults_set_adds_value():
 
         run_script(SCRIPT_PATH, 'init')
 
-        result = run_script(SCRIPT_PATH, 'extension-defaults', 'set',
-                          '--key', 'build.maven.profiles.ignore',
-                          '--value', '["itest", "native"]')
+        result = run_script(
+            SCRIPT_PATH,
+            'extension-defaults',
+            'set',
+            '--key',
+            'build.maven.profiles.ignore',
+            '--value',
+            '["itest", "native"]',
+        )
 
         data = result.json()
         assert data.get('success') is True
@@ -1128,18 +1045,10 @@ def test_ext_defaults_set_updates_existing():
         plan_dir.mkdir(parents=True)
 
         # Create config with existing value
-        config = {
-            "version": 1,
-            "commands": {},
-            "extension_defaults": {
-                "my.key": "old-value"
-            }
-        }
+        config = {'version': 1, 'commands': {}, 'extension_defaults': {'my.key': 'old-value'}}
         (plan_dir / 'run-configuration.json').write_text(json.dumps(config))
 
-        result = run_script(SCRIPT_PATH, 'extension-defaults', 'set',
-                          '--key', 'my.key',
-                          '--value', '"new-value"')
+        result = run_script(SCRIPT_PATH, 'extension-defaults', 'set', '--key', 'my.key', '--value', '"new-value"')
 
         data = result.json()
         assert data.get('success') is True
@@ -1153,9 +1062,7 @@ def test_ext_defaults_set_json_array():
     with PlanContext():
         run_script(SCRIPT_PATH, 'init')
 
-        result = run_script(SCRIPT_PATH, 'extension-defaults', 'set',
-                          '--key', 'test.array',
-                          '--value', '[1, 2, 3]')
+        result = run_script(SCRIPT_PATH, 'extension-defaults', 'set', '--key', 'test.array', '--value', '[1, 2, 3]')
 
         data = result.json()
         assert data.get('success') is True
@@ -1167,13 +1074,13 @@ def test_ext_defaults_set_json_object():
     with PlanContext():
         run_script(SCRIPT_PATH, 'init')
 
-        result = run_script(SCRIPT_PATH, 'extension-defaults', 'set',
-                          '--key', 'test.object',
-                          '--value', '{"foo": "bar", "num": 42}')
+        result = run_script(
+            SCRIPT_PATH, 'extension-defaults', 'set', '--key', 'test.object', '--value', '{"foo": "bar", "num": 42}'
+        )
 
         data = result.json()
         assert data.get('success') is True
-        assert data.get('value') == {"foo": "bar", "num": 42}
+        assert data.get('value') == {'foo': 'bar', 'num': 42}
 
 
 def test_ext_defaults_set_plain_string():
@@ -1181,9 +1088,9 @@ def test_ext_defaults_set_plain_string():
     with PlanContext():
         run_script(SCRIPT_PATH, 'init')
 
-        result = run_script(SCRIPT_PATH, 'extension-defaults', 'set',
-                          '--key', 'test.string',
-                          '--value', 'just a plain string')
+        result = run_script(
+            SCRIPT_PATH, 'extension-defaults', 'set', '--key', 'test.string', '--value', 'just a plain string'
+        )
 
         data = result.json()
         assert data.get('success') is True
@@ -1196,17 +1103,10 @@ def test_ext_defaults_get_existing():
         plan_dir = ctx.fixture_dir / PLAN_DIR_NAME
         plan_dir.mkdir(parents=True)
 
-        config = {
-            "version": 1,
-            "commands": {},
-            "extension_defaults": {
-                "my.key": ["value1", "value2"]
-            }
-        }
+        config = {'version': 1, 'commands': {}, 'extension_defaults': {'my.key': ['value1', 'value2']}}
         (plan_dir / 'run-configuration.json').write_text(json.dumps(config))
 
-        result = run_script(SCRIPT_PATH, 'extension-defaults', 'get',
-                          '--key', 'my.key')
+        result = run_script(SCRIPT_PATH, 'extension-defaults', 'get', '--key', 'my.key')
 
         data = result.json()
         assert data.get('success') is True
@@ -1220,8 +1120,7 @@ def test_ext_defaults_get_nonexistent():
     with PlanContext():
         run_script(SCRIPT_PATH, 'init')
 
-        result = run_script(SCRIPT_PATH, 'extension-defaults', 'get',
-                          '--key', 'nonexistent.key')
+        result = run_script(SCRIPT_PATH, 'extension-defaults', 'get', '--key', 'nonexistent.key')
 
         data = result.json()
         assert data.get('success') is True
@@ -1235,9 +1134,9 @@ def test_ext_defaults_set_default_adds_new():
     with PlanContext():
         run_script(SCRIPT_PATH, 'init')
 
-        result = run_script(SCRIPT_PATH, 'extension-defaults', 'set-default',
-                          '--key', 'new.key',
-                          '--value', '["a", "b"]')
+        result = run_script(
+            SCRIPT_PATH, 'extension-defaults', 'set-default', '--key', 'new.key', '--value', '["a", "b"]'
+        )
 
         data = result.json()
         assert data.get('success') is True
@@ -1251,18 +1150,12 @@ def test_ext_defaults_set_default_skips_existing():
         plan_dir = ctx.fixture_dir / PLAN_DIR_NAME
         plan_dir.mkdir(parents=True)
 
-        config = {
-            "version": 1,
-            "commands": {},
-            "extension_defaults": {
-                "existing.key": "user-defined-value"
-            }
-        }
+        config = {'version': 1, 'commands': {}, 'extension_defaults': {'existing.key': 'user-defined-value'}}
         (plan_dir / 'run-configuration.json').write_text(json.dumps(config))
 
-        result = run_script(SCRIPT_PATH, 'extension-defaults', 'set-default',
-                          '--key', 'existing.key',
-                          '--value', '"new-value"')
+        result = run_script(
+            SCRIPT_PATH, 'extension-defaults', 'set-default', '--key', 'existing.key', '--value', '"new-value"'
+        )
 
         data = result.json()
         assert data.get('success') is True
@@ -1281,14 +1174,7 @@ def test_ext_defaults_list_all():
         plan_dir = ctx.fixture_dir / PLAN_DIR_NAME
         plan_dir.mkdir(parents=True)
 
-        config = {
-            "version": 1,
-            "commands": {},
-            "extension_defaults": {
-                "key1": "value1",
-                "key2": [1, 2, 3]
-            }
-        }
+        config = {'version': 1, 'commands': {}, 'extension_defaults': {'key1': 'value1', 'key2': [1, 2, 3]}}
         (plan_dir / 'run-configuration.json').write_text(json.dumps(config))
 
         result = run_script(SCRIPT_PATH, 'extension-defaults', 'list')
@@ -1298,7 +1184,7 @@ def test_ext_defaults_list_all():
         assert data.get('count') == 2
         assert 'key1' in data.get('keys', [])
         assert 'key2' in data.get('keys', [])
-        assert data.get('values') == {"key1": "value1", "key2": [1, 2, 3]}
+        assert data.get('values') == {'key1': 'value1', 'key2': [1, 2, 3]}
 
 
 def test_ext_defaults_list_empty():
@@ -1320,18 +1206,10 @@ def test_ext_defaults_remove_existing():
         plan_dir = ctx.fixture_dir / PLAN_DIR_NAME
         plan_dir.mkdir(parents=True)
 
-        config = {
-            "version": 1,
-            "commands": {},
-            "extension_defaults": {
-                "to.remove": "value",
-                "to.keep": "other"
-            }
-        }
+        config = {'version': 1, 'commands': {}, 'extension_defaults': {'to.remove': 'value', 'to.keep': 'other'}}
         (plan_dir / 'run-configuration.json').write_text(json.dumps(config))
 
-        result = run_script(SCRIPT_PATH, 'extension-defaults', 'remove',
-                          '--key', 'to.remove')
+        result = run_script(SCRIPT_PATH, 'extension-defaults', 'remove', '--key', 'to.remove')
 
         data = result.json()
         assert data.get('success') is True
@@ -1349,8 +1227,7 @@ def test_ext_defaults_remove_nonexistent_skips():
     with PlanContext():
         run_script(SCRIPT_PATH, 'init')
 
-        result = run_script(SCRIPT_PATH, 'extension-defaults', 'remove',
-                          '--key', 'nonexistent')
+        result = run_script(SCRIPT_PATH, 'extension-defaults', 'remove', '--key', 'nonexistent')
 
         data = result.json()
         assert data.get('success') is True

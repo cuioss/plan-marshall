@@ -5,7 +5,6 @@ Step management command handlers for manage-tasks.py.
 Contains: step-start, step-done, step-skip, add-step, remove-step subcommands.
 """
 
-
 from _manage_tasks_shared import (
     find_task_file,
     format_task_file,
@@ -25,7 +24,7 @@ def cmd_step_start(args) -> int:
 
     filepath = find_task_file(task_dir, args.task)
     if not filepath:
-        output_error(f"Task TASK-{args.task} not found")
+        output_error(f'Task TASK-{args.task} not found')
         return 1
 
     content = filepath.read_text(encoding='utf-8')
@@ -39,7 +38,7 @@ def cmd_step_start(args) -> int:
             break
 
     if not step_found:
-        output_error(f"Step {args.step} not found in TASK-{args.task}")
+        output_error(f'Step {args.step} not found in TASK-{args.task}')
         return 1
 
     step_found['status'] = 'in_progress'
@@ -50,15 +49,17 @@ def cmd_step_start(args) -> int:
     new_content = format_task_file(task)
     atomic_write_file(filepath, new_content)
 
-    output_toon({
-        'status': 'success',
-        'plan_id': args.plan_id,
-        'task_number': args.task,
-        'step': args.step,
-        'task_status': 'in_progress',
-        'step_status': 'in_progress',
-        'step_title': step_found['title']
-    })
+    output_toon(
+        {
+            'status': 'success',
+            'plan_id': args.plan_id,
+            'task_number': args.task,
+            'step': args.step,
+            'task_status': 'in_progress',
+            'step_status': 'in_progress',
+            'step_title': step_found['title'],
+        }
+    )
     return 0
 
 
@@ -68,7 +69,7 @@ def cmd_step_done(args) -> int:
 
     filepath = find_task_file(task_dir, args.task)
     if not filepath:
-        output_error(f"Task TASK-{args.task} not found")
+        output_error(f'Task TASK-{args.task} not found')
         return 1
 
     content = filepath.read_text(encoding='utf-8')
@@ -82,7 +83,7 @@ def cmd_step_done(args) -> int:
             break
 
     if not step_found:
-        output_error(f"Step {args.step} not found in TASK-{args.task}")
+        output_error(f'Step {args.step} not found in TASK-{args.task}')
         return 1
 
     step_found['status'] = 'done'
@@ -120,7 +121,7 @@ def cmd_step_done(args) -> int:
         'step_status': 'done',
         'task_status': task['status'],
         'next_step': next_step,
-        'next_step_title': next_step_title
+        'next_step_title': next_step_title,
     }
 
     if all_done:
@@ -136,7 +137,7 @@ def cmd_step_skip(args) -> int:
 
     filepath = find_task_file(task_dir, args.task)
     if not filepath:
-        output_error(f"Task TASK-{args.task} not found")
+        output_error(f'Task TASK-{args.task} not found')
         return 1
 
     content = filepath.read_text(encoding='utf-8')
@@ -150,7 +151,7 @@ def cmd_step_skip(args) -> int:
             break
 
     if not step_found:
-        output_error(f"Step {args.step} not found in TASK-{args.task}")
+        output_error(f'Step {args.step} not found in TASK-{args.task}')
         return 1
 
     step_found['status'] = 'skipped'
@@ -183,7 +184,7 @@ def cmd_step_skip(args) -> int:
         'step_status': 'skipped',
         'task_status': task['status'],
         'next_step': next_step,
-        'next_step_title': next_step_title
+        'next_step_title': next_step_title,
     }
 
     if args.reason:
@@ -202,7 +203,7 @@ def cmd_add_step(args) -> int:
 
     filepath = find_task_file(task_dir, args.task)
     if not filepath:
-        output_error(f"Task TASK-{args.task} not found")
+        output_error(f'Task TASK-{args.task} not found')
         return 1
 
     content = filepath.read_text(encoding='utf-8')
@@ -213,16 +214,12 @@ def cmd_add_step(args) -> int:
     if args.after is not None:
         insert_pos = args.after
         if insert_pos < 0 or insert_pos > len(steps):
-            output_error(f"Invalid position: after step {insert_pos}")
+            output_error(f'Invalid position: after step {insert_pos}')
             return 1
     else:
         insert_pos = len(steps)
 
-    new_step = {
-        'number': insert_pos + 1,
-        'title': args.title,
-        'status': 'pending'
-    }
+    new_step = {'number': insert_pos + 1, 'title': args.title, 'status': 'pending'}
 
     steps.insert(insert_pos, new_step)
     for i, step in enumerate(steps):
@@ -234,14 +231,16 @@ def cmd_add_step(args) -> int:
     new_content = format_task_file(task)
     atomic_write_file(filepath, new_content)
 
-    output_toon({
-        'status': 'success',
-        'plan_id': args.plan_id,
-        'task_number': args.task,
-        'step': new_step['number'],
-        'step_title': new_step['title'],
-        'message': f"Step added at position {new_step['number']}"
-    })
+    output_toon(
+        {
+            'status': 'success',
+            'plan_id': args.plan_id,
+            'task_number': args.task,
+            'step': new_step['number'],
+            'step_title': new_step['title'],
+            'message': f'Step added at position {new_step["number"]}',
+        }
+    )
     return 0
 
 
@@ -251,7 +250,7 @@ def cmd_remove_step(args) -> int:
 
     filepath = find_task_file(task_dir, args.task)
     if not filepath:
-        output_error(f"Task TASK-{args.task} not found")
+        output_error(f'Task TASK-{args.task} not found')
         return 1
 
     content = filepath.read_text(encoding='utf-8')
@@ -268,11 +267,11 @@ def cmd_remove_step(args) -> int:
             break
 
     if step_index is None:
-        output_error(f"Step {args.step} not found in TASK-{args.task}")
+        output_error(f'Step {args.step} not found in TASK-{args.task}')
         return 1
 
     if len(steps) <= 1:
-        output_error("Cannot remove the last step - task must have at least one step")
+        output_error('Cannot remove the last step - task must have at least one step')
         return 1
 
     steps.pop(step_index)
@@ -290,12 +289,14 @@ def cmd_remove_step(args) -> int:
 
     # removed_step is guaranteed to be set since step_index is not None
     assert removed_step is not None
-    output_toon({
-        'status': 'success',
-        'plan_id': args.plan_id,
-        'task_number': args.task,
-        'step': args.step,
-        'step_title': removed_step['title'],
-        'message': f"Step {args.step} removed"
-    })
+    output_toon(
+        {
+            'status': 'success',
+            'plan_id': args.plan_id,
+            'task_number': args.task,
+            'step': args.step,
+            'step_title': removed_step['title'],
+            'message': f'Step {args.step} removed',
+        }
+    )
     return 0

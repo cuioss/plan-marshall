@@ -16,7 +16,14 @@ EXIT_NON_COMPLIANT = 1
 EXIT_ERROR = 2
 
 # Required attributes for AsciiDoc files
-REQUIRED_ATTRS = ['= ', ':toc: left', ':toclevels: 3', ':toc-title: Table of Contents', ':sectnums:', ':source-highlighter: highlight.js']
+REQUIRED_ATTRS = [
+    '= ',
+    ':toc: left',
+    ':toclevels: 3',
+    ':toc-title: Table of Contents',
+    ':sectnums:',
+    ':source-highlighter: highlight.js',
+]
 
 
 def check_list_formatting(content: str) -> list[tuple[int, str, str]]:
@@ -26,7 +33,7 @@ def check_list_formatting(content: str) -> list[tuple[int, str, str]]:
     in_code_block = False
     prev_was_blank = True
     in_list = False
-    prev_line = ""
+    prev_line = ''
 
     for i, line in enumerate(lines, start=1):
         if line == '----':
@@ -34,20 +41,26 @@ def check_list_formatting(content: str) -> list[tuple[int, str, str]]:
         current_is_blank = len(line.strip()) == 0
 
         starts_new_list = False
-        list_type = ""
+        list_type = ''
         if not in_code_block:
             if re.match(r'^[\*\-\+] ', line):
-                starts_new_list, list_type = True, "unordered"
+                starts_new_list, list_type = True, 'unordered'
             elif re.match(r'^[0-9]+\. ', line):
-                starts_new_list, list_type = True, "ordered"
+                starts_new_list, list_type = True, 'ordered'
             elif re.match(r'^[^:]+::', line):
-                starts_new_list, list_type = True, "definition"
+                starts_new_list, list_type = True, 'definition'
             elif re.match(r'^\. ', line) and not in_list:
-                starts_new_list, list_type = True, "numbered"
+                starts_new_list, list_type = True, 'numbered'
 
         continuing_list = False
         if not in_code_block and in_list:
-            if re.match(r'^[\*\-\+] ', line) or re.match(r'^\*\* ', line) or re.match(r'^[0-9]+\. ', line) or re.match(r'^\. ', line) or current_is_blank:
+            if (
+                re.match(r'^[\*\-\+] ', line)
+                or re.match(r'^\*\* ', line)
+                or re.match(r'^[0-9]+\. ', line)
+                or re.match(r'^\. ', line)
+                or current_is_blank
+            ):
                 continuing_list = True
 
         if starts_new_list and not prev_was_blank and i > 1 and not in_list:
@@ -67,7 +80,16 @@ def check_list_formatting(content: str) -> list[tuple[int, str, str]]:
 def check_file_compliance(file_path: Path) -> dict[str, Any]:
     """Check a single AsciiDoc file for compliance."""
     content = file_path.read_text(encoding='utf-8')
-    result: dict[str, Any] = {'file': str(file_path), 'compliant': True, 'errors': 0, 'warnings': 0, 'issues': [], 'missing_attrs': [], 'list_issues': [], 'xref_count': 0}
+    result: dict[str, Any] = {
+        'file': str(file_path),
+        'compliant': True,
+        'errors': 0,
+        'warnings': 0,
+        'issues': [],
+        'missing_attrs': [],
+        'list_issues': [],
+        'xref_count': 0,
+    }
 
     for attr in REQUIRED_ATTRS:
         if attr not in content:
@@ -80,7 +102,15 @@ def check_file_compliance(file_path: Path) -> dict[str, Any]:
     if list_issues:
         result['list_issues'] = list_issues
         for line_num, list_type, context in list_issues:
-            result['issues'].append({'type': 'list_formatting', 'severity': 'warning', 'line': line_num, 'list_type': list_type, 'context': context})
+            result['issues'].append(
+                {
+                    'type': 'list_formatting',
+                    'severity': 'warning',
+                    'line': line_num,
+                    'list_type': list_type,
+                    'context': context,
+                }
+            )
         result['warnings'] += len(list_issues)
         result['compliant'] = False
 
@@ -126,12 +156,24 @@ def cmd_validate(args: Any) -> int:
     }
 
     if summary['non_compliant_files'] > 0:
-        log_entry('script', 'global', 'INFO', f"[DOCS-VALIDATE] Found {summary['non_compliant_files']} non-compliant files ({summary['total_errors']} errors, {summary['total_warnings']} warnings)")
+        log_entry(
+            'script',
+            'global',
+            'INFO',
+            f'[DOCS-VALIDATE] Found {summary["non_compliant_files"]} non-compliant files ({summary["total_errors"]} errors, {summary["total_warnings"]} warnings)',
+        )
 
     if args.format == 'json':
-        output = {'directory': str(check_path), 'timestamp': datetime.now(UTC).strftime('%Y-%m-%dT%H:%M:%SZ'), 'summary': summary, 'files': [r for r in results if not r['compliant']]}
+        output = {
+            'directory': str(check_path),
+            'timestamp': datetime.now(UTC).strftime('%Y-%m-%dT%H:%M:%SZ'),
+            'summary': summary,
+            'files': [r for r in results if not r['compliant']],
+        }
         print(json.dumps(output, indent=2))
     else:
-        print(f"Summary: {summary['total_files']} files, {summary['non_compliant_files']} non-compliant, {summary['total_errors']} errors, {summary['total_warnings']} warnings")
+        print(
+            f'Summary: {summary["total_files"]} files, {summary["non_compliant_files"]} non-compliant, {summary["total_errors"]} errors, {summary["total_warnings"]} warnings'
+        )
 
     return EXIT_NON_COMPLIANT if summary['total_errors'] > 0 or summary['total_warnings'] > 0 else EXIT_SUCCESS

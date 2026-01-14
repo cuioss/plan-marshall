@@ -16,17 +16,13 @@ from pathlib import Path
 from _build_parse import SEVERITY_ERROR, SEVERITY_WARNING, Issue, UnitTestSummary  # type: ignore[import-not-found]
 
 # ESLint issue pattern: "  line:col  severity  message  rule-name"
-ESLINT_ISSUE_PATTERN = re.compile(
-    r"^\s+(\d+):(\d+)\s+(error|warning)\s+(.+?)\s{2,}(\S+)\s*$"
-)
+ESLINT_ISSUE_PATTERN = re.compile(r'^\s+(\d+):(\d+)\s+(error|warning)\s+(.+?)\s{2,}(\S+)\s*$')
 
 # ESLint summary pattern: "✖ N problems (N errors, N warnings)"
-ESLINT_SUMMARY_PATTERN = re.compile(
-    r"[✖✗]\s*(\d+)\s+problems?\s+\((\d+)\s+errors?,\s+(\d+)\s+warnings?\)"
-)
+ESLINT_SUMMARY_PATTERN = re.compile(r'[✖✗]\s*(\d+)\s+problems?\s+\((\d+)\s+errors?,\s+(\d+)\s+warnings?\)')
 
 # File path line pattern (starts with / or drive letter, no leading whitespace)
-FILE_PATH_PATTERN = re.compile(r"^(/[^\s:]+|[A-Z]:\\[^\s:]+)$")
+FILE_PATH_PATTERN = re.compile(r'^(/[^\s:]+|[A-Z]:\\[^\s:]+)$')
 
 
 def parse_log(log_file: str | Path) -> tuple[list[Issue], UnitTestSummary | None, str]:
@@ -47,11 +43,11 @@ def parse_log(log_file: str | Path) -> tuple[list[Issue], UnitTestSummary | None
         FileNotFoundError: If log file doesn't exist.
     """
     path = Path(log_file)
-    content = path.read_text(encoding="utf-8", errors="replace")
+    content = path.read_text(encoding='utf-8', errors='replace')
 
     issues = _extract_issues(content)
     errors = [i for i in issues if i.severity == SEVERITY_ERROR]
-    build_status = "FAILURE" if errors else "SUCCESS"
+    build_status = 'FAILURE' if errors else 'SUCCESS'
 
     return issues, None, build_status
 
@@ -66,7 +62,7 @@ def _extract_issues(content: str) -> list[Issue]:
         List of Issue dataclasses with ESLint errors and warnings.
     """
     issues = []
-    lines = content.split("\n")
+    lines = content.split('\n')
     current_file = None
     seen = set()
 
@@ -87,20 +83,22 @@ def _extract_issues(content: str) -> list[Issue]:
             rule = issue_match.group(5)
 
             # Determine severity
-            severity = SEVERITY_ERROR if severity_str == "error" else SEVERITY_WARNING
+            severity = SEVERITY_ERROR if severity_str == 'error' else SEVERITY_WARNING
 
             # Deduplication key
-            dedup_key = f"{current_file}:{line_num}:{col}:{rule}"
+            dedup_key = f'{current_file}:{line_num}:{col}:{rule}'
             if dedup_key in seen:
                 continue
             seen.add(dedup_key)
 
-            issues.append(Issue(
-                file=current_file,
-                line=line_num,
-                message=f"{rule}: {message}",
-                severity=severity,
-                category="eslint",
-            ))
+            issues.append(
+                Issue(
+                    file=current_file,
+                    line=line_num,
+                    message=f'{rule}: {message}',
+                    severity=severity,
+                    category='eslint',
+                )
+            )
 
     return issues

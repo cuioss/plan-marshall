@@ -36,10 +36,14 @@ class TestManageLessonAdd(ScriptTestCase):
             result = run_script(
                 SCRIPT_PATH,
                 'add',
-                '--component', 'test-component',
-                '--category', 'bug',
-                '--title', 'Test Lesson',
-                '--detail', 'This is a test lesson detail.'
+                '--component',
+                'test-component',
+                '--category',
+                'bug',
+                '--title',
+                'Test Lesson',
+                '--detail',
+                'This is a test lesson detail.',
             )
 
         self.assert_success(result)
@@ -53,10 +57,14 @@ class TestManageLessonAdd(ScriptTestCase):
             result = run_script(
                 SCRIPT_PATH,
                 'add',
-                '--component', 'test-component',
-                '--category', 'invalid-category',
-                '--title', 'Test',
-                '--detail', 'Detail'
+                '--component',
+                'test-component',
+                '--category',
+                'invalid-category',
+                '--title',
+                'Test',
+                '--detail',
+                'Detail',
             )
 
         self.assert_failure(result)
@@ -72,11 +80,16 @@ class TestManageLessonAdd(ScriptTestCase):
             result = run_script(
                 SCRIPT_PATH,
                 'add',
-                '--component', 'test-component',
-                '--category', 'improvement',
-                '--title', 'Test Lesson',
-                '--detail', 'Detail',
-                '--bundle', 'pm-dev-java'
+                '--component',
+                'test-component',
+                '--category',
+                'improvement',
+                '--title',
+                'Test Lesson',
+                '--detail',
+                'Detail',
+                '--bundle',
+                'pm-dev-java',
             )
 
         self.assert_success(result)
@@ -258,12 +271,7 @@ Body.
         (lessons_dir / '2025-01-01-001.md').write_text(lesson_content)
 
         with patch.dict('os.environ', {'PLAN_BASE_DIR': str(self.temp_dir)}):
-            result = run_script(
-                SCRIPT_PATH,
-                'update',
-                '--id', '2025-01-01-001',
-                '--applied', 'true'
-            )
+            result = run_script(SCRIPT_PATH, 'update', '--id', '2025-01-01-001', '--applied', 'true')
 
         self.assert_success(result)
         self.assertIn('field: applied', result.stdout)
@@ -279,12 +287,7 @@ Body.
         lessons_dir.mkdir(parents=True)
 
         with patch.dict('os.environ', {'PLAN_BASE_DIR': str(self.temp_dir)}):
-            result = run_script(
-                SCRIPT_PATH,
-                'update',
-                '--id', 'nonexistent',
-                '--applied', 'true'
-            )
+            result = run_script(SCRIPT_PATH, 'update', '--id', 'nonexistent', '--applied', 'true')
 
         self.assert_failure(result)
         self.assertIn('not_found', result.stdout)
@@ -302,18 +305,16 @@ class TestManageLessonFromError(ScriptTestCase):
         lessons_dir = self.temp_dir / 'lessons-learned'
         lessons_dir.mkdir(parents=True)
 
-        error_context = json.dumps({
-            'component': 'maven-build',
-            'error': 'Build failed due to missing dependency',
-            'solution': 'Add the missing dependency to pom.xml'
-        })
+        error_context = json.dumps(
+            {
+                'component': 'maven-build',
+                'error': 'Build failed due to missing dependency',
+                'solution': 'Add the missing dependency to pom.xml',
+            }
+        )
 
         with patch.dict('os.environ', {'PLAN_BASE_DIR': str(self.temp_dir)}):
-            result = run_script(
-                SCRIPT_PATH,
-                'from-error',
-                '--context', error_context
-            )
+            result = run_script(SCRIPT_PATH, 'from-error', '--context', error_context)
 
         self.assert_success(result)
         self.assertIn('status: success', result.stdout)
@@ -322,11 +323,7 @@ class TestManageLessonFromError(ScriptTestCase):
     def test_from_error_invalid_json_fails(self):
         """Should fail with invalid JSON context."""
         with patch.dict('os.environ', {'PLAN_BASE_DIR': str(self.temp_dir)}):
-            result = run_script(
-                SCRIPT_PATH,
-                'from-error',
-                '--context', 'not valid json'
-            )
+            result = run_script(SCRIPT_PATH, 'from-error', '--context', 'not valid json')
 
         self.assert_failure(result)
         self.assertIn('invalid_json', result.stdout)
@@ -334,4 +331,5 @@ class TestManageLessonFromError(ScriptTestCase):
 
 if __name__ == '__main__':
     import unittest
+
     unittest.main()

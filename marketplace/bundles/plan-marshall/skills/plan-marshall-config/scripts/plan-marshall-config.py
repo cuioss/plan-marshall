@@ -35,8 +35,7 @@ from _config_core import EXIT_ERROR
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Plan-Marshall configuration management',
-        formatter_class=argparse.RawDescriptionHelpFormatter
+        description='Plan-Marshall configuration management', formatter_class=argparse.RawDescriptionHelpFormatter
     )
 
     subparsers = parser.add_subparsers(dest='noun', help='Noun (resource type)')
@@ -142,46 +141,41 @@ def main():
     p_init.add_argument('--force', action='store_true', help='Overwrite existing')
 
     # --- resolve-domain-skills ---
-    p_rds = subparsers.add_parser('resolve-domain-skills',
-                                   help='Resolve skills for domain and profile')
+    p_rds = subparsers.add_parser('resolve-domain-skills', help='Resolve skills for domain and profile')
     p_rds.add_argument('--domain', required=True, help='Domain name (java, javascript)')
     p_rds.add_argument('--profile', required=True, help='Profile name (implementation, testing)')
 
     # --- get-workflow-skills ---
-    subparsers.add_parser('get-workflow-skills',
-                          help='Get domain-agnostic workflow skills')
+    subparsers.add_parser('get-workflow-skills', help='Get domain-agnostic workflow skills')
 
     # --- resolve-workflow-skill ---
-    p_rws = subparsers.add_parser('resolve-workflow-skill',
-                                   help='Resolve system workflow skill for a phase')
-    p_rws.add_argument('--phase', required=True,
-                       choices=['init', 'outline', 'plan', 'execute', 'finalize'],
-                       help='Phase name (init, outline, plan, execute, finalize)')
+    p_rws = subparsers.add_parser('resolve-workflow-skill', help='Resolve system workflow skill for a phase')
+    p_rws.add_argument(
+        '--phase',
+        required=True,
+        choices=['init', 'outline', 'plan', 'execute', 'finalize'],
+        help='Phase name (init, outline, plan, execute, finalize)',
+    )
 
     # --- resolve-workflow-skill-extension ---
-    p_rwse = subparsers.add_parser('resolve-workflow-skill-extension',
-                                    help='Resolve workflow skill extension for domain and type')
-    p_rwse.add_argument('--domain', required=True,
-                        help='Domain name (java, javascript, etc.)')
-    p_rwse.add_argument('--type', required=True,
-                        choices=['outline', 'triage'],
-                        help='Extension type (outline, triage)')
+    p_rwse = subparsers.add_parser(
+        'resolve-workflow-skill-extension', help='Resolve workflow skill extension for domain and type'
+    )
+    p_rwse.add_argument('--domain', required=True, help='Domain name (java, javascript, etc.)')
+    p_rwse.add_argument('--type', required=True, choices=['outline', 'triage'], help='Extension type (outline, triage)')
 
     # --- get-skills-by-profile ---
-    p_gsbp = subparsers.add_parser('get-skills-by-profile',
-                                    help='Get skills organized by profile for architecture enrichment')
-    p_gsbp.add_argument('--domain', required=True,
-                        help='Domain name (java, javascript, etc.)')
+    p_gsbp = subparsers.add_parser(
+        'get-skills-by-profile', help='Get skills organized by profile for architecture enrichment'
+    )
+    p_gsbp.add_argument('--domain', required=True, help='Domain name (java, javascript, etc.)')
 
     # --- configure-task-executors ---
-    subparsers.add_parser('configure-task-executors',
-                          help='Configure task executors from discovered profiles')
+    subparsers.add_parser('configure-task-executors', help='Configure task executors from discovered profiles')
 
     # --- resolve-task-executor ---
-    p_rte = subparsers.add_parser('resolve-task-executor',
-                                   help='Resolve task executor skill for a profile')
-    p_rte.add_argument('--profile', required=True,
-                       help='Profile name (e.g., implementation, module_testing)')
+    p_rte = subparsers.add_parser('resolve-task-executor', help='Resolve task executor skill for a profile')
+    p_rte.add_argument('--profile', required=True, help='Profile name (e.g., implementation, module_testing)')
 
     args = parser.parse_args()
 

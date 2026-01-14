@@ -107,13 +107,13 @@ def analyze_tool_coverage(file_path: Path) -> dict:
         'tool_coverage': {
             'declared_count': declared_count,
             'declared_tools': declared_tools,
-            'needs_llm_analysis': True
+            'needs_llm_analysis': True,
         },
         'critical_violations': {
             'has_task_declared': has_task_declared,
             'maven_calls': maven_calls,
-            'backup_file_patterns': backup_patterns
-        }
+            'backup_file_patterns': backup_patterns,
+        },
     }
 
 

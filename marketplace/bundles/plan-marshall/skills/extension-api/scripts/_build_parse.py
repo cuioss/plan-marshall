@@ -35,26 +35,27 @@ _PLAN_DIR_NAME = os.environ.get('PLAN_DIR_NAME', '.plan')
 # Constants
 # =============================================================================
 
-SEVERITY_ERROR = "error"
+SEVERITY_ERROR = 'error'
 """Severity level for errors that fail the build."""
 
-SEVERITY_WARNING = "warning"
+SEVERITY_WARNING = 'warning'
 """Severity level for warnings that don't fail the build."""
 
 # Output modes
-MODE_ACTIONABLE = "actionable"
+MODE_ACTIONABLE = 'actionable'
 """Filter out accepted warnings, show only actionable items."""
 
-MODE_STRUCTURED = "structured"
+MODE_STRUCTURED = 'structured'
 """Keep all warnings, mark accepted ones with accepted=True."""
 
-MODE_ERRORS = "errors"
+MODE_ERRORS = 'errors'
 """Only show errors, no warnings."""
 
 
 # =============================================================================
 # Data Classes
 # =============================================================================
+
 
 @dataclass
 class Issue:
@@ -69,6 +70,7 @@ class Issue:
         stack_trace: Optional stack trace for test failures.
         accepted: Whether this warning is accepted (for structured mode output).
     """
+
     file: str | None
     line: int | None
     message: str
@@ -85,20 +87,20 @@ class Issue:
             included if True (for structured mode compatibility).
         """
         result = {
-            "file": self.file,
-            "line": self.line,
-            "message": self.message,
-            "severity": self.severity,
+            'file': self.file,
+            'line': self.line,
+            'message': self.message,
+            'severity': self.severity,
         }
 
         if self.category is not None:
-            result["category"] = self.category
+            result['category'] = self.category
 
         if self.stack_trace is not None:
-            result["stack_trace"] = self.stack_trace
+            result['stack_trace'] = self.stack_trace
 
         if self.accepted:
-            result["accepted"] = True
+            result['accepted'] = True
 
         return result
 
@@ -113,6 +115,7 @@ class UnitTestSummary:
         skipped: Number of tests that were skipped.
         total: Total number of tests (should equal passed + failed + skipped).
     """
+
     passed: int
     failed: int
     skipped: int
@@ -125,16 +128,17 @@ class UnitTestSummary:
             Dict with passed, failed, skipped, and total fields.
         """
         return {
-            "passed": self.passed,
-            "failed": self.failed,
-            "skipped": self.skipped,
-            "total": self.total,
+            'passed': self.passed,
+            'failed': self.failed,
+            'skipped': self.skipped,
+            'total': self.total,
         }
 
 
 # =============================================================================
 # Parser Protocol
 # =============================================================================
+
 
 class BuildParser(Protocol):
     """Protocol for build log parsers.
@@ -173,6 +177,7 @@ class BuildParser(Protocol):
 # Warning Acceptance
 # =============================================================================
 
+
 def load_acceptable_warnings(project_dir: str, build_system: str) -> list[str]:
     """Load acceptable warning patterns from run-configuration.json.
 
@@ -199,7 +204,7 @@ def load_acceptable_warnings(project_dir: str, build_system: str) -> list[str]:
             }
         }
     """
-    config_path = Path(project_dir) / _PLAN_DIR_NAME / "run-configuration.json"
+    config_path = Path(project_dir) / _PLAN_DIR_NAME / 'run-configuration.json'
 
     if not config_path.exists():
         return []
@@ -207,7 +212,7 @@ def load_acceptable_warnings(project_dir: str, build_system: str) -> list[str]:
     try:
         config = json.loads(config_path.read_text())
         build_config = config.get(build_system, {})
-        warnings: list[str] = build_config.get("acceptable_warnings", [])
+        warnings: list[str] = build_config.get('acceptable_warnings', [])
         return warnings
     except (OSError, json.JSONDecodeError):
         return []
@@ -240,7 +245,7 @@ def is_warning_accepted(warning: Issue, patterns: list[str]) -> bool:
     message = warning.message
 
     for pattern in patterns:
-        if pattern.startswith("^"):
+        if pattern.startswith('^'):
             # Regex pattern
             try:
                 if re.match(pattern, message, re.IGNORECASE):
@@ -256,11 +261,7 @@ def is_warning_accepted(warning: Issue, patterns: list[str]) -> bool:
     return False
 
 
-def filter_warnings(
-    warnings: list[Issue],
-    patterns: list[str],
-    mode: str = MODE_ACTIONABLE
-) -> list[Issue]:
+def filter_warnings(warnings: list[Issue], patterns: list[str], mode: str = MODE_ACTIONABLE) -> list[Issue]:
     """Filter warnings based on mode.
 
     Args:
@@ -292,15 +293,17 @@ def filter_warnings(
         for warning in warnings:
             # Create copy with accepted flag set
             accepted = is_warning_accepted(warning, patterns)
-            result.append(Issue(
-                file=warning.file,
-                line=warning.line,
-                message=warning.message,
-                severity=warning.severity,
-                category=warning.category,
-                stack_trace=warning.stack_trace,
-                accepted=accepted,
-            ))
+            result.append(
+                Issue(
+                    file=warning.file,
+                    line=warning.line,
+                    message=warning.message,
+                    severity=warning.severity,
+                    category=warning.category,
+                    stack_trace=warning.stack_trace,
+                    accepted=accepted,
+                )
+            )
         return result
 
     # MODE_ACTIONABLE (default): filter out accepted

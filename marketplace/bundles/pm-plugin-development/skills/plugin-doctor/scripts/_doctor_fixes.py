@@ -12,19 +12,14 @@ def apply_safe_fixes(issues: list[dict], marketplace_root: Path, script_dir: Pat
     applied: list[dict] = []
     failed: list[dict] = []
     skipped: list[dict] = []
-    results: dict = {
-        "applied": applied,
-        "failed": failed,
-        "skipped": skipped,
-        "dry_run": dry_run
-    }
+    results: dict = {'applied': applied, 'failed': failed, 'skipped': skipped, 'dry_run': dry_run}
 
     templates = load_templates(script_dir)
 
     # Group issues by file to avoid conflicts
     by_file: dict[str, list[dict]] = {}
     for issue in issues:
-        file_path = issue.get("file", "")
+        file_path = issue.get('file', '')
         if file_path:
             by_file.setdefault(file_path, []).append(issue)
 
@@ -32,28 +27,19 @@ def apply_safe_fixes(issues: list[dict], marketplace_root: Path, script_dir: Pat
         path = Path(file_path)
         if not path.exists():
             for issue in file_issues:
-                results["failed"].append({
-                    "issue": issue,
-                    "error": f"File not found: {file_path}"
-                })
+                results['failed'].append({'issue': issue, 'error': f'File not found: {file_path}'})
             continue
 
         # Find bundle directory for this file
         bundle_dir = find_bundle_for_file(path, marketplace_root)
         if not bundle_dir:
             for issue in file_issues:
-                results["failed"].append({
-                    "issue": issue,
-                    "error": "Could not determine bundle directory"
-                })
+                results['failed'].append({'issue': issue, 'error': 'Could not determine bundle directory'})
             continue
 
         for issue in file_issues:
             if dry_run:
-                results["skipped"].append({
-                    "issue": issue,
-                    "reason": "dry_run"
-                })
+                results['skipped'].append({'issue': issue, 'reason': 'dry_run'})
                 continue
 
             # Convert absolute path to relative for apply_single_fix
@@ -62,23 +48,13 @@ def apply_safe_fixes(issues: list[dict], marketplace_root: Path, script_dir: Pat
             except ValueError:
                 rel_path = str(path)
 
-            fix_data = {
-                "type": issue.get("type"),
-                "file": rel_path,
-                "details": issue.get("details", {})
-            }
+            fix_data = {'type': issue.get('type'), 'file': rel_path, 'details': issue.get('details', {})}
 
             result = apply_single_fix(fix_data, bundle_dir, templates)
 
-            if result.get("success"):
-                results["applied"].append({
-                    "issue": issue,
-                    "result": result
-                })
+            if result.get('success'):
+                results['applied'].append({'issue': issue, 'result': result})
             else:
-                results["failed"].append({
-                    "issue": issue,
-                    "error": result.get("error", "Unknown error")
-                })
+                results['failed'].append({'issue': issue, 'error': result.get('error', 'Unknown error')})
 
     return results

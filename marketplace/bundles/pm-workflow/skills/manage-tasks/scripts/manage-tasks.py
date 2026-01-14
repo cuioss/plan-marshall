@@ -59,7 +59,7 @@ def build_parser() -> argparse.ArgumentParser:
     """Build argument parser with subcommands."""
     parser = argparse.ArgumentParser(
         description='Manage implementation tasks with sequential sub-steps',
-        formatter_class=argparse.RawDescriptionHelpFormatter
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
     subparsers = parser.add_subparsers(dest='command', required=True)
@@ -74,8 +74,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_update.add_argument('--number', required=True, type=int, help='Task number')
     p_update.add_argument('--title', help='New title')
     p_update.add_argument('--description', help='New description')
-    p_update.add_argument('--depends-on', nargs='*',
-                          help='Update dependencies (TASK-N references or "none" to clear)')
+    p_update.add_argument('--depends-on', nargs='*', help='Update dependencies (TASK-N references or "none" to clear)')
     p_update.add_argument('--status', help='New status (pending/in_progress/done/blocked)')
     p_update.add_argument('--domain', help='Task domain (e.g., java, javascript)')
     p_update.add_argument('--profile', help='Task profile (arbitrary key from marshal.json)')
@@ -90,13 +89,14 @@ def build_parser() -> argparse.ArgumentParser:
     # list
     p_list = subparsers.add_parser('list', help='List all tasks')
     p_list.add_argument('--plan-id', required=True, help='Plan identifier')
-    p_list.add_argument('--status', choices=['pending', 'in_progress', 'done', 'blocked', 'all'],
-                        default='all', help='Filter by status')
-    p_list.add_argument('--phase', choices=['1-init', '2-outline', '3-plan', '4-execute', '5-finalize'],
-                        help='Filter by phase')
+    p_list.add_argument(
+        '--status', choices=['pending', 'in_progress', 'done', 'blocked', 'all'], default='all', help='Filter by status'
+    )
+    p_list.add_argument(
+        '--phase', choices=['1-init', '2-outline', '3-plan', '4-execute', '5-finalize'], help='Filter by phase'
+    )
     p_list.add_argument('--deliverable', type=int, help='Filter by deliverable number')
-    p_list.add_argument('--ready', action='store_true',
-                        help='Only show tasks with no unmet dependencies')
+    p_list.add_argument('--ready', action='store_true', help='Only show tasks with no unmet dependencies')
 
     # get
     p_get = subparsers.add_parser('get', help='Get a single task')
@@ -106,12 +106,11 @@ def build_parser() -> argparse.ArgumentParser:
     # next
     p_next = subparsers.add_parser('next', help='Get next pending task/step')
     p_next.add_argument('--plan-id', required=True, help='Plan identifier')
-    p_next.add_argument('--phase', choices=['1-init', '2-outline', '3-plan', '4-execute', '5-finalize'],
-                        help='Filter by phase')
-    p_next.add_argument('--include-context', action='store_true',
-                        help='Include deliverable details in output')
-    p_next.add_argument('--ignore-deps', action='store_true',
-                        help='Ignore dependency constraints')
+    p_next.add_argument(
+        '--phase', choices=['1-init', '2-outline', '3-plan', '4-execute', '5-finalize'], help='Filter by phase'
+    )
+    p_next.add_argument('--include-context', action='store_true', help='Include deliverable details in output')
+    p_next.add_argument('--ignore-deps', action='store_true', help='Ignore dependency constraints')
 
     # tasks-by-domain
     p_by_domain = subparsers.add_parser('tasks-by-domain', help='List tasks filtered by domain')
@@ -121,8 +120,9 @@ def build_parser() -> argparse.ArgumentParser:
     # tasks-by-profile
     p_by_profile = subparsers.add_parser('tasks-by-profile', help='List tasks filtered by profile')
     p_by_profile.add_argument('--plan-id', required=True, help='Plan identifier')
-    p_by_profile.add_argument('--profile', required=True,
-                              help='Profile to filter by (e.g., implementation, testing, architecture)')
+    p_by_profile.add_argument(
+        '--profile', required=True, help='Profile to filter by (e.g., implementation, testing, architecture)'
+    )
 
     # next-tasks
     p_next_tasks = subparsers.add_parser('next-tasks', help='Get all tasks ready for parallel execution')
@@ -192,7 +192,7 @@ def main() -> int:
         if handler:
             return handler(args)
         else:
-            output_error(f"Unknown command: {args.command}")
+            output_error(f'Unknown command: {args.command}')
             return 1
     except Exception as e:
         output_error(str(e))

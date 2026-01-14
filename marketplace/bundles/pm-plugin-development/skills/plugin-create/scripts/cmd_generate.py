@@ -7,10 +7,7 @@ import sys
 
 def generate_agent_frontmatter(answers):
     """Generate frontmatter for agent component."""
-    frontmatter = {
-        'name': answers['name'],
-        'description': answers['description']
-    }
+    frontmatter = {'name': answers['name'], 'description': answers['description']}
 
     # Add optional model field if present
     if 'model' in answers and answers['model']:
@@ -21,7 +18,7 @@ def generate_agent_frontmatter(answers):
         tools = answers['tools']
         if isinstance(tools, list):
             if len(tools) == 0:
-                raise ValueError("Error: Agents must have at least one tool")
+                raise ValueError('Error: Agents must have at least one tool')
             frontmatter['tools'] = ', '.join(tools)
         else:
             frontmatter['tools'] = tools
@@ -33,19 +30,13 @@ def generate_agent_frontmatter(answers):
 
 def generate_command_frontmatter(answers):
     """Generate frontmatter for command component."""
-    frontmatter = {
-        'name': answers['name'],
-        'description': answers['description']
-    }
+    frontmatter = {'name': answers['name'], 'description': answers['description']}
     return frontmatter
 
 
 def generate_skill_frontmatter(answers):
     """Generate frontmatter for skill component."""
-    frontmatter = {
-        'name': answers['name'],
-        'description': answers['description']
-    }
+    frontmatter = {'name': answers['name'], 'description': answers['description']}
 
     # Add optional allowed-tools field if present
     if 'allowed-tools' in answers and answers['allowed-tools']:
@@ -75,7 +66,7 @@ def format_frontmatter(frontmatter_dict):
             lines.append(f'{key}: {value}')
 
     yaml_content = '\n'.join(lines)
-    return f"---\n{yaml_content}\n---"
+    return f'---\n{yaml_content}\n---'
 
 
 def cmd_generate(args) -> int:
@@ -83,7 +74,7 @@ def cmd_generate(args) -> int:
     try:
         answers = json.loads(args.config)
     except json.JSONDecodeError as e:
-        print(f"Error: Invalid JSON - {str(e)}", file=sys.stderr)
+        print(f'Error: Invalid JSON - {str(e)}', file=sys.stderr)
         return 1
 
     # Validate component type

@@ -16,23 +16,18 @@ from pathlib import Path
 from _build_parse import SEVERITY_ERROR, Issue, UnitTestSummary  # type: ignore[import-not-found]
 
 # npm error code pattern: "npm ERR! code XXXXX"
-NPM_ERROR_CODE_PATTERN = re.compile(r"^npm ERR! code (\S+)", re.MULTILINE)
+NPM_ERROR_CODE_PATTERN = re.compile(r'^npm ERR! code (\S+)', re.MULTILINE)
 
 # npm error message patterns for specific error types
-ERESOLVE_PATTERN = re.compile(
-    r"npm ERR! ERESOLVE unable to resolve dependency tree", re.MULTILINE
-)
+ERESOLVE_PATTERN = re.compile(r'npm ERR! ERESOLVE unable to resolve dependency tree', re.MULTILINE)
 ERESOLVE_CONFLICT_PATTERN = re.compile(
-    r"npm ERR! Could not resolve dependency:\s*\n.*peer\s+(\S+)\s+from\s+(\S+)",
-    re.MULTILINE | re.DOTALL
+    r'npm ERR! Could not resolve dependency:\s*\n.*peer\s+(\S+)\s+from\s+(\S+)', re.MULTILINE | re.DOTALL
 )
 
-E404_PATTERN = re.compile(
-    r"npm ERR! 404\s+'([^']+)'\s+is not in this registry", re.MULTILINE
-)
+E404_PATTERN = re.compile(r"npm ERR! 404\s+'([^']+)'\s+is not in this registry", re.MULTILINE)
 
 # Generic npm ERR! line pattern
-NPM_ERR_LINE_PATTERN = re.compile(r"^npm ERR! (.+)$", re.MULTILINE)
+NPM_ERR_LINE_PATTERN = re.compile(r'^npm ERR! (.+)$', re.MULTILINE)
 
 
 def parse_log(log_file: str | Path) -> tuple[list[Issue], UnitTestSummary | None, str]:
@@ -53,10 +48,10 @@ def parse_log(log_file: str | Path) -> tuple[list[Issue], UnitTestSummary | None
         FileNotFoundError: If log file doesn't exist.
     """
     path = Path(log_file)
-    content = path.read_text(encoding="utf-8", errors="replace")
+    content = path.read_text(encoding='utf-8', errors='replace')
 
     issues = _extract_issues(content)
-    build_status = "FAILURE" if issues else "SUCCESS"
+    build_status = 'FAILURE' if issues else 'SUCCESS'
 
     return issues, None, build_status
 
@@ -80,11 +75,11 @@ def _extract_issues(content: str) -> list[Issue]:
         return issues
 
     # Handle specific error types
-    if error_code == "ERESOLVE":
+    if error_code == 'ERESOLVE':
         issue = _parse_eresolve_error(content)
         if issue:
             issues.append(issue)
-    elif error_code == "E404":
+    elif error_code == 'E404':
         issue = _parse_e404_error(content)
         if issue:
             issues.append(issue)
@@ -111,16 +106,16 @@ def _parse_eresolve_error(content: str) -> Issue | None:
     if conflict_match:
         peer_dep = conflict_match.group(1)
         from_pkg = conflict_match.group(2)
-        message = f"ERESOLVE: Could not resolve peer dependency {peer_dep} from {from_pkg}"
+        message = f'ERESOLVE: Could not resolve peer dependency {peer_dep} from {from_pkg}'
     else:
-        message = "ERESOLVE: Unable to resolve dependency tree"
+        message = 'ERESOLVE: Unable to resolve dependency tree'
 
     return Issue(
-        file="package.json",
+        file='package.json',
         line=None,
         message=message,
         severity=SEVERITY_ERROR,
-        category="npm_dependency",
+        category='npm_dependency',
     )
 
 
@@ -138,14 +133,14 @@ def _parse_e404_error(content: str) -> Issue | None:
         package = match.group(1)
         message = f"E404: Package '{package}' not found in registry"
     else:
-        message = "E404: Package not found"
+        message = 'E404: Package not found'
 
     return Issue(
-        file="package.json",
+        file='package.json',
         line=None,
         message=message,
         severity=SEVERITY_ERROR,
-        category="npm_error",
+        category='npm_error',
     )
 
 
@@ -160,27 +155,27 @@ def _parse_generic_error(content: str, error_code: str) -> Issue | None:
         Issue dataclass or None.
     """
     # Get first meaningful error line after the code line
-    lines = content.split("\n")
+    lines = content.split('\n')
     message_lines = []
 
     for line in lines:
-        if line.startswith("npm ERR! "):
+        if line.startswith('npm ERR! '):
             err_content = line[9:].strip()
             # Skip empty lines and boilerplate
-            if err_content and not err_content.startswith("A complete log"):
+            if err_content and not err_content.startswith('A complete log'):
                 message_lines.append(err_content)
                 if len(message_lines) >= 3:
                     break
 
     if not message_lines:
-        message = f"{error_code}: npm command failed"
+        message = f'{error_code}: npm command failed'
     else:
-        message = f"{error_code}: {message_lines[0]}"
+        message = f'{error_code}: {message_lines[0]}'
 
     return Issue(
         file=None,
         line=None,
         message=message,
         severity=SEVERITY_ERROR,
-        category="npm_error",
+        category='npm_error',
     )

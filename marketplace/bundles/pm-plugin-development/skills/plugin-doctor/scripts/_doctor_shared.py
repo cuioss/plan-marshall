@@ -15,9 +15,9 @@ _PLAN_DIR_NAME = os.environ.get('PLAN_DIR_NAME', '.plan')
 # Constants
 # =============================================================================
 
-MARKETPLACE_BUNDLES_PATH = "marketplace/bundles"
-TEMP_DIR = f"{_PLAN_DIR_NAME}/temp"
-REPORT_DIR = "plugin-doctor-report"
+MARKETPLACE_BUNDLES_PATH = 'marketplace/bundles'
+TEMP_DIR = f'{_PLAN_DIR_NAME}/temp'
+REPORT_DIR = 'plugin-doctor-report'
 
 
 def get_report_dir() -> Path:
@@ -37,10 +37,10 @@ def get_report_filename(timestamp: str | None = None, scope: str | None = None) 
         Filename like "{timestamp}-report.json" or "{timestamp}-{scope}-report.json"
     """
     if timestamp is None:
-        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        timestamp = datetime.now().strftime('%Y%m%d-%H%M%S')
     if scope:
-        return f"{timestamp}-{scope}-report.json"
-    return f"{timestamp}-report.json"
+        return f'{timestamp}-{scope}-report.json'
+    return f'{timestamp}-report.json'
 
 
 def get_default_report_dir() -> Path:
@@ -61,6 +61,7 @@ def ensure_report_dir(report_dir: Path) -> Path:
 # Discovery Functions
 # =============================================================================
 
+
 def find_marketplace_root() -> Path | None:
     """Find the marketplace/bundles directory."""
     cwd = Path.cwd()
@@ -74,7 +75,7 @@ def find_marketplace_root() -> Path | None:
 def find_bundles(base_path: Path, bundle_filter: set[str] | None = None) -> list[Path]:
     """Find all bundle directories by locating plugin.json files."""
     bundles = []
-    for plugin_json in base_path.rglob(".claude-plugin/plugin.json"):
+    for plugin_json in base_path.rglob('.claude-plugin/plugin.json'):
         bundle_dir = plugin_json.parent.parent
         if bundle_filter and bundle_dir.name not in bundle_filter:
             continue
@@ -85,67 +86,45 @@ def find_bundles(base_path: Path, bundle_filter: set[str] | None = None) -> list
 
 def discover_components(bundle_dir: Path) -> dict[str, list[dict]]:
     """Discover all components in a bundle."""
-    components: dict[str, list[dict]] = {
-        "agents": [],
-        "commands": [],
-        "skills": [],
-        "scripts": []
-    }
+    components: dict[str, list[dict]] = {'agents': [], 'commands': [], 'skills': [], 'scripts': []}
 
     # Agents
-    agents_dir = bundle_dir / "agents"
+    agents_dir = bundle_dir / 'agents'
     if agents_dir.is_dir():
-        for f in sorted(agents_dir.glob("*.md")):
+        for f in sorted(agents_dir.glob('*.md')):
             if f.is_file():
-                components["agents"].append({
-                    "name": f.stem,
-                    "path": str(f),
-                    "type": "agent"
-                })
+                components['agents'].append({'name': f.stem, 'path': str(f), 'type': 'agent'})
 
     # Commands
-    commands_dir = bundle_dir / "commands"
+    commands_dir = bundle_dir / 'commands'
     if commands_dir.is_dir():
-        for f in sorted(commands_dir.glob("*.md")):
+        for f in sorted(commands_dir.glob('*.md')):
             if f.is_file():
-                components["commands"].append({
-                    "name": f.stem,
-                    "path": str(f),
-                    "type": "command"
-                })
+                components['commands'].append({'name': f.stem, 'path': str(f), 'type': 'command'})
 
     # Skills
-    skills_dir = bundle_dir / "skills"
+    skills_dir = bundle_dir / 'skills'
     if skills_dir.is_dir():
-        for skill_md in sorted(skills_dir.glob("*/SKILL.md")):
+        for skill_md in sorted(skills_dir.glob('*/SKILL.md')):
             skill_dir = skill_md.parent
-            components["skills"].append({
-                "name": skill_dir.name,
-                "path": str(skill_dir),
-                "skill_md_path": str(skill_md),
-                "type": "skill"
-            })
+            components['skills'].append(
+                {'name': skill_dir.name, 'path': str(skill_dir), 'skill_md_path': str(skill_md), 'type': 'skill'}
+            )
 
     # Scripts
     if skills_dir.is_dir():
-        for script_file in sorted(skills_dir.rglob("scripts/*.py")):
+        for script_file in sorted(skills_dir.rglob('scripts/*.py')):
             if script_file.is_file():
                 skill_dir = script_file.parent.parent
-                components["scripts"].append({
-                    "name": script_file.stem,
-                    "path": str(script_file),
-                    "skill": skill_dir.name,
-                    "type": "script"
-                })
-        for script_file in sorted(skills_dir.rglob("scripts/*.sh")):
+                components['scripts'].append(
+                    {'name': script_file.stem, 'path': str(script_file), 'skill': skill_dir.name, 'type': 'script'}
+                )
+        for script_file in sorted(skills_dir.rglob('scripts/*.sh')):
             if script_file.is_file():
                 skill_dir = script_file.parent.parent
-                components["scripts"].append({
-                    "name": script_file.stem,
-                    "path": str(script_file),
-                    "skill": skill_dir.name,
-                    "type": "script"
-                })
+                components['scripts'].append(
+                    {'name': script_file.stem, 'path': str(script_file), 'skill': skill_dir.name, 'type': 'script'}
+                )
 
     return components
 
@@ -154,7 +133,7 @@ def find_bundle_for_file(file_path: Path, marketplace_root: Path) -> Path | None
     """Find the bundle directory containing a file."""
     current = file_path.parent
     while current != current.parent and marketplace_root in current.parents or current == marketplace_root:
-        plugin_json = current / ".claude-plugin" / "plugin.json"
+        plugin_json = current / '.claude-plugin' / 'plugin.json'
         if plugin_json.exists():
             return current
         current = current.parent
@@ -163,19 +142,20 @@ def find_bundle_for_file(file_path: Path, marketplace_root: Path) -> Path | None
 
 def extract_bundle_name(path: str) -> str:
     """Extract bundle name from a file path."""
-    parts = path.split("/")
+    parts = path.split('/')
     try:
-        bundles_idx = parts.index("bundles")
+        bundles_idx = parts.index('bundles')
         if bundles_idx + 1 < len(parts):
             return parts[bundles_idx + 1]
     except ValueError:
         pass
-    return "unknown"
+    return 'unknown'
 
 
 # =============================================================================
 # Issue Categorization
 # =============================================================================
+
 
 def categorize_all_issues(issues: list[dict]) -> dict[str, list[dict]]:
     """Categorize issues into safe and risky."""
@@ -184,18 +164,14 @@ def categorize_all_issues(issues: list[dict]) -> dict[str, list[dict]]:
     unfixable = []
 
     for issue in issues:
-        if not issue.get("fixable", False):
+        if not issue.get('fixable', False):
             unfixable.append(issue)
             continue
 
         category = categorize_fix(issue)
-        if category == "safe":
+        if category == 'safe':
             safe.append(issue)
         else:
             risky.append(issue)
 
-    return {
-        "safe": safe,
-        "risky": risky,
-        "unfixable": unfixable
-    }
+    return {'safe': safe, 'risky': risky, 'unfixable': unfixable}

@@ -32,10 +32,10 @@ def run_cli(*args, **kwargs):
 # Test: CLI interface
 # =============================================================================
 
+
 def test_cli_help():
     """Test gradle.py --help works."""
-    result = run_cli(
-        'python3', str(GRADLE_CLI), '--help')
+    result = run_cli('python3', str(GRADLE_CLI), '--help')
     assert result.returncode == 0
     assert 'run' in result.stdout
     assert 'parse' in result.stdout
@@ -44,8 +44,7 @@ def test_cli_help():
 
 def test_cli_run_help():
     """Test gradle.py run --help works."""
-    result = run_cli(
-        'python3', str(GRADLE_CLI), 'run', '--help')
+    result = run_cli('python3', str(GRADLE_CLI), 'run', '--help')
     assert result.returncode == 0
     assert '--commandArgs' in result.stdout
     assert '--timeout' in result.stdout
@@ -53,16 +52,14 @@ def test_cli_run_help():
 
 def test_cli_parse_help():
     """Test gradle.py parse --help works."""
-    result = run_cli(
-        'python3', str(GRADLE_CLI), 'parse', '--help')
+    result = run_cli('python3', str(GRADLE_CLI), 'parse', '--help')
     assert result.returncode == 0
     assert '--log' in result.stdout
 
 
 def test_cli_find_project_help():
     """Test gradle.py find-project --help works."""
-    result = run_cli(
-        'python3', str(GRADLE_CLI), 'find-project', '--help')
+    result = run_cli('python3', str(GRADLE_CLI), 'find-project', '--help')
     assert result.returncode == 0
     assert '--project-name' in result.stdout
 

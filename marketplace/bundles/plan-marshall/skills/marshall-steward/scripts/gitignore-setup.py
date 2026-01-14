@@ -32,10 +32,10 @@ from pathlib import Path
 
 # Lines to add to .gitignore
 # Use .plan/* (not .plan/) to allow exceptions - .plan/ ignores entire directory
-GITIGNORE_COMMENT = "# Planning system (managed by /marshall-steward)"
-GITIGNORE_PLAN_DIR = ".plan/*"
-GITIGNORE_MARSHAL_EXCEPTION = "!.plan/marshal.json"
-GITIGNORE_ARCHITECTURE_EXCEPTION = "!.plan/project-architecture/"
+GITIGNORE_COMMENT = '# Planning system (managed by /marshall-steward)'
+GITIGNORE_PLAN_DIR = '.plan/*'
+GITIGNORE_MARSHAL_EXCEPTION = '!.plan/marshal.json'
+GITIGNORE_ARCHITECTURE_EXCEPTION = '!.plan/project-architecture/'
 
 
 def check_gitignore_status(gitignore_path: Path) -> dict:
@@ -57,7 +57,7 @@ def check_gitignore_status(gitignore_path: Path) -> dict:
     has_plan_dir = False
     has_marshal_exception = False
     has_architecture_exception = False
-    content = ""
+    content = ''
 
     if exists:
         content = gitignore_path.read_text()
@@ -66,7 +66,7 @@ def check_gitignore_status(gitignore_path: Path) -> dict:
         for line in lines:
             stripped = line.strip()
             # Accept both .plan/* (correct) and .plan/ or .plan (legacy)
-            if stripped in (".plan/*", ".plan/", ".plan"):
+            if stripped in ('.plan/*', '.plan/', '.plan'):
                 has_plan_dir = True
             if stripped == GITIGNORE_MARSHAL_EXCEPTION:
                 has_marshal_exception = True
@@ -74,11 +74,11 @@ def check_gitignore_status(gitignore_path: Path) -> dict:
                 has_architecture_exception = True
 
     return {
-        "exists": exists,
-        "has_plan_dir": has_plan_dir,
-        "has_marshal_exception": has_marshal_exception,
-        "has_architecture_exception": has_architecture_exception,
-        "content": content
+        'exists': exists,
+        'has_plan_dir': has_plan_dir,
+        'has_marshal_exception': has_marshal_exception,
+        'has_architecture_exception': has_architecture_exception,
+        'content': content,
     }
 
 
@@ -93,49 +93,49 @@ def setup_gitignore(project_root: Path, dry_run: bool = False) -> dict:
     Returns:
         Dict with status, path, and entries_added count
     """
-    gitignore_path = project_root / ".gitignore"
+    gitignore_path = project_root / '.gitignore'
     status = check_gitignore_status(gitignore_path)
 
     entries_to_add = []
 
-    if not status["has_plan_dir"]:
+    if not status['has_plan_dir']:
         entries_to_add.append(GITIGNORE_PLAN_DIR)
-    if not status["has_marshal_exception"]:
+    if not status['has_marshal_exception']:
         entries_to_add.append(GITIGNORE_MARSHAL_EXCEPTION)
-    if not status["has_architecture_exception"]:
+    if not status['has_architecture_exception']:
         entries_to_add.append(GITIGNORE_ARCHITECTURE_EXCEPTION)
 
     result = {
-        "gitignore_path": str(gitignore_path.absolute()),
-        "entries_added": len(entries_to_add),
-        "dry_run": dry_run
+        'gitignore_path': str(gitignore_path.absolute()),
+        'entries_added': len(entries_to_add),
+        'dry_run': dry_run,
     }
 
     if not entries_to_add:
-        result["status"] = "unchanged"
+        result['status'] = 'unchanged'
         return result
 
-    if not status["exists"]:
+    if not status['exists']:
         # Create new .gitignore
-        result["status"] = "created"
-        new_content = f"{GITIGNORE_COMMENT}\n{GITIGNORE_PLAN_DIR}\n{GITIGNORE_MARSHAL_EXCEPTION}\n{GITIGNORE_ARCHITECTURE_EXCEPTION}\n"
+        result['status'] = 'created'
+        new_content = f'{GITIGNORE_COMMENT}\n{GITIGNORE_PLAN_DIR}\n{GITIGNORE_MARSHAL_EXCEPTION}\n{GITIGNORE_ARCHITECTURE_EXCEPTION}\n'
     else:
         # Update existing .gitignore
-        result["status"] = "updated"
-        content = status["content"]
+        result['status'] = 'updated'
+        content = status['content']
 
         # Ensure content ends with newline
-        if content and not content.endswith("\n"):
-            content += "\n"
+        if content and not content.endswith('\n'):
+            content += '\n'
 
         # Add blank line before comment if content exists and doesn't end with blank line
-        if content and not content.endswith("\n\n"):
-            content += "\n"
+        if content and not content.endswith('\n\n'):
+            content += '\n'
 
         # Add comment and entries
-        content += f"{GITIGNORE_COMMENT}\n"
+        content += f'{GITIGNORE_COMMENT}\n'
         for entry in entries_to_add:
-            content += f"{entry}\n"
+            content += f'{entry}\n'
 
         new_content = content
 
@@ -146,41 +146,32 @@ def setup_gitignore(project_root: Path, dry_run: bool = False) -> dict:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(
-        description="Configure .gitignore for planning system"
-    )
+    parser = argparse.ArgumentParser(description='Configure .gitignore for planning system')
     parser.add_argument(
-        "--project-root",
-        type=str,
-        default=".",
-        help="Project root directory (default: current directory)"
+        '--project-root', type=str, default='.', help='Project root directory (default: current directory)'
     )
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Show what would be done without making changes"
-    )
+    parser.add_argument('--dry-run', action='store_true', help='Show what would be done without making changes')
 
     args = parser.parse_args()
     project_root = Path(args.project_root)
 
     if not project_root.exists():
-        print("status\terror", file=sys.stderr)
-        print("error\tproject_root_not_found", file=sys.stderr)
-        print(f"path\t{project_root}", file=sys.stderr)
+        print('status\terror', file=sys.stderr)
+        print('error\tproject_root_not_found', file=sys.stderr)
+        print(f'path\t{project_root}', file=sys.stderr)
         return 1
 
     result = setup_gitignore(project_root, args.dry_run)
 
     # Output in TOON format
-    print(f"status\t{result['status']}")
-    print(f"gitignore_path\t{result['gitignore_path']}")
-    print(f"entries_added\t{result['entries_added']}")
+    print(f'status\t{result["status"]}')
+    print(f'gitignore_path\t{result["gitignore_path"]}')
+    print(f'entries_added\t{result["entries_added"]}')
     if result['dry_run']:
-        print("dry_run\ttrue")
+        print('dry_run\ttrue')
 
     return 0
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     sys.exit(main())

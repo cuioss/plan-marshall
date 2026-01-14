@@ -70,12 +70,12 @@ def _split_to_virtual_modules(modules: list[dict]) -> list[dict]:
 
     # Build list of sibling virtual module names
     technologies = [_get_technology(mod) for mod in modules]
-    sibling_names = [f"{base_name}-{tech}" for tech in technologies]
+    sibling_names = [f'{base_name}-{tech}' for tech in technologies]
 
     virtual_modules = []
     for i, mod in enumerate(modules):
         tech = technologies[i]
-        virtual_name = f"{base_name}-{tech}"
+        virtual_name = f'{base_name}-{tech}'
 
         # Create virtual module by copying and modifying
         virtual = mod.copy()
@@ -83,7 +83,7 @@ def _split_to_virtual_modules(modules: list[dict]) -> list[dict]:
         virtual['virtual_module'] = {
             'physical_path': physical_path,
             'technology': tech,
-            'sibling_modules': [s for s in sibling_names if s != virtual_name]
+            'sibling_modules': [s for s in sibling_names if s != virtual_name],
         }
 
         virtual_modules.append(virtual)
@@ -135,8 +135,8 @@ def discover_project_modules(project_root: Path, discover_extensions_fn) -> dict
     modules_by_path: dict[str, list[dict]] = {}
 
     for ext in extensions:
-        ext_module = ext.get("module")
-        bundle_name = ext.get("bundle", "unknown")
+        ext_module = ext.get('module')
+        bundle_name = ext.get('bundle', 'unknown')
 
         if not ext_module or not hasattr(ext_module, 'discover_modules'):
             continue
@@ -156,13 +156,15 @@ def discover_project_modules(project_root: Path, discover_extensions_fn) -> dict
                 modules_by_path[mod_path].append(mod)
 
         except Exception as e:
-            log_entry('script', 'global', 'WARN', f"[MODULE-AGGREGATION] discover_modules() failed for {bundle_name}: {e}")
+            log_entry(
+                'script', 'global', 'WARN', f'[MODULE-AGGREGATION] discover_modules() failed for {bundle_name}: {e}'
+            )
 
     # Sort paths so "." (root module) comes first, then alphabetically
     def path_sort_key(path: str) -> tuple:
         """Sort key: root module first, then alphabetically."""
-        if path == "." or path == "":
-            return (0, "")  # Root module always first
+        if path == '.' or path == '':
+            return (0, '')  # Root module always first
         return (1, path.lower())
 
     sorted_paths = sorted(modules_by_path.keys(), key=path_sort_key)
@@ -180,7 +182,4 @@ def discover_project_modules(project_root: Path, discover_extensions_fn) -> dict
             if name:
                 modules_by_name[name] = mod
 
-    return {
-        "modules": modules_by_name,
-        "extensions_used": sorted(set(extensions_used))
-    }
+    return {'modules': modules_by_name, 'extensions_used': sorted(set(extensions_used))}

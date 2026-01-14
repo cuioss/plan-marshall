@@ -40,6 +40,7 @@ TEST_SCRIPT_PATH = MARKETPLACE_ROOT / TEST_SCRIPT_BUNDLE / 'skills' / TEST_SCRIP
 # TEST FIXTURES
 # ============================================================================
 
+
 class ExecutorTestEnvironment:
     """
     Manages a temporary test environment for executor integration tests.
@@ -89,14 +90,11 @@ class ExecutorTestEnvironment:
         mappings_code = self._format_mappings(mappings)
 
         # Replace placeholders
-        executor_content = template_content.replace(
-            '{{SCRIPT_MAPPINGS}}',
-            mappings_code
-        )
+        executor_content = template_content.replace('{{SCRIPT_MAPPINGS}}', mappings_code)
         # Point to real plan_logging.py location (isolation via PLAN_BASE_DIR env var)
         executor_content = executor_content.replace(
             '{{LOGGING_DIR}}',
-            str(LOGGING_DIR)  # Real marketplace location for plan_logging module
+            str(LOGGING_DIR),  # Real marketplace location for plan_logging module
         )
 
         self.executor_path = self.plan_dir / 'execute-script.py'
@@ -119,7 +117,7 @@ class ExecutorTestEnvironment:
         for bundle, skill, script in test_scripts:
             script_path = MARKETPLACE_ROOT / bundle / 'skills' / skill / 'scripts' / script
             if script_path.exists():
-                notation = f"{bundle}:{skill}"
+                notation = f'{bundle}:{skill}'
                 mappings[notation] = str(script_path.resolve())
 
         # Add a fake script for error testing
@@ -164,7 +162,7 @@ class ExecutorTestEnvironment:
             text=True,
             cwd=self.temp_dir,
             timeout=timeout,
-            env=env
+            env=env,
         )
 
     def get_log_content(self) -> str:
@@ -207,19 +205,18 @@ def cleanup_test_env():
 # TESTS: Executor Generation
 # ============================================================================
 
+
 def test_executor_generated_successfully():
     """Executor is generated and is valid Python."""
     env = get_test_env()
 
-    assert env.executor_path.exists(), f"Executor not found at {env.executor_path}"
+    assert env.executor_path.exists(), f'Executor not found at {env.executor_path}'
 
     # Verify it's valid Python
     result = subprocess.run(
-        [sys.executable, '-m', 'py_compile', str(env.executor_path)],
-        capture_output=True,
-        text=True
+        [sys.executable, '-m', 'py_compile', str(env.executor_path)], capture_output=True, text=True
     )
-    assert result.returncode == 0, f"Executor syntax error: {result.stderr}"
+    assert result.returncode == 0, f'Executor syntax error: {result.stderr}'
 
 
 def test_executor_contains_mappings():
@@ -229,8 +226,8 @@ def test_executor_contains_mappings():
     content = env.executor_path.read_text()
 
     # Check for expected notations
-    assert 'pm-workflow:manage-config' in content, "Missing pm-workflow:manage-config mapping"
-    assert 'SCRIPTS = {' in content, "Missing SCRIPTS dict"
+    assert 'pm-workflow:manage-config' in content, 'Missing pm-workflow:manage-config mapping'
+    assert 'SCRIPTS = {' in content, 'Missing SCRIPTS dict'
 
 
 def test_executor_list_command():
@@ -239,16 +236,17 @@ def test_executor_list_command():
 
     result = env.run_executor('--list')
 
-    assert result.returncode == 0, f"--list failed: {result.stderr}"
+    assert result.returncode == 0, f'--list failed: {result.stderr}'
 
     # Should list our test scripts
     output = result.stdout
-    assert 'pm-workflow:manage-config' in output, f"Missing pm-workflow:manage-config in list: {output}"
+    assert 'pm-workflow:manage-config' in output, f'Missing pm-workflow:manage-config in list: {output}'
 
 
 # ============================================================================
 # TESTS: Successful Execution
 # ============================================================================
+
 
 def test_execute_script_help():
     """Execute a script with --help (should succeed)."""
@@ -258,9 +256,10 @@ def test_execute_script_help():
     result = env.run_executor('pm-workflow:manage-config', '--help')
 
     # --help typically exits with 0
-    assert result.returncode == 0, f"Script --help failed: {result.stderr}"
-    assert 'usage' in result.stdout.lower() or 'help' in result.stdout.lower(), \
-        f"Expected help output, got: {result.stdout}"
+    assert result.returncode == 0, f'Script --help failed: {result.stderr}'
+    assert 'usage' in result.stdout.lower() or 'help' in result.stdout.lower(), (
+        f'Expected help output, got: {result.stdout}'
+    )
 
 
 def test_execute_script_with_subcommand():
@@ -271,7 +270,7 @@ def test_execute_script_with_subcommand():
     # manage-lifecycle has a 'status' subcommand that should work without a real plan
     result = env.run_executor('pm-workflow:manage-lifecycle', '--help')
 
-    assert result.returncode == 0, f"Script failed: {result.stderr}"
+    assert result.returncode == 0, f'Script failed: {result.stderr}'
 
 
 def test_successful_execution_logged():
@@ -281,12 +280,12 @@ def test_successful_execution_logged():
 
     # Execute something that succeeds
     result = env.run_executor('pm-workflow:manage-config', '--help')
-    assert result.returncode == 0, f"Script failed: {result.stderr}"
+    assert result.returncode == 0, f'Script failed: {result.stderr}'
 
     # Check log was created
     log_content = env.get_log_content()
-    assert 'pm-workflow:manage-config' in log_content, f"Missing log entry. Log content: {log_content}"
-    assert '[INFO]' in log_content, f"Expected INFO marker in log: {log_content}"
+    assert 'pm-workflow:manage-config' in log_content, f'Missing log entry. Log content: {log_content}'
+    assert '[INFO]' in log_content, f'Expected INFO marker in log: {log_content}'
 
 
 def test_log_format_success_compact():
@@ -301,20 +300,21 @@ def test_log_format_success_compact():
     # Success entries should be single line with bracket format
     # Format: [timestamp] [INFO] notation subcommand (duration)
     lines = [line for line in log_content.strip().split('\n') if 'pm-workflow:manage-config' in line]
-    assert len(lines) >= 1, "No log entry found for pm-workflow:manage-config"
+    assert len(lines) >= 1, 'No log entry found for pm-workflow:manage-config'
 
     entry = lines[0]
     # Check bracket format
-    assert '[INFO]' in entry, f"Expected [INFO] marker, got: {entry}"
-    assert entry.startswith('['), f"Entry should start with timestamp bracket: {entry}"
+    assert '[INFO]' in entry, f'Expected [INFO] marker, got: {entry}'
+    assert entry.startswith('['), f'Entry should start with timestamp bracket: {entry}'
 
     # Should NOT contain ERROR marker for success
-    assert '[ERROR]' not in entry, f"Success entry should not contain [ERROR]: {entry}"
+    assert '[ERROR]' not in entry, f'Success entry should not contain [ERROR]: {entry}'
 
 
 # ============================================================================
 # TESTS: Error Execution
 # ============================================================================
+
 
 def test_execute_nonexistent_script():
     """Executing nonexistent script returns error."""
@@ -322,9 +322,10 @@ def test_execute_nonexistent_script():
 
     result = env.run_executor('test:nonexistent', 'subcommand')
 
-    assert result.returncode != 0, "Expected non-zero exit for nonexistent script"
-    assert 'SCRIPT_ERROR' in result.stderr or 'not found' in result.stderr.lower(), \
-        f"Expected error message, got: {result.stderr}"
+    assert result.returncode != 0, 'Expected non-zero exit for nonexistent script'
+    assert 'SCRIPT_ERROR' in result.stderr or 'not found' in result.stderr.lower(), (
+        f'Expected error message, got: {result.stderr}'
+    )
 
 
 def test_execute_unknown_notation():
@@ -333,9 +334,10 @@ def test_execute_unknown_notation():
 
     result = env.run_executor('unknown:notation', 'subcommand')
 
-    assert result.returncode != 0, "Expected non-zero exit for unknown notation"
-    assert 'SCRIPT_ERROR' in result.stderr or 'Unknown notation' in result.stderr, \
-        f"Expected unknown notation error, got: {result.stderr}"
+    assert result.returncode != 0, 'Expected non-zero exit for unknown notation'
+    assert 'SCRIPT_ERROR' in result.stderr or 'Unknown notation' in result.stderr, (
+        f'Expected unknown notation error, got: {result.stderr}'
+    )
 
 
 def test_execute_script_that_fails():
@@ -347,13 +349,13 @@ def test_execute_script_that_fails():
     result = env.run_executor('pm-workflow:manage-config', 'get')
 
     # This should fail because no --plan-id provided
-    assert result.returncode != 0, "Expected non-zero exit for missing required args"
+    assert result.returncode != 0, 'Expected non-zero exit for missing required args'
 
     # Verify error was logged
     log_content = env.get_log_content()
-    assert 'pm-workflow:manage-config' in log_content, f"Missing log entry for failed execution: {log_content}"
+    assert 'pm-workflow:manage-config' in log_content, f'Missing log entry for failed execution: {log_content}'
     # Error entries have [ERROR] marker, not [SUCCESS]
-    assert '[ERROR]' in log_content, f"Expected [ERROR] marker in log: {log_content}"
+    assert '[ERROR]' in log_content, f'Expected [ERROR] marker in log: {log_content}'
 
 
 def test_error_execution_logged_with_details():
@@ -365,15 +367,15 @@ def test_error_execution_logged_with_details():
     result = env.run_executor('pm-workflow:manage-config', 'get', '--plan-id', 'nonexistent-plan-xyz')
 
     # This should fail (plan doesn't exist)
-    assert result.returncode != 0, "Expected non-zero exit for nonexistent plan"
+    assert result.returncode != 0, 'Expected non-zero exit for nonexistent plan'
 
     log_content = env.get_log_content()
-    assert 'pm-workflow:manage-config' in log_content, f"Missing log entry: {log_content}"
+    assert 'pm-workflow:manage-config' in log_content, f'Missing log entry: {log_content}'
 
     # Error entries should contain [ERROR] marker and args detail
-    assert '[ERROR]' in log_content, f"Expected [ERROR] marker in log: {log_content}"
-    assert 'args:' in log_content, f"Error entry missing args detail: {log_content}"
-    assert 'nonexistent-plan-xyz' in log_content, f"Args should include plan-id: {log_content}"
+    assert '[ERROR]' in log_content, f'Expected [ERROR] marker in log: {log_content}'
+    assert 'args:' in log_content, f'Error entry missing args detail: {log_content}'
+    assert 'nonexistent-plan-xyz' in log_content, f'Args should include plan-id: {log_content}'
 
 
 def test_log_format_error_multi_line():
@@ -383,7 +385,7 @@ def test_log_format_error_multi_line():
 
     # Execute with invalid arguments to force error
     result = env.run_executor('pm-workflow:manage-config', 'get', '--plan-id', 'test-error-format')
-    assert result.returncode != 0, "Expected failure"
+    assert result.returncode != 0, 'Expected failure'
 
     log_content = env.get_log_content()
 
@@ -392,19 +394,20 @@ def test_log_format_error_multi_line():
     error_lines = [line for line in lines if 'pm-workflow:manage-config' in line or line.startswith('  ')]
 
     # Should have at least the main entry line + args line
-    assert len(error_lines) >= 2, f"Expected multi-line error entry, got: {error_lines}"
+    assert len(error_lines) >= 2, f'Expected multi-line error entry, got: {error_lines}'
 
     # First line should have [ERROR] marker
-    assert '[ERROR]' in error_lines[0], f"First line should have [ERROR]: {error_lines[0]}"
+    assert '[ERROR]' in error_lines[0], f'First line should have [ERROR]: {error_lines[0]}'
 
     # Should have indented detail lines
     indented_lines = [line for line in error_lines if line.startswith('  ')]
-    assert len(indented_lines) >= 1, f"Expected indented detail lines: {error_lines}"
+    assert len(indented_lines) >= 1, f'Expected indented detail lines: {error_lines}'
 
 
 # ============================================================================
 # TESTS: Argument Forwarding
 # ============================================================================
+
 
 def test_arguments_forwarded_correctly():
     """Arguments are correctly forwarded to the script."""
@@ -414,7 +417,7 @@ def test_arguments_forwarded_correctly():
     result = env.run_executor('pm-workflow:manage-config', '--help')
 
     assert result.returncode == 0
-    assert '--help' not in result.stderr, "Help flag should be consumed by target script"
+    assert '--help' not in result.stderr, 'Help flag should be consumed by target script'
 
 
 def test_subcommand_forwarded():
@@ -435,28 +438,27 @@ def test_complex_arguments_forwarded():
 
     # Test with multiple argument types (use correct arg name --field)
     result = env.run_executor(
-        'pm-workflow:manage-config',
-        'get',
-        '--plan-id', 'test-arg-forward',
-        '--field', 'some.nested.field'
+        'pm-workflow:manage-config', 'get', '--plan-id', 'test-arg-forward', '--field', 'some.nested.field'
     )
 
     # Will fail because plan doesn't exist, but args should be forwarded
     # We verify by checking the log contains our specific args
     log_content = env.get_log_content()
-    assert 'test-arg-forward' in log_content, f"plan-id arg not forwarded: {log_content}"
-    assert 'some.nested.field' in log_content, f"field arg not forwarded: {log_content}"
+    assert 'test-arg-forward' in log_content, f'plan-id arg not forwarded: {log_content}'
+    assert 'some.nested.field' in log_content, f'field arg not forwarded: {log_content}'
 
     # Also verify script received the args (it will fail for nonexistent plan)
-    assert result.returncode != 0, "Should fail for nonexistent plan"
+    assert result.returncode != 0, 'Should fail for nonexistent plan'
     # The error should be about the plan not existing, not about missing args
-    assert 'required' not in result.stderr.lower() or 'test-arg-forward' in result.stderr, \
-        f"All required args should have been provided: {result.stderr}"
+    assert 'required' not in result.stderr.lower() or 'test-arg-forward' in result.stderr, (
+        f'All required args should have been provided: {result.stderr}'
+    )
 
 
 # ============================================================================
 # TESTS: Edge Cases
 # ============================================================================
+
 
 def test_no_arguments_shows_usage():
     """Running executor without arguments shows usage."""
@@ -464,9 +466,8 @@ def test_no_arguments_shows_usage():
 
     result = env.run_executor()
 
-    assert result.returncode != 0, "Should fail without arguments"
-    assert 'Usage' in result.stderr or 'usage' in result.stderr, \
-        f"Expected usage message, got: {result.stderr}"
+    assert result.returncode != 0, 'Should fail without arguments'
+    assert 'Usage' in result.stderr or 'usage' in result.stderr, f'Expected usage message, got: {result.stderr}'
 
 
 def test_partial_notation_resolution():
@@ -477,11 +478,12 @@ def test_partial_notation_resolution():
     result = env.run_executor('pm-workflow', '--help')
 
     # Should resolve to first planning:* script and succeed with --help
-    assert result.returncode == 0, f"Partial notation resolution failed: {result.stderr}"
+    assert result.returncode == 0, f'Partial notation resolution failed: {result.stderr}'
 
     # Output should be help from one of the planning scripts
-    assert 'usage' in result.stdout.lower() or len(result.stdout) > 0, \
-        f"Expected help output from resolved script: {result.stdout}"
+    assert 'usage' in result.stdout.lower() or len(result.stdout) > 0, (
+        f'Expected help output from resolved script: {result.stdout}'
+    )
 
 
 def test_partial_notation_matches_substring():
@@ -492,7 +494,7 @@ def test_partial_notation_matches_substring():
     result = env.run_executor('manage-config', '--help')
 
     # Should resolve and show help
-    assert result.returncode == 0, f"Substring notation resolution failed: {result.stderr}"
+    assert result.returncode == 0, f'Substring notation resolution failed: {result.stderr}'
 
 
 def test_multiple_executions_append_to_log():
@@ -509,12 +511,13 @@ def test_multiple_executions_append_to_log():
 
     # Count occurrences
     count = log_content.count('pm-workflow:manage-config')
-    assert count >= 3, f"Expected at least 3 log entries, found {count}"
+    assert count >= 3, f'Expected at least 3 log entries, found {count}'
 
 
 # ============================================================================
 # TESTS: Log Location (Plan-Scoped vs Global)
 # ============================================================================
+
 
 def test_global_log_used_without_plan_id():
     """Global log is used when no --plan-id provided."""
@@ -527,7 +530,7 @@ def test_global_log_used_without_plan_id():
     # Check global log exists
     today = datetime.now().strftime('%Y-%m-%d')
     global_log = env.logs_dir / f'script-execution-{today}.log'
-    assert global_log.exists(), f"Global log not created at {global_log}"
+    assert global_log.exists(), f'Global log not created at {global_log}'
 
 
 def test_plan_scoped_log_when_plan_exists():
@@ -542,23 +545,17 @@ def test_plan_scoped_log_when_plan_exists():
     try:
         env.clear_logs()
 
-        env.run_executor(
-            'pm-workflow:manage-config',
-            'get',
-            '--plan-id', plan_id,
-            '--key', 'test'
-        )
+        env.run_executor('pm-workflow:manage-config', 'get', '--plan-id', plan_id, '--key', 'test')
 
         # Check if plan-scoped log was created
         plan_log = plan_dir / 'script-execution.log'
-        assert plan_log.exists(), f"Plan-scoped log not created at {plan_log}"
+        assert plan_log.exists(), f'Plan-scoped log not created at {plan_log}'
 
         log_content = plan_log.read_text()
-        assert 'pm-workflow:manage-config' in log_content, \
-            f"Plan log missing entry: {log_content}"
+        assert 'pm-workflow:manage-config' in log_content, f'Plan log missing entry: {log_content}'
 
         # Verify plan-id appears in plan log, confirming it went to the right place
-        assert plan_id in log_content, f"Plan-id should appear in plan-scoped log: {log_content}"
+        assert plan_id in log_content, f'Plan-id should appear in plan-scoped log: {log_content}'
 
     finally:
         # Cleanup

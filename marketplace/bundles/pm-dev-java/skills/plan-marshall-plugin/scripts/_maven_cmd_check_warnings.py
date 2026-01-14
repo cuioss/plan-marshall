@@ -6,7 +6,7 @@ import re
 import sys
 
 # Warning types that are always considered fixable
-ALWAYS_FIXABLE_TYPES = ["javadoc_warning", "compilation_error", "deprecation_warning", "unchecked_warning"]
+ALWAYS_FIXABLE_TYPES = ['javadoc_warning', 'compilation_error', 'deprecation_warning', 'unchecked_warning']
 
 
 def is_acceptable(warning_message: str, patterns: list[str]) -> bool:
@@ -44,54 +44,66 @@ def cmd_check_warnings(args):
         try:
             warnings = json.loads(args.warnings)
         except json.JSONDecodeError as e:
-            print(json.dumps({"success": False, "error": f"Invalid JSON in --warnings: {e}"}, indent=2))
+            print(json.dumps({'success': False, 'error': f'Invalid JSON in --warnings: {e}'}, indent=2))
             return 1
         if args.patterns:
             try:
                 patterns = json.loads(args.patterns)
             except json.JSONDecodeError as e:
-                print(json.dumps({"success": False, "error": f"Invalid JSON in --patterns: {e}"}, indent=2))
+                print(json.dumps({'success': False, 'error': f'Invalid JSON in --patterns: {e}'}, indent=2))
                 return 1
         elif args.acceptable_warnings:
             try:
                 patterns = flatten_patterns(json.loads(args.acceptable_warnings))
             except json.JSONDecodeError as e:
-                print(json.dumps({"success": False, "error": f"Invalid JSON in --acceptable-warnings: {e}"}, indent=2))
+                print(json.dumps({'success': False, 'error': f'Invalid JSON in --acceptable-warnings: {e}'}, indent=2))
                 return 1
     else:
         if sys.stdin.isatty():
-            print(json.dumps({"success": False, "error": "No input provided. Use --warnings/--patterns or pipe JSON to stdin."}, indent=2))
+            print(
+                json.dumps(
+                    {'success': False, 'error': 'No input provided. Use --warnings/--patterns or pipe JSON to stdin.'},
+                    indent=2,
+                )
+            )
             return 1
         try:
             input_data = json.load(sys.stdin)
         except json.JSONDecodeError as e:
-            print(json.dumps({"success": False, "error": f"Invalid JSON from stdin: {e}"}, indent=2))
+            print(json.dumps({'success': False, 'error': f'Invalid JSON from stdin: {e}'}, indent=2))
             return 1
-        warnings = input_data.get("warnings", [])
-        patterns = input_data.get("patterns", []) or flatten_patterns(input_data.get("acceptable_warnings", {}))
+        warnings = input_data.get('warnings', [])
+        patterns = input_data.get('patterns', []) or flatten_patterns(input_data.get('acceptable_warnings', {}))
 
     if warnings is None or not isinstance(warnings, list):
-        print(json.dumps({"success": False, "error": "warnings must be an array"}, indent=2))
+        print(json.dumps({'success': False, 'error': 'warnings must be an array'}, indent=2))
         return 1
 
-    warning_items = [w for w in warnings if w.get("severity") == "WARNING"]
+    warning_items = [w for w in warnings if w.get('severity') == 'WARNING']
     acceptable, fixable, unknown = [], [], []
 
     for w in warning_items:
-        wtype = w.get("type", "other")
+        wtype = w.get('type', 'other')
         if wtype in ALWAYS_FIXABLE_TYPES:
             fixable.append(w)
-        elif is_acceptable(w.get("message", ""), patterns):
+        elif is_acceptable(w.get('message', ''), patterns):
             acceptable.append(w)
-        elif wtype in ["compilation_error", "test_failure", "dependency_error"]:
+        elif wtype in ['compilation_error', 'test_failure', 'dependency_error']:
             fixable.append(w)
-        elif wtype == "openrewrite_info":
+        elif wtype == 'openrewrite_info':
             acceptable.append(w)
-        elif wtype in ["other", "other_warnings"]:
-            unknown.append({**w, "requires_classification": True})
+        elif wtype in ['other', 'other_warnings']:
+            unknown.append({**w, 'requires_classification': True})
         else:
             fixable.append(w)
 
-    result = {"success": True, "total": len(warning_items), "acceptable": len(acceptable), "fixable": len(fixable), "unknown": len(unknown), "categorized": {"acceptable": acceptable, "fixable": fixable, "unknown": unknown}}
+    result = {
+        'success': True,
+        'total': len(warning_items),
+        'acceptable': len(acceptable),
+        'fixable': len(fixable),
+        'unknown': len(unknown),
+        'categorized': {'acceptable': acceptable, 'fixable': fixable, 'unknown': unknown},
+    }
     print(json.dumps(result, indent=2))
     return 1 if len(fixable) > 0 or len(unknown) > 0 else 0

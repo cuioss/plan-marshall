@@ -23,21 +23,22 @@ from typing import Any
 # =============================================================================
 
 # Core fields in output order
-CORE_FIELDS = ["status", "exit_code", "duration_seconds", "log_file", "command"]
+CORE_FIELDS = ['status', 'exit_code', 'duration_seconds', 'log_file', 'command']
 """Core fields that appear in every result, in display order."""
 
 # Additional fields that may appear after core fields
-EXTRA_FIELDS = ["error", "timeout_used_seconds", "wrapper", "command_type"]
+EXTRA_FIELDS = ['error', 'timeout_used_seconds', 'wrapper', 'command_type']
 """Additional scalar fields that appear after core fields."""
 
 # Structured fields handled specially
-STRUCTURED_FIELDS = {"errors", "warnings", "tests"}
+STRUCTURED_FIELDS = {'errors', 'warnings', 'tests'}
 """Fields containing structured data (lists/dicts) formatted specially in TOON."""
 
 
 # =============================================================================
 # TOON Formatting
 # =============================================================================
+
 
 def format_toon(result: dict) -> str:
     """Format result dict as TOON output.
@@ -82,56 +83,57 @@ def format_toon(result: dict) -> str:
     # Core fields first (in order)
     for field in CORE_FIELDS:
         if field in result:
-            lines.append(f"{field}\t{result[field]}")
+            lines.append(f'{field}\t{result[field]}')
 
     # Extra scalar fields
     for field in EXTRA_FIELDS:
         if field in result:
-            lines.append(f"{field}\t{result[field]}")
+            lines.append(f'{field}\t{result[field]}')
 
     # Errors section
-    if "errors" in result and result["errors"]:
-        lines.append("")  # Blank line before section
-        errors = _normalize_issues(result["errors"])
-        lines.append(f"errors[{len(errors)}]{{file,line,message,category}}:")
+    if 'errors' in result and result['errors']:
+        lines.append('')  # Blank line before section
+        errors = _normalize_issues(result['errors'])
+        lines.append(f'errors[{len(errors)}]{{file,line,message,category}}:')
         for err in errors:
-            line_num = err.get("line") if err.get("line") is not None else "-"
-            category = err.get("category", "")
-            lines.append(f"{err.get('file', '-')}\t{line_num}\t{err.get('message', '')}\t{category}")
+            line_num = err.get('line') if err.get('line') is not None else '-'
+            category = err.get('category', '')
+            lines.append(f'{err.get("file", "-")}\t{line_num}\t{err.get("message", "")}\t{category}')
 
     # Warnings section
-    if "warnings" in result and result["warnings"]:
-        lines.append("")  # Blank line before section
-        warnings = _normalize_issues(result["warnings"])
+    if 'warnings' in result and result['warnings']:
+        lines.append('')  # Blank line before section
+        warnings = _normalize_issues(result['warnings'])
         # Check if any warning has 'accepted' field (structured mode)
-        has_accepted = any(w.get("accepted") is not None for w in warnings)
+        has_accepted = any(w.get('accepted') is not None for w in warnings)
         if has_accepted:
-            lines.append(f"warnings[{len(warnings)}]{{file,line,message,accepted}}:")
+            lines.append(f'warnings[{len(warnings)}]{{file,line,message,accepted}}:')
             for warn in warnings:
-                line_num = warn.get("line") if warn.get("line") is not None else "-"
-                accepted = "[accepted]" if warn.get("accepted") else ""
-                lines.append(f"{warn.get('file', '-')}\t{line_num}\t{warn.get('message', '')}\t{accepted}")
+                line_num = warn.get('line') if warn.get('line') is not None else '-'
+                accepted = '[accepted]' if warn.get('accepted') else ''
+                lines.append(f'{warn.get("file", "-")}\t{line_num}\t{warn.get("message", "")}\t{accepted}')
         else:
-            lines.append(f"warnings[{len(warnings)}]{{file,line,message}}:")
+            lines.append(f'warnings[{len(warnings)}]{{file,line,message}}:')
             for warn in warnings:
-                line_num = warn.get("line") if warn.get("line") is not None else "-"
-                lines.append(f"{warn.get('file', '-')}\t{line_num}\t{warn.get('message', '')}")
+                line_num = warn.get('line') if warn.get('line') is not None else '-'
+                lines.append(f'{warn.get("file", "-")}\t{line_num}\t{warn.get("message", "")}')
 
     # Tests section
-    if "tests" in result and result["tests"]:
-        lines.append("")  # Blank line before section
-        tests = _normalize_dict(result["tests"])
-        lines.append("tests:")
-        lines.append(f"  passed: {tests.get('passed', 0)}")
-        lines.append(f"  failed: {tests.get('failed', 0)}")
-        lines.append(f"  skipped: {tests.get('skipped', 0)}")
+    if 'tests' in result and result['tests']:
+        lines.append('')  # Blank line before section
+        tests = _normalize_dict(result['tests'])
+        lines.append('tests:')
+        lines.append(f'  passed: {tests.get("passed", 0)}')
+        lines.append(f'  failed: {tests.get("failed", 0)}')
+        lines.append(f'  skipped: {tests.get("skipped", 0)}')
 
-    return "\n".join(lines)
+    return '\n'.join(lines)
 
 
 # =============================================================================
 # JSON Formatting
 # =============================================================================
+
 
 def format_json(result: dict, indent: int = 2) -> str:
     """Format result dict as JSON output.
@@ -162,6 +164,7 @@ def format_json(result: dict, indent: int = 2) -> str:
 # Helper Functions
 # =============================================================================
 
+
 def _normalize_result(result: dict) -> dict:
     """Normalize result dict for JSON serialization.
 
@@ -175,9 +178,9 @@ def _normalize_result(result: dict) -> dict:
     """
     normalized: dict[str, Any] = {}
     for key, value in result.items():
-        if key == "errors" or key == "warnings":
+        if key == 'errors' or key == 'warnings':
             normalized[key] = _normalize_issues(value)
-        elif key == "tests":
+        elif key == 'tests':
             normalized[key] = _normalize_dict(value)
         else:
             normalized[key] = value
@@ -195,7 +198,7 @@ def _normalize_issues(issues: list) -> list[dict[Any, Any]]:
     """
     result: list[dict[Any, Any]] = []
     for issue in issues:
-        if hasattr(issue, "to_dict"):
+        if hasattr(issue, 'to_dict'):
             issue_dict: dict[Any, Any] = issue.to_dict()
             result.append(issue_dict)
         elif isinstance(issue, dict):
@@ -215,7 +218,7 @@ def _normalize_dict(obj: Any) -> dict[Any, Any]:
     Returns:
         Plain dict.
     """
-    if hasattr(obj, "to_dict"):
+    if hasattr(obj, 'to_dict'):
         normalized: dict[Any, Any] = obj.to_dict()
         return normalized
     if isinstance(obj, dict):

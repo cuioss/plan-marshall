@@ -24,24 +24,26 @@ CROSS_FILE_FIXTURES = Path(__file__).parent / 'fixtures' / 'cross-file-analysis'
 # Main help tests
 # =============================================================================
 
+
 def test_script_exists():
     """Test that script exists."""
-    assert Path(SCRIPT_PATH).exists(), f"Script not found: {SCRIPT_PATH}"
+    assert Path(SCRIPT_PATH).exists(), f'Script not found: {SCRIPT_PATH}'
 
 
 def test_main_help():
     """Test main --help displays all subcommands."""
     result = run_script(SCRIPT_PATH, '--help')
     combined = result.stdout + result.stderr
-    assert 'markdown' in combined, "markdown subcommand in help"
-    assert 'structure' in combined, "structure subcommand in help"
-    assert 'coverage' in combined, "coverage subcommand in help"
-    assert 'cross-file' in combined, "cross-file subcommand in help"
+    assert 'markdown' in combined, 'markdown subcommand in help'
+    assert 'structure' in combined, 'structure subcommand in help'
+    assert 'coverage' in combined, 'coverage subcommand in help'
+    assert 'cross-file' in combined, 'cross-file subcommand in help'
 
 
 # =============================================================================
 # Structure Subcommand Tests (from analyze-skill-structure.py)
 # =============================================================================
+
 
 def test_structure_table_refs_no_unreferenced():
     """Test that table-referenced files are detected (no unreferenced files)."""
@@ -50,11 +52,11 @@ def test_structure_table_refs_no_unreferenced():
         return  # Skip if fixture not available
 
     result = run_script(SCRIPT_PATH, 'structure', '--directory', str(test_dir))
-    assert result.returncode == 0, f"Script returned error: {result.stderr}"
+    assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
     data = result.json()
     unreferenced = data.get('standards_files', {}).get('unreferenced_files', [])
-    assert len(unreferenced) == 0, f"Should have no unreferenced files, found {len(unreferenced)}"
+    assert len(unreferenced) == 0, f'Should have no unreferenced files, found {len(unreferenced)}'
 
 
 def test_structure_table_refs_no_missing():
@@ -64,11 +66,11 @@ def test_structure_table_refs_no_missing():
         return  # Skip if fixture not available
 
     result = run_script(SCRIPT_PATH, 'structure', '--directory', str(test_dir))
-    assert result.returncode == 0, f"Script returned error: {result.stderr}"
+    assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
     data = result.json()
     missing = data.get('standards_files', {}).get('missing_files', [])
-    assert len(missing) == 0, f"Should have no missing files, found {len(missing)}"
+    assert len(missing) == 0, f'Should have no missing files, found {len(missing)}'
 
 
 def test_structure_table_refs_perfect_score():
@@ -78,11 +80,11 @@ def test_structure_table_refs_perfect_score():
         return  # Skip if fixture not available
 
     result = run_script(SCRIPT_PATH, 'structure', '--directory', str(test_dir))
-    assert result.returncode == 0, f"Script returned error: {result.stderr}"
+    assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
     data = result.json()
     score = data.get('structure_score', 0)
-    assert score >= 100, f"Score should be 100, got {score}"
+    assert score >= 100, f'Score should be 100, got {score}'
 
 
 def test_structure_code_block_no_false_positive():
@@ -92,11 +94,11 @@ def test_structure_code_block_no_false_positive():
         return  # Skip if fixture not available
 
     result = run_script(SCRIPT_PATH, 'structure', '--directory', str(test_dir))
-    assert result.returncode == 0, f"Script returned error: {result.stderr}"
+    assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
     data = result.json()
     missing = data.get('standards_files', {}).get('missing_files', [])
-    assert len(missing) == 0, f"Should not flag code block examples as missing, found {len(missing)}"
+    assert len(missing) == 0, f'Should not flag code block examples as missing, found {len(missing)}'
 
 
 def test_structure_cross_skill_no_false_positive():
@@ -106,11 +108,11 @@ def test_structure_cross_skill_no_false_positive():
         return  # Skip if fixture not available
 
     result = run_script(SCRIPT_PATH, 'structure', '--directory', str(test_dir))
-    assert result.returncode == 0, f"Script returned error: {result.stderr}"
+    assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
     data = result.json()
     missing = data.get('standards_files', {}).get('missing_files', [])
-    assert len(missing) == 0, f"Cross-skill refs should not be flagged as missing, found {len(missing)}"
+    assert len(missing) == 0, f'Cross-skill refs should not be flagged as missing, found {len(missing)}'
 
 
 def test_structure_real_plugin_doctor():
@@ -120,40 +122,40 @@ def test_structure_real_plugin_doctor():
         return  # Skip if not found
 
     result = run_script(SCRIPT_PATH, 'structure', '--directory', str(skill_dir))
-    assert result.returncode == 0, f"Script returned error: {result.stderr}"
+    assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
     data = result.json()
     score = data.get('structure_score', 0)
-    assert score >= 90, f"plugin-doctor should score >= 90, got {score}"
+    assert score >= 90, f'plugin-doctor should score >= 90, got {score}'
 
 
 # =============================================================================
 # Cross-File Subcommand Tests (from analyze-cross-file-content.py)
 # =============================================================================
 
+
 def test_crossfile_help():
     """Test cross-file --help is available."""
     result = run_script(SCRIPT_PATH, 'cross-file', '--help')
-    assert 'skill-path' in result.stdout or 'skill-path' in result.stderr, \
-        "Help output should contain skill-path option"
+    assert 'skill-path' in result.stdout or 'skill-path' in result.stderr, (
+        'Help output should contain skill-path option'
+    )
 
 
 def test_crossfile_missing_argument():
     """Test returns error for missing argument."""
     result = run_script(SCRIPT_PATH, 'cross-file')
-    assert result.returncode != 0, "Should return error for missing argument"
+    assert result.returncode != 0, 'Should return error for missing argument'
     output = result.stderr.lower() + result.stdout.lower()
-    assert 'error' in output or 'required' in output, \
-        "Should indicate error for missing argument"
+    assert 'error' in output or 'required' in output, 'Should indicate error for missing argument'
 
 
 def test_crossfile_invalid_path():
     """Test returns error for invalid path."""
     result = run_script(SCRIPT_PATH, 'cross-file', '--skill-path', '/nonexistent/path')
-    assert result.returncode != 0, "Should return error for invalid path"
+    assert result.returncode != 0, 'Should return error for invalid path'
     output = result.stderr.lower() + result.stdout.lower()
-    assert 'not found' in output or 'error' in output, \
-        "Should indicate path not found"
+    assert 'not found' in output or 'error' in output, 'Should indicate path not found'
 
 
 def test_crossfile_duplicates_valid_json():
@@ -164,7 +166,7 @@ def test_crossfile_duplicates_valid_json():
 
     result = run_script(SCRIPT_PATH, 'cross-file', '--skill-path', str(skill_path))
     data = result.json()
-    assert data is not None, "Should return valid JSON"
+    assert data is not None, 'Should return valid JSON'
 
 
 def test_crossfile_detect_exact_duplicates():
@@ -177,7 +179,7 @@ def test_crossfile_detect_exact_duplicates():
     data = result.json()
 
     exact_duplicates = data.get('exact_duplicates', [])
-    assert len(exact_duplicates) >= 1, f"Should detect exact duplicates, found {len(exact_duplicates)}"
+    assert len(exact_duplicates) >= 1, f'Should detect exact duplicates, found {len(exact_duplicates)}'
 
 
 def test_crossfile_extraction_candidates():
@@ -189,7 +191,7 @@ def test_crossfile_extraction_candidates():
     result = run_script(SCRIPT_PATH, 'cross-file', '--skill-path', str(skill_path))
     data = result.json()
 
-    assert 'extraction_candidates' in data, "Should have extraction_candidates field"
+    assert 'extraction_candidates' in data, 'Should have extraction_candidates field'
 
 
 def test_crossfile_llm_review_flag():
@@ -202,7 +204,7 @@ def test_crossfile_llm_review_flag():
     data = result.json()
 
     summary = data.get('summary', {})
-    assert 'llm_review_required' in summary, "Should contain llm_review_required flag in summary"
+    assert 'llm_review_required' in summary, 'Should contain llm_review_required flag in summary'
 
 
 def test_crossfile_clean_skill():
@@ -213,7 +215,7 @@ def test_crossfile_clean_skill():
 
     result = run_script(SCRIPT_PATH, 'cross-file', '--skill-path', str(skill_path))
     data = result.json()
-    assert data is not None, "Should return valid JSON for clean skill"
+    assert data is not None, 'Should return valid JSON for clean skill'
 
 
 def test_crossfile_custom_threshold():
@@ -222,14 +224,9 @@ def test_crossfile_custom_threshold():
     if not skill_path.exists():
         return  # Skip if fixture not available
 
-    result = run_script(
-        SCRIPT_PATH,
-        'cross-file',
-        '--skill-path', str(skill_path),
-        '--similarity-threshold', '0.3'
-    )
+    result = run_script(SCRIPT_PATH, 'cross-file', '--skill-path', str(skill_path), '--similarity-threshold', '0.3')
     data = result.json()
-    assert data is not None, "Should accept custom similarity threshold"
+    assert data is not None, 'Should accept custom similarity threshold'
 
 
 # =============================================================================

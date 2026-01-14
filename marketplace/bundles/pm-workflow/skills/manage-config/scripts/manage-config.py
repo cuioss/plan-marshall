@@ -42,6 +42,7 @@ FALLBACK_DEFAULTS = {
     'branch_strategy': 'feature',
 }
 
+
 def get_defaults() -> dict:
     """Get plan defaults from marshal.json, falling back to hardcoded defaults.
 
@@ -96,7 +97,7 @@ def write_config(plan_id: str, config: dict):
     """Write config.toon for a plan."""
     path = get_config_path(plan_id)
     path.parent.mkdir(parents=True, exist_ok=True)
-    content = "# Plan Configuration\n\n" + serialize_toon(config)
+    content = '# Plan Configuration\n\n' + serialize_toon(config)
     atomic_write_file(path, content)
 
 
@@ -140,29 +141,24 @@ def output_toon(data: dict):
 def cmd_read(args):
     """Read entire config.toon."""
     if not validate_plan_id(args.plan_id):
-        output_toon({
-            'status': 'error',
-            'plan_id': args.plan_id,
-            'error': 'invalid_plan_id',
-            'message': f"Invalid plan_id format: {args.plan_id}"
-        })
+        output_toon(
+            {
+                'status': 'error',
+                'plan_id': args.plan_id,
+                'error': 'invalid_plan_id',
+                'message': f'Invalid plan_id format: {args.plan_id}',
+            }
+        )
         sys.exit(1)
 
     config = read_config(args.plan_id)
     if not config:
-        output_toon({
-            'status': 'error',
-            'plan_id': args.plan_id,
-            'error': 'file_not_found',
-            'message': 'config.toon not found'
-        })
+        output_toon(
+            {'status': 'error', 'plan_id': args.plan_id, 'error': 'file_not_found', 'message': 'config.toon not found'}
+        )
         sys.exit(1)
 
-    output_toon({
-        'status': 'success',
-        'plan_id': args.plan_id,
-        'config': config
-    })
+    output_toon({'status': 'success', 'plan_id': args.plan_id, 'config': config})
 
 
 def cmd_get(args):
@@ -171,22 +167,21 @@ def cmd_get(args):
     Supports nested field access via dot notation (e.g., workflow_skills.java.implementation).
     """
     if not validate_plan_id(args.plan_id):
-        output_toon({
-            'status': 'error',
-            'plan_id': args.plan_id,
-            'error': 'invalid_plan_id',
-            'message': f"Invalid plan_id format: {args.plan_id}"
-        })
+        output_toon(
+            {
+                'status': 'error',
+                'plan_id': args.plan_id,
+                'error': 'invalid_plan_id',
+                'message': f'Invalid plan_id format: {args.plan_id}',
+            }
+        )
         sys.exit(1)
 
     config = read_config(args.plan_id)
     if not config:
-        output_toon({
-            'status': 'error',
-            'plan_id': args.plan_id,
-            'error': 'file_not_found',
-            'message': 'config.toon not found'
-        })
+        output_toon(
+            {'status': 'error', 'plan_id': args.plan_id, 'error': 'file_not_found', 'message': 'config.toon not found'}
+        )
         sys.exit(1)
 
     # Support nested field access via dot notation
@@ -196,45 +191,46 @@ def cmd_get(args):
         value = config.get(args.field)
 
     if value is None:
-        output_toon({
-            'status': 'error',
-            'plan_id': args.plan_id,
-            'field': args.field,
-            'error': 'field_not_found',
-            'message': f"Field '{args.field}' not found in config"
-        })
+        output_toon(
+            {
+                'status': 'error',
+                'plan_id': args.plan_id,
+                'field': args.field,
+                'error': 'field_not_found',
+                'message': f"Field '{args.field}' not found in config",
+            }
+        )
         sys.exit(1)
 
-    output_toon({
-        'status': 'success',
-        'plan_id': args.plan_id,
-        'field': args.field,
-        'value': value
-    })
+    output_toon({'status': 'success', 'plan_id': args.plan_id, 'field': args.field, 'value': value})
 
 
 def cmd_set(args):
     """Set a specific field value."""
     if not validate_plan_id(args.plan_id):
-        output_toon({
-            'status': 'error',
-            'plan_id': args.plan_id,
-            'error': 'invalid_plan_id',
-            'message': f"Invalid plan_id format: {args.plan_id}"
-        })
+        output_toon(
+            {
+                'status': 'error',
+                'plan_id': args.plan_id,
+                'error': 'invalid_plan_id',
+                'message': f'Invalid plan_id format: {args.plan_id}',
+            }
+        )
         sys.exit(1)
 
     # Validate value against schema for enum fields
     is_valid, valid_values = validate_field(args.field, args.value)
     if not is_valid:
-        output_toon({
-            'status': 'error',
-            'plan_id': args.plan_id,
-            'field': args.field,
-            'error': 'invalid_value',
-            'message': f"Invalid value '{args.value}' for field '{args.field}'",
-            'valid_values': valid_values
-        })
+        output_toon(
+            {
+                'status': 'error',
+                'plan_id': args.plan_id,
+                'field': args.field,
+                'error': 'invalid_value',
+                'message': f"Invalid value '{args.value}' for field '{args.field}'",
+                'valid_values': valid_values,
+            }
+        )
         sys.exit(1)
 
     config = read_config(args.plan_id)
@@ -243,12 +239,7 @@ def cmd_set(args):
     write_config(args.plan_id, config)
     log_entry('work', args.plan_id, 'INFO', f'[MANAGE-CONFIG] Set {args.field}={args.value}')
 
-    result = {
-        'status': 'success',
-        'plan_id': args.plan_id,
-        'field': args.field,
-        'value': args.value
-    }
+    result = {'status': 'success', 'plan_id': args.plan_id, 'field': args.field, 'value': args.value}
     if previous is not None:
         result['previous'] = previous
     output_toon(result)
@@ -257,31 +248,27 @@ def cmd_set(args):
 def cmd_get_multi(args):
     """Get multiple fields in one call."""
     if not validate_plan_id(args.plan_id):
-        output_toon({
-            'status': 'error',
-            'plan_id': args.plan_id,
-            'error': 'invalid_plan_id',
-            'message': f"Invalid plan_id format: {args.plan_id}"
-        })
+        output_toon(
+            {
+                'status': 'error',
+                'plan_id': args.plan_id,
+                'error': 'invalid_plan_id',
+                'message': f'Invalid plan_id format: {args.plan_id}',
+            }
+        )
         sys.exit(1)
 
     config = read_config(args.plan_id)
     if not config:
-        output_toon({
-            'status': 'error',
-            'plan_id': args.plan_id,
-            'error': 'file_not_found',
-            'message': 'config.toon not found'
-        })
+        output_toon(
+            {'status': 'error', 'plan_id': args.plan_id, 'error': 'file_not_found', 'message': 'config.toon not found'}
+        )
         sys.exit(1)
 
     # Parse requested fields
     fields = [f.strip() for f in args.fields.split(',') if f.strip()]
 
-    result = {
-        'status': 'success',
-        'plan_id': args.plan_id
-    }
+    result = {'status': 'success', 'plan_id': args.plan_id}
 
     # Add requested fields to result (only if they exist)
     for field in fields:
@@ -298,44 +285,52 @@ def cmd_create(args):
     at runtime from marshal.json via plan-marshall-config resolve-workflow-skill.
     """
     if not validate_plan_id(args.plan_id):
-        output_toon({
-            'status': 'error',
-            'plan_id': args.plan_id,
-            'error': 'invalid_plan_id',
-            'message': f"Invalid plan_id format: {args.plan_id}"
-        })
+        output_toon(
+            {
+                'status': 'error',
+                'plan_id': args.plan_id,
+                'error': 'invalid_plan_id',
+                'message': f'Invalid plan_id format: {args.plan_id}',
+            }
+        )
         sys.exit(1)
 
     # Parse and validate domains
     domains = [d.strip() for d in args.domains.split(',') if d.strip()]
     if not domains:
-        output_toon({
-            'status': 'error',
-            'plan_id': args.plan_id,
-            'error': 'invalid_domains',
-            'message': 'At least one domain is required'
-        })
+        output_toon(
+            {
+                'status': 'error',
+                'plan_id': args.plan_id,
+                'error': 'invalid_domains',
+                'message': 'At least one domain is required',
+            }
+        )
         sys.exit(1)
 
     for domain in domains:
         if not validate_domain(domain):
-            output_toon({
-                'status': 'error',
-                'plan_id': args.plan_id,
-                'error': 'invalid_domain',
-                'message': f"Invalid domain format: {domain}. Must be lowercase identifier (e.g., java, javascript, plan-marshall-plugin-dev)"
-            })
+            output_toon(
+                {
+                    'status': 'error',
+                    'plan_id': args.plan_id,
+                    'error': 'invalid_domain',
+                    'message': f'Invalid domain format: {domain}. Must be lowercase identifier (e.g., java, javascript, plan-marshall-plugin-dev)',
+                }
+            )
             sys.exit(1)
 
     # Check if already exists
     path = get_config_path(args.plan_id)
     if path.exists() and not args.force:
-        output_toon({
-            'status': 'error',
-            'plan_id': args.plan_id,
-            'error': 'file_exists',
-            'message': 'config.toon already exists. Use --force to overwrite.'
-        })
+        output_toon(
+            {
+                'status': 'error',
+                'plan_id': args.plan_id,
+                'error': 'file_exists',
+                'message': 'config.toon already exists. Use --force to overwrite.',
+            }
+        )
         sys.exit(1)
 
     # Get defaults from marshal.json (falls back to hardcoded if not available)
@@ -345,14 +340,16 @@ def cmd_create(args):
     commit_strategy = args.commit_strategy or defaults['commit_strategy']
     is_valid, valid_values = validate_field('commit_strategy', commit_strategy)
     if not is_valid:
-        output_toon({
-            'status': 'error',
-            'plan_id': args.plan_id,
-            'field': 'commit_strategy',
-            'error': 'invalid_value',
-            'message': f"Invalid value '{commit_strategy}' for commit_strategy",
-            'valid_values': valid_values
-        })
+        output_toon(
+            {
+                'status': 'error',
+                'plan_id': args.plan_id,
+                'field': 'commit_strategy',
+                'error': 'invalid_value',
+                'message': f"Invalid value '{commit_strategy}' for commit_strategy",
+                'valid_values': valid_values,
+            }
+        )
         sys.exit(1)
 
     config = {
@@ -377,63 +374,53 @@ def cmd_create(args):
     branch_strategy = args.branch_strategy or defaults['branch_strategy']
     is_valid, valid_values = validate_field('branch_strategy', branch_strategy)
     if not is_valid:
-        output_toon({
-            'status': 'error',
-            'plan_id': args.plan_id,
-            'field': 'branch_strategy',
-            'error': 'invalid_value',
-            'message': f"Invalid value '{branch_strategy}' for branch_strategy",
-            'valid_values': valid_values
-        })
+        output_toon(
+            {
+                'status': 'error',
+                'plan_id': args.plan_id,
+                'field': 'branch_strategy',
+                'error': 'invalid_value',
+                'message': f"Invalid value '{branch_strategy}' for branch_strategy",
+                'valid_values': valid_values,
+            }
+        )
         sys.exit(1)
     config['branch_strategy'] = branch_strategy
 
     write_config(args.plan_id, config)
     log_entry('work', args.plan_id, 'INFO', f'[MANAGE-CONFIG] Created config (domains: {",".join(domains)})')
 
-    output_toon({
-        'status': 'success',
-        'plan_id': args.plan_id,
-        'file': 'config.toon',
-        'created': True,
-        'config': config
-    })
+    output_toon(
+        {'status': 'success', 'plan_id': args.plan_id, 'file': 'config.toon', 'created': True, 'config': config}
+    )
 
 
 def cmd_get_domains(args):
     """Get the domains array from config.toon."""
     if not validate_plan_id(args.plan_id):
-        output_toon({
-            'status': 'error',
-            'plan_id': args.plan_id,
-            'error': 'invalid_plan_id',
-            'message': f"Invalid plan_id format: {args.plan_id}"
-        })
+        output_toon(
+            {
+                'status': 'error',
+                'plan_id': args.plan_id,
+                'error': 'invalid_plan_id',
+                'message': f'Invalid plan_id format: {args.plan_id}',
+            }
+        )
         sys.exit(1)
 
     config = read_config(args.plan_id)
     if not config:
-        output_toon({
-            'status': 'error',
-            'plan_id': args.plan_id,
-            'error': 'file_not_found',
-            'message': 'config.toon not found'
-        })
+        output_toon(
+            {'status': 'error', 'plan_id': args.plan_id, 'error': 'file_not_found', 'message': 'config.toon not found'}
+        )
         sys.exit(1)
 
     domains = config.get('domains', [])
-    output_toon({
-        'status': 'success',
-        'plan_id': args.plan_id,
-        'domains': domains,
-        'count': len(domains)
-    })
+    output_toon({'status': 'success', 'plan_id': args.plan_id, 'domains': domains, 'count': len(domains)})
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description='Manage config.toon files with schema validation'
-    )
+    parser = argparse.ArgumentParser(description='Manage config.toon files with schema validation')
     subparsers = parser.add_subparsers(dest='command', required=True)
 
     # read
@@ -444,8 +431,7 @@ def main():
     # get (supports nested field access via dot notation)
     get_parser = subparsers.add_parser('get', help='Get specific field (supports dot notation)')
     get_parser.add_argument('--plan-id', required=True, help='Plan identifier')
-    get_parser.add_argument('--field', required=True,
-                            help='Field name (supports dot notation for nested access)')
+    get_parser.add_argument('--field', required=True, help='Field name (supports dot notation for nested access)')
     get_parser.set_defaults(func=cmd_get)
 
     # set
@@ -458,29 +444,29 @@ def main():
     # get-multi
     get_multi_parser = subparsers.add_parser('get-multi', help='Get multiple fields in one call')
     get_multi_parser.add_argument('--plan-id', required=True, help='Plan identifier')
-    get_multi_parser.add_argument('--fields', required=True,
-                                  help='Comma-separated field names (e.g., commit_strategy,branch_strategy)')
+    get_multi_parser.add_argument(
+        '--fields', required=True, help='Comma-separated field names (e.g., commit_strategy,branch_strategy)'
+    )
     get_multi_parser.set_defaults(func=cmd_get_multi)
 
     # create
     create_parser = subparsers.add_parser('create', help='Create config.toon')
     create_parser.add_argument('--plan-id', required=True, help='Plan identifier')
-    create_parser.add_argument('--domains', required=True,
-                               help='Comma-separated list of domains (e.g., java or java,javascript)')
-    create_parser.add_argument('--commit-strategy',
-                               choices=['per_task', 'per_plan', 'none'],
-                               help='Commit strategy (default: per_task, none=no commits)')
-    create_parser.add_argument('--create-pr',
-                               help='Create PR on finalize (default: true)')
-    create_parser.add_argument('--verification-required',
-                               help='Require verification (default: true)')
-    create_parser.add_argument('--verification-command',
-                               help='Verification command to run')
-    create_parser.add_argument('--branch-strategy',
-                               choices=['feature', 'direct'],
-                               help='Branch strategy (default: feature)')
-    create_parser.add_argument('--force', action='store_true',
-                               help='Overwrite existing config')
+    create_parser.add_argument(
+        '--domains', required=True, help='Comma-separated list of domains (e.g., java or java,javascript)'
+    )
+    create_parser.add_argument(
+        '--commit-strategy',
+        choices=['per_task', 'per_plan', 'none'],
+        help='Commit strategy (default: per_task, none=no commits)',
+    )
+    create_parser.add_argument('--create-pr', help='Create PR on finalize (default: true)')
+    create_parser.add_argument('--verification-required', help='Require verification (default: true)')
+    create_parser.add_argument('--verification-command', help='Verification command to run')
+    create_parser.add_argument(
+        '--branch-strategy', choices=['feature', 'direct'], help='Branch strategy (default: feature)'
+    )
+    create_parser.add_argument('--force', action='store_true', help='Overwrite existing config')
     create_parser.set_defaults(func=cmd_create)
 
     # get-domains

@@ -94,11 +94,7 @@ def atomic_write_file(path: str | Path, content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
 
     # Write to temp file first, then rename (atomic on most systems)
-    fd, temp_path = tempfile.mkstemp(
-        suffix=path.suffix,
-        prefix='.tmp_',
-        dir=path.parent
-    )
+    fd, temp_path = tempfile.mkstemp(suffix=path.suffix, prefix='.tmp_', dir=path.parent)
     try:
         with os.fdopen(fd, 'w', encoding='utf-8') as f:
             f.write(content)
@@ -144,7 +140,7 @@ def output_success(operation: str, **kwargs: Any) -> None:
         operation: Name of the operation
         **kwargs: Additional fields to include in output
     """
-    result = {"success": True, "operation": operation}
+    result = {'success': True, 'operation': operation}
     result.update(kwargs)
     print(json.dumps(result, indent=2, ensure_ascii=False))
 
@@ -156,7 +152,7 @@ def output_error(operation: str, error: str) -> None:
         operation: Name of the operation
         error: Error message
     """
-    result = {"success": False, "operation": operation, "error": error}
+    result = {'success': False, 'operation': operation, 'error': error}
     print(json.dumps(result, indent=2), file=sys.stderr)
 
 
@@ -219,7 +215,7 @@ def generate_markdown_metadata(data: dict[str, str]) -> str:
     """
     lines = []
     for key, value in data.items():
-        lines.append(f"{key}={value}")
+        lines.append(f'{key}={value}')
     return '\n'.join(lines)
 
 
@@ -253,7 +249,7 @@ def update_markdown_metadata(content: str, updates: dict[str, str]) -> str:
         if '=' in stripped:
             key = stripped.split('=', 1)[0].strip()
             if key in updates:
-                metadata_lines.append(f"{key}={updates[key]}")
+                metadata_lines.append(f'{key}={updates[key]}')
                 found_keys.add(key)
             else:
                 metadata_lines.append(line)
@@ -266,7 +262,7 @@ def update_markdown_metadata(content: str, updates: dict[str, str]) -> str:
     # Add any new keys not found in existing metadata
     for key, value in updates.items():
         if key not in found_keys:
-            metadata_lines.append(f"{key}={value}")
+            metadata_lines.append(f'{key}={value}')
 
     # Reconstruct content
     remaining = lines[metadata_end:]
@@ -306,19 +302,19 @@ def get_metadata_content_split(content: str) -> tuple[str, str]:
 
 if __name__ == '__main__':
     # Quick self-test when run directly
-    print("file_ops.py - File Operations Base Module")
-    print("=" * 50)
-    print(f"\nWorkflow Base Directory: {get_base_dir()}")
-    print("\nAvailable functions:")
-    print("- get_base_dir() -> Path")
-    print("- set_base_dir(path)")
-    print("- base_path(*parts) -> Path")
-    print("- atomic_write_file(path, content)")
-    print("- ensure_directory(path)")
-    print("- output_success(operation, **kwargs)")
-    print("- output_error(operation, error)")
-    print("- parse_markdown_metadata(content)")
-    print("- generate_markdown_metadata(data)")
-    print("- update_markdown_metadata(content, updates)")
-    print("- get_metadata_content_split(content)")
-    print("\nRun test-file-ops.py for full test suite.")
+    print('file_ops.py - File Operations Base Module')
+    print('=' * 50)
+    print(f'\nWorkflow Base Directory: {get_base_dir()}')
+    print('\nAvailable functions:')
+    print('- get_base_dir() -> Path')
+    print('- set_base_dir(path)')
+    print('- base_path(*parts) -> Path')
+    print('- atomic_write_file(path, content)')
+    print('- ensure_directory(path)')
+    print('- output_success(operation, **kwargs)')
+    print('- output_error(operation, error)')
+    print('- parse_markdown_metadata(content)')
+    print('- generate_markdown_metadata(data)')
+    print('- update_markdown_metadata(content, updates)')
+    print('- get_metadata_content_split(content)')
+    print('\nRun test-file-ops.py for full test suite.')

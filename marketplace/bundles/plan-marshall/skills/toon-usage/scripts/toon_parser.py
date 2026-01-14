@@ -29,12 +29,13 @@ class ToonParseError(Exception):
     def __init__(self, message: str, line_number: int = 0, line_content: str = ''):
         self.line_number = line_number
         self.line_content = line_content
-        super().__init__(f"Line {line_number}: {message}\n  > {line_content}")
+        super().__init__(f'Line {line_number}: {message}\n  > {line_content}')
 
 
 @dataclass
 class ParseContext:
     """Internal parsing context."""
+
     lines: list[str]
     index: int = 0
     base_indent: int = 0
@@ -215,7 +216,7 @@ def _parse_multiline_value(ctx: ParseContext, base_indent: int) -> str:
         if indent <= base_indent and line.strip():
             break
 
-        lines.append(line[base_indent + 2:] if len(line) > base_indent + 2 else line.strip())
+        lines.append(line[base_indent + 2 :] if len(line) > base_indent + 2 else line.strip())
         ctx.index += 1
 
     return '\n'.join(lines).strip()
@@ -279,7 +280,7 @@ def _parse_object(ctx: ParseContext, base_indent: int) -> dict[str, Any]:
             # Regular key: value
             colon_pos = content.index(':')
             key = content[:colon_pos].strip()
-            value_part = content[colon_pos + 1:].strip()
+            value_part = content[colon_pos + 1 :].strip()
 
             ctx.index += 1
 
@@ -348,9 +349,7 @@ def parse_toon(content: str) -> dict[str, Any]:
         return _parse_object(ctx, 0)
     except Exception as e:
         raise ToonParseError(
-            str(e),
-            line_number=ctx.index + 1,
-            line_content=ctx.lines[ctx.index] if ctx.index < len(ctx.lines) else ''
+            str(e), line_number=ctx.index + 1, line_content=ctx.lines[ctx.index] if ctx.index < len(ctx.lines) else ''
         ) from e
 
 
@@ -435,31 +434,31 @@ def serialize_toon(data: dict[str, Any], indent: int = 0) -> str:
 
     for key, value in data.items():
         if isinstance(value, dict):
-            lines.append(f"{prefix}{key}:")
+            lines.append(f'{prefix}{key}:')
             lines.append(serialize_toon(value, indent + 1))
         elif isinstance(value, list):
             is_uniform, fields = _is_uniform_array(value)
             if is_uniform and fields:
                 # Uniform array with headers
-                lines.append(f"{prefix}{key}[{len(value)}]{{{','.join(fields)}}}:")
+                lines.append(f'{prefix}{key}[{len(value)}]{{{",".join(fields)}}}:')
                 for item in value:
                     row_values = [_serialize_value(item.get(f, '')) for f in fields]
-                    lines.append(f"{prefix}  {','.join(row_values)}")
+                    lines.append(f'{prefix}  {",".join(row_values)}')
             else:
                 # Simple array
-                lines.append(f"{prefix}{key}[{len(value)}]:")
+                lines.append(f'{prefix}{key}[{len(value)}]:')
                 for item in value:
-                    lines.append(f"{prefix}  - {_serialize_value(item)}")
+                    lines.append(f'{prefix}  - {_serialize_value(item)}')
         else:
-            lines.append(f"{prefix}{key}: {_serialize_value(value)}")
+            lines.append(f'{prefix}{key}: {_serialize_value(value)}')
 
     return '\n'.join(lines)
 
 
 if __name__ == '__main__':
     # Quick self-test
-    print("toon_parser.py - TOON Parser Module")
-    print("=" * 50)
+    print('toon_parser.py - TOON Parser Module')
+    print('=' * 50)
 
     test_toon = """
 # Example TOON document
@@ -482,12 +481,12 @@ tags[3]:
 - parser
 """
 
-    print("\nInput TOON:")
+    print('\nInput TOON:')
     print(test_toon)
 
     parsed = parse_toon(test_toon)
-    print("\nParsed Python dict:")
+    print('\nParsed Python dict:')
     print(parsed)
 
-    print("\nRe-serialized TOON:")
+    print('\nRe-serialized TOON:')
     print(serialize_toon(parsed))

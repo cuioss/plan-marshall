@@ -60,11 +60,13 @@ def find_duplicate_sections(new_sections: dict, existing_sections: dict) -> list
         for existing_name, existing_content in existing_sections.items():
             similarity = calculate_similarity(new_content, existing_content)
             if similarity > 0.6:  # 60% similarity threshold
-                duplicates.append({
-                    'new_section': new_name,
-                    'existing_section': existing_name,
-                    'similarity': round(similarity * 100, 1)
-                })
+                duplicates.append(
+                    {
+                        'new_section': new_name,
+                        'existing_section': existing_name,
+                        'similarity': round(similarity * 100, 1),
+                    }
+                )
 
     return duplicates
 
@@ -76,16 +78,10 @@ def check_duplication(skill_path: str, content_file: str) -> dict:
 
     # Validate inputs
     if not skill_dir.exists():
-        return {
-            'error': f'Skill directory not found: {skill_path}',
-            'skill_path': skill_path
-        }
+        return {'error': f'Skill directory not found: {skill_path}', 'skill_path': skill_path}
 
     if not content_path.exists():
-        return {
-            'error': f'Content file not found: {content_file}',
-            'new_content_file': content_file
-        }
+        return {'error': f'Content file not found: {content_file}', 'new_content_file': content_file}
 
     # Read new content
     new_content = content_path.read_text()
@@ -101,7 +97,7 @@ def check_duplication(skill_path: str, content_file: str) -> dict:
             'duplication_percentage': 0,
             'duplicate_files': [],
             'recommendation': 'proceed',
-            'note': 'Content file is empty or minimal'
+            'note': 'Content file is empty or minimal',
         }
 
     # Find references directory
@@ -117,7 +113,7 @@ def check_duplication(skill_path: str, content_file: str) -> dict:
             'duplication_percentage': 0,
             'duplicate_files': [],
             'recommendation': 'proceed',
-            'note': 'No existing references directory found'
+            'note': 'No existing references directory found',
         }
 
     # Scan existing references
@@ -136,11 +132,13 @@ def check_duplication(skill_path: str, content_file: str) -> dict:
 
             if duplicate_sections:
                 overlap_pct = round(overall_similarity * 100, 1)
-                duplicate_files.append({
-                    'existing_file': str(ref_file.relative_to(skill_dir)),
-                    'overlap_percentage': overlap_pct,
-                    'duplicate_sections': [d['existing_section'] for d in duplicate_sections[:5]]
-                })
+                duplicate_files.append(
+                    {
+                        'existing_file': str(ref_file.relative_to(skill_dir)),
+                        'overlap_percentage': overlap_pct,
+                        'duplicate_sections': [d['existing_section'] for d in duplicate_sections[:5]],
+                    }
+                )
                 max_overlap = max(max_overlap, overlap_pct)
 
     # Determine recommendation
@@ -158,7 +156,7 @@ def check_duplication(skill_path: str, content_file: str) -> dict:
         'duplication_detected': duplication_detected,
         'duplication_percentage': max_overlap,
         'duplicate_files': sorted(duplicate_files, key=lambda x: x['overlap_percentage'], reverse=True),
-        'recommendation': recommendation
+        'recommendation': recommendation,
     }
 
 

@@ -12,32 +12,20 @@ class Extension(ExtensionBase):
 
     def provides_triage(self) -> str | None:
         """Return triage skill reference."""
-        return "pm-requirements:ext-triage-reqs"
+        return 'pm-requirements:ext-triage-reqs'
 
     def get_skill_domains(self) -> dict:
         """Domain metadata for skill loading."""
         return {
-            "domain": {
-                "key": "requirements",
-                "name": "Requirements Engineering",
-                "description": "User stories, acceptance criteria, specifications"
+            'domain': {
+                'key': 'requirements',
+                'name': 'Requirements Engineering',
+                'description': 'User stories, acceptance criteria, specifications',
             },
-            "profiles": {
-                "core": {
-                    "defaults": ["pm-requirements:requirements-authoring"],
-                    "optionals": []
-                },
-                "implementation": {
-                    "defaults": [],
-                    "optionals": []
-                },
-                "module_testing": {
-                    "defaults": [],
-                    "optionals": []
-                },
-                "quality": {
-                    "defaults": [],
-                    "optionals": []
-                }
-            }
+            'profiles': {
+                'core': {'defaults': ['pm-requirements:requirements-authoring'], 'optionals': []},
+                'implementation': {'defaults': [], 'optionals': []},
+                'module_testing': {'defaults': [], 'optionals': []},
+                'quality': {'defaults': [], 'optionals': []},
+            },
         }

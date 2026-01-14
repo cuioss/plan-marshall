@@ -22,9 +22,9 @@ class Link:
     line_num: int
     link_text: str
     link_type: str
-    target: str = ""
-    anchor: str = ""
-    label: str = ""
+    target: str = ''
+    anchor: str = ''
+    label: str = ''
 
 
 @dataclass
@@ -34,8 +34,8 @@ class Issue:
     link_text: str
     issue_type: str
     description: str
-    context: str = ""
-    suggested_fix: str = ""
+    context: str = ''
+    suggested_fix: str = ''
 
 
 def extract_anchors_from_file(filepath: str) -> set[str]:
@@ -74,15 +74,42 @@ def extract_links_from_file(filepath: str) -> list[Link]:
             continue
 
         for match in re.finditer(r'<<([^,>]+)(?:,([^>]+))?>>', line):
-            links.append(Link(file=filepath, line_num=line_num, link_text=match.group(0), link_type='cross-ref', anchor=match.group(1).strip(), label=match.group(2).strip() if match.group(2) else ""))
+            links.append(
+                Link(
+                    file=filepath,
+                    line_num=line_num,
+                    link_text=match.group(0),
+                    link_type='cross-ref',
+                    anchor=match.group(1).strip(),
+                    label=match.group(2).strip() if match.group(2) else '',
+                )
+            )
 
         for match in re.finditer(r'xref:([^\[]+)\[([^\]]*)\]', line):
             target_full = match.group(1).strip()
-            target, anchor = (target_full.split('#', 1) + [""])[:2] if '#' in target_full else (target_full, "")
-            links.append(Link(file=filepath, line_num=line_num, link_text=match.group(0), link_type='xref', target=target, anchor=anchor, label=match.group(2).strip()))
+            target, anchor = (target_full.split('#', 1) + [''])[:2] if '#' in target_full else (target_full, '')
+            links.append(
+                Link(
+                    file=filepath,
+                    line_num=line_num,
+                    link_text=match.group(0),
+                    link_type='xref',
+                    target=target,
+                    anchor=anchor,
+                    label=match.group(2).strip(),
+                )
+            )
 
         for match in re.finditer(r'<<([^>]*\.adoc[^>]*)>>', line):
-            links.append(Link(file=filepath, line_num=line_num, link_text=match.group(0), link_type='deprecated', target=match.group(1)))
+            links.append(
+                Link(
+                    file=filepath,
+                    line_num=line_num,
+                    link_text=match.group(0),
+                    link_type='deprecated',
+                    target=match.group(1),
+                )
+            )
 
     return links
 
@@ -99,18 +126,53 @@ def verify_links(files: list[str]) -> tuple[list[Link], list[Issue]]:
 
         for link in links:
             if link.link_type == 'cross-ref' and link.anchor not in anchor_cache[filepath]:
-                issues.append(Issue(file=filepath, line_num=link.line_num, link_text=link.link_text, issue_type='broken', description=f"Anchor '{link.anchor}' not found"))
+                issues.append(
+                    Issue(
+                        file=filepath,
+                        line_num=link.line_num,
+                        link_text=link.link_text,
+                        issue_type='broken',
+                        description=f"Anchor '{link.anchor}' not found",
+                    )
+                )
             elif link.link_type == 'xref':
-                target_path = os.path.normpath(os.path.join(os.path.dirname(filepath), link.target)) if link.target else filepath
+                target_path = (
+                    os.path.normpath(os.path.join(os.path.dirname(filepath), link.target)) if link.target else filepath
+                )
                 if not os.path.exists(target_path):
-                    issues.append(Issue(file=filepath, line_num=link.line_num, link_text=link.link_text, issue_type='broken', description=f"Target file '{target_path}' not found"))
+                    issues.append(
+                        Issue(
+                            file=filepath,
+                            line_num=link.line_num,
+                            link_text=link.link_text,
+                            issue_type='broken',
+                            description=f"Target file '{target_path}' not found",
+                        )
+                    )
                 elif link.anchor:
                     if target_path not in anchor_cache:
                         anchor_cache[target_path] = extract_anchors_from_file(target_path)
                     if link.anchor not in anchor_cache[target_path]:
-                        issues.append(Issue(file=filepath, line_num=link.line_num, link_text=link.link_text, issue_type='broken', description=f"Anchor '{link.anchor}' not found in '{target_path}'"))
+                        issues.append(
+                            Issue(
+                                file=filepath,
+                                line_num=link.line_num,
+                                link_text=link.link_text,
+                                issue_type='broken',
+                                description=f"Anchor '{link.anchor}' not found in '{target_path}'",
+                            )
+                        )
             elif link.link_type == 'deprecated':
-                issues.append(Issue(file=filepath, line_num=link.line_num, link_text=link.link_text, issue_type='format_violation', description="Deprecated syntax - use xref:", suggested_fix=f"xref:{link.target.rstrip('#,')}[Label]"))
+                issues.append(
+                    Issue(
+                        file=filepath,
+                        line_num=link.line_num,
+                        link_text=link.link_text,
+                        issue_type='format_violation',
+                        description='Deprecated syntax - use xref:',
+                        suggested_fix=f'xref:{link.target.rstrip("#,")}[Label]',
+                    )
+                )
 
     return all_links, issues
 
@@ -118,7 +180,7 @@ def verify_links(files: list[str]) -> tuple[list[Link], list[Issue]]:
 def cmd_verify_links(args):
     """Handle verify-links subcommand."""
     if args.file and args.directory:
-        print("Error: Cannot specify both --file and --directory", file=sys.stderr)
+        print('Error: Cannot specify both --file and --directory', file=sys.stderr)
         return EXIT_ERROR
 
     target_path = args.file if args.file else (args.directory if args.directory else '.')
@@ -138,7 +200,7 @@ def cmd_verify_links(args):
         files = [str(f) for f in path.glob('*.adoc')]
 
     if not files:
-        print(f"No AsciiDoc files found in {target_path}", file=sys.stderr)
+        print(f'No AsciiDoc files found in {target_path}', file=sys.stderr)
         return EXIT_ERROR
 
     all_links, issues = verify_links(files)
@@ -146,12 +208,32 @@ def cmd_verify_links(args):
     violations = [i for i in issues if i.issue_type == 'format_violation']
 
     if issues:
-        log_entry('script', 'global', 'INFO', f'[DOCS-LINKS] Found {len(broken)} broken links, {len(violations)} format violations in {len(files)} files')
+        log_entry(
+            'script',
+            'global',
+            'INFO',
+            f'[DOCS-LINKS] Found {len(broken)} broken links, {len(violations)} format violations in {len(files)} files',
+        )
 
     output = {
         'status': 'success' if not issues else 'failure',
-        'data': {'files_processed': len(files), 'total_links': len(all_links), 'broken_links': len(broken), 'format_violations': len(violations), 'issues': [{'file': i.file, 'line': i.line_num, 'link': i.link_text, 'type': i.issue_type, 'description': i.description} for i in issues]},
-        'metrics': {'valid_links': len(all_links) - len(issues)}
+        'data': {
+            'files_processed': len(files),
+            'total_links': len(all_links),
+            'broken_links': len(broken),
+            'format_violations': len(violations),
+            'issues': [
+                {
+                    'file': i.file,
+                    'line': i.line_num,
+                    'link': i.link_text,
+                    'type': i.issue_type,
+                    'description': i.description,
+                }
+                for i in issues
+            ],
+        },
+        'metrics': {'valid_links': len(all_links) - len(issues)},
     }
     print(json.dumps(output, indent=2))
 

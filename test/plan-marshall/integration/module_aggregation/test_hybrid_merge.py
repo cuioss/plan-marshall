@@ -33,29 +33,24 @@ from integration_common import (  # noqa: E402
 # Projects relative to git directory (parent of plan-marshall)
 TEST_PROJECTS = [
     ProjectFixture(
-        name="nifi-extensions",
-        relative_path="nifi-extensions",
-        description="Hybrid Java+npm project with overlapping modules"
+        name='nifi-extensions',
+        relative_path='nifi-extensions',
+        description='Hybrid Java+npm project with overlapping modules',
     ),
+    ProjectFixture(name='cui-jwt', relative_path='cui-jwt', description='Maven-only project (no npm)'),
     ProjectFixture(
-        name="cui-jwt",
-        relative_path="cui-jwt",
-        description="Maven-only project (no npm)"
-    ),
-    ProjectFixture(
-        name="sample-monorepo",
-        relative_path="other-test-projects/sample-monorepo",
-        description="npm-only monorepo"
+        name='sample-monorepo', relative_path='other-test-projects/sample-monorepo', description='npm-only monorepo'
     ),
 ]
 
 # Output directory for results
-OUTPUT_DIR = INTEGRATION_TEST_OUTPUT_DIR / "module-aggregation"
+OUTPUT_DIR = INTEGRATION_TEST_OUTPUT_DIR / 'module-aggregation'
 
 
 # =============================================================================
 # Hybrid Module Assertions
 # =============================================================================
+
 
 def assert_hybrid_module_structure(modules: dict) -> list[str]:
     """Validate hybrid module structure from discover_project_modules().
@@ -75,27 +70,27 @@ def assert_hybrid_module_structure(modules: dict) -> list[str]:
 
     for name, module in modules.items():
         # Check required fields
-        if "paths" not in module:
+        if 'paths' not in module:
             errors.append(f"{name}: missing 'paths' field")
 
         # Check build_systems is present (always required, no 'technology' field anymore)
-        if "build_systems" not in module:
+        if 'build_systems' not in module:
             errors.append(f"{name}: missing 'build_systems' field")
-        elif not isinstance(module["build_systems"], list):
+        elif not isinstance(module['build_systems'], list):
             errors.append(f"{name}: 'build_systems' should be a list")
-        elif len(module["build_systems"]) == 0:
+        elif len(module['build_systems']) == 0:
             errors.append(f"{name}: 'build_systems' should not be empty")
 
         # technology field should not exist (deprecated)
-        if "technology" in module:
+        if 'technology' in module:
             errors.append(f"{name}: has deprecated 'technology' field, should only have 'build_systems'")
 
         # If hybrid (multiple build systems), verify command nesting
-        if "build_systems" in module:
-            build_systems = module.get("build_systems", [])
+        if 'build_systems' in module:
+            build_systems = module.get('build_systems', [])
             if len(build_systems) > 1:
                 # Check commands have proper nesting for conflicts
-                commands = module.get("commands", {})
+                commands = module.get('commands', {})
                 for cmd_name, cmd_value in commands.items():
                     # Commands can be either:
                     # - string (provided by one extension only)
@@ -111,11 +106,11 @@ def assert_hybrid_module_structure(modules: dict) -> list[str]:
                         errors.append(f"{name}: command '{cmd_name}' should be string or dict")
 
         # Check stats structure if present
-        stats = module.get("stats", {})
+        stats = module.get('stats', {})
         if stats:
-            if "source_files" not in stats:
+            if 'source_files' not in stats:
                 errors.append(f"{name}: stats missing 'source_files'")
-            if "test_files" not in stats:
+            if 'test_files' not in stats:
                 errors.append(f"{name}: stats missing 'test_files'")
 
     return errors
@@ -133,13 +128,13 @@ def assert_extensions_used(result: dict, expected_extensions: list[str] | None =
     """
     errors = []
 
-    if "extensions_used" not in result:
+    if 'extensions_used' not in result:
         errors.append("Result missing 'extensions_used' field")
         return errors
 
-    extensions_used = result["extensions_used"]
+    extensions_used = result['extensions_used']
     if not isinstance(extensions_used, list):
-        errors.append(f"extensions_used should be list, got {type(extensions_used).__name__}")
+        errors.append(f'extensions_used should be list, got {type(extensions_used).__name__}')
         return errors
 
     if expected_extensions:
@@ -154,6 +149,7 @@ def assert_extensions_used(result: dict, expected_extensions: list[str] | None =
 # Integration Tests
 # =============================================================================
 
+
 def run_integration_tests() -> int:
     """Run all module aggregation integration tests.
 
@@ -165,20 +161,20 @@ def run_integration_tests() -> int:
     pass_count = 0
 
     with IntegrationContext(OUTPUT_DIR, clean_before=True) as ctx:
-        print("Module Aggregation Integration Tests")
-        print("=" * 60)
-        print(f"Output directory: {OUTPUT_DIR}")
-        print(f"Git directory: {ctx.git_dir}")
+        print('Module Aggregation Integration Tests')
+        print('=' * 60)
+        print(f'Output directory: {OUTPUT_DIR}')
+        print(f'Git directory: {ctx.git_dir}')
         print()
 
         for project in TEST_PROJECTS:
-            print(f"\n--- {project.name} ---")
-            print(f"Path: {project.relative_path}")
-            print(f"Description: {project.description}")
+            print(f'\n--- {project.name} ---')
+            print(f'Path: {project.relative_path}')
+            print(f'Description: {project.description}')
 
             # Check if project exists
             if not ctx.validate_project(project):
-                print("  SKIP: Project not found")
+                print('  SKIP: Project not found')
                 continue
 
             test_count += 1
@@ -187,15 +183,15 @@ def run_integration_tests() -> int:
             # Run discovery
             try:
                 result = discover_project_modules(project_path)
-                modules = result.get("modules", {})
-                extensions = result.get("extensions_used", [])
+                modules = result.get('modules', {})
+                extensions = result.get('extensions_used', [])
 
-                print(f"  Found: {len(modules)} module(s)")
-                print(f"  Extensions: {extensions}")
+                print(f'  Found: {len(modules)} module(s)')
+                print(f'  Extensions: {extensions}')
 
                 # Save result
                 output_path = ctx.save_result(project, result)
-                print(f"  Saved: {output_path.name}")
+                print(f'  Saved: {output_path.name}')
 
                 # Run assertions
                 errors = []
@@ -209,43 +205,41 @@ def run_integration_tests() -> int:
                 errors.extend(hybrid_errors)
 
                 # Assert no unexpected null values
-                nulls = assert_no_null_values(
-                    result,
-                    allowed_null_suffixes=[".readme", ".description", ".parent"]
-                )
+                nulls = assert_no_null_values(result, allowed_null_suffixes=['.readme', '.description', '.parent'])
                 if nulls:
-                    errors.append(f"Null values found at: {', '.join(nulls)}")
+                    errors.append(f'Null values found at: {", ".join(nulls)}')
 
                 # Report results
                 if errors:
-                    print(f"  FAIL: {len(errors)} error(s)")
+                    print(f'  FAIL: {len(errors)} error(s)')
                     for err in errors:
-                        print(f"    - {err}")
-                    ctx.errors.extend([f"{project.name}: {e}" for e in errors])
+                        print(f'    - {err}')
+                    ctx.errors.extend([f'{project.name}: {e}' for e in errors])
                     all_passed = False
                 else:
-                    print("  PASS: All assertions passed")
+                    print('  PASS: All assertions passed')
                     pass_count += 1
 
                 # Print module summary
                 for mod_name, mod in modules.items():
-                    build_systems = mod.get("build_systems", ["?"])
-                    mod_path = mod.get("paths", {}).get("module", "?")
-                    print(f"    - {mod_name} {build_systems} ({mod_path})")
+                    build_systems = mod.get('build_systems', ['?'])
+                    mod_path = mod.get('paths', {}).get('module', '?')
+                    print(f'    - {mod_name} {build_systems} ({mod_path})')
 
             except Exception as e:
                 import traceback
-                print(f"  ERROR: {e}")
+
+                print(f'  ERROR: {e}')
                 traceback.print_exc()
-                ctx.errors.append(f"{project.name}: {e}")
+                ctx.errors.append(f'{project.name}: {e}')
                 all_passed = False
 
         # Print summary
         ctx.print_summary()
-        print(f"\nTests: {pass_count}/{test_count} passed")
+        print(f'\nTests: {pass_count}/{test_count} passed')
 
     return 0 if all_passed else 1
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     sys.exit(run_integration_tests())

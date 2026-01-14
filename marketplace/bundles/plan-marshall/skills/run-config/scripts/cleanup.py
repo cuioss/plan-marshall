@@ -51,6 +51,7 @@ MARSHAL_JSON = PLAN_BASE_DIR / 'marshal.json'
 @dataclass
 class CleanupStats:
     """Statistics from cleanup operations."""
+
     temp_files: int = 0
     temp_bytes: int = 0
     logs_deleted: int = 0
@@ -72,26 +73,23 @@ def get_retention_settings() -> dict:
         SystemExit: If marshal.json doesn't exist or has no retention config
     """
     if not MARSHAL_JSON.exists():
-        print(serialize_toon({
-            "status": "error",
-            "error": "marshal.json not found. Run command /marshall-steward first"
-        }))
+        print(
+            serialize_toon({'status': 'error', 'error': 'marshal.json not found. Run command /marshall-steward first'})
+        )
         sys.exit(1)
 
     try:
         config = json.loads(MARSHAL_JSON.read_text(encoding='utf-8'))
     except json.JSONDecodeError as e:
-        print(serialize_toon({
-            "status": "error",
-            "error": f"Invalid marshal.json: {e}"
-        }))
+        print(serialize_toon({'status': 'error', 'error': f'Invalid marshal.json: {e}'}))
         sys.exit(1)
 
     if 'system' not in config or 'retention' not in config['system']:
-        print(serialize_toon({
-            "status": "error",
-            "error": "system.retention not configured. Run command /marshall-steward first"
-        }))
+        print(
+            serialize_toon(
+                {'status': 'error', 'error': 'system.retention not configured. Run command /marshall-steward first'}
+            )
+        )
         sys.exit(1)
 
     retention: dict = config['system']['retention']
@@ -337,11 +335,11 @@ def get_status() -> dict:
                         pass
 
     return {
-        "retention": retention,
-        "temp": {"files": temp_files, "bytes": temp_bytes},
-        "logs": {"total": logs_total, "old": logs_old, "old_bytes": logs_old_bytes},
-        "archived_plans": {"total": archived_total, "old": archived_old, "old_bytes": archived_old_bytes},
-        "memory": {"total": memory_total, "old": memory_old, "old_bytes": memory_old_bytes}
+        'retention': retention,
+        'temp': {'files': temp_files, 'bytes': temp_bytes},
+        'logs': {'total': logs_total, 'old': logs_old, 'old_bytes': logs_old_bytes},
+        'archived_plans': {'total': archived_total, 'old': archived_old, 'old_bytes': archived_old_bytes},
+        'memory': {'total': memory_total, 'old': memory_old, 'old_bytes': memory_old_bytes},
     }
 
 
@@ -378,21 +376,21 @@ def cmd_clean(args) -> int:
         stats.memory_bytes = bytes_freed
 
     # Output
-    status = "dry_run" if dry_run else "success"
+    status = 'dry_run' if dry_run else 'success'
     total_bytes = stats.temp_bytes + stats.logs_bytes + stats.archived_plans_bytes + stats.memory_bytes
 
     result = {
-        "status": status,
-        "target": target,
-        "temp_files": stats.temp_files,
-        "temp_bytes": stats.temp_bytes,
-        "logs_deleted": stats.logs_deleted,
-        "logs_bytes": stats.logs_bytes,
-        "archived_plans_deleted": stats.archived_plans_deleted,
-        "archived_plans_bytes": stats.archived_plans_bytes,
-        "memory_files_deleted": stats.memory_files_deleted,
-        "memory_bytes": stats.memory_bytes,
-        "total_bytes_freed": total_bytes
+        'status': status,
+        'target': target,
+        'temp_files': stats.temp_files,
+        'temp_bytes': stats.temp_bytes,
+        'logs_deleted': stats.logs_deleted,
+        'logs_bytes': stats.logs_bytes,
+        'archived_plans_deleted': stats.archived_plans_deleted,
+        'archived_plans_bytes': stats.archived_plans_bytes,
+        'memory_files_deleted': stats.memory_files_deleted,
+        'memory_bytes': stats.memory_bytes,
+        'total_bytes_freed': total_bytes,
     }
 
     print(serialize_toon(result))
@@ -404,22 +402,22 @@ def cmd_status(args) -> int:
     status = get_status()
 
     result = {
-        "status": "ok",
-        "retention_logs_days": status["retention"]["logs_days"],
-        "retention_archived_plans_days": status["retention"]["archived_plans_days"],
-        "retention_memory_days": status["retention"]["memory_days"],
-        "retention_temp_on_maintenance": status["retention"]["temp_on_maintenance"],
-        "temp_files": status["temp"]["files"],
-        "temp_bytes": status["temp"]["bytes"],
-        "logs_total": status["logs"]["total"],
-        "logs_old": status["logs"]["old"],
-        "logs_old_bytes": status["logs"]["old_bytes"],
-        "archived_plans_total": status["archived_plans"]["total"],
-        "archived_plans_old": status["archived_plans"]["old"],
-        "archived_plans_old_bytes": status["archived_plans"]["old_bytes"],
-        "memory_total": status["memory"]["total"],
-        "memory_old": status["memory"]["old"],
-        "memory_old_bytes": status["memory"]["old_bytes"]
+        'status': 'ok',
+        'retention_logs_days': status['retention']['logs_days'],
+        'retention_archived_plans_days': status['retention']['archived_plans_days'],
+        'retention_memory_days': status['retention']['memory_days'],
+        'retention_temp_on_maintenance': status['retention']['temp_on_maintenance'],
+        'temp_files': status['temp']['files'],
+        'temp_bytes': status['temp']['bytes'],
+        'logs_total': status['logs']['total'],
+        'logs_old': status['logs']['old'],
+        'logs_old_bytes': status['logs']['old_bytes'],
+        'archived_plans_total': status['archived_plans']['total'],
+        'archived_plans_old': status['archived_plans']['old'],
+        'archived_plans_old_bytes': status['archived_plans']['old_bytes'],
+        'memory_total': status['memory']['total'],
+        'memory_old': status['memory']['old'],
+        'memory_old_bytes': status['memory']['old_bytes'],
     }
 
     print(serialize_toon(result))
@@ -427,29 +425,23 @@ def cmd_status(args) -> int:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(
-        description="Cleanup .plan directory based on retention settings"
-    )
+    parser = argparse.ArgumentParser(description='Cleanup .plan directory based on retention settings')
 
-    subparsers = parser.add_subparsers(dest="command", required=True)
+    subparsers = parser.add_subparsers(dest='command', required=True)
 
     # clean subcommand
-    clean_parser = subparsers.add_parser("clean", help="Clean directories based on retention")
+    clean_parser = subparsers.add_parser('clean', help='Clean directories based on retention')
+    clean_parser.add_argument('--dry-run', action='store_true', help='Show what would be deleted without deleting')
     clean_parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Show what would be deleted without deleting"
-    )
-    clean_parser.add_argument(
-        "--target",
-        choices=["all", "temp", "logs", "archived-plans", "memory"],
-        default="all",
-        help="Clean specific target only (default: all)"
+        '--target',
+        choices=['all', 'temp', 'logs', 'archived-plans', 'memory'],
+        default='all',
+        help='Clean specific target only (default: all)',
     )
     clean_parser.set_defaults(func=cmd_clean)
 
     # status subcommand
-    status_parser = subparsers.add_parser("status", help="Show cleanup status")
+    status_parser = subparsers.add_parser('status', help='Show cleanup status')
     status_parser.set_defaults(func=cmd_status)
 
     args = parser.parse_args()
@@ -457,5 +449,5 @@ def main() -> int:
     return func_result
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     sys.exit(main())

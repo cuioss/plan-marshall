@@ -26,6 +26,7 @@ RUN_CONFIG_PATH = PLAN_BASE_DIR / 'run-configuration.json'
 
 class MarshalNotInitializedError(Exception):
     """Raised when marshal.json doesn't exist and operation requires it."""
+
     pass
 
 
@@ -41,9 +42,7 @@ def require_initialized() -> None:
             f"Directory '{PLAN_BASE_DIR}' does not exist. Run command /marshall-steward first"
         )
     if not MARSHAL_PATH.exists():
-        raise MarshalNotInitializedError(
-            "marshal.json not found. Run command /marshall-steward first"
-        )
+        raise MarshalNotInitializedError('marshal.json not found. Run command /marshall-steward first')
 
 
 def load_config() -> dict:
@@ -58,7 +57,7 @@ def save_config(config: dict) -> None:
 
     # Canonical key order for marshal.json
     # Note: module_config replaces modules for command configuration
-    key_order = ["ci", "plan", "skill_domains", "module_config", "system"]
+    key_order = ['ci', 'plan', 'skill_domains', 'module_config', 'system']
 
     # Build ordered dict: known keys first in order, then any remaining keys
     ordered = {}
@@ -77,7 +76,7 @@ def load_run_config() -> dict:
     if RUN_CONFIG_PATH.exists():
         config: dict = json.loads(RUN_CONFIG_PATH.read_text(encoding='utf-8'))
         return config
-    return {"version": 1, "commands": {}, "ci": {"authenticated_tools": [], "verified_at": None}}
+    return {'version': 1, 'commands': {}, 'ci': {'authenticated_tools': [], 'verified_at': None}}
 
 
 def save_run_config(config: dict) -> None:
@@ -93,13 +92,13 @@ def output(data: dict) -> None:
 
 def error_exit(message: str, **extra) -> int:
     """Output error and return error exit code."""
-    output({"status": "error", "error": message, **extra})
+    output({'status': 'error', 'error': message, **extra})
     return EXIT_ERROR
 
 
 def success_exit(data: dict) -> int:
     """Output success and return success exit code."""
-    output({"status": "success", **data})
+    output({'status': 'success', **data})
     return EXIT_SUCCESS
 
 
@@ -113,7 +112,7 @@ def get_skill_description(skill_notation: str) -> str:
         Description string or skill name as fallback
     """
     try:
-        parts = skill_notation.split(":")
+        parts = skill_notation.split(':')
         if len(parts) != 2:
             return skill_notation
         bundle, skill = parts
@@ -139,8 +138,7 @@ def get_skill_description(skill_notation: str) -> str:
             if line.startswith('description:'):
                 desc = line[12:].strip()
                 # Remove quotes if present
-                if (desc.startswith('"') and desc.endswith('"')) or \
-                   (desc.startswith("'") and desc.endswith("'")):
+                if (desc.startswith('"') and desc.endswith('"')) or (desc.startswith("'") and desc.endswith("'")):
                     desc = desc[1:-1]
                 return desc
 
@@ -157,6 +155,6 @@ def is_nested_domain(domain_config: dict) -> bool:
     - 'workflow_skills' key (system domain with 5-phase workflow)
     - 'workflow_skill_extensions' key (domain extensions for outline/triage)
     """
-    return ('bundle' in domain_config or
-            'workflow_skills' in domain_config or
-            'workflow_skill_extensions' in domain_config)
+    return (
+        'bundle' in domain_config or 'workflow_skills' in domain_config or 'workflow_skill_extensions' in domain_config
+    )

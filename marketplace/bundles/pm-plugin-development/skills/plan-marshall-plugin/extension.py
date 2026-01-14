@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 
 # Add scripts directory to path for plugin_discover import
-SCRIPTS_DIR = Path(__file__).parent / "scripts"
+SCRIPTS_DIR = Path(__file__).parent / 'scripts'
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
@@ -22,38 +22,29 @@ class Extension(ExtensionBase):
     def get_skill_domains(self) -> dict:
         """Domain metadata for skill loading."""
         return {
-            "domain": {
-                "key": "plan-marshall-plugin-dev",
-                "name": "Plugin Development",
-                "description": "Claude Code marketplace component development"
+            'domain': {
+                'key': 'plan-marshall-plugin-dev',
+                'name': 'Plugin Development',
+                'description': 'Claude Code marketplace component development',
             },
-            "profiles": {
-                "core": {
-                    "defaults": ["pm-plugin-development:plugin-architecture"],
-                    "optionals": ["pm-plugin-development:plugin-script-architecture"]
+            'profiles': {
+                'core': {
+                    'defaults': ['pm-plugin-development:plugin-architecture'],
+                    'optionals': ['pm-plugin-development:plugin-script-architecture'],
                 },
-                "implementation": {
-                    "defaults": [],
-                    "optionals": []
-                },
-                "module_testing": {
-                    "defaults": [],
-                    "optionals": []
-                },
-                "quality": {
-                    "defaults": [],
-                    "optionals": []
-                }
-            }
+                'implementation': {'defaults': [], 'optionals': []},
+                'module_testing': {'defaults': [], 'optionals': []},
+                'quality': {'defaults': [], 'optionals': []},
+            },
         }
 
     def provides_triage(self) -> str | None:
         """Return triage skill reference."""
-        return "pm-plugin-development:ext-triage-plugin"
+        return 'pm-plugin-development:ext-triage-plugin'
 
     def provides_outline(self) -> str | None:
         """Return outline skill reference."""
-        return "pm-plugin-development:ext-outline-plugin"
+        return 'pm-plugin-development:ext-outline-plugin'
 
     def discover_modules(self, project_root: str) -> list:
         """Discover plugin bundles as modules.
@@ -69,7 +60,7 @@ class Extension(ExtensionBase):
         Returns:
             List of module dicts if marketplace/bundles exists, else empty list.
         """
-        bundles_path = Path(project_root) / "marketplace" / "bundles"
+        bundles_path = Path(project_root) / 'marketplace' / 'bundles'
         if not bundles_path.exists():
             return []
 

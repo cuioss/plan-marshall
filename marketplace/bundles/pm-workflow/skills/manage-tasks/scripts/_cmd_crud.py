@@ -33,7 +33,7 @@ def cmd_add(args) -> int:
     """
     stdin_content = sys.stdin.read()
     if not stdin_content.strip():
-        output_error("No task definition provided on stdin")
+        output_error('No task definition provided on stdin')
         return 1
 
     try:
@@ -48,16 +48,12 @@ def cmd_add(args) -> int:
 
     # Use type for filename (TASK-SEQ-TYPE format per target architecture)
     task_type = parsed['type']
-    filename = f"TASK-{number:03d}-{task_type}.toon"
+    filename = f'TASK-{number:03d}-{task_type}.toon'
     filepath = task_dir / filename
 
     steps = []
     for i, step_title in enumerate(parsed['steps'], 1):
-        steps.append({
-            'number': i,
-            'title': step_title,
-            'status': 'pending'
-        })
+        steps.append({'number': i, 'title': step_title, 'status': 'pending'})
 
     now = now_iso()
     task = {
@@ -80,36 +76,40 @@ def cmd_add(args) -> int:
         'delegation': parsed['delegation'],
         'verification': parsed['verification'],
         'steps': steps,
-        'current_step': 1
+        'current_step': 1,
     }
 
     content = format_task_file(task)
     atomic_write_file(filepath, content)
 
-    total = len(list(task_dir.glob("TASK-*.toon")))
+    total = len(list(task_dir.glob('TASK-*.toon')))
 
-    log_entry('work', args.plan_id, 'INFO', f'[MANAGE-TASKS] Added TASK-{number:03d} ({task_type}): {parsed["title"][:50]}')
+    log_entry(
+        'work', args.plan_id, 'INFO', f'[MANAGE-TASKS] Added TASK-{number:03d} ({task_type}): {parsed["title"][:50]}'
+    )
 
-    output_toon({
-        'status': 'success',
-        'plan_id': args.plan_id,
-        'file': filename,
-        'total_tasks': total,
-        'task': {
-            'number': number,
-            'title': parsed['title'],
-            'domain': parsed['domain'],
-            'profile': parsed['profile'],
-            'type': parsed['type'],
-            'skills': parsed['skills'],
-            'deliverables': parsed['deliverables'],
-            'depends_on': parsed['depends_on'],
-            'phase': parsed['phase'],
-            'origin': parsed['origin'],
-            'status': 'pending',
-            'step_count': len(steps)
+    output_toon(
+        {
+            'status': 'success',
+            'plan_id': args.plan_id,
+            'file': filename,
+            'total_tasks': total,
+            'task': {
+                'number': number,
+                'title': parsed['title'],
+                'domain': parsed['domain'],
+                'profile': parsed['profile'],
+                'type': parsed['type'],
+                'skills': parsed['skills'],
+                'deliverables': parsed['deliverables'],
+                'depends_on': parsed['depends_on'],
+                'phase': parsed['phase'],
+                'origin': parsed['origin'],
+                'status': 'pending',
+                'step_count': len(steps),
+            },
         }
-    })
+    )
     return 0
 
 
@@ -119,7 +119,7 @@ def cmd_update(args) -> int:
 
     filepath = find_task_file(task_dir, args.number)
     if not filepath:
-        output_error(f"Task TASK-{args.number} not found")
+        output_error(f'Task TASK-{args.number} not found')
         return 1
 
     content = filepath.read_text(encoding='utf-8')
@@ -137,7 +137,7 @@ def cmd_update(args) -> int:
         task['depends_on'] = depends_on
     if args.status:
         if args.status not in ('pending', 'in_progress', 'done', 'blocked'):
-            output_error(f"Invalid status: {args.status}. Must be pending, in_progress, done, or blocked")
+            output_error(f'Invalid status: {args.status}. Must be pending, in_progress, done, or blocked')
             return 1
         task['status'] = args.status
 
@@ -170,7 +170,7 @@ def cmd_update(args) -> int:
                 deliverables_list = [int(d) for d in args.deliverables]
             task['deliverables'] = deliverables_list
         except ValueError:
-            output_error("Deliverables must be comma-separated integers")
+            output_error('Deliverables must be comma-separated integers')
             return 1
 
     task['updated'] = now_iso()
@@ -179,20 +179,22 @@ def cmd_update(args) -> int:
     new_content = format_task_file(task)
     atomic_write_file(filepath, new_content)
 
-    output_toon({
-        'status': 'success',
-        'plan_id': args.plan_id,
-        'file': filepath.name,
-        'task': {
-            'number': task['number'],
-            'title': task['title'],
-            'domain': task.get('domain'),
-            'profile': task.get('profile'),
-            'type': task.get('type'),
-            'skills': task.get('skills', []),
-            'status': task['status']
+    output_toon(
+        {
+            'status': 'success',
+            'plan_id': args.plan_id,
+            'file': filepath.name,
+            'task': {
+                'number': task['number'],
+                'title': task['title'],
+                'domain': task.get('domain'),
+                'profile': task.get('profile'),
+                'type': task.get('type'),
+                'skills': task.get('skills', []),
+                'status': task['status'],
+            },
         }
-    })
+    )
     return 0
 
 
@@ -202,7 +204,7 @@ def cmd_remove(args) -> int:
 
     filepath = find_task_file(task_dir, args.number)
     if not filepath:
-        output_error(f"Task TASK-{args.number} not found")
+        output_error(f'Task TASK-{args.number} not found')
         return 1
 
     content = filepath.read_text(encoding='utf-8')
@@ -211,18 +213,16 @@ def cmd_remove(args) -> int:
 
     filepath.unlink()
 
-    total = len(list(task_dir.glob("TASK-*.toon")))
+    total = len(list(task_dir.glob('TASK-*.toon')))
 
     log_entry('work', args.plan_id, 'INFO', f'[MANAGE-TASKS] Removed TASK-{task["number"]:03d}: {task["title"][:50]}')
 
-    output_toon({
-        'status': 'success',
-        'plan_id': args.plan_id,
-        'total_tasks': total,
-        'removed': {
-            'number': task['number'],
-            'title': task['title'],
-            'file': filename
+    output_toon(
+        {
+            'status': 'success',
+            'plan_id': args.plan_id,
+            'total_tasks': total,
+            'removed': {'number': task['number'], 'title': task['title'], 'file': filename},
         }
-    })
+    )
     return 0

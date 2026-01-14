@@ -46,66 +46,61 @@ def format_toon_output(result: dict) -> str:
     lines = []
 
     # Status line first
-    lines.append(f"status: {result.get('status', 'success')}")
+    lines.append(f'status: {result.get("status", "success")}')
 
     # Plan ID
     if 'plan_id' in result:
-        lines.append(f"plan_id: {result['plan_id']}")
+        lines.append(f'plan_id: {result["plan_id"]}')
 
     # Error info
     if result.get('status') == 'error':
         if 'error' in result:
-            lines.append(f"error: {result['error']}")
+            lines.append(f'error: {result["error"]}')
         if 'message' in result:
-            lines.append(f"message: {result['message']}")
+            lines.append(f'message: {result["message"]}')
         return '\n'.join(lines)
 
     # Success fields
     if 'log_type' in result:
-        lines.append(f"log_type: {result['log_type']}")
+        lines.append(f'log_type: {result["log_type"]}')
 
     if 'total_entries' in result:
-        lines.append(f"total_entries: {result['total_entries']}")
+        lines.append(f'total_entries: {result["total_entries"]}')
 
     if 'showing' in result:
-        lines.append(f"showing: {result['showing']}")
+        lines.append(f'showing: {result["showing"]}')
 
     # Entries (structured work log)
     entries = result.get('entries', [])
     if entries:
-        lines.append("")
-        lines.append("entries:")
+        lines.append('')
+        lines.append('entries:')
         for entry in entries:
-            lines.append(f"  - timestamp: {entry.get('timestamp', '')}")
-            lines.append(f"    level: {entry.get('level', '')}")
+            lines.append(f'  - timestamp: {entry.get("timestamp", "")}')
+            lines.append(f'    level: {entry.get("level", "")}')
             if entry.get('category'):
-                lines.append(f"    category: {entry.get('category', '')}")
-            lines.append(f"    message: {entry.get('message', '')}")
+                lines.append(f'    category: {entry.get("category", "")}')
+            lines.append(f'    message: {entry.get("message", "")}')
             if entry.get('phase'):
-                lines.append(f"    phase: {entry.get('phase', '')}")
+                lines.append(f'    phase: {entry.get("phase", "")}')
             if entry.get('detail'):
-                lines.append(f"    detail: {entry.get('detail', '')}")
+                lines.append(f'    detail: {entry.get("detail", "")}')
 
     # Raw content (script execution logs)
     raw_content = result.get('raw_content')
     if raw_content:
-        lines.append("")
-        lines.append("content:")
+        lines.append('')
+        lines.append('content:')
         for line in raw_content.split('\n'):
             if line.strip():
-                lines.append(f"  {line}")
+                lines.append(f'  {line}')
 
     return '\n'.join(lines)
 
 
 def parse_read_args(args: list) -> dict:
     """Parse named arguments for read command."""
-    result: dict[str, str | int | None] = {
-        'plan_id': None,
-        'log_type': None,
-        'limit': None,
-        'phase': None
-    }
+    result: dict[str, str | int | None] = {'plan_id': None, 'log_type': None, 'limit': None, 'phase': None}
 
     i = 0
     while i < len(args):
@@ -147,21 +142,21 @@ def handle_read(args: list) -> None:
 
     # Validate required args
     if not parsed['plan_id']:
-        print("status: error", file=sys.stderr)
-        print("error: missing_argument", file=sys.stderr)
-        print("message: --plan-id is required", file=sys.stderr)
+        print('status: error', file=sys.stderr)
+        print('error: missing_argument', file=sys.stderr)
+        print('message: --plan-id is required', file=sys.stderr)
         sys.exit(1)
 
     if not parsed['log_type']:
-        print("status: error", file=sys.stderr)
-        print("error: missing_argument", file=sys.stderr)
-        print("message: --type is required (work or script)", file=sys.stderr)
+        print('status: error', file=sys.stderr)
+        print('error: missing_argument', file=sys.stderr)
+        print('message: --type is required (work or script)', file=sys.stderr)
         sys.exit(1)
 
     if parsed['log_type'] not in VALID_TYPES:
-        print("status: error", file=sys.stderr)
-        print("error: invalid_type", file=sys.stderr)
-        print(f"message: type must be one of {VALID_TYPES}", file=sys.stderr)
+        print('status: error', file=sys.stderr)
+        print('error: invalid_type', file=sys.stderr)
+        print(f'message: type must be one of {VALID_TYPES}', file=sys.stderr)
         sys.exit(1)
 
     # Currently only work logs support full parsing
@@ -181,14 +176,14 @@ def handle_read(args: list) -> None:
 
             # Apply limit if specified
             if parsed['limit'] and lines:
-                lines = lines[-parsed['limit']:]
+                lines = lines[-parsed['limit'] :]
 
             result = {
                 'status': 'success',
                 'plan_id': parsed['plan_id'],
                 'log_type': 'script',
                 'total_entries': len(lines),
-                'raw_content': '\n'.join(lines)
+                'raw_content': '\n'.join(lines),
             }
         else:
             result = {
@@ -196,7 +191,7 @@ def handle_read(args: list) -> None:
                 'plan_id': parsed['plan_id'],
                 'log_type': 'script',
                 'total_entries': 0,
-                'raw_content': ''
+                'raw_content': '',
             }
 
     # Output
@@ -210,33 +205,33 @@ def handle_read(args: list) -> None:
 def handle_write(args: list) -> None:
     """Handle write operation (positional args)."""
     if len(args) != 4:
-        print(f"Usage: {sys.argv[0]} {{type}} {{plan_id}} {{level}} \"{{message}}\"", file=sys.stderr)
+        print(f'Usage: {sys.argv[0]} {{type}} {{plan_id}} {{level}} "{{message}}"', file=sys.stderr)
         sys.exit(1)
 
     log_type, plan_id, level, message = args
 
     # Validate type
     if log_type not in VALID_TYPES:
-        print(f"Error: type must be one of {VALID_TYPES}", file=sys.stderr)
+        print(f'Error: type must be one of {VALID_TYPES}', file=sys.stderr)
         sys.exit(1)
 
     # Validate level
     if level not in VALID_LEVELS:
-        print(f"Error: level must be one of {VALID_LEVELS}", file=sys.stderr)
+        print(f'Error: level must be one of {VALID_LEVELS}', file=sys.stderr)
         sys.exit(1)
 
     # Log entry
     try:
         log_entry(log_type, plan_id, level, message)
     except Exception as e:
-        print(f"Error: {e}", file=sys.stderr)
+        print(f'Error: {e}', file=sys.stderr)
         sys.exit(1)
 
 
 def main():
     if len(sys.argv) < 2:
-        print(f"Usage: {sys.argv[0]} read --plan-id {{id}} --type {{work|script}}", file=sys.stderr)
-        print(f"       {sys.argv[0]} {{type}} {{plan_id}} {{level}} \"{{message}}\"", file=sys.stderr)
+        print(f'Usage: {sys.argv[0]} read --plan-id {{id}} --type {{work|script}}', file=sys.stderr)
+        print(f'       {sys.argv[0]} {{type}} {{plan_id}} {{level}} "{{message}}"', file=sys.stderr)
         sys.exit(1)
 
     # Check if first arg is 'read' subcommand

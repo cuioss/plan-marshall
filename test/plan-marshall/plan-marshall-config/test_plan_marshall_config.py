@@ -8,7 +8,6 @@ Detailed variant and corner case tests are in:
 - test_cmd_system_plan.py
 """
 
-
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
 from test_helpers import SCRIPT_PATH, create_marshal_json, create_nested_marshal_json, create_run_config
 
@@ -18,16 +17,17 @@ from conftest import PlanContext, run_script
 # Happy-Path Integration Tests
 # =============================================================================
 
+
 def test_init_creates_marshal_json():
     """Test init creates marshal.json with defaults."""
     with PlanContext() as ctx:
         result = run_script(SCRIPT_PATH, 'init')
 
-        assert result.success, f"Init should succeed: {result.stderr}"
+        assert result.success, f'Init should succeed: {result.stderr}'
         assert 'success' in result.stdout.lower()
 
         marshal_path = ctx.fixture_dir / 'marshal.json'
-        assert marshal_path.exists(), "marshal.json should be created"
+        assert marshal_path.exists(), 'marshal.json should be created'
 
 
 def test_skill_domains_list():
@@ -37,7 +37,7 @@ def test_skill_domains_list():
 
         result = run_script(SCRIPT_PATH, 'skill-domains', 'list')
 
-        assert result.success, f"Should succeed: {result.stderr}"
+        assert result.success, f'Should succeed: {result.stderr}'
         assert 'java' in result.stdout
 
 
@@ -48,7 +48,7 @@ def test_skill_domains_get():
 
         result = run_script(SCRIPT_PATH, 'skill-domains', 'get', '--domain', 'java')
 
-        assert result.success, f"Should succeed: {result.stderr}"
+        assert result.success, f'Should succeed: {result.stderr}'
         assert 'pm-dev-java:java-core' in result.stdout
 
 
@@ -59,7 +59,7 @@ def test_system_retention_get():
 
         result = run_script(SCRIPT_PATH, 'system', 'retention', 'get')
 
-        assert result.success, f"Should succeed: {result.stderr}"
+        assert result.success, f'Should succeed: {result.stderr}'
         assert 'logs_days' in result.stdout
 
 
@@ -70,7 +70,7 @@ def test_plan_defaults_list():
 
         result = run_script(SCRIPT_PATH, 'plan', 'defaults', 'list')
 
-        assert result.success, f"Should succeed: {result.stderr}"
+        assert result.success, f'Should succeed: {result.stderr}'
         assert 'commit_strategy' in result.stdout
 
 
@@ -79,13 +79,9 @@ def test_resolve_domain_skills():
     with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
 
-        result = run_script(
-            SCRIPT_PATH, 'resolve-domain-skills',
-            '--domain', 'java',
-            '--profile', 'implementation'
-        )
+        result = run_script(SCRIPT_PATH, 'resolve-domain-skills', '--domain', 'java', '--profile', 'implementation')
 
-        assert result.success, f"Should succeed: {result.stderr}"
+        assert result.success, f'Should succeed: {result.stderr}'
         assert 'pm-dev-java:java-core' in result.stdout
 
 
@@ -96,7 +92,7 @@ def test_get_workflow_skills():
 
         result = run_script(SCRIPT_PATH, 'get-workflow-skills')
 
-        assert result.success, f"Should succeed: {result.stderr}"
+        assert result.success, f'Should succeed: {result.stderr}'
         # Verify 5-phase model output
         assert 'outline' in result.stdout
         assert 'pm-workflow:phase-2-outline' in result.stdout
@@ -109,14 +105,14 @@ def test_error_without_marshal_json():
 
         result = run_script(SCRIPT_PATH, 'skill-domains', 'list')
 
-        assert 'error' in result.stdout.lower(), "Should report error"
+        assert 'error' in result.stdout.lower(), 'Should report error'
 
 
 def test_help_output():
     """Test --help outputs usage information."""
     result = run_script(SCRIPT_PATH, '--help')
 
-    assert result.success, "Help should succeed"
+    assert result.success, 'Help should succeed'
     assert 'skill-domains' in result.stdout
     assert 'ci' in result.stdout
 
@@ -128,7 +124,7 @@ def test_ci_get():
 
         result = run_script(SCRIPT_PATH, 'ci', 'get')
 
-        assert result.success, f"Should succeed: {result.stderr}"
+        assert result.success, f'Should succeed: {result.stderr}'
         assert 'github' in result.stdout
         assert 'repo_url' in result.stdout
 
@@ -140,7 +136,7 @@ def test_ci_get_provider():
 
         result = run_script(SCRIPT_PATH, 'ci', 'get-provider')
 
-        assert result.success, f"Should succeed: {result.stderr}"
+        assert result.success, f'Should succeed: {result.stderr}'
         assert 'github' in result.stdout
 
 
@@ -152,7 +148,7 @@ def test_ci_get_tools():
 
         result = run_script(SCRIPT_PATH, 'ci', 'get-tools')
 
-        assert result.success, f"Should succeed: {result.stderr}"
+        assert result.success, f'Should succeed: {result.stderr}'
         assert 'git' in result.stdout
         assert 'gh' in result.stdout
 
@@ -163,12 +159,10 @@ def test_ci_set_provider():
         create_marshal_json(ctx.fixture_dir)
 
         result = run_script(
-            SCRIPT_PATH, 'ci', 'set-provider',
-            '--provider', 'gitlab',
-            '--repo-url', 'https://gitlab.com/test/repo'
+            SCRIPT_PATH, 'ci', 'set-provider', '--provider', 'gitlab', '--repo-url', 'https://gitlab.com/test/repo'
         )
 
-        assert result.success, f"Should succeed: {result.stderr}"
+        assert result.success, f'Should succeed: {result.stderr}'
         assert 'gitlab' in result.stdout
 
 
@@ -177,12 +171,9 @@ def test_ci_set_tools():
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
 
-        result = run_script(
-            SCRIPT_PATH, 'ci', 'set-tools',
-            '--tools', 'git,glab,python3'
-        )
+        result = run_script(SCRIPT_PATH, 'ci', 'set-tools', '--tools', 'git,glab,python3')
 
-        assert result.success, f"Should succeed: {result.stderr}"
+        assert result.success, f'Should succeed: {result.stderr}'
         assert 'glab' in result.stdout
 
 

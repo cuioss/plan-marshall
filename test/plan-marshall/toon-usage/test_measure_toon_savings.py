@@ -64,10 +64,11 @@ def measure_toon_file(file_path):
 # Tests
 # =============================================================================
 
+
 def test_toon_files_exist():
     """Test that .toon files exist."""
     toon_files = find_toon_files()
-    assert len(toon_files) > 0, "No .toon files found in test directory"
+    assert len(toon_files) > 0, 'No .toon files found in test directory'
 
 
 def test_expected_toon_files_present():
@@ -80,8 +81,9 @@ def test_expected_toon_files_present():
 
     # Allow some flexibility - not all files may exist
     present_count = len(EXPECTED_TOON_FILES) - len(missing)
-    assert present_count >= 5, \
-        f"Only {present_count} of {len(EXPECTED_TOON_FILES)} expected TOON files present. Missing: {missing}"
+    assert present_count >= 5, (
+        f'Only {present_count} of {len(EXPECTED_TOON_FILES)} expected TOON files present. Missing: {missing}'
+    )
 
 
 def test_toon_files_not_empty():
@@ -94,7 +96,7 @@ def test_toon_files_not_empty():
         if metrics['toon_words'] == 0:
             empty_files.append(file_path.relative_to(TEST_ROOT))
 
-    assert len(empty_files) == 0, f"Empty TOON files: {empty_files}"
+    assert len(empty_files) == 0, f'Empty TOON files: {empty_files}'
 
 
 def test_toon_provides_savings():
@@ -110,15 +112,13 @@ def test_toon_provides_savings():
         total_json_estimate += metrics['json_estimate']
 
     # TOON should be significantly smaller than JSON estimate
-    assert total_toon_words < total_json_estimate, \
-        "TOON should be smaller than JSON estimate"
+    assert total_toon_words < total_json_estimate, 'TOON should be smaller than JSON estimate'
 
     # Calculate overall savings percentage
     savings_pct = ((total_json_estimate - total_toon_words) * 100) // total_json_estimate
 
     # Expect at least 40% savings (conservative, since JSON estimate is 2x)
-    assert savings_pct >= 40, \
-        f"Expected at least 40% savings, got {savings_pct}%"
+    assert savings_pct >= 40, f'Expected at least 40% savings, got {savings_pct}%'
 
 
 def test_individual_files_have_reasonable_size():
@@ -133,13 +133,12 @@ def test_individual_files_have_reasonable_size():
         # Flag extremely small files (< 10 words) as potential issues
         if words < 10:
             rel_path = file_path.relative_to(TEST_ROOT)
-            issues.append(f"{rel_path}: only {words} words")
+            issues.append(f'{rel_path}: only {words} words')
 
     # Allow some small files, but not all
     if len(toon_files) > 0:
         small_ratio = len(issues) / len(toon_files)
-        assert small_ratio < 0.5, \
-            f"Too many small TOON files ({len(issues)}/{len(toon_files)}): {issues}"
+        assert small_ratio < 0.5, f'Too many small TOON files ({len(issues)}/{len(toon_files)}): {issues}'
 
 
 def test_total_token_savings_report():
@@ -154,21 +153,18 @@ def test_total_token_savings_report():
         metrics = measure_toon_file(file_path)
         total_toon_words += metrics['toon_words']
         total_json_estimate += metrics['json_estimate']
-        file_metrics.append({
-            'file': file_path.relative_to(TEST_ROOT),
-            **metrics
-        })
+        file_metrics.append({'file': file_path.relative_to(TEST_ROOT), **metrics})
 
     # Should have measurable content
-    assert total_toon_words > 0, "No TOON content to measure"
-    assert len(file_metrics) > 0, "No files measured"
+    assert total_toon_words > 0, 'No TOON content to measure'
+    assert len(file_metrics) > 0, 'No files measured'
 
     # Calculate estimated token counts (words * 1.3)
     toon_tokens = int(total_toon_words * 1.3)
     json_tokens = int(total_json_estimate * 1.3)
 
-    assert toon_tokens > 0, "Should have TOON tokens"
-    assert json_tokens > toon_tokens, "JSON estimate should be larger than TOON"
+    assert toon_tokens > 0, 'Should have TOON tokens'
+    assert json_tokens > toon_tokens, 'JSON estimate should be larger than TOON'
 
 
 # =============================================================================

@@ -31,7 +31,7 @@ PERFORMANCE_PATTERNS = [
 def cmd_analyze_tone(args):
     """Handle analyze-tone subcommand."""
     if not args.file and not args.directory:
-        print("Error: --file or --directory required", file=sys.stderr)
+        print('Error: --file or --directory required', file=sys.stderr)
         return EXIT_ERROR
 
     all_issues = []
@@ -46,11 +46,21 @@ def cmd_analyze_tone(args):
 
             for pattern, category in PROMOTIONAL_PATTERNS:
                 for match in re.finditer(pattern, line, re.IGNORECASE):
-                    all_issues.append({'file': file_path, 'line': line_num, 'text': match.group(0), 'category': 'promotional', 'subcategory': category})
+                    all_issues.append(
+                        {
+                            'file': file_path,
+                            'line': line_num,
+                            'text': match.group(0),
+                            'category': 'promotional',
+                            'subcategory': category,
+                        }
+                    )
 
             for pattern in PERFORMANCE_PATTERNS:
                 for match in re.finditer(pattern, line, re.IGNORECASE):
-                    all_issues.append({'file': file_path, 'line': line_num, 'text': match.group(0), 'category': 'performance_claim'})
+                    all_issues.append(
+                        {'file': file_path, 'line': line_num, 'text': match.group(0), 'category': 'performance_claim'}
+                    )
 
     if args.file:
         analyze_file(args.file)
@@ -63,11 +73,20 @@ def cmd_analyze_tone(args):
     perf_count = len([i for i in all_issues if i['category'] == 'performance_claim'])
 
     if all_issues:
-        log_entry('script', 'global', 'INFO', f'[DOCS-TONE] Found {len(all_issues)} issues ({promotional_count} promotional, {perf_count} performance claims)')
+        log_entry(
+            'script',
+            'global',
+            'INFO',
+            f'[DOCS-TONE] Found {len(all_issues)} issues ({promotional_count} promotional, {perf_count} performance claims)',
+        )
 
     result = {
-        'summary': {'total_issues': len(all_issues), 'promotional_count': promotional_count, 'performance_claim_count': perf_count},
-        'all_issues': all_issues
+        'summary': {
+            'total_issues': len(all_issues),
+            'promotional_count': promotional_count,
+            'performance_claim_count': perf_count,
+        },
+        'all_issues': all_issues,
     }
 
     output_json = json.dumps(result, indent=2 if args.pretty else None)

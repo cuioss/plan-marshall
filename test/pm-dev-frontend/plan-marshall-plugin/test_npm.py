@@ -5,7 +5,6 @@ Tests the foundation layer for npm command execution including
 command type detection, timeout handling, and command execution.
 """
 
-
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
 from conftest import BuildContext, get_script_path
 
@@ -18,6 +17,7 @@ from npm import detect_command_type, execute_direct, get_bash_timeout  # noqa: E
 # =============================================================================
 # Test: API functions (via import)
 # =============================================================================
+
 
 def test_api_detect_command_type():
     """Test detect_command_type API function."""
@@ -37,7 +37,7 @@ def test_api_get_bash_timeout():
     """Test get_bash_timeout API adds buffer correctly."""
     # Test various values
     assert get_bash_timeout(300) == 330  # 300 + 30 buffer
-    assert get_bash_timeout(60) == 90    # 60 + 30 buffer
+    assert get_bash_timeout(60) == 90  # 60 + 30 buffer
     assert get_bash_timeout(120) == 150  # 120 + 30 buffer
 
 
@@ -45,10 +45,7 @@ def test_api_execute_direct_success():
     """Test execute_direct API with successful command."""
     with BuildContext() as ctx:
         result = execute_direct(
-            args='--version',
-            command_key='test:version',
-            default_timeout=10,
-            project_dir=str(ctx.temp_dir)
+            args='--version', command_key='test:version', default_timeout=10, project_dir=str(ctx.temp_dir)
         )
 
         # npm --version should succeed (npm is available in most environments)
@@ -61,15 +58,12 @@ def test_api_execute_direct_returns_log_file():
     """Test execute_direct API returns log_file (R1 compliance)."""
     with BuildContext() as ctx:
         result = execute_direct(
-            args='--version',
-            command_key='test:log_file',
-            default_timeout=10,
-            project_dir=str(ctx.temp_dir)
+            args='--version', command_key='test:log_file', default_timeout=10, project_dir=str(ctx.temp_dir)
         )
 
         # R1: All build output must go to a log file
         assert 'log_file' in result
-        assert result['log_file'], "log_file should not be empty"
+        assert result['log_file'], 'log_file should not be empty'
         assert '.plan/temp/build-output' in result['log_file']
         assert 'npm-' in result['log_file']  # Build system in filename
 
@@ -78,10 +72,7 @@ def test_api_execute_direct_npx_command():
     """Test execute_direct API with npx command."""
     with BuildContext() as ctx:
         result = execute_direct(
-            args='--version',
-            command_key='test:npx_version',
-            default_timeout=10,
-            project_dir=str(ctx.temp_dir)
+            args='--version', command_key='test:npx_version', default_timeout=10, project_dir=str(ctx.temp_dir)
         )
 
         # --version is detected as npm not npx (starts with -)

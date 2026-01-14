@@ -55,12 +55,12 @@ def discover_available_domains(project_root: Path | None = None) -> dict:
     applicable_bundles = set()
     if project_root:
         applicable_extensions = discover_extensions(project_root)
-        applicable_bundles = {ext["bundle"] for ext in applicable_extensions}
+        applicable_bundles = {ext['bundle'] for ext in applicable_extensions}
 
     domains = []
 
     for ext in all_extensions:
-        module = ext.get("module")
+        module = ext.get('module')
         if not module:
             continue
 
@@ -68,8 +68,8 @@ def discover_available_domains(project_root: Path | None = None) -> dict:
         if hasattr(module, 'get_skill_domains'):
             try:
                 domain_info = module.get_skill_domains()
-                if domain_info and isinstance(domain_info.get("domain"), dict):
-                    domain_data = domain_info["domain"]
+                if domain_info and isinstance(domain_info.get('domain'), dict):
+                    domain_data = domain_info['domain']
                     has_triage = False
                     has_outline = False
 
@@ -80,23 +80,23 @@ def discover_available_domains(project_root: Path | None = None) -> dict:
                         has_outline = module.provides_outline() is not None
 
                     domain_entry = {
-                        "key": domain_data.get("key", ""),
-                        "name": domain_data.get("name", ""),
-                        "description": domain_data.get("description", ""),
-                        "bundle": ext["bundle"],
-                        "has_triage": has_triage,
-                        "has_outline": has_outline
+                        'key': domain_data.get('key', ''),
+                        'name': domain_data.get('name', ''),
+                        'description': domain_data.get('description', ''),
+                        'bundle': ext['bundle'],
+                        'has_triage': has_triage,
+                        'has_outline': has_outline,
                     }
 
                     # Add applicability flag if project_root was provided
                     if project_root:
-                        domain_entry["applicable"] = ext["bundle"] in applicable_bundles
+                        domain_entry['applicable'] = ext['bundle'] in applicable_bundles
 
                     domains.append(domain_entry)
             except Exception as e:
-                print(f"Warning: Failed to get domains from {ext['bundle']}: {e}", file=sys.stderr)
+                print(f'Warning: Failed to get domains from {ext["bundle"]}: {e}', file=sys.stderr)
 
-    return {"domains": domains}
+    return {'domains': domains}
 
 
 def load_domain_config_from_bundle(domain_key: str) -> dict | None:
@@ -114,7 +114,7 @@ def load_domain_config_from_bundle(domain_key: str) -> dict | None:
     extensions = discover_all_extensions()
 
     for ext in extensions:
-        module = ext.get("module")
+        module = ext.get('module')
         if not module or not hasattr(module, 'get_skill_domains'):
             continue
 
@@ -123,9 +123,9 @@ def load_domain_config_from_bundle(domain_key: str) -> dict | None:
             if not domain_info:
                 continue
 
-            domain_data = domain_info.get("domain", {})
-            if isinstance(domain_data, dict) and domain_data.get("key") == domain_key:
-                return convert_extension_to_domain_config(module, domain_info, ext["bundle"])
+            domain_data = domain_info.get('domain', {})
+            if isinstance(domain_data, dict) and domain_data.get('key') == domain_key:
+                return convert_extension_to_domain_config(module, domain_info, ext['bundle'])
         except Exception:
             continue
 
@@ -147,7 +147,8 @@ def convert_extension_to_domain_config(module, domain_info: dict, bundle_name: s
         Config dict compatible with marshal.json skill_domains
     """
     from typing import Any
-    config: dict[str, Any] = {"bundle": bundle_name}
+
+    config: dict[str, Any] = {'bundle': bundle_name}
 
     # Extract extensions from dedicated functions
     if hasattr(module, 'provides_triage') or hasattr(module, 'provides_outline'):
@@ -155,13 +156,13 @@ def convert_extension_to_domain_config(module, domain_info: dict, bundle_name: s
         if hasattr(module, 'provides_outline'):
             outline = module.provides_outline()
             if outline:
-                extensions["outline"] = outline
+                extensions['outline'] = outline
         if hasattr(module, 'provides_triage'):
             triage = module.provides_triage()
             if triage:
-                extensions["triage"] = triage
+                extensions['triage'] = triage
         if extensions:
-            config["workflow_skill_extensions"] = extensions
+            config['workflow_skill_extensions'] = extensions
 
     return config
 
@@ -179,21 +180,21 @@ def load_profiles_from_bundle(bundle_name: str) -> dict:
     extensions = discover_all_extensions()
 
     for ext in extensions:
-        if ext.get("bundle") != bundle_name:
+        if ext.get('bundle') != bundle_name:
             continue
 
-        module = ext.get("module")
+        module = ext.get('module')
         if not module or not hasattr(module, 'get_skill_domains'):
             continue
 
         try:
             domain_info = module.get_skill_domains()
             if domain_info:
-                return {"profiles": domain_info.get("profiles", {})}
+                return {'profiles': domain_info.get('profiles', {})}
         except Exception:
             pass
 
-    return {"profiles": {}}
+    return {'profiles': {}}
 
 
 def cmd_skill_domains(args) -> int:
@@ -205,92 +206,94 @@ def cmd_skill_domains(args) -> int:
 
     config = load_config()
 
-    if "skill_domains" not in config:
-        return error_exit("skill_domains not configured. Run command /marshall-steward first")
+    if 'skill_domains' not in config:
+        return error_exit('skill_domains not configured. Run command /marshall-steward first')
 
     skill_domains = config.get('skill_domains', {})
 
     if args.verb == 'list':
         domains = list(skill_domains.keys())
-        return success_exit({"domains": domains, "count": len(domains)})
+        return success_exit({'domains': domains, 'count': len(domains)})
 
     elif args.verb == 'get':
         domain = args.domain
         if domain not in skill_domains:
-            return error_exit(f"Unknown domain: {domain}")
+            return error_exit(f'Unknown domain: {domain}')
         domain_config = skill_domains[domain]
 
         # Check if nested structure
         if is_nested_domain(domain_config):
-            result = {"domain": domain}
+            result = {'domain': domain}
             # Include bundle reference if present
-            if "bundle" in domain_config:
-                result["bundle"] = domain_config["bundle"]
+            if 'bundle' in domain_config:
+                result['bundle'] = domain_config['bundle']
             # Include workflow_skills if present
-            if "workflow_skills" in domain_config:
-                result["workflow_skills"] = domain_config["workflow_skills"]
+            if 'workflow_skills' in domain_config:
+                result['workflow_skills'] = domain_config['workflow_skills']
             # Include task_executors if present
-            if "task_executors" in domain_config:
-                result["task_executors"] = domain_config["task_executors"]
+            if 'task_executors' in domain_config:
+                result['task_executors'] = domain_config['task_executors']
             # Include workflow_skill_extensions if present
-            if "workflow_skill_extensions" in domain_config:
-                result["workflow_skill_extensions"] = domain_config["workflow_skill_extensions"]
+            if 'workflow_skill_extensions' in domain_config:
+                result['workflow_skill_extensions'] = domain_config['workflow_skill_extensions']
             # Include top-level defaults/optionals if present (system domain)
-            if "defaults" in domain_config:
-                result["defaults"] = domain_config["defaults"]
-            if "optionals" in domain_config:
-                result["optionals"] = domain_config["optionals"]
+            if 'defaults' in domain_config:
+                result['defaults'] = domain_config['defaults']
+            if 'optionals' in domain_config:
+                result['optionals'] = domain_config['optionals']
 
             # Load profiles from extension.py if bundle is present
-            bundle = domain_config.get("bundle")
+            bundle = domain_config.get('bundle')
             if bundle:
                 ext_data = load_profiles_from_bundle(bundle)
-                profiles = ext_data.get("profiles", {})
+                profiles = ext_data.get('profiles', {})
                 for profile_name in ['core', 'implementation', 'module_testing', 'integration_testing', 'quality']:
                     if profile_name in profiles:
                         result[profile_name] = profiles[profile_name]
             return success_exit(result)
         else:
             # Flat structure (backward compatible)
-            return success_exit({
-                "domain": domain,
-                "defaults": domain_config.get("defaults", []),
-                "optionals": domain_config.get("optionals", [])
-            })
+            return success_exit(
+                {
+                    'domain': domain,
+                    'defaults': domain_config.get('defaults', []),
+                    'optionals': domain_config.get('optionals', []),
+                }
+            )
 
     elif args.verb == 'get-defaults':
         domain = args.domain
         if domain not in skill_domains:
-            return error_exit(f"Unknown domain: {domain}")
+            return error_exit(f'Unknown domain: {domain}')
         domain_config = skill_domains[domain]
         # For nested structure, load core.defaults from extension.py
         if is_nested_domain(domain_config):
-            bundle = domain_config.get("bundle")
+            bundle = domain_config.get('bundle')
             if bundle:
                 ext_data = load_profiles_from_bundle(bundle)
-                defaults = ext_data.get("profiles", {}).get("core", {}).get("defaults", [])
+                defaults = ext_data.get('profiles', {}).get('core', {}).get('defaults', [])
             else:
-                defaults = domain_config.get("defaults", [])
+                defaults = domain_config.get('defaults', [])
         else:
-            defaults = domain_config.get("defaults", [])
-        return success_exit({"domain": domain, "defaults": defaults})
+            defaults = domain_config.get('defaults', [])
+        return success_exit({'domain': domain, 'defaults': defaults})
 
     elif args.verb == 'get-optionals':
         domain = args.domain
         if domain not in skill_domains:
-            return error_exit(f"Unknown domain: {domain}")
+            return error_exit(f'Unknown domain: {domain}')
         domain_config = skill_domains[domain]
         # For nested structure, load core.optionals from extension.py
         if is_nested_domain(domain_config):
-            bundle = domain_config.get("bundle")
+            bundle = domain_config.get('bundle')
             if bundle:
                 ext_data = load_profiles_from_bundle(bundle)
-                optionals = ext_data.get("profiles", {}).get("core", {}).get("optionals", [])
+                optionals = ext_data.get('profiles', {}).get('core', {}).get('optionals', [])
             else:
-                optionals = domain_config.get("optionals", [])
+                optionals = domain_config.get('optionals', [])
         else:
-            optionals = domain_config.get("optionals", [])
-        return success_exit({"domain": domain, "optionals": optionals})
+            optionals = domain_config.get('optionals', [])
+        return success_exit({'domain': domain, 'optionals': optionals})
 
     elif args.verb == 'set':
         domain = args.domain
@@ -303,40 +306,34 @@ def cmd_skill_domains(args) -> int:
         if profile:
             # Profile modification not supported - profiles come from extension.py
             return error_exit(
-                "Profile modification not supported. Profiles are defined in bundle extension.py "
-                "and cannot be modified via marshal.json."
+                'Profile modification not supported. Profiles are defined in bundle extension.py '
+                'and cannot be modified via marshal.json.'
             )
         else:
             # Flat structure update (system domain only)
             if args.defaults:
-                skill_domains[domain]["defaults"] = args.defaults.split(',')
+                skill_domains[domain]['defaults'] = args.defaults.split(',')
             if args.optionals is not None:
-                skill_domains[domain]["optionals"] = args.optionals.split(',') if args.optionals else []
+                skill_domains[domain]['optionals'] = args.optionals.split(',') if args.optionals else []
 
         config['skill_domains'] = skill_domains
         save_config(config)
-        return success_exit({
-            "domain": domain,
-            "updated": skill_domains[domain]
-        })
+        return success_exit({'domain': domain, 'updated': skill_domains[domain]})
 
     elif args.verb == 'get-extensions':
         domain = args.domain
         if domain not in skill_domains:
-            return error_exit(f"Unknown domain: {domain}")
+            return error_exit(f'Unknown domain: {domain}')
         domain_config = skill_domains[domain]
         extensions = domain_config.get('workflow_skill_extensions', {})
-        return success_exit({
-            "domain": domain,
-            "extensions": extensions
-        })
+        return success_exit({'domain': domain, 'extensions': extensions})
 
     elif args.verb == 'set-extensions':
         domain = args.domain
         ext_type = args.type
         skill = args.skill
         if domain not in skill_domains:
-            return error_exit(f"Unknown domain: {domain}")
+            return error_exit(f'Unknown domain: {domain}')
         domain_config = skill_domains[domain]
         if 'workflow_skill_extensions' not in domain_config:
             domain_config['workflow_skill_extensions'] = {}
@@ -344,78 +341,77 @@ def cmd_skill_domains(args) -> int:
         skill_domains[domain] = domain_config
         config['skill_domains'] = skill_domains
         save_config(config)
-        return success_exit({
-            "domain": domain,
-            "type": ext_type,
-            "skill": skill
-        })
+        return success_exit({'domain': domain, 'type': ext_type, 'skill': skill})
 
     elif args.verb == 'add':
         domain = args.domain
         if domain in skill_domains:
-            return error_exit(f"Domain already exists: {domain}")
+            return error_exit(f'Domain already exists: {domain}')
         defaults = args.defaults.split(',') if args.defaults else []
         optionals = args.optionals.split(',') if args.optionals else []
-        skill_domains[domain] = {"defaults": defaults, "optionals": optionals}
+        skill_domains[domain] = {'defaults': defaults, 'optionals': optionals}
         config['skill_domains'] = skill_domains
         save_config(config)
-        return success_exit({
-            "domain": domain,
-            "added": skill_domains[domain]
-        })
+        return success_exit({'domain': domain, 'added': skill_domains[domain]})
 
     elif args.verb == 'validate':
         domain = args.domain
         skill = args.skill
         if domain not in skill_domains:
-            return error_exit(f"Unknown domain: {domain}")
+            return error_exit(f'Unknown domain: {domain}')
         domain_config = skill_domains[domain]
 
         # Handle nested structure
         if is_nested_domain(domain_config):
             # Load profiles from extension.py
-            bundle = domain_config.get("bundle")
+            bundle = domain_config.get('bundle')
             if bundle:
                 ext_data = load_profiles_from_bundle(bundle)
-                profiles = ext_data.get("profiles", {})
+                profiles = ext_data.get('profiles', {})
 
                 # Collect all defaults and optionals across all profiles
                 all_defaults = []
                 all_optionals = []
                 for key in ['core', 'implementation', 'module_testing', 'integration_testing', 'quality']:
                     if key in profiles:
-                        all_defaults.extend(profiles[key].get("defaults", []))
-                        all_optionals.extend(profiles[key].get("optionals", []))
+                        all_defaults.extend(profiles[key].get('defaults', []))
+                        all_optionals.extend(profiles[key].get('optionals', []))
                 valid = skill in all_defaults or skill in all_optionals
-                return success_exit({
-                    "domain": domain,
-                    "skill": skill,
-                    "valid": valid,
-                    "in_defaults": skill in all_defaults,
-                    "in_optionals": skill in all_optionals
-                })
+                return success_exit(
+                    {
+                        'domain': domain,
+                        'skill': skill,
+                        'valid': valid,
+                        'in_defaults': skill in all_defaults,
+                        'in_optionals': skill in all_optionals,
+                    }
+                )
             else:
                 # System domain with top-level defaults/optionals
-                all_skills = domain_config.get("defaults", []) + domain_config.get("optionals", [])
+                all_skills = domain_config.get('defaults', []) + domain_config.get('optionals', [])
                 valid = skill in all_skills
-                return success_exit({
-                    "domain": domain,
-                    "skill": skill,
-                    "valid": valid,
-                    "in_defaults": skill in domain_config.get("defaults", []),
-                    "in_optionals": skill in domain_config.get("optionals", [])
-                })
+                return success_exit(
+                    {
+                        'domain': domain,
+                        'skill': skill,
+                        'valid': valid,
+                        'in_defaults': skill in domain_config.get('defaults', []),
+                        'in_optionals': skill in domain_config.get('optionals', []),
+                    }
+                )
         else:
             # Flat structure
-            all_skills = domain_config.get("defaults", []) + domain_config.get("optionals", [])
+            all_skills = domain_config.get('defaults', []) + domain_config.get('optionals', [])
             valid = skill in all_skills
-            return success_exit({
-                "domain": domain,
-                "skill": skill,
-                "valid": valid,
-                "in_defaults": skill in domain_config.get("defaults", []),
-                "in_optionals": skill in domain_config.get("optionals", [])
-            })
+            return success_exit(
+                {
+                    'domain': domain,
+                    'skill': skill,
+                    'valid': valid,
+                    'in_defaults': skill in domain_config.get('defaults', []),
+                    'in_optionals': skill in domain_config.get('optionals', []),
+                }
+            )
 
     elif args.verb == 'detect':
         detected_keys = detect_domains()  # Returns list of domain keys
@@ -426,11 +422,13 @@ def cmd_skill_domains(args) -> int:
                 if domain_config:
                     skill_domains[domain_key] = domain_config
         save_config(config)
-        return success_exit({
-            "detected": detected_keys,
-            "count": len(detected_keys),
-            "message": f"Detected domains: {', '.join(detected_keys)}" if detected_keys else "No domains detected"
-        })
+        return success_exit(
+            {
+                'detected': detected_keys,
+                'count': len(detected_keys),
+                'message': f'Detected domains: {", ".join(detected_keys)}' if detected_keys else 'No domains detected',
+            }
+        )
 
     elif args.verb == 'get-available':
         # Use dynamic discovery to find available domains
@@ -438,11 +436,9 @@ def cmd_skill_domains(args) -> int:
         project_root = Path('.').resolve()
         discovery = discover_available_domains(project_root)
 
-        result = {
-            'discovered_domains': discovery.get("domains", [])
-        }
-        if "error" in discovery and discovery["error"]:
-            result['error'] = discovery["error"]
+        result = {'discovered_domains': discovery.get('domains', [])}
+        if 'error' in discovery and discovery['error']:
+            result['error'] = discovery['error']
 
         return success_exit(result)
 
@@ -471,7 +467,7 @@ def cmd_skill_domains(args) -> int:
         result = {
             'system_domain': 'configured',
             'domains_configured': len(domains_configured),
-            'domains': ','.join(domains_configured)
+            'domains': ','.join(domains_configured),
         }
         if domains_not_found:
             result['domains_not_found'] = ','.join(domains_not_found)
@@ -500,7 +496,7 @@ def cmd_resolve_domain_skills(args) -> int:
 
     # Validate domain exists
     if domain not in skill_domains:
-        return error_exit(f"Unknown domain: {domain}")
+        return error_exit(f'Unknown domain: {domain}')
 
     domain_config = skill_domains[domain]
 
@@ -519,7 +515,9 @@ def cmd_resolve_domain_skills(args) -> int:
     # Validate profile exists
     if profile not in profiles and profile != 'core':
         available = [k for k in profiles.keys() if k != 'core']
-        return error_exit(f"Unknown profile: {profile} for domain: {domain}. Available profiles: {', '.join(available)}")
+        return error_exit(
+            f'Unknown profile: {profile} for domain: {domain}. Available profiles: {", ".join(available)}'
+        )
 
     # Aggregate: core + profile skills
     core_config = profiles.get('core', {})
@@ -532,12 +530,9 @@ def cmd_resolve_domain_skills(args) -> int:
     defaults_with_desc = {skill: get_skill_description(skill) for skill in defaults}
     optionals_with_desc = {skill: get_skill_description(skill) for skill in optionals}
 
-    return success_exit({
-        "domain": domain,
-        "profile": profile,
-        "defaults": defaults_with_desc,
-        "optionals": optionals_with_desc
-    })
+    return success_exit(
+        {'domain': domain, 'profile': profile, 'defaults': defaults_with_desc, 'optionals': optionals_with_desc}
+    )
 
 
 def _find_workflow_skill(workflow_skills: dict[str, str], phase: str) -> str:
@@ -552,10 +547,10 @@ def _find_workflow_skill(workflow_skills: dict[str, str], phase: str) -> str:
 
     # Look for numbered key pattern (e.g., "1-init" for "init")
     for key, value in workflow_skills.items():
-        if key.endswith(f"-{phase}"):
+        if key.endswith(f'-{phase}'):
             return value
 
-    return ""
+    return ''
 
 
 def cmd_get_workflow_skills(args) -> int:
@@ -573,21 +568,23 @@ def cmd_get_workflow_skills(args) -> int:
 
     # Get workflow_skills from system domain
     if 'system' not in skill_domains:
-        return error_exit("System domain not configured. Run /marshall-steward to initialize.")
+        return error_exit('System domain not configured. Run /marshall-steward to initialize.')
 
     system_config = skill_domains['system']
     workflow_skills = system_config.get('workflow_skills', {})
 
     if not workflow_skills:
-        return error_exit("System domain has no workflow_skills configured")
+        return error_exit('System domain has no workflow_skills configured')
 
-    return success_exit({
-        "init": _find_workflow_skill(workflow_skills, "init"),
-        "outline": _find_workflow_skill(workflow_skills, "outline"),
-        "plan": _find_workflow_skill(workflow_skills, "plan"),
-        "execute": _find_workflow_skill(workflow_skills, "execute"),
-        "finalize": _find_workflow_skill(workflow_skills, "finalize")
-    })
+    return success_exit(
+        {
+            'init': _find_workflow_skill(workflow_skills, 'init'),
+            'outline': _find_workflow_skill(workflow_skills, 'outline'),
+            'plan': _find_workflow_skill(workflow_skills, 'plan'),
+            'execute': _find_workflow_skill(workflow_skills, 'execute'),
+            'finalize': _find_workflow_skill(workflow_skills, 'finalize'),
+        }
+    )
 
 
 def cmd_resolve_workflow_skill(args) -> int:
@@ -610,23 +607,20 @@ def cmd_resolve_workflow_skill(args) -> int:
 
     # Always use system domain for workflow skills
     if 'system' not in skill_domains:
-        return error_exit("System domain not configured. Run /marshall-steward to initialize.")
+        return error_exit('System domain not configured. Run /marshall-steward to initialize.')
 
     system_config = skill_domains['system']
     workflow_skills = system_config.get('workflow_skills', {})
 
     if not workflow_skills:
-        return error_exit("System domain has no workflow_skills configured")
+        return error_exit('System domain has no workflow_skills configured')
 
     skill = _find_workflow_skill(workflow_skills, phase)
     if not skill:
         available = [k.split('-')[-1] if '-' in k else k for k in workflow_skills.keys()]
-        return error_exit(f"Unknown phase: {phase}. Available: {', '.join(available)}")
+        return error_exit(f'Unknown phase: {phase}. Available: {", ".join(available)}')
 
-    return success_exit({
-        "phase": phase,
-        "workflow_skill": skill
-    })
+    return success_exit({'phase': phase, 'workflow_skill': skill})
 
 
 def cmd_resolve_workflow_skill_extension(args) -> int:
@@ -650,21 +644,13 @@ def cmd_resolve_workflow_skill_extension(args) -> int:
 
     # Return null extension if domain doesn't exist (not an error)
     if domain not in skill_domains:
-        return success_exit({
-            "domain": domain,
-            "type": ext_type,
-            "extension": None
-        })
+        return success_exit({'domain': domain, 'type': ext_type, 'extension': None})
 
     domain_config = skill_domains[domain]
     extensions = domain_config.get('workflow_skill_extensions', {})
     extension = extensions.get(ext_type)  # None if not present
 
-    return success_exit({
-        "domain": domain,
-        "type": ext_type,
-        "extension": extension
-    })
+    return success_exit({'domain': domain, 'type': ext_type, 'extension': extension})
 
 
 def cmd_get_skills_by_profile(args) -> int:
@@ -687,7 +673,7 @@ def cmd_get_skills_by_profile(args) -> int:
     domain = args.domain
 
     if domain not in skill_domains:
-        return error_exit(f"Unknown domain: {domain}")
+        return error_exit(f'Unknown domain: {domain}')
 
     domain_config = skill_domains[domain]
 
@@ -734,10 +720,7 @@ def cmd_get_skills_by_profile(args) -> int:
 
         skills_by_profile[profile_name] = combined
 
-    return success_exit({
-        "domain": domain,
-        "skills_by_profile": skills_by_profile
-    })
+    return success_exit({'domain': domain, 'skills_by_profile': skills_by_profile})
 
 
 def cmd_configure_task_executors(args) -> int:
@@ -758,7 +741,7 @@ def cmd_configure_task_executors(args) -> int:
 
     # Ensure system domain exists
     if 'system' not in skill_domains:
-        return error_exit("System domain not configured. Run skill-domains configure first.")
+        return error_exit('System domain not configured. Run skill-domains configure first.')
 
     # Discover all unique profiles from configured domains
     # Now loads profiles from extension.py via bundle reference
@@ -771,10 +754,10 @@ def cmd_configure_task_executors(args) -> int:
             continue
 
         # Load profiles from extension.py
-        bundle = domain_config.get("bundle")
+        bundle = domain_config.get('bundle')
         if bundle:
             ext_data = load_profiles_from_bundle(bundle)
-            profiles = ext_data.get("profiles", {})
+            profiles = ext_data.get('profiles', {})
             # Collect profile keys (exclude 'core' which is not an executable profile)
             for key in profiles.keys():
                 if key != 'core':
@@ -786,7 +769,7 @@ def cmd_configure_task_executors(args) -> int:
         # Skip quality profile - it's handled by finalize phase, not task execution
         if profile == 'quality':
             continue
-        task_executors[profile] = f"pm-workflow:task-{profile}"
+        task_executors[profile] = f'pm-workflow:task-{profile}'
 
     # Update system domain with task_executors
     system_config = skill_domains['system']
@@ -796,11 +779,9 @@ def cmd_configure_task_executors(args) -> int:
     config['skill_domains'] = skill_domains
     save_config(config)
 
-    return success_exit({
-        "status": "success",
-        "task_executors_configured": len(task_executors),
-        "executors": task_executors
-    })
+    return success_exit(
+        {'status': 'success', 'task_executors_configured': len(task_executors), 'executors': task_executors}
+    )
 
 
 def cmd_resolve_task_executor(args) -> int:
@@ -827,19 +808,12 @@ def cmd_resolve_task_executor(args) -> int:
     task_executors = system_config.get('task_executors', {})
 
     if not task_executors:
-        return error_exit(
-            "No task_executors configured. Run configure-task-executors first."
-        )
+        return error_exit('No task_executors configured. Run configure-task-executors first.')
 
     if profile not in task_executors:
         available = sorted(task_executors.keys())
-        return error_exit(
-            f"Unknown profile '{profile}'. Available profiles: {', '.join(available)}"
-        )
+        return error_exit(f"Unknown profile '{profile}'. Available profiles: {', '.join(available)}")
 
     task_executor = task_executors[profile]
 
-    return success_exit({
-        "profile": profile,
-        "task_executor": task_executor
-    })
+    return success_exit({'profile': profile, 'task_executor': task_executor})

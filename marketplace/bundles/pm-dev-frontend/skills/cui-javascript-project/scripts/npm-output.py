@@ -130,21 +130,13 @@ def determine_build_status(lines: list, exit_code: int | None = None) -> str:
 def parse_npm_output(log_path: str, mode: str) -> dict:
     """Parse npm output log file."""
     if not os.path.exists(log_path):
-        return {
-            'status': 'error',
-            'error': 'LOG_NOT_FOUND',
-            'message': f'Log file not found: {log_path}'
-        }
+        return {'status': 'error', 'error': 'LOG_NOT_FOUND', 'message': f'Log file not found: {log_path}'}
 
     try:
         with open(log_path, encoding='utf-8', errors='replace') as f:
             content = f.read()
     except Exception as e:
-        return {
-            'status': 'error',
-            'error': 'READ_ERROR',
-            'message': f'Failed to read log file: {e}'
-        }
+        return {'status': 'error', 'error': 'READ_ERROR', 'message': f'Failed to read log file: {e}'}
 
     lines = content.split('\n')
     build_status = determine_build_status(lines, None)
@@ -170,7 +162,7 @@ def parse_npm_output(log_path: str, mode: str) -> dict:
                 'column': column,
                 'message': line,
                 'severity': severity,
-                'log_line': line_num
+                'log_line': line_num,
             }
 
             issues.append(issue)
@@ -192,41 +184,22 @@ def parse_npm_output(log_path: str, mode: str) -> dict:
         'other_warnings': sum(1 for i in issues if i['type'] == 'other' and i['severity'] == 'WARNING'),
         'total_errors': sum(1 for i in issues if i['severity'] == 'ERROR'),
         'total_warnings': sum(1 for i in issues if i['severity'] == 'WARNING'),
-        'total_issues': len(issues)
+        'total_issues': len(issues),
     }
 
     if mode == 'structured':
-        return {
-            'status': build_status.lower(),
-            'data': {
-                'output_file': log_path,
-                'issues': issues
-            },
-            'metrics': summary
-        }
+        return {'status': build_status.lower(), 'data': {'output_file': log_path, 'issues': issues}, 'metrics': summary}
     elif mode == 'errors':
         return {
             'status': build_status.lower(),
-            'data': {
-                'output_file': log_path,
-                'errors': errors_only
-            },
-            'metrics': {
-                'total_errors': summary['total_errors']
-            }
+            'data': {'output_file': log_path, 'errors': errors_only},
+            'metrics': {'total_errors': summary['total_errors']},
         }
     else:  # default
         return {
             'status': build_status.lower(),
-            'data': {
-                'output_file': log_path,
-                'errors': errors_only,
-                'warnings': warnings
-            },
-            'metrics': {
-                'total_errors': summary['total_errors'],
-                'total_warnings': summary['total_warnings']
-            }
+            'data': {'output_file': log_path, 'errors': errors_only, 'warnings': warnings},
+            'metrics': {'total_errors': summary['total_errors'], 'total_warnings': summary['total_warnings']},
         }
 
 
@@ -246,18 +219,22 @@ def cmd_parse(args) -> int:
 # MAIN
 # =============================================================================
 
+
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="npm build output analysis tool",
-        formatter_class=argparse.RawDescriptionHelpFormatter
+        description='npm build output analysis tool', formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    subparsers = parser.add_subparsers(dest="command", required=True)
+    subparsers = parser.add_subparsers(dest='command', required=True)
 
     # parse subcommand
-    parse_parser = subparsers.add_parser("parse", help="Parse npm/npx build output logs and categorize issues")
-    parse_parser.add_argument("--log", required=True, help="Path to npm output log file")
-    parse_parser.add_argument("--mode", choices=['default', 'errors', 'structured'], default='default',
-                              help="Output mode: default, errors, or structured")
+    parse_parser = subparsers.add_parser('parse', help='Parse npm/npx build output logs and categorize issues')
+    parse_parser.add_argument('--log', required=True, help='Path to npm output log file')
+    parse_parser.add_argument(
+        '--mode',
+        choices=['default', 'errors', 'structured'],
+        default='default',
+        help='Output mode: default, errors, or structured',
+    )
     parse_parser.set_defaults(func=cmd_parse)
 
     args = parser.parse_args()
@@ -265,5 +242,5 @@ def main() -> int:
     return result
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     sys.exit(main())

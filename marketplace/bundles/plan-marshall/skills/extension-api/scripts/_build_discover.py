@@ -23,10 +23,10 @@ from pathlib import Path
 # Constants
 # =============================================================================
 
-README_PATTERNS = ["README.md", "README.adoc", "README.txt", "README"]
+README_PATTERNS = ['README.md', 'README.adoc', 'README.txt', 'README']
 """Ordered list of README file patterns to search for."""
 
-EXCLUDE_DIRS = {".git", "node_modules", "target", "build", "__pycache__", ".plan"}
+EXCLUDE_DIRS = {'.git', 'node_modules', 'target', 'build', '__pycache__', '.plan'}
 """Directory names to exclude from recursive searches."""
 
 
@@ -34,12 +34,14 @@ EXCLUDE_DIRS = {".git", "node_modules", "target", "build", "__pycache__", ".plan
 # Data Classes
 # =============================================================================
 
+
 @dataclass
 class ModulePaths:
     """Path structure for a module.
 
     All paths are relative to project root.
     """
+
     module: str
     """Relative path from project root to module directory."""
 
@@ -57,6 +59,7 @@ class ModuleBase:
     Contains only the information that can be determined from file system
     structure without parsing descriptor contents.
     """
+
     name: str
     """Module name (derived from directory name)."""
 
@@ -70,12 +73,12 @@ class ModuleBase:
             Dict with 'name' and 'paths' keys.
         """
         return {
-            "name": self.name,
-            "paths": {
-                "module": self.paths.module,
-                "descriptor": self.paths.descriptor,
-                "readme": self.paths.readme,
-            }
+            'name': self.name,
+            'paths': {
+                'module': self.paths.module,
+                'descriptor': self.paths.descriptor,
+                'readme': self.paths.readme,
+            },
         }
 
 
@@ -83,11 +86,8 @@ class ModuleBase:
 # Discovery Functions
 # =============================================================================
 
-def discover_descriptors(
-    project_root: str,
-    descriptor_name: str,
-    exclude_dirs: set | None = None
-) -> list[Path]:
+
+def discover_descriptors(project_root: str, descriptor_name: str, exclude_dirs: set | None = None) -> list[Path]:
     """Recursively find all descriptor files in a project.
 
     Searches the project directory tree for files matching the descriptor name,
@@ -169,13 +169,13 @@ def build_module_base(project_root: str, descriptor_path: str) -> ModuleBase:
         rel_descriptor = desc_path.relative_to(root_path)
     except ValueError:
         # descriptor_path is not under project_root
-        rel_module = Path(".")
+        rel_module = Path('.')
         rel_descriptor = Path(desc_path.name)
 
     # Module name: directory name, or "default" for root
-    module_name = rel_module.name if rel_module != Path(".") else "default"
+    module_name = rel_module.name if rel_module != Path('.') else 'default'
     if not module_name:
-        module_name = "default"
+        module_name = 'default'
 
     # Find README
     readme_rel = find_readme(str(module_dir))
@@ -188,7 +188,7 @@ def build_module_base(project_root: str, descriptor_path: str) -> ModuleBase:
             readme_rel = None
 
     paths = ModulePaths(
-        module=str(rel_module) if str(rel_module) != "." else ".",
+        module=str(rel_module) if str(rel_module) != '.' else '.',
         descriptor=str(rel_descriptor),
         readme=readme_rel,
     )

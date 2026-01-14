@@ -16,11 +16,11 @@ from pathlib import Path
 from _build_parse import SEVERITY_ERROR, Issue, UnitTestSummary  # type: ignore[import-not-found]
 
 # Jest failure header pattern
-FAIL_PATTERN = re.compile(r"^\s*FAIL\s+(.+)$", re.MULTILINE)
+FAIL_PATTERN = re.compile(r'^\s*FAIL\s+(.+)$', re.MULTILINE)
 
 # Jest test summary pattern: Tests: N failed, N passed, N total
 SUMMARY_PATTERN = re.compile(
-    r"Tests:\s+(?:(\d+)\s+failed,\s+)?(?:(\d+)\s+skipped,\s+)?(?:(\d+)\s+passed,\s+)?(\d+)\s+total"
+    r'Tests:\s+(?:(\d+)\s+failed,\s+)?(?:(\d+)\s+skipped,\s+)?(?:(\d+)\s+passed,\s+)?(\d+)\s+total'
 )
 
 
@@ -42,11 +42,11 @@ def parse_log(log_file: str | Path) -> tuple[list[Issue], UnitTestSummary | None
         FileNotFoundError: If log file doesn't exist.
     """
     path = Path(log_file)
-    content = path.read_text(encoding="utf-8", errors="replace")
+    content = path.read_text(encoding='utf-8', errors='replace')
 
     issues = _extract_issues(content)
     test_summary = _extract_test_summary(content)
-    build_status = "FAILURE" if issues else "SUCCESS"
+    build_status = 'FAILURE' if issues else 'SUCCESS'
 
     return issues, test_summary, build_status
 
@@ -61,7 +61,7 @@ def _extract_issues(content: str) -> list[Issue]:
         List of Issue dataclasses with test failures.
     """
     issues: list[Issue] = []
-    lines = content.split("\n")
+    lines = content.split('\n')
     current_file = None
     current_test = None
     collecting_stack = False
@@ -75,7 +75,7 @@ def _extract_issues(content: str) -> list[Issue]:
             continue
 
         # Check for test name (● TestSuite › test name)
-        if line.strip().startswith("●"):
+        if line.strip().startswith('●'):
             # Save previous test if collecting
             if current_test and stack_lines:
                 _add_issue(issues, current_file, current_test, stack_lines)
@@ -88,13 +88,13 @@ def _extract_issues(content: str) -> list[Issue]:
         # Collect stack trace lines
         if collecting_stack:
             stripped = line.strip()
-            if stripped and not stripped.startswith("at "):
+            if stripped and not stripped.startswith('at '):
                 stack_lines.append(line)
-            elif stripped.startswith("at "):
+            elif stripped.startswith('at '):
                 stack_lines.append(line)
             elif not stripped:
                 # Empty line might end the stack trace
-                if stack_lines and any("at " in sl for sl in stack_lines) and current_test:
+                if stack_lines and any('at ' in sl for sl in stack_lines) and current_test:
                     _add_issue(issues, current_file, current_test, stack_lines)
                     stack_lines = []
                     collecting_stack = False
@@ -119,21 +119,23 @@ def _add_issue(issues: list[Issue], file: str | None, test: str, stack_lines: li
     # Extract line number from stack trace
     line_num = None
     for sl in stack_lines:
-        match = re.search(r":(\d+):\d+\)?$", sl)
+        match = re.search(r':(\d+):\d+\)?$', sl)
         if match:
             line_num = int(match.group(1))
             break
 
-    stack_trace = "\n".join(stack_lines) if stack_lines else None
+    stack_trace = '\n'.join(stack_lines) if stack_lines else None
 
-    issues.append(Issue(
-        file=file if file is not None else "unknown",
-        line=line_num,
-        message=test,
-        severity=SEVERITY_ERROR,
-        category="test_failure",
-        stack_trace=stack_trace,
-    ))
+    issues.append(
+        Issue(
+            file=file if file is not None else 'unknown',
+            line=line_num,
+            message=test,
+            severity=SEVERITY_ERROR,
+            category='test_failure',
+            stack_trace=stack_trace,
+        )
+    )
 
 
 def _extract_test_summary(content: str) -> UnitTestSummary | None:

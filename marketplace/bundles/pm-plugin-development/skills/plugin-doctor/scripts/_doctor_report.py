@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Report generation functions for doctor-marketplace."""
 
-
 from _cmd_categorize import categorize_fix
 from _doctor_shared import categorize_all_issues, extract_bundle_name
 
@@ -10,7 +9,7 @@ def count_issues_by_type(all_issues: list[dict]) -> dict[str, int]:
     """Count issues by their type."""
     counts: dict[str, int] = {}
     for issue in all_issues:
-        itype = issue.get("type", "unknown")
+        itype = issue.get('type', 'unknown')
         counts[itype] = counts.get(itype, 0) + 1
     return counts
 
@@ -19,17 +18,17 @@ def count_issues_by_bundle(analysis_results: list[dict]) -> dict[str, dict[str, 
     """Count issues by bundle with safe/risky breakdown."""
     counts: dict[str, dict[str, int]] = {}
     for result in analysis_results:
-        path = result.get("component", {}).get("path", "")
+        path = result.get('component', {}).get('path', '')
         bundle_name = extract_bundle_name(path)
 
         if bundle_name not in counts:
-            counts[bundle_name] = {"total": 0, "safe": 0, "risky": 0}
+            counts[bundle_name] = {'total': 0, 'safe': 0, 'risky': 0}
 
-        for issue in result.get("issues", []):
-            counts[bundle_name]["total"] += 1
-            if issue.get("fixable", False):
+        for issue in result.get('issues', []):
+            counts[bundle_name]['total'] += 1
+            if issue.get('fixable', False):
                 cat = categorize_fix(issue)
-                counts[bundle_name]["safe" if cat == "safe" else "risky"] += 1
+                counts[bundle_name]['safe' if cat == 'safe' else 'risky'] += 1
 
     return counts
 
@@ -38,35 +37,41 @@ def extract_components_for_tool_analysis(analysis_results: list[dict]) -> list[d
     """Extract components needing semantic tool coverage analysis by LLM."""
     components = []
     for result in analysis_results:
-        tc = result.get("analysis", {}).get("coverage", {}).get("tool_coverage", {})
-        if tc.get("needs_llm_analysis"):
-            comp = result.get("component", {})
-            components.append({
-                "file": comp.get("path", ""),
-                "type": comp.get("type", ""),
-                "bundle": result.get("bundle", ""),
-                "declared_tools": tc.get("declared_tools", [])
-            })
+        tc = result.get('analysis', {}).get('coverage', {}).get('tool_coverage', {})
+        if tc.get('needs_llm_analysis'):
+            comp = result.get('component', {})
+            components.append(
+                {
+                    'file': comp.get('path', ''),
+                    'type': comp.get('type', ''),
+                    'bundle': result.get('bundle', ''),
+                    'declared_tools': tc.get('declared_tools', []),
+                }
+            )
     return components
 
 
 def build_llm_review_items(categorized: dict) -> list[dict]:
     """Build list of items requiring LLM review."""
     items = []
-    for issue in categorized["risky"]:
-        items.append({
-            "type": issue.get("type"),
-            "file": issue.get("file"),
-            "description": issue.get("description", ""),
-            "action_required": "Review and confirm fix"
-        })
-    for issue in categorized["unfixable"]:
-        items.append({
-            "type": issue.get("type"),
-            "file": issue.get("file"),
-            "description": issue.get("description", ""),
-            "action_required": "Manual investigation required"
-        })
+    for issue in categorized['risky']:
+        items.append(
+            {
+                'type': issue.get('type'),
+                'file': issue.get('file'),
+                'description': issue.get('description', ''),
+                'action_required': 'Review and confirm fix',
+            }
+        )
+    for issue in categorized['unfixable']:
+        items.append(
+            {
+                'type': issue.get('type'),
+                'file': issue.get('file'),
+                'description': issue.get('description', ''),
+                'action_required': 'Manual investigation required',
+            }
+        )
     return items
 
 
@@ -80,35 +85,35 @@ def generate_report(scan_results: dict, analysis_results: list[dict], fix_result
     # Aggregate all issues
     all_issues = []
     for result in analysis_results:
-        all_issues.extend(result.get("issues", []))
+        all_issues.extend(result.get('issues', []))
 
     categorized = categorize_all_issues(all_issues)
     components_for_tool_analysis = extract_components_for_tool_analysis(analysis_results)
 
     report = {
-        "summary": {
-            "total_bundles": scan_results.get("total_bundles", 0),
-            "total_components": scan_results.get("total_components", 0),
-            "total_issues": len(all_issues),
-            "safe_fixes": len(categorized["safe"]),
-            "risky_fixes": len(categorized["risky"]),
-            "unfixable": len(categorized["unfixable"]),
-            "components_needing_tool_analysis": len(components_for_tool_analysis)
+        'summary': {
+            'total_bundles': scan_results.get('total_bundles', 0),
+            'total_components': scan_results.get('total_components', 0),
+            'total_issues': len(all_issues),
+            'safe_fixes': len(categorized['safe']),
+            'risky_fixes': len(categorized['risky']),
+            'unfixable': len(categorized['unfixable']),
+            'components_needing_tool_analysis': len(components_for_tool_analysis),
         },
-        "issues_by_type": count_issues_by_type(all_issues),
-        "issues_by_bundle": count_issues_by_bundle(analysis_results),
-        "safe_fixes": categorized["safe"],
-        "risky_fixes": categorized["risky"],
-        "unfixable_issues": categorized["unfixable"],
-        "components_for_tool_analysis": components_for_tool_analysis,
-        "llm_review_items": build_llm_review_items(categorized)
+        'issues_by_type': count_issues_by_type(all_issues),
+        'issues_by_bundle': count_issues_by_bundle(analysis_results),
+        'safe_fixes': categorized['safe'],
+        'risky_fixes': categorized['risky'],
+        'unfixable_issues': categorized['unfixable'],
+        'components_for_tool_analysis': components_for_tool_analysis,
+        'llm_review_items': build_llm_review_items(categorized),
     }
 
     if fix_results:
-        report["fix_results"] = {
-            "applied": len(fix_results.get("applied", [])),
-            "failed": len(fix_results.get("failed", [])),
-            "skipped": len(fix_results.get("skipped", []))
+        report['fix_results'] = {
+            'applied': len(fix_results.get('applied', [])),
+            'failed': len(fix_results.get('failed', [])),
+            'skipped': len(fix_results.get('skipped', [])),
         }
 
     return report

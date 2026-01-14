@@ -11,8 +11,10 @@ from pathlib import Path
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
 
 # Path to the script
-SCRIPTS_DIR = Path(__file__).parent.parent.parent.parent / "marketplace/bundles/plan-marshall/skills/script-executor/scripts"
-GENERATE_SCRIPT = SCRIPTS_DIR / "generate-executor.py"
+SCRIPTS_DIR = (
+    Path(__file__).parent.parent.parent.parent / 'marketplace/bundles/plan-marshall/skills/script-executor/scripts'
+)
+GENERATE_SCRIPT = SCRIPTS_DIR / 'generate-executor.py'
 
 
 def load_module():
@@ -21,6 +23,7 @@ def load_module():
         code = f.read()
 
     import types
+
     module = types.ModuleType('generate_executor')
     # Provide __file__ for the module
     module.__dict__['__file__'] = str(GENERATE_SCRIPT)
@@ -32,19 +35,20 @@ def load_module():
 # TESTS: generate_mappings_code
 # =============================================================================
 
+
 def test_generates_valid_python_dict_syntax():
     """Generated code is valid Python dict syntax."""
     module = load_module()
 
     mappings = {
-        "planning:manage-files": "/path/to/manage-files.py",
-        "builder:maven": "/path/to/maven.py",
+        'planning:manage-files': '/path/to/manage-files.py',
+        'builder:maven': '/path/to/maven.py',
     }
 
     code = module.generate_mappings_code(mappings)
 
     # Should be valid Python when wrapped in dict
-    full_code = f"SCRIPTS = {{\n{code}\n}}"
+    full_code = f'SCRIPTS = {{\n{code}\n}}'
     exec(full_code)  # Should not raise
 
 
@@ -53,9 +57,9 @@ def test_sorts_mappings_alphabetically():
     module = load_module()
 
     mappings = {
-        "z-bundle:skill": "/path/z.py",
-        "a-bundle:skill": "/path/a.py",
-        "m-bundle:skill": "/path/m.py",
+        'z-bundle:skill': '/path/z.py',
+        'a-bundle:skill': '/path/a.py',
+        'm-bundle:skill': '/path/m.py',
     }
 
     code = module.generate_mappings_code(mappings)
@@ -70,44 +74,46 @@ def test_sorts_mappings_alphabetically():
 # TESTS: compute_checksum
 # =============================================================================
 
+
 def test_same_mappings_same_checksum():
     """Same mappings produce same checksum."""
     module = load_module()
 
-    mappings = {"a:b": "/path/a.py", "c:d": "/path/c.py"}
+    mappings = {'a:b': '/path/a.py', 'c:d': '/path/c.py'}
 
     checksum1 = module.compute_checksum(mappings)
     checksum2 = module.compute_checksum(mappings)
 
-    assert checksum1 == checksum2, f"Checksums should be equal: {checksum1} != {checksum2}"
+    assert checksum1 == checksum2, f'Checksums should be equal: {checksum1} != {checksum2}'
 
 
 def test_different_mappings_different_checksum():
     """Different mappings produce different checksums."""
     module = load_module()
 
-    mappings1 = {"a:b": "/path/a.py"}
-    mappings2 = {"c:d": "/path/c.py"}
+    mappings1 = {'a:b': '/path/a.py'}
+    mappings2 = {'c:d': '/path/c.py'}
 
     checksum1 = module.compute_checksum(mappings1)
     checksum2 = module.compute_checksum(mappings2)
 
-    assert checksum1 != checksum2, f"Checksums should be different: {checksum1} == {checksum2}"
+    assert checksum1 != checksum2, f'Checksums should be different: {checksum1} == {checksum2}'
 
 
 def test_checksum_is_8_chars():
     """Checksum is truncated to 8 characters."""
     module = load_module()
 
-    mappings = {"a:b": "/path/a.py"}
+    mappings = {'a:b': '/path/a.py'}
     checksum = module.compute_checksum(mappings)
 
-    assert len(checksum) == 8, f"Expected 8 chars, got {len(checksum)}"
+    assert len(checksum) == 8, f'Expected 8 chars, got {len(checksum)}'
 
 
 # =============================================================================
 # TESTS: cleanup_old_logs
 # =============================================================================
+
 
 def test_cleanup_deletes_old_logs():
     """Cleanup deletes logs older than max_age_days."""
@@ -131,8 +137,8 @@ def test_cleanup_deletes_old_logs():
 
         try:
             deleted = module.cleanup_old_logs(max_age_days=7)
-            assert deleted == 1, f"Expected 1 deleted, got {deleted}"
-            assert not old_log.exists(), "Old log should be deleted"
+            assert deleted == 1, f'Expected 1 deleted, got {deleted}'
+            assert not old_log.exists(), 'Old log should be deleted'
         finally:
             module.LOGS_DIR = original
 
@@ -153,8 +159,8 @@ def test_cleanup_preserves_recent_logs():
 
         try:
             deleted = module.cleanup_old_logs(max_age_days=7)
-            assert deleted == 0, f"Expected 0 deleted, got {deleted}"
-            assert recent_log.exists(), "Recent log should be preserved"
+            assert deleted == 0, f'Expected 0 deleted, got {deleted}'
+            assert recent_log.exists(), 'Recent log should be preserved'
         finally:
             module.LOGS_DIR = original
 
@@ -163,15 +169,12 @@ def test_cleanup_preserves_recent_logs():
 # TESTS: Script execution
 # =============================================================================
 
+
 def test_help_output():
     """Script shows help with --help."""
-    result = subprocess.run(
-        ['python3', str(GENERATE_SCRIPT), '--help'],
-        capture_output=True,
-        text=True
-    )
+    result = subprocess.run(['python3', str(GENERATE_SCRIPT), '--help'], capture_output=True, text=True)
 
-    assert result.returncode == 0, f"Script failed: {result.stderr}"
+    assert result.returncode == 0, f'Script failed: {result.stderr}'
     assert 'generate' in result.stdout, "Missing 'generate' in help"
     assert 'verify' in result.stdout, "Missing 'verify' in help"
     assert 'drift' in result.stdout, "Missing 'drift' in help"
@@ -181,13 +184,9 @@ def test_help_output():
 
 def test_generate_help():
     """Generate subcommand has help."""
-    result = subprocess.run(
-        ['python3', str(GENERATE_SCRIPT), 'generate', '--help'],
-        capture_output=True,
-        text=True
-    )
+    result = subprocess.run(['python3', str(GENERATE_SCRIPT), 'generate', '--help'], capture_output=True, text=True)
 
-    assert result.returncode == 0, f"Script failed: {result.stderr}"
+    assert result.returncode == 0, f'Script failed: {result.stderr}'
     assert '--force' in result.stdout, "Missing '--force' in help"
     assert '--dry-run' in result.stdout, "Missing '--dry-run' in help"
 
@@ -196,71 +195,49 @@ def test_verify_requires_executor():
     """Verify fails when executor doesn't exist."""
     with tempfile.TemporaryDirectory() as tmp:
         # Run in temp directory where .plan doesn't exist
-        result = subprocess.run(
-            ['python3', str(GENERATE_SCRIPT), 'verify'],
-            capture_output=True,
-            text=True,
-            cwd=tmp
-        )
+        result = subprocess.run(['python3', str(GENERATE_SCRIPT), 'verify'], capture_output=True, text=True, cwd=tmp)
 
-        assert result.returncode == 1, f"Expected failure, got {result.returncode}"
+        assert result.returncode == 1, f'Expected failure, got {result.returncode}'
 
 
 def test_drift_requires_executor():
     """Drift fails when executor doesn't exist."""
     with tempfile.TemporaryDirectory() as tmp:
-        result = subprocess.run(
-            ['python3', str(GENERATE_SCRIPT), 'drift'],
-            capture_output=True,
-            text=True,
-            cwd=tmp
-        )
+        result = subprocess.run(['python3', str(GENERATE_SCRIPT), 'drift'], capture_output=True, text=True, cwd=tmp)
 
-        assert result.returncode == 1, f"Expected failure, got {result.returncode}"
+        assert result.returncode == 1, f'Expected failure, got {result.returncode}'
         assert 'Could not read executor mappings' in result.stderr
 
 
 def test_paths_requires_executor():
     """Paths fails when executor doesn't exist."""
     with tempfile.TemporaryDirectory() as tmp:
-        result = subprocess.run(
-            ['python3', str(GENERATE_SCRIPT), 'paths'],
-            capture_output=True,
-            text=True,
-            cwd=tmp
-        )
+        result = subprocess.run(['python3', str(GENERATE_SCRIPT), 'paths'], capture_output=True, text=True, cwd=tmp)
 
-        assert result.returncode == 1, f"Expected failure, got {result.returncode}"
+        assert result.returncode == 1, f'Expected failure, got {result.returncode}'
         assert 'Could not read executor mappings' in result.stderr
 
 
 def test_drift_help():
     """Drift subcommand has help."""
-    result = subprocess.run(
-        ['python3', str(GENERATE_SCRIPT), 'drift', '--help'],
-        capture_output=True,
-        text=True
-    )
+    result = subprocess.run(['python3', str(GENERATE_SCRIPT), 'drift', '--help'], capture_output=True, text=True)
 
-    assert result.returncode == 0, f"Script failed: {result.stderr}"
+    assert result.returncode == 0, f'Script failed: {result.stderr}'
     assert 'drift' in result.stdout.lower(), "Missing 'drift' in help"
 
 
 def test_paths_help():
     """Paths subcommand has help."""
-    result = subprocess.run(
-        ['python3', str(GENERATE_SCRIPT), 'paths', '--help'],
-        capture_output=True,
-        text=True
-    )
+    result = subprocess.run(['python3', str(GENERATE_SCRIPT), 'paths', '--help'], capture_output=True, text=True)
 
-    assert result.returncode == 0, f"Script failed: {result.stderr}"
+    assert result.returncode == 0, f'Script failed: {result.stderr}'
     assert 'paths' in result.stdout.lower(), "Missing 'paths' in help"
 
 
 # =============================================================================
 # TESTS: _resolve_plan_marshall_path
 # =============================================================================
+
 
 def test_resolve_finds_versioned_path():
     """Resolves path in versioned cache structure (any version)."""
@@ -270,15 +247,15 @@ def test_resolve_finds_versioned_path():
         base = Path(tmp)
 
         # Create versioned structure: plan-marshall/0.1-BETA/skills/...
-        versioned_path = base / "plan-marshall" / "0.1-BETA" / "skills" / "test-skill" / "scripts"
+        versioned_path = base / 'plan-marshall' / '0.1-BETA' / 'skills' / 'test-skill' / 'scripts'
         versioned_path.mkdir(parents=True)
-        script = versioned_path / "test.py"
-        script.write_text("# test")
+        script = versioned_path / 'test.py'
+        script.write_text('# test')
 
-        result = module._resolve_plan_marshall_path(base, "skills/test-skill/scripts/test.py")
+        result = module._resolve_plan_marshall_path(base, 'skills/test-skill/scripts/test.py')
 
-        assert result.exists(), f"Should find versioned path, got {result}"
-        assert "0.1-BETA" in str(result), f"Should include version dir, got {result}"
+        assert result.exists(), f'Should find versioned path, got {result}'
+        assert '0.1-BETA' in str(result), f'Should include version dir, got {result}'
 
 
 def test_resolve_finds_any_version():
@@ -289,14 +266,14 @@ def test_resolve_finds_any_version():
         base = Path(tmp)
 
         # Create structure with arbitrary version
-        versioned_path = base / "plan-marshall" / "2.5.0-RC1" / "skills" / "my-skill"
+        versioned_path = base / 'plan-marshall' / '2.5.0-RC1' / 'skills' / 'my-skill'
         versioned_path.mkdir(parents=True)
-        (versioned_path / "SKILL.md").write_text("# skill")
+        (versioned_path / 'SKILL.md').write_text('# skill')
 
-        result = module._resolve_plan_marshall_path(base, "skills/my-skill/SKILL.md")
+        result = module._resolve_plan_marshall_path(base, 'skills/my-skill/SKILL.md')
 
-        assert result.exists(), f"Should find path with any version, got {result}"
-        assert "2.5.0-RC1" in str(result)
+        assert result.exists(), f'Should find path with any version, got {result}'
+        assert '2.5.0-RC1' in str(result)
 
 
 def test_resolve_falls_back_to_non_versioned():
@@ -307,14 +284,14 @@ def test_resolve_falls_back_to_non_versioned():
         base = Path(tmp)
 
         # Create non-versioned structure: plan-marshall/skills/...
-        non_versioned = base / "plan-marshall" / "skills" / "test-skill"
+        non_versioned = base / 'plan-marshall' / 'skills' / 'test-skill'
         non_versioned.mkdir(parents=True)
-        (non_versioned / "SKILL.md").write_text("# skill")
+        (non_versioned / 'SKILL.md').write_text('# skill')
 
-        result = module._resolve_plan_marshall_path(base, "skills/test-skill/SKILL.md")
+        result = module._resolve_plan_marshall_path(base, 'skills/test-skill/SKILL.md')
 
-        assert result.exists(), f"Should find non-versioned path, got {result}"
-        assert "skills/test-skill/SKILL.md" in str(result)
+        assert result.exists(), f'Should find non-versioned path, got {result}'
+        assert 'skills/test-skill/SKILL.md' in str(result)
 
 
 def test_resolve_skips_hidden_dirs():
@@ -325,24 +302,25 @@ def test_resolve_skips_hidden_dirs():
         base = Path(tmp)
 
         # Create hidden dir with matching structure (should be skipped)
-        hidden = base / "plan-marshall" / ".git" / "skills" / "test"
+        hidden = base / 'plan-marshall' / '.git' / 'skills' / 'test'
         hidden.mkdir(parents=True)
-        (hidden / "script.py").write_text("# hidden")
+        (hidden / 'script.py').write_text('# hidden')
 
         # Create real versioned path
-        real = base / "plan-marshall" / "1.0.0" / "skills" / "test"
+        real = base / 'plan-marshall' / '1.0.0' / 'skills' / 'test'
         real.mkdir(parents=True)
-        (real / "script.py").write_text("# real")
+        (real / 'script.py').write_text('# real')
 
-        result = module._resolve_plan_marshall_path(base, "skills/test/script.py")
+        result = module._resolve_plan_marshall_path(base, 'skills/test/script.py')
 
-        assert ".git" not in str(result), f"Should skip hidden dirs, got {result}"
-        assert "1.0.0" in str(result), f"Should find real version, got {result}"
+        assert '.git' not in str(result), f'Should skip hidden dirs, got {result}'
+        assert '1.0.0' in str(result), f'Should find real version, got {result}'
 
 
 # =============================================================================
 # TESTS: discover_scripts_fallback
 # =============================================================================
+
 
 def test_discovers_scripts_from_directory_structure():
     """Fallback discovery finds scripts in expected structure - tests the actual marketplace."""
@@ -364,12 +342,12 @@ def test_discovers_scripts_from_directory_structure():
     if mappings:
         # Check format: all keys should be bundle:skill format
         for notation in mappings:
-            assert ':' in notation, f"Notation should be bundle:skill format, got {notation}"
+            assert ':' in notation, f'Notation should be bundle:skill format, got {notation}'
             parts = notation.split(':')
-            assert len(parts) == 2, f"Expected 2 parts in notation, got {parts}"
+            assert len(parts) == 2, f'Expected 2 parts in notation, got {parts}'
         # Check values are paths
         for path in mappings.values():
-            assert path.endswith('.py'), f"Script path should end with .py, got {path}"
+            assert path.endswith('.py'), f'Script path should end with .py, got {path}'
     # If no mappings found, that's also acceptable (marketplace might not exist)
     # The function works correctly - just nothing to discover
 
@@ -394,7 +372,7 @@ def test_skips_test_files():
 
         # Should find the real script, not the test
         if 'bundle:skill' in mappings:
-            assert 'test_' not in mappings['bundle:skill'], "Should not include test files"
+            assert 'test_' not in mappings['bundle:skill'], 'Should not include test files'
 
 
 def test_skips_private_modules():
@@ -419,6 +397,6 @@ def test_skips_private_modules():
         # Should find the public script, not the private ones
         if 'bundle:skill' in mappings:
             path = mappings['bundle:skill']
-            assert '_internal' not in path, "Should not include _internal.py"
-            assert '_helper' not in path, "Should not include _helper.py"
-            assert 'main.py' in path, "Should include main.py"
+            assert '_internal' not in path, 'Should not include _internal.py'
+            assert '_helper' not in path, 'Should not include _helper.py'
+            assert 'main.py' in path, 'Should include main.py'

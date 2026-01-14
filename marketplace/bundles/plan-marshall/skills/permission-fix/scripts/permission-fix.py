@@ -24,9 +24,9 @@ EXIT_ERROR = 1
 
 # Default permissions for plan directory and plugin cache
 DEFAULT_PERMISSIONS = [
-    "Edit(.plan/**)",
-    "Write(.plan/**)",
-    "Read(~/.claude/plugins/cache/**)",  # Skills reference files via relative paths
+    'Edit(.plan/**)',
+    'Write(.plan/**)',
+    'Read(~/.claude/plugins/cache/**)',  # Skills reference files via relative paths
 ]
 
 # Timestamp patterns for consolidation
@@ -38,26 +38,27 @@ DATE_PATTERN = re.compile(r'^(\w+)\((.*/)?(.+)-(\d{4}-\d{2}-\d{2})\.(\w+)\)$')
 # Shared Utilities
 # =============================================================================
 
+
 def load_settings(path: str) -> tuple[dict, str | None]:
     """Load settings from a JSON file."""
     settings_path = Path(path)
 
     if not settings_path.exists():
-        return {}, f"Settings file not found: {path}"
+        return {}, f'Settings file not found: {path}'
 
     try:
         with open(settings_path) as f:
             data = json.load(f)
 
-        if "permissions" not in data:
-            data["permissions"] = {}
-        for key in ["allow", "deny", "ask"]:
-            if key not in data["permissions"]:
-                data["permissions"][key] = []
+        if 'permissions' not in data:
+            data['permissions'] = {}
+        for key in ['allow', 'deny', 'ask']:
+            if key not in data['permissions']:
+                data['permissions'][key] = []
 
         return data, None
     except json.JSONDecodeError as e:
-        return {}, f"Invalid JSON in {path}: {e}"
+        return {}, f'Invalid JSON in {path}: {e}'
 
 
 def save_settings(path: str, settings: dict) -> bool:
@@ -73,7 +74,7 @@ def save_settings(path: str, settings: dict) -> bool:
 
 def get_global_settings_path() -> Path:
     """Get path to global settings file."""
-    return Path.home() / ".claude" / "settings.json"
+    return Path.home() / '.claude' / 'settings.json'
 
 
 def get_project_settings_path_for_write(project_dir: Path | None = None) -> Path:
@@ -81,34 +82,34 @@ def get_project_settings_path_for_write(project_dir: Path | None = None) -> Path
     if project_dir is None:
         project_dir = Path.cwd()
 
-    settings_json = project_dir / ".claude" / "settings.json"
+    settings_json = project_dir / '.claude' / 'settings.json'
     if settings_json.exists():
         return settings_json
 
-    return project_dir / ".claude" / "settings.local.json"
+    return project_dir / '.claude' / 'settings.local.json'
 
 
 def load_settings_path(path: Path) -> dict[str, Any]:
     """Load settings from a Path."""
     if not path.exists():
-        return {"permissions": {"allow": [], "deny": [], "ask": []}}
+        return {'permissions': {'allow': [], 'deny': [], 'ask': []}}
 
     try:
         with open(path) as f:
             data: dict[str, Any] = json.load(f)
-        if "permissions" not in data:
-            data["permissions"] = {}
-        for key in ["allow", "deny", "ask"]:
-            if key not in data["permissions"]:
-                data["permissions"][key] = []
+        if 'permissions' not in data:
+            data['permissions'] = {}
+        for key in ['allow', 'deny', 'ask']:
+            if key not in data['permissions']:
+                data['permissions'][key] = []
         return data
     except json.JSONDecodeError as e:
-        return {"error": f"Invalid JSON: {e}", "permissions": {"allow": [], "deny": [], "ask": []}}
+        return {'error': f'Invalid JSON: {e}', 'permissions': {'allow': [], 'deny': [], 'ask': []}}
 
 
 def get_settings_path(target: str) -> Path:
     """Get settings path based on target."""
-    if target == "global":
+    if target == 'global':
         return get_global_settings_path()
     return get_project_settings_path_for_write()
 
@@ -116,6 +117,7 @@ def get_settings_path(target: str) -> Path:
 # =============================================================================
 # apply-fixes subcommand
 # =============================================================================
+
 
 def normalize_path_perm(permission: str) -> tuple[str, bool]:
     """Normalize a permission path."""
@@ -128,7 +130,7 @@ def normalize_path_perm(permission: str) -> tuple[str, bool]:
     trailing = match.group(3)
 
     if trailing and not path.endswith('*'):
-        return f"{perm_type}({path})", True
+        return f'{perm_type}({path})', True
 
     return permission, False
 
@@ -191,47 +193,47 @@ def cmd_apply_fixes(args) -> int:
     settings_path = resolve_settings_arg(args)
     settings, error = load_settings(settings_path)
     if error:
-        print(json.dumps({"error": error}))
+        print(json.dumps({'error': error}))
         return EXIT_ERROR
 
     total_duplicates = 0
     total_paths_fixed = 0
     was_sorted = False
 
-    for key in ["allow", "deny", "ask"]:
-        perm_list = settings.get("permissions", {}).get(key, [])
+    for key in ['allow', 'deny', 'ask']:
+        perm_list = settings.get('permissions', {}).get(key, [])
         processed, paths_fixed, dups, sorted_flag = process_permission_list(perm_list)
 
-        settings["permissions"][key] = processed
+        settings['permissions'][key] = processed
         total_paths_fixed += paths_fixed
         total_duplicates += dups
         was_sorted = was_sorted or sorted_flag
 
     defaults_added = []
-    allow_list = settings["permissions"]["allow"]
+    allow_list = settings['permissions']['allow']
     defaults_added = add_default_permissions(allow_list)
     if defaults_added:
-        settings["permissions"]["allow"] = sorted(allow_list)
+        settings['permissions']['allow'] = sorted(allow_list)
         was_sorted = True
 
     changes_made = total_duplicates > 0 or total_paths_fixed > 0 or len(defaults_added) > 0 or was_sorted
 
     result = {
-        "duplicates_removed": total_duplicates,
-        "paths_fixed": total_paths_fixed,
-        "defaults_added": defaults_added,
-        "sorted": was_sorted,
-        "changes_made": changes_made,
-        "dry_run": args.dry_run,
-        "settings_path": settings_path
+        'duplicates_removed': total_duplicates,
+        'paths_fixed': total_paths_fixed,
+        'defaults_added': defaults_added,
+        'sorted': was_sorted,
+        'changes_made': changes_made,
+        'dry_run': args.dry_run,
+        'settings_path': settings_path,
     }
 
     if not args.dry_run and changes_made:
-        result["applied"] = save_settings(settings_path, settings)
-        if not result["applied"]:
-            result["error"] = "Failed to save settings"
+        result['applied'] = save_settings(settings_path, settings)
+        if not result['applied']:
+            result['error'] = 'Failed to save settings'
     else:
-        result["applied"] = False
+        result['applied'] = False
 
     print(json.dumps(result, indent=2))
     return EXIT_SUCCESS
@@ -241,17 +243,18 @@ def cmd_apply_fixes(args) -> int:
 # add subcommand
 # =============================================================================
 
+
 def cmd_add(args) -> int:
     """Handle add subcommand."""
     settings_path = get_settings_path(args.target)
     settings = load_settings_path(settings_path)
-    allow_list = settings["permissions"]["allow"]
+    allow_list = settings['permissions']['allow']
 
-    result: dict[str, Any] = {"settings_file": str(settings_path)}
+    result: dict[str, Any] = {'settings_file': str(settings_path)}
 
     if args.permission in allow_list:
-        result["success"] = True
-        result["action"] = "already_exists"
+        result['success'] = True
+        result['action'] = 'already_exists'
         print(json.dumps(result, indent=2))
         return EXIT_SUCCESS
 
@@ -259,58 +262,60 @@ def cmd_add(args) -> int:
     allow_list.sort()
 
     if save_settings(str(settings_path), settings):
-        result["success"] = True
-        result["action"] = "added"
+        result['success'] = True
+        result['action'] = 'added'
     else:
-        result["success"] = False
-        result["error"] = "Failed to save settings"
+        result['success'] = False
+        result['error'] = 'Failed to save settings'
 
     print(json.dumps(result, indent=2))
-    return EXIT_SUCCESS if result.get("success") else EXIT_ERROR
+    return EXIT_SUCCESS if result.get('success') else EXIT_ERROR
 
 
 # =============================================================================
 # remove subcommand
 # =============================================================================
 
+
 def cmd_remove(args) -> int:
     """Handle remove subcommand."""
     settings_path = get_settings_path(args.target)
     settings = load_settings_path(settings_path)
-    allow_list = settings["permissions"]["allow"]
+    allow_list = settings['permissions']['allow']
 
-    result: dict[str, Any] = {"settings_file": str(settings_path)}
+    result: dict[str, Any] = {'settings_file': str(settings_path)}
 
     if args.permission not in allow_list:
-        result["success"] = True
-        result["action"] = "not_found"
+        result['success'] = True
+        result['action'] = 'not_found'
         print(json.dumps(result, indent=2))
         return EXIT_SUCCESS
 
     allow_list.remove(args.permission)
 
     if save_settings(str(settings_path), settings):
-        result["success"] = True
-        result["action"] = "removed"
+        result['success'] = True
+        result['action'] = 'removed'
     else:
-        result["success"] = False
-        result["error"] = "Failed to save settings"
+        result['success'] = False
+        result['error'] = 'Failed to save settings'
 
     print(json.dumps(result, indent=2))
-    return EXIT_SUCCESS if result.get("success") else EXIT_ERROR
+    return EXIT_SUCCESS if result.get('success') else EXIT_ERROR
 
 
 # =============================================================================
 # ensure subcommand
 # =============================================================================
 
+
 def cmd_ensure(args) -> int:
     """Handle ensure subcommand."""
     settings_path = get_settings_path(args.target)
     settings = load_settings_path(settings_path)
-    allow_list = settings["permissions"]["allow"]
+    allow_list = settings['permissions']['allow']
 
-    permissions = [p.strip() for p in args.permissions.split(",")]
+    permissions = [p.strip() for p in args.permissions.split(',')]
 
     added = []
     already_exists = []
@@ -323,30 +328,31 @@ def cmd_ensure(args) -> int:
             added.append(perm)
 
     result = {
-        "settings_file": str(settings_path),
-        "added": added,
-        "already_exists": already_exists,
-        "added_count": len(added),
-        "total_permissions": len(allow_list)
+        'settings_file': str(settings_path),
+        'added': added,
+        'already_exists': already_exists,
+        'added_count': len(added),
+        'total_permissions': len(allow_list),
     }
 
     if added:
         allow_list.sort()
         if save_settings(str(settings_path), settings):
-            result["success"] = True
+            result['success'] = True
         else:
-            result["success"] = False
-            result["error"] = "Failed to save settings"
+            result['success'] = False
+            result['error'] = 'Failed to save settings'
     else:
-        result["success"] = True
+        result['success'] = True
 
     print(json.dumps(result, indent=2))
-    return EXIT_SUCCESS if result.get("success") else EXIT_ERROR
+    return EXIT_SUCCESS if result.get('success') else EXIT_ERROR
 
 
 # =============================================================================
 # consolidate subcommand
 # =============================================================================
+
 
 def parse_timestamped_permission(permission: str) -> dict | None:
     """Parse a permission to check if it contains a timestamp pattern."""
@@ -354,24 +360,24 @@ def parse_timestamped_permission(permission: str) -> dict | None:
     if match:
         perm_type, path_prefix, base_name, timestamp, extension = match.groups()
         return {
-            "permission": permission,
-            "type": perm_type,
-            "path_prefix": path_prefix or "",
-            "base_name": base_name,
-            "timestamp": timestamp,
-            "extension": extension
+            'permission': permission,
+            'type': perm_type,
+            'path_prefix': path_prefix or '',
+            'base_name': base_name,
+            'timestamp': timestamp,
+            'extension': extension,
         }
 
     match = DATE_PATTERN.match(permission)
     if match:
         perm_type, path_prefix, base_name, timestamp, extension = match.groups()
         return {
-            "permission": permission,
-            "type": perm_type,
-            "path_prefix": path_prefix or "",
-            "base_name": base_name,
-            "timestamp": timestamp,
-            "extension": extension
+            'permission': permission,
+            'type': perm_type,
+            'path_prefix': path_prefix or '',
+            'base_name': base_name,
+            'timestamp': timestamp,
+            'extension': extension,
         }
 
     return None
@@ -380,19 +386,19 @@ def parse_timestamped_permission(permission: str) -> dict | None:
 def generate_wildcard(parsed_permissions: list[dict]) -> str:
     """Generate a wildcard pattern from a list of parsed timestamped permissions."""
     if not parsed_permissions:
-        return ""
+        return ''
 
     first = parsed_permissions[0]
-    perm_type = first["type"]
-    base_name = first["base_name"]
-    extension = first["extension"]
-    path_prefixes = {p["path_prefix"] for p in parsed_permissions}
+    perm_type = first['type']
+    base_name = first['base_name']
+    extension = first['extension']
+    path_prefixes = {p['path_prefix'] for p in parsed_permissions}
 
     if len(path_prefixes) == 1:
-        path_prefix = first["path_prefix"]
-        return f"{perm_type}({path_prefix}{base_name}-*.{extension})"
+        path_prefix = first['path_prefix']
+        return f'{perm_type}({path_prefix}{base_name}-*.{extension})'
 
-    return f"{perm_type}(**/{base_name}-*.{extension})"
+    return f'{perm_type}(**/{base_name}-*.{extension})'
 
 
 def cmd_consolidate(args) -> int:
@@ -400,17 +406,17 @@ def cmd_consolidate(args) -> int:
     settings_path = resolve_settings_arg(args)
     settings, error = load_settings(settings_path)
     if error:
-        print(json.dumps({"error": error}))
+        print(json.dumps({'error': error}))
         return EXIT_ERROR
 
-    allow_list = settings.get("permissions", {}).get("allow", [])
+    allow_list = settings.get('permissions', {}).get('allow', [])
     timestamped_groups = defaultdict(list)
     non_timestamped = []
 
     for permission in allow_list:
         parsed = parse_timestamped_permission(permission)
         if parsed:
-            key = (parsed["type"], parsed["base_name"], parsed["extension"])
+            key = (parsed['type'], parsed['base_name'], parsed['extension'])
             timestamped_groups[key].append(parsed)
         else:
             non_timestamped.append(permission)
@@ -422,21 +428,18 @@ def cmd_consolidate(args) -> int:
         if len(group) >= 1:
             wildcard = generate_wildcard(group)
             wildcards_to_add.append(wildcard)
-            permissions_to_remove.extend([p["permission"] for p in group])
+            permissions_to_remove.extend([p['permission'] for p in group])
 
     result = {
-        "consolidated": len(permissions_to_remove),
-        "removed": permissions_to_remove,
-        "wildcards_added": wildcards_to_add,
-        "changes": {
-            "timestamped_groups_found": len(timestamped_groups),
-            "non_timestamped_kept": len(non_timestamped)
-        },
-        "dry_run": args.dry_run,
-        "settings_path": settings_path
+        'consolidated': len(permissions_to_remove),
+        'removed': permissions_to_remove,
+        'wildcards_added': wildcards_to_add,
+        'changes': {'timestamped_groups_found': len(timestamped_groups), 'non_timestamped_kept': len(non_timestamped)},
+        'dry_run': args.dry_run,
+        'settings_path': settings_path,
     }
 
-    if not args.dry_run and result["consolidated"] > 0:
+    if not args.dry_run and result['consolidated'] > 0:
         for perm in permissions_to_remove:
             if perm in allow_list:
                 allow_list.remove(perm)
@@ -446,12 +449,12 @@ def cmd_consolidate(args) -> int:
         allow_list.sort()
 
         if save_settings(settings_path, settings):
-            result["applied"] = True
+            result['applied'] = True
         else:
-            result["error"] = "Failed to save settings"
-            result["applied"] = False
+            result['error'] = 'Failed to save settings'
+            result['applied'] = False
     else:
-        result["applied"] = False
+        result['applied'] = False
 
     print(json.dumps(result, indent=2))
     return EXIT_SUCCESS
@@ -461,6 +464,7 @@ def cmd_consolidate(args) -> int:
 # ensure-wildcards subcommand
 # =============================================================================
 
+
 def has_skills(bundle: dict) -> bool:
     """Check if a bundle has skills defined.
 
@@ -468,8 +472,8 @@ def has_skills(bundle: dict) -> bool:
     - 'skills' key exists and is a non-empty list, OR
     - Neither 'skills' nor 'commands' keys exist (assume bundle has both)
     """
-    skills = bundle.get("skills")
-    commands = bundle.get("commands")
+    skills = bundle.get('skills')
+    commands = bundle.get('commands')
 
     # If skills key exists, check if it's a non-empty list
     if skills is not None:
@@ -490,8 +494,8 @@ def has_commands(bundle: dict) -> bool:
     - 'commands' key exists and is a non-empty list, OR
     - Neither 'skills' nor 'commands' keys exist (assume bundle has both)
     """
-    skills = bundle.get("skills")
-    commands = bundle.get("commands")
+    skills = bundle.get('skills')
+    commands = bundle.get('commands')
 
     # If commands key exists, check if it's a non-empty list
     if commands is not None:
@@ -516,17 +520,17 @@ def generate_required_wildcards(marketplace: dict) -> list[str]:
     """
     wildcards = []
     # Support both 'bundles' (inventory output) and 'plugins' (marketplace.json)
-    bundles = marketplace.get("bundles", marketplace.get("plugins", []))
+    bundles = marketplace.get('bundles', marketplace.get('plugins', []))
 
     for bundle in bundles:
-        bundle_name = bundle.get("name", "")
+        bundle_name = bundle.get('name', '')
         if not bundle_name:
             continue
 
         if has_skills(bundle):
-            wildcards.append(f"Skill({bundle_name}:*)")
+            wildcards.append(f'Skill({bundle_name}:*)')
         if has_commands(bundle):
-            wildcards.append(f"SlashCommand(/{bundle_name}:*)")
+            wildcards.append(f'SlashCommand(/{bundle_name}:*)')
 
     return wildcards
 
@@ -535,22 +539,22 @@ def cmd_ensure_wildcards(args) -> int:
     """Handle ensure-wildcards subcommand."""
     settings, error = load_settings(args.settings)
     if error:
-        print(json.dumps({"error": error}))
+        print(json.dumps({'error': error}))
         return EXIT_ERROR
 
     marketplace_path = Path(args.marketplace_json)
     if not marketplace_path.exists():
-        print(json.dumps({"error": f"Marketplace file not found: {args.marketplace_json}"}))
+        print(json.dumps({'error': f'Marketplace file not found: {args.marketplace_json}'}))
         return EXIT_ERROR
 
     try:
         with open(marketplace_path) as f:
             marketplace = json.load(f)
     except json.JSONDecodeError as e:
-        print(json.dumps({"error": f"Invalid JSON in {args.marketplace_json}: {e}"}))
+        print(json.dumps({'error': f'Invalid JSON in {args.marketplace_json}: {e}'}))
         return EXIT_ERROR
 
-    allow_list = settings.get("permissions", {}).get("allow", [])
+    allow_list = settings.get('permissions', {}).get('allow', [])
     allow_set = set(allow_list)
     required_wildcards = generate_required_wildcards(marketplace)
 
@@ -564,16 +568,16 @@ def cmd_ensure_wildcards(args) -> int:
             added.append(wildcard)
 
     # Count bundles from either 'bundles' or 'plugins' key
-    bundles = marketplace.get("bundles", marketplace.get("plugins", []))
+    bundles = marketplace.get('bundles', marketplace.get('plugins', []))
 
     result = {
-        "added": added,
-        "already_present": already_present,
-        "total": len(required_wildcards),
-        "bundles_analyzed": len(bundles),
-        "dry_run": args.dry_run,
-        "settings_path": args.settings,
-        "marketplace_path": args.marketplace_json
+        'added': added,
+        'already_present': already_present,
+        'total': len(required_wildcards),
+        'bundles_analyzed': len(bundles),
+        'dry_run': args.dry_run,
+        'settings_path': args.settings,
+        'marketplace_path': args.marketplace_json,
     }
 
     if not args.dry_run and len(added) > 0:
@@ -583,12 +587,12 @@ def cmd_ensure_wildcards(args) -> int:
         allow_list.sort()
 
         if save_settings(args.settings, settings):
-            result["applied"] = True
+            result['applied'] = True
         else:
-            result["error"] = "Failed to save settings"
-            result["applied"] = False
+            result['error'] = 'Failed to save settings'
+            result['applied'] = False
     else:
-        result["applied"] = False
+        result['applied'] = False
 
     print(json.dumps(result, indent=2))
     return EXIT_SUCCESS
@@ -598,10 +602,9 @@ def cmd_ensure_wildcards(args) -> int:
 # Main
 # =============================================================================
 
+
 def main():
-    parser = argparse.ArgumentParser(
-        description='Permission fix - write operations for Claude Code settings'
-    )
+    parser = argparse.ArgumentParser(description='Permission fix - write operations for Claude Code settings')
     subparsers = parser.add_subparsers(dest='command', help='Operation to perform')
 
     # apply-fixes subcommand
@@ -615,22 +618,25 @@ def main():
     # add subcommand
     p_add = subparsers.add_parser('add', help='Add a permission to settings')
     p_add.add_argument('--permission', required=True, help='Permission to add')
-    p_add.add_argument('--target', default='project', choices=['global', 'project'],
-                       help='Target settings file (default: project)')
+    p_add.add_argument(
+        '--target', default='project', choices=['global', 'project'], help='Target settings file (default: project)'
+    )
     p_add.set_defaults(func=cmd_add)
 
     # remove subcommand
     p_rem = subparsers.add_parser('remove', help='Remove a permission from settings')
     p_rem.add_argument('--permission', required=True, help='Permission to remove')
-    p_rem.add_argument('--target', default='project', choices=['global', 'project'],
-                       help='Target settings file (default: project)')
+    p_rem.add_argument(
+        '--target', default='project', choices=['global', 'project'], help='Target settings file (default: project)'
+    )
     p_rem.set_defaults(func=cmd_remove)
 
     # ensure subcommand
     p_ens = subparsers.add_parser('ensure', help='Ensure multiple permissions exist')
     p_ens.add_argument('--permissions', required=True, help='Comma-separated permissions to ensure')
-    p_ens.add_argument('--target', default='global', choices=['global', 'project'],
-                       help='Target settings file (default: global)')
+    p_ens.add_argument(
+        '--target', default='global', choices=['global', 'project'], help='Target settings file (default: global)'
+    )
     p_ens.set_defaults(func=cmd_ensure)
 
     # consolidate subcommand

@@ -33,10 +33,7 @@ def check_sections(body: str) -> dict:
         if not any(section in s for s in sections_found):
             missing_sections.append(section)
 
-    return {
-        'sections_found': len(headers),
-        'missing_sections': missing_sections
-    }
+    return {'sections_found': len(headers), 'missing_sections': missing_sections}
 
 
 def check_bloat(body: str, total_lines: int) -> list:
@@ -44,19 +41,23 @@ def check_bloat(body: str, total_lines: int) -> list:
     issues = []
 
     if total_lines > 800:
-        issues.append({
-            'type': 'bloat',
-            'severity': 'high',
-            'message': f'Component has {total_lines} lines (>800 threshold)',
-            'location': 'entire file'
-        })
+        issues.append(
+            {
+                'type': 'bloat',
+                'severity': 'high',
+                'message': f'Component has {total_lines} lines (>800 threshold)',
+                'location': 'entire file',
+            }
+        )
     elif total_lines > 500:
-        issues.append({
-            'type': 'bloat',
-            'severity': 'medium',
-            'message': f'Component has {total_lines} lines (approaching 800 threshold)',
-            'location': 'entire file'
-        })
+        issues.append(
+            {
+                'type': 'bloat',
+                'severity': 'medium',
+                'message': f'Component has {total_lines} lines (approaching 800 threshold)',
+                'location': 'entire file',
+            }
+        )
 
     # Check for duplicate content patterns
     paragraphs = re.split(r'\n\n+', body)
@@ -65,12 +66,14 @@ def check_bloat(body: str, total_lines: int) -> list:
         para_clean = ' '.join(para.split()).lower()
         if len(para_clean) > 100:  # Only check substantial paragraphs
             if para_clean in seen_content:
-                issues.append({
-                    'type': 'duplicate-content',
-                    'severity': 'medium',
-                    'message': 'Duplicate paragraph detected',
-                    'location': f'paragraph {i+1}'
-                })
+                issues.append(
+                    {
+                        'type': 'duplicate-content',
+                        'severity': 'medium',
+                        'message': 'Duplicate paragraph detected',
+                        'location': f'paragraph {i + 1}',
+                    }
+                )
             seen_content.add(para_clean)
 
     return issues
@@ -87,12 +90,14 @@ def check_tool_compliance(frontmatter: dict | None, body: str) -> list:
 
     # Check for array syntax
     if isinstance(tools_raw, dict) and tools_raw.get('is_array'):
-        issues.append({
-            'type': 'tool-compliance',
-            'severity': 'medium',
-            'message': 'Tools use array syntax instead of comma-separated',
-            'location': 'frontmatter'
-        })
+        issues.append(
+            {
+                'type': 'tool-compliance',
+                'severity': 'medium',
+                'message': 'Tools use array syntax instead of comma-separated',
+                'location': 'frontmatter',
+            }
+        )
         tools_str = tools_raw.get('value', '')[1:-1]  # Remove []
     else:
         tools_str = str(tools_raw)
@@ -101,12 +106,14 @@ def check_tool_compliance(frontmatter: dict | None, body: str) -> list:
 
     # Rule 6: Agents should not use Task tool
     if 'Task' in tools:
-        issues.append({
-            'type': 'rule-6-violation',
-            'severity': 'high',
-            'message': 'Agent declares Task tool (Rule 6 violation)',
-            'location': 'frontmatter tools'
-        })
+        issues.append(
+            {
+                'type': 'rule-6-violation',
+                'severity': 'high',
+                'message': 'Agent declares Task tool (Rule 6 violation)',
+                'location': 'frontmatter tools',
+            }
+        )
 
     return issues
 
@@ -163,10 +170,7 @@ def analyze_component(component_path: str) -> dict:
     path = Path(component_path)
 
     if not path.exists():
-        return {
-            'error': f'File not found: {component_path}',
-            'component_path': component_path
-        }
+        return {'error': f'File not found: {component_path}', 'component_path': component_path}
 
     content = path.read_text()
     lines = content.split('\n')
@@ -187,12 +191,14 @@ def analyze_component(component_path: str) -> dict:
     issues = []
 
     if frontmatter is None:
-        issues.append({
-            'type': 'missing-frontmatter',
-            'severity': 'high',
-            'message': 'Component is missing YAML frontmatter',
-            'location': 'file start'
-        })
+        issues.append(
+            {
+                'type': 'missing-frontmatter',
+                'severity': 'high',
+                'message': 'Component is missing YAML frontmatter',
+                'location': 'file start',
+            }
+        )
 
     section_info = check_sections(body)
     issues.extend(check_bloat(body, total_lines))
@@ -211,8 +217,8 @@ def analyze_component(component_path: str) -> dict:
             'total_lines': total_lines,
             'frontmatter_lines': fm_lines,
             'body_lines': total_lines - fm_lines,
-            'sections': section_info['sections_found']
-        }
+            'sections': section_info['sections_found'],
+        },
     }
 
 

@@ -19,7 +19,7 @@ from _config_detection import detect_domains
 def cmd_init(args) -> int:
     """Handle init command."""
     if is_initialized() and not getattr(args, 'force', False):
-        return error_exit("marshal.json already exists. Use --force to overwrite.")
+        return error_exit('marshal.json already exists. Use --force to overwrite.')
 
     config = get_default_config()
 
@@ -37,7 +37,4 @@ def cmd_init(args) -> int:
         config['skill_domains'] = skill_domains
 
     save_config(config)
-    return success_exit({
-        "created": str(MARSHAL_PATH),
-        "domains_detected": detected_keys
-    })
+    return success_exit({'created': str(MARSHAL_PATH), 'domains_detected': detected_keys})

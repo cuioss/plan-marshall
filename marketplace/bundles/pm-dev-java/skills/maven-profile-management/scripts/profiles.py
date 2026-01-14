@@ -20,8 +20,8 @@ from _architecture_core import (  # type: ignore[import-not-found]
 from run_config import ext_defaults_get  # type: ignore[import-not-found]
 
 # Extension defaults keys for profile configuration
-EXT_KEY_PROFILES_SKIP = "build.maven.profiles.skip"
-EXT_KEY_PROFILES_MAP = "build.maven.profiles.map.canonical"
+EXT_KEY_PROFILES_SKIP = 'build.maven.profiles.skip'
+EXT_KEY_PROFILES_MAP = 'build.maven.profiles.map.canonical'
 
 
 # =============================================================================
@@ -30,44 +30,44 @@ EXT_KEY_PROFILES_MAP = "build.maven.profiles.map.canonical"
 
 # Patterns for automatic profile classification
 PROFILE_PATTERNS = {
-    "integration-tests": [
-        r"(?:integration|it|e2e|acceptance)[-_]?tests?",
-        r"local[-_]?integration",
-        r"failsafe",
+    'integration-tests': [
+        r'(?:integration|it|e2e|acceptance)[-_]?tests?',
+        r'local[-_]?integration',
+        r'failsafe',
     ],
-    "coverage": [
-        r"jacoco",
-        r"cobertura",
-        r"coverage",
-        r"istanbul",
+    'coverage': [
+        r'jacoco',
+        r'cobertura',
+        r'coverage',
+        r'istanbul',
     ],
-    "benchmark": [
-        r"jmh",
-        r"perf(?:ormance)?",
-        r"bench(?:mark)?",
-        r"stress",
+    'benchmark': [
+        r'jmh',
+        r'perf(?:ormance)?',
+        r'bench(?:mark)?',
+        r'stress',
     ],
-    "quality-gate": [
-        r"pre[-_]?commit",
-        r"checkstyle",
-        r"spotbugs",
-        r"pmd",
-        r"quality",
-        r"lint",
+    'quality-gate': [
+        r'pre[-_]?commit',
+        r'checkstyle',
+        r'spotbugs',
+        r'pmd',
+        r'quality',
+        r'lint',
     ],
 }
 
 # Profiles that should be skipped (internal/release/config)
 SKIP_PATTERNS = [
-    r"apache[-_]?release",
-    r"skip[-_]?(?:unit[-_]?)?tests?",
-    r"use[-_]?(?:apache[-_]?)?snapshots?",
-    r"release",
-    r"gpg",
-    r"deploy",
-    r"sign",
-    r"sonatype",
-    r"ossrh",
+    r'apache[-_]?release',
+    r'skip[-_]?(?:unit[-_]?)?tests?',
+    r'use[-_]?(?:apache[-_]?)?snapshots?',
+    r'release',
+    r'gpg',
+    r'deploy',
+    r'sign',
+    r'sonatype',
+    r'ossrh',
 ]
 
 
@@ -123,6 +123,7 @@ def get_configured_mapped_profiles(project_dir: str = '.') -> set[str]:
 # API Functions
 # =============================================================================
 
+
 def list_profiles(project_dir: str = '.', module_name: str | None = None) -> dict[str, Any]:
     """List Maven profiles from derived data.
 
@@ -134,13 +135,9 @@ def list_profiles(project_dir: str = '.', module_name: str | None = None) -> dic
         Dict with profiles grouped by module
     """
     derived = load_derived_data(project_dir)
-    modules = derived.get("modules", {})
+    modules = derived.get('modules', {})
 
-    result: dict[str, Any] = {
-        "modules": [],
-        "total_profiles": 0,
-        "unmatched_count": 0
-    }
+    result: dict[str, Any] = {'modules': [], 'total_profiles': 0, 'unmatched_count': 0}
 
     for name, data in modules.items():
         # Filter by module if specified
@@ -148,37 +145,30 @@ def list_profiles(project_dir: str = '.', module_name: str | None = None) -> dic
             continue
 
         # Only process Maven modules
-        build_systems = data.get("build_systems", [])
-        if "maven" not in build_systems:
+        build_systems = data.get('build_systems', [])
+        if 'maven' not in build_systems:
             continue
 
-        metadata = data.get("metadata", {})
-        profiles = metadata.get("profiles", [])
+        metadata = data.get('metadata', {})
+        profiles = metadata.get('profiles', [])
 
         if not profiles:
             continue
 
-        module_info: dict[str, Any] = {
-            "name": name,
-            "profiles": []
-        }
+        module_info: dict[str, Any] = {'name': name, 'profiles': []}
 
         for profile in profiles:
-            profile_id = profile.get("id", "")
-            canonical = profile.get("canonical", "")
-            is_unmatched = canonical == "NO-MATCH-FOUND"
+            profile_id = profile.get('id', '')
+            canonical = profile.get('canonical', '')
+            is_unmatched = canonical == 'NO-MATCH-FOUND'
 
-            module_info["profiles"].append({
-                "id": profile_id,
-                "canonical": canonical,
-                "unmatched": is_unmatched
-            })
+            module_info['profiles'].append({'id': profile_id, 'canonical': canonical, 'unmatched': is_unmatched})
 
-            result["total_profiles"] += 1
+            result['total_profiles'] += 1
             if is_unmatched:
-                result["unmatched_count"] += 1
+                result['unmatched_count'] += 1
 
-        result["modules"].append(module_info)
+        result['modules'].append(module_info)
 
     return result
 
@@ -198,10 +188,10 @@ def classify_profile(profile_id: str) -> dict[str, str]:
     for pattern in SKIP_PATTERNS:
         if re.search(pattern, profile_lower):
             return {
-                "profile_id": profile_id,
-                "classification": "skip",
-                "reason": f"Matches skip pattern: {pattern}",
-                "confidence": "high"
+                'profile_id': profile_id,
+                'classification': 'skip',
+                'reason': f'Matches skip pattern: {pattern}',
+                'confidence': 'high',
             }
 
     # Check canonical patterns
@@ -209,19 +199,14 @@ def classify_profile(profile_id: str) -> dict[str, str]:
         for pattern in patterns:
             if re.search(pattern, profile_lower):
                 return {
-                    "profile_id": profile_id,
-                    "classification": canonical,
-                    "reason": f"Matches pattern: {pattern}",
-                    "confidence": "high"
+                    'profile_id': profile_id,
+                    'classification': canonical,
+                    'reason': f'Matches pattern: {pattern}',
+                    'confidence': 'high',
                 }
 
     # No match
-    return {
-        "profile_id": profile_id,
-        "classification": "unknown",
-        "reason": "No pattern matched",
-        "confidence": "low"
-    }
+    return {'profile_id': profile_id, 'classification': 'unknown', 'reason': 'No pattern matched', 'confidence': 'low'}
 
 
 def get_unmatched_profiles(project_dir: str = '.') -> list[str]:
@@ -240,10 +225,10 @@ def get_unmatched_profiles(project_dir: str = '.') -> list[str]:
     result = list_profiles(project_dir)
     unmatched = set()
 
-    for module in result["modules"]:
-        for profile in module["profiles"]:
-            if profile["unmatched"]:
-                unmatched.add(profile["id"])
+    for module in result['modules']:
+        for profile in module['profiles']:
+            if profile['unmatched']:
+                unmatched.add(profile['id'])
 
     # Filter out profiles configured in run-configuration.json
     skip_profiles = get_configured_skip_profiles(project_dir)
@@ -267,12 +252,14 @@ def suggest_classifications(project_dir: str = '.') -> list[dict[str, str]]:
 
     for profile_id in unmatched:
         classification = classify_profile(profile_id)
-        suggestions.append({
-            "profile_id": profile_id,
-            "suggested": classification["classification"],
-            "reason": classification["reason"],
-            "confidence": classification["confidence"]
-        })
+        suggestions.append(
+            {
+                'profile_id': profile_id,
+                'suggested': classification['classification'],
+                'reason': classification['reason'],
+                'confidence': classification['confidence'],
+            }
+        )
 
     return suggestions
 
@@ -281,32 +268,30 @@ def suggest_classifications(project_dir: str = '.') -> list[dict[str, str]]:
 # CLI Handlers
 # =============================================================================
 
+
 def cmd_list(args: argparse.Namespace) -> int:
     """CLI handler for list command."""
     try:
         result = list_profiles(args.project_dir, args.module)
 
-        print(f"total_profiles: {result['total_profiles']}")
-        print(f"unmatched_count: {result['unmatched_count']}")
+        print(f'total_profiles: {result["total_profiles"]}')
+        print(f'unmatched_count: {result["unmatched_count"]}')
         print()
 
-        for module in result["modules"]:
-            print(f"module: {module['name']}")
-            if module["profiles"]:
-                items = [
-                    {"id": p["id"], "canonical": p["canonical"]}
-                    for p in module["profiles"]
-                ]
-                print_toon_table("profiles", items, ["id", "canonical"])
+        for module in result['modules']:
+            print(f'module: {module["name"]}')
+            if module['profiles']:
+                items = [{'id': p['id'], 'canonical': p['canonical']} for p in module['profiles']]
+                print_toon_table('profiles', items, ['id', 'canonical'])
             print()
 
         return 0
     except DataNotFoundError as e:
-        print(f"error: {e}", file=sys.stderr)
+        print(f'error: {e}', file=sys.stderr)
         print("resolution: Run 'architecture.py discover' first", file=sys.stderr)
         return 1
     except Exception as e:
-        print(f"error: {e}", file=sys.stderr)
+        print(f'error: {e}', file=sys.stderr)
         return 1
 
 
@@ -315,16 +300,16 @@ def cmd_unmatched(args: argparse.Namespace) -> int:
     try:
         unmatched = get_unmatched_profiles(args.project_dir)
 
-        print(f"count: {len(unmatched)}")
+        print(f'count: {len(unmatched)}')
         if unmatched:
-            print_toon_list("profiles", unmatched)
+            print_toon_list('profiles', unmatched)
 
         return 0
     except DataNotFoundError as e:
-        print(f"error: {e}", file=sys.stderr)
+        print(f'error: {e}', file=sys.stderr)
         return 1
     except Exception as e:
-        print(f"error: {e}", file=sys.stderr)
+        print(f'error: {e}', file=sys.stderr)
         return 1
 
 
@@ -332,10 +317,10 @@ def cmd_classify(args: argparse.Namespace) -> int:
     """CLI handler for classify command."""
     result = classify_profile(args.profile_id)
 
-    print(f"profile_id: {result['profile_id']}")
-    print(f"classification: {result['classification']}")
-    print(f"reason: {result['reason']}")
-    print(f"confidence: {result['confidence']}")
+    print(f'profile_id: {result["profile_id"]}')
+    print(f'classification: {result["classification"]}')
+    print(f'reason: {result["reason"]}')
+    print(f'confidence: {result["confidence"]}')
 
     return 0
 
@@ -345,21 +330,17 @@ def cmd_suggest(args: argparse.Namespace) -> int:
     try:
         suggestions = suggest_classifications(args.project_dir)
 
-        print(f"count: {len(suggestions)}")
+        print(f'count: {len(suggestions)}')
         if suggestions:
             print()
-            print_toon_table(
-                "suggestions",
-                suggestions,
-                ["profile_id", "suggested", "confidence", "reason"]
-            )
+            print_toon_table('suggestions', suggestions, ['profile_id', 'suggested', 'confidence', 'reason'])
 
         return 0
     except DataNotFoundError as e:
-        print(f"error: {e}", file=sys.stderr)
+        print(f'error: {e}', file=sys.stderr)
         return 1
     except Exception as e:
-        print(f"error: {e}", file=sys.stderr)
+        print(f'error: {e}', file=sys.stderr)
         return 1
 
 
@@ -367,48 +348,25 @@ def cmd_suggest(args: argparse.Namespace) -> int:
 # Main
 # =============================================================================
 
+
 def main() -> int:
-    parser = argparse.ArgumentParser(
-        description='Maven profile management operations'
-    )
-    parser.add_argument(
-        '--project-dir',
-        default='.',
-        help='Project directory (default: current directory)'
-    )
+    parser = argparse.ArgumentParser(description='Maven profile management operations')
+    parser.add_argument('--project-dir', default='.', help='Project directory (default: current directory)')
     subparsers = parser.add_subparsers(dest='command', required=True)
 
     # list - List all profiles
-    list_parser = subparsers.add_parser(
-        'list',
-        help='List Maven profiles from all modules'
-    )
-    list_parser.add_argument(
-        '--module',
-        help='Filter by module name'
-    )
+    list_parser = subparsers.add_parser('list', help='List Maven profiles from all modules')
+    list_parser.add_argument('--module', help='Filter by module name')
 
     # unmatched - List unmatched profiles
-    subparsers.add_parser(
-        'unmatched',
-        help='List unmatched profiles (NO-MATCH-FOUND)'
-    )
+    subparsers.add_parser('unmatched', help='List unmatched profiles (NO-MATCH-FOUND)')
 
     # classify - Classify a single profile
-    classify_parser = subparsers.add_parser(
-        'classify',
-        help='Classify a profile by pattern matching'
-    )
-    classify_parser.add_argument(
-        'profile_id',
-        help='Profile ID to classify'
-    )
+    classify_parser = subparsers.add_parser('classify', help='Classify a profile by pattern matching')
+    classify_parser.add_argument('profile_id', help='Profile ID to classify')
 
     # suggest - Suggest classifications for unmatched
-    subparsers.add_parser(
-        'suggest',
-        help='Suggest classifications for unmatched profiles'
-    )
+    subparsers.add_parser('suggest', help='Suggest classifications for unmatched profiles')
 
     args = parser.parse_args()
 
@@ -427,5 +385,5 @@ def main() -> int:
         return 1
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     sys.exit(main() or 0)

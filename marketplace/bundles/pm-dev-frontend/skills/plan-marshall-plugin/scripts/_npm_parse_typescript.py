@@ -16,16 +16,10 @@ from pathlib import Path
 from _build_parse import SEVERITY_ERROR, Issue, UnitTestSummary  # type: ignore[import-not-found]
 
 # TypeScript error pattern: path(line,col): error TSNNNN: message
-TS_ERROR_PATTERN = re.compile(
-    r"^(.+?)\((\d+),(\d+)\):\s*(error)\s+(TS\d+):\s*(.+)$",
-    re.MULTILINE
-)
+TS_ERROR_PATTERN = re.compile(r'^(.+?)\((\d+),(\d+)\):\s*(error)\s+(TS\d+):\s*(.+)$', re.MULTILINE)
 
 # Alternative pattern: path:line:col - message
-TS_ERROR_ALT_PATTERN = re.compile(
-    r"^(.+?):(\d+):(\d+)\s*-\s*(error)\s+(TS\d+):\s*(.+)$",
-    re.MULTILINE
-)
+TS_ERROR_ALT_PATTERN = re.compile(r'^(.+?):(\d+):(\d+)\s*-\s*(error)\s+(TS\d+):\s*(.+)$', re.MULTILINE)
 
 
 def parse_log(log_file: str | Path) -> tuple[list[Issue], UnitTestSummary | None, str]:
@@ -46,10 +40,10 @@ def parse_log(log_file: str | Path) -> tuple[list[Issue], UnitTestSummary | None
         FileNotFoundError: If log file doesn't exist.
     """
     path = Path(log_file)
-    content = path.read_text(encoding="utf-8", errors="replace")
+    content = path.read_text(encoding='utf-8', errors='replace')
 
     issues = _extract_issues(content)
-    build_status = "FAILURE" if issues else "SUCCESS"
+    build_status = 'FAILURE' if issues else 'SUCCESS'
 
     return issues, None, build_status
 
@@ -69,36 +63,40 @@ def _extract_issues(content: str) -> list[Issue]:
     # Try primary pattern: path(line,col): error TSNNNN: message
     for match in TS_ERROR_PATTERN.finditer(content):
         file_path, line, col, severity, code, message = match.groups()
-        dedup_key = f"{file_path}:{line}:{col}:{code}"
+        dedup_key = f'{file_path}:{line}:{col}:{code}'
 
         if dedup_key in seen:
             continue
         seen.add(dedup_key)
 
-        issues.append(Issue(
-            file=file_path,
-            line=int(line),
-            message=f"{code}: {message}",
-            severity=SEVERITY_ERROR,
-            category="typescript_error",
-        ))
+        issues.append(
+            Issue(
+                file=file_path,
+                line=int(line),
+                message=f'{code}: {message}',
+                severity=SEVERITY_ERROR,
+                category='typescript_error',
+            )
+        )
 
     # Try alternative pattern if no matches: path:line:col - message
     if not issues:
         for match in TS_ERROR_ALT_PATTERN.finditer(content):
             file_path, line, col, severity, code, message = match.groups()
-            dedup_key = f"{file_path}:{line}:{col}:{code}"
+            dedup_key = f'{file_path}:{line}:{col}:{code}'
 
             if dedup_key in seen:
                 continue
             seen.add(dedup_key)
 
-            issues.append(Issue(
-                file=file_path,
-                line=int(line),
-                message=f"{code}: {message}",
-                severity=SEVERITY_ERROR,
-                category="typescript_error",
-            ))
+            issues.append(
+                Issue(
+                    file=file_path,
+                    line=int(line),
+                    message=f'{code}: {message}',
+                    severity=SEVERITY_ERROR,
+                    category='typescript_error',
+                )
+            )
 
     return issues

@@ -28,28 +28,38 @@ from extension_base import (
 # Tests for CMD_* Constants
 # =============================================================================
 
+
 def test_cmd_constants_values():
     """CMD_* constants have expected string values."""
-    assert CMD_CLEAN == "clean"
-    assert CMD_COMPILE == "compile"
-    assert CMD_TEST_COMPILE == "test-compile"
-    assert CMD_MODULE_TESTS == "module-tests"
-    assert CMD_INTEGRATION_TESTS == "integration-tests"
-    assert CMD_COVERAGE == "coverage"
-    assert CMD_BENCHMARK == "benchmark"
-    assert CMD_QUALITY_GATE == "quality-gate"
-    assert CMD_VERIFY == "verify"
-    assert CMD_INSTALL == "install"
-    assert CMD_CLEAN_INSTALL == "clean-install"
-    assert CMD_PACKAGE == "package"
+    assert CMD_CLEAN == 'clean'
+    assert CMD_COMPILE == 'compile'
+    assert CMD_TEST_COMPILE == 'test-compile'
+    assert CMD_MODULE_TESTS == 'module-tests'
+    assert CMD_INTEGRATION_TESTS == 'integration-tests'
+    assert CMD_COVERAGE == 'coverage'
+    assert CMD_BENCHMARK == 'benchmark'
+    assert CMD_QUALITY_GATE == 'quality-gate'
+    assert CMD_VERIFY == 'verify'
+    assert CMD_INSTALL == 'install'
+    assert CMD_CLEAN_INSTALL == 'clean-install'
+    assert CMD_PACKAGE == 'package'
 
 
 def test_all_canonical_commands_contains_all():
     """ALL_CANONICAL_COMMANDS contains all CMD_* constants."""
     expected = [
-        CMD_CLEAN, CMD_COMPILE, CMD_TEST_COMPILE, CMD_MODULE_TESTS, CMD_INTEGRATION_TESTS,
-        CMD_COVERAGE, CMD_BENCHMARK, CMD_QUALITY_GATE, CMD_VERIFY,
-        CMD_INSTALL, CMD_CLEAN_INSTALL, CMD_PACKAGE
+        CMD_CLEAN,
+        CMD_COMPILE,
+        CMD_TEST_COMPILE,
+        CMD_MODULE_TESTS,
+        CMD_INTEGRATION_TESTS,
+        CMD_COVERAGE,
+        CMD_BENCHMARK,
+        CMD_QUALITY_GATE,
+        CMD_VERIFY,
+        CMD_INSTALL,
+        CMD_CLEAN_INSTALL,
+        CMD_PACKAGE,
     ]
     assert ALL_CANONICAL_COMMANDS == expected
 
@@ -58,44 +68,46 @@ def test_all_canonical_commands_contains_all():
 # Tests for CANONICAL_COMMANDS Metadata
 # =============================================================================
 
+
 def test_canonical_commands_structure():
     """CANONICAL_COMMANDS has expected structure for each command."""
     for cmd_name, meta in CANONICAL_COMMANDS.items():
-        assert "phase" in meta, f"{cmd_name} missing 'phase'"
-        assert "description" in meta, f"{cmd_name} missing 'description'"
-        assert "required" in meta, f"{cmd_name} missing 'required'"
-        assert isinstance(meta["required"], bool), f"{cmd_name} 'required' should be bool"
+        assert 'phase' in meta, f"{cmd_name} missing 'phase'"
+        assert 'description' in meta, f"{cmd_name} missing 'description'"
+        assert 'required' in meta, f"{cmd_name} missing 'required'"
+        assert isinstance(meta['required'], bool), f"{cmd_name} 'required' should be bool"
 
 
 def test_canonical_commands_required():
     """Required commands are marked correctly."""
     required_commands = [CMD_MODULE_TESTS, CMD_QUALITY_GATE, CMD_VERIFY]
     for cmd in required_commands:
-        assert CANONICAL_COMMANDS[cmd]["required"], f"{cmd} should be required"
+        assert CANONICAL_COMMANDS[cmd]['required'], f'{cmd} should be required'
 
 
 def test_canonical_commands_phases():
     """Commands are assigned to expected phases."""
     phase_mapping = {
-        "clean": [CMD_CLEAN],
-        "build": [CMD_COMPILE, CMD_TEST_COMPILE],
-        "test": [CMD_MODULE_TESTS, CMD_INTEGRATION_TESTS, CMD_COVERAGE, CMD_BENCHMARK],
-        "quality": [CMD_QUALITY_GATE],
-        "verify": [CMD_VERIFY],
-        "deploy": [CMD_INSTALL, CMD_CLEAN_INSTALL, CMD_PACKAGE],
+        'clean': [CMD_CLEAN],
+        'build': [CMD_COMPILE, CMD_TEST_COMPILE],
+        'test': [CMD_MODULE_TESTS, CMD_INTEGRATION_TESTS, CMD_COVERAGE, CMD_BENCHMARK],
+        'quality': [CMD_QUALITY_GATE],
+        'verify': [CMD_VERIFY],
+        'deploy': [CMD_INSTALL, CMD_CLEAN_INSTALL, CMD_PACKAGE],
     }
     for phase, commands in phase_mapping.items():
         for cmd in commands:
-            assert CANONICAL_COMMANDS[cmd]["phase"] == phase, f"{cmd} should be in {phase} phase"
+            assert CANONICAL_COMMANDS[cmd]['phase'] == phase, f'{cmd} should be in {phase} phase'
 
 
 # =============================================================================
 # Tests for PROFILE_PATTERNS
 # =============================================================================
 
+
 def test_profile_patterns_integration_tests():
     """Integration test aliases map to CMD_INTEGRATION_TESTS."""
-    aliases = ["integration-tests", "integration-test", "it", "e2e", "acceptance"]
+    aliases = ['integration-tests', 'integration-test', 'it', 'e2e', 'acceptance']
     for alias in aliases:
         assert alias in PROFILE_PATTERNS, f"'{alias}' should be in PROFILE_PATTERNS"
         assert PROFILE_PATTERNS[alias] == CMD_INTEGRATION_TESTS
@@ -103,7 +115,7 @@ def test_profile_patterns_integration_tests():
 
 def test_profile_patterns_quality_gate():
     """Quality gate aliases map to CMD_QUALITY_GATE."""
-    aliases = ["pre-commit", "precommit", "sonar", "lint", "check", "quality"]
+    aliases = ['pre-commit', 'precommit', 'sonar', 'lint', 'check', 'quality']
     for alias in aliases:
         assert alias in PROFILE_PATTERNS, f"'{alias}' should be in PROFILE_PATTERNS"
         assert PROFILE_PATTERNS[alias] == CMD_QUALITY_GATE
@@ -111,7 +123,7 @@ def test_profile_patterns_quality_gate():
 
 def test_profile_patterns_coverage():
     """Coverage aliases map to CMD_COVERAGE."""
-    aliases = ["coverage", "jacoco"]
+    aliases = ['coverage', 'jacoco']
     for alias in aliases:
         assert alias in PROFILE_PATTERNS, f"'{alias}' should be in PROFILE_PATTERNS"
         assert PROFILE_PATTERNS[alias] == CMD_COVERAGE
@@ -119,7 +131,7 @@ def test_profile_patterns_coverage():
 
 def test_profile_patterns_benchmark():
     """Benchmark aliases map to CMD_BENCHMARK."""
-    aliases = ["performance", "jmh", "perf", "benchmarks", "stress", "load"]
+    aliases = ['performance', 'jmh', 'perf', 'benchmarks', 'stress', 'load']
     for alias in aliases:
         assert alias in PROFILE_PATTERNS, f"'{alias}' should be in PROFILE_PATTERNS"
         assert PROFILE_PATTERNS[alias] == CMD_BENCHMARK
@@ -129,23 +141,24 @@ def test_profile_patterns_benchmark():
 # Tests for ExtensionBase Class
 # =============================================================================
 
+
 class ConcreteExtension(ExtensionBase):
     """Concrete implementation for testing."""
 
     def get_skill_domains(self) -> dict:
-        return {"domain": {"key": "test"}, "profiles": {}}
+        return {'domain': {'key': 'test'}, 'profiles': {}}
 
 
 def test_extension_base_abstract_methods():
     """ExtensionBase requires get_skill_domains."""
     ext = ConcreteExtension()
-    assert ext.get_skill_domains()["domain"]["key"] == "test"
+    assert ext.get_skill_domains()['domain']['key'] == 'test'
 
 
 def test_extension_base_default_discover_modules():
     """Default discover_modules returns empty list."""
     ext = ConcreteExtension()
-    assert ext.discover_modules("/some/path") == []
+    assert ext.discover_modules('/some/path') == []
 
 
 def test_extension_base_default_triage():
@@ -160,7 +173,7 @@ def test_extension_base_default_outline():
     assert ext.provides_outline() is None
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     import traceback
 
     tests = [
@@ -188,9 +201,9 @@ if __name__ == "__main__":
             passed += 1
         except Exception:
             failed += 1
-            print(f"FAILED: {test.__name__}")
+            print(f'FAILED: {test.__name__}')
             traceback.print_exc()
             print()
 
-    print(f"\nResults: {passed} passed, {failed} failed")
+    print(f'\nResults: {passed} passed, {failed} failed')
     sys.exit(0 if failed == 0 else 1)

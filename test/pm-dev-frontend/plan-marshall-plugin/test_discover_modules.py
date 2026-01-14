@@ -23,12 +23,14 @@ from pathlib import Path
 from conftest import BuildContext
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
-EXTENSION_FILE = PROJECT_ROOT / 'marketplace' / 'bundles' / 'pm-dev-frontend' / 'skills' / 'plan-marshall-plugin' / 'extension.py'
+EXTENSION_FILE = (
+    PROJECT_ROOT / 'marketplace' / 'bundles' / 'pm-dev-frontend' / 'skills' / 'plan-marshall-plugin' / 'extension.py'
+)
 
 
 def _load_npm_extension():
     """Load npm Extension class avoiding conflicts."""
-    spec = importlib.util.spec_from_file_location("npm_extension", EXTENSION_FILE)
+    spec = importlib.util.spec_from_file_location('npm_extension', EXTENSION_FILE)
     npm_ext = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(npm_ext)
     return npm_ext.Extension
@@ -41,16 +43,12 @@ Extension = _load_npm_extension()
 # Test: Basic Module Discovery
 # =============================================================================
 
+
 def test_discover_modules_single_module():
     """Test discover_modules with single npm project."""
     with BuildContext() as ctx:
         # Create a single-module npm project
-        pkg = {
-            "name": "my-app",
-            "version": "1.0.0",
-            "description": "My sample application",
-            "type": "module"
-        }
+        pkg = {'name': 'my-app', 'version': '1.0.0', 'description': 'My sample application', 'type': 'module'}
         (ctx.temp_dir / 'package.json').write_text(json.dumps(pkg))
 
         # Create source directory
@@ -80,10 +78,7 @@ def test_discover_modules_with_workspaces():
     """
     with BuildContext() as ctx:
         # Create root package.json with workspaces
-        root_pkg = {
-            "name": "monorepo",
-            "workspaces": ["packages/*"]
-        }
+        root_pkg = {'name': 'monorepo', 'workspaces': ['packages/*']}
         (ctx.temp_dir / 'package.json').write_text(json.dumps(root_pkg))
 
         # Create packages directory
@@ -93,18 +88,12 @@ def test_discover_modules_with_workspaces():
         # Create first workspace
         pkg_a_dir = packages_dir / 'pkg-a'
         pkg_a_dir.mkdir()
-        (pkg_a_dir / 'package.json').write_text(json.dumps({
-            "name": "@monorepo/pkg-a",
-            "version": "1.0.0"
-        }))
+        (pkg_a_dir / 'package.json').write_text(json.dumps({'name': '@monorepo/pkg-a', 'version': '1.0.0'}))
 
         # Create second workspace
         pkg_b_dir = packages_dir / 'pkg-b'
         pkg_b_dir.mkdir()
-        (pkg_b_dir / 'package.json').write_text(json.dumps({
-            "name": "@monorepo/pkg-b",
-            "version": "2.0.0"
-        }))
+        (pkg_b_dir / 'package.json').write_text(json.dumps({'name': '@monorepo/pkg-b', 'version': '2.0.0'}))
 
         ext = Extension()
         modules = ext.discover_modules(str(ctx.temp_dir))
@@ -141,6 +130,7 @@ def test_discover_modules_no_package_json():
 # Test: Metadata Extraction
 # =============================================================================
 
+
 def test_metadata_extraction():
     """Test metadata extraction from package.json.
 
@@ -149,15 +139,15 @@ def test_metadata_extraction():
     """
     with BuildContext() as ctx:
         pkg = {
-            "name": "test-pkg",
-            "version": "3.2.1",
-            "description": "A test package",
-            "type": "commonjs",
-            "private": True,  # Not extracted - not useful for planning
-            "main": "dist/index.js",  # Not extracted - runtime detail
-            "license": "MIT",
-            "exports": {".": "./dist/index.js"},
-            "scripts": {"build": "tsc", "test": "jest"}
+            'name': 'test-pkg',
+            'version': '3.2.1',
+            'description': 'A test package',
+            'type': 'commonjs',
+            'private': True,  # Not extracted - not useful for planning
+            'main': 'dist/index.js',  # Not extracted - runtime detail
+            'license': 'MIT',
+            'exports': {'.': './dist/index.js'},
+            'scripts': {'build': 'tsc', 'test': 'jest'},
         }
         (ctx.temp_dir / 'package.json').write_text(json.dumps(pkg))
 
@@ -187,6 +177,7 @@ def test_metadata_extraction():
 # Test: Dependency Extraction
 # =============================================================================
 
+
 def test_extract_dependencies():
     """Test dependency extraction structure.
 
@@ -198,18 +189,10 @@ def test_extract_dependencies():
     """
     with BuildContext() as ctx:
         pkg = {
-            "name": "test-pkg",
-            "dependencies": {
-                "lodash": "^4.17.21",
-                "express": "^4.18.0"
-            },
-            "devDependencies": {
-                "jest": "^29.0.0",
-                "typescript": "^5.0.0"
-            },
-            "peerDependencies": {
-                "react": "^18.0.0"
-            }
+            'name': 'test-pkg',
+            'dependencies': {'lodash': '^4.17.21', 'express': '^4.18.0'},
+            'devDependencies': {'jest': '^29.0.0', 'typescript': '^5.0.0'},
+            'peerDependencies': {'react': '^18.0.0'},
         }
         (ctx.temp_dir / 'package.json').write_text(json.dumps(pkg))
 
@@ -218,7 +201,7 @@ def test_extract_dependencies():
 
         # Dependencies is a list (empty without npm install, populated with real projects)
         deps = modules[0]['dependencies']
-        assert isinstance(deps, list), "dependencies should be a list"
+        assert isinstance(deps, list), 'dependencies should be a list'
 
         # Without npm install, dependencies will be empty
         # Integration tests verify actual dependency extraction with real projects
@@ -227,6 +210,7 @@ def test_extract_dependencies():
 # =============================================================================
 # Test: Source Directory Discovery (via paths object)
 # =============================================================================
+
 
 def test_discover_sources_src():
     """Test source directory discovery with src."""
@@ -276,6 +260,7 @@ def test_discover_sources_no_resources_in_paths():
 # =============================================================================
 # Test: Stats
 # =============================================================================
+
 
 def test_stats_file_counts():
     """Test source and test file counting."""
@@ -332,6 +317,7 @@ def test_no_readme_in_paths():
 # Test: build_systems field (array)
 # =============================================================================
 
+
 def test_build_systems_is_array():
     """Test that build_systems is an array, not a string."""
     with BuildContext() as ctx:
@@ -351,16 +337,12 @@ def test_build_systems_is_array():
 # Test: Workspaces with object format
 # =============================================================================
 
+
 def test_workspaces_object_format():
     """Test workspaces with object format (packages key)."""
     with BuildContext() as ctx:
         # Create root package.json with object workspaces
-        root_pkg = {
-            "name": "monorepo",
-            "workspaces": {
-                "packages": ["packages/*"]
-            }
-        }
+        root_pkg = {'name': 'monorepo', 'workspaces': {'packages': ['packages/*']}}
         (ctx.temp_dir / 'package.json').write_text(json.dumps(root_pkg))
 
         # Create packages directory
@@ -370,10 +352,7 @@ def test_workspaces_object_format():
         # Create workspace
         pkg_dir = packages_dir / 'my-pkg'
         pkg_dir.mkdir()
-        (pkg_dir / 'package.json').write_text(json.dumps({
-            "name": "my-pkg",
-            "version": "1.0.0"
-        }))
+        (pkg_dir / 'package.json').write_text(json.dumps({'name': 'my-pkg', 'version': '1.0.0'}))
 
         ext = Extension()
         modules = ext.discover_modules(str(ctx.temp_dir))
@@ -385,6 +364,7 @@ def test_workspaces_object_format():
 # =============================================================================
 # Test: Paths structure (replaces descriptors)
 # =============================================================================
+
 
 def test_paths_structure():
     """Test that paths has correct structure."""
@@ -411,6 +391,7 @@ def test_paths_structure():
 # Test: Packages (object, not array)
 # =============================================================================
 
+
 def test_packages_is_object():
     """Test that packages is an object, not an array."""
     with BuildContext() as ctx:
@@ -427,12 +408,8 @@ def test_packages_from_exports():
     """Test package discovery from exports field."""
     with BuildContext() as ctx:
         pkg = {
-            "name": "my-lib",
-            "exports": {
-                ".": "./dist/index.js",
-                "./utils": "./dist/utils.js",
-                "./helpers": "./dist/helpers.js"
-            }
+            'name': 'my-lib',
+            'exports': {'.': './dist/index.js', './utils': './dist/utils.js', './helpers': './dist/helpers.js'},
         }
         (ctx.temp_dir / 'package.json').write_text(json.dumps(pkg))
 
@@ -468,17 +445,11 @@ def test_packages_from_directories():
 # Test: Commands
 # =============================================================================
 
+
 def test_commands_from_scripts():
     """Test command generation from package.json scripts."""
     with BuildContext() as ctx:
-        pkg = {
-            "name": "test",
-            "scripts": {
-                "build": "tsc",
-                "test": "jest",
-                "lint": "eslint src/"
-            }
-        }
+        pkg = {'name': 'test', 'scripts': {'build': 'tsc', 'test': 'jest', 'lint': 'eslint src/'}}
         (ctx.temp_dir / 'package.json').write_text(json.dumps(pkg))
 
         ext = Extension()
@@ -494,12 +465,7 @@ def test_commands_from_scripts():
 def test_commands_minimal():
     """Test commands with minimal scripts."""
     with BuildContext() as ctx:
-        pkg = {
-            "name": "test",
-            "scripts": {
-                "test": "jest"
-            }
-        }
+        pkg = {'name': 'test', 'scripts': {'test': 'jest'}}
         (ctx.temp_dir / 'package.json').write_text(json.dumps(pkg))
 
         ext = Extension()

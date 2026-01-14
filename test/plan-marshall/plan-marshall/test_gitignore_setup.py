@@ -9,7 +9,6 @@ Tests .gitignore configuration for the planning system:
 - Supports dry-run mode
 """
 
-
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
 from conftest import MARKETPLACE_ROOT, ScriptTestCase, run_script
 
@@ -53,7 +52,7 @@ class TestGitignoreSetupUpdate(ScriptTestCase):
     def test_updates_existing_gitignore(self):
         """Should add planning entries to existing .gitignore."""
         gitignore_path = self.temp_dir / '.gitignore'
-        gitignore_path.write_text("# Existing content\nnode_modules/\n*.log\n")
+        gitignore_path.write_text('# Existing content\nnode_modules/\n*.log\n')
 
         result = run_script(SCRIPT_PATH, '--project-root', str(self.temp_dir))
 
@@ -72,7 +71,7 @@ class TestGitignoreSetupUpdate(ScriptTestCase):
     def test_adds_only_missing_entries(self):
         """Should only add entries that are missing."""
         gitignore_path = self.temp_dir / '.gitignore'
-        gitignore_path.write_text(".plan/\n")
+        gitignore_path.write_text('.plan/\n')
 
         result = run_script(SCRIPT_PATH, '--project-root', str(self.temp_dir))
 
@@ -95,7 +94,7 @@ class TestGitignoreSetupUnchanged(ScriptTestCase):
     def test_unchanged_when_all_entries_exist(self):
         """Should report unchanged when all entries already present."""
         gitignore_path = self.temp_dir / '.gitignore'
-        gitignore_path.write_text(".plan/\n!.plan/marshal.json\n!.plan/project-architecture/\n")
+        gitignore_path.write_text('.plan/\n!.plan/marshal.json\n!.plan/project-architecture/\n')
 
         result = run_script(SCRIPT_PATH, '--project-root', str(self.temp_dir))
 
@@ -106,7 +105,7 @@ class TestGitignoreSetupUnchanged(ScriptTestCase):
     def test_recognizes_alternate_plan_format(self):
         """Should recognize .plan without trailing slash."""
         gitignore_path = self.temp_dir / '.gitignore'
-        gitignore_path.write_text(".plan\n!.plan/marshal.json\n!.plan/project-architecture/\n")
+        gitignore_path.write_text('.plan\n!.plan/marshal.json\n!.plan/project-architecture/\n')
 
         result = run_script(SCRIPT_PATH, '--project-root', str(self.temp_dir))
 
@@ -137,7 +136,7 @@ class TestGitignoreSetupDryRun(ScriptTestCase):
     def test_dry_run_does_not_modify_file(self):
         """Dry-run should not modify existing .gitignore."""
         gitignore_path = self.temp_dir / '.gitignore'
-        original_content = "# Original\nnode_modules/\n"
+        original_content = '# Original\nnode_modules/\n'
         gitignore_path.write_text(original_content)
 
         result = run_script(SCRIPT_PATH, '--project-root', str(self.temp_dir), '--dry-run')
@@ -169,7 +168,7 @@ class TestGitignoreSetupEdgeCases(ScriptTestCase):
     def test_preserves_newline_formatting(self):
         """Should preserve proper newline formatting."""
         gitignore_path = self.temp_dir / '.gitignore'
-        gitignore_path.write_text("node_modules/")  # No trailing newline
+        gitignore_path.write_text('node_modules/')  # No trailing newline
 
         result = run_script(SCRIPT_PATH, '--project-root', str(self.temp_dir))
 
@@ -191,9 +190,10 @@ class TestGitignoreSetupEdgeCases(ScriptTestCase):
         # Each line should be tab-separated key-value
         for line in lines:
             parts = line.split('\t')
-            self.assertEqual(len(parts), 2, f"Line should have exactly 2 parts: {line}")
+            self.assertEqual(len(parts), 2, f'Line should have exactly 2 parts: {line}')
 
 
 if __name__ == '__main__':
     import unittest
+
     unittest.main()

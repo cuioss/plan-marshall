@@ -45,13 +45,13 @@ def parse_duration(duration_str: str) -> timedelta:
     elif unit == 'm':
         return timedelta(minutes=value)
 
-    raise ValueError(f"Unknown duration unit: {unit}")
+    raise ValueError(f'Unknown duration unit: {unit}')
 
 
 def get_memory_path(category: str, identifier: str | None = None) -> Path:
     """Get path to memory category or specific file."""
     if category not in CATEGORIES:
-        raise ValueError(f"Invalid category: {category}. Must be one of: {', '.join(CATEGORIES)}")
+        raise ValueError(f'Invalid category: {category}. Must be one of: {", ".join(CATEGORIES)}')
 
     path = MEMORY_BASE / category
     if identifier:
@@ -67,13 +67,13 @@ def get_memory_path(category: str, identifier: str | None = None) -> Path:
 def create_memory_envelope(category: str, identifier: str, content: Any, session_id: str | None = None) -> dict:
     """Create memory file with metadata envelope."""
     return {
-        "meta": {
-            "created": datetime.now(UTC).isoformat().replace('+00:00', 'Z'),
-            "category": category,
-            "summary": identifier,
-            "session_id": session_id
+        'meta': {
+            'created': datetime.now(UTC).isoformat().replace('+00:00', 'Z'),
+            'category': category,
+            'summary': identifier,
+            'session_id': session_id,
         },
-        "content": content
+        'content': content,
     }
 
 
@@ -102,25 +102,25 @@ def get_file_info(file_path: Path) -> dict:
         meta = {}
 
     return {
-        "name": file_path.name,
-        "path": str(file_path),
-        "created": meta.get('created', datetime.fromtimestamp(stat.st_ctime).isoformat() + 'Z'),
-        "size": stat.st_size,
-        "summary": meta.get('summary', file_path.stem),
-        "category": meta.get('category')
+        'name': file_path.name,
+        'path': str(file_path),
+        'created': meta.get('created', datetime.fromtimestamp(stat.st_ctime).isoformat() + 'Z'),
+        'size': stat.st_size,
+        'summary': meta.get('summary', file_path.stem),
+        'category': meta.get('category'),
     }
 
 
 def output_success(operation: str, **kwargs) -> None:
     """Output success result as JSON."""
-    result = {"success": True, "operation": operation}
+    result = {'success': True, 'operation': operation}
     result.update(kwargs)
     print(json.dumps(result, indent=2, ensure_ascii=False))
 
 
 def output_error(operation: str, error: str) -> None:
     """Output error result as JSON to stderr."""
-    result = {"success": False, "operation": operation, "error": error}
+    result = {'success': False, 'operation': operation, 'error': error}
     print(json.dumps(result, indent=2), file=sys.stderr)
 
 
@@ -132,7 +132,7 @@ def cmd_save(args) -> int:
         # Generate timestamped filename for context category
         if args.category == 'context':
             date_prefix = datetime.now(UTC).strftime('%Y-%m-%d')
-            identifier = f"{date_prefix}-{args.identifier}"
+            identifier = f'{date_prefix}-{args.identifier}'
         else:
             identifier = args.identifier
 
@@ -141,16 +141,13 @@ def cmd_save(args) -> int:
 
         write_memory_file(file_path, data)
 
-        output_success("save",
-                       path=str(file_path),
-                       category=args.category,
-                       identifier=identifier)
+        output_success('save', path=str(file_path), category=args.category, identifier=identifier)
         return 0
     except json.JSONDecodeError as e:
-        output_error("save", f"Invalid JSON content: {e}")
+        output_error('save', f'Invalid JSON content: {e}')
         return 1
     except Exception as e:
-        output_error("save", str(e))
+        output_error('save', str(e))
         return 1
 
 
@@ -160,18 +157,15 @@ def cmd_load(args) -> int:
         file_path = get_memory_path(args.category, args.identifier)
 
         if not file_path.exists():
-            output_error("load", f"File not found: {file_path}")
+            output_error('load', f'File not found: {file_path}')
             return 1
 
         data = read_memory_file(file_path)
 
-        output_success("load",
-                       path=str(file_path),
-                       meta=data.get('meta', {}),
-                       content=data.get('content', {}))
+        output_success('load', path=str(file_path), meta=data.get('meta', {}), content=data.get('content', {}))
         return 0
     except Exception as e:
-        output_error("load", str(e))
+        output_error('load', str(e))
         return 1
 
 
@@ -211,13 +205,10 @@ def cmd_list(args) -> int:
         # Sort by created date, newest first
         files.sort(key=lambda x: x.get('created', ''), reverse=True)
 
-        output_success("list",
-                       category=args.category,
-                       count=len(files),
-                       files=files)
+        output_success('list', category=args.category, count=len(files), files=files)
         return 0
     except Exception as e:
-        output_error("list", str(e))
+        output_error('list', str(e))
         return 1
 
 
@@ -244,13 +235,10 @@ def cmd_query(args) -> int:
 
         files.sort(key=lambda x: x.get('created', ''), reverse=True)
 
-        output_success("query",
-                       pattern=args.pattern,
-                       count=len(files),
-                       files=files)
+        output_success('query', pattern=args.pattern, count=len(files), files=files)
         return 0
     except Exception as e:
-        output_error("query", str(e))
+        output_error('query', str(e))
         return 1
 
 
@@ -284,13 +272,10 @@ def cmd_cleanup(args) -> int:
                         file_path.unlink()
                         removed.append(str(file_path))
 
-        output_success("cleanup",
-                       older_than=args.older_than,
-                       removed_count=len(removed),
-                       removed=removed)
+        output_success('cleanup', older_than=args.older_than, removed_count=len(removed), removed=removed)
         return 0
     except Exception as e:
-        output_error("cleanup", str(e))
+        output_error('cleanup', str(e))
         return 1
 
 
@@ -307,7 +292,7 @@ def check_field_type(data: dict, field: str, expected_type: type) -> tuple:
 
     actual = type(data[field])
     if actual != expected_type:
-        return False, f"Expected {expected_type.__name__}, got {actual.__name__}"
+        return False, f'Expected {expected_type.__name__}, got {actual.__name__}'
 
     return True, f"Field '{field}' is {expected_type.__name__}"
 
@@ -319,50 +304,45 @@ def validate_memory_format(data: dict) -> list[dict]:
     # Check required envelope
     required = ['meta', 'content']
     passed, missing = check_required_fields(data, required)
-    checks.append({
-        "check": "required_fields",
-        "passed": passed,
-        "fields": required,
-        "missing": missing if not passed else []
-    })
+    checks.append(
+        {'check': 'required_fields', 'passed': passed, 'fields': required, 'missing': missing if not passed else []}
+    )
 
     # Check meta structure
     if 'meta' in data:
         passed, msg = check_field_type(data, 'meta', dict)
-        checks.append({
-            "check": "meta_object",
-            "passed": passed,
-            "message": msg
-        })
+        checks.append({'check': 'meta_object', 'passed': passed, 'message': msg})
 
         if passed:
             meta_required = ['created', 'category', 'summary']
             meta_passed, meta_missing = check_required_fields(data['meta'], meta_required)
-            checks.append({
-                "check": "meta_required_fields",
-                "passed": meta_passed,
-                "fields": meta_required,
-                "missing": meta_missing if not meta_passed else []
-            })
+            checks.append(
+                {
+                    'check': 'meta_required_fields',
+                    'passed': meta_passed,
+                    'fields': meta_required,
+                    'missing': meta_missing if not meta_passed else [],
+                }
+            )
 
             # Validate category value
             if 'category' in data['meta']:
                 valid_categories = CATEGORIES
                 cat = data['meta']['category']
-                checks.append({
-                    "check": "category_valid",
-                    "passed": cat in valid_categories,
-                    "value": cat,
-                    "valid_values": valid_categories
-                })
+                checks.append(
+                    {
+                        'check': 'category_valid',
+                        'passed': cat in valid_categories,
+                        'value': cat,
+                        'valid_values': valid_categories,
+                    }
+                )
 
     # Check content exists (can be any type)
     if 'content' in data:
-        checks.append({
-            "check": "content_present",
-            "passed": True,
-            "message": f"Content is {type(data['content']).__name__}"
-        })
+        checks.append(
+            {'check': 'content_present', 'passed': True, 'message': f'Content is {type(data["content"]).__name__}'}
+        )
 
     return checks
 
@@ -373,7 +353,7 @@ def cmd_validate(args) -> int:
         file_path = Path(args.file)
 
         if not file_path.exists():
-            output_error("validate", f"File not found: {file_path}")
+            output_error('validate', f'File not found: {file_path}')
             return 1
 
         # Parse JSON
@@ -381,17 +361,17 @@ def cmd_validate(args) -> int:
             data = read_memory_file(file_path)
         except json.JSONDecodeError as e:
             result = {
-                "success": True,
-                "valid": False,
-                "file": str(file_path),
-                "format": "memory",
-                "checks": [{"check": "json_syntax", "passed": False, "error": str(e)}]
+                'success': True,
+                'valid': False,
+                'file': str(file_path),
+                'format': 'memory',
+                'checks': [{'check': 'json_syntax', 'passed': False, 'error': str(e)}],
             }
             print(json.dumps(result, indent=2, ensure_ascii=False))
             return 0
 
         # Add JSON syntax check
-        checks = [{"check": "json_syntax", "passed": True}]
+        checks = [{'check': 'json_syntax', 'passed': True}]
 
         # Run validation
         checks.extend(validate_memory_format(data))
@@ -399,17 +379,11 @@ def cmd_validate(args) -> int:
         # Determine overall validity
         valid = all(c.get('passed', True) for c in checks)
 
-        result = {
-            "success": True,
-            "valid": valid,
-            "file": str(file_path),
-            "format": "memory",
-            "checks": checks
-        }
+        result = {'success': True, 'valid': valid, 'file': str(file_path), 'format': 'memory', 'checks': checks}
         print(json.dumps(result, indent=2, ensure_ascii=False))
         return 0
     except Exception as e:
-        output_error("validate", str(e))
+        output_error('validate', str(e))
         return 1
 
 
@@ -436,7 +410,7 @@ Examples:
 
   # Cleanup old context files
   %(prog)s cleanup --category context --older-than 7d
-"""
+""",
     )
 
     subparsers = parser.add_subparsers(dest='command', help='Operation to perform')
@@ -470,7 +444,9 @@ Examples:
     # cleanup command
     p_cleanup = subparsers.add_parser('cleanup', help='Remove old memory files')
     p_cleanup.add_argument('--category', choices=CATEGORIES, help='Filter by category')
-    p_cleanup.add_argument('--older-than', required=True, dest='older_than', help='Remove files older than (e.g., 7d, 24h)')
+    p_cleanup.add_argument(
+        '--older-than', required=True, dest='older_than', help='Remove files older than (e.g., 7d, 24h)'
+    )
     p_cleanup.set_defaults(func=cmd_cleanup)
 
     # validate command

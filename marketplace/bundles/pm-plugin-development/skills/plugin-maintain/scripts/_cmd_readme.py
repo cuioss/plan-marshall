@@ -32,7 +32,7 @@ def extract_description(file_path: Path) -> str:
     # Extract description field
     for line in frontmatter.split('\n'):
         if line.startswith('description:'):
-            desc = line[len('description:'):].strip()
+            desc = line[len('description:') :].strip()
             return desc if desc else 'No description'
 
     return 'No description'
@@ -66,10 +66,7 @@ def discover_commands(bundle_path: Path) -> list[dict]:
     commands = []
     for cmd_file in sorted(commands_dir.glob('*.md')):
         if cmd_file.is_file():
-            commands.append({
-                'name': cmd_file.stem,
-                'description': extract_description(cmd_file)
-            })
+            commands.append({'name': cmd_file.stem, 'description': extract_description(cmd_file)})
     return commands
 
 
@@ -82,10 +79,7 @@ def discover_agents(bundle_path: Path) -> list[dict]:
     agents = []
     for agent_file in sorted(agents_dir.glob('*.md')):
         if agent_file.is_file():
-            agents.append({
-                'name': agent_file.stem,
-                'description': extract_description(agent_file)
-            })
+            agents.append({'name': agent_file.stem, 'description': extract_description(agent_file)})
     return agents
 
 
@@ -98,15 +92,11 @@ def discover_skills(bundle_path: Path) -> list[dict]:
     skills = []
     for skill_md in sorted(skills_dir.glob('*/SKILL.md')):
         skill_dir = skill_md.parent
-        skills.append({
-            'name': skill_dir.name,
-            'description': extract_description(skill_md)
-        })
+        skills.append({'name': skill_dir.name, 'description': extract_description(skill_md)})
     return skills
 
 
-def generate_readme_content(bundle_name: str, commands: list[dict],
-                           agents: list[dict], skills: list[dict]) -> str:
+def generate_readme_content(bundle_name: str, commands: list[dict], agents: list[dict], skills: list[dict]) -> str:
     """Generate README markdown content."""
     lines = [f'# {bundle_name}', '']
 
@@ -114,29 +104,25 @@ def generate_readme_content(bundle_name: str, commands: list[dict],
     if commands:
         lines.extend(['## Commands', ''])
         for cmd in commands:
-            lines.append(f"- **{cmd['name']}** - {cmd['description']}")
+            lines.append(f'- **{cmd["name"]}** - {cmd["description"]}')
         lines.append('')
 
     # Agents section
     if agents:
         lines.extend(['## Agents', ''])
         for agent in agents:
-            lines.append(f"- **{agent['name']}** - {agent['description']}")
+            lines.append(f'- **{agent["name"]}** - {agent["description"]}')
         lines.append('')
 
     # Skills section
     if skills:
         lines.extend(['## Skills', ''])
         for skill in skills:
-            lines.append(f"- **{skill['name']}** - {skill['description']}")
+            lines.append(f'- **{skill["name"]}** - {skill["description"]}')
         lines.append('')
 
     # Installation section
-    lines.extend([
-        '## Installation',
-        '',
-        'Add to your Claude Code settings or install via marketplace.'
-    ])
+    lines.extend(['## Installation', '', 'Add to your Claude Code settings or install via marketplace.'])
 
     return '\n'.join(lines)
 
@@ -178,15 +164,11 @@ def cmd_readme(args) -> int:
         'bundle_path': str(bundle_path),
         'bundle_name': bundle_name,
         'readme_generated': True,
-        'components': {
-            'commands': len(commands),
-            'agents': len(agents),
-            'skills': len(skills)
-        },
+        'components': {'commands': len(commands), 'agents': len(agents), 'skills': len(skills)},
         'readme_content': readme_content,
         'commands': commands,
         'agents': agents,
-        'skills': skills
+        'skills': skills,
     }
 
     output_json(result)

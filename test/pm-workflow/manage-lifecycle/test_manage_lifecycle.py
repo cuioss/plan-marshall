@@ -22,15 +22,21 @@ TestContext = PlanContext
 # Test: Create Command
 # =============================================================================
 
+
 def test_create_plan():
     """Test creating a plan with standard 5-phase model."""
     with TestContext(plan_id='test-plan'):
-        result = run_script(SCRIPT_PATH, 'create',
-            '--plan-id', 'test-plan',
-            '--title', 'Test Plan',
-            '--phases', 'init,outline,plan,execute,finalize'
+        result = run_script(
+            SCRIPT_PATH,
+            'create',
+            '--plan-id',
+            'test-plan',
+            '--title',
+            'Test Plan',
+            '--phases',
+            'init,outline,plan,execute,finalize',
         )
-        assert result.success, f"Script failed: {result.stderr}"
+        assert result.success, f'Script failed: {result.stderr}'
         data = parse_toon(result.stdout)
         assert data['status'] == 'success'
         assert data['plan']['title'] == 'Test Plan'
@@ -42,12 +48,17 @@ def test_create_plan():
 def test_create_plan_custom_phases():
     """Test creating a plan with custom phases."""
     with TestContext(plan_id='custom-plan'):
-        result = run_script(SCRIPT_PATH, 'create',
-            '--plan-id', 'custom-plan',
-            '--title', 'Custom Test',
-            '--phases', 'init,execute,finalize'
+        result = run_script(
+            SCRIPT_PATH,
+            'create',
+            '--plan-id',
+            'custom-plan',
+            '--title',
+            'Custom Test',
+            '--phases',
+            'init,execute,finalize',
         )
-        assert result.success, f"Script failed: {result.stderr}"
+        assert result.success, f'Script failed: {result.stderr}'
         data = parse_toon(result.stdout)
         assert data['status'] == 'success'
 
@@ -56,19 +67,29 @@ def test_create_plan_force_overwrite():
     """Test force overwrite of existing plan."""
     with TestContext(plan_id='force-plan'):
         # Create first plan
-        run_script(SCRIPT_PATH, 'create',
-            '--plan-id', 'force-plan',
-            '--title', 'Original Plan',
-            '--phases', 'init,outline,plan,execute,finalize'
+        run_script(
+            SCRIPT_PATH,
+            'create',
+            '--plan-id',
+            'force-plan',
+            '--title',
+            'Original Plan',
+            '--phases',
+            'init,outline,plan,execute,finalize',
         )
         # Create again with --force
-        result = run_script(SCRIPT_PATH, 'create',
-            '--plan-id', 'force-plan',
-            '--title', 'Replaced Plan',
-            '--phases', 'init,outline,plan,execute,finalize',
-            '--force'
+        result = run_script(
+            SCRIPT_PATH,
+            'create',
+            '--plan-id',
+            'force-plan',
+            '--title',
+            'Replaced Plan',
+            '--phases',
+            'init,outline,plan,execute,finalize',
+            '--force',
         )
-        assert result.success, f"Script failed: {result.stderr}"
+        assert result.success, f'Script failed: {result.stderr}'
         data = parse_toon(result.stdout)
         assert data['plan']['title'] == 'Replaced Plan'
 
@@ -77,21 +98,24 @@ def test_create_plan_force_overwrite():
 # Test: Phase Operations
 # =============================================================================
 
+
 def test_set_phase():
     """Test setting phase."""
     with TestContext(plan_id='phase-plan'):
         # First create the plan
-        run_script(SCRIPT_PATH, 'create',
-            '--plan-id', 'phase-plan',
-            '--title', 'Phase Test',
-            '--phases', 'init,outline,plan,execute,finalize'
+        run_script(
+            SCRIPT_PATH,
+            'create',
+            '--plan-id',
+            'phase-plan',
+            '--title',
+            'Phase Test',
+            '--phases',
+            'init,outline,plan,execute,finalize',
         )
         # Then set phase
-        result = run_script(SCRIPT_PATH, 'set-phase',
-            '--plan-id', 'phase-plan',
-            '--phase', 'execute'
-        )
-        assert result.success, f"Script failed: {result.stderr}"
+        result = run_script(SCRIPT_PATH, 'set-phase', '--plan-id', 'phase-plan', '--phase', 'execute')
+        assert result.success, f'Script failed: {result.stderr}'
         data = parse_toon(result.stdout)
         assert data['current_phase'] == 'execute'
 
@@ -99,15 +123,18 @@ def test_set_phase():
 def test_read_plan():
     """Test reading plan status."""
     with TestContext(plan_id='read-plan'):
-        run_script(SCRIPT_PATH, 'create',
-            '--plan-id', 'read-plan',
-            '--title', 'Read Test',
-            '--phases', 'init,outline,plan,execute,finalize'
+        run_script(
+            SCRIPT_PATH,
+            'create',
+            '--plan-id',
+            'read-plan',
+            '--title',
+            'Read Test',
+            '--phases',
+            'init,outline,plan,execute,finalize',
         )
-        result = run_script(SCRIPT_PATH, 'read',
-            '--plan-id', 'read-plan'
-        )
-        assert result.success, f"Script failed: {result.stderr}"
+        result = run_script(SCRIPT_PATH, 'read', '--plan-id', 'read-plan')
+        assert result.success, f'Script failed: {result.stderr}'
         data = parse_toon(result.stdout)
         assert data['status'] == 'success'
         assert 'plan' in data
@@ -119,18 +146,22 @@ def test_read_plan():
 # Test: Get Routing Context
 # =============================================================================
 
+
 def test_get_routing_context():
     """Test getting routing context combines phase, skill, and progress."""
     with TestContext(plan_id='routing-plan'):
-        run_script(SCRIPT_PATH, 'create',
-            '--plan-id', 'routing-plan',
-            '--title', 'Routing Test',
-            '--phases', '1-init,2-outline,3-plan,4-execute,5-finalize'
+        run_script(
+            SCRIPT_PATH,
+            'create',
+            '--plan-id',
+            'routing-plan',
+            '--title',
+            'Routing Test',
+            '--phases',
+            '1-init,2-outline,3-plan,4-execute,5-finalize',
         )
-        result = run_script(SCRIPT_PATH, 'get-routing-context',
-            '--plan-id', 'routing-plan'
-        )
-        assert result.success, f"Script failed: {result.stderr}"
+        result = run_script(SCRIPT_PATH, 'get-routing-context', '--plan-id', 'routing-plan')
+        assert result.success, f'Script failed: {result.stderr}'
         data = parse_toon(result.stdout)
         assert data['status'] == 'success'
         # Should have current phase
@@ -147,19 +178,19 @@ def test_get_routing_context():
 def test_get_routing_context_after_transition():
     """Test routing context updates after phase transition."""
     with TestContext(plan_id='transition-routing'):
-        run_script(SCRIPT_PATH, 'create',
-            '--plan-id', 'transition-routing',
-            '--title', 'Transition Test',
-            '--phases', '1-init,2-outline,3-plan,4-execute,5-finalize'
+        run_script(
+            SCRIPT_PATH,
+            'create',
+            '--plan-id',
+            'transition-routing',
+            '--title',
+            'Transition Test',
+            '--phases',
+            '1-init,2-outline,3-plan,4-execute,5-finalize',
         )
-        run_script(SCRIPT_PATH, 'transition',
-            '--plan-id', 'transition-routing',
-            '--completed', '1-init'
-        )
-        result = run_script(SCRIPT_PATH, 'get-routing-context',
-            '--plan-id', 'transition-routing'
-        )
-        assert result.success, f"Script failed: {result.stderr}"
+        run_script(SCRIPT_PATH, 'transition', '--plan-id', 'transition-routing', '--completed', '1-init')
+        result = run_script(SCRIPT_PATH, 'get-routing-context', '--plan-id', 'transition-routing')
+        assert result.success, f'Script failed: {result.stderr}'
         data = parse_toon(result.stdout)
         assert data['current_phase'] == '2-outline'
         assert data['skill'] == 'solution-outline'
@@ -169,33 +200,30 @@ def test_get_routing_context_after_transition():
 def test_get_routing_context_not_found():
     """Test get-routing-context with missing plan."""
     with TestContext():
-        result = run_script(SCRIPT_PATH, 'get-routing-context',
-            '--plan-id', 'nonexistent'
-        )
-        assert not result.success, "Expected failure for missing plan"
+        result = run_script(SCRIPT_PATH, 'get-routing-context', '--plan-id', 'nonexistent')
+        assert not result.success, 'Expected failure for missing plan'
 
 
 # =============================================================================
 # Test: List Command
 # =============================================================================
 
+
 def test_list_empty():
     """Test listing when no plans exist."""
     with TestContext():
         result = run_script(SCRIPT_PATH, 'list')
-        assert result.success, f"Script failed: {result.stderr}"
+        assert result.success, f'Script failed: {result.stderr}'
 
 
 def test_list_with_plan():
     """Test listing when a plan exists."""
     with TestContext(plan_id='list-plan'):
-        run_script(SCRIPT_PATH, 'create',
-            '--plan-id', 'list-plan',
-            '--title', 'List Test',
-            '--phases', 'init,execute,finalize'
+        run_script(
+            SCRIPT_PATH, 'create', '--plan-id', 'list-plan', '--title', 'List Test', '--phases', 'init,execute,finalize'
         )
         result = run_script(SCRIPT_PATH, 'list')
-        assert result.success, f"Script failed: {result.stderr}"
+        assert result.success, f'Script failed: {result.stderr}'
         data = parse_toon(result.stdout)
         assert data['total'] >= 1
         # Find our plan in the list

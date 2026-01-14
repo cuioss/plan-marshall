@@ -22,6 +22,7 @@ FIXTURES_DIR = Path(__file__).parent / 'fixtures'
 # Generate Subcommand Tests - Agent Frontmatter
 # =============================================================================
 
+
 def test_generate_agent_with_all_fields():
     """Test generate agent frontmatter with all fields."""
     fixture = FIXTURES_DIR / 'agent-answers-full.json'
@@ -31,7 +32,7 @@ def test_generate_agent_with_all_fields():
     input_json = fixture.read_text().strip()
     result = run_script(SCRIPT_PATH, 'generate', '--type', 'agent', '--config', input_json)
 
-    assert 'model: sonnet' in result.stdout, "Agent frontmatter should include model field"
+    assert 'model: sonnet' in result.stdout, 'Agent frontmatter should include model field'
 
 
 def test_generate_agent_tools_comma_separated():
@@ -44,11 +45,12 @@ def test_generate_agent_tools_comma_separated():
     result = run_script(SCRIPT_PATH, 'generate', '--type', 'agent', '--config', input_json)
 
     import re
+
     has_comma_separated = re.search(r'tools: [A-Za-z]+(, [A-Za-z]+)*', result.stdout) is not None
     has_array_syntax = '[' in result.stdout
 
-    assert has_comma_separated, "Tools should be comma-separated"
-    assert not has_array_syntax, "Tools should not use array syntax"
+    assert has_comma_separated, 'Tools should be comma-separated'
+    assert not has_array_syntax, 'Tools should not use array syntax'
 
 
 def test_generate_agent_without_model():
@@ -60,7 +62,7 @@ def test_generate_agent_without_model():
     input_json = fixture.read_text().strip()
     result = run_script(SCRIPT_PATH, 'generate', '--type', 'agent', '--config', input_json)
 
-    assert 'name: test-agent' in result.stdout, "Agent frontmatter should include name"
+    assert 'name: test-agent' in result.stdout, 'Agent frontmatter should include name'
 
 
 def test_generate_agent_special_chars():
@@ -72,12 +74,13 @@ def test_generate_agent_special_chars():
     input_json = fixture.read_text().strip()
     result = run_script(SCRIPT_PATH, 'generate', '--type', 'agent', '--config', input_json)
 
-    assert 'quotes' in result.stdout, "Should handle special characters in description"
+    assert 'quotes' in result.stdout, 'Should handle special characters in description'
 
 
 # =============================================================================
 # Generate Subcommand Tests - Command Frontmatter
 # =============================================================================
+
 
 def test_generate_command_no_tools():
     """Test generate command frontmatter has no tools field."""
@@ -88,13 +91,14 @@ def test_generate_command_no_tools():
     input_json = fixture.read_text().strip()
     result = run_script(SCRIPT_PATH, 'generate', '--type', 'command', '--config', input_json)
 
-    assert 'name: test-command' in result.stdout, "Command frontmatter should include name"
-    assert 'tools:' not in result.stdout, "Command frontmatter should not have tools field"
+    assert 'name: test-command' in result.stdout, 'Command frontmatter should include name'
+    assert 'tools:' not in result.stdout, 'Command frontmatter should not have tools field'
 
 
 # =============================================================================
 # Generate Subcommand Tests - Skill Frontmatter
 # =============================================================================
+
 
 def test_generate_skill_with_tools():
     """Test generate skill with allowed-tools."""
@@ -105,7 +109,7 @@ def test_generate_skill_with_tools():
     input_json = fixture.read_text().strip()
     result = run_script(SCRIPT_PATH, 'generate', '--type', 'skill', '--config', input_json)
 
-    assert 'allowed-tools: Read, Grep' in result.stdout, "Skill should have allowed-tools"
+    assert 'allowed-tools: Read, Grep' in result.stdout, 'Skill should have allowed-tools'
 
 
 def test_generate_skill_without_tools():
@@ -117,13 +121,14 @@ def test_generate_skill_without_tools():
     input_json = fixture.read_text().strip()
     result = run_script(SCRIPT_PATH, 'generate', '--type', 'skill', '--config', input_json)
 
-    assert 'name: test-skill' in result.stdout, "Skill frontmatter should include name"
-    assert 'allowed-tools:' not in result.stdout, "Skill without tools should omit allowed-tools"
+    assert 'name: test-skill' in result.stdout, 'Skill frontmatter should include name'
+    assert 'allowed-tools:' not in result.stdout, 'Skill without tools should omit allowed-tools'
 
 
 # =============================================================================
 # Generate Subcommand Tests - Error Handling
 # =============================================================================
+
 
 def test_generate_empty_tools_error():
     """Test generate empty tools array produces error or warning."""
@@ -132,119 +137,87 @@ def test_generate_empty_tools_error():
 
     output = result.stdout.lower() + result.stderr.lower()
     has_error = 'error' in output or 'warning' in output or 'at least one' in output
-    assert has_error, "Should error or warn on empty tools array"
+    assert has_error, 'Should error or warn on empty tools array'
 
 
 # =============================================================================
 # Validate Subcommand Tests
 # =============================================================================
 
+
 def test_validate_valid_agent():
     """Test validate valid agent validation."""
-    result = run_script(
-        SCRIPT_PATH,
-        'validate',
-        '--file', str(FIXTURES_DIR / 'valid-agent.md'),
-        '--type', 'agent'
-    )
+    result = run_script(SCRIPT_PATH, 'validate', '--file', str(FIXTURES_DIR / 'valid-agent.md'), '--type', 'agent')
     data = result.json()
-    assert data.get('valid') is True, "Valid agent validation"
+    assert data.get('valid') is True, 'Valid agent validation'
 
 
 def test_validate_agent_no_model():
     """Test validate valid agent without model."""
     result = run_script(
-        SCRIPT_PATH,
-        'validate',
-        '--file', str(FIXTURES_DIR / 'valid-agent-no-model.md'),
-        '--type', 'agent'
+        SCRIPT_PATH, 'validate', '--file', str(FIXTURES_DIR / 'valid-agent-no-model.md'), '--type', 'agent'
     )
     data = result.json()
-    assert data.get('valid') is True, "Valid agent without model"
+    assert data.get('valid') is True, 'Valid agent without model'
 
 
 def test_validate_agent_prohibited_task_tool():
     """Test validate agent with prohibited Task tool is invalid."""
     result = run_script(
-        SCRIPT_PATH,
-        'validate',
-        '--file', str(FIXTURES_DIR / 'invalid-agent-task-tool.md'),
-        '--type', 'agent'
+        SCRIPT_PATH, 'validate', '--file', str(FIXTURES_DIR / 'invalid-agent-task-tool.md'), '--type', 'agent'
     )
     data = result.json()
-    assert data.get('valid') is False, "Agent with prohibited Task tool should be invalid"
+    assert data.get('valid') is False, 'Agent with prohibited Task tool should be invalid'
 
 
 def test_validate_agent_self_invocation():
     """Test validate agent with self-invocation pattern is invalid."""
     result = run_script(
-        SCRIPT_PATH,
-        'validate',
-        '--file', str(FIXTURES_DIR / 'invalid-agent-self-invoke.md'),
-        '--type', 'agent'
+        SCRIPT_PATH, 'validate', '--file', str(FIXTURES_DIR / 'invalid-agent-self-invoke.md'), '--type', 'agent'
     )
     data = result.json()
-    assert data.get('valid') is False, "Agent with self-invocation should be invalid"
+    assert data.get('valid') is False, 'Agent with self-invocation should be invalid'
 
 
 def test_validate_agent_missing_frontmatter():
     """Test validate agent missing frontmatter is invalid."""
     result = run_script(
-        SCRIPT_PATH,
-        'validate',
-        '--file', str(FIXTURES_DIR / 'invalid-agent-no-frontmatter.md'),
-        '--type', 'agent'
+        SCRIPT_PATH, 'validate', '--file', str(FIXTURES_DIR / 'invalid-agent-no-frontmatter.md'), '--type', 'agent'
     )
     data = result.json()
-    assert data.get('valid') is False, "Agent missing frontmatter should be invalid"
+    assert data.get('valid') is False, 'Agent missing frontmatter should be invalid'
 
 
 def test_validate_valid_command():
     """Test validate valid command validation."""
-    result = run_script(
-        SCRIPT_PATH,
-        'validate',
-        '--file', str(FIXTURES_DIR / 'valid-command.md'),
-        '--type', 'command'
-    )
+    result = run_script(SCRIPT_PATH, 'validate', '--file', str(FIXTURES_DIR / 'valid-command.md'), '--type', 'command')
     data = result.json()
-    assert data.get('valid') is True, "Valid command validation"
+    assert data.get('valid') is True, 'Valid command validation'
 
 
 def test_validate_command_missing_workflow():
     """Test validate command missing WORKFLOW section is invalid."""
     result = run_script(
-        SCRIPT_PATH,
-        'validate',
-        '--file', str(FIXTURES_DIR / 'invalid-command-missing-section.md'),
-        '--type', 'command'
+        SCRIPT_PATH, 'validate', '--file', str(FIXTURES_DIR / 'invalid-command-missing-section.md'), '--type', 'command'
     )
     data = result.json()
-    assert data.get('valid') is False, "Command missing WORKFLOW should be invalid"
+    assert data.get('valid') is False, 'Command missing WORKFLOW should be invalid'
 
 
 def test_validate_valid_skill():
     """Test validate valid skill validation."""
-    result = run_script(
-        SCRIPT_PATH,
-        'validate',
-        '--file', str(FIXTURES_DIR / 'valid-skill.md'),
-        '--type', 'skill'
-    )
+    result = run_script(SCRIPT_PATH, 'validate', '--file', str(FIXTURES_DIR / 'valid-skill.md'), '--type', 'skill')
     data = result.json()
-    assert data.get('valid') is True, "Valid skill validation"
+    assert data.get('valid') is True, 'Valid skill validation'
 
 
 def test_validate_skill_bad_frontmatter():
     """Test validate skill with bad frontmatter is invalid."""
     result = run_script(
-        SCRIPT_PATH,
-        'validate',
-        '--file', str(FIXTURES_DIR / 'invalid-skill-bad-frontmatter.md'),
-        '--type', 'skill'
+        SCRIPT_PATH, 'validate', '--file', str(FIXTURES_DIR / 'invalid-skill-bad-frontmatter.md'), '--type', 'skill'
     )
     data = result.json()
-    assert data.get('valid') is False, "Skill with bad frontmatter should be invalid"
+    assert data.get('valid') is False, 'Skill with bad frontmatter should be invalid'
 
 
 # =============================================================================

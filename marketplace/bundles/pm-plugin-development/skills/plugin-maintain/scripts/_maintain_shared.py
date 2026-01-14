@@ -40,7 +40,7 @@ def parse_frontmatter(content: str) -> tuple[dict | None, str]:
             else:
                 frontmatter[key] = value
 
-    body = '\n'.join(lines[end_idx + 1:])
+    body = '\n'.join(lines[end_idx + 1 :])
     return frontmatter, body
 
 

@@ -25,6 +25,7 @@ EXIT_ERROR = 1
 # ANALYZE SUBCOMMAND
 # =============================================================================
 
+
 def parse_json_coverage(report_path: str) -> dict[str, Any]:
     """Parse Jest/Istanbul JSON coverage-summary.json format."""
     with open(report_path, encoding='utf-8') as f:
@@ -39,7 +40,7 @@ def parse_json_coverage(report_path: str) -> dict[str, Any]:
             'line_coverage': total.get('lines', {}).get('pct', 0),
             'statement_coverage': total.get('statements', {}).get('pct', 0),
             'function_coverage': total.get('functions', {}).get('pct', 0),
-            'branch_coverage': total.get('branches', {}).get('pct', 0)
+            'branch_coverage': total.get('branches', {}).get('pct', 0),
         }
 
     for file_path, coverage in data.items():
@@ -49,15 +50,17 @@ def parse_json_coverage(report_path: str) -> dict[str, Any]:
         lines_data = coverage.get('lines', {})
         uncovered_count = lines_data.get('total', 0) - lines_data.get('covered', 0)
 
-        by_file.append({
-            'file': file_path,
-            'line_coverage': lines_data.get('pct', 0),
-            'statement_coverage': coverage.get('statements', {}).get('pct', 0),
-            'function_coverage': coverage.get('functions', {}).get('pct', 0),
-            'branch_coverage': coverage.get('branches', {}).get('pct', 0),
-            'uncovered_lines_count': uncovered_count,
-            'uncovered_lines': []
-        })
+        by_file.append(
+            {
+                'file': file_path,
+                'line_coverage': lines_data.get('pct', 0),
+                'statement_coverage': coverage.get('statements', {}).get('pct', 0),
+                'function_coverage': coverage.get('functions', {}).get('pct', 0),
+                'branch_coverage': coverage.get('branches', {}).get('pct', 0),
+                'uncovered_lines_count': uncovered_count,
+                'uncovered_lines': [],
+            }
+        )
 
     return {'overall': overall, 'by_file': by_file}
 
@@ -84,7 +87,7 @@ def parse_lcov_coverage(report_path: str) -> dict[str, Any]:
                 'functions_hit': 0,
                 'branches_found': 0,
                 'branches_hit': 0,
-                'uncovered_lines': []
+                'uncovered_lines': [],
             }
         elif line.startswith('LF:'):
             current_data['lines_found'] = int(line[3:])
@@ -117,24 +120,30 @@ def parse_lcov_coverage(report_path: str) -> dict[str, Any]:
         'line_coverage': (total_lines_hit / total_lines_found * 100) if total_lines_found > 0 else 0,
         'function_coverage': (total_funcs_hit / total_funcs_found * 100) if total_funcs_found > 0 else 0,
         'branch_coverage': (total_branches_hit / total_branches_found * 100) if total_branches_found > 0 else 0,
-        'statement_coverage': (total_lines_hit / total_lines_found * 100) if total_lines_found > 0 else 0
+        'statement_coverage': (total_lines_hit / total_lines_found * 100) if total_lines_found > 0 else 0,
     }
 
     by_file: list[dict[str, Any]] = []
     for file_info in files_data:
         line_cov = (file_info['lines_hit'] / file_info['lines_found'] * 100) if file_info['lines_found'] > 0 else 0
-        func_cov = (file_info['functions_hit'] / file_info['functions_found'] * 100) if file_info['functions_found'] > 0 else 0
-        branch_cov = (file_info['branches_hit'] / file_info['branches_found'] * 100) if file_info['branches_found'] > 0 else 0
+        func_cov = (
+            (file_info['functions_hit'] / file_info['functions_found'] * 100) if file_info['functions_found'] > 0 else 0
+        )
+        branch_cov = (
+            (file_info['branches_hit'] / file_info['branches_found'] * 100) if file_info['branches_found'] > 0 else 0
+        )
 
-        by_file.append({
-            'file': file_info['file'],
-            'line_coverage': round(line_cov, 2),
-            'function_coverage': round(func_cov, 2),
-            'branch_coverage': round(branch_cov, 2),
-            'statement_coverage': round(line_cov, 2),
-            'uncovered_lines_count': len(file_info['uncovered_lines']),
-            'uncovered_lines': file_info['uncovered_lines']
-        })
+        by_file.append(
+            {
+                'file': file_info['file'],
+                'line_coverage': round(line_cov, 2),
+                'function_coverage': round(func_cov, 2),
+                'branch_coverage': round(branch_cov, 2),
+                'statement_coverage': round(line_cov, 2),
+                'uncovered_lines_count': len(file_info['uncovered_lines']),
+                'uncovered_lines': file_info['uncovered_lines'],
+            }
+        )
 
     return {'overall': overall, 'by_file': by_file}
 
@@ -155,7 +164,7 @@ def analyze_coverage(report_path: str, report_format: str, threshold: float) -> 
             'status': 'error',
             'error': 'REPORT_NOT_FOUND',
             'message': f'Coverage report not found: {report_path}',
-            'searched_path': report_path
+            'searched_path': report_path,
         }
 
     try:
@@ -167,20 +176,12 @@ def analyze_coverage(report_path: str, report_format: str, threshold: float) -> 
             return {
                 'status': 'error',
                 'error': 'UNSUPPORTED_FORMAT',
-                'message': f'Unsupported report format: {report_format}'
+                'message': f'Unsupported report format: {report_format}',
             }
     except json.JSONDecodeError as e:
-        return {
-            'status': 'error',
-            'error': 'PARSE_ERROR',
-            'message': f'Failed to parse JSON: {e}'
-        }
+        return {'status': 'error', 'error': 'PARSE_ERROR', 'message': f'Failed to parse JSON: {e}'}
     except Exception as e:
-        return {
-            'status': 'error',
-            'error': 'PARSE_ERROR',
-            'message': f'Failed to parse report: {e}'
-        }
+        return {'status': 'error', 'error': 'PARSE_ERROR', 'message': f'Failed to parse report: {e}'}
 
     low_coverage_files: list[dict[str, Any]] = []
     files_with_good_coverage = 0
@@ -194,19 +195,23 @@ def analyze_coverage(report_path: str, report_format: str, threshold: float) -> 
             files_with_good_coverage += 1
         elif severity == 'CRITICAL':
             files_with_critical += 1
-            low_coverage_files.append({
-                'file': file_data['file'],
-                'coverage': coverage,
-                'severity': severity,
-                'uncovered_lines': file_data.get('uncovered_lines', [])
-            })
+            low_coverage_files.append(
+                {
+                    'file': file_data['file'],
+                    'coverage': coverage,
+                    'severity': severity,
+                    'uncovered_lines': file_data.get('uncovered_lines', []),
+                }
+            )
         else:
-            low_coverage_files.append({
-                'file': file_data['file'],
-                'coverage': coverage,
-                'severity': severity,
-                'uncovered_lines': file_data.get('uncovered_lines', [])
-            })
+            low_coverage_files.append(
+                {
+                    'file': file_data['file'],
+                    'coverage': coverage,
+                    'severity': severity,
+                    'uncovered_lines': file_data.get('uncovered_lines', []),
+                }
+            )
 
     low_coverage_files.sort(key=lambda x: x['coverage'])
     overall = {k: round(v, 2) for k, v in data['overall'].items()}
@@ -218,15 +223,15 @@ def analyze_coverage(report_path: str, report_format: str, threshold: float) -> 
             'report_path': report_path,
             'overall_coverage': overall,
             'by_file': data['by_file'],
-            'low_coverage_files': low_coverage_files
+            'low_coverage_files': low_coverage_files,
         },
         'metrics': {
             'total_files': len(data['by_file']),
             'files_with_good_coverage': files_with_good_coverage,
             'files_with_low_coverage': len(low_coverage_files),
             'files_with_critical_coverage': files_with_critical,
-            'threshold': threshold
-        }
+            'threshold': threshold,
+        },
     }
 
 
@@ -248,20 +253,22 @@ def cmd_analyze(args: argparse.Namespace) -> int:
 # MAIN
 # =============================================================================
 
+
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="JavaScript test coverage analysis tool",
-        formatter_class=argparse.RawDescriptionHelpFormatter
+        description='JavaScript test coverage analysis tool', formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    subparsers = parser.add_subparsers(dest="command", required=True)
+    subparsers = parser.add_subparsers(dest='command', required=True)
 
     # analyze subcommand
-    analyze_parser = subparsers.add_parser("analyze", help="Analyze JavaScript test coverage reports")
-    analyze_parser.add_argument("--report", required=True, help="Path to coverage report file")
-    analyze_parser.add_argument("--format", choices=['json', 'lcov'], default='json',
-                                help="Report format: json (default) or lcov")
-    analyze_parser.add_argument("--threshold", type=float, default=80.0,
-                                help="Coverage threshold percentage (default: 80)")
+    analyze_parser = subparsers.add_parser('analyze', help='Analyze JavaScript test coverage reports')
+    analyze_parser.add_argument('--report', required=True, help='Path to coverage report file')
+    analyze_parser.add_argument(
+        '--format', choices=['json', 'lcov'], default='json', help='Report format: json (default) or lcov'
+    )
+    analyze_parser.add_argument(
+        '--threshold', type=float, default=80.0, help='Coverage threshold percentage (default: 80)'
+    )
     analyze_parser.set_defaults(func=cmd_analyze)
 
     args = parser.parse_args()
@@ -269,5 +276,5 @@ def main() -> int:
     return result
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     sys.exit(main())

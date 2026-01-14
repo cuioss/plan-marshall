@@ -19,26 +19,18 @@ def verify_frontmatter_fix(file_path: Path) -> dict:
     frontmatter_present, frontmatter = extract_frontmatter(content)
 
     if not frontmatter_present:
-        return {
-            'verified': True,
-            'issue_resolved': False,
-            'details': 'Still missing frontmatter'
-        }
+        return {'verified': True, 'issue_resolved': False, 'details': 'Still missing frontmatter'}
 
     has_name = bool(re.search(r'^name:', frontmatter, re.MULTILINE))
     has_desc = bool(re.search(r'^description:', frontmatter, re.MULTILINE))
 
     if has_name and has_desc:
-        return {
-            'verified': True,
-            'issue_resolved': True,
-            'details': 'Frontmatter present with required fields'
-        }
+        return {'verified': True, 'issue_resolved': True, 'details': 'Frontmatter present with required fields'}
 
     return {
         'verified': True,
         'issue_resolved': False,
-        'details': f'Frontmatter present but missing fields (name: {has_name}, description: {has_desc})'
+        'details': f'Frontmatter present but missing fields (name: {has_name}, description: {has_desc})',
     }
 
 
@@ -52,24 +44,12 @@ def verify_array_syntax_fix(file_path: Path) -> dict:
     frontmatter_present, frontmatter = extract_frontmatter(content)
 
     if not frontmatter_present:
-        return {
-            'verified': True,
-            'issue_resolved': True,
-            'details': 'No frontmatter to check'
-        }
+        return {'verified': True, 'issue_resolved': True, 'details': 'No frontmatter to check'}
 
     if re.search(r'^tools:.*\[', frontmatter, re.MULTILINE):
-        return {
-            'verified': True,
-            'issue_resolved': False,
-            'details': 'Still using array syntax for tools'
-        }
+        return {'verified': True, 'issue_resolved': False, 'details': 'Still using array syntax for tools'}
 
-    return {
-        'verified': True,
-        'issue_resolved': True,
-        'details': 'Tools now using comma-separated format'
-    }
+    return {'verified': True, 'issue_resolved': True, 'details': 'Tools now using comma-separated format'}
 
 
 def verify_rule_6_fix(file_path: Path) -> dict:
@@ -82,24 +62,12 @@ def verify_rule_6_fix(file_path: Path) -> dict:
     frontmatter_present, frontmatter = extract_frontmatter(content)
 
     if not frontmatter_present:
-        return {
-            'verified': True,
-            'issue_resolved': True,
-            'details': 'No frontmatter to check'
-        }
+        return {'verified': True, 'issue_resolved': True, 'details': 'No frontmatter to check'}
 
     if re.search(r'^tools:.*\bTask\b', frontmatter, re.MULTILINE):
-        return {
-            'verified': True,
-            'issue_resolved': False,
-            'details': 'Task tool still declared (Rule 6 violation)'
-        }
+        return {'verified': True, 'issue_resolved': False, 'details': 'Task tool still declared (Rule 6 violation)'}
 
-    return {
-        'verified': True,
-        'issue_resolved': True,
-        'details': 'Task tool removed from declaration'
-    }
+    return {'verified': True, 'issue_resolved': True, 'details': 'Task tool removed from declaration'}
 
 
 def verify_trailing_whitespace_fix(file_path: Path) -> dict:
@@ -115,14 +83,10 @@ def verify_trailing_whitespace_fix(file_path: Path) -> dict:
         return {
             'verified': True,
             'issue_resolved': False,
-            'details': f'Still has trailing whitespace on {trailing_count} lines'
+            'details': f'Still has trailing whitespace on {trailing_count} lines',
         }
 
-    return {
-        'verified': True,
-        'issue_resolved': True,
-        'details': 'No trailing whitespace found'
-    }
+    return {'verified': True, 'issue_resolved': True, 'details': 'No trailing whitespace found'}
 
 
 def verify_pattern_22_fix(file_path: Path) -> dict:
@@ -136,23 +100,15 @@ def verify_pattern_22_fix(file_path: Path) -> dict:
         return {
             'verified': True,
             'issue_resolved': False,
-            'details': 'Still contains self-update commands (Pattern 22 violation)'
+            'details': 'Still contains self-update commands (Pattern 22 violation)',
         }
 
-    return {
-        'verified': True,
-        'issue_resolved': True,
-        'details': 'Self-update patterns removed'
-    }
+    return {'verified': True, 'issue_resolved': True, 'details': 'Self-update patterns removed'}
 
 
 def verify_generic(file_path: Path, fix_type: str) -> dict:
     """Generic verification for unknown fix types."""
-    return {
-        'verified': True,
-        'issue_resolved': None,
-        'details': 'Manual verification recommended'
-    }
+    return {'verified': True, 'issue_resolved': None, 'details': 'Manual verification recommended'}
 
 
 def cmd_verify(args) -> int:
@@ -160,23 +116,16 @@ def cmd_verify(args) -> int:
     file_path = Path(args.file)
 
     if not file_path.exists():
-        print(json.dumps({
-            'verified': False,
-            'error': f'File not found: {args.file}'
-        }), file=sys.stderr)
+        print(json.dumps({'verified': False, 'error': f'File not found: {args.file}'}), file=sys.stderr)
         return 1
 
     if not file_path.is_file():
-        print(json.dumps({
-            'verified': False,
-            'error': f'Not a file: {args.file}'
-        }), file=sys.stderr)
+        print(json.dumps({'verified': False, 'error': f'Not a file: {args.file}'}), file=sys.stderr)
         return 1
 
     fix_type = args.fix_type
 
-    if fix_type in ('missing-frontmatter', 'missing-name-field',
-                    'missing-description-field', 'missing-tools-field'):
+    if fix_type in ('missing-frontmatter', 'missing-name-field', 'missing-description-field', 'missing-tools-field'):
         result = verify_frontmatter_fix(file_path)
     elif fix_type == 'array-syntax-tools':
         result = verify_array_syntax_fix(file_path)

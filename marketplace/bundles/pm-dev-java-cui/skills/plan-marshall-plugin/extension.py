@@ -16,29 +16,20 @@ class Extension(ExtensionBase):
     def get_skill_domains(self) -> dict:
         """Domain metadata for skill loading."""
         return {
-            "domain": {
-                "key": "java-cui",
-                "name": "CUI Java Development",
-                "description": "CUI-specific Java patterns for logging, testing, and HTTP"
+            'domain': {
+                'key': 'java-cui',
+                'name': 'CUI Java Development',
+                'description': 'CUI-specific Java patterns for logging, testing, and HTTP',
             },
-            "profiles": {
-                "core": {
-                    "defaults": ["pm-dev-java-cui:cui-logging"],
-                    "optionals": []
+            'profiles': {
+                'core': {'defaults': ['pm-dev-java-cui:cui-logging'], 'optionals': []},
+                'implementation': {'defaults': [], 'optionals': ['pm-dev-java-cui:cui-http']},
+                'module_testing': {
+                    'defaults': [],
+                    'optionals': ['pm-dev-java-cui:cui-testing', 'pm-dev-java-cui:cui-testing-http'],
                 },
-                "implementation": {
-                    "defaults": [],
-                    "optionals": ["pm-dev-java-cui:cui-http"]
-                },
-                "module_testing": {
-                    "defaults": [],
-                    "optionals": ["pm-dev-java-cui:cui-testing", "pm-dev-java-cui:cui-testing-http"]
-                },
-                "quality": {
-                    "defaults": [],
-                    "optionals": []
-                }
-            }
+                'quality': {'defaults': [], 'optionals': []},
+            },
         }
 
     def config_defaults(self, project_root: str) -> None:
@@ -61,14 +52,12 @@ class Extension(ExtensionBase):
         # CUI standard profile mappings
         # pre-commit → quality-gate, coverage → coverage, javadoc → javadoc
         ext_defaults_set_default(
-            EXT_KEY_PROFILES_MAP,
-            "pre-commit:quality-gate,coverage:coverage,javadoc:javadoc",
-            project_root
+            EXT_KEY_PROFILES_MAP, 'pre-commit:quality-gate,coverage:coverage,javadoc:javadoc', project_root
         )
 
         # Skip internal profiles that shouldn't generate commands
         ext_defaults_set_default(
             EXT_KEY_PROFILES_SKIP,
-            "build-plantuml,rewrite-maven-clean, release, release-snapshot, license-cleanup, sonar, only-eclipse,release-pom",
-            project_root
+            'build-plantuml,rewrite-maven-clean, release, release-snapshot, license-cleanup, sonar, only-eclipse,release-pom',
+            project_root,
         )

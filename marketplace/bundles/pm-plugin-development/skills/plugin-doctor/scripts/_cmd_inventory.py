@@ -83,18 +83,9 @@ def scan_directory(skill_path: Path, include_hidden: bool) -> dict:
 
                     rel_path = str(file_entry.relative_to(skill_path))
 
-                    dir_files.append({
-                        "name": file_name,
-                        "path": rel_path,
-                        "lines": lines,
-                        "size_bytes": size
-                    })
+                    dir_files.append({'name': file_name, 'path': rel_path, 'lines': lines, 'size_bytes': size})
 
-                directories.append({
-                    "name": dir_name,
-                    "path": f"{dir_name}/",
-                    "files": dir_files
-                })
+                directories.append({'name': dir_name, 'path': f'{dir_name}/', 'files': dir_files})
 
             elif entry.is_file():
                 file_name = entry.name
@@ -110,27 +101,22 @@ def scan_directory(skill_path: Path, include_hidden: bool) -> dict:
                     ext = '.' + file_name.rsplit('.', 1)[1]
                     extensions[ext] += 1
 
-                root_files.append({
-                    "name": file_name,
-                    "path": file_name,
-                    "lines": lines,
-                    "size_bytes": size
-                })
+                root_files.append({'name': file_name, 'path': file_name, 'lines': lines, 'size_bytes': size})
 
     except OSError as e:
-        return {"error": f"Failed to scan directory: {e}"}
+        return {'error': f'Failed to scan directory: {e}'}
 
     return {
-        "skill_name": skill_name,
-        "skill_path": abs_skill_path,
-        "directories": directories,
-        "root_files": root_files,
-        "statistics": {
-            "total_directories": total_dirs,
-            "total_files": total_files,
-            "total_lines": total_lines,
-            "by_extension": dict(sorted(extensions.items()))
-        }
+        'skill_name': skill_name,
+        'skill_path': abs_skill_path,
+        'directories': directories,
+        'root_files': root_files,
+        'statistics': {
+            'total_directories': total_dirs,
+            'total_files': total_files,
+            'total_lines': total_lines,
+            'by_extension': dict(sorted(extensions.items())),
+        },
     }
 
 
@@ -139,17 +125,17 @@ def cmd_inventory(args) -> int:
     skill_path = Path(args.skill_path)
 
     if not skill_path.exists():
-        print(json.dumps({"error": f"Directory not found: {args.skill_path}"}), file=sys.stderr)
+        print(json.dumps({'error': f'Directory not found: {args.skill_path}'}), file=sys.stderr)
         return 1
 
     if not skill_path.is_dir():
-        print(json.dumps({"error": f"Not a directory: {args.skill_path}"}), file=sys.stderr)
+        print(json.dumps({'error': f'Not a directory: {args.skill_path}'}), file=sys.stderr)
         return 1
 
     skill_path = skill_path.resolve()
     result = scan_directory(skill_path, args.include_hidden)
 
-    if "error" in result:
+    if 'error' in result:
         print(json.dumps(result), file=sys.stderr)
         return 1
 

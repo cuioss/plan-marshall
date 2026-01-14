@@ -100,15 +100,17 @@ def extract_deliverables(deliverables_section: str) -> list[dict[str, Any]]:
         # Check for success criteria
         has_success_criteria = '**Success Criteria:**' in content or '**Success criteria:**' in content
 
-        deliverables.append({
-            'number': number,
-            'title': title,
-            'reference': f"{number}. {title}",
-            'metadata': metadata,
-            'affected_files': affected_files,
-            'verification': verification,
-            'has_success_criteria': has_success_criteria
-        })
+        deliverables.append(
+            {
+                'number': number,
+                'title': title,
+                'reference': f'{number}. {title}',
+                'metadata': metadata,
+                'affected_files': affected_files,
+                'verification': verification,
+                'has_success_criteria': has_success_criteria,
+            }
+        )
 
     return sorted(deliverables, key=lambda d: d['number'])
 
@@ -188,11 +190,7 @@ def validate_solution_structure(content: str) -> tuple[list[str], list[str], dic
     """
     errors: list[str] = []
     warnings: list[str] = []
-    info: dict[str, Any] = {
-        'sections_found': [],
-        'deliverable_count': 0,
-        'deliverables': []
-    }
+    info: dict[str, Any] = {'sections_found': [], 'deliverable_count': 0, 'deliverables': []}
 
     sections = parse_document_sections(content)
 
@@ -202,7 +200,7 @@ def validate_solution_structure(content: str) -> tuple[list[str], list[str], dic
         if section in sections:
             info['sections_found'].append(section)
         else:
-            errors.append(f"Missing required section: {section.replace('_', ' ').title()}")
+            errors.append(f'Missing required section: {section.replace("_", " ").title()}')
 
     # Optional sections
     optional_sections = ['approach', 'dependencies', 'risks_and_mitigations', 'risks']
@@ -217,7 +215,7 @@ def validate_solution_structure(content: str) -> tuple[list[str], list[str], dic
         info['deliverables'] = [d['reference'] for d in deliverables]
 
         if not deliverables:
-            errors.append("No numbered deliverables found (expected ### N. Title)")
+            errors.append('No numbered deliverables found (expected ### N. Title)')
         else:
             # Validate each deliverable against contract
             for d in deliverables:
@@ -244,63 +242,67 @@ def validate_deliverable_contract(deliverable: dict) -> tuple[list[str], list[st
     # Check 1: Metadata block exists
     metadata = deliverable.get('metadata', {})
     if not metadata:
-        errors.append(f"D{num}: Missing **Metadata:** block")
+        errors.append(f'D{num}: Missing **Metadata:** block')
     else:
         # Check 1a: All required metadata fields
         # profile is the universal requirement for config-based routing
         # suggested_skill/suggested_workflow are optional explicit overrides
-        required_fields = [
-            'change_type', 'execution_mode', 'domain', 'profile', 'depends'
-        ]
+        required_fields = ['change_type', 'execution_mode', 'domain', 'profile', 'depends']
         for field in required_fields:
             if field not in metadata:
-                errors.append(f"D{num}: Missing metadata field: {field}")
+                errors.append(f'D{num}: Missing metadata field: {field}')
 
         # Check 1a2: Valid profile values
         valid_profiles = ['implementation', 'testing']
         if metadata.get('profile') and metadata['profile'] not in valid_profiles:
-            errors.append(f"D{num}: Invalid profile '{metadata['profile']}' (must be one of: {', '.join(valid_profiles)})")
+            errors.append(
+                f"D{num}: Invalid profile '{metadata['profile']}' (must be one of: {', '.join(valid_profiles)})"
+            )
 
         # Check 1b: Valid change_type
         valid_change_types = ['create', 'modify', 'refactor', 'migrate', 'delete']
         if metadata.get('change_type') and metadata['change_type'] not in valid_change_types:
-            errors.append(f"D{num}: Invalid change_type '{metadata['change_type']}' (must be one of: {', '.join(valid_change_types)})")
+            errors.append(
+                f"D{num}: Invalid change_type '{metadata['change_type']}' (must be one of: {', '.join(valid_change_types)})"
+            )
 
         # Check 1c: Valid execution_mode
         valid_modes = ['automated', 'manual', 'mixed']
         if metadata.get('execution_mode') and metadata['execution_mode'] not in valid_modes:
-            errors.append(f"D{num}: Invalid execution_mode '{metadata['execution_mode']}' (must be one of: {', '.join(valid_modes)})")
+            errors.append(
+                f"D{num}: Invalid execution_mode '{metadata['execution_mode']}' (must be one of: {', '.join(valid_modes)})"
+            )
 
     # Check 2: Affected files section
     affected_files = deliverable.get('affected_files', [])
     if not affected_files:
-        errors.append(f"D{num}: Missing **Affected files:** section")
+        errors.append(f'D{num}: Missing **Affected files:** section')
     else:
         # Check 2a: No wildcards or vague references
         for f in affected_files:
             if '*' in f:
-                errors.append(f"D{num}: Wildcard in affected files: {f}")
+                errors.append(f'D{num}: Wildcard in affected files: {f}')
             if '...' in f:
-                errors.append(f"D{num}: Ellipsis in affected files: {f}")
+                errors.append(f'D{num}: Ellipsis in affected files: {f}')
             if 'all ' in f.lower():
-                errors.append(f"D{num}: Vague reference in affected files: {f}")
+                errors.append(f'D{num}: Vague reference in affected files: {f}')
             # Check for reasonable path structure
             if not ('/' in f or f.endswith('.md') or f.endswith('.py')):
-                warnings.append(f"D{num}: Unusual file path format: {f}")
+                warnings.append(f'D{num}: Unusual file path format: {f}')
 
     # Check 3: Verification section
     verification = deliverable.get('verification', {})
     if not verification:
-        errors.append(f"D{num}: Missing **Verification:** section")
+        errors.append(f'D{num}: Missing **Verification:** section')
     else:
         if 'command' not in verification:
-            warnings.append(f"D{num}: Verification missing Command")
+            warnings.append(f'D{num}: Verification missing Command')
         if 'criteria' not in verification:
-            warnings.append(f"D{num}: Verification missing Criteria")
+            warnings.append(f'D{num}: Verification missing Criteria')
 
     # Check 4: Success criteria
     if not deliverable.get('has_success_criteria'):
-        warnings.append(f"D{num}: Missing **Success Criteria:** section")
+        warnings.append(f'D{num}: Missing **Success Criteria:** section')
 
     return errors, warnings
 
@@ -309,44 +311,57 @@ def validate_deliverable_contract(deliverable: dict) -> tuple[list[str], list[st
 # Commands
 # =============================================================================
 
+
 def cmd_validate(args) -> int:
     """Validate solution outline structure against deliverable contract."""
     if not validate_plan_id(args.plan_id):
-        print(serialize_toon({
-            'status': 'error',
-            'error': 'invalid_plan_id',
-            'plan_id': args.plan_id,
-            'message': 'Plan ID must be kebab-case (lowercase, hyphens only)'
-        }))
+        print(
+            serialize_toon(
+                {
+                    'status': 'error',
+                    'error': 'invalid_plan_id',
+                    'plan_id': args.plan_id,
+                    'message': 'Plan ID must be kebab-case (lowercase, hyphens only)',
+                }
+            )
+        )
         return 1
 
     file_path = get_solution_path(args.plan_id)
 
     if not file_path.exists():
-        print(serialize_toon({
-            'status': 'error',
-            'error': 'document_not_found',
-            'plan_id': args.plan_id,
-            'file': SOLUTION_FILE,
-            'suggestions': [
-                "Write solution using: manage-solution-outline write --plan-id X <<'EOF'",
-                'Check plan_id spelling'
-            ]
-        }))
+        print(
+            serialize_toon(
+                {
+                    'status': 'error',
+                    'error': 'document_not_found',
+                    'plan_id': args.plan_id,
+                    'file': SOLUTION_FILE,
+                    'suggestions': [
+                        "Write solution using: manage-solution-outline write --plan-id X <<'EOF'",
+                        'Check plan_id spelling',
+                    ],
+                }
+            )
+        )
         return 1
 
     content = file_path.read_text(encoding='utf-8')
     errors, warnings, info = validate_solution_structure(content)
 
     if errors:
-        print(serialize_toon({
-            'status': 'error',
-            'error': 'validation_failed',
-            'plan_id': args.plan_id,
-            'issues': errors,
-            'warnings': warnings,
-            'deliverable_count': info['deliverable_count']
-        }))
+        print(
+            serialize_toon(
+                {
+                    'status': 'error',
+                    'error': 'validation_failed',
+                    'plan_id': args.plan_id,
+                    'issues': errors,
+                    'warnings': warnings,
+                    'deliverable_count': info['deliverable_count'],
+                }
+            )
+        )
         return 1
 
     result = {
@@ -356,8 +371,8 @@ def cmd_validate(args) -> int:
         'validation': {
             'sections_found': ','.join(info['sections_found']),
             'deliverable_count': info['deliverable_count'],
-            'deliverables': info['deliverables']
-        }
+            'deliverables': info['deliverables'],
+        },
     }
 
     if warnings:
@@ -370,70 +385,73 @@ def cmd_validate(args) -> int:
 def cmd_list_deliverables(args) -> int:
     """List deliverables from solution outline."""
     if not validate_plan_id(args.plan_id):
-        print(serialize_toon({
-            'status': 'error',
-            'error': 'invalid_plan_id',
-            'plan_id': args.plan_id
-        }))
+        print(serialize_toon({'status': 'error', 'error': 'invalid_plan_id', 'plan_id': args.plan_id}))
         return 1
 
     file_path = get_solution_path(args.plan_id)
 
     if not file_path.exists():
-        print(serialize_toon({
-            'status': 'error',
-            'error': 'document_not_found',
-            'plan_id': args.plan_id,
-            'file': SOLUTION_FILE
-        }))
+        print(
+            serialize_toon(
+                {'status': 'error', 'error': 'document_not_found', 'plan_id': args.plan_id, 'file': SOLUTION_FILE}
+            )
+        )
         return 1
 
     content = file_path.read_text(encoding='utf-8')
     sections = parse_document_sections(content)
 
     if 'deliverables' not in sections:
-        print(serialize_toon({
-            'status': 'error',
-            'plan_id': args.plan_id,
-            'error': 'section_not_found',
-            'message': 'Deliverables section not found'
-        }))
+        print(
+            serialize_toon(
+                {
+                    'status': 'error',
+                    'plan_id': args.plan_id,
+                    'error': 'section_not_found',
+                    'message': 'Deliverables section not found',
+                }
+            )
+        )
         return 1
 
     deliverables = extract_deliverables(sections['deliverables'])
 
-    print(serialize_toon({
-        'status': 'success',
-        'plan_id': args.plan_id,
-        'deliverable_count': len(deliverables),
-        'deliverables': deliverables
-    }))
+    print(
+        serialize_toon(
+            {
+                'status': 'success',
+                'plan_id': args.plan_id,
+                'deliverable_count': len(deliverables),
+                'deliverables': deliverables,
+            }
+        )
+    )
     return 0
 
 
 def cmd_read(args) -> int:
     """Read solution outline."""
     if not validate_plan_id(args.plan_id):
-        print(serialize_toon({
-            'status': 'error',
-            'error': 'invalid_plan_id',
-            'plan_id': args.plan_id
-        }))
+        print(serialize_toon({'status': 'error', 'error': 'invalid_plan_id', 'plan_id': args.plan_id}))
         return 1
 
     file_path = get_solution_path(args.plan_id)
 
     if not file_path.exists():
-        print(serialize_toon({
-            'status': 'error',
-            'error': 'document_not_found',
-            'plan_id': args.plan_id,
-            'file': SOLUTION_FILE,
-            'suggestions': [
-                "Write solution using: manage-solution-outline write --plan-id X <<'EOF'",
-                'Check plan_id spelling'
-            ]
-        }))
+        print(
+            serialize_toon(
+                {
+                    'status': 'error',
+                    'error': 'document_not_found',
+                    'plan_id': args.plan_id,
+                    'file': SOLUTION_FILE,
+                    'suggestions': [
+                        "Write solution using: manage-solution-outline write --plan-id X <<'EOF'",
+                        'Check plan_id spelling',
+                    ],
+                }
+            )
+        )
         return 1
 
     content = file_path.read_text(encoding='utf-8')
@@ -442,12 +460,9 @@ def cmd_read(args) -> int:
         print(content)
     else:
         sections = parse_document_sections(content)
-        print(serialize_toon({
-            'status': 'success',
-            'plan_id': args.plan_id,
-            'file': SOLUTION_FILE,
-            'content': sections
-        }))
+        print(
+            serialize_toon({'status': 'success', 'plan_id': args.plan_id, 'file': SOLUTION_FILE, 'content': sections})
+        )
 
     return 0
 
@@ -455,22 +470,13 @@ def cmd_read(args) -> int:
 def cmd_exists(args) -> int:
     """Check if solution outline exists."""
     if not validate_plan_id(args.plan_id):
-        print(serialize_toon({
-            'status': 'error',
-            'error': 'invalid_plan_id',
-            'plan_id': args.plan_id
-        }))
+        print(serialize_toon({'status': 'error', 'error': 'invalid_plan_id', 'plan_id': args.plan_id}))
         return 1
 
     file_path = get_solution_path(args.plan_id)
     exists = file_path.exists()
 
-    print(serialize_toon({
-        'status': 'success',
-        'plan_id': args.plan_id,
-        'file': SOLUTION_FILE,
-        'exists': exists
-    }))
+    print(serialize_toon({'status': 'success', 'plan_id': args.plan_id, 'file': SOLUTION_FILE, 'exists': exists}))
 
     return 0 if exists else 1
 
@@ -483,38 +489,50 @@ def cmd_write(args) -> int:
     Returns error if validation fails (file is NOT written).
     """
     if not validate_plan_id(args.plan_id):
-        print(serialize_toon({
-            'status': 'error',
-            'error': 'invalid_plan_id',
-            'plan_id': args.plan_id,
-            'message': 'Plan ID must be kebab-case (lowercase, hyphens only)'
-        }))
+        print(
+            serialize_toon(
+                {
+                    'status': 'error',
+                    'error': 'invalid_plan_id',
+                    'plan_id': args.plan_id,
+                    'message': 'Plan ID must be kebab-case (lowercase, hyphens only)',
+                }
+            )
+        )
         return 1
 
     # Read content from stdin
     content = sys.stdin.read()
 
     if not content.strip():
-        print(serialize_toon({
-            'status': 'error',
-            'error': 'empty_content',
-            'plan_id': args.plan_id,
-            'message': 'Content cannot be empty'
-        }))
+        print(
+            serialize_toon(
+                {
+                    'status': 'error',
+                    'error': 'empty_content',
+                    'plan_id': args.plan_id,
+                    'message': 'Content cannot be empty',
+                }
+            )
+        )
         return 1
 
     # ALWAYS validate before writing
     errors, warnings, info = validate_solution_structure(content)
 
     if errors:
-        print(serialize_toon({
-            'status': 'error',
-            'error': 'validation_failed',
-            'plan_id': args.plan_id,
-            'issues': errors,
-            'warnings': warnings,
-            'deliverable_count': info['deliverable_count']
-        }))
+        print(
+            serialize_toon(
+                {
+                    'status': 'error',
+                    'error': 'validation_failed',
+                    'plan_id': args.plan_id,
+                    'issues': errors,
+                    'warnings': warnings,
+                    'deliverable_count': info['deliverable_count'],
+                }
+            )
+        )
         return 1
 
     file_path = get_solution_path(args.plan_id)
@@ -522,13 +540,17 @@ def cmd_write(args) -> int:
 
     # Check if exists and --force not specified
     if existed_before and not getattr(args, 'force', False):
-        print(serialize_toon({
-            'status': 'error',
-            'error': 'file_exists',
-            'plan_id': args.plan_id,
-            'file': SOLUTION_FILE,
-            'message': 'Solution outline already exists. Use --force to overwrite.'
-        }))
+        print(
+            serialize_toon(
+                {
+                    'status': 'error',
+                    'error': 'file_exists',
+                    'plan_id': args.plan_id,
+                    'file': SOLUTION_FILE,
+                    'message': 'Solution outline already exists. Use --force to overwrite.',
+                }
+            )
+        )
         return 1
 
     # Ensure plan directory exists
@@ -544,8 +566,8 @@ def cmd_write(args) -> int:
         'action': 'updated' if existed_before else 'created',
         'validation': {
             'deliverable_count': info['deliverable_count'],
-            'sections_found': ','.join(info['sections_found'])
-        }
+            'sections_found': ','.join(info['sections_found']),
+        },
     }
 
     if warnings:
@@ -567,16 +589,21 @@ def cmd_get_module_context(args) -> int:
     enriched_path = arch_dir / LLM_ENRICHED_FILE
 
     if not derived_path.exists():
-        print(serialize_toon({
-            'status': 'not_found',
-            'file': str(arch_dir),
-            'message': 'Project architecture not discovered. Run architecture discovery first.',
-            'suggestion': 'Run: python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture discover'
-        }))
+        print(
+            serialize_toon(
+                {
+                    'status': 'not_found',
+                    'file': str(arch_dir),
+                    'message': 'Project architecture not discovered. Run architecture discovery first.',
+                    'suggestion': 'Run: python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture discover',
+                }
+            )
+        )
         return 0  # Not an error - just means no architecture available
 
     try:
         import json
+
         with open(derived_path, encoding='utf-8') as f:
             derived_data = json.load(f)
 
@@ -585,12 +612,7 @@ def cmd_get_module_context(args) -> int:
             with open(enriched_path, encoding='utf-8') as f:
                 enriched_data = json.load(f)
     except Exception as e:
-        print(serialize_toon({
-            'status': 'error',
-            'error': 'parse_error',
-            'file': str(arch_dir),
-            'message': str(e)
-        }))
+        print(serialize_toon({'status': 'error', 'error': 'parse_error', 'file': str(arch_dir), 'message': str(e)}))
         return 1
 
     # Extract modules from derived data
@@ -599,11 +621,7 @@ def cmd_get_module_context(args) -> int:
 
     # Build context for LLM
     modules_list: list[dict] = []
-    context = {
-        'status': 'success',
-        'module_count': len(derived_modules),
-        'modules': modules_list
-    }
+    context = {'status': 'success', 'module_count': len(derived_modules), 'modules': modules_list}
 
     for name, mod in derived_modules.items():
         enriched = enriched_modules.get(name, {})
@@ -612,7 +630,7 @@ def cmd_get_module_context(args) -> int:
             'name': name,
             'path': paths.get('module', '.'),
             'purpose': enriched.get('purpose', 'unknown'),
-            'responsibility': enriched.get('responsibility', '')
+            'responsibility': enriched.get('responsibility', ''),
         }
         if enriched.get('key_packages'):
             module_info['key_packages'] = list(enriched['key_packages'].keys())
@@ -632,10 +650,9 @@ def cmd_get_module_context(args) -> int:
 # Main
 # =============================================================================
 
+
 def main():
-    parser = argparse.ArgumentParser(
-        description='Manage solution outline documents'
-    )
+    parser = argparse.ArgumentParser(description='Manage solution outline documents')
     subparsers = parser.add_subparsers(dest='command', help='Command')
 
     # validate

@@ -28,7 +28,7 @@ from _maintain_shared import EXIT_ERROR
 def main():
     parser = argparse.ArgumentParser(
         description='Plugin component maintenance tools',
-        epilog='''
+        epilog="""
 Examples:
   # Apply updates to a component
   maintain.py update --component agent.md --updates '{"updates": [...]}'
@@ -41,8 +41,8 @@ Examples:
 
   # Generate README for a bundle
   maintain.py readme --bundle-path ./marketplace/bundles/my-bundle
-''',
-        formatter_class=argparse.RawDescriptionHelpFormatter
+""",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
     subparsers = parser.add_subparsers(dest='command', help='Operation to perform')

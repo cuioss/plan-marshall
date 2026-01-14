@@ -23,7 +23,7 @@ TestContext = PlanContext
 
 
 # Sample valid solution outline with ASCII diagram (contract-compliant)
-VALID_SOLUTION = '''# Solution: JWT Validation Service
+VALID_SOLUTION = """# Solution: JWT Validation Service
 
 plan_id: test-plan
 created: 2025-01-01T00:00:00Z
@@ -133,23 +133,21 @@ Use standard JWT libraries with Quarkus integration.
 | Risk | Mitigation |
 |------|------------|
 | Key rotation | Implement key cache refresh |
-'''
+"""
 
 
 # =============================================================================
 # Test: Validate Command
 # =============================================================================
 
+
 def test_validate_success():
     """Test validating a well-formed solution document."""
     with TestContext(plan_id='solution-valid') as ctx:
         (ctx.plan_dir / 'solution_outline.md').write_text(VALID_SOLUTION)
 
-        result = run_script(SCRIPT_PATH,
-            'validate',
-            '--plan-id', 'solution-valid'
-        )
-        assert result.success, f"Script failed: {result.stderr}"
+        result = run_script(SCRIPT_PATH, 'validate', '--plan-id', 'solution-valid')
+        assert result.success, f'Script failed: {result.stderr}'
         data = parse_toon(result.stdout)
         assert data['status'] == 'success'
         assert 'validation' in data
@@ -160,7 +158,7 @@ def test_validate_success():
 def test_validate_missing_overview():
     """Test validation fails when Overview section is missing."""
     with TestContext(plan_id='solution-missing-overview') as ctx:
-        (ctx.plan_dir / 'solution_outline.md').write_text('''# Solution: Test
+        (ctx.plan_dir / 'solution_outline.md').write_text("""# Solution: Test
 
 ## Summary
 
@@ -171,13 +169,10 @@ Brief summary
 ### 1. First deliverable
 
 Description
-''')
+""")
 
-        result = run_script(SCRIPT_PATH,
-            'validate',
-            '--plan-id', 'solution-missing-overview'
-        )
-        assert not result.success, "Expected failure for missing Overview"
+        result = run_script(SCRIPT_PATH, 'validate', '--plan-id', 'solution-missing-overview')
+        assert not result.success, 'Expected failure for missing Overview'
         data = parse_toon(result.stdout)
         assert data['status'] == 'error'
         assert data['error'] == 'validation_failed'
@@ -187,7 +182,7 @@ Description
 def test_validate_no_deliverables():
     """Test validation fails when no numbered deliverables found."""
     with TestContext(plan_id='solution-no-deliverables') as ctx:
-        (ctx.plan_dir / 'solution_outline.md').write_text('''# Solution: Test
+        (ctx.plan_dir / 'solution_outline.md').write_text("""# Solution: Test
 
 ## Summary
 
@@ -200,13 +195,10 @@ Architecture diagram here
 ## Deliverables
 
 Some text but no ### N. Title items
-''')
+""")
 
-        result = run_script(SCRIPT_PATH,
-            'validate',
-            '--plan-id', 'solution-no-deliverables'
-        )
-        assert not result.success, "Expected failure for no numbered deliverables"
+        result = run_script(SCRIPT_PATH, 'validate', '--plan-id', 'solution-no-deliverables')
+        assert not result.success, 'Expected failure for no numbered deliverables'
         data = parse_toon(result.stdout)
         assert data['status'] == 'error'
         assert any('numbered deliverables' in issue for issue in data['issues'])
@@ -215,11 +207,8 @@ Some text but no ### N. Title items
 def test_validate_document_not_found():
     """Test validation fails when document doesn't exist."""
     with TestContext(plan_id='no-solution'):
-        result = run_script(SCRIPT_PATH,
-            'validate',
-            '--plan-id', 'no-solution'
-        )
-        assert not result.success, "Expected failure for missing document"
+        result = run_script(SCRIPT_PATH, 'validate', '--plan-id', 'no-solution')
+        assert not result.success, 'Expected failure for missing document'
         data = parse_toon(result.stdout)
         assert data['error'] == 'document_not_found'
 
@@ -228,16 +217,14 @@ def test_validate_document_not_found():
 # Test: List Deliverables Command
 # =============================================================================
 
+
 def test_list_deliverables():
     """Test listing deliverables from solution document."""
     with TestContext(plan_id='solution-list') as ctx:
         (ctx.plan_dir / 'solution_outline.md').write_text(VALID_SOLUTION)
 
-        result = run_script(SCRIPT_PATH,
-            'list-deliverables',
-            '--plan-id', 'solution-list'
-        )
-        assert result.success, f"Script failed: {result.stderr}"
+        result = run_script(SCRIPT_PATH, 'list-deliverables', '--plan-id', 'solution-list')
+        assert result.success, f'Script failed: {result.stderr}'
         data = parse_toon(result.stdout)
         assert data['status'] == 'success'
         assert data['deliverable_count'] == 3
@@ -252,18 +239,15 @@ def test_list_deliverables():
 def test_list_deliverables_empty():
     """Test list-deliverables with no deliverables section."""
     with TestContext(plan_id='solution-empty') as ctx:
-        (ctx.plan_dir / 'solution_outline.md').write_text('''# Solution: Test
+        (ctx.plan_dir / 'solution_outline.md').write_text("""# Solution: Test
 
 ## Summary
 
 Just summary, no deliverables section
-''')
+""")
 
-        result = run_script(SCRIPT_PATH,
-            'list-deliverables',
-            '--plan-id', 'solution-empty'
-        )
-        assert not result.success, "Expected failure for missing Deliverables section"
+        result = run_script(SCRIPT_PATH, 'list-deliverables', '--plan-id', 'solution-empty')
+        assert not result.success, 'Expected failure for missing Deliverables section'
         data = parse_toon(result.stdout)
         assert data['error'] == 'section_not_found'
 
@@ -272,16 +256,14 @@ Just summary, no deliverables section
 # Test: Read Command
 # =============================================================================
 
+
 def test_read():
     """Test reading a solution document."""
     with TestContext(plan_id='solution-read') as ctx:
         (ctx.plan_dir / 'solution_outline.md').write_text(VALID_SOLUTION)
 
-        result = run_script(SCRIPT_PATH,
-            'read',
-            '--plan-id', 'solution-read'
-        )
-        assert result.success, f"Script failed: {result.stderr}"
+        result = run_script(SCRIPT_PATH, 'read', '--plan-id', 'solution-read')
+        assert result.success, f'Script failed: {result.stderr}'
         data = parse_toon(result.stdout)
         assert data['status'] == 'success'
         # Content is a nested object - verify it exists and has expected sections
@@ -296,12 +278,8 @@ def test_read_raw():
     with TestContext(plan_id='solution-raw') as ctx:
         (ctx.plan_dir / 'solution_outline.md').write_text(VALID_SOLUTION)
 
-        result = run_script(SCRIPT_PATH,
-            'read',
-            '--plan-id', 'solution-raw',
-            '--raw'
-        )
-        assert result.success, f"Script failed: {result.stderr}"
+        result = run_script(SCRIPT_PATH, 'read', '--plan-id', 'solution-raw', '--raw')
+        assert result.success, f'Script failed: {result.stderr}'
         # Raw mode outputs the actual markdown
         assert '# Solution: JWT Validation Service' in result.stdout
         assert '## Overview' in result.stdout
@@ -312,11 +290,8 @@ def test_read_raw():
 def test_read_not_found():
     """Test read fails when document doesn't exist."""
     with TestContext(plan_id='no-solution'):
-        result = run_script(SCRIPT_PATH,
-            'read',
-            '--plan-id', 'no-solution'
-        )
-        assert not result.success, "Expected failure for missing document"
+        result = run_script(SCRIPT_PATH, 'read', '--plan-id', 'no-solution')
+        assert not result.success, 'Expected failure for missing document'
         data = parse_toon(result.stdout)
         assert data['error'] == 'document_not_found'
 
@@ -325,16 +300,14 @@ def test_read_not_found():
 # Test: Exists Command
 # =============================================================================
 
+
 def test_exists_present():
     """Test exists returns true when document exists."""
     with TestContext(plan_id='solution-exists') as ctx:
         (ctx.plan_dir / 'solution_outline.md').write_text(VALID_SOLUTION)
 
-        result = run_script(SCRIPT_PATH,
-            'exists',
-            '--plan-id', 'solution-exists'
-        )
-        assert result.success, f"Script failed: {result.stderr}"
+        result = run_script(SCRIPT_PATH, 'exists', '--plan-id', 'solution-exists')
+        assert result.success, f'Script failed: {result.stderr}'
         data = parse_toon(result.stdout)
         assert data['status'] == 'success'
         assert data['exists'] is True
@@ -343,10 +316,7 @@ def test_exists_present():
 def test_exists_absent():
     """Test exists returns false when document doesn't exist."""
     with TestContext(plan_id='no-solution'):
-        result = run_script(SCRIPT_PATH,
-            'exists',
-            '--plan-id', 'no-solution'
-        )
+        result = run_script(SCRIPT_PATH, 'exists', '--plan-id', 'no-solution')
         # Script returns exit code 1 when document doesn't exist
         assert not result.success
         data = parse_toon(result.stdout)
@@ -358,15 +328,12 @@ def test_exists_absent():
 # Test: Write Command
 # =============================================================================
 
+
 def test_write_new():
     """Test writing a new solution outline via stdin (validates automatically)."""
     with TestContext(plan_id='solution-write') as ctx:
-        result = run_script(SCRIPT_PATH,
-            'write',
-            '--plan-id', 'solution-write',
-            input_data=VALID_SOLUTION
-        )
-        assert result.success, f"Script failed: {result.stderr}\nOutput: {result.stdout}"
+        result = run_script(SCRIPT_PATH, 'write', '--plan-id', 'solution-write', input_data=VALID_SOLUTION)
+        assert result.success, f'Script failed: {result.stderr}\nOutput: {result.stdout}'
         data = parse_toon(result.stdout)
         assert data['status'] == 'success'
         assert data['file'] == 'solution_outline.md'
@@ -384,12 +351,8 @@ def test_write_exists_without_force():
         # Create existing file with valid content
         (ctx.plan_dir / 'solution_outline.md').write_text(VALID_SOLUTION)
 
-        result = run_script(SCRIPT_PATH,
-            'write',
-            '--plan-id', 'solution-exists',
-            input_data=VALID_SOLUTION
-        )
-        assert not result.success, "Expected failure when file exists without --force"
+        result = run_script(SCRIPT_PATH, 'write', '--plan-id', 'solution-exists', input_data=VALID_SOLUTION)
+        assert not result.success, 'Expected failure when file exists without --force'
         data = parse_toon(result.stdout)
         assert data['error'] == 'file_exists'
 
@@ -398,15 +361,10 @@ def test_write_with_force():
     """Test that write succeeds with --force when document exists."""
     with TestContext(plan_id='solution-force') as ctx:
         # Create existing file with old content
-        (ctx.plan_dir / 'solution_outline.md').write_text("# Old content")
+        (ctx.plan_dir / 'solution_outline.md').write_text('# Old content')
 
-        result = run_script(SCRIPT_PATH,
-            'write',
-            '--plan-id', 'solution-force',
-            '--force',
-            input_data=VALID_SOLUTION
-        )
-        assert result.success, f"Script failed: {result.stderr}\nOutput: {result.stdout}"
+        result = run_script(SCRIPT_PATH, 'write', '--plan-id', 'solution-force', '--force', input_data=VALID_SOLUTION)
+        assert result.success, f'Script failed: {result.stderr}\nOutput: {result.stdout}'
         data = parse_toon(result.stdout)
         assert data['status'] == 'success'
         # Verify content was overwritten
@@ -419,14 +377,12 @@ def test_write_with_force():
 # Test: Invalid Plan IDs
 # =============================================================================
 
+
 def test_invalid_plan_id_uppercase():
     """Test that uppercase plan IDs are rejected."""
     with TestContext():
-        result = run_script(SCRIPT_PATH,
-            'validate',
-            '--plan-id', 'My-Plan'
-        )
-        assert not result.success, "Expected rejection of uppercase plan ID"
+        result = run_script(SCRIPT_PATH, 'validate', '--plan-id', 'My-Plan')
+        assert not result.success, 'Expected rejection of uppercase plan ID'
         data = parse_toon(result.stdout)
         assert data['error'] == 'invalid_plan_id'
 
@@ -434,17 +390,15 @@ def test_invalid_plan_id_uppercase():
 def test_invalid_plan_id_underscore():
     """Test that underscores in plan IDs are rejected."""
     with TestContext():
-        result = run_script(SCRIPT_PATH,
-            'validate',
-            '--plan-id', 'my_plan'
-        )
-        assert not result.success, "Expected rejection of underscore plan ID"
+        result = run_script(SCRIPT_PATH, 'validate', '--plan-id', 'my_plan')
+        assert not result.success, 'Expected rejection of underscore plan ID'
         data = parse_toon(result.stdout)
         assert data['error'] == 'invalid_plan_id'
 
 
 if __name__ == '__main__':
     import sys
+
     # Run tests
     test_funcs = [name for name in dir() if name.startswith('test_')]
     passed = 0
@@ -452,16 +406,16 @@ if __name__ == '__main__':
 
     for test_name in test_funcs:
         try:
-            print(f"Running {test_name}...", end=' ')
+            print(f'Running {test_name}...', end=' ')
             globals()[test_name]()
-            print("PASS")
+            print('PASS')
             passed += 1
         except AssertionError as e:
-            print(f"FAIL: {e}")
+            print(f'FAIL: {e}')
             failed += 1
         except Exception as e:
-            print(f"ERROR: {e}")
+            print(f'ERROR: {e}')
             failed += 1
 
-    print(f"\nPassed: {passed}, Failed: {failed}")
+    print(f'\nPassed: {passed}, Failed: {failed}')
     sys.exit(0 if failed == 0 else 1)

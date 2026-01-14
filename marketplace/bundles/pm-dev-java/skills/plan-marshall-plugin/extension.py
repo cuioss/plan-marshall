@@ -13,17 +13,17 @@ from pathlib import Path
 from extension_base import ExtensionBase
 
 # Add scripts directory to path
-SCRIPTS_DIR = Path(__file__).parent / "scripts"
+SCRIPTS_DIR = Path(__file__).parent / 'scripts'
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
 
 # Build file constants
-POM_XML = "pom.xml"
-BUILD_GRADLE = "build.gradle"
-BUILD_GRADLE_KTS = "build.gradle.kts"
-SETTINGS_GRADLE = "settings.gradle"
-SETTINGS_GRADLE_KTS = "settings.gradle.kts"
+POM_XML = 'pom.xml'
+BUILD_GRADLE = 'build.gradle'
+BUILD_GRADLE_KTS = 'build.gradle.kts'
+SETTINGS_GRADLE = 'settings.gradle'
+SETTINGS_GRADLE_KTS = 'settings.gradle.kts'
 
 
 class Extension(ExtensionBase):
@@ -32,34 +32,31 @@ class Extension(ExtensionBase):
     def get_skill_domains(self) -> dict:
         """Domain metadata for skill loading."""
         return {
-            "domain": {
-                "key": "java",
-                "name": "Java Development",
-                "description": "Java code patterns, CDI, JUnit testing, Maven/Gradle builds"
+            'domain': {
+                'key': 'java',
+                'name': 'Java Development',
+                'description': 'Java code patterns, CDI, JUnit testing, Maven/Gradle builds',
             },
-            "profiles": {
-                "core": {
-                    "defaults": ["pm-dev-java:java-core"],
-                    "optionals": ["pm-dev-java:java-null-safety", "pm-dev-java:java-lombok"]
+            'profiles': {
+                'core': {
+                    'defaults': ['pm-dev-java:java-core'],
+                    'optionals': ['pm-dev-java:java-null-safety', 'pm-dev-java:java-lombok'],
                 },
-                "implementation": {
-                    "defaults": [],
-                    "optionals": ["pm-dev-java:java-cdi", "pm-dev-java:java-maintenance"]
+                'implementation': {
+                    'defaults': [],
+                    'optionals': ['pm-dev-java:java-cdi', 'pm-dev-java:java-maintenance'],
                 },
-                "module_testing": {
-                    "defaults": ["pm-dev-java:junit-core"],
-                    "optionals": ["pm-dev-java:junit-integration"]
+                'module_testing': {
+                    'defaults': ['pm-dev-java:junit-core'],
+                    'optionals': ['pm-dev-java:junit-integration'],
                 },
-                "quality": {
-                    "defaults": ["pm-dev-java:javadoc"],
-                    "optionals": []
-                }
-            }
+                'quality': {'defaults': ['pm-dev-java:javadoc'], 'optionals': []},
+            },
         }
 
     def provides_triage(self) -> str | None:
         """Return triage skill reference."""
-        return "pm-dev-java:ext-triage-java"
+        return 'pm-dev-java:ext-triage-java'
 
     def discover_modules(self, project_root: str) -> list:
         """Discover all modules with complete metadata.
@@ -72,6 +69,7 @@ class Extension(ExtensionBase):
         # Maven modules
         if (root / POM_XML).exists():
             from _maven_cmd_discover import discover_maven_modules
+
             modules.extend(discover_maven_modules(project_root))
 
         # Gradle modules (only if no Maven at same path)
@@ -81,6 +79,7 @@ class Extension(ExtensionBase):
         has_gradle = any((root / bf).exists() for bf in gradle_files)
         if has_gradle:
             from _gradle_cmd_discover import discover_gradle_modules
+
             gradle_modules = discover_gradle_modules(project_root)
             for gm in gradle_modules:
                 # Error-only modules (no paths) are always included

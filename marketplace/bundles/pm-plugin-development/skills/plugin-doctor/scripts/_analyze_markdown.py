@@ -27,7 +27,7 @@ def check_frontmatter_fields(frontmatter: str) -> dict:
     return {
         'name': {'present': has_name},
         'description': {'present': has_desc},
-        'tools': {'present': has_tools, 'field_type': tools_field_type}
+        'tools': {'present': has_tools, 'field_type': tools_field_type},
     }
 
 
@@ -46,13 +46,7 @@ def check_continuous_improvement(content: str, component_type: str) -> dict:
         if component_type == 'agent' and ci_pattern == 'self-update':
             pattern_22_violation = True
 
-    return {
-        'present': ci_present,
-        'format': {
-            'pattern': ci_pattern,
-            'pattern_22_violation': pattern_22_violation
-        }
-    }
+    return {'present': ci_present, 'format': {'pattern': ci_pattern, 'pattern_22_violation': pattern_22_violation}}
 
 
 def get_bloat_classification(line_count: int, component_type: str) -> str:
@@ -88,7 +82,7 @@ def check_execution_patterns(content: str) -> dict:
         'has_execution_mode': bool(re.search(r'EXECUTION MODE', content, re.IGNORECASE)),
         'has_workflow_tree': bool(re.search(r'Workflow Decision Tree', content, re.IGNORECASE)),
         'mandatory_marker_count': len(re.findall(r'\*\*MANDATORY\*\*', content)),
-        'has_handoff_rules': bool(re.search(r'CRITICAL HANDOFF', content, re.IGNORECASE))
+        'has_handoff_rules': bool(re.search(r'CRITICAL HANDOFF', content, re.IGNORECASE)),
     }
 
 
@@ -97,14 +91,32 @@ def check_rule_9_violations(content: str) -> list:
     violations = []
 
     action_verbs = [
-        'read the', 'write the', 'display the', 'check the', 'validate the',
-        'get the', 'list the', 'create the', 'update the', 'delete the',
-        'read config', 'read status', 'read solution', 'read task',
-        'display solution', 'display status', 'display config'
+        'read the',
+        'write the',
+        'display the',
+        'check the',
+        'validate the',
+        'get the',
+        'list the',
+        'create the',
+        'update the',
+        'delete the',
+        'read config',
+        'read status',
+        'read solution',
+        'read task',
+        'display solution',
+        'display status',
+        'display config',
     ]
 
     exempt_patterns = [
-        r'Task:', r'Skill:', r'Read:', r'Glob:', r'Grep:', r'AskUserQuestion',
+        r'Task:',
+        r'Skill:',
+        r'Read:',
+        r'Glob:',
+        r'Grep:',
+        r'AskUserQuestion',
     ]
 
     step_pattern = re.compile(r'^###?\s+Step\s+\d+[a-z]?[:\s].*$', re.MULTILINE | re.IGNORECASE)
@@ -139,17 +151,18 @@ def check_rule_9_violations(content: str) -> list:
         has_script_call = bool(re.search(r'execute-script\.py', step_content))
 
         if not has_script_call:
-            violations.append({
-                'step': step_header.strip(),
-                'action_verb': found_verb,
-                'issue': 'Missing explicit script call (execute-script.py) for action verb'
-            })
+            violations.append(
+                {
+                    'step': step_header.strip(),
+                    'action_verb': found_verb,
+                    'issue': 'Missing explicit script call (execute-script.py) for action verb',
+                }
+            )
 
     return violations
 
 
-def check_rule_violations(content: str, frontmatter: str, component_type: str,
-                          has_tools: bool, file_path: str) -> dict:
+def check_rule_violations(content: str, frontmatter: str, component_type: str, has_tools: bool, file_path: str) -> dict:
     """Check for rule violations."""
     rule_6_violation = False
     if component_type == 'agent' and has_tools:
@@ -179,7 +192,7 @@ def check_rule_violations(content: str, frontmatter: str, component_type: str,
         'rule_6_violation': rule_6_violation,
         'rule_7_violation': rule_7_violation,
         'rule_8_violation': rule_8_violation,
-        'rule_9_violations': rule_9_violations
+        'rule_9_violations': rule_9_violations,
     }
 
 
@@ -207,11 +220,15 @@ def analyze_markdown_file(file_path: Path, component_type: str) -> dict:
 
     frontmatter_present, frontmatter = extract_frontmatter(content)
     yaml_valid = check_yaml_validity(frontmatter) if frontmatter_present else False
-    required_fields = check_frontmatter_fields(frontmatter) if frontmatter_present else {
-        'name': {'present': False},
-        'description': {'present': False},
-        'tools': {'present': False, 'field_type': 'none'}
-    }
+    required_fields = (
+        check_frontmatter_fields(frontmatter)
+        if frontmatter_present
+        else {
+            'name': {'present': False},
+            'description': {'present': False},
+            'tools': {'present': False, 'field_type': 'none'},
+        }
+    )
 
     section_count = len(re.findall(r'^## ', content, re.MULTILINE))
     has_param_section = bool(re.search(r'^## PARAMETERS|^### Parameters', content, re.MULTILINE | re.IGNORECASE))
@@ -219,8 +236,7 @@ def analyze_markdown_file(file_path: Path, component_type: str) -> dict:
     bloat_class = get_bloat_classification(line_count, component_type)
     exec_patterns = check_execution_patterns(content)
     rules = check_rule_violations(
-        content, frontmatter, component_type,
-        required_fields['tools']['present'], str(file_path)
+        content, frontmatter, component_type, required_fields['tools']['present'], str(file_path)
     )
     has_forbidden, forbidden_sections = check_forbidden_metadata(content)
 
@@ -228,21 +244,14 @@ def analyze_markdown_file(file_path: Path, component_type: str) -> dict:
         'file_path': str(file_path),
         'file_type': {'type': component_type},
         'metrics': {'line_count': line_count},
-        'frontmatter': {
-            'present': frontmatter_present,
-            'yaml_valid': yaml_valid,
-            'required_fields': required_fields
-        },
+        'frontmatter': {'present': frontmatter_present, 'yaml_valid': yaml_valid, 'required_fields': required_fields},
         'structure': {'section_count': section_count},
         'parameters': {'has_section': has_param_section},
         'continuous_improvement_rule': ci_rule,
         'bloat': {'classification': bloat_class},
         'execution_patterns': exec_patterns,
         'rules': rules,
-        'quality': {
-            'has_forbidden_metadata': has_forbidden,
-            'forbidden_sections': forbidden_sections
-        }
+        'quality': {'has_forbidden_metadata': has_forbidden, 'forbidden_sections': forbidden_sections},
     }
 
 

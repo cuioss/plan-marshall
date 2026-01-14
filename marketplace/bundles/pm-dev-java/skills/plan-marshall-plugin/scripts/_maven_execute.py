@@ -68,6 +68,7 @@ OUTER_TIMEOUT_BUFFER = 30
 # API Functions (no argparse dependency)
 # =============================================================================
 
+
 def detect_wrapper(project_dir: str = '.') -> str:
     """Detect Maven wrapper or fallback to mvn.
 
@@ -89,10 +90,7 @@ def detect_wrapper(project_dir: str = '.') -> str:
 
 
 def execute_direct(
-    args: str,
-    command_key: str,
-    default_timeout: int = 300,
-    project_dir: str = '.'
+    args: str, command_key: str, default_timeout: int = 300, project_dir: str = '.'
 ) -> DirectCommandResult:
     """Execute Maven command with log file output and adaptive timeout learning.
 
@@ -123,23 +121,23 @@ def execute_direct(
     """
     # Step 1: Create log file in standard location
     # Extract module from -pl argument if present for scoped log files
-    scope = "default"
-    if "-pl " in args:
+    scope = 'default'
+    if '-pl ' in args:
         try:
-            pl_idx = args.index("-pl ") + 4
+            pl_idx = args.index('-pl ') + 4
             scope = args[pl_idx:].split()[0]
         except (ValueError, IndexError):
             pass
-    log_file = create_log_file("maven", scope, project_dir)
+    log_file = create_log_file('maven', scope, project_dir)
     if not log_file:
         return {
-            "status": "error",
-            "exit_code": -1,
-            "duration_seconds": 0,
-            "timeout_used_seconds": 0,
-            "log_file": "",
-            "command": "",
-            "error": "Failed to create log file"
+            'status': 'error',
+            'exit_code': -1,
+            'duration_seconds': 0,
+            'timeout_used_seconds': 0,
+            'log_file': '',
+            'command': '',
+            'error': 'Failed to create log file',
         }
 
     # Step 2: Detect wrapper
@@ -150,7 +148,7 @@ def execute_direct(
 
     # Step 4: Build command with -l flag for log file output
     # args is complete and self-contained (includes all routing like -pl, -P)
-    cmd_parts = [wrapper, "-l", log_file] + args.split()
+    cmd_parts = [wrapper, '-l', log_file] + args.split()
     command_str = ' '.join(cmd_parts)
 
     # Step 5: Execute (output goes to log file, not captured)
@@ -162,7 +160,7 @@ def execute_direct(
             timeout=timeout_seconds,
             capture_output=False,  # Output goes to log file via -l
             check=False,
-            cwd=project_dir
+            cwd=project_dir,
         )
         duration_seconds = int(time.time() - start_time)
 
@@ -172,59 +170,59 @@ def execute_direct(
         # Step 7: Return structured result
         if result.returncode == 0:
             return {
-                "status": "success",
-                "exit_code": 0,
-                "duration_seconds": duration_seconds,
-                "timeout_used_seconds": timeout_seconds,
-                "log_file": log_file,
-                "command": command_str
+                'status': 'success',
+                'exit_code': 0,
+                'duration_seconds': duration_seconds,
+                'timeout_used_seconds': timeout_seconds,
+                'log_file': log_file,
+                'command': command_str,
             }
         else:
             return {
-                "status": "error",
-                "exit_code": result.returncode,
-                "duration_seconds": duration_seconds,
-                "timeout_used_seconds": timeout_seconds,
-                "log_file": log_file,
-                "command": command_str,
-                "error": f"Build failed with exit code {result.returncode}"
+                'status': 'error',
+                'exit_code': result.returncode,
+                'duration_seconds': duration_seconds,
+                'timeout_used_seconds': timeout_seconds,
+                'log_file': log_file,
+                'command': command_str,
+                'error': f'Build failed with exit code {result.returncode}',
             }
 
     except subprocess.TimeoutExpired:
         duration_seconds = int(time.time() - start_time)
-        log_entry('script', 'global', 'ERROR', f"[MAVEN-EXECUTE] Timeout after {timeout_seconds}s: {command_str}")
+        log_entry('script', 'global', 'ERROR', f'[MAVEN-EXECUTE] Timeout after {timeout_seconds}s: {command_str}')
         return {
-            "status": "timeout",
-            "exit_code": -1,
-            "duration_seconds": duration_seconds,
-            "timeout_used_seconds": timeout_seconds,
-            "log_file": log_file,
-            "command": command_str,
-            "error": f"Command timed out after {timeout_seconds} seconds"
+            'status': 'timeout',
+            'exit_code': -1,
+            'duration_seconds': duration_seconds,
+            'timeout_used_seconds': timeout_seconds,
+            'log_file': log_file,
+            'command': command_str,
+            'error': f'Command timed out after {timeout_seconds} seconds',
         }
 
     except FileNotFoundError:
-        log_entry('script', 'global', 'ERROR', f"[MAVEN-EXECUTE] Wrapper not found: {wrapper}")
+        log_entry('script', 'global', 'ERROR', f'[MAVEN-EXECUTE] Wrapper not found: {wrapper}')
         return {
-            "status": "error",
-            "exit_code": -1,
-            "duration_seconds": 0,
-            "timeout_used_seconds": timeout_seconds,
-            "log_file": log_file,
-            "command": command_str,
-            "error": f"Maven wrapper not found: {wrapper}"
+            'status': 'error',
+            'exit_code': -1,
+            'duration_seconds': 0,
+            'timeout_used_seconds': timeout_seconds,
+            'log_file': log_file,
+            'command': command_str,
+            'error': f'Maven wrapper not found: {wrapper}',
         }
 
     except OSError as e:
-        log_entry('script', 'global', 'ERROR', f"[MAVEN-EXECUTE] OS error: {e}")
+        log_entry('script', 'global', 'ERROR', f'[MAVEN-EXECUTE] OS error: {e}')
         return {
-            "status": "error",
-            "exit_code": -1,
-            "duration_seconds": 0,
-            "timeout_used_seconds": timeout_seconds,
-            "log_file": log_file,
-            "command": command_str,
-            "error": str(e)
+            'status': 'error',
+            'exit_code': -1,
+            'duration_seconds': 0,
+            'timeout_used_seconds': timeout_seconds,
+            'log_file': log_file,
+            'command': command_str,
+            'error': str(e),
         }
 
 
@@ -247,6 +245,7 @@ def get_bash_timeout(inner_timeout_seconds: int) -> int:
 # Run Subcommand (execute + auto-parse on failure)
 # =============================================================================
 
+
 def cmd_run(args):
     """Handle run subcommand - execute + auto-parse on failure.
 
@@ -261,8 +260,8 @@ def cmd_run(args):
 
     # Build command key for timeout learning (use first goal as key)
     command_args = args.commandArgs
-    first_goal = command_args.split()[0] if command_args else "default"
-    command_key = f"maven:{first_goal.replace('-', '_')}"
+    first_goal = command_args.split()[0] if command_args else 'default'
+    command_key = f'maven:{first_goal.replace("-", "_")}'
 
     # Get timeout (convert ms to seconds if needed)
     if hasattr(args, 'timeout') and args.timeout:
@@ -273,15 +272,12 @@ def cmd_run(args):
     # Execute via direct_command foundation layer
     # commandArgs is complete and self-contained (includes -pl, -P, etc.)
     result = execute_direct(
-        args=command_args,
-        command_key=command_key,
-        default_timeout=timeout_seconds,
-        project_dir=project_dir
+        args=command_args, command_key=command_key, default_timeout=timeout_seconds, project_dir=project_dir
     )
 
     log_file = result['log_file']
     command_str = result['command']
-    print(f"[EXEC] {command_str}", file=sys.stderr)
+    print(f'[EXEC] {command_str}', file=sys.stderr)
 
     # Handle execution errors (wrapper not found, log file creation failed)
     if result['status'] == 'error' and result['exit_code'] == -1:
@@ -328,7 +324,7 @@ def cmd_run(args):
         errors, warnings = partition_issues(issues)
 
         # Load acceptable warnings and filter based on mode
-        patterns = load_acceptable_warnings(project_dir, "maven")
+        patterns = load_acceptable_warnings(project_dir, 'maven')
         filtered_warnings = filter_warnings(warnings, patterns, mode)
 
         # Build result dict
@@ -342,15 +338,15 @@ def cmd_run(args):
 
         # Add errors if present
         if errors:
-            output["errors"] = errors[:20]
+            output['errors'] = errors[:20]
 
         # Add warnings if present (mode != errors already handled by filter_warnings)
         if filtered_warnings:
-            output["warnings"] = filtered_warnings[:10]
+            output['warnings'] = filtered_warnings[:10]
 
         # Add test summary if present
         if test_summary:
-            output["tests"] = test_summary
+            output['tests'] = test_summary
 
         print(formatter(output))
 

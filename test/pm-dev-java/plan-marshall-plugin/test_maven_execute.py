@@ -32,6 +32,7 @@ def run_cli(*args, **kwargs):
 # Test: CLI interface
 # =============================================================================
 
+
 def test_cli_help():
     """Test maven.py --help works."""
     result = run_cli('python3', str(MAVEN_CLI), '--help')

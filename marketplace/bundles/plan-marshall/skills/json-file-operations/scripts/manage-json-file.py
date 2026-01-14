@@ -26,7 +26,7 @@ def parse_json_path(path: str) -> list[str | int]:
     - Quoted keys: 'a."my-key".b'
     """
     components: list[str | int] = []
-    current = ""
+    current = ''
     i = 0
     in_quotes = False
 
@@ -44,16 +44,16 @@ def parse_json_path(path: str) -> list[str | int]:
         elif char == '.' and not in_quotes:
             if current:
                 components.append(current)
-                current = ""
+                current = ''
             i += 1
             continue
         elif char == '[' and not in_quotes:
             if current:
                 components.append(current)
-                current = ""
+                current = ''
             # Parse array index
             i += 1
-            index_str = ""
+            index_str = ''
             while i < len(path) and path[i] != ']':
                 index_str += path[i]
                 i += 1
@@ -77,11 +77,11 @@ def get_nested_value(data: Any, path_components: list) -> Any:
     for component in path_components:
         if isinstance(component, int):
             if not isinstance(current, list):
-                raise KeyError(f"Cannot index non-list with [{component}]")
+                raise KeyError(f'Cannot index non-list with [{component}]')
             if component < 0:
                 component = len(current) + component
             if component < 0 or component >= len(current):
-                raise KeyError(f"Index {component} out of range")
+                raise KeyError(f'Index {component} out of range')
             current = current[component]
         elif isinstance(current, dict):
             if component not in current:
@@ -98,7 +98,7 @@ def set_nested_value(data: Any, path_components: list, value: Any) -> None:
     for i, component in enumerate(path_components[:-1]):
         if isinstance(component, int):
             if not isinstance(current, list):
-                raise KeyError(f"Cannot index non-list with [{component}]")
+                raise KeyError(f'Cannot index non-list with [{component}]')
             if component < 0:
                 component = len(current) + component
             current = current[component]
@@ -114,7 +114,7 @@ def set_nested_value(data: Any, path_components: list, value: Any) -> None:
     final = path_components[-1]
     if isinstance(final, int):
         if not isinstance(current, list):
-            raise KeyError(f"Cannot index non-list with [{final}]")
+            raise KeyError(f'Cannot index non-list with [{final}]')
         if final < 0:
             final = len(current) + final
         current[final] = value
@@ -143,7 +143,7 @@ def delete_nested_value(data: Any, path_components: list) -> Any:
 def read_json_file(file_path: Path) -> dict[str, Any]:
     """Read and parse a JSON file."""
     if not file_path.exists():
-        raise FileNotFoundError(f"File not found: {file_path}")
+        raise FileNotFoundError(f'File not found: {file_path}')
 
     with open(file_path, encoding='utf-8') as f:
         data: dict[str, Any] = json.load(f)
@@ -156,11 +156,7 @@ def write_json_file(file_path: Path, data: Any) -> None:
     file_path.parent.mkdir(parents=True, exist_ok=True)
 
     # Write to temp file first, then rename (atomic on most systems)
-    fd, temp_path = tempfile.mkstemp(
-        suffix='.json',
-        prefix='.tmp_',
-        dir=file_path.parent
-    )
+    fd, temp_path = tempfile.mkstemp(suffix='.json', prefix='.tmp_', dir=file_path.parent)
     try:
         with os.fdopen(fd, 'w', encoding='utf-8') as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
@@ -174,14 +170,14 @@ def write_json_file(file_path: Path, data: Any) -> None:
 
 def output_success(operation: str, **kwargs) -> None:
     """Output success result as JSON."""
-    result = {"success": True, "operation": operation}
+    result = {'success': True, 'operation': operation}
     result.update(kwargs)
     print(json.dumps(result, indent=2, ensure_ascii=False))
 
 
 def output_error(operation: str, error: str) -> None:
     """Output error result as JSON to stderr."""
-    result = {"success": False, "operation": operation, "error": error}
+    result = {'success': False, 'operation': operation, 'error': error}
     print(json.dumps(result, indent=2), file=sys.stderr)
 
 
@@ -190,10 +186,10 @@ def cmd_read(args) -> int:
     try:
         file_path = Path(args.file_path)
         data = read_json_file(file_path)
-        output_success("read", path=str(file_path), value=data)
+        output_success('read', path=str(file_path), value=data)
         return 0
     except Exception as e:
-        output_error("read", str(e))
+        output_error('read', str(e))
         return 1
 
 
@@ -205,10 +201,10 @@ def cmd_read_field(args) -> int:
         components = parse_json_path(args.field)
         value = get_nested_value(data, components)
 
-        output_success("read-field", path=str(file_path), field=args.field, value=value)
+        output_success('read-field', path=str(file_path), field=args.field, value=value)
         return 0
     except Exception as e:
-        output_error("read-field", str(e))
+        output_error('read-field', str(e))
         return 1
 
 
@@ -219,13 +215,13 @@ def cmd_write(args) -> int:
         data = json.loads(args.value)
         write_json_file(file_path, data)
 
-        output_success("write", path=str(file_path))
+        output_success('write', path=str(file_path))
         return 0
     except json.JSONDecodeError as e:
-        output_error("write", f"Invalid JSON: {e}")
+        output_error('write', f'Invalid JSON: {e}')
         return 1
     except Exception as e:
-        output_error("write", str(e))
+        output_error('write', str(e))
         return 1
 
 
@@ -246,13 +242,13 @@ def cmd_update_field(args) -> int:
 
         write_json_file(file_path, data)
 
-        output_success("update-field", path=str(file_path), field=args.field, value=value)
+        output_success('update-field', path=str(file_path), field=args.field, value=value)
         return 0
     except json.JSONDecodeError as e:
-        output_error("update-field", f"Invalid JSON value: {e}")
+        output_error('update-field', f'Invalid JSON value: {e}')
         return 1
     except Exception as e:
-        output_error("update-field", str(e))
+        output_error('update-field', str(e))
         return 1
 
 
@@ -275,22 +271,22 @@ def cmd_add_entry(args) -> int:
             target.append(value)
         elif isinstance(target, dict):
             if not isinstance(value, dict):
-                output_error("add-entry", "Value must be an object when adding to object")
+                output_error('add-entry', 'Value must be an object when adding to object')
                 return 1
             target.update(value)
         else:
-            output_error("add-entry", f"Cannot add to {type(target).__name__}")
+            output_error('add-entry', f'Cannot add to {type(target).__name__}')
             return 1
 
         write_json_file(file_path, data)
 
-        output_success("add-entry", path=str(file_path), field=args.field, added=value)
+        output_success('add-entry', path=str(file_path), field=args.field, added=value)
         return 0
     except json.JSONDecodeError as e:
-        output_error("add-entry", f"Invalid JSON value: {e}")
+        output_error('add-entry', f'Invalid JSON value: {e}')
         return 1
     except Exception as e:
-        output_error("add-entry", str(e))
+        output_error('add-entry', str(e))
         return 1
 
 
@@ -310,17 +306,17 @@ def cmd_remove_entry(args) -> int:
                     target.remove(value)
                     removed = value
                 else:
-                    output_error("remove-entry", "Value not found in array")
+                    output_error('remove-entry', 'Value not found in array')
                     return 1
             elif isinstance(target, dict):
                 key = args.value.strip('"\'')
                 if key in target:
                     removed = target.pop(key)
                 else:
-                    output_error("remove-entry", f"Key '{key}' not found")
+                    output_error('remove-entry', f"Key '{key}' not found")
                     return 1
             else:
-                output_error("remove-entry", f"Cannot remove from {type(target).__name__}")
+                output_error('remove-entry', f'Cannot remove from {type(target).__name__}')
                 return 1
         else:
             # Remove the field itself
@@ -328,13 +324,13 @@ def cmd_remove_entry(args) -> int:
 
         write_json_file(file_path, data)
 
-        output_success("remove-entry", path=str(file_path), field=args.field, removed=removed)
+        output_success('remove-entry', path=str(file_path), field=args.field, removed=removed)
         return 0
     except json.JSONDecodeError as e:
-        output_error("remove-entry", f"Invalid JSON value: {e}")
+        output_error('remove-entry', f'Invalid JSON value: {e}')
         return 1
     except Exception as e:
-        output_error("remove-entry", str(e))
+        output_error('remove-entry', str(e))
         return 1
 
 
@@ -361,7 +357,7 @@ Examples:
 
   # Also works with .claude/ (for settings)
   %(prog)s read .claude/settings.json
-"""
+""",
     )
 
     subparsers = parser.add_subparsers(dest='command', help='Operation to perform')

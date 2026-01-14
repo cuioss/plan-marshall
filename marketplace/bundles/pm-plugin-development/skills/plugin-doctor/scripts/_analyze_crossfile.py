@@ -78,16 +78,18 @@ def extract_sections(content: str, file_path: str) -> list[dict]:
             if current_content_lines:
                 section_text = '\n'.join(current_content_lines)
                 if len(section_text.strip()) >= MIN_SECTION_LENGTH:
-                    sections.append({
-                        'header': current_header,
-                        'level': current_level,
-                        'start_line': current_start_line,
-                        'end_line': i - 1,
-                        'text': section_text,
-                        'content_hash': compute_hash(section_text),
-                        'normalized_length': len(normalize_text(section_text)),
-                        'content_lines': current_content_lines
-                    })
+                    sections.append(
+                        {
+                            'header': current_header,
+                            'level': current_level,
+                            'start_line': current_start_line,
+                            'end_line': i - 1,
+                            'text': section_text,
+                            'content_hash': compute_hash(section_text),
+                            'normalized_length': len(normalize_text(section_text)),
+                            'content_lines': current_content_lines,
+                        }
+                    )
 
             current_header = header_match.group(2).strip()
             current_level = len(header_match.group(1))
@@ -99,16 +101,18 @@ def extract_sections(content: str, file_path: str) -> list[dict]:
     if current_content_lines:
         section_text = '\n'.join(current_content_lines)
         if len(section_text.strip()) >= MIN_SECTION_LENGTH:
-            sections.append({
-                'header': current_header,
-                'level': current_level,
-                'start_line': current_start_line,
-                'end_line': len(lines),
-                'text': section_text,
-                'content_hash': compute_hash(section_text),
-                'normalized_length': len(normalize_text(section_text)),
-                'content_lines': current_content_lines
-            })
+            sections.append(
+                {
+                    'header': current_header,
+                    'level': current_level,
+                    'start_line': current_start_line,
+                    'end_line': len(lines),
+                    'text': section_text,
+                    'content_hash': compute_hash(section_text),
+                    'normalized_length': len(normalize_text(section_text)),
+                    'content_lines': current_content_lines,
+                }
+            )
 
     return sections
 
@@ -132,29 +136,23 @@ def find_exact_duplicates(all_sections: list[dict]) -> list[dict]:
     duplicates = []
     for content_hash, sections in hash_groups.items():
         if len(sections) > 1:
-            duplicates.append({
-                'hash': content_hash,
-                'occurrences': [
-                    {
-                        'file': s['file'],
-                        'section': s['header'],
-                        'lines': f"{s['start_line']}-{s['end_line']}"
-                    }
-                    for s in sections
-                ],
-                'line_count': sections[0]['end_line'] - sections[0]['start_line'] + 1,
-                'content_preview': normalize_text(sections[0]['text'])[:200] + '...',
-                'recommendation': 'consolidate'
-            })
+            duplicates.append(
+                {
+                    'hash': content_hash,
+                    'occurrences': [
+                        {'file': s['file'], 'section': s['header'], 'lines': f'{s["start_line"]}-{s["end_line"]}'}
+                        for s in sections
+                    ],
+                    'line_count': sections[0]['end_line'] - sections[0]['start_line'] + 1,
+                    'content_preview': normalize_text(sections[0]['text'])[:200] + '...',
+                    'recommendation': 'consolidate',
+                }
+            )
 
     return duplicates
 
 
-def find_similarity_candidates(
-    all_sections: list[dict],
-    threshold: float,
-    exact_hashes: set[str]
-) -> list[dict]:
+def find_similarity_candidates(all_sections: list[dict], threshold: float, exact_hashes: set[str]) -> list[dict]:
     """Find sections with similarity between threshold and EXACT_THRESHOLD."""
     candidates: list[dict] = []
     processed_pairs: set[tuple[str, str]] = set()
@@ -163,17 +161,16 @@ def find_similarity_candidates(
         if section1.get('content_hash') in exact_hashes:
             continue
 
-        for _j, section2 in enumerate(all_sections[i + 1:], i + 1):
+        for _j, section2 in enumerate(all_sections[i + 1 :], i + 1):
             if section1['file'] == section2['file']:
                 continue
 
             if section2.get('content_hash') in exact_hashes:
                 continue
 
-            pair_items: list[str] = sorted([
-                f"{section1['file']}:{section1['header']}",
-                f"{section2['file']}:{section2['header']}"
-            ])
+            pair_items: list[str] = sorted(
+                [f'{section1["file"]}:{section1["header"]}', f'{section2["file"]}:{section2["header"]}']
+            )
             pair_id: tuple[str, str] = (pair_items[0], pair_items[1])
 
             if pair_id in processed_pairs:
@@ -183,20 +180,22 @@ def find_similarity_candidates(
             similarity = calculate_similarity(section1['text'], section2['text'])
 
             if threshold <= similarity < EXACT_THRESHOLD:
-                candidates.append({
-                    'source': {
-                        'file': section1['file'],
-                        'section': section1['header'],
-                        'lines': f"{section1['start_line']}-{section1['end_line']}"
-                    },
-                    'target': {
-                        'file': section2['file'],
-                        'section': section2['header'],
-                        'lines': f"{section2['start_line']}-{section2['end_line']}"
-                    },
-                    'similarity': round(similarity, 3),
-                    'llm_analysis_required': True
-                })
+                candidates.append(
+                    {
+                        'source': {
+                            'file': section1['file'],
+                            'section': section1['header'],
+                            'lines': f'{section1["start_line"]}-{section1["end_line"]}',
+                        },
+                        'target': {
+                            'file': section2['file'],
+                            'section': section2['header'],
+                            'lines': f'{section2["start_line"]}-{section2["end_line"]}',
+                        },
+                        'similarity': round(similarity, 3),
+                        'llm_analysis_required': True,
+                    }
+                )
 
     candidates.sort(key=lambda x: float(x['similarity']), reverse=True)
     return candidates
@@ -215,15 +214,17 @@ def detect_extraction_candidates(all_sections: list[dict]) -> list[dict]:
             placeholders_found.extend(matches)
 
         if placeholders_found:
-            candidates.append({
-                'type': 'template',
-                'pattern': 'placeholder_structure',
-                'file': section['file'],
-                'section': section['header'],
-                'lines': f"{section['start_line']}-{section['end_line']}",
-                'detected_placeholders': list(set(placeholders_found)),
-                'recommendation': 'extract_to_templates'
-            })
+            candidates.append(
+                {
+                    'type': 'template',
+                    'pattern': 'placeholder_structure',
+                    'file': section['file'],
+                    'section': section['header'],
+                    'lines': f'{section["start_line"]}-{section["end_line"]}',
+                    'detected_placeholders': list(set(placeholders_found)),
+                    'recommendation': 'extract_to_templates',
+                }
+            )
             continue
 
         workflow_indicators = 0
@@ -231,15 +232,17 @@ def detect_extraction_candidates(all_sections: list[dict]) -> list[dict]:
             workflow_indicators += len(re.findall(pattern, text, re.MULTILINE))
 
         if workflow_indicators >= 3:
-            candidates.append({
-                'type': 'workflow',
-                'pattern': 'step_sequence',
-                'file': section['file'],
-                'section': section['header'],
-                'lines': f"{section['start_line']}-{section['end_line']}",
-                'step_count': workflow_indicators,
-                'recommendation': 'extract_to_workflows'
-            })
+            candidates.append(
+                {
+                    'type': 'workflow',
+                    'pattern': 'step_sequence',
+                    'file': section['file'],
+                    'section': section['header'],
+                    'lines': f'{section["start_line"]}-{section["end_line"]}',
+                    'step_count': workflow_indicators,
+                    'recommendation': 'extract_to_workflows',
+                }
+            )
 
     return candidates
 
@@ -282,19 +285,17 @@ def find_terminology_variants(terms_by_file: dict[str, dict[str, int]]) -> list[
             for term, occurrences in found_variants.items():
                 files = [occ[0] for occ in occurrences]
                 total_count = sum(occ[1] for occ in occurrences)
-                variant_list.append({
-                    'term': term,
-                    'files': list(set(files)),
-                    'count': total_count
-                })
+                variant_list.append({'term': term, 'files': list(set(files)), 'count': total_count})
 
             if variant_list:
                 most_common = max(variant_list, key=lambda x: x['count'] if isinstance(x['count'], int) else 0)
-                variants.append({
-                    'concept': list(synonym_group)[0],
-                    'variants': variant_list,
-                    'recommendation': f"standardize on '{most_common['term']}'"
-                })
+                variants.append(
+                    {
+                        'concept': list(synonym_group)[0],
+                        'variants': variant_list,
+                        'recommendation': f"standardize on '{most_common['term']}'",
+                    }
+                )
 
     return variants
 
@@ -328,12 +329,12 @@ def analyze_cross_file(skill_path: Path, similarity_threshold: float) -> dict:
 
     content_blocks = [
         {
-            'id': f"{s['file']}:{s['header']}".replace('/', ':').replace(' ', '-').lower(),
+            'id': f'{s["file"]}:{s["header"]}'.replace('/', ':').replace(' ', '-').lower(),
             'file': s['file'],
             'section': s['header'],
-            'lines': f"{s['start_line']}-{s['end_line']}",
+            'lines': f'{s["start_line"]}-{s["end_line"]}',
             'content_hash': s.get('content_hash', ''),
-            'normalized_length': s.get('normalized_length', 0)
+            'normalized_length': s.get('normalized_length', 0),
         }
         for s in all_sections
     ]
@@ -341,9 +342,7 @@ def analyze_cross_file(skill_path: Path, similarity_threshold: float) -> dict:
     exact_duplicates = find_exact_duplicates(all_sections)
     exact_hashes = {d['hash'] for d in exact_duplicates}
 
-    similarity_candidates = find_similarity_candidates(
-        all_sections, similarity_threshold, exact_hashes
-    )
+    similarity_candidates = find_similarity_candidates(all_sections, similarity_threshold, exact_hashes)
 
     extraction_candidates = detect_extraction_candidates(all_sections)
 
@@ -351,9 +350,7 @@ def analyze_cross_file(skill_path: Path, similarity_threshold: float) -> dict:
     terminology_variants = find_terminology_variants(terms_by_file)
 
     llm_review_required = (
-        len(similarity_candidates) > 0 or
-        len(extraction_candidates) > 0 or
-        len(terminology_variants) > 0
+        len(similarity_candidates) > 0 or len(extraction_candidates) > 0 or len(terminology_variants) > 0
     )
 
     return {
@@ -371,8 +368,8 @@ def analyze_cross_file(skill_path: Path, similarity_threshold: float) -> dict:
             'similarity_candidates': len(similarity_candidates),
             'extraction_candidates': len(extraction_candidates),
             'terminology_issues': len(terminology_variants),
-            'llm_review_required': llm_review_required
-        }
+            'llm_review_required': llm_review_required,
+        },
     }
 
 

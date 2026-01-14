@@ -27,30 +27,17 @@ EXIT_ERROR = 1
 # =============================================================================
 
 # Patterns for JavaScript constructs that should have JSDoc
-FUNCTION_PATTERN = re.compile(
-    r'^(?:export\s+)?(?:async\s+)?function\s+(\w+)\s*\(([^)]*)\)',
-    re.MULTILINE
-)
+FUNCTION_PATTERN = re.compile(r'^(?:export\s+)?(?:async\s+)?function\s+(\w+)\s*\(([^)]*)\)', re.MULTILINE)
 
 ARROW_FUNCTION_PATTERN = re.compile(
-    r'^(?:export\s+)?(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s+)?\([^)]*\)\s*=>',
-    re.MULTILINE
+    r'^(?:export\s+)?(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s+)?\([^)]*\)\s*=>', re.MULTILINE
 )
 
-CLASS_PATTERN = re.compile(
-    r'^(?:export\s+)?class\s+(\w+)',
-    re.MULTILINE
-)
+CLASS_PATTERN = re.compile(r'^(?:export\s+)?class\s+(\w+)', re.MULTILINE)
 
-METHOD_PATTERN = re.compile(
-    r'^\s+(?:async\s+)?(\w+)\s*\(([^)]*)\)\s*\{',
-    re.MULTILINE
-)
+METHOD_PATTERN = re.compile(r'^\s+(?:async\s+)?(\w+)\s*\(([^)]*)\)\s*\{', re.MULTILINE)
 
-CONSTRUCTOR_PATTERN = re.compile(
-    r'^\s+constructor\s*\(([^)]*)\)',
-    re.MULTILINE
-)
+CONSTRUCTOR_PATTERN = re.compile(r'^\s+constructor\s*\(([^)]*)\)', re.MULTILINE)
 
 JSDOC_PATTERN = re.compile(r'/\*\*[\s\S]*?\*/', re.MULTILINE)
 PARAM_TAG_PATTERN = re.compile(r'@param\s+(?:\{([^}]+)\}\s+)?(\w+)')
@@ -74,7 +61,7 @@ def find_preceding_jsdoc(content: str, pos: int) -> str | None:
     if jsdoc_end == -1:
         return None
 
-    between = preceding[jsdoc_end + 2:]
+    between = preceding[jsdoc_end + 2 :]
     if between.strip():
         return None
 
@@ -82,7 +69,7 @@ def find_preceding_jsdoc(content: str, pos: int) -> str | None:
     if jsdoc_start == -1:
         return None
 
-    return preceding[jsdoc_start:jsdoc_end + 2]
+    return preceding[jsdoc_start : jsdoc_end + 2]
 
 
 def extract_function_params(param_str: str) -> list[str]:
@@ -131,29 +118,35 @@ def check_function_jsdoc(jsdoc: str, params: list[str], has_return: bool) -> lis
 
     for param in params:
         if param not in documented_param_names:
-            violations.append({
-                'type': 'missing_param',
-                'severity': 'WARNING',
-                'message': f"@param tag missing for parameter '{param}'",
-                'fix_suggestion': f"Add @param {{type}} {param} - Description"
-            })
+            violations.append(
+                {
+                    'type': 'missing_param',
+                    'severity': 'WARNING',
+                    'message': f"@param tag missing for parameter '{param}'",
+                    'fix_suggestion': f'Add @param {{type}} {param} - Description',
+                }
+            )
 
     for param_type, param_name in documented_params:
         if not param_type:
-            violations.append({
-                'type': 'missing_param_type',
-                'severity': 'WARNING',
-                'message': f"Type annotation missing for @param {param_name}",
-                'fix_suggestion': f"Add type: @param {{Type}} {param_name}"
-            })
+            violations.append(
+                {
+                    'type': 'missing_param_type',
+                    'severity': 'WARNING',
+                    'message': f'Type annotation missing for @param {param_name}',
+                    'fix_suggestion': f'Add type: @param {{Type}} {param_name}',
+                }
+            )
 
     if has_return and not RETURNS_TAG_PATTERN.search(jsdoc):
-        violations.append({
-            'type': 'missing_returns',
-            'severity': 'WARNING',
-            'message': '@returns tag missing for function that returns a value',
-            'fix_suggestion': 'Add @returns {Type} Description'
-        })
+        violations.append(
+            {
+                'type': 'missing_returns',
+                'severity': 'WARNING',
+                'message': '@returns tag missing for function that returns a value',
+                'fix_suggestion': 'Add @returns {Type} Description',
+            }
+        )
 
     return violations
 
@@ -166,49 +159,55 @@ def analyze_file(file_path: str, scope: str) -> list[dict]:
         with open(file_path, encoding='utf-8') as f:
             content = f.read()
     except Exception as e:
-        return [{
-            'file': file_path,
-            'line': 0,
-            'type': 'file_error',
-            'severity': 'CRITICAL',
-            'message': f'Failed to read file: {e}'
-        }]
+        return [
+            {
+                'file': file_path,
+                'line': 0,
+                'type': 'file_error',
+                'severity': 'CRITICAL',
+                'message': f'Failed to read file: {e}',
+            }
+        ]
 
     # Check for @fileoverview
     if scope in ('all', 'syntax'):
         first_jsdoc = JSDOC_PATTERN.search(content)
         if not first_jsdoc or not FILEOVERVIEW_PATTERN.search(first_jsdoc.group()):
-            violations.append({
-                'file': file_path,
-                'line': 1,
-                'type': 'missing_fileoverview',
-                'severity': 'SUGGESTION',
-                'target': 'file',
-                'message': 'Missing @fileoverview tag at file level',
-                'fix_suggestion': 'Add @fileoverview describing the module purpose'
-            })
+            violations.append(
+                {
+                    'file': file_path,
+                    'line': 1,
+                    'type': 'missing_fileoverview',
+                    'severity': 'SUGGESTION',
+                    'target': 'file',
+                    'message': 'Missing @fileoverview tag at file level',
+                    'fix_suggestion': 'Add @fileoverview describing the module purpose',
+                }
+            )
 
     # Find all functions
     for match in FUNCTION_PATTERN.finditer(content):
         func_name = match.group(1)
         params_str = match.group(2)
         line_num = get_line_number(content, match.start())
-        is_exported = 'export' in content[max(0, match.start() - 20):match.start()]
+        is_exported = 'export' in content[max(0, match.start() - 20) : match.start()]
 
         jsdoc = find_preceding_jsdoc(content, match.start())
 
         if scope in ('all', 'missing'):
             if not jsdoc:
                 severity = 'CRITICAL' if is_exported else 'WARNING'
-                violations.append({
-                    'file': file_path,
-                    'line': line_num,
-                    'type': 'missing_jsdoc',
-                    'severity': severity,
-                    'target': f'function {func_name}',
-                    'message': f"{'Exported f' if is_exported else 'F'}unction '{func_name}' missing JSDoc documentation",
-                    'fix_suggestion': 'Add JSDoc block with @param and @returns tags'
-                })
+                violations.append(
+                    {
+                        'file': file_path,
+                        'line': line_num,
+                        'type': 'missing_jsdoc',
+                        'severity': severity,
+                        'target': f'function {func_name}',
+                        'message': f"{'Exported f' if is_exported else 'F'}unction '{func_name}' missing JSDoc documentation",
+                        'fix_suggestion': 'Add JSDoc block with @param and @returns tags',
+                    }
+                )
 
         if scope in ('all', 'syntax') and jsdoc:
             params = extract_function_params(params_str)
@@ -222,7 +221,7 @@ def analyze_file(file_path: str, scope: str) -> list[dict]:
                         brace_count += 1
                     elif content[pos] == '}':
                         brace_count -= 1
-                    elif content[pos:pos + 6] == 'return' and brace_count == 1:
+                    elif content[pos : pos + 6] == 'return' and brace_count == 1:
                         if pos == 0 or not content[pos - 1].isalnum():
                             has_return = True
                     pos += 1
@@ -238,40 +237,44 @@ def analyze_file(file_path: str, scope: str) -> list[dict]:
     for match in ARROW_FUNCTION_PATTERN.finditer(content):
         func_name = match.group(1)
         line_num = get_line_number(content, match.start())
-        is_exported = 'export' in content[max(0, match.start() - 20):match.start()]
+        is_exported = 'export' in content[max(0, match.start() - 20) : match.start()]
 
         jsdoc = find_preceding_jsdoc(content, match.start())
 
         if scope in ('all', 'missing') and not jsdoc:
             severity = 'CRITICAL' if is_exported else 'WARNING'
-            violations.append({
-                'file': file_path,
-                'line': line_num,
-                'type': 'missing_jsdoc',
-                'severity': severity,
-                'target': f'arrow function {func_name}',
-                'message': f"{'Exported a' if is_exported else 'A'}rrow function '{func_name}' missing JSDoc documentation",
-                'fix_suggestion': 'Add JSDoc block with @param and @returns tags'
-            })
+            violations.append(
+                {
+                    'file': file_path,
+                    'line': line_num,
+                    'type': 'missing_jsdoc',
+                    'severity': severity,
+                    'target': f'arrow function {func_name}',
+                    'message': f"{'Exported a' if is_exported else 'A'}rrow function '{func_name}' missing JSDoc documentation",
+                    'fix_suggestion': 'Add JSDoc block with @param and @returns tags',
+                }
+            )
 
     # Find all classes
     for match in CLASS_PATTERN.finditer(content):
         class_name = match.group(1)
         line_num = get_line_number(content, match.start())
-        is_exported = 'export' in content[max(0, match.start() - 20):match.start()]
+        is_exported = 'export' in content[max(0, match.start() - 20) : match.start()]
 
         jsdoc = find_preceding_jsdoc(content, match.start())
 
         if scope in ('all', 'missing') and not jsdoc:
-            violations.append({
-                'file': file_path,
-                'line': line_num,
-                'type': 'missing_class_doc',
-                'severity': 'CRITICAL',
-                'target': f'class {class_name}',
-                'message': f"Class '{class_name}' is missing JSDoc documentation",
-                'fix_suggestion': 'Add JSDoc block describing the class purpose'
-            })
+            violations.append(
+                {
+                    'file': file_path,
+                    'line': line_num,
+                    'type': 'missing_class_doc',
+                    'severity': 'CRITICAL',
+                    'target': f'class {class_name}',
+                    'message': f"Class '{class_name}' is missing JSDoc documentation",
+                    'fix_suggestion': 'Add JSDoc block describing the class purpose',
+                }
+            )
 
     # Find constructors
     for match in CONSTRUCTOR_PATTERN.finditer(content):
@@ -281,15 +284,17 @@ def analyze_file(file_path: str, scope: str) -> list[dict]:
         jsdoc = find_preceding_jsdoc(content, match.start())
 
         if scope in ('all', 'missing') and not jsdoc and params_str.strip():
-            violations.append({
-                'file': file_path,
-                'line': line_num,
-                'type': 'missing_constructor_doc',
-                'severity': 'CRITICAL',
-                'target': 'constructor',
-                'message': 'Constructor with parameters is missing JSDoc documentation',
-                'fix_suggestion': 'Add JSDoc block with @param tags for constructor parameters'
-            })
+            violations.append(
+                {
+                    'file': file_path,
+                    'line': line_num,
+                    'type': 'missing_constructor_doc',
+                    'severity': 'CRITICAL',
+                    'target': 'constructor',
+                    'message': 'Constructor with parameters is missing JSDoc documentation',
+                    'fix_suggestion': 'Add JSDoc block with @param tags for constructor parameters',
+                }
+            )
 
     return violations
 
@@ -313,36 +318,25 @@ def analyze_jsdoc(target: str, is_directory: bool, scope: str) -> dict[str, Any]
     """Main analysis function."""
     if is_directory:
         if not os.path.isdir(target):
-            return {
-                'status': 'error',
-                'error': 'DIRECTORY_NOT_FOUND',
-                'message': f'Directory not found: {target}'
-            }
+            return {'status': 'error', 'error': 'DIRECTORY_NOT_FOUND', 'message': f'Directory not found: {target}'}
         files = find_js_files(target)
     else:
         if not os.path.exists(target):
-            return {
-                'status': 'error',
-                'error': 'FILE_NOT_FOUND',
-                'message': f'File not found: {target}'
-            }
+            return {'status': 'error', 'error': 'FILE_NOT_FOUND', 'message': f'File not found: {target}'}
         files = [target]
 
     if not files:
         return {
             'status': 'success',
-            'data': {
-                'violations': [],
-                'files_analyzed': 0
-            },
+            'data': {'violations': [], 'files_analyzed': 0},
             'metrics': {
                 'total_files': 0,
                 'files_with_violations': 0,
                 'critical': 0,
                 'warnings': 0,
                 'suggestions': 0,
-                'total_violations': 0
-            }
+                'total_violations': 0,
+            },
         }
 
     all_violations = []
@@ -362,18 +356,15 @@ def analyze_jsdoc(target: str, is_directory: bool, scope: str) -> dict[str, Any]
 
     return {
         'status': status,
-        'data': {
-            'violations': all_violations,
-            'files_analyzed': files
-        },
+        'data': {'violations': all_violations, 'files_analyzed': files},
         'metrics': {
             'total_files': len(files),
             'files_with_violations': len(files_with_violations),
             'critical': critical,
             'warnings': warnings,
             'suggestions': suggestions,
-            'total_violations': len(all_violations)
-        }
+            'total_violations': len(all_violations),
+        },
     }
 
 
@@ -395,20 +386,24 @@ def cmd_analyze(args) -> int:
 # MAIN
 # =============================================================================
 
+
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="JSDoc documentation analysis tool",
-        formatter_class=argparse.RawDescriptionHelpFormatter
+        description='JSDoc documentation analysis tool', formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    subparsers = parser.add_subparsers(dest="command", required=True)
+    subparsers = parser.add_subparsers(dest='command', required=True)
 
     # analyze subcommand
-    analyze_parser = subparsers.add_parser("analyze", help="Analyze JavaScript files for JSDoc compliance violations")
+    analyze_parser = subparsers.add_parser('analyze', help='Analyze JavaScript files for JSDoc compliance violations')
     group = analyze_parser.add_mutually_exclusive_group(required=True)
-    group.add_argument("--directory", help="Directory to scan for JavaScript files")
-    group.add_argument("--file", help="Single JavaScript file to analyze")
-    analyze_parser.add_argument("--scope", choices=['all', 'missing', 'syntax'], default='all',
-                                help="Analysis scope: all (default), missing, or syntax")
+    group.add_argument('--directory', help='Directory to scan for JavaScript files')
+    group.add_argument('--file', help='Single JavaScript file to analyze')
+    analyze_parser.add_argument(
+        '--scope',
+        choices=['all', 'missing', 'syntax'],
+        default='all',
+        help='Analysis scope: all (default), missing, or syntax',
+    )
     analyze_parser.set_defaults(func=cmd_analyze)
 
     args = parser.parse_args()
@@ -416,5 +411,5 @@ def main() -> int:
     return result
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     sys.exit(main())

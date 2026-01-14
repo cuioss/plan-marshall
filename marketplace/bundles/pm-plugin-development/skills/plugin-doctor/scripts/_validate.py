@@ -51,7 +51,7 @@ Examples:
 
   # Validate bundle extension
   %(prog)s extension --bundle marketplace/bundles/pm-dev-java
-"""
+""",
     )
 
     subparsers = parser.add_subparsers(dest='command', help='Operation to perform')

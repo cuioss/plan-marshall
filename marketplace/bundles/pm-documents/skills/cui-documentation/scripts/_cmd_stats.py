@@ -18,11 +18,11 @@ NC = '\033[0m'
 def format_size(size: int) -> str:
     """Format file size in human-readable format."""
     if size > 1048576:
-        return f"{size // 1048576} MB"
+        return f'{size // 1048576} MB'
     elif size > 1024:
-        return f"{size // 1024} KB"
+        return f'{size // 1024} KB'
     else:
-        return f"{size} B"
+        return f'{size} B'
 
 
 def analyze_file_stats(file_path: Path) -> dict:
@@ -97,19 +97,29 @@ def cmd_stats(args):
 
     if args.format == 'json':
         output = {
-            'metadata': {'directory': str(target_dir), 'generated': datetime.now(UTC).strftime('%Y-%m-%dT%H:%M:%SZ'), 'total_files': total_files},
-            'summary': {**totals, 'averages': {'lines_per_file': totals['lines'] // total_files if total_files else 0, 'words_per_file': totals['words'] // total_files if total_files else 0}},
+            'metadata': {
+                'directory': str(target_dir),
+                'generated': datetime.now(UTC).strftime('%Y-%m-%dT%H:%M:%SZ'),
+                'total_files': total_files,
+            },
+            'summary': {
+                **totals,
+                'averages': {
+                    'lines_per_file': totals['lines'] // total_files if total_files else 0,
+                    'words_per_file': totals['words'] // total_files if total_files else 0,
+                },
+            },
             'directories': dir_stats,
         }
         if args.details:
             output['files'] = {s['file']: {k: v for k, v in s.items() if k != 'file'} for s in file_stats}
         print(json.dumps(output, indent=2))
     else:
-        print(f"{BLUE}Documentation Statistics{NC}")
-        print("=" * 30)
-        print(f"Directory: {target_dir}")
-        print(f"Total files: {total_files}")
-        print(f"Total lines: {totals['lines']:,}")
-        print(f"Total words: {totals['words']:,}")
+        print(f'{BLUE}Documentation Statistics{NC}')
+        print('=' * 30)
+        print(f'Directory: {target_dir}')
+        print(f'Total files: {total_files}')
+        print(f'Total lines: {totals["lines"]:,}')
+        print(f'Total words: {totals["words"]:,}')
 
     return EXIT_SUCCESS

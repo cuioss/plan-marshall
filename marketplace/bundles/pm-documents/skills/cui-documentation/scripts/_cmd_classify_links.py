@@ -36,7 +36,7 @@ def cmd_classify_links(args):
         else:
             input_data = json.load(sys.stdin)
     except (json.JSONDecodeError, FileNotFoundError) as e:
-        print(f"Error: {e}", file=sys.stderr)
+        print(f'Error: {e}', file=sys.stderr)
         return EXIT_ERROR
 
     issues = input_data.get('issues', input_data.get('data', {}).get('issues', []))
@@ -48,8 +48,13 @@ def cmd_classify_links(args):
         categorized[category].append(issue)
 
     result = {
-        'summary': {'total_issues': len(issues), 'likely_false_positive_count': len(categorized['likely-false-positive']), 'must_verify_manual_count': len(categorized['must-verify-manual']), 'definitely_broken_count': len(categorized['definitely-broken'])},
-        'categorized_issues': categorized
+        'summary': {
+            'total_issues': len(issues),
+            'likely_false_positive_count': len(categorized['likely-false-positive']),
+            'must_verify_manual_count': len(categorized['must-verify-manual']),
+            'definitely_broken_count': len(categorized['definitely-broken']),
+        },
+        'categorized_issues': categorized,
     }
 
     output_json = json.dumps(result, indent=2 if args.pretty else None)

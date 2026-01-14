@@ -12,40 +12,31 @@ class Extension(ExtensionBase):
 
     def provides_triage(self) -> str | None:
         """Return triage skill reference."""
-        return "pm-documents:ext-triage-docs"
+        return 'pm-documents:ext-triage-docs'
 
     def provides_outline(self) -> str | None:
         """Return outline skill reference for documentation domain."""
-        return "pm-documents:ext-outline-docs"
+        return 'pm-documents:ext-outline-docs'
 
     def get_skill_domains(self) -> dict:
         """Domain metadata for skill loading."""
         return {
-            "domain": {
-                "key": "documentation",
-                "name": "Documentation",
-                "description": "AsciiDoc documentation, ADRs, and interface specifications"
+            'domain': {
+                'key': 'documentation',
+                'name': 'Documentation',
+                'description': 'AsciiDoc documentation, ADRs, and interface specifications',
             },
-            "profiles": {
-                "core": {
-                    "defaults": ["pm-documents:cui-documentation"],
-                    "optionals": []
+            'profiles': {
+                'core': {'defaults': ['pm-documents:cui-documentation'], 'optionals': []},
+                'implementation': {
+                    'defaults': [],
+                    'optionals': ['pm-documents:adr-management', 'pm-documents:interface-management'],
                 },
-                "implementation": {
-                    "defaults": [],
-                    "optionals": ["pm-documents:adr-management", "pm-documents:interface-management"]
+                'module_testing': {'defaults': [], 'optionals': []},
+                'quality': {'defaults': [], 'optionals': []},
+                'documentation': {
+                    'defaults': ['pm-documents:cui-documentation'],
+                    'optionals': ['pm-documents:adr-management', 'pm-documents:interface-management'],
                 },
-                "module_testing": {
-                    "defaults": [],
-                    "optionals": []
-                },
-                "quality": {
-                    "defaults": [],
-                    "optionals": []
-                },
-                "documentation": {
-                    "defaults": ["pm-documents:cui-documentation"],
-                    "optionals": ["pm-documents:adr-management", "pm-documents:interface-management"]
-                }
-            }
+            },
         }

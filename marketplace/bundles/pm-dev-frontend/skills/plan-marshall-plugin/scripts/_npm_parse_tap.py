@@ -16,13 +16,13 @@ from pathlib import Path
 from _build_parse import SEVERITY_ERROR, Issue, UnitTestSummary  # type: ignore[import-not-found]
 
 # TAP summary patterns
-TESTS_PATTERN = re.compile(r"^#\s*tests\s+(\d+)", re.MULTILINE)
-PASS_PATTERN = re.compile(r"^#\s*pass\s+(\d+)", re.MULTILINE)
-FAIL_PATTERN = re.compile(r"^#\s*fail\s+(\d+)", re.MULTILINE)
-SKIPPED_PATTERN = re.compile(r"^#\s*skipped\s+(\d+)", re.MULTILINE)
+TESTS_PATTERN = re.compile(r'^#\s*tests\s+(\d+)', re.MULTILINE)
+PASS_PATTERN = re.compile(r'^#\s*pass\s+(\d+)', re.MULTILINE)
+FAIL_PATTERN = re.compile(r'^#\s*fail\s+(\d+)', re.MULTILINE)
+SKIPPED_PATTERN = re.compile(r'^#\s*skipped\s+(\d+)', re.MULTILINE)
 
 # TAP failure pattern: "not ok N - test name"
-NOT_OK_PATTERN = re.compile(r"^\s*not ok\s+\d+\s*-\s*(.+)$", re.MULTILINE)
+NOT_OK_PATTERN = re.compile(r'^\s*not ok\s+\d+\s*-\s*(.+)$', re.MULTILINE)
 
 
 def parse_log(log_file: str | Path) -> tuple[list[Issue], UnitTestSummary | None, str]:
@@ -43,11 +43,11 @@ def parse_log(log_file: str | Path) -> tuple[list[Issue], UnitTestSummary | None
         FileNotFoundError: If log file doesn't exist.
     """
     path = Path(log_file)
-    content = path.read_text(encoding="utf-8", errors="replace")
+    content = path.read_text(encoding='utf-8', errors='replace')
 
     issues = _extract_issues(content)
     test_summary = _extract_test_summary(content)
-    build_status = "FAILURE" if issues else "SUCCESS"
+    build_status = 'FAILURE' if issues else 'SUCCESS'
 
     return issues, test_summary, build_status
 
@@ -62,7 +62,7 @@ def _extract_issues(content: str) -> list[Issue]:
         List of Issue dataclasses with test failures.
     """
     issues = []
-    lines = content.split("\n")
+    lines = content.split('\n')
     i = 0
 
     while i < len(lines):
@@ -85,26 +85,26 @@ def _extract_issues(content: str) -> list[Issue]:
                 yaml_line = lines[i]
                 stripped = yaml_line.strip()
 
-                if stripped == "---":
+                if stripped == '---':
                     in_yaml_block = True
                     i += 1
                     continue
-                elif stripped == "...":
+                elif stripped == '...':
                     break
                 elif in_yaml_block:
-                    if stripped.startswith("error:"):
-                        error_msg = stripped[6:].strip().strip("'\"")
-                    elif stripped.startswith("location:"):
-                        location = stripped[9:].strip().strip("'\"")
-                    elif stripped.startswith("stack:"):
+                    if stripped.startswith('error:'):
+                        error_msg = stripped[6:].strip().strip('\'"')
+                    elif stripped.startswith('location:'):
+                        location = stripped[9:].strip().strip('\'"')
+                    elif stripped.startswith('stack:'):
                         in_stack = True
                         # Check if value is on same line
                         stack_val = stripped[6:].strip()
-                        if stack_val and stack_val != "|":
+                        if stack_val and stack_val != '|':
                             stack_lines.append(stack_val)
-                    elif in_stack and yaml_line.startswith("        "):
+                    elif in_stack and yaml_line.startswith('        '):
                         stack_lines.append(stripped)
-                    elif not yaml_line.startswith(" "):
+                    elif not yaml_line.startswith(' '):
                         break
                 else:
                     break
@@ -112,27 +112,29 @@ def _extract_issues(content: str) -> list[Issue]:
 
             # Build stack trace
             if stack_lines:
-                stack_trace = "\n".join(stack_lines)
+                stack_trace = '\n'.join(stack_lines)
 
             # Extract file and line from location
             file_path = None
             line_num = None
             if location:
-                loc_match = re.match(r"(.+):(\d+):\d+", location)
+                loc_match = re.match(r'(.+):(\d+):\d+', location)
                 if loc_match:
                     file_path = loc_match.group(1)
                     line_num = int(loc_match.group(2))
 
             message = error_msg if error_msg else test_name
 
-            issues.append(Issue(
-                file=file_path,
-                line=line_num,
-                message=message,
-                severity=SEVERITY_ERROR,
-                category="test_failure",
-                stack_trace=stack_trace,
-            ))
+            issues.append(
+                Issue(
+                    file=file_path,
+                    line=line_num,
+                    message=message,
+                    severity=SEVERITY_ERROR,
+                    category='test_failure',
+                    stack_trace=stack_trace,
+                )
+            )
         else:
             i += 1
 

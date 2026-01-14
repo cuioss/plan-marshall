@@ -35,11 +35,31 @@ def analyze_content_line(line: str, line_number: int, file_path: str) -> list[di
 
     for pattern, issue_type in MARKETING_PATTERNS:
         for match in re.finditer(pattern, line, re.IGNORECASE):
-            issues.append({'file': file_path, 'line': line_number, 'type': 'tone', 'subtype': issue_type, 'severity': 'high', 'text': match.group(), 'message': f"Marketing language: '{match.group()}'"})
+            issues.append(
+                {
+                    'file': file_path,
+                    'line': line_number,
+                    'type': 'tone',
+                    'subtype': issue_type,
+                    'severity': 'high',
+                    'text': match.group(),
+                    'message': f"Marketing language: '{match.group()}'",
+                }
+            )
 
     for pattern, issue_type in COMPLETENESS_PATTERNS:
         for match in re.finditer(pattern, line, re.IGNORECASE):
-            issues.append({'file': file_path, 'line': line_number, 'type': 'completeness', 'subtype': issue_type, 'severity': 'high', 'text': match.group(), 'message': f"Completeness issue: {issue_type}"})
+            issues.append(
+                {
+                    'file': file_path,
+                    'line': line_number,
+                    'type': 'completeness',
+                    'subtype': issue_type,
+                    'severity': 'high',
+                    'text': match.group(),
+                    'message': f'Completeness issue: {issue_type}',
+                }
+            )
 
     return issues
 
@@ -47,11 +67,13 @@ def analyze_content_line(line: str, line_number: int, file_path: str) -> list[di
 def cmd_review(args):
     """Handle review subcommand."""
     if not args.file and not args.directory:
-        print("Error: --file or --directory required", file=sys.stderr)
+        print('Error: --file or --directory required', file=sys.stderr)
         return EXIT_ERROR
 
     results = []
-    paths = [Path(args.file)] if args.file else list(Path(args.directory).glob('**/*.adoc' if args.recursive else '*.adoc'))
+    paths = (
+        [Path(args.file)] if args.file else list(Path(args.directory).glob('**/*.adoc' if args.recursive else '*.adoc'))
+    )
 
     for file_path in paths:
         if 'target' in file_path.parts or not file_path.exists():
@@ -77,12 +99,17 @@ def cmd_review(args):
     completeness_count = len([i for i in all_issues if i['type'] == 'completeness'])
 
     if all_issues:
-        log_entry('script', 'global', 'INFO', f'[DOCS-REVIEW] Found {len(all_issues)} issues ({tone_count} tone, {completeness_count} completeness)')
+        log_entry(
+            'script',
+            'global',
+            'INFO',
+            f'[DOCS-REVIEW] Found {len(all_issues)} issues ({tone_count} tone, {completeness_count} completeness)',
+        )
 
     output = {
         'status': 'success',
         'data': {'files_analyzed': len(results), 'total_issues': len(all_issues), 'issues': all_issues},
-        'metrics': {'tone_issues': tone_count, 'completeness_issues': completeness_count}
+        'metrics': {'tone_issues': tone_count, 'completeness_issues': completeness_count},
     }
 
     output_json = json.dumps(output, indent=2)

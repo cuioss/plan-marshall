@@ -46,10 +46,11 @@ def verify_duplication_claim(claim: dict, analysis: dict, skill_path: Path) -> t
     target_block = find_content_block(analysis, target.get('file', ''), target.get('section', ''))
 
     if not source_block or not target_block:
-        return False, 'content_blocks_not_found', {
-            'source_found': source_block is not None,
-            'target_found': target_block is not None
-        }
+        return (
+            False,
+            'content_blocks_not_found',
+            {'source_found': source_block is not None, 'target_found': target_block is not None},
+        )
 
     in_candidates = False
     reported_similarity = None
@@ -58,14 +59,17 @@ def verify_duplication_claim(claim: dict, analysis: dict, skill_path: Path) -> t
         cand_source = candidate.get('source', {})
         cand_target = candidate.get('target', {})
 
-        if ((cand_source.get('file') == source.get('file') and
-             cand_source.get('section') == source.get('section') and
-             cand_target.get('file') == target.get('file') and
-             cand_target.get('section') == target.get('section')) or
-            (cand_target.get('file') == source.get('file') and
-             cand_target.get('section') == source.get('section') and
-             cand_source.get('file') == target.get('file') and
-             cand_source.get('section') == target.get('section'))):
+        if (
+            cand_source.get('file') == source.get('file')
+            and cand_source.get('section') == source.get('section')
+            and cand_target.get('file') == target.get('file')
+            and cand_target.get('section') == target.get('section')
+        ) or (
+            cand_target.get('file') == source.get('file')
+            and cand_target.get('section') == source.get('section')
+            and cand_source.get('file') == target.get('file')
+            and cand_source.get('section') == target.get('section')
+        ):
             in_candidates = True
             reported_similarity = candidate.get('similarity')
             break
@@ -74,8 +78,12 @@ def verify_duplication_claim(claim: dict, analysis: dict, skill_path: Path) -> t
     for dup in analysis.get('exact_duplicates', []):
         files = [occ.get('file') for occ in dup.get('occurrences', [])]
         sections = [occ.get('section') for occ in dup.get('occurrences', [])]
-        if (source.get('file') in files and target.get('file') in files and
-            source.get('section') in sections and target.get('section') in sections):
+        if (
+            source.get('file') in files
+            and target.get('file') in files
+            and source.get('section') in sections
+            and target.get('section') in sections
+        ):
             in_exact = True
             break
 
@@ -83,20 +91,19 @@ def verify_duplication_claim(claim: dict, analysis: dict, skill_path: Path) -> t
         if in_exact:
             return True, 'confirmed_exact_duplicate', {'verification_method': 'hash_match'}
         elif in_candidates and reported_similarity and reported_similarity >= 0.8:
-            return True, 'confirmed_high_similarity', {
-                'similarity': reported_similarity,
-                'verification_method': 'similarity_threshold'
-            }
+            return (
+                True,
+                'confirmed_high_similarity',
+                {'similarity': reported_similarity, 'verification_method': 'similarity_threshold'},
+            )
         elif in_candidates:
-            return True, 'confirmed_in_candidates', {
-                'similarity': reported_similarity,
-                'note': 'LLM semantic judgment accepted'
-            }
+            return (
+                True,
+                'confirmed_in_candidates',
+                {'similarity': reported_similarity, 'note': 'LLM semantic judgment accepted'},
+            )
         else:
-            return False, 'not_in_analysis_candidates', {
-                'in_exact': in_exact,
-                'in_similarity': in_candidates
-            }
+            return False, 'not_in_analysis_candidates', {'in_exact': in_exact, 'in_similarity': in_candidates}
 
     elif classification == 'similar_concept':
         if in_candidates:
@@ -106,10 +113,7 @@ def verify_duplication_claim(claim: dict, analysis: dict, skill_path: Path) -> t
 
     elif classification == 'false_positive':
         if in_candidates or in_exact:
-            return True, 'false_positive_acknowledged', {
-                'was_candidate': in_candidates,
-                'was_exact': in_exact
-            }
+            return True, 'false_positive_acknowledged', {'was_candidate': in_candidates, 'was_exact': in_exact}
         else:
             return False, 'not_a_candidate_to_reject', {}
 
@@ -131,23 +135,29 @@ def verify_extraction_claim(claim: dict, analysis: dict, skill_path: Path) -> tu
 
     if matching_candidate:
         if matching_candidate.get('type') == claim_type:
-            return True, 'confirmed_extraction_candidate', {
-                'analysis_type': matching_candidate.get('type'),
-                'analysis_pattern': matching_candidate.get('pattern'),
-                'llm_recommendation': recommendation
-            }
+            return (
+                True,
+                'confirmed_extraction_candidate',
+                {
+                    'analysis_type': matching_candidate.get('type'),
+                    'analysis_pattern': matching_candidate.get('pattern'),
+                    'llm_recommendation': recommendation,
+                },
+            )
         else:
-            return True, 'type_mismatch_but_candidate_exists', {
-                'claimed_type': claim_type,
-                'analysis_type': matching_candidate.get('type')
-            }
+            return (
+                True,
+                'type_mismatch_but_candidate_exists',
+                {'claimed_type': claim_type, 'analysis_type': matching_candidate.get('type')},
+            )
 
     content_block = find_content_block(analysis, file_path, section)
     if content_block:
-        return True, 'llm_identified_new_candidate', {
-            'note': 'LLM found extraction opportunity not in script analysis',
-            'requires_manual_review': True
-        }
+        return (
+            True,
+            'llm_identified_new_candidate',
+            {'note': 'LLM found extraction opportunity not in script analysis', 'requires_manual_review': True},
+        )
 
     return False, 'section_not_found', {'file': file_path, 'section': section}
 
@@ -169,16 +179,21 @@ def verify_terminology_claim(claim: dict, analysis: dict) -> tuple[bool, str, di
 
         if action == 'standardize':
             if standardized_term.lower() in [t.lower() for t in variant_terms]:
-                return True, 'confirmed_standardization', {
-                    'available_variants': variant_terms,
-                    'chosen_standard': standardized_term
-                }
+                return (
+                    True,
+                    'confirmed_standardization',
+                    {'available_variants': variant_terms, 'chosen_standard': standardized_term},
+                )
             else:
-                return True, 'standardization_term_not_in_variants', {
-                    'available_variants': variant_terms,
-                    'chosen_standard': standardized_term,
-                    'note': 'LLM may have chosen a better canonical form'
-                }
+                return (
+                    True,
+                    'standardization_term_not_in_variants',
+                    {
+                        'available_variants': variant_terms,
+                        'chosen_standard': standardized_term,
+                        'note': 'LLM may have chosen a better canonical form',
+                    },
+                )
 
         elif action == 'keep_variants':
             return True, 'confirmed_keep_variants', {'variants': variant_terms}
@@ -211,11 +226,13 @@ def verify_findings(analysis: dict, llm_findings: dict) -> dict:
         if is_verified:
             verified.append(result)
             if details.get('requires_manual_review'):
-                warnings.append({
-                    'type': 'manual_review_needed',
-                    'claim': claim,
-                    'reason': 'LLM identified opportunity not in script analysis'
-                })
+                warnings.append(
+                    {
+                        'type': 'manual_review_needed',
+                        'claim': claim,
+                        'reason': 'LLM identified opportunity not in script analysis',
+                    }
+                )
         else:
             rejected.append(result)
 
@@ -231,30 +248,30 @@ def verify_findings(analysis: dict, llm_findings: dict) -> dict:
     for claim in llm_findings.get('duplications', []):
         source = claim.get('source', {})
         target = claim.get('target', {})
-        pair = tuple(sorted([
-            f"{source.get('file')}:{source.get('section')}",
-            f"{target.get('file')}:{target.get('section')}"
-        ]))
+        pair = tuple(
+            sorted([f'{source.get("file")}:{source.get("section")}', f'{target.get("file")}:{target.get("section")}'])
+        )
         llm_addressed_pairs.add(pair)
 
     for candidate in analysis.get('similarity_candidates', []):
         source = candidate.get('source', {})
         target = candidate.get('target', {})
-        pair = tuple(sorted([
-            f"{source.get('file')}:{source.get('section')}",
-            f"{target.get('file')}:{target.get('section')}"
-        ]))
+        pair = tuple(
+            sorted([f'{source.get("file")}:{source.get("section")}', f'{target.get("file")}:{target.get("section")}'])
+        )
         if pair not in llm_addressed_pairs:
-            warnings.append({
-                'type': 'unaddressed_candidate',
-                'candidate': candidate,
-                'reason': 'Similarity candidate not addressed by LLM'
-            })
+            warnings.append(
+                {
+                    'type': 'unaddressed_candidate',
+                    'candidate': candidate,
+                    'reason': 'Similarity candidate not addressed by LLM',
+                }
+            )
 
     total_claims = (
-        len(llm_findings.get('duplications', [])) +
-        len(llm_findings.get('extractions', [])) +
-        len(llm_findings.get('terminology', []))
+        len(llm_findings.get('duplications', []))
+        + len(llm_findings.get('extractions', []))
+        + len(llm_findings.get('terminology', []))
     )
 
     verification_rate = len(verified) / total_claims * 100 if total_claims > 0 else 100.0
@@ -269,8 +286,8 @@ def verify_findings(analysis: dict, llm_findings: dict) -> dict:
             'verified_count': len(verified),
             'rejected_count': len(rejected),
             'warning_count': len(warnings),
-            'verification_rate': round(verification_rate, 1)
-        }
+            'verification_rate': round(verification_rate, 1),
+        },
     }
 
 

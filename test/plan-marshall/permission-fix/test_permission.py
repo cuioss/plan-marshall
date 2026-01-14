@@ -25,6 +25,7 @@ SCRIPT_PATH = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'permission-fix' /
 # Tests for consolidate subcommand
 # =============================================================================
 
+
 class TestConsolidate(ScriptTestCase):
     """Test permission-fix.py consolidate subcommand."""
 
@@ -35,25 +36,24 @@ class TestConsolidate(ScriptTestCase):
     def test_detect_timestamped_build_output(self):
         """Should detect permissions with timestamp patterns."""
         settings_file = self.temp_dir / 'settings.json'
-        settings_file.write_text(json.dumps({
-            "permissions": {
-                "allow": [
-                    "Bash(git:*)",
-                    "Read(target/build-output-2025-11-20-174411.log)",
-                    "Read(target/build-output-2025-11-21-093000.log)",
-                    "Read(target/build-output-2025-11-22-120000.log)"
-                ],
-                "deny": [],
-                "ask": []
-            }
-        }))
-
-        result = run_script(
-            SCRIPT_PATH,
-            'consolidate',
-            '--settings', str(settings_file),
-            '--dry-run'
+        settings_file.write_text(
+            json.dumps(
+                {
+                    'permissions': {
+                        'allow': [
+                            'Bash(git:*)',
+                            'Read(target/build-output-2025-11-20-174411.log)',
+                            'Read(target/build-output-2025-11-21-093000.log)',
+                            'Read(target/build-output-2025-11-22-120000.log)',
+                        ],
+                        'deny': [],
+                        'ask': [],
+                    }
+                }
+            )
         )
+
+        result = run_script(SCRIPT_PATH, 'consolidate', '--settings', str(settings_file), '--dry-run')
         self.assert_success(result)
         data = result.json()
 
@@ -63,23 +63,22 @@ class TestConsolidate(ScriptTestCase):
     def test_generates_correct_wildcard(self):
         """Should generate correct wildcard pattern."""
         settings_file = self.temp_dir / 'settings.json'
-        settings_file.write_text(json.dumps({
-            "permissions": {
-                "allow": [
-                    "Read(target/build-output-2025-11-20-174411.log)",
-                    "Read(target/build-output-2025-11-21-093000.log)"
-                ],
-                "deny": [],
-                "ask": []
-            }
-        }))
-
-        result = run_script(
-            SCRIPT_PATH,
-            'consolidate',
-            '--settings', str(settings_file),
-            '--dry-run'
+        settings_file.write_text(
+            json.dumps(
+                {
+                    'permissions': {
+                        'allow': [
+                            'Read(target/build-output-2025-11-20-174411.log)',
+                            'Read(target/build-output-2025-11-21-093000.log)',
+                        ],
+                        'deny': [],
+                        'ask': [],
+                    }
+                }
+            )
         )
+
+        result = run_script(SCRIPT_PATH, 'consolidate', '--settings', str(settings_file), '--dry-run')
         self.assert_success(result)
         data = result.json()
 
@@ -88,23 +87,14 @@ class TestConsolidate(ScriptTestCase):
 
     def test_dry_run_does_not_modify_file(self):
         """Dry-run should not modify the settings file."""
-        original_content = json.dumps({
-            "permissions": {
-                "allow": ["Read(target/build-output-2025-11-20-174411.log)"],
-                "deny": [],
-                "ask": []
-            }
-        })
+        original_content = json.dumps(
+            {'permissions': {'allow': ['Read(target/build-output-2025-11-20-174411.log)'], 'deny': [], 'ask': []}}
+        )
 
         settings_file = self.temp_dir / 'settings.json'
         settings_file.write_text(original_content)
 
-        result = run_script(
-            SCRIPT_PATH,
-            'consolidate',
-            '--settings', str(settings_file),
-            '--dry-run'
-        )
+        result = run_script(SCRIPT_PATH, 'consolidate', '--settings', str(settings_file), '--dry-run')
         self.assert_success(result)
 
         self.assertEqual(settings_file.read_text(), original_content)
@@ -113,6 +103,7 @@ class TestConsolidate(ScriptTestCase):
 # =============================================================================
 # Tests for ensure-wildcards subcommand
 # =============================================================================
+
 
 class TestEnsureWildcards(ScriptTestCase):
     """Test permission-fix.py ensure-wildcards subcommand."""
@@ -124,28 +115,21 @@ class TestEnsureWildcards(ScriptTestCase):
     def test_adds_missing_wildcards(self):
         """Should add missing marketplace wildcards."""
         settings_file = self.temp_dir / 'settings.json'
-        settings_file.write_text(json.dumps({
-            "permissions": {
-                "allow": ["Bash(git:*)"],
-                "deny": [],
-                "ask": []
-            }
-        }))
+        settings_file.write_text(json.dumps({'permissions': {'allow': ['Bash(git:*)'], 'deny': [], 'ask': []}}))
 
         marketplace_file = self.temp_dir / 'marketplace.json'
-        marketplace_file.write_text(json.dumps({
-            "bundles": [
-                {"path": "bundles/builder"},
-                {"path": "bundles/planning"}
-            ]
-        }))
+        marketplace_file.write_text(
+            json.dumps({'bundles': [{'path': 'bundles/builder'}, {'path': 'bundles/planning'}]})
+        )
 
         result = run_script(
             SCRIPT_PATH,
             'ensure-wildcards',
-            '--settings', str(settings_file),
-            '--marketplace-json', str(marketplace_file),
-            '--dry-run'
+            '--settings',
+            str(settings_file),
+            '--marketplace-json',
+            str(marketplace_file),
+            '--dry-run',
         )
         self.assert_success(result)
         data = result.json()
@@ -156,27 +140,23 @@ class TestEnsureWildcards(ScriptTestCase):
     def test_reports_already_present(self):
         """Should report wildcards already present."""
         settings_file = self.temp_dir / 'settings.json'
-        settings_file.write_text(json.dumps({
-            "permissions": {
-                "allow": ["Skill(builder:*)", "SlashCommand(/builder:*)"],
-                "deny": [],
-                "ask": []
-            }
-        }))
+        settings_file.write_text(
+            json.dumps(
+                {'permissions': {'allow': ['Skill(builder:*)', 'SlashCommand(/builder:*)'], 'deny': [], 'ask': []}}
+            )
+        )
 
         marketplace_file = self.temp_dir / 'marketplace.json'
-        marketplace_file.write_text(json.dumps({
-            "bundles": [
-                {"path": "bundles/builder"}
-            ]
-        }))
+        marketplace_file.write_text(json.dumps({'bundles': [{'path': 'bundles/builder'}]}))
 
         result = run_script(
             SCRIPT_PATH,
             'ensure-wildcards',
-            '--settings', str(settings_file),
-            '--marketplace-json', str(marketplace_file),
-            '--dry-run'
+            '--settings',
+            str(settings_file),
+            '--marketplace-json',
+            str(marketplace_file),
+            '--dry-run',
         )
         self.assert_success(result)
         data = result.json()
@@ -190,42 +170,42 @@ class TestEnsureWildcards(ScriptTestCase):
         directly in the plugin entry (used by scan-marketplace-inventory output).
         """
         settings_file = self.temp_dir / 'settings.json'
-        settings_file.write_text(json.dumps({
-            "permissions": {
-                "allow": ["Bash(git:*)"],
-                "deny": [],
-                "ask": []
-            }
-        }))
+        settings_file.write_text(json.dumps({'permissions': {'allow': ['Bash(git:*)'], 'deny': [], 'ask': []}}))
 
         # Use 'plugins' key with embedded skills/commands
         marketplace_file = self.temp_dir / 'marketplace.json'
-        marketplace_file.write_text(json.dumps({
-            "name": "plan-marshall",
-            "plugins": [
+        marketplace_file.write_text(
+            json.dumps(
                 {
-                    "name": "pm-workflow",
-                    "description": "Workflow management",
-                    "source": "./bundles/pm-workflow",
-                    "skills": [{"name": "manage-lifecycle"}],
-                    "commands": [{"name": "plan-manage"}]
-                },
-                {
-                    "name": "pm-dev-java",
-                    "description": "Java development",
-                    "source": "./bundles/pm-dev-java",
-                    "skills": [{"name": "cui-java-core"}],
-                    "commands": [{"name": "java-create"}]
+                    'name': 'plan-marshall',
+                    'plugins': [
+                        {
+                            'name': 'pm-workflow',
+                            'description': 'Workflow management',
+                            'source': './bundles/pm-workflow',
+                            'skills': [{'name': 'manage-lifecycle'}],
+                            'commands': [{'name': 'plan-manage'}],
+                        },
+                        {
+                            'name': 'pm-dev-java',
+                            'description': 'Java development',
+                            'source': './bundles/pm-dev-java',
+                            'skills': [{'name': 'cui-java-core'}],
+                            'commands': [{'name': 'java-create'}],
+                        },
+                    ],
                 }
-            ]
-        }))
+            )
+        )
 
         result = run_script(
             SCRIPT_PATH,
             'ensure-wildcards',
-            '--settings', str(settings_file),
-            '--marketplace-json', str(marketplace_file),
-            '--dry-run'
+            '--settings',
+            str(settings_file),
+            '--marketplace-json',
+            str(marketplace_file),
+            '--dry-run',
         )
         self.assert_success(result)
         data = result.json()
@@ -258,40 +238,40 @@ class TestEnsureWildcards(ScriptTestCase):
         The script should generate wildcards for ALL bundles in this case.
         """
         settings_file = self.temp_dir / 'settings.json'
-        settings_file.write_text(json.dumps({
-            "permissions": {
-                "allow": ["Bash(git:*)"],
-                "deny": [],
-                "ask": []
-            }
-        }))
+        settings_file.write_text(json.dumps({'permissions': {'allow': ['Bash(git:*)'], 'deny': [], 'ask': []}}))
 
         # Use REAL marketplace.json format - NO skills/commands arrays
         marketplace_file = self.temp_dir / 'marketplace.json'
-        marketplace_file.write_text(json.dumps({
-            "name": "plan-marshall",
-            "plugins": [
+        marketplace_file.write_text(
+            json.dumps(
                 {
-                    "name": "pm-workflow",
-                    "description": "Workflow management",
-                    "source": "./bundles/pm-workflow",
-                    "strict": False
-                },
-                {
-                    "name": "pm-dev-java",
-                    "description": "Java development",
-                    "source": "./bundles/pm-dev-java",
-                    "strict": False
+                    'name': 'plan-marshall',
+                    'plugins': [
+                        {
+                            'name': 'pm-workflow',
+                            'description': 'Workflow management',
+                            'source': './bundles/pm-workflow',
+                            'strict': False,
+                        },
+                        {
+                            'name': 'pm-dev-java',
+                            'description': 'Java development',
+                            'source': './bundles/pm-dev-java',
+                            'strict': False,
+                        },
+                    ],
                 }
-            ]
-        }))
+            )
+        )
 
         result = run_script(
             SCRIPT_PATH,
             'ensure-wildcards',
-            '--settings', str(settings_file),
-            '--marketplace-json', str(marketplace_file),
-            '--dry-run'
+            '--settings',
+            str(settings_file),
+            '--marketplace-json',
+            str(marketplace_file),
+            '--dry-run',
         )
         self.assert_success(result)
         data = result.json()
@@ -311,6 +291,7 @@ class TestEnsureWildcards(ScriptTestCase):
 # Tests for apply-fixes subcommand
 # =============================================================================
 
+
 class TestApplyFixes(ScriptTestCase):
     """Test permission-fix.py apply-fixes subcommand."""
 
@@ -321,20 +302,11 @@ class TestApplyFixes(ScriptTestCase):
     def test_removes_duplicates(self):
         """Should remove duplicate permissions."""
         settings_file = self.temp_dir / 'settings.json'
-        settings_file.write_text(json.dumps({
-            "permissions": {
-                "allow": ["Bash(git:*)", "Bash(git:*)", "Bash(npm:*)"],
-                "deny": [],
-                "ask": []
-            }
-        }))
-
-        result = run_script(
-            SCRIPT_PATH,
-            'apply-fixes',
-            '--settings', str(settings_file),
-            '--dry-run'
+        settings_file.write_text(
+            json.dumps({'permissions': {'allow': ['Bash(git:*)', 'Bash(git:*)', 'Bash(npm:*)'], 'deny': [], 'ask': []}})
         )
+
+        result = run_script(SCRIPT_PATH, 'apply-fixes', '--settings', str(settings_file), '--dry-run')
         self.assert_success(result)
         data = result.json()
 
@@ -344,20 +316,11 @@ class TestApplyFixes(ScriptTestCase):
     def test_sorts_permissions(self):
         """Should sort permissions alphabetically."""
         settings_file = self.temp_dir / 'settings.json'
-        settings_file.write_text(json.dumps({
-            "permissions": {
-                "allow": ["Write(**)", "Bash(git:*)", "Edit(**)"],
-                "deny": [],
-                "ask": []
-            }
-        }))
-
-        result = run_script(
-            SCRIPT_PATH,
-            'apply-fixes',
-            '--settings', str(settings_file),
-            '--dry-run'
+        settings_file.write_text(
+            json.dumps({'permissions': {'allow': ['Write(**)', 'Bash(git:*)', 'Edit(**)'], 'deny': [], 'ask': []}})
         )
+
+        result = run_script(SCRIPT_PATH, 'apply-fixes', '--settings', str(settings_file), '--dry-run')
         self.assert_success(result)
         data = result.json()
 
@@ -367,20 +330,9 @@ class TestApplyFixes(ScriptTestCase):
     def test_adds_default_permissions(self):
         """Should add default permissions if missing."""
         settings_file = self.temp_dir / 'settings.json'
-        settings_file.write_text(json.dumps({
-            "permissions": {
-                "allow": ["Bash(git:*)"],
-                "deny": [],
-                "ask": []
-            }
-        }))
+        settings_file.write_text(json.dumps({'permissions': {'allow': ['Bash(git:*)'], 'deny': [], 'ask': []}}))
 
-        result = run_script(
-            SCRIPT_PATH,
-            'apply-fixes',
-            '--settings', str(settings_file),
-            '--dry-run'
-        )
+        result = run_script(SCRIPT_PATH, 'apply-fixes', '--settings', str(settings_file), '--dry-run')
         self.assert_success(result)
         data = result.json()
 
@@ -395,6 +347,7 @@ class TestApplyFixes(ScriptTestCase):
 # Tests for add subcommand
 # =============================================================================
 
+
 class TestAdd(ScriptTestCase):
     """Test permission-fix.py add subcommand."""
 
@@ -408,21 +361,9 @@ class TestAdd(ScriptTestCase):
         claude_dir = self.temp_dir / '.claude'
         claude_dir.mkdir()
         settings_file = claude_dir / 'settings.json'
-        settings_file.write_text(json.dumps({
-            "permissions": {
-                "allow": ["Bash(git:*)"],
-                "deny": [],
-                "ask": []
-            }
-        }))
+        settings_file.write_text(json.dumps({'permissions': {'allow': ['Bash(git:*)'], 'deny': [], 'ask': []}}))
 
-        result = run_script(
-            SCRIPT_PATH,
-            'add',
-            '--permission', 'Bash(npm:*)',
-            '--target', 'project',
-            cwd=self.temp_dir
-        )
+        result = run_script(SCRIPT_PATH, 'add', '--permission', 'Bash(npm:*)', '--target', 'project', cwd=self.temp_dir)
         self.assert_success(result)
 
         settings = json.loads(settings_file.read_text())
@@ -434,21 +375,9 @@ class TestAdd(ScriptTestCase):
         claude_dir = self.temp_dir / '.claude'
         claude_dir.mkdir()
         settings_file = claude_dir / 'settings.json'
-        settings_file.write_text(json.dumps({
-            "permissions": {
-                "allow": ["Bash(git:*)"],
-                "deny": [],
-                "ask": []
-            }
-        }))
+        settings_file.write_text(json.dumps({'permissions': {'allow': ['Bash(git:*)'], 'deny': [], 'ask': []}}))
 
-        result = run_script(
-            SCRIPT_PATH,
-            'add',
-            '--permission', 'Bash(git:*)',
-            '--target', 'project',
-            cwd=self.temp_dir
-        )
+        result = run_script(SCRIPT_PATH, 'add', '--permission', 'Bash(git:*)', '--target', 'project', cwd=self.temp_dir)
         self.assert_success(result)
         data = result.json()
 
@@ -459,6 +388,7 @@ class TestAdd(ScriptTestCase):
 # =============================================================================
 # Tests for remove subcommand
 # =============================================================================
+
 
 class TestRemove(ScriptTestCase):
     """Test permission-fix.py remove subcommand."""
@@ -473,20 +403,12 @@ class TestRemove(ScriptTestCase):
         claude_dir = self.temp_dir / '.claude'
         claude_dir.mkdir()
         settings_file = claude_dir / 'settings.json'
-        settings_file.write_text(json.dumps({
-            "permissions": {
-                "allow": ["Bash(git:*)", "Bash(npm:*)"],
-                "deny": [],
-                "ask": []
-            }
-        }))
+        settings_file.write_text(
+            json.dumps({'permissions': {'allow': ['Bash(git:*)', 'Bash(npm:*)'], 'deny': [], 'ask': []}})
+        )
 
         result = run_script(
-            SCRIPT_PATH,
-            'remove',
-            '--permission', 'Bash(npm:*)',
-            '--target', 'project',
-            cwd=self.temp_dir
+            SCRIPT_PATH, 'remove', '--permission', 'Bash(npm:*)', '--target', 'project', cwd=self.temp_dir
         )
         self.assert_success(result)
 
@@ -500,20 +422,10 @@ class TestRemove(ScriptTestCase):
         claude_dir = self.temp_dir / '.claude'
         claude_dir.mkdir()
         settings_file = claude_dir / 'settings.json'
-        settings_file.write_text(json.dumps({
-            "permissions": {
-                "allow": ["Bash(git:*)"],
-                "deny": [],
-                "ask": []
-            }
-        }))
+        settings_file.write_text(json.dumps({'permissions': {'allow': ['Bash(git:*)'], 'deny': [], 'ask': []}}))
 
         result = run_script(
-            SCRIPT_PATH,
-            'remove',
-            '--permission', 'Bash(npm:*)',
-            '--target', 'project',
-            cwd=self.temp_dir
+            SCRIPT_PATH, 'remove', '--permission', 'Bash(npm:*)', '--target', 'project', cwd=self.temp_dir
         )
         self.assert_success(result)
         data = result.json()
@@ -525,6 +437,7 @@ class TestRemove(ScriptTestCase):
 # =============================================================================
 # Tests for --scope option
 # =============================================================================
+
 
 class TestScopeOption(ScriptTestCase):
     """Test permission-fix.py --scope option for apply-fixes and consolidate."""
@@ -538,21 +451,11 @@ class TestScopeOption(ScriptTestCase):
         claude_dir = self.temp_dir / '.claude'
         claude_dir.mkdir()
         settings_file = claude_dir / 'settings.json'
-        settings_file.write_text(json.dumps({
-            "permissions": {
-                "allow": ["Bash(git:*)", "Bash(git:*)"],
-                "deny": [],
-                "ask": []
-            }
-        }))
-
-        result = run_script(
-            SCRIPT_PATH,
-            'apply-fixes',
-            '--scope', 'project',
-            '--dry-run',
-            cwd=self.temp_dir
+        settings_file.write_text(
+            json.dumps({'permissions': {'allow': ['Bash(git:*)', 'Bash(git:*)'], 'deny': [], 'ask': []}})
         )
+
+        result = run_script(SCRIPT_PATH, 'apply-fixes', '--scope', 'project', '--dry-run', cwd=self.temp_dir)
         self.assert_success(result)
         data = result.json()
 
@@ -565,24 +468,22 @@ class TestScopeOption(ScriptTestCase):
         claude_dir = self.temp_dir / '.claude'
         claude_dir.mkdir()
         settings_file = claude_dir / 'settings.json'
-        settings_file.write_text(json.dumps({
-            "permissions": {
-                "allow": [
-                    "Read(target/build-output-2025-11-20-174411.log)",
-                    "Read(target/build-output-2025-11-21-093000.log)"
-                ],
-                "deny": [],
-                "ask": []
-            }
-        }))
-
-        result = run_script(
-            SCRIPT_PATH,
-            'consolidate',
-            '--scope', 'project',
-            '--dry-run',
-            cwd=self.temp_dir
+        settings_file.write_text(
+            json.dumps(
+                {
+                    'permissions': {
+                        'allow': [
+                            'Read(target/build-output-2025-11-20-174411.log)',
+                            'Read(target/build-output-2025-11-21-093000.log)',
+                        ],
+                        'deny': [],
+                        'ask': [],
+                    }
+                }
+            )
         )
+
+        result = run_script(SCRIPT_PATH, 'consolidate', '--scope', 'project', '--dry-run', cwd=self.temp_dir)
         self.assert_success(result)
         data = result.json()
 
@@ -592,11 +493,7 @@ class TestScopeOption(ScriptTestCase):
     def test_scope_and_settings_mutually_exclusive(self):
         """--scope and --settings should be mutually exclusive."""
         result = run_script(
-            SCRIPT_PATH,
-            'apply-fixes',
-            '--scope', 'project',
-            '--settings', '/tmp/test.json',
-            '--dry-run'
+            SCRIPT_PATH, 'apply-fixes', '--scope', 'project', '--settings', '/tmp/test.json', '--dry-run'
         )
         # Should fail due to mutual exclusivity
         self.assertEqual(result.returncode, 2)
@@ -606,9 +503,10 @@ class TestScopeOption(ScriptTestCase):
 # Simple function-based tests for quick validation
 # =============================================================================
 
+
 def test_script_exists():
     """Verify the script exists."""
-    assert SCRIPT_PATH.exists(), f"Script not found: {SCRIPT_PATH}"
+    assert SCRIPT_PATH.exists(), f'Script not found: {SCRIPT_PATH}'
 
 
 def test_help_works():
@@ -662,7 +560,7 @@ if __name__ == '__main__':
 
     # Check if script exists first
     if not SCRIPT_PATH.exists():
-        print(f"ERROR: Script not found: {SCRIPT_PATH}")
+        print(f'ERROR: Script not found: {SCRIPT_PATH}')
         sys.exit(1)
 
     # Run unittest-based tests
@@ -680,9 +578,9 @@ if __name__ == '__main__':
     result = runner.run(suite)
 
     # Also run simple function tests
-    print("\n" + "=" * 50)
-    print("Running simple function tests...")
-    print("=" * 50)
+    print('\n' + '=' * 50)
+    print('Running simple function tests...')
+    print('=' * 50)
 
     simple_tests = [
         test_script_exists,
@@ -700,9 +598,9 @@ if __name__ == '__main__':
     for test_fn in simple_tests:
         try:
             test_fn()
-            print(f"  PASS: {test_fn.__name__}")
+            print(f'  PASS: {test_fn.__name__}')
         except AssertionError as e:
-            print(f"  FAIL: {test_fn.__name__}: {e}")
+            print(f'  FAIL: {test_fn.__name__}: {e}')
             simple_failures += 1
 
     # Exit with combined result

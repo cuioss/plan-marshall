@@ -42,18 +42,18 @@ from _build_discover import (  # noqa: F401
 # Canonical Command Constants
 # =============================================================================
 
-CMD_CLEAN = "clean"
-CMD_COMPILE = "compile"
-CMD_TEST_COMPILE = "test-compile"
-CMD_MODULE_TESTS = "module-tests"
-CMD_INTEGRATION_TESTS = "integration-tests"
-CMD_COVERAGE = "coverage"
-CMD_BENCHMARK = "benchmark"
-CMD_QUALITY_GATE = "quality-gate"
-CMD_VERIFY = "verify"
-CMD_INSTALL = "install"
-CMD_CLEAN_INSTALL = "clean-install"
-CMD_PACKAGE = "package"
+CMD_CLEAN = 'clean'
+CMD_COMPILE = 'compile'
+CMD_TEST_COMPILE = 'test-compile'
+CMD_MODULE_TESTS = 'module-tests'
+CMD_INTEGRATION_TESTS = 'integration-tests'
+CMD_COVERAGE = 'coverage'
+CMD_BENCHMARK = 'benchmark'
+CMD_QUALITY_GATE = 'quality-gate'
+CMD_VERIFY = 'verify'
+CMD_INSTALL = 'install'
+CMD_CLEAN_INSTALL = 'clean-install'
+CMD_PACKAGE = 'package'
 
 ALL_CANONICAL_COMMANDS = [
     CMD_CLEAN,
@@ -78,87 +78,94 @@ ALL_CANONICAL_COMMANDS = [
 CANONICAL_COMMANDS = {
     # Clean phase
     CMD_CLEAN: {
-        "phase": "clean",
-        "description": "Remove build artifacts and generated files",
-        "required": False,
+        'phase': 'clean',
+        'description': 'Remove build artifacts and generated files',
+        'required': False,
     },
-
     # Build phase
     CMD_COMPILE: {
-        "phase": "build",
-        "description": "Compile production sources only",
-        "required": False,
+        'phase': 'build',
+        'description': 'Compile production sources only',
+        'required': False,
     },
     CMD_TEST_COMPILE: {
-        "phase": "build",
-        "description": "Compile production and test sources",
-        "required": False,
+        'phase': 'build',
+        'description': 'Compile production and test sources',
+        'required': False,
     },
-
     # Test phase
     CMD_MODULE_TESTS: {
-        "phase": "test",
-        "description": "Unit tests for the module (JUnit, Jest, pytest)",
-        "required": True,
+        'phase': 'test',
+        'description': 'Unit tests for the module (JUnit, Jest, pytest)',
+        'required': True,
     },
     CMD_INTEGRATION_TESTS: {
-        "phase": "test",
-        "description": "Integration tests (containers, external services)",
-        "required": False,
-        "aliases": [
-            "integration-tests", "integration-test", "integrationTest",
-            "it", "e2e", "acceptance",
+        'phase': 'test',
+        'description': 'Integration tests (containers, external services)',
+        'required': False,
+        'aliases': [
+            'integration-tests',
+            'integration-test',
+            'integrationTest',
+            'it',
+            'e2e',
+            'acceptance',
         ],
     },
     CMD_COVERAGE: {
-        "phase": "test",
-        "description": "Test execution with coverage measurement",
-        "required": False,
-        "aliases": ["coverage", "jacoco"],
+        'phase': 'test',
+        'description': 'Test execution with coverage measurement',
+        'required': False,
+        'aliases': ['coverage', 'jacoco'],
     },
     CMD_BENCHMARK: {
-        "phase": "test",
-        "description": "Benchmark/performance tests (JMH, k6, wrk)",
-        "required": False,
-        "aliases": [
-            "performance", "benchmarks", "jmh",
-            "perf", "stress", "load",
+        'phase': 'test',
+        'description': 'Benchmark/performance tests (JMH, k6, wrk)',
+        'required': False,
+        'aliases': [
+            'performance',
+            'benchmarks',
+            'jmh',
+            'perf',
+            'stress',
+            'load',
         ],
     },
-
     # Quality phase
     CMD_QUALITY_GATE: {
-        "phase": "quality",
-        "description": "Static analysis, linting, formatting checks",
-        "required": True,
-        "aliases": [
-            "pre-commit", "precommit", "sonar",
-            "lint", "check", "quality",
+        'phase': 'quality',
+        'description': 'Static analysis, linting, formatting checks',
+        'required': True,
+        'aliases': [
+            'pre-commit',
+            'precommit',
+            'sonar',
+            'lint',
+            'check',
+            'quality',
         ],
     },
-
     # Verify phase
     CMD_VERIFY: {
-        "phase": "verify",
-        "description": "Full verification (compile + test + quality)",
-        "required": True,
+        'phase': 'verify',
+        'description': 'Full verification (compile + test + quality)',
+        'required': True,
     },
-
     # Deploy phase
     CMD_INSTALL: {
-        "phase": "deploy",
-        "description": "Install artifact to local repository",
-        "required": False,
+        'phase': 'deploy',
+        'description': 'Install artifact to local repository',
+        'required': False,
     },
     CMD_CLEAN_INSTALL: {
-        "phase": "deploy",
-        "description": "Clean build artifacts then install to local repository",
-        "required": False,
+        'phase': 'deploy',
+        'description': 'Clean build artifacts then install to local repository',
+        'required': False,
     },
     CMD_PACKAGE: {
-        "phase": "deploy",
-        "description": "Create deployable artifact (jar, war, native)",
-        "required": False,
+        'phase': 'deploy',
+        'description': 'Create deployable artifact (jar, war, native)',
+        'required': False,
     },
 }
 
@@ -167,11 +174,12 @@ CANONICAL_COMMANDS = {
 # Profile Classification Patterns (derived from CANONICAL_COMMANDS aliases)
 # =============================================================================
 
+
 def _build_profile_patterns() -> dict[str, str]:
     """Build PROFILE_PATTERNS from CANONICAL_COMMANDS aliases."""
     patterns: dict[str, str] = {}
     for cmd, meta in CANONICAL_COMMANDS.items():
-        aliases: list[str] = meta.get("aliases", [])  # type: ignore[assignment]
+        aliases: list[str] = meta.get('aliases', [])  # type: ignore[assignment]
         for alias in aliases:
             patterns[alias] = cmd
     return patterns

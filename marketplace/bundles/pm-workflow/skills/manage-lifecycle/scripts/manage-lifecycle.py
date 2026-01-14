@@ -82,61 +82,62 @@ def output_toon(data: dict):
 def cmd_read(args):
     """Read plan status."""
     if not validate_plan_id(args.plan_id):
-        output_toon({
-            'status': 'error',
-            'plan_id': args.plan_id,
-            'error': 'invalid_plan_id',
-            'message': f"Invalid plan_id format: {args.plan_id}"
-        })
+        output_toon(
+            {
+                'status': 'error',
+                'plan_id': args.plan_id,
+                'error': 'invalid_plan_id',
+                'message': f'Invalid plan_id format: {args.plan_id}',
+            }
+        )
         sys.exit(1)
 
     status = read_status(args.plan_id)
     if not status:
-        output_toon({
-            'status': 'error',
-            'plan_id': args.plan_id,
-            'error': 'file_not_found',
-            'message': 'status.toon not found'
-        })
+        output_toon(
+            {'status': 'error', 'plan_id': args.plan_id, 'error': 'file_not_found', 'message': 'status.toon not found'}
+        )
         sys.exit(1)
 
-    output_toon({
-        'status': 'success',
-        'plan_id': args.plan_id,
-        'plan': status
-    })
+    output_toon({'status': 'success', 'plan_id': args.plan_id, 'plan': status})
 
 
 def cmd_create(args):
     """Create status.toon for a new plan."""
     if not validate_plan_id(args.plan_id):
-        output_toon({
-            'status': 'error',
-            'plan_id': args.plan_id,
-            'error': 'invalid_plan_id',
-            'message': f"Invalid plan_id format: {args.plan_id}"
-        })
+        output_toon(
+            {
+                'status': 'error',
+                'plan_id': args.plan_id,
+                'error': 'invalid_plan_id',
+                'message': f'Invalid plan_id format: {args.plan_id}',
+            }
+        )
         sys.exit(1)
 
     path = get_status_path(args.plan_id)
     if path.exists() and not args.force:
-        output_toon({
-            'status': 'error',
-            'plan_id': args.plan_id,
-            'error': 'file_exists',
-            'message': 'status.toon already exists. Use --force to overwrite.'
-        })
+        output_toon(
+            {
+                'status': 'error',
+                'plan_id': args.plan_id,
+                'error': 'file_exists',
+                'message': 'status.toon already exists. Use --force to overwrite.',
+            }
+        )
         sys.exit(1)
 
     # Parse phases from comma-separated argument
     phases = [p.strip() for p in args.phases.split(',') if p.strip()]
     if not phases:
-        output_toon({
-            'status': 'error',
-            'plan_id': args.plan_id,
-            'error': 'invalid_phases',
-            'message': 'At least one phase is required'
-        })
+        output_toon(
+            {
+                'status': 'error',
+                'plan_id': args.plan_id,
+                'error': 'invalid_phases',
+                'message': 'At least one phase is required',
+            }
+        )
         sys.exit(1)
 
     now = now_iso()
@@ -146,55 +147,55 @@ def cmd_create(args):
         'current_phase': phases[0],
         'phases': [{'name': p, 'status': 'pending'} for p in phases],
         'created': now,
-        'updated': now
+        'updated': now,
     }
     # Mark first phase as in_progress
     status['phases'][0]['status'] = 'in_progress'
 
     write_status(args.plan_id, status)
 
-    output_toon({
-        'status': 'success',
-        'plan_id': args.plan_id,
-        'file': 'status.toon',
-        'created': True,
-        'plan': {
-            'title': args.title,
-            'current_phase': phases[0]
+    output_toon(
+        {
+            'status': 'success',
+            'plan_id': args.plan_id,
+            'file': 'status.toon',
+            'created': True,
+            'plan': {'title': args.title, 'current_phase': phases[0]},
         }
-    })
+    )
 
 
 def cmd_set_phase(args):
     """Set current phase."""
     if not validate_plan_id(args.plan_id):
-        output_toon({
-            'status': 'error',
-            'plan_id': args.plan_id,
-            'error': 'invalid_plan_id',
-            'message': f"Invalid plan_id format: {args.plan_id}"
-        })
+        output_toon(
+            {
+                'status': 'error',
+                'plan_id': args.plan_id,
+                'error': 'invalid_plan_id',
+                'message': f'Invalid plan_id format: {args.plan_id}',
+            }
+        )
         sys.exit(1)
 
     status = read_status(args.plan_id)
     if not status:
-        output_toon({
-            'status': 'error',
-            'plan_id': args.plan_id,
-            'error': 'file_not_found',
-            'message': 'status.toon not found'
-        })
+        output_toon(
+            {'status': 'error', 'plan_id': args.plan_id, 'error': 'file_not_found', 'message': 'status.toon not found'}
+        )
         sys.exit(1)
 
     phase_names = [p['name'] for p in status.get('phases', [])]
     if args.phase not in phase_names:
-        output_toon({
-            'status': 'error',
-            'plan_id': args.plan_id,
-            'error': 'invalid_phase',
-            'message': f"Invalid phase: {args.phase}",
-            'valid_phases': phase_names
-        })
+        output_toon(
+            {
+                'status': 'error',
+                'plan_id': args.plan_id,
+                'error': 'invalid_phase',
+                'message': f'Invalid phase: {args.phase}',
+                'valid_phases': phase_names,
+            }
+        )
         sys.exit(1)
 
     previous = status.get('current_phase')
@@ -208,33 +209,27 @@ def cmd_set_phase(args):
     write_status(args.plan_id, status)
     log_entry('work', args.plan_id, 'INFO', f'[MANAGE-LIFECYCLE] Phase: {previous} -> {args.phase}')
 
-    output_toon({
-        'status': 'success',
-        'plan_id': args.plan_id,
-        'current_phase': args.phase,
-        'previous_phase': previous
-    })
+    output_toon({'status': 'success', 'plan_id': args.plan_id, 'current_phase': args.phase, 'previous_phase': previous})
 
 
 def cmd_update_phase(args):
     """Update a specific phase status."""
     if not validate_plan_id(args.plan_id):
-        output_toon({
-            'status': 'error',
-            'plan_id': args.plan_id,
-            'error': 'invalid_plan_id',
-            'message': f"Invalid plan_id format: {args.plan_id}"
-        })
+        output_toon(
+            {
+                'status': 'error',
+                'plan_id': args.plan_id,
+                'error': 'invalid_plan_id',
+                'message': f'Invalid plan_id format: {args.plan_id}',
+            }
+        )
         sys.exit(1)
 
     status = read_status(args.plan_id)
     if not status:
-        output_toon({
-            'status': 'error',
-            'plan_id': args.plan_id,
-            'error': 'file_not_found',
-            'message': 'status.toon not found'
-        })
+        output_toon(
+            {'status': 'error', 'plan_id': args.plan_id, 'error': 'file_not_found', 'message': 'status.toon not found'}
+        )
         sys.exit(1)
 
     found = False
@@ -245,43 +240,39 @@ def cmd_update_phase(args):
             break
 
     if not found:
-        output_toon({
-            'status': 'error',
-            'plan_id': args.plan_id,
-            'error': 'phase_not_found',
-            'message': f"Phase '{args.phase}' not found"
-        })
+        output_toon(
+            {
+                'status': 'error',
+                'plan_id': args.plan_id,
+                'error': 'phase_not_found',
+                'message': f"Phase '{args.phase}' not found",
+            }
+        )
         sys.exit(1)
 
     write_status(args.plan_id, status)
 
-    output_toon({
-        'status': 'success',
-        'plan_id': args.plan_id,
-        'phase': args.phase,
-        'phase_status': args.status
-    })
+    output_toon({'status': 'success', 'plan_id': args.plan_id, 'phase': args.phase, 'phase_status': args.status})
 
 
 def cmd_progress(args):
     """Calculate plan progress."""
     if not validate_plan_id(args.plan_id):
-        output_toon({
-            'status': 'error',
-            'plan_id': args.plan_id,
-            'error': 'invalid_plan_id',
-            'message': f"Invalid plan_id format: {args.plan_id}"
-        })
+        output_toon(
+            {
+                'status': 'error',
+                'plan_id': args.plan_id,
+                'error': 'invalid_plan_id',
+                'message': f'Invalid plan_id format: {args.plan_id}',
+            }
+        )
         sys.exit(1)
 
     status = read_status(args.plan_id)
     if not status:
-        output_toon({
-            'status': 'error',
-            'plan_id': args.plan_id,
-            'error': 'file_not_found',
-            'message': 'status.toon not found'
-        })
+        output_toon(
+            {'status': 'error', 'plan_id': args.plan_id, 'error': 'file_not_found', 'message': 'status.toon not found'}
+        )
         sys.exit(1)
 
     phases = status.get('phases', [])
@@ -289,27 +280,25 @@ def cmd_progress(args):
     completed = sum(1 for p in phases if p.get('status') == 'done')
     percent = int((completed / total) * 100) if total > 0 else 0
 
-    output_toon({
-        'status': 'success',
-        'plan_id': args.plan_id,
-        'progress': {
-            'total_phases': total,
-            'completed_phases': completed,
-            'current_phase': status.get('current_phase'),
-            'percent': percent
+    output_toon(
+        {
+            'status': 'success',
+            'plan_id': args.plan_id,
+            'progress': {
+                'total_phases': total,
+                'completed_phases': completed,
+                'current_phase': status.get('current_phase'),
+                'percent': percent,
+            },
         }
-    })
+    )
 
 
 def cmd_list(args):
     """Discover all plans."""
     plans_dir = get_plans_dir()
     if not plans_dir.exists():
-        output_toon({
-            'status': 'success',
-            'total': 0,
-            'plans': []
-        })
+        output_toon({'status': 'success', 'total': 0, 'plans': []})
         return
 
     plans = []
@@ -331,53 +320,46 @@ def cmd_list(args):
                 if current_phase not in filter_phases:
                     continue
 
-            plans.append({
-                'id': plan_dir.name,
-                'current_phase': current_phase,
-                'status': 'in_progress'
-            })
+            plans.append({'id': plan_dir.name, 'current_phase': current_phase, 'status': 'in_progress'})
         except (ValueError, KeyError, OSError):
             # Skip plans with corrupted or unreadable status files
             continue
 
-    output_toon({
-        'status': 'success',
-        'total': len(plans),
-        'plans': plans
-    })
+    output_toon({'status': 'success', 'total': len(plans), 'plans': plans})
 
 
 def cmd_transition(args):
     """Transition to next phase."""
     if not validate_plan_id(args.plan_id):
-        output_toon({
-            'status': 'error',
-            'plan_id': args.plan_id,
-            'error': 'invalid_plan_id',
-            'message': f"Invalid plan_id format: {args.plan_id}"
-        })
+        output_toon(
+            {
+                'status': 'error',
+                'plan_id': args.plan_id,
+                'error': 'invalid_plan_id',
+                'message': f'Invalid plan_id format: {args.plan_id}',
+            }
+        )
         sys.exit(1)
 
     status = read_status(args.plan_id)
     if not status:
-        output_toon({
-            'status': 'error',
-            'plan_id': args.plan_id,
-            'error': 'file_not_found',
-            'message': 'status.toon not found'
-        })
+        output_toon(
+            {'status': 'error', 'plan_id': args.plan_id, 'error': 'file_not_found', 'message': 'status.toon not found'}
+        )
         sys.exit(1)
 
     phases = status.get('phases', [])
     phase_names = [p['name'] for p in phases]
 
     if args.completed not in phase_names:
-        output_toon({
-            'status': 'error',
-            'plan_id': args.plan_id,
-            'error': 'invalid_phase',
-            'message': f"Invalid phase: {args.completed}"
-        })
+        output_toon(
+            {
+                'status': 'error',
+                'plan_id': args.plan_id,
+                'error': 'invalid_phase',
+                'message': f'Invalid phase: {args.completed}',
+            }
+        )
         sys.exit(1)
 
     completed_idx = phase_names.index(args.completed)
@@ -395,11 +377,7 @@ def cmd_transition(args):
 
     write_status(args.plan_id, status)
 
-    result = {
-        'status': 'success',
-        'plan_id': args.plan_id,
-        'completed_phase': args.completed
-    }
+    result = {'status': 'success', 'plan_id': args.plan_id, 'completed_phase': args.completed}
     if next_phase:
         result['next_phase'] = next_phase
     else:
@@ -411,89 +389,77 @@ def cmd_transition(args):
 def cmd_archive(args):
     """Archive a completed plan."""
     if not validate_plan_id(args.plan_id):
-        output_toon({
-            'status': 'error',
-            'plan_id': args.plan_id,
-            'error': 'invalid_plan_id',
-            'message': f"Invalid plan_id format: {args.plan_id}"
-        })
+        output_toon(
+            {
+                'status': 'error',
+                'plan_id': args.plan_id,
+                'error': 'invalid_plan_id',
+                'message': f'Invalid plan_id format: {args.plan_id}',
+            }
+        )
         sys.exit(1)
 
     plan_dir = base_path('plans', args.plan_id)
     if not plan_dir.exists():
-        output_toon({
-            'status': 'error',
-            'plan_id': args.plan_id,
-            'error': 'not_found',
-            'message': 'Plan directory not found'
-        })
+        output_toon(
+            {'status': 'error', 'plan_id': args.plan_id, 'error': 'not_found', 'message': 'Plan directory not found'}
+        )
         sys.exit(1)
 
     date_prefix = datetime.utcnow().strftime('%Y-%m-%d')
-    archive_name = f"{date_prefix}-{args.plan_id}"
+    archive_name = f'{date_prefix}-{args.plan_id}'
     archive_dir = get_archive_dir()
     archive_path = archive_dir / archive_name
 
     if args.dry_run:
-        output_toon({
-            'status': 'success',
-            'plan_id': args.plan_id,
-            'dry_run': True,
-            'would_archive_to': str(archive_path)
-        })
+        output_toon(
+            {'status': 'success', 'plan_id': args.plan_id, 'dry_run': True, 'would_archive_to': str(archive_path)}
+        )
         return
 
     archive_dir.mkdir(parents=True, exist_ok=True)
     shutil.move(str(plan_dir), str(archive_path))
 
-    output_toon({
-        'status': 'success',
-        'plan_id': args.plan_id,
-        'archived_to': str(archive_path)
-    })
+    output_toon({'status': 'success', 'plan_id': args.plan_id, 'archived_to': str(archive_path)})
 
 
 def cmd_route(args):
     """Get skill for a phase."""
     if args.phase not in PHASE_ROUTING:
-        output_toon({
-            'status': 'error',
-            'phase': args.phase,
-            'error': 'unknown_phase',
-            'message': f"Unknown phase: {args.phase}",
-            'valid_phases': list(PHASE_ROUTING.keys())
-        })
+        output_toon(
+            {
+                'status': 'error',
+                'phase': args.phase,
+                'error': 'unknown_phase',
+                'message': f'Unknown phase: {args.phase}',
+                'valid_phases': list(PHASE_ROUTING.keys()),
+            }
+        )
         sys.exit(1)
 
     skill, description = PHASE_ROUTING[args.phase]
 
-    output_toon({
-        'status': 'success',
-        'phase': args.phase,
-        'skill': skill,
-        'description': description
-    })
+    output_toon({'status': 'success', 'phase': args.phase, 'skill': skill, 'description': description})
 
 
 def cmd_get_routing_context(args):
     """Get combined routing context: phase, skill, and progress in one call."""
     if not validate_plan_id(args.plan_id):
-        output_toon({
-            'status': 'error',
-            'plan_id': args.plan_id,
-            'error': 'invalid_plan_id',
-            'message': f"Invalid plan_id format: {args.plan_id}"
-        })
+        output_toon(
+            {
+                'status': 'error',
+                'plan_id': args.plan_id,
+                'error': 'invalid_plan_id',
+                'message': f'Invalid plan_id format: {args.plan_id}',
+            }
+        )
         sys.exit(1)
 
     status = read_status(args.plan_id)
     if not status:
-        output_toon({
-            'status': 'error',
-            'plan_id': args.plan_id,
-            'error': 'file_not_found',
-            'message': 'status.toon not found'
-        })
+        output_toon(
+            {'status': 'error', 'plan_id': args.plan_id, 'error': 'file_not_found', 'message': 'status.toon not found'}
+        )
         sys.exit(1)
 
     current_phase = status.get('current_phase', 'unknown')
@@ -509,23 +475,23 @@ def cmd_get_routing_context(args):
     if current_phase in PHASE_ROUTING:
         skill, description = PHASE_ROUTING[current_phase]
 
-    output_toon({
-        'status': 'success',
-        'plan_id': args.plan_id,
-        'title': status.get('title', ''),
-        'current_phase': current_phase,
-        'skill': skill,
-        'skill_description': description,
-        'total_phases': total,
-        'completed_phases': completed,
-        'phases': [{'name': p['name'], 'status': p['status']} for p in phases]
-    })
+    output_toon(
+        {
+            'status': 'success',
+            'plan_id': args.plan_id,
+            'title': status.get('title', ''),
+            'current_phase': current_phase,
+            'skill': skill,
+            'skill_description': description,
+            'total_phases': total,
+            'completed_phases': completed,
+            'phases': [{'name': p['name'], 'status': p['status']} for p in phases],
+        }
+    )
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description='Manage plan lifecycle with status.toon and phase operations'
-    )
+    parser = argparse.ArgumentParser(description='Manage plan lifecycle with status.toon and phase operations')
     subparsers = parser.add_subparsers(dest='command', required=True)
 
     # read
@@ -537,10 +503,12 @@ def main():
     create_parser = subparsers.add_parser('create', help='Create status.toon')
     create_parser.add_argument('--plan-id', required=True, help='Plan identifier')
     create_parser.add_argument('--title', required=True, help='Plan title')
-    create_parser.add_argument('--phases', required=True,
-                               help='Comma-separated phase names (e.g., 1-init,2-outline,3-plan,4-execute,5-finalize)')
-    create_parser.add_argument('--force', action='store_true',
-                               help='Overwrite existing status')
+    create_parser.add_argument(
+        '--phases',
+        required=True,
+        help='Comma-separated phase names (e.g., 1-init,2-outline,3-plan,4-execute,5-finalize)',
+    )
+    create_parser.add_argument('--force', action='store_true', help='Overwrite existing status')
     create_parser.set_defaults(func=cmd_create)
 
     # set-phase
@@ -553,9 +521,9 @@ def main():
     update_phase_parser = subparsers.add_parser('update-phase', help='Update phase status')
     update_phase_parser.add_argument('--plan-id', required=True, help='Plan identifier')
     update_phase_parser.add_argument('--phase', required=True, help='Phase name')
-    update_phase_parser.add_argument('--status', required=True,
-                                     choices=['pending', 'in_progress', 'done'],
-                                     help='Phase status')
+    update_phase_parser.add_argument(
+        '--status', required=True, choices=['pending', 'in_progress', 'done'], help='Phase status'
+    )
     update_phase_parser.set_defaults(func=cmd_update_phase)
 
     # progress
@@ -586,8 +554,9 @@ def main():
     route_parser.set_defaults(func=cmd_route)
 
     # get-routing-context
-    routing_context_parser = subparsers.add_parser('get-routing-context',
-        help='Get combined routing context (phase, skill, progress)')
+    routing_context_parser = subparsers.add_parser(
+        'get-routing-context', help='Get combined routing context (phase, skill, progress)'
+    )
     routing_context_parser.add_argument('--plan-id', required=True, help='Plan identifier')
     routing_context_parser.set_defaults(func=cmd_get_routing_context)
 

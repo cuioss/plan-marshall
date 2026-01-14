@@ -30,18 +30,18 @@ def validate_toon_file(file_path):
 
     # Check 1: File exists and not empty
     if not file_path.exists():
-        return [f"File not found: {file_path}"]
+        return [f'File not found: {file_path}']
 
     content = file_path.read_text()
     if not content.strip():
-        return ["File is empty"]
+        return ['File is empty']
 
     lines = content.split('\n')
 
     # Check 2: No tabs (TOON should use spaces)
     for i, line in enumerate(lines, 1):
         if '\t' in line:
-            errors.append(f"Tab character on line {i}")
+            errors.append(f'Tab character on line {i}')
 
     # Check 3: Array declarations have matching row counts
     # Look for patterns like: issues[5]{col1,col2}:
@@ -67,9 +67,7 @@ def validate_toon_file(file_path):
                 j += 1
 
             if declared_count != actual_count:
-                errors.append(
-                    f"Array '{array_name}': declared {declared_count} rows, found {actual_count}"
-                )
+                errors.append(f"Array '{array_name}': declared {declared_count} rows, found {actual_count}")
             i = j
         else:
             i += 1
@@ -81,10 +79,11 @@ def validate_toon_file(file_path):
 # Tests
 # =============================================================================
 
+
 def test_toon_files_exist():
     """Test that at least one .toon file exists."""
     toon_files = find_toon_files()
-    assert len(toon_files) > 0, "No .toon files found in test directory"
+    assert len(toon_files) > 0, 'No .toon files found in test directory'
 
 
 def test_all_toon_files_valid_syntax():
@@ -96,9 +95,9 @@ def test_all_toon_files_valid_syntax():
         errors = validate_toon_file(file_path)
         if errors:
             rel_path = file_path.relative_to(TEST_ROOT)
-            all_errors.append(f"{rel_path}: {'; '.join(errors)}")
+            all_errors.append(f'{rel_path}: {"; ".join(errors)}')
 
-    assert len(all_errors) == 0, "TOON syntax errors:\n  " + "\n  ".join(all_errors)
+    assert len(all_errors) == 0, 'TOON syntax errors:\n  ' + '\n  '.join(all_errors)
 
 
 def test_no_tabs_in_toon_files():
@@ -111,8 +110,7 @@ def test_no_tabs_in_toon_files():
         if '\t' in content:
             files_with_tabs.append(file_path.relative_to(TEST_ROOT))
 
-    assert len(files_with_tabs) == 0, \
-        f"TOON files with tabs (should use spaces): {files_with_tabs}"
+    assert len(files_with_tabs) == 0, f'TOON files with tabs (should use spaces): {files_with_tabs}'
 
 
 def test_toon_files_not_empty():
@@ -125,7 +123,7 @@ def test_toon_files_not_empty():
         if not content.strip():
             empty_files.append(file_path.relative_to(TEST_ROOT))
 
-    assert len(empty_files) == 0, f"Empty TOON files: {empty_files}"
+    assert len(empty_files) == 0, f'Empty TOON files: {empty_files}'
 
 
 def test_array_declarations_match_rows():
@@ -157,15 +155,12 @@ def test_array_declarations_match_rows():
 
                 if declared_count != actual_count:
                     rel_path = file_path.relative_to(TEST_ROOT)
-                    mismatches.append(
-                        f"{rel_path}: {array_name}[{declared_count}] has {actual_count} rows"
-                    )
+                    mismatches.append(f'{rel_path}: {array_name}[{declared_count}] has {actual_count} rows')
                 i = j
             else:
                 i += 1
 
-    assert len(mismatches) == 0, \
-        "Array declaration mismatches:\n  " + "\n  ".join(mismatches)
+    assert len(mismatches) == 0, 'Array declaration mismatches:\n  ' + '\n  '.join(mismatches)
 
 
 # =============================================================================

@@ -112,11 +112,7 @@ def run_test(test_file: Path, fixture_dir: Path) -> tuple[bool, str]:
     env['PYTHONPATH'] = full_pythonpath + (':' + existing_pythonpath if existing_pythonpath else '')
 
     result = subprocess.run(
-        [sys.executable, str(test_file)],
-        capture_output=True,
-        text=True,
-        cwd=TEST_ROOT.parent,
-        env=env
+        [sys.executable, str(test_file)], capture_output=True, text=True, cwd=TEST_ROOT.parent, env=env
     )
     output = result.stdout + result.stderr
     return result.returncode == 0, output
@@ -132,20 +128,20 @@ def main():
         target = TEST_ROOT
 
     if not target.exists():
-        print(f"Error: Path not found: {target}")
+        print(f'Error: Path not found: {target}')
         sys.exit(1)
 
     # Find test files
     test_files = find_test_files(target)
     if not test_files:
-        print(f"No test files found in: {target}")
+        print(f'No test files found in: {target}')
         sys.exit(1)
 
     # Create centralized test fixture directory
     fixture_dir = create_test_fixture_dir()
-    print(f"Test fixture directory: {fixture_dir}")
-    print(f"Running {len(test_files)} test file(s)...")
-    print("=" * 60)
+    print(f'Test fixture directory: {fixture_dir}')
+    print(f'Running {len(test_files)} test file(s)...')
+    print('=' * 60)
 
     passed = 0
     failed = 0
@@ -158,26 +154,26 @@ def main():
 
             if success:
                 passed += 1
-                print(f"  ✓ {relative_path}")
+                print(f'  ✓ {relative_path}')
             else:
                 failed += 1
                 failed_tests.append((relative_path, output))
-                print(f"  ✗ {relative_path}")
+                print(f'  ✗ {relative_path}')
 
-        print("=" * 60)
-        print(f"Passed: {passed}, Failed: {failed}")
+        print('=' * 60)
+        print(f'Passed: {passed}, Failed: {failed}')
 
         # Show failure details
         if failed_tests:
-            print("\nFailure details:")
+            print('\nFailure details:')
             for path, output in failed_tests:
-                print(f"\n--- {path} ---")
+                print(f'\n--- {path} ---')
                 print(output)
 
     finally:
         # Always cleanup the fixture directory
         cleanup_test_fixture_dir(fixture_dir)
-        print(f"\nCleaned up: {fixture_dir}")
+        print(f'\nCleaned up: {fixture_dir}')
 
     sys.exit(0 if failed == 0 else 1)
 

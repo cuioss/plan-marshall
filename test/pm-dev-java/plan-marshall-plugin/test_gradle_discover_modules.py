@@ -31,7 +31,7 @@ sys.path.insert(0, str(EXTENSION_DIR))
 
 import importlib.util  # noqa: E402
 
-spec = importlib.util.spec_from_file_location("java_extension", EXTENSION_DIR / "extension.py")
+spec = importlib.util.spec_from_file_location('java_extension', EXTENSION_DIR / 'extension.py')
 java_extension = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(java_extension)
 Extension = java_extension.Extension
@@ -41,6 +41,7 @@ Extension = java_extension.Extension
 # Test: Basic Gradle Module Discovery (Error Cases - No Gradle Available)
 # =============================================================================
 
+
 def test_discover_gradle_single_module():
     """Test discover_modules with single-module Gradle project.
 
@@ -48,7 +49,7 @@ def test_discover_gradle_single_module():
     """
     with BuildContext() as ctx:
         # Create a single-module Gradle project
-        build_gradle = '''
+        build_gradle = """
 plugins {
     id 'java'
 }
@@ -56,7 +57,7 @@ plugins {
 group = 'com.example'
 version = '1.0.0'
 description = 'My Gradle application'
-'''
+"""
         (ctx.temp_dir / 'build.gradle').write_text(build_gradle)
 
         # Create source directory
@@ -73,7 +74,7 @@ description = 'My Gradle application'
         # Without Gradle, returns error-only structure
         assert module['build_systems'] == ['gradle']
         assert module['name'] == 'default'  # Root module is always "default"
-        assert 'error' in module, "Should have error when Gradle unavailable"
+        assert 'error' in module, 'Should have error when Gradle unavailable'
         # Error-only structure has no paths, stats, or commands
         assert 'paths' not in module
         assert 'stats' not in module
@@ -87,11 +88,11 @@ def test_discover_gradle_multi_module():
     """
     with BuildContext() as ctx:
         # Create settings.gradle with modules
-        settings_gradle = '''
+        settings_gradle = """
 rootProject.name = 'parent'
 include 'core'
 include 'web'
-'''
+"""
         (ctx.temp_dir / 'settings.gradle').write_text(settings_gradle)
 
         # Create root build.gradle
@@ -134,7 +135,7 @@ def test_discover_gradle_kotlin_dsl():
     In test environment without Gradle, returns error-only structure.
     """
     with BuildContext() as ctx:
-        build_gradle_kts = '''
+        build_gradle_kts = """
 plugins {
     java
 }
@@ -142,7 +143,7 @@ plugins {
 group = "com.example"
 version = "2.0.0"
 description = "Kotlin DSL project"
-'''
+"""
         (ctx.temp_dir / 'build.gradle.kts').write_text(build_gradle_kts)
 
         ext = Extension()
@@ -159,6 +160,7 @@ description = "Kotlin DSL project"
 # =============================================================================
 # Test: Source Directory Discovery (Error Cases)
 # =============================================================================
+
 
 def test_gradle_discover_sources():
     """Test source directory discovery for Gradle.
@@ -185,6 +187,7 @@ def test_gradle_discover_sources():
 # =============================================================================
 # Test: Stats (Error Cases)
 # =============================================================================
+
 
 def test_gradle_stats_file_counts():
     """Test source and test file counting for Gradle.
@@ -343,6 +346,7 @@ def test_gradle_stats_readme_in_paths():
 # Test: Commands (Error Cases)
 # =============================================================================
 
+
 def test_gradle_module_has_commands():
     """Test Gradle module commands.
 
@@ -371,6 +375,7 @@ def test_gradle_module_has_commands():
 # Test: No Duplicate Modules
 # =============================================================================
 
+
 def test_no_duplicate_modules_with_both_build_files():
     """Test that modules are not duplicated when both pom.xml and build.gradle exist.
 
@@ -380,11 +385,11 @@ def test_no_duplicate_modules_with_both_build_files():
     """
     with BuildContext() as ctx:
         # Create both Maven and Gradle files
-        (ctx.temp_dir / 'pom.xml').write_text('''<?xml version="1.0"?>
+        (ctx.temp_dir / 'pom.xml').write_text("""<?xml version="1.0"?>
 <project>
     <artifactId>test-project</artifactId>
     <groupId>com.example</groupId>
-</project>''')
+</project>""")
         (ctx.temp_dir / 'build.gradle').write_text('apply plugin: "java"')
 
         ext = Extension()

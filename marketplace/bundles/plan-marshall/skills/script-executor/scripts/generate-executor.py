@@ -43,9 +43,9 @@ STATE_PATH = PLAN_DIR / 'marshall-state.toon'
 LOGS_DIR = PLAN_DIR / 'logs'
 
 # Path constants
-MARKETPLACE_BUNDLES_PATH = "marketplace/bundles"
-CLAUDE_DIR = ".claude"
-PLUGIN_CACHE_SUBPATH = "plugins/cache/plan-marshall"
+MARKETPLACE_BUNDLES_PATH = 'marketplace/bundles'
+CLAUDE_DIR = '.claude'
+PLUGIN_CACHE_SUBPATH = 'plugins/cache/plan-marshall'
 
 # Script-relative paths (resolved at runtime)
 SCRIPT_DIR = Path(__file__).parent.resolve()
@@ -54,6 +54,7 @@ SCRIPT_DIR = Path(__file__).parent.resolve()
 # ============================================================================
 # PATH RESOLUTION (follows scan-marketplace-inventory.py pattern)
 # ============================================================================
+
 
 def _find_marketplace_path() -> Path | None:
     """Find marketplace/bundles directory in cwd or parent."""
@@ -90,10 +91,7 @@ def get_base_path(use_marketplace: bool = False) -> Path:
         marketplace = _find_marketplace_path()
         if marketplace:
             return marketplace
-        raise FileNotFoundError(
-            f"{MARKETPLACE_BUNDLES_PATH} directory not found. "
-            f"Run from marketplace repo root."
-        )
+        raise FileNotFoundError(f'{MARKETPLACE_BUNDLES_PATH} directory not found. Run from marketplace repo root.')
 
     # Default: plugin-cache first (common user case), then marketplace
     cache = _get_plugin_cache_path()
@@ -105,9 +103,9 @@ def get_base_path(use_marketplace: bool = False) -> Path:
         return marketplace
 
     raise FileNotFoundError(
-        f"Neither plugin cache ({Path.home() / CLAUDE_DIR / PLUGIN_CACHE_SUBPATH}) "
-        f"nor {MARKETPLACE_BUNDLES_PATH} found. "
-        f"Ensure plugin is installed or run from marketplace repo."
+        f'Neither plugin cache ({Path.home() / CLAUDE_DIR / PLUGIN_CACHE_SUBPATH}) '
+        f'nor {MARKETPLACE_BUNDLES_PATH} found. '
+        f'Ensure plugin is installed or run from marketplace repo.'
     )
 
 
@@ -116,7 +114,7 @@ def _resolve_plan_marshall_path(base_path: Path, subpath: str) -> Path:
 
     Tries versioned path first (plugin-cache with version dir), then non-versioned (marketplace).
     """
-    plan_marshall_dir = base_path / "plan-marshall"
+    plan_marshall_dir = base_path / 'plan-marshall'
 
     # Try versioned path first (plugin-cache structure: plan-marshall/{version}/...)
     if plan_marshall_dir.is_dir():
@@ -132,23 +130,23 @@ def _resolve_plan_marshall_path(base_path: Path, subpath: str) -> Path:
 
 def get_inventory_script(base_path: Path) -> Path:
     """Get path to inventory script based on context."""
-    return _resolve_plan_marshall_path(
-        base_path, "skills/marketplace-inventory/scripts/scan-marketplace-inventory.py"
-    )
+    return _resolve_plan_marshall_path(base_path, 'skills/marketplace-inventory/scripts/scan-marketplace-inventory.py')
 
 
 def get_templates_dir(base_path: Path) -> Path:
     """Get path to templates directory based on context."""
-    return _resolve_plan_marshall_path(base_path, "skills/script-executor/templates")
+    return _resolve_plan_marshall_path(base_path, 'skills/script-executor/templates')
 
 
 def get_logging_scripts_dir(base_path: Path) -> Path:
     """Get path to logging scripts directory based on context."""
-    return _resolve_plan_marshall_path(base_path, "skills/logging/scripts")
+    return _resolve_plan_marshall_path(base_path, 'skills/logging/scripts')
+
 
 # ============================================================================
 # SCRIPT DISCOVERY
 # ============================================================================
+
 
 def discover_scripts(base_path: Path) -> dict[str, str]:
     """
@@ -163,21 +161,21 @@ def discover_scripts(base_path: Path) -> dict[str, str]:
     inventory_script = get_inventory_script(base_path)
 
     if not inventory_script.exists():
-        print(f"Error: Inventory script not found: {inventory_script}", file=sys.stderr)
+        print(f'Error: Inventory script not found: {inventory_script}', file=sys.stderr)
         sys.exit(1)
 
     # Determine scope based on path
-    scope = "marketplace" if "marketplace" in str(base_path) else "plugin-cache"
+    scope = 'marketplace' if 'marketplace' in str(base_path) else 'plugin-cache'
 
     # Run inventory scan
     result = subprocess.run(
         ['python3', str(inventory_script), '--scope', scope, '--resource-types', 'scripts'],
         capture_output=True,
-        text=True
+        text=True,
     )
 
     if result.returncode != 0:
-        print(f"Error running inventory scan: {result.stderr}", file=sys.stderr)
+        print(f'Error running inventory scan: {result.stderr}', file=sys.stderr)
         sys.exit(1)
 
     inventory = json.loads(result.stdout)
@@ -236,7 +234,7 @@ def discover_scripts_fallback(base_path: Path) -> dict[str, str]:
                     continue
 
                 # Use simplified notation
-                notation = f"{bundle_name}:{skill_name}"
+                notation = f'{bundle_name}:{skill_name}'
                 abs_path = str(script_file.resolve())
                 mappings[notation] = abs_path
                 break  # Only take first script per skill
@@ -247,6 +245,7 @@ def discover_scripts_fallback(base_path: Path) -> dict[str, str]:
 # ============================================================================
 # GENERATION
 # ============================================================================
+
 
 def generate_mappings_code(mappings: dict[str, str]) -> str:
     """Generate Python code for script mappings dict."""
@@ -272,7 +271,7 @@ def generate_executor(mappings: dict[str, str], base_path: Path, dry_run: bool =
     executor_template = templates_dir / 'execute-script.py.template'
 
     if not executor_template.exists():
-        print(f"Error: Template not found: {executor_template}", file=sys.stderr)
+        print(f'Error: Template not found: {executor_template}', file=sys.stderr)
         return False
 
     template = executor_template.read_text()
@@ -287,9 +286,9 @@ def generate_executor(mappings: dict[str, str], base_path: Path, dry_run: bool =
     content = content.replace('{{PLAN_DIR_NAME}}', PLAN_DIR_NAME)
 
     if dry_run:
-        print("=== execute-script.py ===")
+        print('=== execute-script.py ===')
         print(content[:2000])
-        print("... (truncated)")
+        print('... (truncated)')
         return True
 
     PLAN_DIR.mkdir(parents=True, exist_ok=True)
@@ -342,6 +341,7 @@ def cleanup_old_logs(max_age_days: int = 7) -> int:
 # VERIFICATION
 # ============================================================================
 
+
 def verify_executor(base_path: Path | None = None) -> tuple[bool, int]:
     """
     Verify existing executor is valid.
@@ -354,7 +354,7 @@ def verify_executor(base_path: Path | None = None) -> tuple[bool, int]:
         (is_valid, script_count)
     """
     if not EXECUTOR_PATH.exists():
-        print(f"Error: Executor not found: {EXECUTOR_PATH}", file=sys.stderr)
+        print(f'Error: Executor not found: {EXECUTOR_PATH}', file=sys.stderr)
         return False, 0
 
     # Resolve base_path if not provided
@@ -362,14 +362,14 @@ def verify_executor(base_path: Path | None = None) -> tuple[bool, int]:
         try:
             base_path = get_base_path(use_marketplace=False)
         except FileNotFoundError as e:
-            print(f"Error: {e}", file=sys.stderr)
+            print(f'Error: {e}', file=sys.stderr)
             return False, 0
 
     logging_scripts_dir = get_logging_scripts_dir(base_path)
     logging_module = logging_scripts_dir / 'plan_logging.py'
 
     if not logging_module.exists():
-        print(f"Error: Logging module not found: {logging_module}", file=sys.stderr)
+        print(f'Error: Logging module not found: {logging_module}', file=sys.stderr)
         return False, 0
 
     # Try to import and validate using importlib.util for hyphenated filename
@@ -382,37 +382,37 @@ module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 print(len(module.SCRIPTS))
 """
-        result = subprocess.run(
-            ['python3', '-c', import_code.strip()],
-            capture_output=True,
-            text=True
-        )
+        result = subprocess.run(['python3', '-c', import_code.strip()], capture_output=True, text=True)
         if result.returncode != 0:
-            print(f"Error validating executor: {result.stderr}", file=sys.stderr)
+            print(f'Error validating executor: {result.stderr}', file=sys.stderr)
             return False, 0
 
         script_count = int(result.stdout.strip())
-        print(f"Executor valid: {script_count} scripts mapped")
+        print(f'Executor valid: {script_count} scripts mapped')
 
     except Exception as e:
-        print(f"Error validating executor: {e}", file=sys.stderr)
+        print(f'Error validating executor: {e}', file=sys.stderr)
         return False, 0
 
     # Verify logging module
     try:
         result = subprocess.run(
-            ['python3', '-c', f"import sys; sys.path.insert(0, '{logging_scripts_dir}'); from plan_logging import log_script_execution; print('OK')"],
+            [
+                'python3',
+                '-c',
+                f"import sys; sys.path.insert(0, '{logging_scripts_dir}'); from plan_logging import log_script_execution; print('OK')",
+            ],
             capture_output=True,
-            text=True
+            text=True,
         )
         if result.returncode != 0:
-            print(f"Error validating logging module: {result.stderr}", file=sys.stderr)
+            print(f'Error validating logging module: {result.stderr}', file=sys.stderr)
             return False, 0
 
-        print("Logging module valid")
+        print('Logging module valid')
 
     except Exception as e:
-        print(f"Error validating logging module: {e}", file=sys.stderr)
+        print(f'Error validating logging module: {e}', file=sys.stderr)
         return False, 0
 
     return True, script_count
@@ -435,11 +435,7 @@ module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 print(json.dumps(module.SCRIPTS))
 """
-        result = subprocess.run(
-            ['python3', '-c', import_code.strip()],
-            capture_output=True,
-            text=True
-        )
+        result = subprocess.run(['python3', '-c', import_code.strip()], capture_output=True, text=True)
         if result.returncode != 0:
             return {}
 
@@ -473,66 +469,67 @@ def check_paths_exist(mappings: dict[str, str]) -> tuple[list, list]:
 # COMMANDS
 # ============================================================================
 
+
 def cmd_generate(args):
     """Generate executor with embedded script mappings."""
     # Resolve base path
     try:
         base_path = get_base_path(use_marketplace=args.marketplace)
-        context = "marketplace" if args.marketplace else "auto-detected"
-        print(f"Using context: {context} ({base_path})")
+        context = 'marketplace' if args.marketplace else 'auto-detected'
+        print(f'Using context: {context} ({base_path})')
     except FileNotFoundError as e:
-        print(f"Error: {e}", file=sys.stderr)
+        print(f'Error: {e}', file=sys.stderr)
         sys.exit(1)
 
     # Discover scripts
-    print("Discovering scripts...")
+    print('Discovering scripts...')
     try:
         mappings = discover_scripts(base_path)
     except Exception as e:
-        print(f"Falling back to glob discovery: {e}", file=sys.stderr)
+        print(f'Falling back to glob discovery: {e}', file=sys.stderr)
         mappings = discover_scripts_fallback(base_path)
 
-    print(f"Found {len(mappings)} scripts")
+    print(f'Found {len(mappings)} scripts')
 
     if args.dry_run:
-        print("\n=== Script Mappings ===")
+        print('\n=== Script Mappings ===')
         for notation, path in sorted(mappings.items()):
-            print(f"  {notation} -> {path}")
+            print(f'  {notation} -> {path}')
         print()
 
     # Generate executor (uses logging skill from plan-marshall/logging)
-    print("Generating executor...")
+    print('Generating executor...')
     if not generate_executor(mappings, base_path, dry_run=args.dry_run):
         sys.exit(1)
 
     if args.dry_run:
-        print("\nDry run complete. No files written.")
+        print('\nDry run complete. No files written.')
         return
 
     # Cleanup old logs
     logs_cleaned = cleanup_old_logs()
     if logs_cleaned > 0:
-        print(f"Cleaned up {logs_cleaned} old log files")
+        print(f'Cleaned up {logs_cleaned} old log files')
 
     # Update state
     checksum = compute_checksum(mappings)
     update_state(len(mappings), checksum, logs_cleaned)
 
     # Output summary in TOON format
-    print("\nstatus\tscripts_discovered\texecutor_generated\tlogs_cleaned")
-    print(f"success\t{len(mappings)}\t{EXECUTOR_PATH}\t{logs_cleaned}")
+    print('\nstatus\tscripts_discovered\texecutor_generated\tlogs_cleaned')
+    print(f'success\t{len(mappings)}\t{EXECUTOR_PATH}\t{logs_cleaned}')
 
 
 def cmd_verify(args):
     """Verify existing executor."""
     valid, count = verify_executor()
     if valid:
-        print("\nstatus\tscript_count")
-        print(f"ok\t{count}")
+        print('\nstatus\tscript_count')
+        print(f'ok\t{count}')
         sys.exit(0)
     else:
-        print("\nstatus\tissues")
-        print("error\tVerification failed")
+        print('\nstatus\tissues')
+        print('error\tVerification failed')
         sys.exit(1)
 
 
@@ -541,23 +538,23 @@ def cmd_drift(args):
     executor_mappings = get_executor_mappings()
 
     if not executor_mappings:
-        print("Error: Could not read executor mappings", file=sys.stderr)
+        print('Error: Could not read executor mappings', file=sys.stderr)
         sys.exit(1)
 
     # Resolve base path
     try:
         base_path = get_base_path(use_marketplace=args.marketplace)
-        context = "marketplace" if args.marketplace else "auto-detected"
-        print(f"Using context: {context} ({base_path})")
+        context = 'marketplace' if args.marketplace else 'auto-detected'
+        print(f'Using context: {context} ({base_path})')
     except FileNotFoundError as e:
-        print(f"Error: {e}", file=sys.stderr)
+        print(f'Error: {e}', file=sys.stderr)
         sys.exit(1)
 
     # Get current bundles state using discover_scripts()
     try:
         current_mappings = discover_scripts(base_path)
     except SystemExit:
-        print("Warning: Could not read bundles state", file=sys.stderr)
+        print('Warning: Could not read bundles state', file=sys.stderr)
         current_mappings = {}
 
     # Find differences
@@ -573,31 +570,31 @@ def cmd_drift(args):
             changed.append(notation)
 
     # Report
-    print(f"Executor scripts: {len(executor_mappings)}")
-    print(f"Bundles scripts: {len(current_mappings)}")
+    print(f'Executor scripts: {len(executor_mappings)}')
+    print(f'Bundles scripts: {len(current_mappings)}')
 
     if added:
-        print(f"\nAdded in bundles ({len(added)}):")
+        print(f'\nAdded in bundles ({len(added)}):')
         for n in sorted(added):
-            print(f"  + {n}")
+            print(f'  + {n}')
 
     if removed:
-        print(f"\nRemoved from bundles ({len(removed)}):")
+        print(f'\nRemoved from bundles ({len(removed)}):')
         for n in sorted(removed):
-            print(f"  - {n}")
+            print(f'  - {n}')
 
     if changed:
-        print(f"\nPath changed ({len(changed)}):")
+        print(f'\nPath changed ({len(changed)}):')
         for n in sorted(changed):
-            print(f"  ~ {n}")
+            print(f'  ~ {n}')
 
     if added or removed or changed:
-        print("\nstatus\tadded\tremoved\tchanged")
-        print(f"drift\t{len(added)}\t{len(removed)}\t{len(changed)}")
+        print('\nstatus\tadded\tremoved\tchanged')
+        print(f'drift\t{len(added)}\t{len(removed)}\t{len(changed)}')
         sys.exit(1)
     else:
-        print("\nstatus\tadded\tremoved\tchanged")
-        print("ok\t0\t0\t0")
+        print('\nstatus\tadded\tremoved\tchanged')
+        print('ok\t0\t0\t0')
         sys.exit(0)
 
 
@@ -606,43 +603,44 @@ def cmd_paths(args):
     mappings = get_executor_mappings()
 
     if not mappings:
-        print("Error: Could not read executor mappings", file=sys.stderr)
+        print('Error: Could not read executor mappings', file=sys.stderr)
         sys.exit(1)
 
     existing, missing = check_paths_exist(mappings)
 
-    print(f"Total mappings: {len(mappings)}")
-    print(f"Existing: {len(existing)}")
-    print(f"Missing: {len(missing)}")
+    print(f'Total mappings: {len(mappings)}')
+    print(f'Existing: {len(existing)}')
+    print(f'Missing: {len(missing)}')
 
     if missing:
-        print("\nMissing scripts:")
+        print('\nMissing scripts:')
         for notation, path in missing:
-            print(f"  {notation} -> {path}")
+            print(f'  {notation} -> {path}')
 
-        print("\nstatus\texisting\tmissing")
-        print(f"error\t{len(existing)}\t{len(missing)}")
+        print('\nstatus\texisting\tmissing')
+        print(f'error\t{len(existing)}\t{len(missing)}')
         sys.exit(1)
     else:
-        print("\nstatus\texisting\tmissing")
-        print(f"ok\t{len(existing)}\t0")
+        print('\nstatus\texisting\tmissing')
+        print(f'ok\t{len(existing)}\t0')
         sys.exit(0)
 
 
 def cmd_cleanup(args):
     """Clean up old global logs."""
     deleted = cleanup_old_logs(max_age_days=args.max_age_days)
-    print(f"Deleted {deleted} old log files")
+    print(f'Deleted {deleted} old log files')
 
 
 # ============================================================================
 # MAIN
 # ============================================================================
 
+
 def main():
     parser = argparse.ArgumentParser(
         description='Generate execute-script.py with embedded script mappings',
-        epilog='By default uses plugin-cache context. Use --marketplace for development.'
+        epilog='By default uses plugin-cache context. Use --marketplace for development.',
     )
     subparsers = parser.add_subparsers(dest='command', required=True)
 
@@ -650,8 +648,9 @@ def main():
     gen_parser = subparsers.add_parser('generate', help='Generate executor with script mappings')
     gen_parser.add_argument('--force', action='store_true', help='Force regeneration')
     gen_parser.add_argument('--dry-run', action='store_true', help='Show what would be generated')
-    gen_parser.add_argument('--marketplace', action='store_true',
-                           help='Use marketplace context (development mode) instead of plugin-cache')
+    gen_parser.add_argument(
+        '--marketplace', action='store_true', help='Use marketplace context (development mode) instead of plugin-cache'
+    )
     gen_parser.set_defaults(func=cmd_generate)
 
     # verify subcommand
@@ -660,8 +659,9 @@ def main():
 
     # drift subcommand
     drift_parser = subparsers.add_parser('drift', help='Compare with current bundles state')
-    drift_parser.add_argument('--marketplace', action='store_true',
-                             help='Use marketplace context (development mode) instead of plugin-cache')
+    drift_parser.add_argument(
+        '--marketplace', action='store_true', help='Use marketplace context (development mode) instead of plugin-cache'
+    )
     drift_parser.set_defaults(func=cmd_drift)
 
     # paths subcommand

@@ -24,50 +24,42 @@ from _cmd_manage import (
 # Helper Functions
 # =============================================================================
 
+
 def create_test_derived_data(tmpdir: str) -> dict:
     """Create test derived-data.json and return the data."""
     test_data = {
-        "project": {
-            "name": "test-project"
-        },
-        "modules": {
-            "module-a": {
-                "name": "module-a",
-                "build_systems": ["maven"],
-                "paths": {
-                    "module": "module-a",
-                    "descriptor": "module-a/pom.xml",
-                    "sources": ["module-a/src/main/java"],
-                    "tests": ["module-a/src/test/java"],
-                    "readme": "module-a/README.md"
+        'project': {'name': 'test-project'},
+        'modules': {
+            'module-a': {
+                'name': 'module-a',
+                'build_systems': ['maven'],
+                'paths': {
+                    'module': 'module-a',
+                    'descriptor': 'module-a/pom.xml',
+                    'sources': ['module-a/src/main/java'],
+                    'tests': ['module-a/src/test/java'],
+                    'readme': 'module-a/README.md',
                 },
-                "metadata": {
-                    "artifact_id": "module-a",
-                    "description": "Module A description"
+                'metadata': {'artifact_id': 'module-a', 'description': 'Module A description'},
+                'packages': {'com.example.a': {'path': 'module-a/src/main/java/com/example/a'}},
+                'dependencies': ['org.example:dep1:compile'],
+                'stats': {'source_files': 10, 'test_files': 5},
+                'commands': {
+                    'module-tests': 'python3 .plan/execute-script.py ...',
+                    'verify': 'python3 .plan/execute-script.py ...',
                 },
-                "packages": {
-                    "com.example.a": {"path": "module-a/src/main/java/com/example/a"}
-                },
-                "dependencies": ["org.example:dep1:compile"],
-                "stats": {"source_files": 10, "test_files": 5},
-                "commands": {
-                    "module-tests": "python3 .plan/execute-script.py ...",
-                    "verify": "python3 .plan/execute-script.py ..."
-                }
             },
-            "module-b": {
-                "name": "module-b",
-                "build_systems": ["maven"],
-                "paths": {
-                    "module": "module-b"
-                },
-                "metadata": {},
-                "packages": {},
-                "dependencies": [],
-                "stats": {},
-                "commands": {}
-            }
-        }
+            'module-b': {
+                'name': 'module-b',
+                'build_systems': ['maven'],
+                'paths': {'module': 'module-b'},
+                'metadata': {},
+                'packages': {},
+                'dependencies': [],
+                'stats': {},
+                'commands': {},
+            },
+        },
     }
     save_derived_data(test_data, tmpdir)
     return test_data
@@ -77,6 +69,7 @@ def create_test_derived_data(tmpdir: str) -> dict:
 # Tests for api_init
 # =============================================================================
 
+
 def test_api_init_creates_enrichment():
     """api_init creates llm-enriched.json with module stubs."""
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -84,21 +77,21 @@ def test_api_init_creates_enrichment():
 
         result = api_init(tmpdir)
 
-        assert result["status"] == "success"
-        assert result["modules_initialized"] == 2
-        assert "output_file" in result
+        assert result['status'] == 'success'
+        assert result['modules_initialized'] == 2
+        assert 'output_file' in result
 
         # Verify file created
-        enriched_path = Path(tmpdir) / ".plan" / "project-architecture" / "llm-enriched.json"
+        enriched_path = Path(tmpdir) / '.plan' / 'project-architecture' / 'llm-enriched.json'
         assert enriched_path.exists()
 
         # Verify structure
         enriched = json.loads(enriched_path.read_text())
-        assert "project" in enriched
-        assert "modules" in enriched
-        assert "module-a" in enriched["modules"]
-        assert "module-b" in enriched["modules"]
-        assert "responsibility" in enriched["modules"]["module-a"]
+        assert 'project' in enriched
+        assert 'modules' in enriched
+        assert 'module-a' in enriched['modules']
+        assert 'module-b' in enriched['modules']
+        assert 'responsibility' in enriched['modules']['module-a']
 
 
 def test_api_init_check_existing():
@@ -112,8 +105,8 @@ def test_api_init_check_existing():
         # Then check
         result = api_init(tmpdir, check=True)
 
-        assert result["status"] == "exists"
-        assert result["modules_enriched"] == 2
+        assert result['status'] == 'exists'
+        assert result['modules_enriched'] == 2
 
 
 def test_api_init_check_missing():
@@ -123,7 +116,7 @@ def test_api_init_check_missing():
 
         result = api_init(tmpdir, check=True)
 
-        assert result["status"] == "missing"
+        assert result['status'] == 'missing'
 
 
 def test_api_init_no_overwrite():
@@ -137,8 +130,8 @@ def test_api_init_no_overwrite():
         # Try again without force
         result = api_init(tmpdir)
 
-        assert result["status"] == "exists"
-        assert "force" in result.get("message", "").lower()
+        assert result['status'] == 'exists'
+        assert 'force' in result.get('message', '').lower()
 
 
 def test_api_init_force_overwrites():
@@ -152,7 +145,7 @@ def test_api_init_force_overwrites():
         # Force overwrite
         result = api_init(tmpdir, force=True)
 
-        assert result["status"] == "success"
+        assert result['status'] == 'success'
 
 
 def test_api_init_missing_derived():
@@ -160,13 +153,14 @@ def test_api_init_missing_derived():
     with tempfile.TemporaryDirectory() as tmpdir:
         result = api_init(tmpdir)
 
-        assert result["status"] == "error"
-        assert "discover" in result.get("error", "").lower()
+        assert result['status'] == 'error'
+        assert 'discover' in result.get('error', '').lower()
 
 
 # =============================================================================
 # Tests for api_get_derived
 # =============================================================================
+
 
 def test_api_get_derived_returns_data():
     """api_get_derived returns derived data."""
@@ -175,9 +169,9 @@ def test_api_get_derived_returns_data():
 
         result = api_get_derived(tmpdir)
 
-        assert result["project"]["name"] == "test-project"
-        assert "module-a" in result["modules"]
-        assert "module-b" in result["modules"]
+        assert result['project']['name'] == 'test-project'
+        assert 'module-a' in result['modules']
+        assert 'module-b' in result['modules']
 
 
 def test_api_get_derived_missing_raises():
@@ -185,7 +179,7 @@ def test_api_get_derived_missing_raises():
     with tempfile.TemporaryDirectory() as tmpdir:
         try:
             api_get_derived(tmpdir)
-            assert False, "Should have raised DataNotFoundError"
+            assert False, 'Should have raised DataNotFoundError'
         except DataNotFoundError:
             pass
 
@@ -194,16 +188,17 @@ def test_api_get_derived_missing_raises():
 # Tests for api_get_derived_module
 # =============================================================================
 
+
 def test_api_get_derived_module_returns_module():
     """api_get_derived_module returns single module data."""
     with tempfile.TemporaryDirectory() as tmpdir:
         create_test_derived_data(tmpdir)
 
-        result = api_get_derived_module("module-a", tmpdir)
+        result = api_get_derived_module('module-a', tmpdir)
 
-        assert result["name"] == "module-a"
-        assert result["build_systems"] == ["maven"]
-        assert "com.example.a" in result["packages"]
+        assert result['name'] == 'module-a'
+        assert result['build_systems'] == ['maven']
+        assert 'com.example.a' in result['packages']
 
 
 def test_api_get_derived_module_not_found_raises():
@@ -212,8 +207,8 @@ def test_api_get_derived_module_not_found_raises():
         create_test_derived_data(tmpdir)
 
         try:
-            api_get_derived_module("nonexistent", tmpdir)
-            assert False, "Should have raised ModuleNotFoundError"
+            api_get_derived_module('nonexistent', tmpdir)
+            assert False, 'Should have raised ModuleNotFoundError'
         except ModuleNotFoundError:
             pass
 
@@ -222,6 +217,7 @@ def test_api_get_derived_module_not_found_raises():
 # Tests for list_modules
 # =============================================================================
 
+
 def test_list_modules_returns_names():
     """list_modules returns list of module names."""
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -229,7 +225,7 @@ def test_list_modules_returns_names():
 
         result = list_modules(tmpdir)
 
-        assert set(result) == {"module-a", "module-b"}
+        assert set(result) == {'module-a', 'module-b'}
 
 
 def test_list_modules_missing_raises():
@@ -237,12 +233,12 @@ def test_list_modules_missing_raises():
     with tempfile.TemporaryDirectory() as tmpdir:
         try:
             list_modules(tmpdir)
-            assert False, "Should have raised DataNotFoundError"
+            assert False, 'Should have raised DataNotFoundError'
         except DataNotFoundError:
             pass
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     import traceback
 
     tests = [
@@ -267,12 +263,12 @@ if __name__ == "__main__":
         try:
             test()
             passed += 1
-            print(f"PASSED: {test.__name__}")
+            print(f'PASSED: {test.__name__}')
         except Exception:
             failed += 1
-            print(f"FAILED: {test.__name__}")
+            print(f'FAILED: {test.__name__}')
             traceback.print_exc()
             print()
 
-    print(f"\nResults: {passed} passed, {failed} failed")
+    print(f'\nResults: {passed} passed, {failed} failed')
     sys.exit(0 if failed == 0 else 1)

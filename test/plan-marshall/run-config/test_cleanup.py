@@ -14,12 +14,7 @@ from conftest import PlanContext, get_script_path, run_script
 SCRIPT_PATH = get_script_path('plan-marshall', 'run-config', 'cleanup.py')
 
 # Default retention config for tests
-DEFAULT_RETENTION = {
-    "logs_days": 1,
-    "archived_plans_days": 5,
-    "memory_days": 5,
-    "temp_on_maintenance": True
-}
+DEFAULT_RETENTION = {'logs_days': 1, 'archived_plans_days': 5, 'memory_days': 5, 'temp_on_maintenance': True}
 
 
 def clean_fixture_dirs(fixture_dir: Path):
@@ -32,11 +27,7 @@ def clean_fixture_dirs(fixture_dir: Path):
 
 def setup_marshal_json(fixture_dir: Path, retention: dict | None = None):
     """Create marshal.json with retention settings."""
-    config = {
-        "system": {
-            "retention": retention or DEFAULT_RETENTION
-        }
-    }
+    config = {'system': {'retention': retention or DEFAULT_RETENTION}}
     marshal_path = fixture_dir / 'marshal.json'
     marshal_path.write_text(json.dumps(config, indent=2))
 
@@ -57,13 +48,13 @@ def test_clean_temp():
         (subdir / 'nested.txt').write_text('nested content')
 
         result = run_script(SCRIPT_PATH, 'clean', '--target', 'temp')
-        assert result.success, f"Script failed: {result.stderr}"
+        assert result.success, f'Script failed: {result.stderr}'
         assert 'status: success' in result.stdout
         assert 'temp_files: 3' in result.stdout
 
         # Verify files were deleted
         remaining = list(temp_dir.iterdir())
-        assert len(remaining) == 0, f"Files remain: {remaining}"
+        assert len(remaining) == 0, f'Files remain: {remaining}'
 
 
 def test_clean_logs():
@@ -85,13 +76,13 @@ def test_clean_logs():
         recent_log.write_text('recent log content')
 
         result = run_script(SCRIPT_PATH, 'clean', '--target', 'logs')
-        assert result.success, f"Script failed: {result.stderr}"
+        assert result.success, f'Script failed: {result.stderr}'
         assert 'status: success' in result.stdout
         assert 'logs_deleted: 1' in result.stdout
 
         # Verify old log deleted, recent kept
-        assert not old_log.exists(), "Old log should be deleted"
-        assert recent_log.exists(), "Recent log should be kept"
+        assert not old_log.exists(), 'Old log should be deleted'
+        assert recent_log.exists(), 'Recent log should be kept'
 
 
 def test_clean_archived_plans():
@@ -116,13 +107,13 @@ def test_clean_archived_plans():
         (recent_plan / 'config.toon').write_text('config')
 
         result = run_script(SCRIPT_PATH, 'clean', '--target', 'archived-plans')
-        assert result.success, f"Script failed: {result.stderr}"
+        assert result.success, f'Script failed: {result.stderr}'
         assert 'status: success' in result.stdout
         assert 'archived_plans_deleted: 1' in result.stdout
 
         # Verify old plan deleted, recent kept
-        assert not old_plan.exists(), "Old plan should be deleted"
-        assert recent_plan.exists(), "Recent plan should be kept"
+        assert not old_plan.exists(), 'Old plan should be deleted'
+        assert recent_plan.exists(), 'Recent plan should be kept'
 
 
 def test_clean_memory():
@@ -144,13 +135,13 @@ def test_clean_memory():
         recent_file.write_text('recent memory')
 
         result = run_script(SCRIPT_PATH, 'clean', '--target', 'memory')
-        assert result.success, f"Script failed: {result.stderr}"
+        assert result.success, f'Script failed: {result.stderr}'
         assert 'status: success' in result.stdout
         assert 'memory_files_deleted: 1' in result.stdout
 
         # Verify old file deleted, recent kept
-        assert not old_file.exists(), "Old memory file should be deleted"
-        assert recent_file.exists(), "Recent memory file should be kept"
+        assert not old_file.exists(), 'Old memory file should be deleted'
+        assert recent_file.exists(), 'Recent memory file should be kept'
 
 
 def test_clean_all():
@@ -172,7 +163,7 @@ def test_clean_all():
         os.utime(old_log, (old_time, old_time))
 
         result = run_script(SCRIPT_PATH, 'clean', '--target', 'all')
-        assert result.success, f"Script failed: {result.stderr}"
+        assert result.success, f'Script failed: {result.stderr}'
         assert 'status: success' in result.stdout
         assert 'temp_files: 1' in result.stdout
         assert 'logs_deleted: 1' in result.stdout
@@ -190,12 +181,12 @@ def test_clean_dry_run():
         test_file.write_text('should not be deleted')
 
         result = run_script(SCRIPT_PATH, 'clean', '--dry-run', '--target', 'temp')
-        assert result.success, f"Script failed: {result.stderr}"
+        assert result.success, f'Script failed: {result.stderr}'
         assert 'status: dry_run' in result.stdout
         assert 'temp_files: 1' in result.stdout
 
         # Verify file was NOT deleted
-        assert test_file.exists(), "File should not be deleted in dry-run mode"
+        assert test_file.exists(), 'File should not be deleted in dry-run mode'
 
 
 def test_status():
@@ -215,7 +206,7 @@ def test_status():
         (logs_dir / 'test.log').write_text('log')
 
         result = run_script(SCRIPT_PATH, 'status')
-        assert result.success, f"Script failed: {result.stderr}"
+        assert result.success, f'Script failed: {result.stderr}'
         assert 'status: ok' in result.stdout
         assert 'temp_files: 1' in result.stdout
         assert 'logs_total: 1' in result.stdout
@@ -243,7 +234,7 @@ def test_missing_marshal_json():
             marshal_path.unlink()
 
         result = run_script(SCRIPT_PATH, 'clean', '--target', 'all')
-        assert not result.success, "Should fail without marshal.json"
+        assert not result.success, 'Should fail without marshal.json'
         assert 'error' in result.stdout.lower()
         assert 'marshal.json not found' in result.stdout
 
@@ -253,10 +244,10 @@ def test_missing_retention_config():
     with PlanContext(plan_id='test-missing-retention') as ctx:
         # Create marshal.json without system.retention section
         marshal_path = ctx.fixture_dir / 'marshal.json'
-        marshal_path.write_text(json.dumps({"other": "config"}))
+        marshal_path.write_text(json.dumps({'other': 'config'}))
 
         result = run_script(SCRIPT_PATH, 'clean', '--target', 'all')
-        assert not result.success, "Should fail without retention config"
+        assert not result.success, 'Should fail without retention config'
         assert 'error' in result.stdout.lower()
         assert 'system.retention' in result.stdout.lower()
 
@@ -264,5 +255,5 @@ def test_missing_retention_config():
 def test_missing_subcommand():
     """Missing required subcommand fails."""
     result = run_script(SCRIPT_PATH)
-    assert not result.success, "Should fail without subcommand"
+    assert not result.success, 'Should fail without subcommand'
     assert 'required' in result.stderr.lower() or 'error' in result.stderr.lower()

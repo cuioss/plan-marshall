@@ -9,13 +9,13 @@ from pathlib import Path
 
 def detect_file_type(file_path: str) -> str:
     """Detect if file is agent, command, or skill."""
-    if "/agents/" in file_path:
-        return "agent"
-    elif "/commands/" in file_path:
-        return "command"
-    elif "/skills/" in file_path:
-        return "skill"
-    return "unknown"
+    if '/agents/' in file_path:
+        return 'agent'
+    elif '/commands/' in file_path:
+        return 'command'
+    elif '/skills/' in file_path:
+        return 'skill'
+    return 'unknown'
 
 
 def pre_filter_documentation_lines(content: str) -> set[int]:
@@ -100,28 +100,15 @@ def extract_references(content: str, excluded_lines: set[int]) -> list[dict]:
             continue
 
         for match in slash_pattern.finditer(line):
-            references.append({
-                "line": i + 1,
-                "type": "SlashCommand",
-                "reference": f"/{match.group(1)}",
-                "raw_text": match.group(0)
-            })
+            references.append(
+                {'line': i + 1, 'type': 'SlashCommand', 'reference': f'/{match.group(1)}', 'raw_text': match.group(0)}
+            )
 
         for match in task_pattern.finditer(line):
-            references.append({
-                "line": i + 1,
-                "type": "Task",
-                "reference": match.group(1),
-                "raw_text": match.group(0)
-            })
+            references.append({'line': i + 1, 'type': 'Task', 'reference': match.group(1), 'raw_text': match.group(0)})
 
         for match in skill_pattern.finditer(line):
-            references.append({
-                "line": i + 1,
-                "type": "Skill",
-                "reference": match.group(1),
-                "raw_text": match.group(0)
-            })
+            references.append({'line': i + 1, 'type': 'Skill', 'reference': match.group(1), 'raw_text': match.group(0)})
 
     return references
 
@@ -131,14 +118,14 @@ def cmd_references(args) -> int:
     file_path = Path(args.file)
 
     if not file_path.is_file():
-        print(json.dumps({"error": f"File not found: {args.file}"}), file=sys.stderr)
+        print(json.dumps({'error': f'File not found: {args.file}'}), file=sys.stderr)
         return 1
 
     try:
         with open(file_path, encoding='utf-8') as f:
             content = f.read()
     except Exception as e:
-        print(json.dumps({"error": f"Failed to read file: {str(e)}"}), file=sys.stderr)
+        print(json.dumps({'error': f'Failed to read file: {str(e)}'}), file=sys.stderr)
         return 1
 
     file_type = detect_file_type(str(file_path))
@@ -150,14 +137,11 @@ def cmd_references(args) -> int:
     exclusion_rate = (excluded_count / total_lines * 100) if total_lines > 0 else 0.0
 
     result = {
-        "file_path": str(file_path),
-        "file_type": file_type,
-        "total_lines": total_lines,
-        "references": references,
-        "pre_filter": {
-            "excluded_lines_count": excluded_count,
-            "exclusion_rate": round(exclusion_rate, 1)
-        }
+        'file_path': str(file_path),
+        'file_type': file_type,
+        'total_lines': total_lines,
+        'references': references,
+        'pre_filter': {'excluded_lines_count': excluded_count, 'exclusion_rate': round(exclusion_rate, 1)},
     }
 
     print(json.dumps(result, indent=2))

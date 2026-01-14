@@ -57,7 +57,7 @@ Examples:
 
   # Analyze cross-file content
   %(prog)s cross-file --skill-path skills/plugin-doctor
-"""
+""",
     )
 
     subparsers = parser.add_subparsers(dest='command', help='Operation to perform')
@@ -65,9 +65,13 @@ Examples:
     # markdown subcommand
     p_md = subparsers.add_parser('markdown', help='Analyze markdown file structure')
     p_md.add_argument('--file', '-f', required=True, help='Path to markdown file')
-    p_md.add_argument('--type', '-t', default='auto',
-                     choices=['agent', 'command', 'skill', 'auto'],
-                     help='Component type (default: auto-detect)')
+    p_md.add_argument(
+        '--type',
+        '-t',
+        default='auto',
+        choices=['agent', 'command', 'skill', 'auto'],
+        help='Component type (default: auto-detect)',
+    )
     p_md.set_defaults(func=cmd_markdown)
 
     # structure subcommand
@@ -83,9 +87,13 @@ Examples:
     # cross-file subcommand
     p_cross = subparsers.add_parser('cross-file', help='Analyze cross-file content')
     p_cross.add_argument('--skill-path', '-s', required=True, help='Path to skill directory')
-    p_cross.add_argument('--similarity-threshold', '-t', type=float,
-                        default=DEFAULT_SIMILARITY_THRESHOLD,
-                        help=f'Similarity threshold (default: {DEFAULT_SIMILARITY_THRESHOLD})')
+    p_cross.add_argument(
+        '--similarity-threshold',
+        '-t',
+        type=float,
+        default=DEFAULT_SIMILARITY_THRESHOLD,
+        help=f'Similarity threshold (default: {DEFAULT_SIMILARITY_THRESHOLD})',
+    )
     p_cross.set_defaults(func=cmd_cross_file)
 
     args = parser.parse_args()

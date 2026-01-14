@@ -69,6 +69,7 @@ OUTER_TIMEOUT_BUFFER = 30
 # API Functions (no argparse dependency)
 # =============================================================================
 
+
 def detect_wrapper(project_dir: str = '.') -> str:
     """Detect Gradle wrapper or fallback to gradle.
 
@@ -93,10 +94,7 @@ def detect_wrapper(project_dir: str = '.') -> str:
 
 
 def execute_direct(
-    args: str,
-    command_key: str,
-    default_timeout: int = 300,
-    project_dir: str = '.'
+    args: str, command_key: str, default_timeout: int = 300, project_dir: str = '.'
 ) -> DirectCommandResult:
     """Execute Gradle command with log file output and adaptive timeout learning.
 
@@ -127,22 +125,22 @@ def execute_direct(
     """
     # Step 1: Create log file in standard location
     # Extract module from :module:task prefix if present for scoped log files
-    scope = "default"
-    if args.startswith(":"):
+    scope = 'default'
+    if args.startswith(':'):
         # Extract module name from :module:task format
-        parts = args.split(":")
+        parts = args.split(':')
         if len(parts) >= 2:
             scope = parts[1]
-    log_file = create_log_file("gradle", scope, project_dir)
+    log_file = create_log_file('gradle', scope, project_dir)
     if not log_file:
         return {
-            "status": "error",
-            "exit_code": -1,
-            "duration_seconds": 0,
-            "timeout_used_seconds": 0,
-            "log_file": "",
-            "command": "",
-            "error": "Failed to create log file"
+            'status': 'error',
+            'exit_code': -1,
+            'duration_seconds': 0,
+            'timeout_used_seconds': 0,
+            'log_file': '',
+            'command': '',
+            'error': 'Failed to create log file',
         }
 
     # Step 2: Detect wrapper
@@ -160,23 +158,17 @@ def execute_direct(
     start_time = time.time()
 
     try:
-        result = subprocess.run(
-            cmd_parts,
-            timeout=timeout_seconds,
-            capture_output=True,
-            text=True,
-            cwd=project_dir
-        )
+        result = subprocess.run(cmd_parts, timeout=timeout_seconds, capture_output=True, text=True, cwd=project_dir)
         duration_seconds = int(time.time() - start_time)
 
         # Write output to log file
         with open(log_file, 'w') as f:
-            f.write(f"Command: {command_str}\n")
-            f.write(f"Exit code: {result.returncode}\n")
-            f.write(f"Duration: {duration_seconds}s\n")
-            f.write("\n=== STDOUT ===\n")
+            f.write(f'Command: {command_str}\n')
+            f.write(f'Exit code: {result.returncode}\n')
+            f.write(f'Duration: {duration_seconds}s\n')
+            f.write('\n=== STDOUT ===\n')
             f.write(result.stdout)
-            f.write("\n=== STDERR ===\n")
+            f.write('\n=== STDERR ===\n')
             f.write(result.stderr)
 
         # Step 6: Record duration for adaptive learning
@@ -185,71 +177,71 @@ def execute_direct(
         # Step 7: Return structured result
         if result.returncode == 0:
             return {
-                "status": "success",
-                "exit_code": 0,
-                "duration_seconds": duration_seconds,
-                "timeout_used_seconds": timeout_seconds,
-                "log_file": log_file,
-                "command": command_str
+                'status': 'success',
+                'exit_code': 0,
+                'duration_seconds': duration_seconds,
+                'timeout_used_seconds': timeout_seconds,
+                'log_file': log_file,
+                'command': command_str,
             }
         else:
             return {
-                "status": "error",
-                "exit_code": result.returncode,
-                "duration_seconds": duration_seconds,
-                "timeout_used_seconds": timeout_seconds,
-                "log_file": log_file,
-                "command": command_str,
-                "error": f"Build failed with exit code {result.returncode}"
+                'status': 'error',
+                'exit_code': result.returncode,
+                'duration_seconds': duration_seconds,
+                'timeout_used_seconds': timeout_seconds,
+                'log_file': log_file,
+                'command': command_str,
+                'error': f'Build failed with exit code {result.returncode}',
             }
 
     except subprocess.TimeoutExpired as e:
         duration_seconds = int(time.time() - start_time)
-        log_entry('script', 'global', 'ERROR', f"[GRADLE-EXECUTE] Timeout after {timeout_seconds}s: {command_str}")
+        log_entry('script', 'global', 'ERROR', f'[GRADLE-EXECUTE] Timeout after {timeout_seconds}s: {command_str}')
 
         # Write timeout info to log file
         with open(log_file, 'w') as f:
-            f.write(f"Command: {command_str}\n")
-            f.write(f"Status: TIMEOUT after {timeout_seconds}s\n")
+            f.write(f'Command: {command_str}\n')
+            f.write(f'Status: TIMEOUT after {timeout_seconds}s\n')
             if e.stdout:
-                f.write("\n=== STDOUT (partial) ===\n")
+                f.write('\n=== STDOUT (partial) ===\n')
                 f.write(e.stdout.decode() if isinstance(e.stdout, bytes) else e.stdout)
             if e.stderr:
-                f.write("\n=== STDERR (partial) ===\n")
+                f.write('\n=== STDERR (partial) ===\n')
                 f.write(e.stderr.decode() if isinstance(e.stderr, bytes) else e.stderr)
 
         return {
-            "status": "timeout",
-            "exit_code": -1,
-            "duration_seconds": duration_seconds,
-            "timeout_used_seconds": timeout_seconds,
-            "log_file": log_file,
-            "command": command_str,
-            "error": f"Command timed out after {timeout_seconds} seconds"
+            'status': 'timeout',
+            'exit_code': -1,
+            'duration_seconds': duration_seconds,
+            'timeout_used_seconds': timeout_seconds,
+            'log_file': log_file,
+            'command': command_str,
+            'error': f'Command timed out after {timeout_seconds} seconds',
         }
 
     except FileNotFoundError:
-        log_entry('script', 'global', 'ERROR', f"[GRADLE-EXECUTE] Wrapper not found: {wrapper}")
+        log_entry('script', 'global', 'ERROR', f'[GRADLE-EXECUTE] Wrapper not found: {wrapper}')
         return {
-            "status": "error",
-            "exit_code": -1,
-            "duration_seconds": 0,
-            "timeout_used_seconds": timeout_seconds,
-            "log_file": log_file,
-            "command": command_str,
-            "error": f"Gradle wrapper not found: {wrapper}"
+            'status': 'error',
+            'exit_code': -1,
+            'duration_seconds': 0,
+            'timeout_used_seconds': timeout_seconds,
+            'log_file': log_file,
+            'command': command_str,
+            'error': f'Gradle wrapper not found: {wrapper}',
         }
 
     except OSError as e:
-        log_entry('script', 'global', 'ERROR', f"[GRADLE-EXECUTE] OS error: {e}")
+        log_entry('script', 'global', 'ERROR', f'[GRADLE-EXECUTE] OS error: {e}')
         return {
-            "status": "error",
-            "exit_code": -1,
-            "duration_seconds": 0,
-            "timeout_used_seconds": timeout_seconds,
-            "log_file": log_file,
-            "command": command_str,
-            "error": str(e)
+            'status': 'error',
+            'exit_code': -1,
+            'duration_seconds': 0,
+            'timeout_used_seconds': timeout_seconds,
+            'log_file': log_file,
+            'command': command_str,
+            'error': str(e),
         }
 
 
@@ -272,6 +264,7 @@ def get_bash_timeout(inner_timeout_seconds: int) -> int:
 # Run Subcommand (execute + auto-parse on failure)
 # =============================================================================
 
+
 def cmd_run(args):
     """Handle run subcommand - execute + auto-parse on failure.
 
@@ -290,10 +283,10 @@ def cmd_run(args):
 
     # Build command key for timeout learning (use first task as key)
     command_args = args.commandArgs
-    first_task = command_args.split()[0] if command_args else "default"
+    first_task = command_args.split()[0] if command_args else 'default'
     # Clean up task name for command key (remove leading colons)
     task_name = first_task.lstrip(':').replace(':', '_')
-    command_key = f"gradle:{task_name}"
+    command_key = f'gradle:{task_name}'
 
     # Get timeout (convert ms to seconds if needed)
     if hasattr(args, 'timeout') and args.timeout:
@@ -304,15 +297,12 @@ def cmd_run(args):
     # Execute via direct_command foundation layer
     # commandArgs is complete and self-contained (includes :module:task prefix)
     result = execute_direct(
-        args=command_args,
-        command_key=command_key,
-        default_timeout=timeout_seconds,
-        project_dir=project_dir
+        args=command_args, command_key=command_key, default_timeout=timeout_seconds, project_dir=project_dir
     )
 
     log_file = result['log_file']
     command_str = result['command']
-    print(f"[EXEC] {command_str}", file=sys.stderr)
+    print(f'[EXEC] {command_str}', file=sys.stderr)
 
     # Handle execution errors (wrapper not found, log file creation failed)
     if result['status'] == 'error' and result['exit_code'] == -1:
@@ -359,29 +349,29 @@ def cmd_run(args):
         errors, warnings = partition_issues(issues)
 
         # Load acceptable warnings and filter based on mode
-        patterns = load_acceptable_warnings(project_dir, "gradle")
+        patterns = load_acceptable_warnings(project_dir, 'gradle')
         filtered_warnings = filter_warnings(warnings, patterns, mode)
 
         # Build result dict
         output = error_result(
             error=ERROR_BUILD_FAILED,
-            exit_code=result["exit_code"],
-            duration_seconds=result["duration_seconds"],
+            exit_code=result['exit_code'],
+            duration_seconds=result['duration_seconds'],
             log_file=log_file,
             command=command_str,
         )
 
         # Add errors if present
         if errors:
-            output["errors"] = errors[:20]
+            output['errors'] = errors[:20]
 
         # Add warnings if present (mode != errors already handled by filter_warnings)
         if filtered_warnings:
-            output["warnings"] = filtered_warnings[:10]
+            output['warnings'] = filtered_warnings[:10]
 
         # Add test summary if present
         if test_summary:
-            output["tests"] = test_summary
+            output['tests'] = test_summary
 
         print(formatter(output))
 
@@ -389,8 +379,8 @@ def cmd_run(args):
         # If parsing fails, still return the build failure
         output = error_result(
             error=ERROR_BUILD_FAILED,
-            exit_code=result["exit_code"],
-            duration_seconds=result["duration_seconds"],
+            exit_code=result['exit_code'],
+            duration_seconds=result['duration_seconds'],
             log_file=log_file,
             command=command_str,
         )

@@ -26,21 +26,23 @@ from _config_core import (
 
 def _get_timestamp() -> str:
     """Get current UTC timestamp in ISO format."""
-    return datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
+    return datetime.now(UTC).isoformat(timespec='seconds').replace('+00:00', 'Z')
 
 
 def _handle_get(ci_config: dict) -> int:
     """Handle 'get' verb."""
-    return success_exit({"ci": ci_config})
+    return success_exit({'ci': ci_config})
 
 
 def _handle_get_provider(ci_config: dict) -> int:
     """Handle 'get-provider' verb."""
-    return success_exit({
-        "provider": ci_config.get('provider', 'unknown'),
-        "repo_url": ci_config.get('repo_url'),
-        "confidence": "persisted" if ci_config.get('detected_at') else "unknown"
-    })
+    return success_exit(
+        {
+            'provider': ci_config.get('provider', 'unknown'),
+            'repo_url': ci_config.get('repo_url'),
+            'confidence': 'persisted' if ci_config.get('detected_at') else 'unknown',
+        }
+    )
 
 
 def _handle_set_provider(args, config: dict, ci_config: dict) -> int:
@@ -50,10 +52,7 @@ def _handle_set_provider(args, config: dict, ci_config: dict) -> int:
     ci_config['detected_at'] = _get_timestamp()
     config['ci'] = ci_config
     save_config(config)
-    return success_exit({
-        "provider": args.provider,
-        "repo_url": args.repo_url
-    })
+    return success_exit({'provider': args.provider, 'repo_url': args.repo_url})
 
 
 def _handle_set_tools(args) -> int:
@@ -65,14 +64,14 @@ def _handle_set_tools(args) -> int:
     run_ci['verified_at'] = _get_timestamp()
     run_config['ci'] = run_ci
     save_run_config(run_config)
-    return success_exit({"authenticated_tools": tools})
+    return success_exit({'authenticated_tools': tools})
 
 
 def _handle_get_tools() -> int:
     """Handle 'get-tools' verb."""
     run_config = load_run_config()
     run_ci = run_config.get('ci', {})
-    return success_exit({"authenticated_tools": run_ci.get('authenticated_tools', [])})
+    return success_exit({'authenticated_tools': run_ci.get('authenticated_tools', [])})
 
 
 def _handle_persist(args, config: dict, ci_config: dict) -> int:
@@ -86,7 +85,7 @@ def _handle_persist(args, config: dict, ci_config: dict) -> int:
         try:
             ci_config['commands'] = json.loads(args.commands)
         except json.JSONDecodeError as e:
-            return error_exit(f"Invalid JSON for --commands: {e}")
+            return error_exit(f'Invalid JSON for --commands: {e}')
     else:
         ci_config['commands'] = {}
 
@@ -105,11 +104,9 @@ def _handle_persist(args, config: dict, ci_config: dict) -> int:
         run_config['ci'] = run_ci
         save_run_config(run_config)
 
-    return success_exit({
-        "provider": args.provider,
-        "repo_url": args.repo_url,
-        "commands_count": len(ci_config.get('commands', {}))
-    })
+    return success_exit(
+        {'provider': args.provider, 'repo_url': args.repo_url, 'commands_count': len(ci_config.get('commands', {}))}
+    )
 
 
 def cmd_ci(args) -> int:

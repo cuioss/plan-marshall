@@ -81,6 +81,7 @@ def broken(
 # Single Extension Validation Tests
 # =============================================================================
 
+
 def test_validate_valid_extension():
     """Test validating a valid extension.py file."""
     with tempfile.TemporaryDirectory() as td:
@@ -91,7 +92,7 @@ def test_validate_valid_extension():
         result = run_script(SCRIPT_PATH, 'extension', '--extension', str(ext_path))
         data = result.json()
 
-        assert data.get('valid') is True, f"Should be valid: {data}"
+        assert data.get('valid') is True, f'Should be valid: {data}'
         assert len(data.get('issues', [])) == 0
         methods = data.get('methods', {})
         # Only get_skill_domains is required
@@ -112,7 +113,7 @@ def test_validate_extension_missing_functions():
         issues = data.get('issues', [])
         # Only required methods are checked - get_skill_domains is required, provides_build_systems is optional
         missing_methods = [i['method'] for i in issues if i['type'] == 'missing_method']
-        assert 'get_skill_domains' in missing_methods, f"Should report missing get_skill_domains: {missing_methods}"
+        assert 'get_skill_domains' in missing_methods, f'Should report missing get_skill_domains: {missing_methods}'
 
 
 def test_validate_extension_syntax_error():
@@ -148,6 +149,7 @@ def test_validate_extension_not_found():
 # Bundle Validation Tests
 # =============================================================================
 
+
 def test_validate_bundle_with_extension():
     """Test validating a bundle that has extension.py."""
     with tempfile.TemporaryDirectory() as td:
@@ -182,6 +184,7 @@ def test_validate_bundle_without_extension():
 # =============================================================================
 # Marketplace Scan Tests
 # =============================================================================
+
 
 def test_scan_marketplace():
     """Test scanning marketplace for all extensions."""
@@ -225,7 +228,9 @@ def test_scan_marketplace_real():
 
     assert 'summary' in data
     assert data['summary']['with_extension'] >= 6  # 6 bundles have extension.py
-    assert data['summary']['invalid'] == 0, f"All should be valid, issues: {[e for e in data.get('extensions', []) if not e.get('valid')]}"
+    assert data['summary']['invalid'] == 0, (
+        f'All should be valid, issues: {[e for e in data.get("extensions", []) if not e.get("valid")]}'
+    )
 
 
 def test_extension_help():

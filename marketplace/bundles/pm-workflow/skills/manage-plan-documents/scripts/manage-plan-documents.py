@@ -62,13 +62,13 @@ def validate_fields(doc_def: dict, provided: dict) -> list[str]:
         value = provided.get(name)
 
         if required and not value:
-            errors.append(f"Missing required field: {name}")
+            errors.append(f'Missing required field: {name}')
         elif value:
             # Type-specific validation
             if field_type.startswith('enum('):
                 allowed = field_type[5:-1].split('|')
                 if value not in allowed:
-                    errors.append(f"Invalid {name}: must be one of {allowed}")
+                    errors.append(f'Invalid {name}: must be one of {allowed}')
 
     return errors
 
@@ -76,17 +76,17 @@ def validate_fields(doc_def: dict, provided: dict) -> list[str]:
 def render_template(doc_def: dict, fields: dict, plan_id: str) -> str:
     """Render template with field substitution."""
     template_rel = doc_def.get('template', '')
-    template_name = template_rel.replace('templates/', '') if template_rel else f"{doc_def['name']}.md"
+    template_name = template_rel.replace('templates/', '') if template_rel else f'{doc_def["name"]}.md'
     template_path = TEMPLATES_DIR / template_name
 
     if not template_path.exists():
         # Generate basic template if not found
-        lines = [f"# {doc_def['name'].title()}: {fields.get('title', plan_id)}"]
-        lines.append(f"\nplan_id: {plan_id}")
-        lines.append(f"created: {datetime.now(UTC).isoformat()}")
+        lines = [f'# {doc_def["name"].title()}: {fields.get("title", plan_id)}']
+        lines.append(f'\nplan_id: {plan_id}')
+        lines.append(f'created: {datetime.now(UTC).isoformat()}')
         for name, value in fields.items():
             if value and name != 'title':
-                lines.append(f"\n## {name.replace('_', ' ').title()}\n\n{value}")
+                lines.append(f'\n## {name.replace("_", " ").title()}\n\n{value}')
         return '\n'.join(lines)
 
     template = template_path.read_text(encoding='utf-8')
@@ -209,25 +209,34 @@ def parse_document_sections(content: str) -> dict[str, str]:
 # Commands
 # =============================================================================
 
+
 def cmd_create(doc_type: str, args) -> int:
     """Create a new document."""
     doc_def = load_document_type(doc_type)
     if not doc_def:
-        print(serialize_toon({
-            'status': 'error',
-            'error': 'unknown_document_type',
-            'document': doc_type,
-            'available': get_available_types()
-        }))
+        print(
+            serialize_toon(
+                {
+                    'status': 'error',
+                    'error': 'unknown_document_type',
+                    'document': doc_type,
+                    'available': get_available_types(),
+                }
+            )
+        )
         return 1
 
     if not validate_plan_id(args.plan_id):
-        print(serialize_toon({
-            'status': 'error',
-            'error': 'invalid_plan_id',
-            'plan_id': args.plan_id,
-            'message': 'Plan ID must be kebab-case (lowercase, hyphens only)'
-        }))
+        print(
+            serialize_toon(
+                {
+                    'status': 'error',
+                    'error': 'invalid_plan_id',
+                    'plan_id': args.plan_id,
+                    'message': 'Plan ID must be kebab-case (lowercase, hyphens only)',
+                }
+            )
+        )
         return 1
 
     # Collect fields from args
@@ -241,11 +250,7 @@ def cmd_create(doc_type: str, args) -> int:
     # Validate
     errors = validate_fields(doc_def, fields)
     if errors:
-        print(serialize_toon({
-            'status': 'error',
-            'error': 'validation_failed',
-            'errors': errors
-        }))
+        print(serialize_toon({'status': 'error', 'error': 'validation_failed', 'errors': errors}))
         return 1
 
     # Check if document already exists
@@ -254,31 +259,39 @@ def cmd_create(doc_type: str, args) -> int:
     file_path = plan_dir / file_name
 
     if file_path.exists() and not getattr(args, 'force', False):
-        print(serialize_toon({
-            'status': 'error',
-            'error': 'document_exists',
-            'plan_id': args.plan_id,
-            'document': doc_type,
-            'file': file_name,
-            'message': 'Document already exists. Use --force to overwrite.'
-        }))
+        print(
+            serialize_toon(
+                {
+                    'status': 'error',
+                    'error': 'document_exists',
+                    'plan_id': args.plan_id,
+                    'document': doc_type,
+                    'file': file_name,
+                    'message': 'Document already exists. Use --force to overwrite.',
+                }
+            )
+        )
         return 1
 
     # Render and write
     content = render_template(doc_def, fields, args.plan_id)
     atomic_write_file(file_path, content)
 
-    print(serialize_toon({
-        'status': 'success',
-        'plan_id': args.plan_id,
-        'document': doc_type,
-        'file': file_name,
-        'action': 'created',
-        'document_info': {
-            'title': fields.get('title', ''),
-            'sections': ','.join(f['name'] for f in doc_def.get('fields', []))
-        }
-    }))
+    print(
+        serialize_toon(
+            {
+                'status': 'success',
+                'plan_id': args.plan_id,
+                'document': doc_type,
+                'file': file_name,
+                'action': 'created',
+                'document_info': {
+                    'title': fields.get('title', ''),
+                    'sections': ','.join(f['name'] for f in doc_def.get('fields', [])),
+                },
+            }
+        )
+    )
     return 0
 
 
@@ -286,19 +299,11 @@ def cmd_read(doc_type: str, args) -> int:
     """Read a document."""
     doc_def = load_document_type(doc_type)
     if not doc_def:
-        print(serialize_toon({
-            'status': 'error',
-            'error': 'unknown_document_type',
-            'document': doc_type
-        }))
+        print(serialize_toon({'status': 'error', 'error': 'unknown_document_type', 'document': doc_type}))
         return 1
 
     if not validate_plan_id(args.plan_id):
-        print(serialize_toon({
-            'status': 'error',
-            'error': 'invalid_plan_id',
-            'plan_id': args.plan_id
-        }))
+        print(serialize_toon({'status': 'error', 'error': 'invalid_plan_id', 'plan_id': args.plan_id}))
         return 1
 
     plan_dir = get_plan_dir(args.plan_id)
@@ -306,17 +311,18 @@ def cmd_read(doc_type: str, args) -> int:
     file_path = plan_dir / file_name
 
     if not file_path.exists():
-        print(serialize_toon({
-            'status': 'error',
-            'error': 'document_not_found',
-            'plan_id': args.plan_id,
-            'document': doc_type,
-            'file': file_name,
-            'suggestions': [
-                f'Create the {doc_type} document first',
-                'Check plan_id spelling'
-            ]
-        }))
+        print(
+            serialize_toon(
+                {
+                    'status': 'error',
+                    'error': 'document_not_found',
+                    'plan_id': args.plan_id,
+                    'document': doc_type,
+                    'file': file_name,
+                    'suggestions': [f'Create the {doc_type} document first', 'Check plan_id spelling'],
+                }
+            )
+        )
         return 1
 
     content = file_path.read_text(encoding='utf-8')
@@ -327,13 +333,17 @@ def cmd_read(doc_type: str, args) -> int:
     else:
         # Parse into sections
         sections = parse_document_sections(content)
-        print(serialize_toon({
-            'status': 'success',
-            'plan_id': args.plan_id,
-            'document': doc_type,
-            'file': file_name,
-            'content': sections
-        }))
+        print(
+            serialize_toon(
+                {
+                    'status': 'success',
+                    'plan_id': args.plan_id,
+                    'document': doc_type,
+                    'file': file_name,
+                    'content': sections,
+                }
+            )
+        )
 
     return 0
 
@@ -342,19 +352,11 @@ def cmd_update(doc_type: str, args) -> int:
     """Update a document section."""
     doc_def = load_document_type(doc_type)
     if not doc_def:
-        print(serialize_toon({
-            'status': 'error',
-            'error': 'unknown_document_type',
-            'document': doc_type
-        }))
+        print(serialize_toon({'status': 'error', 'error': 'unknown_document_type', 'document': doc_type}))
         return 1
 
     if not validate_plan_id(args.plan_id):
-        print(serialize_toon({
-            'status': 'error',
-            'error': 'invalid_plan_id',
-            'plan_id': args.plan_id
-        }))
+        print(serialize_toon({'status': 'error', 'error': 'invalid_plan_id', 'plan_id': args.plan_id}))
         return 1
 
     plan_dir = get_plan_dir(args.plan_id)
@@ -362,12 +364,11 @@ def cmd_update(doc_type: str, args) -> int:
     file_path = plan_dir / file_name
 
     if not file_path.exists():
-        print(serialize_toon({
-            'status': 'error',
-            'error': 'document_not_found',
-            'plan_id': args.plan_id,
-            'document': doc_type
-        }))
+        print(
+            serialize_toon(
+                {'status': 'error', 'error': 'document_not_found', 'plan_id': args.plan_id, 'document': doc_type}
+            )
+        )
         return 1
 
     content = file_path.read_text(encoding='utf-8')
@@ -379,7 +380,7 @@ def cmd_update(doc_type: str, args) -> int:
     new_lines = []
     in_section = False
     section_found = False
-    section_heading = f"## {section.replace('_', ' ').title()}"
+    section_heading = f'## {section.replace("_", " ").title()}'
 
     for line in lines:
         if line.lower().startswith('## '):
@@ -411,13 +412,11 @@ def cmd_update(doc_type: str, args) -> int:
 
     atomic_write_file(file_path, '\n'.join(new_lines))
 
-    print(serialize_toon({
-        'status': 'success',
-        'plan_id': args.plan_id,
-        'document': doc_type,
-        'section': section,
-        'updated': True
-    }))
+    print(
+        serialize_toon(
+            {'status': 'success', 'plan_id': args.plan_id, 'document': doc_type, 'section': section, 'updated': True}
+        )
+    )
     return 0
 
 
@@ -425,19 +424,11 @@ def cmd_exists(doc_type: str, args) -> int:
     """Check if document exists."""
     doc_def = load_document_type(doc_type)
     if not doc_def:
-        print(serialize_toon({
-            'status': 'error',
-            'error': 'unknown_document_type',
-            'document': doc_type
-        }))
+        print(serialize_toon({'status': 'error', 'error': 'unknown_document_type', 'document': doc_type}))
         return 1
 
     if not validate_plan_id(args.plan_id):
-        print(serialize_toon({
-            'status': 'error',
-            'error': 'invalid_plan_id',
-            'plan_id': args.plan_id
-        }))
+        print(serialize_toon({'status': 'error', 'error': 'invalid_plan_id', 'plan_id': args.plan_id}))
         return 1
 
     plan_dir = get_plan_dir(args.plan_id)
@@ -445,13 +436,11 @@ def cmd_exists(doc_type: str, args) -> int:
     file_path = plan_dir / file_name
 
     exists = file_path.exists()
-    print(serialize_toon({
-        'status': 'success',
-        'plan_id': args.plan_id,
-        'document': doc_type,
-        'file': file_name,
-        'exists': exists
-    }))
+    print(
+        serialize_toon(
+            {'status': 'success', 'plan_id': args.plan_id, 'document': doc_type, 'file': file_name, 'exists': exists}
+        )
+    )
 
     return 0 if exists else 1
 
@@ -460,19 +449,11 @@ def cmd_remove(doc_type: str, args) -> int:
     """Remove a document."""
     doc_def = load_document_type(doc_type)
     if not doc_def:
-        print(serialize_toon({
-            'status': 'error',
-            'error': 'unknown_document_type',
-            'document': doc_type
-        }))
+        print(serialize_toon({'status': 'error', 'error': 'unknown_document_type', 'document': doc_type}))
         return 1
 
     if not validate_plan_id(args.plan_id):
-        print(serialize_toon({
-            'status': 'error',
-            'error': 'invalid_plan_id',
-            'plan_id': args.plan_id
-        }))
+        print(serialize_toon({'status': 'error', 'error': 'invalid_plan_id', 'plan_id': args.plan_id}))
         return 1
 
     plan_dir = get_plan_dir(args.plan_id)
@@ -480,23 +461,20 @@ def cmd_remove(doc_type: str, args) -> int:
     file_path = plan_dir / file_name
 
     if not file_path.exists():
-        print(serialize_toon({
-            'status': 'error',
-            'error': 'document_not_found',
-            'plan_id': args.plan_id,
-            'document': doc_type
-        }))
+        print(
+            serialize_toon(
+                {'status': 'error', 'error': 'document_not_found', 'plan_id': args.plan_id, 'document': doc_type}
+            )
+        )
         return 1
 
     file_path.unlink()
 
-    print(serialize_toon({
-        'status': 'success',
-        'plan_id': args.plan_id,
-        'document': doc_type,
-        'file': file_name,
-        'action': 'removed'
-    }))
+    print(
+        serialize_toon(
+            {'status': 'success', 'plan_id': args.plan_id, 'document': doc_type, 'file': file_name, 'action': 'removed'}
+        )
+    )
     return 0
 
 
@@ -508,16 +486,15 @@ def cmd_list_types(args) -> int:
     for doc_type in types:
         doc_def = load_document_type(doc_type)
         if doc_def:
-            type_info.append({
-                'name': doc_type,
-                'file': doc_def.get('file', f'{doc_type}.md'),
-                'fields': len(doc_def.get('fields', []))
-            })
+            type_info.append(
+                {
+                    'name': doc_type,
+                    'file': doc_def.get('file', f'{doc_type}.md'),
+                    'fields': len(doc_def.get('fields', [])),
+                }
+            )
 
-    print(serialize_toon({
-        'status': 'success',
-        'types': type_info
-    }))
+    print(serialize_toon({'status': 'success', 'types': type_info}))
     return 0
 
 
@@ -525,10 +502,9 @@ def cmd_list_types(args) -> int:
 # Main
 # =============================================================================
 
+
 def main():
-    parser = argparse.ArgumentParser(
-        description='Manage typed documents within plan directories'
-    )
+    parser = argparse.ArgumentParser(description='Manage typed documents within plan directories')
     subparsers = parser.add_subparsers(dest='doc_type', help='Document type or command')
 
     # Special command: list-types
@@ -557,16 +533,12 @@ def main():
             required = field_def.get('required') == 'true' or field_def.get('required') is True
             field_type = field_def.get('type', 'string')
 
-            help_text = f"{name} ({field_type})"
+            help_text = f'{name} ({field_type})'
             if field_type.startswith('enum('):
                 allowed = field_type[5:-1]
-                help_text = f"{name} - one of: {allowed}"
+                help_text = f'{name} - one of: {allowed}'
 
-            create_parser.add_argument(
-                f'--{name.replace("_", "-")}',
-                required=required,
-                help=help_text
-            )
+            create_parser.add_argument(f'--{name.replace("_", "-")}', required=required, help=help_text)
 
         create_parser.set_defaults(func=lambda args, dt=doc_type: cmd_create(dt, args))
 

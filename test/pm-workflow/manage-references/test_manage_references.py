@@ -22,14 +22,12 @@ TestContext = PlanContext
 # Test: Create Command
 # =============================================================================
 
+
 def test_create_references():
     """Test creating references.toon."""
     with TestContext():
-        result = run_script(SCRIPT_PATH, 'create',
-            '--plan-id', 'test-plan',
-            '--branch', 'feature/test'
-        )
-        assert result.success, f"Script failed: {result.stderr}"
+        result = run_script(SCRIPT_PATH, 'create', '--plan-id', 'test-plan', '--branch', 'feature/test')
+        assert result.success, f'Script failed: {result.stderr}'
         data = parse_toon(result.stdout)
         assert data['status'] == 'success'
         assert data['created'] is True
@@ -38,29 +36,30 @@ def test_create_references():
 def test_create_with_issue_url():
     """Test creating references with issue URL."""
     with TestContext():
-        result = run_script(SCRIPT_PATH, 'create',
-            '--plan-id', 'test-plan',
-            '--branch', 'feature/test',
-            '--issue-url', 'https://github.com/org/repo/issues/123'
+        result = run_script(
+            SCRIPT_PATH,
+            'create',
+            '--plan-id',
+            'test-plan',
+            '--branch',
+            'feature/test',
+            '--issue-url',
+            'https://github.com/org/repo/issues/123',
         )
-        assert result.success, f"Script failed: {result.stderr}"
+        assert result.success, f'Script failed: {result.stderr}'
 
 
 # =============================================================================
 # Test: Read Command
 # =============================================================================
 
+
 def test_read_references():
     """Test reading references.toon."""
     with TestContext():
-        run_script(SCRIPT_PATH, 'create',
-            '--plan-id', 'test-plan',
-            '--branch', 'feature/test'
-        )
-        result = run_script(SCRIPT_PATH, 'read',
-            '--plan-id', 'test-plan'
-        )
-        assert result.success, f"Script failed: {result.stderr}"
+        run_script(SCRIPT_PATH, 'create', '--plan-id', 'test-plan', '--branch', 'feature/test')
+        result = run_script(SCRIPT_PATH, 'read', '--plan-id', 'test-plan')
+        assert result.success, f'Script failed: {result.stderr}'
         data = parse_toon(result.stdout)
         assert data['status'] == 'success'
 
@@ -69,18 +68,13 @@ def test_read_references():
 # Test: Get/Set Commands
 # =============================================================================
 
+
 def test_get_field():
     """Test getting a specific field."""
     with TestContext():
-        run_script(SCRIPT_PATH, 'create',
-            '--plan-id', 'test-plan',
-            '--branch', 'feature/test'
-        )
-        result = run_script(SCRIPT_PATH, 'get',
-            '--plan-id', 'test-plan',
-            '--field', 'branch'
-        )
-        assert result.success, f"Script failed: {result.stderr}"
+        run_script(SCRIPT_PATH, 'create', '--plan-id', 'test-plan', '--branch', 'feature/test')
+        result = run_script(SCRIPT_PATH, 'get', '--plan-id', 'test-plan', '--field', 'branch')
+        assert result.success, f'Script failed: {result.stderr}'
         data = parse_toon(result.stdout)
         assert data['value'] == 'feature/test'
 
@@ -88,16 +82,11 @@ def test_get_field():
 def test_set_field():
     """Test setting a specific field."""
     with TestContext():
-        run_script(SCRIPT_PATH, 'create',
-            '--plan-id', 'test-plan',
-            '--branch', 'feature/test'
+        run_script(SCRIPT_PATH, 'create', '--plan-id', 'test-plan', '--branch', 'feature/test')
+        result = run_script(
+            SCRIPT_PATH, 'set', '--plan-id', 'test-plan', '--field', 'branch', '--value', 'feature/new-branch'
         )
-        result = run_script(SCRIPT_PATH, 'set',
-            '--plan-id', 'test-plan',
-            '--field', 'branch',
-            '--value', 'feature/new-branch'
-        )
-        assert result.success, f"Script failed: {result.stderr}"
+        assert result.success, f'Script failed: {result.stderr}'
         data = parse_toon(result.stdout)
         assert data['value'] == 'feature/new-branch'
 
@@ -106,18 +95,13 @@ def test_set_field():
 # Test: Add/Remove File Commands
 # =============================================================================
 
+
 def test_add_file():
     """Test adding a file to modified_files."""
     with TestContext():
-        run_script(SCRIPT_PATH, 'create',
-            '--plan-id', 'test-plan',
-            '--branch', 'feature/test'
-        )
-        result = run_script(SCRIPT_PATH, 'add-file',
-            '--plan-id', 'test-plan',
-            '--file', 'src/Main.java'
-        )
-        assert result.success, f"Script failed: {result.stderr}"
+        run_script(SCRIPT_PATH, 'create', '--plan-id', 'test-plan', '--branch', 'feature/test')
+        result = run_script(SCRIPT_PATH, 'add-file', '--plan-id', 'test-plan', '--file', 'src/Main.java')
+        assert result.success, f'Script failed: {result.stderr}'
         data = parse_toon(result.stdout)
         assert data['added'] == 'src/Main.java'
         assert data['total'] == 1
@@ -127,28 +111,27 @@ def test_add_file():
 # Test: Get Context (NEW OPTIMIZATION)
 # =============================================================================
 
+
 def test_get_context():
     """Test get-context returns all relevant references in one call."""
     with TestContext():
-        run_script(SCRIPT_PATH, 'create',
-            '--plan-id', 'test-plan',
-            '--branch', 'feature/test',
-            '--issue-url', 'https://github.com/org/repo/issues/123',
-            '--build-system', 'maven'
+        run_script(
+            SCRIPT_PATH,
+            'create',
+            '--plan-id',
+            'test-plan',
+            '--branch',
+            'feature/test',
+            '--issue-url',
+            'https://github.com/org/repo/issues/123',
+            '--build-system',
+            'maven',
         )
-        run_script(SCRIPT_PATH, 'add-file',
-            '--plan-id', 'test-plan',
-            '--file', 'src/Main.java'
-        )
-        run_script(SCRIPT_PATH, 'add-file',
-            '--plan-id', 'test-plan',
-            '--file', 'src/Test.java'
-        )
+        run_script(SCRIPT_PATH, 'add-file', '--plan-id', 'test-plan', '--file', 'src/Main.java')
+        run_script(SCRIPT_PATH, 'add-file', '--plan-id', 'test-plan', '--file', 'src/Test.java')
 
-        result = run_script(SCRIPT_PATH, 'get-context',
-            '--plan-id', 'test-plan'
-        )
-        assert result.success, f"Script failed: {result.stderr}"
+        result = run_script(SCRIPT_PATH, 'get-context', '--plan-id', 'test-plan')
+        assert result.success, f'Script failed: {result.stderr}'
         data = parse_toon(result.stdout)
         assert data['status'] == 'success'
         # Should have branch info
@@ -165,14 +148,9 @@ def test_get_context():
 def test_get_context_empty():
     """Test get-context with minimal references."""
     with TestContext():
-        run_script(SCRIPT_PATH, 'create',
-            '--plan-id', 'test-plan',
-            '--branch', 'feature/test'
-        )
-        result = run_script(SCRIPT_PATH, 'get-context',
-            '--plan-id', 'test-plan'
-        )
-        assert result.success, f"Script failed: {result.stderr}"
+        run_script(SCRIPT_PATH, 'create', '--plan-id', 'test-plan', '--branch', 'feature/test')
+        result = run_script(SCRIPT_PATH, 'get-context', '--plan-id', 'test-plan')
+        assert result.success, f'Script failed: {result.stderr}'
         data = parse_toon(result.stdout)
         assert data['modified_files_count'] == 0
 
@@ -180,7 +158,5 @@ def test_get_context_empty():
 def test_get_context_not_found():
     """Test get-context with missing plan."""
     with TestContext():
-        result = run_script(SCRIPT_PATH, 'get-context',
-            '--plan-id', 'nonexistent'
-        )
-        assert not result.success, "Expected failure for missing plan"
+        result = run_script(SCRIPT_PATH, 'get-context', '--plan-id', 'nonexistent')
+        assert not result.success, 'Expected failure for missing plan'

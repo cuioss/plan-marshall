@@ -38,6 +38,7 @@ _PLAN_DIR_NAME = os.environ.get('PLAN_DIR_NAME', '.plan')
 # Type Definitions
 # =============================================================================
 
+
 class DirectCommandResult(TypedDict, total=False):
     """Standard return structure for {build_system}_execute.py implementations.
 
@@ -79,53 +80,54 @@ class DirectCommandResult(TypedDict, total=False):
             "error": "Build failed with exit code 1"
         }
     """
+
     # Required fields
-    status: Literal["success", "error", "timeout"]
+    status: Literal['success', 'error', 'timeout']
     exit_code: int
     duration_seconds: int
     log_file: str
     command: str
     # Optional fields
     timeout_used_seconds: int
-    wrapper: str          # Maven/Gradle: wrapper path used
-    command_type: str     # npm: "npm" or "npx"
-    error: str            # Error message (on error/timeout only)
+    wrapper: str  # Maven/Gradle: wrapper path used
+    command_type: str  # npm: "npm" or "npx"
+    error: str  # Error message (on error/timeout only)
 
 
 # =============================================================================
 # Constants
 # =============================================================================
 
-LOG_BASE_DIR = f"{_PLAN_DIR_NAME}/temp/build-output"
+LOG_BASE_DIR = f'{_PLAN_DIR_NAME}/temp/build-output'
 """Base directory for build log files, relative to project root."""
 
-TIMESTAMP_FORMAT = "%Y-%m-%d-%H%M%S"
+TIMESTAMP_FORMAT = '%Y-%m-%d-%H%M%S'
 """Timestamp format for log file names."""
 
 # Status values
-STATUS_SUCCESS = "success"
+STATUS_SUCCESS = 'success'
 """Build completed with exit code 0."""
 
-STATUS_ERROR = "error"
+STATUS_ERROR = 'error'
 """Build failed or execution error occurred."""
 
-STATUS_TIMEOUT = "timeout"
+STATUS_TIMEOUT = 'timeout'
 """Build exceeded timeout limit."""
 
 # Error type identifiers
-ERROR_BUILD_FAILED = "build_failed"
+ERROR_BUILD_FAILED = 'build_failed'
 """Build process returned non-zero exit code."""
 
-ERROR_TIMEOUT = "timeout"
+ERROR_TIMEOUT = 'timeout'
 """Build exceeded timeout limit."""
 
-ERROR_EXECUTION_FAILED = "execution_failed"
+ERROR_EXECUTION_FAILED = 'execution_failed'
 """Failed to execute build command (e.g., subprocess error)."""
 
-ERROR_WRAPPER_NOT_FOUND = "wrapper_not_found"
+ERROR_WRAPPER_NOT_FOUND = 'wrapper_not_found'
 """Build wrapper (mvnw, gradlew) not found."""
 
-ERROR_LOG_FILE_FAILED = "log_file_failed"
+ERROR_LOG_FILE_FAILED = 'log_file_failed'
 """Failed to create log file for build output."""
 
 
@@ -133,7 +135,7 @@ ERROR_LOG_FILE_FAILED = "log_file_failed"
 # Required Result Fields
 # =============================================================================
 
-REQUIRED_FIELDS = {"status", "exit_code", "duration_seconds", "log_file", "command"}
+REQUIRED_FIELDS = {'status', 'exit_code', 'duration_seconds', 'log_file', 'command'}
 """Fields that must be present in every result dict."""
 
 
@@ -141,11 +143,8 @@ REQUIRED_FIELDS = {"status", "exit_code", "duration_seconds", "log_file", "comma
 # Log File Management
 # =============================================================================
 
-def create_log_file(
-    build_system: str,
-    scope: str = "default",
-    project_dir: str = "."
-) -> str | None:
+
+def create_log_file(build_system: str, scope: str = 'default', project_dir: str = '.') -> str | None:
     """Create a timestamped log file for build output.
 
     Creates the directory structure if needed and returns the absolute path
@@ -170,7 +169,7 @@ def create_log_file(
     try:
         project_path = Path(project_dir).resolve()
         timestamp = datetime.now().strftime(TIMESTAMP_FORMAT)
-        log_filename = f"{build_system}-{timestamp}.log"
+        log_filename = f'{build_system}-{timestamp}.log'
 
         log_dir = project_path / LOG_BASE_DIR / scope
         log_dir.mkdir(parents=True, exist_ok=True)
@@ -188,12 +187,8 @@ def create_log_file(
 # Result Construction
 # =============================================================================
 
-def success_result(
-    duration_seconds: int,
-    log_file: str,
-    command: str,
-    **extra
-) -> dict:
+
+def success_result(duration_seconds: int, log_file: str, command: str, **extra) -> dict:
     """Build success result dict.
 
     Args:
@@ -213,24 +208,17 @@ def success_result(
         0
     """
     result = {
-        "status": STATUS_SUCCESS,
-        "exit_code": 0,
-        "duration_seconds": duration_seconds,
-        "log_file": log_file,
-        "command": command,
+        'status': STATUS_SUCCESS,
+        'exit_code': 0,
+        'duration_seconds': duration_seconds,
+        'log_file': log_file,
+        'command': command,
     }
     result.update(extra)
     return result
 
 
-def error_result(
-    error: str,
-    exit_code: int,
-    duration_seconds: int,
-    log_file: str,
-    command: str,
-    **extra
-) -> dict:
+def error_result(error: str, exit_code: int, duration_seconds: int, log_file: str, command: str, **extra) -> dict:
     """Build error result dict.
 
     Args:
@@ -254,24 +242,18 @@ def error_result(
         'build_failed'
     """
     result = {
-        "status": STATUS_ERROR,
-        "error": error,
-        "exit_code": exit_code,
-        "duration_seconds": duration_seconds,
-        "log_file": log_file,
-        "command": command,
+        'status': STATUS_ERROR,
+        'error': error,
+        'exit_code': exit_code,
+        'duration_seconds': duration_seconds,
+        'log_file': log_file,
+        'command': command,
     }
     result.update(extra)
     return result
 
 
-def timeout_result(
-    timeout_used_seconds: int,
-    duration_seconds: int,
-    log_file: str,
-    command: str,
-    **extra
-) -> dict:
+def timeout_result(timeout_used_seconds: int, duration_seconds: int, log_file: str, command: str, **extra) -> dict:
     """Build timeout result dict.
 
     Args:
@@ -292,13 +274,13 @@ def timeout_result(
         -1
     """
     result = {
-        "status": STATUS_TIMEOUT,
-        "error": ERROR_TIMEOUT,
-        "exit_code": -1,
-        "timeout_used_seconds": timeout_used_seconds,
-        "duration_seconds": duration_seconds,
-        "log_file": log_file,
-        "command": command,
+        'status': STATUS_TIMEOUT,
+        'error': ERROR_TIMEOUT,
+        'exit_code': -1,
+        'timeout_used_seconds': timeout_used_seconds,
+        'duration_seconds': duration_seconds,
+        'log_file': log_file,
+        'command': command,
     }
     result.update(extra)
     return result

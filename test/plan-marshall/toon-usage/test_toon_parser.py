@@ -11,6 +11,7 @@ from toon_parser import parse_toon, serialize_toon
 # Test: Basic Key-Value Parsing
 # =============================================================================
 
+
 def test_simple_key_value():
     """Test parsing simple key: value pairs."""
     toon = """
@@ -19,7 +20,7 @@ age: 30
 """
     result = parse_toon(toon)
     assert result['name'] == 'Alice', f"Expected 'Alice', got {result['name']}"
-    assert result['age'] == 30, f"Expected 30, got {result['age']}"
+    assert result['age'] == 30, f'Expected 30, got {result["age"]}'
 
 
 def test_string_values():
@@ -88,6 +89,7 @@ age: 30
 # Test: Nested Objects
 # =============================================================================
 
+
 def test_nested_object():
     """Test parsing nested objects via indentation."""
     toon = """
@@ -129,6 +131,7 @@ metadata:
 # =============================================================================
 # Test: Uniform Arrays
 # =============================================================================
+
 
 def test_uniform_array():
     """Test parsing uniform array with field headers."""
@@ -185,6 +188,7 @@ data:
 # Test: Simple Arrays
 # =============================================================================
 
+
 def test_simple_array():
     """Test parsing simple list with - markers."""
     toon = """
@@ -230,12 +234,7 @@ dependencies:
 
 def test_roundtrip_hyphenated_array_keys():
     """Test serialize -> parse roundtrip with hyphenated array keys."""
-    original = {
-        'dependencies': {
-            'oauth-sheriff-core': ['lib-one', 'lib-two'],
-            'my-app-module': ['oauth-sheriff-core']
-        }
-    }
+    original = {'dependencies': {'oauth-sheriff-core': ['lib-one', 'lib-two'], 'my-app-module': ['oauth-sheriff-core']}}
     serialized = serialize_toon(original)
     parsed = parse_toon(serialized)
     assert parsed['dependencies']['oauth-sheriff-core'] == ['lib-one', 'lib-two']
@@ -245,6 +244,7 @@ def test_roundtrip_hyphenated_array_keys():
 # =============================================================================
 # Test: Multi-line Values
 # =============================================================================
+
 
 def test_multiline_value():
     """Test parsing multi-line string values."""
@@ -263,6 +263,7 @@ name: test
 # =============================================================================
 # Test: Complete Handoff Document
 # =============================================================================
+
 
 def test_handoff_document():
     """Test parsing a complete handoff document."""
@@ -334,6 +335,7 @@ alternatives[3]:
 # Test: Serialization
 # =============================================================================
 
+
 def test_serialize_simple():
     """Test serializing simple key-value pairs."""
     data = {'name': 'Alice', 'age': 30, 'active': True}
@@ -345,12 +347,7 @@ def test_serialize_simple():
 
 def test_serialize_nested():
     """Test serializing nested objects."""
-    data = {
-        'user': {
-            'name': 'Alice',
-            'role': 'admin'
-        }
-    }
+    data = {'user': {'name': 'Alice', 'role': 'admin'}}
     result = serialize_toon(data)
     assert 'user:' in result
     assert 'name: Alice' in result
@@ -358,12 +355,7 @@ def test_serialize_nested():
 
 def test_serialize_uniform_array():
     """Test serializing uniform arrays."""
-    data = {
-        'users': [
-            {'id': 1, 'name': 'Alice'},
-            {'id': 2, 'name': 'Bob'}
-        ]
-    }
+    data = {'users': [{'id': 1, 'name': 'Alice'}, {'id': 2, 'name': 'Bob'}]}
     result = serialize_toon(data)
     assert 'users[2]{id,name}:' in result
     assert '1,Alice' in result
@@ -372,9 +364,7 @@ def test_serialize_uniform_array():
 
 def test_serialize_simple_array():
     """Test serializing simple arrays."""
-    data = {
-        'tags': ['python', 'toon']
-    }
+    data = {'tags': ['python', 'toon']}
     result = serialize_toon(data)
     assert 'tags[2]:' in result
     assert '- python' in result
@@ -409,6 +399,7 @@ roles[2]{id,name}:
 # =============================================================================
 # Test: Edge Cases
 # =============================================================================
+
 
 def test_empty_input():
     """Test parsing empty input."""

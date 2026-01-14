@@ -7,7 +7,6 @@ Tests both subcommands:
 - check-docs: Check if project docs need .plan/temp documentation
 """
 
-
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
 from conftest import MARKETPLACE_ROOT, ScriptTestCase, run_script
 
@@ -111,7 +110,7 @@ class TestModeSubcommand(ScriptTestCase):
         # Each line should be tab-separated key-value
         for line in lines:
             parts = line.split('\t')
-            self.assertEqual(len(parts), 2, f"Line should have exactly 2 parts: {line}")
+            self.assertEqual(len(parts), 2, f'Line should have exactly 2 parts: {line}')
 
 
 class TestCheckDocsSubcommand(ScriptTestCase):
@@ -214,7 +213,7 @@ class TestCheckDocsSubcommand(ScriptTestCase):
         # Each line should be tab-separated key-value
         for line in lines:
             parts = line.split('\t')
-            self.assertEqual(len(parts), 2, f"Line should have exactly 2 parts: {line}")
+            self.assertEqual(len(parts), 2, f'Line should have exactly 2 parts: {line}')
 
 
 class TestSubcommandRequired(ScriptTestCase):
@@ -233,4 +232,5 @@ class TestSubcommandRequired(ScriptTestCase):
 
 if __name__ == '__main__':
     import unittest
+
     unittest.main()

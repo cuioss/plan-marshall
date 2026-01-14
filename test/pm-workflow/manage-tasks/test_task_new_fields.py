@@ -18,6 +18,7 @@ SCRIPT_PATH = get_script_path('pm-workflow', 'manage-tasks', 'manage-tasks.py')
 # Test Helpers
 # =============================================================================
 
+
 def setup_plan_dir():
     """Create temp plan directory and set PLAN_BASE_DIR."""
     temp_dir = create_temp_dir()
@@ -49,7 +50,7 @@ def build_task_toon_with_new_fields(
     description='Task description',
     steps=None,
     phase='4-execute',
-    depends_on='none'
+    depends_on='none',
 ):
     """Build TOON content for task with new fields."""
     if deliverables is None:
@@ -69,7 +70,7 @@ def build_task_toon_with_new_fields(
         f'phase: {phase}',
         f'origin: {origin}',
         f'description: {description}',
-        'skills:'
+        'skills:',
     ]
 
     for skill in skills:
@@ -94,6 +95,7 @@ def add_task_with_fields(plan_id='test-plan', **kwargs):
 # Tests: add with new fields
 # =============================================================================
 
+
 def test_add_with_profile():
     """Add task with profile field."""
     temp_dir = setup_plan_dir()
@@ -103,10 +105,10 @@ def test_add_with_profile():
             deliverables=[1],
             domain='java',
             profile='implementation',
-            skills=['pm-dev-java:java-core']
+            skills=['pm-dev-java:java-core'],
         )
 
-        assert result.returncode == 0, f"Failed: {result.stderr}"
+        assert result.returncode == 0, f'Failed: {result.stderr}'
         assert 'status: success' in result.stdout
         assert 'profile: implementation' in result.stdout
     finally:
@@ -118,14 +120,10 @@ def test_add_with_testing_profile():
     temp_dir = setup_plan_dir()
     try:
         result = add_task_with_fields(
-            title='Test task',
-            deliverables=[1],
-            domain='java',
-            profile='testing',
-            skills=['pm-dev-java:junit-core']
+            title='Test task', deliverables=[1], domain='java', profile='testing', skills=['pm-dev-java:junit-core']
         )
 
-        assert result.returncode == 0, f"Failed: {result.stderr}"
+        assert result.returncode == 0, f'Failed: {result.stderr}'
         assert 'profile: testing' in result.stdout
     finally:
         cleanup(temp_dir)
@@ -140,10 +138,10 @@ def test_add_with_quality_profile():
             deliverables=[1],
             domain='java',
             profile='quality',
-            skills=['pm-dev-java:java-maintenance']
+            skills=['pm-dev-java:java-maintenance'],
         )
 
-        assert result.returncode == 0, f"Failed: {result.stderr}"
+        assert result.returncode == 0, f'Failed: {result.stderr}'
         assert 'profile: quality' in result.stdout
     finally:
         cleanup(temp_dir)
@@ -158,10 +156,10 @@ def test_add_with_skills():
             deliverables=[1],
             domain='java',
             profile='implementation',
-            skills=['pm-dev-java:java-core', 'pm-dev-java:java-cdi', 'pm-dev-java:java-lombok']
+            skills=['pm-dev-java:java-core', 'pm-dev-java:java-cdi', 'pm-dev-java:java-lombok'],
         )
 
-        assert result.returncode == 0, f"Failed: {result.stderr}"
+        assert result.returncode == 0, f'Failed: {result.stderr}'
         assert 'skills:' in result.stdout
         assert 'pm-dev-java:java-core' in result.stdout
     finally:
@@ -173,14 +171,10 @@ def test_add_with_origin():
     temp_dir = setup_plan_dir()
     try:
         result = add_task_with_fields(
-            title='Plan origin task',
-            deliverables=[1],
-            domain='java',
-            profile='implementation',
-            origin='plan'
+            title='Plan origin task', deliverables=[1], domain='java', profile='implementation', origin='plan'
         )
 
-        assert result.returncode == 0, f"Failed: {result.stderr}"
+        assert result.returncode == 0, f'Failed: {result.stderr}'
         assert 'origin: plan' in result.stdout
     finally:
         cleanup(temp_dir)
@@ -279,6 +273,7 @@ steps:
 # Tests: get returns new fields
 # =============================================================================
 
+
 def test_get_returns_domain():
     """Get returns domain field."""
     temp_dir = setup_plan_dir()
@@ -309,10 +304,7 @@ def test_get_returns_skills():
     """Get returns skills array."""
     temp_dir = setup_plan_dir()
     try:
-        add_task_with_fields(
-            title='Test',
-            skills=['pm-dev-java:java-core', 'pm-dev-java:java-cdi']
-        )
+        add_task_with_fields(title='Test', skills=['pm-dev-java:java-core', 'pm-dev-java:java-cdi'])
         result = run_script(SCRIPT_PATH, 'get', '--plan-id', 'test-plan', '--number', '1')
 
         assert result.returncode == 0
@@ -339,6 +331,7 @@ def test_get_returns_origin():
 # =============================================================================
 # Tests: list includes new columns
 # =============================================================================
+
 
 def test_list_includes_domain_column():
     """List includes domain column."""
@@ -377,13 +370,13 @@ def test_list_includes_profile_column():
 # Tests: update with new field parameters
 # =============================================================================
 
+
 def test_update_domain():
     """Update domain field."""
     temp_dir = setup_plan_dir()
     try:
         add_task_with_fields(title='Task', domain='java')
-        result = run_script(SCRIPT_PATH, 'update', '--plan-id', 'test-plan',
-                           '--number', '1', '--domain', 'javascript')
+        result = run_script(SCRIPT_PATH, 'update', '--plan-id', 'test-plan', '--number', '1', '--domain', 'javascript')
 
         assert result.returncode == 0
         assert 'domain: javascript' in result.stdout
@@ -400,8 +393,7 @@ def test_update_profile():
     temp_dir = setup_plan_dir()
     try:
         add_task_with_fields(title='Task', profile='implementation')
-        result = run_script(SCRIPT_PATH, 'update', '--plan-id', 'test-plan',
-                           '--number', '1', '--profile', 'testing')
+        result = run_script(SCRIPT_PATH, 'update', '--plan-id', 'test-plan', '--number', '1', '--profile', 'testing')
 
         assert result.returncode == 0
         assert 'profile: testing' in result.stdout
@@ -418,8 +410,16 @@ def test_update_skills():
     temp_dir = setup_plan_dir()
     try:
         add_task_with_fields(title='Task', skills=['pm-dev-java:java-core'])
-        result = run_script(SCRIPT_PATH, 'update', '--plan-id', 'test-plan',
-                           '--number', '1', '--skills', 'pm-dev-java:java-cdi,pm-dev-java:java-lombok')
+        result = run_script(
+            SCRIPT_PATH,
+            'update',
+            '--plan-id',
+            'test-plan',
+            '--number',
+            '1',
+            '--skills',
+            'pm-dev-java:java-cdi,pm-dev-java:java-lombok',
+        )
 
         assert result.returncode == 0
 
@@ -436,8 +436,7 @@ def test_update_deliverables():
     temp_dir = setup_plan_dir()
     try:
         add_task_with_fields(title='Task', deliverables=[1])
-        result = run_script(SCRIPT_PATH, 'update', '--plan-id', 'test-plan',
-                           '--number', '1', '--deliverables', '1,2,3')
+        result = run_script(SCRIPT_PATH, 'update', '--plan-id', 'test-plan', '--number', '1', '--deliverables', '1,2,3')
 
         assert result.returncode == 0
 
@@ -455,8 +454,9 @@ def test_update_with_arbitrary_profile():
         add_task_with_fields(title='Task', profile='implementation')
 
         # Update to arbitrary profile
-        result = run_script(SCRIPT_PATH, 'update', '--plan-id', 'test-plan',
-                           '--number', '1', '--profile', 'architecture')
+        result = run_script(
+            SCRIPT_PATH, 'update', '--plan-id', 'test-plan', '--number', '1', '--profile', 'architecture'
+        )
 
         assert result.returncode == 0
         assert 'profile: architecture' in result.stdout
@@ -475,8 +475,9 @@ def test_update_with_custom_profile():
         add_task_with_fields(title='Task', profile='implementation')
 
         # Update to custom profile
-        result = run_script(SCRIPT_PATH, 'update', '--plan-id', 'test-plan',
-                           '--number', '1', '--profile', 'my-custom-profile')
+        result = run_script(
+            SCRIPT_PATH, 'update', '--plan-id', 'test-plan', '--number', '1', '--profile', 'my-custom-profile'
+        )
 
         assert result.returncode == 0
         assert 'profile: my-custom-profile' in result.stdout
@@ -489,8 +490,9 @@ def test_update_fails_with_invalid_skills():
     temp_dir = setup_plan_dir()
     try:
         add_task_with_fields(title='Task', skills=['pm-dev-java:java-core'])
-        result = run_script(SCRIPT_PATH, 'update', '--plan-id', 'test-plan',
-                           '--number', '1', '--skills', 'invalid-no-colon')
+        result = run_script(
+            SCRIPT_PATH, 'update', '--plan-id', 'test-plan', '--number', '1', '--skills', 'invalid-no-colon'
+        )
 
         assert result.returncode != 0
         assert 'skill' in result.stderr.lower() or 'bundle:skill' in result.stderr.lower()
@@ -502,6 +504,7 @@ def test_update_fails_with_invalid_skills():
 # Tests: tasks-by-domain query
 # =============================================================================
 
+
 def test_tasks_by_domain_filters():
     """tasks-by-domain filters by domain."""
     temp_dir = setup_plan_dir()
@@ -510,8 +513,7 @@ def test_tasks_by_domain_filters():
         add_task_with_fields(title='JS task', domain='javascript')
         add_task_with_fields(title='Java task 2', domain='java')
 
-        result = run_script(SCRIPT_PATH, 'tasks-by-domain', '--plan-id', 'test-plan',
-                           '--domain', 'java')
+        result = run_script(SCRIPT_PATH, 'tasks-by-domain', '--plan-id', 'test-plan', '--domain', 'java')
 
         assert result.returncode == 0
         assert 'total: 2' in result.stdout
@@ -528,8 +530,7 @@ def test_tasks_by_domain_empty_result():
     try:
         add_task_with_fields(title='Java task', domain='java')
 
-        result = run_script(SCRIPT_PATH, 'tasks-by-domain', '--plan-id', 'test-plan',
-                           '--domain', 'javascript')
+        result = run_script(SCRIPT_PATH, 'tasks-by-domain', '--plan-id', 'test-plan', '--domain', 'javascript')
 
         assert result.returncode == 0
         assert 'total: 0' in result.stdout
@@ -541,6 +542,7 @@ def test_tasks_by_domain_empty_result():
 # Tests: tasks-by-profile query
 # =============================================================================
 
+
 def test_tasks_by_profile_filters():
     """tasks-by-profile filters by profile."""
     temp_dir = setup_plan_dir()
@@ -549,8 +551,7 @@ def test_tasks_by_profile_filters():
         add_task_with_fields(title='Test task', profile='testing')
         add_task_with_fields(title='Impl task 2', profile='implementation')
 
-        result = run_script(SCRIPT_PATH, 'tasks-by-profile', '--plan-id', 'test-plan',
-                           '--profile', 'implementation')
+        result = run_script(SCRIPT_PATH, 'tasks-by-profile', '--plan-id', 'test-plan', '--profile', 'implementation')
 
         assert result.returncode == 0
         assert 'total: 2' in result.stdout
@@ -569,8 +570,7 @@ def test_tasks_by_profile_testing():
         add_task_with_fields(title='Test task 1', profile='testing')
         add_task_with_fields(title='Test task 2', profile='testing')
 
-        result = run_script(SCRIPT_PATH, 'tasks-by-profile', '--plan-id', 'test-plan',
-                           '--profile', 'testing')
+        result = run_script(SCRIPT_PATH, 'tasks-by-profile', '--plan-id', 'test-plan', '--profile', 'testing')
 
         assert result.returncode == 0
         assert 'total: 2' in result.stdout
@@ -583,6 +583,7 @@ def test_tasks_by_profile_testing():
 # =============================================================================
 # Tests: next-tasks query
 # =============================================================================
+
 
 def test_next_tasks_returns_ready_tasks():
     """next-tasks returns all tasks with satisfied dependencies."""
@@ -612,9 +613,7 @@ def test_next_tasks_includes_skills():
     temp_dir = setup_plan_dir()
     try:
         add_task_with_fields(
-            title='Task with skills',
-            skills=['pm-dev-java:java-core', 'pm-dev-java:java-cdi'],
-            depends_on='none'
+            title='Task with skills', skills=['pm-dev-java:java-core', 'pm-dev-java:java-cdi'], depends_on='none'
         )
 
         result = run_script(SCRIPT_PATH, 'next-tasks', '--plan-id', 'test-plan')
@@ -670,6 +669,7 @@ def test_next_tasks_includes_in_progress():
 # Tests: backward compatibility
 # =============================================================================
 
+
 def test_backward_compat_old_file_without_new_fields():
     """Old task files without new fields are handled gracefully."""
     temp_dir = setup_plan_dir()
@@ -720,7 +720,7 @@ def test_next_returns_new_fields():
             title='Task with all fields',
             domain='java',
             profile='implementation',
-            skills=['pm-dev-java:java-core', 'pm-dev-java:java-cdi']
+            skills=['pm-dev-java:java-core', 'pm-dev-java:java-cdi'],
         )
 
         result = run_script(SCRIPT_PATH, 'next', '--plan-id', 'test-plan')
@@ -738,6 +738,7 @@ def test_next_returns_new_fields():
 # Tests: file format
 # =============================================================================
 
+
 def test_file_contains_all_new_fields():
     """Created file contains all new fields."""
     temp_dir = setup_plan_dir()
@@ -747,7 +748,7 @@ def test_file_contains_all_new_fields():
             domain='java',
             profile='implementation',
             skills=['pm-dev-java:java-core', 'pm-dev-java:java-cdi'],
-            origin='plan'
+            origin='plan',
         )
 
         task_dir = Path(os.environ['PLAN_BASE_DIR']) / 'plans' / 'test-plan' / 'tasks'
@@ -769,6 +770,7 @@ def test_file_contains_all_new_fields():
 # Tests: 5-phase model (outline + plan instead of refine)
 # =============================================================================
 
+
 def test_add_with_outline_phase():
     """Add accepts '2-outline' phase (5-phase model)."""
     temp_dir = setup_plan_dir()
@@ -785,7 +787,7 @@ steps:
   - src/main/java/File.java"""
         result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
 
-        assert result.returncode == 0, f"Failed: {result.stderr}"
+        assert result.returncode == 0, f'Failed: {result.stderr}'
         assert 'phase: 2-outline' in result.stdout
     finally:
         cleanup(temp_dir)
@@ -807,7 +809,7 @@ steps:
   - src/main/java/File.java"""
         result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
 
-        assert result.returncode == 0, f"Failed: {result.stderr}"
+        assert result.returncode == 0, f'Failed: {result.stderr}'
         assert 'phase: 3-plan' in result.stdout
     finally:
         cleanup(temp_dir)
@@ -816,6 +818,7 @@ steps:
 # =============================================================================
 # Tests: arbitrary domains (config-driven, not hardcoded)
 # =============================================================================
+
 
 def test_add_with_arbitrary_domain():
     """Add accepts any domain value (domains are config-driven)."""
@@ -833,7 +836,7 @@ steps:
   - docs/requirements.adoc"""
         result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
 
-        assert result.returncode == 0, f"Failed: {result.stderr}"
+        assert result.returncode == 0, f'Failed: {result.stderr}'
         assert 'domain: requirements' in result.stdout
     finally:
         cleanup(temp_dir)
@@ -855,7 +858,7 @@ steps:
   - src/main/java/File.java"""
         result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
 
-        assert result.returncode == 0, f"Failed: {result.stderr}"
+        assert result.returncode == 0, f'Failed: {result.stderr}'
         assert 'domain: my-custom-domain' in result.stdout
     finally:
         cleanup(temp_dir)
@@ -867,8 +870,9 @@ def test_update_with_arbitrary_domain():
     try:
         add_task_with_fields(title='Task', domain='java')
 
-        result = run_script(SCRIPT_PATH, 'update', '--plan-id', 'test-plan',
-                           '--number', '1', '--domain', 'requirements')
+        result = run_script(
+            SCRIPT_PATH, 'update', '--plan-id', 'test-plan', '--number', '1', '--domain', 'requirements'
+        )
 
         assert result.returncode == 0
         assert 'domain: requirements' in result.stdout
@@ -879,6 +883,7 @@ def test_update_with_arbitrary_domain():
 # =============================================================================
 # Tests: task type field
 # =============================================================================
+
 
 def test_add_with_impl_type():
     """Add accepts type field with IMPL value."""
@@ -897,7 +902,7 @@ steps:
   - src/main/java/File.java"""
         result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
 
-        assert result.returncode == 0, f"Failed: {result.stderr}"
+        assert result.returncode == 0, f'Failed: {result.stderr}'
         assert 'type: IMPL' in result.stdout
     finally:
         cleanup(temp_dir)
@@ -921,7 +926,7 @@ steps:
   - src/main/java/File.java"""
         result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
 
-        assert result.returncode == 0, f"Failed: {result.stderr}"
+        assert result.returncode == 0, f'Failed: {result.stderr}'
         assert 'type: FIX' in result.stdout
     finally:
         cleanup(temp_dir)
@@ -945,7 +950,7 @@ steps:
   - src/main/java/File.java"""
         result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
 
-        assert result.returncode == 0, f"Failed: {result.stderr}"
+        assert result.returncode == 0, f'Failed: {result.stderr}'
         assert 'type: SONAR' in result.stdout
     finally:
         cleanup(temp_dir)
@@ -954,6 +959,7 @@ steps:
 # =============================================================================
 # Tests: task ID format TASK-SEQ-TYPE
 # =============================================================================
+
 
 def test_task_file_uses_type_suffix():
     """Task file uses TASK-SEQ-TYPE format instead of slug."""
@@ -972,7 +978,7 @@ steps:
   - src/main/java/File.java"""
         result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
 
-        assert result.returncode == 0, f"Failed: {result.stderr}"
+        assert result.returncode == 0, f'Failed: {result.stderr}'
         # Should use TASK-001-IMPL.toon format
         assert 'file: TASK-001-IMPL.toon' in result.stdout
     finally:
@@ -997,7 +1003,7 @@ steps:
   - src/test/java/FileTest.java"""
         result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
 
-        assert result.returncode == 0, f"Failed: {result.stderr}"
+        assert result.returncode == 0, f'Failed: {result.stderr}'
         # Should use TASK-001-FIX.toon format
         assert 'file: TASK-001-FIX.toon' in result.stdout
     finally:

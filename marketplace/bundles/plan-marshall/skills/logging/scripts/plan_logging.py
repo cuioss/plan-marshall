@@ -24,39 +24,43 @@ from pathlib import Path
 
 LOG_ENABLED = True
 
+
 def get_plan_base_dir() -> Path:
     """Get base directory for plan structure."""
     return Path(os.environ.get('PLAN_BASE_DIR', '.plan'))
+
 
 def get_max_output() -> int:
     """Get max chars to capture from stdout/stderr."""
     return int(os.environ.get('LOG_MAX_OUTPUT', '2000'))
 
+
 def get_retention_days() -> int:
     """Get days to keep global logs."""
     return int(os.environ.get('LOG_RETENTION_DAYS', '7'))
+
 
 def get_global_log_dir() -> Path:
     """Get global log directory."""
     return get_plan_base_dir() / 'logs'
 
+
 def get_plans_dir() -> Path:
     """Get plans directory."""
     return get_plan_base_dir() / 'plans'
+
 
 # =============================================================================
 # UTILITIES
 # =============================================================================
 
+
 def format_timestamp() -> str:
     """Get current time in ISO 8601 UTC format."""
     return datetime.now(UTC).strftime('%Y-%m-%dT%H:%M:%SZ')
 
-def format_log_entry(
-    level: str,
-    message: str,
-    **fields
-) -> str:
+
+def format_log_entry(level: str, message: str, **fields) -> str:
     """
     Format a standard log entry.
 
@@ -69,13 +73,14 @@ def format_log_entry(
         Formatted log entry string with trailing newline
     """
     timestamp = format_timestamp()
-    lines = [f"[{timestamp}] [{level}] {message}"]
+    lines = [f'[{timestamp}] [{level}] {message}']
 
     for key, value in fields.items():
         if value is not None and value != '':
-            lines.append(f"  {key}: {value}")
+            lines.append(f'  {key}: {value}')
 
     return '\n'.join(lines) + '\n'
+
 
 def extract_plan_id(args: list) -> str | None:
     """Extract --plan-id value from argument list."""
@@ -88,13 +93,16 @@ def extract_plan_id(args: list) -> str | None:
             return plan_id_value
     return None
 
+
 def validate_plan_id(plan_id: str) -> bool:
     """Validate plan_id is kebab-case with no special characters."""
     return bool(re.match(r'^[a-z][a-z0-9-]*$', plan_id))
 
+
 # =============================================================================
 # PATH RESOLUTION
 # =============================================================================
+
 
 def get_log_path(plan_id: str | None, log_type: str = 'script') -> Path:
     """
@@ -124,12 +132,14 @@ def get_log_path(plan_id: str | None, log_type: str = 'script') -> Path:
 
     return global_log_dir / f'script-execution-{date.today()}.log'
 
+
 # =============================================================================
 # UNIFIED LOG ENTRY (SIMPLIFIED API)
 # =============================================================================
 
 VALID_TYPES = ('script', 'work')
 VALID_LEVELS = ('INFO', 'WARN', 'ERROR')
+
 
 def log_entry(log_type: str, plan_id: str, level: str, message: str) -> None:
     """
@@ -159,18 +169,14 @@ def log_entry(log_type: str, plan_id: str, level: str, message: str) -> None:
     except Exception:
         pass  # Silent failure for logging
 
+
 # =============================================================================
 # SCRIPT EXECUTION LOGGING
 # =============================================================================
 
+
 def log_script_execution(
-    notation: str,
-    subcommand: str,
-    args: list,
-    exit_code: int,
-    duration: float,
-    stdout: str = '',
-    stderr: str = ''
+    notation: str, subcommand: str, args: list, exit_code: int, duration: float, stdout: str = '', stderr: str = ''
 ) -> None:
     """
     Log script execution to script-execution.log.
@@ -191,18 +197,19 @@ def log_script_execution(
         plan_id = extract_plan_id(args)
         log_file = get_log_path(plan_id, 'script')
 
-        message = f"{notation} {subcommand} ({duration:.2f}s)"
+        message = f'{notation} {subcommand} ({duration:.2f}s)'
 
         if exit_code == 0:
             entry = format_log_entry('INFO', message)
         else:
             max_output = get_max_output()
             entry = format_log_entry(
-                'ERROR', message,
+                'ERROR',
+                message,
                 exit_code=exit_code,
                 args=' '.join(args),
                 stdout=stdout[:max_output].replace('\n', ' ')[:500] if stdout else None,
-                stderr=stderr[:max_output].replace('\n', ' ')[:500] if stderr else None
+                stderr=stderr[:max_output].replace('\n', ' ')[:500] if stderr else None,
             )
 
         with open(log_file, 'a', encoding='utf-8') as f:
@@ -210,6 +217,7 @@ def log_script_execution(
 
     except Exception:
         pass  # Silent failure for logging
+
 
 def cleanup_old_script_logs(max_age_days: int | None = None) -> int:
     """
@@ -241,19 +249,15 @@ def cleanup_old_script_logs(max_age_days: int | None = None) -> int:
 
     return deleted
 
+
 # =============================================================================
 # WORK LOGGING
 # =============================================================================
 
 VALID_CATEGORIES = ['DECISION', 'ARTIFACT', 'PROGRESS', 'ERROR', 'OUTCOME', 'FINDING']
 
-def log_work(
-    plan_id: str,
-    category: str,
-    message: str,
-    phase: str,
-    detail: str | None = None
-) -> dict:
+
+def log_work(plan_id: str, category: str, message: str, phase: str, detail: str | None = None) -> dict:
     """
     Add entry to work.log.
 
@@ -272,7 +276,7 @@ def log_work(
             'status': 'error',
             'plan_id': plan_id,
             'error': 'invalid_plan_id',
-            'message': f"Invalid plan_id format: {plan_id}"
+            'message': f'Invalid plan_id format: {plan_id}',
         }
 
     category = category.upper()
@@ -281,7 +285,7 @@ def log_work(
             'status': 'error',
             'plan_id': plan_id,
             'error': 'invalid_category',
-            'message': f"Invalid category '{category}'. Valid: {', '.join(VALID_CATEGORIES)}"
+            'message': f"Invalid category '{category}'. Valid: {', '.join(VALID_CATEGORIES)}",
         }
 
     try:
@@ -290,12 +294,8 @@ def log_work(
 
         level = 'ERROR' if category == 'ERROR' else 'INFO'
         # Include category in message for work logs (DECISION, ARTIFACT, etc.)
-        formatted_message = f"[{category}] {message}"
-        entry = format_log_entry(
-            level, formatted_message,
-            phase=phase,
-            detail=detail
-        )
+        formatted_message = f'[{category}] {message}'
+        entry = format_log_entry(level, formatted_message, phase=phase, detail=detail)
 
         with open(log_file, 'a', encoding='utf-8') as f:
             f.write(entry)
@@ -310,7 +310,7 @@ def log_work(
             'phase': phase,
             'timestamp': format_timestamp(),
             'message': message,
-            'total_entries': total_entries
+            'total_entries': total_entries,
         }
         if detail:
             result['detail'] = detail
@@ -318,12 +318,8 @@ def log_work(
         return result
 
     except Exception as e:
-        return {
-            'status': 'error',
-            'plan_id': plan_id,
-            'error': 'write_failed',
-            'message': str(e)
-        }
+        return {'status': 'error', 'plan_id': plan_id, 'error': 'write_failed', 'message': str(e)}
+
 
 def read_work_log(plan_id: str, phase: str | None = None) -> dict:
     """
@@ -341,19 +337,14 @@ def read_work_log(plan_id: str, phase: str | None = None) -> dict:
             'status': 'error',
             'plan_id': plan_id,
             'error': 'invalid_plan_id',
-            'message': f"Invalid plan_id format: {plan_id}"
+            'message': f'Invalid plan_id format: {plan_id}',
         }
 
     try:
         log_file = get_log_path(plan_id, 'work')
 
         if not log_file.exists():
-            return {
-                'status': 'success',
-                'plan_id': plan_id,
-                'total_entries': 0,
-                'entries': []
-            }
+            return {'status': 'success', 'plan_id': plan_id, 'total_entries': 0, 'entries': []}
 
         entries = _parse_log_file(log_file)
 
@@ -361,20 +352,11 @@ def read_work_log(plan_id: str, phase: str | None = None) -> dict:
         if phase:
             entries = [e for e in entries if e.get('phase') == phase]
 
-        return {
-            'status': 'success',
-            'plan_id': plan_id,
-            'total_entries': len(entries),
-            'entries': entries
-        }
+        return {'status': 'success', 'plan_id': plan_id, 'total_entries': len(entries), 'entries': entries}
 
     except Exception as e:
-        return {
-            'status': 'error',
-            'plan_id': plan_id,
-            'error': 'read_failed',
-            'message': str(e)
-        }
+        return {'status': 'error', 'plan_id': plan_id, 'error': 'read_failed', 'message': str(e)}
+
 
 def list_recent_work(plan_id: str, limit: int = 10) -> dict:
     """
@@ -400,8 +382,9 @@ def list_recent_work(plan_id: str, limit: int = 10) -> dict:
         'plan_id': plan_id,
         'total_entries': total,
         'showing': len(entries),
-        'entries': entries
+        'entries': entries,
     }
+
 
 # =============================================================================
 # PARSING HELPERS
@@ -412,9 +395,10 @@ def list_recent_work(plan_id: str, limit: int = 10) -> dict:
 HEADER_PATTERN = re.compile(
     r'^\[(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z)\] '
     r'\[(\w+)\] (?:\[(\w+)\] )?(.+)$',
-    re.MULTILINE
+    re.MULTILINE,
 )
 FIELD_PATTERN = re.compile(r'^  (\w+): (.+)$', re.MULTILINE)
+
 
 def _parse_log_file(log_file: Path) -> list:
     """Parse log file into list of entry dicts."""
@@ -443,6 +427,7 @@ def _parse_log_file(log_file: Path) -> list:
 
     return entries
 
+
 def _count_entries(log_file: Path) -> int:
     """Count entries in log file."""
     if not log_file.exists():
@@ -450,23 +435,24 @@ def _count_entries(log_file: Path) -> int:
     content = log_file.read_text(encoding='utf-8')
     return len(HEADER_PATTERN.findall(content))
 
+
 # =============================================================================
 # MODULE SELF-TEST
 # =============================================================================
 
 if __name__ == '__main__':
-    print("plan_logging.py - Unified Logging Module")
-    print("=" * 50)
-    print(f"\nPlan Base Directory: {get_plan_base_dir()}")
-    print(f"Max Output Capture: {get_max_output()}")
-    print(f"Retention Days: {get_retention_days()}")
-    print("\nAvailable functions:")
-    print("- format_timestamp() -> str")
-    print("- format_log_entry(level, category, message, **fields) -> str")
-    print("- extract_plan_id(args) -> str | None")
-    print("- get_log_path(plan_id, log_type) -> Path")
-    print("- log_script_execution(...)")
-    print("- cleanup_old_script_logs(max_age_days) -> int")
-    print("- log_work(plan_id, category, message, phase, detail) -> dict")
-    print("- read_work_log(plan_id, phase) -> dict")
-    print("- list_recent_work(plan_id, limit) -> dict")
+    print('plan_logging.py - Unified Logging Module')
+    print('=' * 50)
+    print(f'\nPlan Base Directory: {get_plan_base_dir()}')
+    print(f'Max Output Capture: {get_max_output()}')
+    print(f'Retention Days: {get_retention_days()}')
+    print('\nAvailable functions:')
+    print('- format_timestamp() -> str')
+    print('- format_log_entry(level, category, message, **fields) -> str')
+    print('- extract_plan_id(args) -> str | None')
+    print('- get_log_path(plan_id, log_type) -> Path')
+    print('- log_script_execution(...)')
+    print('- cleanup_old_script_logs(max_age_days) -> int')
+    print('- log_work(plan_id, category, message, phase, detail) -> dict')
+    print('- read_work_log(plan_id, phase) -> dict')
+    print('- list_recent_work(plan_id, limit) -> dict')

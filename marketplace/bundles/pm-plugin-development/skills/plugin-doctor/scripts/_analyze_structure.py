@@ -17,7 +17,7 @@ def extract_skill_references(content: str, skill_dir: Path) -> set[str]:
     for match in re.finditer(local_pattern, content):
         ref = match.group(0)
         start = match.start()
-        if start > 0 and content[start-1] == ':':
+        if start > 0 and content[start - 1] == ':':
             continue
         references.add(ref)
 
@@ -34,7 +34,7 @@ def extract_skill_references(content: str, skill_dir: Path) -> set[str]:
                 if file_path.is_file():
                     filename = file_path.name
                     if f'`{filename}`' in content_no_codeblocks:
-                        references.add(f"{subdir}/{filename}")
+                        references.add(f'{subdir}/{filename}')
 
     return references
 
@@ -57,8 +57,7 @@ def find_existing_files(skill_dir: Path) -> set[str]:
     return existing
 
 
-def calculate_structure_score(skill_exists: bool, yaml_valid: bool,
-                              missing_count: int, unreferenced_count: int) -> int:
+def calculate_structure_score(skill_exists: bool, yaml_valid: bool, missing_count: int, unreferenced_count: int) -> int:
     """Calculate structure score based on issues."""
     if not skill_exists:
         return 0
@@ -103,7 +102,7 @@ def analyze_skill_structure(skill_dir: Path) -> dict:
         for match in re.finditer(local_pattern, content_no_codeblocks):
             ref = match.group(0)
             start = match.start()
-            if start > 0 and content_no_codeblocks[start-1] == ':':
+            if start > 0 and content_no_codeblocks[start - 1] == ':':
                 continue
             refs_outside_codeblocks.add(ref)
 
@@ -124,26 +123,22 @@ def analyze_skill_structure(skill_dir: Path) -> dict:
                     if basename.startswith('_'):
                         continue
                     # Legacy patterns (for backward compatibility)
-                    if (basename.startswith('cmd_') or
-                        basename.startswith('doctor_') or
-                        basename.startswith('analyze_') or
-                        basename.endswith('_shared.py')):
+                    if (
+                        basename.startswith('cmd_')
+                        or basename.startswith('doctor_')
+                        or basename.startswith('analyze_')
+                        or basename.endswith('_shared.py')
+                    ):
                         continue
                 unreferenced_files.append(existing_file)
 
-    structure_score = calculate_structure_score(
-        skill_exists, yaml_valid,
-        len(missing_files), len(unreferenced_files)
-    )
+    structure_score = calculate_structure_score(skill_exists, yaml_valid, len(missing_files), len(unreferenced_files))
 
     return {
         'skill_dir': str(skill_dir),
         'skill_md': {'exists': skill_exists, 'yaml_valid': yaml_valid},
-        'standards_files': {
-            'missing_files': sorted(missing_files),
-            'unreferenced_files': sorted(unreferenced_files)
-        },
-        'structure_score': structure_score
+        'standards_files': {'missing_files': sorted(missing_files), 'unreferenced_files': sorted(unreferenced_files)},
+        'structure_score': structure_score,
     }
 
 

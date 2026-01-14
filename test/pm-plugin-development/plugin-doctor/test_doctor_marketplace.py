@@ -31,39 +31,40 @@ def marketplace_available():
 # Help and Basic Tests
 # =============================================================================
 
+
 def test_script_exists():
     """Test that script exists."""
-    assert Path(SCRIPT_PATH).exists(), f"Script not found: {SCRIPT_PATH}"
+    assert Path(SCRIPT_PATH).exists(), f'Script not found: {SCRIPT_PATH}'
 
 
 def test_main_help():
     """Test main --help displays all subcommands."""
     result = run_script(SCRIPT_PATH, '--help')
     combined = result.stdout + result.stderr
-    assert 'scan' in combined, "scan subcommand in help"
-    assert 'analyze' in combined, "analyze subcommand in help"
-    assert 'fix' in combined, "fix subcommand in help"
-    assert 'report' in combined, "report subcommand in help"
+    assert 'scan' in combined, 'scan subcommand in help'
+    assert 'analyze' in combined, 'analyze subcommand in help'
+    assert 'fix' in combined, 'fix subcommand in help'
+    assert 'report' in combined, 'report subcommand in help'
 
 
 def test_no_command_shows_help():
     """Test that running without command shows help."""
     result = run_script(SCRIPT_PATH)
-    assert result.returncode != 0, "Should return error without command"
+    assert result.returncode != 0, 'Should return error without command'
     combined = result.stdout + result.stderr
-    assert 'scan' in combined or 'usage' in combined.lower(), \
-        "Should show usage information"
+    assert 'scan' in combined or 'usage' in combined.lower(), 'Should show usage information'
 
 
 # =============================================================================
 # Scan Subcommand Tests
 # =============================================================================
 
+
 def test_scan_help():
     """Test scan --help is available."""
     result = run_script(SCRIPT_PATH, 'scan', '--help')
     combined = result.stdout + result.stderr
-    assert 'bundles' in combined.lower(), "Help should mention bundles option"
+    assert 'bundles' in combined.lower(), 'Help should mention bundles option'
 
 
 def test_scan_returns_valid_json():
@@ -72,13 +73,13 @@ def test_scan_returns_valid_json():
         return  # Skip if marketplace not available
 
     result = run_script(SCRIPT_PATH, 'scan', cwd=str(PROJECT_ROOT))
-    assert result.returncode == 0, f"Scan failed: {result.stderr}"
+    assert result.returncode == 0, f'Scan failed: {result.stderr}'
 
     data = result.json()
-    assert data is not None, "Should return valid JSON"
-    assert 'bundles' in data, "Should have bundles field"
-    assert 'total_bundles' in data, "Should have total_bundles field"
-    assert 'total_components' in data, "Should have total_components field"
+    assert data is not None, 'Should return valid JSON'
+    assert 'bundles' in data, 'Should have bundles field'
+    assert 'total_bundles' in data, 'Should have total_bundles field'
+    assert 'total_components' in data, 'Should have total_components field'
 
 
 def test_scan_finds_bundles():
@@ -89,9 +90,8 @@ def test_scan_finds_bundles():
     result = run_script(SCRIPT_PATH, 'scan', cwd=str(PROJECT_ROOT))
     data = result.json()
 
-    assert data['total_bundles'] > 0, "Should find at least one bundle"
-    assert len(data['bundles']) == data['total_bundles'], \
-        "Bundle list length should match total_bundles"
+    assert data['total_bundles'] > 0, 'Should find at least one bundle'
+    assert len(data['bundles']) == data['total_bundles'], 'Bundle list length should match total_bundles'
 
 
 def test_scan_bundle_structure():
@@ -103,16 +103,16 @@ def test_scan_bundle_structure():
     data = result.json()
 
     for bundle in data['bundles']:
-        assert 'name' in bundle, "Bundle should have name"
-        assert 'path' in bundle, "Bundle should have path"
-        assert 'components' in bundle, "Bundle should have components"
-        assert 'counts' in bundle, "Bundle should have counts"
+        assert 'name' in bundle, 'Bundle should have name'
+        assert 'path' in bundle, 'Bundle should have path'
+        assert 'components' in bundle, 'Bundle should have components'
+        assert 'counts' in bundle, 'Bundle should have counts'
 
         components = bundle['components']
-        assert 'agents' in components, "Components should have agents"
-        assert 'commands' in components, "Components should have commands"
-        assert 'skills' in components, "Components should have skills"
-        assert 'scripts' in components, "Components should have scripts"
+        assert 'agents' in components, 'Components should have agents'
+        assert 'commands' in components, 'Components should have commands'
+        assert 'skills' in components, 'Components should have skills'
+        assert 'scripts' in components, 'Components should have scripts'
 
 
 def test_scan_bundle_filter():
@@ -132,21 +132,21 @@ def test_scan_bundle_filter():
     result = run_script(SCRIPT_PATH, 'scan', '--bundles', first_bundle, cwd=str(PROJECT_ROOT))
     filtered = result.json()
 
-    assert filtered['total_bundles'] == 1, "Should have exactly one bundle"
-    assert filtered['bundles'][0]['name'] == first_bundle, \
-        f"Should be {first_bundle}"
+    assert filtered['total_bundles'] == 1, 'Should have exactly one bundle'
+    assert filtered['bundles'][0]['name'] == first_bundle, f'Should be {first_bundle}'
 
 
 # =============================================================================
 # Analyze Subcommand Tests
 # =============================================================================
 
+
 def test_analyze_help():
     """Test analyze --help is available."""
     result = run_script(SCRIPT_PATH, 'analyze', '--help')
     combined = result.stdout + result.stderr
-    assert 'bundles' in combined.lower(), "Help should mention bundles option"
-    assert 'type' in combined.lower(), "Help should mention type option"
+    assert 'bundles' in combined.lower(), 'Help should mention bundles option'
+    assert 'type' in combined.lower(), 'Help should mention type option'
 
 
 def test_analyze_returns_valid_json():
@@ -163,13 +163,13 @@ def test_analyze_returns_valid_json():
     first_bundle = scan_data['bundles'][0]['name']
 
     result = run_script(SCRIPT_PATH, 'analyze', '--bundles', first_bundle, cwd=str(PROJECT_ROOT))
-    assert result.returncode == 0, f"Analyze failed: {result.stderr}"
+    assert result.returncode == 0, f'Analyze failed: {result.stderr}'
 
     data = result.json()
-    assert data is not None, "Should return valid JSON"
-    assert 'analysis' in data, "Should have analysis field"
-    assert 'summary' in data, "Should have summary field"
-    assert 'categorized' in data, "Should have categorized field"
+    assert data is not None, 'Should return valid JSON'
+    assert 'analysis' in data, 'Should have analysis field'
+    assert 'summary' in data, 'Should have summary field'
+    assert 'categorized' in data, 'Should have categorized field'
 
 
 def test_analyze_summary_structure():
@@ -188,11 +188,11 @@ def test_analyze_summary_structure():
     data = result.json()
 
     summary = data['summary']
-    assert 'total_components' in summary, "Summary should have total_components"
-    assert 'total_issues' in summary, "Summary should have total_issues"
-    assert 'safe_fixes' in summary, "Summary should have safe_fixes"
-    assert 'risky_fixes' in summary, "Summary should have risky_fixes"
-    assert 'unfixable' in summary, "Summary should have unfixable"
+    assert 'total_components' in summary, 'Summary should have total_components'
+    assert 'total_issues' in summary, 'Summary should have total_issues'
+    assert 'safe_fixes' in summary, 'Summary should have safe_fixes'
+    assert 'risky_fixes' in summary, 'Summary should have risky_fixes'
+    assert 'unfixable' in summary, 'Summary should have unfixable'
 
 
 def test_analyze_categorized_structure():
@@ -211,9 +211,9 @@ def test_analyze_categorized_structure():
     data = result.json()
 
     categorized = data['categorized']
-    assert 'safe' in categorized, "Categorized should have safe"
-    assert 'risky' in categorized, "Categorized should have risky"
-    assert 'unfixable' in categorized, "Categorized should have unfixable"
+    assert 'safe' in categorized, 'Categorized should have safe'
+    assert 'risky' in categorized, 'Categorized should have risky'
+    assert 'unfixable' in categorized, 'Categorized should have unfixable'
 
 
 def test_analyze_type_filter():
@@ -228,30 +228,26 @@ def test_analyze_type_filter():
 
     first_bundle = scan_data['bundles'][0]['name']
 
-    result = run_script(
-        SCRIPT_PATH, 'analyze',
-        '--bundles', first_bundle,
-        '--type', 'agents',
-        cwd=str(PROJECT_ROOT)
-    )
+    result = run_script(SCRIPT_PATH, 'analyze', '--bundles', first_bundle, '--type', 'agents', cwd=str(PROJECT_ROOT))
     data = result.json()
 
     # All analyzed components should be agents
     for item in data['analysis']:
         comp_type = item.get('component', {}).get('type')
-        assert comp_type == 'agent', f"Expected agent, got {comp_type}"
+        assert comp_type == 'agent', f'Expected agent, got {comp_type}'
 
 
 # =============================================================================
 # Fix Subcommand Tests
 # =============================================================================
 
+
 def test_fix_help():
     """Test fix --help is available."""
     result = run_script(SCRIPT_PATH, 'fix', '--help')
     combined = result.stdout + result.stderr
-    assert 'bundles' in combined.lower(), "Help should mention bundles option"
-    assert 'dry-run' in combined.lower(), "Help should mention dry-run option"
+    assert 'bundles' in combined.lower(), 'Help should mention bundles option'
+    assert 'dry-run' in combined.lower(), 'Help should mention dry-run option'
 
 
 def test_fix_dry_run_returns_valid_json():
@@ -266,20 +262,15 @@ def test_fix_dry_run_returns_valid_json():
 
     first_bundle = scan_data['bundles'][0]['name']
 
-    result = run_script(
-        SCRIPT_PATH, 'fix',
-        '--bundles', first_bundle,
-        '--dry-run',
-        cwd=str(PROJECT_ROOT)
-    )
+    result = run_script(SCRIPT_PATH, 'fix', '--bundles', first_bundle, '--dry-run', cwd=str(PROJECT_ROOT))
     # Should succeed even if no fixes needed
-    assert result.returncode == 0, f"Fix dry-run failed: {result.stderr}"
+    assert result.returncode == 0, f'Fix dry-run failed: {result.stderr}'
 
     data = result.json()
-    assert data is not None, "Should return valid JSON"
-    assert 'status' in data, "Should have status field"
-    assert 'dry_run' in data, "Should have dry_run field"
-    assert data['dry_run'] is True, "dry_run should be True"
+    assert data is not None, 'Should return valid JSON'
+    assert 'status' in data, 'Should have status field'
+    assert 'dry_run' in data, 'Should have dry_run field'
+    assert data['dry_run'] is True, 'dry_run should be True'
 
 
 def test_fix_dry_run_no_changes():
@@ -302,32 +293,27 @@ def test_fix_dry_run_no_changes():
         mtimes_before[str(md_file)] = md_file.stat().st_mtime
 
     # Run fix with dry-run
-    result = run_script(
-        SCRIPT_PATH, 'fix',
-        '--bundles', first_bundle,
-        '--dry-run',
-        cwd=str(PROJECT_ROOT)
-    )
+    result = run_script(SCRIPT_PATH, 'fix', '--bundles', first_bundle, '--dry-run', cwd=str(PROJECT_ROOT))
 
     # Verify no files changed
     for md_file in bundle_path.rglob('*.md'):
         mtime_after = md_file.stat().st_mtime
         path_str = str(md_file)
         if path_str in mtimes_before:
-            assert mtimes_before[path_str] == mtime_after, \
-                f"File modified during dry-run: {md_file}"
+            assert mtimes_before[path_str] == mtime_after, f'File modified during dry-run: {md_file}'
 
 
 # =============================================================================
 # Report Subcommand Tests
 # =============================================================================
 
+
 def test_report_help():
     """Test report --help is available."""
     result = run_script(SCRIPT_PATH, 'report', '--help')
     combined = result.stdout + result.stderr
-    assert 'bundles' in combined.lower(), "Help should mention bundles option"
-    assert 'output' in combined.lower(), "Help should mention output option"
+    assert 'bundles' in combined.lower(), 'Help should mention bundles option'
+    assert 'output' in combined.lower(), 'Help should mention output option'
 
 
 def test_report_returns_valid_json():
@@ -342,23 +328,20 @@ def test_report_returns_valid_json():
 
     first_bundle = scan_data['bundles'][0]['name']
 
-    result = run_script(
-        SCRIPT_PATH, 'report',
-        '--bundles', first_bundle,
-        cwd=str(PROJECT_ROOT)
-    )
-    assert result.returncode == 0, f"Report failed: {result.stderr}"
+    result = run_script(SCRIPT_PATH, 'report', '--bundles', first_bundle, cwd=str(PROJECT_ROOT))
+    assert result.returncode == 0, f'Report failed: {result.stderr}'
 
     data = result.json()
-    assert data is not None, "Should return valid JSON"
-    assert 'status' in data, "Should have status field"
-    assert data['status'] == 'success', "Status should be success"
-    assert 'report_dir' in data, "Should have report_dir field"
-    assert 'report_file' in data, "Should have report_file field"
-    assert 'findings_file' in data, "Should have findings_file field"
-    assert 'summary' in data, "Should have summary field"
-    assert data['report_dir'] == '.plan/temp/plugin-doctor-report', \
-        "Report dir should be .plan/temp/plugin-doctor-report"
+    assert data is not None, 'Should return valid JSON'
+    assert 'status' in data, 'Should have status field'
+    assert data['status'] == 'success', 'Status should be success'
+    assert 'report_dir' in data, 'Should have report_dir field'
+    assert 'report_file' in data, 'Should have report_file field'
+    assert 'findings_file' in data, 'Should have findings_file field'
+    assert 'summary' in data, 'Should have summary field'
+    assert data['report_dir'] == '.plan/temp/plugin-doctor-report', (
+        'Report dir should be .plan/temp/plugin-doctor-report'
+    )
 
 
 def test_report_summary_structure():
@@ -373,20 +356,16 @@ def test_report_summary_structure():
 
     first_bundle = scan_data['bundles'][0]['name']
 
-    result = run_script(
-        SCRIPT_PATH, 'report',
-        '--bundles', first_bundle,
-        cwd=str(PROJECT_ROOT)
-    )
+    result = run_script(SCRIPT_PATH, 'report', '--bundles', first_bundle, cwd=str(PROJECT_ROOT))
     data = result.json()
 
     # Summary is included in stdout response
     summary = data['summary']
-    assert 'total_bundles' in summary, "Summary should have total_bundles"
-    assert 'total_components' in summary, "Summary should have total_components"
-    assert 'total_issues' in summary, "Summary should have total_issues"
-    assert 'safe_fixes' in summary, "Summary should have safe_fixes"
-    assert 'risky_fixes' in summary, "Summary should have risky_fixes"
+    assert 'total_bundles' in summary, 'Summary should have total_bundles'
+    assert 'total_components' in summary, 'Summary should have total_components'
+    assert 'total_issues' in summary, 'Summary should have total_issues'
+    assert 'safe_fixes' in summary, 'Summary should have safe_fixes'
+    assert 'risky_fixes' in summary, 'Summary should have risky_fixes'
 
 
 def test_report_has_llm_review_items():
@@ -401,23 +380,18 @@ def test_report_has_llm_review_items():
 
     first_bundle = scan_data['bundles'][0]['name']
 
-    result = run_script(
-        SCRIPT_PATH, 'report',
-        '--bundles', first_bundle,
-        cwd=str(PROJECT_ROOT)
-    )
+    result = run_script(SCRIPT_PATH, 'report', '--bundles', first_bundle, cwd=str(PROJECT_ROOT))
     response = result.json()
 
     # Read the actual report file
     report_path = Path(PROJECT_ROOT) / response['report_file']
-    assert report_path.exists(), f"Report file should exist: {report_path}"
+    assert report_path.exists(), f'Report file should exist: {report_path}'
 
     with open(report_path) as f:
         report_data = json.load(f)
 
-    assert 'llm_review_items' in report_data, "Report should have llm_review_items"
-    assert isinstance(report_data['llm_review_items'], list), \
-        "llm_review_items should be a list"
+    assert 'llm_review_items' in report_data, 'Report should have llm_review_items'
+    assert isinstance(report_data['llm_review_items'], list), 'llm_review_items should be a list'
 
 
 def test_report_to_custom_dir():
@@ -437,21 +411,18 @@ def test_report_to_custom_dir():
 
     try:
         result = run_script(
-            SCRIPT_PATH, 'report',
-            '--bundles', first_bundle,
-            '--output', output_dir,
-            cwd=str(PROJECT_ROOT)
+            SCRIPT_PATH, 'report', '--bundles', first_bundle, '--output', output_dir, cwd=str(PROJECT_ROOT)
         )
-        assert result.returncode == 0, f"Report failed: {result.stderr}"
+        assert result.returncode == 0, f'Report failed: {result.stderr}'
 
         # Verify directory contains timestamped JSON file
         json_files = list(Path(output_dir).glob('*-report.json'))
-        assert len(json_files) == 1, f"Should have exactly one report JSON file, found: {json_files}"
+        assert len(json_files) == 1, f'Should have exactly one report JSON file, found: {json_files}'
         json_path = json_files[0]
 
         with open(json_path) as f:
             data = json.load(f)
-        assert 'summary' in data, "File should contain valid report"
+        assert 'summary' in data, 'File should contain valid report'
     finally:
         shutil.rmtree(output_dir, ignore_errors=True)
 
@@ -459,6 +430,7 @@ def test_report_to_custom_dir():
 # =============================================================================
 # Integration Tests with Fixture
 # =============================================================================
+
 
 class TestWithTempMarketplace:
     """Tests using a temporary marketplace fixture."""
@@ -476,10 +448,7 @@ class TestWithTempMarketplace:
         # Create plugin.json
         plugin_dir = bundle_dir / '.claude-plugin'
         plugin_dir.mkdir()
-        (plugin_dir / 'plugin.json').write_text(json.dumps({
-            "name": "test-bundle",
-            "version": "1.0.0"
-        }))
+        (plugin_dir / 'plugin.json').write_text(json.dumps({'name': 'test-bundle', 'version': '1.0.0'}))
 
         # Create an agent with issues
         agents_dir = bundle_dir / 'agents'
@@ -536,11 +505,11 @@ def test_fixture_scan():
 
     try:
         result = run_script(SCRIPT_PATH, 'scan', cwd=str(temp_dir))
-        assert result.returncode == 0, f"Scan failed: {result.stderr}"
+        assert result.returncode == 0, f'Scan failed: {result.stderr}'
 
         data = result.json()
-        assert data['total_bundles'] == 1, "Should find one bundle"
-        assert data['bundles'][0]['name'] == 'test-bundle', "Should be test-bundle"
+        assert data['total_bundles'] == 1, 'Should find one bundle'
+        assert data['bundles'][0]['name'] == 'test-bundle', 'Should be test-bundle'
     finally:
         fixture.cleanup()
 
@@ -552,12 +521,11 @@ def test_fixture_analyze_finds_issues():
 
     try:
         result = run_script(SCRIPT_PATH, 'analyze', cwd=str(temp_dir))
-        assert result.returncode == 0, f"Analyze failed: {result.stderr}"
+        assert result.returncode == 0, f'Analyze failed: {result.stderr}'
 
         data = result.json()
         # Should find at least one issue (Rule 6 - Task in agent)
-        assert data['summary']['total_issues'] > 0, \
-            "Should find issues in test fixture"
+        assert data['summary']['total_issues'] > 0, 'Should find issues in test fixture'
     finally:
         fixture.cleanup()
 
@@ -569,10 +537,10 @@ def test_fixture_fix_dry_run():
 
     try:
         result = run_script(SCRIPT_PATH, 'fix', '--dry-run', cwd=str(temp_dir))
-        assert result.returncode == 0, f"Fix dry-run failed: {result.stderr}"
+        assert result.returncode == 0, f'Fix dry-run failed: {result.stderr}'
 
         data = result.json()
-        assert data['dry_run'] is True, "Should be dry run"
+        assert data['dry_run'] is True, 'Should be dry run'
     finally:
         fixture.cleanup()
 
@@ -584,26 +552,26 @@ def test_fixture_report():
 
     try:
         result = run_script(SCRIPT_PATH, 'report', cwd=str(temp_dir))
-        assert result.returncode == 0, f"Report failed: {result.stderr}"
+        assert result.returncode == 0, f'Report failed: {result.stderr}'
 
         response = result.json()
-        assert response['status'] == 'success', "Status should be success"
-        assert response['summary']['total_bundles'] == 1, "Should have one bundle"
-        assert 'report_dir' in response, "Should have report_dir"
-        assert 'report_file' in response, "Should have report_file"
-        assert 'findings_file' in response, "Should have findings_file"
+        assert response['status'] == 'success', 'Status should be success'
+        assert response['summary']['total_bundles'] == 1, 'Should have one bundle'
+        assert 'report_dir' in response, 'Should have report_dir'
+        assert 'report_file' in response, 'Should have report_file'
+        assert 'findings_file' in response, 'Should have findings_file'
 
         # Read and verify report file
         report_path = temp_dir / response['report_file']
-        assert report_path.exists(), f"Report file should exist: {report_path}"
+        assert report_path.exists(), f'Report file should exist: {report_path}'
 
         with open(report_path) as f:
             report_data = json.load(f)
-        assert 'llm_review_items' in report_data, "Report should have LLM review items"
+        assert 'llm_review_items' in report_data, 'Report should have LLM review items'
 
         # Verify directory structure
         report_dir = temp_dir / response['report_dir']
-        assert report_dir.is_dir(), f"Report dir should exist: {report_dir}"
+        assert report_dir.is_dir(), f'Report dir should exist: {report_dir}'
     finally:
         fixture.cleanup()
 
