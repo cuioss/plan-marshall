@@ -8,8 +8,13 @@ Uses runtime discovery per extension-api specification:
 - Parses pyproject.toml for [tool.pyprojectx.aliases]
 - Maps aliases to canonical commands
 - Validates ./pw wrapper existence
+
+Note: This extension is mutually exclusive with pm-plugin-development.
+It skips module discovery for the plan-marshall marketplace (handled by
+pm-plugin-development instead).
 """
 
+import json
 import tomllib
 from pathlib import Path
 
@@ -18,6 +23,33 @@ from extension_base import ExtensionBase  # type: ignore[import-not-found]
 
 # Build file constant
 PYPROJECT_TOML = 'pyproject.toml'
+
+# Marketplace identification
+MARKETPLACE_JSON = 'marketplace/.claude-plugin/marketplace.json'
+PLAN_MARSHALL_NAME = 'plan-marshall'
+
+
+def _is_plan_marshall_marketplace(project_root: str) -> bool:
+    """Check if this is the plan-marshall marketplace by name.
+
+    The plan-marshall marketplace is handled by pm-plugin-development,
+    so pm-dev-python should skip module discovery for it.
+
+    Args:
+        project_root: Path to project root directory
+
+    Returns:
+        True if this is the plan-marshall marketplace, False otherwise
+    """
+    marketplace_json = Path(project_root) / MARKETPLACE_JSON
+    if not marketplace_json.exists():
+        return False
+    try:
+        data = json.loads(marketplace_json.read_text(encoding='utf-8'))
+        name = data.get('name')
+        return isinstance(name, str) and name == PLAN_MARSHALL_NAME
+    except (OSError, json.JSONDecodeError):
+        return False
 
 
 class Extension(ExtensionBase):
@@ -63,12 +95,17 @@ class Extension(ExtensionBase):
         """Discover Python modules via runtime inspection.
 
         Uses runtime discovery per extension-api specification:
-        1. Check pyproject.toml exists
-        2. Parse [tool.pyprojectx.aliases] section (using tomllib)
-        3. Map aliases to canonical commands
-        4. Check ./pw wrapper exists
-        5. Return module with discovered commands
+        1. Skip if this is the plan-marshall marketplace (handled by pm-plugin-development)
+        2. Check pyproject.toml exists
+        3. Parse [tool.pyprojectx.aliases] section (using tomllib)
+        4. Map aliases to canonical commands
+        5. Check ./pw wrapper exists
+        6. Return module with discovered commands
         """
+        # Skip plan-marshall marketplace (handled by pm-plugin-development)
+        if _is_plan_marshall_marketplace(project_root):
+            return []
+
         root = Path(project_root)
         pyproject = root / PYPROJECT_TOML
 

@@ -15,6 +15,23 @@ Provides two key capabilities:
 1. **Domain Configuration** - Declares the plan-marshall-plugin-dev domain with profile-based skill organization
 2. **Module Discovery** - Discovers marketplace bundles for `.plan/project-architecture/derived-data.json` generation
 
+## Mutual Exclusivity
+
+This extension is **mutually exclusive** with `pm-dev-python:plan-marshall-plugin` for module discovery:
+
+| Project Type | Handled By |
+|-------------|------------|
+| plan-marshall marketplace | This extension (`pm-plugin-development`) |
+| Other Python projects | `pm-dev-python` |
+
+Detection uses `marketplace/.claude-plugin/marketplace.json`:
+- If `name` field equals `"plan-marshall"` → this extension provides module discovery
+- Otherwise → skip (pm-dev-python handles it)
+
+This avoids duplicate modules when both extensions are active.
+
+---
+
 ## Module Discovery
 
 Discovers Claude Code marketplace bundles as modules. Each bundle in `marketplace/bundles/` becomes a module with:
@@ -24,8 +41,20 @@ Discovers Claude Code marketplace bundles as modules. Each bundle in `marketplac
 | Build system | `marshall-plugin` |
 | Descriptor | `.claude-plugin/plugin.json` |
 | Packages | Skills, agents, commands (type-prefixed) |
-| Tests | `python3 test/run-tests.py test/{bundle}` |
-| Quality gate | `/plugin-doctor --bundle {name}` |
+
+### Canonical Commands
+
+Each bundle module gets the full set of canonical Python build commands via `pm-dev-python:plan-marshall-plugin:python_build`:
+
+| Command | Execution |
+|---------|-----------|
+| `compile` | mypy on bundle sources |
+| `test-compile` | mypy on bundle tests |
+| `module-tests` | pytest on bundle tests |
+| `quality-gate` | ruff check on bundle |
+| `verify` | Full verification (compile + quality-gate + module-tests) |
+| `coverage` | pytest with coverage |
+| `clean` | Remove build artifacts |
 
 ### Package Types
 
@@ -37,9 +66,8 @@ Components are mapped to packages with type prefixes:
 
 ### Root Module
 
-A "default" root module is included with:
-- `module-tests`: `python3 test/run-tests.py` (all tests)
-- `quality-gate`: `/plugin-doctor marketplace`
+A "default" root module provides project-wide commands (no bundle filter):
+- All canonical commands without bundle argument run against entire project
 
 ## Configuration
 
@@ -51,6 +79,11 @@ All configuration is in `extension.py` which implements the Extension API:
 | `discover_modules()` | Module discovery for derived-data.json |
 | `provides_triage()` | Triage skill reference |
 | `provides_outline()` | Outline skill reference |
+
+## Dependencies
+
+This skill depends on:
+- `pm-dev-python:plan-marshall-plugin` - Python build execution via python_build.py
 
 ## Integration
 

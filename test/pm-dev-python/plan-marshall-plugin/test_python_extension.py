@@ -328,3 +328,68 @@ verify = "echo verify"
         assert len(modules) == 1
         paths = modules[0]['paths']
         assert paths.get('readme') == 'README.md'
+
+
+# =============================================================================
+# Test: Mutual Exclusivity with pm-plugin-development
+# =============================================================================
+
+
+def test_discover_modules_skips_plan_marshall_marketplace():
+    """discover_modules() returns [] for plan-marshall marketplace.
+
+    The plan-marshall marketplace is handled by pm-plugin-development,
+    so pm-dev-python should skip it to avoid duplicate modules.
+    """
+    with BuildContext() as ctx:
+        # Create pyproject.toml and wrapper (valid Python project)
+        pyproject = ctx.temp_dir / 'pyproject.toml'
+        pyproject.write_text('''
+[tool.pyprojectx.aliases]
+verify = "echo verify"
+''')
+        pw = ctx.temp_dir / 'pw'
+        pw.write_text('#!/bin/bash')
+        pw.chmod(0o755)
+
+        # Create marketplace.json with name=plan-marshall
+        marketplace_dir = ctx.temp_dir / 'marketplace' / '.claude-plugin'
+        marketplace_dir.mkdir(parents=True)
+        marketplace_json = marketplace_dir / 'marketplace.json'
+        marketplace_json.write_text('{"name": "plan-marshall", "version": "1.0.0"}')
+
+        ext = Extension()
+        modules = ext.discover_modules(str(ctx.temp_dir))
+
+        # Should return empty - handled by pm-plugin-development
+        assert modules == []
+
+
+def test_discover_modules_handles_other_marketplaces():
+    """discover_modules() works for non-plan-marshall marketplaces.
+
+    Other code marketplaces with different names should be handled by pm-dev-python.
+    """
+    with BuildContext() as ctx:
+        # Create pyproject.toml and wrapper (valid Python project)
+        pyproject = ctx.temp_dir / 'pyproject.toml'
+        pyproject.write_text('''
+[tool.pyprojectx.aliases]
+verify = "echo verify"
+''')
+        pw = ctx.temp_dir / 'pw'
+        pw.write_text('#!/bin/bash')
+        pw.chmod(0o755)
+
+        # Create marketplace.json with different name
+        marketplace_dir = ctx.temp_dir / 'marketplace' / '.claude-plugin'
+        marketplace_dir.mkdir(parents=True)
+        marketplace_json = marketplace_dir / 'marketplace.json'
+        marketplace_json.write_text('{"name": "other-marketplace", "version": "1.0.0"}')
+
+        ext = Extension()
+        modules = ext.discover_modules(str(ctx.temp_dir))
+
+        # Should return module - NOT plan-marshall
+        assert len(modules) == 1
+        assert modules[0]['name'] == '.'

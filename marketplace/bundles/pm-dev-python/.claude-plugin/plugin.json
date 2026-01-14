@@ -1,6 +1,6 @@
 {
   "name": "pm-dev-python",
-  "version": "0.1.0",
+  "version": "0.1-BETA",
   "description": "Python domain extension with pyprojectx build operations",
   "skills": [
     "python-best-practices",

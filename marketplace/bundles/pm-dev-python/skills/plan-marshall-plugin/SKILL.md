@@ -36,16 +36,34 @@ Configuration in `extension.py` implements the Extension API contract:
 
 ---
 
+## Mutual Exclusivity
+
+This extension is **mutually exclusive** with `pm-plugin-development:plan-marshall-plugin` for module discovery:
+
+| Project Type | Handled By |
+|-------------|------------|
+| plan-marshall marketplace | `pm-plugin-development` |
+| Other Python projects | `pm-dev-python` (this extension) |
+
+Detection uses `marketplace/.claude-plugin/marketplace.json`:
+- If `name` field equals `"plan-marshall"` → skip (pm-plugin-development handles it)
+- Otherwise → this extension provides module discovery
+
+This avoids duplicate modules when both extensions are active.
+
+---
+
 ## Runtime Discovery
 
 The extension discovers available commands by parsing `pyproject.toml`:
 
 ```
-1. Check pyproject.toml exists
-2. Parse [tool.pyprojectx.aliases] section (using tomllib)
-3. Map aliases to canonical commands
-4. Check ./pw wrapper exists
-5. Return module with discovered commands
+1. Skip if this is the plan-marshall marketplace (detected via marketplace.json)
+2. Check pyproject.toml exists
+3. Parse [tool.pyprojectx.aliases] section (using tomllib)
+4. Map aliases to canonical commands
+5. Check ./pw wrapper exists
+6. Return module with discovered commands
 ```
 
 **Detected aliases mapped to canonical commands:**

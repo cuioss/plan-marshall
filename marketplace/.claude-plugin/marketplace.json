@@ -27,6 +27,12 @@
       "strict": false
     },
     {
+      "name": "pm-dev-python",
+      "description": "Python development best practices and pyprojectx build integration",
+      "source": "./bundles/pm-dev-python",
+      "strict": false
+    },
+    {
       "name": "pm-documents",
       "description": "AsciiDoc and documentation standards enforcement for projects",
       "source": "./bundles/pm-documents",

@@ -9,6 +9,10 @@ Packages are:
 - agents: Each .md file in agents/ (description from frontmatter)
 - commands: Each .md file in commands/ (description from frontmatter)
 
+Note: This extension is specific to the plan-marshall marketplace.
+It only provides modules when marketplace.json name is 'plan-marshall'.
+Other Python projects are handled by pm-dev-python instead.
+
 Usage:
     python3 plugin_discover.py discover --root /path/to/project
 
@@ -46,6 +50,39 @@ BUNDLES_DIR = 'marketplace/bundles'
 
 BUILD_SYSTEM = 'marshall-plugin'
 """Build system identifier for plugin bundles."""
+
+PYTHON_BUILD_BASE = 'python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run'
+"""Base command for Python build execution via pm-dev-python."""
+
+# Marketplace identification
+MARKETPLACE_JSON = 'marketplace/.claude-plugin/marketplace.json'
+"""Path to marketplace configuration file."""
+
+PLAN_MARSHALL_NAME = 'plan-marshall'
+"""Expected name in marketplace.json for this extension."""
+
+
+def _is_plan_marshall_marketplace(project_root: str) -> bool:
+    """Check if this is the plan-marshall marketplace by name.
+
+    This extension is specific to plan-marshall marketplace.
+    Other Python projects are handled by pm-dev-python instead.
+
+    Args:
+        project_root: Path to project root directory
+
+    Returns:
+        True if this is the plan-marshall marketplace, False otherwise
+    """
+    marketplace_json = Path(project_root) / MARKETPLACE_JSON
+    if not marketplace_json.exists():
+        return False
+    try:
+        data = json.loads(marketplace_json.read_text(encoding='utf-8'))
+        name = data.get('name')
+        return isinstance(name, str) and name == PLAN_MARSHALL_NAME
+    except (OSError, json.JSONDecodeError):
+        return False
 
 
 # =============================================================================
@@ -302,17 +339,26 @@ def discover_commands(bundle_dir: Path, plugin_data: dict) -> dict:
 
 
 def build_commands(bundle_name: str) -> dict:
-    """Build commands for a bundle module.
+    """Build canonical commands for a bundle module.
+
+    Each bundle gets the full set of canonical Python build commands
+    that delegate to pm-dev-python's python_build.py via execute-script.
 
     Args:
-        bundle_name: Name of the bundle.
+        bundle_name: Name of the bundle (e.g., 'pm-dev-java').
 
     Returns:
-        Dict of canonical commands.
+        Dict of canonical commands using python_build execution.
     """
+    base = PYTHON_BUILD_BASE
     return {
-        'module-tests': f'python3 test/run-tests.py test/{bundle_name}',
-        'quality-gate': f'/plugin-doctor --bundle {bundle_name}',
+        'compile': f'{base} --commandArgs "compile {bundle_name}"',
+        'test-compile': f'{base} --commandArgs "test-compile {bundle_name}"',
+        'module-tests': f'{base} --commandArgs "module-tests {bundle_name}"',
+        'quality-gate': f'{base} --commandArgs "quality-gate {bundle_name}"',
+        'verify': f'{base} --commandArgs "verify {bundle_name}"',
+        'coverage': f'{base} --commandArgs "coverage {bundle_name}"',
+        'clean': f'{base} --commandArgs "clean {bundle_name}"',
     }
 
 
@@ -436,8 +482,13 @@ def build_default_module(project_root: Path, bundle_count: int) -> dict:
             'bundle_count': bundle_count,
         },
         'commands': {
-            'module-tests': 'python3 test/run-tests.py',
-            'quality-gate': '/plugin-doctor marketplace',
+            'compile': f'{PYTHON_BUILD_BASE} --commandArgs "compile"',
+            'test-compile': f'{PYTHON_BUILD_BASE} --commandArgs "test-compile"',
+            'module-tests': f'{PYTHON_BUILD_BASE} --commandArgs "module-tests"',
+            'quality-gate': f'{PYTHON_BUILD_BASE} --commandArgs "quality-gate"',
+            'verify': f'{PYTHON_BUILD_BASE} --commandArgs "verify"',
+            'coverage': f'{PYTHON_BUILD_BASE} --commandArgs "coverage"',
+            'clean': f'{PYTHON_BUILD_BASE} --commandArgs "clean"',
         },
     }
 
@@ -452,13 +503,21 @@ def discover_plugin_modules(project_root: str) -> list:
 
     Implements the discover_modules() contract from ExtensionBase.
 
+    Note: This extension is specific to plan-marshall marketplace.
+    Returns empty list for other Python projects (handled by pm-dev-python).
+
     Args:
         project_root: Absolute path to project root.
 
     Returns:
         List of module dicts conforming to build-project-structure.md contract.
         Includes default root module plus one module per bundle.
+        Returns empty list if not the plan-marshall marketplace.
     """
+    # Only handle plan-marshall marketplace (other Python projects use pm-dev-python)
+    if not _is_plan_marshall_marketplace(project_root):
+        return []
+
     root = Path(project_root).resolve()
     modules = []
 

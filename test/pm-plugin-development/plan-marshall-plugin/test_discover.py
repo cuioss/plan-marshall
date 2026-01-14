@@ -5,11 +5,14 @@ Tests the plugin_discover module that discovers marketplace bundles
 and generates module dicts for derived-data.json.
 """
 
+import json
+import tempfile
 import unittest
 from pathlib import Path
 
 from plugin_discover import (
     BUILD_SYSTEM,
+    _is_plan_marshall_marketplace,
     build_bundle_module,
     build_commands,
     build_default_module,
@@ -88,11 +91,17 @@ class TestBuildCommands(unittest.TestCase):
     def test_build_commands(self):
         """Test command generation for a bundle."""
         commands = build_commands('pm-plugin-development')
-        self.assertEqual(
-            commands['module-tests'],
-            'python3 test/run-tests.py test/pm-plugin-development',
-        )
-        self.assertEqual(commands['quality-gate'], '/plugin-doctor --bundle pm-plugin-development')
+        # Should generate all 7 canonical commands
+        self.assertIn('compile', commands)
+        self.assertIn('test-compile', commands)
+        self.assertIn('module-tests', commands)
+        self.assertIn('quality-gate', commands)
+        self.assertIn('verify', commands)
+        self.assertIn('coverage', commands)
+        self.assertIn('clean', commands)
+        # Commands should use python_build via execute-script
+        self.assertIn('pm-dev-python:plan-marshall-plugin:python_build', commands['module-tests'])
+        self.assertIn('pm-plugin-development', commands['module-tests'])
 
 
 class TestBuildDefaultModule(unittest.TestCase):
@@ -109,7 +118,12 @@ class TestBuildDefaultModule(unittest.TestCase):
         self.assertEqual(module['paths']['module'], '.')
         self.assertEqual(module['paths']['descriptor'], 'marketplace/.claude-plugin/marketplace.json')
         self.assertEqual(module['stats']['bundle_count'], 8)
-        self.assertEqual(module['commands']['module-tests'], 'python3 test/run-tests.py')
+        # Default module should have all 7 canonical commands
+        self.assertIn('compile', module['commands'])
+        self.assertIn('module-tests', module['commands'])
+        self.assertIn('verify', module['commands'])
+        # Commands should use python_build via execute-script
+        self.assertIn('pm-dev-python:plan-marshall-plugin:python_build', module['commands']['module-tests'])
 
 
 class TestDiscoverBundles(unittest.TestCase):
@@ -293,9 +307,64 @@ class TestDiscoverPluginModules(unittest.TestCase):
     def test_discover_plugin_modules_nonexistent(self):
         """Test discovery on path without marketplace."""
         modules = discover_plugin_modules('/tmp')
-        # Should return empty list or just default module
-        # depending on implementation - check that it doesn't crash
-        self.assertIsInstance(modules, list)
+        # Should return empty list - not plan-marshall marketplace
+        self.assertEqual(modules, [])
+
+
+class TestMarketplaceCheck(unittest.TestCase):
+    """Tests for plan-marshall marketplace detection."""
+
+    def test_is_plan_marshall_marketplace_true(self):
+        """Test detection of plan-marshall marketplace."""
+        project_root = Path(__file__).parent.parent.parent.parent
+        # Real project should be plan-marshall
+        self.assertTrue(_is_plan_marshall_marketplace(str(project_root)))
+
+    def test_is_plan_marshall_marketplace_false_no_file(self):
+        """Test returns False when marketplace.json doesn't exist."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            self.assertFalse(_is_plan_marshall_marketplace(temp_dir))
+
+    def test_is_plan_marshall_marketplace_false_different_name(self):
+        """Test returns False for different marketplace name."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            marketplace_dir = Path(temp_dir) / 'marketplace' / '.claude-plugin'
+            marketplace_dir.mkdir(parents=True)
+            marketplace_json = marketplace_dir / 'marketplace.json'
+            marketplace_json.write_text(json.dumps({'name': 'other-marketplace', 'version': '1.0.0'}))
+
+            self.assertFalse(_is_plan_marshall_marketplace(temp_dir))
+
+    def test_is_plan_marshall_marketplace_true_with_plan_marshall_name(self):
+        """Test returns True for plan-marshall name."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            marketplace_dir = Path(temp_dir) / 'marketplace' / '.claude-plugin'
+            marketplace_dir.mkdir(parents=True)
+            marketplace_json = marketplace_dir / 'marketplace.json'
+            marketplace_json.write_text(json.dumps({'name': 'plan-marshall', 'version': '1.0.0'}))
+
+            self.assertTrue(_is_plan_marshall_marketplace(temp_dir))
+
+    def test_discover_plugin_modules_returns_empty_for_non_plan_marshall(self):
+        """discover_plugin_modules returns [] for non-plan-marshall projects.
+
+        This extension is specific to plan-marshall marketplace.
+        Other Python projects are handled by pm-dev-python instead.
+        """
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Create marketplace.json with different name
+            marketplace_dir = Path(temp_dir) / 'marketplace' / '.claude-plugin'
+            marketplace_dir.mkdir(parents=True)
+            marketplace_json = marketplace_dir / 'marketplace.json'
+            marketplace_json.write_text(json.dumps({'name': 'other-marketplace', 'version': '1.0.0'}))
+
+            # Even with a valid bundles directory, should return []
+            bundles_dir = Path(temp_dir) / 'marketplace' / 'bundles' / 'test-bundle' / '.claude-plugin'
+            bundles_dir.mkdir(parents=True)
+            (bundles_dir / 'plugin.json').write_text(json.dumps({'name': 'test-bundle', 'version': '1.0.0'}))
+
+            modules = discover_plugin_modules(temp_dir)
+            self.assertEqual(modules, [])
 
 
 if __name__ == '__main__':
