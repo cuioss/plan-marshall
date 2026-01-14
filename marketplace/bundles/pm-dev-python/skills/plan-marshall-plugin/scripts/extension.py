@@ -19,6 +19,7 @@ import tomllib
 from pathlib import Path
 
 # Cross-skill imports (PYTHONPATH set by executor)
+from _build_wrapper import has_wrapper  # type: ignore[import-not-found]
 from extension_base import ExtensionBase  # type: ignore[import-not-found]
 
 # Build file constant
@@ -146,16 +147,18 @@ class Extension(ExtensionBase):
             return {}
 
     def _has_wrapper(self, project_root: Path) -> bool:
-        """Check if pyprojectx wrapper exists.
+        """Check if pyprojectx wrapper exists for current platform.
+
+        On Windows: checks for pw.bat
+        On Unix: checks for pw
 
         Args:
             project_root: Project root directory
 
         Returns:
-            True if ./pw exists, False otherwise
+            True if wrapper exists for current platform, False otherwise
         """
-        pw = project_root / 'pw'
-        return pw.exists()
+        return has_wrapper(project_root, 'pw', 'pw.bat')
 
     def _map_to_canonical(self, aliases: dict) -> dict:
         """Map pyprojectx aliases to canonical command strings.

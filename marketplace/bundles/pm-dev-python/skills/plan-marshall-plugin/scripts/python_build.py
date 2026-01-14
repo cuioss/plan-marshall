@@ -22,7 +22,6 @@ Usage:
 
 import argparse
 import re
-import shutil
 import subprocess
 import sys
 import time
@@ -46,6 +45,7 @@ from _build_result import (  # type: ignore[import-not-found]
     success_result,
     timeout_result,
 )
+from _build_wrapper import detect_wrapper as _detect_wrapper  # type: ignore[import-not-found]
 from plan_logging import log_entry  # type: ignore[import-not-found]
 
 # Cross-skill imports (PYTHONPATH set by executor)
@@ -68,7 +68,10 @@ MIN_TIMEOUT = 60
 
 
 def detect_wrapper(project_dir: str = '.') -> str:
-    """Detect pyprojectx wrapper: ./pw > pwx (system).
+    """Detect pyprojectx wrapper based on platform.
+
+    On Windows: pw.bat > pwx (system)
+    On Unix: ./pw > pwx (system)
 
     Args:
         project_dir: Project root directory.
@@ -79,13 +82,10 @@ def detect_wrapper(project_dir: str = '.') -> str:
     Raises:
         FileNotFoundError: If no wrapper is available.
     """
-    pw = Path(project_dir) / 'pw'
-    if pw.exists():
-        return './pw'
-    # Check for system pyprojectx
-    if shutil.which('pwx'):
-        return 'pwx'
-    raise FileNotFoundError('No pyprojectx wrapper found (./pw or pwx)')
+    wrapper = _detect_wrapper(project_dir, 'pw', 'pw.bat', 'pwx')
+    if wrapper is None:
+        raise FileNotFoundError('No pyprojectx wrapper found (pw, pw.bat, or pwx)')
+    return wrapper
 
 
 # =============================================================================

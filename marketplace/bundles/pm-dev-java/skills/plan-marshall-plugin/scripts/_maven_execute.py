@@ -24,7 +24,6 @@ Usage:
 import subprocess
 import sys
 import time
-from pathlib import Path
 
 from _build_format import format_json, format_toon
 from _build_parse import (
@@ -42,6 +41,7 @@ from _build_result import (
     success_result,
     timeout_result,
 )
+from _build_wrapper import detect_wrapper as _detect_wrapper
 
 # Import parser (underscore prefix = private)
 from _maven_cmd_parse import parse_log
@@ -53,9 +53,6 @@ from run_config import timeout_get, timeout_set
 # =============================================================================
 # Constants
 # =============================================================================
-
-# Wrapper detection order
-MAVEN_WRAPPERS = ['./mvnw', 'mvn']
 
 # Default timeout in seconds for Maven builds
 DEFAULT_TIMEOUT_SECONDS = 300
@@ -70,7 +67,10 @@ OUTER_TIMEOUT_BUFFER = 30
 
 
 def detect_wrapper(project_dir: str = '.') -> str:
-    """Detect Maven wrapper or fallback to mvn.
+    """Detect Maven wrapper based on platform.
+
+    On Windows: mvnw.cmd > mvn (system)
+    On Unix: ./mvnw > mvn (system)
 
     Args:
         project_dir: Project root directory.
@@ -78,15 +78,8 @@ def detect_wrapper(project_dir: str = '.') -> str:
     Returns:
         Path to wrapper script or 'mvn' if no wrapper found.
     """
-    root = Path(project_dir).resolve()
-
-    for wrapper in MAVEN_WRAPPERS:
-        wrapper_path = root / wrapper
-        if wrapper_path.exists() and wrapper_path.is_file():
-            return str(wrapper_path)
-
-    # Fallback to mvn on PATH
-    return 'mvn'
+    wrapper = _detect_wrapper(project_dir, 'mvnw', 'mvnw.cmd', 'mvn')
+    return wrapper or 'mvn'
 
 
 def execute_direct(

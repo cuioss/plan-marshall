@@ -21,11 +21,9 @@ Usage:
     cmd_run(args)  # args from argparse
 """
 
-import shutil
 import subprocess
 import sys
 import time
-from pathlib import Path
 
 from _build_format import format_json, format_toon
 from _build_parse import (
@@ -43,6 +41,7 @@ from _build_result import (
     success_result,
     timeout_result,
 )
+from _build_wrapper import detect_wrapper as _detect_wrapper
 
 # Import parser (underscore prefix = private)
 from _gradle_cmd_parse import parse_log
@@ -54,9 +53,6 @@ from run_config import timeout_get, timeout_set
 # =============================================================================
 # Constants
 # =============================================================================
-
-# Wrapper detection order
-GRADLE_WRAPPERS = ['./gradlew', 'gradlew.bat']
 
 # Default timeout in seconds for Gradle builds
 DEFAULT_TIMEOUT_SECONDS = 300
@@ -71,7 +67,10 @@ OUTER_TIMEOUT_BUFFER = 30
 
 
 def detect_wrapper(project_dir: str = '.') -> str:
-    """Detect Gradle wrapper or fallback to gradle.
+    """Detect Gradle wrapper based on platform.
+
+    On Windows: gradlew.bat > gradle (system)
+    On Unix: ./gradlew > gradle (system)
 
     Args:
         project_dir: Project root directory.
@@ -79,18 +78,8 @@ def detect_wrapper(project_dir: str = '.') -> str:
     Returns:
         Path to wrapper script or 'gradle' if no wrapper found.
     """
-    root = Path(project_dir).resolve()
-
-    for wrapper in GRADLE_WRAPPERS:
-        wrapper_path = root / wrapper
-        if wrapper_path.exists() and wrapper_path.is_file():
-            return str(wrapper_path)
-
-    # Fallback to gradle on PATH
-    if shutil.which('gradle'):
-        return 'gradle'
-
-    return 'gradle'  # Return gradle even if not found, let execution fail with clear error
+    wrapper = _detect_wrapper(project_dir, 'gradlew', 'gradlew.bat', 'gradle')
+    return wrapper or 'gradle'  # Return gradle even if not found, let execution fail with clear error
 
 
 def execute_direct(
