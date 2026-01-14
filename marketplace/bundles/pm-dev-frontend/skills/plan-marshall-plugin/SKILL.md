@@ -27,6 +27,76 @@ Configuration in `extension.py` implements the Extension API contract:
 
 ---
 
+## Scripts Overview
+
+| Script | Type | Purpose |
+|--------|------|---------|
+| `extension.py` | Extension | ExtensionBase implementation |
+| `npm.py` | CLI + Library | npm/npx operations, `execute_direct()` |
+| `_npm_parse_typescript.py` | Library | TypeScript error parsing |
+| `_npm_parse_jest.py` | Library | Jest/Vitest test output parsing |
+| `_npm_parse_eslint.py` | Library | ESLint output parsing |
+| `_npm_parse_tap.py` | Library | TAP format test output parsing |
+| `_npm_parse_errors.py` | Library | Generic npm error parsing |
+
+---
+
+## npm vs npx Detection
+
+Commands are automatically routed to npm or npx:
+
+```python
+# npx commands (standalone tools)
+NPX_COMMANDS = ['playwright', 'eslint', 'prettier', 'stylelint', 'tsc', 'jest', 'vitest']
+
+# detect_command_type(args) returns:
+#   "npx" for commands starting with NPX_COMMANDS
+#   "npm" for all others
+```
+
+---
+
+## Multi-Parser Architecture
+
+Unlike Maven/Gradle, npm is a script runner that executes arbitrary tools. Each tool has its own output format:
+
+```
+npm build output
+    │
+    ▼
+detect_tool_type(content, command)
+    │
+    ├─→ "typescript" → parse_typescript()
+    ├─→ "jest"       → parse_jest()
+    ├─→ "eslint"     → parse_eslint()
+    ├─→ "tap"        → parse_tap()
+    ├─→ "npm_error"  → parse_npm_errors()
+    └─→ "generic"    → Try each parser in sequence
+```
+
+All parsers return unified `(issues, test_summary, build_status)` tuples.
+
+---
+
+## Timeout Learning
+
+Command durations are recorded for adaptive timeouts:
+
+```python
+# Before execution
+timeout = timeout_get("npm:test", default=120, project_dir=".")
+
+# After execution
+timeout_set("npm:test", duration=5, project_dir=".")
+```
+
+Default timeouts by command type:
+- Build/test: 120 seconds
+- E2E/Playwright: 180 seconds
+- Lint/format: 60 seconds
+
+---
+
 ## Build Operations
 
 Scripts for npm/npx build execution.
@@ -141,4 +211,5 @@ This extension is discovered by:
 ## References
 
 - `plan-marshall:extension-api` - Extension API contract
+- `plan-marshall:extension-api/standards/build-execution-flow.md` - Complete execution lifecycle
 - `standards/npm-impl.md` - npm execution details

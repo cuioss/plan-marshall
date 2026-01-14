@@ -27,6 +27,53 @@ Configuration in `extension.py` implements the Extension API contract:
 
 ---
 
+## Scripts Overview
+
+| Script | Type | Purpose |
+|--------|------|---------|
+| `extension.py` | Extension | ExtensionBase implementation |
+| `maven.py` | CLI | Maven operations dispatcher |
+| `gradle.py` | CLI | Gradle operations dispatcher |
+| `_maven_execute.py` | Library | Foundation execution, wrapper detection |
+| `_maven_cmd_discover.py` | Library | Module discovery via pom.xml |
+| `_maven_cmd_parse.py` | Library | Log parsing, issue extraction |
+| `_gradle_execute.py` | Library | Foundation execution, wrapper detection |
+| `_gradle_cmd_discover.py` | Library | Module discovery via build.gradle |
+| `_gradle_cmd_parse.py` | Library | Log parsing, issue extraction |
+
+---
+
+## Wrapper Detection
+
+Both Maven and Gradle prefer project-local wrappers:
+
+```
+Maven:  ./mvnw > mvn (on PATH)
+Gradle: ./gradlew > gradle (on PATH)
+```
+
+The `detect_wrapper(project_dir)` function checks for wrapper scripts in the project root before falling back to system commands.
+
+---
+
+## Timeout Learning
+
+Command durations are recorded for adaptive timeouts:
+
+```python
+# Before execution
+timeout = timeout_get("maven:verify", default=300, project_dir=".")
+# Returns: learned * 1.25 or default
+
+# After execution
+timeout_set("maven:verify", duration=45, project_dir=".")
+# Updates .plan/run-configuration.json
+```
+
+Minimum enforced: 120 seconds (prevents warm JVM timing issues from affecting cold starts).
+
+---
+
 ## Build Operations
 
 Scripts for Maven and Gradle build execution.
@@ -161,5 +208,6 @@ This extension is discovered by:
 ## References
 
 - `plan-marshall:extension-api` - Extension API contract
+- `plan-marshall:extension-api/standards/build-execution-flow.md` - Complete execution lifecycle
 - `standards/maven-impl.md` - Maven execution details
 - `standards/gradle-impl.md` - Gradle execution details

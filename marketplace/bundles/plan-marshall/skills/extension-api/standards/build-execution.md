@@ -4,6 +4,8 @@ Specification for build command execution in domain extensions.
 
 ## Purpose
 
+For a visual overview of the complete execution lifecycle, see [build-execution-flow.md](build-execution-flow.md).
+
 Domain bundles that provide build capabilities expose a **unified execution API** that:
 - Captures all output to a log file (not stdout/stderr)
 - Provides adaptive timeout learning

@@ -81,6 +81,7 @@ For understanding the complete system architecture, reference these documents:
 | Document | Purpose | When to Read |
 |----------|---------|--------------|
 | [architecture-overview.md](standards/architecture-overview.md) | System flow, data dependencies | Understanding overall data flow |
+| [build-execution-flow.md](standards/build-execution-flow.md) | Complete execution lifecycle diagram | Understanding the end-to-end flow |
 | [config-callback.md](standards/config-callback.md) | Project configuration callback | Implementing `config_defaults()` |
 | [build-base-libs.md](standards/build-base-libs.md) | Base library API reference | Implementing extension scripts |
 | [build-execution.md](standards/build-execution.md) | Execution patterns | Running build commands |
