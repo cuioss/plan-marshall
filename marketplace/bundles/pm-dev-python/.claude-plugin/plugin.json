@@ -1,0 +1,9 @@
+{
+  "name": "pm-dev-python",
+  "version": "0.1.0",
+  "description": "Python domain extension with pyprojectx build operations",
+  "skills": [
+    "python-best-practices",
+    "plan-marshall-plugin"
+  ]
+}
