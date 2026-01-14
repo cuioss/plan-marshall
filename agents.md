@@ -74,11 +74,14 @@ bundle-name/
 Tests use pytest via the `pw` (Pyprojectx) wrapper. Only Python 3 is required - first run auto-downloads tools.
 
 ```bash
-./pw test                                     # All tests (Unix)
-pw test                                       # All tests (Windows)
-./pw uv run pytest test/pm-workflow/          # Specific directory
-./pw test-cov                                 # With coverage report (to .plan/temp/htmlcov/)
-./pw test-parallel                            # Parallel execution (-n auto)
+# Canonical commands with optional module filtering (see build.py)
+./pw compile                      # mypy marketplace/bundles/
+./pw compile pm-dev-frontend      # mypy single bundle
+./pw module-tests                 # pytest test/
+./pw module-tests pm-workflow     # pytest single directory
+./pw quality-gate                 # ruff check all
+./pw verify                       # Full: compile + quality-gate + module-tests
+./pw verify pm-dev-java           # Full verification on single bundle
 ```
 
 ### Quality Checks
@@ -103,7 +106,7 @@ Use conventional commit format:
 
 ### Pre-Submission Checklist
 
-1. All Python tests pass (`./pw test`)
+1. All Python tests pass (`./pw module-tests`)
 2. Plugin doctor shows no critical issues
 3. No duplicate information across documents
 4. Cross-references use proper `xref:` syntax (AsciiDoc) or markdown links
@@ -137,6 +140,6 @@ Commands orchestrate agents using the Task tool. Agents:
 ## Integration Points
 
 - **Git**: Standard workflow on main branch
-- **Build/Test**: Pyprojectx wrapper (`./pw test`, `./pw lint`, `./pw fmt`)
+- **Build/Test**: Pyprojectx wrapper (`./pw module-tests`, `./pw quality-gate`, `./pw verify`)
 - **IDE**: IntelliJ MCP for diagnostics (file must be active in editor)
 - **GitHub**: Via `gh` CLI for issue/PR management

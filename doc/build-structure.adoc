@@ -13,11 +13,19 @@ Pyprojectx was chosen because it provides a proven, mvnw/gradlew-style wrapper f
 
 [source,bash]
 ----
-# First run auto-downloads all tools
-./pw test              # Run tests
-./pw lint              # Check code style
-./pw fmt               # Format code
-./pw check             # Run all checks
+# Canonical commands with optional module filtering (see build.py)
+./pw compile                      # mypy marketplace/bundles/
+./pw compile pm-dev-frontend      # mypy single bundle
+./pw test-compile                 # mypy test/
+./pw test-compile pm-workflow     # mypy single test directory
+./pw module-tests                 # pytest test/
+./pw module-tests pm-dev-frontend # pytest single directory
+./pw quality-gate                 # ruff check all
+./pw quality-gate pm-dev-java     # ruff on single bundle + tests
+./pw coverage                     # pytest with coverage
+./pw verify                       # Full: compile + quality-gate + module-tests
+./pw verify pm-dev-frontend       # Full verification on single bundle
+./pw clean                        # Remove build artifacts
 ----
 
 == Project Structure
@@ -28,6 +36,7 @@ plan-marshall/
 ├── pw                 # Unix wrapper (committed)
 ├── pw.bat             # Windows wrapper (committed)
 ├── pw.lock            # Tool version lock (committed)
+├── build.py           # Build script with module filtering (committed)
 ├── .pyprojectx/       # Tool installations (gitignored)
 ├── pyproject.toml     # Configuration
 └── test/              # Tests
@@ -46,13 +55,15 @@ Tool configuration is in `pyproject.toml`:
 
 == Testing
 
-Tests use pytest via the wrapper:
+Tests use pytest via the wrapper with optional module filtering:
 
 [source,bash]
 ----
-./pw test              # All tests
-./pw test-cov          # With coverage report (to .plan/temp/htmlcov/)
-./pw test-parallel     # Parallel execution (-n auto)
+./pw module-tests                 # pytest test/
+./pw module-tests pm-workflow     # pytest test/pm-workflow
+./pw module-tests -p              # pytest test/ --parallel
+./pw coverage                     # pytest with coverage (to .plan/temp/htmlcov/)
+./pw coverage pm-dev-frontend     # coverage for single module
 ----
 
 === Test Infrastructure

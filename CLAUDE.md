@@ -151,21 +151,27 @@ python3 .plan/execute-script.py {notation} [subcommand] {args...}
 Tests use pytest via the `pw` (Pyprojectx) wrapper. Only Python 3 is required on the host system.
 
 ```bash
-# First run auto-downloads all tools (uv, pytest, ruff, mypy)
-./pw test                         # All tests (Unix)
-pw test                           # All tests (Windows)
-./pw test-cov                     # With coverage report (to .plan/temp/htmlcov/)
-./pw test-parallel                # Parallel execution
-./pw uv run pytest test/pm-workflow/  # Specific directory
+# Canonical commands with optional module filtering (see build.py)
+./pw compile                      # mypy marketplace/bundles/
+./pw compile pm-dev-frontend      # mypy marketplace/bundles/pm-dev-frontend
+./pw test-compile                 # mypy test/
+./pw test-compile pm-workflow     # mypy test/pm-workflow
+./pw module-tests                 # pytest test/
+./pw module-tests pm-dev-frontend # pytest test/pm-dev-frontend
+./pw module-tests -p              # pytest test/ --parallel
+./pw quality-gate                 # ruff check marketplace/bundles/ test/
+./pw quality-gate pm-dev-java     # ruff on single bundle + tests
+./pw coverage                     # pytest with coverage
+./pw coverage pm-workflow         # coverage for single module
+./pw verify                       # Full: compile + quality-gate + module-tests
+./pw verify pm-dev-frontend       # Full verification on single bundle
+./pw clean                        # Remove build artifacts
 ```
 
-Linting and formatting:
+Additional shortcuts:
 ```bash
-./pw lint       # ruff check
-./pw lint-fix   # ruff check --fix
-./pw fmt        # ruff format
-./pw typecheck  # mypy
-./pw check      # All checks (lint + typecheck + test)
+./pw lint-fix      # ruff check --fix (all)
+./pw fmt           # ruff format (all)
 ```
 
 See `pm-plugin-development:plugin-script-architecture` skill for testing standards and `doc/build-structure.adoc` for build system details.
