@@ -7,7 +7,7 @@ Specification for project structure discovery in domain extensions.
 Domain bundles that provide build capabilities expose a **unified discovery API** that:
 - Discovers all project modules with complete metadata
 - Extracts dependencies, packages, and source structure
-- Detects hybrid modules (e.g., Maven+npm in same directory)
+- Splits multi-tech directories into virtual modules (e.g., Maven+npm → separate modules)
 - Returns structured data for project analysis
 
 ## Discovery Contract
@@ -88,8 +88,12 @@ See [orchestrator-integration.md](../../analyze-project-architecture/standards/o
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `name` | string | Module name |
-| `build_systems` | string[] | Build systems (e.g., `["maven"]` or `["maven", "npm"]` for hybrid) |
+| `name` | string | Module name (includes technology suffix for virtual modules) |
+| `build_systems` | string[] | Single build system (e.g., `["maven"]` or `["npm"]`) |
+| `virtual_module` | object \| null | Virtual module metadata (for multi-tech directories) |
+| `virtual_module.physical_path` | string | Actual directory path (shared by siblings) |
+| `virtual_module.technology` | string | Build system technology |
+| `virtual_module.sibling_modules` | string[] | Names of sibling virtual modules |
 | `paths.module` | string | Relative path from project root |
 | `paths.descriptor` | string | Path to descriptor |
 | `paths.sources` | string[] | Source directories |
@@ -98,7 +102,7 @@ See [orchestrator-integration.md](../../analyze-project-architecture/standards/o
 | `metadata.*` | string \| null | Extracted metadata (snake_case) |
 | `metadata.profiles` | array \| null | Build-system-specific profiles (Maven only, see below) |
 | `packages` | object | Package name → {path, package_info?} |
-| `dependencies` | string[] | `groupId:artifactId:scope` |
+| `dependencies` | string[] | Technology-native format (see Dependency format below) |
 | `stats` | object | `{source_files, test_files}` |
 | `commands` | object | Canonical command name → resolved command string |
 
@@ -139,15 +143,34 @@ The `metadata.packaging` field stores build-system-specific packaging informatio
 
 **Framework detection** (e.g., Quarkus) is inferred from dependencies, not stored as packaging type.
 
-## Hybrid Module Detection
+## Virtual Modules (Multi-Tech Directories)
 
-Modules may use multiple build systems simultaneously (e.g., Maven for backend, npm for frontend in same directory).
+When a directory contains multiple build systems (e.g., pom.xml + package.json), the discovery creates **separate virtual modules** with technology suffixes instead of merging them.
 
-**Detection**: A module is hybrid when multiple descriptor files exist:
-- `pom.xml` + `package.json` → Maven + npm hybrid
-- `build.gradle` + `package.json` → Gradle + npm hybrid
+**Detection**: Multiple descriptor files in same directory:
+- `pom.xml` + `package.json` → `{name}-maven` + `{name}-npm`
+- `build.gradle` + `package.json` → `{name}-gradle` + `{name}-npm`
 
-**Merging**: See [orchestrator-integration.md](../../analyze-project-architecture/standards/orchestrator-integration.md) for merge rules.
+**Virtual module structure**:
+```json
+{
+  "name": "my-module-maven",
+  "build_systems": ["maven"],
+  "virtual_module": {
+    "physical_path": "my-module",
+    "technology": "maven",
+    "sibling_modules": ["my-module-npm"]
+  },
+  "paths": { "module": "my-module", ... },
+  "commands": { "module-tests": "..." }
+}
+```
+
+**Benefits**:
+- Each module has single build system (no ambiguity)
+- Commands are strings (no nested technology selection)
+- Skills by profile are technology-specific
+- Task assignment targets single technology
 
 ## Extension Implementation
 
@@ -168,9 +191,9 @@ See [build-execution.md](build-execution.md) for `execute_direct` API and [build
 | Gradle | `gradlew projects dependencies` | Projects + dependencies in log |
 | npm | `npm pkg get name version description` | JSON metadata |
 
-**Dependency format**: `groupId:artifactId:scope`
-- Maven: `org.projectlombok:lombok:compile`
-- npm: `npm:lit:compile` (prefixed with `npm:`)
+**Dependency format**: Technology-native format without prefixes:
+- Maven: `groupId:artifactId:scope` (e.g., `org.projectlombok:lombok:compile`)
+- npm: `name:scope` (e.g., `lit:compile`, `@testing-library/dom:test`)
 
 ### Package Discovery
 
@@ -211,11 +234,11 @@ See [build-execution.md](build-execution.md) for `execute_direct` API and [build
 
 ## Orchestrator Integration
 
-The `project-structure` skill orchestrates discovery across all extensions, merges hybrid modules, and persists results.
+The `project-structure` skill orchestrates discovery across all extensions, splits multi-tech directories into virtual modules, and persists results.
 
 See [orchestrator-integration.md](../../analyze-project-architecture/standards/orchestrator-integration.md) for:
 - Orchestrator flow and extension discovery
-- Hybrid module merging algorithm
+- Virtual module splitting algorithm
 - Output location (`.plan/raw-project-data.json`)
 - CLI interface
 
@@ -225,13 +248,13 @@ Extensions providing module discovery must:
 
 - [ ] Implement `discover_modules()` returning list of module dicts
 - [ ] Return empty list (not None) when no modules found
-- [ ] Use `build_systems` field as array (e.g., `["maven"]`)
+- [ ] Use `build_systems` field as single-element array (e.g., `["maven"]`)
 - [ ] Use `paths` object with `module`, `descriptor`, `sources`, `tests`, `readme`
 - [ ] Use snake_case for metadata fields (`artifact_id`, `group_id`)
 - [ ] Include `metadata.profiles` for build-system-specific profiles (Maven)
 - [ ] Use `packages` as object keyed by package name
-- [ ] Use dependency format `groupId:artifactId:scope`
-- [ ] Include `commands` with resolved canonical command strings
+- [ ] Use technology-native dependency format (Maven: `groupId:artifactId:scope`, npm: `name:scope`)
+- [ ] Include `commands` with resolved canonical command strings (not nested)
 - [ ] All paths project-relative (not absolute)
 
 ## Known Limitations

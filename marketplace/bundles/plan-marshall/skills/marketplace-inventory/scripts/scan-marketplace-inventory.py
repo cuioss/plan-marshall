@@ -28,12 +28,10 @@ Exit codes:
 import argparse
 import fnmatch
 import json
-import os
 import re
 import sys
 from pathlib import Path
-from typing import Optional
-
+from typing import Any
 
 # Constants
 MARKETPLACE_BUNDLES_PATH = "marketplace/bundles"
@@ -61,7 +59,7 @@ def find_bundles(base_path: Path) -> list[Path]:
     return sorted(bundles)
 
 
-def extract_description(file_path: Path) -> Optional[str]:
+def extract_description(file_path: Path) -> str | None:
     """Extract description from YAML frontmatter."""
     if not file_path.exists():
         return None
@@ -100,7 +98,7 @@ def discover_agents(bundle_dir: Path, include_descriptions: bool) -> list[dict]:
     agents = []
     for agent_file in sorted(agents_dir.glob("*.md")):
         if agent_file.is_file():
-            agent = {
+            agent: dict[str, Any] = {
                 "name": agent_file.stem,
                 "path": safe_relative_path(agent_file)
             }
@@ -119,7 +117,7 @@ def discover_commands(bundle_dir: Path, include_descriptions: bool) -> list[dict
     commands = []
     for command_file in sorted(commands_dir.glob("*.md")):
         if command_file.is_file():
-            command = {
+            command: dict[str, Any] = {
                 "name": command_file.stem,
                 "path": safe_relative_path(command_file)
             }
@@ -138,7 +136,7 @@ def discover_skills(bundle_dir: Path, include_descriptions: bool) -> list[dict]:
     skills = []
     for skill_md in sorted(skills_dir.glob("*/SKILL.md")):
         skill_dir = skill_md.parent
-        skill = {
+        skill: dict[str, Any] = {
             "name": skill_dir.name,
             "path": safe_relative_path(skill_dir)
         }
@@ -209,7 +207,7 @@ def filter_resources_by_pattern(resources: list[dict], patterns: list[str]) -> l
 VALID_RESOURCE_TYPES = ("agents", "commands", "skills", "scripts")
 
 
-def parse_resource_types(resource_types_str: str) -> tuple[dict, Optional[str]]:
+def parse_resource_types(resource_types_str: str) -> tuple[dict, str | None]:
     """Parse resource types string and return inclusion flags and optional error."""
     if resource_types_str == "all":
         return dict.fromkeys(VALID_RESOURCE_TYPES, True), None
@@ -239,11 +237,11 @@ def _extract_bundle_name(bundle_dir: Path) -> str:
     return name
 
 
-def process_bundle(bundle_dir: Path, include: dict, include_descriptions: bool,
-                   name_patterns: list[str]) -> dict:
+def process_bundle(bundle_dir: Path, include: dict[str, bool], include_descriptions: bool,
+                   name_patterns: list[str]) -> dict[str, Any]:
     """Process a single bundle directory and return its data."""
     bundle_name = _extract_bundle_name(bundle_dir)
-    bundle = {
+    bundle: dict[str, Any] = {
         "name": bundle_name,
         "path": safe_relative_path(bundle_dir)
     }

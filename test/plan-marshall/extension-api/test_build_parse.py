@@ -7,19 +7,18 @@ import tempfile
 from pathlib import Path
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-
 # Import modules under test (PYTHONPATH set by conftest)
 from _build_parse import (
+    MODE_ACTIONABLE,
+    MODE_ERRORS,
+    MODE_STRUCTURED,
     SEVERITY_ERROR,
     SEVERITY_WARNING,
-    MODE_ACTIONABLE,
-    MODE_STRUCTURED,
-    MODE_ERRORS,
     Issue,
     UnitTestSummary,
-    load_acceptable_warnings,
-    is_warning_accepted,
     filter_warnings,
+    is_warning_accepted,
+    load_acceptable_warnings,
     partition_issues,
 )
 
@@ -488,7 +487,7 @@ if __name__ == "__main__":
         try:
             test()
             passed += 1
-        except Exception as e:
+        except Exception:
             failed += 1
             print(f"FAILED: {test.__name__}")
             traceback.print_exc()

@@ -29,14 +29,14 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 
 # Re-export module discovery utilities from private implementation
-from _build_discover import (
-    discover_descriptors,
-    build_module_base,
-    find_readme,
-    ModuleBase,
-    ModulePaths,
+from _build_discover import (  # noqa: F401
     EXCLUDE_DIRS,
     README_PATTERNS,
+    ModuleBase,
+    ModulePaths,
+    build_module_base,
+    discover_descriptors,
+    find_readme,
 )
 
 
@@ -169,11 +169,12 @@ CANONICAL_COMMANDS = {
 # Profile Classification Patterns (derived from CANONICAL_COMMANDS aliases)
 # =============================================================================
 
-def _build_profile_patterns() -> dict:
+def _build_profile_patterns() -> dict[str, str]:
     """Build PROFILE_PATTERNS from CANONICAL_COMMANDS aliases."""
-    patterns = {}
+    patterns: dict[str, str] = {}
     for cmd, meta in CANONICAL_COMMANDS.items():
-        for alias in meta.get("aliases", []):
+        aliases: list[str] = meta.get("aliases", [])  # type: ignore[assignment]
+        for alias in aliases:
             patterns[alias] = cmd
     return patterns
 

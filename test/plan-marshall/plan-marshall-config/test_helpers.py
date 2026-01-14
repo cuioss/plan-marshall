@@ -5,17 +5,16 @@ Provides common fixtures and utilities used across all test modules.
 """
 
 import json
-import sys
 from pathlib import Path
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import run_script, get_script_path, PlanContext
+from conftest import get_script_path
 
 # Script under test
 SCRIPT_PATH = get_script_path('plan-marshall', 'plan-marshall-config', 'plan-marshall-config.py')
 
 
-def create_run_config(fixture_dir: Path, config: dict = None) -> Path:
+def create_run_config(fixture_dir: Path, config: dict | None = None) -> Path:
     """Create run-configuration.json in fixture directory.
 
     Args:
@@ -40,7 +39,7 @@ def create_run_config(fixture_dir: Path, config: dict = None) -> Path:
     return run_config_path
 
 
-def create_marshal_json(fixture_dir: Path, config: dict = None) -> Path:
+def create_marshal_json(fixture_dir: Path, config: dict | None = None) -> Path:
     """Create marshal.json in fixture directory with module_config structure.
 
     Also creates raw-project-data.json with module facts (source of truth for modules).

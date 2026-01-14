@@ -4,14 +4,14 @@
 import json
 import sys
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 # Exit codes
 EXIT_SUCCESS = 0
 EXIT_ERROR = 2
 
 
-def categorize_broken_link(issue: Dict[str, Any]) -> str:
+def categorize_broken_link(issue: dict[str, Any]) -> str:
     """Categorize a broken link issue."""
     link = issue.get('link', '')
     if link.startswith('<<') or '#' in link:
@@ -31,7 +31,7 @@ def cmd_classify_links(args):
     """Handle classify-links subcommand."""
     try:
         if args.input:
-            with open(args.input, 'r') as f:
+            with open(args.input) as f:
                 input_data = json.load(f)
         else:
             input_data = json.load(sys.stdin)

@@ -135,7 +135,7 @@ Apply project-specific configuration defaults from domain extensions BEFORE disc
 **Why first**: This sets profile skip lists and mappings that the discovery step uses to filter profiles. Running this first ensures discovered modules contain only relevant profiles.
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:extension-api:extension apply-config-defaults
+python3 .plan/execute-script.py plan-marshall:extension-api:extension_discovery apply-config-defaults
 ```
 
 **Output (TOON)**:

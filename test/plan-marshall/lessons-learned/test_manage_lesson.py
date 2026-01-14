@@ -11,14 +11,10 @@ Tests subcommands:
 """
 
 import json
-import sys
-from pathlib import Path
 from unittest.mock import patch
-from datetime import datetime
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import ScriptTestCase, run_script, MARKETPLACE_ROOT
-
+from conftest import MARKETPLACE_ROOT, ScriptTestCase, run_script
 
 # Script path to manage-lesson.py
 SCRIPT_PATH = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'lessons-learned' / 'scripts' / 'manage-lesson.py'

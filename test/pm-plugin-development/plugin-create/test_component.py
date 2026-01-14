@@ -8,12 +8,10 @@ Consolidated from:
 Tests component frontmatter generation and validation.
 """
 
-import json
-import sys
 from pathlib import Path
 
 # Import shared infrastructure
-from conftest import run_script, get_script_path
+from conftest import get_script_path, run_script
 
 # Script under test
 SCRIPT_PATH = get_script_path('pm-plugin-development', 'plugin-create', 'component.py')

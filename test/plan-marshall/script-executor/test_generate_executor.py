@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
 """Unit tests for generate-executor.py script."""
 
-import json
 import os
 import subprocess
-import sys
 import tempfile
 import time
 from datetime import date

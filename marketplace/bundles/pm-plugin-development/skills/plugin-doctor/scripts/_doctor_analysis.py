@@ -2,7 +2,6 @@
 """Analysis functions for doctor-marketplace."""
 
 from pathlib import Path
-from typing import Dict, List
 
 # Import from analyze.py
 from _analyze import (
@@ -12,7 +11,7 @@ from _analyze import (
 )
 
 
-def analyze_component(component: Dict) -> Dict:
+def analyze_component(component: dict) -> dict:
     """Analyze a single component and return issues."""
     component_type = component.get("type")
     path = component.get("path")
@@ -22,21 +21,29 @@ def analyze_component(component: Dict) -> Dict:
 
     if component_type in ("agent", "command"):
         # Markdown analysis
-        file_path = Path(path)
-        if file_path.exists():
-            md_analysis = analyze_markdown_file(file_path, component_type)
-            analysis["markdown"] = md_analysis
+        if path is not None:
+            file_path = Path(path)
+            if file_path.exists():
+                md_analysis = analyze_markdown_file(file_path, component_type)
+                analysis["markdown"] = md_analysis
 
-            # Extract issues from analysis
-            issues.extend(extract_issues_from_markdown_analysis(md_analysis, path, component_type))
+                # Extract issues from analysis
+                issues.extend(extract_issues_from_markdown_analysis(md_analysis, str(path), component_type))
 
-            # Tool coverage analysis
-            coverage = analyze_tool_coverage(file_path)
-            if "error" not in coverage:
-                analysis["coverage"] = coverage
-                issues.extend(extract_issues_from_coverage_analysis(coverage, path, component_type))
+                # Tool coverage analysis
+                coverage = analyze_tool_coverage(file_path)
+                if "error" not in coverage:
+                    analysis["coverage"] = coverage
+                    issues.extend(extract_issues_from_coverage_analysis(coverage, str(path), component_type))
 
     elif component_type == "skill":
+        if path is None:
+            return {
+                "component": component,
+                "analysis": analysis,
+                "issues": issues,
+                "issue_count": len(issues)
+            }
         skill_dir = Path(path)
         skill_md_path = component.get("skill_md_path")
 
@@ -60,7 +67,7 @@ def analyze_component(component: Dict) -> Dict:
     }
 
 
-def extract_issues_from_markdown_analysis(analysis: Dict, file_path: str, component_type: str) -> List[Dict]:
+def extract_issues_from_markdown_analysis(analysis: dict, file_path: str, component_type: str) -> list[dict]:
     """Extract fixable issues from markdown analysis."""
     issues = []
 
@@ -157,7 +164,7 @@ def extract_issues_from_markdown_analysis(analysis: Dict, file_path: str, compon
     return issues
 
 
-def extract_issues_from_coverage_analysis(coverage: Dict, file_path: str, component_type: str = "") -> List[Dict]:
+def extract_issues_from_coverage_analysis(coverage: dict, file_path: str, component_type: str = "") -> list[dict]:
     """Extract deterministic issues from tool coverage analysis.
 
     NOTE: This function extracts issues that can be determined structurally:

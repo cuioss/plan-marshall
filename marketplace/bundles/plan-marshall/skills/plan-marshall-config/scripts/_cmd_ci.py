@@ -9,24 +9,24 @@ Storage split:
 """
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from _config_core import (
     EXIT_ERROR,
     MarshalNotInitializedError,
-    require_initialized,
-    load_config,
-    save_config,
-    load_run_config,
-    save_run_config,
     error_exit,
+    load_config,
+    load_run_config,
+    require_initialized,
+    save_config,
+    save_run_config,
     success_exit,
 )
 
 
 def _get_timestamp() -> str:
     """Get current UTC timestamp in ISO format."""
-    return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+    return datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
 def _handle_get(ci_config: dict) -> int:

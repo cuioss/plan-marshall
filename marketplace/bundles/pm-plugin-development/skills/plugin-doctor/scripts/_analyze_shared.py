@@ -24,9 +24,9 @@ def check_yaml_validity(frontmatter: str) -> bool:
 def count_lines(file_path: Path) -> int:
     """Count lines in a file."""
     try:
-        with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
+        with open(file_path, encoding='utf-8', errors='replace') as f:
             return sum(1 for _ in f)
-    except (OSError, IOError):
+    except OSError:
         return 0
 
 

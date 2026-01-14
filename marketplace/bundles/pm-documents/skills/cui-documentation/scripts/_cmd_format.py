@@ -4,7 +4,6 @@
 import re
 import shutil
 from pathlib import Path
-from typing import Tuple
 
 from plan_logging import log_entry  # type: ignore[import-not-found]
 
@@ -17,7 +16,7 @@ GREEN = '\033[0;32m'
 NC = '\033[0m'
 
 
-def fix_lists(content: str) -> Tuple[str, int]:
+def fix_lists(content: str) -> tuple[str, int]:
     """Fix list formatting by adding blank lines before lists."""
     lines = content.split('\n')
     result = []
@@ -57,14 +56,14 @@ def fix_lists(content: str) -> Tuple[str, int]:
     return '\n'.join(result), fixed_count
 
 
-def fix_xrefs(content: str) -> Tuple[str, int]:
+def fix_xrefs(content: str) -> tuple[str, int]:
     """Fix cross-references by converting <<>> syntax to xref:."""
     pattern = r'<<([^,>]*),([^>]*)>>'
     fixed_content, count = re.subn(pattern, r'xref:\1[\2]', content)
     return fixed_content, count
 
 
-def fix_whitespace(content: str) -> Tuple[str, int]:
+def fix_whitespace(content: str) -> tuple[str, int]:
     """Fix whitespace issues."""
     original = content
     lines = [line.rstrip() for line in content.split('\n')]

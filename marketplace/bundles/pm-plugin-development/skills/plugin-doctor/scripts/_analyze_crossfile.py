@@ -8,8 +8,6 @@ import sys
 from collections import defaultdict
 from difflib import SequenceMatcher
 from pathlib import Path
-from typing import Dict, List, Set, Tuple
-
 
 # Constants
 CONTENT_DIRS = ['references', 'workflows', 'templates']
@@ -65,46 +63,52 @@ def compute_hash(text: str) -> str:
     return hashlib.sha256(normalized.encode('utf-8')).hexdigest()[:16]
 
 
-def extract_sections(content: str, file_path: str) -> List[Dict]:
+def extract_sections(content: str, file_path: str) -> list[dict]:
     """Extract sections from markdown content."""
-    sections = []
+    sections: list[dict] = []
     lines = content.split('\n')
-    current_section = {
-        'header': '_intro',
-        'level': 0,
-        'start_line': 1,
-        'content_lines': []
-    }
+    current_header = '_intro'
+    current_level = 0
+    current_start_line = 1
+    current_content_lines: list[str] = []
 
     for i, line in enumerate(lines, 1):
         header_match = re.match(r'^(#{2,4})\s+(.+)$', line)
         if header_match:
-            if current_section['content_lines']:
-                section_text = '\n'.join(current_section['content_lines'])
+            if current_content_lines:
+                section_text = '\n'.join(current_content_lines)
                 if len(section_text.strip()) >= MIN_SECTION_LENGTH:
-                    current_section['end_line'] = i - 1
-                    current_section['text'] = section_text
-                    current_section['content_hash'] = compute_hash(section_text)
-                    current_section['normalized_length'] = len(normalize_text(section_text))
-                    sections.append(current_section)
+                    sections.append({
+                        'header': current_header,
+                        'level': current_level,
+                        'start_line': current_start_line,
+                        'end_line': i - 1,
+                        'text': section_text,
+                        'content_hash': compute_hash(section_text),
+                        'normalized_length': len(normalize_text(section_text)),
+                        'content_lines': current_content_lines
+                    })
 
-            current_section = {
-                'header': header_match.group(2).strip(),
-                'level': len(header_match.group(1)),
-                'start_line': i,
-                'content_lines': []
-            }
+            current_header = header_match.group(2).strip()
+            current_level = len(header_match.group(1))
+            current_start_line = i
+            current_content_lines = []
         else:
-            current_section['content_lines'].append(line)
+            current_content_lines.append(line)
 
-    if current_section['content_lines']:
-        section_text = '\n'.join(current_section['content_lines'])
+    if current_content_lines:
+        section_text = '\n'.join(current_content_lines)
         if len(section_text.strip()) >= MIN_SECTION_LENGTH:
-            current_section['end_line'] = len(lines)
-            current_section['text'] = section_text
-            current_section['content_hash'] = compute_hash(section_text)
-            current_section['normalized_length'] = len(normalize_text(section_text))
-            sections.append(current_section)
+            sections.append({
+                'header': current_header,
+                'level': current_level,
+                'start_line': current_start_line,
+                'end_line': len(lines),
+                'text': section_text,
+                'content_hash': compute_hash(section_text),
+                'normalized_length': len(normalize_text(section_text)),
+                'content_lines': current_content_lines
+            })
 
     return sections
 
@@ -116,9 +120,9 @@ def calculate_similarity(text1: str, text2: str) -> float:
     return SequenceMatcher(None, norm1, norm2).ratio()
 
 
-def find_exact_duplicates(all_sections: List[Dict]) -> List[Dict]:
+def find_exact_duplicates(all_sections: list[dict]) -> list[dict]:
     """Find exact duplicates using content hashes."""
-    hash_groups: Dict[str, List[Dict]] = defaultdict(list)
+    hash_groups: dict[str, list[dict]] = defaultdict(list)
 
     for section in all_sections:
         content_hash = section.get('content_hash')
@@ -147,13 +151,13 @@ def find_exact_duplicates(all_sections: List[Dict]) -> List[Dict]:
 
 
 def find_similarity_candidates(
-    all_sections: List[Dict],
+    all_sections: list[dict],
     threshold: float,
-    exact_hashes: Set[str]
-) -> List[Dict]:
+    exact_hashes: set[str]
+) -> list[dict]:
     """Find sections with similarity between threshold and EXACT_THRESHOLD."""
-    candidates = []
-    processed_pairs: Set[Tuple[str, str]] = set()
+    candidates: list[dict] = []
+    processed_pairs: set[tuple[str, str]] = set()
 
     for i, section1 in enumerate(all_sections):
         if section1.get('content_hash') in exact_hashes:
@@ -166,10 +170,11 @@ def find_similarity_candidates(
             if section2.get('content_hash') in exact_hashes:
                 continue
 
-            pair_id = tuple(sorted([
+            pair_items: list[str] = sorted([
                 f"{section1['file']}:{section1['header']}",
                 f"{section2['file']}:{section2['header']}"
-            ]))
+            ])
+            pair_id: tuple[str, str] = (pair_items[0], pair_items[1])
 
             if pair_id in processed_pairs:
                 continue
@@ -193,11 +198,11 @@ def find_similarity_candidates(
                     'llm_analysis_required': True
                 })
 
-    candidates.sort(key=lambda x: x['similarity'], reverse=True)
+    candidates.sort(key=lambda x: float(x['similarity']), reverse=True)
     return candidates
 
 
-def detect_extraction_candidates(all_sections: List[Dict]) -> List[Dict]:
+def detect_extraction_candidates(all_sections: list[dict]) -> list[dict]:
     """Detect content that should be extracted to templates or workflows."""
     candidates = []
 
@@ -239,9 +244,9 @@ def detect_extraction_candidates(all_sections: List[Dict]) -> List[Dict]:
     return candidates
 
 
-def extract_terminology(all_sections: List[Dict]) -> Dict[str, Dict[str, int]]:
+def extract_terminology(all_sections: list[dict]) -> dict[str, dict[str, int]]:
     """Extract terminology from content and group by file."""
-    terms_by_file: Dict[str, Dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    terms_by_file: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
 
     for section in all_sections:
         file_path = section['file']
@@ -257,12 +262,12 @@ def extract_terminology(all_sections: List[Dict]) -> Dict[str, Dict[str, int]]:
     return terms_by_file
 
 
-def find_terminology_variants(terms_by_file: Dict[str, Dict[str, int]]) -> List[Dict]:
+def find_terminology_variants(terms_by_file: dict[str, dict[str, int]]) -> list[dict]:
     """Find terminology variants using known synonym groups."""
     variants = []
 
     for synonym_group in KNOWN_SYNONYM_GROUPS:
-        found_variants: Dict[str, List[Tuple[str, int]]] = defaultdict(list)
+        found_variants: dict[str, list[tuple[str, int]]] = defaultdict(list)
 
         for file_path, terms in terms_by_file.items():
             for term, count in terms.items():
@@ -273,7 +278,7 @@ def find_terminology_variants(terms_by_file: Dict[str, Dict[str, int]]) -> List[
                         break
 
         if len(found_variants) > 1:
-            variant_list = []
+            variant_list: list[dict[str, object]] = []
             for term, occurrences in found_variants.items():
                 files = [occ[0] for occ in occurrences]
                 total_count = sum(occ[1] for occ in occurrences)
@@ -284,7 +289,7 @@ def find_terminology_variants(terms_by_file: Dict[str, Dict[str, int]]) -> List[
                 })
 
             if variant_list:
-                most_common = max(variant_list, key=lambda x: x['count'])
+                most_common = max(variant_list, key=lambda x: x['count'] if isinstance(x['count'], int) else 0)
                 variants.append({
                     'concept': list(synonym_group)[0],
                     'variants': variant_list,
@@ -294,7 +299,7 @@ def find_terminology_variants(terms_by_file: Dict[str, Dict[str, int]]) -> List[
     return variants
 
 
-def analyze_cross_file(skill_path: Path, similarity_threshold: float) -> Dict:
+def analyze_cross_file(skill_path: Path, similarity_threshold: float) -> dict:
     """Main cross-file analysis function."""
     skill_name = skill_path.name
     all_sections = []
@@ -318,7 +323,7 @@ def analyze_cross_file(skill_path: Path, similarity_threshold: float) -> Dict:
                     section['file'] = rel_path
                 all_sections.extend(sections)
 
-            except (OSError, IOError):
+            except OSError:
                 continue
 
     content_blocks = [

@@ -21,9 +21,7 @@ from pathlib import Path
 
 # Import shared infrastructure (sets up PYTHONPATH for cross-skill imports)
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from conftest import (
-    BuildContext
-)
+from conftest import BuildContext
 
 # Direct imports - conftest sets up PYTHONPATH
 # Import Extension class from the extension module
@@ -32,6 +30,7 @@ EXTENSION_DIR = PROJECT_ROOT / 'marketplace' / 'bundles' / 'pm-dev-java' / 'skil
 sys.path.insert(0, str(EXTENSION_DIR))
 
 import importlib.util
+
 spec = importlib.util.spec_from_file_location("java_extension", EXTENSION_DIR / "extension.py")
 java_extension = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(java_extension)

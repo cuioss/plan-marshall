@@ -6,18 +6,18 @@ These commands write to llm-enriched.json.
 """
 
 import sys
+from typing import Any
 
 from _architecture_core import (
     DataNotFoundError,
     ModuleNotFoundError,
     get_enriched_path,
+    get_module_names,
     load_derived_data,
     load_llm_enriched,
-    save_llm_enriched,
-    get_module_names,
     print_toon_list,
+    save_llm_enriched,
 )
-
 
 # =============================================================================
 # API Functions
@@ -26,7 +26,7 @@ from _architecture_core import (
 def enrich_project(
     description: str,
     project_dir: str = '.',
-    reasoning: str = None
+    reasoning: str | None = None
 ) -> dict:
     """Update project description.
 
@@ -60,11 +60,11 @@ def enrich_project(
 def enrich_module(
     module_name: str,
     responsibility: str,
-    purpose: str = None,
+    purpose: str | None = None,
     project_dir: str = '.',
-    reasoning: str = None,
-    responsibility_reasoning: str = None,
-    purpose_reasoning: str = None
+    reasoning: str | None = None,
+    responsibility_reasoning: str | None = None,
+    purpose_reasoning: str | None = None
 ) -> dict:
     """Update module responsibility and purpose.
 
@@ -125,7 +125,7 @@ def enrich_package(
     package_name: str,
     description: str,
     project_dir: str = '.',
-    components: list = None
+    components: list | None = None
 ) -> dict:
     """Add or update key package description and components.
 
@@ -160,7 +160,7 @@ def enrich_package(
     existing = enriched["modules"][module_name]["key_packages"].get(package_name, {})
     existing_components = existing.get("components")
 
-    pkg_data = {"description": description}
+    pkg_data: dict[str, Any] = {"description": description}
 
     # Use provided components, or preserve existing
     if components is not None:
@@ -185,11 +185,53 @@ def enrich_package(
     return result
 
 
+def _validate_skills_for_technology(skills_by_profile: dict, technology: str) -> list[str]:
+    """Validate that skills match the module's technology.
+
+    Args:
+        skills_by_profile: Dict mapping profile names to skill lists
+        technology: Module technology (maven, npm, gradle)
+
+    Returns:
+        List of warning messages (empty if no issues)
+    """
+    warnings: list[str] = []
+
+    # Technology to expected skill bundle patterns
+    tech_skill_patterns = {
+        "maven": ["pm-dev-java:", "pm-dev-java-cui:"],
+        "gradle": ["pm-dev-java:", "pm-dev-java-cui:"],
+        "npm": ["pm-dev-frontend:"]
+    }
+
+    expected_patterns = tech_skill_patterns.get(technology, [])
+    if not expected_patterns:
+        return warnings  # Unknown technology, skip validation
+
+    # Check each skill
+    for profile, skills in skills_by_profile.items():
+        for skill in skills:
+            # Check if skill matches expected patterns
+            matches = any(skill.startswith(pattern) for pattern in expected_patterns)
+            if not matches:
+                # Check if it's from a different technology
+                for other_tech, other_patterns in tech_skill_patterns.items():
+                    if other_tech != technology:
+                        if any(skill.startswith(p) for p in other_patterns):
+                            warnings.append(
+                                f"Skill '{skill}' appears to be for {other_tech}, "
+                                f"but module technology is {technology}"
+                            )
+                            break
+
+    return warnings
+
+
 def enrich_skills_by_profile(
     module_name: str,
     skills_by_profile: dict,
     project_dir: str = '.',
-    reasoning: str = None
+    reasoning: str | None = None
 ) -> dict:
     """Update skills organized by profile.
 
@@ -201,13 +243,29 @@ def enrich_skills_by_profile(
         reasoning: Selection rationale
 
     Returns:
-        Dict with status, module, and skills_by_profile
+        Dict with status, module, skills_by_profile, and optional warnings
     """
     # Validate module exists
     derived = load_derived_data(project_dir)
     modules = get_module_names(derived)
     if module_name not in modules:
         raise ModuleNotFoundError(f"Module not found: {module_name}", modules)
+
+    # Get module data to check technology for virtual modules
+    module_data = derived.get("modules", {}).get(module_name, {})
+    virtual_module = module_data.get("virtual_module", {})
+    technology = virtual_module.get("technology") if virtual_module else None
+
+    # If no virtual_module, infer technology from build_systems
+    if not technology:
+        build_systems = module_data.get("build_systems", [])
+        if build_systems:
+            technology = build_systems[0]
+
+    # Validate skills match technology
+    warnings = []
+    if technology:
+        warnings = _validate_skills_for_technology(skills_by_profile, technology)
 
     enriched = load_llm_enriched(project_dir)
 
@@ -223,19 +281,24 @@ def enrich_skills_by_profile(
 
     save_llm_enriched(enriched, project_dir)
 
-    return {
+    result = {
         "status": "success",
         "module": module_name,
         "skills_by_profile": skills_by_profile
     }
 
+    if warnings:
+        result["warnings"] = warnings
+
+    return result
+
 
 def enrich_dependencies(
     module_name: str,
-    key_deps: list = None,
-    internal_deps: list = None,
+    key_deps: list | None = None,
+    internal_deps: list | None = None,
     project_dir: str = '.',
-    reasoning: str = None
+    reasoning: str | None = None
 ) -> dict:
     """Update key and internal dependencies.
 
@@ -262,7 +325,7 @@ def enrich_dependencies(
     if module_name not in enriched["modules"]:
         enriched["modules"][module_name] = {}
 
-    result = {
+    result: dict[str, Any] = {
         "status": "success",
         "module": module_name
     }
@@ -369,7 +432,7 @@ def _append_to_list(module_name: str, field: str, value: str, project_dir: str =
 # CLI Handlers
 # =============================================================================
 
-def _handle_module_not_found(module_name: str, project_dir: str):
+def _handle_module_not_found(module_name: str, project_dir: str) -> int:
     """Handle module not found error with available modules list."""
     try:
         derived = load_derived_data(project_dir)
@@ -380,7 +443,7 @@ def _handle_module_not_found(module_name: str, project_dir: str):
     print("error: Module not found")
     print(f"module: {module_name}")
     print_toon_list("available", modules)
-    sys.exit(1)
+    return 1
 
 
 def cmd_enrich_project(args) -> int:
@@ -397,7 +460,7 @@ def cmd_enrich_project(args) -> int:
         print("resolution: Run 'architecture.py init' first")
         return 1
     except Exception as e:
-        print(f"status\terror", file=sys.stderr)
+        print("status\terror", file=sys.stderr)
         print(f"error\t{e}", file=sys.stderr)
         return 1
 
@@ -422,14 +485,14 @@ def cmd_enrich_module(args) -> int:
         print_toon_list("updated", result['updated'])
         return 0
     except ModuleNotFoundError:
-        _handle_module_not_found(args.name, args.project_dir)
+        return _handle_module_not_found(args.name, args.project_dir)
     except DataNotFoundError:
         print("error: Enrichment data not found")
         print(f"expected_file: {get_enriched_path(args.project_dir)}")
         print("resolution: Run 'architecture.py init' first")
         return 1
     except Exception as e:
-        print(f"status\terror", file=sys.stderr)
+        print("status\terror", file=sys.stderr)
         print(f"error\t{e}", file=sys.stderr)
         return 1
 
@@ -455,14 +518,14 @@ def cmd_enrich_package(args) -> int:
             print_toon_list("components", result['components'])
         return 0
     except ModuleNotFoundError:
-        _handle_module_not_found(args.module, args.project_dir)
+        return _handle_module_not_found(args.module, args.project_dir)
     except DataNotFoundError:
         print("error: Enrichment data not found")
         print(f"expected_file: {get_enriched_path(args.project_dir)}")
         print("resolution: Run 'architecture.py init' first")
         return 1
     except Exception as e:
-        print(f"status\terror", file=sys.stderr)
+        print("status\terror", file=sys.stderr)
         print(f"error\t{e}", file=sys.stderr)
         return 1
 
@@ -485,18 +548,18 @@ def cmd_enrich_skills_by_profile(args) -> int:
                 print(f"    - {skill}")
         return 0
     except json.JSONDecodeError as e:
-        print(f"status\terror", file=sys.stderr)
+        print("status\terror", file=sys.stderr)
         print(f"error\tInvalid JSON: {e}", file=sys.stderr)
         return 1
     except ModuleNotFoundError:
-        _handle_module_not_found(args.module, args.project_dir)
+        return _handle_module_not_found(args.module, args.project_dir)
     except DataNotFoundError:
         print("error: Enrichment data not found")
         print(f"expected_file: {get_enriched_path(args.project_dir)}")
         print("resolution: Run 'architecture.py init' first")
         return 1
     except Exception as e:
-        print(f"status\terror", file=sys.stderr)
+        print("status\terror", file=sys.stderr)
         print(f"error\t{e}", file=sys.stderr)
         return 1
 
@@ -527,14 +590,14 @@ def cmd_enrich_dependencies(args) -> int:
             print_toon_list("internal_dependencies", result['internal_dependencies'])
         return 0
     except ModuleNotFoundError:
-        _handle_module_not_found(args.module, args.project_dir)
+        return _handle_module_not_found(args.module, args.project_dir)
     except DataNotFoundError:
         print("error: Enrichment data not found")
         print(f"expected_file: {get_enriched_path(args.project_dir)}")
         print("resolution: Run 'architecture.py init' first")
         return 1
     except Exception as e:
-        print(f"status\terror", file=sys.stderr)
+        print("status\terror", file=sys.stderr)
         print(f"error\t{e}", file=sys.stderr)
         return 1
 
@@ -548,14 +611,14 @@ def cmd_enrich_tip(args) -> int:
         print_toon_list("tips", result['tips'])
         return 0
     except ModuleNotFoundError:
-        _handle_module_not_found(args.module, args.project_dir)
+        return _handle_module_not_found(args.module, args.project_dir)
     except DataNotFoundError:
         print("error: Enrichment data not found")
         print(f"expected_file: {get_enriched_path(args.project_dir)}")
         print("resolution: Run 'architecture.py init' first")
         return 1
     except Exception as e:
-        print(f"status\terror", file=sys.stderr)
+        print("status\terror", file=sys.stderr)
         print(f"error\t{e}", file=sys.stderr)
         return 1
 
@@ -569,14 +632,14 @@ def cmd_enrich_insight(args) -> int:
         print_toon_list("insights", result['insights'])
         return 0
     except ModuleNotFoundError:
-        _handle_module_not_found(args.module, args.project_dir)
+        return _handle_module_not_found(args.module, args.project_dir)
     except DataNotFoundError:
         print("error: Enrichment data not found")
         print(f"expected_file: {get_enriched_path(args.project_dir)}")
         print("resolution: Run 'architecture.py init' first")
         return 1
     except Exception as e:
-        print(f"status\terror", file=sys.stderr)
+        print("status\terror", file=sys.stderr)
         print(f"error\t{e}", file=sys.stderr)
         return 1
 
@@ -590,13 +653,13 @@ def cmd_enrich_best_practice(args) -> int:
         print_toon_list("best_practices", result['best_practices'])
         return 0
     except ModuleNotFoundError:
-        _handle_module_not_found(args.module, args.project_dir)
+        return _handle_module_not_found(args.module, args.project_dir)
     except DataNotFoundError:
         print("error: Enrichment data not found")
         print(f"expected_file: {get_enriched_path(args.project_dir)}")
         print("resolution: Run 'architecture.py init' first")
         return 1
     except Exception as e:
-        print(f"status\terror", file=sys.stderr)
+        print("status\terror", file=sys.stderr)
         print(f"error\t{e}", file=sys.stderr)
         return 1

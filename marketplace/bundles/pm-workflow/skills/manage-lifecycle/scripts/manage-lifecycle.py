@@ -16,12 +16,12 @@ import argparse
 import re
 import shutil
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from file_ops import atomic_write_file, base_path  # type: ignore[import-not-found]
-from toon_parser import parse_toon, serialize_toon  # type: ignore[import-not-found]
 from plan_logging import log_entry  # type: ignore[import-not-found]
+from toon_parser import parse_toon, serialize_toon  # type: ignore[import-not-found]
 
 # Phase routing maps phase names to skills (for route command)
 PHASE_ROUTING = {
@@ -55,7 +55,7 @@ def get_archive_dir() -> Path:
 
 def now_iso() -> str:
     """Get current time in ISO format."""
-    return datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+    return datetime.now(UTC).strftime('%Y-%m-%dT%H:%M:%SZ')
 
 
 def read_status(plan_id: str) -> dict:

@@ -1,30 +1,28 @@
 #!/usr/bin/env python3
 """Tests for _cmd_enrich.py module."""
 
-import json
 import sys
 import tempfile
-from pathlib import Path
 
-# Import modules under test (PYTHONPATH set by conftest)
-from _cmd_enrich import (
-    enrich_project,
-    enrich_module,
-    enrich_package,
-    enrich_skills_by_profile,
-    enrich_dependencies,
-    enrich_tip,
-    enrich_insight,
-    enrich_best_practice,
-)
 from _architecture_core import (
     DataNotFoundError,
     ModuleNotFoundError,
+    load_llm_enriched,
     save_derived_data,
     save_llm_enriched,
-    load_llm_enriched,
 )
 
+# Import modules under test (PYTHONPATH set by conftest)
+from _cmd_enrich import (
+    enrich_best_practice,
+    enrich_dependencies,
+    enrich_insight,
+    enrich_module,
+    enrich_package,
+    enrich_project,
+    enrich_skills_by_profile,
+    enrich_tip,
+)
 
 # =============================================================================
 # Helper Functions
@@ -549,7 +547,7 @@ if __name__ == "__main__":
             test()
             passed += 1
             print(f"PASSED: {test.__name__}")
-        except Exception as e:
+        except Exception:
             failed += 1
             print(f"FAILED: {test.__name__}")
             traceback.print_exc()

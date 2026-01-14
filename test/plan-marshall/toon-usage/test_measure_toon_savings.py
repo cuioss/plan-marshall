@@ -5,7 +5,6 @@ Migrated from test/measure-toon-savings.sh - measures token savings
 from TOON format vs estimated JSON equivalent.
 """
 
-import sys
 from pathlib import Path
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)

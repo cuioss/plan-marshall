@@ -11,11 +11,16 @@ from pathlib import Path
 
 # Import shared infrastructure
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from conftest import run_script, get_script_path
+from conftest import ScriptResult, get_script_path, run_script
 
 
 class TestManageAdr(unittest.TestCase):
     """Test cases for ADR management script."""
+
+    script_path: Path
+    temp_dir: str
+    adr_dir: Path
+    original_cwd: str
 
     @classmethod
     def setUpClass(cls):

@@ -23,9 +23,7 @@ import json
 import re
 import subprocess
 import sys
-from datetime import datetime, timezone
 from pathlib import Path
-
 
 # Tool definitions: {tool: requires_auth}
 # Note: python3 not checked - if it wasn't available, this script couldn't run
@@ -324,7 +322,7 @@ def cmd_persist(args: argparse.Namespace) -> int:
             self.tools = tools
             self.git_present = git_present_str
 
-    args = PersistArgs(
+    persist_args = PersistArgs(
         provider=provider_result["provider"],
         repo_url=provider_result["repo_url"] or "",
         commands_json=json.dumps(ci_commands),
@@ -334,7 +332,7 @@ def cmd_persist(args: argparse.Namespace) -> int:
 
     config = load_config()
     ci_config = config.get('ci', {})
-    result_code = _handle_persist(args, config, ci_config)
+    result_code = _handle_persist(persist_args, config, ci_config)
     if result_code != 0:
         return error_json("Failed to persist CI config")
 

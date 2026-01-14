@@ -7,12 +7,10 @@ Tests module detection including nested Maven modules and npm workspaces.
 import json
 import os
 import shutil
-import sys
 import tempfile
 from pathlib import Path
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-
 # Import functions under test (PYTHONPATH set by conftest)
 from _config_detection import detect_maven_modules, detect_npm_workspaces
 
@@ -34,7 +32,7 @@ class TempProjectContext:
         os.chdir(self.original_cwd)
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
-    def create_pom(self, path: str, modules: list = None):
+    def create_pom(self, path: str, modules: list | None = None):
         """Create a pom.xml file with optional modules section."""
         pom_path = self.temp_dir / path / 'pom.xml' if path else self.temp_dir / 'pom.xml'
         pom_path.parent.mkdir(parents=True, exist_ok=True)
@@ -57,12 +55,12 @@ class TempProjectContext:
 """
         pom_path.write_text(content)
 
-    def create_package_json(self, path: str, name: str = None, workspaces: list = None):
+    def create_package_json(self, path: str, name: str | None = None, workspaces: list | None = None):
         """Create a package.json file."""
         pkg_path = self.temp_dir / path / 'package.json' if path else self.temp_dir / 'package.json'
         pkg_path.parent.mkdir(parents=True, exist_ok=True)
 
-        content = {"name": name or "test-package", "version": "1.0.0"}
+        content: dict[str, str | list] = {"name": name or "test-package", "version": "1.0.0"}
         if workspaces:
             content["workspaces"] = workspaces
 

@@ -8,15 +8,14 @@ using architecture API for data access.
 import argparse
 import re
 import sys
+from typing import Any
 
 # Direct imports - executor sets up PYTHONPATH for cross-skill imports
 from _architecture_core import (  # type: ignore[import-not-found]
     DataNotFoundError,
     load_derived_data,
-    get_module_names,
-    get_module,
-    print_toon_table,
     print_toon_list,
+    print_toon_table,
 )
 from run_config import ext_defaults_get  # type: ignore[import-not-found]
 
@@ -72,7 +71,7 @@ SKIP_PATTERNS = [
 ]
 
 
-def get_configured_skip_profiles(project_dir: str = '.') -> set:
+def get_configured_skip_profiles(project_dir: str = '.') -> set[str]:
     """Get set of profile IDs configured to skip in run-configuration.json.
 
     Reads from extension_defaults.build.maven.profiles.skip which is a
@@ -93,7 +92,7 @@ def get_configured_skip_profiles(project_dir: str = '.') -> set:
     return {p.strip() for p in skip_value.split(',') if p.strip()}
 
 
-def get_configured_mapped_profiles(project_dir: str = '.') -> set:
+def get_configured_mapped_profiles(project_dir: str = '.') -> set[str]:
     """Get set of profile IDs that have explicit canonical mappings.
 
     Reads from extension_defaults.build.maven.profiles.map.canonical which is a
@@ -124,7 +123,7 @@ def get_configured_mapped_profiles(project_dir: str = '.') -> set:
 # API Functions
 # =============================================================================
 
-def list_profiles(project_dir: str = '.', module_name: str = None) -> dict:
+def list_profiles(project_dir: str = '.', module_name: str | None = None) -> dict[str, Any]:
     """List Maven profiles from derived data.
 
     Args:
@@ -137,7 +136,7 @@ def list_profiles(project_dir: str = '.', module_name: str = None) -> dict:
     derived = load_derived_data(project_dir)
     modules = derived.get("modules", {})
 
-    result = {
+    result: dict[str, Any] = {
         "modules": [],
         "total_profiles": 0,
         "unmatched_count": 0
@@ -159,7 +158,7 @@ def list_profiles(project_dir: str = '.', module_name: str = None) -> dict:
         if not profiles:
             continue
 
-        module_info = {
+        module_info: dict[str, Any] = {
             "name": name,
             "profiles": []
         }
@@ -184,7 +183,7 @@ def list_profiles(project_dir: str = '.', module_name: str = None) -> dict:
     return result
 
 
-def classify_profile(profile_id: str) -> dict:
+def classify_profile(profile_id: str) -> dict[str, str]:
     """Classify a profile by pattern matching.
 
     Args:
@@ -225,7 +224,7 @@ def classify_profile(profile_id: str) -> dict:
     }
 
 
-def get_unmatched_profiles(project_dir: str = '.') -> list:
+def get_unmatched_profiles(project_dir: str = '.') -> list[str]:
     """Get deduplicated list of unmatched profiles across all modules.
 
     Filters out profiles that are configured in run-configuration.json:
@@ -254,7 +253,7 @@ def get_unmatched_profiles(project_dir: str = '.') -> list:
     return sorted(unmatched)
 
 
-def suggest_classifications(project_dir: str = '.') -> list:
+def suggest_classifications(project_dir: str = '.') -> list[dict[str, str]]:
     """Suggest classifications for unmatched profiles.
 
     Args:
@@ -282,7 +281,7 @@ def suggest_classifications(project_dir: str = '.') -> list:
 # CLI Handlers
 # =============================================================================
 
-def cmd_list(args) -> int:
+def cmd_list(args: argparse.Namespace) -> int:
     """CLI handler for list command."""
     try:
         result = list_profiles(args.project_dir, args.module)
@@ -311,7 +310,7 @@ def cmd_list(args) -> int:
         return 1
 
 
-def cmd_unmatched(args) -> int:
+def cmd_unmatched(args: argparse.Namespace) -> int:
     """CLI handler for unmatched command."""
     try:
         unmatched = get_unmatched_profiles(args.project_dir)
@@ -329,7 +328,7 @@ def cmd_unmatched(args) -> int:
         return 1
 
 
-def cmd_classify(args) -> int:
+def cmd_classify(args: argparse.Namespace) -> int:
     """CLI handler for classify command."""
     result = classify_profile(args.profile_id)
 
@@ -341,7 +340,7 @@ def cmd_classify(args) -> int:
     return 0
 
 
-def cmd_suggest(args) -> int:
+def cmd_suggest(args: argparse.Namespace) -> int:
     """CLI handler for suggest command."""
     try:
         suggestions = suggest_classifications(args.project_dir)
@@ -368,7 +367,7 @@ def cmd_suggest(args) -> int:
 # Main
 # =============================================================================
 
-def main():
+def main() -> int:
     parser = argparse.ArgumentParser(
         description='Maven profile management operations'
     )

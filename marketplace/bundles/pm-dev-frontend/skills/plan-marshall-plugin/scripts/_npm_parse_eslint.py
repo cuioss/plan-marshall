@@ -13,8 +13,7 @@ import re
 from pathlib import Path
 
 # Cross-skill imports (PYTHONPATH set by executor)
-from _build_parse import Issue, UnitTestSummary, SEVERITY_ERROR, SEVERITY_WARNING  # type: ignore[import-not-found]
-
+from _build_parse import SEVERITY_ERROR, SEVERITY_WARNING, Issue, UnitTestSummary  # type: ignore[import-not-found]
 
 # ESLint issue pattern: "  line:col  severity  message  rule-name"
 ESLINT_ISSUE_PATTERN = re.compile(

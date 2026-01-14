@@ -17,29 +17,27 @@ from pathlib import Path
 from _config_core import (
     EXIT_ERROR,
     MarshalNotInitializedError,
-    require_initialized,
-    load_config,
-    save_config,
     error_exit,
-    success_exit,
     get_skill_description,
     is_nested_domain,
+    load_config,
+    require_initialized,
+    save_config,
+    success_exit,
 )
 from _config_defaults import (
-    RESERVED_DOMAIN_KEYS,
     DEFAULT_SYSTEM_DOMAIN,
 )
 from _config_detection import detect_domains
 
 # Direct imports - PYTHONPATH set by executor
-from extension import (  # type: ignore[import-not-found]
+from extension_discovery import (  # type: ignore[import-not-found]
     discover_all_extensions,
     discover_extensions,
-    get_skill_domains_from_extensions,
 )
 
 
-def discover_available_domains(project_root: Path = None) -> dict:
+def discover_available_domains(project_root: Path | None = None) -> dict:
     """Discover domains from extension.py files.
 
     Args:
@@ -148,19 +146,22 @@ def convert_extension_to_domain_config(module, domain_info: dict, bundle_name: s
     Returns:
         Config dict compatible with marshal.json skill_domains
     """
-    config = {"bundle": bundle_name}
+    from typing import Any
+    config: dict[str, Any] = {"bundle": bundle_name}
 
     # Extract extensions from dedicated functions
     if hasattr(module, 'provides_triage') or hasattr(module, 'provides_outline'):
-        config["workflow_skill_extensions"] = {}
+        extensions: dict[str, str] = {}
         if hasattr(module, 'provides_outline'):
             outline = module.provides_outline()
             if outline:
-                config["workflow_skill_extensions"]["outline"] = outline
+                extensions["outline"] = outline
         if hasattr(module, 'provides_triage'):
             triage = module.provides_triage()
             if triage:
-                config["workflow_skill_extensions"]["triage"] = triage
+                extensions["triage"] = triage
+        if extensions:
+            config["workflow_skill_extensions"] = extensions
 
     return config
 
@@ -302,8 +303,8 @@ def cmd_skill_domains(args) -> int:
         if profile:
             # Profile modification not supported - profiles come from extension.py
             return error_exit(
-                f"Profile modification not supported. Profiles are defined in bundle extension.py "
-                f"and cannot be modified via marshal.json."
+                "Profile modification not supported. Profiles are defined in bundle extension.py "
+                "and cannot be modified via marshal.json."
             )
         else:
             # Flat structure update (system domain only)
@@ -539,14 +540,15 @@ def cmd_resolve_domain_skills(args) -> int:
     })
 
 
-def _find_workflow_skill(workflow_skills: dict, phase: str) -> str:
+def _find_workflow_skill(workflow_skills: dict[str, str], phase: str) -> str:
     """Find workflow skill by phase, handling numbered keys (e.g., '1-init' for 'init').
 
     Looks for exact match first, then key ending with '-{phase}'.
     """
     # Exact match first
     if phase in workflow_skills:
-        return workflow_skills[phase]
+        result: str = workflow_skills[phase]
+        return result
 
     # Look for numbered key pattern (e.g., "1-init" for "init")
     for key, value in workflow_skills.items():

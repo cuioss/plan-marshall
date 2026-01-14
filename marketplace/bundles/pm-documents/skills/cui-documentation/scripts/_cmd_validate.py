@@ -4,8 +4,9 @@
 import fnmatch
 import json
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 from plan_logging import log_entry  # type: ignore[import-not-found]
 
@@ -18,10 +19,10 @@ EXIT_ERROR = 2
 REQUIRED_ATTRS = ['= ', ':toc: left', ':toclevels: 3', ':toc-title: Table of Contents', ':sectnums:', ':source-highlighter: highlight.js']
 
 
-def check_list_formatting(content: str) -> list:
+def check_list_formatting(content: str) -> list[tuple[int, str, str]]:
     """Check for list formatting issues."""
-    lines = content.split('\n')
-    issues = []
+    lines: list[str] = content.split('\n')
+    issues: list[tuple[int, str, str]] = []
     in_code_block = False
     prev_was_blank = True
     in_list = False
@@ -63,10 +64,10 @@ def check_list_formatting(content: str) -> list:
     return issues
 
 
-def check_file_compliance(file_path: Path) -> dict:
+def check_file_compliance(file_path: Path) -> dict[str, Any]:
     """Check a single AsciiDoc file for compliance."""
     content = file_path.read_text(encoding='utf-8')
-    result = {'file': str(file_path), 'compliant': True, 'errors': 0, 'warnings': 0, 'issues': [], 'missing_attrs': [], 'list_issues': [], 'xref_count': 0}
+    result: dict[str, Any] = {'file': str(file_path), 'compliant': True, 'errors': 0, 'warnings': 0, 'issues': [], 'missing_attrs': [], 'list_issues': [], 'xref_count': 0}
 
     for attr in REQUIRED_ATTRS:
         if attr not in content:
@@ -93,7 +94,7 @@ def check_file_compliance(file_path: Path) -> dict:
     return result
 
 
-def cmd_validate(args):
+def cmd_validate(args: Any) -> int:
     """Handle validate subcommand."""
     check_path = Path(args.path)
 
@@ -104,19 +105,19 @@ def cmd_validate(args):
             print(f"Error: Path '{check_path}' does not exist.")
         return EXIT_ERROR
 
-    results = []
+    results: list[dict[str, Any]] = []
     if check_path.is_file():
         adoc_files = [check_path] if check_path.suffix == '.adoc' else []
     else:
         adoc_files = sorted(check_path.rglob('*.adoc'))
 
-    ignore_patterns = args.ignore_patterns or ['asciidoc-standards.adoc']
+    ignore_patterns: list[str] = args.ignore_patterns or ['asciidoc-standards.adoc']
     for file_path in adoc_files:
         if any(fnmatch.fnmatch(file_path.name, p) for p in ignore_patterns):
             continue
         results.append(check_file_compliance(file_path))
 
-    summary = {
+    summary: dict[str, int] = {
         'total_files': len(results),
         'non_compliant_files': sum(1 for r in results if not r['compliant']),
         'compliant_files': sum(1 for r in results if r['compliant']),
@@ -128,7 +129,7 @@ def cmd_validate(args):
         log_entry('script', 'global', 'INFO', f"[DOCS-VALIDATE] Found {summary['non_compliant_files']} non-compliant files ({summary['total_errors']} errors, {summary['total_warnings']} warnings)")
 
     if args.format == 'json':
-        output = {'directory': str(check_path), 'timestamp': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'), 'summary': summary, 'files': [r for r in results if not r['compliant']]}
+        output = {'directory': str(check_path), 'timestamp': datetime.now(UTC).strftime('%Y-%m-%dT%H:%M:%SZ'), 'summary': summary, 'files': [r for r in results if not r['compliant']]}
         print(json.dumps(output, indent=2))
     else:
         print(f"Summary: {summary['total_files']} files, {summary['non_compliant_files']} non-compliant, {summary['total_errors']} errors, {summary['total_warnings']} warnings")

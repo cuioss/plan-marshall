@@ -14,17 +14,13 @@ Updated to test spec-compliant structure per build-project-structure.md:
 - commands: {} (canonical command mappings)
 """
 
+# Use importlib to avoid module naming conflicts with other Extension classes
+import importlib.util
 import json
-import sys
 from pathlib import Path
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import (
-    BuildContext
-)
-
-# Use importlib to avoid module naming conflicts with other Extension classes
-import importlib.util
+from conftest import BuildContext
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 EXTENSION_FILE = PROJECT_ROOT / 'marketplace' / 'bundles' / 'pm-dev-frontend' / 'skills' / 'plan-marshall-plugin' / 'extension.py'

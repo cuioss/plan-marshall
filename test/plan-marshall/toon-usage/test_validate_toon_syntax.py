@@ -6,7 +6,6 @@ including array row counts, no tabs, and basic structure.
 """
 
 import re
-import sys
 from pathlib import Path
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
@@ -99,7 +98,7 @@ def test_all_toon_files_valid_syntax():
             rel_path = file_path.relative_to(TEST_ROOT)
             all_errors.append(f"{rel_path}: {'; '.join(errors)}")
 
-    assert len(all_errors) == 0, f"TOON syntax errors:\n  " + "\n  ".join(all_errors)
+    assert len(all_errors) == 0, "TOON syntax errors:\n  " + "\n  ".join(all_errors)
 
 
 def test_no_tabs_in_toon_files():
@@ -166,7 +165,7 @@ def test_array_declarations_match_rows():
                 i += 1
 
     assert len(mismatches) == 0, \
-        f"Array declaration mismatches:\n  " + "\n  ".join(mismatches)
+        "Array declaration mismatches:\n  " + "\n  ".join(mismatches)
 
 
 # =============================================================================

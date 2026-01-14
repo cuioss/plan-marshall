@@ -16,7 +16,7 @@ import re
 import sys
 from collections import defaultdict
 from pathlib import Path
-from typing import Optional
+from typing import Any
 
 # Exit codes
 EXIT_SUCCESS = 0
@@ -38,7 +38,7 @@ DATE_PATTERN = re.compile(r'^(\w+)\((.*/)?(.+)-(\d{4}-\d{2}-\d{2})\.(\w+)\)$')
 # Shared Utilities
 # =============================================================================
 
-def load_settings(path: str) -> tuple[dict, Optional[str]]:
+def load_settings(path: str) -> tuple[dict, str | None]:
     """Load settings from a JSON file."""
     settings_path = Path(path)
 
@@ -46,7 +46,7 @@ def load_settings(path: str) -> tuple[dict, Optional[str]]:
         return {}, f"Settings file not found: {path}"
 
     try:
-        with open(settings_path, 'r') as f:
+        with open(settings_path) as f:
             data = json.load(f)
 
         if "permissions" not in data:
@@ -76,7 +76,7 @@ def get_global_settings_path() -> Path:
     return Path.home() / ".claude" / "settings.json"
 
 
-def get_project_settings_path_for_write(project_dir: Optional[Path] = None) -> Path:
+def get_project_settings_path_for_write(project_dir: Path | None = None) -> Path:
     """Get path for writing project settings."""
     if project_dir is None:
         project_dir = Path.cwd()
@@ -88,14 +88,14 @@ def get_project_settings_path_for_write(project_dir: Optional[Path] = None) -> P
     return project_dir / ".claude" / "settings.local.json"
 
 
-def load_settings_path(path: Path) -> dict:
+def load_settings_path(path: Path) -> dict[str, Any]:
     """Load settings from a Path."""
     if not path.exists():
         return {"permissions": {"allow": [], "deny": [], "ask": []}}
 
     try:
-        with open(path, 'r') as f:
-            data = json.load(f)
+        with open(path) as f:
+            data: dict[str, Any] = json.load(f)
         if "permissions" not in data:
             data["permissions"] = {}
         for key in ["allow", "deny", "ask"]:
@@ -180,7 +180,7 @@ def add_default_permissions(allow_list: list[str]) -> list[str]:
 def resolve_settings_arg(args) -> str:
     """Resolve settings path from --settings or --scope argument."""
     if hasattr(args, 'settings') and args.settings:
-        return args.settings
+        return str(args.settings)
     if hasattr(args, 'scope') and args.scope:
         return str(get_settings_path(args.scope))
     return str(get_project_settings_path_for_write())
@@ -247,7 +247,7 @@ def cmd_add(args) -> int:
     settings = load_settings_path(settings_path)
     allow_list = settings["permissions"]["allow"]
 
-    result = {"settings_file": str(settings_path)}
+    result: dict[str, Any] = {"settings_file": str(settings_path)}
 
     if args.permission in allow_list:
         result["success"] = True
@@ -279,7 +279,7 @@ def cmd_remove(args) -> int:
     settings = load_settings_path(settings_path)
     allow_list = settings["permissions"]["allow"]
 
-    result = {"settings_file": str(settings_path)}
+    result: dict[str, Any] = {"settings_file": str(settings_path)}
 
     if args.permission not in allow_list:
         result["success"] = True
@@ -348,7 +348,7 @@ def cmd_ensure(args) -> int:
 # consolidate subcommand
 # =============================================================================
 
-def parse_timestamped_permission(permission: str) -> Optional[dict]:
+def parse_timestamped_permission(permission: str) -> dict | None:
     """Parse a permission to check if it contains a timestamp pattern."""
     match = TIMESTAMP_PATTERN.match(permission)
     if match:
@@ -544,7 +544,7 @@ def cmd_ensure_wildcards(args) -> int:
         return EXIT_ERROR
 
     try:
-        with open(marketplace_path, 'r') as f:
+        with open(marketplace_path) as f:
             marketplace = json.load(f)
     except json.JSONDecodeError as e:
         print(json.dumps({"error": f"Invalid JSON in {args.marketplace_json}: {e}"}))

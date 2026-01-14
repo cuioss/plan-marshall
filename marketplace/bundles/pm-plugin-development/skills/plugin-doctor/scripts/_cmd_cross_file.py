@@ -6,8 +6,6 @@ import re
 import sys
 from difflib import SequenceMatcher
 from pathlib import Path
-from typing import Dict, Optional, Tuple
-
 
 SIMILARITY_VERIFICATION_TOLERANCE = 0.1
 MIN_CONTENT_OVERLAP = 0.3
@@ -29,15 +27,16 @@ def calculate_similarity(text1: str, text2: str) -> float:
     return SequenceMatcher(None, norm1, norm2).ratio()
 
 
-def find_content_block(analysis: Dict, file_path: str, section: str) -> Optional[Dict]:
+def find_content_block(analysis: dict, file_path: str, section: str) -> dict | None:
     """Find a content block in the analysis by file and section."""
     for block in analysis.get('content_blocks', []):
         if block['file'] == file_path and block['section'] == section:
-            return block
+            result: dict = block
+            return result
     return None
 
 
-def verify_duplication_claim(claim: Dict, analysis: Dict, skill_path: Path) -> Tuple[bool, str, Dict]:
+def verify_duplication_claim(claim: dict, analysis: dict, skill_path: Path) -> tuple[bool, str, dict]:
     """Verify a duplication claim from LLM analysis."""
     source = claim.get('source', {})
     target = claim.get('target', {})
@@ -117,7 +116,7 @@ def verify_duplication_claim(claim: Dict, analysis: Dict, skill_path: Path) -> T
     return False, 'unknown_classification', {'classification': classification}
 
 
-def verify_extraction_claim(claim: Dict, analysis: Dict, skill_path: Path) -> Tuple[bool, str, Dict]:
+def verify_extraction_claim(claim: dict, analysis: dict, skill_path: Path) -> tuple[bool, str, dict]:
     """Verify an extraction recommendation from LLM analysis."""
     file_path = claim.get('file', '')
     section = claim.get('section', '')
@@ -153,7 +152,7 @@ def verify_extraction_claim(claim: Dict, analysis: Dict, skill_path: Path) -> Tu
     return False, 'section_not_found', {'file': file_path, 'section': section}
 
 
-def verify_terminology_claim(claim: Dict, analysis: Dict) -> Tuple[bool, str, Dict]:
+def verify_terminology_claim(claim: dict, analysis: dict) -> tuple[bool, str, dict]:
     """Verify a terminology standardization claim from LLM analysis."""
     concept = claim.get('concept', '')
     standardized_term = claim.get('standardized_term', '')
@@ -190,7 +189,7 @@ def verify_terminology_claim(claim: Dict, analysis: Dict) -> Tuple[bool, str, Di
     return False, 'concept_not_in_analysis', {'concept': concept}
 
 
-def verify_findings(analysis: Dict, llm_findings: Dict) -> Dict:
+def verify_findings(analysis: dict, llm_findings: dict) -> dict:
     """Main verification function that processes all LLM findings."""
     skill_path = Path(analysis.get('skill_path', ''))
 
@@ -283,7 +282,7 @@ def cmd_cross_file(args) -> int:
         return 1
 
     try:
-        with open(analysis_path, 'r', encoding='utf-8') as f:
+        with open(analysis_path, encoding='utf-8') as f:
             analysis = json.load(f)
     except json.JSONDecodeError as e:
         print(json.dumps({'error': f'Invalid JSON in analysis file: {str(e)}'}), file=sys.stderr)
@@ -296,7 +295,7 @@ def cmd_cross_file(args) -> int:
             return 1
 
         try:
-            with open(findings_path, 'r', encoding='utf-8') as f:
+            with open(findings_path, encoding='utf-8') as f:
                 llm_findings = json.load(f)
         except json.JSONDecodeError as e:
             print(json.dumps({'error': f'Invalid JSON in LLM findings file: {str(e)}'}), file=sys.stderr)

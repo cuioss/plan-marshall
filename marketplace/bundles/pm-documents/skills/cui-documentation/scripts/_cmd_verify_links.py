@@ -7,7 +7,6 @@ import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Set, Tuple
 
 from plan_logging import log_entry  # type: ignore[import-not-found]
 
@@ -39,10 +38,10 @@ class Issue:
     suggested_fix: str = ""
 
 
-def extract_anchors_from_file(filepath: str) -> Set[str]:
+def extract_anchors_from_file(filepath: str) -> set[str]:
     """Extract all valid anchors from an AsciiDoc file."""
     anchors = set()
-    with open(filepath, 'r', encoding='utf-8') as f:
+    with open(filepath, encoding='utf-8') as f:
         lines = f.readlines()
 
     for line in lines:
@@ -62,10 +61,10 @@ def extract_anchors_from_file(filepath: str) -> Set[str]:
     return anchors
 
 
-def extract_links_from_file(filepath: str) -> List[Link]:
+def extract_links_from_file(filepath: str) -> list[Link]:
     """Extract all links from an AsciiDoc file."""
     links = []
-    with open(filepath, 'r', encoding='utf-8') as f:
+    with open(filepath, encoding='utf-8') as f:
         lines = f.readlines()
 
     in_code_block = False
@@ -88,7 +87,7 @@ def extract_links_from_file(filepath: str) -> List[Link]:
     return links
 
 
-def verify_links(files: List[str]) -> Tuple[List[Link], List[Issue]]:
+def verify_links(files: list[str]) -> tuple[list[Link], list[Issue]]:
     """Verify all links in all files."""
     all_links = []
     issues = []

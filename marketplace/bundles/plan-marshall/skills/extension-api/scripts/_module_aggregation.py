@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Module aggregation and hybrid module merging utilities.
+"""Module aggregation and virtual module splitting utilities.
 
-Handles merging modules discovered by multiple extensions (e.g., Maven + npm)
-into unified hybrid module structures with proper command nesting.
+Handles splitting modules discovered by multiple extensions (e.g., Maven + npm)
+at the same path into separate virtual modules with technology suffixes.
 
 Usage:
     from module_aggregation import discover_project_modules
@@ -11,53 +11,10 @@ Usage:
     # result = {"modules": {...}, "extensions_used": [...]}
 """
 
-import sys
 from pathlib import Path
 
 # Direct import - executor sets up PYTHONPATH for cross-skill imports
 from plan_logging import log_entry
-
-
-def _merge_commands(existing: dict, new: dict, existing_tech: str, new_tech: str) -> dict:
-    """Merge commands from two modules, nesting by build system for conflicts.
-
-    When both extensions provide the same command, nest by build system.
-    When only one provides a command, keep as string.
-
-    Args:
-        existing: Commands dict from first module
-        new: Commands dict from second module
-        existing_tech: Technology name of first module (e.g., "maven")
-        new_tech: Technology name of second module (e.g., "npm")
-
-    Returns:
-        Merged commands dict with nested structure for conflicts.
-
-    Example:
-        existing = {"module-tests": "mvn test", "coverage": "mvn jacoco"}
-        new = {"module-tests": "npm test", "lint": "npm lint"}
-        result = {
-            "module-tests": {"maven": "mvn test", "npm": "npm test"},
-            "coverage": "mvn jacoco",
-            "lint": "npm lint"
-        }
-    """
-    result = {}
-    all_keys = set(existing.keys()) | set(new.keys())
-
-    for key in all_keys:
-        if key in existing and key in new:
-            # Both provide same command - nest by build system
-            result[key] = {
-                existing_tech: existing[key],
-                new_tech: new[key]
-            }
-        elif key in existing:
-            result[key] = existing[key]
-        else:
-            result[key] = new[key]
-
-    return result
 
 
 def _get_technology(module: dict) -> str:
@@ -69,115 +26,78 @@ def _get_technology(module: dict) -> str:
     Returns:
         Primary build system name (e.g., "maven", "npm") or "unknown"
     """
-    build_systems = module.get('build_systems', [])
+    build_systems: list[str] = module.get('build_systems', [])
     if build_systems:
-        return build_systems[0]
+        primary: str = build_systems[0]
+        return primary
     return 'unknown'
 
 
-def _merge_hybrid_module(existing: dict, new: dict) -> dict:
-    """Merge two module dicts for hybrid modules (e.g., Maven + npm).
+def _split_to_virtual_modules(modules: list[dict]) -> list[dict]:
+    """Split modules at same path into separate virtual modules.
 
-    When the same module path is discovered by multiple extensions (Java and npm),
-    this function merges the data into a single comprehensive module dict.
-
-    Merge strategy:
-    - name: Prefer existing (Maven artifactId typically more canonical)
-    - build_systems: Combined from both technologies
-    - paths: Merge sources/tests lists, combine descriptors
-    - metadata: First non-null value wins (Maven typically more detailed)
-    - packages: Combine dicts
-    - dependencies: Combine lists
-    - stats: Sum counts
-    - commands: Nest by build system for conflicts (via _merge_commands)
+    When multiple extensions discover modules at the same directory path
+    (e.g., pom.xml + package.json), create separate virtual modules with
+    technology suffixes instead of merging them.
 
     Args:
-        existing: First module dict
-        new: Second module dict
+        modules: List of module dicts discovered at the same path
 
     Returns:
-        Merged module dict with build_systems list and nested commands.
+        List of virtual module dicts, one per original module with:
+        - name: "{base_name}-{technology}" (e.g., "my-module-maven")
+        - virtual_module: {physical_path, technology, sibling_modules}
+        - Single build_systems entry
+        - String commands (not nested)
     """
-    merged = existing.copy()
+    if len(modules) < 2:
+        # Single module - no splitting needed
+        return modules
 
-    # Determine technologies for command merging
-    existing_tech = _get_technology(existing)
-    new_tech = _get_technology(new)
+    # Get the physical path from first module
+    first_paths = modules[0].get('paths', {})
+    physical_path = first_paths.get('module') or '.'
 
-    # Collect build systems from both modules
-    existing_systems = set(existing.get('build_systems', []))
-    new_systems = set(new.get('build_systems', []))
+    # Determine base name (prefer Maven artifactId as most canonical)
+    base_name = None
+    for mod in modules:
+        tech = _get_technology(mod)
+        if tech == 'maven':
+            base_name = mod.get('name')
+            break
+    if not base_name:
+        base_name = modules[0].get('name', 'module')
 
-    merged['build_systems'] = sorted(existing_systems | new_systems)
+    # Build list of sibling virtual module names
+    technologies = [_get_technology(mod) for mod in modules]
+    sibling_names = [f"{base_name}-{tech}" for tech in technologies]
 
-    # Merge paths
-    existing_paths = existing.get('paths', {})
-    new_paths = new.get('paths', {})
-    merged_paths = {
-        'module': existing_paths.get('module') or new_paths.get('module'),
-        'sources': list(set(existing_paths.get('sources', []) + new_paths.get('sources', []))),
-        'tests': list(set(existing_paths.get('tests', []) + new_paths.get('tests', []))),
-    }
-    # Merge descriptors into list
-    descriptors = []
-    for p in [existing_paths, new_paths]:
-        desc = p.get('descriptor')
-        if desc and desc not in descriptors:
-            descriptors.append(desc)
-    if descriptors:
-        merged_paths['descriptors'] = descriptors
-    # Preserve readme from either
-    readme = existing_paths.get('readme') or new_paths.get('readme')
-    if readme:
-        merged_paths['readme'] = readme
-    merged['paths'] = merged_paths
+    virtual_modules = []
+    for i, mod in enumerate(modules):
+        tech = technologies[i]
+        virtual_name = f"{base_name}-{tech}"
 
-    # Merge metadata (first non-null wins)
-    existing_meta = existing.get('metadata', {})
-    new_meta = new.get('metadata', {})
-    merged_meta = {}
-    for key in set(existing_meta.keys()) | set(new_meta.keys()):
-        merged_meta[key] = existing_meta.get(key) or new_meta.get(key)
-    if merged_meta:
-        merged['metadata'] = merged_meta
+        # Create virtual module by copying and modifying
+        virtual = mod.copy()
+        virtual['name'] = virtual_name
+        virtual['virtual_module'] = {
+            'physical_path': physical_path,
+            'technology': tech,
+            'sibling_modules': [s for s in sibling_names if s != virtual_name]
+        }
 
-    # Merge packages (combine dicts)
-    existing_pkgs = existing.get('packages', {})
-    new_pkgs = new.get('packages', {})
-    if existing_pkgs or new_pkgs:
-        merged['packages'] = {**existing_pkgs, **new_pkgs}
+        virtual_modules.append(virtual)
 
-    # Merge dependencies (combine lists)
-    existing_deps = existing.get('dependencies', [])
-    new_deps = new.get('dependencies', [])
-    if existing_deps or new_deps:
-        merged['dependencies'] = existing_deps + new_deps
-
-    # Merge stats (sum counts)
-    existing_stats = existing.get('stats', {})
-    new_stats = new.get('stats', {})
-    merged['stats'] = {
-        'source_files': existing_stats.get('source_files', 0) + new_stats.get('source_files', 0),
-        'test_files': existing_stats.get('test_files', 0) + new_stats.get('test_files', 0),
-    }
-
-    # Merge commands (nest by build system for conflicts)
-    existing_cmds = existing.get('commands', {})
-    new_cmds = new.get('commands', {})
-    if existing_cmds or new_cmds:
-        merged['commands'] = _merge_commands(existing_cmds, new_cmds, existing_tech, new_tech)
-
-    return merged
+    return virtual_modules
 
 
 def discover_project_modules(project_root: Path, discover_extensions_fn) -> dict:
-    """Discover all modules and merge hybrid modules.
+    """Discover all modules and split multi-technology paths into virtual modules.
 
     Single entry point for module discovery. Handles:
     - Extension discovery (which bundles apply)
     - Module discovery per extension
-    - Hybrid module merging (same path from multiple extensions)
-    - Command merging (nest by build system for conflicts)
+    - Virtual module splitting (same path from multiple extensions)
 
     Args:
         project_root: Path to project root
@@ -189,14 +109,15 @@ def discover_project_modules(project_root: Path, discover_extensions_fn) -> dict
             "modules": {
                 "module-name": {
                     "name": "...",
-                    "build_systems": ["maven", "npm"],  # list for hybrid
+                    "build_systems": ["maven"],  # single technology
                     "paths": {...},
                     "metadata": {...},
-                    "commands": {
-                        "module-tests": {"maven": "...", "npm": "..."},
-                        "lint": "..."  # string if only one provides it
-                    },
-                    ...
+                    "commands": {...},  # string commands, not nested
+                    "virtual_module": {  # only for split modules
+                        "physical_path": "...",
+                        "technology": "maven",
+                        "sibling_modules": ["module-name-npm"]
+                    }
                 }
             },
             "extensions_used": ["pm-dev-java", "pm-dev-frontend"]
@@ -209,8 +130,9 @@ def discover_project_modules(project_root: Path, discover_extensions_fn) -> dict
     extensions = discover_extensions_fn(project_root)
     extensions_used = []
 
-    # Collect modules from all extensions, keyed by path for merging
-    modules_by_path = {}  # {path: module_dict}
+    # Collect modules from all extensions, keyed by path
+    # Value is a list of modules (for splitting)
+    modules_by_path: dict[str, list[dict]] = {}
 
     for ext in extensions:
         ext_module = ext.get("module")
@@ -225,22 +147,17 @@ def discover_project_modules(project_root: Path, discover_extensions_fn) -> dict
                 extensions_used.append(bundle_name)
 
             for mod in ext_modules:
-                # Get module path for deduplication/merging
+                # Get module path for deduplication/splitting
                 paths = mod.get('paths', {})
                 mod_path = paths.get('module') or mod.get('path', '.')
 
-                if mod_path in modules_by_path:
-                    # Merge hybrid module (same path from different extensions)
-                    modules_by_path[mod_path] = _merge_hybrid_module(
-                        modules_by_path[mod_path], mod
-                    )
-                else:
-                    modules_by_path[mod_path] = mod
+                if mod_path not in modules_by_path:
+                    modules_by_path[mod_path] = []
+                modules_by_path[mod_path].append(mod)
 
         except Exception as e:
             log_entry('script', 'global', 'WARN', f"[MODULE-AGGREGATION] discover_modules() failed for {bundle_name}: {e}")
 
-    # Convert modules_by_path to modules_by_name, with root module first
     # Sort paths so "." (root module) comes first, then alphabetically
     def path_sort_key(path: str) -> tuple:
         """Sort key: root module first, then alphabetically."""
@@ -250,12 +167,18 @@ def discover_project_modules(project_root: Path, discover_extensions_fn) -> dict
 
     sorted_paths = sorted(modules_by_path.keys(), key=path_sort_key)
 
+    # Process modules: split multi-technology paths into virtual modules
     modules_by_name = {}
     for path in sorted_paths:
-        mod = modules_by_path[path]
-        name = mod.get('name', '')
-        if name:
-            modules_by_name[name] = mod
+        path_modules = modules_by_path[path]
+
+        # Split if multiple technologies at same path
+        result_modules = _split_to_virtual_modules(path_modules)
+
+        for mod in result_modules:
+            name = mod.get('name', '')
+            if name:
+                modules_by_name[name] = mod
 
     return {
         "modules": modules_by_name,

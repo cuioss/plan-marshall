@@ -2,18 +2,14 @@
 """Unit tests for logging module."""
 
 import os
-import re
-import sys
 import tempfile
 import time
 from datetime import date
 from pathlib import Path
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-
 # Import the module under test (PYTHONPATH set by conftest)
 import plan_logging as module
-
 
 # =============================================================================
 # TESTS: format_timestamp

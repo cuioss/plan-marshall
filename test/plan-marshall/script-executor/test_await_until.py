@@ -9,7 +9,7 @@ import tempfile
 from pathlib import Path
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import run_script, get_script_path, _MARKETPLACE_SCRIPT_DIRS
+from conftest import _MARKETPLACE_SCRIPT_DIRS, get_script_path, run_script
 
 # Path to the script
 SCRIPT_PATH = get_script_path('plan-marshall', 'script-executor', 'await-until.py')

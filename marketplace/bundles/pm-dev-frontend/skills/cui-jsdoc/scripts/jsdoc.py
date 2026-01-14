@@ -16,8 +16,7 @@ import json
 import os
 import re
 import sys
-from typing import Any, List, Dict
-
+from typing import Any
 
 EXIT_SUCCESS = 0
 EXIT_ERROR = 1
@@ -67,7 +66,7 @@ def get_line_number(content: str, pos: int) -> int:
     return content[:pos].count('\n') + 1
 
 
-def find_preceding_jsdoc(content: str, pos: int) -> str:
+def find_preceding_jsdoc(content: str, pos: int) -> str | None:
     """Find JSDoc block immediately preceding a position."""
     preceding = content[:pos].rstrip()
 
@@ -86,7 +85,7 @@ def find_preceding_jsdoc(content: str, pos: int) -> str:
     return preceding[jsdoc_start:jsdoc_end + 2]
 
 
-def extract_function_params(param_str: str) -> List[str]:
+def extract_function_params(param_str: str) -> list[str]:
     """Extract parameter names from function signature."""
     if not param_str.strip():
         return []
@@ -123,7 +122,7 @@ def extract_function_params(param_str: str) -> List[str]:
     return params
 
 
-def check_function_jsdoc(jsdoc: str, params: List[str], has_return: bool) -> List[Dict]:
+def check_function_jsdoc(jsdoc: str, params: list[str], has_return: bool) -> list[dict]:
     """Check JSDoc block for a function, return violations."""
     violations = []
 
@@ -159,12 +158,12 @@ def check_function_jsdoc(jsdoc: str, params: List[str], has_return: bool) -> Lis
     return violations
 
 
-def analyze_file(file_path: str, scope: str) -> List[Dict]:
+def analyze_file(file_path: str, scope: str) -> list[dict]:
     """Analyze a single file for JSDoc violations."""
     violations = []
 
     try:
-        with open(file_path, 'r', encoding='utf-8') as f:
+        with open(file_path, encoding='utf-8') as f:
             content = f.read()
     except Exception as e:
         return [{
@@ -295,7 +294,7 @@ def analyze_file(file_path: str, scope: str) -> List[Dict]:
     return violations
 
 
-def find_js_files(directory: str) -> List[str]:
+def find_js_files(directory: str) -> list[str]:
     """Find all JavaScript files in directory."""
     js_files = []
 
@@ -310,7 +309,7 @@ def find_js_files(directory: str) -> List[str]:
     return js_files
 
 
-def analyze_jsdoc(target: str, is_directory: bool, scope: str) -> Dict[str, Any]:
+def analyze_jsdoc(target: str, is_directory: bool, scope: str) -> dict[str, Any]:
     """Main analysis function."""
     if is_directory:
         if not os.path.isdir(target):
@@ -413,7 +412,8 @@ def main() -> int:
     analyze_parser.set_defaults(func=cmd_analyze)
 
     args = parser.parse_args()
-    return args.func(args)
+    result: int = args.func(args)
+    return result
 
 
 if __name__ == "__main__":

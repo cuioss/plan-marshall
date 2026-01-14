@@ -15,9 +15,8 @@ Configuration via environment variables:
 import os
 import re
 import time
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from pathlib import Path
-from typing import Optional
 
 # =============================================================================
 # CONFIGURATION
@@ -51,7 +50,7 @@ def get_plans_dir() -> Path:
 
 def format_timestamp() -> str:
     """Get current time in ISO 8601 UTC format."""
-    return datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+    return datetime.now(UTC).strftime('%Y-%m-%dT%H:%M:%SZ')
 
 def format_log_entry(
     level: str,
@@ -78,13 +77,15 @@ def format_log_entry(
 
     return '\n'.join(lines) + '\n'
 
-def extract_plan_id(args: list) -> Optional[str]:
+def extract_plan_id(args: list) -> str | None:
     """Extract --plan-id value from argument list."""
     for i, arg in enumerate(args):
         if arg == '--plan-id' and i + 1 < len(args):
-            return args[i + 1]
+            plan_id: str = args[i + 1]
+            return plan_id
         if arg.startswith('--plan-id='):
-            return arg.split('=', 1)[1]
+            plan_id_value: str = arg.split('=', 1)[1]
+            return plan_id_value
     return None
 
 def validate_plan_id(plan_id: str) -> bool:
@@ -95,7 +96,7 @@ def validate_plan_id(plan_id: str) -> bool:
 # PATH RESOLUTION
 # =============================================================================
 
-def get_log_path(plan_id: Optional[str], log_type: str = 'script') -> Path:
+def get_log_path(plan_id: str | None, log_type: str = 'script') -> Path:
     """
     Get path to log file.
 
@@ -210,7 +211,7 @@ def log_script_execution(
     except Exception:
         pass  # Silent failure for logging
 
-def cleanup_old_script_logs(max_age_days: Optional[int] = None) -> int:
+def cleanup_old_script_logs(max_age_days: int | None = None) -> int:
     """
     Delete global script logs older than max_age_days.
 
@@ -251,7 +252,7 @@ def log_work(
     category: str,
     message: str,
     phase: str,
-    detail: Optional[str] = None
+    detail: str | None = None
 ) -> dict:
     """
     Add entry to work.log.
@@ -324,7 +325,7 @@ def log_work(
             'message': str(e)
         }
 
-def read_work_log(plan_id: str, phase: Optional[str] = None) -> dict:
+def read_work_log(plan_id: str, phase: str | None = None) -> dict:
     """
     Read work log entries.
 

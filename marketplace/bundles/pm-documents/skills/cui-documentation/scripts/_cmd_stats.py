@@ -3,7 +3,7 @@
 
 import json
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 # Exit codes
@@ -44,14 +44,18 @@ def analyze_file_stats(file_path: Path) -> dict:
         'lists': 0,
     }
 
+    section_count = 0
+    max_depth = 0
     section_pattern = re.compile(r'^(=+) ')
     for line in lines:
         match = section_pattern.match(line)
         if match:
-            stats['sections'] += 1
+            section_count += 1
             depth = len(match.group(1))
-            if depth > stats['max_depth']:
-                stats['max_depth'] = depth
+            if depth > max_depth:
+                max_depth = depth
+    stats['sections'] = section_count
+    stats['max_depth'] = max_depth
 
     stats['xrefs'] = len(re.findall(r'xref:', content))
     stats['images'] = len(re.findall(r'image::', content))
@@ -93,7 +97,7 @@ def cmd_stats(args):
 
     if args.format == 'json':
         output = {
-            'metadata': {'directory': str(target_dir), 'generated': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'), 'total_files': total_files},
+            'metadata': {'directory': str(target_dir), 'generated': datetime.now(UTC).strftime('%Y-%m-%dT%H:%M:%SZ'), 'total_files': total_files},
             'summary': {**totals, 'averages': {'lines_per_file': totals['lines'] // total_files if total_files else 0, 'words_per_file': totals['words'] // total_files if total_files else 0}},
             'directories': dir_stats,
         }

@@ -1,24 +1,23 @@
 #!/usr/bin/env python3
 """Report generation functions for doctor-marketplace."""
 
-from typing import Dict, List, Optional
 
-from _doctor_shared import categorize_all_issues, extract_bundle_name
 from _cmd_categorize import categorize_fix
+from _doctor_shared import categorize_all_issues, extract_bundle_name
 
 
-def count_issues_by_type(all_issues: List[Dict]) -> Dict[str, int]:
+def count_issues_by_type(all_issues: list[dict]) -> dict[str, int]:
     """Count issues by their type."""
-    counts: Dict[str, int] = {}
+    counts: dict[str, int] = {}
     for issue in all_issues:
         itype = issue.get("type", "unknown")
         counts[itype] = counts.get(itype, 0) + 1
     return counts
 
 
-def count_issues_by_bundle(analysis_results: List[Dict]) -> Dict[str, Dict[str, int]]:
+def count_issues_by_bundle(analysis_results: list[dict]) -> dict[str, dict[str, int]]:
     """Count issues by bundle with safe/risky breakdown."""
-    counts: Dict[str, Dict[str, int]] = {}
+    counts: dict[str, dict[str, int]] = {}
     for result in analysis_results:
         path = result.get("component", {}).get("path", "")
         bundle_name = extract_bundle_name(path)
@@ -35,7 +34,7 @@ def count_issues_by_bundle(analysis_results: List[Dict]) -> Dict[str, Dict[str, 
     return counts
 
 
-def extract_components_for_tool_analysis(analysis_results: List[Dict]) -> List[Dict]:
+def extract_components_for_tool_analysis(analysis_results: list[dict]) -> list[dict]:
     """Extract components needing semantic tool coverage analysis by LLM."""
     components = []
     for result in analysis_results:
@@ -51,7 +50,7 @@ def extract_components_for_tool_analysis(analysis_results: List[Dict]) -> List[D
     return components
 
 
-def build_llm_review_items(categorized: Dict) -> List[Dict]:
+def build_llm_review_items(categorized: dict) -> list[dict]:
     """Build list of items requiring LLM review."""
     items = []
     for issue in categorized["risky"]:
@@ -71,7 +70,7 @@ def build_llm_review_items(categorized: Dict) -> List[Dict]:
     return items
 
 
-def generate_report(scan_results: Dict, analysis_results: List[Dict], fix_results: Optional[Dict] = None) -> Dict:
+def generate_report(scan_results: dict, analysis_results: list[dict], fix_results: dict | None = None) -> dict:
     """Generate comprehensive report for LLM review.
 
     Includes:

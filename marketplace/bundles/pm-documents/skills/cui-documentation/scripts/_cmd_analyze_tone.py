@@ -37,7 +37,7 @@ def cmd_analyze_tone(args):
     all_issues = []
 
     def analyze_file(file_path: str):
-        with open(file_path, 'r', encoding='utf-8') as f:
+        with open(file_path, encoding='utf-8') as f:
             lines = f.readlines()
 
         for line_num, line in enumerate(lines, 1):

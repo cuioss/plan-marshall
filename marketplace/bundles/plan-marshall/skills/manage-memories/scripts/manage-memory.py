@@ -13,9 +13,9 @@ import json
 import re
 import sys
 import warnings
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 # Direct imports - PYTHONPATH set by executor
 from file_ops import base_path  # type: ignore[import-not-found]
@@ -48,7 +48,7 @@ def parse_duration(duration_str: str) -> timedelta:
     raise ValueError(f"Unknown duration unit: {unit}")
 
 
-def get_memory_path(category: str, identifier: Optional[str] = None) -> Path:
+def get_memory_path(category: str, identifier: str | None = None) -> Path:
     """Get path to memory category or specific file."""
     if category not in CATEGORIES:
         raise ValueError(f"Invalid category: {category}. Must be one of: {', '.join(CATEGORIES)}")
@@ -64,11 +64,11 @@ def get_memory_path(category: str, identifier: Optional[str] = None) -> Path:
     return path
 
 
-def create_memory_envelope(category: str, identifier: str, content: Any, session_id: Optional[str] = None) -> Dict:
+def create_memory_envelope(category: str, identifier: str, content: Any, session_id: str | None = None) -> dict:
     """Create memory file with metadata envelope."""
     return {
         "meta": {
-            "created": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
+            "created": datetime.now(UTC).isoformat().replace('+00:00', 'Z'),
             "category": category,
             "summary": identifier,
             "session_id": session_id
@@ -77,13 +77,14 @@ def create_memory_envelope(category: str, identifier: str, content: Any, session
     }
 
 
-def read_memory_file(file_path: Path) -> Dict:
+def read_memory_file(file_path: Path) -> dict:
     """Read and parse a memory file."""
-    with open(file_path, 'r', encoding='utf-8') as f:
-        return json.load(f)
+    with open(file_path, encoding='utf-8') as f:
+        data: dict = json.load(f)
+        return data
 
 
-def write_memory_file(file_path: Path, data: Dict) -> None:
+def write_memory_file(file_path: Path, data: dict) -> None:
     """Write memory file with proper formatting."""
     file_path.parent.mkdir(parents=True, exist_ok=True)
     with open(file_path, 'w', encoding='utf-8') as f:
@@ -91,7 +92,7 @@ def write_memory_file(file_path: Path, data: Dict) -> None:
         f.write('\n')
 
 
-def get_file_info(file_path: Path) -> Dict:
+def get_file_info(file_path: Path) -> dict:
     """Get metadata about a memory file."""
     stat = file_path.stat()
     try:
@@ -130,7 +131,7 @@ def cmd_save(args) -> int:
 
         # Generate timestamped filename for context category
         if args.category == 'context':
-            date_prefix = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+            date_prefix = datetime.now(UTC).strftime('%Y-%m-%d')
             identifier = f"{date_prefix}-{args.identifier}"
         else:
             identifier = args.identifier
@@ -196,7 +197,7 @@ def cmd_list(args) -> int:
                 if args.since:
                     try:
                         duration = parse_duration(args.since)
-                        cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - duration
+                        cutoff = datetime.now(UTC).replace(tzinfo=None) - duration
                         created_str = info.get('created', '')
                         if created_str:
                             created = datetime.fromisoformat(created_str.rstrip('Z'))
@@ -257,7 +258,7 @@ def cmd_cleanup(args) -> int:
     """Remove old memory files based on age."""
     try:
         duration = parse_duration(args.older_than)
-        cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - duration
+        cutoff = datetime.now(UTC).replace(tzinfo=None) - duration
 
         removed = []
         categories = [args.category] if args.category else CATEGORIES
@@ -293,13 +294,13 @@ def cmd_cleanup(args) -> int:
         return 1
 
 
-def check_required_fields(data: Dict, required: List[str]) -> tuple:
+def check_required_fields(data: dict, required: list[str]) -> tuple:
     """Check if required fields exist."""
     missing = [f for f in required if f not in data]
     return len(missing) == 0, missing
 
 
-def check_field_type(data: Dict, field: str, expected_type: type) -> tuple:
+def check_field_type(data: dict, field: str, expected_type: type) -> tuple:
     """Check if field has expected type."""
     if field not in data:
         return False, f"Field '{field}' not found"
@@ -311,7 +312,7 @@ def check_field_type(data: Dict, field: str, expected_type: type) -> tuple:
     return True, f"Field '{field}' is {expected_type.__name__}"
 
 
-def validate_memory_format(data: Dict) -> List[Dict]:
+def validate_memory_format(data: dict) -> list[dict]:
     """Validate memory file format."""
     checks = []
 

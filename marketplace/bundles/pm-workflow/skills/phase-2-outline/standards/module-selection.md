@@ -77,3 +77,49 @@ Deliverables are ordered so that dependencies are implemented BEFORE dependents:
 - Finally top-level modules
 
 This ensures each deliverable can be verified independently.
+
+---
+
+## Virtual Module Selection
+
+When a directory contains multiple technologies (Maven + npm), it creates separate **virtual modules** with technology suffixes.
+
+### Identifying Virtual Modules
+
+Query modules at a physical path:
+```bash
+python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture modules \
+  --physical-path {directory}
+```
+
+Example output for a hybrid directory:
+```
+physical_path: nifi-cuioss-ui
+
+modules[2]:
+  - nifi-cuioss-ui-maven
+  - nifi-cuioss-ui-npm
+```
+
+### Selection by Task Technology
+
+| Task Type | Select Module |
+|-----------|---------------|
+| Java implementation | `{name}-maven` |
+| JavaScript/npm work | `{name}-npm` |
+| Gradle-based Java | `{name}-gradle` |
+
+### Finding Siblings
+
+Query sibling virtual modules:
+```bash
+python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture siblings \
+  --name {module-name}
+```
+
+### Virtual Module Benefits
+
+- Each deliverable targets single technology
+- Skills by profile are technology-specific (no mixing)
+- Build commands are strings (no nested technology selection)
+- Task verification is unambiguous

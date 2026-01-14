@@ -29,16 +29,15 @@ FIXTURES_DIR = Path(__file__).parent / 'fixtures'
 
 # Direct imports - conftest sets up PYTHONPATH
 from _maven_cmd_discover import (
-    _parse_coordinates_from_maven_output,
-    _parse_profiles_from_maven_output,
-    _parse_dependencies_from_maven_output,
+    _build_commands,
+    _classify_profile,
     _filter_command_line_profiles,
     _filter_skip_profiles,
     _map_canonical_profiles,
-    _classify_profile,
-    _build_commands,
+    _parse_coordinates_from_maven_output,
+    _parse_dependencies_from_maven_output,
+    _parse_profiles_from_maven_output,
 )
-
 
 # =============================================================================
 # Fixtures

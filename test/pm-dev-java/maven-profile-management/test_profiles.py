@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Tests for profiles.py module."""
 
-import json
 import sys
 import tempfile
 from pathlib import Path
@@ -10,22 +9,19 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 # Direct imports - conftest sets up PYTHONPATH
+from _architecture_core import save_derived_data
 from profiles import (
     classify_profile,
-    list_profiles,
     get_unmatched_profiles,
+    list_profiles,
     suggest_classifications,
-    PROFILE_PATTERNS,
-    SKIP_PATTERNS,
 )
-from _architecture_core import save_derived_data
-
 
 # =============================================================================
 # Helper Functions
 # =============================================================================
 
-def create_test_derived_data(tmpdir: str, profiles: list = None) -> dict:
+def create_test_derived_data(tmpdir: str, profiles: list | None = None) -> dict:
     """Create test derived-data.json with Maven module and profiles."""
     if profiles is None:
         profiles = [
@@ -210,22 +206,5 @@ def test_suggest_classifications():
 
 
 if __name__ == "__main__":
-    runner = TestRunner()
-    runner.add_tests([
-        test_classify_jacoco,
-        test_classify_integration_tests,
-        test_classify_it,
-        test_classify_jmh,
-        test_classify_benchmark,
-        test_classify_pre_commit,
-        test_classify_apache_release,
-        test_classify_skip_tests,
-        test_classify_unknown,
-        test_list_profiles_returns_all,
-        test_list_profiles_counts_unmatched,
-        test_list_profiles_filters_by_module,
-        test_get_unmatched_profiles,
-        test_get_unmatched_profiles_empty,
-        test_suggest_classifications,
-    ])
-    sys.exit(runner.run())
+    import pytest
+    sys.exit(pytest.main([__file__, "-v"]))

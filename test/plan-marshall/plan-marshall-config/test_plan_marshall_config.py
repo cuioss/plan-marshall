@@ -8,13 +8,11 @@ Detailed variant and corner case tests are in:
 - test_cmd_system_plan.py
 """
 
-import sys
-from pathlib import Path
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import run_script, PlanContext
 from test_helpers import SCRIPT_PATH, create_marshal_json, create_nested_marshal_json, create_run_config
 
+from conftest import PlanContext, run_script
 
 # =============================================================================
 # Happy-Path Integration Tests

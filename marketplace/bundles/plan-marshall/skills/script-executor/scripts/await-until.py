@@ -5,11 +5,11 @@ import argparse
 import subprocess
 import sys
 import time
-from pathlib import Path
+
+from run_config import timeout_get, timeout_set  # type: ignore[import-not-found]
 
 # Direct imports - PYTHONPATH set by executor
 from toon_parser import parse_toon, serialize_toon  # type: ignore[import-not-found]
-from run_config import timeout_get, timeout_set  # type: ignore[import-not-found]
 
 DEFAULT_TIMEOUT = 300
 DEFAULT_INTERVAL = 30

@@ -5,7 +5,6 @@ import json
 import re
 import sys
 
-
 # =============================================================================
 # Constants
 # =============================================================================
@@ -78,7 +77,7 @@ def read_json_input(input_file: str) -> tuple[dict | None, str | None]:
         if input_file == "-":
             content = sys.stdin.read()
         else:
-            with open(input_file, "r", encoding="utf-8") as f:
+            with open(input_file, encoding="utf-8") as f:
                 content = f.read()
 
         if not content.strip():

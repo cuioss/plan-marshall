@@ -3,7 +3,6 @@
 
 import json
 import re
-import sys
 
 
 def parse_simple_yaml(yaml_text):
@@ -253,12 +252,12 @@ def validate_skill_content(content):
 
 def cmd_validate(args) -> int:
     """Validate marketplace component structure."""
-    errors = []
-    warnings = []
+    errors: list[dict] = []
+    warnings: list[dict] = []
 
     # Read file
     try:
-        with open(args.file, 'r', encoding='utf-8') as f:
+        with open(args.file, encoding='utf-8') as f:
             content = f.read()
     except FileNotFoundError:
         result = {

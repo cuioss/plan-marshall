@@ -1,23 +1,21 @@
 #!/usr/bin/env python3
 """Tests for _cmd_client.py module."""
 
-import json
 import sys
 import tempfile
-from pathlib import Path
+from argparse import Namespace
 
-# Import modules under test (PYTHONPATH set by conftest)
-from _cmd_client import (
-    get_modules_list,
-    get_modules_with_command,
-    get_module_graph,
-    cmd_modules,
-)
 from _architecture_core import (
     save_derived_data,
 )
-from argparse import Namespace
 
+# Import modules under test (PYTHONPATH set by conftest)
+from _cmd_client import (
+    cmd_modules,
+    get_module_graph,
+    get_modules_list,
+    get_modules_with_command,
+)
 
 # =============================================================================
 # Helper Functions
@@ -135,8 +133,8 @@ def test_cmd_modules_bug_command_naming_collision():
     After fix, this test should still pass because the code should
     use filter_command instead of command.
     """
-    import io
     import contextlib
+    import io
 
     with tempfile.TemporaryDirectory() as tmpdir:
         create_test_derived_data(tmpdir)
@@ -169,8 +167,8 @@ def test_cmd_modules_bug_command_naming_collision():
 
 def test_cmd_modules_without_filter_lists_all_modules():
     """cmd_modules without --command filter lists all modules."""
-    import io
     import contextlib
+    import io
 
     with tempfile.TemporaryDirectory() as tmpdir:
         create_test_derived_data(tmpdir)
@@ -198,8 +196,8 @@ def test_cmd_modules_without_filter_lists_all_modules():
 
 def test_cmd_modules_with_filter_filters_by_command():
     """cmd_modules with --command filter only returns matching modules."""
-    import io
     import contextlib
+    import io
 
     with tempfile.TemporaryDirectory() as tmpdir:
         create_test_derived_data(tmpdir)
@@ -227,8 +225,8 @@ def test_cmd_modules_with_filter_filters_by_command():
 
 def test_cmd_modules_with_filter_quality_gate():
     """cmd_modules with --command quality-gate returns only module-a."""
-    import io
     import contextlib
+    import io
 
     with tempfile.TemporaryDirectory() as tmpdir:
         create_test_derived_data(tmpdir)
@@ -561,7 +559,7 @@ if __name__ == "__main__":
             test()
             passed += 1
             print(f"PASSED: {test.__name__}")
-        except Exception as e:
+        except Exception:
             failed += 1
             print(f"FAILED: {test.__name__}")
             traceback.print_exc()

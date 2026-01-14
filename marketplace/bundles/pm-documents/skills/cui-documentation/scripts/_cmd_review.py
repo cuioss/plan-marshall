@@ -5,7 +5,7 @@ import json
 import re
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 from plan_logging import log_entry  # type: ignore[import-not-found]
 
@@ -29,7 +29,7 @@ COMPLETENESS_PATTERNS = [
 ]
 
 
-def analyze_content_line(line: str, line_number: int, file_path: str) -> List[Dict[str, Any]]:
+def analyze_content_line(line: str, line_number: int, file_path: str) -> list[dict[str, Any]]:
     """Analyze a single line for content issues."""
     issues = []
 

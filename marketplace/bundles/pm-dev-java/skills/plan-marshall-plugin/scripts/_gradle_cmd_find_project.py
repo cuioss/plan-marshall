@@ -5,10 +5,9 @@ import json
 import os
 import re
 from pathlib import Path
-from typing import List, Optional
 
 
-def find_settings_file(root: Path) -> Optional[Path]:
+def find_settings_file(root: Path) -> Path | None:
     """Find settings.gradle or settings.gradle.kts."""
     for name in ["settings.gradle.kts", "settings.gradle"]:
         settings_path = root / name
@@ -16,9 +15,9 @@ def find_settings_file(root: Path) -> Optional[Path]:
     return None
 
 
-def parse_included_projects(settings_path: Path) -> List[str]:
+def parse_included_projects(settings_path: Path) -> list[str]:
     """Parse included projects from settings file."""
-    with open(settings_path, "r", encoding="utf-8") as f:
+    with open(settings_path, encoding="utf-8") as f:
         content = f.read()
     projects = []
     for pattern in [r'include\s*\(\s*([^)]+)\s*\)', r"include\s+(['\"][^'\"]+['\"](?:\s*,\s*['\"][^'\"]+['\"])*)"]:
@@ -28,15 +27,15 @@ def parse_included_projects(settings_path: Path) -> List[str]:
     return list(set(projects))
 
 
-def get_root_project_name(settings_path: Path) -> Optional[str]:
+def get_root_project_name(settings_path: Path) -> str | None:
     """Extract rootProject.name from settings file."""
-    with open(settings_path, "r", encoding="utf-8") as f:
+    with open(settings_path, encoding="utf-8") as f:
         content = f.read()
     match = re.search(r'rootProject\.name\s*=\s*["\']([^"\']+)["\']', content)
     return match.group(1) if match else None
 
 
-def find_build_files(root: Path) -> List[Path]:
+def find_build_files(root: Path) -> list[Path]:
     """Find all build.gradle and build.gradle.kts files."""
     build_files = []
     for pattern in ["**/build.gradle", "**/build.gradle.kts"]:

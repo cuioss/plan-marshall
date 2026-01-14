@@ -8,14 +8,10 @@ Consolidated from:
 Tests run-configuration.json initialization and validation.
 """
 
-import os
-import sys
 import shutil
-import subprocess
-from pathlib import Path
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import run_script, get_script_path, PlanContext, PLAN_DIR_NAME
+from conftest import PLAN_DIR_NAME, PlanContext, get_script_path, run_script
 
 # Script under test
 SCRIPT_PATH = get_script_path('plan-marshall', 'run-config', 'run_config.py')
@@ -1183,7 +1179,6 @@ def test_ext_defaults_set_updates_existing():
 
 def test_ext_defaults_set_json_array():
     """Test extension-defaults set with JSON array value."""
-    import json
     with PlanContext() as ctx:
         run_script(SCRIPT_PATH, 'init')
 
@@ -1198,7 +1193,6 @@ def test_ext_defaults_set_json_array():
 
 def test_ext_defaults_set_json_object():
     """Test extension-defaults set with JSON object value."""
-    import json
     with PlanContext() as ctx:
         run_script(SCRIPT_PATH, 'init')
 
@@ -1213,7 +1207,6 @@ def test_ext_defaults_set_json_object():
 
 def test_ext_defaults_set_plain_string():
     """Test extension-defaults set with plain string (non-JSON) value."""
-    import json
     with PlanContext() as ctx:
         run_script(SCRIPT_PATH, 'init')
 
@@ -1269,7 +1262,6 @@ def test_ext_defaults_get_nonexistent():
 
 def test_ext_defaults_set_default_adds_new():
     """Test extension-defaults set-default adds value when key doesn't exist."""
-    import json
     with PlanContext() as ctx:
         run_script(SCRIPT_PATH, 'init')
 

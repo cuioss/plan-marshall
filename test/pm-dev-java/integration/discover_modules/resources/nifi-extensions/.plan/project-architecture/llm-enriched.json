@@ -32,9 +32,9 @@
       "key_packages": {},
       "internal_dependencies": [],
       "key_dependencies": [
-        "npm:@playwright/test",
-        "npm:axe-playwright",
-        "npm:jwt-decode"
+        "@playwright/test",
+        "axe-playwright",
+        "jwt-decode"
       ],
       "key_dependencies_reasoning": "Playwright for E2E testing, axe-playwright for accessibility testing, jwt-decode for token validation in tests",
       "skills_by_profile": {

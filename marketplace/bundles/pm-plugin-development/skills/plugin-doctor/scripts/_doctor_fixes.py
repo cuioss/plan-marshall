@@ -2,25 +2,27 @@
 """Fix application functions for doctor-marketplace."""
 
 from pathlib import Path
-from typing import Dict, List, Optional
 
 from _cmd_apply import apply_single_fix, load_templates
 from _doctor_shared import find_bundle_for_file
 
 
-def apply_safe_fixes(issues: List[Dict], marketplace_root: Path, script_dir: Path, dry_run: bool = False) -> Dict:
+def apply_safe_fixes(issues: list[dict], marketplace_root: Path, script_dir: Path, dry_run: bool = False) -> dict:
     """Apply all safe fixes to files."""
-    results = {
-        "applied": [],
-        "failed": [],
-        "skipped": [],
+    applied: list[dict] = []
+    failed: list[dict] = []
+    skipped: list[dict] = []
+    results: dict = {
+        "applied": applied,
+        "failed": failed,
+        "skipped": skipped,
         "dry_run": dry_run
     }
 
     templates = load_templates(script_dir)
 
     # Group issues by file to avoid conflicts
-    by_file: Dict[str, List[Dict]] = {}
+    by_file: dict[str, list[dict]] = {}
     for issue in issues:
         file_path = issue.get("file", "")
         if file_path:

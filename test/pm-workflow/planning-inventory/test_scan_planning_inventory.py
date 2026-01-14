@@ -10,7 +10,7 @@ from pathlib import Path
 
 # Import shared infrastructure
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from conftest import run_script, get_script_path
+from conftest import get_script_path, run_script
 
 # Script under test
 SCRIPT_PATH = get_script_path('pm-workflow', 'planning-inventory', 'scan-planning-inventory.py')

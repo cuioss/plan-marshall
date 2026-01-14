@@ -13,8 +13,7 @@ import re
 from pathlib import Path
 
 # Cross-skill imports (PYTHONPATH set by executor)
-from _build_parse import Issue, UnitTestSummary, SEVERITY_ERROR  # type: ignore[import-not-found]
-
+from _build_parse import SEVERITY_ERROR, Issue, UnitTestSummary  # type: ignore[import-not-found]
 
 # npm error code pattern: "npm ERR! code XXXXX"
 NPM_ERROR_CODE_PATTERN = re.compile(r"^npm ERR! code (\S+)", re.MULTILINE)
@@ -71,7 +70,7 @@ def _extract_issues(content: str) -> list[Issue]:
     Returns:
         List of Issue dataclasses with npm errors.
     """
-    issues = []
+    issues: list[Issue] = []
 
     # Get error code if present
     code_match = NPM_ERROR_CODE_PATTERN.search(content)

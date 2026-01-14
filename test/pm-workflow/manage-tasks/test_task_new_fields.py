@@ -8,7 +8,7 @@ from pathlib import Path
 
 # Import shared infrastructure
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from conftest import run_script, create_temp_dir, get_script_path
+from conftest import create_temp_dir, get_script_path, run_script
 
 # Script under test
 SCRIPT_PATH = get_script_path('pm-workflow', 'manage-tasks', 'manage-tasks.py')

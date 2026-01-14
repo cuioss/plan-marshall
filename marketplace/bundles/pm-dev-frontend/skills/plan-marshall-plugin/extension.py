@@ -14,9 +14,8 @@ import json
 from pathlib import Path
 
 # Cross-skill imports (PYTHONPATH set by executor)
-from extension_base import ExtensionBase, discover_descriptors, build_module_base  # type: ignore[import-not-found]
+from extension_base import ExtensionBase, build_module_base, discover_descriptors  # type: ignore[import-not-found]
 from npm import execute_direct  # type: ignore[import-not-found]
-
 
 # Build file constant
 PACKAGE_JSON = "package.json"
@@ -155,7 +154,7 @@ class Extension(ExtensionBase):
         - paths: {module, descriptor, sources, tests, readme}
         - metadata: npm-specific fields (type, description)
         - packages: {} (object keyed by package name)
-        - dependencies: ["npm:name:scope", ...] (string format)
+        - dependencies: ["name:scope", ...] (string format, e.g., "lit:compile")
         - stats: {source_files, test_files}
         - commands: {} (canonical command mappings)
         """
@@ -268,7 +267,7 @@ class Extension(ExtensionBase):
             module_dir: Directory containing package.json
 
         Returns:
-            List of "npm:{name}:{scope}" strings per specification
+            List of "{name}:{scope}" strings (e.g., "lit:compile", "@testing-library/dom:test")
         """
         result = execute_direct(
             args="ls --json --depth=0",
@@ -299,7 +298,7 @@ class Extension(ExtensionBase):
                     scope = "provided"
                 else:
                     scope = "compile"
-                dependencies.append(f"npm:{name}:{scope}")
+                dependencies.append(f"{name}:{scope}")
 
         except (json.JSONDecodeError, OSError):
             pass

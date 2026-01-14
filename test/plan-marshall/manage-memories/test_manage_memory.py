@@ -9,14 +9,13 @@ Tests memory layer operations and format validation.
 """
 
 import os
-import sys
-import tempfile
 import subprocess
-from pathlib import Path
+import tempfile
 from contextlib import contextmanager
+from pathlib import Path
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import run_script, get_script_path, _MARKETPLACE_SCRIPT_DIRS
+from conftest import _MARKETPLACE_SCRIPT_DIRS, get_script_path
 
 # Script under test
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-memories', 'manage-memory.py')

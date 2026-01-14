@@ -25,8 +25,7 @@ import os
 import sys
 import tempfile
 from pathlib import Path
-from typing import Any, Dict, Optional
-
+from typing import Any
 
 # Default base directory for workflow files
 # Can be overridden via PLAN_BASE_DIR environment variable for testing
@@ -161,7 +160,7 @@ def output_error(operation: str, error: str) -> None:
     print(json.dumps(result, indent=2), file=sys.stderr)
 
 
-def parse_markdown_metadata(content: str) -> Dict[str, str]:
+def parse_markdown_metadata(content: str) -> dict[str, str]:
     """Parse key=value metadata from markdown content.
 
     Parses metadata at the start of markdown content that uses key=value format.
@@ -203,7 +202,7 @@ def parse_markdown_metadata(content: str) -> Dict[str, str]:
     return metadata
 
 
-def generate_markdown_metadata(data: Dict[str, str]) -> str:
+def generate_markdown_metadata(data: dict[str, str]) -> str:
     """Generate key=value metadata block from dictionary.
 
     Args:
@@ -224,7 +223,7 @@ def generate_markdown_metadata(data: Dict[str, str]) -> str:
     return '\n'.join(lines)
 
 
-def update_markdown_metadata(content: str, updates: Dict[str, str]) -> str:
+def update_markdown_metadata(content: str, updates: dict[str, str]) -> str:
     """Update specific metadata fields in markdown content.
 
     Preserves existing metadata and content, only updating specified keys.

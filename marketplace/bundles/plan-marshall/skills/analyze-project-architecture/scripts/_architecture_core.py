@@ -8,6 +8,7 @@ import json
 import os
 import sys
 from pathlib import Path
+from typing import Any
 
 # Plan directory name - configurable for test isolation
 _PLAN_DIR_NAME = os.environ.get('PLAN_DIR_NAME', '.plan')
@@ -63,7 +64,7 @@ def get_enriched_path(project_dir: str = '.') -> Path:
     return get_data_dir(project_dir) / LLM_ENRICHED_FILE
 
 
-def load_derived_data(project_dir: str = '.') -> dict:
+def load_derived_data(project_dir: str = '.') -> dict[str, Any]:
     """Load derived-data.json.
 
     Args:
@@ -81,11 +82,12 @@ def load_derived_data(project_dir: str = '.') -> dict:
             f"Derived data not found. Run 'architecture.py discover' first. "
             f"Expected: {path}"
         )
-    with open(path, 'r') as f:
-        return json.load(f)
+    with open(path) as f:
+        result: dict[str, Any] = json.load(f)
+        return result
 
 
-def load_llm_enriched(project_dir: str = '.') -> dict:
+def load_llm_enriched(project_dir: str = '.') -> dict[str, Any]:
     """Load llm-enriched.json.
 
     Args:
@@ -103,11 +105,12 @@ def load_llm_enriched(project_dir: str = '.') -> dict:
             f"Enrichment data not found. Run 'architecture.py init' first. "
             f"Expected: {path}"
         )
-    with open(path, 'r') as f:
-        return json.load(f)
+    with open(path) as f:
+        result: dict[str, Any] = json.load(f)
+        return result
 
 
-def load_llm_enriched_or_empty(project_dir: str = '.') -> dict:
+def load_llm_enriched_or_empty(project_dir: str = '.') -> dict[str, Any]:
     """Load llm-enriched.json or return empty structure.
 
     Args:
@@ -119,11 +122,12 @@ def load_llm_enriched_or_empty(project_dir: str = '.') -> dict:
     path = get_enriched_path(project_dir)
     if not path.exists():
         return {"project": {}, "modules": {}}
-    with open(path, 'r') as f:
-        return json.load(f)
+    with open(path) as f:
+        result: dict[str, Any] = json.load(f)
+        return result
 
 
-def save_derived_data(data: dict, project_dir: str = '.') -> Path:
+def save_derived_data(data: dict[str, Any], project_dir: str = '.') -> Path:
     """Save derived-data.json.
 
     Args:
@@ -140,7 +144,7 @@ def save_derived_data(data: dict, project_dir: str = '.') -> Path:
     return path
 
 
-def save_llm_enriched(data: dict, project_dir: str = '.') -> Path:
+def save_llm_enriched(data: dict[str, Any], project_dir: str = '.') -> Path:
     """Save llm-enriched.json.
 
     Args:
@@ -161,7 +165,7 @@ def save_llm_enriched(data: dict, project_dir: str = '.') -> Path:
 # Module Operations
 # =============================================================================
 
-def get_module_names(derived: dict) -> list:
+def get_module_names(derived: dict[str, Any]) -> list[str]:
     """Get list of module names from derived data.
 
     Args:
@@ -173,7 +177,7 @@ def get_module_names(derived: dict) -> list:
     return list(derived.get("modules", {}).keys())
 
 
-def get_root_module(derived: dict) -> str | None:
+def get_root_module(derived: dict[str, Any]) -> str | None:
     """Get the root module name (module at project root).
 
     Root module is determined by:
@@ -189,17 +193,19 @@ def get_root_module(derived: dict) -> str | None:
     Returns:
         Root module name, or None if no modules exist
     """
-    modules = derived.get("modules", {})
+    modules: dict[str, Any] = derived.get("modules", {})
     for name, data in modules.items():
         paths = data.get("paths", {})
         module_path = paths.get("module", "")
         if module_path == "." or module_path == "":
-            return name
+            root_name: str = name
+            return root_name
     # Fallback: first module
-    return next(iter(modules.keys()), None)
+    result: str | None = next(iter(modules.keys()), None)
+    return result
 
 
-def get_module(derived: dict, module_name: str) -> dict:
+def get_module(derived: dict[str, Any], module_name: str) -> dict[str, Any]:
     """Get module data by name.
 
     Args:
@@ -219,10 +225,11 @@ def get_module(derived: dict, module_name: str) -> dict:
             f"Module not found: {module_name}",
             available
         )
-    return modules[module_name]
+    result: dict[str, Any] = modules[module_name]
+    return result
 
 
-def merge_module_data(derived: dict, enriched: dict, module_name: str) -> dict:
+def merge_module_data(derived: dict[str, Any], enriched: dict[str, Any], module_name: str) -> dict[str, Any]:
     """Merge derived and enriched data for a module.
 
     Args:
@@ -330,7 +337,7 @@ def print_toon_list(name: str, items: list):
 # Error Handling
 # =============================================================================
 
-def error_exit(message: str, context: dict = None):
+def error_exit(message: str, context: dict[str, Any] | None = None) -> None:
     """Print error in TOON format and exit with code 1.
 
     Args:

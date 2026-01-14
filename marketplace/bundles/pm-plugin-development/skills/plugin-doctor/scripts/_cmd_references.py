@@ -5,7 +5,6 @@ import json
 import re
 import sys
 from pathlib import Path
-from typing import Dict, List, Set
 
 
 def detect_file_type(file_path: str) -> str:
@@ -19,7 +18,7 @@ def detect_file_type(file_path: str) -> str:
     return "unknown"
 
 
-def pre_filter_documentation_lines(content: str) -> Set[int]:
+def pre_filter_documentation_lines(content: str) -> set[int]:
     """Pre-filter documentation lines to exclude from reference detection."""
     lines = content.split('\n')
     excluded = set()
@@ -87,7 +86,7 @@ def pre_filter_documentation_lines(content: str) -> Set[int]:
     return excluded
 
 
-def extract_references(content: str, excluded_lines: Set[int]) -> List[Dict]:
+def extract_references(content: str, excluded_lines: set[int]) -> list[dict]:
     """Extract plugin references from content."""
     lines = content.split('\n')
     references = []
@@ -136,7 +135,7 @@ def cmd_references(args) -> int:
         return 1
 
     try:
-        with open(file_path, 'r', encoding='utf-8') as f:
+        with open(file_path, encoding='utf-8') as f:
             content = f.read()
     except Exception as e:
         print(json.dumps({"error": f"Failed to read file: {str(e)}"}), file=sys.stderr)

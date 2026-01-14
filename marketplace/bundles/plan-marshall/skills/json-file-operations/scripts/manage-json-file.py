@@ -14,10 +14,10 @@ import os
 import sys
 import tempfile
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 
-def parse_json_path(path: str) -> list:
+def parse_json_path(path: str) -> list[str | int]:
     """Parse a JSON path string into components.
 
     Supports:
@@ -25,7 +25,7 @@ def parse_json_path(path: str) -> list:
     - Array indices: 'a[0].b', 'a[-1]'
     - Quoted keys: 'a."my-key".b'
     """
-    components = []
+    components: list[str | int] = []
     current = ""
     i = 0
     in_quotes = False
@@ -140,13 +140,14 @@ def delete_nested_value(data: Any, path_components: list) -> Any:
         return current.pop(final)
 
 
-def read_json_file(file_path: Path) -> dict:
+def read_json_file(file_path: Path) -> dict[str, Any]:
     """Read and parse a JSON file."""
     if not file_path.exists():
         raise FileNotFoundError(f"File not found: {file_path}")
 
-    with open(file_path, 'r', encoding='utf-8') as f:
-        return json.load(f)
+    with open(file_path, encoding='utf-8') as f:
+        data: dict[str, Any] = json.load(f)
+        return data
 
 
 def write_json_file(file_path: Path, data: Any) -> None:
@@ -309,7 +310,7 @@ def cmd_remove_entry(args) -> int:
                     target.remove(value)
                     removed = value
                 else:
-                    output_error("remove-entry", f"Value not found in array")
+                    output_error("remove-entry", "Value not found in array")
                     return 1
             elif isinstance(target, dict):
                 key = args.value.strip('"\'')

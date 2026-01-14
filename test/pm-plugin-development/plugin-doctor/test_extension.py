@@ -4,13 +4,11 @@
 Tests the cmd_extension.py script that validates extension.py files.
 """
 
-import json
-import sys
 import tempfile
 from pathlib import Path
 
 # Import shared infrastructure
-from conftest import run_script, get_script_path
+from conftest import get_script_path, run_script
 
 # Script under test
 SCRIPT_PATH = get_script_path('pm-plugin-development', 'plugin-doctor', '_validate.py')

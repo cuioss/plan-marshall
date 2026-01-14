@@ -18,7 +18,6 @@ Usage:
 import json
 from typing import Any
 
-
 # =============================================================================
 # Constants
 # =============================================================================
@@ -174,7 +173,7 @@ def _normalize_result(result: dict) -> dict:
     Returns:
         Dict with all nested objects converted to plain dicts.
     """
-    normalized = {}
+    normalized: dict[str, Any] = {}
     for key, value in result.items():
         if key == "errors" or key == "warnings":
             normalized[key] = _normalize_issues(value)
@@ -185,7 +184,7 @@ def _normalize_result(result: dict) -> dict:
     return normalized
 
 
-def _normalize_issues(issues: list) -> list[dict]:
+def _normalize_issues(issues: list) -> list[dict[Any, Any]]:
     """Convert list of Issues or dicts to list of dicts.
 
     Args:
@@ -194,10 +193,11 @@ def _normalize_issues(issues: list) -> list[dict]:
     Returns:
         List of plain dicts.
     """
-    result = []
+    result: list[dict[Any, Any]] = []
     for issue in issues:
         if hasattr(issue, "to_dict"):
-            result.append(issue.to_dict())
+            issue_dict: dict[Any, Any] = issue.to_dict()
+            result.append(issue_dict)
         elif isinstance(issue, dict):
             result.append(issue)
         else:
@@ -206,7 +206,7 @@ def _normalize_issues(issues: list) -> list[dict]:
     return result
 
 
-def _normalize_dict(obj: Any) -> dict:
+def _normalize_dict(obj: Any) -> dict[Any, Any]:
     """Convert object with to_dict() or dict to plain dict.
 
     Args:
@@ -216,7 +216,8 @@ def _normalize_dict(obj: Any) -> dict:
         Plain dict.
     """
     if hasattr(obj, "to_dict"):
-        return obj.to_dict()
+        normalized: dict[Any, Any] = obj.to_dict()
+        return normalized
     if isinstance(obj, dict):
         return obj
     return {}

@@ -5,7 +5,7 @@ import json
 import re
 from pathlib import Path
 
-from _maintain_shared import EXIT_SUCCESS, EXIT_ERROR, output_json
+from _maintain_shared import EXIT_ERROR, EXIT_SUCCESS, output_json
 
 
 def extract_description(file_path: Path) -> str:
@@ -15,7 +15,7 @@ def extract_description(file_path: Path) -> str:
 
     try:
         content = file_path.read_text(encoding='utf-8', errors='replace')
-    except (OSError, IOError):
+    except OSError:
         return 'No description'
 
     # Check for YAML frontmatter
@@ -49,10 +49,11 @@ def get_bundle_name(bundle_path: Path) -> str:
         return 'Unknown'
 
     try:
-        with open(plugin_json, 'r', encoding='utf-8') as f:
+        with open(plugin_json, encoding='utf-8') as f:
             data = json.load(f)
-            return data.get('name', 'Unknown')
-    except (OSError, IOError, json.JSONDecodeError):
+            name: str = data.get('name', 'Unknown')
+            return name
+    except (OSError, json.JSONDecodeError):
         return 'Unknown'
 
 

@@ -2,7 +2,7 @@
 """Shared utilities for maintain subcommands."""
 
 import json
-import re
+from typing import Any
 
 EXIT_SUCCESS = 0
 EXIT_ERROR = 1
@@ -25,7 +25,7 @@ def parse_frontmatter(content: str) -> tuple[dict | None, str]:
         return None, content
 
     # Parse YAML (simple key: value parsing)
-    frontmatter = {}
+    frontmatter: dict[str, Any] = {}
     for line in lines[1:end_idx]:
         line = line.strip()
         if not line or line.startswith('#'):

@@ -13,7 +13,7 @@ def verify_frontmatter_fix(file_path: Path) -> dict:
     """Verify frontmatter was added with required fields."""
     try:
         content = file_path.read_text(encoding='utf-8', errors='replace')
-    except (OSError, IOError) as e:
+    except OSError as e:
         return {'verified': False, 'error': f'Failed to read file: {e}'}
 
     frontmatter_present, frontmatter = extract_frontmatter(content)
@@ -46,7 +46,7 @@ def verify_array_syntax_fix(file_path: Path) -> dict:
     """Verify tools no longer uses array syntax."""
     try:
         content = file_path.read_text(encoding='utf-8', errors='replace')
-    except (OSError, IOError) as e:
+    except OSError as e:
         return {'verified': False, 'error': f'Failed to read file: {e}'}
 
     frontmatter_present, frontmatter = extract_frontmatter(content)
@@ -76,7 +76,7 @@ def verify_rule_6_fix(file_path: Path) -> dict:
     """Verify Task tool was removed from declaration."""
     try:
         content = file_path.read_text(encoding='utf-8', errors='replace')
-    except (OSError, IOError) as e:
+    except OSError as e:
         return {'verified': False, 'error': f'Failed to read file: {e}'}
 
     frontmatter_present, frontmatter = extract_frontmatter(content)
@@ -106,7 +106,7 @@ def verify_trailing_whitespace_fix(file_path: Path) -> dict:
     """Verify trailing whitespace was removed."""
     try:
         content = file_path.read_text(encoding='utf-8', errors='replace')
-    except (OSError, IOError) as e:
+    except OSError as e:
         return {'verified': False, 'error': f'Failed to read file: {e}'}
 
     trailing_count = len(re.findall(r'[ \t]+$', content, re.MULTILINE))
@@ -129,7 +129,7 @@ def verify_pattern_22_fix(file_path: Path) -> dict:
     """Verify self-update patterns were removed."""
     try:
         content = file_path.read_text(encoding='utf-8', errors='replace')
-    except (OSError, IOError) as e:
+    except OSError as e:
         return {'verified': False, 'error': f'Failed to read file: {e}'}
 
     if re.search(r'/plugin-update-agent|/plugin-update-command', content, re.IGNORECASE):

@@ -6,19 +6,19 @@ import sys
 import tempfile
 from pathlib import Path
 
-# Import modules under test (PYTHONPATH set by conftest)
-from _cmd_manage import (
-    api_init,
-    api_get_derived,
-    api_get_derived_module,
-    list_modules,
-)
 from _architecture_core import (
     DataNotFoundError,
     ModuleNotFoundError,
     save_derived_data,
 )
 
+# Import modules under test (PYTHONPATH set by conftest)
+from _cmd_manage import (
+    api_get_derived,
+    api_get_derived_module,
+    api_init,
+    list_modules,
+)
 
 # =============================================================================
 # Helper Functions
@@ -268,7 +268,7 @@ if __name__ == "__main__":
             test()
             passed += 1
             print(f"PASSED: {test.__name__}")
-        except Exception as e:
+        except Exception:
             failed += 1
             print(f"FAILED: {test.__name__}")
             traceback.print_exc()

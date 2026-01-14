@@ -33,10 +33,9 @@ Examples:
 """
 
 import sys
-from pathlib import Path
 
 # Direct imports from same directory (local imports)
-from plan_logging import log_entry, read_work_log, list_recent_work, get_log_path
+from plan_logging import get_log_path, list_recent_work, log_entry, read_work_log
 
 VALID_TYPES = ('script', 'work')
 VALID_LEVELS = ('INFO', 'WARN', 'ERROR')
@@ -101,7 +100,7 @@ def format_toon_output(result: dict) -> str:
 
 def parse_read_args(args: list) -> dict:
     """Parse named arguments for read command."""
-    result = {
+    result: dict[str, str | int | None] = {
         'plan_id': None,
         'log_type': None,
         'limit': None,
@@ -161,7 +160,7 @@ def handle_read(args: list) -> None:
 
     if parsed['log_type'] not in VALID_TYPES:
         print("status: error", file=sys.stderr)
-        print(f"error: invalid_type", file=sys.stderr)
+        print("error: invalid_type", file=sys.stderr)
         print(f"message: type must be one of {VALID_TYPES}", file=sys.stderr)
         sys.exit(1)
 

@@ -15,6 +15,7 @@ Usage:
 import argparse
 import re
 import sys
+from pathlib import Path
 
 from file_ops import atomic_write_file, base_path  # type: ignore[import-not-found]
 from toon_parser import parse_toon, serialize_toon  # type: ignore[import-not-found]

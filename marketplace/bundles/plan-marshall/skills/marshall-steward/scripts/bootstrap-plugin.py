@@ -29,7 +29,7 @@ Environment:
 import argparse
 import os
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 # Default plugin name to search for
@@ -138,7 +138,7 @@ def get_plugin_root(refresh: bool = False) -> tuple[Path | None, str]:
         # Cache for future use
         state = read_state()
         state["plugin_root"] = str(plugin_root)
-        state["detected_at"] = datetime.now(timezone.utc).isoformat()
+        state["detected_at"] = datetime.now(UTC).isoformat()
         write_state(state)
         return plugin_root, "detected"
 

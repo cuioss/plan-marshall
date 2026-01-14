@@ -10,9 +10,9 @@ from pathlib import Path
 def count_lines(file_path: Path) -> int:
     """Count lines in a file."""
     try:
-        with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
+        with open(file_path, encoding='utf-8', errors='replace') as f:
             return sum(1 for _ in f)
-    except (OSError, IOError):
+    except OSError:
         return 0
 
 
@@ -51,7 +51,7 @@ def scan_directory(skill_path: Path, include_hidden: bool) -> dict:
     total_dirs = 0
     total_files = 0
     total_lines = 0
-    extensions = defaultdict(int)
+    extensions: defaultdict[str, int] = defaultdict(int)
 
     try:
         for entry in sorted(skill_path.iterdir()):

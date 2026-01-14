@@ -24,7 +24,7 @@ import json
 import re
 import sys
 from pathlib import Path
-
+from typing import Any
 
 # ============================================================================
 # CONFIGURATION
@@ -108,7 +108,7 @@ def wrap_text(text: str, width: int) -> str:
 
 
 def format_message(commit_type: str, scope: str, subject: str,
-                   body: str = None, breaking: str = None, footer: str = None) -> str:
+                   body: str | None = None, breaking: str | None = None, footer: str | None = None) -> str:
     """Format complete commit message."""
     # Header
     breaking_indicator = "!" if breaking else ""
@@ -190,11 +190,12 @@ def cmd_format_commit(args):
 
 def analyze_diff(diff_content: str) -> dict:
     """Analyze diff content to suggest commit parameters."""
-    suggestions = {
+    detected_changes: list[str] = []
+    suggestions: dict[str, Any] = {
         "type": "chore",
         "scope": None,
         "subject": None,
-        "detected_changes": []
+        "detected_changes": detected_changes
     }
 
     # Detect file types changed
@@ -226,27 +227,27 @@ def analyze_diff(diff_content: str) -> dict:
     # Bug fix indicators
     if re.search(r'(fix|bug|error|null|exception)', diff_content, re.IGNORECASE):
         suggestions["type"] = "fix"
-        suggestions["detected_changes"].append("Bug fix patterns detected")
+        detected_changes.append("Bug fix patterns detected")
 
     # Feature indicators
     elif additions > deletions * 2 and src_files:
         suggestions["type"] = "feat"
-        suggestions["detected_changes"].append("Significant new code added")
+        detected_changes.append("Significant new code added")
 
     # Test changes
     elif test_files and not src_files:
         suggestions["type"] = "test"
-        suggestions["detected_changes"].append("Test files modified")
+        detected_changes.append("Test files modified")
 
     # Documentation
     elif doc_files and not src_files:
         suggestions["type"] = "docs"
-        suggestions["detected_changes"].append("Documentation modified")
+        detected_changes.append("Documentation modified")
 
     # Refactoring
     elif abs(additions - deletions) < min(additions, deletions) * 0.3:
         suggestions["type"] = "refactor"
-        suggestions["detected_changes"].append("Similar additions/deletions suggests refactoring")
+        detected_changes.append("Similar additions/deletions suggests refactoring")
 
     suggestions["files_changed"] = files_changed[:10]  # Limit to 10
 

@@ -23,8 +23,8 @@ import sys
 from pathlib import Path
 
 from file_ops import atomic_write_file, base_path  # type: ignore[import-not-found]
-from toon_parser import parse_toon, serialize_toon  # type: ignore[import-not-found]
 from plan_logging import log_entry  # type: ignore[import-not-found]
+from toon_parser import parse_toon, serialize_toon  # type: ignore[import-not-found]
 
 
 def validate_plan_id(plan_id: str) -> bool:

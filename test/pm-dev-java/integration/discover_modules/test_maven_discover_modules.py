@@ -23,6 +23,10 @@ EXTENSION_DIR = PROJECT_ROOT / "marketplace" / "bundles" / "pm-dev-java" / "skil
 sys.path.insert(0, str(EXTENSION_DIR))
 
 # Direct imports - conftest sets up PYTHONPATH for cross-skill imports
+from _architecture_core import save_derived_data
+from _cmd_client import get_module_graph
+from extension import Extension
+
 from integration_common import (
     INTEGRATION_TEST_OUTPUT_DIR,
     IntegrationContext,
@@ -32,10 +36,6 @@ from integration_common import (
     assert_no_null_values,
     assert_paths_exist,
 )
-from extension import Extension
-from _cmd_client import get_module_graph
-from _architecture_core import save_derived_data
-
 
 # =============================================================================
 # Graph Output Helper
@@ -220,7 +220,7 @@ def save_graph_outputs(output_dir: Path, project_name: str, modules: list, proje
     derived_path = project_output_dir / ".plan" / "project-architecture" / "derived-data.json"
     if derived_path.exists():
         if not resources_copied:
-            print(f"  Derived: derived-data.json (existing)")
+            print("  Derived: derived-data.json (existing)")
     else:
         derived_data = {
             "project": {
@@ -229,21 +229,21 @@ def save_graph_outputs(output_dir: Path, project_name: str, modules: list, proje
             "modules": modules_dict
         }
         save_derived_data(derived_data, str(project_output_dir))
-        print(f"  Derived: derived-data.json (generated)")
+        print("  Derived: derived-data.json (generated)")
 
     # Generate and save enriched data with computed internal_dependencies
     # Only generate if no existing llm-enriched.json (preserve marshal-steward output)
     enriched_path = project_output_dir / ".plan" / "project-architecture" / "llm-enriched.json"
     if enriched_path.exists():
         if not resources_copied:
-            print(f"  Enriched: llm-enriched.json (existing)")
+            print("  Enriched: llm-enriched.json (existing)")
     else:
         enriched_data = generate_enriched_data(modules_dict)
         if enriched_data["modules"]:
             enriched_path.parent.mkdir(parents=True, exist_ok=True)
             with open(enriched_path, "w") as f:
                 json.dump(enriched_data, f, indent=2)
-            print(f"  Enriched: llm-enriched.json (generated)")
+            print("  Enriched: llm-enriched.json (generated)")
 
     # Generate graph without --full (filters aggregators)
     try:
@@ -327,7 +327,7 @@ def run_integration_tests() -> int:
 
             # Check if project exists
             if not ctx.validate_project(project):
-                print(f"  SKIP: Project not found")
+                print("  SKIP: Project not found")
                 continue
 
             test_count += 1
@@ -381,7 +381,7 @@ def run_integration_tests() -> int:
                     ctx.errors.extend([f"{project.name}: {e}" for e in errors])
                     all_passed = False
                 else:
-                    print(f"  PASS: All assertions passed")
+                    print("  PASS: All assertions passed")
                     pass_count += 1
 
                 # Print module summary

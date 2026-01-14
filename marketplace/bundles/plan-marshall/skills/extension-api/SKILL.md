@@ -31,7 +31,7 @@ extension-api/
 ├── SKILL.md                        # This file
 ├── scripts/
 │   ├── extension_base.py           # ExtensionBase ABC, canonical commands
-│   ├── extension.py                # Extension discovery, loading, aggregation
+│   ├── extension_discovery.py      # Extension discovery, loading, aggregation
 │   ├── build_discover.py           # Module discovery, path building
 │   ├── build_result.py             # Log file creation, result construction
 │   └── build_parse.py              # Issue structures, warning filtering
@@ -97,18 +97,18 @@ For understanding the complete system architecture, reference these documents:
 | Script | Type | Purpose |
 |--------|------|---------|
 | `extension_base.py` | Library | ExtensionBase ABC, canonical commands, profile patterns |
-| `extension.py` | Library + CLI | Extension discovery, loading, aggregation, config defaults |
+| `extension_discovery.py` | Library + CLI | Extension discovery, loading, aggregation, config defaults |
 | `build_discover.py` | Library | Module discovery, path building, README detection |
 | `build_result.py` | Library | Log file creation, result dict construction |
 | `build_parse.py` | Library | Issue structures, warning filtering |
 
 ### CLI Commands
 
-The `extension.py` script provides CLI commands for extension operations:
+The `extension_discovery.py` script provides CLI commands for extension operations:
 
 ```bash
 # Apply config_defaults() callback for all extensions
-python3 .plan/execute-script.py plan-marshall:extension-api:extension apply-config-defaults
+python3 .plan/execute-script.py plan-marshall:extension-api:extension_discovery apply-config-defaults
 ```
 
 **Output (TOON)**:
@@ -131,7 +131,7 @@ from pathlib import Path
 extension_api_path = Path(__file__).parent.parent.parent / "extension-api" / "scripts"
 sys.path.insert(0, str(extension_api_path))
 
-from extension import (
+from extension_discovery import (
     discover_all_extensions,
     discover_project_modules,
     get_build_systems_from_extensions,

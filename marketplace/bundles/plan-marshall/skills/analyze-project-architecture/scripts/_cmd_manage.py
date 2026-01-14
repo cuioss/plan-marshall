@@ -4,27 +4,25 @@
 Handles: discover, init, derived, derived-module
 """
 
+import sys
 from pathlib import Path
 
 from _architecture_core import (
     DataNotFoundError,
     ModuleNotFoundError,
-    get_data_dir,
-    get_derived_path,
-    get_enriched_path,
-    load_derived_data,
-    load_llm_enriched,
-    save_derived_data,
-    save_llm_enriched,
-    get_module_names,
-    get_module,
-    print_toon_kv,
-    print_toon_table,
-    print_toon_list,
     error_data_not_found,
     error_module_not_found,
+    get_derived_path,
+    get_enriched_path,
+    get_module,
+    get_module_names,
+    load_derived_data,
+    load_llm_enriched,
+    print_toon_list,
+    print_toon_table,
+    save_derived_data,
+    save_llm_enriched,
 )
-
 
 # =============================================================================
 # API Functions
@@ -50,7 +48,7 @@ def api_discover(project_dir: str = '.', force: bool = False) -> dict:
         }
 
     # Import extension API for discovery (PYTHONPATH set by executor)
-    from extension import discover_project_modules  # type: ignore[import-not-found]
+    from extension_discovery import discover_project_modules  # type: ignore[import-not-found]
 
     # Run discovery
     project_path = Path(project_dir).resolve()
@@ -220,7 +218,7 @@ def cmd_discover(args) -> int:
 
         return 0
     except Exception as e:
-        print(f"status\terror", file=sys.stderr)
+        print("status\terror", file=sys.stderr)
         print(f"error\t{e}", file=sys.stderr)
         return 1
 
@@ -248,7 +246,7 @@ def cmd_init(args) -> int:
 
         return 0
     except Exception as e:
-        print(f"status\terror", file=sys.stderr)
+        print("status\terror", file=sys.stderr)
         print(f"error\t{e}", file=sys.stderr)
         return 1
 
@@ -291,8 +289,9 @@ def cmd_derived(args) -> int:
             str(get_derived_path(args.project_dir)),
             "Run 'architecture.py discover' first"
         )
+        return 1
     except Exception as e:
-        print(f"status\terror", file=sys.stderr)
+        print("status\terror", file=sys.stderr)
         print(f"error\t{e}", file=sys.stderr)
         return 1
 
@@ -379,10 +378,12 @@ def cmd_derived_module(args) -> int:
             str(get_derived_path(args.project_dir)),
             "Run 'architecture.py discover' first"
         )
-    except ModuleNotFoundError as e:
+        return 1
+    except ModuleNotFoundError:
         modules = get_module_names(load_derived_data(args.project_dir))
         error_module_not_found(args.name, modules)
+        return 1
     except Exception as e:
-        print(f"status\terror", file=sys.stderr)
+        print("status\terror", file=sys.stderr)
         print(f"error\t{e}", file=sys.stderr)
         return 1

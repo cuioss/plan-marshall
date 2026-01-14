@@ -18,7 +18,7 @@ from datetime import datetime
 from pathlib import Path
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import MARKETPLACE_ROOT, _MARKETPLACE_SCRIPT_DIRS
+from conftest import _MARKETPLACE_SCRIPT_DIRS, MARKETPLACE_ROOT
 
 # ============================================================================
 # PATHS
@@ -172,7 +172,8 @@ class ExecutorTestEnvironment:
         today = datetime.now().strftime('%Y-%m-%d')
         log_file = self.logs_dir / f'script-execution-{today}.log'
         if log_file.exists():
-            return log_file.read_text()
+            content: str = log_file.read_text()
+            return content
         return ''
 
     def clear_logs(self):

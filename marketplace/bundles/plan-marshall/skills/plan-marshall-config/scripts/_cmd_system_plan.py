@@ -7,10 +7,10 @@ Handles: system, plan
 from _config_core import (
     EXIT_ERROR,
     MarshalNotInitializedError,
-    require_initialized,
-    load_config,
-    save_config,
     error_exit,
+    load_config,
+    require_initialized,
+    save_config,
     success_exit,
 )
 

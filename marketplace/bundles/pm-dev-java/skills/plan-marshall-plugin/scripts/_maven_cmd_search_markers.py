@@ -6,7 +6,6 @@ import os
 import re
 from pathlib import Path
 
-
 # Pattern for OpenRewrite TODO markers
 MARKER_PATTERN = re.compile(r'/\*~~\(TODO:\s*(.+?)\)>\*/')
 
@@ -43,7 +42,7 @@ def cmd_search_markers(args):
     for file_path in sorted(files):
         try:
             content = file_path.read_text(encoding='utf-8')
-        except (IOError, UnicodeDecodeError):
+        except (OSError, UnicodeDecodeError):
             continue
         for line_num, line in enumerate(content.split('\n'), start=1):
             for match in MARKER_PATTERN.finditer(line):

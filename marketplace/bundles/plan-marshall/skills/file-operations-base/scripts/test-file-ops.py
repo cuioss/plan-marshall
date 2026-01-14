@@ -7,7 +7,6 @@ Usage:
 """
 
 import json
-import os
 import sys
 import tempfile
 from io import StringIO
@@ -16,16 +15,16 @@ from pathlib import Path
 # Import module under test
 from file_ops import (
     atomic_write_file,
+    base_path,
     ensure_directory,
-    output_success,
-    output_error,
-    parse_markdown_metadata,
     generate_markdown_metadata,
-    update_markdown_metadata,
-    get_metadata_content_split,
     get_base_dir,
+    get_metadata_content_split,
+    output_error,
+    output_success,
+    parse_markdown_metadata,
     set_base_dir,
-    base_path
+    update_markdown_metadata,
 )
 
 

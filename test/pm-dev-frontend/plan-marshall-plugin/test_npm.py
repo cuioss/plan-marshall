@@ -5,21 +5,15 @@ Tests the foundation layer for npm command execution including
 command type detection, timeout handling, and command execution.
 """
 
-import sys
-from pathlib import Path
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import (
-    get_script_path,
-    BuildContext
-)
+from conftest import BuildContext, get_script_path
 
 # Get script path
 SCRIPT_PATH = get_script_path('pm-dev-frontend', 'plan-marshall-plugin', 'npm.py')
 
 # Import modules under test (PYTHONPATH set by conftest)
-from npm import detect_command_type, get_bash_timeout, execute_direct
-
+from npm import detect_command_type, execute_direct, get_bash_timeout
 
 # =============================================================================
 # Test: API functions (via import)

@@ -3,7 +3,7 @@
 
 import json
 
-from _fix_shared import SAFE_FIX_TYPES, RISKY_FIX_TYPES, read_json_input
+from _fix_shared import RISKY_FIX_TYPES, SAFE_FIX_TYPES, read_json_input
 
 
 def categorize_fix(issue: dict) -> str:
@@ -59,16 +59,14 @@ def cmd_categorize(args) -> int:
         return 1
 
     if not data:
-        result = {
+        empty_result: dict = {
             "safe": [],
             "risky": [],
             "summary": {"safe_count": 0, "risky_count": 0, "total_count": 0},
-            "error": None
         }
-        print(json.dumps(result, indent=2))
+        print(json.dumps(empty_result, indent=2))
         return 0
 
     result = categorize_issues(data)
-    result["error"] = None
     print(json.dumps(result, indent=2))
     return 0

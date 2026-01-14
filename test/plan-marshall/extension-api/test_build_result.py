@@ -6,23 +6,22 @@ import tempfile
 from pathlib import Path
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-
 # Import modules under test (PYTHONPATH set by conftest)
 from _build_result import (
-    LOG_BASE_DIR,
-    TIMESTAMP_FORMAT,
-    STATUS_SUCCESS,
-    STATUS_ERROR,
-    STATUS_TIMEOUT,
     ERROR_BUILD_FAILED,
-    ERROR_TIMEOUT,
     ERROR_EXECUTION_FAILED,
-    ERROR_WRAPPER_NOT_FOUND,
     ERROR_LOG_FILE_FAILED,
+    ERROR_TIMEOUT,
+    ERROR_WRAPPER_NOT_FOUND,
+    LOG_BASE_DIR,
     REQUIRED_FIELDS,
+    STATUS_ERROR,
+    STATUS_SUCCESS,
+    STATUS_TIMEOUT,
+    TIMESTAMP_FORMAT,
     create_log_file,
-    success_result,
     error_result,
+    success_result,
     timeout_result,
     validate_result,
 )
@@ -333,7 +332,7 @@ if __name__ == "__main__":
         try:
             test()
             passed += 1
-        except Exception as e:
+        except Exception:
             failed += 1
             print(f"FAILED: {test.__name__}")
             traceback.print_exc()

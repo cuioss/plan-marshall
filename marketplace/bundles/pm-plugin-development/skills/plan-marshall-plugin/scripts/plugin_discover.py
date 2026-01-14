@@ -35,7 +35,6 @@ if str(EXTENSION_API_DIR) not in sys.path:
 
 from _build_discover import find_readme
 
-
 # =============================================================================
 # Constants
 # =============================================================================
@@ -141,7 +140,7 @@ def get_component_description(file_path: Path) -> str | None:
         has_fm, frontmatter = extract_frontmatter(content)
         if has_fm:
             return extract_description_from_frontmatter(frontmatter)
-    except (OSError, IOError):
+    except OSError:
         pass
     return None
 
@@ -189,8 +188,9 @@ def load_plugin_json(plugin_path: Path) -> dict | None:
     """
     try:
         content = plugin_path.read_text(encoding="utf-8")
-        return json.loads(content)
-    except (OSError, IOError, json.JSONDecodeError):
+        data: dict = json.loads(content)
+        return data
+    except (OSError, json.JSONDecodeError):
         return None
 
 

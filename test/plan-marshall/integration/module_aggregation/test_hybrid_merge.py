@@ -17,14 +17,14 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent.parent
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
+from extension import discover_project_modules
+
 from integration_common import (
     INTEGRATION_TEST_OUTPUT_DIR,
     IntegrationContext,
     ProjectFixture,
     assert_no_null_values,
 )
-from extension import discover_project_modules
-
 
 # =============================================================================
 # Test Projects Configuration
@@ -178,7 +178,7 @@ def run_integration_tests() -> int:
 
             # Check if project exists
             if not ctx.validate_project(project):
-                print(f"  SKIP: Project not found")
+                print("  SKIP: Project not found")
                 continue
 
             test_count += 1
@@ -224,7 +224,7 @@ def run_integration_tests() -> int:
                     ctx.errors.extend([f"{project.name}: {e}" for e in errors])
                     all_passed = False
                 else:
-                    print(f"  PASS: All assertions passed")
+                    print("  PASS: All assertions passed")
                     pass_count += 1
 
                 # Print module summary

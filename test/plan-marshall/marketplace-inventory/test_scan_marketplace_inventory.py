@@ -6,11 +6,10 @@ scanning including basic discovery, resource filtering, description extraction,
 JSON validity, bundle structure, script discovery, and error handling.
 """
 
-import sys
 from pathlib import Path
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import run_script, get_script_path
+from conftest import get_script_path, run_script
 
 # Script under test
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent

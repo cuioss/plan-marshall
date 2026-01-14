@@ -16,20 +16,18 @@ Output: JSON to stdout.
 import argparse
 import sys
 
+from _analyze_coverage import analyze_tool_coverage, cmd_coverage
+from _analyze_crossfile import DEFAULT_SIMILARITY_THRESHOLD, cmd_cross_file
+
 # Import subcommand handlers
-from _analyze_markdown import cmd_markdown, analyze_markdown_file
-from _analyze_structure import cmd_structure, analyze_skill_structure
-from _analyze_coverage import cmd_coverage, analyze_tool_coverage
-from _analyze_crossfile import cmd_cross_file, DEFAULT_SIMILARITY_THRESHOLD
+from _analyze_markdown import analyze_markdown_file, cmd_markdown
 
 # Re-export shared utilities for other scripts that import from analyze
 from _analyze_shared import (
-    extract_frontmatter,
-    check_yaml_validity,
-    count_lines,
     detect_component_type,
-    remove_code_blocks,
+    extract_frontmatter,
 )
+from _analyze_structure import analyze_skill_structure, cmd_structure
 
 # Re-export API functions for backward compatibility
 # These are used by doctor_analysis.py and other scripts

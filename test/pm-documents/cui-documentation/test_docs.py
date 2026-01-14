@@ -11,14 +11,13 @@ Consolidates tests from:
 """
 
 import json
-import shutil
 import sys
 import tempfile
 from pathlib import Path
 
 # Import shared infrastructure
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from conftest import run_script, get_script_path
+from conftest import get_script_path, run_script
 
 # Test directories
 TEST_DIR = Path(__file__).parent

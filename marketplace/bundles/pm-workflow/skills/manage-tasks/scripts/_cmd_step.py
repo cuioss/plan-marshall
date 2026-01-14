@@ -5,15 +5,18 @@ Step management command handlers for manage-tasks.py.
 Contains: step-start, step-done, step-skip, add-step, remove-step subcommands.
 """
 
-import sys
-
-from file_ops import atomic_write_file  # type: ignore[import-not-found]
-from plan_logging import log_entry  # type: ignore[import-not-found]
 
 from _manage_tasks_shared import (
-    now_iso, get_tasks_dir, parse_task_file, format_task_file,
-    find_task_file, output_toon, output_error
+    find_task_file,
+    format_task_file,
+    get_tasks_dir,
+    now_iso,
+    output_error,
+    output_toon,
+    parse_task_file,
 )
+from file_ops import atomic_write_file  # type: ignore[import-not-found]
+from plan_logging import log_entry  # type: ignore[import-not-found]
 
 
 def cmd_step_start(args) -> int:
@@ -287,6 +290,8 @@ def cmd_remove_step(args) -> int:
     new_content = format_task_file(task)
     atomic_write_file(filepath, new_content)
 
+    # removed_step is guaranteed to be set since step_index is not None
+    assert removed_step is not None
     output_toon({
         'status': 'success',
         'plan_id': args.plan_id,

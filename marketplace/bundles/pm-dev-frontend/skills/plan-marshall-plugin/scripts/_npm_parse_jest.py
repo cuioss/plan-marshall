@@ -13,8 +13,7 @@ import re
 from pathlib import Path
 
 # Cross-skill imports (PYTHONPATH set by executor)
-from _build_parse import Issue, UnitTestSummary, SEVERITY_ERROR  # type: ignore[import-not-found]
-
+from _build_parse import SEVERITY_ERROR, Issue, UnitTestSummary  # type: ignore[import-not-found]
 
 # Jest failure header pattern
 FAIL_PATTERN = re.compile(r"^\s*FAIL\s+(.+)$", re.MULTILINE)
@@ -61,7 +60,7 @@ def _extract_issues(content: str) -> list[Issue]:
     Returns:
         List of Issue dataclasses with test failures.
     """
-    issues = []
+    issues: list[Issue] = []
     lines = content.split("\n")
     current_file = None
     current_test = None
@@ -95,7 +94,7 @@ def _extract_issues(content: str) -> list[Issue]:
                 stack_lines.append(line)
             elif not stripped:
                 # Empty line might end the stack trace
-                if stack_lines and any("at " in l for l in stack_lines):
+                if stack_lines and any("at " in l for l in stack_lines) and current_test:
                     _add_issue(issues, current_file, current_test, stack_lines)
                     stack_lines = []
                     collecting_stack = False
@@ -108,7 +107,7 @@ def _extract_issues(content: str) -> list[Issue]:
     return issues
 
 
-def _add_issue(issues: list, file: str | None, test: str, stack_lines: list[str]) -> None:
+def _add_issue(issues: list[Issue], file: str | None, test: str, stack_lines: list[str]) -> None:
     """Add a test failure issue.
 
     Args:
@@ -128,7 +127,7 @@ def _add_issue(issues: list, file: str | None, test: str, stack_lines: list[str]
     stack_trace = "\n".join(stack_lines) if stack_lines else None
 
     issues.append(Issue(
-        file=file,
+        file=file if file is not None else "unknown",
         line=line_num,
         message=test,
         severity=SEVERITY_ERROR,

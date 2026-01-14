@@ -19,11 +19,12 @@ Subcommands:
 import argparse
 import sys
 
-# Import command handlers from internal modules (underscore prefix = private)
-from _maven_execute import cmd_run
+from _maven_cmd_check_warnings import cmd_check_warnings
 from _maven_cmd_parse import cmd_parse
 from _maven_cmd_search_markers import cmd_search_markers
-from _maven_cmd_check_warnings import cmd_check_warnings
+
+# Import command handlers from internal modules (underscore prefix = private)
+from _maven_execute import cmd_run
 
 
 def main():

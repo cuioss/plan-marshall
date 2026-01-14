@@ -5,13 +5,11 @@ Tests init command variants including force overwrite and error handling.
 """
 
 import json
-import sys
-from pathlib import Path
 
-# Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import run_script, PlanContext
 from test_helpers import SCRIPT_PATH, create_marshal_json
 
+# Import shared infrastructure (conftest.py sets up PYTHONPATH)
+from conftest import PlanContext, run_script
 
 # =============================================================================
 # Init Command Tests

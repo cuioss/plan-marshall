@@ -22,7 +22,7 @@ Examples:
 import argparse
 import json
 import sys
-
+from typing import Any
 
 # ============================================================================
 # TRIAGE CONFIGURATION
@@ -58,25 +58,24 @@ TYPE_BOOST = {
 # FETCH SUBCOMMAND
 # ============================================================================
 
-def generate_mcp_instruction(project: str, pr: str = None, severities: str = None) -> dict:
+def generate_mcp_instruction(project: str, pr: str | None = None, severities: str | None = None) -> dict[str, Any]:
     """Generate MCP tool invocation instruction for Claude."""
-    instruction = {
+    parameters: dict[str, Any] = {"projects": [project]}
+    instruction: dict[str, Any] = {
         "tool": "mcp__sonarqube__search_sonar_issues_in_projects",
-        "parameters": {
-            "projects": [project]
-        }
+        "parameters": parameters
     }
 
     if pr:
-        instruction["parameters"]["pullRequestId"] = pr
+        parameters["pullRequestId"] = pr
 
     if severities:
-        instruction["parameters"]["severities"] = severities
+        parameters["severities"] = severities
 
     return instruction
 
 
-def create_fetch_output(project: str, pr: str = None, severities: str = None, types: str = None) -> dict:
+def create_fetch_output(project: str, pr: str | None = None, severities: str | None = None, types: str | None = None) -> dict:
     """Create output structure showing expected format for fetch."""
     return {
         "project_key": project,

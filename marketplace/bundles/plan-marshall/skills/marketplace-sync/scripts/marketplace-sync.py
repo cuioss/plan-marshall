@@ -12,7 +12,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 # Exit codes
 EXIT_SUCCESS = 0
@@ -43,7 +43,7 @@ def get_global_settings_path() -> Path:
     return Path.home() / ".claude" / "settings.json"
 
 
-def get_project_settings_path_for_write(project_dir: Optional[Path] = None) -> Path:
+def get_project_settings_path_for_write(project_dir: Path | None = None) -> Path:
     """Get path for writing project settings."""
     if project_dir is None:
         project_dir = Path.cwd()
@@ -55,14 +55,14 @@ def get_project_settings_path_for_write(project_dir: Optional[Path] = None) -> P
     return project_dir / ".claude" / "settings.local.json"
 
 
-def load_settings_path(path: Path) -> dict:
+def load_settings_path(path: Path) -> dict[str, Any]:
     """Load settings from a Path."""
     if not path.exists():
         return {"permissions": {"allow": [], "deny": [], "ask": []}}
 
     try:
-        with open(path, 'r') as f:
-            data = json.load(f)
+        with open(path) as f:
+            data: dict[str, Any] = json.load(f)
         if "permissions" not in data:
             data["permissions"] = {}
         for key in ["allow", "deny", "ask"]:
@@ -183,7 +183,7 @@ def cmd_generate_wildcards(args) -> int:
     """Handle generate-wildcards subcommand."""
     try:
         if args.input:
-            with open(args.input, "r") as f:
+            with open(args.input) as f:
                 inventory = json.load(f)
         else:
             inventory = json.load(sys.stdin)
@@ -197,7 +197,7 @@ def cmd_generate_wildcards(args) -> int:
     bundles = inventory.get("bundles", [])
 
     if not bundles:
-        result = {
+        result: dict[str, Any] = {
             "error": "No bundles found in inventory",
             "statistics": {
                 "bundles_scanned": 0,

@@ -5,7 +5,6 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
 

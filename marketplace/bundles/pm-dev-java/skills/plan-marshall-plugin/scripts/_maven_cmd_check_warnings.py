@@ -4,14 +4,12 @@
 import json
 import re
 import sys
-from typing import List
-
 
 # Warning types that are always considered fixable
 ALWAYS_FIXABLE_TYPES = ["javadoc_warning", "compilation_error", "deprecation_warning", "unchecked_warning"]
 
 
-def is_acceptable(warning_message: str, patterns: List[str]) -> bool:
+def is_acceptable(warning_message: str, patterns: list[str]) -> bool:
     """Check if a warning matches any acceptable pattern."""
     for pattern in patterns:
         clean_pattern = pattern[9:].strip() if pattern.startswith('[WARNING]') else pattern
@@ -25,9 +23,9 @@ def is_acceptable(warning_message: str, patterns: List[str]) -> bool:
     return False
 
 
-def flatten_patterns(acceptable_warnings: dict) -> List[str]:
+def flatten_patterns(acceptable_warnings: dict) -> list[str]:
     """Flatten acceptable_warnings object into a list of patterns."""
-    patterns = []
+    patterns: list[str] = []
     if isinstance(acceptable_warnings, dict):
         for value in acceptable_warnings.values():
             if isinstance(value, list):

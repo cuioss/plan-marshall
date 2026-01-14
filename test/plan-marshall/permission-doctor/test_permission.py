@@ -9,14 +9,9 @@ Tests subcommands:
 
 import json
 import sys
-from pathlib import Path
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import (
-    ScriptTestCase, run_script,
-    MARKETPLACE_ROOT
-)
-
+from conftest import MARKETPLACE_ROOT, ScriptTestCase, run_script
 
 # Script path to permission-doctor.py
 SCRIPT_PATH = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'permission-doctor' / 'scripts' / 'permission-doctor.py'
@@ -390,9 +385,15 @@ if __name__ == '__main__':
         test_detect_suspicious_help,
     ]
 
-    simple_runner = TestRunner()
-    simple_runner.add_tests(simple_tests)
-    simple_result = simple_runner.run()
+    # Run simple function tests
+    simple_failures = 0
+    for test_fn in simple_tests:
+        try:
+            test_fn()
+            print(f"  PASS: {test_fn.__name__}")
+        except AssertionError as e:
+            print(f"  FAIL: {test_fn.__name__}: {e}")
+            simple_failures += 1
 
     # Exit with combined result
-    sys.exit(0 if result.wasSuccessful() and simple_result == 0 else 1)
+    sys.exit(0 if result.wasSuccessful() and simple_failures == 0 else 1)

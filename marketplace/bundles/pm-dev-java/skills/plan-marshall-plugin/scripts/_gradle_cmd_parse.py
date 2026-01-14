@@ -13,12 +13,10 @@ Usage (internal):
 import json
 import re
 from pathlib import Path
-from typing import List, Optional, Tuple
 
 # Direct imports - executor sets up PYTHONPATH for cross-skill imports
-from _build_parse import Issue, UnitTestSummary, SEVERITY_ERROR, SEVERITY_WARNING
+from _build_parse import SEVERITY_ERROR, SEVERITY_WARNING, Issue, UnitTestSummary
 from plan_logging import log_entry
-
 
 # Pattern definitions for categorizing build output
 COMPILATION_PATTERNS = [
@@ -35,7 +33,7 @@ DEPRECATION_PATTERNS = [r"\[deprecation\]", r"has been deprecated", r"is depreca
 UNCHECKED_PATTERNS = [r"\[unchecked\]", r"unchecked conversion", r"unchecked call"]
 
 
-def categorize_line(line: str) -> Optional[str]:
+def categorize_line(line: str) -> str | None:
     """Categorize a log line by issue type."""
     for pattern in COMPILATION_PATTERNS:
         if re.search(pattern, line, re.IGNORECASE): return "compilation_error"
@@ -52,7 +50,7 @@ def categorize_line(line: str) -> Optional[str]:
     return None
 
 
-def extract_file_location(line: str) -> Tuple[str, int, int]:
+def extract_file_location(line: str) -> tuple[str, int, int]:
     """Extract file path, line, and column from error message."""
     match = re.search(r"([^\s:]+\.(java|kt|groovy)):(\d+):?(\d+)?", line)
     if match:
@@ -60,7 +58,7 @@ def extract_file_location(line: str) -> Tuple[str, int, int]:
     return "", 0, 0
 
 
-def parse_build_status(lines: List[str]) -> str:
+def parse_build_status(lines: list[str]) -> str:
     """Determine overall build status from log lines."""
     for line in reversed(lines[-50:]):
         if "BUILD SUCCESSFUL" in line: return "SUCCESS"
@@ -68,7 +66,7 @@ def parse_build_status(lines: List[str]) -> str:
     return "UNKNOWN"
 
 
-def parse_metrics(lines: List[str]) -> dict:
+def parse_metrics(lines: list[str]) -> dict:
     """Extract build metrics from log."""
     metrics = {"duration_ms": 0, "tasks_executed": 0, "tests_run": 0, "tests_failed": 0}
     for line in lines:
@@ -117,7 +115,7 @@ def parse_log(log_file: str | Path) -> tuple[list[Issue], UnitTestSummary | None
     return issues, test_summary, build_status
 
 
-def _detect_build_status(lines: List[str]) -> str:
+def _detect_build_status(lines: list[str]) -> str:
     """Determine overall build status from log lines.
 
     Args:
@@ -135,7 +133,7 @@ def _detect_build_status(lines: List[str]) -> str:
     return "FAILURE"
 
 
-def _extract_issues_as_dataclass(lines: List[str]) -> list[Issue]:
+def _extract_issues_as_dataclass(lines: list[str]) -> list[Issue]:
     """Extract all issues from Gradle output as Issue dataclasses.
 
     Args:
@@ -176,7 +174,7 @@ def _extract_issues_as_dataclass(lines: List[str]) -> list[Issue]:
     return issues
 
 
-def _extract_test_summary_as_dataclass(lines: List[str]) -> UnitTestSummary | None:
+def _extract_test_summary_as_dataclass(lines: list[str]) -> UnitTestSummary | None:
     """Extract test execution summary as UnitTestSummary dataclass.
 
     Args:
@@ -217,7 +215,7 @@ def cmd_parse(args):
         print(json.dumps({"status": "error", "error": "file_not_found", "message": f"Log file not found: {args.log}"}, indent=2))
         return 1
 
-    with open(path, "r", encoding="utf-8", errors="replace") as f:
+    with open(path, encoding="utf-8", errors="replace") as f:
         lines = f.readlines()
 
     issues, seen = [], set()

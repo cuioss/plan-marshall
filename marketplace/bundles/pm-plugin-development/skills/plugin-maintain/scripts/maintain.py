@@ -18,11 +18,11 @@ Usage:
 import argparse
 import sys
 
-from _maintain_shared import EXIT_SUCCESS, EXIT_ERROR
-from _cmd_update import cmd_update
-from _cmd_check_duplication import cmd_check_duplication
 from _cmd_analyze import cmd_analyze
+from _cmd_check_duplication import cmd_check_duplication
 from _cmd_readme import cmd_readme
+from _cmd_update import cmd_update
+from _maintain_shared import EXIT_ERROR
 
 
 def main():

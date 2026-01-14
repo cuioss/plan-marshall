@@ -21,10 +21,10 @@ Usage:
 import argparse
 import sys
 
-from _cmd_references import cmd_references
 from _cmd_cross_file import cmd_cross_file
-from _cmd_inventory import cmd_inventory
 from _cmd_extension import cmd_extension
+from _cmd_inventory import cmd_inventory
+from _cmd_references import cmd_references
 
 
 def main():

@@ -13,8 +13,7 @@ import re
 from pathlib import Path
 
 # Cross-skill imports (PYTHONPATH set by executor)
-from _build_parse import Issue, UnitTestSummary, SEVERITY_ERROR  # type: ignore[import-not-found]
-
+from _build_parse import SEVERITY_ERROR, Issue, UnitTestSummary  # type: ignore[import-not-found]
 
 # TAP summary patterns
 TESTS_PATTERN = re.compile(r"^#\s*tests\s+(\d+)", re.MULTILINE)

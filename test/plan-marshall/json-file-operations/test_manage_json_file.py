@@ -5,12 +5,11 @@ Migrated from test-manage-json-file.sh - tests JSON file CRUD operations
 with path notation including read, update, add, and remove operations.
 """
 
-import sys
 import tempfile
 from pathlib import Path
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import run_script, get_script_path
+from conftest import get_script_path, run_script
 
 # Script under test
 SCRIPT_PATH = get_script_path('plan-marshall', 'json-file-operations', 'manage-json-file.py')

@@ -11,21 +11,20 @@ from _architecture_core import (
     DATA_DIR,
     DataNotFoundError,
     ModuleNotFoundError,
+    format_toon_value,
     get_data_dir,
     get_derived_path,
     get_enriched_path,
+    get_module,
+    get_module_names,
+    get_root_module,
     load_derived_data,
     load_llm_enriched,
     load_llm_enriched_or_empty,
+    merge_module_data,
     save_derived_data,
     save_llm_enriched,
-    get_module_names,
-    get_root_module,
-    get_module,
-    merge_module_data,
-    format_toon_value,
 )
-
 
 # =============================================================================
 # Tests for Path Functions
@@ -379,7 +378,7 @@ if __name__ == "__main__":
             test()
             passed += 1
             print(f"PASSED: {test.__name__}")
-        except Exception as e:
+        except Exception:
             failed += 1
             print(f"FAILED: {test.__name__}")
             traceback.print_exc()

@@ -18,7 +18,7 @@ import os
 import sys
 import tempfile
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
 # Environment variables for path configuration (set by executor or test infrastructure)
 _PLAN_DIR_NAME = os.environ.get('PLAN_DIR_NAME', '.plan')
@@ -120,13 +120,13 @@ def cmd_init(args) -> int:
 # Validate Subcommand
 # =============================================================================
 
-def check_required_fields(data: Dict, required: List[str]) -> Tuple[bool, List[str]]:
+def check_required_fields(data: dict[str, Any], required: list[str]) -> tuple[bool, list[str]]:
     """Check if required fields exist."""
     missing = [f for f in required if f not in data]
     return len(missing) == 0, missing
 
 
-def check_field_type(data: Dict, field: str, expected_type: type) -> Tuple[bool, str]:
+def check_field_type(data: dict[str, Any], field: str, expected_type: type) -> tuple[bool, str]:
     """Check if field has expected type."""
     if field not in data:
         return False, f"Field '{field}' not found"
@@ -138,9 +138,9 @@ def check_field_type(data: Dict, field: str, expected_type: type) -> Tuple[bool,
     return True, f"Field '{field}' is {expected_type.__name__}"
 
 
-def validate_run_config(data: Dict) -> List[Dict]:
+def validate_run_config(data: dict[str, Any]) -> list[dict[str, Any]]:
     """Validate run-configuration.json format."""
-    checks = []
+    checks: list[dict[str, Any]] = []
 
     # Check required fields
     required = ['version', 'commands']
@@ -172,7 +172,7 @@ def validate_run_config(data: Dict) -> List[Dict]:
 
         # Validate command entries
         if passed:
-            invalid_commands = []
+            invalid_commands: list[str] = []
             for cmd_name, cmd_data in data['commands'].items():
                 if not isinstance(cmd_data, dict):
                     invalid_commands.append(f"{cmd_name} (not an object)")
@@ -213,7 +213,7 @@ def cmd_validate(args) -> int:
 
         # Parse JSON
         try:
-            with open(file_path, 'r', encoding='utf-8') as f:
+            with open(file_path, encoding='utf-8') as f:
                 data = json.load(f)
         except json.JSONDecodeError as e:
             result = {
@@ -270,11 +270,12 @@ def get_run_config_path(project_dir: str | None = None) -> Path:
     return Path(base).resolve() / _PLAN_DIR_NAME / 'run-configuration.json'
 
 
-def read_run_config(config_path: Path) -> dict:
+def read_run_config(config_path: Path) -> dict[str, Any]:
     """Read run configuration file."""
     if config_path.exists():
-        with open(config_path, 'r', encoding='utf-8') as f:
-            return json.load(f)
+        with open(config_path, encoding='utf-8') as f:
+            data: dict[str, Any] = json.load(f)
+            return data
     return {"version": 1, "commands": {}}
 
 
@@ -351,9 +352,10 @@ def timeout_set(command_key: str, duration: int, project_dir: str = '.') -> None
 VALID_WARNING_CATEGORIES = ['transitive_dependency', 'plugin_compatibility', 'platform_specific']
 
 
-def get_acceptable_warnings(config: dict, build_system: str = 'maven') -> dict:
+def get_acceptable_warnings(config: dict[str, Any], build_system: str = 'maven') -> dict[str, Any]:
     """Get acceptable_warnings section for a build system."""
-    return config.get(build_system, {}).get('acceptable_warnings', {})
+    result: dict[str, Any] = config.get(build_system, {}).get('acceptable_warnings', {})
+    return result
 
 
 def cmd_warning_add(args) -> int:
@@ -463,9 +465,10 @@ def cmd_warning_remove(args) -> int:
 # Profile Mapping Subcommands
 # =============================================================================
 
-def get_profile_mappings(config: dict) -> dict:
+def get_profile_mappings(config: dict[str, Any]) -> dict[str, Any]:
     """Get profile_mappings section from config."""
-    return config.get('profile_mappings', {})
+    result: dict[str, Any] = config.get('profile_mappings', {})
+    return result
 
 
 def cmd_profile_mapping_set(args) -> int:
@@ -612,7 +615,7 @@ def cmd_profile_mapping_batch_set(args) -> int:
             return 1
 
         # Validate all canonicals
-        invalid = []
+        invalid: list[str] = []
         for profile_id, canonical in new_mappings.items():
             if canonical not in VALID_PROFILE_CANONICALS:
                 invalid.append(f"{profile_id}:{canonical}")
@@ -656,13 +659,15 @@ def cmd_profile_mapping_batch_set(args) -> int:
 def profile_mapping_get(profile_id: str, project_dir: str = '.') -> str | None:
     """Get mapping for a profile. Returns canonical name or None if not mapped."""
     config = read_run_config(get_run_config_path(project_dir))
-    return config.get('profile_mappings', {}).get(profile_id)
+    mappings: dict[str, str] = config.get('profile_mappings', {})
+    return mappings.get(profile_id)
 
 
-def profile_mapping_get_all(project_dir: str = '.') -> dict:
+def profile_mapping_get_all(project_dir: str = '.') -> dict[str, Any]:
     """Get all profile mappings."""
     config = read_run_config(get_run_config_path(project_dir))
-    return config.get('profile_mappings', {})
+    result: dict[str, Any] = config.get('profile_mappings', {})
+    return result
 
 
 def profile_mapping_set(profile_id: str, canonical: str, project_dir: str = '.') -> None:
@@ -679,9 +684,10 @@ def profile_mapping_set(profile_id: str, canonical: str, project_dir: str = '.')
 # Extension Defaults Subcommands (Generic key-value in extension_defaults)
 # =============================================================================
 
-def get_extension_defaults(config: dict) -> dict:
+def get_extension_defaults(config: dict[str, Any]) -> dict[str, Any]:
     """Get extension_defaults section from config."""
-    return config.get('extension_defaults', {})
+    result: dict[str, Any] = config.get('extension_defaults', {})
+    return result
 
 
 def cmd_ext_defaults_get(args) -> int:
@@ -882,10 +888,11 @@ def ext_defaults_set_default(key: str, value: Any, project_dir: str = '.') -> bo
     return True
 
 
-def ext_defaults_list(project_dir: str = '.') -> dict:
+def ext_defaults_list(project_dir: str = '.') -> dict[str, Any]:
     """Get all extension_defaults as a dict."""
     config = read_run_config(get_run_config_path(project_dir))
-    return config.get('extension_defaults', {})
+    result: dict[str, Any] = config.get('extension_defaults', {})
+    return result
 
 
 # =============================================================================

@@ -13,14 +13,15 @@ def load_templates(script_dir: Path) -> dict:
     """Load fix templates from assets/fix-templates.json."""
     templates_path = script_dir.parent / "assets" / "fix-templates.json"
     if templates_path.exists():
-        with open(templates_path, "r", encoding="utf-8") as f:
-            return json.load(f)
+        with open(templates_path, encoding="utf-8") as f:
+            result: dict = json.load(f)
+            return result
     return {}
 
 
 def apply_missing_frontmatter(file_path: Path, fix: dict, templates: dict) -> dict:
     """Add frontmatter to a file that has none."""
-    with open(file_path, "r", encoding="utf-8") as f:
+    with open(file_path, encoding="utf-8") as f:
         content = f.read()
 
     if content.strip().startswith("---"):
@@ -59,7 +60,7 @@ description: [Description needed]
 
 def apply_array_syntax_fix(file_path: Path, fix: dict, templates: dict) -> dict:
     """Convert array syntax tools: [A, B] to comma-separated tools: A, B."""
-    with open(file_path, "r", encoding="utf-8") as f:
+    with open(file_path, encoding="utf-8") as f:
         content = f.read()
 
     pattern = r'^(tools:\s*)\[([^\]]+)\]'
@@ -84,7 +85,7 @@ def apply_missing_field_fix(file_path: Path, fix: dict, templates: dict) -> dict
     """Add a missing required field to frontmatter."""
     field_name = fix.get("type", "").replace("missing-", "").replace("-field", "")
 
-    with open(file_path, "r", encoding="utf-8") as f:
+    with open(file_path, encoding="utf-8") as f:
         content = f.read()
 
     if not content.strip().startswith("---"):
@@ -129,7 +130,7 @@ def apply_missing_field_fix(file_path: Path, fix: dict, templates: dict) -> dict
 
 def apply_trailing_whitespace_fix(file_path: Path, fix: dict, templates: dict) -> dict:
     """Remove trailing whitespace from all lines."""
-    with open(file_path, "r", encoding="utf-8") as f:
+    with open(file_path, encoding="utf-8") as f:
         lines = f.readlines()
 
     fixed_count = 0
@@ -155,7 +156,7 @@ def apply_trailing_whitespace_fix(file_path: Path, fix: dict, templates: dict) -
 
 def apply_rule_6_fix(file_path: Path, fix: dict, templates: dict) -> dict:
     """Remove Task tool from agent's tools declaration."""
-    with open(file_path, "r", encoding="utf-8") as f:
+    with open(file_path, encoding="utf-8") as f:
         content = f.read()
 
     patterns = [
@@ -190,7 +191,7 @@ def apply_unused_tool_fix(file_path: Path, fix: dict, templates: dict) -> dict:
     if not unused_tools:
         return {"success": False, "error": "No unused tools specified"}
 
-    with open(file_path, "r", encoding="utf-8") as f:
+    with open(file_path, encoding="utf-8") as f:
         content = f.read()
 
     new_content = content
@@ -221,7 +222,7 @@ def apply_unused_tool_fix(file_path: Path, fix: dict, templates: dict) -> dict:
 
 def apply_pattern_22_fix(file_path: Path, fix: dict, templates: dict) -> dict:
     """Fix Pattern 22 violation by changing self-update to caller reporting."""
-    with open(file_path, "r", encoding="utf-8") as f:
+    with open(file_path, encoding="utf-8") as f:
         content = f.read()
 
     replacements = [
@@ -323,6 +324,11 @@ def cmd_apply(args) -> int:
 
     script_dir = Path(__file__).parent
     templates = load_templates(script_dir)
+
+    if data is None:
+        result = {"success": False, "error": "No fix data provided"}
+        print(json.dumps(result, indent=2))
+        return 1
 
     result = apply_single_fix(data, bundle_path, templates)
     print(json.dumps(result, indent=2))

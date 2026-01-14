@@ -35,7 +35,6 @@ from pathlib import Path
 from extension_base import find_readme
 from plan_logging import log_entry
 
-
 # =============================================================================
 # Constants
 # =============================================================================
@@ -229,7 +228,7 @@ def _parse_properties_output(log_content: str) -> dict:
     Returns:
         Dict with group_id, name, version, description
     """
-    metadata = {
+    metadata: dict[str, str | None] = {
         "group_id": None,
         "name": None,
         "version": None,
@@ -428,7 +427,7 @@ def _discover_sources(module_path: Path) -> dict:
     Returns:
         Dict with main and test source directories
     """
-    sources = {"main": [], "test": []}
+    sources: dict[str, list[str]] = {"main": [], "test": []}
 
     for lang in JVM_LANGUAGES:
         main_dir = module_path / "src" / "main" / lang

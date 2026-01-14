@@ -1,14 +1,11 @@
 #!/usr/bin/env python3
 """Tests for toon_parser.py module."""
 
-import sys
-from pathlib import Path
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
 
 # Import the module under test (PYTHONPATH set by conftest)
-from toon_parser import parse_toon, serialize_toon, ToonParseError
-
+from toon_parser import parse_toon, serialize_toon
 
 # =============================================================================
 # Test: Basic Key-Value Parsing

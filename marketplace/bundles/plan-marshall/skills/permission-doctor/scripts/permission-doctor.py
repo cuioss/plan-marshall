@@ -11,7 +11,6 @@ import json
 import re
 import sys
 from pathlib import Path
-from typing import Optional
 
 # Exit codes
 EXIT_SUCCESS = 0
@@ -22,15 +21,17 @@ EXIT_ERROR = 1
 # Shared Utilities
 # =============================================================================
 
-def load_settings(path: str) -> tuple[dict, Optional[str]]:
+def load_settings(path: str | None) -> tuple[dict, str | None]:
     """Load settings from a JSON file."""
+    if path is None:
+        return {}, "No settings path provided"
     settings_path = Path(path)
 
     if not settings_path.exists():
         return {}, f"Settings file not found: {path}"
 
     try:
-        with open(settings_path, 'r') as f:
+        with open(settings_path) as f:
             data = json.load(f)
 
         if "permissions" not in data:
@@ -64,7 +65,7 @@ def get_project_settings_path() -> Path:
     return project_dir / ".claude" / "settings.json"
 
 
-def resolve_scope_to_paths(scope: str) -> tuple[Optional[str], Optional[str]]:
+def resolve_scope_to_paths(scope: str) -> tuple[str | None, str | None]:
     """Resolve scope to global and local settings paths.
 
     Returns:
@@ -84,7 +85,7 @@ def resolve_scope_to_paths(scope: str) -> tuple[Optional[str], Optional[str]]:
 # detect-redundant subcommand
 # =============================================================================
 
-def is_marketplace_permission(permission: str, project_root: Optional[Path] = None) -> bool:
+def is_marketplace_permission(permission: str, project_root: Path | None = None) -> bool:
     """Check if a permission is a marketplace permission.
 
     Args:
@@ -255,7 +256,7 @@ SUSPICIOUS_PATTERNS = [
 ]
 
 
-def load_approved_permissions(approved_file: Optional[str]) -> set[str]:
+def load_approved_permissions(approved_file: str | None) -> set[str]:
     """Load user-approved permissions from run-configuration file."""
     if not approved_file:
         return set()
@@ -265,7 +266,7 @@ def load_approved_permissions(approved_file: Optional[str]) -> set[str]:
         return set()
 
     try:
-        with open(approved_path, 'r') as f:
+        with open(approved_path) as f:
             data = json.load(f)
         commands = data.get("commands", {})
         setup_perms = commands.get("setup-project-permissions", {})
@@ -275,7 +276,7 @@ def load_approved_permissions(approved_file: Optional[str]) -> set[str]:
         return set()
 
 
-def check_permission(permission: str) -> Optional[dict]:
+def check_permission(permission: str) -> dict | None:
     """Check if a permission matches any suspicious pattern."""
     for pattern_info in SUSPICIOUS_PATTERNS:
         if re.match(pattern_info["pattern"], permission, re.IGNORECASE):

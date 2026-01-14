@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for extension.py module (discovery functions)."""
+"""Tests for extension_discovery.py module (discovery functions)."""
 
 import os
 import sys
@@ -7,14 +7,12 @@ import tempfile
 from pathlib import Path
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-
 # Import the module under test (PYTHONPATH set by conftest)
-from extension import (
-    get_plugin_cache_path,
-    get_extension_api_scripts_path,
+from extension_discovery import (
     find_extension_path,
+    get_extension_api_scripts_path,
+    get_plugin_cache_path,
 )
-
 
 # =============================================================================
 # Tests for Path Resolution Functions
@@ -150,7 +148,7 @@ if __name__ == "__main__":
         try:
             test()
             passed += 1
-        except Exception as e:
+        except Exception:
             failed += 1
             print(f"FAILED: {test.__name__}")
             traceback.print_exc()

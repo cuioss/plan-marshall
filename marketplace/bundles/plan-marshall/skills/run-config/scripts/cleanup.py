@@ -94,7 +94,8 @@ def get_retention_settings() -> dict:
         }))
         sys.exit(1)
 
-    return config['system']['retention']
+    retention: dict = config['system']['retention']
+    return retention
 
 
 def get_dir_age_days(path: Path) -> float:
@@ -452,7 +453,8 @@ def main() -> int:
     status_parser.set_defaults(func=cmd_status)
 
     args = parser.parse_args()
-    return args.func(args)
+    func_result: int = args.func(args)
+    return func_result
 
 
 if __name__ == "__main__":

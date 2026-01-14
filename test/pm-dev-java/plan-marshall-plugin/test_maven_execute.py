@@ -11,10 +11,8 @@ from pathlib import Path
 # Import shared infrastructure
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 import os
-from conftest import (
-    get_script_path,
-    BuildContext,
-    _MARKETPLACE_SCRIPT_DIRS)
+
+from conftest import _MARKETPLACE_SCRIPT_DIRS, get_script_path
 
 # Get CLI entry point
 MAVEN_CLI = get_script_path('pm-dev-java', 'plan-marshall-plugin', 'maven.py')

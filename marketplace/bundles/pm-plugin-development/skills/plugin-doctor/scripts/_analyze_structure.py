@@ -6,7 +6,7 @@ import re
 import sys
 from pathlib import Path
 
-from _analyze_shared import extract_frontmatter, check_yaml_validity, remove_code_blocks
+from _analyze_shared import check_yaml_validity, extract_frontmatter, remove_code_blocks
 
 
 def extract_skill_references(content: str, skill_dir: Path) -> set[str]:
@@ -87,7 +87,7 @@ def analyze_skill_structure(skill_dir: Path) -> dict:
     if skill_exists:
         try:
             content = skill_md.read_text(encoding='utf-8', errors='replace')
-        except (OSError, IOError):
+        except OSError:
             content = ''
 
         frontmatter_present, frontmatter = extract_frontmatter(content)

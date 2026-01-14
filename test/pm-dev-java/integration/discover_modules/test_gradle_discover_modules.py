@@ -20,6 +20,8 @@ EXTENSION_DIR = PROJECT_ROOT / "marketplace" / "bundles" / "pm-dev-java" / "skil
 sys.path.insert(0, str(EXTENSION_DIR))
 
 # Direct imports - conftest sets up PYTHONPATH for cross-skill imports
+from extension import Extension
+
 from integration_common import (
     INTEGRATION_TEST_OUTPUT_DIR,
     IntegrationContext,
@@ -29,8 +31,6 @@ from integration_common import (
     assert_no_null_values,
     assert_paths_exist,
 )
-from extension import Extension
-
 
 # =============================================================================
 # Test Projects Configuration
@@ -84,7 +84,7 @@ def run_integration_tests() -> int:
 
             # Check if project exists
             if not ctx.validate_project(project):
-                print(f"  SKIP: Project not found")
+                print("  SKIP: Project not found")
                 continue
 
             test_count += 1
@@ -145,7 +145,7 @@ def run_integration_tests() -> int:
                     ctx.errors.extend([f"{project.name}: {e}" for e in errors])
                     all_passed = False
                 else:
-                    print(f"  PASS: All assertions passed")
+                    print("  PASS: All assertions passed")
                     pass_count += 1
 
                 # Print module summary (successful ones)

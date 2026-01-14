@@ -109,7 +109,7 @@ def _parse_pom_modules(pom_path: Path) -> list:
 
 def _discover_maven_modules_recursive(
     base_path: Path,
-    parent_name: str = None,
+    parent_name: str | None = None,
     path_prefix: str = ""
 ) -> list:
     """Recursively discover Maven modules starting from a directory.
@@ -122,7 +122,7 @@ def _discover_maven_modules_recursive(
     Returns:
         List of module info dicts with name, path, and parent fields
     """
-    modules = []
+    modules: list[dict[str, str]] = []
     pom_path = base_path / 'pom.xml'
 
     if not pom_path.exists():
@@ -234,7 +234,7 @@ def detect_npm_workspaces() -> list:
         - name: Package name from package.json (or directory name)
         - path: Relative path from project root
     """
-    modules = []
+    modules: list[dict[str, str]] = []
     pkg_path = Path('package.json')
 
     if not pkg_path.exists():
@@ -242,7 +242,7 @@ def detect_npm_workspaces() -> list:
 
     try:
         pkg_data = json.loads(pkg_path.read_text(encoding='utf-8'))
-    except (json.JSONDecodeError, IOError):
+    except (OSError, json.JSONDecodeError):
         return modules
 
     # Get workspaces config
@@ -271,7 +271,7 @@ def detect_npm_workspaces() -> list:
                 try:
                     workspace_pkg = json.loads(pkg_json_path.read_text(encoding='utf-8'))
                     name = workspace_pkg.get('name', rel_path.split('/')[-1])
-                except (json.JSONDecodeError, IOError):
+                except (OSError, json.JSONDecodeError):
                     name = rel_path.split('/')[-1]
             else:
                 name = rel_path.split('/')[-1]

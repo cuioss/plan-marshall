@@ -21,12 +21,13 @@ Subcommands:
 import argparse
 import sys
 
+from _gradle_cmd_check_warnings import cmd_check_warnings
+from _gradle_cmd_find_project import cmd_find_project
+from _gradle_cmd_parse import cmd_parse
+from _gradle_cmd_search_markers import cmd_search_markers
+
 # Import command handlers from internal modules (underscore prefix = private)
 from _gradle_execute import cmd_run
-from _gradle_cmd_parse import cmd_parse
-from _gradle_cmd_find_project import cmd_find_project
-from _gradle_cmd_search_markers import cmd_search_markers
-from _gradle_cmd_check_warnings import cmd_check_warnings
 
 
 def main():

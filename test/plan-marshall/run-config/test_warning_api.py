@@ -10,11 +10,9 @@ Tests:
 """
 
 import json
-import sys
-from pathlib import Path
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import run_script, get_script_path, PlanContext, PLAN_DIR_NAME
+from conftest import PLAN_DIR_NAME, PlanContext, get_script_path, run_script
 
 # Script under test
 SCRIPT_PATH = get_script_path('plan-marshall', 'run-config', 'run_config.py')

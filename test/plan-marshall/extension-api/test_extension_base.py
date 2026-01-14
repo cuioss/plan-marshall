@@ -2,30 +2,27 @@
 """Tests for extension_base.py module (public API)."""
 
 import sys
-from pathlib import Path
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-
 # Import modules under test (PYTHONPATH set by conftest)
 from extension_base import (
-    CMD_CLEAN,
-    CMD_COMPILE,
-    CMD_TEST_COMPILE,
-    CMD_MODULE_TESTS,
-    CMD_INTEGRATION_TESTS,
-    CMD_COVERAGE,
-    CMD_BENCHMARK,
-    CMD_QUALITY_GATE,
-    CMD_VERIFY,
-    CMD_INSTALL,
-    CMD_CLEAN_INSTALL,
-    CMD_PACKAGE,
     ALL_CANONICAL_COMMANDS,
     CANONICAL_COMMANDS,
+    CMD_BENCHMARK,
+    CMD_CLEAN,
+    CMD_CLEAN_INSTALL,
+    CMD_COMPILE,
+    CMD_COVERAGE,
+    CMD_INSTALL,
+    CMD_INTEGRATION_TESTS,
+    CMD_MODULE_TESTS,
+    CMD_PACKAGE,
+    CMD_QUALITY_GATE,
+    CMD_TEST_COMPILE,
+    CMD_VERIFY,
     PROFILE_PATTERNS,
     ExtensionBase,
 )
-
 
 # =============================================================================
 # Tests for CMD_* Constants
@@ -189,7 +186,7 @@ if __name__ == "__main__":
         try:
             test()
             passed += 1
-        except Exception as e:
+        except Exception:
             failed += 1
             print(f"FAILED: {test.__name__}")
             traceback.print_exc()

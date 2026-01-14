@@ -10,11 +10,10 @@ New simplified API: manage-log {type} {plan_id} {level} "{message}"
 No stdout output, exit code only.
 """
 
-import sys
 from pathlib import Path
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import run_script, get_script_path, PlanContext
+from conftest import PlanContext, get_script_path, run_script
 
 # Get script path
 SCRIPT_PATH = get_script_path('plan-marshall', 'logging', 'manage-log.py')

@@ -49,10 +49,10 @@ Add command usage (stdin-based API):
 import argparse
 import sys
 
+from _cmd_crud import cmd_add, cmd_remove, cmd_update
+from _cmd_query import cmd_get, cmd_list, cmd_next, cmd_next_tasks, cmd_tasks_by_domain, cmd_tasks_by_profile
+from _cmd_step import cmd_add_step, cmd_remove_step, cmd_step_done, cmd_step_skip, cmd_step_start
 from _manage_tasks_shared import output_error
-from _cmd_crud import cmd_add, cmd_update, cmd_remove
-from _cmd_query import cmd_list, cmd_get, cmd_next, cmd_tasks_by_domain, cmd_tasks_by_profile, cmd_next_tasks
-from _cmd_step import cmd_step_start, cmd_step_done, cmd_step_skip, cmd_add_step, cmd_remove_step
 
 
 def build_parser() -> argparse.ArgumentParser:

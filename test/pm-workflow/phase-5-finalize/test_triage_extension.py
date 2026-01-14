@@ -10,7 +10,7 @@ from pathlib import Path
 
 # Import shared infrastructure
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from conftest import run_script, get_script_path, PlanContext
+from conftest import PlanContext, get_script_path, run_script
 
 # Get script path for plan-marshall-config
 SCRIPT_PATH = get_script_path('plan-marshall', 'plan-marshall-config', 'plan-marshall-config.py')

@@ -6,8 +6,6 @@ import os
 import re
 from collections import defaultdict
 from pathlib import Path
-from typing import Optional
-
 
 # Pattern for OpenRewrite TODO markers
 MARKER_PATTERN = re.compile(r'/\*~~\(TODO:\s*(.+?)\)>\*/')
@@ -19,7 +17,7 @@ AUTO_SUPPRESS_RECIPES = {
 }
 
 
-def extract_recipe_name(message: str) -> Optional[str]:
+def extract_recipe_name(message: str) -> str | None:
     """Extract recipe name from marker message."""
     for recipe in AUTO_SUPPRESS_RECIPES:
         if recipe.lower() in message.lower():
@@ -45,7 +43,7 @@ def cmd_search_markers(args):
                 continue
             try:
                 content = file_path.read_text(encoding='utf-8')
-            except (IOError, UnicodeDecodeError):
+            except (OSError, UnicodeDecodeError):
                 continue
             for line_num, line in enumerate(content.split('\n'), start=1):
                 for match in MARKER_PATTERN.finditer(line):

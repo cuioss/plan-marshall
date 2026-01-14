@@ -53,29 +53,33 @@ def check_gitignore_status(gitignore_path: Path) -> dict:
         - has_architecture_exception: bool
         - content: str (if exists)
     """
-    result = {
-        "exists": gitignore_path.exists(),
-        "has_plan_dir": False,
-        "has_marshal_exception": False,
-        "has_architecture_exception": False,
-        "content": ""
-    }
+    exists = gitignore_path.exists()
+    has_plan_dir = False
+    has_marshal_exception = False
+    has_architecture_exception = False
+    content = ""
 
-    if result["exists"]:
-        result["content"] = gitignore_path.read_text()
-        lines = result["content"].splitlines()
+    if exists:
+        content = gitignore_path.read_text()
+        lines = content.splitlines()
 
         for line in lines:
             stripped = line.strip()
             # Accept both .plan/* (correct) and .plan/ or .plan (legacy)
             if stripped in (".plan/*", ".plan/", ".plan"):
-                result["has_plan_dir"] = True
+                has_plan_dir = True
             if stripped == GITIGNORE_MARSHAL_EXCEPTION:
-                result["has_marshal_exception"] = True
+                has_marshal_exception = True
             if stripped == GITIGNORE_ARCHITECTURE_EXCEPTION:
-                result["has_architecture_exception"] = True
+                has_architecture_exception = True
 
-    return result
+    return {
+        "exists": exists,
+        "has_plan_dir": has_plan_dir,
+        "has_marshal_exception": has_marshal_exception,
+        "has_architecture_exception": has_architecture_exception,
+        "content": content
+    }
 
 
 def setup_gitignore(project_root: Path, dry_run: bool = False) -> dict:

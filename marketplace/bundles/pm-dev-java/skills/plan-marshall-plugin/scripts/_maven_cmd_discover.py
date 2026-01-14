@@ -37,8 +37,7 @@ EXTENSION_API_DIR = Path(__file__).parent.parent.parent.parent.parent / 'plan-ma
 if str(EXTENSION_API_DIR) not in sys.path:
     sys.path.insert(0, str(EXTENSION_API_DIR))
 
-from extension_base import discover_descriptors, build_module_base
-
+from extension_base import build_module_base, discover_descriptors
 
 # =============================================================================
 # Extension Defaults Keys (for config_defaults callback)
@@ -588,7 +587,7 @@ def _discover_sources(module_path: Path) -> dict:
     - main: src/main/java, src/main/resources
     - test: src/test/java, src/test/resources
     """
-    sources = {"main": [], "test": []}
+    sources: dict[str, list[str]] = {"main": [], "test": []}
 
     # Main sources
     if (module_path / "src" / "main" / "java").exists():

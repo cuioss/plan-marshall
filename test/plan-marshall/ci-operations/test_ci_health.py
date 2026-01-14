@@ -5,11 +5,9 @@ Tests provider detection, tool verification, and configuration persistence.
 """
 
 import json
-import sys
-from pathlib import Path
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import run_script, get_script_path, PlanContext
+from conftest import PlanContext, get_script_path, run_script
 
 # Get script path
 SCRIPT_PATH = get_script_path('plan-marshall', 'ci-operations', 'ci_health.py')

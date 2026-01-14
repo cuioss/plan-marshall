@@ -6,13 +6,11 @@ including nested structure variants and edge cases.
 """
 
 import json
-import sys
-from pathlib import Path
 
-# Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import run_script, PlanContext
 from test_helpers import SCRIPT_PATH, create_marshal_json, create_nested_marshal_json
 
+# Import shared infrastructure (conftest.py sets up PYTHONPATH)
+from conftest import PlanContext, run_script
 
 # =============================================================================
 # skill-domains Basic Tests (Flat Structure)

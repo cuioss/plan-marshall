@@ -17,7 +17,6 @@ import os
 import sys
 from typing import Any
 
-
 EXIT_SUCCESS = 0
 EXIT_ERROR = 1
 
@@ -26,13 +25,13 @@ EXIT_ERROR = 1
 # ANALYZE SUBCOMMAND
 # =============================================================================
 
-def parse_json_coverage(report_path: str) -> dict:
+def parse_json_coverage(report_path: str) -> dict[str, Any]:
     """Parse Jest/Istanbul JSON coverage-summary.json format."""
-    with open(report_path, 'r', encoding='utf-8') as f:
+    with open(report_path, encoding='utf-8') as f:
         data = json.load(f)
 
-    overall = {}
-    by_file = []
+    overall: dict[str, Any] = {}
+    by_file: list[dict[str, Any]] = []
 
     if 'total' in data:
         total = data['total']
@@ -63,14 +62,14 @@ def parse_json_coverage(report_path: str) -> dict:
     return {'overall': overall, 'by_file': by_file}
 
 
-def parse_lcov_coverage(report_path: str) -> dict:
+def parse_lcov_coverage(report_path: str) -> dict[str, Any]:
     """Parse LCOV format coverage report."""
-    with open(report_path, 'r', encoding='utf-8') as f:
+    with open(report_path, encoding='utf-8') as f:
         content = f.read()
 
-    files_data = []
-    current_file = None
-    current_data = {}
+    files_data: list[dict[str, Any]] = []
+    current_file: str | None = None
+    current_data: dict[str, Any] = {}
 
     for line in content.split('\n'):
         line = line.strip()
@@ -114,27 +113,27 @@ def parse_lcov_coverage(report_path: str) -> dict:
     total_branches_found = sum(f['branches_found'] for f in files_data)
     total_branches_hit = sum(f['branches_hit'] for f in files_data)
 
-    overall = {
+    overall: dict[str, Any] = {
         'line_coverage': (total_lines_hit / total_lines_found * 100) if total_lines_found > 0 else 0,
         'function_coverage': (total_funcs_hit / total_funcs_found * 100) if total_funcs_found > 0 else 0,
         'branch_coverage': (total_branches_hit / total_branches_found * 100) if total_branches_found > 0 else 0,
         'statement_coverage': (total_lines_hit / total_lines_found * 100) if total_lines_found > 0 else 0
     }
 
-    by_file = []
-    for f in files_data:
-        line_cov = (f['lines_hit'] / f['lines_found'] * 100) if f['lines_found'] > 0 else 0
-        func_cov = (f['functions_hit'] / f['functions_found'] * 100) if f['functions_found'] > 0 else 0
-        branch_cov = (f['branches_hit'] / f['branches_found'] * 100) if f['branches_found'] > 0 else 0
+    by_file: list[dict[str, Any]] = []
+    for file_info in files_data:
+        line_cov = (file_info['lines_hit'] / file_info['lines_found'] * 100) if file_info['lines_found'] > 0 else 0
+        func_cov = (file_info['functions_hit'] / file_info['functions_found'] * 100) if file_info['functions_found'] > 0 else 0
+        branch_cov = (file_info['branches_hit'] / file_info['branches_found'] * 100) if file_info['branches_found'] > 0 else 0
 
         by_file.append({
-            'file': f['file'],
+            'file': file_info['file'],
             'line_coverage': round(line_cov, 2),
             'function_coverage': round(func_cov, 2),
             'branch_coverage': round(branch_cov, 2),
             'statement_coverage': round(line_cov, 2),
-            'uncovered_lines_count': len(f['uncovered_lines']),
-            'uncovered_lines': f['uncovered_lines']
+            'uncovered_lines_count': len(file_info['uncovered_lines']),
+            'uncovered_lines': file_info['uncovered_lines']
         })
 
     return {'overall': overall, 'by_file': by_file}
@@ -149,7 +148,7 @@ def classify_coverage(coverage: float, threshold: float) -> str:
     return 'OK'
 
 
-def analyze_coverage(report_path: str, report_format: str, threshold: float) -> dict:
+def analyze_coverage(report_path: str, report_format: str, threshold: float) -> dict[str, Any]:
     """Main analysis function."""
     if not os.path.exists(report_path):
         return {
@@ -183,7 +182,7 @@ def analyze_coverage(report_path: str, report_format: str, threshold: float) -> 
             'message': f'Failed to parse report: {e}'
         }
 
-    low_coverage_files = []
+    low_coverage_files: list[dict[str, Any]] = []
     files_with_good_coverage = 0
     files_with_critical = 0
 
@@ -231,7 +230,7 @@ def analyze_coverage(report_path: str, report_format: str, threshold: float) -> 
     }
 
 
-def cmd_analyze(args) -> int:
+def cmd_analyze(args: argparse.Namespace) -> int:
     """Handle analyze subcommand."""
     report_format = args.format
     if report_format == 'json' and args.report.endswith('.info'):
@@ -266,7 +265,8 @@ def main() -> int:
     analyze_parser.set_defaults(func=cmd_analyze)
 
     args = parser.parse_args()
-    return args.func(args)
+    result: int = args.func(args)
+    return result
 
 
 if __name__ == "__main__":

@@ -119,7 +119,7 @@ def _parse_uniform_array(ctx: ParseContext, count: int, fields: list[str], min_i
         fields: Field names for CSV parsing
         min_indent: Minimum indentation for array rows (rows must be >= this)
     """
-    result = []
+    result: list[dict[str, Any]] = []
 
     while ctx.index < len(ctx.lines) and len(result) < count:
         line = ctx.lines[ctx.index]
@@ -223,7 +223,7 @@ def _parse_multiline_value(ctx: ParseContext, base_indent: int) -> str:
 
 def _parse_object(ctx: ParseContext, base_indent: int) -> dict[str, Any]:
     """Parse a TOON object at the given indentation level."""
-    result = {}
+    result: dict[str, Any] = {}
 
     while ctx.index < len(ctx.lines):
         line = ctx.lines[ctx.index]

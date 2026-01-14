@@ -1,14 +1,11 @@
 #!/usr/bin/env python3
 """Shared utilities for doctor-marketplace subcommands."""
 
-import json
 import os
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Set
 
 # Import fix categorization from fix modules
-from _fix_shared import SAFE_FIX_TYPES, RISKY_FIX_TYPES
 from _cmd_categorize import categorize_fix
 
 # Plan directory configuration for test isolation
@@ -28,7 +25,7 @@ def get_report_dir() -> Path:
     return Path(TEMP_DIR) / REPORT_DIR
 
 
-def get_report_filename(timestamp: Optional[str] = None, scope: Optional[str] = None) -> str:
+def get_report_filename(timestamp: str | None = None, scope: str | None = None) -> str:
     """Generate timestamped report filename.
 
     Args:
@@ -64,7 +61,7 @@ def ensure_report_dir(report_dir: Path) -> Path:
 # Discovery Functions
 # =============================================================================
 
-def find_marketplace_root() -> Optional[Path]:
+def find_marketplace_root() -> Path | None:
     """Find the marketplace/bundles directory."""
     cwd = Path.cwd()
     if (cwd / MARKETPLACE_BUNDLES_PATH).is_dir():
@@ -74,7 +71,7 @@ def find_marketplace_root() -> Optional[Path]:
     return None
 
 
-def find_bundles(base_path: Path, bundle_filter: Optional[Set[str]] = None) -> List[Path]:
+def find_bundles(base_path: Path, bundle_filter: set[str] | None = None) -> list[Path]:
     """Find all bundle directories by locating plugin.json files."""
     bundles = []
     for plugin_json in base_path.rglob(".claude-plugin/plugin.json"):
@@ -86,9 +83,9 @@ def find_bundles(base_path: Path, bundle_filter: Optional[Set[str]] = None) -> L
     return sorted(bundles, key=lambda p: p.name)
 
 
-def discover_components(bundle_dir: Path) -> Dict[str, List[Dict]]:
+def discover_components(bundle_dir: Path) -> dict[str, list[dict]]:
     """Discover all components in a bundle."""
-    components = {
+    components: dict[str, list[dict]] = {
         "agents": [],
         "commands": [],
         "skills": [],
@@ -153,7 +150,7 @@ def discover_components(bundle_dir: Path) -> Dict[str, List[Dict]]:
     return components
 
 
-def find_bundle_for_file(file_path: Path, marketplace_root: Path) -> Optional[Path]:
+def find_bundle_for_file(file_path: Path, marketplace_root: Path) -> Path | None:
     """Find the bundle directory containing a file."""
     current = file_path.parent
     while current != current.parent and marketplace_root in current.parents or current == marketplace_root:
@@ -180,7 +177,7 @@ def extract_bundle_name(path: str) -> str:
 # Issue Categorization
 # =============================================================================
 
-def categorize_all_issues(issues: List[Dict]) -> Dict[str, List[Dict]]:
+def categorize_all_issues(issues: list[dict]) -> dict[str, list[dict]]:
     """Categorize issues into safe and risky."""
     safe = []
     risky = []

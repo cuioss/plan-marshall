@@ -15,8 +15,6 @@ import json
 import os
 import re
 import sys
-from typing import Any
-
 
 EXIT_SUCCESS = 0
 EXIT_ERROR = 1
@@ -111,7 +109,7 @@ def categorize_line(line: str) -> tuple:
     return None, None
 
 
-def determine_build_status(lines: list, exit_code: int = None) -> str:
+def determine_build_status(lines: list, exit_code: int | None = None) -> str:
     """Determine overall build status from output."""
     for line in lines:
         if 'npm ERR!' in line:
@@ -139,7 +137,7 @@ def parse_npm_output(log_path: str, mode: str) -> dict:
         }
 
     try:
-        with open(log_path, 'r', encoding='utf-8', errors='replace') as f:
+        with open(log_path, encoding='utf-8', errors='replace') as f:
             content = f.read()
     except Exception as e:
         return {
@@ -263,7 +261,8 @@ def main() -> int:
     parse_parser.set_defaults(func=cmd_parse)
 
     args = parser.parse_args()
-    return args.func(args)
+    result: int = args.func(args)
+    return result
 
 
 if __name__ == "__main__":

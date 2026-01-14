@@ -7,13 +7,12 @@ Domain detection uses skill-domains detect to find build files at project root.
 
 import json
 import shutil
-import sys
 from pathlib import Path
 
-# Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import run_script, PlanContext
 from test_helpers import SCRIPT_PATH
 
+# Import shared infrastructure (conftest.py sets up PYTHONPATH)
+from conftest import PlanContext, run_script
 
 # =============================================================================
 # Test Cleanup - Ensure Isolation Between Tests

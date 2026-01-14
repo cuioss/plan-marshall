@@ -13,6 +13,7 @@ import importlib.util
 import os
 import sys
 from pathlib import Path
+from typing import Any
 
 # Direct import - executor sets up PYTHONPATH for cross-skill imports
 from plan_logging import log_entry
@@ -78,6 +79,9 @@ def load_extension_module(extension_path: Path, bundle_name: str):
             f"extension_{bundle_name}",
             extension_path
         )
+        if spec is None or spec.loader is None:
+            log_entry('script', 'global', 'WARN', f"[EXTENSION] Failed to create spec for {bundle_name}")
+            return None
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
 
@@ -121,7 +125,7 @@ def find_extension_path(bundle_dir: Path) -> Path | None:
     return None
 
 
-def discover_all_extensions() -> list:
+def discover_all_extensions() -> list[dict[str, Any]]:
     """Discover all extension.py files in bundles (no applicability check).
 
     Scans all bundles for extension.py files in skills/plan-marshall-plugin/
@@ -129,7 +133,7 @@ def discover_all_extensions() -> list:
     Returns:
         List of dicts with extension info: {bundle, path, module}
     """
-    extensions = []
+    extensions: list[dict[str, Any]] = []
     bundles_path = get_marketplace_bundles_path()
 
     if not bundles_path.is_dir():
@@ -154,7 +158,7 @@ def discover_all_extensions() -> list:
     return extensions
 
 
-def discover_extensions(project_root: Path) -> list:
+def discover_extensions(project_root: Path) -> list[dict[str, Any]]:
     """Discover applicable extensions for a project.
 
     Scans all bundles for extension.py files. Extensions are included if
@@ -167,7 +171,7 @@ def discover_extensions(project_root: Path) -> list:
         List of dicts with extension info: {bundle, path, module}
     """
     all_extensions = discover_all_extensions()
-    applicable = []
+    applicable: list[dict[str, Any]] = []
 
     for ext in all_extensions:
         module = ext.get("module")
@@ -179,7 +183,7 @@ def discover_extensions(project_root: Path) -> list:
     return applicable
 
 
-def get_build_systems_from_extensions(extensions: list, project_root: Path = None) -> list:
+def get_build_systems_from_extensions(extensions: list[dict[str, Any]], project_root: Path | None = None) -> list[str]:
     """Get build systems provided by extensions.
 
     Args:
@@ -214,7 +218,7 @@ def get_build_systems_from_extensions(extensions: list, project_root: Path = Non
     return list(build_systems)
 
 
-def get_skill_domains_from_extensions(extensions: list) -> list:
+def get_skill_domains_from_extensions(extensions: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Get skill domains from extensions.
 
     Args:
@@ -223,7 +227,7 @@ def get_skill_domains_from_extensions(extensions: list) -> list:
     Returns:
         List of domain info dicts: {domain, profiles, bundle}
     """
-    domains = []
+    domains: list[dict[str, Any]] = []
 
     for ext in extensions:
         module = ext.get("module")
@@ -239,7 +243,7 @@ def get_skill_domains_from_extensions(extensions: list) -> list:
     return domains
 
 
-def get_workflow_extensions_from_extensions(extensions: list) -> dict:
+def get_workflow_extensions_from_extensions(extensions: list[dict[str, Any]]) -> dict[str, dict[str, str]]:
     """Get workflow extensions (triage, outline) from extensions.
 
     Args:
@@ -248,14 +252,14 @@ def get_workflow_extensions_from_extensions(extensions: list) -> dict:
     Returns:
         Dict mapping bundle to {triage: skill_ref, outline: skill_ref}
     """
-    workflow_extensions = {}
+    workflow_extensions: dict[str, dict[str, str]] = {}
 
     for ext in extensions:
         module = ext.get("module")
         if not module:
             continue
 
-        ext_info = {}
+        ext_info: dict[str, str] = {}
 
         if hasattr(module, 'provides_triage'):
             try:
@@ -279,7 +283,7 @@ def get_workflow_extensions_from_extensions(extensions: list) -> dict:
     return workflow_extensions
 
 
-def apply_config_defaults(project_root: Path) -> dict:
+def apply_config_defaults(project_root: Path) -> dict[str, Any]:
     """Apply config_defaults() callback for all discovered extensions.
 
     Called during initialization to let extensions set project-specific
@@ -297,7 +301,7 @@ def apply_config_defaults(project_root: Path) -> dict:
         }
     """
     extensions = discover_all_extensions()
-    results = {
+    results: dict[str, Any] = {
         "extensions_called": 0,
         "extensions_skipped": 0,
         "errors": []
@@ -327,7 +331,7 @@ def apply_config_defaults(project_root: Path) -> dict:
 # Module Discovery and Merging (thin wrapper)
 # =============================================================================
 
-def discover_project_modules(project_root: Path) -> dict:
+def discover_project_modules(project_root: Path) -> dict[str, Any]:
     """Discover all modules and merge hybrid modules.
 
     Single entry point for module discovery. Handles:
@@ -377,7 +381,7 @@ def cmd_apply_config_defaults(args) -> int:
     results = apply_config_defaults(project_root)
 
     # Output in TOON format
-    print(f"status\tsuccess")
+    print("status\tsuccess")
     print(f"extensions_called\t{results['extensions_called']}")
     print(f"extensions_skipped\t{results['extensions_skipped']}")
     print(f"errors_count\t{len(results['errors'])}")
@@ -411,7 +415,8 @@ def main() -> int:
     defaults_parser.set_defaults(func=cmd_apply_config_defaults)
 
     args = parser.parse_args()
-    return args.func(args)
+    result: int = args.func(args)
+    return result
 
 
 if __name__ == "__main__":

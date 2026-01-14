@@ -25,13 +25,13 @@ Subcommands:
 import argparse
 import sys
 
+from _cmd_analyze_tone import cmd_analyze_tone
+from _cmd_classify_links import cmd_classify_links
+from _cmd_format import cmd_format
+from _cmd_review import cmd_review
 from _cmd_stats import cmd_stats
 from _cmd_validate import cmd_validate
-from _cmd_format import cmd_format
 from _cmd_verify_links import cmd_verify_links
-from _cmd_classify_links import cmd_classify_links
-from _cmd_review import cmd_review
-from _cmd_analyze_tone import cmd_analyze_tone
 
 
 def main():

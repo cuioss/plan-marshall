@@ -7,12 +7,9 @@ Tests both subcommands:
 - check-docs: Check if project docs need .plan/temp documentation
 """
 
-import sys
-from pathlib import Path
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import ScriptTestCase, run_script, MARKETPLACE_ROOT
-
+from conftest import MARKETPLACE_ROOT, ScriptTestCase, run_script
 
 # Script path to determine-mode.py
 SCRIPT_PATH = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'marshall-steward' / 'scripts' / 'determine-mode.py'

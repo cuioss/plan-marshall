@@ -8,10 +8,9 @@ projects in the local git directory.
 import json
 import os
 import shutil
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
-
 
 # Project root (plan-marshall)
 PROJECT_ROOT = Path(__file__).parent.parent.parent
@@ -205,7 +204,7 @@ def assert_npm_module_structure(modules: list[dict]) -> list[str]:
     Checks:
     - build_systems contains "npm"
     - paths.descriptor ends with "package.json"
-    - dependencies follow format "npm:{name}:{scope}"
+    - dependencies follow format "{name}:{scope}" (no prefix - technology is implicit)
     - metadata.type is "module" or "commonjs" (if present)
     - commands contain npm execute-script pattern
 
@@ -229,18 +228,20 @@ def assert_npm_module_structure(modules: list[dict]) -> list[str]:
         if not descriptor.endswith("package.json"):
             errors.append(f"{name}: descriptor should end with 'package.json', got '{descriptor}'")
 
-        # Check dependencies format
+        # Check dependencies format: {name}:{scope} (no prefix - technology is implicit in module)
         for dep in module.get("dependencies", []):
             if not isinstance(dep, str):
                 errors.append(f"{name}: dependency should be string, got {type(dep).__name__}")
                 continue
             parts = dep.split(":")
-            if len(parts) != 3:
-                errors.append(f"{name}: dependency '{dep}' should have format 'npm:name:scope'")
-            elif parts[0] != "npm":
-                errors.append(f"{name}: dependency '{dep}' should start with 'npm:'")
-            elif parts[2] not in valid_dep_scopes:
-                errors.append(f"{name}: dependency '{dep}' has invalid scope '{parts[2]}'")
+            # npm dependencies: name:scope (scoped packages like @org/pkg count as one name part)
+            # Split from right to handle scoped packages: "@testing-library/dom:test" -> ["@testing-library/dom", "test"]
+            if dep.count(":") < 1:
+                errors.append(f"{name}: dependency '{dep}' should have format 'name:scope'")
+                continue
+            scope = dep.rsplit(":", 1)[1]
+            if scope not in valid_dep_scopes:
+                errors.append(f"{name}: dependency '{dep}' has invalid scope '{scope}'")
 
         # Check metadata.type if present
         metadata = module.get("metadata", {})
@@ -401,7 +402,7 @@ def assert_has_root_aggregator(
 
     Returns list of validation errors.
     """
-    errors = []
+    errors: list[str] = []
 
     if len(modules) <= 1:
         return errors  # Single module projects don't need aggregator

@@ -17,12 +17,11 @@ Note: Solution documents are managed by the manage-solution-outline skill.
 import argparse
 import re
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
 
-from toon_parser import parse_toon, serialize_toon  # type: ignore[import-not-found]
 from file_ops import atomic_write_file, base_path  # type: ignore[import-not-found]
+from toon_parser import parse_toon, serialize_toon  # type: ignore[import-not-found]
 
 # Skill directory paths for document definitions and templates
 SKILL_DIR = Path(__file__).parent.parent
@@ -84,7 +83,7 @@ def render_template(doc_def: dict, fields: dict, plan_id: str) -> str:
         # Generate basic template if not found
         lines = [f"# {doc_def['name'].title()}: {fields.get('title', plan_id)}"]
         lines.append(f"\nplan_id: {plan_id}")
-        lines.append(f"created: {datetime.now(timezone.utc).isoformat()}")
+        lines.append(f"created: {datetime.now(UTC).isoformat()}")
         for name, value in fields.items():
             if value and name != 'title':
                 lines.append(f"\n## {name.replace('_', ' ').title()}\n\n{value}")
@@ -94,7 +93,7 @@ def render_template(doc_def: dict, fields: dict, plan_id: str) -> str:
 
     # Built-in placeholders
     template = template.replace('{plan_id}', plan_id)
-    template = template.replace('{timestamp}', datetime.now(timezone.utc).isoformat())
+    template = template.replace('{timestamp}', datetime.now(UTC).isoformat())
 
     # Field placeholders
     for key, value in fields.items():
@@ -184,9 +183,9 @@ def get_plan_dir(plan_id: str) -> Path:
 
 def parse_document_sections(content: str) -> dict[str, str]:
     """Parse markdown document into sections by heading."""
-    sections = {}
+    sections: dict[str, str] = {}
     current_section = '_header'
-    current_content = []
+    current_content: list[str] = []
 
     for line in content.split('\n'):
         if line.startswith('## '):
@@ -261,7 +260,7 @@ def cmd_create(doc_type: str, args) -> int:
             'plan_id': args.plan_id,
             'document': doc_type,
             'file': file_name,
-            'message': f'Document already exists. Use --force to overwrite.'
+            'message': 'Document already exists. Use --force to overwrite.'
         }))
         return 1
 

@@ -339,30 +339,30 @@ def main():
     args = parser.parse_args()
 
     # Import command handlers
-    from _cmd_manage import (
-        cmd_discover,
-        cmd_init,
-        cmd_derived,
-        cmd_derived_module,
-    )
     from _cmd_client import (
-        cmd_info,
-        cmd_modules,
-        cmd_graph,
-        cmd_module,
         cmd_commands,
-        cmd_resolve,
+        cmd_graph,
+        cmd_info,
+        cmd_module,
+        cmd_modules,
         cmd_profiles,
+        cmd_resolve,
     )
     from _cmd_enrich import (
-        cmd_enrich_project,
+        cmd_enrich_best_practice,
+        cmd_enrich_dependencies,
+        cmd_enrich_insight,
         cmd_enrich_module,
         cmd_enrich_package,
+        cmd_enrich_project,
         cmd_enrich_skills_by_profile,
-        cmd_enrich_dependencies,
         cmd_enrich_tip,
-        cmd_enrich_insight,
-        cmd_enrich_best_practice,
+    )
+    from _cmd_manage import (
+        cmd_derived,
+        cmd_derived_module,
+        cmd_discover,
+        cmd_init,
     )
 
     # Dispatch to handlers

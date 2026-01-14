@@ -43,7 +43,7 @@ High-level workflow for the analyze-project-architecture skill.
 │  Input:  Project root path                           │
 │                                                      │
 │  Action: python3 .plan/execute-script.py             │
-│          plan-marshall:extension-api:extension       │
+│          plan-marshall:extension-api:extension_discovery │
 │          discover-modules                            │
 │                                                      │
 │  Output: .plan/project-architecture/derived-data.json│

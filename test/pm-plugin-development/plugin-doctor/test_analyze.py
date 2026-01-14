@@ -8,11 +8,10 @@ Consolidates tests from:
 Tests plugin component analysis capabilities.
 """
 
-import sys
 from pathlib import Path
 
 # Import shared infrastructure
-from conftest import run_script, get_script_path
+from conftest import get_script_path, run_script
 
 # Script under test
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent

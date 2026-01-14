@@ -12,8 +12,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 # Direct imports - conftest sets up PYTHONPATH
+from _build_parse import SEVERITY_ERROR, SEVERITY_WARNING, Issue, UnitTestSummary
 from _maven_cmd_parse import parse_log
-from _build_parse import Issue, UnitTestSummary, SEVERITY_ERROR, SEVERITY_WARNING
 
 # Test data location (fixtures in test directory)
 TEST_DATA_DIR = Path(__file__).parent / "fixtures" / "log-test-data"
@@ -237,7 +237,7 @@ if __name__ == "__main__":
         try:
             test()
             passed += 1
-        except Exception as e:
+        except Exception:
             failed += 1
             print(f"FAILED: {test.__name__}")
             traceback.print_exc()

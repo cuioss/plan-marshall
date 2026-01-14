@@ -6,9 +6,14 @@ Contains: list, get, next, tasks-by-domain, tasks-by-profile, next-tasks subcomm
 """
 
 from _manage_tasks_shared import (
-    get_tasks_dir, parse_task_file, find_task_file, get_all_tasks,
-    calculate_progress, format_list_value, get_deliverable_context,
-    output_toon, output_error
+    calculate_progress,
+    find_task_file,
+    get_all_tasks,
+    get_deliverable_context,
+    get_tasks_dir,
+    output_error,
+    output_toon,
+    parse_task_file,
 )
 
 
@@ -53,7 +58,7 @@ def cmd_list(args) -> int:
     blocked = sum(1 for _, t in all_tasks if t.get('status') == 'blocked')
 
     # Compute counts by phase
-    by_phase = {}
+    by_phase: dict[str, int] = {}
     for _, t in all_tasks:
         phase = t.get('phase', 'execute')
         by_phase[phase] = by_phase.get(phase, 0) + 1

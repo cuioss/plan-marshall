@@ -28,19 +28,18 @@ from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).parent
 
-from _doctor_shared import (
-    find_marketplace_root,
-    find_bundles,
-    discover_components,
-    categorize_all_issues,
-    get_report_dir,
-    get_report_filename,
-    ensure_report_dir,
-)
 from _doctor_analysis import analyze_component
 from _doctor_fixes import apply_safe_fixes
 from _doctor_report import generate_report
-
+from _doctor_shared import (
+    categorize_all_issues,
+    discover_components,
+    ensure_report_dir,
+    find_bundles,
+    find_marketplace_root,
+    get_report_dir,
+    get_report_filename,
+)
 
 # =============================================================================
 # Subcommands
@@ -59,12 +58,13 @@ def cmd_scan(args) -> int:
 
     bundles = find_bundles(marketplace_root, bundle_filter)
 
-    results = {
+    results: dict[str, object] = {
         "marketplace_root": str(marketplace_root),
         "bundles": [],
         "total_bundles": 0,
         "total_components": 0
     }
+    bundles_list: list[dict] = []
 
     total_components = 0
     for bundle_dir in bundles:
@@ -72,7 +72,7 @@ def cmd_scan(args) -> int:
         bundle_total = sum(len(v) for v in components.values())
         total_components += bundle_total
 
-        results["bundles"].append({
+        bundles_list.append({
             "name": bundle_dir.name,
             "path": str(bundle_dir),
             "components": components,
@@ -85,6 +85,7 @@ def cmd_scan(args) -> int:
             }
         })
 
+    results["bundles"] = bundles_list
     results["total_bundles"] = len(bundles)
     results["total_components"] = total_components
 

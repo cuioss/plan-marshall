@@ -9,14 +9,12 @@ Tests the hybrid Phase 1 script that provides automated batch operations:
 """
 
 import json
-import os
 import shutil
-import sys
 import tempfile
 from pathlib import Path
 
 # Import shared infrastructure
-from conftest import run_script, get_script_path
+from conftest import get_script_path, run_script
 
 # Script under test
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
@@ -414,7 +412,7 @@ def test_report_has_llm_review_items():
     report_path = Path(PROJECT_ROOT) / response['report_file']
     assert report_path.exists(), f"Report file should exist: {report_path}"
 
-    with open(report_path, 'r') as f:
+    with open(report_path) as f:
         report_data = json.load(f)
 
     assert 'llm_review_items' in report_data, "Report should have llm_review_items"
@@ -451,7 +449,7 @@ def test_report_to_custom_dir():
         assert len(json_files) == 1, f"Should have exactly one report JSON file, found: {json_files}"
         json_path = json_files[0]
 
-        with open(json_path, 'r') as f:
+        with open(json_path) as f:
             data = json.load(f)
         assert 'summary' in data, "File should contain valid report"
     finally:
@@ -599,7 +597,7 @@ def test_fixture_report():
         report_path = temp_dir / response['report_file']
         assert report_path.exists(), f"Report file should exist: {report_path}"
 
-        with open(report_path, 'r') as f:
+        with open(report_path) as f:
             report_data = json.load(f)
         assert 'llm_review_items' in report_data, "Report should have LLM review items"
 

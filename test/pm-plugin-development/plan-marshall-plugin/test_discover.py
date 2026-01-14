@@ -5,16 +5,11 @@ Tests the plugin_discover module that discovers marketplace bundles
 and generates module dicts for derived-data.json.
 """
 
-import json
-import os
 import unittest
 from pathlib import Path
 
 from plugin_discover import (
     BUILD_SYSTEM,
-    BUNDLES_DIR,
-    PLUGIN_JSON,
-    SKILL_MD,
     build_bundle_module,
     build_commands,
     build_default_module,
@@ -25,7 +20,6 @@ from plugin_discover import (
     discover_skills,
     extract_description_from_frontmatter,
     extract_frontmatter,
-    get_component_description,
     load_plugin_json,
 )
 

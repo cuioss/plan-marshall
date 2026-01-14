@@ -8,14 +8,13 @@ from pathlib import Path
 
 # Import shared infrastructure
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from conftest import run_script, get_script_path, PlanContext, get_test_fixture_dir
+from conftest import PlanContext, get_script_path, get_test_fixture_dir, run_script
 
 # Get script path
 SCRIPT_PATH = get_script_path('pm-workflow', 'manage-files', 'manage-files.py')
 
 # Import toon_parser - conftest sets up PYTHONPATH
 from toon_parser import parse_toon  # type: ignore[import-not-found]
-
 
 # Alias for backward compatibility
 TestContext = PlanContext

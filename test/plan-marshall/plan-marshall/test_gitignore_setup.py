@@ -9,12 +9,9 @@ Tests .gitignore configuration for the planning system:
 - Supports dry-run mode
 """
 
-import sys
-from pathlib import Path
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import ScriptTestCase, run_script, MARKETPLACE_ROOT
-
+from conftest import MARKETPLACE_ROOT, ScriptTestCase, run_script
 
 # Script path to gitignore-setup.py
 SCRIPT_PATH = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'marshall-steward' / 'scripts' / 'gitignore-setup.py'

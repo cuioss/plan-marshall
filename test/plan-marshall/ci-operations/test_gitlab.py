@@ -6,11 +6,9 @@ Note: Actual glab CLI operations require authentication and network.
 These tests focus on the script interface, not live operations.
 """
 
-import sys
-from pathlib import Path
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import run_script, get_script_path
+from conftest import get_script_path, run_script
 
 # Get script path
 SCRIPT_PATH = get_script_path('plan-marshall', 'ci-operations', 'gitlab.py')

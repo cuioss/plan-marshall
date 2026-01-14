@@ -13,14 +13,9 @@ Tests subcommands:
 
 import json
 import sys
-from pathlib import Path
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import (
-    ScriptTestCase, run_script,
-    MARKETPLACE_ROOT
-)
-
+from conftest import MARKETPLACE_ROOT, ScriptTestCase, run_script
 
 # Script path to permission-fix.py
 SCRIPT_PATH = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'permission-fix' / 'scripts' / 'permission-fix.py'

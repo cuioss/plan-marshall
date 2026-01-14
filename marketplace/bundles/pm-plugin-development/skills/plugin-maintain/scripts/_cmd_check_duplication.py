@@ -5,7 +5,7 @@ import re
 from difflib import SequenceMatcher
 from pathlib import Path
 
-from _maintain_shared import EXIT_SUCCESS, EXIT_ERROR, output_json
+from _maintain_shared import EXIT_ERROR, EXIT_SUCCESS, output_json
 
 
 def normalize_text(text: str) -> str:
@@ -23,7 +23,7 @@ def extract_sections(content: str) -> dict[str, str]:
     """Extract sections from markdown content."""
     sections = {}
     current_section = 'intro'
-    current_content = []
+    current_content: list[str] = []
 
     for line in content.split('\n'):
         if line.startswith('#'):
@@ -122,7 +122,7 @@ def check_duplication(skill_path: str, content_file: str) -> dict:
 
     # Scan existing references
     duplicate_files = []
-    max_overlap = 0
+    max_overlap: float = 0
 
     for ref_file in refs_dir.glob('*.md'):
         existing_content = ref_file.read_text()

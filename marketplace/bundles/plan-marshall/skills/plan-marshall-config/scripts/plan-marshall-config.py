@@ -14,23 +14,23 @@ Usage:
 
 import argparse
 import sys
-from pathlib import Path
+
+from _cmd_ci import cmd_ci
+from _cmd_init import cmd_init
+from _cmd_skill_domains import (
+    cmd_configure_task_executors,
+    cmd_get_skills_by_profile,
+    cmd_get_workflow_skills,
+    cmd_resolve_domain_skills,
+    cmd_resolve_task_executor,
+    cmd_resolve_workflow_skill,
+    cmd_resolve_workflow_skill_extension,
+    cmd_skill_domains,
+)
+from _cmd_system_plan import cmd_plan, cmd_system
 
 # Direct imports - PYTHONPATH set by executor
 from _config_core import EXIT_ERROR
-from _cmd_skill_domains import (
-    cmd_skill_domains,
-    cmd_resolve_domain_skills,
-    cmd_get_workflow_skills,
-    cmd_resolve_workflow_skill,
-    cmd_resolve_workflow_skill_extension,
-    cmd_get_skills_by_profile,
-    cmd_configure_task_executors,
-    cmd_resolve_task_executor,
-)
-from _cmd_system_plan import cmd_system, cmd_plan
-from _cmd_ci import cmd_ci
-from _cmd_init import cmd_init
 
 
 def main():

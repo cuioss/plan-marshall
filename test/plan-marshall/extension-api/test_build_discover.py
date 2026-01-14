@@ -6,15 +6,14 @@ import tempfile
 from pathlib import Path
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-
 # Import modules under test (PYTHONPATH set by conftest)
 from extension_base import (
-    README_PATTERNS,
     EXCLUDE_DIRS,
-    ModulePaths,
+    README_PATTERNS,
     ModuleBase,
-    discover_descriptors,
+    ModulePaths,
     build_module_base,
+    discover_descriptors,
     find_readme,
 )
 
@@ -315,7 +314,7 @@ if __name__ == "__main__":
         try:
             test()
             passed += 1
-        except Exception as e:
+        except Exception:
             failed += 1
             print(f"FAILED: {test.__name__}")
             traceback.print_exc()

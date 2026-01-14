@@ -207,8 +207,9 @@ def load_acceptable_warnings(project_dir: str, build_system: str) -> list[str]:
     try:
         config = json.loads(config_path.read_text())
         build_config = config.get(build_system, {})
-        return build_config.get("acceptable_warnings", [])
-    except (json.JSONDecodeError, IOError):
+        warnings: list[str] = build_config.get("acceptable_warnings", [])
+        return warnings
+    except (OSError, json.JSONDecodeError):
         return []
 
 

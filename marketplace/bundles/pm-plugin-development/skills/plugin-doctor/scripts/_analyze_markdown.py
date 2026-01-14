@@ -6,7 +6,7 @@ import re
 import sys
 from pathlib import Path
 
-from _analyze_shared import extract_frontmatter, check_yaml_validity, detect_component_type
+from _analyze_shared import check_yaml_validity, detect_component_type, extract_frontmatter
 
 
 def check_frontmatter_fields(frontmatter: str) -> dict:
@@ -197,7 +197,7 @@ def analyze_markdown_file(file_path: Path, component_type: str) -> dict:
     """Analyze markdown file and return results."""
     try:
         content = file_path.read_text(encoding='utf-8', errors='replace')
-    except (OSError, IOError) as e:
+    except OSError as e:
         return {'error': f'Failed to read file: {e}'}
 
     line_count = content.count('\n') + (1 if content and not content.endswith('\n') else 0)

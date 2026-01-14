@@ -85,7 +85,7 @@ def analyze_tool_coverage(file_path: Path) -> dict:
     """
     try:
         content = file_path.read_text(encoding='utf-8', errors='replace')
-    except (OSError, IOError) as e:
+    except OSError as e:
         return {'error': f'Failed to read file: {e}'}
 
     frontmatter_present, frontmatter = extract_frontmatter(content)

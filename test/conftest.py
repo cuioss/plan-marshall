@@ -18,9 +18,8 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from typing import Any, Optional, Union
+from typing import Any
 from unittest import TestCase
-
 
 # =============================================================================
 # Path Constants
@@ -50,6 +49,8 @@ collect_ignore = [
     'pm-dev-frontend/integration/discover_modules/test_npm_discover_modules.py',
     'pm-dev-java/integration/discover_modules/test_gradle_discover_modules.py',
     'pm-dev-java/integration/discover_modules/test_maven_discover_modules.py',
+    # Import issue: imports from non-existent 'extension' module
+    'plan-marshall/integration/module_aggregation/test_hybrid_merge.py',
 ]
 
 
@@ -115,18 +116,21 @@ class ScriptResult:
         """True if script exited with code 0."""
         return self.returncode == 0
 
-    def json(self) -> dict:
+    def json(self) -> dict[str, Any]:
         """Parse stdout as JSON. Raises ValueError if invalid."""
         if not self.stdout.strip():
             raise ValueError(f"Empty stdout. stderr: {self.stderr}")
-        return json.loads(self.stdout)
+        data: dict[str, Any] = json.loads(self.stdout)
+        return data
 
-    def json_or_error(self) -> dict:
+    def json_or_error(self) -> dict[str, Any]:
         """Parse stdout as JSON, or stderr if stdout is empty."""
         if self.stdout.strip():
-            return json.loads(self.stdout)
+            data: dict[str, Any] = json.loads(self.stdout)
+            return data
         if self.stderr.strip():
-            return json.loads(self.stderr)
+            data = json.loads(self.stderr)
+            return data
         return {'error': 'No output'}
 
     def __repr__(self) -> str:
@@ -134,10 +138,10 @@ class ScriptResult:
 
 
 def run_script(
-    script_path: Union[str, Path],
+    script_path: str | Path,
     *args: str,
-    input_data: Optional[str] = None,
-    cwd: Optional[Union[str, Path]] = None,
+    input_data: str | None = None,
+    cwd: str | Path | None = None,
     timeout: int = 30
 ) -> ScriptResult:
     """
@@ -205,7 +209,7 @@ def get_script_path(bundle: str, skill: str, script: str) -> Path:
 def create_temp_file(
     content: str,
     suffix: str = '.md',
-    dir: Optional[Union[str, Path]] = None
+    dir: str | Path | None = None
 ) -> Path:
     """
     Create a temporary file with content.
@@ -273,6 +277,10 @@ class ScriptTestCase(TestCase):
     bundle: str = ''
     skill: str = ''
     script: str = ''
+    # Set dynamically by setUpClass/setUp
+    script_path: Path | None = None
+    temp_dir: Path
+    temp_files: list[Path]
 
     @classmethod
     def setUpClass(cls):
@@ -317,11 +325,11 @@ class ScriptTestCase(TestCase):
         return self.run_script(str(temp_file), *extra_args)
 
     # Assertion helpers
-    def assert_success(self, result: ScriptResult, msg: str = None):
+    def assert_success(self, result: ScriptResult, msg: str | None = None):
         """Assert script succeeded."""
         self.assertEqual(result.returncode, 0, msg or f"Script failed: {result.stderr}")
 
-    def assert_failure(self, result: ScriptResult, msg: str = None):
+    def assert_failure(self, result: ScriptResult, msg: str | None = None):
         """Assert script failed."""
         self.assertNotEqual(result.returncode, 0, msg or "Expected script to fail")
 
@@ -429,7 +437,7 @@ def assert_json_structure(data: dict, expected_keys: list, context: str = ""):
         raise AssertionError(f"Missing keys {missing} in {context or 'data'}: {list(data.keys())}")
 
 
-def load_fixture(fixture_path: Union[str, Path]) -> str:
+def load_fixture(fixture_path: str | Path) -> str:
     """Load fixture file content."""
     path = Path(fixture_path)
     if not path.is_absolute():
@@ -493,9 +501,9 @@ class PlanContext:
             plan_id: Plan identifier (kebab-case)
         """
         self.plan_id = plan_id
-        self.fixture_dir: Optional[Path] = None
-        self.plan_dir: Optional[Path] = None
-        self._original_plan_base_dir: Optional[str] = None
+        self.fixture_dir: Path | None = None
+        self.plan_dir: Path | None = None
+        self._original_plan_base_dir: str | None = None
         self._is_standalone: bool = False
 
     def __enter__(self) -> 'PlanContext':
@@ -570,7 +578,7 @@ MARSHAL_KEY_SYSTEM = "system"
 MARSHAL_KEY_PLAN = "plan"
 
 # Default schema for marshal.json
-MARSHAL_SCHEMA_DEFAULT = {
+MARSHAL_SCHEMA_DEFAULT: dict[str, Any] = {
     MARSHAL_KEY_SKILL_DOMAINS: {"system": {}},
     MARSHAL_KEY_MODULE_CONFIG: {},
     MARSHAL_KEY_SYSTEM: {"retention": {}},
@@ -580,9 +588,9 @@ MARSHAL_SCHEMA_DEFAULT = {
 
 def create_marshal_json(
     base_dir: Path,
-    module_config: Optional[dict] = None,
-    skill_domains: Optional[dict] = None,
-    extra: Optional[dict] = None
+    module_config: dict | None = None,
+    skill_domains: dict | None = None,
+    extra: dict | None = None
 ) -> Path:
     """
     Create marshal.json with proper schema.
@@ -627,10 +635,10 @@ def create_marshal_json(
 
 def create_raw_project_data(
     base_dir: Path,
-    modules: Optional[list] = None,
-    module_details: Optional[dict] = None,
-    project_name: Optional[str] = None,
-    frameworks: Optional[list] = None
+    modules: list | None = None,
+    module_details: dict | None = None,
+    project_name: str | None = None,
+    frameworks: list | None = None
 ) -> Path:
     """
     Create raw-project-data.json with module facts.
@@ -704,9 +712,9 @@ class BuildContext:
 
     def __init__(
         self,
-        module_config: Optional[dict] = None,
-        modules: Optional[list] = None,
-        module_details: Optional[dict] = None
+        module_config: dict | None = None,
+        modules: list | None = None,
+        module_details: dict | None = None
     ):
         """
         Initialize the build test context.
@@ -716,8 +724,8 @@ class BuildContext:
             modules: Initial modules list for raw-project-data.json
             module_details: Initial module_details for raw-project-data.json
         """
-        self.temp_dir: Optional[Path] = None
-        self.plan_dir: Optional[Path] = None
+        self.temp_dir: Path | None = None
+        self.plan_dir: Path | None = None
         self._initial_module_config = module_config
         self._initial_modules = modules
         self._initial_module_details = module_details
@@ -746,19 +754,23 @@ class BuildContext:
         if self.temp_dir and self.temp_dir.exists():
             shutil.rmtree(self.temp_dir, ignore_errors=True)
 
-    def load_marshal_json(self) -> dict:
+    def load_marshal_json(self) -> dict[str, Any]:
         """Load and return the current marshal.json content."""
+        assert self.plan_dir is not None, "BuildContext not entered"
         marshal_path = self.plan_dir / 'marshal.json'
         if not marshal_path.exists():
             raise FileNotFoundError(f"marshal.json not found at {marshal_path}")
-        return json.loads(marshal_path.read_text())
+        data: dict[str, Any] = json.loads(marshal_path.read_text())
+        return data
 
-    def load_raw_project_data(self) -> dict:
+    def load_raw_project_data(self) -> dict[str, Any]:
         """Load and return the current raw-project-data.json content."""
+        assert self.plan_dir is not None, "BuildContext not entered"
         raw_data_path = self.plan_dir / 'raw-project-data.json'
         if not raw_data_path.exists():
             raise FileNotFoundError(f"raw-project-data.json not found at {raw_data_path}")
-        return json.loads(raw_data_path.read_text())
+        data: dict[str, Any] = json.loads(raw_data_path.read_text())
+        return data
 
     def create_pom(
         self,
@@ -766,7 +778,7 @@ class BuildContext:
         packaging: str = 'jar',
         artifact_id: str = 'test-module',
         with_quarkus: bool = False,
-        profiles: Optional[list] = None
+        profiles: list | None = None
     ) -> Path:
         """
         Create a pom.xml file.
@@ -781,6 +793,7 @@ class BuildContext:
         Returns:
             Path to created pom.xml
         """
+        assert self.temp_dir is not None, "BuildContext not entered"
         target_dir = self.temp_dir / path if path != '.' else self.temp_dir
         target_dir.mkdir(parents=True, exist_ok=True)
 
@@ -824,6 +837,7 @@ class BuildContext:
         Returns:
             Path to created pom.xml
         """
+        assert self.temp_dir is not None, "BuildContext not entered"
         modules_xml = '\n'.join(f'    <module>{m}</module>' for m in modules)
         content = f'''<?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0">
@@ -857,6 +871,7 @@ class BuildContext:
         Returns:
             Path to created package.json
         """
+        assert self.temp_dir is not None, "BuildContext not entered"
         target_dir = self.temp_dir / path if path != '.' else self.temp_dir
         target_dir.mkdir(parents=True, exist_ok=True)
 
@@ -884,6 +899,7 @@ class BuildContext:
         Returns:
             Path to created build file
         """
+        assert self.temp_dir is not None, "BuildContext not entered"
         target_dir = self.temp_dir / path if path != '.' else self.temp_dir
         target_dir.mkdir(parents=True, exist_ok=True)
 

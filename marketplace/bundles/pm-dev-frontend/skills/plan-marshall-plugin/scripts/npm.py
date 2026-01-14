@@ -25,23 +25,10 @@ import argparse
 import subprocess
 import sys
 import time
+from collections.abc import Callable
 from pathlib import Path
-from typing import List, Optional, Tuple
 
-# Cross-skill imports (PYTHONPATH set by executor)
-from run_config import timeout_get, timeout_set  # type: ignore[import-not-found]
-from plan_logging import log_entry  # type: ignore[import-not-found]
-from _build_result import (
-    DirectCommandResult,
-    create_log_file,
-    success_result,
-    error_result,
-    timeout_result,
-    ERROR_BUILD_FAILED,
-    ERROR_LOG_FILE_FAILED,
-    ERROR_EXECUTION_FAILED,
-)
-from _build_format import format_toon, format_json
+from _build_format import format_json, format_toon
 from _build_parse import (
     Issue,
     UnitTestSummary,
@@ -49,14 +36,27 @@ from _build_parse import (
     load_acceptable_warnings,
     partition_issues,
 )
+from _build_result import (
+    ERROR_BUILD_FAILED,
+    ERROR_EXECUTION_FAILED,
+    ERROR_LOG_FILE_FAILED,
+    DirectCommandResult,
+    create_log_file,
+    error_result,
+    success_result,
+    timeout_result,
+)
+from _npm_parse_errors import parse_log as parse_npm_errors
+from _npm_parse_eslint import parse_log as parse_eslint
+from _npm_parse_jest import parse_log as parse_jest
+from _npm_parse_tap import parse_log as parse_tap
 
 # Import npm parsers from internal modules (underscore prefix = private)
 from _npm_parse_typescript import parse_log as parse_typescript
-from _npm_parse_jest import parse_log as parse_jest
-from _npm_parse_tap import parse_log as parse_tap
-from _npm_parse_eslint import parse_log as parse_eslint
-from _npm_parse_errors import parse_log as parse_npm_errors
+from plan_logging import log_entry  # type: ignore[import-not-found]
 
+# Cross-skill imports (PYTHONPATH set by executor)
+from run_config import timeout_get, timeout_set  # type: ignore[import-not-found]
 
 # =============================================================================
 # Constants
@@ -97,8 +97,8 @@ def execute_direct(
     command_key: str,
     default_timeout: int = 300,
     project_dir: str = '.',
-    working_dir: str = None,
-    env_vars: str = None
+    working_dir: str | None = None,
+    env_vars: str | None = None
 ) -> DirectCommandResult:
     """Execute npm command with adaptive timeout learning.
 
@@ -312,7 +312,7 @@ def detect_tool_type(content: str, command: str) -> str:
     return "generic"
 
 
-def parse_with_detector(log_file: str, command: str) -> Tuple[List[Issue], Optional[UnitTestSummary], str]:
+def parse_with_detector(log_file: str, command: str) -> tuple[list[Issue], UnitTestSummary | None, str]:
     """Parse log file using appropriate tool-specific parser.
 
     Args:
@@ -338,7 +338,7 @@ def parse_with_detector(log_file: str, command: str) -> Tuple[List[Issue], Optio
             return parse_npm_errors(log_file)
         else:
             # Generic fallback - try each parser and use first with results
-            parsers = [parse_npm_errors, parse_typescript, parse_eslint, parse_jest, parse_tap]
+            parsers: list[Callable[[str], tuple[list[Issue], UnitTestSummary | None, str]]] = [parse_npm_errors, parse_typescript, parse_eslint, parse_jest, parse_tap]
             for parser in parsers:
                 try:
                     issues, test_summary, build_status = parser(log_file)
@@ -355,7 +355,7 @@ def parse_with_detector(log_file: str, command: str) -> Tuple[List[Issue], Optio
 # Run Subcommand (execute + auto-parse on failure)
 # =============================================================================
 
-def cmd_run(args):
+def cmd_run(args: argparse.Namespace) -> int:
     """Handle run subcommand - execute + auto-parse on failure.
 
     Delegates to execute_direct() for all npm execution.
@@ -481,7 +481,7 @@ def cmd_run(args):
 # Main
 # =============================================================================
 
-def main():
+def main() -> int:
     """Main entry point."""
     parser = argparse.ArgumentParser(description="npm/npx build operations", formatter_class=argparse.RawDescriptionHelpFormatter)
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -498,7 +498,8 @@ def main():
     run_parser.set_defaults(func=cmd_run)
 
     args = parser.parse_args()
-    return args.func(args)
+    result: int = args.func(args)
+    return result
 
 
 if __name__ == "__main__":

@@ -16,10 +16,8 @@ Output: JSON to stdout.
 import ast
 import importlib.util
 import json
-import sys
 from pathlib import Path
 from typing import Any
-
 
 # Required methods for Extension class (self is implicit, not listed)
 # Only get_skill_domains is required as an abstract method
@@ -299,9 +297,9 @@ def validate_skill_domains_structure(domains: dict) -> list:
 # Command Mapping Validation
 # =============================================================================
 
-def validate_command_mappings(mappings: dict, build_systems: list) -> list:
+def validate_command_mappings(mappings: dict[str, Any], build_systems: list[str]) -> list[dict[str, Any]]:
     """Validate command mappings cover required canonicals."""
-    issues = []
+    issues: list[dict[str, Any]] = []
 
     if not build_systems:
         # Non-build bundles should return empty mappings (not an error)
@@ -350,19 +348,19 @@ def validate_command_mappings(mappings: dict, build_systems: list) -> list:
     return issues
 
 
-def parse_extension_file(extension_path: Path) -> tuple[bool, list[dict], dict, bool]:
+def parse_extension_file(extension_path: Path) -> tuple[bool, list[dict[str, Any]], dict[str, Any], bool]:
     """Parse extension.py file and extract method info from Extension class.
 
     Returns:
         (success, errors, methods, has_extension_class)
     """
-    errors = []
-    methods = {}
+    errors: list[dict[str, Any]] = []
+    methods: dict[str, Any] = {}
     has_extension_class = False
 
     try:
         content = extension_path.read_text(encoding='utf-8')
-    except (OSError, IOError) as e:
+    except OSError as e:
         return False, [{'type': 'read_error', 'message': str(e)}], {}, False
 
     try:
@@ -407,13 +405,15 @@ def parse_extension_file(extension_path: Path) -> tuple[bool, list[dict], dict, 
     return True, errors, methods, has_extension_class
 
 
-def load_extension_module(extension_path: Path):
+def load_extension_module(extension_path: Path) -> Any:
     """Load an extension.py module and return Extension instance."""
     try:
         spec = importlib.util.spec_from_file_location(
             f"extension_{extension_path.parent.parent.parent.name}",
             extension_path
         )
+        if spec is None or spec.loader is None:
+            return None
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
 
@@ -425,63 +425,65 @@ def load_extension_module(extension_path: Path):
         return None
 
 
-def validate_extension(extension_path: Path, deep: bool = True) -> dict:
+def validate_extension(extension_path: Path, deep: bool = True) -> dict[str, Any]:
     """Validate a single extension.py file.
 
     Args:
         extension_path: Path to extension.py
         deep: If True, also validate return values by executing methods
     """
-    result = {
+    issues: list[dict[str, Any]] = []
+    methods: dict[str, Any] = {}
+    result: dict[str, Any] = {
         'path': str(extension_path),
         'valid': True,
-        'issues': [],
-        'methods': {}
+        'issues': issues,
+        'methods': methods
     }
 
     if not extension_path.exists():
         result['valid'] = False
-        result['issues'].append({
+        issues.append({
             'type': 'file_missing',
             'message': f'Extension file not found: {extension_path}'
         })
         return result
 
-    success, errors, methods, has_extension_class = parse_extension_file(extension_path)
+    success, errors, parsed_methods, has_extension_class = parse_extension_file(extension_path)
 
     if not success:
         result['valid'] = False
-        result['issues'].extend(errors)
+        issues.extend(errors)
         return result
 
     if not has_extension_class:
         result['valid'] = False
-        result['issues'].append({
+        issues.append({
             'type': 'missing_class',
             'message': 'Extension class not found. Extensions must define class Extension(ExtensionBase).'
         })
         return result
 
-    result['methods'] = methods
+    result['methods'] = parsed_methods
 
     # Check required methods
     for method_name, spec in REQUIRED_METHODS.items():
-        if method_name not in methods:
+        if method_name not in parsed_methods:
             result['valid'] = False
-            result['issues'].append({
+            issues.append({
                 'type': 'missing_method',
                 'method': method_name,
                 'message': f"Missing required method: {method_name}() - {spec['description']}"
             })
             continue
 
-        method_info = methods[method_name]
+        method_info = parsed_methods[method_name]
 
         # Check arguments (self already removed by parser)
         expected_args = spec['args']
         actual_args = method_info['args']
         if actual_args != expected_args:
-            result['issues'].append({
+            issues.append({
                 'type': 'wrong_args',
                 'method': method_name,
                 'expected': expected_args,
@@ -506,17 +508,17 @@ def validate_extension(extension_path: Path, deep: bool = True) -> dict:
                     for issue in structure_issues:
                         if issue.get('severity') != 'warning':
                             result['valid'] = False
-                    result['issues'].extend(structure_issues)
+                    issues.extend(structure_issues)
 
                     # Validate skill references
                     if marketplace_root:
                         ref_issues = validate_skill_references(domains, marketplace_root)
                         for issue in ref_issues:
                             result['valid'] = False
-                        result['issues'].extend(ref_issues)
+                        issues.extend(ref_issues)
 
                 except Exception as e:
-                    result['issues'].append({
+                    issues.append({
                         'type': 'execution_error',
                         'function': 'get_skill_domains',
                         'message': f"get_skill_domains() raised: {e}"
@@ -527,17 +529,18 @@ def validate_extension(extension_path: Path, deep: bool = True) -> dict:
                 triage_outline_issues = validate_triage_outline_references(module, marketplace_root)
                 for issue in triage_outline_issues:
                     result['valid'] = False
-                result['issues'].extend(triage_outline_issues)
+                issues.extend(triage_outline_issues)
 
     return result
 
 
-def validate_bundle_consistency(bundle_path: Path) -> dict:
+def validate_bundle_consistency(bundle_path: Path) -> dict[str, Any]:
     """Validate consistency between extension.py and bundle structure."""
-    result = {
+    issues: list[dict[str, Any]] = []
+    result: dict[str, Any] = {
         'bundle': bundle_path.name,
         'valid': True,
-        'issues': []
+        'issues': issues
     }
 
     extension_path = bundle_path / 'skills' / 'plan-marshall-plugin' / 'extension.py'
@@ -554,7 +557,7 @@ def validate_bundle_consistency(bundle_path: Path) -> dict:
 
     if not success:
         result['valid'] = False
-        result['issues'].append({
+        issues.append({
             'type': 'parse_error',
             'message': 'Failed to parse extension.py'
         })
@@ -562,7 +565,7 @@ def validate_bundle_consistency(bundle_path: Path) -> dict:
 
     if not has_extension_class:
         result['valid'] = False
-        result['issues'].append({
+        issues.append({
             'type': 'missing_class',
             'message': 'Extension class not found'
         })
@@ -578,7 +581,7 @@ def validate_bundle_consistency(bundle_path: Path) -> dict:
         # (pm-dev-java, pm-dev-frontend, etc.)
         if bundle_path.name in ['pm-dev-java', 'pm-dev-frontend']:
             if not build_ops_path.is_dir():
-                result['issues'].append({
+                issues.append({
                     'type': 'missing_build_operations',
                     'severity': 'warning',
                     'message': f"Bundle {bundle_path.name} may provide build systems but lacks plan-marshall-plugin skill"
@@ -587,22 +590,24 @@ def validate_bundle_consistency(bundle_path: Path) -> dict:
     return result
 
 
-def scan_extensions(marketplace_root: Path) -> dict:
+def scan_extensions(marketplace_root: Path) -> dict[str, Any]:
     """Scan all bundles for extension.py files."""
     bundles_path = marketplace_root / 'bundles'
 
     if not bundles_path.is_dir():
         return {'error': f'Bundles directory not found: {bundles_path}'}
 
-    results = {
-        'extensions': [],
-        'summary': {
-            'total_bundles': 0,
-            'with_extension': 0,
-            'valid': 0,
-            'invalid': 0,
-            'issues': 0
-        }
+    extensions: list[dict[str, Any]] = []
+    summary: dict[str, int] = {
+        'total_bundles': 0,
+        'with_extension': 0,
+        'valid': 0,
+        'invalid': 0,
+        'issues': 0
+    }
+    results: dict[str, Any] = {
+        'extensions': extensions,
+        'summary': summary
     }
 
     for bundle_dir in sorted(bundles_path.iterdir()):
@@ -611,12 +616,12 @@ def scan_extensions(marketplace_root: Path) -> dict:
         if bundle_dir.name.startswith('.'):
             continue
 
-        results['summary']['total_bundles'] += 1
+        summary['total_bundles'] += 1
 
         extension_path = bundle_dir / 'skills' / 'plan-marshall-plugin' / 'extension.py'
 
         if extension_path.exists():
-            results['summary']['with_extension'] += 1
+            summary['with_extension'] += 1
             ext_result = validate_extension(extension_path)
             ext_result['bundle'] = bundle_dir.name
 
@@ -625,14 +630,14 @@ def scan_extensions(marketplace_root: Path) -> dict:
             ext_result['consistency'] = consistency
 
             if ext_result['valid'] and consistency['valid']:
-                results['summary']['valid'] += 1
+                summary['valid'] += 1
             else:
-                results['summary']['invalid'] += 1
+                summary['invalid'] += 1
 
-            results['summary']['issues'] += len(ext_result['issues'])
-            results['summary']['issues'] += len(consistency.get('issues', []))
+            summary['issues'] += len(ext_result['issues'])
+            summary['issues'] += len(consistency.get('issues', []))
 
-            results['extensions'].append(ext_result)
+            extensions.append(ext_result)
 
     return results
 

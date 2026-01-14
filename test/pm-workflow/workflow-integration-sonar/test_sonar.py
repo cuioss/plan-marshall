@@ -1,7 +1,6 @@
 """Tests for sonar.py - consolidated Sonar workflow script."""
 
 import json
-import os
 import subprocess
 import sys
 import unittest

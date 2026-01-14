@@ -5,7 +5,6 @@ import json
 import re
 import sys
 
-
 # Warning types that are always considered fixable
 ALWAYS_FIXABLE_TYPES = ["javadoc_warning", "compilation_error", "deprecation_warning", "unchecked_warning"]
 

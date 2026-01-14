@@ -4,11 +4,10 @@
 Tests the parse subcommand for analyzing npm/npx build logs.
 """
 
-import sys
 from pathlib import Path
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import run_script, get_script_path
+from conftest import get_script_path, run_script
 
 # Script under test
 SCRIPT_PATH = get_script_path('pm-dev-frontend', 'cui-javascript-project', 'npm-output.py')

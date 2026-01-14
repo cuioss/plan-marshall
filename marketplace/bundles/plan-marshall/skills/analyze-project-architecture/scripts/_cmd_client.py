@@ -6,31 +6,30 @@ These commands merge derived + enriched data for consumer output.
 """
 
 import sys
+from typing import Any
 
 from _architecture_core import (
     DataNotFoundError,
     ModuleNotFoundError,
-    get_derived_path,
-    load_derived_data,
-    load_llm_enriched_or_empty,
-    get_module_names,
-    get_root_module,
-    get_module,
-    merge_module_data,
-    print_toon_kv,
-    print_toon_table,
-    print_toon_list,
+    error_command_not_found,
     error_data_not_found,
     error_module_not_found,
-    error_command_not_found,
+    get_derived_path,
+    get_module,
+    get_module_names,
+    get_root_module,
+    load_derived_data,
+    load_llm_enriched_or_empty,
+    merge_module_data,
+    print_toon_list,
+    print_toon_table,
 )
-
 
 # =============================================================================
 # API Functions
 # =============================================================================
 
-def get_project_info(project_dir: str = '.') -> dict:
+def get_project_info(project_dir: str = '.') -> dict[str, Any]:
     """Get project summary with metadata and module overview.
 
     Args:
@@ -53,7 +52,7 @@ def get_project_info(project_dir: str = '.') -> dict:
             technologies.add(bs)
 
     # Build module overview with enriched purpose
-    module_overview = []
+    module_overview: list[dict[str, Any]] = []
     enriched_modules = enriched.get("modules", {})
     for name, data in modules_data.items():
         paths = data.get("paths", {})
@@ -74,7 +73,7 @@ def get_project_info(project_dir: str = '.') -> dict:
     }
 
 
-def get_modules_list(project_dir: str = '.') -> list:
+def get_modules_list(project_dir: str = '.') -> list[str]:
     """Get list of module names.
 
     Args:
@@ -87,7 +86,7 @@ def get_modules_list(project_dir: str = '.') -> list:
     return get_module_names(derived)
 
 
-def get_modules_with_command(command_name: str, project_dir: str = '.') -> list:
+def get_modules_with_command(command_name: str, project_dir: str = '.') -> list[str]:
     """Get list of module names that provide a specific command.
 
     Args:
@@ -98,7 +97,7 @@ def get_modules_with_command(command_name: str, project_dir: str = '.') -> list:
         List of module names that have the specified command
     """
     derived = load_derived_data(project_dir)
-    modules_with_command = []
+    modules_with_command: list[str] = []
 
     for module_name, module_data in derived.get("modules", {}).items():
         commands = module_data.get("commands", {})
@@ -108,7 +107,56 @@ def get_modules_with_command(command_name: str, project_dir: str = '.') -> list:
     return modules_with_command
 
 
-def get_module_graph(project_dir: str = '.', full: bool = False) -> dict:
+def get_modules_by_physical_path(physical_path: str, project_dir: str = '.') -> list[str]:
+    """Get list of module names at a specific physical path.
+
+    For virtual modules, multiple modules may share the same physical path.
+
+    Args:
+        physical_path: Physical directory path to filter by
+        project_dir: Project directory path
+
+    Returns:
+        List of module names at the specified physical path
+    """
+    derived = load_derived_data(project_dir)
+    modules_at_path: list[str] = []
+
+    for module_name, module_data in derived.get("modules", {}).items():
+        # Check virtual_module.physical_path first
+        virtual = module_data.get("virtual_module", {})
+        mod_physical_path = virtual.get("physical_path") if virtual else None
+
+        # Fall back to paths.module
+        if not mod_physical_path:
+            paths = module_data.get("paths", {})
+            mod_physical_path = paths.get("module", ".")
+
+        if mod_physical_path == physical_path:
+            modules_at_path.append(module_name)
+
+    return modules_at_path
+
+
+def get_sibling_modules(module_name: str, project_dir: str = '.') -> list[str]:
+    """Get sibling virtual modules for a given module.
+
+    Args:
+        module_name: Module name to find siblings for
+        project_dir: Project directory path
+
+    Returns:
+        List of sibling module names (empty if not a virtual module)
+    """
+    derived = load_derived_data(project_dir)
+    module = get_module(derived, module_name)
+
+    virtual = module.get("virtual_module", {})
+    siblings: list[str] = virtual.get("sibling_modules", [])
+    return siblings
+
+
+def get_module_graph(project_dir: str = '.', full: bool = False) -> dict[str, Any]:
     """Get complete internal module dependency graph with topological layers.
 
     Uses Kahn's algorithm to compute execution layers where layer 0 contains
@@ -129,7 +177,7 @@ def get_module_graph(project_dir: str = '.', full: bool = False) -> dict:
 
     # Build mapping of groupId:artifactId -> module_name for internal dep detection
     # This allows us to identify which dependencies are internal to the project
-    artifact_to_module = {}
+    artifact_to_module: dict[str, str] = {}
     for mod_name, mod_data in modules_data.items():
         metadata = mod_data.get("metadata", {})
         group_id = metadata.get("group_id")
@@ -138,7 +186,7 @@ def get_module_graph(project_dir: str = '.', full: bool = False) -> dict:
             artifact_to_module[f"{group_id}:{artifact_id}"] = mod_name
 
     # Compute internal_dependencies for each module from its dependencies list
-    internal_deps_map = {}
+    internal_deps_map: dict[str, list[str]] = {}
     for mod_name, mod_data in modules_data.items():
         # Check enriched data first (LLM-curated internal deps)
         enriched_mod = enriched_modules.get(mod_name, {})
@@ -166,8 +214,8 @@ def get_module_graph(project_dir: str = '.', full: bool = False) -> dict:
     # Aggregators are pom-packaging modules (not jar, nar, war, etc.)
     # BUT enriched data can mark pom modules as is_leaf to override filtering
     if full:
-        module_names = list(modules_data.keys())
-        filtered_out = []
+        module_names: list[str] = list(modules_data.keys())
+        filtered_out: list[str] = []
     else:
         module_names = []
         filtered_out = []
@@ -190,10 +238,10 @@ def get_module_graph(project_dir: str = '.', full: bool = False) -> dict:
 
     # Build adjacency list and in-degree count
     # Edge direction: from dependency TO dependent (for topological sort)
-    in_degree = {name: 0 for name in module_names}
-    dependents = {name: [] for name in module_names}  # who depends on this module
+    in_degree: dict[str, int] = dict.fromkeys(module_names, 0)
+    dependents: dict[str, list[str]] = {name: [] for name in module_names}  # who depends on this module
 
-    edges = []
+    edges: list[dict[str, str]] = []
     for module_name in module_names:
         internal_deps = internal_deps_map.get(module_name, [])
         for dep in internal_deps:
@@ -205,9 +253,9 @@ def get_module_graph(project_dir: str = '.', full: bool = False) -> dict:
                 dependents[dep].append(module_name)
 
     # Kahn's algorithm for topological sort with layer assignment
-    layers = []
+    layers: list[dict[str, Any]] = []
     remaining = set(module_names)
-    node_layers = {}
+    node_layers: dict[str, int] = {}
 
     # Find all nodes with no dependencies (layer 0)
     current_layer = [name for name in module_names if in_degree[name] == 0]
@@ -232,10 +280,10 @@ def get_module_graph(project_dir: str = '.', full: bool = False) -> dict:
         layer_num += 1
 
     # Check for circular dependencies
-    circular_deps = list(remaining) if remaining else None
+    circular_deps: list[str] | None = list(remaining) if remaining else None
 
     # Build nodes with layer and purpose
-    nodes = []
+    nodes: list[dict[str, Any]] = []
     for name in module_names:
         enriched_module = enriched_modules.get(name, {})
         nodes.append({
@@ -263,7 +311,7 @@ def get_module_graph(project_dir: str = '.', full: bool = False) -> dict:
     }
 
 
-def get_module_info(module_name: str = None, full: bool = False, project_dir: str = '.') -> dict:
+def get_module_info(module_name: str | None = None, full: bool = False, project_dir: str = '.') -> dict[str, Any]:
     """Get module information merged from derived + enriched data.
 
     Args:
@@ -307,7 +355,7 @@ def get_module_info(module_name: str = None, full: bool = False, project_dir: st
     return merged
 
 
-def get_module_commands(module_name: str = None, project_dir: str = '.') -> dict:
+def get_module_commands(module_name: str | None = None, project_dir: str = '.') -> dict[str, Any]:
     """Get available commands for a module.
 
     Args:
@@ -329,7 +377,7 @@ def get_module_commands(module_name: str = None, project_dir: str = '.') -> dict
     commands = module.get("commands", {})
 
     # Build command list with descriptions
-    command_list = []
+    command_list: list[dict[str, str]] = []
     for cmd_name, cmd_data in commands.items():
         description = ""
         if isinstance(cmd_data, dict):
@@ -345,7 +393,7 @@ def get_module_commands(module_name: str = None, project_dir: str = '.') -> dict
     }
 
 
-def resolve_command(command_name: str, module_name: str = None, project_dir: str = '.') -> dict:
+def resolve_command(command_name: str, module_name: str | None = None, project_dir: str = '.') -> dict[str, str]:
     """Resolve command to executable form.
 
     Args:
@@ -354,7 +402,7 @@ def resolve_command(command_name: str, module_name: str = None, project_dir: str
         project_dir: Project directory path
 
     Returns:
-        Dict with module, command, and executable(s)
+        Dict with module, command, and executable
     """
     derived = load_derived_data(project_dir)
 
@@ -368,34 +416,17 @@ def resolve_command(command_name: str, module_name: str = None, project_dir: str
     commands = module.get("commands", {})
 
     if command_name not in commands:
-        available = list(commands.keys())
         raise ValueError(f"Command not found: {command_name}")
 
     cmd_data = commands[command_name]
 
-    # Check if hybrid (multiple build systems provide same command)
-    if isinstance(cmd_data, dict) and not cmd_data.get("executable"):
-        # Nested by build system
-        executables = []
-        for build_system, executable in cmd_data.items():
-            if build_system != "description":
-                executables.append({
-                    "build_system": build_system,
-                    "command": executable
-                })
-        return {
-            "module": module_name,
-            "command": command_name,
-            "executables": executables
-        }
-    else:
-        # Single executable
-        executable = cmd_data if isinstance(cmd_data, str) else cmd_data.get("executable", "")
-        return {
-            "module": module_name,
-            "command": command_name,
-            "executable": executable
-        }
+    # Commands are always strings (virtual modules have single build system)
+    executable = cmd_data if isinstance(cmd_data, str) else cmd_data.get("executable", "")
+    return {
+        "module": module_name,
+        "command": command_name,
+        "executable": executable
+    }
 
 
 # =============================================================================
@@ -428,7 +459,7 @@ def cmd_info(args) -> int:
         )
         return 1
     except Exception as e:
-        print(f"status\terror", file=sys.stderr)
+        print("status\terror", file=sys.stderr)
         print(f"error\t{e}", file=sys.stderr)
         return 1
 
@@ -437,11 +468,17 @@ def cmd_modules(args) -> int:
     """CLI handler for modules command."""
     try:
         command_filter = getattr(args, 'filter_command', None)
+        physical_path_filter = getattr(args, 'physical_path', None)
 
         if command_filter:
             # Filter modules by command availability
             modules = get_modules_with_command(command_filter, args.project_dir)
             print(f"command: {command_filter}")
+            print()
+        elif physical_path_filter:
+            # Filter modules by physical path (for virtual modules)
+            modules = get_modules_by_physical_path(physical_path_filter, args.project_dir)
+            print(f"physical_path: {physical_path_filter}")
             print()
         else:
             # List all modules
@@ -456,7 +493,7 @@ def cmd_modules(args) -> int:
         )
         return 1
     except Exception as e:
-        print(f"status\terror", file=sys.stderr)
+        print("status\terror", file=sys.stderr)
         print(f"error\t{e}", file=sys.stderr)
         return 1
 
@@ -477,7 +514,7 @@ def cmd_graph(args) -> int:
             return 0
 
         # Build dependency lookup: what does each module depend on
-        dependencies = {n['name']: [] for n in nodes}
+        dependencies: dict[str, list[str]] = {n['name']: [] for n in nodes}
         for edge in edges:
             # edge['from'] depends on edge['to']
             dependencies[edge['to']].append(edge['from'])
@@ -522,7 +559,7 @@ def cmd_graph(args) -> int:
         )
         return 1
     except Exception as e:
-        print(f"status: error", file=sys.stderr)
+        print("status: error", file=sys.stderr)
         print(f"error: {e}", file=sys.stderr)
         return 1
 
@@ -648,8 +685,9 @@ def cmd_module(args) -> int:
     except ModuleNotFoundError:
         modules = get_modules_list(args.project_dir)
         error_module_not_found(args.name, modules)
+        return 1
     except Exception as e:
-        print(f"status\terror", file=sys.stderr)
+        print("status\terror", file=sys.stderr)
         print(f"error\t{e}", file=sys.stderr)
         return 1
 
@@ -673,8 +711,9 @@ def cmd_commands(args) -> int:
     except ModuleNotFoundError:
         modules = get_modules_list(args.project_dir)
         error_module_not_found(args.name, modules)
+        return 1
     except Exception as e:
-        print(f"status\terror", file=sys.stderr)
+        print("status\terror", file=sys.stderr)
         print(f"error\t{e}", file=sys.stderr)
         return 1
 
@@ -686,16 +725,7 @@ def cmd_resolve(args) -> int:
 
         print(f"module: {result['module']}")
         print(f"command: {result['command']}")
-
-        if 'executable' in result:
-            print(f"executable: {result['executable']}")
-        elif 'executables' in result:
-            print()
-            print_toon_table(
-                "executables",
-                result['executables'],
-                ["build_system", "command"]
-            )
+        print(f"executable: {result['executable']}")
 
         return 0
     except DataNotFoundError:
@@ -707,15 +737,17 @@ def cmd_resolve(args) -> int:
     except ModuleNotFoundError:
         modules = get_modules_list(args.project_dir)
         error_module_not_found(args.name, modules)
+        return 1
     except ValueError:
         # Command not found
         derived = load_derived_data(args.project_dir)
-        module_name = args.name or get_root_module(derived)
-        module = get_module(derived, module_name)
+        resolved_module: str = args.name or get_root_module(derived) or ""
+        module = get_module(derived, resolved_module)
         commands = list(module.get("commands", {}).keys())
-        error_command_not_found(module_name, args.command, commands)
+        error_command_not_found(resolved_module, args.command, commands)
+        return 1
     except Exception as e:
-        print(f"status\terror", file=sys.stderr)
+        print("status\terror", file=sys.stderr)
         print(f"error\t{e}", file=sys.stderr)
         return 1
 
@@ -779,6 +811,40 @@ def cmd_profiles(args) -> int:
         error_module_not_found(str(e), modules)
         return 1
     except Exception as e:
-        print(f"status: error", file=sys.stderr)
+        print("status: error", file=sys.stderr)
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+
+
+def cmd_siblings(args) -> int:
+    """CLI handler for siblings command.
+
+    Find sibling virtual modules for a given module.
+    """
+    try:
+        siblings = get_sibling_modules(args.name, args.project_dir)
+
+        print(f"module: {args.name}")
+        print()
+
+        if siblings:
+            print_toon_list("siblings", siblings)
+        else:
+            print("siblings: []")
+            print("note: Module is not a virtual module or has no siblings")
+
+        return 0
+    except DataNotFoundError:
+        error_data_not_found(
+            str(get_derived_path(args.project_dir)),
+            "Run 'architecture.py discover' first"
+        )
+        return 1
+    except ModuleNotFoundError:
+        modules = get_modules_list(args.project_dir)
+        error_module_not_found(args.name, modules)
+        return 1
+    except Exception as e:
+        print("status: error", file=sys.stderr)
         print(f"error: {e}", file=sys.stderr)
         return 1

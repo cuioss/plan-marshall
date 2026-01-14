@@ -4,12 +4,11 @@
 import json
 import os
 import shutil
-import sys
 import time
 from pathlib import Path
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import run_script, get_script_path, PlanContext
+from conftest import PlanContext, get_script_path, run_script
 
 # Get script path (moved from marshall-steward to run-config)
 SCRIPT_PATH = get_script_path('plan-marshall', 'run-config', 'cleanup.py')
@@ -31,7 +30,7 @@ def clean_fixture_dirs(fixture_dir: Path):
             shutil.rmtree(path)
 
 
-def setup_marshal_json(fixture_dir: Path, retention: dict = None):
+def setup_marshal_json(fixture_dir: Path, retention: dict | None = None):
     """Create marshal.json with retention settings."""
     config = {
         "system": {

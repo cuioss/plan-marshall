@@ -4,7 +4,7 @@
 import re
 from pathlib import Path
 
-from _maintain_shared import EXIT_SUCCESS, EXIT_ERROR, parse_frontmatter, output_json
+from _maintain_shared import EXIT_ERROR, EXIT_SUCCESS, output_json, parse_frontmatter
 
 
 def detect_component_type(path: Path) -> str:
@@ -78,7 +78,7 @@ def check_bloat(body: str, total_lines: int) -> list:
 
 def check_tool_compliance(frontmatter: dict | None, body: str) -> list:
     """Check for tool compliance issues."""
-    issues = []
+    issues: list[dict] = []
 
     if frontmatter is None:
         return issues

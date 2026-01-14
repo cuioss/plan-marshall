@@ -9,13 +9,14 @@ import sys
 import tempfile
 from pathlib import Path
 
-# Modules under test (PYTHONPATH set by conftest)
-from _npm_parse_typescript import parse_log as parse_typescript
+from _build_parse import SEVERITY_ERROR, SEVERITY_WARNING, Issue, UnitTestSummary
+from _npm_parse_errors import parse_log as parse_errors
+from _npm_parse_eslint import parse_log as parse_eslint
 from _npm_parse_jest import parse_log as parse_jest
 from _npm_parse_tap import parse_log as parse_tap
-from _npm_parse_eslint import parse_log as parse_eslint
-from _npm_parse_errors import parse_log as parse_errors
-from _build_parse import Issue, UnitTestSummary, SEVERITY_ERROR, SEVERITY_WARNING
+
+# Modules under test (PYTHONPATH set by conftest)
+from _npm_parse_typescript import parse_log as parse_typescript
 
 # Test data location (fixtures in test directory)
 TEST_DATA_DIR = Path(__file__).parent / "fixtures" / "log-test-data"
@@ -359,7 +360,7 @@ if __name__ == "__main__":
         try:
             test()
             passed += 1
-        except Exception as e:
+        except Exception:
             failed += 1
             print(f"FAILED: {test.__name__}")
             traceback.print_exc()

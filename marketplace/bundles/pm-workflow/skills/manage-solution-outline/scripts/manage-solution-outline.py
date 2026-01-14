@@ -21,9 +21,10 @@ import argparse
 import re
 import sys
 from pathlib import Path
+from typing import Any
 
-from toon_parser import serialize_toon, parse_toon  # type: ignore[import-not-found]
-from file_ops import base_path, atomic_write_file  # type: ignore[import-not-found]
+from file_ops import atomic_write_file, base_path  # type: ignore[import-not-found]
+from toon_parser import serialize_toon  # type: ignore[import-not-found]
 
 SOLUTION_FILE = 'solution_outline.md'
 ARCHITECTURE_DIR = 'project-architecture'
@@ -43,9 +44,9 @@ def get_solution_path(plan_id: str) -> Path:
 
 def parse_document_sections(content: str) -> dict[str, str]:
     """Parse markdown document into sections by heading."""
-    sections = {}
+    sections: dict[str, str] = {}
     current_section = '_header'
-    current_content = []
+    current_content: list[str] = []
 
     for line in content.split('\n'):
         if line.startswith('## '):
@@ -65,13 +66,13 @@ def parse_document_sections(content: str) -> dict[str, str]:
     return sections
 
 
-def extract_deliverables(deliverables_section: str) -> list[dict]:
+def extract_deliverables(deliverables_section: str) -> list[dict[str, Any]]:
     """Extract numbered deliverables from Deliverables section.
 
     Parses `### N. Title` headings and returns structured deliverable info
     including metadata, affected files, and verification.
     """
-    deliverables = []
+    deliverables: list[dict[str, Any]] = []
     # Split by ### N. headers
     pattern = re.compile(r'^###\s+(\d+)\.\s+(.+)$', re.MULTILINE)
 
@@ -112,9 +113,9 @@ def extract_deliverables(deliverables_section: str) -> list[dict]:
     return sorted(deliverables, key=lambda d: d['number'])
 
 
-def extract_metadata_block(content: str) -> dict:
+def extract_metadata_block(content: str) -> dict[str, str]:
     """Extract **Metadata:** block fields from deliverable content."""
-    metadata = {}
+    metadata: dict[str, str] = {}
 
     # Look for Metadata block
     metadata_match = re.search(r'\*\*Metadata:\*\*\s*((?:- [^\n]+\n?)+)', content, re.IGNORECASE)
@@ -135,7 +136,7 @@ def extract_metadata_block(content: str) -> dict:
 
 def extract_affected_files(content: str) -> list[str]:
     """Extract **Affected files:** list from deliverable content."""
-    files = []
+    files: list[str] = []
 
     # Look for Affected files block
     files_match = re.search(r'\*\*Affected files:\*\*\s*((?:- [^\n]+\n?)+)', content, re.IGNORECASE)
@@ -154,9 +155,9 @@ def extract_affected_files(content: str) -> list[str]:
     return files
 
 
-def extract_verification(content: str) -> dict:
+def extract_verification(content: str) -> dict[str, str]:
     """Extract **Verification:** section from deliverable content."""
-    verification = {}
+    verification: dict[str, str] = {}
 
     # Look for Verification block
     verif_match = re.search(r'\*\*Verification:\*\*\s*((?:- [^\n]+\n?)+)', content, re.IGNORECASE)
@@ -177,7 +178,7 @@ def extract_verification(content: str) -> dict:
     return verification
 
 
-def validate_solution_structure(content: str) -> tuple[list[str], list[str], dict]:
+def validate_solution_structure(content: str) -> tuple[list[str], list[str], dict[str, Any]]:
     """Validate solution outline document structure against deliverable contract.
 
     Returns (errors, warnings, info) where:
@@ -185,9 +186,9 @@ def validate_solution_structure(content: str) -> tuple[list[str], list[str], dic
     - warnings: Issues that should be addressed but don't block
     - info: Validation metadata
     """
-    errors = []
-    warnings = []
-    info = {
+    errors: list[str] = []
+    warnings: list[str] = []
+    info: dict[str, Any] = {
         'sections_found': [],
         'deliverable_count': 0,
         'deliverables': []
@@ -597,10 +598,11 @@ def cmd_get_module_context(args) -> int:
     enriched_modules = enriched_data.get('modules', {})
 
     # Build context for LLM
+    modules_list: list[dict] = []
     context = {
         'status': 'success',
         'module_count': len(derived_modules),
-        'modules': []
+        'modules': modules_list
     }
 
     for name, mod in derived_modules.items():
@@ -620,7 +622,7 @@ def cmd_get_module_context(args) -> int:
             module_info['insights'] = enriched['insights']
         if enriched.get('skills_by_profile'):
             module_info['skills_by_profile'] = enriched['skills_by_profile']
-        context['modules'].append(module_info)
+        modules_list.append(module_info)
 
     print(serialize_toon(context))
     return 0

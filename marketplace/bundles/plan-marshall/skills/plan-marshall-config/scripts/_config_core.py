@@ -7,7 +7,6 @@ and error handling used by all command modules.
 
 import json
 import os
-import sys
 from pathlib import Path
 
 # Direct imports - PYTHONPATH set by executor
@@ -43,13 +42,14 @@ def require_initialized() -> None:
         )
     if not MARSHAL_PATH.exists():
         raise MarshalNotInitializedError(
-            f"marshal.json not found. Run command /marshall-steward first"
+            "marshal.json not found. Run command /marshall-steward first"
         )
 
 
 def load_config() -> dict:
     """Load marshal.json."""
-    return json.loads(MARSHAL_PATH.read_text(encoding='utf-8'))
+    config: dict = json.loads(MARSHAL_PATH.read_text(encoding='utf-8'))
+    return config
 
 
 def save_config(config: dict) -> None:
@@ -75,7 +75,8 @@ def save_config(config: dict) -> None:
 def load_run_config() -> dict:
     """Load run-configuration.json (local, not shared via git)."""
     if RUN_CONFIG_PATH.exists():
-        return json.loads(RUN_CONFIG_PATH.read_text(encoding='utf-8'))
+        config: dict = json.loads(RUN_CONFIG_PATH.read_text(encoding='utf-8'))
+        return config
     return {"version": 1, "commands": {}, "ci": {"authenticated_tools": [], "verified_at": None}}
 
 

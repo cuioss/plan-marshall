@@ -3,20 +3,17 @@
 
 import json
 import sys
-from pathlib import Path
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-
 # Import modules under test (PYTHONPATH set by conftest)
 from _build_format import (
     CORE_FIELDS,
     EXTRA_FIELDS,
     STRUCTURED_FIELDS,
-    format_toon,
     format_json,
+    format_toon,
 )
-from _build_parse import Issue, UnitTestSummary, SEVERITY_ERROR, SEVERITY_WARNING
-
+from _build_parse import SEVERITY_ERROR, SEVERITY_WARNING, Issue, UnitTestSummary
 
 # =============================================================================
 # Constants Tests
@@ -499,7 +496,7 @@ if __name__ == "__main__":
         try:
             test()
             passed += 1
-        except Exception as e:
+        except Exception:
             failed += 1
             print(f"FAILED: {test.__name__}")
             traceback.print_exc()

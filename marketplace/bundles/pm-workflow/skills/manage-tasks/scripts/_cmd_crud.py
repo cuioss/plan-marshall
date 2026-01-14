@@ -7,16 +7,22 @@ Contains: add, update, remove subcommands.
 
 import sys
 
+from _manage_tasks_shared import (
+    find_task_file,
+    format_task_file,
+    get_next_number,
+    get_tasks_dir,
+    now_iso,
+    output_error,
+    output_toon,
+    parse_depends_on,
+    parse_stdin_task,
+    parse_task_file,
+    validate_profile,
+    validate_skills,
+)
 from file_ops import atomic_write_file  # type: ignore[import-not-found]
 from plan_logging import log_entry  # type: ignore[import-not-found]
-
-from _manage_tasks_shared import (
-    now_iso, parse_depends_on,
-    get_tasks_dir, parse_task_file, format_task_file,
-    find_task_file, get_next_number,
-    parse_stdin_task, output_toon, output_error,
-    validate_profile, validate_skills
-)
 
 
 def cmd_add(args) -> int:

@@ -13,10 +13,9 @@ Usage (internal):
 import json
 import re
 from pathlib import Path
-from typing import Optional
 
 # Direct imports - executor sets up PYTHONPATH for cross-skill imports
-from _build_parse import Issue, UnitTestSummary, SEVERITY_ERROR, SEVERITY_WARNING
+from _build_parse import SEVERITY_ERROR, SEVERITY_WARNING, Issue, UnitTestSummary
 from plan_logging import log_entry
 
 
@@ -31,7 +30,7 @@ def detect_build_status(content: str) -> str:
     return "SUCCESS"
 
 
-def extract_duration(content: str) -> Optional[int]:
+def extract_duration(content: str) -> int | None:
     """Extract total build time in milliseconds."""
     match = re.search(r"Total time:\s+([\d.]+)\s+s", content)
     if match:

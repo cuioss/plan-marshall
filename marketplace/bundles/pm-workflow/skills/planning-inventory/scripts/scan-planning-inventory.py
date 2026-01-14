@@ -92,7 +92,8 @@ def run_marketplace_inventory(include_descriptions: bool) -> dict:
     if result.returncode != 0:
         raise RuntimeError(f"marketplace-inventory failed: {result.stderr}")
 
-    return json.loads(result.stdout)
+    data: dict = json.loads(result.stdout)
+    return data
 
 
 def categorize_components(inventory: dict) -> dict:

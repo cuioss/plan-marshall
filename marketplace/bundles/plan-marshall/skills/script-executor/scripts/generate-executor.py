@@ -443,7 +443,8 @@ print(json.dumps(module.SCRIPTS))
         if result.returncode != 0:
             return {}
 
-        return json.loads(result.stdout.strip())
+        mappings: dict[str, str] = json.loads(result.stdout.strip())
+        return mappings
 
     except Exception:
         return {}
@@ -526,12 +527,12 @@ def cmd_verify(args):
     """Verify existing executor."""
     valid, count = verify_executor()
     if valid:
-        print(f"\nstatus\tscript_count")
+        print("\nstatus\tscript_count")
         print(f"ok\t{count}")
         sys.exit(0)
     else:
-        print(f"\nstatus\tissues")
-        print(f"error\tVerification failed")
+        print("\nstatus\tissues")
+        print("error\tVerification failed")
         sys.exit(1)
 
 
@@ -591,12 +592,12 @@ def cmd_drift(args):
             print(f"  ~ {n}")
 
     if added or removed or changed:
-        print(f"\nstatus\tadded\tremoved\tchanged")
+        print("\nstatus\tadded\tremoved\tchanged")
         print(f"drift\t{len(added)}\t{len(removed)}\t{len(changed)}")
         sys.exit(1)
     else:
-        print(f"\nstatus\tadded\tremoved\tchanged")
-        print(f"ok\t0\t0\t0")
+        print("\nstatus\tadded\tremoved\tchanged")
+        print("ok\t0\t0\t0")
         sys.exit(0)
 
 
@@ -615,15 +616,15 @@ def cmd_paths(args):
     print(f"Missing: {len(missing)}")
 
     if missing:
-        print(f"\nMissing scripts:")
+        print("\nMissing scripts:")
         for notation, path in missing:
             print(f"  {notation} -> {path}")
 
-        print(f"\nstatus\texisting\tmissing")
+        print("\nstatus\texisting\tmissing")
         print(f"error\t{len(existing)}\t{len(missing)}")
         sys.exit(1)
     else:
-        print(f"\nstatus\texisting\tmissing")
+        print("\nstatus\texisting\tmissing")
         print(f"ok\t{len(existing)}\t0")
         sys.exit(0)
 

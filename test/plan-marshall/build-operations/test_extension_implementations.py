@@ -12,16 +12,12 @@ These are behavioral tests, not just structural validation.
 """
 
 import importlib.util
-import json
-import os
 import shutil
-import sys
 import tempfile
 from pathlib import Path
-from typing import Any
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import PROJECT_ROOT, MARKETPLACE_ROOT
+from conftest import MARKETPLACE_ROOT
 
 # Required canonical commands in discover_modules() output
 # NOTE: Commands are now part of module discovery output, not separate mappings
@@ -40,6 +36,8 @@ def load_extension(bundle_name: str):
         raise FileNotFoundError(f"Extension not found: {extension_path}")
 
     spec = importlib.util.spec_from_file_location(f"extension_{bundle_name}", extension_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Could not load module from {extension_path}")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
 

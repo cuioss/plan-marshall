@@ -69,48 +69,85 @@ Direct output from `discover_project_modules()`. See [build-project-structure.md
 
 | Field | Description |
 |-------|-------------|
-| `name` | Module name |
-| `build_systems` | Array of build systems (e.g., `["maven"]`, `["maven", "npm"]`) |
+| `name` | Module name (includes technology suffix for virtual modules) |
+| `build_systems` | Array with single build system (e.g., `["maven"]` or `["npm"]`) |
 | `paths` | Module paths (descriptor, sources, tests, readme) |
 | `metadata` | Build-system specific metadata |
 | `packages` | All packages with paths and package-info |
-| `dependencies` | Full dependency list with scopes |
+| `dependencies` | Full dependency list with scopes (see format below) |
 | `stats` | File counts |
-| `commands` | Available build commands (see structure below) |
+| `commands` | Available build commands (string values) |
+| `virtual_module` | (Optional) Virtual module metadata for multi-tech directories |
 
-### Commands Structure
+### Dependency Format
 
-Commands can be stored in two formats:
+Dependencies use technology-native format without prefixes:
 
-**Single build system** (e.g., Maven-only or npm-only):
+| Build System | Format | Example |
+|--------------|--------|---------|
+| Maven | `groupId:artifactId:scope` | `de.cuioss:cui-java-tools:compile` |
+| npm | `name:scope` | `lit:compile`, `@testing-library/dom:test` |
+
+### Virtual Modules
+
+When a directory contains multiple build systems (e.g., pom.xml + package.json), the discovery creates separate **virtual modules** with technology suffixes instead of merging them:
+
 ```json
 {
-  "commands": {
-    "module-tests": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --module mod --targets test",
-    "verify": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --module mod --targets verify"
-  }
-}
-```
-
-**Hybrid module** (multiple build systems like Maven + npm):
-```json
-{
-  "commands": {
-    "module-tests": {
-      "maven": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --module mod --targets test",
-      "npm": "python3 .plan/execute-script.py pm-dev-frontend:plan-marshall-plugin:npm run --package mod --targets test"
+  "modules": {
+    "nifi-cuioss-ui-maven": {
+      "name": "nifi-cuioss-ui-maven",
+      "build_systems": ["maven"],
+      "virtual_module": {
+        "physical_path": "nifi-cuioss-ui",
+        "technology": "maven",
+        "sibling_modules": ["nifi-cuioss-ui-npm"]
+      },
+      "paths": {
+        "module": "nifi-cuioss-ui",
+        "descriptor": "nifi-cuioss-ui/pom.xml",
+        "sources": ["nifi-cuioss-ui/src/main/java"]
+      },
+      "dependencies": ["jakarta.servlet:jakarta.servlet-api:provided"],
+      "commands": {
+        "module-tests": "python3 .plan/execute-script.py pm-dev-java:..."
+      }
     },
-    "verify": {
-      "maven": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --module mod --targets verify",
-      "npm": "python3 .plan/execute-script.py pm-dev-frontend:plan-marshall-plugin:npm run --package mod --targets build"
+    "nifi-cuioss-ui-npm": {
+      "name": "nifi-cuioss-ui-npm",
+      "build_systems": ["npm"],
+      "virtual_module": {
+        "physical_path": "nifi-cuioss-ui",
+        "technology": "npm",
+        "sibling_modules": ["nifi-cuioss-ui-maven"]
+      },
+      "paths": {
+        "module": "nifi-cuioss-ui",
+        "descriptor": "nifi-cuioss-ui/package.json",
+        "sources": ["nifi-cuioss-ui/src"]
+      },
+      "dependencies": ["lit:compile", "@playwright/test:test"],
+      "commands": {
+        "module-tests": "python3 .plan/execute-script.py pm-dev-frontend:..."
+      }
     }
   }
 }
 ```
 
-The `resolve` command in [client-api.md](client-api.md) handles both formats:
-- Single build system: Returns single `executable` field
-- Hybrid: Returns `executables` table with build_system and command columns
+**Virtual Module Fields:**
+
+| Field | Description |
+|-------|-------------|
+| `physical_path` | Actual directory path (shared by siblings) |
+| `technology` | Build system technology (`maven`, `npm`, `gradle`) |
+| `sibling_modules` | List of other virtual modules from same directory |
+
+**Benefits of virtual modules:**
+- Each module has single build system (no ambiguity)
+- Commands are strings (no nested technology selection)
+- Skills by profile are technology-specific
+- Task assignment targets single technology
 
 ---
 
@@ -182,9 +219,9 @@ LLM-generated enrichments referencing modules by name.
 | `purpose_reasoning` | Analysis rationale |
 | `key_packages` | Important packages with descriptions and components |
 | `internal_dependencies` | Dependencies on other project modules |
-| `key_dependencies` | Important external dependencies |
+| `key_dependencies` | Important external dependencies (no technology prefix) |
 | `key_dependencies_reasoning` | Filtering rationale |
-| `skills_by_profile` | Skills organized by execution profile (implementation, unit-testing, etc.) |
+| `skills_by_profile` | Skills organized by execution profile |
 | `skills_by_profile_reasoning` | Selection and filtering rationale |
 | `tips` | Implementation tips for working with the module |
 | `insights` | Learned insights from implementation experience |
@@ -197,7 +234,7 @@ The `skills_by_profile` field organizes skills by execution profile:
 | Profile | Purpose |
 |---------|---------|
 | `implementation` | Skills for writing production code |
-| `unit-testing` | Skills for writing unit tests |
+| `module_testing` | Skills for writing unit tests |
 | `integration-testing` | Skills for integration tests (if applicable) |
 | `benchmark-testing` | Skills for performance tests (if applicable) |
 
@@ -245,6 +282,7 @@ The [client-api.md](client-api.md) merges both files for output:
 | `dependencies` | derived | No | Yes |
 | `stats` | derived | Yes | Yes |
 | `commands` | derived | Yes | Yes |
+| `virtual_module` | derived | Yes | Yes |
 | `responsibility` | llm-enriched | Yes | Yes |
 | `responsibility_reasoning` | llm-enriched | No | Yes |
 | `purpose` | llm-enriched | Yes | Yes |

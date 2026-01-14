@@ -27,14 +27,14 @@ import json
 import re
 import subprocess
 import sys
-
+from typing import Any
 
 # ============================================================================
 # TRIAGE CONFIGURATION
 # ============================================================================
 
 # Patterns for classification
-PATTERNS = {
+PATTERNS: dict[str, Any] = {
     "code_change": {
         "high": [
             r"security",
@@ -94,7 +94,7 @@ PATTERNS = {
 # FETCH-COMMENTS SUBCOMMAND
 # ============================================================================
 
-def run_gh_command(args: list) -> tuple:
+def run_gh_command(args: list[str]) -> tuple[str, str, int]:
     """Run gh CLI command and return stdout, stderr, return code."""
     try:
         result = subprocess.run(
@@ -107,7 +107,7 @@ def run_gh_command(args: list) -> tuple:
         return "", "gh CLI not installed or not in PATH", 1
 
 
-def get_current_pr_number() -> int:
+def get_current_pr_number() -> int | None:
     """Get PR number for current branch."""
     stdout, stderr, code = run_gh_command([
         "pr", "view", "--json", "number", "--jq", ".number"
@@ -122,7 +122,7 @@ def get_current_pr_number() -> int:
         return None
 
 
-def fetch_comments(pr_number: int) -> dict:
+def fetch_comments(pr_number: int) -> dict[str, Any]:
     """Fetch review comments for a PR."""
     # Fetch review threads with comments
     stdout, stderr, code = run_gh_command([
@@ -146,7 +146,7 @@ def fetch_comments(pr_number: int) -> dict:
         }
 
     # Extract comments from threads
-    comments = []
+    comments: list[dict[str, Any]] = []
     for thread in threads:
         if "comments" not in thread:
             continue
@@ -193,7 +193,7 @@ def cmd_fetch_comments(args):
 # TRIAGE SUBCOMMAND
 # ============================================================================
 
-def classify_comment(body: str) -> tuple:
+def classify_comment(body: str) -> tuple[str, str, str]:
     """Classify comment and determine action and priority."""
     body_lower = body.lower()
 
@@ -220,7 +220,7 @@ def classify_comment(body: str) -> tuple:
     return "ignore", "none", "Brief comment with no actionable content"
 
 
-def suggest_implementation(action: str, body: str, path: str, line: int) -> str:
+def suggest_implementation(action: str, body: str, path: str | None, line: int | None) -> str | None:
     """Generate implementation suggestion based on action type."""
     if action == "ignore":
         return None
