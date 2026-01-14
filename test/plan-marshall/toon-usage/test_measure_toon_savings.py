@@ -9,7 +9,6 @@ import sys
 from pathlib import Path
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import TestRunner
 
 # Test root directory
 TEST_ROOT = Path(__file__).parent.parent.parent
@@ -176,15 +175,3 @@ def test_total_token_savings_report():
 # =============================================================================
 # Main
 # =============================================================================
-
-if __name__ == '__main__':
-    runner = TestRunner()
-    runner.add_tests([
-        test_toon_files_exist,
-        test_expected_toon_files_present,
-        test_toon_files_not_empty,
-        test_toon_provides_savings,
-        test_individual_files_have_reasonable_size,
-        test_total_token_savings_report,
-    ])
-    sys.exit(runner.run())

@@ -39,3 +39,18 @@ target/
 
 # Planning system (managed by /marshall-steward)
 !.plan/project-architecture/
+
+# Pyprojectx (tool installations, downloaded on demand)
+.pyprojectx/
+
+# Virtual environment (if using uv directly)
+.venv/
+
+# Tool caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Coverage reports
+htmlcov/
+.coverage

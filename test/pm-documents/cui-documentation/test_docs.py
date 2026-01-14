@@ -18,7 +18,7 @@ from pathlib import Path
 
 # Import shared infrastructure
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from conftest import TestRunner, run_script, get_script_path
+from conftest import run_script, get_script_path
 
 # Test directories
 TEST_DIR = Path(__file__).parent
@@ -413,55 +413,3 @@ Technical documentation content.
 # =============================================================================
 # Main
 # =============================================================================
-
-if __name__ == '__main__':
-    runner = TestRunner()
-    runner.add_tests([
-        # Main tests
-        test_script_exists,
-        test_fixtures_exist,
-        test_main_help,
-        # Stats tests
-        test_stats_help,
-        test_stats_console_format,
-        test_stats_json_format,
-        test_stats_details_flag,
-        test_stats_empty_directory,
-        test_stats_nonexistent_dir,
-        # Validate tests
-        test_validate_help,
-        test_validate_console_format,
-        test_validate_json_format,
-        test_validate_missing_blank_line,
-        test_validate_ignore_pattern,
-        test_validate_invalid_format_rejected,
-        test_validate_nonexistent_path,
-        # Format tests
-        test_format_help,
-        test_format_no_backup_flag,
-        test_format_lists_type,
-        test_format_xref_type,
-        test_format_whitespace_type,
-        test_format_all_types,
-        test_format_invalid_type_rejected,
-        test_format_nonexistent_path,
-        # Verify-links tests
-        test_verify_links_help,
-        test_verify_links_single_file,
-        test_verify_links_empty_file,
-        test_verify_links_file_not_found,
-        test_verify_links_both_file_and_directory,
-        # Classify-links tests
-        test_classify_links_help,
-        test_classify_links_stdin_stdout,
-        test_classify_links_with_files,
-        # Review tests
-        test_review_help,
-        test_review_single_file,
-        test_review_directory,
-        # Analyze-tone tests
-        test_analyze_tone_help,
-        test_analyze_tone_sample_file,
-        test_analyze_tone_directory,
-    ])
-    sys.exit(runner.run())

@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import run_script, TestRunner, PlanTestContext
+from conftest import run_script, PlanContext
 from test_helpers import SCRIPT_PATH, create_marshal_json, create_nested_marshal_json, create_run_config
 
 
@@ -22,7 +22,7 @@ from test_helpers import SCRIPT_PATH, create_marshal_json, create_nested_marshal
 
 def test_init_creates_marshal_json():
     """Test init creates marshal.json with defaults."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         result = run_script(SCRIPT_PATH, 'init')
 
         assert result.success, f"Init should succeed: {result.stderr}"
@@ -34,7 +34,7 @@ def test_init_creates_marshal_json():
 
 def test_skill_domains_list():
     """Test skill-domains list."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
 
         result = run_script(SCRIPT_PATH, 'skill-domains', 'list')
@@ -45,7 +45,7 @@ def test_skill_domains_list():
 
 def test_skill_domains_get():
     """Test skill-domains get."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
 
         result = run_script(SCRIPT_PATH, 'skill-domains', 'get', '--domain', 'java')
@@ -56,7 +56,7 @@ def test_skill_domains_get():
 
 def test_system_retention_get():
     """Test system retention get."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
 
         result = run_script(SCRIPT_PATH, 'system', 'retention', 'get')
@@ -67,7 +67,7 @@ def test_system_retention_get():
 
 def test_plan_defaults_list():
     """Test plan defaults list."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
 
         result = run_script(SCRIPT_PATH, 'plan', 'defaults', 'list')
@@ -78,7 +78,7 @@ def test_plan_defaults_list():
 
 def test_resolve_domain_skills():
     """Test resolve-domain-skills command."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
 
         result = run_script(
@@ -93,7 +93,7 @@ def test_resolve_domain_skills():
 
 def test_get_workflow_skills():
     """Test get-workflow-skills command (5-phase model)."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
 
         result = run_script(SCRIPT_PATH, 'get-workflow-skills')
@@ -106,7 +106,7 @@ def test_get_workflow_skills():
 
 def test_error_without_marshal_json():
     """Test operations fail gracefully without marshal.json."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         # Don't create marshal.json
 
         result = run_script(SCRIPT_PATH, 'skill-domains', 'list')
@@ -125,7 +125,7 @@ def test_help_output():
 
 def test_ci_get():
     """Test ci get returns full CI config."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
 
         result = run_script(SCRIPT_PATH, 'ci', 'get')
@@ -137,7 +137,7 @@ def test_ci_get():
 
 def test_ci_get_provider():
     """Test ci get-provider returns provider info."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
 
         result = run_script(SCRIPT_PATH, 'ci', 'get-provider')
@@ -148,7 +148,7 @@ def test_ci_get_provider():
 
 def test_ci_get_tools():
     """Test ci get-tools returns authenticated tools from run-configuration.json."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
         create_run_config(ctx.fixture_dir)  # Tools are stored in run-configuration.json
 
@@ -161,7 +161,7 @@ def test_ci_get_tools():
 
 def test_ci_set_provider():
     """Test ci set-provider updates provider."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
 
         result = run_script(
@@ -176,7 +176,7 @@ def test_ci_set_provider():
 
 def test_ci_set_tools():
     """Test ci set-tools updates authenticated tools."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
 
         result = run_script(
@@ -191,23 +191,3 @@ def test_ci_set_tools():
 # =============================================================================
 # Main
 # =============================================================================
-
-if __name__ == '__main__':
-    runner = TestRunner()
-    runner.add_tests([
-        test_init_creates_marshal_json,
-        test_skill_domains_list,
-        test_skill_domains_get,
-        test_system_retention_get,
-        test_plan_defaults_list,
-        test_resolve_domain_skills,
-        test_get_workflow_skills,
-        test_error_without_marshal_json,
-        test_help_output,
-        test_ci_get,
-        test_ci_get_provider,
-        test_ci_get_tools,
-        test_ci_set_provider,
-        test_ci_set_tools,
-    ])
-    sys.exit(runner.run())

@@ -10,7 +10,7 @@ import tempfile
 from pathlib import Path
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import run_script, TestRunner, get_script_path
+from conftest import run_script, get_script_path
 
 # Script under test
 SCRIPT_PATH = get_script_path('plan-marshall', 'json-file-operations', 'manage-json-file.py')
@@ -292,22 +292,3 @@ def test_invalid_json_value():
 # =============================================================================
 # Main
 # =============================================================================
-
-if __name__ == '__main__':
-    runner = TestRunner()
-    runner.add_tests([
-        test_read_entire_file,
-        test_read_field,
-        test_read_nested_field,
-        test_read_array_index,
-        test_read_nonexistent_field,
-        test_update_field,
-        test_update_creates_path,
-        test_add_entry_to_array,
-        test_remove_entry_from_array,
-        test_remove_field,
-        test_write_entire_file,
-        test_file_not_found,
-        test_invalid_json_value,
-    ])
-    sys.exit(runner.run())

@@ -11,7 +11,7 @@ import sys
 from pathlib import Path
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import run_script, TestRunner, PlanTestContext
+from conftest import run_script, PlanContext
 from test_helpers import SCRIPT_PATH
 
 
@@ -154,7 +154,7 @@ def create_minimal_marshal_json(fixture_dir: Path) -> Path:
 
 def test_detect_domains_maven_project():
     """Test detecting java domain from Maven project."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         cleanup_project_files(ctx.fixture_dir)
         create_simple_maven_project(ctx.fixture_dir)
         create_minimal_marshal_json(ctx.fixture_dir)
@@ -170,7 +170,7 @@ def test_detect_domains_maven_project():
 
 def test_detect_domains_npm_project():
     """Test detecting javascript domain from npm project."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         cleanup_project_files(ctx.fixture_dir)
         create_simple_npm_project(ctx.fixture_dir)
         create_minimal_marshal_json(ctx.fixture_dir)
@@ -186,7 +186,7 @@ def test_detect_domains_npm_project():
 
 def test_detect_domains_multi_module_maven_no_javascript():
     """Test that multi-module Maven with nested npm doesn't add javascript at root."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         cleanup_project_files(ctx.fixture_dir)
         create_mixed_multi_module_project(ctx.fixture_dir)
         create_minimal_marshal_json(ctx.fixture_dir)
@@ -208,13 +208,3 @@ def test_detect_domains_multi_module_maven_no_javascript():
 # =============================================================================
 # Main
 # =============================================================================
-
-if __name__ == '__main__':
-    runner = TestRunner()
-    runner.add_tests([
-        # Domain detection (skill-domains detect)
-        test_detect_domains_maven_project,
-        test_detect_domains_npm_project,
-        test_detect_domains_multi_module_maven_no_javascript,
-    ])
-    sys.exit(runner.run())

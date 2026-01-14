@@ -15,7 +15,7 @@ from _npm_parse_jest import parse_log as parse_jest
 from _npm_parse_tap import parse_log as parse_tap
 from _npm_parse_eslint import parse_log as parse_eslint
 from _npm_parse_errors import parse_log as parse_errors
-from _build_parse import Issue, TestSummary, SEVERITY_ERROR, SEVERITY_WARNING
+from _build_parse import Issue, UnitTestSummary, SEVERITY_ERROR, SEVERITY_WARNING
 
 # Test data location (fixtures in test directory)
 TEST_DATA_DIR = Path(__file__).parent / "fixtures" / "log-test-data"
@@ -99,7 +99,7 @@ def test_jest_extracts_test_summary():
     log_file = TEST_DATA_DIR / "npm-jest-test-failure.log"
     issues, test_summary, build_status = parse_jest(log_file)
 
-    assert isinstance(test_summary, TestSummary)
+    assert isinstance(test_summary, UnitTestSummary)
     assert test_summary.total > 0
 
 
@@ -138,7 +138,7 @@ def test_tap_extracts_test_summary_success():
     log_file = TEST_DATA_DIR / "npm-tap-test-real.log"
     issues, test_summary, build_status = parse_tap(log_file)
 
-    assert isinstance(test_summary, TestSummary)
+    assert isinstance(test_summary, UnitTestSummary)
     assert test_summary.total == 5
     assert test_summary.passed == 5
     assert test_summary.failed == 0
@@ -149,7 +149,7 @@ def test_tap_extracts_test_summary_failure():
     log_file = TEST_DATA_DIR / "npm-tap-test-failure-real.log"
     issues, test_summary, build_status = parse_tap(log_file)
 
-    assert isinstance(test_summary, TestSummary)
+    assert isinstance(test_summary, UnitTestSummary)
     assert test_summary.total == 3
     assert test_summary.passed == 1
     assert test_summary.failed == 2
@@ -288,7 +288,7 @@ def test_issue_to_dict():
 
 
 def test_test_summary_to_dict():
-    """TestSummary.to_dict() returns proper dict structure."""
+    """UnitTestSummary.to_dict() returns proper dict structure."""
     log_file = TEST_DATA_DIR / "npm-tap-test-real.log"
     issues, test_summary, build_status = parse_tap(log_file)
 

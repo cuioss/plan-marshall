@@ -13,7 +13,7 @@ import re
 from pathlib import Path
 
 # Cross-skill imports (PYTHONPATH set by executor)
-from _build_parse import Issue, TestSummary, SEVERITY_ERROR  # type: ignore[import-not-found]
+from _build_parse import Issue, UnitTestSummary, SEVERITY_ERROR  # type: ignore[import-not-found]
 
 
 # TypeScript error pattern: path(line,col): error TSNNNN: message
@@ -29,7 +29,7 @@ TS_ERROR_ALT_PATTERN = re.compile(
 )
 
 
-def parse_log(log_file: str | Path) -> tuple[list[Issue], TestSummary | None, str]:
+def parse_log(log_file: str | Path) -> tuple[list[Issue], UnitTestSummary | None, str]:
     """Parse TypeScript compilation log file.
 
     Implements BuildParser protocol for TypeScript errors.

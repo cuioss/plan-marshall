@@ -10,7 +10,7 @@ from pathlib import Path
 
 # Import shared infrastructure
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from conftest import run_script, get_script_path, PlanTestContext
+from conftest import run_script, get_script_path, PlanContext
 
 # Get script path for plan-marshall-config
 SCRIPT_PATH = get_script_path('plan-marshall', 'plan-marshall-config', 'plan-marshall-config.py')
@@ -31,7 +31,7 @@ def create_marshal_json(fixture_dir: Path, config: dict):
 
 def test_resolve_triage_extension_java():
     """Test resolving triage extension for Java domain."""
-    with PlanTestContext(plan_id='triage-java') as ctx:
+    with PlanContext(plan_id='triage-java') as ctx:
         # Initialize with Java domain
         create_marshal_json(ctx.fixture_dir, {
             "skill_domains": {
@@ -73,7 +73,7 @@ def test_resolve_triage_extension_java():
 
 def test_resolve_triage_extension_javascript():
     """Test resolving triage extension for JavaScript domain."""
-    with PlanTestContext(plan_id='triage-js') as ctx:
+    with PlanContext(plan_id='triage-js') as ctx:
         create_marshal_json(ctx.fixture_dir, {
             "skill_domains": {
                 "system": {
@@ -112,7 +112,7 @@ def test_resolve_triage_extension_javascript():
 
 def test_resolve_triage_extension_plugin_dev():
     """Test resolving triage extension for plugin development domain."""
-    with PlanTestContext(plan_id='triage-plugin') as ctx:
+    with PlanContext(plan_id='triage-plugin') as ctx:
         create_marshal_json(ctx.fixture_dir, {
             "skill_domains": {
                 "system": {
@@ -150,7 +150,7 @@ def test_resolve_triage_extension_plugin_dev():
 
 def test_resolve_triage_extension_null_for_missing():
     """Test that missing triage extension returns null (not error)."""
-    with PlanTestContext(plan_id='triage-missing') as ctx:
+    with PlanContext(plan_id='triage-missing') as ctx:
         # Create domain without triage extension
         create_marshal_json(ctx.fixture_dir, {
             "skill_domains": {
@@ -192,7 +192,7 @@ def test_resolve_triage_extension_null_for_missing():
 
 def test_resolve_triage_extension_null_for_unknown_domain():
     """Test that unknown domain returns null extension (not error)."""
-    with PlanTestContext(plan_id='triage-unknown') as ctx:
+    with PlanContext(plan_id='triage-unknown') as ctx:
         create_marshal_json(ctx.fixture_dir, {
             "skill_domains": {
                 "system": {

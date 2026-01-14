@@ -10,11 +10,10 @@ from pathlib import Path
 
 # Import shared infrastructure (sets up PYTHONPATH for cross-skill imports)
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from conftest import TestRunner
 
 # Direct imports - conftest sets up PYTHONPATH
 from _gradle_cmd_parse import parse_log
-from _build_parse import Issue, TestSummary, SEVERITY_ERROR, SEVERITY_WARNING
+from _build_parse import Issue, UnitTestSummary, SEVERITY_ERROR, SEVERITY_WARNING
 
 # Test data location (fixtures in test directory)
 TEST_DATA_DIR = Path(__file__).parent / "fixtures" / "log-test-data"
@@ -132,11 +131,11 @@ def test_parse_log_test_failure_build_status():
 
 
 def test_parse_log_test_failure_test_summary():
-    """Test failure build returns TestSummary with failures."""
+    """Test failure build returns UnitTestSummary with failures."""
     log_file = TEST_DATA_DIR / "gradle-test-failure-real.log"
     issues, test_summary, build_status = parse_log(log_file)
 
-    assert isinstance(test_summary, TestSummary)
+    assert isinstance(test_summary, UnitTestSummary)
     assert test_summary.total == 5
     assert test_summary.failed == 2
     assert test_summary.passed == 3  # 5 - 2 - 0
@@ -163,7 +162,7 @@ def test_issue_to_dict():
 
 
 def test_test_summary_to_dict():
-    """TestSummary.to_dict() returns proper dict structure."""
+    """UnitTestSummary.to_dict() returns proper dict structure."""
     log_file = TEST_DATA_DIR / "gradle-test-failure-real.log"
     issues, test_summary, build_status = parse_log(log_file)
 

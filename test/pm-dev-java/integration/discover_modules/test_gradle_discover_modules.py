@@ -14,7 +14,6 @@ from pathlib import Path
 # Import shared infrastructure (sets up PYTHONPATH for cross-skill imports)
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "test"))
-from conftest import TestRunner
 
 # Import Extension from pm-dev-java
 EXTENSION_DIR = PROJECT_ROOT / "marketplace" / "bundles" / "pm-dev-java" / "skills" / "plan-marshall-plugin"
@@ -23,8 +22,8 @@ sys.path.insert(0, str(EXTENSION_DIR))
 # Direct imports - conftest sets up PYTHONPATH for cross-skill imports
 from integration_common import (
     INTEGRATION_TEST_OUTPUT_DIR,
-    IntegrationTestContext,
-    TestProject,
+    IntegrationContext,
+    ProjectFixture,
     assert_gradle_module_structure,
     assert_has_root_aggregator,
     assert_no_null_values,
@@ -40,12 +39,12 @@ from extension import Extension
 # Projects relative to git directory (parent of plan-marshall)
 # Gradle-only projects (no Maven pom.xml at root)
 TEST_PROJECTS = [
-    TestProject(
+    ProjectFixture(
         name="mrlonis-spring-boot-monorepo",
         relative_path="other-test-projects/mrlonis-spring-boot-monorepo",
         description="Multi-module Gradle Spring Boot monorepo"
     ),
-    TestProject(
+    ProjectFixture(
         name="logbee-gradle-plugins",
         relative_path="other-test-projects/logbee-gradle-plugins",
         description="Gradle plugin project (may have version incompatibility)"
@@ -71,7 +70,7 @@ def run_integration_tests() -> int:
     test_count = 0
     pass_count = 0
 
-    with IntegrationTestContext(OUTPUT_DIR, clean_before=True) as ctx:
+    with IntegrationContext(OUTPUT_DIR, clean_before=True) as ctx:
         print("Gradle discover_modules() Integration Tests")
         print("=" * 60)
         print(f"Output directory: {OUTPUT_DIR}")

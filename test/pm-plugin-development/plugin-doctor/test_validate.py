@@ -13,7 +13,7 @@ import tempfile
 from pathlib import Path
 
 # Import shared infrastructure
-from conftest import run_script, TestRunner, get_script_path
+from conftest import run_script, get_script_path
 
 # Script under test
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
@@ -133,25 +133,3 @@ def test_inventory_real_skill():
 # =============================================================================
 # Main
 # =============================================================================
-
-if __name__ == '__main__':
-    runner = TestRunner()
-    runner.add_tests([
-        # Main tests
-        test_script_exists,
-        test_main_help,
-        # References subcommand tests
-        test_references_help,
-        test_references_missing_file,
-        test_references_nonexistent_file,
-        test_references_valid_file,
-        # Cross-file subcommand tests
-        test_crossfile_help,
-        test_crossfile_missing_arguments,
-        # Inventory subcommand tests
-        test_inventory_help,
-        test_inventory_missing_path,
-        test_inventory_nonexistent_path,
-        test_inventory_real_skill,
-    ])
-    sys.exit(runner.run())

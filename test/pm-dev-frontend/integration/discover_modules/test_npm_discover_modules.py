@@ -15,8 +15,8 @@ from pathlib import Path
 # Modules under test (PYTHONPATH set by conftest)
 from integration_common import (
     INTEGRATION_TEST_OUTPUT_DIR,
-    IntegrationTestContext,
-    TestProject,
+    IntegrationContext,
+    ProjectFixture,
     assert_has_root_aggregator,
     assert_no_null_values,
     assert_npm_module_structure,
@@ -45,17 +45,17 @@ Extension = _load_npm_extension()
 
 # Projects relative to git directory (parent of plan-marshall)
 TEST_PROJECTS = [
-    TestProject(
+    ProjectFixture(
         name="sample-monorepo",
         relative_path="other-test-projects/sample-monorepo",
         description="npm workspaces monorepo with 3 packages"
     ),
-    TestProject(
+    ProjectFixture(
         name="nifi-extensions",
         relative_path="nifi-extensions",
         description="Hybrid Java+npm project with 2 npm modules"
     ),
-    TestProject(
+    ProjectFixture(
         name="OAuth-Sheriff",
         relative_path="OAuth-Sheriff",
         description="Nested npm module in Java project"
@@ -81,7 +81,7 @@ def run_integration_tests() -> int:
     test_count = 0
     pass_count = 0
 
-    with IntegrationTestContext(OUTPUT_DIR, clean_before=True) as ctx:
+    with IntegrationContext(OUTPUT_DIR, clean_before=True) as ctx:
         print("npm discover_modules() Integration Tests")
         print("=" * 60)
         print(f"Output directory: {OUTPUT_DIR}")

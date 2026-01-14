@@ -8,7 +8,7 @@ from pathlib import Path
 
 # Import shared infrastructure
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from conftest import run_script, TestRunner, get_script_path, PlanTestContext, get_test_fixture_dir
+from conftest import run_script, get_script_path, PlanContext, get_test_fixture_dir
 
 # Get script path
 SCRIPT_PATH = get_script_path('pm-workflow', 'manage-files', 'manage-files.py')
@@ -18,7 +18,7 @@ from toon_parser import parse_toon  # type: ignore[import-not-found]
 
 
 # Alias for backward compatibility
-TestContext = PlanTestContext
+TestContext = PlanContext
 
 
 # =============================================================================
@@ -144,7 +144,7 @@ def test_mkdir():
 # Test: Create-or-Reference
 # =============================================================================
 
-class TestContextEmpty:
+class EmptyPlanContext:
     """Context manager for test WITHOUT pre-created plan directory."""
 
     def __init__(self):
@@ -183,7 +183,7 @@ class TestContextEmpty:
 
 def test_create_or_reference_new_plan():
     """Test create-or-reference creates new plan directory."""
-    with TestContextEmpty() as ctx:
+    with EmptyPlanContext() as ctx:
         result = run_script(SCRIPT_PATH, 'create-or-reference',
             '--plan-id', 'new-plan'
         )
@@ -232,7 +232,7 @@ current_phase: outline
 
 def test_create_or_reference_invalid_plan_id():
     """Test create-or-reference rejects invalid plan IDs."""
-    with TestContextEmpty():
+    with EmptyPlanContext():
         result = run_script(SCRIPT_PATH, 'create-or-reference',
             '--plan-id', 'Invalid_Plan'
         )
@@ -270,7 +270,7 @@ def test_delete_plan_success():
 
 def test_delete_plan_not_found():
     """Test deleting a plan that doesn't exist."""
-    with TestContextEmpty() as ctx:
+    with EmptyPlanContext() as ctx:
         result = run_script(SCRIPT_PATH, 'delete-plan',
             '--plan-id', 'nonexistent-plan'
         )
@@ -282,7 +282,7 @@ def test_delete_plan_not_found():
 
 def test_delete_plan_invalid_id():
     """Test delete-plan rejects invalid plan IDs."""
-    with TestContextEmpty():
+    with EmptyPlanContext():
         result = run_script(SCRIPT_PATH, 'delete-plan',
             '--plan-id', 'Invalid_Plan'
         )
@@ -312,38 +312,3 @@ def test_invalid_plan_id_underscore():
             '--plan-id', 'my_plan'
         )
         assert not result.success, "Expected failure for underscore in plan ID"
-
-
-# =============================================================================
-# Test Runner
-# =============================================================================
-
-if __name__ == '__main__':
-    runner = TestRunner()
-    runner.add_tests([
-        # Write and Read
-        test_write_file,
-        test_read_file,
-        test_read_nonexistent_file,
-        # List and Exists
-        test_list_empty,
-        test_list_with_files,
-        test_exists_present,
-        test_exists_absent,
-        # Remove and Mkdir
-        test_remove_file,
-        test_mkdir,
-        # Create-or-Reference
-        test_create_or_reference_new_plan,
-        test_create_or_reference_existing_plan,
-        test_create_or_reference_existing_with_status,
-        test_create_or_reference_invalid_plan_id,
-        # Delete Plan
-        test_delete_plan_success,
-        test_delete_plan_not_found,
-        test_delete_plan_invalid_id,
-        # Invalid plan IDs
-        test_invalid_plan_id_uppercase,
-        test_invalid_plan_id_underscore,
-    ])
-    sys.exit(runner.run())

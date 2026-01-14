@@ -7,7 +7,6 @@ import tempfile
 from pathlib import Path
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import TestRunner
 
 # Import the module under test (PYTHONPATH set by conftest)
 from extension import (

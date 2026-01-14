@@ -19,8 +19,8 @@ PROJECT_ROOT = Path(__file__).parent.parent.parent.parent.parent
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
 from integration_common import (
     INTEGRATION_TEST_OUTPUT_DIR,
-    IntegrationTestContext,
-    TestProject,
+    IntegrationContext,
+    ProjectFixture,
     assert_no_null_values,
 )
 from extension import discover_project_modules
@@ -32,17 +32,17 @@ from extension import discover_project_modules
 
 # Projects relative to git directory (parent of plan-marshall)
 TEST_PROJECTS = [
-    TestProject(
+    ProjectFixture(
         name="nifi-extensions",
         relative_path="nifi-extensions",
         description="Hybrid Java+npm project with overlapping modules"
     ),
-    TestProject(
+    ProjectFixture(
         name="cui-jwt",
         relative_path="cui-jwt",
         description="Maven-only project (no npm)"
     ),
-    TestProject(
+    ProjectFixture(
         name="sample-monorepo",
         relative_path="other-test-projects/sample-monorepo",
         description="npm-only monorepo"
@@ -164,7 +164,7 @@ def run_integration_tests() -> int:
     test_count = 0
     pass_count = 0
 
-    with IntegrationTestContext(OUTPUT_DIR, clean_before=True) as ctx:
+    with IntegrationContext(OUTPUT_DIR, clean_before=True) as ctx:
         print("Module Aggregation Integration Tests")
         print("=" * 60)
         print(f"Output directory: {OUTPUT_DIR}")

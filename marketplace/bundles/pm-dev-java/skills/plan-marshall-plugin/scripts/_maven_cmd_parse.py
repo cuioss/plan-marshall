@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Optional
 
 # Direct imports - executor sets up PYTHONPATH for cross-skill imports
-from _build_parse import Issue, TestSummary, SEVERITY_ERROR, SEVERITY_WARNING
+from _build_parse import Issue, UnitTestSummary, SEVERITY_ERROR, SEVERITY_WARNING
 from plan_logging import log_entry
 
 
@@ -126,7 +126,7 @@ def generate_summary(issues: list) -> dict:
 # BuildParser Protocol Implementation
 # =============================================================================
 
-def parse_log(log_file: str | Path) -> tuple[list[Issue], TestSummary | None, str]:
+def parse_log(log_file: str | Path) -> tuple[list[Issue], UnitTestSummary | None, str]:
     """Parse Maven build log file.
 
     Implements BuildParser protocol for unified build log parsing.
@@ -137,7 +137,7 @@ def parse_log(log_file: str | Path) -> tuple[list[Issue], TestSummary | None, st
     Returns:
         Tuple of (issues, test_summary, build_status):
         - issues: list[Issue] - all errors and warnings found
-        - test_summary: TestSummary | None - test counts if tests ran
+        - test_summary: UnitTestSummary | None - test counts if tests ran
         - build_status: "SUCCESS" | "FAILURE"
 
     Raises:
@@ -190,18 +190,18 @@ def _extract_issues_as_dataclass(content: str) -> list[Issue]:
     return issues
 
 
-def _extract_test_summary_as_dataclass(content: str) -> TestSummary | None:
-    """Extract test execution summary as TestSummary dataclass.
+def _extract_test_summary_as_dataclass(content: str) -> UnitTestSummary | None:
+    """Extract test execution summary as UnitTestSummary dataclass.
 
     Args:
         content: Maven log file content.
 
     Returns:
-        TestSummary dataclass if tests were run, None otherwise.
+        UnitTestSummary dataclass if tests were run, None otherwise.
 
     Note:
         Maven reports "Failures" (assertion failures) and "Errors" (exceptions)
-        separately. This combines them into the "failed" count per TestSummary spec.
+        separately. This combines them into the "failed" count per UnitTestSummary spec.
     """
     pattern = r"Tests run:\s*(\d+),\s*Failures:\s*(\d+),\s*Errors:\s*(\d+),\s*Skipped:\s*(\d+)"
     matches = list(re.finditer(pattern, content))
@@ -220,7 +220,7 @@ def _extract_test_summary_as_dataclass(content: str) -> TestSummary | None:
     failed = failures + errors
     passed = tests_run - failed - skipped
 
-    return TestSummary(
+    return UnitTestSummary(
         passed=passed,
         failed=failed,
         skipped=skipped,

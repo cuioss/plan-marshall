@@ -24,7 +24,6 @@ from pathlib import Path
 
 # Import shared infrastructure (sets up PYTHONPATH for cross-skill imports)
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from conftest import TestRunner
 
 FIXTURES_DIR = Path(__file__).parent / 'fixtures'
 
@@ -497,58 +496,3 @@ def test_full_profile_pipeline():
 # =============================================================================
 # Runner
 # =============================================================================
-
-if __name__ == '__main__':
-    runner = TestRunner()
-    runner.add_tests([
-        # Coordinate parsing
-        test_parse_coordinates_extracts_group_id,
-        test_parse_coordinates_extracts_artifact_id,
-        test_parse_coordinates_extracts_packaging,
-        test_parse_coordinates_ignores_dependency_lines,
-        test_parse_coordinates_handles_empty_log,
-
-        # Raw profile parsing
-        test_parse_profiles_extracts_all_raw_profiles,
-        test_parse_profiles_includes_activation_status,
-
-        # Command-line filter
-        test_filter_command_line_excludes_default_activated,
-        test_filter_command_line_removes_is_active_field,
-
-        # Skip list filter
-        test_filter_skip_removes_listed_profiles,
-        test_filter_skip_handles_empty_skip_list,
-        test_filter_skip_handles_none_skip_list,
-        test_filter_skip_trims_whitespace,
-
-        # Canonical mapping
-        test_map_canonical_uses_explicit_mapping_first,
-        test_map_canonical_falls_back_to_aliases,
-        test_map_canonical_sets_no_match_for_unknown,
-        test_map_canonical_handles_empty_mapping,
-
-        # Profile classification (aliases)
-        test_classify_profile_quality_gate_aliases,
-        test_classify_profile_coverage_aliases,
-        test_classify_profile_integration_tests_aliases,
-        test_classify_profile_benchmark_aliases,
-        test_classify_profile_unknown,
-        test_classify_profile_no_substring_matching,
-
-        # Dependency parsing
-        test_parse_dependencies_extracts_direct_deps,
-        test_parse_dependencies_format,
-        test_parse_dependencies_correct_scopes,
-        test_parse_dependencies_ignores_transitive,
-
-        # Full pipeline
-        test_full_profile_pipeline,
-
-        # Pom aggregator commands
-        test_pom_aggregator_gets_clean_command,
-        test_pom_aggregator_gets_quality_gate_command,
-        test_pom_aggregator_gets_verify_command,
-        test_pom_aggregator_does_not_get_module_tests,
-    ])
-    sys.exit(runner.run())

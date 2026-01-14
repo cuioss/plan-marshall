@@ -6,7 +6,7 @@ from pathlib import Path
 
 # Import shared infrastructure
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from conftest import run_script, TestRunner, get_script_path, PlanTestContext
+from conftest import run_script, get_script_path, PlanContext
 
 # Get script path
 SCRIPT_PATH = get_script_path('pm-workflow', 'manage-plan-documents', 'manage-plan-documents.py')
@@ -16,7 +16,7 @@ from toon_parser import parse_toon  # type: ignore[import-not-found]
 
 
 # Alias for backward compatibility
-TestContext = PlanTestContext
+TestContext = PlanContext
 
 
 # =============================================================================
@@ -290,35 +290,3 @@ def test_unknown_document_type():
         )
         # argparse will fail before reaching our code
         assert not result.success
-
-
-# =============================================================================
-# Test Runner
-# =============================================================================
-
-if __name__ == '__main__':
-    runner = TestRunner()
-    runner.add_tests([
-        # List types
-        test_list_types,
-        # Request document
-        test_request_create,
-        test_request_create_with_context,
-        test_request_create_invalid_source,
-        test_request_create_missing_required,
-        test_request_read,
-        test_request_read_raw,
-        test_request_read_not_found,
-        test_request_exists_present,
-        test_request_exists_absent,
-        test_request_remove,
-        # Invalid plan IDs
-        test_invalid_plan_id_uppercase,
-        test_invalid_plan_id_underscore,
-        # Document exists
-        test_create_existing_fails,
-        test_create_existing_with_force,
-        # Unknown type
-        test_unknown_document_type,
-    ])
-    sys.exit(runner.run())

@@ -24,7 +24,7 @@ INTEGRATION_TEST_OUTPUT_DIR = PROJECT_ROOT / ".plan" / "temp" / "integration-tes
 
 
 @dataclass
-class TestProject:
+class ProjectFixture:
     """A test project configuration."""
     name: str
     relative_path: str  # Relative to git directory
@@ -39,7 +39,7 @@ class TestProject:
         return self.absolute_path(git_dir).exists()
 
 
-class IntegrationTestContext:
+class IntegrationContext:
     """Context manager for integration tests.
 
     Manages:
@@ -72,7 +72,7 @@ class IntegrationTestContext:
     def __exit__(self, exc_type, exc_val, exc_tb):
         return False
 
-    def validate_project(self, project: TestProject) -> bool:
+    def validate_project(self, project: ProjectFixture) -> bool:
         """Check if a project exists, log if missing."""
         if not project.exists(self.git_dir):
             self.skipped.append(
@@ -81,7 +81,7 @@ class IntegrationTestContext:
             return False
         return True
 
-    def save_result(self, project: TestProject, data: list | dict) -> Path:
+    def save_result(self, project: ProjectFixture, data: list | dict) -> Path:
         """Save discovery result to JSON file."""
         filename = project.name.lower().replace(" ", "-").replace("/", "-")
         output_path = self.output_dir / f"{filename}.json"

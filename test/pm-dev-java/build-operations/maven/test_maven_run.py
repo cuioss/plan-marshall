@@ -16,7 +16,7 @@ from contextlib import contextmanager
 
 # Import shared infrastructure
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
-from conftest import run_script, TestRunner, get_script_path
+from conftest import run_script, get_script_path
 
 # Script under test - pm-dev-java bundle
 SCRIPT_PATH = get_script_path('pm-dev-java', 'plan-marshall-plugin', 'maven.py')
@@ -198,18 +198,3 @@ def test_run_help():
 # =============================================================================
 # Main
 # =============================================================================
-
-if __name__ == '__main__':
-    runner = TestRunner()
-    runner.add_tests([
-        test_run_success_output_format,
-        test_run_includes_duration,
-        test_run_failure_includes_errors,
-        test_run_failure_with_compilation_errors,
-        test_run_mode_actionable,
-        test_run_mode_errors,
-        test_run_mode_structured,
-        test_run_with_module_routing,
-        test_run_help,
-    ])
-    sys.exit(runner.run())

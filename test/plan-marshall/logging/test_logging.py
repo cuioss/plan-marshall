@@ -10,7 +10,6 @@ from datetime import date
 from pathlib import Path
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import TestRunner
 
 # Import the module under test (PYTHONPATH set by conftest)
 import plan_logging as module
@@ -412,44 +411,3 @@ def test_list_recent_work_with_limit():
             assert 'Entry 4' in result['entries'][-1]['message']
         finally:
             del os.environ['PLAN_BASE_DIR']
-
-
-# =============================================================================
-# Test Runner
-# =============================================================================
-
-if __name__ == '__main__':
-    runner = TestRunner()
-    runner.add_tests([
-        # format_timestamp
-        test_format_timestamp_iso8601,
-        # format_log_entry
-        test_format_log_entry_basic,
-        test_format_log_entry_with_fields,
-        test_format_log_entry_skips_empty_fields,
-        # get_log_path
-        test_get_log_path_plan_scoped_script,
-        test_get_log_path_plan_scoped_work,
-        test_get_log_path_global_fallback,
-        # extract_plan_id
-        test_extract_plan_id_with_space_separator,
-        test_extract_plan_id_with_equals_separator,
-        test_extract_plan_id_missing,
-        # log_script_execution
-        test_log_script_execution_success,
-        test_log_script_execution_error_with_details,
-        # cleanup
-        test_cleanup_deletes_old_logs,
-        test_cleanup_preserves_recent_logs,
-        # log_work
-        test_log_work_default_category,
-        test_log_work_all_categories,
-        test_log_work_invalid_plan_id,
-        test_log_work_invalid_category,
-        # read_work_log
-        test_read_work_log_all_entries,
-        test_read_work_log_filtered_by_phase,
-        # list_recent_work
-        test_list_recent_work_with_limit,
-    ])
-    sys.exit(runner.run())

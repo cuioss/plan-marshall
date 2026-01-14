@@ -10,7 +10,7 @@ from pathlib import Path
 
 # Import shared infrastructure
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from conftest import run_script, TestRunner, get_script_path, PlanTestContext
+from conftest import run_script, get_script_path, PlanContext
 
 # Get script path
 SCRIPT_PATH = get_script_path('pm-workflow', 'manage-solution-outline', 'manage-solution-outline.py')
@@ -20,7 +20,7 @@ from toon_parser import parse_toon  # type: ignore[import-not-found]
 
 
 # Alias for backward compatibility
-TestContext = PlanTestContext
+TestContext = PlanContext
 
 
 # Sample valid solution outline with ASCII diagram (contract-compliant)

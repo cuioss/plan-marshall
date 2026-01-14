@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 
 # Direct imports - executor sets up PYTHONPATH for cross-skill imports
-from _build_parse import Issue, TestSummary, SEVERITY_ERROR, SEVERITY_WARNING
+from _build_parse import Issue, UnitTestSummary, SEVERITY_ERROR, SEVERITY_WARNING
 from plan_logging import log_entry
 
 
@@ -89,7 +89,7 @@ def parse_metrics(lines: List[str]) -> dict:
 # BuildParser Protocol Implementation
 # =============================================================================
 
-def parse_log(log_file: str | Path) -> tuple[list[Issue], TestSummary | None, str]:
+def parse_log(log_file: str | Path) -> tuple[list[Issue], UnitTestSummary | None, str]:
     """Parse Gradle build log file.
 
     Implements BuildParser protocol for unified build log parsing.
@@ -100,7 +100,7 @@ def parse_log(log_file: str | Path) -> tuple[list[Issue], TestSummary | None, st
     Returns:
         Tuple of (issues, test_summary, build_status):
         - issues: list[Issue] - all errors and warnings found
-        - test_summary: TestSummary | None - test counts if tests ran
+        - test_summary: UnitTestSummary | None - test counts if tests ran
         - build_status: "SUCCESS" | "FAILURE"
 
     Raises:
@@ -176,14 +176,14 @@ def _extract_issues_as_dataclass(lines: List[str]) -> list[Issue]:
     return issues
 
 
-def _extract_test_summary_as_dataclass(lines: List[str]) -> TestSummary | None:
-    """Extract test execution summary as TestSummary dataclass.
+def _extract_test_summary_as_dataclass(lines: List[str]) -> UnitTestSummary | None:
+    """Extract test execution summary as UnitTestSummary dataclass.
 
     Args:
         lines: Log file lines.
 
     Returns:
-        TestSummary dataclass if tests were run, None otherwise.
+        UnitTestSummary dataclass if tests were run, None otherwise.
 
     Note:
         Gradle format: "5 tests completed, 2 failed" or "5 tests completed, 2 failed, 1 skipped"
@@ -199,7 +199,7 @@ def _extract_test_summary_as_dataclass(lines: List[str]) -> TestSummary | None:
             skipped = int(match.group(3) or 0)
             passed = total - failed - skipped
 
-            return TestSummary(
+            return UnitTestSummary(
                 passed=passed,
                 failed=failed,
                 skipped=skipped,

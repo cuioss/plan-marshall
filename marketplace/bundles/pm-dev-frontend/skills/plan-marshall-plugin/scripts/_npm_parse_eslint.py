@@ -13,7 +13,7 @@ import re
 from pathlib import Path
 
 # Cross-skill imports (PYTHONPATH set by executor)
-from _build_parse import Issue, TestSummary, SEVERITY_ERROR, SEVERITY_WARNING  # type: ignore[import-not-found]
+from _build_parse import Issue, UnitTestSummary, SEVERITY_ERROR, SEVERITY_WARNING  # type: ignore[import-not-found]
 
 
 # ESLint issue pattern: "  line:col  severity  message  rule-name"
@@ -30,7 +30,7 @@ ESLINT_SUMMARY_PATTERN = re.compile(
 FILE_PATH_PATTERN = re.compile(r"^(/[^\s:]+|[A-Z]:\\[^\s:]+)$")
 
 
-def parse_log(log_file: str | Path) -> tuple[list[Issue], TestSummary | None, str]:
+def parse_log(log_file: str | Path) -> tuple[list[Issue], UnitTestSummary | None, str]:
     """Parse ESLint log file.
 
     Implements BuildParser protocol for ESLint results.

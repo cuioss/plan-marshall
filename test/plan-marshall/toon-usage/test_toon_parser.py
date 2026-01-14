@@ -5,7 +5,6 @@ import sys
 from pathlib import Path
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import TestRunner
 
 # Import the module under test (PYTHONPATH set by conftest)
 from toon_parser import parse_toon, serialize_toon, ToonParseError
@@ -450,51 +449,3 @@ url: https://example.com
     result = parse_toon(toon)
     assert result['timestamp'] == '2025-12-02T10:30:00Z'
     assert result['url'] == 'https://example.com'
-
-
-# =============================================================================
-# Test Runner
-# =============================================================================
-
-if __name__ == '__main__':
-    runner = TestRunner()
-    runner.add_tests([
-        # Basic key-value
-        test_simple_key_value,
-        test_string_values,
-        test_boolean_values,
-        test_null_value,
-        test_number_values,
-        test_comments,
-        # Nested objects
-        test_nested_object,
-        test_deeply_nested_object,
-        test_multiple_nested_objects,
-        # Uniform arrays
-        test_uniform_array,
-        test_uniform_array_with_empty_values,
-        test_uniform_array_with_quoted_values,
-        test_nested_uniform_array,
-        # Simple arrays
-        test_simple_array,
-        test_simple_array_with_numbers,
-        test_simple_array_with_hyphenated_keys,
-        test_roundtrip_hyphenated_array_keys,
-        # Multi-line
-        test_multiline_value,
-        # Complete documents
-        test_handoff_document,
-        test_error_handoff_document,
-        # Serialization
-        test_serialize_simple,
-        test_serialize_nested,
-        test_serialize_uniform_array,
-        test_serialize_simple_array,
-        test_roundtrip,
-        # Edge cases
-        test_empty_input,
-        test_only_comments,
-        test_whitespace_handling,
-        test_colon_in_value,
-    ])
-    sys.exit(runner.run())

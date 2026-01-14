@@ -6,7 +6,7 @@ Used by domain extensions (pm-dev-java, pm-dev-frontend) for consistent issue ha
 
 Usage:
     from build_parse import (
-        Issue, TestSummary, BuildParser, SEVERITY_ERROR, SEVERITY_WARNING,
+        Issue, UnitTestSummary, BuildParser, SEVERITY_ERROR, SEVERITY_WARNING,
         filter_warnings, partition_issues, load_acceptable_warnings
     )
 
@@ -104,7 +104,7 @@ class Issue:
 
 
 @dataclass
-class TestSummary:
+class UnitTestSummary:
     """Summary of test execution results.
 
     Attributes:
@@ -143,7 +143,7 @@ class BuildParser(Protocol):
     Structural typing - no inheritance required.
 
     Example:
-        def parse_log(log_file: str | Path) -> tuple[list[Issue], TestSummary | None, str]:
+        def parse_log(log_file: str | Path) -> tuple[list[Issue], UnitTestSummary | None, str]:
             content = Path(log_file).read_text()
             issues = _extract_issues(content)
             test_summary = _extract_test_summary(content)
@@ -151,7 +151,7 @@ class BuildParser(Protocol):
             return issues, test_summary, build_status
     """
 
-    def parse_log(self, log_file: str | Path) -> tuple[list[Issue], TestSummary | None, str]:
+    def parse_log(self, log_file: str | Path) -> tuple[list[Issue], UnitTestSummary | None, str]:
         """Parse build log file.
 
         Args:
@@ -160,7 +160,7 @@ class BuildParser(Protocol):
         Returns:
             Tuple of (issues, test_summary, build_status):
             - issues: list[Issue] - all errors and warnings found
-            - test_summary: TestSummary | None - test counts if tests ran
+            - test_summary: UnitTestSummary | None - test counts if tests ran
             - build_status: "SUCCESS" | "FAILURE"
 
         Raises:

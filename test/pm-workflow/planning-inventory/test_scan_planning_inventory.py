@@ -10,7 +10,7 @@ from pathlib import Path
 
 # Import shared infrastructure
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from conftest import TestRunner, run_script, get_script_path
+from conftest import run_script, get_script_path
 
 # Script under test
 SCRIPT_PATH = get_script_path('pm-workflow', 'planning-inventory', 'scan-planning-inventory.py')
@@ -314,35 +314,3 @@ def test_include_descriptions_adds_descriptions():
 # =============================================================================
 # Main
 # =============================================================================
-
-if __name__ == '__main__':
-    runner = TestRunner()
-    runner.add_tests([
-        # Basic Execution
-        test_default_execution_succeeds,
-        test_default_produces_valid_json,
-        # Output Structure
-        test_full_format_has_required_fields,
-        test_core_has_required_fields,
-        test_derived_is_list,
-        test_statistics_has_required_fields,
-        # Core Components
-        test_core_has_plan_skills,
-        test_core_has_manage_skills,
-        test_core_has_workflow_skills,
-        test_core_has_commands,
-        # Derived Components
-        test_derived_plugin_has_plan_components,
-        test_java_and_frontend_not_in_derived,
-        test_derived_includes_plugin_tools,
-        # Summary Format
-        test_summary_format_has_required_fields,
-        test_summary_core_components_structure,
-        test_summary_derived_bundles_structure,
-        # Statistics
-        test_statistics_totals_are_consistent,
-        test_total_components_is_sum,
-        # Description Extraction
-        test_include_descriptions_adds_descriptions,
-    ])
-    sys.exit(runner.run())

@@ -10,7 +10,7 @@ import sys
 from pathlib import Path
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import run_script, TestRunner, PlanTestContext
+from conftest import run_script, PlanContext
 from test_helpers import SCRIPT_PATH, create_marshal_json, create_nested_marshal_json
 
 
@@ -20,7 +20,7 @@ from test_helpers import SCRIPT_PATH, create_marshal_json, create_nested_marshal
 
 def test_skill_domains_list():
     """Test skill-domains list."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
 
         result = run_script(SCRIPT_PATH, 'skill-domains', 'list')
@@ -32,7 +32,7 @@ def test_skill_domains_list():
 
 def test_skill_domains_get():
     """Test skill-domains get."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
 
         result = run_script(SCRIPT_PATH, 'skill-domains', 'get', '--domain', 'java')
@@ -43,7 +43,7 @@ def test_skill_domains_get():
 
 def test_skill_domains_get_defaults():
     """Test skill-domains get-defaults."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
 
         result = run_script(SCRIPT_PATH, 'skill-domains', 'get-defaults', '--domain', 'java')
@@ -54,7 +54,7 @@ def test_skill_domains_get_defaults():
 
 def test_skill_domains_get_optionals():
     """Test skill-domains get-optionals."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
 
         result = run_script(SCRIPT_PATH, 'skill-domains', 'get-optionals', '--domain', 'java')
@@ -65,7 +65,7 @@ def test_skill_domains_get_optionals():
 
 def test_skill_domains_unknown_domain():
     """Test skill-domains get with unknown domain returns error."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
 
         result = run_script(SCRIPT_PATH, 'skill-domains', 'get', '--domain', 'unknown')
@@ -76,7 +76,7 @@ def test_skill_domains_unknown_domain():
 
 def test_skill_domains_add():
     """Test skill-domains add."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
 
         result = run_script(
@@ -94,7 +94,7 @@ def test_skill_domains_add():
 
 def test_skill_domains_validate():
     """Test skill-domains validate."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
 
         # Valid skill
@@ -110,7 +110,7 @@ def test_skill_domains_validate():
 
 def test_skill_domains_validate_returns_location():
     """Test skill-domains validate returns in_defaults or in_optionals."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
 
         # Skill in defaults
@@ -136,7 +136,7 @@ def test_skill_domains_validate_returns_location():
 
 def test_skill_domains_validate_invalid_skill():
     """Test skill-domains validate with invalid skill returns false."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
 
         result = run_script(
@@ -155,7 +155,7 @@ def test_skill_domains_validate_invalid_skill():
 
 def test_skill_domains_get_nested_structure():
     """Test skill-domains get returns nested structure for domains with bundle reference."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
 
         result = run_script(SCRIPT_PATH, 'skill-domains', 'get', '--domain', 'java')
@@ -170,7 +170,7 @@ def test_skill_domains_get_nested_structure():
 
 def test_skill_domains_get_defaults_nested():
     """Test skill-domains get-defaults loads core.defaults from extension.py."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
 
         result = run_script(SCRIPT_PATH, 'skill-domains', 'get-defaults', '--domain', 'java')
@@ -182,7 +182,7 @@ def test_skill_domains_get_defaults_nested():
 
 def test_skill_domains_get_optionals_nested():
     """Test skill-domains get-optionals loads core.optionals from extension.py."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
 
         result = run_script(SCRIPT_PATH, 'skill-domains', 'get-optionals', '--domain', 'java')
@@ -195,7 +195,7 @@ def test_skill_domains_get_optionals_nested():
 
 def test_skill_domains_validate_nested():
     """Test skill-domains validate loads profiles from extension.py."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
 
         # Validate skill in core.defaults (loaded from extension.py)
@@ -211,7 +211,7 @@ def test_skill_domains_validate_nested():
 
 def test_skill_domains_validate_nested_profile_skill():
     """Test skill-domains validate finds skills in profile blocks loaded from extension.py."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
 
         # Validate skill in module_testing.defaults (junit-core loaded from extension)
@@ -228,7 +228,7 @@ def test_skill_domains_validate_nested_profile_skill():
 
 def test_skill_domains_get_system_has_workflow_skills():
     """Test skill-domains get returns system domain with workflow_skills."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
 
         result = run_script(SCRIPT_PATH, 'skill-domains', 'get', '--domain', 'system')
@@ -247,7 +247,7 @@ def test_skill_domains_get_system_has_workflow_skills():
 
 def test_skill_domains_detect_runs():
     """Test skill-domains detect command runs successfully."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         # Create minimal marshal.json
         config = {
             "skill_domains": {
@@ -273,7 +273,7 @@ def test_skill_domains_detect_runs():
 
 def test_skill_domains_detect_no_overwrite():
     """Test skill-domains detect does not overwrite existing domains."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         # Create marshal.json with custom java domain (new structure with bundle reference)
         config = {
             "skill_domains": {
@@ -308,7 +308,7 @@ def test_skill_domains_detect_no_overwrite():
 
 def test_resolve_domain_skills_java_implementation():
     """Test resolve-domain-skills for java + implementation profile."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
 
         result = run_script(
@@ -328,7 +328,7 @@ def test_resolve_domain_skills_java_implementation():
 
 def test_resolve_domain_skills_java_testing():
     """Test resolve-domain-skills for java + module_testing profile."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
 
         result = run_script(
@@ -350,7 +350,7 @@ def test_resolve_domain_skills_java_testing():
 
 def test_resolve_domain_skills_javascript_implementation():
     """Test resolve-domain-skills for javascript + implementation profile."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
 
         result = run_script(
@@ -368,7 +368,7 @@ def test_resolve_domain_skills_javascript_implementation():
 
 def test_resolve_domain_skills_unknown_domain():
     """Test resolve-domain-skills with unknown domain returns error."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
 
         result = run_script(
@@ -383,7 +383,7 @@ def test_resolve_domain_skills_unknown_domain():
 
 def test_resolve_domain_skills_unknown_profile():
     """Test resolve-domain-skills with unknown profile returns error."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
 
         result = run_script(
@@ -398,7 +398,7 @@ def test_resolve_domain_skills_unknown_profile():
 
 def test_resolve_domain_skills_java_quality():
     """Test resolve-domain-skills for java + quality profile (finalize phase)."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
 
         result = run_script(
@@ -420,7 +420,7 @@ def test_resolve_domain_skills_java_quality():
 
 def test_get_workflow_skills():
     """Test get-workflow-skills returns all 5-phase workflow skill references."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
 
         result = run_script(SCRIPT_PATH, 'get-workflow-skills')
@@ -440,7 +440,7 @@ def test_get_workflow_skills():
 
 def test_get_workflow_skills_output_format():
     """Test get-workflow-skills returns all 5 workflow skill references."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
 
         result = run_script(SCRIPT_PATH, 'get-workflow-skills')
@@ -457,7 +457,7 @@ def test_get_workflow_skills_output_format():
 
 def test_resolve_workflow_skill_init():
     """Test resolve-workflow-skill for init phase returns system workflow skill."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
 
         result = run_script(SCRIPT_PATH, 'resolve-workflow-skill', '--phase', 'init')
@@ -470,7 +470,7 @@ def test_resolve_workflow_skill_init():
 
 def test_resolve_workflow_skill_outline():
     """Test resolve-workflow-skill for outline phase returns system workflow skill."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
 
         result = run_script(SCRIPT_PATH, 'resolve-workflow-skill', '--phase', 'outline')
@@ -481,7 +481,7 @@ def test_resolve_workflow_skill_outline():
 
 def test_resolve_workflow_skill_plan():
     """Test resolve-workflow-skill for plan phase returns system workflow skill."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
 
         result = run_script(SCRIPT_PATH, 'resolve-workflow-skill', '--phase', 'plan')
@@ -492,7 +492,7 @@ def test_resolve_workflow_skill_plan():
 
 def test_resolve_workflow_skill_execute():
     """Test resolve-workflow-skill for execute phase returns system workflow skill."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
 
         result = run_script(SCRIPT_PATH, 'resolve-workflow-skill', '--phase', 'execute')
@@ -503,7 +503,7 @@ def test_resolve_workflow_skill_execute():
 
 def test_resolve_workflow_skill_finalize():
     """Test resolve-workflow-skill for finalize phase returns system workflow skill."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
 
         result = run_script(SCRIPT_PATH, 'resolve-workflow-skill', '--phase', 'finalize')
@@ -514,7 +514,7 @@ def test_resolve_workflow_skill_finalize():
 
 def test_resolve_workflow_skill_no_system_domain():
     """Test resolve-workflow-skill returns error when system domain is missing."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         # Create marshal.json WITHOUT system domain
         config = {
             "skill_domains": {
@@ -540,7 +540,7 @@ def test_resolve_workflow_skill_no_system_domain():
 
 def test_resolve_workflow_skill_extension_java_outline():
     """Test resolve-workflow-skill-extension returns outline extension for java."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
 
         result = run_script(SCRIPT_PATH, 'resolve-workflow-skill-extension',
@@ -555,7 +555,7 @@ def test_resolve_workflow_skill_extension_java_outline():
 
 def test_resolve_workflow_skill_extension_java_triage():
     """Test resolve-workflow-skill-extension returns triage extension for java."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
 
         result = run_script(SCRIPT_PATH, 'resolve-workflow-skill-extension',
@@ -567,7 +567,7 @@ def test_resolve_workflow_skill_extension_java_triage():
 
 def test_resolve_workflow_skill_extension_javascript_outline():
     """Test resolve-workflow-skill-extension returns outline extension for javascript."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
 
         result = run_script(SCRIPT_PATH, 'resolve-workflow-skill-extension',
@@ -579,7 +579,7 @@ def test_resolve_workflow_skill_extension_javascript_outline():
 
 def test_resolve_workflow_skill_extension_missing_type():
     """Test resolve-workflow-skill-extension returns null for missing extension type."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
 
         # javascript has no triage extension
@@ -593,7 +593,7 @@ def test_resolve_workflow_skill_extension_missing_type():
 
 def test_resolve_workflow_skill_extension_unknown_domain():
     """Test resolve-workflow-skill-extension returns null for unknown domain (not error)."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
 
         result = run_script(SCRIPT_PATH, 'resolve-workflow-skill-extension',
@@ -606,7 +606,7 @@ def test_resolve_workflow_skill_extension_unknown_domain():
 
 def test_resolve_workflow_skill_extension_plugin_dev():
     """Test resolve-workflow-skill-extension returns extensions for plugin-dev domain."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
 
         result = run_script(SCRIPT_PATH, 'resolve-workflow-skill-extension',
@@ -622,7 +622,7 @@ def test_resolve_workflow_skill_extension_plugin_dev():
 
 def test_get_extensions_java():
     """Test get-extensions returns extensions for java domain."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
 
         result = run_script(SCRIPT_PATH, 'skill-domains', 'get-extensions', '--domain', 'java')
@@ -635,7 +635,7 @@ def test_get_extensions_java():
 
 def test_get_extensions_unknown_domain():
     """Test get-extensions returns error for unknown domain."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
 
         result = run_script(SCRIPT_PATH, 'skill-domains', 'get-extensions', '--domain', 'unknown')
@@ -645,7 +645,7 @@ def test_get_extensions_unknown_domain():
 
 def test_set_extensions():
     """Test set-extensions adds extension to domain."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
 
         result = run_script(SCRIPT_PATH, 'skill-domains', 'set-extensions',
@@ -662,7 +662,7 @@ def test_set_extensions():
 
 def test_get_available_uses_discovery():
     """Test get-available uses discovery for domains (no longer tied to build system)."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         # Create marshal.json - build_systems no longer affect get-available
         config = {
             "skill_domains": {"system": {"defaults": []}},
@@ -683,7 +683,7 @@ def test_get_available_uses_discovery():
 
 def test_configure_domains():
     """Test configure adds system domain and selected domains."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         config = {
             "skill_domains": {},
             "modules": {},
@@ -710,7 +710,7 @@ def test_configure_domains():
 
 def test_configure_always_adds_system():
     """Test configure always adds system domain even with empty selection."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         config = {
             "skill_domains": {},
             "modules": {},
@@ -736,7 +736,7 @@ def test_configure_always_adds_system():
 
 def test_set_with_profile_returns_error():
     """Test set with --profile returns error since profiles are in extension.py."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
 
         result = run_script(SCRIPT_PATH, 'skill-domains', 'set',
@@ -753,7 +753,7 @@ def test_set_with_profile_returns_error():
 
 def test_get_skills_by_profile_java():
     """Test get-skills-by-profile loads profile-keyed skills from extension.py."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
 
         result = run_script(SCRIPT_PATH, 'get-skills-by-profile', '--domain', 'java')
@@ -769,7 +769,7 @@ def test_get_skills_by_profile_java():
 
 def test_get_skills_by_profile_includes_core_skills():
     """Test get-skills-by-profile includes core skills in all profiles."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
 
         result = run_script(SCRIPT_PATH, 'get-skills-by-profile', '--domain', 'java')
@@ -781,7 +781,7 @@ def test_get_skills_by_profile_includes_core_skills():
 
 def test_get_skills_by_profile_includes_profile_skills():
     """Test get-skills-by-profile includes profile-specific skills."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
 
         result = run_script(SCRIPT_PATH, 'get-skills-by-profile', '--domain', 'java')
@@ -793,7 +793,7 @@ def test_get_skills_by_profile_includes_profile_skills():
 
 def test_get_skills_by_profile_javascript():
     """Test get-skills-by-profile works for javascript domain."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
 
         result = run_script(SCRIPT_PATH, 'get-skills-by-profile', '--domain', 'javascript')
@@ -806,7 +806,7 @@ def test_get_skills_by_profile_javascript():
 
 def test_get_skills_by_profile_unknown_domain():
     """Test get-skills-by-profile returns error for unknown domain."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
 
         result = run_script(SCRIPT_PATH, 'get-skills-by-profile', '--domain', 'unknown')
@@ -817,7 +817,7 @@ def test_get_skills_by_profile_unknown_domain():
 
 def test_get_skills_by_profile_flat_domain_error():
     """Test get-skills-by-profile returns error for flat structure domain (no bundle)."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         # Create marshal.json with flat structure (no bundle reference)
         create_marshal_json(ctx.fixture_dir)
 
@@ -830,70 +830,3 @@ def test_get_skills_by_profile_flat_domain_error():
 # =============================================================================
 # Main
 # =============================================================================
-
-if __name__ == '__main__':
-    runner = TestRunner()
-    runner.add_tests([
-        # Basic skill-domains tests (flat structure)
-        test_skill_domains_list,
-        test_skill_domains_get,
-        test_skill_domains_get_defaults,
-        test_skill_domains_get_optionals,
-        test_skill_domains_unknown_domain,
-        test_skill_domains_add,
-        test_skill_domains_validate,
-        test_skill_domains_validate_returns_location,
-        test_skill_domains_validate_invalid_skill,
-        # Nested structure tests
-        test_skill_domains_get_nested_structure,
-        test_skill_domains_get_defaults_nested,
-        test_skill_domains_get_optionals_nested,
-        test_skill_domains_validate_nested,
-        test_skill_domains_validate_nested_profile_skill,
-        test_skill_domains_get_system_has_workflow_skills,
-        # Detect tests
-        test_skill_domains_detect_runs,
-        test_skill_domains_detect_no_overwrite,
-        # resolve-domain-skills tests
-        test_resolve_domain_skills_java_implementation,
-        test_resolve_domain_skills_java_testing,
-        test_resolve_domain_skills_javascript_implementation,
-        test_resolve_domain_skills_unknown_domain,
-        test_resolve_domain_skills_unknown_profile,
-        test_resolve_domain_skills_java_quality,
-        # get-workflow-skills tests
-        test_get_workflow_skills,
-        test_get_workflow_skills_output_format,
-        # resolve-workflow-skill tests (5-phase model)
-        test_resolve_workflow_skill_init,
-        test_resolve_workflow_skill_outline,
-        test_resolve_workflow_skill_plan,
-        test_resolve_workflow_skill_execute,
-        test_resolve_workflow_skill_finalize,
-        test_resolve_workflow_skill_no_system_domain,
-        # resolve-workflow-skill-extension tests
-        test_resolve_workflow_skill_extension_java_outline,
-        test_resolve_workflow_skill_extension_java_triage,
-        test_resolve_workflow_skill_extension_javascript_outline,
-        test_resolve_workflow_skill_extension_missing_type,
-        test_resolve_workflow_skill_extension_unknown_domain,
-        test_resolve_workflow_skill_extension_plugin_dev,
-        # get-extensions / set-extensions tests
-        test_get_extensions_java,
-        test_get_extensions_unknown_domain,
-        test_set_extensions,
-        # get-available / configure tests
-        test_get_available_uses_discovery,
-        test_configure_domains,
-        test_configure_always_adds_system,
-        # set with --profile tests (profiles are read-only)
-        test_set_with_profile_returns_error,
-        # get-skills-by-profile tests
-        test_get_skills_by_profile_java,
-        test_get_skills_by_profile_includes_core_skills,
-        test_get_skills_by_profile_includes_profile_skills,
-        test_get_skills_by_profile_javascript,
-        test_get_skills_by_profile_unknown_domain,
-        test_get_skills_by_profile_flat_domain_error,
-    ])
-    sys.exit(runner.run())

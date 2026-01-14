@@ -14,7 +14,7 @@ import sys
 from pathlib import Path
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import run_script, TestRunner, get_script_path, PlanTestContext
+from conftest import run_script, get_script_path, PlanContext
 
 # Get script path
 SCRIPT_PATH = get_script_path('plan-marshall', 'logging', 'manage-log.py')
@@ -35,7 +35,7 @@ def read_log_file(plan_dir: Path, log_type: str) -> str:
 
 def test_script_success():
     """Test script type logs INFO entry for success."""
-    with PlanTestContext(plan_id='log-script-success') as ctx:
+    with PlanContext(plan_id='log-script-success') as ctx:
         result = run_script(SCRIPT_PATH,
             'script', 'log-script-success', 'INFO', 'test:skill:script add (0.15s)'
         )
@@ -49,7 +49,7 @@ def test_script_success():
 
 def test_script_error():
     """Test script type logs ERROR entry."""
-    with PlanTestContext(plan_id='log-script-error') as ctx:
+    with PlanContext(plan_id='log-script-error') as ctx:
         result = run_script(SCRIPT_PATH,
             'script', 'log-script-error', 'ERROR', 'test:skill:script add failed'
         )
@@ -65,7 +65,7 @@ def test_script_error():
 
 def test_work_info():
     """Test work type logs INFO entry."""
-    with PlanTestContext(plan_id='log-work-info') as ctx:
+    with PlanContext(plan_id='log-work-info') as ctx:
         result = run_script(SCRIPT_PATH,
             'work', 'log-work-info', 'INFO', 'Created deliverable: auth module'
         )
@@ -79,7 +79,7 @@ def test_work_info():
 
 def test_work_warn():
     """Test work type logs WARN entry."""
-    with PlanTestContext(plan_id='log-work-warn') as ctx:
+    with PlanContext(plan_id='log-work-warn') as ctx:
         result = run_script(SCRIPT_PATH,
             'work', 'log-work-warn', 'WARN', 'Skipped validation step'
         )
@@ -95,7 +95,7 @@ def test_work_warn():
 
 def test_invalid_type():
     """Test that invalid type fails."""
-    with PlanTestContext(plan_id='log-invalid-type'):
+    with PlanContext(plan_id='log-invalid-type'):
         result = run_script(SCRIPT_PATH,
             'invalid', 'log-invalid-type', 'INFO', 'Test message'
         )
@@ -105,7 +105,7 @@ def test_invalid_type():
 
 def test_invalid_level():
     """Test that invalid level fails."""
-    with PlanTestContext(plan_id='log-invalid-level'):
+    with PlanContext(plan_id='log-invalid-level'):
         result = run_script(SCRIPT_PATH,
             'work', 'log-invalid-level', 'INVALID', 'Test message'
         )
@@ -122,7 +122,7 @@ def test_missing_args():
 
 def test_multiple_entries():
     """Test multiple log entries append correctly."""
-    with PlanTestContext(plan_id='log-multiple') as ctx:
+    with PlanContext(plan_id='log-multiple') as ctx:
         run_script(SCRIPT_PATH, 'work', 'log-multiple', 'INFO', 'First entry')
         run_script(SCRIPT_PATH, 'work', 'log-multiple', 'INFO', 'Second entry')
         run_script(SCRIPT_PATH, 'work', 'log-multiple', 'WARN', 'Third entry')
@@ -139,7 +139,7 @@ def test_multiple_entries():
 
 def test_read_work_log():
     """Test read subcommand returns work log entries."""
-    with PlanTestContext(plan_id='log-read-work') as ctx:
+    with PlanContext(plan_id='log-read-work') as ctx:
         # Write some entries first
         run_script(SCRIPT_PATH, 'work', 'log-read-work', 'INFO', 'Test entry one')
         run_script(SCRIPT_PATH, 'work', 'log-read-work', 'INFO', 'Test entry two')
@@ -155,7 +155,7 @@ def test_read_work_log():
 
 def test_read_work_log_with_limit():
     """Test read subcommand with --limit returns limited entries."""
-    with PlanTestContext(plan_id='log-read-limit') as ctx:
+    with PlanContext(plan_id='log-read-limit') as ctx:
         # Write multiple entries
         run_script(SCRIPT_PATH, 'work', 'log-read-limit', 'INFO', 'Entry 1')
         run_script(SCRIPT_PATH, 'work', 'log-read-limit', 'INFO', 'Entry 2')
@@ -175,7 +175,7 @@ def test_read_work_log_with_limit():
 
 def test_read_empty_log():
     """Test read subcommand on plan with no log entries."""
-    with PlanTestContext(plan_id='log-read-empty') as ctx:
+    with PlanContext(plan_id='log-read-empty') as ctx:
         result = run_script(SCRIPT_PATH, 'read', '--plan-id', 'log-read-empty', '--type', 'work')
         assert result.success, f"Read failed: {result.stderr}"
         assert 'status: success' in result.stdout
@@ -184,7 +184,7 @@ def test_read_empty_log():
 
 def test_read_script_log():
     """Test read subcommand for script type logs."""
-    with PlanTestContext(plan_id='log-read-script') as ctx:
+    with PlanContext(plan_id='log-read-script') as ctx:
         # Write script log entry
         run_script(SCRIPT_PATH, 'script', 'log-read-script', 'INFO', 'test:skill:script (0.1s)')
 
@@ -216,33 +216,3 @@ def test_read_invalid_type():
     result = run_script(SCRIPT_PATH, 'read', '--plan-id', 'test-plan', '--type', 'invalid')
     assert not result.success, "Expected failure with invalid type"
     assert 'invalid_type' in result.stderr
-
-
-# =============================================================================
-# Test Runner
-# =============================================================================
-
-if __name__ == '__main__':
-    runner = TestRunner()
-    runner.add_tests([
-        # script type
-        test_script_success,
-        test_script_error,
-        # work type
-        test_work_info,
-        test_work_warn,
-        # validation
-        test_invalid_type,
-        test_invalid_level,
-        test_missing_args,
-        test_multiple_entries,
-        # read subcommand
-        test_read_work_log,
-        test_read_work_log_with_limit,
-        test_read_empty_log,
-        test_read_script_log,
-        test_read_missing_plan_id,
-        test_read_missing_type,
-        test_read_invalid_type,
-    ])
-    sys.exit(runner.run())

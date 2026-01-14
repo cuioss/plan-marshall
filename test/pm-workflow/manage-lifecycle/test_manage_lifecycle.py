@@ -6,7 +6,7 @@ from pathlib import Path
 
 # Import shared infrastructure
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from conftest import run_script, TestRunner, get_script_path, PlanTestContext
+from conftest import run_script, get_script_path, PlanContext
 
 # Get script path
 SCRIPT_PATH = get_script_path('pm-workflow', 'manage-lifecycle', 'manage-lifecycle.py')
@@ -16,7 +16,7 @@ from toon_parser import parse_toon  # type: ignore[import-not-found]
 
 
 # Alias for backward compatibility
-TestContext = PlanTestContext
+TestContext = PlanContext
 
 
 # =============================================================================
@@ -205,28 +205,3 @@ def test_list_with_plan():
         # Domain should NOT be in list output (removed from status.toon)
         for plan in data['plans']:
             assert 'domain' not in plan
-
-
-# =============================================================================
-# Test Runner
-# =============================================================================
-
-if __name__ == '__main__':
-    runner = TestRunner()
-    runner.add_tests([
-        # Create command
-        test_create_plan,
-        test_create_plan_custom_phases,
-        test_create_plan_force_overwrite,
-        # Phase operations
-        test_set_phase,
-        test_read_plan,
-        # Get routing context
-        test_get_routing_context,
-        test_get_routing_context_after_transition,
-        test_get_routing_context_not_found,
-        # List command
-        test_list_empty,
-        test_list_with_plan,
-    ])
-    sys.exit(runner.run())

@@ -15,7 +15,7 @@ from pathlib import Path
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
 from conftest import (
-    ScriptTestCase, TestRunner, run_script,
+    ScriptTestCase, run_script,
     MARKETPLACE_ROOT
 )
 
@@ -282,42 +282,3 @@ def test_migrate_executor_help():
 # =============================================================================
 # Main
 # =============================================================================
-
-if __name__ == '__main__':
-    import unittest
-
-    # Check if script exists first
-    if not SCRIPT_PATH.exists():
-        print(f"ERROR: Script not found: {SCRIPT_PATH}")
-        sys.exit(1)
-
-    # Run unittest-based tests
-    loader = unittest.TestLoader()
-    suite = unittest.TestSuite()
-
-    suite.addTests(loader.loadTestsFromTestCase(TestGenerateWildcards))
-    suite.addTests(loader.loadTestsFromTestCase(TestExecutorPattern))
-
-    runner = unittest.TextTestRunner(verbosity=2)
-    result = runner.run(suite)
-
-    # Also run simple function tests
-    print("\n" + "=" * 50)
-    print("Running simple function tests...")
-    print("=" * 50)
-
-    simple_tests = [
-        test_script_exists,
-        test_help_works,
-        test_generate_wildcards_help,
-        test_ensure_executor_help,
-        test_cleanup_scripts_help,
-        test_migrate_executor_help,
-    ]
-
-    simple_runner = TestRunner()
-    simple_runner.add_tests(simple_tests)
-    simple_result = simple_runner.run()
-
-    # Exit with combined result
-    sys.exit(0 if result.wasSuccessful() and simple_result == 0 else 1)

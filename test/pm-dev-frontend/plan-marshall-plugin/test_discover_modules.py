@@ -20,8 +20,7 @@ from pathlib import Path
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
 from conftest import (
-    TestRunner,
-    BuildTestContext
+    BuildContext
 )
 
 # Use importlib to avoid module naming conflicts with other Extension classes
@@ -48,7 +47,7 @@ Extension = _load_npm_extension()
 
 def test_discover_modules_single_module():
     """Test discover_modules with single npm project."""
-    with BuildTestContext() as ctx:
+    with BuildContext() as ctx:
         # Create a single-module npm project
         pkg = {
             "name": "my-app",
@@ -83,7 +82,7 @@ def test_discover_modules_with_workspaces():
     Discovery returns ALL package.json files including root workspace container.
     Root module is returned first (at "."), followed by workspace packages.
     """
-    with BuildTestContext() as ctx:
+    with BuildContext() as ctx:
         # Create root package.json with workspaces
         root_pkg = {
             "name": "monorepo",
@@ -135,7 +134,7 @@ def test_discover_modules_with_workspaces():
 
 def test_discover_modules_no_package_json():
     """Test discover_modules with no package.json."""
-    with BuildTestContext() as ctx:
+    with BuildContext() as ctx:
         ext = Extension()
         modules = ext.discover_modules(str(ctx.temp_dir))
 
@@ -152,7 +151,7 @@ def test_metadata_extraction():
     npm metadata includes planning-relevant fields: type, description.
     NOT Maven fields (artifact_id, group_id, parent, profiles).
     """
-    with BuildTestContext() as ctx:
+    with BuildContext() as ctx:
         pkg = {
             "name": "test-pkg",
             "version": "3.2.1",
@@ -201,7 +200,7 @@ def test_extract_dependencies():
 
     Integration tests with real projects verify actual dependency extraction.
     """
-    with BuildTestContext() as ctx:
+    with BuildContext() as ctx:
         pkg = {
             "name": "test-pkg",
             "dependencies": {
@@ -235,7 +234,7 @@ def test_extract_dependencies():
 
 def test_discover_sources_src():
     """Test source directory discovery with src."""
-    with BuildTestContext() as ctx:
+    with BuildContext() as ctx:
         (ctx.temp_dir / 'package.json').write_text('{"name": "test"}')
         (ctx.temp_dir / 'src').mkdir()
 
@@ -249,7 +248,7 @@ def test_discover_sources_src():
 
 def test_discover_sources_test():
     """Test test directory discovery."""
-    with BuildTestContext() as ctx:
+    with BuildContext() as ctx:
         (ctx.temp_dir / 'package.json').write_text('{"name": "test"}')
         (ctx.temp_dir / 'test').mkdir()
         (ctx.temp_dir / '__tests__').mkdir()
@@ -265,7 +264,7 @@ def test_discover_sources_test():
 
 def test_discover_sources_no_resources_in_paths():
     """Test that resources are not included in paths (not in spec)."""
-    with BuildTestContext() as ctx:
+    with BuildContext() as ctx:
         (ctx.temp_dir / 'package.json').write_text('{"name": "test"}')
         (ctx.temp_dir / 'public').mkdir()
         (ctx.temp_dir / 'static').mkdir()
@@ -284,7 +283,7 @@ def test_discover_sources_no_resources_in_paths():
 
 def test_stats_file_counts():
     """Test source and test file counting."""
-    with BuildTestContext() as ctx:
+    with BuildContext() as ctx:
         (ctx.temp_dir / 'package.json').write_text('{"name": "test"}')
 
         # Create source files
@@ -310,7 +309,7 @@ def test_stats_file_counts():
 
 def test_readme_in_paths():
     """Test README detection returns path in paths.readme."""
-    with BuildTestContext() as ctx:
+    with BuildContext() as ctx:
         (ctx.temp_dir / 'package.json').write_text('{"name": "test"}')
         (ctx.temp_dir / 'README.md').write_text('# My Project')
 
@@ -323,7 +322,7 @@ def test_readme_in_paths():
 
 def test_no_readme_in_paths():
     """Test README key is omitted when none exists (null values filtered)."""
-    with BuildTestContext() as ctx:
+    with BuildContext() as ctx:
         (ctx.temp_dir / 'package.json').write_text('{"name": "test"}')
 
         ext = Extension()
@@ -339,7 +338,7 @@ def test_no_readme_in_paths():
 
 def test_build_systems_is_array():
     """Test that build_systems is an array, not a string."""
-    with BuildTestContext() as ctx:
+    with BuildContext() as ctx:
         # Create npm project
         (ctx.temp_dir / 'package.json').write_text('{"name": "frontend", "version": "1.0.0"}')
 
@@ -358,7 +357,7 @@ def test_build_systems_is_array():
 
 def test_workspaces_object_format():
     """Test workspaces with object format (packages key)."""
-    with BuildTestContext() as ctx:
+    with BuildContext() as ctx:
         # Create root package.json with object workspaces
         root_pkg = {
             "name": "monorepo",
@@ -393,7 +392,7 @@ def test_workspaces_object_format():
 
 def test_paths_structure():
     """Test that paths has correct structure."""
-    with BuildTestContext() as ctx:
+    with BuildContext() as ctx:
         (ctx.temp_dir / 'package.json').write_text('{"name": "test"}')
         (ctx.temp_dir / 'README.md').write_text('# Test')  # Create README
 
@@ -418,7 +417,7 @@ def test_paths_structure():
 
 def test_packages_is_object():
     """Test that packages is an object, not an array."""
-    with BuildTestContext() as ctx:
+    with BuildContext() as ctx:
         (ctx.temp_dir / 'package.json').write_text('{"name": "test"}')
 
         ext = Extension()
@@ -430,7 +429,7 @@ def test_packages_is_object():
 
 def test_packages_from_exports():
     """Test package discovery from exports field."""
-    with BuildTestContext() as ctx:
+    with BuildContext() as ctx:
         pkg = {
             "name": "my-lib",
             "exports": {
@@ -453,7 +452,7 @@ def test_packages_from_exports():
 
 def test_packages_from_directories():
     """Test package discovery from src subdirectories."""
-    with BuildTestContext() as ctx:
+    with BuildContext() as ctx:
         (ctx.temp_dir / 'package.json').write_text('{"name": "test"}')
         src_dir = ctx.temp_dir / 'src'
         src_dir.mkdir()
@@ -475,7 +474,7 @@ def test_packages_from_directories():
 
 def test_commands_from_scripts():
     """Test command generation from package.json scripts."""
-    with BuildTestContext() as ctx:
+    with BuildContext() as ctx:
         pkg = {
             "name": "test",
             "scripts": {
@@ -498,7 +497,7 @@ def test_commands_from_scripts():
 
 def test_commands_minimal():
     """Test commands with minimal scripts."""
-    with BuildTestContext() as ctx:
+    with BuildContext() as ctx:
         pkg = {
             "name": "test",
             "scripts": {
@@ -519,47 +518,3 @@ def test_commands_minimal():
 # =============================================================================
 # Runner
 # =============================================================================
-
-if __name__ == '__main__':
-    runner = TestRunner()
-    runner.add_tests([
-        # Basic module discovery
-        test_discover_modules_single_module,
-        test_discover_modules_with_workspaces,
-        test_discover_modules_no_package_json,
-
-        # Metadata extraction
-        test_metadata_extraction,
-
-        # Dependency extraction
-        test_extract_dependencies,
-
-        # Source directory discovery
-        test_discover_sources_src,
-        test_discover_sources_test,
-        test_discover_sources_no_resources_in_paths,
-
-        # Stats
-        test_stats_file_counts,
-        test_readme_in_paths,
-        test_no_readme_in_paths,
-
-        # build_systems field
-        test_build_systems_is_array,
-
-        # Workspaces object format
-        test_workspaces_object_format,
-
-        # Paths structure
-        test_paths_structure,
-
-        # Packages
-        test_packages_is_object,
-        test_packages_from_exports,
-        test_packages_from_directories,
-
-        # Commands
-        test_commands_from_scripts,
-        test_commands_minimal,
-    ])
-    sys.exit(runner.run())

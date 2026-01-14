@@ -10,7 +10,7 @@ import sys
 from pathlib import Path
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import run_script, TestRunner, get_script_path
+from conftest import run_script, get_script_path
 
 # Get script path
 SCRIPT_PATH = get_script_path('plan-marshall', 'ci-operations', 'github.py')
@@ -91,21 +91,3 @@ def test_no_subcommand():
     """Test that script requires a subcommand."""
     result = run_script(SCRIPT_PATH)
     assert not result.success, "Expected failure without subcommand"
-
-
-if __name__ == '__main__':
-    runner = TestRunner()
-    runner.add_tests([
-        test_help_flag,
-        test_pr_subcommand_help,
-        test_ci_subcommand_help,
-        test_issue_subcommand_help,
-        test_pr_create_help,
-        test_pr_create_missing_required,
-        test_pr_reviews_missing_required,
-        test_ci_status_missing_required,
-        test_ci_wait_missing_required,
-        test_issue_create_missing_required,
-        test_no_subcommand,
-    ])
-    sys.exit(runner.run())

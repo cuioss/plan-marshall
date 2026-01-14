@@ -6,7 +6,7 @@ This is a Claude Code Marketplace repository providing development standards, au
 
 ### Project Structure
 
-This is a documentation-only repository with no build system, compilation, or testing framework to execute.
+This repository contains marketplace bundles (documentation/skills) plus Python scripts with pytest tests. The `pw` (Pyprojectx) wrapper provides tooling - only Python 3 is required.
 
 ```
 plan-marshall/
@@ -71,12 +71,14 @@ bundle-name/
 
 ## Testing Instructions
 
-See [test/README.md](test/README.md) for full documentation.
+Tests use pytest via the `pw` (Pyprojectx) wrapper. Only Python 3 is required - first run auto-downloads tools.
 
 ```bash
-python3 test/run-tests.py                                          # all tests
-python3 test/run-tests.py test/planning/                           # directory
-python3 test/run-tests.py test/planning/plan-files/test_parse_plan.py  # single file
+./pw test                                     # All tests (Unix)
+pw test                                       # All tests (Windows)
+./pw uv run pytest test/pm-workflow/          # Specific directory
+./pw test-cov                                 # With coverage report (to .plan/temp/htmlcov/)
+./pw test-parallel                            # Parallel execution (-n auto)
 ```
 
 ### Quality Checks
@@ -101,7 +103,7 @@ Use conventional commit format:
 
 ### Pre-Submission Checklist
 
-1. All Python tests pass (`pytest test/`)
+1. All Python tests pass (`./pw test`)
 2. Plugin doctor shows no critical issues
 3. No duplicate information across documents
 4. Cross-references use proper `xref:` syntax (AsciiDoc) or markdown links
@@ -135,6 +137,6 @@ Commands orchestrate agents using the Task tool. Agents:
 ## Integration Points
 
 - **Git**: Standard workflow on main branch
-- **Build Systems**: None (documentation-only)
+- **Build/Test**: Pyprojectx wrapper (`./pw test`, `./pw lint`, `./pw fmt`)
 - **IDE**: IntelliJ MCP for diagnostics (file must be active in editor)
 - **GitHub**: Via `gh` CLI for issue/PR management

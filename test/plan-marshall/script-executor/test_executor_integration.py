@@ -18,7 +18,7 @@ from datetime import datetime
 from pathlib import Path
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import TestRunner, MARKETPLACE_ROOT
+from conftest import MARKETPLACE_ROOT, _MARKETPLACE_SCRIPT_DIRS
 
 # ============================================================================
 # PATHS
@@ -150,9 +150,14 @@ class ExecutorTestEnvironment:
 
     def run_executor(self, *args, timeout: int = 30) -> subprocess.CompletedProcess:
         """Run the generated executor with arguments."""
-        # Pass PLAN_BASE_DIR to subprocess for test isolation
+        # Pass PLAN_BASE_DIR and PYTHONPATH to subprocess for test isolation
         env = os.environ.copy()
         env['PLAN_BASE_DIR'] = str(self.plan_dir)
+        # Include full marketplace PYTHONPATH for cross-skill imports
+        pythonpath = os.pathsep.join(_MARKETPLACE_SCRIPT_DIRS)
+        if 'PYTHONPATH' in env:
+            pythonpath = pythonpath + os.pathsep + env['PYTHONPATH']
+        env['PYTHONPATH'] = pythonpath
         return subprocess.run(
             [sys.executable, str(self.executor_path)] + list(args),
             capture_output=True,
@@ -562,43 +567,3 @@ def test_plan_scoped_log_when_plan_exists():
 # ============================================================================
 # TEST RUNNER
 # ============================================================================
-
-if __name__ == '__main__':
-    runner = TestRunner()
-    runner.add_tests([
-        # Generation tests
-        test_executor_generated_successfully,
-        test_executor_contains_mappings,
-        test_executor_list_command,
-        # Success execution tests
-        test_execute_script_help,
-        test_execute_script_with_subcommand,
-        test_successful_execution_logged,
-        test_log_format_success_compact,
-        # Error execution tests
-        test_execute_nonexistent_script,
-        test_execute_unknown_notation,
-        test_execute_script_that_fails,
-        test_error_execution_logged_with_details,
-        test_log_format_error_multi_line,
-        # Argument forwarding tests
-        test_arguments_forwarded_correctly,
-        test_subcommand_forwarded,
-        test_complex_arguments_forwarded,
-        # Edge case tests
-        test_no_arguments_shows_usage,
-        test_partial_notation_resolution,
-        test_partial_notation_matches_substring,
-        test_multiple_executions_append_to_log,
-        # Log location tests
-        test_global_log_used_without_plan_id,
-        test_plan_scoped_log_when_plan_exists,
-    ])
-
-    try:
-        exit_code = runner.run()
-    finally:
-        # Always cleanup
-        cleanup_test_env()
-
-    sys.exit(exit_code)

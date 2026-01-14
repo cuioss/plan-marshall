@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 
 # Import shared infrastructure
-from conftest import run_script, TestRunner, get_script_path
+from conftest import run_script, get_script_path
 
 # Script under test
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
@@ -236,29 +236,3 @@ def test_crossfile_custom_threshold():
 # =============================================================================
 # Main
 # =============================================================================
-
-if __name__ == '__main__':
-    runner = TestRunner()
-    runner.add_tests([
-        # Main tests
-        test_script_exists,
-        test_main_help,
-        # Structure subcommand tests
-        test_structure_table_refs_no_unreferenced,
-        test_structure_table_refs_no_missing,
-        test_structure_table_refs_perfect_score,
-        test_structure_code_block_no_false_positive,
-        test_structure_cross_skill_no_false_positive,
-        test_structure_real_plugin_doctor,
-        # Cross-file subcommand tests
-        test_crossfile_help,
-        test_crossfile_missing_argument,
-        test_crossfile_invalid_path,
-        test_crossfile_duplicates_valid_json,
-        test_crossfile_detect_exact_duplicates,
-        test_crossfile_extraction_candidates,
-        test_crossfile_llm_review_flag,
-        test_crossfile_clean_skill,
-        test_crossfile_custom_threshold,
-    ])
-    sys.exit(runner.run())

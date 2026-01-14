@@ -17,7 +17,7 @@ from pathlib import Path
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
 from conftest import (
-    ScriptTestCase, TestRunner, run_script,
+    ScriptTestCase, run_script,
     MARKETPLACE_ROOT
 )
 

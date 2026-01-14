@@ -12,7 +12,6 @@ import tempfile
 from pathlib import Path
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import TestRunner
 
 # Import functions under test (PYTHONPATH set by conftest)
 from _config_detection import detect_maven_modules, detect_npm_workspaces
@@ -306,25 +305,3 @@ def test_detect_npm_workspaces_missing_package_json():
 # =============================================================================
 # Main
 # =============================================================================
-
-if __name__ == '__main__':
-    runner = TestRunner()
-    runner.add_tests([
-        # Maven tests
-        test_detect_maven_no_pom,
-        test_detect_maven_single_level,
-        test_detect_maven_nested_modules,
-        test_detect_maven_three_level_nesting,
-        test_detect_maven_parent_relationships,
-        test_detect_maven_missing_module_directory,
-        test_detect_maven_oauth_sheriff_structure,
-        # npm tests
-        test_detect_npm_no_package_json,
-        test_detect_npm_no_workspaces,
-        test_detect_npm_workspaces_direct_paths,
-        test_detect_npm_workspaces_glob_pattern,
-        test_detect_npm_workspaces_multiple_patterns,
-        test_detect_npm_workspaces_object_format,
-        test_detect_npm_workspaces_missing_package_json,
-    ])
-    sys.exit(runner.run())

@@ -13,7 +13,7 @@ import re
 from pathlib import Path
 
 # Cross-skill imports (PYTHONPATH set by executor)
-from _build_parse import Issue, TestSummary, SEVERITY_ERROR  # type: ignore[import-not-found]
+from _build_parse import Issue, UnitTestSummary, SEVERITY_ERROR  # type: ignore[import-not-found]
 
 
 # Jest failure header pattern
@@ -25,7 +25,7 @@ SUMMARY_PATTERN = re.compile(
 )
 
 
-def parse_log(log_file: str | Path) -> tuple[list[Issue], TestSummary | None, str]:
+def parse_log(log_file: str | Path) -> tuple[list[Issue], UnitTestSummary | None, str]:
     """Parse Jest test log file.
 
     Implements BuildParser protocol for Jest test results.
@@ -36,7 +36,7 @@ def parse_log(log_file: str | Path) -> tuple[list[Issue], TestSummary | None, st
     Returns:
         Tuple of (issues, test_summary, build_status):
         - issues: list[Issue] - all test failures found
-        - test_summary: TestSummary with test counts
+        - test_summary: UnitTestSummary with test counts
         - build_status: "SUCCESS" | "FAILURE"
 
     Raises:
@@ -137,14 +137,14 @@ def _add_issue(issues: list, file: str | None, test: str, stack_lines: list[str]
     ))
 
 
-def _extract_test_summary(content: str) -> TestSummary | None:
+def _extract_test_summary(content: str) -> UnitTestSummary | None:
     """Extract Jest test summary from log content.
 
     Args:
         content: Log file content.
 
     Returns:
-        TestSummary dataclass if found, None otherwise.
+        UnitTestSummary dataclass if found, None otherwise.
     """
     match = SUMMARY_PATTERN.search(content)
     if not match:
@@ -155,7 +155,7 @@ def _extract_test_summary(content: str) -> TestSummary | None:
     passed = int(match.group(3) or 0)
     total = int(match.group(4))
 
-    return TestSummary(
+    return UnitTestSummary(
         passed=passed,
         failed=failed,
         skipped=skipped,

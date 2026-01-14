@@ -16,7 +16,7 @@ import tempfile
 from pathlib import Path
 
 # Import shared infrastructure
-from conftest import run_script, TestRunner, get_script_path
+from conftest import run_script, get_script_path
 
 # Script under test
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
@@ -613,40 +613,3 @@ def test_fixture_report():
 # =============================================================================
 # Main
 # =============================================================================
-
-if __name__ == '__main__':
-    runner = TestRunner()
-    runner.add_tests([
-        # Help and basic tests
-        test_script_exists,
-        test_main_help,
-        test_no_command_shows_help,
-        # Scan tests
-        test_scan_help,
-        test_scan_returns_valid_json,
-        test_scan_finds_bundles,
-        test_scan_bundle_structure,
-        test_scan_bundle_filter,
-        # Analyze tests
-        test_analyze_help,
-        test_analyze_returns_valid_json,
-        test_analyze_summary_structure,
-        test_analyze_categorized_structure,
-        test_analyze_type_filter,
-        # Fix tests
-        test_fix_help,
-        test_fix_dry_run_returns_valid_json,
-        test_fix_dry_run_no_changes,
-        # Report tests
-        test_report_help,
-        test_report_returns_valid_json,
-        test_report_summary_structure,
-        test_report_has_llm_review_items,
-        test_report_to_custom_dir,
-        # Fixture tests
-        test_fixture_scan,
-        test_fixture_analyze_finds_issues,
-        test_fixture_fix_dry_run,
-        test_fixture_report,
-    ])
-    sys.exit(runner.run())

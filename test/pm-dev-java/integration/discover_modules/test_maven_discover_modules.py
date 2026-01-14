@@ -17,7 +17,6 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent.parent
 RESOURCES_DIR = Path(__file__).parent / "resources"
 sys.path.insert(0, str(PROJECT_ROOT / "test"))
-from conftest import TestRunner
 
 # Import Extension from pm-dev-java
 EXTENSION_DIR = PROJECT_ROOT / "marketplace" / "bundles" / "pm-dev-java" / "skills" / "plan-marshall-plugin"
@@ -26,8 +25,8 @@ sys.path.insert(0, str(EXTENSION_DIR))
 # Direct imports - conftest sets up PYTHONPATH for cross-skill imports
 from integration_common import (
     INTEGRATION_TEST_OUTPUT_DIR,
-    IntegrationTestContext,
-    TestProject,
+    IntegrationContext,
+    ProjectFixture,
     assert_has_root_aggregator,
     assert_maven_module_structure,
     assert_no_null_values,
@@ -273,22 +272,22 @@ def save_graph_outputs(output_dir: Path, project_name: str, modules: list, proje
 
 # Projects relative to git directory (parent of plan-marshall)
 TEST_PROJECTS = [
-    TestProject(
+    ProjectFixture(
         name="cui-http",
         relative_path="cui-http",
         description="Single-module Maven library"
     ),
-    TestProject(
+    ProjectFixture(
         name="cui-java-tools",
         relative_path="cui-java-tools",
         description="Single-module Maven utility library"
     ),
-    TestProject(
+    ProjectFixture(
         name="nifi-extensions",
         relative_path="nifi-extensions",
         description="Multi-module Maven project with hybrid Java+npm"
     ),
-    TestProject(
+    ProjectFixture(
         name="OAuth-Sheriff",
         relative_path="OAuth-Sheriff",
         description="Multi-module Maven Quarkus project"
@@ -314,7 +313,7 @@ def run_integration_tests() -> int:
     test_count = 0
     pass_count = 0
 
-    with IntegrationTestContext(OUTPUT_DIR, clean_before=True) as ctx:
+    with IntegrationContext(OUTPUT_DIR, clean_before=True) as ctx:
         print("Maven discover_modules() Integration Tests")
         print("=" * 60)
         print(f"Output directory: {OUTPUT_DIR}")

@@ -14,7 +14,7 @@ import sys
 from pathlib import Path
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import run_script, TestRunner, get_script_path, PlanTestContext, PLAN_DIR_NAME
+from conftest import run_script, get_script_path, PlanContext, PLAN_DIR_NAME
 
 # Script under test
 SCRIPT_PATH = get_script_path('plan-marshall', 'run-config', 'run_config.py')
@@ -26,7 +26,7 @@ SCRIPT_PATH = get_script_path('plan-marshall', 'run-config', 'run_config.py')
 
 def test_warning_add_creates_entry():
     """Test warning add creates entry in run-configuration.json."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         # First init the config
         run_script(
             SCRIPT_PATH,
@@ -54,7 +54,7 @@ def test_warning_add_creates_entry():
 
 def test_warning_add_skips_duplicate():
     """Test warning add skips duplicate pattern."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         run_script(SCRIPT_PATH, 'init')
 
         # Add same pattern twice
@@ -76,7 +76,7 @@ def test_warning_add_skips_duplicate():
 
 def test_warning_add_invalid_category():
     """Test warning add rejects invalid category."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         run_script(SCRIPT_PATH, 'init')
 
         result = run_script(
@@ -95,7 +95,7 @@ def test_warning_add_invalid_category():
 
 def test_warning_list_all_categories():
     """Test warning list returns all categories."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         run_script(SCRIPT_PATH, 'init')
 
         # Add patterns to different categories
@@ -125,7 +125,7 @@ def test_warning_list_all_categories():
 
 def test_warning_list_single_category():
     """Test warning list with --category filter."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         run_script(SCRIPT_PATH, 'init')
 
         run_script(
@@ -148,7 +148,7 @@ def test_warning_list_single_category():
 
 def test_warning_list_empty():
     """Test warning list on empty config."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         run_script(SCRIPT_PATH, 'init')
 
         result = run_script(
@@ -166,7 +166,7 @@ def test_warning_list_empty():
 
 def test_warning_remove_existing():
     """Test warning remove removes existing pattern."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         run_script(SCRIPT_PATH, 'init')
 
         # Add then remove
@@ -194,7 +194,7 @@ def test_warning_remove_existing():
 
 def test_warning_remove_nonexistent():
     """Test warning remove skips non-existent pattern."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         run_script(SCRIPT_PATH, 'init')
 
         result = run_script(
@@ -214,7 +214,7 @@ def test_warning_remove_nonexistent():
 
 def test_warning_add_with_build_system():
     """Test warning add with --build-system parameter."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         run_script(SCRIPT_PATH, 'init')
 
         result = run_script(
@@ -236,18 +236,3 @@ def test_warning_add_with_build_system():
 # =============================================================================
 # Main
 # =============================================================================
-
-if __name__ == '__main__':
-    runner = TestRunner()
-    runner.add_tests([
-        test_warning_add_creates_entry,
-        test_warning_add_skips_duplicate,
-        test_warning_add_invalid_category,
-        test_warning_list_all_categories,
-        test_warning_list_single_category,
-        test_warning_list_empty,
-        test_warning_remove_existing,
-        test_warning_remove_nonexistent,
-        test_warning_add_with_build_system,
-    ])
-    sys.exit(runner.run())

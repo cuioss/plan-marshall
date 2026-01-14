@@ -14,7 +14,7 @@ import tempfile
 from pathlib import Path
 
 # Import shared infrastructure
-from conftest import run_script, TestRunner, get_script_path
+from conftest import run_script, get_script_path
 
 # Script under test
 SCRIPT_PATH = get_script_path('pm-plugin-development', 'plugin-doctor', '_fix.py')
@@ -143,25 +143,3 @@ def test_verify_with_valid_file():
 # =============================================================================
 # Main
 # =============================================================================
-
-if __name__ == '__main__':
-    runner = TestRunner()
-    runner.add_tests([
-        # Main tests
-        test_script_exists,
-        test_main_help,
-        # Extract subcommand tests
-        test_extract_help,
-        test_extract_from_stdin,
-        # Categorize subcommand tests
-        test_categorize_help,
-        test_categorize_safe_issues,
-        # Apply subcommand tests
-        test_apply_help,
-        test_apply_missing_arguments,
-        # Verify subcommand tests
-        test_verify_help,
-        test_verify_missing_arguments,
-        test_verify_with_valid_file,
-    ])
-    sys.exit(runner.run())

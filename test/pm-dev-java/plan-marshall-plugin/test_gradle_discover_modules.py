@@ -22,8 +22,7 @@ from pathlib import Path
 # Import shared infrastructure (sets up PYTHONPATH for cross-skill imports)
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from conftest import (
-    TestRunner,
-    BuildTestContext
+    BuildContext
 )
 
 # Direct imports - conftest sets up PYTHONPATH
@@ -48,7 +47,7 @@ def test_discover_gradle_single_module():
 
     In test environment without Gradle, returns error-only structure.
     """
-    with BuildTestContext() as ctx:
+    with BuildContext() as ctx:
         # Create a single-module Gradle project
         build_gradle = '''
 plugins {
@@ -87,7 +86,7 @@ def test_discover_gradle_multi_module():
 
     In test environment without Gradle, returns error-only structure for each module.
     """
-    with BuildTestContext() as ctx:
+    with BuildContext() as ctx:
         # Create settings.gradle with modules
         settings_gradle = '''
 rootProject.name = 'parent'
@@ -123,7 +122,7 @@ include 'web'
 
 def test_discover_gradle_no_build_file():
     """Test discover_modules with no build.gradle."""
-    with BuildTestContext() as ctx:
+    with BuildContext() as ctx:
         ext = Extension()
         modules = ext.discover_modules(str(ctx.temp_dir))
 
@@ -135,7 +134,7 @@ def test_discover_gradle_kotlin_dsl():
 
     In test environment without Gradle, returns error-only structure.
     """
-    with BuildTestContext() as ctx:
+    with BuildContext() as ctx:
         build_gradle_kts = '''
 plugins {
     java
@@ -167,7 +166,7 @@ def test_gradle_discover_sources():
 
     In test environment without Gradle, returns error-only structure.
     """
-    with BuildTestContext() as ctx:
+    with BuildContext() as ctx:
         # Create build.gradle
         (ctx.temp_dir / 'build.gradle').write_text('apply plugin: "java"')
 
@@ -193,7 +192,7 @@ def test_gradle_stats_file_counts():
 
     In test environment without Gradle, returns error-only structure.
     """
-    with BuildTestContext() as ctx:
+    with BuildContext() as ctx:
         (ctx.temp_dir / 'build.gradle').write_text('apply plugin: "java"')
 
         # Create source files
@@ -220,7 +219,7 @@ def test_gradle_kotlin_sources_detected():
 
     In test environment without Gradle, returns error-only structure.
     """
-    with BuildTestContext() as ctx:
+    with BuildContext() as ctx:
         (ctx.temp_dir / 'build.gradle.kts').write_text('plugins { kotlin("jvm") }')
 
         # Create Kotlin source files
@@ -241,7 +240,7 @@ def test_gradle_groovy_sources_detected():
 
     In test environment without Gradle, returns error-only structure.
     """
-    with BuildTestContext() as ctx:
+    with BuildContext() as ctx:
         (ctx.temp_dir / 'build.gradle').write_text('apply plugin: "groovy"')
 
         # Create Groovy source files
@@ -261,7 +260,7 @@ def test_gradle_scala_sources_detected():
 
     In test environment without Gradle, returns error-only structure.
     """
-    with BuildTestContext() as ctx:
+    with BuildContext() as ctx:
         (ctx.temp_dir / 'build.gradle').write_text('apply plugin: "scala"')
 
         # Create Scala source files
@@ -281,7 +280,7 @@ def test_gradle_mixed_jvm_languages():
 
     In test environment without Gradle, returns error-only structure.
     """
-    with BuildTestContext() as ctx:
+    with BuildContext() as ctx:
         (ctx.temp_dir / 'build.gradle').write_text('apply plugin: "java"\napply plugin: "kotlin"')
 
         # Create Java source
@@ -306,7 +305,7 @@ def test_gradle_kotlin_only_module_has_compile_command():
 
     In test environment without Gradle, returns error-only structure (no commands).
     """
-    with BuildTestContext() as ctx:
+    with BuildContext() as ctx:
         (ctx.temp_dir / 'build.gradle.kts').write_text('plugins { kotlin("jvm") }')
 
         # Create Kotlin source (no Java)
@@ -328,7 +327,7 @@ def test_gradle_stats_readme_in_paths():
 
     In test environment without Gradle, returns error-only structure.
     """
-    with BuildTestContext() as ctx:
+    with BuildContext() as ctx:
         (ctx.temp_dir / 'build.gradle').write_text('apply plugin: "java"')
         (ctx.temp_dir / 'README.md').write_text('# My Project')
 
@@ -350,7 +349,7 @@ def test_gradle_module_has_commands():
 
     In test environment without Gradle, returns error-only structure (no commands).
     """
-    with BuildTestContext() as ctx:
+    with BuildContext() as ctx:
         (ctx.temp_dir / 'build.gradle').write_text('apply plugin: "java"')
 
         # Create source and test files
@@ -380,7 +379,7 @@ def test_no_duplicate_modules_with_both_build_files():
     without a valid Maven setup, Maven modules are skipped and Gradle takes over.
     This test verifies no duplication occurs in either case.
     """
-    with BuildTestContext() as ctx:
+    with BuildContext() as ctx:
         # Create both Maven and Gradle files
         (ctx.temp_dir / 'pom.xml').write_text('''<?xml version="1.0"?>
 <project>
@@ -402,32 +401,3 @@ def test_no_duplicate_modules_with_both_build_files():
 # =============================================================================
 # Runner
 # =============================================================================
-
-if __name__ == '__main__':
-    runner = TestRunner()
-    runner.add_tests([
-        # Basic module discovery
-        test_discover_gradle_single_module,
-        test_discover_gradle_multi_module,
-        test_discover_gradle_no_build_file,
-        test_discover_gradle_kotlin_dsl,
-
-        # Source directory discovery
-        test_gradle_discover_sources,
-
-        # Stats
-        test_gradle_stats_file_counts,
-        test_gradle_kotlin_sources_detected,
-        test_gradle_groovy_sources_detected,
-        test_gradle_scala_sources_detected,
-        test_gradle_mixed_jvm_languages,
-        test_gradle_kotlin_only_module_has_compile_command,
-        test_gradle_stats_readme_in_paths,
-
-        # Commands
-        test_gradle_module_has_commands,
-
-        # No duplication
-        test_no_duplicate_modules_with_both_build_files,
-    ])
-    sys.exit(runner.run())

@@ -5,7 +5,6 @@ import sys
 from pathlib import Path
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import TestRunner
 
 # Import modules under test (PYTHONPATH set by conftest)
 from extension_base import (

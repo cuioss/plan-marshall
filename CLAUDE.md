@@ -148,13 +148,27 @@ python3 .plan/execute-script.py {notation} [subcommand] {args...}
 
 ### Testing
 
-See `pm-plugin-development:plugin-script-architecture` skill for testing standards.
+Tests use pytest via the `pw` (Pyprojectx) wrapper. Only Python 3 is required on the host system.
 
 ```bash
-python3 test/run-tests.py                                          # all tests
-python3 test/run-tests.py test/planning/                           # directory
-python3 test/run-tests.py test/planning/plan-files/test_parse_plan.py  # single file
+# First run auto-downloads all tools (uv, pytest, ruff, mypy)
+./pw test                         # All tests (Unix)
+pw test                           # All tests (Windows)
+./pw test-cov                     # With coverage report (to .plan/temp/htmlcov/)
+./pw test-parallel                # Parallel execution
+./pw uv run pytest test/pm-workflow/  # Specific directory
 ```
+
+Linting and formatting:
+```bash
+./pw lint       # ruff check
+./pw lint-fix   # ruff check --fix
+./pw fmt        # ruff format
+./pw typecheck  # mypy
+./pw check      # All checks (lint + typecheck + test)
+```
+
+See `pm-plugin-development:plugin-script-architecture` skill for testing standards and `doc/build-structure.adoc` for build system details.
 
 ### Development Notes
 
@@ -175,5 +189,5 @@ This synchronizes all bundles from `marketplace/bundles/` to `~/.claude/plugins/
 ## Integration Points
 
 - **Git**: `git` tool for issue/PR management
-- **Build Systems**: none, md only
+- **Build Systems**: Pyprojectx wrapper (`./pw`) for Python testing/linting
 - **IDE**: IntelliJ MCP for diagnostics (file must be active in editor)

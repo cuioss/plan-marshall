@@ -16,7 +16,7 @@ from pathlib import Path
 from contextlib import contextmanager
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import run_script, TestRunner, get_script_path
+from conftest import run_script, get_script_path, _MARKETPLACE_SCRIPT_DIRS
 
 # Script under test
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-memories', 'manage-memory.py')
@@ -46,10 +46,16 @@ def memory_test_context():
 
 def run_memory_script(*args):
     """Run the memory script with arguments."""
+    env = os.environ.copy()
+    pythonpath = os.pathsep.join(_MARKETPLACE_SCRIPT_DIRS)
+    if 'PYTHONPATH' in env:
+        pythonpath = pythonpath + os.pathsep + env['PYTHONPATH']
+    env['PYTHONPATH'] = pythonpath
     proc = subprocess.run(
         ['python3', str(SCRIPT_PATH), *args],
         capture_output=True,
-        text=True
+        text=True,
+        env=env
     )
     return proc
 
@@ -455,30 +461,3 @@ def test_validate_format_is_memory():
 # =============================================================================
 # Main
 # =============================================================================
-
-if __name__ == '__main__':
-    runner = TestRunner()
-    runner.add_tests([
-        # CRUD operations
-        test_save_creates_dirs,
-        test_save_context,
-        test_load,
-        test_load_has_meta,
-        test_list_category,
-        test_list_all,
-        test_query_pattern,
-        test_cleanup,
-        test_load_not_found,
-        test_invalid_category,
-        test_context_date_prefix,
-        # Validate subcommand
-        test_validate_valid_memory,
-        test_validate_missing_meta,
-        test_validate_missing_content,
-        test_validate_invalid_category,
-        test_validate_invalid_json,
-        test_validate_checks_array,
-        test_validate_file_not_found,
-        test_validate_format_is_memory,
-    ])
-    sys.exit(runner.run())

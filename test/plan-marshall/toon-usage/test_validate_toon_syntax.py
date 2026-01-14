@@ -10,7 +10,6 @@ import sys
 from pathlib import Path
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import TestRunner
 
 # Test root directory
 TEST_ROOT = Path(__file__).parent.parent.parent
@@ -173,14 +172,3 @@ def test_array_declarations_match_rows():
 # =============================================================================
 # Main
 # =============================================================================
-
-if __name__ == '__main__':
-    runner = TestRunner()
-    runner.add_tests([
-        test_toon_files_exist,
-        test_all_toon_files_valid_syntax,
-        test_no_tabs_in_toon_files,
-        test_toon_files_not_empty,
-        test_array_declarations_match_rows,
-    ])
-    sys.exit(runner.run())

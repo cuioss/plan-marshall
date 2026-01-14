@@ -1,0 +1,62 @@
+= Build Structure
+:toc:
+
+== Overview
+
+This project uses https://pyprojectx.github.io/[Pyprojectx] for Python development tooling, following the Maven/Gradle wrapper pattern.
+
+== Rationale
+
+Pyprojectx was chosen because it provides a proven, mvnw/gradlew-style wrapper for Python that requires only Python 3 on the host system. Unlike custom solutions, it is actively maintained (since 2022), supports multiple tools (uv, ruff, mypy, pytest), and provides reproducible builds via lock files. This approach avoids reinventing the wheel while matching industry best practices for 2025.
+
+== Usage
+
+[source,bash]
+----
+# First run auto-downloads all tools
+./pw test              # Run tests
+./pw lint              # Check code style
+./pw fmt               # Format code
+./pw check             # Run all checks
+----
+
+== Project Structure
+
+[source]
+----
+plan-marshall/
+├── pw                 # Unix wrapper (committed)
+├── pw.bat             # Windows wrapper (committed)
+├── pw.lock            # Tool version lock (committed)
+├── .pyprojectx/       # Tool installations (gitignored)
+├── pyproject.toml     # Configuration
+└── test/              # Tests
+----
+
+== Configuration
+
+Tool configuration is in `pyproject.toml`:
+
+* `[tool.pyprojectx.main]` - Dev tool requirements (uv, pytest, ruff, mypy)
+* `[tool.pyprojectx.aliases]` - Command shortcuts
+* `[tool.pytest.ini_options]` - pytest configuration
+* `[tool.coverage]` - Coverage settings (output to `.plan/temp/htmlcov/`)
+* `[tool.ruff]` - Linter/formatter configuration
+* `[tool.mypy]` - Type checker configuration
+
+== Testing
+
+Tests use pytest via the wrapper:
+
+[source,bash]
+----
+./pw test              # All tests
+./pw test-cov          # With coverage report (to .plan/temp/htmlcov/)
+./pw test-parallel     # Parallel execution (-n auto)
+----
+
+=== Test Infrastructure
+
+* `test/conftest.py` - Shared fixtures and utilities
+* Fixtures: `fixture_dir`, `plan_context`, `build_context`
+* Base class: `ScriptTestCase` for script testing

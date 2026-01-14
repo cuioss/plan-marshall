@@ -6,7 +6,6 @@ import sys
 from pathlib import Path
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import TestRunner
 
 # Import modules under test (PYTHONPATH set by conftest)
 from _build_format import (
@@ -16,7 +15,7 @@ from _build_format import (
     format_toon,
     format_json,
 )
-from _build_parse import Issue, TestSummary, SEVERITY_ERROR, SEVERITY_WARNING
+from _build_parse import Issue, UnitTestSummary, SEVERITY_ERROR, SEVERITY_WARNING
 
 
 # =============================================================================
@@ -259,14 +258,14 @@ def test_format_toon_tests_section():
 
 
 def test_format_toon_tests_with_testsummary_object():
-    """Handles TestSummary object."""
+    """Handles UnitTestSummary object."""
     result = {
         "status": "error",
         "exit_code": 1,
         "duration_seconds": 23,
         "log_file": "/path/to/log",
         "command": "./mvnw clean verify",
-        "tests": TestSummary(passed=10, failed=2, skipped=1, total=13),
+        "tests": UnitTestSummary(passed=10, failed=2, skipped=1, total=13),
     }
     output = format_toon(result)
 
@@ -409,14 +408,14 @@ def test_format_json_with_issue_objects():
 
 
 def test_format_json_with_testsummary_object():
-    """Converts TestSummary object to dict."""
+    """Converts UnitTestSummary object to dict."""
     result = {
         "status": "error",
         "exit_code": 1,
         "duration_seconds": 23,
         "log_file": "/path/to/log",
         "command": "./mvnw clean verify",
-        "tests": TestSummary(passed=10, failed=2, skipped=1, total=13),
+        "tests": UnitTestSummary(passed=10, failed=2, skipped=1, total=13),
     }
     output = format_json(result)
     parsed = json.loads(output)
@@ -453,7 +452,7 @@ def test_format_json_valid():
             Issue(file="pom.xml", line=None, message="deprecated",
                   severity=SEVERITY_WARNING, accepted=True),
         ],
-        "tests": TestSummary(passed=10, failed=2, skipped=1, total=13),
+        "tests": UnitTestSummary(passed=10, failed=2, skipped=1, total=13),
     }
     output = format_json(result)
 

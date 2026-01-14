@@ -11,8 +11,7 @@ from pathlib import Path
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
 from conftest import (
     get_script_path,
-    TestRunner,
-    BuildTestContext
+    BuildContext
 )
 
 # Get script path
@@ -50,7 +49,7 @@ def test_api_get_bash_timeout():
 
 def test_api_execute_direct_success():
     """Test execute_direct API with successful command."""
-    with BuildTestContext() as ctx:
+    with BuildContext() as ctx:
         result = execute_direct(
             args='--version',
             command_key='test:version',
@@ -66,7 +65,7 @@ def test_api_execute_direct_success():
 
 def test_api_execute_direct_returns_log_file():
     """Test execute_direct API returns log_file (R1 compliance)."""
-    with BuildTestContext() as ctx:
+    with BuildContext() as ctx:
         result = execute_direct(
             args='--version',
             command_key='test:log_file',
@@ -83,7 +82,7 @@ def test_api_execute_direct_returns_log_file():
 
 def test_api_execute_direct_npx_command():
     """Test execute_direct API with npx command."""
-    with BuildTestContext() as ctx:
+    with BuildContext() as ctx:
         result = execute_direct(
             args='--version',
             command_key='test:npx_version',
@@ -99,15 +98,3 @@ def test_api_execute_direct_npx_command():
 # =============================================================================
 # Runner
 # =============================================================================
-
-if __name__ == '__main__':
-    runner = TestRunner()
-    runner.add_tests([
-        # API functions
-        test_api_detect_command_type,
-        test_api_get_bash_timeout,
-        test_api_execute_direct_success,
-        test_api_execute_direct_returns_log_file,
-        test_api_execute_direct_npx_command,
-    ])
-    sys.exit(runner.run())

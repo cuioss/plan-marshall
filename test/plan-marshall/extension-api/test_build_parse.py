@@ -7,7 +7,6 @@ import tempfile
 from pathlib import Path
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import TestRunner
 
 # Import modules under test (PYTHONPATH set by conftest)
 from _build_parse import (
@@ -17,7 +16,7 @@ from _build_parse import (
     MODE_STRUCTURED,
     MODE_ERRORS,
     Issue,
-    TestSummary,
+    UnitTestSummary,
     load_acceptable_warnings,
     is_warning_accepted,
     filter_warnings,
@@ -155,8 +154,8 @@ def test_issue_to_dict_without_accepted_false():
 
 
 def test_test_summary_creation():
-    """TestSummary can be created with all fields."""
-    summary = TestSummary(passed=10, failed=2, skipped=1, total=13)
+    """UnitTestSummary can be created with all fields."""
+    summary = UnitTestSummary(passed=10, failed=2, skipped=1, total=13)
     assert summary.passed == 10
     assert summary.failed == 2
     assert summary.skipped == 1
@@ -165,7 +164,7 @@ def test_test_summary_creation():
 
 def test_test_summary_to_dict():
     """to_dict returns all fields."""
-    summary = TestSummary(passed=10, failed=2, skipped=1, total=13)
+    summary = UnitTestSummary(passed=10, failed=2, skipped=1, total=13)
     result = summary.to_dict()
 
     assert result["passed"] == 10
@@ -175,8 +174,8 @@ def test_test_summary_to_dict():
 
 
 def test_test_summary_zero_values():
-    """TestSummary handles zero values."""
-    summary = TestSummary(passed=0, failed=0, skipped=0, total=0)
+    """UnitTestSummary handles zero values."""
+    summary = UnitTestSummary(passed=0, failed=0, skipped=0, total=0)
     result = summary.to_dict()
     assert all(v == 0 for v in result.values())
 

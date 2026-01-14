@@ -44,7 +44,7 @@ from _build_result import (
 from _build_format import format_toon, format_json
 from _build_parse import (
     Issue,
-    TestSummary,
+    UnitTestSummary,
     filter_warnings,
     load_acceptable_warnings,
     partition_issues,
@@ -312,7 +312,7 @@ def detect_tool_type(content: str, command: str) -> str:
     return "generic"
 
 
-def parse_with_detector(log_file: str, command: str) -> Tuple[List[Issue], Optional[TestSummary], str]:
+def parse_with_detector(log_file: str, command: str) -> Tuple[List[Issue], Optional[UnitTestSummary], str]:
     """Parse log file using appropriate tool-specific parser.
 
     Args:

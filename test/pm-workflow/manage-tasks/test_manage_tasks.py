@@ -8,7 +8,7 @@ from pathlib import Path
 
 # Import shared infrastructure
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from conftest import run_script, create_temp_dir, TestRunner, get_script_path
+from conftest import run_script, create_temp_dir, get_script_path
 
 # Script under test
 SCRIPT_PATH = get_script_path('pm-workflow', 'manage-tasks', 'manage-tasks.py')
@@ -1232,78 +1232,3 @@ def test_arbitrary_domains_accepted():
 # =============================================================================
 # Main
 # =============================================================================
-
-if __name__ == '__main__':
-    runner = TestRunner()
-    runner.add_tests([
-        # add with stdin API
-        test_add_first_task,
-        test_add_sequential_numbering,
-        test_add_creates_type_based_filename,
-        test_add_multiple_deliverables,
-        test_add_fails_without_stdin,
-        test_add_fails_without_deliverables,
-        test_add_fails_with_invalid_deliverable,
-        test_add_fails_without_domain,
-        test_add_accepts_arbitrary_domain,
-        test_add_fails_without_steps,
-        test_add_with_phase,
-        test_add_with_dependencies,
-        test_add_with_delegation,
-        test_add_with_verification,
-        test_add_with_shell_metacharacters_in_verification,
-        # get
-        test_get_existing_task,
-        test_get_nonexistent_returns_error,
-        test_get_returns_delegation_block,
-        test_get_returns_verification_block,
-        # list
-        test_list_empty,
-        test_list_with_tasks,
-        test_list_filter_by_status,
-        test_list_filter_by_deliverable,
-        test_list_filter_by_phase,
-        test_list_filter_ready,
-        # next
-        test_next_returns_first_pending,
-        test_next_returns_in_progress_task,
-        test_next_returns_null_when_all_done,
-        test_next_empty_plan,
-        test_next_respects_dependencies,
-        test_next_shows_blocked_tasks,
-        test_next_ignore_deps,
-        test_next_filter_by_phase,
-        test_next_include_context,
-        # step-start
-        test_step_start_marks_in_progress,
-        test_step_start_invalid_step,
-        # step-done
-        test_step_done_marks_completed,
-        test_step_done_completes_task,
-        # step-skip
-        test_step_skip_marks_skipped,
-        test_step_skip_completes_task,
-        # add-step
-        test_add_step_appends,
-        test_add_step_after,
-        # remove-step
-        test_remove_step,
-        test_remove_step_last_fails,
-        # update
-        test_update_title_keeps_filename,
-        test_update_depends_on,
-        test_update_clear_depends_on,
-        # remove
-        test_remove_deletes_file,
-        test_remove_preserves_gaps,
-        # progress
-        test_progress_calculation,
-        # file content
-        test_file_contains_new_fields,
-        # type-based filename
-        test_type_filename_ignores_title_special_chars,
-        test_type_filename_ignores_title_length,
-        # domain
-        test_arbitrary_domains_accepted,
-    ])
-    sys.exit(runner.run())

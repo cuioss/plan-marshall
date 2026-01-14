@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import run_script, TestRunner, get_script_path
+from conftest import run_script, get_script_path
 
 # Script under test
 SCRIPT_PATH = get_script_path('pm-dev-frontend', 'cui-jsdoc', 'jsdoc.py')
@@ -137,24 +137,3 @@ def test_analyze_violation_has_line_field():
 # =============================================================================
 # Main
 # =============================================================================
-
-if __name__ == '__main__':
-    runner = TestRunner()
-    runner.add_tests([
-        test_script_exists,
-        test_main_help,
-        test_analyze_help,
-        test_analyze_valid_jsdoc,
-        test_analyze_missing_jsdoc,
-        test_analyze_partial_jsdoc,
-        test_analyze_web_component,
-        test_analyze_directory,
-        test_analyze_scope_missing,
-        test_analyze_scope_syntax,
-        test_analyze_missing_file_error,
-        test_analyze_missing_directory_error,
-        test_analyze_metrics_present,
-        test_analyze_violation_has_file_field,
-        test_analyze_violation_has_line_field,
-    ])
-    sys.exit(runner.run())

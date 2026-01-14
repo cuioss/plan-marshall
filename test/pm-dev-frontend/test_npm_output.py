@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import run_script, TestRunner, get_script_path
+from conftest import run_script, get_script_path
 
 # Script under test
 SCRIPT_PATH = get_script_path('pm-dev-frontend', 'cui-javascript-project', 'npm-output.py')
@@ -101,20 +101,3 @@ def test_parse_workspace_build():
 # =============================================================================
 # Main
 # =============================================================================
-
-if __name__ == '__main__':
-    runner = TestRunner()
-    runner.add_tests([
-        test_script_exists,
-        test_main_help,
-        test_parse_help,
-        test_parse_successful_build,
-        test_parse_failed_build,
-        test_parse_test_failure_log,
-        test_parse_structured_mode,
-        test_parse_errors_mode,
-        test_parse_missing_log_error,
-        test_parse_output_file_field,
-        test_parse_workspace_build,
-    ])
-    sys.exit(runner.run())

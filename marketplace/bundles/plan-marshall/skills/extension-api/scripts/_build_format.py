@@ -137,7 +137,7 @@ def format_toon(result: dict) -> str:
 def format_json(result: dict, indent: int = 2) -> str:
     """Format result dict as JSON output.
 
-    Converts any Issue or TestSummary objects to dicts before serialization.
+    Converts any Issue or UnitTestSummary objects to dicts before serialization.
 
     Args:
         result: Result dict from build_result.*_result() functions.
@@ -166,7 +166,7 @@ def format_json(result: dict, indent: int = 2) -> str:
 def _normalize_result(result: dict) -> dict:
     """Normalize result dict for JSON serialization.
 
-    Converts Issue and TestSummary objects to dicts.
+    Converts Issue and UnitTestSummary objects to dicts.
 
     Args:
         result: Result dict that may contain objects with to_dict().

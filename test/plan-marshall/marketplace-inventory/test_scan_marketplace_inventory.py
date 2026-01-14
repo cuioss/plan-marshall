@@ -10,7 +10,7 @@ import sys
 from pathlib import Path
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import TestRunner, run_script, get_script_path
+from conftest import run_script, get_script_path
 
 # Script under test
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
@@ -491,53 +491,3 @@ def test_invalid_resource_type_returns_error():
 # =============================================================================
 # Main
 # =============================================================================
-
-if __name__ == '__main__':
-    runner = TestRunner()
-    runner.add_tests([
-        # Basic Discovery
-        test_default_scan_finds_bundles,
-        test_default_scan_finds_agents,
-        test_default_scan_finds_commands,
-        test_default_scan_finds_skills,
-        test_default_scope_is_auto,
-        # Resource Filtering
-        test_agents_only_no_commands,
-        test_agents_only_no_skills,
-        test_agents_only_has_agents,
-        test_commands_only_no_agents,
-        test_commands_only_has_commands,
-        test_skills_only_no_agents,
-        test_skills_only_has_skills,
-        test_multiple_types_has_both,
-        # Description Extraction
-        test_no_descriptions_returns_null,
-        test_with_descriptions_extracts_desc,
-        # JSON Validity
-        test_default_produces_valid_json,
-        test_with_descriptions_produces_valid_json,
-        test_filtered_produces_valid_json,
-        # Bundle Structure
-        test_bundles_have_required_fields,
-        # Script Discovery
-        test_script_count_matches_filesystem,
-        test_scripts_have_path_formats,
-        test_scripts_have_notation_field,
-        test_scripts_notation_format_valid,
-        test_scripts_exclude_private_modules,
-        # Name Pattern Filtering
-        test_name_pattern_filters_agents,
-        test_name_pattern_multiple_patterns,
-        test_name_pattern_no_matches,
-        test_name_pattern_skills_filter,
-        # Bundle Filtering
-        test_bundles_filter_single,
-        test_bundles_filter_multiple,
-        test_bundles_filter_nonexistent,
-        # Combined Filtering
-        test_combined_bundle_and_name_pattern,
-        # Error Handling
-        test_invalid_scope_returns_error,
-        test_invalid_resource_type_returns_error,
-    ])
-    sys.exit(runner.run())

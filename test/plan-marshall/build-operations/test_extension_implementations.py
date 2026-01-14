@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Any
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import TestRunner, PROJECT_ROOT, MARKETPLACE_ROOT
+from conftest import PROJECT_ROOT, MARKETPLACE_ROOT
 
 # Required canonical commands in discover_modules() output
 # NOTE: Commands are now part of module discovery output, not separate mappings
@@ -455,37 +455,3 @@ def test_all_extensions_have_required_functions():
 # =============================================================================
 # Main
 # =============================================================================
-
-if __name__ == '__main__':
-    runner = TestRunner()
-    runner.add_tests([
-        # pm-dev-java tests
-        test_java_extension_skill_domains_structure,
-        test_java_extension_skill_references_exist,
-        test_java_extension_triage_reference,
-        # pm-dev-frontend tests
-        test_frontend_extension_skill_domains_structure,
-        test_frontend_extension_skill_references_exist,
-        test_frontend_extension_triage_reference,
-        # pm-plugin-development tests
-        test_plugin_dev_extension_skill_domains_structure,
-        test_plugin_dev_extension_skill_references_exist,
-        test_plugin_dev_extension_triage_reference,
-        test_plugin_dev_extension_outline_reference,
-        # pm-requirements tests
-        test_requirements_extension_skill_domains_structure,
-        test_requirements_extension_skill_references_exist,
-        test_requirements_extension_triage_reference,
-        # pm-documents tests
-        test_documents_extension_skill_domains_structure,
-        test_documents_extension_skill_references_exist,
-        test_documents_extension_triage_reference,
-        test_documents_extension_outline_reference,
-        # pm-dev-java-cui tests
-        test_java_cui_extension_skill_domains_structure,
-        test_java_cui_extension_skill_references_exist,
-        # Cross-bundle tests
-        test_all_extensions_have_unique_domain_keys,
-        test_all_extensions_have_required_functions,
-    ])
-    sys.exit(runner.run())

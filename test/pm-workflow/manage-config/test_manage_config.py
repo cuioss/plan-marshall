@@ -10,7 +10,7 @@ from pathlib import Path
 
 # Import shared infrastructure
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from conftest import run_script, TestRunner, get_script_path, PlanTestContext
+from conftest import run_script, get_script_path, PlanContext
 
 # Get script path
 SCRIPT_PATH = get_script_path('pm-workflow', 'manage-config', 'manage-config.py')
@@ -20,7 +20,7 @@ from toon_parser import parse_toon  # type: ignore[import-not-found]
 
 
 # Alias for backward compatibility
-TestContext = PlanTestContext
+TestContext = PlanContext
 
 
 # =============================================================================
@@ -304,35 +304,3 @@ def test_create_config_force_overwrite():
         assert result.success, f"Script failed: {result.stderr}"
         data = parse_toon(result.stdout)
         assert data['config']['domains'] == ['javascript']
-
-
-# =============================================================================
-# Test Runner
-# =============================================================================
-
-if __name__ == '__main__':
-    runner = TestRunner()
-    runner.add_tests([
-        # Create command
-        test_create_config_single_domain,
-        test_create_config_multiple_domains,
-        test_create_config_plugin_domain,
-        test_create_config_with_all_options,
-        test_create_config_invalid_domain,
-        # Get-domains
-        test_get_domains_single,
-        test_get_domains_multiple,
-        test_get_domains_not_found,
-        # Basic operations
-        test_set_and_get_field,
-        test_read_config,
-        test_set_invalid_commit_strategy,
-        test_get_domains_array,
-        # Get multi
-        test_get_multi_fields,
-        test_get_multi_not_found,
-        # File exists
-        test_create_config_already_exists,
-        test_create_config_force_overwrite,
-    ])
-    sys.exit(runner.run())

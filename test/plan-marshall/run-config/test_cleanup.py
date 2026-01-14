@@ -9,7 +9,7 @@ import time
 from pathlib import Path
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import run_script, TestRunner, get_script_path, PlanTestContext
+from conftest import run_script, get_script_path, PlanContext
 
 # Get script path (moved from marshall-steward to run-config)
 SCRIPT_PATH = get_script_path('plan-marshall', 'run-config', 'cleanup.py')
@@ -44,7 +44,7 @@ def setup_marshal_json(fixture_dir: Path, retention: dict = None):
 
 def test_clean_temp():
     """Clean temp directory."""
-    with PlanTestContext(plan_id='test-clean-temp') as ctx:
+    with PlanContext(plan_id='test-clean-temp') as ctx:
         setup_marshal_json(ctx.fixture_dir)
 
         temp_dir = ctx.fixture_dir / 'temp'
@@ -69,7 +69,7 @@ def test_clean_temp():
 
 def test_clean_logs():
     """Clean old log files."""
-    with PlanTestContext(plan_id='test-clean-logs') as ctx:
+    with PlanContext(plan_id='test-clean-logs') as ctx:
         setup_marshal_json(ctx.fixture_dir)
 
         logs_dir = ctx.fixture_dir / 'logs'
@@ -97,7 +97,7 @@ def test_clean_logs():
 
 def test_clean_archived_plans():
     """Clean old archived plans."""
-    with PlanTestContext(plan_id='test-clean-archived') as ctx:
+    with PlanContext(plan_id='test-clean-archived') as ctx:
         setup_marshal_json(ctx.fixture_dir)
 
         archived_dir = ctx.fixture_dir / 'archived-plans'
@@ -128,7 +128,7 @@ def test_clean_archived_plans():
 
 def test_clean_memory():
     """Clean old memory files."""
-    with PlanTestContext(plan_id='test-clean-memory') as ctx:
+    with PlanContext(plan_id='test-clean-memory') as ctx:
         setup_marshal_json(ctx.fixture_dir)
 
         memory_dir = ctx.fixture_dir / 'memory' / 'handoffs'
@@ -156,7 +156,7 @@ def test_clean_memory():
 
 def test_clean_all():
     """Clean all directories."""
-    with PlanTestContext(plan_id='test-clean-all') as ctx:
+    with PlanContext(plan_id='test-clean-all') as ctx:
         setup_marshal_json(ctx.fixture_dir)
 
         # Create temp
@@ -181,7 +181,7 @@ def test_clean_all():
 
 def test_clean_dry_run():
     """Dry run shows what would be deleted without deleting."""
-    with PlanTestContext(plan_id='test-dry-run') as ctx:
+    with PlanContext(plan_id='test-dry-run') as ctx:
         setup_marshal_json(ctx.fixture_dir)
 
         temp_dir = ctx.fixture_dir / 'temp'
@@ -201,7 +201,7 @@ def test_clean_dry_run():
 
 def test_status():
     """Status command shows directory statistics."""
-    with PlanTestContext(plan_id='test-status') as ctx:
+    with PlanContext(plan_id='test-status') as ctx:
         clean_fixture_dirs(ctx.fixture_dir)  # Ensure clean state
         setup_marshal_json(ctx.fixture_dir)
 
@@ -224,7 +224,7 @@ def test_status():
 
 def test_clean_nonexistent():
     """Clean on nonexistent directory succeeds with zero counts."""
-    with PlanTestContext(plan_id='test-nonexistent') as ctx:
+    with PlanContext(plan_id='test-nonexistent') as ctx:
         clean_fixture_dirs(ctx.fixture_dir)  # Ensure clean state
         setup_marshal_json(ctx.fixture_dir)
 
@@ -237,7 +237,7 @@ def test_clean_nonexistent():
 
 def test_missing_marshal_json():
     """Script fails loudly when marshal.json is missing."""
-    with PlanTestContext(plan_id='test-missing-marshal') as ctx:
+    with PlanContext(plan_id='test-missing-marshal') as ctx:
         # Ensure no marshal.json exists (may persist from other tests)
         marshal_path = ctx.fixture_dir / 'marshal.json'
         if marshal_path.exists():
@@ -251,7 +251,7 @@ def test_missing_marshal_json():
 
 def test_missing_retention_config():
     """Script fails loudly when retention config is missing."""
-    with PlanTestContext(plan_id='test-missing-retention') as ctx:
+    with PlanContext(plan_id='test-missing-retention') as ctx:
         # Create marshal.json without system.retention section
         marshal_path = ctx.fixture_dir / 'marshal.json'
         marshal_path.write_text(json.dumps({"other": "config"}))
@@ -267,21 +267,3 @@ def test_missing_subcommand():
     result = run_script(SCRIPT_PATH)
     assert not result.success, "Should fail without subcommand"
     assert 'required' in result.stderr.lower() or 'error' in result.stderr.lower()
-
-
-if __name__ == '__main__':
-    runner = TestRunner()
-    runner.add_tests([
-        test_clean_temp,
-        test_clean_logs,
-        test_clean_archived_plans,
-        test_clean_memory,
-        test_clean_all,
-        test_clean_dry_run,
-        test_status,
-        test_clean_nonexistent,
-        test_missing_marshal_json,
-        test_missing_retention_config,
-        test_missing_subcommand,
-    ])
-    sys.exit(runner.run())

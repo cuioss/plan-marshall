@@ -8,7 +8,7 @@ from pathlib import Path
 
 # Import shared infrastructure
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from conftest import run_script, create_temp_dir, TestRunner, get_script_path
+from conftest import run_script, create_temp_dir, get_script_path
 
 # Script under test
 SCRIPT_PATH = get_script_path('pm-workflow', 'manage-tasks', 'manage-tasks.py')
@@ -1007,65 +1007,3 @@ steps:
 # =============================================================================
 # Main
 # =============================================================================
-
-if __name__ == '__main__':
-    runner = TestRunner()
-    runner.add_tests([
-        # add with new fields
-        test_add_with_profile,
-        test_add_with_testing_profile,
-        test_add_with_quality_profile,
-        test_add_with_skills,
-        test_add_with_origin,
-        test_add_with_arbitrary_profile,
-        test_add_with_planning_profile,
-        test_add_with_custom_profile,
-        test_add_fails_with_invalid_skill_format,
-        # get returns new fields
-        test_get_returns_domain,
-        test_get_returns_profile,
-        test_get_returns_skills,
-        test_get_returns_origin,
-        # list includes new columns
-        test_list_includes_domain_column,
-        test_list_includes_profile_column,
-        # update with new fields
-        test_update_domain,
-        test_update_profile,
-        test_update_skills,
-        test_update_deliverables,
-        test_update_with_arbitrary_profile,
-        test_update_with_custom_profile,
-        test_update_fails_with_invalid_skills,
-        # tasks-by-domain
-        test_tasks_by_domain_filters,
-        test_tasks_by_domain_empty_result,
-        # tasks-by-profile
-        test_tasks_by_profile_filters,
-        test_tasks_by_profile_testing,
-        # next-tasks
-        test_next_tasks_returns_ready_tasks,
-        test_next_tasks_includes_skills,
-        test_next_tasks_shows_blocked,
-        test_next_tasks_includes_in_progress,
-        # backward compatibility
-        test_backward_compat_old_file_without_new_fields,
-        test_next_returns_new_fields,
-        # file format
-        test_file_contains_all_new_fields,
-        # 5-phase model
-        test_add_with_outline_phase,
-        test_add_with_plan_phase,
-        # arbitrary domains
-        test_add_with_arbitrary_domain,
-        test_add_with_custom_domain,
-        test_update_with_arbitrary_domain,
-        # task types
-        test_add_with_impl_type,
-        test_add_with_fix_type,
-        test_add_with_sonar_type,
-        # task ID format
-        test_task_file_uses_type_suffix,
-        test_fix_task_file_uses_fix_suffix,
-    ])
-    sys.exit(runner.run())

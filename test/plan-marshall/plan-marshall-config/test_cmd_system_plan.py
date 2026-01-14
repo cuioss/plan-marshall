@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import run_script, TestRunner, PlanTestContext
+from conftest import run_script, PlanContext
 from test_helpers import SCRIPT_PATH, create_marshal_json
 
 
@@ -18,7 +18,7 @@ from test_helpers import SCRIPT_PATH, create_marshal_json
 
 def test_system_retention_get():
     """Test system retention get."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
 
         result = run_script(SCRIPT_PATH, 'system', 'retention', 'get')
@@ -30,7 +30,7 @@ def test_system_retention_get():
 
 def test_system_retention_set():
     """Test system retention set."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
 
         result = run_script(
@@ -48,7 +48,7 @@ def test_system_retention_set():
 
 def test_system_retention_set_boolean():
     """Test system retention set with boolean value."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
 
         result = run_script(
@@ -70,7 +70,7 @@ def test_system_retention_set_boolean():
 
 def test_plan_defaults_list():
     """Test plan defaults list."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
 
         result = run_script(SCRIPT_PATH, 'plan', 'defaults', 'list')
@@ -82,7 +82,7 @@ def test_plan_defaults_list():
 
 def test_plan_defaults_get():
     """Test plan defaults get."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
 
         result = run_script(
@@ -96,7 +96,7 @@ def test_plan_defaults_get():
 
 def test_plan_defaults_get_all():
     """Test plan defaults get without field returns all defaults."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
 
         result = run_script(SCRIPT_PATH, 'plan', 'defaults', 'get')
@@ -109,7 +109,7 @@ def test_plan_defaults_get_all():
 
 def test_plan_defaults_set():
     """Test plan defaults set."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
 
         result = run_script(
@@ -127,7 +127,7 @@ def test_plan_defaults_set():
 
 def test_plan_defaults_set_string():
     """Test plan defaults set with string value."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
 
         result = run_script(
@@ -145,7 +145,7 @@ def test_plan_defaults_set_string():
 
 def test_plan_defaults_get_unknown_field():
     """Test plan defaults get with unknown field returns error."""
-    with PlanTestContext() as ctx:
+    with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
 
         result = run_script(
@@ -159,20 +159,3 @@ def test_plan_defaults_get_unknown_field():
 # =============================================================================
 # Main
 # =============================================================================
-
-if __name__ == '__main__':
-    runner = TestRunner()
-    runner.add_tests([
-        # System retention tests
-        test_system_retention_get,
-        test_system_retention_set,
-        test_system_retention_set_boolean,
-        # Plan defaults tests
-        test_plan_defaults_list,
-        test_plan_defaults_get,
-        test_plan_defaults_get_all,
-        test_plan_defaults_set,
-        test_plan_defaults_set_string,
-        test_plan_defaults_get_unknown_field,
-    ])
-    sys.exit(runner.run())

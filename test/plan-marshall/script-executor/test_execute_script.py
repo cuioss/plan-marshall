@@ -8,7 +8,6 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import TestRunner
 
 # Path to templates and scripts
 SKILL_DIR = Path(__file__).parent.parent.parent.parent / "marketplace/bundles/plan-marshall/skills/script-executor"
@@ -267,28 +266,3 @@ def test_verify_script_help():
 
         assert result.returncode == 0, f"Script failed: {result.stderr}"
         assert 'check' in result.stdout, "Missing 'check' subcommand in help"
-
-
-if __name__ == '__main__':
-    runner = TestRunner()
-    runner.add_tests([
-        test_resolve_exact_match,
-        test_resolve_partial_match,
-        test_resolve_unknown_notation,
-        test_resolve_all_mappings,
-        test_extract_trace_plan_id_space_separated,
-        test_extract_trace_plan_id_equals_format,
-        test_extract_trace_plan_id_not_present,
-        test_extract_trace_plan_id_preserves_other_args,
-        test_extract_trace_plan_id_at_end,
-        test_skip_logging_for_manage_log_success,
-        test_log_manage_log_on_error,
-        test_log_normal_scripts_success,
-        test_log_normal_scripts_failure,
-        test_successful_script_execution,
-        test_failed_script_returns_exit_code,
-        test_argument_forwarding,
-        test_generate_script_help,
-        test_verify_script_help,
-    ])
-    sys.exit(runner.run())

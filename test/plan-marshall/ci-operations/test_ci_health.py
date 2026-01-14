@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import run_script, TestRunner, get_script_path, PlanTestContext
+from conftest import run_script, get_script_path, PlanContext
 
 # Get script path
 SCRIPT_PATH = get_script_path('plan-marshall', 'ci-operations', 'ci_health.py')
@@ -71,7 +71,7 @@ def test_status_success():
 
 def test_persist_no_marshal_json():
     """Test persist command fails without marshal.json."""
-    with PlanTestContext(plan_id='test-persist') as ctx:
+    with PlanContext(plan_id='test-persist') as ctx:
         result = run_script(SCRIPT_PATH, 'persist', '--plan-dir', str(ctx.fixture_dir))
         assert not result.success, "Expected script to fail without marshal.json"
         data = result.json_or_error()
@@ -80,7 +80,7 @@ def test_persist_no_marshal_json():
 
 def test_persist_with_marshal_json():
     """Test persist command succeeds with marshal.json."""
-    with PlanTestContext(plan_id='test-persist-success') as ctx:
+    with PlanContext(plan_id='test-persist-success') as ctx:
         # Create minimal marshal.json
         marshal_path = ctx.fixture_dir / 'marshal.json'
         marshal_path.write_text('{"version": 1}')
@@ -97,7 +97,7 @@ def test_persist_with_marshal_json():
 
 def test_persist_generates_commands():
     """Test persist generates ci.commands for known providers."""
-    with PlanTestContext(plan_id='test-commands') as ctx:
+    with PlanContext(plan_id='test-commands') as ctx:
         # Create minimal marshal.json
         marshal_path = ctx.fixture_dir / 'marshal.json'
         marshal_path.write_text('{"version": 1}')
@@ -130,7 +130,7 @@ def test_persist_key_ordering():
 
     Canonical order: ci, plan, skill_domains, module_config, system
     """
-    with PlanTestContext(plan_id='test-ordering') as ctx:
+    with PlanContext(plan_id='test-ordering') as ctx:
         # Create marshal.json with keys in WRONG order
         marshal_path = ctx.fixture_dir / 'marshal.json'
         marshal_path.write_text(json.dumps({
@@ -156,20 +156,3 @@ def test_persist_key_ordering():
 
         assert actual_order == expected_filtered, \
             f"Key order should be {expected_filtered}, got {actual_order}"
-
-
-if __name__ == '__main__':
-    runner = TestRunner()
-    runner.add_tests([
-        test_detect_success,
-        test_verify_all_tools,
-        test_verify_specific_tool,
-        test_verify_unknown_tool,
-        test_status_success,
-        test_persist_no_marshal_json,
-        test_persist_with_marshal_json,
-        test_persist_generates_commands,
-        test_help_flag,
-        test_persist_key_ordering,
-    ])
-    sys.exit(runner.run())

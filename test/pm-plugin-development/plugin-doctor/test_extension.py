@@ -10,7 +10,7 @@ import tempfile
 from pathlib import Path
 
 # Import shared infrastructure
-from conftest import run_script, TestRunner, get_script_path
+from conftest import run_script, get_script_path
 
 # Script under test
 SCRIPT_PATH = get_script_path('pm-plugin-development', 'plugin-doctor', '_validate.py')
@@ -242,18 +242,3 @@ def test_extension_help():
 # =============================================================================
 # Main
 # =============================================================================
-
-if __name__ == '__main__':
-    runner = TestRunner()
-    runner.add_tests([
-        test_validate_valid_extension,
-        test_validate_extension_missing_functions,
-        test_validate_extension_syntax_error,
-        test_validate_extension_not_found,
-        test_validate_bundle_with_extension,
-        test_validate_bundle_without_extension,
-        test_scan_marketplace,
-        test_scan_marketplace_real,
-        test_extension_help,
-    ])
-    sys.exit(runner.run())

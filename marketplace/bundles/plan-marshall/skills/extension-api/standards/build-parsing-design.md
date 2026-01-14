@@ -129,10 +129,10 @@ npm:
 │  │ parse_log() │    │ build_parse.py  │    │ build_result │    │ build_  │ │
 │  │ returns:    │    │                 │    │ .py          │    │ format  │ │
 │  │ list[Issue] │    │                 │    │              │    │ .py     │ │
-│  │ TestSummary │    │                 │    │              │    │         │ │
+│  │ UnitTestSummary │    │                 │    │              │    │         │ │
 │  └─────────────┘    └─────────────────┘    └──────────────┘    └─────────┘ │
 │                                                                              │
-│  SINGLE TYPE: Issue/TestSummary dataclasses throughout pipeline              │
+│  SINGLE TYPE: Issue/UnitTestSummary dataclasses throughout pipeline              │
 │                                                                              │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -149,7 +149,7 @@ npm:
 | Component | Location | Reason |
 |-----------|----------|--------|
 | `BuildParser` protocol | `build_parse.py` | Unified parser contract |
-| `Issue`, `TestSummary` | `build_parse.py` | Single type throughout pipeline |
+| `Issue`, `UnitTestSummary` | `build_parse.py` | Single type throughout pipeline |
 | `filter_warnings()` | `build_parse.py` | Logic identical, input varies |
 | `format_toon()`, `format_json()` | `build_format.py` | Consumers expect consistent output |
 | `create_log_file()` | `build_result.py` | Standard location `.plan/temp/build-output/` |
@@ -171,7 +171,7 @@ class BuildParser(Protocol):
     Structural typing - no inheritance required.
     """
 
-    def parse_log(self, log_file: str | Path) -> tuple[list[Issue], TestSummary | None, str]:
+    def parse_log(self, log_file: str | Path) -> tuple[list[Issue], UnitTestSummary | None, str]:
         """Parse build log file.
 
         Args:
@@ -180,7 +180,7 @@ class BuildParser(Protocol):
         Returns:
             Tuple of (issues, test_summary, build_status):
             - issues: list[Issue] - all errors and warnings found
-            - test_summary: TestSummary | None - test counts if tests ran
+            - test_summary: UnitTestSummary | None - test counts if tests ran
             - build_status: "SUCCESS" | "FAILURE"
 
         Raises:
@@ -194,9 +194,9 @@ class BuildParser(Protocol):
 ```python
 # maven_cmd_parse.py
 from pathlib import Path
-from build_parse import Issue, TestSummary, SEVERITY_ERROR, SEVERITY_WARNING
+from build_parse import Issue, UnitTestSummary, SEVERITY_ERROR, SEVERITY_WARNING
 
-def parse_log(log_file: str | Path) -> tuple[list[Issue], TestSummary | None, str]:
+def parse_log(log_file: str | Path) -> tuple[list[Issue], UnitTestSummary | None, str]:
     """Parse Maven build log file."""
     content = Path(log_file).read_text(encoding='utf-8', errors='replace')
 
@@ -209,7 +209,7 @@ def parse_log(log_file: str | Path) -> tuple[list[Issue], TestSummary | None, st
 
 ## Output Contract
 
-All parsers produce `Issue` and `TestSummary` dataclasses defined in `build_parse.py`.
+All parsers produce `Issue` and `UnitTestSummary` dataclasses defined in `build_parse.py`.
 
 ### Issue
 
@@ -225,11 +225,11 @@ class Issue:
     accepted: bool             # For warning filtering (structured mode)
 ```
 
-### TestSummary
+### UnitTestSummary
 
 ```python
 @dataclass
-class TestSummary:
+class UnitTestSummary:
     passed: int
     failed: int
     skipped: int

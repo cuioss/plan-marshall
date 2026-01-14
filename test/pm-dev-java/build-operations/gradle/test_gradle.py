@@ -16,7 +16,7 @@ from pathlib import Path
 
 # Import shared infrastructure
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
-from conftest import run_script, TestRunner, get_script_path
+from conftest import run_script, get_script_path
 
 # Script under test - pm-dev-java bundle
 SCRIPT_PATH = get_script_path('pm-dev-java', 'plan-marshall-plugin', 'gradle.py')
@@ -168,17 +168,3 @@ def test_help_main():
 # =============================================================================
 # Main
 # =============================================================================
-
-if __name__ == '__main__':
-    runner = TestRunner()
-    runner.add_tests([
-        test_parse_successful_build,
-        test_parse_compilation_errors,
-        test_parse_missing_file,
-        test_find_project_by_name,
-        test_find_project_not_found,
-        test_search_markers_no_markers,
-        test_check_warnings_empty,
-        test_help_main,
-    ])
-    sys.exit(runner.run())

@@ -9,7 +9,7 @@ import tempfile
 from pathlib import Path
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import TestRunner, run_script, get_script_path
+from conftest import run_script, get_script_path, _MARKETPLACE_SCRIPT_DIRS
 
 # Path to the script
 SCRIPT_PATH = get_script_path('plan-marshall', 'script-executor', 'await-until.py')
@@ -18,6 +18,23 @@ SCRIPT_PATH = get_script_path('plan-marshall', 'script-executor', 'await-until.p
 # =============================================================================
 # Helper Functions
 # =============================================================================
+
+def run_with_pythonpath(args, cwd=None, env=None, timeout=30):
+    """Run subprocess with marketplace PYTHONPATH set."""
+    run_env = (env or os.environ).copy()
+    pythonpath = os.pathsep.join(_MARKETPLACE_SCRIPT_DIRS)
+    if 'PYTHONPATH' in run_env:
+        pythonpath = pythonpath + os.pathsep + run_env['PYTHONPATH']
+    run_env['PYTHONPATH'] = pythonpath
+    return subprocess.run(
+        args,
+        capture_output=True,
+        text=True,
+        cwd=cwd,
+        env=run_env,
+        timeout=timeout
+    )
+
 
 def parse_toon_result(stdout: str) -> dict:
     """Parse TOON output (key: value format) into dict."""
@@ -58,16 +75,13 @@ def test_immediate_success():
         config_path.parent.mkdir(parents=True, exist_ok=True)
         config_path.write_text(json.dumps({"version": 1, "commands": {}}))
 
-        result = subprocess.run(
+        result = run_with_pythonpath(
             [sys.executable, str(SCRIPT_PATH),
              '--check-cmd', "printf 'status: success\\n'",
              '--success-field', 'status=success',
              '--command-key', 'test:immediate',
              '--interval', '1'],
-            capture_output=True,
-            text=True,
-            cwd=tmpdir,
-            timeout=30
+            cwd=tmpdir
         )
         assert result.returncode == 0, f"Script failed: {result.stderr}"
 
@@ -84,16 +98,13 @@ def test_success_with_different_field():
         config_path.parent.mkdir(parents=True, exist_ok=True)
         config_path.write_text(json.dumps({"version": 1, "commands": {}}))
 
-        result = subprocess.run(
+        result = run_with_pythonpath(
             [sys.executable, str(SCRIPT_PATH),
              '--check-cmd', "printf 'state: completed\\nresult: passed\\n'",
              '--success-field', 'state=completed',
              '--command-key', 'test:custom',
              '--interval', '1'],
-            capture_output=True,
-            text=True,
-            cwd=tmpdir,
-            timeout=30
+            cwd=tmpdir
         )
         assert result.returncode == 0, f"Script failed: {result.stderr}"
 
@@ -112,17 +123,14 @@ def test_failure_detection():
         config_path.parent.mkdir(parents=True, exist_ok=True)
         config_path.write_text(json.dumps({"version": 1, "commands": {}}))
 
-        result = subprocess.run(
+        result = run_with_pythonpath(
             [sys.executable, str(SCRIPT_PATH),
              '--check-cmd', "printf 'status: failure\\nerror: Build failed\\n'",
              '--success-field', 'status=success',
              '--failure-field', 'status=failure',
              '--command-key', 'test:failure',
              '--interval', '1'],
-            capture_output=True,
-            text=True,
-            cwd=tmpdir,
-            timeout=30
+            cwd=tmpdir
         )
         assert result.returncode != 0, "Should fail on failure condition"
 
@@ -169,16 +177,13 @@ else:
             config_path.parent.mkdir(parents=True, exist_ok=True)
             config_path.write_text(json.dumps({"version": 1, "commands": {}}))
 
-            result = subprocess.run(
+            result = run_with_pythonpath(
                 [sys.executable, str(SCRIPT_PATH),
                  '--check-cmd', f"python3 {temp_script} {state_file}",
                  '--success-field', 'status=success',
                  '--command-key', 'test:multipoll',
                  '--interval', '1'],
-                capture_output=True,
-                text=True,
-                cwd=tmpdir,
-                timeout=30
+                cwd=tmpdir
             )
             assert result.returncode == 0, f"Script failed: {result.stderr}"
 
@@ -211,16 +216,13 @@ def test_adaptive_timeout_from_run_config():
         config_path.parent.mkdir(parents=True, exist_ok=True)
         config_path.write_text(json.dumps(run_config))
 
-        result = subprocess.run(
+        result = run_with_pythonpath(
             [sys.executable, str(SCRIPT_PATH),
              '--check-cmd', "printf 'status: success\\n'",
              '--success-field', 'status=success',
              '--command-key', 'test:operation',
              '--interval', '1'],
-            capture_output=True,
-            text=True,
-            cwd=tmpdir,
-            timeout=30
+            cwd=tmpdir
         )
         assert result.returncode == 0, f"Script failed: {result.stderr}"
 
@@ -238,16 +240,13 @@ def test_default_timeout_without_history():
         config_path.parent.mkdir(parents=True, exist_ok=True)
         config_path.write_text(json.dumps(run_config))
 
-        result = subprocess.run(
+        result = run_with_pythonpath(
             [sys.executable, str(SCRIPT_PATH),
              '--check-cmd', "printf 'status: success\\n'",
              '--success-field', 'status=success',
              '--command-key', 'unknown:operation',
              '--interval', '1'],
-            capture_output=True,
-            text=True,
-            cwd=tmpdir,
-            timeout=30
+            cwd=tmpdir
         )
         assert result.returncode == 0, f"Script failed: {result.stderr}"
 
@@ -268,16 +267,13 @@ def test_execution_history_updated():
         env = os.environ.copy()
         env['PLAN_BASE_DIR'] = tmpdir
 
-        result = subprocess.run(
+        result = run_with_pythonpath(
             [sys.executable, str(SCRIPT_PATH),
              '--check-cmd', "printf 'status: success\\n'",
              '--success-field', 'status=success',
              '--command-key', 'new:operation',
              '--interval', '1'],
-            capture_output=True,
-            text=True,
-            env=env,
-            timeout=30
+            env=env
         )
         assert result.returncode == 0, f"Script failed: {result.stderr}"
 
@@ -310,16 +306,13 @@ def test_case_insensitive_matching():
         config_path.parent.mkdir(parents=True, exist_ok=True)
         config_path.write_text(json.dumps({"version": 1, "commands": {}}))
 
-        result = subprocess.run(
+        result = run_with_pythonpath(
             [sys.executable, str(SCRIPT_PATH),
              '--check-cmd', "printf 'status: SUCCESS\\n'",
              '--success-field', 'status=success',
              '--command-key', 'test:case',
              '--interval', '1'],
-            capture_output=True,
-            text=True,
-            cwd=tmpdir,
-            timeout=30
+            cwd=tmpdir
         )
         assert result.returncode == 0, f"Should match SUCCESS to success: {result.stderr}"
 
@@ -327,19 +320,3 @@ def test_case_insensitive_matching():
 # =============================================================================
 # Main
 # =============================================================================
-
-if __name__ == '__main__':
-    runner = TestRunner()
-    runner.add_tests([
-        test_help_output,
-        test_immediate_success,
-        test_success_with_different_field,
-        test_failure_detection,
-        test_multiple_polls_before_success,
-        test_adaptive_timeout_from_run_config,
-        test_default_timeout_without_history,
-        test_execution_history_updated,
-        test_missing_required_args,
-        test_case_insensitive_matching,
-    ])
-    sys.exit(runner.run())

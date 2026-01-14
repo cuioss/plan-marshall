@@ -6,7 +6,7 @@ from pathlib import Path
 
 # Import shared infrastructure
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from conftest import run_script, TestRunner, get_script_path, PlanTestContext
+from conftest import run_script, get_script_path, PlanContext
 
 # Get script path
 SCRIPT_PATH = get_script_path('pm-workflow', 'manage-references', 'manage-references.py')
@@ -16,7 +16,7 @@ from toon_parser import parse_toon  # type: ignore[import-not-found]
 
 
 # Alias for backward compatibility
-TestContext = PlanTestContext
+TestContext = PlanContext
 
 
 # =============================================================================
@@ -185,28 +185,3 @@ def test_get_context_not_found():
             '--plan-id', 'nonexistent'
         )
         assert not result.success, "Expected failure for missing plan"
-
-
-# =============================================================================
-# Test Runner
-# =============================================================================
-
-if __name__ == '__main__':
-    runner = TestRunner()
-    runner.add_tests([
-        # Create command
-        test_create_references,
-        test_create_with_issue_url,
-        # Read command
-        test_read_references,
-        # Get/Set commands
-        test_get_field,
-        test_set_field,
-        # Add file command
-        test_add_file,
-        # Get context (optimization)
-        test_get_context,
-        test_get_context_empty,
-        test_get_context_not_found,
-    ])
-    sys.exit(runner.run())

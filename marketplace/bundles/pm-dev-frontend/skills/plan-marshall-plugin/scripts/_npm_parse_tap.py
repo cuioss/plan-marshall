@@ -13,7 +13,7 @@ import re
 from pathlib import Path
 
 # Cross-skill imports (PYTHONPATH set by executor)
-from _build_parse import Issue, TestSummary, SEVERITY_ERROR  # type: ignore[import-not-found]
+from _build_parse import Issue, UnitTestSummary, SEVERITY_ERROR  # type: ignore[import-not-found]
 
 
 # TAP summary patterns
@@ -26,7 +26,7 @@ SKIPPED_PATTERN = re.compile(r"^#\s*skipped\s+(\d+)", re.MULTILINE)
 NOT_OK_PATTERN = re.compile(r"^\s*not ok\s+\d+\s*-\s*(.+)$", re.MULTILINE)
 
 
-def parse_log(log_file: str | Path) -> tuple[list[Issue], TestSummary | None, str]:
+def parse_log(log_file: str | Path) -> tuple[list[Issue], UnitTestSummary | None, str]:
     """Parse TAP test log file.
 
     Implements BuildParser protocol for TAP test results.
@@ -37,7 +37,7 @@ def parse_log(log_file: str | Path) -> tuple[list[Issue], TestSummary | None, st
     Returns:
         Tuple of (issues, test_summary, build_status):
         - issues: list[Issue] - all test failures found
-        - test_summary: TestSummary with test counts
+        - test_summary: UnitTestSummary with test counts
         - build_status: "SUCCESS" | "FAILURE"
 
     Raises:
@@ -140,14 +140,14 @@ def _extract_issues(content: str) -> list[Issue]:
     return issues
 
 
-def _extract_test_summary(content: str) -> TestSummary | None:
+def _extract_test_summary(content: str) -> UnitTestSummary | None:
     """Extract TAP test summary from log content.
 
     Args:
         content: Log file content.
 
     Returns:
-        TestSummary dataclass if found, None otherwise.
+        UnitTestSummary dataclass if found, None otherwise.
     """
     tests_match = TESTS_PATTERN.search(content)
     if not tests_match:
@@ -164,7 +164,7 @@ def _extract_test_summary(content: str) -> TestSummary | None:
     skipped_match = SKIPPED_PATTERN.search(content)
     skipped = int(skipped_match.group(1)) if skipped_match else 0
 
-    return TestSummary(
+    return UnitTestSummary(
         passed=passed,
         failed=failed,
         skipped=skipped,

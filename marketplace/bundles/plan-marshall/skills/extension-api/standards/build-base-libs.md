@@ -343,7 +343,7 @@ Shared data structures for build issues and warning filtering.
 **Location**: `plan-marshall/skills/extension-api/scripts/build_parse.py`
 
 **Responsibility**:
-- Define Issue and TestSummary data structures
+- Define Issue and UnitTestSummary data structures
 - Filter warnings based on acceptable patterns
 - Support actionable/structured/errors modes
 
@@ -372,7 +372,7 @@ class Issue:
         """Convert to dict for JSON serialization."""
 
 @dataclass
-class TestSummary:
+class UnitTestSummary:
     """Summary of test execution results."""
     passed: int
     failed: int
@@ -431,7 +431,7 @@ Shared utilities for formatting build results in TOON and JSON formats.
 **Responsibility**:
 - Format result dicts as TOON output (tab-separated key-value pairs)
 - Format result dicts as JSON output
-- Handle Issue and TestSummary dataclass serialization
+- Handle Issue and UnitTestSummary dataclass serialization
 
 #### API
 
@@ -478,7 +478,7 @@ def format_toon(result: dict) -> str:
 def format_json(result: dict, indent: int = 2) -> str:
     """Format result dict as JSON output.
 
-    Converts any Issue or TestSummary objects to dicts before serialization.
+    Converts any Issue or UnitTestSummary objects to dicts before serialization.
 
     Args:
         result: Result dict from build_result.*_result() functions.

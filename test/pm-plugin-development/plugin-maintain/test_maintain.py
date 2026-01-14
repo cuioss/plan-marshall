@@ -14,7 +14,7 @@ import tempfile
 from pathlib import Path
 
 # Import shared infrastructure
-from conftest import run_script, TestRunner, get_script_path
+from conftest import run_script, get_script_path
 
 # Script under test
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
@@ -207,31 +207,3 @@ def test_readme_real_bundle():
 # =============================================================================
 # Main
 # =============================================================================
-
-if __name__ == '__main__':
-    runner = TestRunner()
-    runner.add_tests([
-        # Main tests
-        test_script_exists,
-        test_main_help,
-        # Update subcommand tests
-        test_update_help,
-        test_update_missing_component,
-        test_update_with_updates_arg,
-        # Check-duplication subcommand tests
-        test_checkdup_help,
-        test_checkdup_missing_arguments,
-        test_checkdup_nonexistent_skill,
-        # Analyze subcommand tests
-        test_analyze_help,
-        test_analyze_missing_component,
-        test_analyze_nonexistent_file,
-        test_analyze_valid_agent,
-        test_analyze_real_agent,
-        # Readme subcommand tests
-        test_readme_help,
-        test_readme_missing_path,
-        test_readme_nonexistent_path,
-        test_readme_real_bundle,
-    ])
-    sys.exit(runner.run())

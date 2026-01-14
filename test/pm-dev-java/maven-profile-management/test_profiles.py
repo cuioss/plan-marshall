@@ -8,7 +8,6 @@ from pathlib import Path
 
 # Import shared infrastructure (sets up PYTHONPATH for cross-skill imports)
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from conftest import TestRunner
 
 # Direct imports - conftest sets up PYTHONPATH
 from profiles import (

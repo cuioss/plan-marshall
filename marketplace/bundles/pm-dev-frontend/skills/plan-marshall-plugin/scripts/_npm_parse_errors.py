@@ -13,7 +13,7 @@ import re
 from pathlib import Path
 
 # Cross-skill imports (PYTHONPATH set by executor)
-from _build_parse import Issue, TestSummary, SEVERITY_ERROR  # type: ignore[import-not-found]
+from _build_parse import Issue, UnitTestSummary, SEVERITY_ERROR  # type: ignore[import-not-found]
 
 
 # npm error code pattern: "npm ERR! code XXXXX"
@@ -36,7 +36,7 @@ E404_PATTERN = re.compile(
 NPM_ERR_LINE_PATTERN = re.compile(r"^npm ERR! (.+)$", re.MULTILINE)
 
 
-def parse_log(log_file: str | Path) -> tuple[list[Issue], TestSummary | None, str]:
+def parse_log(log_file: str | Path) -> tuple[list[Issue], UnitTestSummary | None, str]:
     """Parse npm error log file.
 
     Implements BuildParser protocol for npm command errors.

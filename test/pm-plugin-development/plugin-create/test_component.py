@@ -13,7 +13,7 @@ import sys
 from pathlib import Path
 
 # Import shared infrastructure
-from conftest import run_script, TestRunner, get_script_path
+from conftest import run_script, get_script_path
 
 # Script under test
 SCRIPT_PATH = get_script_path('pm-plugin-development', 'plugin-create', 'component.py')
@@ -252,28 +252,3 @@ def test_validate_skill_bad_frontmatter():
 # =============================================================================
 # Main
 # =============================================================================
-
-if __name__ == '__main__':
-    runner = TestRunner()
-    runner.add_tests([
-        # Generate subcommand tests
-        test_generate_agent_with_all_fields,
-        test_generate_agent_tools_comma_separated,
-        test_generate_agent_without_model,
-        test_generate_agent_special_chars,
-        test_generate_command_no_tools,
-        test_generate_skill_with_tools,
-        test_generate_skill_without_tools,
-        test_generate_empty_tools_error,
-        # Validate subcommand tests
-        test_validate_valid_agent,
-        test_validate_agent_no_model,
-        test_validate_agent_prohibited_task_tool,
-        test_validate_agent_self_invocation,
-        test_validate_agent_missing_frontmatter,
-        test_validate_valid_command,
-        test_validate_command_missing_workflow,
-        test_validate_valid_skill,
-        test_validate_skill_bad_frontmatter,
-    ])
-    sys.exit(runner.run())

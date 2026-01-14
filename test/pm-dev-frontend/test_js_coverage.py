@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import run_script, TestRunner, get_script_path
+from conftest import run_script, get_script_path
 
 # Script under test
 SCRIPT_PATH = get_script_path('pm-dev-frontend', 'cui-javascript-unit-testing', 'js-coverage.py')
@@ -118,22 +118,3 @@ def test_analyze_empty_coverage():
 # =============================================================================
 # Main
 # =============================================================================
-
-if __name__ == '__main__':
-    runner = TestRunner()
-    runner.add_tests([
-        test_script_exists,
-        test_main_help,
-        test_analyze_help,
-        test_analyze_json_coverage,
-        test_analyze_overall_coverage_present,
-        test_analyze_line_coverage_numeric,
-        test_analyze_by_file_present,
-        test_analyze_high_coverage,
-        test_analyze_low_coverage,
-        test_analyze_lcov_format,
-        test_analyze_missing_report_error,
-        test_analyze_threshold_parameter,
-        test_analyze_empty_coverage,
-    ])
-    sys.exit(runner.run())

@@ -10,11 +10,10 @@ from pathlib import Path
 
 # Import shared infrastructure (sets up PYTHONPATH for cross-skill imports)
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from conftest import TestRunner
 
 # Direct imports - conftest sets up PYTHONPATH
 from _maven_cmd_parse import parse_log
-from _build_parse import Issue, TestSummary, SEVERITY_ERROR, SEVERITY_WARNING
+from _build_parse import Issue, UnitTestSummary, SEVERITY_ERROR, SEVERITY_WARNING
 
 # Test data location (fixtures in test directory)
 TEST_DATA_DIR = Path(__file__).parent / "fixtures" / "log-test-data"
@@ -42,11 +41,11 @@ def test_parse_log_success_build_status():
 
 
 def test_parse_log_success_test_summary():
-    """Successful build returns TestSummary with correct counts."""
+    """Successful build returns UnitTestSummary with correct counts."""
     log_file = TEST_DATA_DIR / "maven-success-real.log"
     issues, test_summary, build_status = parse_log(log_file)
 
-    assert isinstance(test_summary, TestSummary)
+    assert isinstance(test_summary, UnitTestSummary)
     assert test_summary.total == 4892
     assert test_summary.passed == 4892
     assert test_summary.failed == 0
@@ -133,11 +132,11 @@ def test_parse_log_failure_warning_category():
 
 
 def test_parse_log_failure_test_summary():
-    """Failed build returns TestSummary with failures."""
+    """Failed build returns UnitTestSummary with failures."""
     log_file = TEST_DATA_DIR / "maven-failure-real.log"
     issues, test_summary, build_status = parse_log(log_file)
 
-    assert isinstance(test_summary, TestSummary)
+    assert isinstance(test_summary, UnitTestSummary)
     assert test_summary.total == 51
     assert test_summary.failed == 2  # Maven: Failures(2) + Errors(0)
     assert test_summary.skipped == 0
@@ -164,7 +163,7 @@ def test_issue_to_dict():
 
 
 def test_test_summary_to_dict():
-    """TestSummary.to_dict() returns proper dict structure."""
+    """UnitTestSummary.to_dict() returns proper dict structure."""
     log_file = TEST_DATA_DIR / "maven-success-real.log"
     issues, test_summary, build_status = parse_log(log_file)
 

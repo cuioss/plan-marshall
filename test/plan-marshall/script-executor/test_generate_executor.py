@@ -11,7 +11,6 @@ from datetime import date
 from pathlib import Path
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import TestRunner
 
 # Path to the script
 SCRIPTS_DIR = Path(__file__).parent.parent.parent.parent / "marketplace/bundles/plan-marshall/skills/script-executor/scripts"
@@ -425,31 +424,3 @@ def test_skips_private_modules():
             assert '_internal' not in path, "Should not include _internal.py"
             assert '_helper' not in path, "Should not include _helper.py"
             assert 'main.py' in path, "Should include main.py"
-
-
-if __name__ == '__main__':
-    runner = TestRunner()
-    runner.add_tests([
-        test_generates_valid_python_dict_syntax,
-        test_sorts_mappings_alphabetically,
-        test_same_mappings_same_checksum,
-        test_different_mappings_different_checksum,
-        test_checksum_is_8_chars,
-        test_cleanup_deletes_old_logs,
-        test_cleanup_preserves_recent_logs,
-        test_help_output,
-        test_generate_help,
-        test_verify_requires_executor,
-        test_drift_requires_executor,
-        test_paths_requires_executor,
-        test_drift_help,
-        test_paths_help,
-        test_resolve_finds_versioned_path,
-        test_resolve_finds_any_version,
-        test_resolve_falls_back_to_non_versioned,
-        test_resolve_skips_hidden_dirs,
-        test_discovers_scripts_from_directory_structure,
-        test_skips_test_files,
-        test_skips_private_modules,
-    ])
-    sys.exit(runner.run())
