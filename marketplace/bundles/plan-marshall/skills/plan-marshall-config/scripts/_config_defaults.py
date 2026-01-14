@@ -6,18 +6,12 @@ project initialization and detection.
 """
 
 # Reserved keys in nested domain config (not profile names)
+# bundle: Reference to bundle providing this domain (e.g., 'pm-dev-java')
 # workflow_skills: System domain only - 5 workflow phases
 # task_executors: System domain only - profile to task skill mapping
 # workflow_skill_extensions: Domain extensions (outline, triage)
-# core: Core skills loaded for all profiles
-RESERVED_DOMAIN_KEYS = ['workflow_skills', 'task_executors', 'workflow_skill_extensions', 'core', 'defaults', 'optionals']
-
-# Skill profiles for technical domains
-# - implementation: execute phase (production code)
-# - module_testing: execute phase (unit/module tests)
-# - integration_testing: execute phase (integration tests)
-# - quality: finalize phase
-DEFAULT_PROFILES = ['implementation', 'module_testing', 'integration_testing', 'quality']
+# defaults/optionals: System domain top-level skills
+RESERVED_DOMAIN_KEYS = ['bundle', 'workflow_skills', 'task_executors', 'workflow_skill_extensions', 'defaults', 'optionals']
 
 # System workflow skills (always from system domain)
 DEFAULT_SYSTEM_WORKFLOW_SKILLS = {

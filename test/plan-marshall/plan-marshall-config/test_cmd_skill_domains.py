@@ -154,52 +154,51 @@ def test_skill_domains_validate_invalid_skill():
 # =============================================================================
 
 def test_skill_domains_get_nested_structure():
-    """Test skill-domains get returns nested structure for domains with profiles."""
+    """Test skill-domains get returns nested structure for domains with bundle reference."""
     with PlanTestContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
 
         result = run_script(SCRIPT_PATH, 'skill-domains', 'get', '--domain', 'java')
 
         assert result.success, f"Should succeed: {result.stderr}"
-        # Should include core block
-        assert 'core' in result.stdout
-        # Should include implementation block
-        assert 'implementation' in result.stdout
-        # Should include module_testing block
-        assert 'module_testing' in result.stdout
+        # Should include bundle reference
+        assert 'bundle' in result.stdout
+        assert 'pm-dev-java' in result.stdout
+        # Should include workflow_skill_extensions
+        assert 'workflow_skill_extensions' in result.stdout
 
 
 def test_skill_domains_get_defaults_nested():
-    """Test skill-domains get-defaults returns core.defaults for nested structure."""
+    """Test skill-domains get-defaults loads core.defaults from extension.py."""
     with PlanTestContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
 
         result = run_script(SCRIPT_PATH, 'skill-domains', 'get-defaults', '--domain', 'java')
 
         assert result.success, f"Should succeed: {result.stderr}"
-        # Should return core.defaults
+        # Should return core.defaults loaded from pm-dev-java extension.py
         assert 'pm-dev-java:java-core' in result.stdout
 
 
 def test_skill_domains_get_optionals_nested():
-    """Test skill-domains get-optionals returns core.optionals for nested structure."""
+    """Test skill-domains get-optionals loads core.optionals from extension.py."""
     with PlanTestContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
 
         result = run_script(SCRIPT_PATH, 'skill-domains', 'get-optionals', '--domain', 'java')
 
         assert result.success, f"Should succeed: {result.stderr}"
-        # Should return core.optionals
+        # Should return core.optionals loaded from pm-dev-java extension.py
         assert 'pm-dev-java:java-null-safety' in result.stdout
         assert 'pm-dev-java:java-lombok' in result.stdout
 
 
 def test_skill_domains_validate_nested():
-    """Test skill-domains validate works with nested structure."""
+    """Test skill-domains validate loads profiles from extension.py."""
     with PlanTestContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
 
-        # Validate skill in core.defaults
+        # Validate skill in core.defaults (loaded from extension.py)
         result = run_script(
             SCRIPT_PATH, 'skill-domains', 'validate',
             '--domain', 'java',
@@ -211,11 +210,11 @@ def test_skill_domains_validate_nested():
 
 
 def test_skill_domains_validate_nested_profile_skill():
-    """Test skill-domains validate finds skills in profile blocks."""
+    """Test skill-domains validate finds skills in profile blocks loaded from extension.py."""
     with PlanTestContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
 
-        # Validate skill in testing.defaults (junit-core)
+        # Validate skill in module_testing.defaults (junit-core loaded from extension)
         result = run_script(
             SCRIPT_PATH, 'skill-domains', 'validate',
             '--domain', 'java',
@@ -275,12 +274,15 @@ def test_skill_domains_detect_runs():
 def test_skill_domains_detect_no_overwrite():
     """Test skill-domains detect does not overwrite existing domains."""
     with PlanTestContext() as ctx:
-        # Create marshal.json with custom java domain
+        # Create marshal.json with custom java domain (new structure with bundle reference)
         config = {
             "skill_domains": {
                 "system": {"defaults": [], "optionals": []},
                 "java": {
-                    "core": {"defaults": ["custom:skill"], "optionals": []}
+                    "bundle": "custom-java-bundle",
+                    "workflow_skill_extensions": {
+                        "outline": "custom:outline-skill"
+                    }
                 }
             },
             "modules": {},
@@ -297,7 +299,7 @@ def test_skill_domains_detect_no_overwrite():
 
         # Verify existing java domain was NOT overwritten (even if java was detected)
         verify = run_script(SCRIPT_PATH, 'skill-domains', 'get', '--domain', 'java')
-        assert 'custom:skill' in verify.stdout
+        assert 'custom-java-bundle' in verify.stdout or 'custom:outline-skill' in verify.stdout
 
 
 # =============================================================================
@@ -545,7 +547,7 @@ def test_resolve_workflow_skill_extension_java_outline():
             '--domain', 'java', '--type', 'outline')
 
         assert result.success, f"Should succeed: {result.stderr}"
-        assert 'pm-dev-java:java-outline-ext' in result.stdout
+        assert 'pm-dev-java:ext-outline-java' in result.stdout
         assert 'domain' in result.stdout
         assert 'type' in result.stdout
         assert 'extension' in result.stdout
@@ -572,7 +574,7 @@ def test_resolve_workflow_skill_extension_javascript_outline():
             '--domain', 'javascript', '--type', 'outline')
 
         assert result.success, f"Should succeed: {result.stderr}"
-        assert 'pm-dev-frontend:js-outline-ext' in result.stdout
+        assert 'pm-dev-frontend:ext-outline-frontend' in result.stdout
 
 
 def test_resolve_workflow_skill_extension_missing_type():
@@ -611,7 +613,7 @@ def test_resolve_workflow_skill_extension_plugin_dev():
             '--domain', 'plan-marshall-plugin-dev', '--type', 'outline')
 
         assert result.success, f"Should succeed: {result.stderr}"
-        assert 'pm-plugin-development:plugin-outline-ext' in result.stdout
+        assert 'pm-plugin-development:ext-outline-plugin' in result.stdout
 
 
 # =============================================================================
@@ -729,11 +731,11 @@ def test_configure_always_adds_system():
 
 
 # =============================================================================
-# set with --profile Tests
+# set with --profile Tests (profiles are read-only from extension.py)
 # =============================================================================
 
-def test_set_with_profile():
-    """Test set with --profile updates specific profile."""
+def test_set_with_profile_returns_error():
+    """Test set with --profile returns error since profiles are in extension.py."""
     with PlanTestContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
 
@@ -741,8 +743,8 @@ def test_set_with_profile():
             '--domain', 'java', '--profile', 'quality',
             '--defaults', 'pm-dev-java:new-skill')
 
-        assert result.success, f"Should succeed: {result.stderr}"
-        assert 'quality' in result.stdout
+        # Should return error because profiles are read-only (from extension.py)
+        assert 'error' in result.stdout.lower(), "Should report error for profile modification"
 
 
 # =============================================================================
@@ -750,14 +752,14 @@ def test_set_with_profile():
 # =============================================================================
 
 def test_get_skills_by_profile_java():
-    """Test get-skills-by-profile returns profile-keyed skills for java domain."""
+    """Test get-skills-by-profile loads profile-keyed skills from extension.py."""
     with PlanTestContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
 
         result = run_script(SCRIPT_PATH, 'get-skills-by-profile', '--domain', 'java')
 
         assert result.success, f"Should succeed: {result.stderr}"
-        # Should have skills_by_profile structure
+        # Should have skills_by_profile structure (loaded from pm-dev-java extension)
         assert 'skills_by_profile' in result.stdout
         # Should have all profiles
         assert 'implementation' in result.stdout
@@ -773,7 +775,7 @@ def test_get_skills_by_profile_includes_core_skills():
         result = run_script(SCRIPT_PATH, 'get-skills-by-profile', '--domain', 'java')
 
         assert result.success, f"Should succeed: {result.stderr}"
-        # Core skill should appear in output (java-core is in core.defaults)
+        # Core skill should appear in output (java-core from extension.py core.defaults)
         assert 'pm-dev-java:java-core' in result.stdout
 
 
@@ -785,7 +787,7 @@ def test_get_skills_by_profile_includes_profile_skills():
         result = run_script(SCRIPT_PATH, 'get-skills-by-profile', '--domain', 'java')
 
         assert result.success, f"Should succeed: {result.stderr}"
-        # Module testing profile skill should appear (junit-core is in module_testing.defaults)
+        # Module testing profile skill should appear (junit-core from extension.py)
         assert 'pm-dev-java:junit-core' in result.stdout
 
 
@@ -798,7 +800,7 @@ def test_get_skills_by_profile_javascript():
 
         assert result.success, f"Should succeed: {result.stderr}"
         assert 'skills_by_profile' in result.stdout
-        # Core js skill should be present
+        # Core js skill should be present (from pm-dev-frontend extension.py)
         assert 'pm-dev-frontend:cui-javascript' in result.stdout
 
 
@@ -814,15 +816,15 @@ def test_get_skills_by_profile_unknown_domain():
 
 
 def test_get_skills_by_profile_flat_domain_error():
-    """Test get-skills-by-profile returns error for flat structure domain."""
+    """Test get-skills-by-profile returns error for flat structure domain (no bundle)."""
     with PlanTestContext() as ctx:
-        # Create marshal.json with flat structure
+        # Create marshal.json with flat structure (no bundle reference)
         create_marshal_json(ctx.fixture_dir)
 
         result = run_script(SCRIPT_PATH, 'get-skills-by-profile', '--domain', 'java')
 
-        assert 'error' in result.stdout.lower(), "Should report error for flat domain"
-        assert 'profile' in result.stdout.lower() or 'flat' in result.stdout.lower()
+        assert 'error' in result.stdout.lower(), "Should report error for domain without bundle"
+        assert 'bundle' in result.stdout.lower() or 'profile' in result.stdout.lower()
 
 
 # =============================================================================
@@ -884,8 +886,8 @@ if __name__ == '__main__':
         test_get_available_uses_discovery,
         test_configure_domains,
         test_configure_always_adds_system,
-        # set with --profile tests
-        test_set_with_profile,
+        # set with --profile tests (profiles are read-only)
+        test_set_with_profile_returns_error,
         # get-skills-by-profile tests
         test_get_skills_by_profile_java,
         test_get_skills_by_profile_includes_core_skills,

@@ -149,13 +149,13 @@ def get_skill_description(skill_notation: str) -> str:
 
 
 def is_nested_domain(domain_config: dict) -> bool:
-    """Check if domain config uses nested structure (with core, profiles).
+    """Check if domain config uses nested structure.
 
     Nested domains have one of:
-    - 'core' key (technical domains with profile-based skills)
+    - 'bundle' key (technical domains with profiles in extension.py)
     - 'workflow_skills' key (system domain with 5-phase workflow)
     - 'workflow_skill_extensions' key (domain extensions for outline/triage)
     """
-    return ('core' in domain_config or
+    return ('bundle' in domain_config or
             'workflow_skills' in domain_config or
             'workflow_skill_extensions' in domain_config)

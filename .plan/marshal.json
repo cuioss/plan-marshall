@@ -42,29 +42,10 @@
       }
     },
     "plan-marshall-plugin-dev": {
+      "bundle": "pm-plugin-development",
       "workflow_skill_extensions": {
         "outline": "pm-plugin-development:ext-outline-plugin",
         "triage": "pm-plugin-development:ext-triage-plugin"
-      },
-      "core": {
-        "defaults": [
-          "pm-plugin-development:plugin-architecture"
-        ],
-        "optionals": [
-          "pm-plugin-development:plugin-script-architecture"
-        ]
-      },
-      "implementation": {
-        "defaults": [],
-        "optionals": []
-      },
-      "module_testing": {
-        "defaults": [],
-        "optionals": []
-      },
-      "quality": {
-        "defaults": [],
-        "optionals": []
       }
     }
   },

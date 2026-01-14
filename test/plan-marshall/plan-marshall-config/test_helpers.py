@@ -115,8 +115,11 @@ def create_nested_marshal_json(fixture_dir: Path) -> Path:
     """Create marshal.json with nested skill_domains structure.
 
     Uses 5-phase model: init, outline, plan, execute, finalize.
-    System domain contains workflow_skills.
-    Domain-specific domains contain workflow_skill_extensions and profiles.
+    System domain contains workflow_skills and task_executors.
+    Domain-specific domains contain bundle reference and workflow_skill_extensions.
+
+    NOTE: Profiles (core, implementation, module_testing, quality) are NOT stored
+    in marshal.json - they are loaded from extension.py at runtime.
     """
     config = {
         "skill_domains": {
@@ -124,76 +127,36 @@ def create_nested_marshal_json(fixture_dir: Path) -> Path:
                 "defaults": ["plan-marshall:general-development-rules"],
                 "optionals": ["plan-marshall:diagnostic-patterns"],
                 "workflow_skills": {
-                    "init": "pm-workflow:phase-1-init",
-                    "outline": "pm-workflow:phase-2-outline",
-                    "plan": "pm-workflow:phase-3-plan",
-                    "execute": "pm-workflow:phase-4-execute",
-                    "finalize": "pm-workflow:phase-5-finalize"
+                    "1-init": "pm-workflow:phase-1-init",
+                    "2-outline": "pm-workflow:phase-2-outline",
+                    "3-plan": "pm-workflow:phase-3-plan",
+                    "4-execute": "pm-workflow:phase-4-execute",
+                    "5-finalize": "pm-workflow:phase-5-finalize"
+                },
+                "task_executors": {
+                    "implementation": "pm-workflow:task-implementation",
+                    "module_testing": "pm-workflow:task-module_testing",
+                    "integration_testing": "pm-workflow:task-integration_testing"
                 }
             },
             "java": {
+                "bundle": "pm-dev-java",
                 "workflow_skill_extensions": {
-                    "outline": "pm-dev-java:java-outline-ext",
+                    "outline": "pm-dev-java:ext-outline-java",
                     "triage": "pm-dev-java:ext-triage-java"
-                },
-                "core": {
-                    "defaults": ["pm-dev-java:java-core"],
-                    "optionals": ["pm-dev-java:java-null-safety", "pm-dev-java:java-lombok"]
-                },
-                "implementation": {
-                    "defaults": [],
-                    "optionals": ["pm-dev-java:java-cdi", "pm-dev-java:java-maintenance"]
-                },
-                "module_testing": {
-                    "defaults": ["pm-dev-java:junit-core"],
-                    "optionals": ["pm-dev-java:junit-integration"]
-                },
-                "quality": {
-                    "defaults": ["pm-dev-java:javadoc"],
-                    "optionals": []
                 }
             },
             "javascript": {
+                "bundle": "pm-dev-frontend",
                 "workflow_skill_extensions": {
-                    "outline": "pm-dev-frontend:js-outline-ext"
-                },
-                "core": {
-                    "defaults": ["pm-dev-frontend:cui-javascript"],
-                    "optionals": ["pm-dev-frontend:cui-jsdoc"]
-                },
-                "implementation": {
-                    "defaults": [],
-                    "optionals": ["pm-dev-frontend:cui-javascript-linting"]
-                },
-                "module_testing": {
-                    "defaults": ["pm-dev-frontend:cui-javascript-unit-testing"],
-                    "optionals": ["pm-dev-frontend:cui-cypress"]
-                },
-                "quality": {
-                    "defaults": [],
-                    "optionals": []
+                    "outline": "pm-dev-frontend:ext-outline-frontend"
                 }
             },
             "plan-marshall-plugin-dev": {
+                "bundle": "pm-plugin-development",
                 "workflow_skill_extensions": {
-                    "outline": "pm-plugin-development:plugin-outline-ext",
+                    "outline": "pm-plugin-development:ext-outline-plugin",
                     "triage": "pm-plugin-development:ext-triage-plugin"
-                },
-                "core": {
-                    "defaults": ["pm-plugin-development:plugin-architecture"],
-                    "optionals": []
-                },
-                "implementation": {
-                    "defaults": [],
-                    "optionals": []
-                },
-                "module_testing": {
-                    "defaults": [],
-                    "optionals": []
-                },
-                "quality": {
-                    "defaults": [],
-                    "optionals": []
                 }
             }
         },
