@@ -210,7 +210,7 @@ class ExtensionBase(ABC):
                 "profiles": {
                     "core": {"defaults": [...], "optionals": [...]},
                     "implementation": {"defaults": [...], "optionals": [...]},
-                    "testing": {"defaults": [...], "optionals": [...]},
+                    "module_testing": {"defaults": [...], "optionals": [...]},
                     "quality": {"defaults": [...], "optionals": [...]},
                     "documentation": {"defaults": [...], "optionals": [...]}  # Optional
                 }
@@ -219,7 +219,8 @@ class ExtensionBase(ABC):
         Standard Profiles:
             - core: Skills loaded for all profiles (foundation skills)
             - implementation: Code implementation skills
-            - testing: Unit test skills (maps to unit-testing, integration-testing, benchmark-testing)
+            - module_testing: Unit/module test skills
+            - integration_testing: Integration test skills
             - quality: Quality/lint/format skills
 
         Cross-Domain Profile:

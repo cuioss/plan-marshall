@@ -144,7 +144,7 @@ def create_nested_marshal_json(fixture_dir: Path) -> Path:
                     "defaults": [],
                     "optionals": ["pm-dev-java:java-cdi", "pm-dev-java:java-maintenance"]
                 },
-                "testing": {
+                "module_testing": {
                     "defaults": ["pm-dev-java:junit-core"],
                     "optionals": ["pm-dev-java:junit-integration"]
                 },
@@ -165,7 +165,7 @@ def create_nested_marshal_json(fixture_dir: Path) -> Path:
                     "defaults": [],
                     "optionals": ["pm-dev-frontend:cui-javascript-linting"]
                 },
-                "testing": {
+                "module_testing": {
                     "defaults": ["pm-dev-frontend:cui-javascript-unit-testing"],
                     "optionals": ["pm-dev-frontend:cui-cypress"]
                 },
@@ -187,7 +187,7 @@ def create_nested_marshal_json(fixture_dir: Path) -> Path:
                     "defaults": [],
                     "optionals": []
                 },
-                "testing": {
+                "module_testing": {
                     "defaults": [],
                     "optionals": []
                 },

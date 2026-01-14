@@ -150,7 +150,7 @@ LLM-generated enrichments referencing modules by name.
           "pm-dev-java:java-null-safety",
           "pm-dev-java:java-lombok"
         ],
-        "unit-testing": [
+        "module_testing": [
           "pm-dev-java:java-core",
           "pm-dev-java:junit-core"
         ]

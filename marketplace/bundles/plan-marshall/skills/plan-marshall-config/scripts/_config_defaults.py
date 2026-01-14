@@ -7,15 +7,17 @@ project initialization and detection.
 
 # Reserved keys in nested domain config (not profile names)
 # workflow_skills: System domain only - 5 workflow phases
+# task_executors: System domain only - profile to task skill mapping
 # workflow_skill_extensions: Domain extensions (outline, triage)
 # core: Core skills loaded for all profiles
-RESERVED_DOMAIN_KEYS = ['workflow_skills', 'workflow_skill_extensions', 'core', 'defaults', 'optionals']
+RESERVED_DOMAIN_KEYS = ['workflow_skills', 'task_executors', 'workflow_skill_extensions', 'core', 'defaults', 'optionals']
 
 # Skill profiles for technical domains
 # - implementation: execute phase (production code)
-# - testing: execute phase (test code)
+# - module_testing: execute phase (unit/module tests)
+# - integration_testing: execute phase (integration tests)
 # - quality: finalize phase
-DEFAULT_PROFILES = ['implementation', 'testing', 'quality']
+DEFAULT_PROFILES = ['implementation', 'module_testing', 'integration_testing', 'quality']
 
 # System workflow skills (always from system domain)
 DEFAULT_SYSTEM_WORKFLOW_SKILLS = {
@@ -26,11 +28,21 @@ DEFAULT_SYSTEM_WORKFLOW_SKILLS = {
     "5-finalize": "pm-workflow:phase-5-finalize"
 }
 
+# Task executors map profile -> workflow skill
+# Convention: profile X maps to pm-workflow:task-X
+# These are defaults; marshall-steward auto-discovers from extension.py files
+DEFAULT_TASK_EXECUTORS = {
+    "implementation": "pm-workflow:task-implementation",
+    "module_testing": "pm-workflow:task-module_testing",
+    "integration_testing": "pm-workflow:task-integration_testing"
+}
+
 # Default system domain configuration
 DEFAULT_SYSTEM_DOMAIN = {
     "defaults": ["plan-marshall:general-development-rules"],
     "optionals": ["plan-marshall:diagnostic-patterns"],
-    "workflow_skills": DEFAULT_SYSTEM_WORKFLOW_SKILLS
+    "workflow_skills": DEFAULT_SYSTEM_WORKFLOW_SKILLS,
+    "task_executors": DEFAULT_TASK_EXECUTORS
 }
 
 # System retention defaults

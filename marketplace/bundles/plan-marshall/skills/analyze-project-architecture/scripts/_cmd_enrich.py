@@ -196,7 +196,7 @@ def enrich_skills_by_profile(
     Args:
         module_name: Module name
         skills_by_profile: Dict mapping profile names to skill lists
-            e.g., {"implementation": ["java-core"], "unit-testing": ["junit-core"]}
+            e.g., {"implementation": ["java-core"], "module_testing": ["junit-core"]}
         project_dir: Project directory path
         reasoning: Selection rationale
 

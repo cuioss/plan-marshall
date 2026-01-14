@@ -143,6 +143,16 @@ def main():
         help='Module name (default: root module)'
     )
 
+    # profiles - Extract unique profiles from modules
+    profiles_parser = subparsers.add_parser(
+        'profiles',
+        help='Extract unique profile keys from skills_by_profile for modules'
+    )
+    profiles_parser.add_argument(
+        '--modules',
+        help='Comma-separated module names (default: all modules with enrichment)'
+    )
+
     # =========================================================================
     # Enrich Commands (Write Enrichment)
     # =========================================================================
@@ -342,6 +352,7 @@ def main():
         cmd_module,
         cmd_commands,
         cmd_resolve,
+        cmd_profiles,
     )
     from _cmd_enrich import (
         cmd_enrich_project,
@@ -366,6 +377,7 @@ def main():
         'module': cmd_module,
         'commands': cmd_commands,
         'resolve': cmd_resolve,
+        'profiles': cmd_profiles,
     }
 
     if args.command == 'enrich':

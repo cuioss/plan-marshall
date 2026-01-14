@@ -1,14 +1,14 @@
 ---
-name: task-testing
-description: Domain-agnostic testing task execution with two-tier skill loading
+name: task-module_testing
+description: Domain-agnostic module testing task execution with two-tier skill loading
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash
 ---
 
-# Task Testing Skill
+# Task Module Testing Skill
 
-**Role**: Domain-agnostic workflow skill for executing testing tasks (profile=testing). Loaded by `pm-workflow:task-execute-agent` when `task.profile` is `testing`.
+**Role**: Domain-agnostic task executor skill for executing module testing tasks (profile=module_testing). Loaded by `pm-workflow:task-execute-agent` when `task.profile` is `module_testing`.
 
-**Key Pattern**: Agent loads this skill via `resolve-workflow-skill --domain {domain} --phase testing`. Skill executes a test-focused workflow: understand context → plan tests → implement tests → verify. Domain-specific testing knowledge comes from `task.skills` (loaded by agent).
+**Key Pattern**: Agent loads this skill via `resolve-task-executor --profile module_testing`. Skill executes a test-focused workflow: understand context → plan tests → implement tests → verify. Domain-specific testing knowledge comes from `task.skills` (loaded by agent).
 
 ## Contract Compliance
 
@@ -67,7 +67,7 @@ python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks get \
 
 Extract key fields:
 - `domain`: Domain for this task
-- `profile`: Should be `testing`
+- `profile`: Should be `module_testing`
 - `skills`: Domain testing skills to apply (already loaded by agent)
 - `description`: What tests to create
 - `steps`: File paths (test files) to work on
@@ -227,7 +227,7 @@ On issues or unexpected patterns:
 ```bash
 python3 .plan/execute-script.py plan-marshall:lessons-learned:manage-lesson add \
   --component-type skill \
-  --component-name task-testing \
+  --component-name task-module_testing \
   --category observation \
   --title "{issue summary}" \
   --detail "{context and resolution}"
@@ -345,9 +345,9 @@ If test requires unavailable dependencies:
 
 ## Integration
 
-**Invoked by**: `pm-workflow:task-execute-agent` (when task.profile = testing)
+**Invoked by**: `pm-workflow:task-execute-agent` (when task.profile = module_testing)
 
-**Skill Loading**: Agent loads this skill from `config.workflow_skills.{domain}.testing`
+**Skill Loading**: Agent resolves this skill via `resolve-task-executor --profile module_testing`
 
 **Script Notations** (use EXACTLY as shown):
 - `pm-workflow:manage-tasks:manage-tasks` - Task operations (get, update, update-step)

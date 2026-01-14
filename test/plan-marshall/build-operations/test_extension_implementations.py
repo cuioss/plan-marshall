@@ -28,7 +28,7 @@ from conftest import TestRunner, PROJECT_ROOT, MARKETPLACE_ROOT
 REQUIRED_CANONICAL_COMMANDS = ['module-tests', 'verify']
 
 # Valid domain profile categories
-VALID_PROFILE_CATEGORIES = ['core', 'implementation', 'testing', 'quality', 'documentation']
+VALID_PROFILE_CATEGORIES = ['core', 'implementation', 'module_testing', 'integration_testing', 'quality', 'documentation']
 
 
 def load_extension(bundle_name: str):

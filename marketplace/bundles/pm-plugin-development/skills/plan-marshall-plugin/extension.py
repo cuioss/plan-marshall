@@ -36,7 +36,7 @@ class Extension(ExtensionBase):
                     "defaults": [],
                     "optionals": []
                 },
-                "testing": {
+                "module_testing": {
                     "defaults": [],
                     "optionals": []
                 },

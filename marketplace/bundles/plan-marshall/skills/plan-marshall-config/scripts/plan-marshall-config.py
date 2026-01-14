@@ -25,6 +25,8 @@ from _cmd_skill_domains import (
     cmd_resolve_workflow_skill,
     cmd_resolve_workflow_skill_extension,
     cmd_get_skills_by_profile,
+    cmd_configure_task_executors,
+    cmd_resolve_task_executor,
 )
 from _cmd_system_plan import cmd_system, cmd_plan
 from _cmd_ci import cmd_ci
@@ -171,6 +173,16 @@ def main():
     p_gsbp.add_argument('--domain', required=True,
                         help='Domain name (java, javascript, etc.)')
 
+    # --- configure-task-executors ---
+    subparsers.add_parser('configure-task-executors',
+                          help='Configure task executors from discovered profiles')
+
+    # --- resolve-task-executor ---
+    p_rte = subparsers.add_parser('resolve-task-executor',
+                                   help='Resolve task executor skill for a profile')
+    p_rte.add_argument('--profile', required=True,
+                       help='Profile name (e.g., implementation, module_testing)')
+
     args = parser.parse_args()
 
     if args.noun is None:
@@ -210,6 +222,10 @@ def main():
         return cmd_resolve_workflow_skill_extension(args)
     elif args.noun == 'get-skills-by-profile':
         return cmd_get_skills_by_profile(args)
+    elif args.noun == 'configure-task-executors':
+        return cmd_configure_task_executors(args)
+    elif args.noun == 'resolve-task-executor':
+        return cmd_resolve_task_executor(args)
     else:
         parser.print_help()
         return EXIT_ERROR

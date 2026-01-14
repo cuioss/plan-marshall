@@ -30,7 +30,7 @@ class Extension(ExtensionBase):
                     "defaults": [],
                     "optionals": ["pm-dev-java-cui:cui-http"]
                 },
-                "testing": {
+                "module_testing": {
                     "defaults": [],
                     "optionals": ["pm-dev-java-cui:cui-testing", "pm-dev-java-cui:cui-testing-http"]
                 },

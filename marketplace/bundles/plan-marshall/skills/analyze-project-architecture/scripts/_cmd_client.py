@@ -718,3 +718,67 @@ def cmd_resolve(args) -> int:
         print(f"status\terror", file=sys.stderr)
         print(f"error\t{e}", file=sys.stderr)
         return 1
+
+
+def cmd_profiles(args) -> int:
+    """CLI handler for profiles command.
+
+    Extract unique profile keys from skills_by_profile for given modules.
+    Used by marshall-steward to auto-discover profiles for task_executors config.
+    """
+    try:
+        derived = load_derived_data(args.project_dir)
+        enriched = load_llm_enriched_or_empty(args.project_dir)
+        enriched_modules = enriched.get("modules", {})
+
+        # Determine which modules to analyze
+        if args.modules:
+            module_names = [m.strip() for m in args.modules.split(",")]
+            # Validate module names
+            all_modules = get_module_names(derived)
+            for name in module_names:
+                if name not in all_modules:
+                    raise ModuleNotFoundError(f"Module not found: {name}", all_modules)
+        else:
+            # Default: all modules with enrichment data
+            module_names = list(enriched_modules.keys())
+
+        # Collect unique profiles
+        profiles = set()
+        modules_analyzed = []
+
+        for module_name in module_names:
+            module_enriched = enriched_modules.get(module_name, {})
+            skills_by_profile = module_enriched.get("skills_by_profile", {})
+            if skills_by_profile:
+                modules_analyzed.append(module_name)
+                for profile_name in skills_by_profile.keys():
+                    profiles.add(profile_name)
+
+        # Output in TOON format
+        print("status: success")
+        print(f"count: {len(profiles)}")
+        print()
+        print(f"profiles[{len(profiles)}]:")
+        for profile in sorted(profiles):
+            print(f"  - {profile}")
+        print()
+        print(f"modules_analyzed[{len(modules_analyzed)}]:")
+        for module in sorted(modules_analyzed):
+            print(f"  - {module}")
+
+        return 0
+    except DataNotFoundError:
+        error_data_not_found(
+            str(get_derived_path(args.project_dir)),
+            "Run 'architecture.py discover' first"
+        )
+        return 1
+    except ModuleNotFoundError as e:
+        modules = get_module_names(load_derived_data(args.project_dir))
+        error_module_not_found(str(e), modules)
+        return 1
+    except Exception as e:
+        print(f"status: error", file=sys.stderr)
+        print(f"error: {e}", file=sys.stderr)
+        return 1

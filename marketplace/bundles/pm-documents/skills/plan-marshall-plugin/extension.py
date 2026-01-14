@@ -35,7 +35,7 @@ class Extension(ExtensionBase):
                     "defaults": [],
                     "optionals": ["pm-documents:adr-management", "pm-documents:interface-management"]
                 },
-                "testing": {
+                "module_testing": {
                     "defaults": [],
                     "optionals": []
                 },

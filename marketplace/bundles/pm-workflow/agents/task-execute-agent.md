@@ -1,6 +1,6 @@
 ---
 name: task-execute-agent
-description: Execute a single task with two-tier skill loading and profile-based workflow routing
+description: Execute a single task with two-tier skill loading and profile-based task executor routing
 tools: Read, Write, Edit, Glob, Grep, Bash, Skill
 model: sonnet
 skills: plan-marshall:general-development-rules
@@ -28,7 +28,7 @@ Stay in your lane:
 - You do NOT initialize plans (that's plan-init-agent)
 - You do NOT create solution outlines (that's solution-outline-agent)
 - You do NOT create tasks (that's task-plan-agent)
-- You execute tasks by loading domain skills and workflow skill
+- You execute tasks by loading domain skills and task executor skill
 
 **File Access**:
 - **`.plan/` files**: ONLY via `python3 .plan/execute-script.py {notation} {subcommand} {args}` - NEVER Read/Write/Edit/cat
@@ -70,33 +70,32 @@ python3 .plan/execute-script.py plan-marshall:logging:manage-log \
   work {plan_id} INFO "[SKILL] (pm-workflow:task-execute-agent) Loading domain skills from task.skills: [{task.skills}]"
 ```
 
-### Step 3: Resolve Workflow Skill
+### Step 3: Resolve Task Executor
 
-Resolve workflow skill from marshal.json based on domain and phase:
+Resolve task executor skill from marshal.json based on profile:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall-config resolve-workflow-skill \
-  --domain {task.domain} \
-  --phase {task.profile}
+python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall-config resolve-task-executor \
+  --profile {task.profile}
 ```
 
-Note: The task's `profile` field (implementation/testing) maps to the workflow_skills phase.
+The task's `profile` field (e.g., `implementation`, `module_testing`) maps to a task executor skill.
 
 **Log the resolved skill**:
 ```bash
 python3 .plan/execute-script.py plan-marshall:logging:manage-log \
-  work {plan_id} INFO "[SKILL] (pm-workflow:task-execute-agent) Using workflow_skill: {workflow_skill} from domain: {task.domain}, phase: {task.profile}"
+  work {plan_id} INFO "[SKILL] (pm-workflow:task-execute-agent) Using task_executor: {task_executor} for profile: {task.profile}"
 ```
 
-### Step 4: Load and Execute Workflow Skill
+### Step 4: Load and Execute Task Executor
 
-Load the resolved workflow skill:
+Load the resolved task executor skill:
 
 ```
-Skill: {workflow_skill}  # e.g., pm-workflow:task-implementation
+Skill: {task_executor}  # e.g., pm-workflow:task-implementation
 ```
 
-The skill handles:
+The task executor skill handles:
 1. Understanding context (read affected files)
 2. Planning implementation
 3. Implementing changes per step
@@ -152,7 +151,8 @@ context:
 
 ### MUST DO - Skill Delegation
 - Load system skills (Step 0) before any action
-- Read task to get domain skills and workflow skill
+- Read task to get domain skills and profile
 - Load domain skills from task.skills
-- Delegate to workflow skill for execution logic
+- Resolve and load task executor skill based on profile
+- Delegate to task executor for execution logic
 - Return structured TOON output

@@ -46,7 +46,7 @@ class Extension(ExtensionBase):
                     "defaults": [],
                     "optionals": ["pm-dev-java:java-cdi", "pm-dev-java:java-maintenance"]
                 },
-                "testing": {
+                "module_testing": {
                     "defaults": ["pm-dev-java:junit-core"],
                     "optionals": ["pm-dev-java:junit-integration"]
                 },

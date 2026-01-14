@@ -214,8 +214,10 @@ def cmd_skill_domains(args) -> int:
                 result["planning"] = domain_config["planning"]
             if "implementation" in domain_config:
                 result["implementation"] = domain_config["implementation"]
-            if "testing" in domain_config:
-                result["testing"] = domain_config["testing"]
+            if "module_testing" in domain_config:
+                result["module_testing"] = domain_config["module_testing"]
+            if "integration_testing" in domain_config:
+                result["integration_testing"] = domain_config["integration_testing"]
             if "quality" in domain_config:
                 result["quality"] = domain_config["quality"]
             return success_exit(result)
@@ -263,7 +265,7 @@ def cmd_skill_domains(args) -> int:
             # Profile-based update
             if not is_nested_domain(domain_config):
                 return error_exit(f"Domain '{domain}' uses flat structure. Cannot set profile.")
-            if profile not in domain_config and profile not in ['core', 'implementation', 'testing', 'quality']:
+            if profile not in domain_config and profile not in ['core', 'implementation', 'module_testing', 'integration_testing', 'quality']:
                 return error_exit(f"Unknown profile: {profile}")
             # Initialize profile if not exists
             if profile not in domain_config:
@@ -625,9 +627,8 @@ def cmd_get_skills_by_profile(args) -> int:
     # Map profile names to domain config keys
     profile_mapping = {
         'implementation': 'implementation',
-        'unit-testing': 'testing',
-        'integration-testing': 'testing',
-        'benchmark-testing': 'testing',
+        'module_testing': 'module_testing',
+        'integration_testing': 'integration_testing',
         'documentation': 'documentation',
     }
 
@@ -646,8 +647,8 @@ def cmd_get_skills_by_profile(args) -> int:
                 combined.append(skill)
                 seen.add(skill)
 
-        # For integration-testing, also include junit-integration if available
-        if profile_name == 'integration-testing':
+        # For integration_testing, also include junit-integration if available
+        if profile_name == 'integration_testing':
             for skill in profile_optionals:
                 if 'integration' in skill.lower() and skill not in seen:
                     combined.append(skill)
@@ -658,4 +659,108 @@ def cmd_get_skills_by_profile(args) -> int:
     return success_exit({
         "domain": domain,
         "skills_by_profile": skills_by_profile
+    })
+
+
+def cmd_configure_task_executors(args) -> int:
+    """Configure task executors from discovered profiles.
+
+    Auto-discovers profiles from configured domains and registers task executors
+    using convention: profile X → skill pm-workflow:task-X
+
+    Task executors map profile values to workflow skills that execute tasks.
+    """
+    try:
+        require_initialized()
+    except MarshalNotInitializedError as e:
+        return error_exit(str(e))
+
+    config = load_config()
+    skill_domains = config.get('skill_domains', {})
+
+    # Ensure system domain exists
+    if 'system' not in skill_domains:
+        return error_exit("System domain not configured. Run skill-domains configure first.")
+
+    # Discover all unique profiles from configured domains
+    discovered_profiles = set()
+
+    for domain_key, domain_config in skill_domains.items():
+        if domain_key == 'system':
+            continue
+        if not is_nested_domain(domain_config):
+            continue
+
+        # Collect profile keys (exclude reserved keys)
+        for key in domain_config.keys():
+            if key not in RESERVED_DOMAIN_KEYS:
+                discovered_profiles.add(key)
+
+    # Also include default profiles
+    from _config_defaults import DEFAULT_PROFILES
+    for profile in DEFAULT_PROFILES:
+        discovered_profiles.add(profile)
+
+    # Build task_executors mapping using convention: profile X → pm-workflow:task-X
+    task_executors = {}
+    for profile in sorted(discovered_profiles):
+        # Skip quality profile - it's handled by finalize phase, not task execution
+        if profile == 'quality':
+            continue
+        task_executors[profile] = f"pm-workflow:task-{profile}"
+
+    # Update system domain with task_executors
+    system_config = skill_domains['system']
+    system_config['task_executors'] = task_executors
+    skill_domains['system'] = system_config
+
+    config['skill_domains'] = skill_domains
+    save_config(config)
+
+    return success_exit({
+        "status": "success",
+        "task_executors_configured": len(task_executors),
+        "executors": task_executors
+    })
+
+
+def cmd_resolve_task_executor(args) -> int:
+    """Resolve task executor skill for a given profile.
+
+    Looks up the task executor mapping in marshal.json:
+    skill_domains.system.task_executors.{profile}
+
+    Args:
+        args.profile: Profile name (e.g., 'implementation', 'module_testing')
+
+    Returns:
+        TOON output with resolved task_executor skill reference
+    """
+    try:
+        require_initialized()
+    except MarshalNotInitializedError as e:
+        return error_exit(str(e))
+
+    profile = args.profile
+    config = load_config()
+    skill_domains = config.get('skill_domains', {})
+    system_config = skill_domains.get('system', {})
+    task_executors = system_config.get('task_executors', {})
+
+    if not task_executors:
+        return error_exit(
+            "No task_executors configured. Run configure-task-executors first."
+        )
+
+    if profile not in task_executors:
+        available = sorted(task_executors.keys())
+        return error_exit(
+            f"Unknown profile '{profile}'. Available profiles: {', '.join(available)}"
+        )
+
+    task_executor = task_executors[profile]
+
+    return success_exit({
+        "profile": profile,
+        "task_executor": task_executor
     })

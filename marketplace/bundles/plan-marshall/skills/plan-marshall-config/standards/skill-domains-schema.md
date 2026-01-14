@@ -20,6 +20,11 @@ The skill domains configuration uses a 5-phase workflow model with profile-based
         "3-plan": "pm-workflow:phase-3-plan",
         "4-execute": "pm-workflow:phase-4-execute",
         "5-finalize": "pm-workflow:phase-5-finalize"
+      },
+      "task_executors": {
+        "implementation": "pm-workflow:task-implementation",
+        "module_testing": "pm-workflow:task-module_testing",
+        "integration_testing": "pm-workflow:task-integration_testing"
       }
     },
     "{domain}": {
@@ -32,7 +37,8 @@ The skill domains configuration uses a 5-phase workflow model with profile-based
         "optionals": ["bundle:skill"]
       },
       "implementation": { "defaults": [], "optionals": [] },
-      "testing": { "defaults": [], "optionals": [] },
+      "module_testing": { "defaults": [], "optionals": [] },
+      "integration_testing": { "defaults": [], "optionals": [] },
       "quality": { "defaults": [], "optionals": [] }
     }
   }
@@ -48,6 +54,7 @@ The `system` domain is required and contains:
 | `defaults` | array | No | Base skills loaded for all tasks |
 | `optionals` | array | No | Optional base skills available for selection |
 | `workflow_skills` | object | Yes | Maps 5 phases to workflow skill references |
+| `task_executors` | object | Yes | Maps profiles to task executor skills |
 
 ### Workflow Skills (5-Phase Model)
 
@@ -71,6 +78,33 @@ The `system` domain is required and contains:
 | `4-execute` | Execute individual tasks | `pm-workflow:phase-4-execute` |
 | `5-finalize` | Verify, document, commit | `pm-workflow:phase-5-finalize` |
 
+### Task Executors
+
+Task executors map profile values to the workflow skill that executes tasks of that profile:
+
+```json
+{
+  "task_executors": {
+    "implementation": "pm-workflow:task-implementation",
+    "module_testing": "pm-workflow:task-module_testing",
+    "integration_testing": "pm-workflow:task-integration_testing"
+  }
+}
+```
+
+| Profile | Purpose | Default Executor |
+|---------|---------|------------------|
+| `implementation` | Production code tasks | `pm-workflow:task-implementation` |
+| `module_testing` | Unit/module test tasks | `pm-workflow:task-module_testing` |
+| `integration_testing` | Integration test tasks | `pm-workflow:task-integration_testing` |
+
+**Extensibility**: The profile list is open for extension. To add a new profile:
+1. Add profile key to `skills_by_profile` in domain `extension.py`
+2. Create corresponding `pm-workflow:task-{profile}` skill
+3. Marshall-steward auto-discovers and registers in `task_executors`
+
+**Convention**: Profile `X` maps to skill `pm-workflow:task-X` by default.
+
 ## Technical Domains
 
 Technical domains (java, javascript, etc.) use profile-based organization:
@@ -80,7 +114,8 @@ Technical domains (java, javascript, etc.) use profile-based organization:
 | `workflow_skill_extensions` | object | No | Domain-specific extensions for phases |
 | `core` | object | Yes | Core skills loaded for all profiles |
 | `implementation` | object | No | Skills for execute phase (production code) |
-| `testing` | object | No | Skills for execute phase (test code) |
+| `module_testing` | object | No | Skills for execute phase (unit/module tests) |
+| `integration_testing` | object | No | Skills for execute phase (integration tests) |
 | `quality` | object | No | Skills for finalize phase |
 
 ### Workflow Skill Extensions
@@ -124,10 +159,22 @@ Each profile contains defaults and optionals:
 | Profile | Phase | Use Case |
 |---------|-------|----------|
 | `implementation` | execute | Production code development tasks |
-| `testing` | execute | Test code development tasks |
+| `module_testing` | execute | Unit/module test development tasks |
+| `integration_testing` | execute | Integration test development tasks |
 | `quality` | finalize | Documentation, verification, compliance |
 
 ## Skill Resolution
+
+### Task Executor Resolution
+
+```bash
+# Resolves profile to task executor skill from system.task_executors
+plan-marshall-config resolve-task-executor --profile implementation
+# Returns: pm-workflow:task-implementation
+
+plan-marshall-config resolve-task-executor --profile module_testing
+# Returns: pm-workflow:task-module_testing
+```
 
 ### Workflow Skill Resolution
 
@@ -170,7 +217,11 @@ plan-marshall-config resolve-domain-skills --domain java --profile implementatio
       "defaults": [],
       "optionals": ["pm-dev-java:java-cdi", "pm-dev-java:java-maintenance"]
     },
-    "testing": {
+    "module_testing": {
+      "defaults": ["pm-dev-java:junit-core"],
+      "optionals": []
+    },
+    "integration_testing": {
       "defaults": ["pm-dev-java:junit-core"],
       "optionals": ["pm-dev-java:junit-integration"]
     },
@@ -198,8 +249,12 @@ plan-marshall-config resolve-domain-skills --domain java --profile implementatio
       "defaults": [],
       "optionals": ["pm-dev-frontend:cui-javascript-linting", "pm-dev-frontend:cui-javascript-maintenance"]
     },
-    "testing": {
+    "module_testing": {
       "defaults": ["pm-dev-frontend:cui-javascript-unit-testing"],
+      "optionals": []
+    },
+    "integration_testing": {
+      "defaults": [],
       "optionals": ["pm-dev-frontend:cui-cypress"]
     },
     "quality": {
@@ -214,15 +269,17 @@ plan-marshall-config resolve-domain-skills --domain java --profile implementatio
 
 1. **System domain required**: `skill_domains.system` must exist
 2. **Workflow skills required**: `system.workflow_skills` must have all 5 phases
-3. **Profile structure**: If domain has profiles, must have at least `core`
-4. **Extension types**: Only `outline` and `triage` are valid extension types
-5. **Skill format**: All skills must be `bundle:skill` format
+3. **Task executors required**: `system.task_executors` must exist with at least `implementation`
+4. **Profile structure**: If domain has profiles, must have at least `core`
+5. **Extension types**: Only `outline` and `triage` are valid extension types
+6. **Skill format**: All skills must be `bundle:skill` format
 
 ## Reserved Keys
 
 These keys are reserved in domain configuration and cannot be used as profile names:
 
 - `workflow_skills` - System domain only
+- `task_executors` - System domain only
 - `workflow_skill_extensions` - Domain extensions
 - `core` - Core skills for all profiles
 - `defaults` - Top-level defaults (flat structure compatibility)

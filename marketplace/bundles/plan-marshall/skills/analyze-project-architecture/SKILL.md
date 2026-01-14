@@ -477,7 +477,7 @@ python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall
 ```json
 {
   "implementation": [...],
-  "unit-testing": [...],
+  "module_testing": [...],
   "documentation": ["pm-documents:cui-documentation", "pm-documents:adr-management", ...]
 }
 ```
@@ -491,13 +491,13 @@ python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall
 ```bash
 python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture \
   enrich skills-by-profile --module {module-name} \
-  --skills-json '{"implementation": ["pm-dev-java:java-core", "pm-dev-java:java-cdi"], "unit-testing": ["pm-dev-java:java-core", "pm-dev-java:junit-core"]}' \
+  --skills-json '{"implementation": ["pm-dev-java:java-core", "pm-dev-java:java-cdi"], "module_testing": ["pm-dev-java:java-core", "pm-dev-java:junit-core"]}' \
   --reasoning "{filtering applied: removed java-lombok (no @Data annotations found), kept java-cdi (CDI beans present)}"
 ```
 
 **Reasoning examples**:
 - "Base java domain, no filtering applied"
-- "Removed java-cdi (no CDI annotations), removed integration-testing (no *IT.java files)"
+- "Removed java-cdi (no CDI annotations), removed integration_testing (no *IT.java files)"
 - "Added cui-testing-http based on MockWebServer test dependency"
 - "Added documentation profile (module has doc/*.adoc files)"
 

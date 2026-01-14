@@ -572,18 +572,44 @@ domains: java,java-cui,javascript
 ```
 
 This populates `skill_domains` in marshal.json with:
-- `system` domain (always) with workflow_skills for 5 phases
+- `system` domain (always) with workflow_skills for 5 phases and task_executors
 - Each selected domain with nested structure from bundle manifest:
   - `workflow_skill_extensions` (outline, triage)
   - `core` (defaults + optionals)
-  - Profile blocks (implementation, testing, quality)
+  - Profile blocks (implementation, module_testing, integration_testing, quality)
+
+**Step 7e: Configure Task Executors**
+
+Task executors map profile values to workflow skills that execute tasks of that profile.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall-config \
+  configure-task-executors
+```
+
+**Output (TOON)**:
+```toon
+status: success
+task_executors_configured: 3
+executors:
+  implementation: pm-workflow:task-implementation
+  module_testing: pm-workflow:task-module_testing
+  integration_testing: pm-workflow:task-integration_testing
+```
+
+This auto-discovers profiles from configured domains and registers default task executors using convention: profile `X` → skill `pm-workflow:task-X`.
+
+**Extensibility**: New profiles can be added by:
+1. Adding profile to `skills_by_profile` in domain `extension.py`
+2. Creating corresponding `pm-workflow:task-{profile}` skill
+3. Re-running `/marshall-steward` to auto-discover and register
 
 ---
 
 ## Step 8: Verify Skill Domain Configuration
 
 Skill domains configure which implementation skills are loaded during plan execution. The 5-phase model uses:
-- **System domain**: Contains workflow_skills (init, outline, plan, execute, finalize)
+- **System domain**: Contains workflow_skills (init, outline, plan, execute, finalize) and task_executors
 - **Technical domains**: Profile-based skills and workflow_skill_extensions
 
 ```bash
@@ -600,6 +626,11 @@ python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall
       "3-plan": "pm-workflow:phase-3-plan",
       "4-execute": "pm-workflow:phase-4-execute",
       "5-finalize": "pm-workflow:phase-5-finalize"
+    },
+    "task_executors": {
+      "implementation": "pm-workflow:task-implementation",
+      "module_testing": "pm-workflow:task-module_testing",
+      "integration_testing": "pm-workflow:task-integration_testing"
     }
   },
   "java": {
@@ -610,13 +641,14 @@ python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall
     "core": {...},
     "architecture": {...},
     "implementation": {...},
-    "testing": {...},
+    "module_testing": {...},
+    "integration_testing": {...},
     "quality": {...}
   }
 }
 ```
 
-**Note**: Workflow skills are resolved from system domain. Domain-specific behavior is provided via workflow_skill_extensions (outline, triage).
+**Note**: Workflow skills are resolved from system domain. Task executors map profiles to execution skills. Domain-specific behavior is provided via workflow_skill_extensions (outline, triage).
 
 ---
 

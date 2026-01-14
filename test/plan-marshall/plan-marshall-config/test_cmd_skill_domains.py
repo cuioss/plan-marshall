@@ -165,8 +165,8 @@ def test_skill_domains_get_nested_structure():
         assert 'core' in result.stdout
         # Should include implementation block
         assert 'implementation' in result.stdout
-        # Should include testing block
-        assert 'testing' in result.stdout
+        # Should include module_testing block
+        assert 'module_testing' in result.stdout
 
 
 def test_skill_domains_get_defaults_nested():
@@ -325,22 +325,22 @@ def test_resolve_domain_skills_java_implementation():
 
 
 def test_resolve_domain_skills_java_testing():
-    """Test resolve-domain-skills for java + testing profile."""
+    """Test resolve-domain-skills for java + module_testing profile."""
     with PlanTestContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
 
         result = run_script(
             SCRIPT_PATH, 'resolve-domain-skills',
             '--domain', 'java',
-            '--profile', 'testing'
+            '--profile', 'module_testing'
         )
 
         assert result.success, f"Should succeed: {result.stderr}"
         # Should include core defaults (java-core)
         assert 'pm-dev-java:java-core' in result.stdout
-        # Should include testing defaults (junit-core)
+        # Should include module_testing defaults (junit-core)
         assert 'pm-dev-java:junit-core' in result.stdout
-        # Should include testing optionals (junit-integration)
+        # Should include module_testing optionals (junit-integration)
         assert 'pm-dev-java:junit-integration' in result.stdout
         # Should NOT include implementation optionals (java-cdi)
         assert 'pm-dev-java:java-cdi' not in result.stdout
@@ -761,9 +761,8 @@ def test_get_skills_by_profile_java():
         assert 'skills_by_profile' in result.stdout
         # Should have all profiles
         assert 'implementation' in result.stdout
-        assert 'unit-testing' in result.stdout
-        assert 'integration-testing' in result.stdout
-        assert 'benchmark-testing' in result.stdout
+        assert 'module_testing' in result.stdout
+        assert 'integration_testing' in result.stdout
 
 
 def test_get_skills_by_profile_includes_core_skills():
@@ -786,7 +785,7 @@ def test_get_skills_by_profile_includes_profile_skills():
         result = run_script(SCRIPT_PATH, 'get-skills-by-profile', '--domain', 'java')
 
         assert result.success, f"Should succeed: {result.stderr}"
-        # Testing profile skill should appear (junit-core is in testing.defaults)
+        # Module testing profile skill should appear (junit-core is in module_testing.defaults)
         assert 'pm-dev-java:junit-core' in result.stdout
 
 

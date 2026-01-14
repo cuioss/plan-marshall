@@ -61,6 +61,7 @@ allowed-tools: Read
 | [standards/data-layer.md](standards/data-layer.md) | manage-* skills | File operations, TOON format |
 | [standards/skill-loading.md](standards/skill-loading.md) | Two-tier loading | System vs domain skills |
 | [standards/artifacts.md](standards/artifacts.md) | Plan file formats | config.toon, status.toon, TASK-*.toon |
+| [standards/task-executor-routing.md](standards/task-executor-routing.md) | Task executor routing | Profile→executor mapping, extensibility |
 | `pm-workflow:workflow-extension-api` | Extension mechanism | Domain extensions for outline/triage |
 
 ---
@@ -130,7 +131,7 @@ allowed-tools: Read
 │  │  ═════════════════════════════                                       │   │
 │  │  phase-1-init         phase-2-outline        phase-3-plan            │   │
 │  │  phase-4-execute      phase-5-finalize                               │   │
-│  │  task-implementation           task-testing                          │   │
+│  │  task-implementation           task-module_testing                   │   │
 │  │  git-workflow         pr-workflow                                    │   │
 │  └─────────────────────────────────────────────────────────────────────┘   │
 │                                     │                                       │
@@ -167,7 +168,7 @@ allowed-tools: Read
 | `pm-workflow:phase-4-execute` | Execute phase implementation |
 | `pm-workflow:phase-5-finalize` | Finalize phase implementation |
 | `pm-workflow:task-implementation` | Implementation profile workflow |
-| `pm-workflow:task-testing` | Testing profile workflow |
+| `pm-workflow:task-module_testing` | Module testing profile workflow |
 
 ---
 
@@ -190,4 +191,7 @@ Read standards/skill-loading.md
 
 # Understanding plan file formats
 Read standards/artifacts.md
+
+# Understanding task executor routing
+Read standards/task-executor-routing.md
 ```

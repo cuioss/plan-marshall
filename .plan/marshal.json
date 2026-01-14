@@ -34,6 +34,11 @@
         "3-plan": "pm-workflow:phase-3-plan",
         "4-execute": "pm-workflow:phase-4-execute",
         "5-finalize": "pm-workflow:phase-5-finalize"
+      },
+      "task_executors": {
+        "implementation": "pm-workflow:task-implementation",
+        "module_testing": "pm-workflow:task-module_testing",
+        "integration_testing": "pm-workflow:task-integration_testing"
       }
     },
     "plan-marshall-plugin-dev": {
@@ -53,7 +58,7 @@
         "defaults": [],
         "optionals": []
       },
-      "testing": {
+      "module_testing": {
         "defaults": [],
         "optionals": []
       },
@@ -63,7 +68,6 @@
       }
     }
   },
-  
   "system": {
     "retention": {
       "logs_days": 1,

@@ -42,7 +42,7 @@ class Extension(ExtensionBase):
                     "defaults": [],
                     "optionals": ["pm-dev-frontend:cui-javascript-linting", "pm-dev-frontend:cui-javascript-maintenance"]
                 },
-                "testing": {
+                "module_testing": {
                     "defaults": ["pm-dev-frontend:cui-javascript-unit-testing"],
                     "optionals": ["pm-dev-frontend:cui-cypress"]
                 },
