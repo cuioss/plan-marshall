@@ -17,10 +17,11 @@
     "./commands/tools-verify-architecture-diagrams.md"
   ],
   "skills": [
-    "./skills/cui-documentation",
-    "./skills/adr-management",
+    "./skills/ref-documentation",
+    "./skills/manage-adr",
     "./skills/ext-triage-docs",
-    "./skills/interface-management",
+    "./skills/ext-outline-docs",
+    "./skills/manage-interface",
     "./skills/plan-marshall-plugin"
   ]
 }

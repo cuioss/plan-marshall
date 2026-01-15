@@ -357,7 +357,7 @@ Partial Results:
 [source,bash]
 ----
 # Quick format check only
-python3 .plan/execute-script.py pm-documents:cui-documentation:docs validate-format --file $FILE
+python3 .plan/execute-script.py pm-documents:ref-documentation:docs validate-format --file $FILE
 
 # Exit if format errors
 if [ $? -ne 0 ]; then

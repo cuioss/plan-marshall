@@ -73,7 +73,7 @@ If file exists at output_path:
 ### Step 4: Load Documentation Skill
 
 ```
-Skill: pm-documents:cui-documentation
+Skill: pm-documents:ref-documentation
 ```
 
 ### Step 5: Execute Creation Workflow
@@ -107,10 +107,10 @@ Next steps:
 
 **Pattern**: Thin Orchestrator Command (~80 lines)
 - Validates parameters
-- Delegates creation to cui-documentation skill
+- Delegates creation to ref-documentation skill
 - No business logic in command
 
-**Skill Dependency**: pm-documents:cui-documentation
+**Skill Dependency**: pm-documents:ref-documentation
 - Provides: create-from-template workflow
 - Templates: templates/standard-template.adoc, readme-template.adoc, guide-template.adoc
 
@@ -118,4 +118,4 @@ Next steps:
 
 - `/doc-doctor` - Diagnose documentation issues
 - `/doc-maintain` - Maintain existing documentation
-- `cui-documentation` skill - Provides creation workflow and templates
+- `ref-documentation` skill - Provides creation workflow and templates

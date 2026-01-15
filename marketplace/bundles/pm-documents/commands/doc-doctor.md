@@ -66,7 +66,7 @@ If no files found:
 ### Step 3: Load Documentation Skill
 
 ```
-Skill: pm-documents:cui-documentation
+Skill: pm-documents:ref-documentation
 ```
 
 ### Step 4: Execute Diagnostic
@@ -138,14 +138,14 @@ Files with Issues:
 
 **Pattern**: Thin Orchestrator Command (~100 lines)
 - Parses parameters and determines scope
-- Delegates ALL validation to cui-documentation skill
+- Delegates ALL validation to ref-documentation skill
 - No business logic in command
 
-**Skill Dependency**: pm-documents:cui-documentation
+**Skill Dependency**: pm-documents:ref-documentation
 - Provides: validate-format, verify-links, review-content, comprehensive-review workflows
 
 ## Related
 
 - `/doc-create` - Create new documentation from templates
 - `/doc-maintain` - Maintain existing documentation
-- `cui-documentation` skill - Provides all validation workflows
+- `ref-documentation` skill - Provides all validation workflows

@@ -192,12 +192,12 @@ class Extension(ExtensionBase):
             },
             "profiles": {
                 "core": {
-                    "defaults": ["pm-documents:cui-documentation"],
+                    "defaults": ["pm-documents:ref-documentation"],
                     "optionals": []
                 },
                 "implementation": {
                     "defaults": [],
-                    "optionals": ["pm-documents:adr-management"]
+                    "optionals": ["pm-documents:manage-adr"]
                 },
                 "testing": {"defaults": [], "optionals": []},
                 "quality": {"defaults": [], "optionals": []}

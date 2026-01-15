@@ -150,7 +150,7 @@ This skill integrates with:
 - **pm-requirements:setup** - Provides initial structure that authoring populates
 - **pm-requirements:planning** - Planning tasks trace to requirements created here
 - **pm-requirements:traceability** - Links authored specs to implementation code
-- **cui-documentation:cui-documentation** - General AsciiDoc formatting standards
+- **pm-documents:ref-documentation** - General AsciiDoc formatting standards
 - **pm-dev-java:javadoc** - JavaDoc standards for referencing requirements
 
 ## Anti-Patterns to Avoid
@@ -198,6 +198,6 @@ Before completing requirements/specification work:
 - traceability - Linking specs to implementation
 
 **External:**
-- cui-documentation:cui-documentation - AsciiDoc formatting
+- pm-documents:ref-documentation - AsciiDoc formatting
 - pm-dev-java:javadoc - JavaDoc requirement references
 - pm-workflow:workflow-integration-git - Committing requirement changes

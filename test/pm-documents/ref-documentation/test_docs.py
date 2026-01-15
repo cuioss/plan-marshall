@@ -22,7 +22,7 @@ from conftest import get_script_path, run_script
 # Test directories
 TEST_DIR = Path(__file__).parent
 PROJECT_ROOT = TEST_DIR.parent.parent.parent
-SCRIPT_PATH = get_script_path('pm-documents', 'cui-documentation', 'docs.py')
+SCRIPT_PATH = get_script_path('pm-documents', 'ref-documentation', 'docs.py')
 FIXTURES_DIR = TEST_DIR / 'fixtures'
 LINK_VERIFY_FIXTURES = FIXTURES_DIR / 'link-verify'
 

@@ -1,5 +1,5 @@
 ---
-name: adr-management
+name: manage-adr
 description: Manage Architectural Decision Records (ADRs) with CRUD operations, automatic numbering, and AsciiDoc formatting
 allowed-tools: Read, Edit, Write, Bash, Grep, Glob, Skill
 ---
@@ -17,7 +17,7 @@ Provide structured management of architectural decisions:
 - **Update** ADR status through lifecycle
 - **Delete** ADRs when necessary
 - **List** all ADRs with optional filtering
-- **Validate** ADR format using cui-documentation
+- **Validate** ADR format using ref-documentation
 
 ## Available Workflows
 
@@ -28,7 +28,7 @@ Provide structured management of architectural decisions:
 | **read-adr** | Read ADR content | `manage-adr.py read` |
 | **update-adr** | Update ADR status | `manage-adr.py update` |
 | **delete-adr** | Delete ADR (with confirmation) | `manage-adr.py delete` |
-| **validate-adr** | Validate ADR format | cui-documentation workflows |
+| **validate-adr** | Validate ADR format | ref-documentation workflows |
 
 ## Workflow: list-adrs
 
@@ -43,7 +43,7 @@ List all ADRs with optional status filtering.
 **Step 1: Execute List**
 
 ```bash
-python3 .plan/execute-script.py pm-documents:adr-management:manage-adr list [--status {status}]
+python3 .plan/execute-script.py pm-documents:manage-adr:manage-adr list [--status {status}]
 ```
 
 **Step 3: Parse Output**
@@ -78,7 +78,7 @@ Create a new ADR with automatic numbering.
 **Step 1: Create ADR**
 
 ```bash
-python3 .plan/execute-script.py pm-documents:adr-management:manage-adr create --title "{title}" [--status "{status}"]
+python3 .plan/execute-script.py pm-documents:manage-adr:manage-adr create --title "{title}" [--status "{status}"]
 ```
 
 **Step 3: Parse Output**
@@ -92,7 +92,7 @@ Read the created file and inform user to fill in content sections.
 **Step 5: Validate Format**
 
 ```
-Skill: pm-documents:cui-documentation
+Skill: pm-documents:ref-documentation
 Execute workflow: validate-format
 Parameters:
   target: {created_path}
@@ -127,7 +127,7 @@ Read ADR content by number.
 **Step 1: Read ADR**
 
 ```bash
-python3 .plan/execute-script.py pm-documents:adr-management:manage-adr read --number {number}
+python3 .plan/execute-script.py pm-documents:manage-adr:manage-adr read --number {number}
 ```
 
 **Step 3: Display Content**
@@ -148,7 +148,7 @@ Update ADR status through lifecycle.
 **Step 1: Update ADR**
 
 ```bash
-python3 .plan/execute-script.py pm-documents:adr-management:manage-adr update --number {number} --status {status}
+python3 .plan/execute-script.py pm-documents:manage-adr:manage-adr update --number {number} --status {status}
 ```
 
 **Step 3: Confirm Update**
@@ -169,7 +169,7 @@ Delete ADR with confirmation.
 **Step 1: Delete ADR**
 
 ```bash
-python3 .plan/execute-script.py pm-documents:adr-management:manage-adr delete --number {number} --force
+python3 .plan/execute-script.py pm-documents:manage-adr:manage-adr delete --number {number} --force
 ```
 
 **Step 3: Confirm Deletion**
@@ -178,7 +178,7 @@ Report deletion to user.
 
 ## Workflow: validate-adr
 
-Validate ADR format using cui-documentation skill.
+Validate ADR format using ref-documentation skill.
 
 ### Parameters
 
@@ -193,7 +193,7 @@ Use list-adrs workflow to get ADR path by number.
 **Step 2: Validate Format**
 
 ```
-Skill: pm-documents:cui-documentation
+Skill: pm-documents:ref-documentation
 Execute workflow: validate-format
 Parameters:
   target: {adr_path}
@@ -203,9 +203,9 @@ Parameters:
 
 Report validation results to user.
 
-## Integration with cui-documentation
+## Integration with ref-documentation
 
-This skill integrates with `cui-documentation` for:
+This skill integrates with `ref-documentation` for:
 
 - **Format validation**: Ensures AsciiDoc formatting compliance
 - **Link verification**: Validates cross-references
@@ -250,4 +250,4 @@ Examples:
 
 ## References
 
-- [cui-documentation SKILL](../cui-documentation/SKILL.md) - Format validation
+- [ref-documentation SKILL](../ref-documentation/SKILL.md) - Format validation

@@ -76,7 +76,7 @@ Check derived-data.json for NO-MATCH-FOUND profiles in `modules.*.metadata.profi
 
 **If Maven modules exist AND unmatched profiles found**:
 
-Load skill `pm-dev-java:maven-profile-management` and follow its workflow to:
+Load skill `pm-dev-java:manage-maven-profiles` and follow its workflow to:
 1. Ask user about each unmatched profile (Ignore/Skip/Map)
 2. Apply configuration via `run_config` commands
 3. Re-run discovery to apply changes
@@ -478,7 +478,7 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-m
 {
   "implementation": [...],
   "module_testing": [...],
-  "documentation": ["pm-documents:cui-documentation", "pm-documents:adr-management", ...]
+  "documentation": ["pm-documents:ref-documentation", "pm-documents:manage-adr", ...]
 }
 ```
 
@@ -591,7 +591,7 @@ For detailed specifications, load on demand:
 | [architecture-persistence.md](standards/architecture-persistence.md) | Field schemas and formats |
 | [architecture-workflow.md](standards/architecture-workflow.md) | Workflow phase details |
 | [documentation-sources.md](standards/documentation-sources.md) | Reading strategy details |
-| `pm-dev-java:maven-profile-management` | Maven profile classification (Step 1.5) |
+| `pm-dev-java:manage-maven-profiles` | Maven profile classification (Step 1.5) |
 
 ---
 

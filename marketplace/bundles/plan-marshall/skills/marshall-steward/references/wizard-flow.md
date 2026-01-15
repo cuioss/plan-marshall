@@ -222,7 +222,7 @@ Build commands are stored in `module_config` section of marshal.json, separate f
 Query for Maven profiles that can be mapped to canonical commands:
 
 ```bash
-python3 .plan/execute-script.py pm-dev-java:maven-profile-management:profiles list
+python3 .plan/execute-script.py pm-dev-java:manage-maven-profiles:profiles list
 ```
 
 **Output (TOON)**:
@@ -334,7 +334,7 @@ If there are unmapped profiles, resolve them interactively.
 
 **Check for unmatched profiles**:
 ```bash
-python3 .plan/execute-script.py pm-dev-java:maven-profile-management:profiles unmatched
+python3 .plan/execute-script.py pm-dev-java:manage-maven-profiles:profiles unmatched
 ```
 
 **Output (TOON)**:

@@ -51,7 +51,7 @@ Execute the verify-adoc-links.py script to identify potential broken links:
 
 [source,bash]
 ----
-python3 .plan/execute-script.py pm-documents:cui-documentation:docs verify-links --file path/to/file.adoc --report target/links.md
+python3 .plan/execute-script.py pm-documents:ref-documentation:docs verify-links --file path/to/file.adoc --report target/links.md
 ----
 
 **Output:** JSON report with broken link candidates
@@ -62,7 +62,7 @@ Use verify-links-false-positives.py to categorize detected issues:
 
 [source,bash]
 ----
-python3 .plan/execute-script.py pm-documents:cui-documentation:docs verify-false-positives --input target/links.json --output target/classified.json
+python3 .plan/execute-script.py pm-documents:ref-documentation:docs verify-false-positives --input target/links.json --output target/classified.json
 ----
 
 **Categories:**

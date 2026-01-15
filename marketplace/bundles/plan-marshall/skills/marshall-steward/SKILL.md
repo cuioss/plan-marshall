@@ -44,7 +44,7 @@ allowed-tools: Read, Write, Edit, Bash, Glob, Skill, AskUserQuestion
 | ci_health | `plan-marshall:tools-integration-ci:ci_health` | CI provider detection (delegated to tools-integration-ci) |
 | plan-marshall-config | `plan-marshall:manage-plan-marshall-config:plan-marshall-config` | Project-level marshal.json CRUD |
 | scan-marketplace-inventory | `plan-marshall:tools-marketplace-inventory:scan-marketplace-inventory` | Script discovery |
-| profiles | `pm-dev-java:maven-profile-management:profiles` | Maven profile management |
+| profiles | `pm-dev-java:manage-maven-profiles:profiles` | Maven profile management |
 | permission-doctor | `plan-marshall:permission-doctor:permission-doctor` | Permission analysis |
 | permission-fix | `plan-marshall:permission-fix:permission-fix` | Permission fixes |
 | generate-executor | `plan-marshall:tools-script-executor:generate-executor` | Executor generation |

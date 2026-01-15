@@ -27,16 +27,16 @@ class Extension(ExtensionBase):
                 'description': 'AsciiDoc documentation, ADRs, and interface specifications',
             },
             'profiles': {
-                'core': {'defaults': ['pm-documents:cui-documentation'], 'optionals': []},
+                'core': {'defaults': ['pm-documents:ref-documentation'], 'optionals': []},
                 'implementation': {
                     'defaults': [],
-                    'optionals': ['pm-documents:adr-management', 'pm-documents:interface-management'],
+                    'optionals': ['pm-documents:manage-adr', 'pm-documents:manage-interface'],
                 },
                 'module_testing': {'defaults': [], 'optionals': []},
                 'quality': {'defaults': [], 'optionals': []},
                 'documentation': {
-                    'defaults': ['pm-documents:cui-documentation'],
-                    'optionals': ['pm-documents:adr-management', 'pm-documents:interface-management'],
+                    'defaults': ['pm-documents:ref-documentation'],
+                    'optionals': ['pm-documents:manage-adr', 'pm-documents:manage-interface'],
                 },
             },
         }

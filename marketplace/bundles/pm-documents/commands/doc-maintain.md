@@ -60,7 +60,7 @@ If target not found:
 ### Step 3: Load Documentation Skill
 
 ```
-Skill: pm-documents:cui-documentation
+Skill: pm-documents:ref-documentation
 ```
 
 ### Step 4: Execute Action
@@ -170,11 +170,11 @@ Manual Review Needed:
 - Routes to appropriate skill workflow
 - No business logic in command
 
-**Skill Dependency**: pm-documents:cui-documentation
+**Skill Dependency**: pm-documents:ref-documentation
 - Provides: sync-with-code, cleanup-stale, refresh-metadata workflows
 
 ## Related
 
 - `/doc-doctor` - Diagnose documentation issues
 - `/doc-create` - Create new documentation
-- `cui-documentation` skill - Provides maintenance workflows
+- `ref-documentation` skill - Provides maintenance workflows

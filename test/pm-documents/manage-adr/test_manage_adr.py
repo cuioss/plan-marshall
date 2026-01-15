@@ -25,7 +25,7 @@ class TestManageAdr(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         """Set up test fixtures."""
-        cls.script_path = get_script_path('pm-documents', 'adr-management', 'manage-adr.py')
+        cls.script_path = get_script_path('pm-documents', 'manage-adr', 'manage-adr.py')
         cls.temp_dir = tempfile.mkdtemp()
         cls.adr_dir = Path(cls.temp_dir) / 'doc' / 'adr'
         cls.adr_dir.mkdir(parents=True)

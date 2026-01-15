@@ -97,6 +97,6 @@ ls -1 doc/interfaces/IF-*.adoc 2>/dev/null | sort
 
 | Skill | Purpose |
 |-------|---------|
-| `pm-documents:cui-documentation` | General documentation standards |
-| `pm-documents:adr-management` | ADR CRUD and formatting |
-| `pm-documents:interface-management` | Interface spec CRUD and formatting |
+| `pm-documents:ref-documentation` | General documentation standards |
+| `pm-documents:manage-adr` | ADR CRUD and formatting |
+| `pm-documents:manage-interface` | Interface spec CRUD and formatting |

@@ -1,5 +1,5 @@
 ---
-name: maven-profile-management
+name: manage-maven-profiles
 description: Maven build profile classification and user workflow for unmatched profiles
 allowed-tools: Read, Bash, AskUserQuestion
 ---

@@ -162,7 +162,7 @@ def test_resolve_triage_extension_null_for_missing():
                             'outline': 'pm-documents:doc-outline-ext'
                             # No triage extension
                         },
-                        'core': {'defaults': ['pm-documents:cui-documentation'], 'optionals': []},
+                        'core': {'defaults': ['pm-documents:ref-documentation'], 'optionals': []},
                     },
                 }
             },

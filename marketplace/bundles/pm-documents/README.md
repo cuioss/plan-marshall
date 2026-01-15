@@ -77,7 +77,7 @@ Examples:
 
 ### Skills (3 skills)
 
-**cui-documentation** - Documentation standards skill (9 workflows):
+**ref-documentation** - Documentation standards skill (9 workflows):
 
 | Workflow | Purpose |
 |----------|---------|
@@ -91,7 +91,7 @@ Examples:
 | **cleanup-stale** | Remove stale documentation |
 | **refresh-metadata** | Update metadata and xrefs |
 
-**adr-management** - Architectural Decision Records skill (5 workflows):
+**manage-adr** - Architectural Decision Records skill (5 workflows):
 
 | Workflow | Purpose |
 |----------|---------|
@@ -101,7 +101,7 @@ Examples:
 | **update-adr** | Update ADR status |
 | **delete-adr** | Delete ADR with confirmation |
 
-**interface-management** - Interface specifications skill (5 workflows):
+**manage-interface** - Interface specifications skill (5 workflows):
 
 | Workflow | Purpose |
 |----------|---------|
@@ -166,17 +166,17 @@ pm-documents/
 │   ├── doc-create.md             # Create from templates
 │   └── doc-maintain.md           # Maintenance operations
 └── skills/
-    ├── cui-documentation/        # Core documentation skill (9 workflows)
+    ├── ref-documentation/        # Core documentation skill (9 workflows)
     │   ├── SKILL.md
     │   ├── references/           # Documentation standards (lookup)
     │   ├── workflows/            # Operational procedures
     │   ├── templates/            # Document templates
     │   └── scripts/              # Automation scripts
-    ├── adr-management/           # ADR management skill (5 workflows)
+    ├── manage-adr/           # ADR management skill (5 workflows)
     │   ├── SKILL.md
     │   ├── scripts/
     │   └── templates/
-    └── interface-management/     # Interface spec skill (5 workflows)
+    └── manage-interface/     # Interface spec skill (5 workflows)
         ├── SKILL.md
         ├── scripts/
         └── templates/
@@ -185,9 +185,9 @@ pm-documents/
 ## Goal-Based Command Pattern
 
 ```
-CREATE:   /doc-create   → cui-documentation → create-from-template
-DOCTOR:   /doc-doctor   → cui-documentation → comprehensive-review
-MAINTAIN: /doc-maintain → cui-documentation → sync/cleanup/refresh
+CREATE:   /doc-create   → ref-documentation → create-from-template
+DOCTOR:   /doc-doctor   → ref-documentation → comprehensive-review
+MAINTAIN: /doc-maintain → ref-documentation → sync/cleanup/refresh
 ```
 
 All commands are thin orchestrators (<150 lines) that delegate to skill workflows.

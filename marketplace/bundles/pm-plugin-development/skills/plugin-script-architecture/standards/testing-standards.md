@@ -93,7 +93,7 @@ class TestManageAdr(ScriptTestCase):
     """Test ADR management script."""
 
     bundle = 'pm-documents'
-    skill = 'adr-management'
+    skill = 'manage-adr'
     script = 'manage-adr.py'
 
     def test_create_adr(self):

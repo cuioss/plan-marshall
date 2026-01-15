@@ -1,5 +1,5 @@
 ---
-name: interface-management
+name: manage-interface
 description: Manage Interface specifications with CRUD operations, automatic numbering, and AsciiDoc formatting
 allowed-tools: Read, Edit, Write, Bash, Grep, Glob, Skill
 ---
@@ -17,7 +17,7 @@ Provide structured management of interface documentation:
 - **Update** interface specifications
 - **Delete** interfaces when necessary
 - **List** all interfaces with optional filtering
-- **Validate** interface format using cui-documentation
+- **Validate** interface format using ref-documentation
 
 ## Available Workflows
 
@@ -28,7 +28,7 @@ Provide structured management of interface documentation:
 | **read-interface** | Read interface content | `manage-interface.py read` |
 | **update-interface** | Update interface content | `manage-interface.py update` |
 | **delete-interface** | Delete interface (with confirmation) | `manage-interface.py delete` |
-| **validate-interface** | Validate interface format | cui-documentation workflows |
+| **validate-interface** | Validate interface format | ref-documentation workflows |
 
 ## Workflow: list-interfaces
 
@@ -43,7 +43,7 @@ List all interfaces with optional type filtering.
 **Step 1: Execute List**
 
 ```bash
-python3 .plan/execute-script.py pm-documents:interface-management:manage-interface list [--type {type}]
+python3 .plan/execute-script.py pm-documents:manage-interface:manage-interface list [--type {type}]
 ```
 
 **Step 3: Parse Output**
@@ -78,7 +78,7 @@ Create a new interface specification with automatic numbering.
 **Step 1: Create Interface**
 
 ```bash
-python3 .plan/execute-script.py pm-documents:interface-management:manage-interface create --title "{title}" --type "{type}"
+python3 .plan/execute-script.py pm-documents:manage-interface:manage-interface create --title "{title}" --type "{type}"
 ```
 
 **Step 3: Parse Output**
@@ -92,7 +92,7 @@ Read the created file and inform user to fill in content sections.
 **Step 5: Validate Format**
 
 ```
-Skill: pm-documents:cui-documentation
+Skill: pm-documents:ref-documentation
 Execute workflow: validate-format
 Parameters:
   target: {created_path}
@@ -127,7 +127,7 @@ Read interface content by number.
 **Step 1: Read Interface**
 
 ```bash
-python3 .plan/execute-script.py pm-documents:interface-management:manage-interface read --number {number}
+python3 .plan/execute-script.py pm-documents:manage-interface:manage-interface read --number {number}
 ```
 
 **Step 3: Display Content**
@@ -149,7 +149,7 @@ Update interface field content.
 **Step 1: Update Interface**
 
 ```bash
-python3 .plan/execute-script.py pm-documents:interface-management:manage-interface update --number {number} --field {field} --value "{value}"
+python3 .plan/execute-script.py pm-documents:manage-interface:manage-interface update --number {number} --field {field} --value "{value}"
 ```
 
 **Step 3: Confirm Update**
@@ -170,7 +170,7 @@ Delete interface with confirmation.
 **Step 1: Delete Interface**
 
 ```bash
-python3 .plan/execute-script.py pm-documents:interface-management:manage-interface delete --number {number} --force
+python3 .plan/execute-script.py pm-documents:manage-interface:manage-interface delete --number {number} --force
 ```
 
 **Step 3: Confirm Deletion**
@@ -179,7 +179,7 @@ Report deletion to user.
 
 ## Workflow: validate-interface
 
-Validate interface format using cui-documentation skill.
+Validate interface format using ref-documentation skill.
 
 ### Parameters
 
@@ -194,7 +194,7 @@ Use list-interfaces workflow to get interface path by number.
 **Step 2: Validate Format**
 
 ```
-Skill: pm-documents:cui-documentation
+Skill: pm-documents:ref-documentation
 Execute workflow: validate-format
 Parameters:
   target: {interface_path}
@@ -204,9 +204,9 @@ Parameters:
 
 Report validation results to user.
 
-## Integration with cui-documentation
+## Integration with ref-documentation
 
-This skill integrates with `cui-documentation` for:
+This skill integrates with `ref-documentation` for:
 
 - **Format validation**: Ensures AsciiDoc formatting compliance
 - **Link verification**: Validates cross-references
@@ -252,4 +252,4 @@ Examples:
 
 ## References
 
-- [cui-documentation SKILL](../cui-documentation/SKILL.md) - Format validation
+- [ref-documentation SKILL](../ref-documentation/SKILL.md) - Format validation

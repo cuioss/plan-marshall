@@ -152,4 +152,4 @@ Missing sections = **Fix** (no exceptions)
 ## Related Standards
 
 - [suppression.md](suppression.md) - How to suppress findings
-- [pm-documents:cui-documentation](../../cui-documentation/SKILL.md) - Documentation standards
+- [pm-documents:ref-documentation](../../ref-documentation/SKILL.md) - Documentation standards

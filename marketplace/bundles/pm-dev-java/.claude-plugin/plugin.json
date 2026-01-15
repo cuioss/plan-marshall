@@ -41,6 +41,6 @@
     "./skills/java-maintenance",
     "./skills/ext-triage-java",
     "./skills/plan-marshall-plugin",
-    "./skills/maven-profile-management"
+    "./skills/manage-maven-profiles"
   ]
 }

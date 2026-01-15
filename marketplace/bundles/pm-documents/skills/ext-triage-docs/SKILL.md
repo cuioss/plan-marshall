@@ -74,4 +74,4 @@ Registered in marshal.json under the documentation domain:
 ## Related Documents
 
 - [workflow-extension-api:triage-extension](../../../pm-workflow/skills/workflow-extension-api/standards/extensions/triage-extension.md) - Triage extension contract
-- [pm-documents:cui-documentation](../cui-documentation/SKILL.md) - Documentation standards
+- [pm-documents:ref-documentation](../ref-documentation/SKILL.md) - Documentation standards

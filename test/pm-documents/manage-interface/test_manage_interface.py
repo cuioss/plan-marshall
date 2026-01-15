@@ -25,7 +25,7 @@ class TestManageInterface(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         """Set up test fixtures."""
-        cls.script_path = get_script_path('pm-documents', 'interface-management', 'manage-interface.py')
+        cls.script_path = get_script_path('pm-documents', 'manage-interface', 'manage-interface.py')
         cls.temp_dir = tempfile.mkdtemp()
         cls.interface_dir = Path(cls.temp_dir) / 'doc' / 'interfaces'
         cls.interface_dir.mkdir(parents=True)
