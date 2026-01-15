@@ -3,7 +3,7 @@ name: task-plan-agent
 description: Transform deliverables into optimized tasks with explicit domain skills
 tools: Read, Bash, Skill
 model: sonnet
-skills: pm-workflow:phase-3-plan, plan-marshall:general-development-rules
+skills: pm-workflow:phase-3-plan, plan-marshall:ref-development-standards
 ---
 
 # Task Plan Agent
@@ -15,7 +15,7 @@ Minimal wrapper that loads task-plan skill and creates tasks from deliverables.
 Load these skills using the Skill tool BEFORE any other action:
 
 ```
-Skill: plan-marshall:general-development-rules
+Skill: plan-marshall:ref-development-standards
 Skill: pm-workflow:phase-3-plan
 ```
 
@@ -23,7 +23,7 @@ If skill loading fails, STOP and report the error. Do NOT proceed without skills
 
 **Log skill selection**:
 ```bash
-python3 .plan/execute-script.py plan-marshall:logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   work {plan_id} INFO "[SKILL] (pm-workflow:phase-3-plan-agent) Using workflow_skill: pm-workflow:phase-3-plan from phase: plan"
 ```
 

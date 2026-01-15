@@ -80,7 +80,7 @@ The extension API allows domains to **extend** system workflow skills without **
 
 ```bash
 # Resolve extension for a specific domain and type
-python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
   resolve-workflow-skill-extension --domain java --type outline
 ```
 

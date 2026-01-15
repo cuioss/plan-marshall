@@ -28,8 +28,8 @@ Activate when:
 | manage-plan-document | `pm-workflow:manage-plan-documents` |
 | manage-files | `pm-workflow:manage-files` |
 | manage-references | `pm-workflow:manage-references` |
-| manage-lessons | `plan-marshall:lessons-learned` |
-| manage-log | `plan-marshall:logging:manage-log` |
+| manage-lessons | `plan-marshall:manage-lessons` |
+| manage-log | `plan-marshall:manage-logging:manage-log` |
 | manage-config | `pm-workflow:manage-config` |
 | manage-lifecycle | `pm-workflow:manage-lifecycle` |
 
@@ -72,7 +72,7 @@ Parse the TOON output. The `action` field indicates:
 **On successful creation**, log the phase start (directory now exists):
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   work {plan_id} INFO "[STATUS] (pm-workflow:phase-1-init) Starting init phase"
 ```
 
@@ -97,7 +97,7 @@ python3 .plan/execute-script.py pm-workflow:manage-files:manage-files create-or-
 
 3. Log the replacement (directory now exists for logging):
 ```bash
-python3 .plan/execute-script.py plan-marshall:logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   work {plan_id} INFO "[ACTION] (pm-workflow:phase-1-init) Replaced existing plan - deleted previous version"
 ```
 
@@ -112,7 +112,7 @@ python3 .plan/execute-script.py plan-marshall:logging:manage-log \
 **From Lesson**:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:lessons-learned:manage-lesson get \
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lesson get \
   --id {lesson_id}
 ```
 
@@ -156,7 +156,7 @@ python3 .plan/execute-script.py pm-workflow:manage-plan-documents:manage-plan-do
 **After successful creation**, log the artifact:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   work {plan_id} INFO "[ARTIFACT] (pm-workflow:phase-1-init) Created request.md from {source_type}"
 ```
 
@@ -193,7 +193,7 @@ Query configured domains from marshal.json and select appropriate domain for the
 **Otherwise**, query available domains:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
   skill-domains list
 ```
 
@@ -205,7 +205,7 @@ python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall
 **After selecting domain**, log the decision:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   work {plan_id} INFO "[DECISION] (pm-workflow:phase-1-init) Detected domain: {domain} - {reasoning}"
 ```
 
@@ -244,7 +244,7 @@ Note: `workflow_skills` are NOT stored in config.toon. They are resolved at runt
 Log the plan creation as an artifact:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   work {plan_id} INFO "[ARTIFACT] (pm-workflow:phase-1-init) Created plan: {derived_title} (source: {source_type}, domain: {domain})"
 ```
 
@@ -261,7 +261,7 @@ python3 .plan/execute-script.py pm-workflow:manage-lifecycle:manage-lifecycle tr
 **After successful transition**, log phase completion:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   work {plan_id} INFO "[STATUS] (pm-workflow:phase-1-init) Init phase complete - plan created with {domain} domain"
 ```
 
@@ -293,7 +293,7 @@ artifacts:
 On any error, **first log the error** to work-log (if plan directory exists):
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   work {plan_id} ERROR "[ERROR] (pm-workflow:phase-1-init) {error_type}: {full error context and message}"
 ```
 
@@ -343,8 +343,8 @@ This skill is called by `pm-workflow:phase-1-init-agent`. The agent completes th
 | `pm-workflow:manage-plan-documents` | Write request.md (typed document) |
 | `pm-workflow:manage-files` | Create/reference plan directory |
 | `pm-workflow:manage-references` | Initialize references |
-| `plan-marshall:logging:manage-log` | Log creation |
-| `plan-marshall:lessons-learned` | Read lesson (if source=lesson) |
+| `plan-marshall:manage-logging:manage-log` | Log creation |
+| `plan-marshall:manage-lessons` | Read lesson (if source=lesson) |
 | `pm-workflow:manage-config` | Create config.toon |
 | `pm-workflow:manage-lifecycle` | Create status.toon, phase transitions |
 

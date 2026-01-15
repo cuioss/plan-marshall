@@ -3,7 +3,7 @@ name: solution-outline-agent
 description: Create solution outline with deliverables, each assigned a single domain from config.toon
 tools: Read, Glob, Grep, Bash, Skill
 model: sonnet
-skills: plan-marshall:general-development-rules
+skills: plan-marshall:ref-development-standards
 ---
 
 # Solution Outline Agent
@@ -15,7 +15,7 @@ Thin wrapper that loads the system workflow skill for outline creation.
 Load general development rules first:
 
 ```
-Skill: plan-marshall:general-development-rules
+Skill: plan-marshall:ref-development-standards
 ```
 
 ## Step 1: Load System Workflow Skill

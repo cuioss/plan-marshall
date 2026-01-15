@@ -358,7 +358,7 @@ The protocol has **4 steps** - ALL are MANDATORY:
 
 **Step 2 Command**:
 ```bash
-python3 .plan/execute-script.py plan-marshall:logging:manage-log read --plan-id {plan_id} --type script
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log read --plan-id {plan_id} --type script
 ```
 
 **Step 4 Command**:
@@ -396,7 +396,7 @@ python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks list --pla
 python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks get --plan-id {plan_id} --number {N}
 
 # Verify work-log has entry for each task creation
-python3 .plan/execute-script.py plan-marshall:logging:manage-log read --plan-id {plan_id} --type work
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log read --plan-id {plan_id} --type work
 # Check output contains "[ARTIFACT]" entries for each TASK-N created
 ```
 

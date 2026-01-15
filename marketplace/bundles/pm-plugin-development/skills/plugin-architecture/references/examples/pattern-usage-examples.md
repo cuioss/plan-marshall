@@ -20,7 +20,7 @@ skill: marketplace-inventory
 
 ## Step 1: Scan Marketplace Structure
 
-python3 .plan/execute-script.py plan-marshall:marketplace-inventory:scan-marketplace-inventory \
+python3 .plan/execute-script.py plan-marshall:tools-marketplace-inventory:scan-marketplace-inventory \
   --scope marketplace \
   --include-descriptions
 

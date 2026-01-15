@@ -108,7 +108,7 @@ Extensions **must** integrate with `run_config` for adaptive timeouts.
 }
 ```
 
-**Python API** (import from `plan-marshall:run-config`):
+**Python API** (import from `plan-marshall:manage-run-config`):
 
 ```python
 from run_config import timeout_get, timeout_set
@@ -137,11 +137,11 @@ timeout_set(
 **CLI** (via execute-script):
 ```bash
 # Get timeout
-python3 .plan/execute-script.py plan-marshall:run-config:run_config \
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config \
   timeout get --command "maven:verify" --default 300
 
 # Set timeout
-python3 .plan/execute-script.py plan-marshall:run-config:run_config \
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config \
   timeout set --command "maven:verify" --duration 165
 ```
 

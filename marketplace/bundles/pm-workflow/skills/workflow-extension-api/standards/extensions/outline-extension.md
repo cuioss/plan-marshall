@@ -33,7 +33,7 @@ class Extension(ExtensionBase):
 ## Resolution
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
   resolve-workflow-skill-extension --domain java --type outline
 ```
 
@@ -267,7 +267,7 @@ This domain is relevant when:
 
 ### Discovery Script
 ```bash
-python3 .plan/execute-script.py plan-marshall:marketplace-inventory:scan-marketplace-inventory \
+python3 .plan/execute-script.py plan-marshall:tools-marketplace-inventory:scan-marketplace-inventory \
   --trace-plan-id {plan_id} --include-descriptions
 ```
 ```

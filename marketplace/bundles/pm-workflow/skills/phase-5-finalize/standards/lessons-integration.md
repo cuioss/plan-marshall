@@ -44,7 +44,7 @@ If a matching lesson exists:
 3. **Log application** - Record that lesson was applied
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   work {plan_id} INFO "[TRIAGE] (pm-workflow:phase-5-finalize) Applied lesson {lesson_id}: {decision} for {finding}"
 ```
 

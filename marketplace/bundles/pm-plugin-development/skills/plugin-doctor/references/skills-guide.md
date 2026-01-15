@@ -154,7 +154,7 @@ allowed-tools: Read, Bash, Grep
 
 ### Step 1: Load Prerequisites
 
-Skill: plan-marshall:diagnostic-patterns
+Skill: plan-marshall:ref-development-standards
 
 ### Step 2: Load Standards (Progressive Disclosure)
 

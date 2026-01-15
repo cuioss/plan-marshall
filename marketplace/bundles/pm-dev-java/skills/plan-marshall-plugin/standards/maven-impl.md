@@ -160,7 +160,7 @@ These warnings MUST be fixed and NEVER added to acceptable list:
 ### Configuration Access
 
 ```
-Skill: plan-marshall:run-config
+Skill: plan-marshall:manage-run-config
 Workflow: Read Configuration
 Field: maven.acceptable_warnings
 ```

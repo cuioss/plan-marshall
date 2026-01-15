@@ -92,15 +92,15 @@ After analyzing each deliverable or deliverable pair, log the decision:
 
 ```bash
 # If aggregating deliverables
-python3 .plan/execute-script.py plan-marshall:logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   work {plan_id} INFO "[OPTIMIZATION] (pm-plugin-development:plugin-task-plan) Aggregating D{N}+D{M}: same skill ({skill}), no inter-dependency"
 
 # If keeping deliverable separate
-python3 .plan/execute-script.py plan-marshall:logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   work {plan_id} INFO "[OPTIMIZATION] (pm-plugin-development:plugin-task-plan) Keeping D{N} separate: {reason}"
 
 # If splitting deliverable
-python3 .plan/execute-script.py plan-marshall:logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   work {plan_id} INFO "[OPTIMIZATION] (pm-plugin-development:plugin-task-plan) Splitting D{N}: execution_mode=mixed"
 ```
 
@@ -192,7 +192,7 @@ EOF
 On ambiguous deliverable or planning issues:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:lessons-learned:manage-lesson add \
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lesson add \
   --component-type skill \
   --component-name plugin-task-plan \
   --category observation \
@@ -407,8 +407,8 @@ If deliverable lacks required parameters:
 **Script Notations** (use EXACTLY as shown):
 - `pm-workflow:manage-solution-outline:manage-solution-outline` - Read solution and list deliverables (list-deliverables, read)
 - `pm-workflow:manage-tasks:manage-tasks` - Create tasks (add --plan-id X <<'EOF' ... EOF)
-- `plan-marshall:lessons-learned:manage-lesson` - Record lessons on issues (add)
-- `plan-marshall:logging:manage-log` - Log progress (work)
+- `plan-marshall:manage-lessons:manage-lesson` - Record lessons on issues (add)
+- `plan-marshall:manage-logging:manage-log` - Log progress (work)
 
 **Skills Delegated To**:
 - `pm-plugin-development:plugin-create` - Component creation (handles validation and verification internally)

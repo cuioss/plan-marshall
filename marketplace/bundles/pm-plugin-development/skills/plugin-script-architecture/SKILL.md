@@ -12,7 +12,7 @@ allowed-tools: Read, Bash
 - **Testing Standards**: pytest infrastructure, test organization, fixtures
 - **Output Contract**: TOON format, exit codes, error patterns
 
-For script execution patterns, see: `plan-marshall:script-executor`
+For script execution patterns, see: `plan-marshall:tools-script-executor`
 
 ## When to Activate
 
@@ -44,4 +44,4 @@ Load: `standards/cross-skill-integration.md`
 
 ## Related Skills
 
-- `plan-marshall:script-executor` - Script execution, notation resolution, plan-marshall command
+- `plan-marshall:tools-script-executor` - Script execution, notation resolution, plan-marshall command

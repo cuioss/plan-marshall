@@ -3,7 +3,7 @@ name: task-execute-agent
 description: Execute a single task with two-tier skill loading and profile-based task executor routing
 tools: Read, Write, Edit, Glob, Grep, Bash, Skill
 model: sonnet
-skills: plan-marshall:general-development-rules
+skills: plan-marshall:ref-development-standards
 ---
 
 # Task Execute Agent
@@ -15,7 +15,7 @@ Minimal wrapper that loads task-specific skills and executes implementation/test
 Load system default skill using the Skill tool BEFORE any other action:
 
 ```
-Skill: plan-marshall:general-development-rules
+Skill: plan-marshall:ref-development-standards
 ```
 
 If skill loading fails, STOP and report the error. Do NOT proceed without skills loaded.
@@ -66,7 +66,7 @@ Skill: {skill_name}
 
 **Log domain skills loaded**:
 ```bash
-python3 .plan/execute-script.py plan-marshall:logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   work {plan_id} INFO "[SKILL] (pm-workflow:task-execute-agent) Loading domain skills from task.skills: [{task.skills}]"
 ```
 
@@ -75,7 +75,7 @@ python3 .plan/execute-script.py plan-marshall:logging:manage-log \
 Resolve task executor skill from marshal.json based on profile:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall-config resolve-task-executor \
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config resolve-task-executor \
   --profile {task.profile}
 ```
 
@@ -83,7 +83,7 @@ The task's `profile` field (e.g., `implementation`, `module_testing`) maps to a 
 
 **Log the resolved skill**:
 ```bash
-python3 .plan/execute-script.py plan-marshall:logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   work {plan_id} INFO "[SKILL] (pm-workflow:task-execute-agent) Using task_executor: {task_executor} for profile: {task.profile}"
 ```
 

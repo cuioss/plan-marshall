@@ -33,7 +33,7 @@ plan-phase-agent plan_id={plan_id} phase=4-execute task_number={task_number}
 
 **Skill resolution**:
 ```bash
-python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
   resolve-workflow-skill --domain {task.domain} --phase {task.profile}
 ```
 
@@ -223,7 +223,7 @@ python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks get \
 
 ```bash
 # Uses task.domain and task.profile
-python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
   resolve-workflow-skill --domain java --phase implementation
 ```
 
@@ -267,7 +267,7 @@ python3 .plan/execute-script.py pm-workflow:manage-references:manage-references 
 ### Progress Logging
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   work {plan_id} INFO "[STEP] Completed step {N}: {file_path}"
 ```
 
@@ -347,7 +347,7 @@ name: task-execute-agent
 description: Execute single task with two-tier skill loading
 tools: Read, Write, Edit, Bash, Skill
 model: sonnet
-skills: pm-workflow:task-execution, plan-marshall:general-development-rules
+skills: pm-workflow:task-execution, plan-marshall:ref-development-standards
 ---
 
 # Task Execute Agent
@@ -359,7 +359,7 @@ then loads task.skills array for domain knowledge.
 
 ```
 Skill: pm-workflow:task-execution
-Skill: plan-marshall:general-development-rules
+Skill: plan-marshall:ref-development-standards
 ```
 
 ## Workflow

@@ -79,7 +79,7 @@ This domain is relevant when:
 ### Discovery Script
 For cross-cutting changes, use the marketplace inventory:
 ```bash
-python3 .plan/execute-script.py plan-marshall:marketplace-inventory:scan-marketplace-inventory \
+python3 .plan/execute-script.py plan-marshall:tools-marketplace-inventory:scan-marketplace-inventory \
   --trace-plan-id {plan_id} --include-descriptions
 ```
 

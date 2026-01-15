@@ -90,7 +90,7 @@ Multi-domain plans (e.g., fullstack features) have multiple domains in `marshal.
 Solution outline skills MUST validate domains exist in marshal.json:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
   skill-domains get --domain {domain}
 ```
 

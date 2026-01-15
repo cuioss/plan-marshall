@@ -99,7 +99,7 @@ This ensures script execution works without prompting, independent of global set
 **BOOTSTRAP**: Use DIRECT Python call with glob (executor doesn't exist yet):
 
 ```bash
-python3 ${PLUGIN_ROOT}/plan-marshall/skills/script-executor/scripts/generate-executor.py generate
+python3 ${PLUGIN_ROOT}/plan-marshall/skills/tools-script-executor/scripts/generate-executor.py generate
 ```
 
 **Output (TOON)**:
@@ -204,7 +204,7 @@ Modules discovered: 10
 ## Step 5: Initialize Marshal.json
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall-config init
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config init
 ```
 
 **Output**: "Created .plan/marshal.json with defaults"
@@ -378,14 +378,14 @@ AskUserQuestion:
 **Save decision to run-config**:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:run-config:run_config profile-mapping set \
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config profile-mapping set \
   --profile-id jfr --canonical skip
 ```
 
 **Batch mode** - If multiple profiles share same classification:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:run-config:run_config profile-mapping batch-set \
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config profile-mapping batch-set \
   --mappings-json '{"jfr": "skip", "analyze-jfr": "skip", "quick": "skip"}'
 ```
 
@@ -396,7 +396,7 @@ Profile mappings are persisted to `run-configuration.json` and used by build com
 Auto-populate module domains from build_systems:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
   modules infer-domains
 ```
 
@@ -468,7 +468,7 @@ Configure skill domains using bundle discovery. Domains are auto-discovered from
 **Step 7a: Discover available domains**
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
   skill-domains get-available
 ```
 
@@ -559,7 +559,7 @@ If more than 4 optional domains exist, prioritize by relevance or show multiple 
 **Step 7d: Configure selected domains**
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
   skill-domains configure --domains "java,java-cui,javascript"
 ```
 
@@ -583,7 +583,7 @@ This populates `skill_domains` in marshal.json with:
 Task executors map profile values to workflow skills that execute tasks of that profile.
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
   configure-task-executors
 ```
 
@@ -613,7 +613,7 @@ Skill domains configure which implementation skills are loaded during plan execu
 - **Technical domains**: Profile-based skills and workflow_skill_extensions
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall-config skill-domains list
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config skill-domains list
 ```
 
 **Expected output**: Shows configured domains:

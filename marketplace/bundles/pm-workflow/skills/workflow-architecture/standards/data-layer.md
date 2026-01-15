@@ -395,4 +395,4 @@ The pm-workflow bundle uses manage-* skills as the data access layer for all pla
 | `pm-workflow:manage-config/SKILL.md` | Full config commands |
 | `pm-workflow:manage-lifecycle/SKILL.md` | Full lifecycle commands |
 | `pm-workflow:manage-tasks/SKILL.md` | Full task commands |
-| `plan-marshall:logging/SKILL.md` | Work log and script execution logging |
+| `plan-marshall:manage-logging/SKILL.md` | Work log and script execution logging |

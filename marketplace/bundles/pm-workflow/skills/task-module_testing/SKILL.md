@@ -225,7 +225,7 @@ python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks update \
 
 On issues or unexpected patterns:
 ```bash
-python3 .plan/execute-script.py plan-marshall:lessons-learned:manage-lesson add \
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lesson add \
   --component-type skill \
   --component-name task-module_testing \
   --category observation \
@@ -351,7 +351,7 @@ If test requires unavailable dependencies:
 
 **Script Notations** (use EXACTLY as shown):
 - `pm-workflow:manage-tasks:manage-tasks` - Task operations (get, update, update-step)
-- `plan-marshall:lessons-learned:manage-lesson` - Record lessons (add)
+- `plan-marshall:manage-lessons:manage-lesson` - Record lessons (add)
 
 **Domain Testing Skills Applied** (loaded by agent from task.skills):
 - Java: `pm-dev-java:java-core`, `pm-dev-java:junit-core`, `pm-dev-java:junit-integration`

@@ -22,7 +22,7 @@ allowed-tools: Read, Write, Edit, Bash, Skill, Task, AskUserQuestion
 |--------|---------|
 | `pm-workflow:manage-config:manage-config` | Config field access |
 | `pm-workflow:manage-lifecycle:manage-lifecycle` | Phase routing and transitions |
-| `plan-marshall:logging:manage-log` | Work log entries |
+| `plan-marshall:manage-logging:manage-log` | Work log entries |
 | `pm-workflow:manage-tasks:manage-tasks` | Task and step management |
 | `pm-workflow:manage-references:manage-references` | Reference file CRUD |
 
@@ -92,7 +92,7 @@ Use `current_phase` for logging, `skill` for dynamic routing, and `completed_pha
 At the start of execute or finalize phase:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   work {plan_id} INFO "[STATUS] (pm-workflow:phase-4-execute) Starting {phase} phase"
 ```
 
@@ -129,7 +129,7 @@ python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks step-done 
 After each task completes:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   work {plan_id} INFO "[OUTCOME] (pm-workflow:phase-4-execute) Completed {task_id}: {task_title} ({steps_completed} steps)"
 ```
 
@@ -142,7 +142,7 @@ python3 .plan/execute-script.py plan-marshall:logging:manage-log \
 ### Step 5: Log Phase Completion (When phase completes)
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   work {plan_id} INFO "[STATUS] (pm-workflow:phase-4-execute) Completed {phase} phase: {tasks_completed} tasks"
 ```
 
@@ -194,7 +194,7 @@ This automatically updates status.toon and moves to the next phase.
 On any error, **first log the error** to work-log:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   work {plan_id} ERROR "[ERROR] (pm-workflow:phase-4-execute) {task_id} failed - {error_type}: {error_context}"
 ```
 
@@ -227,7 +227,7 @@ python3 .plan/execute-script.py plan-marshall:logging:manage-log \
 | `pm-workflow:manage-lifecycle` | `get-routing-context` | Phase, skill routing, progress |
 | `pm-workflow:manage-config` | `get-multi` | Finalize config fields |
 | `pm-workflow:manage-tasks` | `next --include-context` | Task with goal context |
-| `plan-marshall:logging:manage-log` | `work` | Work log entries |
+| `plan-marshall:manage-logging:manage-log` | `work` | Work log entries |
 | `pm-workflow:manage-references` | - | Reference file CRUD |
 | `pm-workflow:workflow-integration-git` | - | Commit operations |
 

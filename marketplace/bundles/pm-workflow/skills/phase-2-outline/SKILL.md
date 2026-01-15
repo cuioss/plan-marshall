@@ -121,7 +121,7 @@ For each domain in config.toon, check if an outline extension exists and load it
 
 **EXECUTE**:
 ```bash
-python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
   resolve-workflow-skill-extension --domain {domain} --type outline
 ```
 
@@ -375,7 +375,7 @@ This is an **intelligent decision output** - not a copy of marshal.json domains,
 
 **EXECUTE**:
 ```bash
-python3 .plan/execute-script.py plan-marshall:lessons-learned:manage-lesson add \
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lesson add \
   --component-type skill \
   --component-name phase-2-outline \
   --category observation \
@@ -421,7 +421,7 @@ message: {error message if status=error}
 - `pm-workflow:manage-plan-documents:manage-plan-documents` - Request operations
 - `pm-workflow:manage-config:manage-config` - Plan config operations
 - `pm-workflow:manage-references:manage-references` - Plan references
-- `plan-marshall:lessons-learned:manage-lesson` - Record lessons on issues
+- `plan-marshall:manage-lessons:manage-lesson` - Record lessons on issues
 
 **Consumed By**:
 - `pm-workflow:phase-3-plan` skill (reads deliverables for task creation)

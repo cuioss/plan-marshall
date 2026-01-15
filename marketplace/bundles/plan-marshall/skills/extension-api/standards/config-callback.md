@@ -79,7 +79,7 @@ def config_defaults(self, project_root: str) -> None:
 **Alternative** - CLI via subprocess (when import path unavailable):
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:run-config:run_config extension-defaults set-default \
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config extension-defaults set-default \
   --key "my_bundle.my_setting" --value "default_value"
 ```
 
@@ -138,7 +138,7 @@ class Extension(ExtensionBase):
             # Check if mapping exists
             result = subprocess.run(
                 ["python3", ".plan/execute-script.py",
-                 "plan-marshall:run-config:run_config", "profile-mapping", "get",
+                 "plan-marshall:manage-run-config:run_config", "profile-mapping", "get",
                  "--profile-id", profile_id],
                 capture_output=True, text=True, cwd=project_root
             )
@@ -147,7 +147,7 @@ class Extension(ExtensionBase):
             if '"mapped": false' in result.stdout:
                 subprocess.run(
                     ["python3", ".plan/execute-script.py",
-                     "plan-marshall:run-config:run_config", "profile-mapping", "set",
+                     "plan-marshall:manage-run-config:run_config", "profile-mapping", "set",
                      "--profile-id", profile_id, "--canonical", "skip"],
                     cwd=project_root
                 )

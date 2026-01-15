@@ -27,7 +27,7 @@ Verification runs → Findings detected → Load triage extensions → Apply dec
 For each domain in `config.toon.domains`:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
   resolve-workflow-skill-extension --domain {domain} --type triage
 ```
 
@@ -190,7 +190,7 @@ If no triage extension exists for a domain, apply default rules:
 Log triage decisions to work-log:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   work {plan_id} INFO "[TRIAGE] (pm-workflow:phase-5-finalize) {file}:{line} - {finding_type}: {decision} - {reason}"
 ```
 

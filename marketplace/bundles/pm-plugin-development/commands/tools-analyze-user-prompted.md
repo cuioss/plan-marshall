@@ -246,5 +246,5 @@ If user selects 1-3:
 ## RELATED
 
 - `/plan-marshall:tools-manage-web-permissions` - Manage WebFetch domain permissions
-- `plan-marshall:script-executor` - Script execution permission patterns
+- `plan-marshall:tools-script-executor` - Script execution permission patterns
 - `pm-plugin-development:plugin-architecture` - Component tool declarations

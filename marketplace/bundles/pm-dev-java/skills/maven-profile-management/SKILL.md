@@ -106,17 +106,17 @@ AskUserQuestion:
 **Skip** - Add to skip list:
 ```bash
 # Get current value first
-python3 .plan/execute-script.py plan-marshall:run-config:run_config ext-defaults get \
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config ext-defaults get \
   --key build.maven.profiles.skip
 
 # Append new profile (comma-separated)
-python3 .plan/execute-script.py plan-marshall:run-config:run_config ext-defaults set \
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config ext-defaults set \
   --key build.maven.profiles.skip --value "{existing},{profile-id}"
 ```
 
 **Map** - Add canonical mapping:
 ```bash
-python3 .plan/execute-script.py plan-marshall:run-config:run_config profile-mapping set \
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config profile-mapping set \
   --profile-id {profile-id} --canonical {canonical}
 ```
 
@@ -176,6 +176,6 @@ Configuration stored in `run-configuration.json`:
 
 | Document | Purpose |
 |----------|---------|
-| [profile-mapping.md](../../plan-marshall/skills/run-config/standards/profile-mapping.md) | run_config profile-mapping commands |
+| [profile-mapping.md](../../plan-marshall/skills/manage-run-config/standards/profile-mapping.md) | run_config profile-mapping commands |
 | [maven-impl.md](../plan-marshall-plugin/standards/maven-impl.md) | Maven profile pipeline implementation |
 | [canonical-commands.md](../../plan-marshall/skills/extension-api/standards/canonical-commands.md) | Command vocabulary |

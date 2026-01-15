@@ -9,7 +9,7 @@ Verify the planning system setup and diagnose issues. Run all checks and report 
 Check executor exists, is valid, and in sync with marketplace:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:script-executor:generate-executor verify
+python3 .plan/execute-script.py plan-marshall:tools-script-executor:generate-executor verify
 ```
 
 **Output (TOON)**:
@@ -27,7 +27,7 @@ If status is `error` or executor missing: Offer to regenerate via Maintenance me
 Compare executor mappings with current marketplace state:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:script-executor:generate-executor drift
+python3 .plan/execute-script.py plan-marshall:tools-script-executor:generate-executor drift
 ```
 
 **Output (TOON)**:

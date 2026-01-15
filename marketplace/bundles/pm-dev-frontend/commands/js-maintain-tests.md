@@ -12,7 +12,7 @@ Orchestrates systematic JavaScript test quality improvement workflow while ensur
 
 If you discover issues or improvements during execution, record them:
 
-1. **Activate skill**: `Skill: plan-marshall:lessons-learned`
+1. **Activate skill**: `Skill: plan-marshall:manage-lessons`
 2. **Record lesson** with:
    - Component: `{type: "command", name: "js-maintain-tests", bundle: "pm-dev-frontend"}`
    - Category: bug | improvement | pattern | anti-pattern

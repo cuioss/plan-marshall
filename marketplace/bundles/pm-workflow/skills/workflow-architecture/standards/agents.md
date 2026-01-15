@@ -103,7 +103,7 @@ Each agent follows the same pattern:
 │  │  description: {what it does}                                         │  │
 │  │  tools: Read, Write, Edit, Glob, Grep, Bash, Skill                   │  │
 │  │  model: sonnet                                                       │  │
-│  │  skills: plan-marshall:general-development-rules                     │  │
+│  │  skills: plan-marshall:ref-development-standards                     │  │
 │  │  ---                                                                 │  │
 │  │                                                                      │  │
 │  │  # {Agent Name}                                                      │  │
@@ -111,14 +111,14 @@ Each agent follows the same pattern:
 │  │  ## Step 0: Load System Skills (MANDATORY)                           │  │
 │  │                                                                      │  │
 │  │  ```                                                                 │  │
-│  │  Skill: plan-marshall:general-development-rules                      │  │
+│  │  Skill: plan-marshall:ref-development-standards                      │  │
 │  │  ```                                                                 │  │
 │  │                                                                      │  │
 │  │  ## Step 1: Resolve Workflow Skill                                   │  │
 │  │                                                                      │  │
 │  │  ```bash                                                             │  │
 │  │  python3 .plan/execute-script.py                                     │  │
-│  │    plan-marshall:plan-marshall-config:plan-marshall-config           │  │
+│  │    plan-marshall:manage-plan-marshall-config:plan-marshall-config           │  │
 │  │    resolve-workflow-skill --domain {domain} --phase {phase}          │  │
 │  │  ```                                                                 │  │
 │  │                                                                      │  │
@@ -192,7 +192,7 @@ Each agent follows the same pattern:
 │  │  ┌────────────────────────────────────────────────────────────────┐ │  │
 │  │  │ Step 0: Load System Skills                                     │ │  │
 │  │  │                                                                │ │  │
-│  │  │ Skill: plan-marshall:general-development-rules                 │ │  │
+│  │  │ Skill: plan-marshall:ref-development-standards                 │ │  │
 │  │  └────────────────────────────────────────────────────────────────┘ │  │
 │  │                              │                                       │  │
 │  │                              ▼                                       │  │
@@ -256,7 +256,7 @@ Each agent follows the same pattern:
 │  │  ┌────────────────────────────────────────────────────────────────┐ │  │
 │  │  │ Step 0: Load System Skills                                     │ │  │
 │  │  │                                                                │ │  │
-│  │  │ Skill: plan-marshall:general-development-rules                 │ │  │
+│  │  │ Skill: plan-marshall:ref-development-standards                 │ │  │
 │  │  └────────────────────────────────────────────────────────────────┘ │  │
 │  │                              │                                       │  │
 │  │                              ▼                                       │  │

@@ -107,7 +107,7 @@ solution_outline.md                      TASK.toon
 
 **Log skill inheritance**:
 ```bash
-python3 .plan/execute-script.py plan-marshall:logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   work {plan_id} INFO "[SKILL] (pm-workflow:phase-3-plan) Inherited skills for TASK-{N}: [{task.skills}]"
 ```
 
@@ -149,7 +149,7 @@ EOF
 
 **MANDATORY - Log each task creation**:
 ```bash
-python3 .plan/execute-script.py plan-marshall:logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   work {plan_id} INFO "[ARTIFACT] (pm-workflow:phase-3-plan) Created TASK-{N}: {title}"
 ```
 
@@ -180,7 +180,7 @@ execution_order:
 On ambiguous deliverable or planning issues:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:lessons-learned:manage-lesson add \
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lesson add \
   --component-type skill \
   --component-name task-plan \
   --category observation \
@@ -279,7 +279,7 @@ If deliverable metadata incomplete:
 **Script Notations** (use EXACTLY as shown):
 - `pm-workflow:manage-solution-outline:manage-solution-outline` - Read deliverables with skills (list-deliverables, read)
 - `pm-workflow:manage-tasks:manage-tasks` - Create tasks (add --plan-id X <<'EOF' ... EOF)
-- `plan-marshall:lessons-learned:manage-lesson` - Record lessons on issues (add)
+- `plan-marshall:manage-lessons:manage-lesson` - Record lessons on issues (add)
 
 **Consumed By**:
 - `pm-workflow:task-execute-agent` - Reads tasks and executes them

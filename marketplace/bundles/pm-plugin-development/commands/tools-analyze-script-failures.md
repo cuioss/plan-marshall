@@ -63,6 +63,6 @@ When you invoke this command, I will:
 ## RELATED
 
 - `/pm-plugin-development:tools-analyze-user-prompted` - Analyze permission prompts
-- `plan-marshall:lessons-learned` - Store lessons from failures
+- `plan-marshall:manage-lessons` - Store lessons from failures
 - `pm-plugin-development:plugin-script-architecture` - Script development standards
 - `/pm-plugin-development:plugin-doctor` - Diagnose component issues

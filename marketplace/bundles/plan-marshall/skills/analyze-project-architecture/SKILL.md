@@ -366,7 +366,7 @@ Assign skills organized by execution profile (implementation, unit-testing, inte
 Get all configured skill domains:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
   skill-domains list
 ```
 
@@ -408,7 +408,7 @@ Based on the module analysis from Steps 6a-6d, determine which domain applies.
 For the applicable domain, get the pre-assembled skills by profile:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
   get-skills-by-profile --domain {domain-key}
 ```
 
@@ -469,7 +469,7 @@ ls {module-path}/doc/*.adoc 2>/dev/null || ls {module-path}/docs/*.adoc 2>/dev/n
 
 1. Get documentation skills:
 ```bash
-python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
   get-skills-by-profile --domain documentation
 ```
 

@@ -453,7 +453,7 @@ scripts/
 # BAD: Subprocess call to Python script
 result = subprocess.run([
     "python3", ".plan/execute-script.py",
-    "plan-marshall:run-config:run_config",
+    "plan-marshall:manage-run-config:run_config",
     "timeout", "get", "--command-key", command_key
 ], capture_output=True, text=True)
 # Then parse JSON output...

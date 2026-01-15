@@ -31,7 +31,7 @@ Activate when:
 
 ```
 Skill: pm-plugin-development:plugin-architecture
-Skill: plan-marshall:diagnostic-patterns
+Skill: plan-marshall:ref-development-standards
 ```
 
 These provide architecture principles and non-prompting tool usage patterns.
@@ -226,7 +226,7 @@ For each selected action:
 - Activate: `Skill: plan-marshall:manage-lessons-learned`
 - Create lesson with:
   ```bash
-  python3 .plan/execute-script.py plan-marshall:lessons-learned:manage-lesson add \
+  python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lesson add \
     --component "{source_component}" \
     --category "bug" \
     --title "Script failure: {short_description}" \
@@ -278,7 +278,7 @@ Recorded lessons:
 - Preserve existing component structure
 
 **Lessons Learned Integration**:
-- Use `plan-marshall:lessons-learned` skill for recording
+- Use `plan-marshall:manage-lessons` skill for recording
 - Category should reflect nature: bug, improvement, anti-pattern
 - Include enough detail for future reference
 

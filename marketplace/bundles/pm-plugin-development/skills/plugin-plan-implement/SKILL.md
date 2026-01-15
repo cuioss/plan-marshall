@@ -15,8 +15,8 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash, Skill
 | Script | Purpose |
 |--------|---------|
 | `pm-workflow:manage-tasks:manage-tasks` | Task retrieval and progress tracking |
-| `plan-marshall:logging:manage-log` | Work log entries |
-| `plan-marshall:plan-marshall-config:plan-marshall-config` | Domain skill retrieval |
+| `plan-marshall:manage-logging:manage-log` | Work log entries |
+| `plan-marshall:manage-plan-marshall-config:plan-marshall-config` | Domain skill retrieval |
 
 ## Standards (Load On-Demand)
 
@@ -58,7 +58,7 @@ Extract from response:
 #### 2a. Get Domain Defaults
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
   skill-domains get-defaults \
   --domain {delegation.domain}
 ```
@@ -82,7 +82,7 @@ Skill: {delegation.context_skills[1]}
 ### Step 3: Log Task Start
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   work {plan_id} INFO "[TASK] (pm-plugin-development:plugin-plan-implement) Starting task {task_number}: {title}"
 ```
 
@@ -120,7 +120,7 @@ Read standards/step-execution.md
 #### 4c. Log Step Progress
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   work {plan_id} INFO "[STEP] (pm-plugin-development:plugin-plan-implement) Completed step {step_number}: {file_path}"
 ```
 
@@ -146,7 +146,7 @@ After all steps complete:
 Log result:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   work {plan_id} INFO "[VERIFY] (pm-plugin-development:plugin-plan-implement) Verification {passed|failed}: {criteria}"
 ```
 
@@ -235,7 +235,7 @@ If verification fails:
 ### Uses
 - `pm-plugin-development:plugin-architecture` - Architecture principles
 - `pm-workflow:manage-tasks` - Task and step management
-- `plan-marshall:logging:manage-log` - Work logging
+- `plan-marshall:manage-logging:manage-log` - Work logging
 - Context skills from task delegation (loaded dynamically)
 
 ### Related Skills

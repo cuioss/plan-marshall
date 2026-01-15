@@ -240,7 +240,7 @@ The `skills_by_profile` field organizes skills by execution profile:
 
 Skills are derived from configured domain skill sets. Query available domains and their skills via:
 ```bash
-python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall-config get-skills-by-profile --domain java
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config get-skills-by-profile --domain java
 ```
 
 ### Purpose Values

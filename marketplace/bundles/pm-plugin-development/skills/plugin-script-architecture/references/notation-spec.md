@@ -36,7 +36,7 @@ pm-plugin-development:plugin-doctor/scripts/analyze-markdown-file.sh
 ### Python Scripts
 
 ```
-plan-marshall:marketplace-inventory/scripts/scan-marketplace-inventory.py
+plan-marshall:tools-marketplace-inventory/scripts/scan-marketplace-inventory.py
 plan-marshall:permission-doctor/scripts/permission-doctor.py
 pm-dev-java:java-core/scripts/analyze-logging-violations.py
 pm-workflow:workflow-integration-github/scripts/fetch-pr-comments.py
@@ -56,7 +56,7 @@ Where `{install_path}` comes from `~/.claude/plugins/installed_plugins.json`.
 
 Notation:
 ```
-plan-marshall:marketplace-inventory/scripts/scan-marketplace-inventory.py
+plan-marshall:tools-marketplace-inventory/scripts/scan-marketplace-inventory.py
 ```
 
 Install path (from installed_plugins.json):
@@ -66,7 +66,7 @@ Install path (from installed_plugins.json):
 
 Resolved absolute path:
 ```
-/Users/oliver/git/plan-marshall/marketplace/bundles/plan-marshall-core/skills/marketplace-inventory/scripts/scan-marketplace-inventory.py
+/Users/oliver/git/plan-marshall/marketplace/bundles/plan-marshall-core/skills/tools-marketplace-inventory/scripts/scan-marketplace-inventory.py
 ```
 
 ## Validation Rules

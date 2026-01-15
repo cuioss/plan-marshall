@@ -84,9 +84,9 @@ All 5 workflows follow the same pattern:
 
    **EXECUTE** these skill loads before proceeding:
    ```
-   Skill: plan-marshall:diagnostic-patterns
+   Skill: plan-marshall:ref-development-standards
    Skill: pm-plugin-development:plugin-architecture
-   Skill: plan-marshall:marketplace-inventory
+   Skill: plan-marshall:tools-marketplace-inventory
    ```
 
 2. **MANDATORY - Load Component Reference** (progressive disclosure)
@@ -185,7 +185,7 @@ All 5 workflows follow the same pattern:
 ### Step 1: Load Prerequisites and Standards
 
 ```
-Skill: plan-marshall:diagnostic-patterns
+Skill: plan-marshall:ref-development-standards
 Skill: pm-plugin-development:plugin-architecture
 Read references/agents-guide.md
 Read references/fix-catalog.md
@@ -195,7 +195,7 @@ Read references/fix-catalog.md
 
 **marketplace scope** (default):
 ```
-Skill: plan-marshall:marketplace-inventory
+Skill: plan-marshall:tools-marketplace-inventory
 ```
 
 **global/project scope**:
@@ -261,7 +261,7 @@ Display summary using reporting-templates.md format.
 ### Step 1: Load Prerequisites and Standards
 
 ```
-Skill: plan-marshall:diagnostic-patterns
+Skill: plan-marshall:ref-development-standards
 Skill: pm-plugin-development:plugin-architecture
 Read references/commands-guide.md
 Read references/fix-catalog.md
@@ -386,7 +386,7 @@ Same pattern as doctor-agents with command-specific thresholds.
 ### Step 1: Load Prerequisites and Standards
 
 ```
-Skill: plan-marshall:diagnostic-patterns
+Skill: plan-marshall:ref-development-standards
 Skill: pm-plugin-development:plugin-architecture
 Read references/skills-guide.md
 Read references/fix-catalog.md
@@ -396,7 +396,7 @@ Read references/fix-catalog.md
 
 **marketplace scope**:
 ```
-Skill: plan-marshall:marketplace-inventory
+Skill: plan-marshall:tools-marketplace-inventory
 ```
 
 ### Step 3: Analyze Each Skill
@@ -428,12 +428,12 @@ python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:validate ref
 **Required foundation skills**:
 ```
 Skill: pm-plugin-development:plugin-architecture
-Skill: plan-marshall:diagnostic-patterns
+Skill: plan-marshall:ref-development-standards
 ```
 
 **Check criteria**:
 1. Search SKILL.md for `Skill: pm-plugin-development:plugin-architecture`
-2. Search SKILL.md for `Skill: plan-marshall:diagnostic-patterns`
+2. Search SKILL.md for `Skill: plan-marshall:ref-development-standards`
 3. **Exempt skills** (skip check):
    - `plugin-architecture` (is itself the architecture skill)
    - `marketplace-inventory` (pure Pattern 1 script automation, no component operations)
@@ -504,7 +504,7 @@ Read references/plan-marshall-plugin-validation.md
 
 \`\`\`
 Skill: pm-plugin-development:plugin-architecture
-Skill: plan-marshall:diagnostic-patterns
+Skill: plan-marshall:ref-development-standards
 \`\`\`
 
 These provide architecture principles and non-prompting tool usage patterns.
@@ -527,7 +527,7 @@ Same pattern with skill-specific checks.
 ### Step 1: Load Prerequisites and Standards
 
 ```
-Skill: plan-marshall:diagnostic-patterns
+Skill: plan-marshall:ref-development-standards
 Read references/metadata-guide.md
 Read references/fix-catalog.md
 ```
@@ -564,7 +564,7 @@ Glob: pattern="**/plugin.json", path="marketplace/bundles"
 ### Step 1: Load Prerequisites and Standards
 
 ```
-Skill: plan-marshall:diagnostic-patterns
+Skill: plan-marshall:ref-development-standards
 Skill: pm-plugin-development:plugin-architecture
 Skill: pm-plugin-development:plugin-script-architecture
 Read references/fix-catalog.md
@@ -614,7 +614,7 @@ This workflow analyzes all markdown files within a skill's subdirectories for pr
 ### Step 1: Load Prerequisites
 
 ```
-Skill: plan-marshall:diagnostic-patterns
+Skill: plan-marshall:ref-development-standards
 Skill: pm-plugin-development:plugin-architecture
 Read references/content-classification-guide.md
 Read references/content-quality-guide.md

@@ -42,7 +42,7 @@ Uses shared configuration flow (same as wizard Step 4d).
 **Step 1: Discover available domains**
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
   skill-domains get-available
 ```
 
@@ -75,7 +75,7 @@ AskUserQuestion:
 **Step 3: Configure selected domains**
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
   skill-domains configure --domains "java,java-cui,javascript"
 ```
 
@@ -86,13 +86,13 @@ This configures:
 ### List Domains
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall-config skill-domains list
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config skill-domains list
 ```
 
 ### View Domain Configuration
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall-config skill-domains get --domain java
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config skill-domains get --domain java
 ```
 
 ### Resolve Domain Skills (for task planning)
@@ -100,7 +100,7 @@ python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall
 Aggregate core + profile skills with descriptions for LLM skill selection:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall-config resolve-domain-skills \
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config resolve-domain-skills \
   --domain java --profile implementation
 ```
 
@@ -110,7 +110,7 @@ Update skills for a specific profile:
 
 ```bash
 # Update implementation profile skills
-python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall-config skill-domains set \
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config skill-domains set \
   --domain java \
   --profile implementation \
   --defaults "pm-dev-java:java-core" \

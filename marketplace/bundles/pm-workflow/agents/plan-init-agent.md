@@ -3,7 +3,7 @@ name: plan-init-agent
 description: Initialize a plan with artifacts, detect domains, write config.toon
 tools: Read, Glob, Bash, AskUserQuestion, Skill
 model: sonnet
-skills: pm-workflow:phase-1-init, plan-marshall:general-development-rules
+skills: pm-workflow:phase-1-init, plan-marshall:ref-development-standards
 ---
 
 # Plan Init Agent
@@ -15,7 +15,7 @@ Minimal wrapper that loads plan-init skill and initializes plans.
 Load these skills using the Skill tool BEFORE any other action:
 
 ```
-Skill: plan-marshall:general-development-rules
+Skill: plan-marshall:ref-development-standards
 Skill: pm-workflow:phase-1-init
 ```
 

@@ -107,7 +107,7 @@ High-level workflow for the analyze-project-architecture skill.
 
 **Resolution**: Query via script:
 ```bash
-python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall-config skill-domains list
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config skill-domains list
 ```
 
 ---

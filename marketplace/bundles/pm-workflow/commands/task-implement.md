@@ -10,7 +10,7 @@ Implement tasks through goal-based workflow with automatic mode selection and ve
 
 ## CONTINUOUS IMPROVEMENT RULE
 
-Record improvements: `Skill: plan-marshall:lessons-learned` with component `{type: "command", name: "task-implement", bundle: "pm-workflow"}`
+Record improvements: `Skill: plan-marshall:manage-lessons` with component `{type: "command", name: "task-implement", bundle: "pm-workflow"}`
 
 ## PARAMETERS
 

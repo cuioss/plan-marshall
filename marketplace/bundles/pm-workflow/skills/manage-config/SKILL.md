@@ -219,11 +219,11 @@ message: Invalid domain format: Java. Must be lowercase identifier
 Workflow skills are resolved from marshal.json (not config.toon):
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
   resolve-workflow-skill --domain {domain} --phase {phase}
 ```
 
-See `plan-marshall:plan-marshall-config` for workflow skill resolution.
+See `plan-marshall:manage-plan-marshall-config` for workflow skill resolution.
 
 ---
 
@@ -242,4 +242,4 @@ See `plan-marshall:plan-marshall-config` for workflow skill resolution.
 
 | Skill | Purpose |
 |-------|---------|
-| `plan-marshall:plan-marshall-config` | Project-level marshal.json configuration, workflow skill resolution |
+| `plan-marshall:manage-plan-marshall-config` | Project-level marshal.json configuration, workflow skill resolution |

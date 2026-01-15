@@ -26,13 +26,13 @@ Goals MUST contain explicit file paths. A goal that says "update all X" without 
 ```bash
 # Full inventory with descriptions
 python3 .plan/execute-script.py \
-  plan-marshall:marketplace-inventory:scan-marketplace-inventory \
+  plan-marshall:tools-marketplace-inventory:scan-marketplace-inventory \
   --trace-plan-id {plan_id} \
   --include-descriptions
 
 # Or filter by bundles if impact is known to be limited
 python3 .plan/execute-script.py \
-  plan-marshall:marketplace-inventory:scan-marketplace-inventory \
+  plan-marshall:tools-marketplace-inventory:scan-marketplace-inventory \
   --trace-plan-id {plan_id} \
   --bundles planning,pm-dev-java \
   --include-descriptions
@@ -50,7 +50,7 @@ Process components in batches of **10-15 files** per bundle. After each batch:
 
 ```bash
 # After each batch of 10-15 components
-python3 .plan/execute-script.py plan-marshall:logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   work {plan_id} INFO "[STATUS] (pm-plugin-development:ext-outline-plugin) Analyzed batch {N} of {bundle}: {X} affected, {Y} not affected"
 ```
 
@@ -74,7 +74,7 @@ For each component, execute these steps **in order**:
 For each **affected** file, log immediately:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   work {plan_id} INFO "[FINDING] (pm-plugin-development:ext-outline-plugin) Affected: {file_path} - {reason}"
 ```
 
@@ -93,7 +93,7 @@ affected_files:
 After all batches complete, log the summary:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   work {plan_id} INFO "[MILESTONE] (pm-plugin-development:ext-outline-plugin) Impact analysis complete: {total_affected} of {total_analyzed} affected"
 ```
 

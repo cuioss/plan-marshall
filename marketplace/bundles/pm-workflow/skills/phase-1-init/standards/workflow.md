@@ -160,8 +160,8 @@ recovery: Use resume option or provide different plan_id
 | `pm-workflow:manage-plan-documents` | Write request.md (typed document) |
 | `pm-workflow:manage-files` | Create/reference plan directory |
 | `pm-workflow:manage-references` | Initialize references |
-| `plan-marshall:logging:manage-log` | Log creation |
-| `plan-marshall:lessons-learned` | Read lesson content |
+| `plan-marshall:manage-logging:manage-log` | Log creation |
+| `plan-marshall:manage-lessons` | Read lesson content |
 
 ### Complete Initialization
 

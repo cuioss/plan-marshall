@@ -17,7 +17,7 @@ Coverage analysis and gap identification (read-only, no modifications).
 ## Step 0: Load Development Rules
 
 ```
-Skill: plan-marshall:general-development-rules
+Skill: plan-marshall:ref-development-standards
 ```
 
 This ensures proper tool usage (Write instead of cat heredoc, Glob instead of find, etc.).

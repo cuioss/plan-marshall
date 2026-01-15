@@ -82,7 +82,7 @@ Task executors are configured in the system domain:
 Resolve task executor skill for a given profile.
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
   resolve-task-executor --profile {profile}
 ```
 
@@ -128,7 +128,7 @@ Underscores are more consistent with JSON key conventions.
 Marshall-steward auto-populates task_executors during setup:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
   configure-task-executors
 ```
 
@@ -180,7 +180,7 @@ The profile system is designed for extension. New profiles can be added without 
 
 4. **Verify configuration**:
    ```bash
-   python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall-config \
+   python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
      resolve-task-executor --profile my_new_profile
    ```
 

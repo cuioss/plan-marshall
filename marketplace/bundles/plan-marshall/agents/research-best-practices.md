@@ -372,7 +372,7 @@ After completing all work, return findings in this format:
 
 If you discover issues or improvements during execution, record them:
 
-1. **Activate skill**: `Skill: plan-marshall:lessons-learned`
+1. **Activate skill**: `Skill: plan-marshall:manage-lessons`
 2. **Record lesson** with:
    - Component: `{type: "agent", name: "research-best-practices", bundle: "plan-marshall"}`
    - Category: bug | improvement | pattern | anti-pattern

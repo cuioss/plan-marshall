@@ -26,7 +26,7 @@ Analyzes WebFetch domains across global and project settings, researches domains
 ### Step 1: Load Web Security Standards
 
 ```
-Skill: plan-marshall:web-permissions
+Skill: plan-marshall:permission-web-access
 ```
 
 Loads trusted domains, security assessment patterns, and research methodology.
@@ -240,7 +240,7 @@ Display all statistics in Step 8 report.
 ## ARCHITECTURE
 
 This command:
-- Uses plan-marshall:web-permissions skill for domain knowledge
+- Uses plan-marshall:permission-web-access skill for domain knowledge
 - Performs web research for unknown domains
 - Provides consolidation recommendations
 - Optionally applies changes
@@ -248,10 +248,10 @@ This command:
 ## STANDARDS
 
 References:
-- plan-marshall:web-permissions skill (trusted domains, security patterns)
+- plan-marshall:permission-web-access skill (trusted domains, security patterns)
 - Permission architecture standards (global vs local)
 
 ## RELATED
 
 - `/plan-marshall:marshall-steward` - Permission management wizard
-- `plan-marshall:web-permissions` skill - Domain security knowledge
+- `plan-marshall:permission-web-access` skill - Domain security knowledge

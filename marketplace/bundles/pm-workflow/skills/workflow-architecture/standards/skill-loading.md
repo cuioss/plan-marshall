@@ -17,7 +17,7 @@ The pm-workflow bundle uses a two-tier skill loading pattern for domain-agnostic
 │  │   ═════════════════════                                              │  │
 │  │   • Loaded by agent (Step 0)                                         │  │
 │  │   • Source: skill_domains.system.defaults                            │  │
-│  │   • Example: plan-marshall:general-development-rules                 │  │
+│  │   • Example: plan-marshall:ref-development-standards                 │  │
 │  │   • Applies to ALL tasks regardless of domain                        │  │
 │  │                                                                      │  │
 │  │   ─────────────────────────────────────────────────────────────────  │  │
@@ -148,7 +148,7 @@ The pm-workflow bundle uses a two-tier skill loading pattern for domain-agnostic
 │  │   ┌────────────────────────────────────────────────────────────┐    │  │
 │  │   │  Step 0: Load System Skills (Tier 1)                       │    │  │
 │  │   │                                                            │    │  │
-│  │   │  Skill: plan-marshall:general-development-rules            │    │  │
+│  │   │  Skill: plan-marshall:ref-development-standards            │    │  │
 │  │   │                                                            │    │  │
 │  │   │  • Always loaded                                           │    │  │
 │  │   │  • Agent's skills: field in frontmatter                    │    │  │
@@ -270,7 +270,7 @@ The pm-workflow bundle uses a two-tier skill loading pattern for domain-agnostic
 │  │  RESOLUTION:                                                         │  │
 │  │                                                                      │  │
 │  │  python3 .plan/execute-script.py                                     │  │
-│  │    plan-marshall:plan-marshall-config:plan-marshall-config           │  │
+│  │    plan-marshall:manage-plan-marshall-config:plan-marshall-config           │  │
 │  │    resolve-workflow-skill-extension                                  │  │
 │  │    --domain java                                                     │  │
 │  │    --type triage                                                     │  │

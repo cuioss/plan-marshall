@@ -110,7 +110,7 @@ All CI operations share:
 
 | Component | Purpose |
 |-----------|---------|
-| **Timeout handling** | `plan-marshall:run-config` for adaptive timeouts |
+| **Timeout handling** | `plan-marshall:manage-run-config` for adaptive timeouts |
 | **Output format** | TOON for all script outputs |
 | **Two-layer execution** | Outer Bash timeout + inner shell timeout |
 

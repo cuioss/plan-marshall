@@ -170,7 +170,7 @@ import json
 
 result = subprocess.run([
     "python3", ".plan/execute-script.py",
-    "plan-marshall:logging:plan_logging",
+    "plan-marshall:manage-logging:plan_logging",
     "script", "global", "INFO", "message"
 ], capture_output=True, text=True, timeout=5)
 ```

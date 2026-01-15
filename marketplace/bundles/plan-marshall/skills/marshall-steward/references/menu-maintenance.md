@@ -47,7 +47,7 @@ Execute BOTH operations in sequence:
 ## Operation: Regenerate Executor
 
 ```bash
-python3 ${PLUGIN_ROOT}/plan-marshall/*/skills/script-executor/scripts/generate-executor.py generate
+python3 ${PLUGIN_ROOT}/plan-marshall/*/skills/tools-script-executor/scripts/generate-executor.py generate
 ```
 
 The script uses subcommands (`generate`, `verify`, `drift`, `paths`, `cleanup`), not positional arguments.
@@ -70,7 +70,7 @@ success	47	.plan/execute-script.py	0
 Clean all directories based on retention settings from marshal.json:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:run-config:cleanup run
+python3 .plan/execute-script.py plan-marshall:manage-run-config:cleanup run
 ```
 
 **Output (TOON)**:
@@ -100,21 +100,21 @@ Configurable via marshal.json:
 ### Configure Retention
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall-config system retention set --field logs_days --value 7
-python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall-config system retention set --field archived_plans_days --value 14
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config system retention set --field logs_days --value 7
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config system retention set --field archived_plans_days --value 14
 ```
 
 ### Cleanup with Custom Retention
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:run-config:cleanup run \
+python3 .plan/execute-script.py plan-marshall:manage-run-config:cleanup run \
     --logs-days 1 --archived-days 5 --memory-days 5
 ```
 
 ### Dry Run (Preview)
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:run-config:cleanup run --dry-run
+python3 .plan/execute-script.py plan-marshall:manage-run-config:cleanup run --dry-run
 ```
 
 **NOTE**: The `.plan/temp/` directory is the default temp directory for ALL temporary files. It is covered by the existing `Write(.plan/**)` permission (avoiding permission prompts for `/tmp/`) and cleaned during maintenance.

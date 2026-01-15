@@ -26,7 +26,7 @@ Activate when:
 | `pm-workflow:manage-config:manage-config` | Config field access |
 | `pm-workflow:manage-references:manage-references` | Reference file CRUD |
 | `pm-workflow:manage-lifecycle:manage-lifecycle` | Phase transitions |
-| `plan-marshall:logging:manage-log` | Work log entries |
+| `plan-marshall:manage-logging:manage-log` | Work log entries |
 | `pm-workflow:workflow-integration-git:git-workflow` | Commit, push, PR creation |
 
 ---
@@ -61,7 +61,7 @@ Returns only the required finalize fields in a single call.
 ### Step 0: Log Phase Start
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   work {plan_id} INFO "[STATUS] (pm-workflow:phase-5-finalize) Starting finalize phase"
 ```
 
@@ -87,7 +87,7 @@ Returns: `branch`, `base_branch`, `issue_url`, `build_system`, and file counts i
 **After reading configuration**, log the finalize strategy decision:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   work {plan_id} INFO "[DECISION] (pm-workflow:phase-5-finalize) Finalize strategy: verification={verification_required}, PR={create_pr}, branch={branch_strategy}"
 ```
 
@@ -154,7 +154,7 @@ python3 .plan/execute-script.py pm-workflow:manage-lifecycle:manage-lifecycle tr
 ### Step 7: Log Completion
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   work {plan_id} INFO "[STATUS] (pm-workflow:phase-5-finalize) Plan completed: commit={commit_hash}, PR={pr_url|skipped}"
 ```
 
@@ -195,7 +195,7 @@ recovery: {recovery_suggestion}
 On any error, **first log the error** to work-log:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   work {plan_id} ERROR "[ERROR] (pm-workflow:phase-5-finalize) {step} failed - {error_type}: {error_context}"
 ```
 
@@ -315,7 +315,7 @@ Contains: How lessons inform triage decisions, lesson query before decisions, re
 | `pm-workflow:manage-config:manage-config` | `get-multi` | Read finalize config fields |
 | `pm-workflow:manage-references:manage-references` | `get-context` | Read branch, issue info |
 | `pm-workflow:manage-lifecycle:manage-lifecycle` | `transition` | Phase transition |
-| `plan-marshall:logging:manage-log` | `work` | Log completion |
+| `plan-marshall:manage-logging:manage-log` | `work` | Log completion |
 | `pm-workflow:workflow-integration-git:git-workflow` | `format-commit`, `analyze-diff` | Commit message generation |
 
 ---

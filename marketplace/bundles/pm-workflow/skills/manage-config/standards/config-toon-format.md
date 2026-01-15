@@ -74,7 +74,7 @@ Each deliverable/task selects ONE domain from this array.
 Workflow skills are resolved at runtime from `marshal.json`:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
   resolve-workflow-skill --phase {phase}
 ```
 

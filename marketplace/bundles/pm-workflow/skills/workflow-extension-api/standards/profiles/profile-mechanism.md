@@ -90,7 +90,7 @@ Domains configure profile overrides in marshal.json:
 ## Resolution API
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
   resolve-workflow-skill --domain {domain} --phase {profile}
 ```
 

@@ -57,7 +57,7 @@ This skill provides 4 workflows, one for each component type. All workflows foll
 
 ```
 Skill: pm-plugin-development:plugin-architecture
-Skill: plan-marshall:diagnostic-patterns
+Skill: plan-marshall:ref-development-standards
 ```
 
 These provide architecture principles and non-prompting tool usage patterns.
@@ -254,7 +254,7 @@ If diagnosis fails: Display warning but don't abort (agent already created).
 
 ```
 Skill: pm-plugin-development:plugin-architecture
-Skill: plan-marshall:diagnostic-patterns
+Skill: plan-marshall:ref-development-standards
 ```
 
 These provide architecture principles and non-prompting tool usage patterns.
@@ -379,7 +379,7 @@ SlashCommand: /pm-plugin-development:plugin-doctor commands command-name={comman
 
 ```
 Skill: pm-plugin-development:plugin-architecture
-Skill: plan-marshall:diagnostic-patterns
+Skill: plan-marshall:ref-development-standards
 ```
 
 These provide architecture principles and non-prompting tool usage patterns.
@@ -552,7 +552,7 @@ SlashCommand: /pm-plugin-development:plugin-doctor skills skill-name={skill-name
 
 ```
 Skill: pm-plugin-development:plugin-architecture
-Skill: plan-marshall:diagnostic-patterns
+Skill: plan-marshall:ref-development-standards
 ```
 
 These provide architecture principles and non-prompting tool usage patterns.

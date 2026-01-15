@@ -17,7 +17,7 @@ Autonomous code refactoring with CUI standards compliance and build verification
 ## Step 0: Load Development Rules
 
 ```
-Skill: plan-marshall:general-development-rules
+Skill: plan-marshall:ref-development-standards
 ```
 
 This ensures proper tool usage (Write instead of cat heredoc, Glob instead of find, etc.).

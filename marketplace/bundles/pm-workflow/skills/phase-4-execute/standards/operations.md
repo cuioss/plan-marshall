@@ -130,7 +130,7 @@ npm run docs:check
 **Trigger**: "**Log**:", "Record completion"
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   work {plan_id} INFO "{what was done}: {outcome}"
 ```
 

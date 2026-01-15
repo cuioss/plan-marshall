@@ -563,11 +563,11 @@ Semantic work progress tracking across all phases.
 
 ```bash
 # Write entry
-python3 .plan/execute-script.py plan-marshall:logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   work {plan_id} {level} "{message}"
 
 # Read entries
-python3 .plan/execute-script.py plan-marshall:logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   read --plan-id {id} --type work [--limit N] [--phase PHASE]
 ```
 
@@ -614,7 +614,7 @@ Technical script execution tracing (automatic).
 
 ```bash
 # Read entries (read-only, written automatically by executor)
-python3 .plan/execute-script.py plan-marshall:logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   read --plan-id {id} --type script [--limit N]
 ```
 
@@ -672,4 +672,4 @@ archive     .plan/archived-plans/{date}-{plan_id}/
 | `pm-workflow:manage-lifecycle` | status.toon operations |
 | `pm-workflow:manage-tasks` | TASK-*.toon operations |
 | `pm-workflow:manage-solution-outline` | solution_outline.md operations |
-| `plan-marshall:logging` | work.log and script-execution.log operations |
+| `plan-marshall:manage-logging` | work.log and script-execution.log operations |

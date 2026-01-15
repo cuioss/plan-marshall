@@ -104,7 +104,7 @@ Profile skills handle the actual implementation/testing work. Domains CAN overri
 ### Resolution Mechanism
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
   resolve-workflow-skill --domain java --phase implementation
 ```
 
@@ -158,7 +158,7 @@ class Extension(ExtensionBase):
 ### Extension Resolution
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
   resolve-workflow-skill-extension --domain java --type triage
 ```
 
@@ -201,11 +201,11 @@ Domain skills are NOT extensions of the workflow - they are knowledge loaded by 
 - `pm-workflow:phase-5-finalize` - Verifies, loads triage extensions, commits
 
 **Profile Resolution**:
-- `plan-marshall:plan-marshall-config resolve-workflow-skill` - Resolves profile skill with fallback
+- `plan-marshall:manage-plan-marshall-config resolve-workflow-skill` - Resolves profile skill with fallback
 
 **Extension Discovery**:
 - `plan-marshall:extension-api` - ExtensionBase with provides_*() methods
-- `plan-marshall:plan-marshall-config resolve-workflow-skill-extension` - Resolves extensions
+- `plan-marshall:manage-plan-marshall-config resolve-workflow-skill-extension` - Resolves extensions
 
 **Visual Overview**:
 - [workflow-architecture](../workflow-architecture/SKILL.md) - High-level diagrams

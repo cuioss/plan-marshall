@@ -120,7 +120,7 @@ Domain-specific extensions loaded via `resolve-workflow-skill-extension`:
 | `manage-references` | `manage-references.py` | references.toon domain |
 | `manage-lifecycle` | `manage-lifecycle.py` | status.toon + phases |
 
-**Logging**: Work log entries and script execution logging are provided by `plan-marshall:logging` skill.
+**Logging**: Work log entries and script execution logging are provided by `plan-marshall:manage-logging` skill.
 
 ## Domain Configuration
 

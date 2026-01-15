@@ -41,7 +41,7 @@ deliverables: [2]
 ## Resolution
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
   resolve-workflow-skill --domain java --phase testing
 ```
 

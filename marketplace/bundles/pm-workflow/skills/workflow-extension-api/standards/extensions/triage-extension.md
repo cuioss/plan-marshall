@@ -15,7 +15,7 @@ Triage extensions provide **decision-making knowledge** for handling findings du
 Triage extensions are loaded via the `workflow_skill_extensions.triage` field in marshal.json:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
   resolve-workflow-skill-extension --domain java --type triage
 ```
 

@@ -190,13 +190,13 @@ Manage warnings via run-config:
 
 ```bash
 # Add accepted warning
-python3 .plan/execute-script.py plan-marshall:run-config:run_config warning add \
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config warning add \
     --category transitive_dependency \
     --pattern "peer dep warning ..." \
     --build-system npm
 
 # List accepted warnings
-python3 .plan/execute-script.py plan-marshall:run-config:run_config warning list
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config warning list
 ```
 
 ---
