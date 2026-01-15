@@ -1,10 +1,19 @@
 {
   "name": "pm-dev-python",
   "version": "0.1-BETA",
-  "author": "https://github.com/cuioss/plan-marshall",
   "description": "Python domain extension with pyprojectx build operations",
+  "author": {
+    "name": "https://github.com/cuioss/plan-marshall",
+    "email": "contact@cuioss.de"
+  },
+  "license": "FSL-1.1-ALv2",
+  "homepage": "https://github.com/cuioss/plan-marshall",
+  "repository": "https://github.com/cuioss/plan-marshall.git",
+  "keywords": ["python", "pyprojectx", "build", "standards"],
+  "agents": [],
+  "commands": [],
   "skills": [
-    "python-best-practices",
-    "plan-marshall-plugin"
+    "./skills/plan-marshall-plugin",
+    "./skills/python-best-practices"
   ]
 }

@@ -13,35 +13,35 @@
   "agents": [
     "./agents/plan-init-agent.md",
     "./agents/solution-outline-agent.md",
-    "./agents/task-plan-agent.md",
-    "./agents/task-execute-agent.md"
+    "./agents/task-execute-agent.md",
+    "./agents/task-plan-agent.md"
   ],
   "commands": [
-    "./commands/task-implement.md",
-    "./commands/pr-doctor.md",
+    "./commands/plan-execute.md",
     "./commands/plan-manage.md",
-    "./commands/plan-execute.md"
+    "./commands/pr-doctor.md",
+    "./commands/task-implement.md"
   ],
   "skills": [
-    "./skills/workflow-integration-git",
-    "./skills/workflow-integration-ci",
-    "./skills/workflow-integration-sonar",
-    "./skills/workflow-architecture",
-    "./skills/workflow-extension-api",
+    "./skills/manage-config",
+    "./skills/manage-files",
+    "./skills/manage-lifecycle",
+    "./skills/manage-plan-documents",
+    "./skills/manage-references",
+    "./skills/manage-solution-outline",
+    "./skills/manage-tasks",
     "./skills/phase-1-init",
     "./skills/phase-2-outline",
     "./skills/phase-3-plan",
     "./skills/phase-4-execute",
     "./skills/phase-5-finalize",
+    "./skills/planning-inventory",
     "./skills/task-implementation",
     "./skills/task-module_testing",
-    "./skills/manage-tasks",
-    "./skills/manage-files",
-    "./skills/manage-plan-documents",
-    "./skills/manage-solution-outline",
-    "./skills/manage-config",
-    "./skills/manage-references",
-    "./skills/manage-lifecycle",
-    "./skills/planning-inventory"
+    "./skills/workflow-architecture",
+    "./skills/workflow-extension-api",
+    "./skills/workflow-integration-ci",
+    "./skills/workflow-integration-git",
+    "./skills/workflow-integration-sonar"
   ]
 }

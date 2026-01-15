@@ -10,37 +10,37 @@
   "homepage": "https://github.com/cuioss/plan-marshall",
   "repository": "https://github.com/cuioss/plan-marshall.git",
   "keywords": ["java", "cdi", "quarkus", "testing", "standards", "patterns", "agents"],
+  "agents": [
+    "./agents/java-coverage-agent.md",
+    "./agents/java-fix-build-agent.md",
+    "./agents/java-fix-javadoc-agent.md",
+    "./agents/java-fix-tests-agent.md",
+    "./agents/java-implement-agent.md",
+    "./agents/java-implement-tests-agent.md",
+    "./agents/java-quality-agent.md",
+    "./agents/java-refactor-agent.md",
+    "./agents/java-verify-agent.md"
+  ],
   "commands": [
     "./commands/java-analyze-all.md",
-    "./commands/java-full-workflow.md",
     "./commands/java-create.md",
     "./commands/java-enforce-logrecords.md",
+    "./commands/java-full-workflow.md",
     "./commands/java-maintain-logger.md",
     "./commands/java-optimize-quarkus-native.md"
   ],
-  "agents": [
-    "./agents/java-implement-agent.md",
-    "./agents/java-implement-tests-agent.md",
-    "./agents/java-fix-build-agent.md",
-    "./agents/java-fix-tests-agent.md",
-    "./agents/java-fix-javadoc-agent.md",
-    "./agents/java-refactor-agent.md",
-    "./agents/java-coverage-agent.md",
-    "./agents/java-quality-agent.md",
-    "./agents/java-verify-agent.md"
-  ],
   "skills": [
-    "./skills/java-core",
-    "./skills/java-null-safety",
-    "./skills/java-lombok",
+    "./skills/ext-triage-java",
     "./skills/java-cdi",
     "./skills/java-cdi-quarkus",
+    "./skills/java-core",
+    "./skills/java-lombok",
+    "./skills/java-maintenance",
+    "./skills/java-null-safety",
+    "./skills/javadoc",
     "./skills/junit-core",
     "./skills/junit-integration",
-    "./skills/javadoc",
-    "./skills/java-maintenance",
-    "./skills/ext-triage-java",
-    "./skills/plan-marshall-plugin",
-    "./skills/manage-maven-profiles"
+    "./skills/manage-maven-profiles",
+    "./skills/plan-marshall-plugin"
   ]
 }

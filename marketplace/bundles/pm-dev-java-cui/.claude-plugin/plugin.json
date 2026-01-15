@@ -10,12 +10,12 @@
   "homepage": "https://github.com/cuioss/plan-marshall",
   "repository": "https://github.com/cuioss/plan-marshall.git",
   "keywords": ["java", "cui", "logging", "testing", "generators", "http-client"],
-  "commands": [],
   "agents": [],
+  "commands": [],
   "skills": [
+    "./skills/cui-http",
     "./skills/cui-logging",
     "./skills/cui-testing",
-    "./skills/cui-http",
     "./skills/cui-testing-http",
     "./skills/plan-marshall-plugin"
   ]

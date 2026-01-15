@@ -11,23 +11,26 @@
   "repository": "https://github.com/cuioss/plan-marshall.git",
   "keywords": ["plugin", "development", "tools", "doctor", "create", "maintain"],
   "commands": [
+    "./commands/plugin-apply-lessons-learned.md",
     "./commands/plugin-create.md",
     "./commands/plugin-doctor.md",
     "./commands/plugin-maintain.md",
+    "./commands/tools-analyze-script-failures.md",
     "./commands/tools-analyze-user-prompted.md"
   ],
   "skills": [
+    "./skills/analyze-script-failures",
+    "./skills/ext-outline-plugin",
+    "./skills/ext-triage-plugin",
+    "./skills/plan-marshall-plugin",
     "./skills/plugin-architecture",
     "./skills/plugin-create",
     "./skills/plugin-doctor",
     "./skills/plugin-maintain",
     "./skills/plugin-plan-implement",
     "./skills/plugin-script-architecture",
-    "./skills/ext-outline-plugin",
     "./skills/plugin-task-plan",
-    "./skills/ext-triage-plugin",
-    "./skills/verification",
-    "./skills/plan-marshall-plugin"
+    "./skills/verification"
   ],
   "agents": [
     "./agents/tool-coverage-agent.md"
