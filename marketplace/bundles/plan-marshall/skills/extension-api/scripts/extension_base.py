@@ -289,14 +289,14 @@ class ExtensionBase(ABC):
         Contract:
             - MUST only write values if they don't already exist
             - MUST NOT override user-defined configuration
-            - SHOULD use direct import from run_config module
+            - SHOULD use direct import from _config_core module
             - MAY skip silently if no defaults are needed
 
         Example:
             def config_defaults(self, project_root: str) -> None:
-                from run_config import ext_defaults_set_default
+                from _config_core import ext_defaults_set_default
                 # set_default returns True if set, False if key already existed
-                ext_defaults_set_default("my_bundle.skip_profiles", ["itest", "native"], project_root)
+                ext_defaults_set_default("my_bundle.skip_profiles", "itest,native", project_root)
 
         See standards/config-callback.md for complete documentation.
         """

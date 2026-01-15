@@ -309,7 +309,7 @@ from _maven_cmd_discover import (
 ```python
 def config_defaults(self, project_root: str) -> None:
     """Configure CUI-specific Maven defaults."""
-    from run_config import ext_defaults_set_default
+    from _config_core import ext_defaults_set_default
     from _maven_cmd_discover import EXT_KEY_PROFILES_SKIP, EXT_KEY_PROFILES_MAP
 
     # Skip internal profiles

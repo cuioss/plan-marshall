@@ -362,8 +362,8 @@ def _apply_profile_pipeline(raw_profiles: list, project_root: str) -> list:
         List of processed profile dicts with id and canonical fields only
     """
     # Import directly - executor sets up PYTHONPATH for cross-skill imports
+    from _config_core import ext_defaults_get
     from plan_logging import log_entry
-    from run_config import ext_defaults_get
 
     log_entry('script', 'global', 'INFO', f'[PROFILE-PIPELINE] called with {len(raw_profiles)} raw profiles')
 
@@ -380,7 +380,7 @@ def _apply_profile_pipeline(raw_profiles: list, project_root: str) -> list:
         skip_list = [s.strip() for s in skip_csv.split(',')]
         log_entry('script', 'global', 'INFO', f'[PROFILE-PIPELINE] Loaded skip list from config: {skip_list}')
     else:
-        log_entry('script', 'global', 'INFO', '[PROFILE-PIPELINE] No skip list configured in run-configuration.json')
+        log_entry('script', 'global', 'INFO', '[PROFILE-PIPELINE] No skip list configured in marshal.json')
 
     map_csv = ext_defaults_get(EXT_KEY_PROFILES_MAP, project_root)
     if map_csv:

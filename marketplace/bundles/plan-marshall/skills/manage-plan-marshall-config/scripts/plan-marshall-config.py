@@ -16,6 +16,7 @@ import argparse
 import sys
 
 from _cmd_ci import cmd_ci
+from _cmd_ext_defaults import cmd_ext_defaults
 from _cmd_init import cmd_init
 from _cmd_skill_domains import (
     cmd_configure_task_executors,
@@ -136,6 +137,26 @@ def main():
     ci_persist.add_argument('--tools', help='Comma-separated authenticated tool names')
     ci_persist.add_argument('--git-present', help='Whether git is present (true/false)')
 
+    # --- ext-defaults ---
+    p_ext = subparsers.add_parser('ext-defaults', help='Manage extension defaults (shared config)')
+    ext_sub = p_ext.add_subparsers(dest='verb', help='Operation')
+
+    ext_get = ext_sub.add_parser('get', help='Get extension default value')
+    ext_get.add_argument('--key', required=True, help='Key to retrieve')
+
+    ext_set = ext_sub.add_parser('set', help='Set extension default value (always overwrites)')
+    ext_set.add_argument('--key', required=True, help='Key to set')
+    ext_set.add_argument('--value', required=True, help='Value (JSON or string)')
+
+    ext_set_def = ext_sub.add_parser('set-default', help='Set value only if key does not exist (write-once)')
+    ext_set_def.add_argument('--key', required=True, help='Key to set')
+    ext_set_def.add_argument('--value', required=True, help='Value (JSON or string)')
+
+    ext_sub.add_parser('list', help='List all extension defaults')
+
+    ext_remove = ext_sub.add_parser('remove', help='Remove extension default')
+    ext_remove.add_argument('--key', required=True, help='Key to remove')
+
     # --- init ---
     p_init = subparsers.add_parser('init', help='Initialize marshal.json')
     p_init.add_argument('--force', action='store_true', help='Overwrite existing')
@@ -204,6 +225,11 @@ def main():
             p_ci.print_help()
             return EXIT_ERROR
         return cmd_ci(args)
+    elif args.noun == 'ext-defaults':
+        if not args.verb:
+            p_ext.print_help()
+            return EXIT_ERROR
+        return cmd_ext_defaults(args)
     elif args.noun == 'init':
         return cmd_init(args)
     elif args.noun == 'resolve-domain-skills':

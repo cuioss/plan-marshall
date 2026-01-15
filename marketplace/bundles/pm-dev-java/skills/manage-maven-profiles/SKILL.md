@@ -106,22 +106,22 @@ AskUserQuestion:
 **Skip** - Add to skip list:
 ```bash
 # Get current value first
-python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config ext-defaults get \
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config ext-defaults get \
   --key build.maven.profiles.skip
 
 # Append new profile (comma-separated)
-python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config ext-defaults set \
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config ext-defaults set \
   --key build.maven.profiles.skip --value "{existing},{profile-id}"
 ```
 
 **Map** - Add canonical mapping:
 ```bash
 # Get current mappings first
-python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config ext-defaults get \
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config ext-defaults get \
   --key build.maven.profiles.map.canonical
 
 # Append new mapping (comma-separated profile:canonical pairs)
-python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config ext-defaults set \
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config ext-defaults set \
   --key build.maven.profiles.map.canonical --value "{existing},{profile-id}:{canonical}"
 ```
 
@@ -161,7 +161,7 @@ When multiple profiles map to the same canonical:
 
 ## Storage
 
-Configuration stored in `run-configuration.json` under `extension_defaults`:
+Configuration stored in `marshal.json` under `extension_defaults`:
 
 ```json
 {

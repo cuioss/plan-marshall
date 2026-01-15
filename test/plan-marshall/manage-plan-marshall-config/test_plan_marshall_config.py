@@ -178,5 +178,176 @@ def test_ci_set_tools():
 
 
 # =============================================================================
+# Extension Defaults Tests
+# =============================================================================
+
+
+def test_ext_defaults_set_adds_value():
+    """Test ext-defaults set adds a value."""
+    with PlanContext() as ctx:
+        create_marshal_json(ctx.fixture_dir)
+
+        result = run_script(SCRIPT_PATH, 'ext-defaults', 'set', '--key', 'test.key', '--value', 'test-value')
+
+        assert result.success, f'Should succeed: {result.stderr}'
+        assert 'success' in result.stdout
+        assert 'test.key' in result.stdout
+
+
+def test_ext_defaults_set_updates_existing():
+    """Test ext-defaults set overwrites existing value."""
+    with PlanContext() as ctx:
+        create_marshal_json(ctx.fixture_dir)
+
+        # Set initial value
+        run_script(SCRIPT_PATH, 'ext-defaults', 'set', '--key', 'test.key', '--value', 'initial')
+
+        # Update value
+        result = run_script(SCRIPT_PATH, 'ext-defaults', 'set', '--key', 'test.key', '--value', 'updated')
+
+        assert result.success, f'Should succeed: {result.stderr}'
+        assert 'updated' in result.stdout
+
+
+def test_ext_defaults_set_json_array():
+    """Test ext-defaults set with JSON array value."""
+    with PlanContext() as ctx:
+        create_marshal_json(ctx.fixture_dir)
+
+        result = run_script(SCRIPT_PATH, 'ext-defaults', 'set', '--key', 'test.array', '--value', '["a","b","c"]')
+
+        assert result.success, f'Should succeed: {result.stderr}'
+        assert 'success' in result.stdout
+
+
+def test_ext_defaults_set_json_object():
+    """Test ext-defaults set with JSON object value."""
+    with PlanContext() as ctx:
+        create_marshal_json(ctx.fixture_dir)
+
+        result = run_script(SCRIPT_PATH, 'ext-defaults', 'set', '--key', 'test.obj', '--value', '{"nested": true}')
+
+        assert result.success, f'Should succeed: {result.stderr}'
+        assert 'success' in result.stdout
+
+
+def test_ext_defaults_set_plain_string():
+    """Test ext-defaults set with plain string (not JSON)."""
+    with PlanContext() as ctx:
+        create_marshal_json(ctx.fixture_dir)
+
+        result = run_script(SCRIPT_PATH, 'ext-defaults', 'set', '--key', 'test.str', '--value', 'hello-world')
+
+        assert result.success, f'Should succeed: {result.stderr}'
+        assert 'hello-world' in result.stdout
+
+
+def test_ext_defaults_get_existing():
+    """Test ext-defaults get retrieves existing value."""
+    with PlanContext() as ctx:
+        create_marshal_json(ctx.fixture_dir)
+        run_script(SCRIPT_PATH, 'ext-defaults', 'set', '--key', 'my.key', '--value', 'my-value')
+
+        result = run_script(SCRIPT_PATH, 'ext-defaults', 'get', '--key', 'my.key')
+
+        assert result.success, f'Should succeed: {result.stderr}'
+        assert 'my-value' in result.stdout
+
+
+def test_ext_defaults_get_nonexistent():
+    """Test ext-defaults get returns not_found for missing key."""
+    with PlanContext() as ctx:
+        create_marshal_json(ctx.fixture_dir)
+
+        result = run_script(SCRIPT_PATH, 'ext-defaults', 'get', '--key', 'nonexistent')
+
+        assert result.success, f'Should succeed: {result.stderr}'
+        assert 'not_found' in result.stdout
+
+
+def test_ext_defaults_set_default_adds_new():
+    """Test ext-defaults set-default adds value when key doesn't exist."""
+    with PlanContext() as ctx:
+        create_marshal_json(ctx.fixture_dir)
+
+        result = run_script(SCRIPT_PATH, 'ext-defaults', 'set-default', '--key', 'new.key', '--value', 'new-value')
+
+        assert result.success, f'Should succeed: {result.stderr}'
+        assert 'success' in result.stdout
+        assert 'new-value' in result.stdout
+
+
+def test_ext_defaults_set_default_skips_existing():
+    """Test ext-defaults set-default skips when key exists."""
+    with PlanContext() as ctx:
+        create_marshal_json(ctx.fixture_dir)
+        run_script(SCRIPT_PATH, 'ext-defaults', 'set', '--key', 'existing.key', '--value', 'original')
+
+        result = run_script(SCRIPT_PATH, 'ext-defaults', 'set-default', '--key', 'existing.key', '--value', 'new')
+
+        assert result.success, f'Should succeed: {result.stderr}'
+        assert 'skipped' in result.stdout
+        assert 'key_exists' in result.stdout
+
+
+def test_ext_defaults_list_all():
+    """Test ext-defaults list shows all values."""
+    with PlanContext() as ctx:
+        create_marshal_json(ctx.fixture_dir)
+        run_script(SCRIPT_PATH, 'ext-defaults', 'set', '--key', 'key1', '--value', 'value1')
+        run_script(SCRIPT_PATH, 'ext-defaults', 'set', '--key', 'key2', '--value', 'value2')
+
+        result = run_script(SCRIPT_PATH, 'ext-defaults', 'list')
+
+        assert result.success, f'Should succeed: {result.stderr}'
+        assert 'key1' in result.stdout
+        assert 'key2' in result.stdout
+
+
+def test_ext_defaults_list_empty():
+    """Test ext-defaults list with no values."""
+    with PlanContext() as ctx:
+        create_marshal_json(ctx.fixture_dir)
+
+        result = run_script(SCRIPT_PATH, 'ext-defaults', 'list')
+
+        assert result.success, f'Should succeed: {result.stderr}'
+        assert 'count' in result.stdout
+
+
+def test_ext_defaults_remove_existing():
+    """Test ext-defaults remove deletes existing key."""
+    with PlanContext() as ctx:
+        create_marshal_json(ctx.fixture_dir)
+        run_script(SCRIPT_PATH, 'ext-defaults', 'set', '--key', 'to.remove', '--value', 'value')
+
+        result = run_script(SCRIPT_PATH, 'ext-defaults', 'remove', '--key', 'to.remove')
+
+        assert result.success, f'Should succeed: {result.stderr}'
+        assert 'removed' in result.stdout
+
+
+def test_ext_defaults_remove_nonexistent_skips():
+    """Test ext-defaults remove skips non-existent key."""
+    with PlanContext() as ctx:
+        create_marshal_json(ctx.fixture_dir)
+
+        result = run_script(SCRIPT_PATH, 'ext-defaults', 'remove', '--key', 'nonexistent')
+
+        assert result.success, f'Should succeed: {result.stderr}'
+        assert 'skipped' in result.stdout
+
+
+def test_ext_defaults_help():
+    """Test ext-defaults --help shows usage."""
+    result = run_script(SCRIPT_PATH, 'ext-defaults', '--help')
+
+    assert result.success, 'Help should succeed'
+    assert 'get' in result.stdout
+    assert 'set' in result.stdout
+    assert 'set-default' in result.stdout
+
+
+# =============================================================================
 # Main
 # =============================================================================

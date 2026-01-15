@@ -211,7 +211,7 @@ Check the `derived-data.json` for profiles with `"canonical": "NO-MATCH-FOUND"` 
 
 Load skill `pm-dev-java:manage-maven-profiles` and follow its workflow to:
 1. Ask user about each unmatched profile (Ignore/Skip/Map)
-2. Apply configuration via `run_config ext-defaults` commands
+2. Apply configuration via `plan-marshall-config ext-defaults` commands
 3. Re-run discovery to apply changes:
 
 ```bash

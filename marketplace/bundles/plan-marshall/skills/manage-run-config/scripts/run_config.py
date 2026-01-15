@@ -36,7 +36,6 @@ DEFAULT_STRUCTURE = {
         'acceptable_warnings': {'transitive_dependency': [], 'plugin_compatibility': [], 'platform_specific': []}
     },
     'ci': {'authenticated_tools': [], 'verified_at': None},
-    'extension_defaults': {},  # Internal config set by extensions (not user-visible)
 }
 
 
@@ -413,198 +412,6 @@ def cmd_warning_remove(args) -> int:
 
 
 # =============================================================================
-# Extension Defaults Subcommands (Generic key-value in extension_defaults)
-# =============================================================================
-
-
-def get_extension_defaults(config: dict[str, Any]) -> dict[str, Any]:
-    """Get extension_defaults section from config."""
-    result: dict[str, Any] = config.get('extension_defaults', {})
-    return result
-
-
-def cmd_ext_defaults_get(args) -> int:
-    """Get a value from extension_defaults by key."""
-    try:
-        config_path = get_run_config_path()
-        config = read_run_config(config_path)
-
-        key = args.key
-        defaults = get_extension_defaults(config)
-        value = defaults.get(key)
-
-        if value is None:
-            result = {'success': True, 'key': key, 'exists': False}
-        else:
-            result = {'success': True, 'key': key, 'exists': True, 'value': value}
-
-        print(json.dumps(result, indent=2, ensure_ascii=False))
-        return 0
-
-    except Exception as e:
-        output_error(str(e))
-        return 1
-
-
-def cmd_ext_defaults_set(args) -> int:
-    """Set a value in extension_defaults (always overwrites)."""
-    try:
-        config_path = get_run_config_path()
-        config = read_run_config(config_path)
-
-        key = args.key
-        # Parse value as JSON
-        try:
-            value = json.loads(args.value)
-        except json.JSONDecodeError:
-            # If not valid JSON, treat as string
-            value = args.value
-
-        # Ensure extension_defaults section exists
-        if 'extension_defaults' not in config:
-            config['extension_defaults'] = {}
-
-        previous = config['extension_defaults'].get(key)
-        config['extension_defaults'][key] = value
-        write_json_file(config_path, config)
-
-        result = {'success': True, 'action': 'updated' if previous is not None else 'added', 'key': key, 'value': value}
-        if previous is not None:
-            result['previous'] = previous
-
-        print(json.dumps(result, indent=2, ensure_ascii=False))
-        return 0
-
-    except Exception as e:
-        output_error(str(e))
-        return 1
-
-
-def cmd_ext_defaults_set_default(args) -> int:
-    """Set a value in extension_defaults only if key doesn't exist (write-once)."""
-    try:
-        config_path = get_run_config_path()
-        config = read_run_config(config_path)
-
-        key = args.key
-        defaults = get_extension_defaults(config)
-
-        # Check if key already exists
-        if key in defaults:
-            result = {
-                'success': True,
-                'action': 'skipped',
-                'key': key,
-                'reason': 'Key already exists',
-                'existing_value': defaults[key],
-            }
-            print(json.dumps(result, indent=2, ensure_ascii=False))
-            return 0
-
-        # Parse value as JSON
-        try:
-            value = json.loads(args.value)
-        except json.JSONDecodeError:
-            # If not valid JSON, treat as string
-            value = args.value
-
-        # Ensure extension_defaults section exists
-        if 'extension_defaults' not in config:
-            config['extension_defaults'] = {}
-
-        config['extension_defaults'][key] = value
-        write_json_file(config_path, config)
-
-        result = {'success': True, 'action': 'added', 'key': key, 'value': value}
-        print(json.dumps(result, indent=2, ensure_ascii=False))
-        return 0
-
-    except Exception as e:
-        output_error(str(e))
-        return 1
-
-
-def cmd_ext_defaults_list(args) -> int:
-    """List all keys in extension_defaults."""
-    try:
-        config_path = get_run_config_path()
-        config = read_run_config(config_path)
-
-        defaults = get_extension_defaults(config)
-
-        result = {'success': True, 'count': len(defaults), 'keys': list(defaults.keys()), 'values': defaults}
-        print(json.dumps(result, indent=2, ensure_ascii=False))
-        return 0
-
-    except Exception as e:
-        output_error(str(e))
-        return 1
-
-
-def cmd_ext_defaults_remove(args) -> int:
-    """Remove a key from extension_defaults."""
-    try:
-        config_path = get_run_config_path()
-        config = read_run_config(config_path)
-
-        key = args.key
-        defaults = get_extension_defaults(config)
-
-        if key not in defaults:
-            output_success('skipped', key=key, reason='Key not found')
-            return 0
-
-        previous = config['extension_defaults'].pop(key)
-        write_json_file(config_path, config)
-
-        output_success('removed', key=key, previous=previous)
-        return 0
-
-    except Exception as e:
-        output_error(str(e))
-        return 1
-
-
-# Python API for extension_defaults (for import by other scripts)
-def ext_defaults_get(key: str, project_dir: str = '.') -> Any:
-    """Get value from extension_defaults. Returns None if not found."""
-    config = read_run_config(get_run_config_path(project_dir))
-    return config.get('extension_defaults', {}).get(key)
-
-
-def ext_defaults_set(key: str, value: Any, project_dir: str = '.') -> None:
-    """Set value in extension_defaults (always overwrites)."""
-    config_path = get_run_config_path(project_dir)
-    config = read_run_config(config_path)
-    config.setdefault('extension_defaults', {})[key] = value
-    write_json_file(config_path, config)
-
-
-def ext_defaults_set_default(key: str, value: Any, project_dir: str = '.') -> bool:
-    """Set value in extension_defaults only if key doesn't exist.
-
-    Returns True if value was set, False if key already existed.
-    """
-    config_path = get_run_config_path(project_dir)
-    config = read_run_config(config_path)
-    defaults = config.get('extension_defaults', {})
-
-    if key in defaults:
-        return False
-
-    config.setdefault('extension_defaults', {})[key] = value
-    write_json_file(config_path, config)
-    return True
-
-
-def ext_defaults_list(project_dir: str = '.') -> dict[str, Any]:
-    """Get all extension_defaults as a dict."""
-    config = read_run_config(get_run_config_path(project_dir))
-    result: dict[str, Any] = config.get('extension_defaults', {})
-    return result
-
-
-# =============================================================================
 # CLI Subcommands
 # =============================================================================
 
@@ -753,44 +560,6 @@ Examples:
     p_warning_remove.add_argument('--build-system', default='maven', help='Build system (default: maven)')
     p_warning_remove.set_defaults(func=cmd_warning_remove)
 
-    # extension-defaults command with subcommands (generic key-value in extension_defaults)
-    p_ext_defaults = subparsers.add_parser('extension-defaults', help='Manage extension defaults (generic key-value)')
-    ext_defaults_subparsers = p_ext_defaults.add_subparsers(
-        dest='ext_defaults_command', help='Extension defaults operation'
-    )
-
-    # extension-defaults get
-    p_ext_defaults_get = ext_defaults_subparsers.add_parser('get', help='Get value by key')
-    p_ext_defaults_get.add_argument('--key', required=True, help='Configuration key (e.g., "my_bundle.skip_profiles")')
-    p_ext_defaults_get.set_defaults(func=cmd_ext_defaults_get)
-
-    # extension-defaults set
-    p_ext_defaults_set = ext_defaults_subparsers.add_parser('set', help='Set value (always overwrites)')
-    p_ext_defaults_set.add_argument('--key', required=True, help='Configuration key')
-    p_ext_defaults_set.add_argument(
-        '--value', required=True, help='Value as JSON (e.g., \'["a", "b"]\' or \'"string"\' or \'123\')'
-    )
-    p_ext_defaults_set.set_defaults(func=cmd_ext_defaults_set)
-
-    # extension-defaults set-default
-    p_ext_defaults_set_default = ext_defaults_subparsers.add_parser(
-        'set-default', help='Set value only if key does not exist (write-once)'
-    )
-    p_ext_defaults_set_default.add_argument('--key', required=True, help='Configuration key')
-    p_ext_defaults_set_default.add_argument(
-        '--value', required=True, help='Value as JSON (e.g., \'["a", "b"]\' or \'"string"\' or \'123\')'
-    )
-    p_ext_defaults_set_default.set_defaults(func=cmd_ext_defaults_set_default)
-
-    # extension-defaults list
-    p_ext_defaults_list = ext_defaults_subparsers.add_parser('list', help='List all extension defaults')
-    p_ext_defaults_list.set_defaults(func=cmd_ext_defaults_list)
-
-    # extension-defaults remove
-    p_ext_defaults_remove = ext_defaults_subparsers.add_parser('remove', help='Remove a key')
-    p_ext_defaults_remove.add_argument('--key', required=True, help='Configuration key to remove')
-    p_ext_defaults_remove.set_defaults(func=cmd_ext_defaults_remove)
-
     args = parser.parse_args()
 
     if not args.command:
@@ -807,12 +576,6 @@ Examples:
     if args.command == 'warning':
         if not args.warning_command:
             p_warning.print_help()
-            return 1
-
-    # Handle extension-defaults subcommand
-    if args.command == 'extension-defaults':
-        if not args.ext_defaults_command:
-            p_ext_defaults.print_help()
             return 1
 
     return args.func(args)

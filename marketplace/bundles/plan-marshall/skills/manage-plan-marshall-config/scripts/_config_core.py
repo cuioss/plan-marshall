@@ -56,7 +56,7 @@ def save_config(config: dict) -> None:
     MARSHAL_PATH.parent.mkdir(parents=True, exist_ok=True)
 
     # Canonical key order for marshal.json
-    key_order = ['ci', 'plan', 'skill_domains', 'system']
+    key_order = ['ci', 'extension_defaults', 'plan', 'skill_domains', 'system']
 
     # Build ordered dict: known keys first in order, then any remaining keys
     ordered = {}
@@ -157,3 +157,95 @@ def is_nested_domain(domain_config: dict) -> bool:
     return (
         'bundle' in domain_config or 'workflow_skills' in domain_config or 'workflow_skill_extensions' in domain_config
     )
+
+
+# =============================================================================
+# Extension Defaults API
+# =============================================================================
+
+
+def get_extension_defaults(config: dict) -> dict:
+    """Get extension_defaults section from config, ensuring it exists."""
+    if 'extension_defaults' not in config:
+        config['extension_defaults'] = {}
+    ext: dict = config['extension_defaults']
+    return ext
+
+
+def ext_defaults_get(key: str, project_dir: str = '.') -> str | None:
+    """Get extension default value by key.
+
+    Args:
+        key: The key to retrieve
+        project_dir: Project directory containing .plan/
+
+    Returns:
+        The value if found, None otherwise
+    """
+    marshal_path = Path(project_dir) / '.plan' / 'marshal.json'
+    if not marshal_path.exists():
+        return None
+
+    config: dict = json.loads(marshal_path.read_text(encoding='utf-8'))
+    ext = get_extension_defaults(config)
+    result: str | None = ext.get(key)
+    return result
+
+
+def ext_defaults_set(key: str, value: str, project_dir: str = '.') -> None:
+    """Set extension default value (always overwrites).
+
+    Args:
+        key: The key to set
+        value: The value to store
+        project_dir: Project directory containing .plan/
+    """
+    marshal_path = Path(project_dir) / '.plan' / 'marshal.json'
+    config: dict = json.loads(marshal_path.read_text(encoding='utf-8')) if marshal_path.exists() else {}
+    ext = get_extension_defaults(config)
+    ext[key] = value
+
+    marshal_path.parent.mkdir(parents=True, exist_ok=True)
+    marshal_path.write_text(json.dumps(config, indent=2), encoding='utf-8')
+
+
+def ext_defaults_set_default(key: str, value: str, project_dir: str = '.') -> bool:
+    """Set extension default value only if key doesn't exist (write-once).
+
+    Args:
+        key: The key to set
+        value: The value to store
+        project_dir: Project directory containing .plan/
+
+    Returns:
+        True if value was set, False if key already existed
+    """
+    marshal_path = Path(project_dir) / '.plan' / 'marshal.json'
+    config: dict = json.loads(marshal_path.read_text(encoding='utf-8')) if marshal_path.exists() else {}
+    ext = get_extension_defaults(config)
+
+    if key in ext:
+        return False
+
+    ext[key] = value
+    marshal_path.parent.mkdir(parents=True, exist_ok=True)
+    marshal_path.write_text(json.dumps(config, indent=2), encoding='utf-8')
+    return True
+
+
+def ext_defaults_list(project_dir: str = '.') -> dict:
+    """List all extension defaults.
+
+    Args:
+        project_dir: Project directory containing .plan/
+
+    Returns:
+        Dictionary of all extension defaults
+    """
+    marshal_path = Path(project_dir) / '.plan' / 'marshal.json'
+    if not marshal_path.exists():
+        return {}
+
+    config: dict = json.loads(marshal_path.read_text(encoding='utf-8'))
+    result: dict = get_extension_defaults(config)
+    return result

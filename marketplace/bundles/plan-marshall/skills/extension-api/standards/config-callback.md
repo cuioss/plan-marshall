@@ -4,7 +4,7 @@ Extension callback mechanism for configuring project-specific defaults during in
 
 ## Purpose
 
-Provides a hook for extensions to set project-specific configuration defaults in `run-configuration.json` before other components access them. This enables:
+Provides a hook for extensions to set project-specific configuration defaults in `marshal.json` before other components access them. This enables:
 
 - Domain-specific defaults (e.g., profiles to ignore in coverage)
 - Project-aware configuration without hardcoding
@@ -31,7 +31,7 @@ The callback is invoked by `marshall-steward` during initialization:
 
 ```python
 def config_defaults(self, project_root: str) -> None:
-    """Configure project-specific defaults in run-configuration.json.
+    """Configure project-specific defaults in marshal.json.
 
     Called during initialization to set up domain-specific configuration
     values. Implementations MUST respect existing user-defined values.
@@ -45,7 +45,7 @@ def config_defaults(self, project_root: str) -> None:
     Contract:
         - MUST only write values if they don't already exist
         - MUST NOT override user-defined configuration
-        - SHOULD use direct import from run_config module
+        - SHOULD use direct import from _config_core module
         - MAY skip silently if no defaults are needed
     """
     pass  # Default no-op implementation
@@ -61,14 +61,14 @@ The critical contract: **only write if the key doesn't exist**. This ensures use
 
 The `extension-defaults set-default` command implements this automatically - it only writes if the key doesn't exist, eliminating the need for check-then-set patterns.
 
-### Using run_config Commands
+### Using plan-marshall-config Commands
 
-All configuration operations use the `run_config` script API. The script handles file location internally - no file paths needed.
+All configuration operations use the `plan-marshall-config` script API. The script handles file location internally - no file paths needed.
 
 **Recommended pattern** - Direct import for simplicity and performance:
 
 ```python
-from run_config import ext_defaults_set_default
+from _config_core import ext_defaults_set_default
 
 def config_defaults(self, project_root: str) -> None:
     """Configure extension defaults."""
@@ -79,20 +79,18 @@ def config_defaults(self, project_root: str) -> None:
 **Alternative** - CLI via subprocess (when import path unavailable):
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config extension-defaults set-default \
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config ext-defaults set-default \
   --key "my_bundle.my_setting" --value "default_value"
 ```
 
-Values are stored in the isolated `extension_defaults` section of `run-configuration.json`.
+Values are stored in the isolated `extension_defaults` section of `marshal.json`.
 
-### Available run_config Operations
+### Available plan-marshall-config Operations
 
 | Operation | Description |
 |-----------|-------------|
-| `extension-defaults set-default` | Set value only if key doesn't exist (write-once) |
-| `extension-defaults get/set/list/remove` | Generic key-value operations in `extension_defaults` |
-| `warning add/list/remove` | Manage acceptable warning patterns |
-| `timeout get/set` | Adaptive command timeouts |
+| `ext-defaults set-default` | Set value only if key doesn't exist (write-once) |
+| `ext-defaults get/set/list/remove` | Generic key-value operations in `extension_defaults` |
 
 ---
 
@@ -101,18 +99,18 @@ Values are stored in the isolated `extension_defaults` section of `run-configura
 Extensions can store arbitrary configuration using direct import:
 
 ```python
-from run_config import ext_defaults_set_default
+from _config_core import ext_defaults_set_default
 
 class Extension(ExtensionBase):
     """Example extension with generic defaults."""
 
     def config_defaults(self, project_root: str) -> None:
         """Configure extension-specific defaults."""
-        # Store list of profiles to skip (JSON-serializable values supported)
-        ext_defaults_set_default("my_bundle.skip_profiles", ["itest", "native"], project_root)
+        # Store comma-separated values
+        ext_defaults_set_default("my_bundle.skip_profiles", "itest,native", project_root)
 
-        # Store simple values
-        ext_defaults_set_default("my_bundle.default_timeout", 300, project_root)
+        # Store simple string values
+        ext_defaults_set_default("my_bundle.default_mode", "strict", project_root)
 ```
 
 **Effect**: Values are stored in `extension_defaults` section and can be retrieved with `ext_defaults_get()`.
@@ -124,7 +122,7 @@ class Extension(ExtensionBase):
 Profile configuration uses extension defaults with specific key patterns:
 
 ```python
-from run_config import ext_defaults_set_default
+from _config_core import ext_defaults_set_default
 
 class Extension(ExtensionBase):
     """CUI Java extension for pm-dev-java-cui bundle."""
@@ -144,16 +142,14 @@ class Extension(ExtensionBase):
 
 ## Configuration Operations
 
-Extensions should use existing run_config operations:
+Extensions should use plan-marshall-config operations:
 
 | Operation | Use Case |
 |-----------|----------|
-| `extension-defaults set-default` | Generic extension defaults (write-once) |
-| `extension-defaults set` | Generic extension config (overwrites) |
-| `extension-defaults set build.maven.profiles.skip` | Exclude profiles from discovery |
-| `extension-defaults set build.maven.profiles.map.canonical` | Map profiles to canonical commands |
-| `warning add` | Accept known build warnings |
-| `timeout set` | Set command-specific timeouts |
+| `ext-defaults set-default` | Generic extension defaults (write-once) |
+| `ext-defaults set` | Generic extension config (overwrites) |
+| `ext-defaults set --key build.maven.profiles.skip` | Exclude profiles from discovery |
+| `ext-defaults set --key build.maven.profiles.map.canonical` | Map profiles to canonical commands |
 
 ---
 
@@ -163,7 +159,7 @@ Extensions should use existing run_config operations:
 
 Hardcoded defaults in extension logic work, but config-callback provides:
 
-1. **User Override** - Users can always set their own values in `run-configuration.json`
+1. **User Override** - Users can always set their own values in `marshal.json`
 2. **Transparency** - Configuration is visible and editable, not hidden in code
 3. **Project Specificity** - Different projects using the same extension may need different values
 

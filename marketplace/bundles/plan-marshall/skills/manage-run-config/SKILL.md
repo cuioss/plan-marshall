@@ -13,7 +13,6 @@ Run configuration handling for persistent command configuration storage.
 - Read and update run configuration entries
 - Track command execution history
 - Manage acceptable warnings and skip lists
-- Store extension-specific defaults
 - Adaptive timeout management
 - Validate run configuration format
 
@@ -22,7 +21,6 @@ Run configuration handling for persistent command configuration storage.
 Activate this skill when:
 - Recording command execution results
 - Managing acceptable warnings lists
-- Setting extension defaults during initialization
 - Managing command timeouts
 - Validating run configuration structure
 
@@ -47,7 +45,10 @@ Activate this skill when:
       "platform_specific": []
     }
   },
-  "extension_defaults": {}
+  "ci": {
+    "authenticated_tools": [],
+    "verified_at": null
+  }
 }
 ```
 
@@ -66,11 +67,6 @@ See [references/run-config-format.md](references/run-config-format.md) for compl
 | warning add | `plan-marshall:manage-run-config:run_config warning add` |
 | warning list | `plan-marshall:manage-run-config:run_config warning list` |
 | warning remove | `plan-marshall:manage-run-config:run_config warning remove` |
-| extension-defaults get | `plan-marshall:manage-run-config:run_config extension-defaults get` |
-| extension-defaults set | `plan-marshall:manage-run-config:run_config extension-defaults set` |
-| extension-defaults set-default | `plan-marshall:manage-run-config:run_config extension-defaults set-default` |
-| extension-defaults list | `plan-marshall:manage-run-config:run_config extension-defaults list` |
-| extension-defaults remove | `plan-marshall:manage-run-config:run_config extension-defaults remove` |
 | cleanup | `plan-marshall:manage-run-config:cleanup` |
 
 Script characteristics:
@@ -87,7 +83,6 @@ Script characteristics:
 |----------|---------|--------------|
 | [timeout-handling.md](standards/timeout-handling.md) | Adaptive timeout management | Managing command timeouts |
 | [warning-handling.md](standards/warning-handling.md) | Acceptable warning patterns | Filtering build warnings |
-| [extension-defaults.md](standards/extension-defaults.md) | Extension configuration | Setting extension defaults |
 | [cleanup-operations.md](standards/cleanup-operations.md) | Directory cleanup | Cleaning old files |
 
 ---
@@ -128,5 +123,4 @@ python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config valid
 - `references/run-config-format.md` - Complete schema documentation
 - `standards/timeout-handling.md` - Adaptive timeout management
 - `standards/warning-handling.md` - Acceptable warning patterns
-- `standards/extension-defaults.md` - Extension configuration storage
 - `standards/cleanup-operations.md` - Directory cleanup operations

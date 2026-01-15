@@ -21,7 +21,7 @@ Scripts can import from ANY skill's scripts directory without path manipulation:
 ```python
 # These imports work because executor sets PYTHONPATH
 from plan_logging import log_entry
-from run_config import ext_defaults_get
+from _config_core import ext_defaults_get
 from toon_parser import parse_toon, serialize_toon
 from file_ops import atomic_write_file, base_path
 ```
@@ -70,7 +70,7 @@ Add `# type: ignore[import-not-found]` to suppress IDE noise:
 
 ```python
 from plan_logging import log_entry  # type: ignore[import-not-found]
-from run_config import ext_defaults_get  # type: ignore[import-not-found]
+from _config_core import ext_defaults_get  # type: ignore[import-not-found]
 from toon_parser import parse_toon  # type: ignore[import-not-found]
 from file_ops import atomic_write_file  # type: ignore[import-not-found]
 ```
@@ -114,12 +114,12 @@ log_entry('script', 'global', 'ERROR', '[MY-COMPONENT] Failed to process')
 - `[MANAGE-TASKS] Added TASK-003`
 - `[GIT-WORKFLOW] Commit formatted`
 
-### Configuration API: `run_config.ext_defaults_get()`
+### Configuration API: `_config_core.ext_defaults_get()`
 
-Use `run_config.ext_defaults_get()` for accessing extension default values.
+Use `_config_core.ext_defaults_get()` for accessing extension default values stored in `marshal.json`.
 
 ```python
-from run_config import ext_defaults_get  # type: ignore[import-not-found]
+from _config_core import ext_defaults_get  # type: ignore[import-not-found]
 
 # Get extension default value
 value = ext_defaults_get('build.maven.profiles.skip', project_dir)

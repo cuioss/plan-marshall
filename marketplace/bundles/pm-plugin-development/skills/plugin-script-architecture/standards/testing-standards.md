@@ -334,7 +334,7 @@ from conftest import run_script, TestRunner
 
 # Direct imports from other skills work automatically
 from plan_logging import log_entry
-from run_config import ext_defaults_get
+from _config_core import ext_defaults_get
 from extension_base import PROFILE_PATTERNS
 ```
 
