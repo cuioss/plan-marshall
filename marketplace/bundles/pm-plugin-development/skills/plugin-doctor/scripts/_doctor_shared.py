@@ -16,6 +16,12 @@ _PLAN_DIR_NAME = os.environ.get('PLAN_DIR_NAME', '.plan')
 # =============================================================================
 
 MARKETPLACE_BUNDLES_PATH = 'marketplace/bundles'
+
+# Script-relative path discovery (works regardless of cwd)
+# Script is at: marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/
+# So bundles directory is 5 levels up from script
+SCRIPT_DIR = Path(__file__).resolve().parent
+_BUNDLES_FROM_SCRIPT = SCRIPT_DIR.parent.parent.parent.parent.parent
 TEMP_DIR = f'{_PLAN_DIR_NAME}/temp'
 REPORT_DIR = 'plugin-doctor-report'
 
@@ -63,12 +69,20 @@ def ensure_report_dir(report_dir: Path) -> Path:
 
 
 def find_marketplace_root() -> Path | None:
-    """Find the marketplace/bundles directory."""
+    """Find the marketplace/bundles directory.
+
+    First checks cwd-based discovery (supports test fixtures),
+    then falls back to script-relative path (works regardless of cwd).
+    """
+    # First try cwd-based discovery (allows tests to use fixture directories)
     cwd = Path.cwd()
     if (cwd / MARKETPLACE_BUNDLES_PATH).is_dir():
         return cwd / MARKETPLACE_BUNDLES_PATH
     if (cwd.parent / MARKETPLACE_BUNDLES_PATH).is_dir():
         return cwd.parent / MARKETPLACE_BUNDLES_PATH
+    # Fallback to script-relative path (works regardless of cwd)
+    if _BUNDLES_FROM_SCRIPT.is_dir():
+        return _BUNDLES_FROM_SCRIPT
     return None
 
 

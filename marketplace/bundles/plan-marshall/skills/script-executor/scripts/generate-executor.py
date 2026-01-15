@@ -49,6 +49,9 @@ PLUGIN_CACHE_SUBPATH = 'plugins/cache/plan-marshall'
 
 # Script-relative paths (resolved at runtime)
 SCRIPT_DIR = Path(__file__).parent.resolve()
+# Script is at: marketplace/bundles/plan-marshall/skills/script-executor/scripts/
+# So bundles directory is 5 levels up from script
+_BUNDLES_FROM_SCRIPT = SCRIPT_DIR.parent.parent.parent.parent.parent
 
 
 # ============================================================================
@@ -57,11 +60,19 @@ SCRIPT_DIR = Path(__file__).parent.resolve()
 
 
 def _find_marketplace_path() -> Path | None:
-    """Find marketplace/bundles directory in cwd or parent."""
+    """Find marketplace/bundles directory relative to cwd or script.
+
+    First checks cwd-based discovery (supports test fixtures),
+    then falls back to script-relative path (works regardless of cwd).
+    """
+    # First try cwd-based discovery (allows tests to use fixture directories)
     if (Path.cwd() / MARKETPLACE_BUNDLES_PATH).is_dir():
         return Path.cwd() / MARKETPLACE_BUNDLES_PATH
     if (Path.cwd().parent / MARKETPLACE_BUNDLES_PATH).is_dir():
         return Path.cwd().parent / MARKETPLACE_BUNDLES_PATH
+    # Fallback to script-relative path (works regardless of cwd)
+    if _BUNDLES_FROM_SCRIPT.is_dir():
+        return _BUNDLES_FROM_SCRIPT
     return None
 
 

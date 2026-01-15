@@ -19,6 +19,12 @@ import json
 from pathlib import Path
 from typing import Any
 
+# Script-relative path discovery (works regardless of cwd)
+# Script is at: marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/
+# So marketplace directory is 5 levels up from script
+SCRIPT_DIR = Path(__file__).resolve().parent
+_MARKETPLACE_FROM_SCRIPT = SCRIPT_DIR.parent.parent.parent.parent.parent
+
 # Required methods for Extension class (self is implicit, not listed)
 # Only get_skill_domains is required as an abstract method
 REQUIRED_METHODS = {
@@ -636,9 +642,15 @@ def cmd_extension(args) -> int:
         return 0 if result['summary']['invalid'] == 0 else 1
 
     else:
-        # Default: scan from current directory
+        # Default: scan from cwd first (supports test fixtures), then script-relative
         marketplace_path = Path.cwd() / 'marketplace'
-        if not marketplace_path.exists():
+        if marketplace_path.is_dir():
+            pass  # use marketplace_path
+        elif Path.cwd().is_dir() and (Path.cwd() / 'bundles').is_dir():
+            marketplace_path = Path.cwd()
+        elif _MARKETPLACE_FROM_SCRIPT.is_dir():
+            marketplace_path = _MARKETPLACE_FROM_SCRIPT
+        else:
             marketplace_path = Path.cwd()
 
         result = scan_extensions(marketplace_path)

@@ -343,6 +343,20 @@ class ScriptTestCase(TestCase):
 import pytest  # noqa: E402
 
 
+@pytest.fixture(autouse=True)
+def _restore_cwd():
+    """Safety net fixture to restore cwd after each test.
+
+    This ensures test isolation even if a test changes cwd without
+    restoring it. Scripts should use script-relative paths, but this
+    provides defense-in-depth against test pollution.
+    """
+    original_cwd = os.getcwd()
+    yield
+    if os.getcwd() != original_cwd:
+        os.chdir(original_cwd)
+
+
 @pytest.fixture
 def fixture_dir(tmp_path):
     """
