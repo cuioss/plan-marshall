@@ -15,6 +15,18 @@ from conftest import get_script_path, run_script
 # Script under test
 SCRIPT_PATH = get_script_path('pm-workflow', 'planning-inventory', 'scan-planning-inventory.py')
 
+# Project root (marketplace-inventory script uses cwd to find bundles)
+PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
+
+
+def run_inventory_script(*args: str) -> 'ScriptResult':  # noqa: F821
+    """Run the planning inventory script with cwd set to project root.
+
+    The underlying marketplace-inventory script uses Path.cwd() to find
+    marketplace/bundles, so we must ensure cwd is correct.
+    """
+    return run_script(SCRIPT_PATH, *args, cwd=PROJECT_ROOT)
+
 
 def parse_json(output):
     """Parse JSON from output."""
@@ -30,13 +42,13 @@ def parse_json(output):
 
 def test_default_execution_succeeds():
     """Test default execution completes successfully."""
-    result = run_script(SCRIPT_PATH)
+    result = run_inventory_script()
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
 
 def test_default_produces_valid_json():
     """Test default mode produces valid JSON."""
-    result = run_script(SCRIPT_PATH)
+    result = run_inventory_script()
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
     try:
@@ -52,7 +64,7 @@ def test_default_produces_valid_json():
 
 def test_full_format_has_required_fields():
     """Test full format has required top-level fields."""
-    result = run_script(SCRIPT_PATH, '--format', 'full')
+    result = run_inventory_script('--format', 'full')
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
     data = parse_json(result.stdout)
@@ -65,7 +77,7 @@ def test_full_format_has_required_fields():
 
 def test_core_has_required_fields():
     """Test core section has required fields."""
-    result = run_script(SCRIPT_PATH)
+    result = run_inventory_script()
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
     data = parse_json(result.stdout)
@@ -79,7 +91,7 @@ def test_core_has_required_fields():
 
 def test_derived_is_list():
     """Test derived section is a list."""
-    result = run_script(SCRIPT_PATH)
+    result = run_inventory_script()
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
     data = parse_json(result.stdout)
@@ -89,7 +101,7 @@ def test_derived_is_list():
 
 def test_statistics_has_required_fields():
     """Test statistics section has required fields."""
-    result = run_script(SCRIPT_PATH)
+    result = run_inventory_script()
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
     data = parse_json(result.stdout)
@@ -106,7 +118,7 @@ def test_statistics_has_required_fields():
 
 def test_core_has_plan_skills():
     """Test core bundle contains planning-related skills."""
-    result = run_script(SCRIPT_PATH)
+    result = run_inventory_script()
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
     data = parse_json(result.stdout)
@@ -121,7 +133,7 @@ def test_core_has_plan_skills():
 
 def test_core_has_manage_skills():
     """Test core bundle contains manage-* skills."""
-    result = run_script(SCRIPT_PATH)
+    result = run_inventory_script()
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
     data = parse_json(result.stdout)
@@ -135,7 +147,7 @@ def test_core_has_manage_skills():
 
 def test_core_has_workflow_skills():
     """Test core bundle contains task-* skills for workflow execution."""
-    result = run_script(SCRIPT_PATH)
+    result = run_inventory_script()
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
     data = parse_json(result.stdout)
@@ -150,7 +162,7 @@ def test_core_has_workflow_skills():
 
 def test_core_has_commands():
     """Test core bundle contains commands."""
-    result = run_script(SCRIPT_PATH)
+    result = run_inventory_script()
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
     data = parse_json(result.stdout)
@@ -171,7 +183,7 @@ def test_core_has_commands():
 
 def test_derived_plugin_has_plan_components():
     """Test pm-plugin-development derived bundle has plan components."""
-    result = run_script(SCRIPT_PATH)
+    result = run_inventory_script()
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
     data = parse_json(result.stdout)
@@ -190,7 +202,7 @@ def test_derived_plugin_has_plan_components():
 
 def test_java_and_frontend_not_in_derived():
     """Test pm-dev-java and pm-dev-frontend are NOT in derived (planning components removed)."""
-    result = run_script(SCRIPT_PATH)
+    result = run_inventory_script()
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
     data = parse_json(result.stdout)
@@ -206,7 +218,7 @@ def test_java_and_frontend_not_in_derived():
 
 def test_derived_includes_plugin_tools():
     """Test derived includes pm-plugin-development bundle."""
-    result = run_script(SCRIPT_PATH)
+    result = run_inventory_script()
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
     data = parse_json(result.stdout)
@@ -222,7 +234,7 @@ def test_derived_includes_plugin_tools():
 
 def test_summary_format_has_required_fields():
     """Test summary format has required fields."""
-    result = run_script(SCRIPT_PATH, '--format', 'summary')
+    result = run_inventory_script('--format', 'summary')
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
     data = parse_json(result.stdout)
@@ -234,7 +246,7 @@ def test_summary_format_has_required_fields():
 
 def test_summary_core_components_structure():
     """Test summary core_components has correct structure."""
-    result = run_script(SCRIPT_PATH, '--format', 'summary')
+    result = run_inventory_script('--format', 'summary')
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
     data = parse_json(result.stdout)
@@ -249,7 +261,7 @@ def test_summary_core_components_structure():
 
 def test_summary_derived_bundles_structure():
     """Test summary derived_bundles has correct structure."""
-    result = run_script(SCRIPT_PATH, '--format', 'summary')
+    result = run_inventory_script('--format', 'summary')
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
     data = parse_json(result.stdout)
@@ -267,7 +279,7 @@ def test_summary_derived_bundles_structure():
 
 def test_statistics_totals_are_consistent():
     """Test statistics totals are consistent with component counts."""
-    result = run_script(SCRIPT_PATH)
+    result = run_inventory_script()
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
     data = parse_json(result.stdout)
@@ -289,7 +301,7 @@ def test_statistics_totals_are_consistent():
 
 def test_total_components_is_sum():
     """Test total_components equals core + derived totals."""
-    result = run_script(SCRIPT_PATH)
+    result = run_inventory_script()
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
     data = parse_json(result.stdout)
@@ -311,7 +323,7 @@ def test_total_components_is_sum():
 
 def test_include_descriptions_adds_descriptions():
     """Test --include-descriptions adds description fields."""
-    result = run_script(SCRIPT_PATH, '--include-descriptions')
+    result = run_inventory_script('--include-descriptions')
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
     data = parse_json(result.stdout)
