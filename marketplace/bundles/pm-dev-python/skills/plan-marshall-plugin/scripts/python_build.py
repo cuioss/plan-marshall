@@ -85,7 +85,7 @@ def detect_wrapper(project_dir: str = '.') -> str:
     wrapper = _detect_wrapper(project_dir, 'pw', 'pw.bat', 'pwx')
     if wrapper is None:
         raise FileNotFoundError('No pyprojectx wrapper found (pw, pw.bat, or pwx)')
-    return wrapper
+    return str(wrapper)  # Cast: _detect_wrapper typed as Any due to cross-skill import
 
 
 # =============================================================================

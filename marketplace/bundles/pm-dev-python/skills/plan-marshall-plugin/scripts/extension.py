@@ -158,7 +158,7 @@ class Extension(ExtensionBase):
         Returns:
             True if wrapper exists for current platform, False otherwise
         """
-        return has_wrapper(project_root, 'pw', 'pw.bat')
+        return bool(has_wrapper(project_root, 'pw', 'pw.bat'))  # Cast: has_wrapper typed as Any
 
     def _map_to_canonical(self, aliases: dict) -> dict:
         """Map pyprojectx aliases to canonical command strings.
