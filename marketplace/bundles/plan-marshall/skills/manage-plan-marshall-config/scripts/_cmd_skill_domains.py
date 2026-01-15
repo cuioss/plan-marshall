@@ -445,6 +445,9 @@ def cmd_skill_domains(args) -> int:
     elif args.verb == 'configure':
         selected_domains = [d.strip() for d in args.domains.split(',') if d.strip()]
 
+        # Clear existing domains and start fresh with only selected ones
+        skill_domains = {}
+
         # Always add system domain with workflow_skills
         skill_domains['system'] = copy.deepcopy(DEFAULT_SYSTEM_DOMAIN)
 

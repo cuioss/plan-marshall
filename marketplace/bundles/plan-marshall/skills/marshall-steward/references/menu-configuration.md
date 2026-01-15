@@ -33,55 +33,71 @@ AskUserQuestion:
 
 ## Configuration: Skill Domains
 
-Skill domains configure which implementation skills are loaded for different code types. Domains are auto-discovered from installed bundles.
-
-Uses shared configuration flow (same as wizard Step 4d).
+Skill domains configure which implementation skills are loaded for different code types. Applicable domains are determined from architecture analysis results.
 
 ### Reconfigure Skill Domains
 
-**Step 1: Discover available domains**
+**Step 1: Get applicable domains from architecture analysis**
+
+Query `extensions_used` from the architecture analysis (populated during project discovery):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture derived
+```
+
+Look for `extensions_used` in the output - these are bundles that detected modules in this project.
+
+**Step 2: Map bundles to domain keys**
+
+Get all available domains with bundle mappings:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
   skill-domains get-available
 ```
 
-**Output** shows `discovered_domains[]` from bundle manifests.
+Bundle to domain key mapping:
+- `pm-dev-java` → `java`
+- `pm-dev-java-cui` → `java-cui`
+- `pm-dev-frontend` → `javascript`
+- `pm-plugin-development` → `plan-marshall-plugin-dev`
+- `pm-documents` → `documentation`
+- `pm-requirements` → `requirements`
 
-**Step 2: User domain selection**
+**Step 3: User domain selection**
 
-Present AskUserQuestion with available domains:
+Present AskUserQuestion with applicable domains pre-selected:
 
 ```yaml
 AskUserQuestion:
-  question: "Select skill domains to enable for this project:"
+  question: "Confirm skill domains for this project:"
   header: "Skill Domains"
   multiSelect: true
   options:
-    # Build dynamically from discovered_domains
-    # Pre-select domains already configured in marshal.json
-    - label: "Java Development"
+    # Pre-select domains from extensions_used
+    # Show all available domains, mark applicable ones
+    - label: "Java Development (detected)"
       description: "Java code patterns, CDI, JUnit (pm-dev-java)"
-    - label: "CUI Java Development"
-      description: "CUI logging, testing, HTTP (pm-dev-java-cui)"
+    - label: "Documentation (detected)"
+      description: "AsciiDoc, ADRs (pm-documents)"
     - label: "JavaScript Development"
       description: "Modern JS, ESLint, Jest (pm-dev-frontend)"
     - label: "Plugin Development"
       description: "Claude Code components (pm-plugin-development)"
-    - label: "Requirements Engineering"
-      description: "User stories and specs (pm-requirements)"
 ```
 
-**Step 3: Configure selected domains**
+**Step 4: Configure selected domains**
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
-  skill-domains configure --domains "java,java-cui,javascript"
+  skill-domains configure --domains "java,documentation"
 ```
 
 This configures:
 - `system` domain (always) with workflow_skills for 5 phases
 - Each selected domain with profile structure from bundle manifest
+
+**Note**: The `configure` command replaces all existing domains with the selected ones.
 
 ### List Domains
 

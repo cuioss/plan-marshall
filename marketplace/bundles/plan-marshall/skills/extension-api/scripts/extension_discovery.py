@@ -169,9 +169,14 @@ def discover_extensions(project_root: Path) -> list[dict[str, Any]]:
     for ext in all_extensions:
         module = ext.get('module')
         if module and hasattr(module, 'discover_modules'):
-            # Include all extensions with discover_modules - they will
-            # return empty list if not applicable to this project
-            applicable.append(ext)
+            # Actually call discover_modules to check applicability
+            try:
+                discovered = module.discover_modules(project_root)
+                if discovered:  # Only include if modules were found
+                    applicable.append(ext)
+            except Exception:
+                # Skip extensions that fail during discovery
+                pass
 
     return applicable
 

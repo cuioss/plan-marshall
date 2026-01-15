@@ -213,11 +213,27 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-m
 
 ---
 
-## Step 6: Configure Build Commands
+## Step 6: Configure Build Commands (Maven/Gradle Projects Only)
 
 Build commands are stored in `module_config` section of marshal.json, separate from module detection data.
 
-### Step 6a: Detect Available Profiles
+**IMPORTANT: Skip this entire step if no Maven/Gradle modules exist.**
+
+Check the `build_systems` field in derived-data.json modules. If all modules use non-Java build systems (e.g., `marshall-plugin`, `npm`, `pyprojectx`), proceed directly to Step 7.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture derived
+```
+
+If no modules have `maven` or `gradle` in their `build_systems`, output:
+```
+No Maven/Gradle modules detected. Skipping build command configuration.
+```
+Then proceed to Step 7.
+
+---
+
+### Step 6a: Detect Available Profiles (Maven/Gradle only)
 
 Query for Maven profiles that can be mapped to canonical commands:
 
@@ -391,42 +407,6 @@ python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config profi
 
 Profile mappings are persisted to `run-configuration.json` and used by build commands.
 
-### Step 6c-2: Infer Module Domains
-
-Auto-populate module domains from build_systems:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
-  modules infer-domains
-```
-
-**Output (TOON)**:
-```toon
-status: success
-updated_count: 3
-updated:
-  - module: oauth-sheriff-core
-    domains: java
-    from_build_systems: maven
-  - module: oauth-sheriff-ui
-    domains: javascript
-    from_build_systems: npm
-  - module: default
-    domains: java
-    from_build_systems: maven
-skipped_count: 0
-```
-
-**Domain Inference Mapping:**
-
-| Build System | Inferred Domain |
-|--------------|-----------------|
-| maven | java |
-| gradle | java |
-| npm | javascript |
-
-Hybrid modules with multiple build systems (e.g., Maven + npm) get both domains: `["java", "javascript"]`.
-
 ---
 
 ### Canonical Command Names
@@ -463,98 +443,57 @@ Use `lookup --build-system maven` or `lookup --build-system npm` to get specific
 
 ## Step 7: Skill Domain Configuration
 
-Configure skill domains using bundle discovery. Domains are auto-discovered from installed bundles.
+Skill domains are determined from the architecture analysis results. The `extensions_used` field in `derived-data.json` (populated during Step 4) contains the bundles whose extensions detected applicable modules in this project.
 
-**Step 7a: Discover available domains**
+**Step 7a: Query architecture analysis for applicable domains**
+
+The architecture analysis already determined which extensions are applicable by calling each extension's `discover_modules()` method. Query the results:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture derived
+```
+
+Look for `extensions_used` in the output - this lists bundles that found modules in the project.
+
+**Example output**:
+```toon
+project:
+  name: my-project
+
+modules[3]{name,path,build_systems}:
+  ...
+
+extensions_used[2]:
+  - pm-dev-java
+  - pm-documents
+```
+
+**Step 7b: Map bundles to domain keys**
+
+Each bundle in `extensions_used` corresponds to a skill domain. Query available domains to get the mapping:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
   skill-domains get-available
 ```
 
-**Output (JSON)**:
-```json
-{
-  "status": "success",
-  "discovered_domains": [
-    {
-      "key": "java",
-      "bundle": "pm-dev-java",
-      "name": "Java Development",
-      "description": "Java code patterns, CDI, JUnit testing, Maven/Gradle builds",
-      "applicable": true
-    },
-    {
-      "key": "java-cui",
-      "bundle": "pm-dev-java-cui",
-      "name": "CUI Java Development",
-      "description": "CUI-specific Java patterns for logging, testing, and HTTP",
-      "applicable": true
-    },
-    {
-      "key": "javascript",
-      "bundle": "pm-dev-frontend",
-      "name": "JavaScript Development",
-      "description": "Modern JavaScript, ESLint, Jest testing, npm builds",
-      "applicable": false
-    },
-    {
-      "key": "plan-marshall-plugin-dev",
-      "bundle": "pm-plugin-development",
-      "name": "Plugin Development",
-      "description": "Claude Code marketplace component development",
-      "applicable": false
-    },
-    {
-      "key": "requirements",
-      "bundle": "pm-requirements",
-      "name": "Requirements Engineering",
-      "description": "User stories, acceptance criteria, specifications",
-      "applicable": false
-    }
-  ]
-}
-```
+This returns all domains with their bundle mappings. Match `extensions_used` bundles to domain keys:
+- `pm-dev-java` → `java`
+- `pm-dev-java-cui` → `java-cui`
+- `pm-dev-frontend` → `javascript`
+- `pm-plugin-development` → `plan-marshall-plugin-dev`
+- `pm-documents` → `documentation`
+- `pm-requirements` → `requirements`
 
-The `applicable` flag indicates whether the domain's extension detected this project type (via `is_applicable()`).
+**Step 7c: Auto-configure applicable domains**
 
-**Step 7b: Auto-configure applicable domains**
-
-All domains with `applicable: true` are automatically configured without user interaction:
+Configure all domains whose bundles appear in `extensions_used`:
 
 ```
-Available Plugins (installed):
+Applicable domains (from architecture analysis):
 - java (pm-dev-java)
-- java-cui (pm-dev-java-cui)
-- requirements (pm-requirements)
+- documentation (pm-documents)
 ```
-
-**Step 7c: User selection for optional domains**
-
-Present non-applicable domains for optional selection. **Note: AskUserQuestion supports max 4 options.**
-
-```yaml
-AskUserQuestion:
-  question: "Enable additional skill domains?"
-  header: "Optional Domains"
-  multiSelect: true
-  options:
-    # Show up to 4 non-applicable domains
-    - label: "JavaScript Development"
-      description: "Modern JS, ESLint, Jest (pm-dev-frontend)"
-    - label: "Plugin Development"
-      description: "Claude Code marketplace (pm-plugin-development)"
-    - label: "Documentation"
-      description: "AsciiDoc, ADRs (pm-documents)"
-    # If more than 4 available, show most relevant 4
-```
-
-If more than 4 optional domains exist, prioritize by relevance or show multiple questions.
-
-**Selection Rule**:
-1. Auto-configure all `applicable: true` domains
-2. Ask about optional domains (max 4 per question)
-3. To add more domains later: `skill-domains configure --domains "domain1,domain2"`
 
 **Step 7d: Configure selected domains**
 
