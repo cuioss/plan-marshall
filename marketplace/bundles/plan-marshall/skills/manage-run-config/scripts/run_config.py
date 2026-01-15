@@ -36,12 +36,8 @@ DEFAULT_STRUCTURE = {
         'acceptable_warnings': {'transitive_dependency': [], 'plugin_compatibility': [], 'platform_specific': []}
     },
     'ci': {'authenticated_tools': [], 'verified_at': None},
-    'profile_mappings': {},
     'extension_defaults': {},  # Internal config set by extensions (not user-visible)
 }
-
-# Valid canonical commands for profile mappings
-VALID_PROFILE_CANONICALS = ['integration-tests', 'coverage', 'benchmark', 'quality-gate', 'skip']
 
 
 def write_json_file(file_path: Path, data: dict) -> None:
@@ -417,208 +413,6 @@ def cmd_warning_remove(args) -> int:
 
 
 # =============================================================================
-# Profile Mapping Subcommands
-# =============================================================================
-
-
-def get_profile_mappings(config: dict[str, Any]) -> dict[str, Any]:
-    """Get profile_mappings section from config."""
-    result: dict[str, Any] = config.get('profile_mappings', {})
-    return result
-
-
-def cmd_profile_mapping_set(args) -> int:
-    """Set a profile mapping (profile_id -> canonical command or 'skip')."""
-    try:
-        config_path = get_run_config_path()
-        config = read_run_config(config_path)
-
-        profile_id = args.profile_id
-        canonical = args.canonical
-
-        if canonical not in VALID_PROFILE_CANONICALS:
-            output_error(f"Invalid canonical '{canonical}'. Valid: {VALID_PROFILE_CANONICALS}")
-            return 1
-
-        # Ensure profile_mappings section exists
-        if 'profile_mappings' not in config:
-            config['profile_mappings'] = {}
-
-        previous = config['profile_mappings'].get(profile_id)
-        config['profile_mappings'][profile_id] = canonical
-        write_json_file(config_path, config)
-
-        result = {
-            'success': True,
-            'action': 'updated' if previous else 'added',
-            'profile_id': profile_id,
-            'canonical': canonical,
-        }
-        if previous:
-            result['previous'] = previous
-
-        print(json.dumps(result, indent=2, ensure_ascii=False))
-        return 0
-
-    except Exception as e:
-        output_error(str(e))
-        return 1
-
-
-def cmd_profile_mapping_get(args) -> int:
-    """Get mapping for a specific profile."""
-    try:
-        config_path = get_run_config_path()
-        config = read_run_config(config_path)
-
-        profile_id = args.profile_id
-        mappings = get_profile_mappings(config)
-        canonical = mappings.get(profile_id)
-
-        if canonical is None:
-            result = {'success': True, 'profile_id': profile_id, 'mapped': False}
-        else:
-            result = {'success': True, 'profile_id': profile_id, 'mapped': True, 'canonical': canonical}
-
-        print(json.dumps(result, indent=2, ensure_ascii=False))
-        return 0
-
-    except Exception as e:
-        output_error(str(e))
-        return 1
-
-
-def cmd_profile_mapping_list(args) -> int:
-    """List all profile mappings."""
-    try:
-        config_path = get_run_config_path()
-        config = read_run_config(config_path)
-
-        mappings = get_profile_mappings(config)
-
-        # Optionally filter by canonical
-        if args.canonical:
-            filtered = {k: v for k, v in mappings.items() if v == args.canonical}
-            result = {'success': True, 'filter': args.canonical, 'count': len(filtered), 'mappings': filtered}
-        else:
-            result = {'success': True, 'count': len(mappings), 'mappings': mappings}
-
-        print(json.dumps(result, indent=2, ensure_ascii=False))
-        return 0
-
-    except Exception as e:
-        output_error(str(e))
-        return 1
-
-
-def cmd_profile_mapping_remove(args) -> int:
-    """Remove a profile mapping."""
-    try:
-        config_path = get_run_config_path()
-        config = read_run_config(config_path)
-
-        profile_id = args.profile_id
-        mappings = get_profile_mappings(config)
-
-        if profile_id not in mappings:
-            output_success('skipped', profile_id=profile_id, reason='Mapping not found')
-            return 0
-
-        previous = config['profile_mappings'].pop(profile_id)
-        write_json_file(config_path, config)
-
-        output_success('removed', profile_id=profile_id, previous=previous)
-        return 0
-
-    except Exception as e:
-        output_error(str(e))
-        return 1
-
-
-def cmd_profile_mapping_batch_set(args) -> int:
-    """Set multiple profile mappings at once from JSON input."""
-    try:
-        config_path = get_run_config_path()
-        config = read_run_config(config_path)
-
-        # Parse mappings from JSON
-        try:
-            new_mappings = json.loads(args.mappings_json)
-        except json.JSONDecodeError as e:
-            output_error(f'Invalid JSON: {e}')
-            return 1
-
-        if not isinstance(new_mappings, dict):
-            output_error('Mappings must be a JSON object')
-            return 1
-
-        # Validate all canonicals
-        invalid: list[str] = []
-        for profile_id, canonical in new_mappings.items():
-            if canonical not in VALID_PROFILE_CANONICALS:
-                invalid.append(f'{profile_id}:{canonical}')
-
-        if invalid:
-            output_error(f'Invalid canonicals: {invalid}. Valid: {VALID_PROFILE_CANONICALS}')
-            return 1
-
-        # Ensure profile_mappings section exists
-        if 'profile_mappings' not in config:
-            config['profile_mappings'] = {}
-
-        # Apply mappings
-        added = 0
-        updated = 0
-        for profile_id, canonical in new_mappings.items():
-            if profile_id in config['profile_mappings']:
-                updated += 1
-            else:
-                added += 1
-            config['profile_mappings'][profile_id] = canonical
-
-        write_json_file(config_path, config)
-
-        result = {
-            'success': True,
-            'action': 'batch_set',
-            'added': added,
-            'updated': updated,
-            'total': len(config['profile_mappings']),
-        }
-        print(json.dumps(result, indent=2, ensure_ascii=False))
-        return 0
-
-    except Exception as e:
-        output_error(str(e))
-        return 1
-
-
-# Python API for profile mappings (for import by other scripts)
-def profile_mapping_get(profile_id: str, project_dir: str = '.') -> str | None:
-    """Get mapping for a profile. Returns canonical name or None if not mapped."""
-    config = read_run_config(get_run_config_path(project_dir))
-    mappings: dict[str, str] = config.get('profile_mappings', {})
-    return mappings.get(profile_id)
-
-
-def profile_mapping_get_all(project_dir: str = '.') -> dict[str, Any]:
-    """Get all profile mappings."""
-    config = read_run_config(get_run_config_path(project_dir))
-    result: dict[str, Any] = config.get('profile_mappings', {})
-    return result
-
-
-def profile_mapping_set(profile_id: str, canonical: str, project_dir: str = '.') -> None:
-    """Set a profile mapping."""
-    if canonical not in VALID_PROFILE_CANONICALS:
-        raise ValueError(f"Invalid canonical '{canonical}'. Valid: {VALID_PROFILE_CANONICALS}")
-    config_path = get_run_config_path(project_dir)
-    config = read_run_config(config_path)
-    config.setdefault('profile_mappings', {})[profile_id] = canonical
-    write_json_file(config_path, config)
-
-
-# =============================================================================
 # Extension Defaults Subcommands (Generic key-value in extension_defaults)
 # =============================================================================
 
@@ -959,38 +753,6 @@ Examples:
     p_warning_remove.add_argument('--build-system', default='maven', help='Build system (default: maven)')
     p_warning_remove.set_defaults(func=cmd_warning_remove)
 
-    # profile-mapping command with subcommands
-    p_profile = subparsers.add_parser('profile-mapping', help='Manage profile mappings')
-    profile_subparsers = p_profile.add_subparsers(dest='profile_command', help='Profile mapping operation')
-
-    # profile-mapping set
-    p_profile_set = profile_subparsers.add_parser('set', help='Set profile mapping')
-    p_profile_set.add_argument('--profile-id', required=True, help='Profile identifier (e.g., "jfr", "benchmark")')
-    p_profile_set.add_argument(
-        '--canonical', required=True, choices=VALID_PROFILE_CANONICALS, help='Canonical command or "skip"'
-    )
-    p_profile_set.set_defaults(func=cmd_profile_mapping_set)
-
-    # profile-mapping get
-    p_profile_get = profile_subparsers.add_parser('get', help='Get profile mapping')
-    p_profile_get.add_argument('--profile-id', required=True, help='Profile identifier')
-    p_profile_get.set_defaults(func=cmd_profile_mapping_get)
-
-    # profile-mapping list
-    p_profile_list = profile_subparsers.add_parser('list', help='List profile mappings')
-    p_profile_list.add_argument('--canonical', choices=VALID_PROFILE_CANONICALS, help='Filter by canonical (optional)')
-    p_profile_list.set_defaults(func=cmd_profile_mapping_list)
-
-    # profile-mapping remove
-    p_profile_remove = profile_subparsers.add_parser('remove', help='Remove profile mapping')
-    p_profile_remove.add_argument('--profile-id', required=True, help='Profile identifier')
-    p_profile_remove.set_defaults(func=cmd_profile_mapping_remove)
-
-    # profile-mapping batch-set
-    p_profile_batch = profile_subparsers.add_parser('batch-set', help='Set multiple profile mappings')
-    p_profile_batch.add_argument('--mappings-json', required=True, help='JSON object of profile_id:canonical mappings')
-    p_profile_batch.set_defaults(func=cmd_profile_mapping_batch_set)
-
     # extension-defaults command with subcommands (generic key-value in extension_defaults)
     p_ext_defaults = subparsers.add_parser('extension-defaults', help='Manage extension defaults (generic key-value)')
     ext_defaults_subparsers = p_ext_defaults.add_subparsers(
@@ -1045,12 +807,6 @@ Examples:
     if args.command == 'warning':
         if not args.warning_command:
             p_warning.print_help()
-            return 1
-
-    # Handle profile-mapping subcommand
-    if args.command == 'profile-mapping':
-        if not args.profile_command:
-            p_profile.print_help()
             return 1
 
     # Handle extension-defaults subcommand

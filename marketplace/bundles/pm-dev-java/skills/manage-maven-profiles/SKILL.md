@@ -116,8 +116,13 @@ python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config ext-d
 
 **Map** - Add canonical mapping:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config profile-mapping set \
-  --profile-id {profile-id} --canonical {canonical}
+# Get current mappings first
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config ext-defaults get \
+  --key build.maven.profiles.map.canonical
+
+# Append new mapping (comma-separated profile:canonical pairs)
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config ext-defaults set \
+  --key build.maven.profiles.map.canonical --value "{existing},{profile-id}:{canonical}"
 ```
 
 ### Step 4: Re-run Discovery
@@ -156,19 +161,22 @@ When multiple profiles map to the same canonical:
 
 ## Storage
 
-Configuration stored in `run-configuration.json`:
+Configuration stored in `run-configuration.json` under `extension_defaults`:
 
 ```json
 {
-  "ext_defaults": {
-    "build.maven.profiles.skip": "itest,native"
-  },
-  "profile_mappings": {
-    "local-integration-tests": "integration-tests",
-    "perf": "benchmark"
+  "extension_defaults": {
+    "build.maven.profiles.skip": "itest,native",
+    "build.maven.profiles.map.canonical": "local-integration-tests:integration-tests,perf:benchmark"
   }
 }
 ```
+
+**Key Formats**:
+- `build.maven.profiles.skip` - Comma-separated profile IDs to exclude
+- `build.maven.profiles.map.canonical` - Comma-separated `profile:canonical` pairs
+
+Skip list and profile mappings are read during architecture discovery to classify profiles.
 
 ---
 
@@ -176,6 +184,5 @@ Configuration stored in `run-configuration.json`:
 
 | Document | Purpose |
 |----------|---------|
-| [profile-mapping.md](../../plan-marshall/skills/manage-run-config/standards/profile-mapping.md) | run_config profile-mapping commands |
 | [maven-impl.md](../plan-marshall-plugin/standards/maven-impl.md) | Maven profile pipeline implementation |
 | [canonical-commands.md](../../plan-marshall/skills/extension-api/standards/canonical-commands.md) | Command vocabulary |

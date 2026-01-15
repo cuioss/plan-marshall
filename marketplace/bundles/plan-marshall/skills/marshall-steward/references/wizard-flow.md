@@ -213,239 +213,11 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-m
 
 ---
 
-## Step 6: Configure Build Commands (Maven/Gradle Projects Only)
-
-Build commands are stored in derived-data.json per module, discovered during architecture analysis.
-
-**IMPORTANT: Skip this entire step if no Maven/Gradle modules exist.**
-
-Check the `build_systems` field in derived-data.json modules. If all modules use non-Java build systems (e.g., `marshall-plugin`, `npm`, `pyprojectx`), proceed directly to Step 7.
-
-```bash
-python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture derived
-```
-
-If no modules have `maven` or `gradle` in their `build_systems`, output:
-```
-No Maven/Gradle modules detected. Skipping build command configuration.
-```
-Then proceed to Step 7.
-
----
-
-### Step 6a: Detect Available Profiles (Maven/Gradle only)
-
-Query for Maven profiles that can be mapped to canonical commands:
-
-```bash
-python3 .plan/execute-script.py pm-dev-java:manage-maven-profiles:profiles list
-```
-
-**Output (TOON)**:
-```toon
-total_profiles: 11
-unmatched_count: 8
-
-modules[3]{name,profiles}:
-default	pre-commit,coverage
-oauth-sheriff-core	integration-tests,coverage,benchmark
-oauth-sheriff-quarkus	native
-```
-
-Display profile summary:
-```
-Profiles detected: 5
-  - default: pre-commit → quality-gate, coverage → coverage
-  - oauth-sheriff-core: integration-tests, coverage, benchmark → performance
-```
-
-### Step 6b: User Command Selection
-
-**Tiered approach** to handle projects of all sizes:
-
-#### Tier 1: Setup Mode Selection
-
-```yaml
-AskUserQuestion:
-  question: "How do you want to configure module commands?"
-  header: "Setup Mode"
-  options:
-    - label: "Auto-detect (Recommended)"
-      description: "Use smart defaults based on module types and detected profiles"
-    - label: "Customize per module"
-      description: "Select commands for each module individually"
-    - label: "Minimal"
-      description: "Only required commands (module-tests, quality-gate, verify)"
-  multiSelect: false
-```
-
-**Routing:**
-
-| Selection | Action |
-|-----------|--------|
-| Auto-detect | Go to Tier 2 (if profiles detected) or directly to Step 6c |
-| Customize | Go to Tier 3 (per-module selection) |
-| Minimal | Go to Step 6c with `--minimal` flag |
-
----
-
-#### Tier 2: Profile Confirmation (Auto-detect path)
-
-Only shown if profiles were detected:
-
-```yaml
-AskUserQuestion:
-  question: "Detected specialized profiles in 2 modules. Include them?"
-  header: "Profiles"
-  multiSelect: true
-  options:
-    - label: "oauth-sheriff-core: integration-tests"
-      description: "Integration tests (mvn verify -Pintegration-tests)"
-    - label: "oauth-sheriff-core: coverage"
-      description: "JaCoCo coverage (mvn verify -Pcoverage)"
-    - label: "oauth-sheriff-core: benchmark → performance"
-      description: "JMH benchmarks (mvn verify -Pbenchmark)"
-    - label: "default: coverage"
-      description: "Coverage reporting (mvn verify -Pcoverage)"
-```
-
-Selected profiles are passed to `persist` command. Proceed to Step 6c.
-
----
-
-#### Tier 3: Per-Module Selection (Customize path)
-
-For each module with available commands, present multi-select:
-
-```yaml
-AskUserQuestion:
-  question: "Select commands for module 'oauth-sheriff-core':"
-  header: "Commands"
-  multiSelect: true
-  options:
-    - label: "module-tests (Required)"
-      description: "Unit tests (mvn clean test)"
-    - label: "quality-gate (Required)"
-      description: "Quality checks (mvn verify -Ppre-commit)"
-    - label: "verify (Required)"
-      description: "Full verification (mvn clean verify)"
-    - label: "integration-tests [DETECTED]"
-      description: "Integration tests (mvn verify -Pintegration-tests)"
-    - label: "coverage [DETECTED]"
-      description: "Test coverage (mvn verify -Pcoverage)"
-    - label: "performance [DETECTED]"
-      description: "JMH benchmarks (mvn verify -Pbenchmark)"
-    - label: "install"
-      description: "Install to local repo (mvn clean install)"
-```
-
-Repeat for each module. Proceed to Step 6c with collected selections.
-
----
-
-### Step 6c: Resolve Unmapped Profiles
-
-Build commands are automatically derived from project architecture (Step 4).
-If there are unmapped profiles, resolve them interactively.
-
-**Check for unmatched profiles**:
-```bash
-python3 .plan/execute-script.py pm-dev-java:manage-maven-profiles:profiles unmatched
-```
-
-**Output (TOON)**:
-```toon
-unmatched_count: 3
-
-profiles[3]{module,profile_id}:
-default	jfr
-benchmark-core	analyze-jfr
-benchmark-core	quick
-```
-
-**For each unique unmapped profile**, ask user to classify:
-
-```yaml
-AskUserQuestion:
-  question: "Profile 'jfr' detected but can't be auto-classified. What is it?"
-  header: "Profile"
-  options:
-    - label: "Skip (internal/unused)"
-      description: "Exclude from command generation"
-    - label: "Integration tests"
-      description: "Integration or E2E test execution"
-    - label: "Coverage"
-      description: "Code coverage analysis"
-    - label: "Benchmark"
-      description: "Benchmark or performance testing"
-  multiSelect: false
-```
-
-**Map user selection to canonical**:
-
-| Selection | Canonical |
-|-----------|-----------|
-| Skip | `skip` |
-| Integration tests | `integration-tests` |
-| Coverage | `coverage` |
-| Benchmark | `benchmark` |
-| Quality gate | `quality-gate` |
-
-**Save decision to run-config**:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config profile-mapping set \
-  --profile-id jfr --canonical skip
-```
-
-**Batch mode** - If multiple profiles share same classification:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config profile-mapping batch-set \
-  --mappings-json '{"jfr": "skip", "analyze-jfr": "skip", "quick": "skip"}'
-```
-
-Profile mappings are persisted to `run-configuration.json` and used by build commands.
-
----
-
-### Canonical Command Names
-
-Commands use a fixed vocabulary for programmatic lookup by plan execution agents:
-
-| Canonical | Required | Description |
-|-----------|----------|-------------|
-| `module-tests` | **Yes** | Unit tests for the module |
-| `quality-gate` | **Yes** | Pre-commit checks (lint, format, static analysis) |
-| `verify` | **Yes** | Full build verification |
-| `integration-tests` | No | Integration/E2E tests |
-| `coverage` | No | Test coverage reports |
-| `performance` | No | Benchmark/performance tests |
-| `install` | No | Install to local repository |
-| `package` | No | Create distributable package |
-
-### Hybrid Module Support
-
-Modules with multiple build systems (e.g., Maven + npm) get nested command format:
-
-```json
-{
-  "module-tests": {
-    "maven": "python3 .plan/execute-script.py ... --goals \"clean test\"",
-    "npm": "python3 .plan/execute-script.py ... --command \"run test\""
-  }
-}
-```
-
-Use `lookup --build-system maven` or `lookup --build-system npm` to get specific command.
-
----
-
-## Step 7: Skill Domain Configuration
+## Step 6: Skill Domain Configuration
 
 Skill domains are determined from the architecture analysis results. The `extensions_used` field in `derived-data.json` (populated during Step 4) contains the bundles whose extensions detected applicable modules in this project.
 
-**Step 7a: Query architecture analysis for applicable domains**
+**Step 6a: Query architecture analysis for applicable domains**
 
 The architecture analysis already determined which extensions are applicable by calling each extension's `discover_modules()` method. Query the results:
 
@@ -468,7 +240,7 @@ extensions_used[2]:
   - pm-documents
 ```
 
-**Step 7b: Map bundles to domain keys**
+**Step 6b: Map bundles to domain keys**
 
 Each bundle in `extensions_used` corresponds to a skill domain. Query available domains to get the mapping:
 
@@ -485,7 +257,7 @@ This returns all domains with their bundle mappings. Match `extensions_used` bun
 - `pm-documents` → `documentation`
 - `pm-requirements` → `requirements`
 
-**Step 7c: Auto-configure applicable domains**
+**Step 6c: Auto-configure applicable domains**
 
 Configure all domains whose bundles appear in `extensions_used`:
 
@@ -495,7 +267,7 @@ Applicable domains (from architecture analysis):
 - documentation (pm-documents)
 ```
 
-**Step 7d: Configure selected domains**
+**Step 6d: Configure selected domains**
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
@@ -517,7 +289,7 @@ This populates `skill_domains` in marshal.json with:
   - `core` (defaults + optionals)
   - Profile blocks (implementation, module_testing, integration_testing, quality)
 
-**Step 7e: Configure Task Executors**
+**Step 6e: Configure Task Executors**
 
 Task executors map profile values to workflow skills that execute tasks of that profile.
 
@@ -545,7 +317,7 @@ This auto-discovers profiles from configured domains and registers default task 
 
 ---
 
-## Step 8: Verify Skill Domain Configuration
+## Step 7: Verify Skill Domain Configuration
 
 Skill domains configure which implementation skills are loaded during plan execution. The 5-phase model uses:
 - **System domain**: Contains workflow_skills (init, outline, plan, execute, finalize) and task_executors
@@ -591,13 +363,13 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-m
 
 ---
 
-## Step 9: Project Structure Analysis
+## Step 8: Project Structure Analysis
 
 Generate project structure knowledge for solution outline support.
 
 **Prerequisites**: Step 4 created `.plan/project-architecture/derived-data.json` with all module information.
 
-### Step 9a: LLM Architectural Analysis
+### Step 8a: LLM Architectural Analysis
 
 Invoke the analysis skill to read raw data and generate meaningful structure:
 
@@ -614,7 +386,7 @@ The LLM analysis reads discovered data, samples documentation and source code, t
 
 **Output**: `.plan/project-architecture/llm-enriched.json` with rich, meaningful content
 
-### Step 9b: User Refinement (Optional)
+### Step 8b: User Refinement (Optional)
 
 Display generated structure and offer refinement:
 
@@ -650,7 +422,7 @@ python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:archi
   enrich module --name oauth-sheriff-core --responsibility "Core OAuth token validation and refresh logic"
 ```
 
-### Step 9c: Verify Structure
+### Step 8c: Verify Structure
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture info
@@ -660,7 +432,7 @@ Verify that all modules have responsibilities and key packages. Missing fields i
 
 ---
 
-## Step 10: Detect CI Provider
+## Step 9: Detect CI Provider
 
 Detect CI provider and verify tools:
 
@@ -681,7 +453,7 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci_health per
 
 ---
 
-## Step 11: Permission Setup
+## Step 10: Permission Setup
 
 ```
 AskUserQuestion:
@@ -702,7 +474,7 @@ python3 .plan/execute-script.py plan-marshall:permission-fix:permission-fix appl
 
 ---
 
-## Step 12: Summary
+## Step 11: Summary
 
 Output final summary:
 
@@ -719,16 +491,9 @@ marshal:
 project_architecture:
   path: .plan/project-architecture/
   modules_count: 3
-build_systems:
-  - maven
-  - npm
-modules:
-  count: 3
-  commands_generated: 15
 skill_domains:
-  - java
-  - javascript
-  - plugin
+  - documentation
+  - plan-marshall-plugin-dev
 
 next_steps:
   - Run /plan-manage to create a new plan

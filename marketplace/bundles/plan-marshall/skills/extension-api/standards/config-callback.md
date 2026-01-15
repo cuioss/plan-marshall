@@ -91,7 +91,6 @@ Values are stored in the isolated `extension_defaults` section of `run-configura
 |-----------|-------------|
 | `extension-defaults set-default` | Set value only if key doesn't exist (write-once) |
 | `extension-defaults get/set/list/remove` | Generic key-value operations in `extension_defaults` |
-| `profile-mapping get/set/list/remove` | Map profiles to canonical commands |
 | `warning add/list/remove` | Manage acceptable warning patterns |
 | `timeout get/set` | Adaptive command timeouts |
 
@@ -120,40 +119,26 @@ class Extension(ExtensionBase):
 
 ---
 
-## Example: Profile Mappings
+## Example: Profile Skip List and Mappings
 
-For profile-to-canonical mappings, use the `profile-mapping` CLI (no Python API available). This requires check-then-set since there's no `set-default` operation:
+Profile configuration uses extension defaults with specific key patterns:
 
 ```python
-import subprocess
+from run_config import ext_defaults_set_default
 
 class Extension(ExtensionBase):
     """CUI Java extension for pm-dev-java-cui bundle."""
 
     def config_defaults(self, project_root: str) -> None:
-        """Configure CUI-specific profile mappings."""
-        profiles_to_skip = ["itest", "native"]
+        """Configure CUI-specific profile settings."""
+        # Store profiles to skip (comma-separated)
+        ext_defaults_set_default("build.maven.profiles.skip", "itest,native", project_root)
 
-        for profile_id in profiles_to_skip:
-            # Check if mapping exists
-            result = subprocess.run(
-                ["python3", ".plan/execute-script.py",
-                 "plan-marshall:manage-run-config:run_config", "profile-mapping", "get",
-                 "--profile-id", profile_id],
-                capture_output=True, text=True, cwd=project_root
-            )
-
-            # Only set if not already mapped (respects user overrides)
-            if '"mapped": false' in result.stdout:
-                subprocess.run(
-                    ["python3", ".plan/execute-script.py",
-                     "plan-marshall:manage-run-config:run_config", "profile-mapping", "set",
-                     "--profile-id", profile_id, "--canonical", "skip"],
-                    cwd=project_root
-                )
+        # Store profile-to-canonical mappings (comma-separated profile:canonical pairs)
+        ext_defaults_set_default("build.maven.profiles.map.canonical", "pre-commit:quality-gate", project_root)
 ```
 
-**Effect**: When `discover_modules` runs later, it checks profile mappings and excludes modules that only activate under skipped profiles.
+**Effect**: When `discover_modules` runs, it checks extension defaults for skip lists and profile mappings before auto-classifying profiles.
 
 ---
 
@@ -165,7 +150,8 @@ Extensions should use existing run_config operations:
 |-----------|----------|
 | `extension-defaults set-default` | Generic extension defaults (write-once) |
 | `extension-defaults set` | Generic extension config (overwrites) |
-| `profile-mapping set --canonical skip` | Exclude profiles from discovery |
+| `extension-defaults set build.maven.profiles.skip` | Exclude profiles from discovery |
+| `extension-defaults set build.maven.profiles.map.canonical` | Map profiles to canonical commands |
 | `warning add` | Accept known build warnings |
 | `timeout set` | Set command-specific timeouts |
 

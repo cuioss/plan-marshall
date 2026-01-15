@@ -34,9 +34,6 @@ The run configuration file stores:
       "plugin_compatibility": [],
       "platform_specific": []
     }
-  },
-  "profile_mappings": {
-    "<profile-id>": "<canonical|skip>"
   }
 }
 ```
@@ -54,7 +51,6 @@ The run configuration file stores:
 |---------|---------|
 | ci | CI provider tool verification status |
 | maven | Maven build configurations |
-| profile_mappings | User decisions for build profile classification |
 
 ---
 
@@ -136,41 +132,6 @@ Maven acceptable warnings configuration.
 
 ---
 
-## Profile Mappings Section
-
-User decisions about build profile classification. Used by `build_env persist` to resolve profiles that can't be auto-classified.
-
-| Field | Type | Description |
-|-------|------|-------------|
-| profile_mappings | object | Map of profile ID to canonical command or 'skip' |
-
-### Valid Canonicals
-
-| Canonical | Description |
-|-----------|-------------|
-| integration-tests | Integration test execution |
-| coverage | Code coverage analysis |
-| benchmark | Performance/benchmark testing |
-| quality-gate | Quality checks (lint, static analysis) |
-| skip | Exclude profile from command generation |
-
-### Example
-
-```json
-{
-  "profile_mappings": {
-    "jfr": "skip",
-    "quick": "skip",
-    "perf": "benchmark",
-    "analyze-jfr": "skip"
-  }
-}
-```
-
-> **Note**: Profile mappings are stored in `run-configuration.json` (local) not `marshal.json` (shared). This allows different machines to have different profile configurations if needed.
-
----
-
 ## JSON Path Access
 
 Use dot notation for field access:
@@ -182,8 +143,6 @@ Use dot notation for field access:
 | `commands.my-cmd.last_execution.date` | Execution date |
 | `commands.my-cmd.skipped_files[0]` | First skipped file |
 | `maven.acceptable_warnings` | Maven warnings |
-| `profile_mappings` | All profile mappings |
-| `profile_mappings.jfr` | Mapping for specific profile |
 
 ---
 
@@ -228,11 +187,6 @@ Use dot notation for field access:
       "plugin_compatibility": [],
       "platform_specific": []
     }
-  },
-  "profile_mappings": {
-    "jfr": "skip",
-    "quick": "skip",
-    "perf": "benchmark"
   }
 }
 ```

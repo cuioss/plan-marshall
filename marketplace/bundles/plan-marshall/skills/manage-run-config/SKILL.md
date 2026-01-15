@@ -13,7 +13,6 @@ Run configuration handling for persistent command configuration storage.
 - Read and update run configuration entries
 - Track command execution history
 - Manage acceptable warnings and skip lists
-- Manage profile-to-canonical mappings
 - Store extension-specific defaults
 - Adaptive timeout management
 - Validate run configuration format
@@ -23,7 +22,6 @@ Run configuration handling for persistent command configuration storage.
 Activate this skill when:
 - Recording command execution results
 - Managing acceptable warnings lists
-- Managing profile mappings for build profiles
 - Setting extension defaults during initialization
 - Managing command timeouts
 - Validating run configuration structure
@@ -49,7 +47,6 @@ Activate this skill when:
       "platform_specific": []
     }
   },
-  "profile_mappings": {},
   "extension_defaults": {}
 }
 ```
@@ -69,11 +66,6 @@ See [references/run-config-format.md](references/run-config-format.md) for compl
 | warning add | `plan-marshall:manage-run-config:run_config warning add` |
 | warning list | `plan-marshall:manage-run-config:run_config warning list` |
 | warning remove | `plan-marshall:manage-run-config:run_config warning remove` |
-| profile-mapping set | `plan-marshall:manage-run-config:run_config profile-mapping set` |
-| profile-mapping get | `plan-marshall:manage-run-config:run_config profile-mapping get` |
-| profile-mapping list | `plan-marshall:manage-run-config:run_config profile-mapping list` |
-| profile-mapping remove | `plan-marshall:manage-run-config:run_config profile-mapping remove` |
-| profile-mapping batch-set | `plan-marshall:manage-run-config:run_config profile-mapping batch-set` |
 | extension-defaults get | `plan-marshall:manage-run-config:run_config extension-defaults get` |
 | extension-defaults set | `plan-marshall:manage-run-config:run_config extension-defaults set` |
 | extension-defaults set-default | `plan-marshall:manage-run-config:run_config extension-defaults set-default` |
@@ -94,7 +86,6 @@ Script characteristics:
 | Document | Purpose | When to Read |
 |----------|---------|--------------|
 | [timeout-handling.md](standards/timeout-handling.md) | Adaptive timeout management | Managing command timeouts |
-| [profile-mapping.md](standards/profile-mapping.md) | Profile-to-canonical mappings | Handling unmapped build profiles |
 | [warning-handling.md](standards/warning-handling.md) | Acceptable warning patterns | Filtering build warnings |
 | [extension-defaults.md](standards/extension-defaults.md) | Extension configuration | Setting extension defaults |
 | [cleanup-operations.md](standards/cleanup-operations.md) | Directory cleanup | Cleaning old files |
@@ -136,7 +127,6 @@ python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config valid
 
 - `references/run-config-format.md` - Complete schema documentation
 - `standards/timeout-handling.md` - Adaptive timeout management
-- `standards/profile-mapping.md` - Profile-to-canonical mappings
 - `standards/warning-handling.md` - Acceptable warning patterns
 - `standards/extension-defaults.md` - Extension configuration storage
 - `standards/cleanup-operations.md` - Directory cleanup operations
