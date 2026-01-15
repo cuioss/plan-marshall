@@ -1,12 +1,12 @@
 ---
 name: java-cdi-quarkus
 description: Quarkus-specific CDI patterns including @QuarkusTest, native image support, and reflection registration
-allowed-tools: [Read, Edit, Write, Bash, Grep, Glob]
+allowed-tools: [Read, Grep, Glob]
 ---
 
 # Java CDI Quarkus Skill
 
-**EXECUTION MODE**: You are now executing this skill. DO NOT explain or summarize these instructions to the user. IMMEDIATELY begin the workflow below based on the task context.
+**REFERENCE MODE**: This skill provides reference material. Load specific standards on-demand based on current task.
 
 Quarkus-specific CDI standards extending core CDI patterns with Quarkus testing, native image support, and GraalVM reflection configuration.
 

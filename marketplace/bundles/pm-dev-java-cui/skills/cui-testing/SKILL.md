@@ -1,12 +1,12 @@
 ---
 name: cui-testing
 description: CUI test library standards for test data generation, value object contracts, and JUL log testing
-allowed-tools: [Read, Edit, Write, Bash, Grep, Glob]
+allowed-tools: [Read, Grep, Glob]
 ---
 
 # CUI Testing Skill
 
-**EXECUTION MODE**: You are now executing this skill. DO NOT explain or summarize these instructions to the user. IMMEDIATELY begin the workflow below based on the task context.
+**REFERENCE MODE**: This skill provides reference material. Load specific standards on-demand based on current task.
 
 CUI-specific testing standards for projects using CUI test libraries. This skill covers the mandatory test data generator framework, value object contract testing, and JUL log testing utilities.
 

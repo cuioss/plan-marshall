@@ -1,12 +1,12 @@
 ---
 name: java-maintenance
 description: Java code maintenance standards including prioritization, refactoring triggers, and compliance verification
-allowed-tools: [Read, Edit, Write, Bash, Grep, Glob]
+allowed-tools: [Read, Grep, Glob]
 ---
 
 # Java Maintenance Skill
 
-**EXECUTION MODE**: You are now executing this skill. DO NOT explain or summarize these instructions to the user. IMMEDIATELY begin the workflow below based on the task context.
+**REFERENCE MODE**: This skill provides reference material. Load specific standards on-demand based on current task.
 
 Java code maintenance standards for identifying, prioritizing, and executing refactoring work. This skill covers compliance checking, maintenance prioritization, and refactoring triggers.
 

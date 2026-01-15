@@ -3,8 +3,6 @@ name: cui-cypress
 description: Cypress E2E testing standards including framework adaptations, test organization, and best practices
 allowed-tools:
   - Read
-  - Write
-  - Bash
   - Grep
   - Glob
 requirements:
@@ -21,7 +19,7 @@ standards:
 
 # Cypress E2E Testing Standards Skill
 
-**EXECUTION MODE**: You are now executing this skill. DO NOT explain or summarize these instructions to the user. IMMEDIATELY begin the workflow below based on the task context.
+**REFERENCE MODE**: This skill provides reference material. Load specific standards on-demand based on current task.
 
 ## Overview
 

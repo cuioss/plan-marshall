@@ -1,12 +1,12 @@
 ---
 name: javadoc
 description: JavaDoc documentation standards including class, method, and code example patterns
-allowed-tools: [Read, Edit, Write, Bash, Grep, Glob]
+allowed-tools: [Read, Grep, Glob]
 ---
 
 # JavaDoc Skill
 
-**EXECUTION MODE**: You are now executing this skill. DO NOT explain or summarize these instructions to the user. IMMEDIATELY begin the workflow below based on the task context.
+**REFERENCE MODE**: This skill provides reference material. Load specific standards on-demand based on current task.
 
 JavaDoc documentation standards for Java projects. This skill covers class documentation, method documentation, code examples, and error references.
 

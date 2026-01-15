@@ -6,7 +6,7 @@ allowed-tools: [Read, Grep, Glob]
 
 # CUI JavaScript Maintenance Skill
 
-**EXECUTION MODE**: You are now executing this skill. DO NOT explain or summarize these instructions to the user. IMMEDIATELY begin the workflow below based on the task context.
+**REFERENCE MODE**: This skill provides reference material. Load specific standards on-demand based on current task.
 
 Standards for systematic JavaScript code maintenance including violation detection, prioritization frameworks, and compliance verification.
 

@@ -1,12 +1,12 @@
 ---
 name: cui-testing-http
 description: CUI MockWebServer standards for HTTP client testing with JUnit 5 integration
-allowed-tools: [Read, Edit, Write, Bash, Grep, Glob]
+allowed-tools: [Read, Grep, Glob]
 ---
 
 # CUI Testing HTTP Skill
 
-**EXECUTION MODE**: You are now executing this skill. DO NOT explain or summarize these instructions to the user. IMMEDIATELY begin the workflow below based on the task context.
+**REFERENCE MODE**: This skill provides reference material. Load specific standards on-demand based on current task.
 
 CUI-specific HTTP testing standards for projects using cui-test-mockwebserver-junit5. This skill covers MockWebServer configuration, HTTPS testing, and request verification patterns.
 

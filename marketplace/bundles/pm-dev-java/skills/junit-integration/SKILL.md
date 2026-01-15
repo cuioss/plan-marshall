@@ -1,12 +1,12 @@
 ---
 name: junit-integration
 description: Maven integration testing with Failsafe plugin, IT naming conventions, and profile configuration
-allowed-tools: [Read, Edit, Write, Bash, Grep, Glob]
+allowed-tools: [Read, Grep, Glob]
 ---
 
 # JUnit Integration Skill
 
-**EXECUTION MODE**: You are now executing this skill. DO NOT explain or summarize these instructions to the user. IMMEDIATELY begin the workflow below based on the task context.
+**REFERENCE MODE**: This skill provides reference material. Load specific standards on-demand based on current task.
 
 Integration testing standards for Maven projects using the Failsafe plugin. This skill covers test separation, naming conventions, and profile configuration.
 

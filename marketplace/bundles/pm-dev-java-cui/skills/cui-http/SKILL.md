@@ -1,12 +1,12 @@
 ---
 name: cui-http
 description: CUI HTTP client standards with HttpHandler, HttpResult pattern, and async-first adapters
-allowed-tools: [Read, Edit, Write, Bash, Grep, Glob]
+allowed-tools: [Read, Grep, Glob]
 ---
 
 # CUI HTTP Skill
 
-**EXECUTION MODE**: You are now executing this skill. DO NOT explain or summarize these instructions to the user. IMMEDIATELY begin the workflow below based on the task context.
+**REFERENCE MODE**: This skill provides reference material. Load specific standards on-demand based on current task.
 
 CUI-specific HTTP client standards for projects using the CUI HTTP library (cui-http). This skill covers HttpHandler usage, the HttpResult sealed interface pattern, and async-first HTTP adapters with retry and caching.
 

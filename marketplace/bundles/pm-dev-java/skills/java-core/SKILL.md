@@ -1,12 +1,12 @@
 ---
 name: java-core
 description: Core Java development patterns including code organization, modern features, performance patterns, and implementation verification
-allowed-tools: [Read, Edit, Write, Bash, Grep, Glob]
+allowed-tools: [Read, Grep, Glob]
 ---
 
 # Java Core Skill
 
-**EXECUTION MODE**: You are now executing this skill. DO NOT explain or summarize these instructions to the user. IMMEDIATELY begin the workflow below based on the task context.
+**REFERENCE MODE**: This skill provides reference material. Load specific standards on-demand based on current task.
 
 Core Java development standards for general Java projects. This skill covers fundamental patterns, modern Java features, performance optimization, and implementation verification.
 

@@ -1,12 +1,12 @@
 ---
 name: junit-core
 description: JUnit 5 core testing patterns with AAA structure, test organization, and coverage standards
-allowed-tools: [Read, Edit, Write, Bash, Grep, Glob]
+allowed-tools: [Read, Grep, Glob]
 ---
 
 # JUnit Core Skill
 
-**EXECUTION MODE**: You are now executing this skill. DO NOT explain or summarize these instructions to the user. IMMEDIATELY begin the workflow below based on the task context.
+**REFERENCE MODE**: This skill provides reference material. Load specific standards on-demand based on current task.
 
 JUnit 5 testing standards for general Java projects. This skill covers test structure, naming conventions, coverage requirements, and the AAA (Arrange-Act-Assert) pattern.
 
