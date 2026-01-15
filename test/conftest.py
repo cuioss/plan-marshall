@@ -584,28 +584,25 @@ class PlanContext:
 
 # Key names - use these constants instead of hardcoding strings
 MARSHAL_KEY_SKILL_DOMAINS = 'skill_domains'
-MARSHAL_KEY_MODULE_CONFIG = 'module_config'
 MARSHAL_KEY_SYSTEM = 'system'
 MARSHAL_KEY_PLAN = 'plan'
 
 # Default schema for marshal.json
 MARSHAL_SCHEMA_DEFAULT: dict[str, Any] = {
     MARSHAL_KEY_SKILL_DOMAINS: {'system': {}},
-    MARSHAL_KEY_MODULE_CONFIG: {},
     MARSHAL_KEY_SYSTEM: {'retention': {}},
     MARSHAL_KEY_PLAN: {'defaults': {}},
 }
 
 
 def create_marshal_json(
-    base_dir: Path, module_config: dict | None = None, skill_domains: dict | None = None, extra: dict | None = None
+    base_dir: Path, skill_domains: dict | None = None, extra: dict | None = None
 ) -> Path:
     """
     Create marshal.json with proper schema.
 
     Args:
         base_dir: Directory to create .plan/marshal.json in (or directory containing marshal.json)
-        module_config: Module configuration dict (optional)
         skill_domains: Skill domains dict (optional, defaults to {"system": {}})
         extra: Additional top-level keys to merge (optional)
 
@@ -613,13 +610,8 @@ def create_marshal_json(
         Path to created marshal.json
 
     Example:
-        marshal_path = create_marshal_json(temp_dir, module_config={
-            "default": {
-                "path": ".",
-                "type": "jar",
-                "build_systems": ["maven"],
-                "commands": {"verify": "mvn verify"}
-            }
+        marshal_path = create_marshal_json(temp_dir, skill_domains={
+            "system": {"workflow_skills": {...}}
         })
     """
     # Determine the correct location for marshal.json
@@ -630,8 +622,6 @@ def create_marshal_json(
 
     # Build the data structure
     data = MARSHAL_SCHEMA_DEFAULT.copy()
-    if module_config is not None:
-        data[MARSHAL_KEY_MODULE_CONFIG] = module_config
     if skill_domains is not None:
         data[MARSHAL_KEY_SKILL_DOMAINS] = skill_domains
     if extra:
@@ -709,7 +699,7 @@ class BuildContext:
 
             # Check marshal.json
             config = ctx.load_marshal_json()
-            assert 'module_config' in config
+            assert 'skill_domains' in config
 
     Attributes:
         temp_dir: Root directory for test files
@@ -719,19 +709,17 @@ class BuildContext:
     __test__ = False  # Not a test class - prevent pytest collection warning
 
     def __init__(
-        self, module_config: dict | None = None, modules: list | None = None, module_details: dict | None = None
+        self, modules: list | None = None, module_details: dict | None = None
     ):
         """
         Initialize the build test context.
 
         Args:
-            module_config: Initial module_config for marshal.json
             modules: Initial modules list for raw-project-data.json
             module_details: Initial module_details for raw-project-data.json
         """
         self.temp_dir: Path | None = None
         self.plan_dir: Path | None = None
-        self._initial_module_config = module_config
         self._initial_modules = modules
         self._initial_module_details = module_details
 
@@ -742,7 +730,7 @@ class BuildContext:
         self.plan_dir.mkdir()
 
         # Create initial marshal.json
-        create_marshal_json(self.temp_dir, module_config=self._initial_module_config)
+        create_marshal_json(self.temp_dir)
 
         # Create raw-project-data.json if modules provided
         if self._initial_modules is not None:

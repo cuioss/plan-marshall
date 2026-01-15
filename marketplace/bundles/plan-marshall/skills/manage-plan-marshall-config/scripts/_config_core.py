@@ -56,8 +56,7 @@ def save_config(config: dict) -> None:
     MARSHAL_PATH.parent.mkdir(parents=True, exist_ok=True)
 
     # Canonical key order for marshal.json
-    # Note: module_config replaces modules for command configuration
-    key_order = ['ci', 'plan', 'skill_domains', 'module_config', 'system']
+    key_order = ['ci', 'plan', 'skill_domains', 'system']
 
     # Build ordered dict: known keys first in order, then any remaining keys
     ordered = {}

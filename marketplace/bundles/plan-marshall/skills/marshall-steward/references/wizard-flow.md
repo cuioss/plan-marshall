@@ -215,7 +215,7 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-m
 
 ## Step 6: Configure Build Commands (Maven/Gradle Projects Only)
 
-Build commands are stored in `module_config` section of marshal.json, separate from module detection data.
+Build commands are stored in derived-data.json per module, discovered during architecture analysis.
 
 **IMPORTANT: Skip this entire step if no Maven/Gradle modules exist.**
 

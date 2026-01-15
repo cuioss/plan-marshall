@@ -126,7 +126,7 @@ def test_help_flag():
 def test_persist_key_ordering():
     """Test persist maintains canonical key ordering in marshal.json.
 
-    Canonical order: ci, plan, skill_domains, module_config, system
+    Canonical order: ci, plan, skill_domains, system
     """
     with PlanContext(plan_id='test-ordering') as ctx:
         # Create marshal.json with keys in WRONG order
@@ -135,7 +135,6 @@ def test_persist_key_ordering():
             json.dumps(
                 {
                     'system': {'retention': {}},
-                    'module_config': {},
                     'plan': {'defaults': {}},
                     'skill_domains': {'system': {}},
                 },
@@ -151,7 +150,7 @@ def test_persist_key_ordering():
         actual_keys = list(updated.keys())
 
         # Expected order (ci should be first since persist adds it)
-        expected_order = ['ci', 'plan', 'skill_domains', 'module_config', 'system']
+        expected_order = ['ci', 'plan', 'skill_domains', 'system']
 
         # Filter to only keys that exist
         actual_order = [k for k in actual_keys if k in expected_order]

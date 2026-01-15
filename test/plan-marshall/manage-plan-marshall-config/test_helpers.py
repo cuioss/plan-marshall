@@ -36,7 +36,7 @@ def create_run_config(fixture_dir: Path, config: dict | None = None) -> Path:
 
 
 def create_marshal_json(fixture_dir: Path, config: dict | None = None) -> Path:
-    """Create marshal.json in fixture directory with module_config structure.
+    """Create marshal.json in fixture directory.
 
     Also creates raw-project-data.json with module facts (source of truth for modules).
     """
@@ -45,20 +45,6 @@ def create_marshal_json(fixture_dir: Path, config: dict | None = None) -> Path:
             'skill_domains': {
                 'java': {'defaults': ['pm-dev-java:java-core'], 'optionals': ['pm-dev-java:java-cdi']},
                 'java-testing': {'defaults': ['pm-dev-java:junit-core'], 'optionals': []},
-            },
-            'module_config': {
-                'default': {
-                    'commands': {
-                        'test': 'python3 .plan/execute-script.py plan-marshall:build-operations:maven run --targets "clean test"',
-                        'verify': 'python3 .plan/execute-script.py plan-marshall:build-operations:maven run --targets "clean verify"',
-                    }
-                },
-                'my-ui': {
-                    'commands': {
-                        'test': 'python3 .plan/execute-script.py plan-marshall:build-operations:npm execute --command "run test"',
-                        'build': 'python3 .plan/execute-script.py plan-marshall:build-operations:npm execute --command "run build"',
-                    }
-                },
             },
             'system': {
                 'retention': {'logs_days': 1, 'archived_plans_days': 5, 'memory_days': 5, 'temp_on_maintenance': True}

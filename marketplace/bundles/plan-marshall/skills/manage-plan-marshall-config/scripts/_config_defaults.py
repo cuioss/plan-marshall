@@ -80,14 +80,12 @@ def get_default_config() -> dict:
 
     NOTE:
     - build_systems is NOT included - determined at runtime via extension discovery
-    - module_config contains command configuration only; module facts come from
-      raw-project-data.json (see plan-marshall:project-structure)
+    - Module facts come from derived-data.json (see plan-marshall:analyze-project-architecture)
     """
     import copy
 
     return {
         'skill_domains': {'system': copy.deepcopy(DEFAULT_SYSTEM_DOMAIN)},
-        'module_config': {},
         'system': {'retention': copy.deepcopy(DEFAULT_SYSTEM_RETENTION)},
         'plan': {'defaults': copy.deepcopy(DEFAULT_PLAN_DEFAULTS)},
     }
