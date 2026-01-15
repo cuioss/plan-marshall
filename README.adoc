@@ -1,13 +1,26 @@
-= CUI Development Standards & Marketplace
+= Plan Marshall
 :toc: left
 :toclevels: 2
 :sectnums:
 
-Claude Code marketplace bundles providing comprehensive development standards and automation for CUI OSS projects.
+An orchestration layer for AI coding assistants (currently Claude Code) that enforces consistency, reliability, and more predictable outputs. 
+
+== Prerequisites
+
+[IMPORTANT]
+====
+**Python 3 is required** and must be available as `python3` in your PATH.
+
+Verify with:
+[source,bash]
+----
+python3 --version
+----
+====
 
 == Installation
 
-Add the CUI marketplace to Claude Code settings (global or project):
+Add the Plan Marshall marketplace to Claude Code:
 
 [source,bash]
 ----
@@ -16,301 +29,123 @@ Add the CUI marketplace to Claude Code settings (global or project):
 ->   "https://github.com/cuioss/plan-marshall/marketplace"
 ----
 
-Then use Claude Code's built-in plugin tooling to install bundles.
+Then install the desired bundles using Claude Code's plugin tooling.
 
-== What This Provides
+== Getting Started
 
-This repository contains **8 production-ready bundles** with **95 total components**:
+After installing the marketplace, run the setup wizard:
 
-* **28 skills** - Development standards and best practices
-* **28 agents** - Specialized task automation
-* **39 commands** - Interactive workflows
+[source,bash]
+----
+/marshall-steward
+----
 
-=== Bundle Overview
+This command:
 
-[cols="1,3,1,1,1"]
+* Configures `.gitignore` for the `.plan/` directory
+* Generates the script executor (`.plan/execute-script.py`)
+* Discovers project architecture and modules
+* Configures skill domains based on detected technologies
+* Sets up CI integration (GitHub/GitLab)
+
+== Core Commands
+
+=== /marshall-steward
+
+Project configuration wizard for the planning system.
+
+[source,bash]
+----
+/marshall-steward           # Interactive menu or first-run wizard
+/marshall-steward --wizard  # Force first-run wizard
+----
+
+**First-Run Wizard** (when executor missing):
+
+1. Configures `.gitignore` for `.plan/` directory
+2. Generates script executor with all script mappings
+3. Discovers project modules via extension API
+4. Initializes `marshal.json` configuration
+5. Configures skill domains based on project structure
+6. Detects CI provider and tools
+
+**Interactive Menu** (returning users):
+
+* **Maintenance** - Regenerate executor, clean logs
+* **Health Check** - Verify setup, diagnose issues
+* **Configuration** - Build systems, skill domains
+
+=== /plan-manage
+
+Manage task plans - create, list, outline, and cleanup.
+
+[source,bash]
+----
+/plan-manage                # Interactive menu
+/plan-manage list           # List all plans
+/plan-manage create         # Create new plan
+/plan-manage cleanup        # Remove completed plans
+----
+
+**Plan Lifecycle**:
+
+1. **Init** - Create plan directory with request document
+2. **Outline** - Generate solution outline with deliverables
+3. **Plan** - Transform deliverables into executable tasks
+4. **Execute** - Run tasks sequentially with skill loading
+5. **Finalize** - Complete with git workflow and PR
+
+== Project Structure
+
+After setup, Plan Marshall creates:
+
+----
+.plan/
+├── execute-script.py           # Script executor (generated)
+├── marshal.json                # Project configuration
+├── run-configuration.json      # Runtime settings
+├── project-architecture/       # Module analysis
+│   ├── derived-data.json       # Raw discovery data
+│   └── llm-enriched.json       # Enriched module info
+└── plans/                      # Active plans
+    └── {plan-id}/
+        ├── request.md          # Plan request
+        ├── config.toon         # Plan config
+        ├── status.toon         # Plan status
+        └── TASK-*.toon         # Task files
+----
+
+== Available Bundles
+
+[cols="1,3"]
 |===
-|Bundle |Description |Skills |Agents |Commands
+|Bundle |Purpose
 
-|xref:marketplace/bundles/pm-dev-java/README.md[pm-dev-java]
-|Java development standards and tooling
-|5 |3 |9
+|`plan-marshall`
+|Core infrastructure, permissions, script execution
 
-|xref:marketplace/bundles/pm-dev-frontend/README.md[pm-dev-frontend]
-|JavaScript/frontend development standards and tooling
-|8 |3 |7
+|`pm-workflow`
+|5-phase planning workflow, task execution
 
-|xref:marketplace/bundles/builder-maven/README.md[builder-maven]
-|Maven build and verification tools
-|1 |1 |1
+|`pm-dev-java`
+|Java development standards and agents
 
-|xref:marketplace/bundles/cui-task-workflow/README.md[cui-task-workflow]
-|Complete development workflow from issue to PR
-|2 |8 |6
+|`pm-dev-frontend`
+|JavaScript/CSS standards and tooling
 
-|xref:marketplace/bundles/pm-documents/README.md[pm-documents]
-|AsciiDoc documentation standards and review
-|1 |4 |2
+|`pm-documents`
+|AsciiDoc documentation standards
 
-|xref:marketplace/bundles/cui-utilities/README.md[cui-utilities]
-|General-purpose utility commands and diagnostics
-|4 |1 |6
+|`pm-plugin-development`
+|Marketplace component development
 
-|xref:marketplace/bundles/pm-plugin-development/README.md[pm-plugin-development]
-|Claude Code marketplace development tools
-|3 |8 |13
-
-|xref:marketplace/bundles/pm-requirements/README.md[pm-requirements]
-|Requirements and planning documentation standards
-|4 |0 |1
+|`pm-requirements`
+|Requirements engineering standards
 |===
 
-== Quick Start
-
-=== Java Development
-
-[source,bash]
-----
-# Implement Java code with standards compliance
-/java-implement-code
-
-# Generate unit tests
-/java-implement-tests
-
-# Fix JavaDoc warnings
-/java-fix-javadoc
-
-# Generate test coverage
-/java-generate-coverage
-----
-
-See xref:marketplace/bundles/pm-dev-java/README.md[pm-dev-java bundle] for details.
-
-=== JavaScript Development
-
-[source,bash]
-----
-# Implement JavaScript code
-/js-implement-code
-
-# Generate tests
-/js-implement-tests
-
-# Fix JSDoc issues
-/js-fix-jsdoc
-
-# Enforce ESLint standards
-/js-enforce-eslint
-----
-
-See xref:marketplace/bundles/pm-dev-frontend/README.md[pm-dev-frontend bundle] for details.
-
-=== Maven Build & Quality
-
-[source,bash]
-----
-# Run full build with auto-fix
-/maven-build-and-fix
-
-# Build, fix, commit, and push
-/maven-build-and-fix push
-----
-
-See xref:marketplace/bundles/builder-maven/README.md[builder-maven bundle] for details.
-
-=== Documentation
-
-[source,bash]
-----
-# Review all technical documentation
-/doc-review-technical-docs
-
-# Review single AsciiDoc file
-/doc-review-single-asciidoc <file>
-----
-
-See xref:marketplace/bundles/pm-documents/README.md[pm-documents bundle] for details.
-
-=== Complete Workflows
-
-[source,bash]
-----
-# Complete issue implementation workflow
-/orchestrate-workflow <issue-number>
-
-# Language-specific implementation
-/orchestrate-language language=java
-/orchestrate-language language=javascript
-
-# Handle pull request workflow
-/pr-handle-pull-request <pr-number>
-----
-
-See xref:marketplace/bundles/cui-task-workflow/README.md[cui-task-workflow bundle] for details.
-
-=== Plugin Development
-
-[source,bash]
-----
-# Create new components
-/plugin-create-skill
-/plugin-create-agent
-/plugin-create-command
-
-# Diagnose quality
-/plugin-diagnose-skills
-/plugin-diagnose-agents
-/plugin-diagnose-commands
-----
-
-See xref:marketplace/bundles/pm-plugin-development/README.md[pm-plugin-development bundle] for details.
-
-== Bundle Details
-
-For comprehensive documentation on each bundle, see their individual README files:
-
-* xref:marketplace/bundles/pm-dev-java/README.md[pm-dev-java Bundle] - Java development standards, logging, CDI, testing
-* xref:marketplace/bundles/pm-dev-frontend/README.md[pm-dev-frontend Bundle] - JavaScript, CSS, Cypress, linting, project structure
-* xref:marketplace/bundles/builder-maven/README.md[Maven Bundle] - Build verification, POM maintenance, quality gates
-* xref:marketplace/bundles/cui-task-workflow/README.md[Task Workflow Bundle] - Issue implementation, PR handling, Sonar integration
-* xref:marketplace/bundles/pm-documents/README.md[pm-documents Bundle] - AsciiDoc formatting, validation, linking
-* xref:marketplace/bundles/cui-utilities/README.md[Utilities Bundle] - Research, permissions, diagnostics, architecture diagrams
-* xref:marketplace/bundles/pm-plugin-development/README.md[pm-plugin-development Bundle] - Component creation, quality diagnosis
-* xref:marketplace/bundles/pm-requirements/README.md[pm-requirements Bundle] - Requirements authoring, planning, traceability
-
-See also: xref:marketplace/README.md[Marketplace Overview]
-
-== Skill Script Permissions
-
-Many skills use bundled scripts (Python/Bash) for build parsing, coverage analysis, and validation. These require a single permission in your global settings.
-
-=== Executor Pattern
-
-All scripts are invoked through `.plan/execute-script.py`, requiring only one permission:
-
-[source]
-----
-Bash(python3 .plan/execute-script.py:*)
-----
-
-=== First-Time Setup
-
-Run once after installing the marketplace:
-
-[source,bash]
-----
-/tools-setup-project-permissions
-----
-
-This command ensures the executor permission exists in `~/.claude/settings.json`.
-
-== Architecture
-
-=== Bundle Structure
-
-Each bundle is self-contained with:
-
-----
-bundle-name/
-├── .claude-plugin/
-│   └── plugin.json          # Bundle manifest
-├── agents/                  # Specialized task agents
-│   └── *.md
-├── commands/                # Slash commands
-│   └── *.md
-├── skills/                  # Development standards
-│   └── skill-name/
-│       ├── SKILL.md
-│       ├── standards/
-│       └── README.md
-└── README.md               # Bundle documentation
-----
-
-=== Component Types
-
-**Skills**::
-Development standards and best practices loaded by AI assistants. Skills provide expert knowledge in specific domains (Java, JavaScript, testing, documentation, etc.).
-
-**Agents**::
-Specialized autonomous agents that handle focused tasks like build execution, coverage analysis, or documentation validation. Agents use specific tool permissions and follow architectural patterns.
-
-**Commands**::
-Interactive slash commands (`/command-name`) that users invoke directly. Commands orchestrate agents and workflows to accomplish complex multi-step tasks.
-
-== Development
-
-=== Creating Components
-
-Use the plugin development tools:
-
-[source,bash]
-----
-# Create new skill
-/plugin-create-skill
-
-# Create new agent
-/plugin-create-agent
-
-# Create new command
-/plugin-create-command
-
-# Create new bundle
-/plugin-create-bundle
-----
-
-=== Quality Verification
-
-[source,bash]
-----
-# Diagnose individual bundles
-/plugin-diagnose-skills
-/plugin-diagnose-agents
-/plugin-diagnose-commands
-
-# Diagnose complete bundle
-/plugin-diagnose-bundle <bundle-name>
-
-# Diagnose marketplace configuration
-/plugin-diagnose-marketplace
-----
-
-=== Component Inventory
-
-List all marketplace components:
-
-[source,bash]
-----
-./marketplace/bundles/pm-plugin-development/skills/cui-marketplace-architecture/scripts/scan-marketplace-inventory.sh
-----
-
-== Contributing
-
-=== Guidelines
-
-. Use professional, technical tone
-. Provide working, tested examples
-. Maintain high quality scores (≥75/100)
-. Ensure proper documentation
-
-=== Workflow
-
-. Create components using creation tools
-. Test thoroughly with real projects
-. Run quality checks
-. Update bundle README
-. Submit for review
-
-See xref:marketplace/bundles/pm-plugin-development/README.md[pm-plugin-development] for detailed guidance.
+See individual bundle READMEs in `marketplace/bundles/*/README.md` for details.
 
 == Support
 
-=== Documentation
-
-* Individual bundle READMEs in `marketplace/bundles/*/README.md`
-* Marketplace overview: `marketplace/README.md`
-
-=== Getting Help
-
-. Review relevant bundle documentation
-. Check command descriptions and examples
-. Report issues at https://github.com/cuioss/plan-marshall/issues
+* Report issues: https://github.com/cuioss/plan-marshall/issues
+* Bundle documentation: `marketplace/bundles/*/README.md`
