@@ -10,7 +10,7 @@ import json
 from conftest import PlanContext, get_script_path, run_script
 
 # Get script path
-SCRIPT_PATH = get_script_path('plan-marshall', 'ci-operations', 'ci_health.py')
+SCRIPT_PATH = get_script_path('plan-marshall', 'tools-integration-ci', 'ci_health.py')
 
 
 def test_detect_success():
@@ -110,7 +110,7 @@ def test_persist_generates_commands():
             commands = updated['ci']['commands']
             assert 'pr-create' in commands
             assert 'ci-status' in commands
-            assert 'ci-operations' in commands['pr-create']
+            assert 'tools-integration-ci' in commands['pr-create']
 
 
 def test_help_flag():

@@ -4,6 +4,7 @@
 Subcommands:
     pr create       Create a merge request (MR)
     pr reviews      Get MR approvals
+    pr comments     Get MR discussion comments (inline code comments)
     ci status       Check pipeline status for a MR
     ci wait         Wait for pipeline to complete
     issue create    Create an issue
@@ -11,6 +12,7 @@ Subcommands:
 Usage:
     python3 gitlab.py pr create --title "Title" --body "Body" [--base main] [--draft]
     python3 gitlab.py pr reviews --pr-number 123
+    python3 gitlab.py pr comments --pr-number 123 [--unresolved-only]
     python3 gitlab.py ci status --pr-number 123
     python3 gitlab.py ci wait --pr-number 123 [--timeout 300] [--interval 30]
     python3 gitlab.py issue create --title "Title" --body "Body" [--labels "bug,priority::high"]
@@ -26,6 +28,7 @@ import json
 import subprocess
 import sys
 import time
+from typing import Any
 
 
 def run_glab(args: list[str]) -> tuple[int, str, str]:
@@ -64,6 +67,38 @@ def output_error(operation: str, error: str, context: str = '') -> int:
     if context:
         print(f'context: {context}', file=sys.stderr)
     return 1
+
+
+def get_project_path() -> str | None:
+    """Get project path (namespace/repo) from current repository.
+
+    Returns project path like 'namespace/repo' or None if not found.
+    """
+    returncode, stdout, _ = run_glab(['repo', 'view', '--output', 'json'])
+    if returncode != 0:
+        return None
+    try:
+        data: dict[str, Any] = json.loads(stdout)
+        path = data.get('full_path') or data.get('path_with_namespace')
+        return str(path) if path else None
+    except json.JSONDecodeError:
+        return None
+
+
+def run_api(endpoint: str) -> tuple[int, list | dict | None, str]:
+    """Run GitLab API request via glab api.
+
+    Returns (returncode, data, error).
+    """
+    returncode, stdout, stderr = run_glab(['api', endpoint])
+    if returncode != 0:
+        return returncode, None, stderr
+
+    try:
+        data = json.loads(stdout)
+        return 0, data, ''
+    except json.JSONDecodeError:
+        return 1, None, f'Failed to parse API response: {stdout[:100]}'
 
 
 def cmd_pr_create(args: argparse.Namespace) -> int:
@@ -141,6 +176,83 @@ def cmd_pr_reviews(args: argparse.Namespace) -> int:
         # approved_at may not be available in all GitLab versions
         submitted = approval.get('approved_at', '-')
         print(f'{user}\t{state}\t{submitted}')
+    return 0
+
+
+def cmd_pr_comments(args: argparse.Namespace) -> int:
+    """Handle 'pr comments' subcommand - fetch MR discussion comments."""
+    # Check auth
+    is_auth, err = check_auth()
+    if not is_auth:
+        return output_error('pr_comments', err)
+
+    # Get project path
+    project_path = get_project_path()
+    if not project_path:
+        return output_error('pr_comments', 'Could not determine project path')
+
+    # URL-encode the project path for API
+    from urllib.parse import quote
+
+    encoded_path = quote(project_path, safe='')
+
+    # Get MR discussions via API
+    # https://docs.gitlab.com/api/discussions/#list-project-merge-request-discussion-items
+    endpoint = f'projects/{encoded_path}/merge_requests/{args.pr_number}/discussions'
+    returncode, discussions, err = run_api(endpoint)
+    if returncode != 0:
+        return output_error('pr_comments', f'API request failed: {err}')
+
+    # Normalize comments
+    comments: list[dict] = []
+    for discussion in discussions or []:
+        discussion_id = discussion.get('id', '')
+        notes = discussion.get('notes', [])
+
+        for note in notes:
+            # Skip system notes (auto-generated)
+            if note.get('system', False):
+                continue
+
+            # Get position info for diff notes
+            position = note.get('position') or {}
+            path = position.get('new_path') or position.get('old_path', '')
+            line = position.get('new_line') or position.get('old_line', 0)
+
+            # Get resolved status
+            is_resolved = note.get('resolved', False)
+
+            # Skip resolved if --unresolved-only
+            if args.unresolved_only and is_resolved:
+                continue
+
+            comments.append(
+                {
+                    'id': str(note.get('id', '')),
+                    'author': note.get('author', {}).get('username', 'unknown'),
+                    'body': note.get('body', ''),
+                    'path': path,
+                    'line': line or 0,
+                    'resolved': is_resolved,
+                    'created_at': note.get('created_at', ''),
+                    'thread_id': discussion_id,
+                }
+            )
+
+    # Output TOON
+    unresolved_count = sum(1 for c in comments if not c['resolved'])
+    print('status: success')
+    print('operation: pr_comments')
+    print('provider: gitlab')
+    print(f'pr_number: {args.pr_number}')
+    print(f'total: {len(comments)}')
+    print(f'unresolved: {unresolved_count}')
+    print()
+    print(f'comments[{len(comments)}]{{id,author,body,path,line,resolved,created_at}}:')
+    for c in comments:
+        # Escape tabs and newlines in body for TOON format
+        body = c['body'].replace('\t', ' ').replace('\n', ' ')[:100]
+        print(f"{c['id']}\t{c['author']}\t{body}\t{c['path']}\t{c['line']}\t{c['resolved']}\t{c['created_at']}")
     return 0
 
 
@@ -333,6 +445,11 @@ def main() -> int:
     pr_reviews_parser = pr_subparsers.add_parser('reviews', help='Get MR approvals')
     pr_reviews_parser.add_argument('--pr-number', required=True, type=int, help='MR number (iid)')
 
+    # pr comments
+    pr_comments_parser = pr_subparsers.add_parser('comments', help='Get MR discussion comments')
+    pr_comments_parser.add_argument('--pr-number', required=True, type=int, help='MR number (iid)')
+    pr_comments_parser.add_argument('--unresolved-only', action='store_true', help='Only show unresolved comments')
+
     # ci subcommand
     ci_parser = subparsers.add_parser('ci', help='CI/Pipeline operations')
     ci_subparsers = ci_parser.add_subparsers(dest='ci_command', required=True)
@@ -364,6 +481,8 @@ def main() -> int:
             return cmd_pr_create(args)
         elif args.pr_command == 'reviews':
             return cmd_pr_reviews(args)
+        elif args.pr_command == 'comments':
+            return cmd_pr_comments(args)
     elif args.command == 'ci':
         if args.ci_command == 'status':
             return cmd_ci_status(args)

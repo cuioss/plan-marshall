@@ -1,21 +1,21 @@
 ---
-name: workflow-integration-github
-description: PR review response workflow - fetch comments, triage, and respond to review feedback
-allowed-tools: Read, Edit, Write, Bash(gh:*), Grep, Glob
+name: workflow-integration-ci
+description: PR review response workflow - fetch comments, triage, and respond to review feedback (GitHub and GitLab)
+allowed-tools: Read, Edit, Write, Bash, Grep, Glob
 ---
 
-# PR Workflow Skill
+# PR Workflow Skill (Provider-Agnostic)
 
 **EXECUTION MODE**: You are now executing this skill. DO NOT explain or summarize these instructions to the user. IMMEDIATELY begin the workflow below based on the task context.
 
-Handles PR review comment workflows - fetching comments, triaging them, and generating appropriate responses.
+Handles PR review comment workflows - fetching comments, triaging them, and generating appropriate responses. Works with both GitHub and GitLab via the unified `tools-integration-ci` abstraction.
 
 ## What This Skill Provides
 
 ### Workflows (Absorbs 2 Agents)
 
 1. **Fetch Comments Workflow** - Retrieves PR review comments
-   - Uses gh CLI to fetch structured comment data
+   - Uses `tools-integration-ci` abstraction (GitHub or GitLab)
    - Replaces: review-comment-fetcher agent
 
 2. **Handle Review Workflow** - Processes and responds to comments
@@ -40,39 +40,36 @@ Handles PR review comment workflows - fetching comments, triaging them, and gene
 
 **Steps:**
 
-1. **Determine PR Number**
-   ```bash
-   gh pr view --json number --jq '.number'
-   ```
+1. **Get PR Comments via CI Integration**
 
-2. **Fetch Comments**
-
-   Script: `pm-workflow:workflow-integration-github`
+   Use the `pr-comments` command from marshal.json (provider-agnostic):
 
    ```bash
-   python3 .plan/execute-script.py pm-workflow:workflow-integration-github:pr fetch-comments [--pr {number}]
+   # Resolve command from config
+   COMMAND=$(jq -r '.ci.commands["pr-comments"]' .plan/marshal.json)
+   eval "$COMMAND --pr-number {number} [--unresolved-only]"
    ```
 
-   Script outputs JSON:
-   ```json
-   {
-     "pr_number": 123,
-     "comments": [
-       {
-         "id": "...",
-         "author": "...",
-         "body": "...",
-         "path": "...",
-         "line": N,
-         "resolved": false
-       }
-     ],
-     "total_comments": N,
-     "unresolved_count": N
-   }
+   Or use the workflow script for additional processing:
+
+   ```bash
+   python3 .plan/execute-script.py pm-workflow:workflow-integration-ci:pr fetch-comments [--pr {number}]
    ```
 
-3. **Return Comment List**
+   Output (TOON format):
+   ```toon
+   status: success
+   operation: pr_comments
+   provider: github|gitlab
+   pr_number: 123
+   total: N
+   unresolved: N
+
+   comments[N]{id,author,body,path,line,resolved,created_at}:
+   c1	alice	Fix security issue	src/Auth.java	42	false	2025-01-15T10:30:00Z
+   ```
+
+2. **Return Comment List**
 
 **Output:** Structured list of comments for triage
 
@@ -92,10 +89,10 @@ Handles PR review comment workflows - fetching comments, triaging them, and gene
 2. **Triage Each Comment**
    For each unresolved comment:
 
-   Script: `pm-workflow:workflow-integration-github`
+   Script: `pm-workflow:workflow-integration-ci`
 
    ```bash
-   python3 .plan/execute-script.py pm-workflow:workflow-integration-github:pr triage --comment '{json}'
+   python3 .plan/execute-script.py pm-workflow:workflow-integration-ci:pr triage --comment '{json}'
    ```
 
    Script outputs decision:
@@ -151,7 +148,7 @@ Handles PR review comment workflows - fetching comments, triaging them, and gene
 
 ## Scripts
 
-Script: `pm-workflow:workflow-integration-github` → `pr.py`
+Script: `pm-workflow:workflow-integration-ci` → `pr.py`
 
 ### pr.py fetch-comments
 
@@ -159,7 +156,7 @@ Script: `pm-workflow:workflow-integration-github` → `pr.py`
 
 **Usage:**
 ```bash
-python3 .plan/execute-script.py pm-workflow:workflow-integration-github:pr fetch-comments [--pr <number>]
+python3 .plan/execute-script.py pm-workflow:workflow-integration-ci:pr fetch-comments [--pr <number>]
 ```
 
 **Requirements:** gh CLI installed and authenticated
@@ -172,7 +169,7 @@ python3 .plan/execute-script.py pm-workflow:workflow-integration-github:pr fetch
 
 **Usage:**
 ```bash
-python3 .plan/execute-script.py pm-workflow:workflow-integration-github:pr triage --comment '{"id":"...", "body":"...", ...}'
+python3 .plan/execute-script.py pm-workflow:workflow-integration-ci:pr triage --comment '{"id":"...", "body":"...", ...}'
 ```
 
 **Output:** JSON with action decision
@@ -214,12 +211,14 @@ Provides:
 
 - [x] Self-contained with relative path pattern
 - [x] Progressive disclosure (references loaded on-demand)
-- [x] Scripts output JSON for machine processing
+- [x] Scripts output TOON/JSON for machine processing
 - [x] Both fetcher and triager agents absorbed
 - [x] Clear workflow definitions
-- [x] gh CLI integration documented
+- [x] Provider-agnostic via tools-integration-ci
 
 ## References
 
+- tools-integration-ci: `plan-marshall:tools-integration-ci` skill
 - GitHub CLI: https://cli.github.com/
+- GitLab CLI: https://gitlab.com/gitlab-org/cli
 - Code Review Best Practices: https://google.github.io/eng-practices/review/

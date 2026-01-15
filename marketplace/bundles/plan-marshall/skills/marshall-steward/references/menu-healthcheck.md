@@ -109,7 +109,7 @@ If missing, show info message (not blocking):
 Check CI provider detection and tool availability:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:ci-operations:ci_health status
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci_health status
 ```
 
 **Interpret results**:

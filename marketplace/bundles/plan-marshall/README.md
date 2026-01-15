@@ -36,7 +36,7 @@ This bundle provides **core infrastructure** organized into functional areas:
 | **Inventory** | `marketplace-inventory`, `marketplace-sync` |
 | **Standards** | `general-development-rules`, `diagnostic-patterns`, `toon-usage` |
 | **Memory** | `manage-memories`, `lessons-learned` |
-| **CI** | `ci-operations` |
+| **CI** | `tools-integration-ci` |
 
 ### Agents (1)
 

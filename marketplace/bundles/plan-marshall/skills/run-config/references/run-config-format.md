@@ -94,7 +94,7 @@ The `duration_ms` field enables adaptive timeout learning. The `await-until` scr
 
 ## CI Section
 
-CI provider tool verification status (written by `ci-operations:ci_health persist`).
+CI provider tool verification status (written by `tools-integration-ci:ci_health persist`).
 
 | Field | Type | Description |
 |-------|------|-------------|

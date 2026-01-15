@@ -24,7 +24,7 @@
   ],
   "skills": [
     "./skills/workflow-integration-git",
-    "./skills/workflow-integration-github",
+    "./skills/workflow-integration-ci",
     "./skills/workflow-integration-sonar",
     "./skills/workflow-architecture",
     "./skills/workflow-extension-api",

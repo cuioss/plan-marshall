@@ -12,7 +12,7 @@
   "keywords": ["environment", "permissions", "utilities", "configuration", "workflow"],
   "skills": [
     "./skills/analyze-project-architecture",
-    "./skills/ci-operations",
+    "./skills/tools-integration-ci",
     "./skills/diagnostic-patterns",
     "./skills/extension-api",
     "./skills/file-operations-base",

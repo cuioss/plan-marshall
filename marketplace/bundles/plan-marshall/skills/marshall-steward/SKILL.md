@@ -41,7 +41,7 @@ allowed-tools: Read, Write, Edit, Bash, Glob, Skill, AskUserQuestion
 | determine-mode | `plan-marshall:marshall-steward:determine-mode` | Determine wizard vs menu mode |
 | gitignore-setup | `plan-marshall:marshall-steward:gitignore-setup` | Configure .gitignore for .plan/ |
 | cleanup | `plan-marshall:run-config:cleanup` | Clean temp, logs, archived-plans, memory (delegated to run-config) |
-| ci_health | `plan-marshall:ci-operations:ci_health` | CI provider detection (delegated to ci-operations) |
+| ci_health | `plan-marshall:tools-integration-ci:ci_health` | CI provider detection (delegated to tools-integration-ci) |
 | plan-marshall-config | `plan-marshall:plan-marshall-config:plan-marshall-config` | Project-level marshal.json CRUD |
 | scan-marketplace-inventory | `plan-marshall:marketplace-inventory:scan-marketplace-inventory` | Script discovery |
 | profiles | `pm-dev-java:maven-profile-management:profiles` | Maven profile management |

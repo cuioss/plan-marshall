@@ -1,10 +1,10 @@
 ---
-name: ci-operations
+name: tools-integration-ci
 description: CI provider abstraction with unified API for GitHub and GitLab operations (PR, issues, CI status)
 allowed-tools: Read, Bash
 ---
 
-# CI Operations Skill
+# Tools Integration CI Skill
 
 Unified CI provider abstraction using **static routing** - one script per provider, config stores full commands.
 
@@ -47,7 +47,7 @@ Read standards/architecture.md
 ## Skill Structure
 
 ```
-ci-operations/
+tools-integration-ci/
 ├── SKILL.md                     # This file
 ├── standards/
 │   ├── architecture.md          # Static routing, skill boundaries
@@ -66,9 +66,9 @@ ci-operations/
 
 | Script | Notation | Purpose |
 |--------|----------|---------|
-| ci_health | `plan-marshall:ci-operations:ci_health` | Provider detection & verification |
-| github | `plan-marshall:ci-operations:github` | GitHub operations via gh CLI |
-| gitlab | `plan-marshall:ci-operations:gitlab` | GitLab operations via glab CLI |
+| ci_health | `plan-marshall:tools-integration-ci:ci_health` | Provider detection & verification |
+| github | `plan-marshall:tools-integration-ci:github` | GitHub operations via gh CLI |
+| gitlab | `plan-marshall:tools-integration-ci:gitlab` | GitLab operations via glab CLI |
 
 ---
 
@@ -81,7 +81,7 @@ Detect CI provider and verify tools are available and authenticated.
 ### Step 1: Run Health Check
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:ci-operations:ci_health status
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci_health status
 ```
 
 ### Step 2: Process Result
@@ -111,7 +111,7 @@ Detect CI provider from git remote URL.
 ### Step 1: Run Detection
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:ci-operations:ci_health detect
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci_health detect
 ```
 
 ### Step 2: Process Result
@@ -134,7 +134,7 @@ Detect provider and persist to marshal.json with static commands.
 ### Step 1: Run Persist
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:ci-operations:ci_health persist
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci_health persist
 ```
 
 ### Step 2: Process Result
@@ -148,11 +148,11 @@ provider	github
 repo_url	https://github.com/org/repo
 
 ci_commands[5]{name,command}:
-pr-create	python3 .plan/execute-script.py plan-marshall:ci-operations:github pr create
-pr-reviews	python3 .plan/execute-script.py plan-marshall:ci-operations:github pr reviews
-ci-status	python3 .plan/execute-script.py plan-marshall:ci-operations:github ci status
-ci-wait	python3 .plan/execute-script.py plan-marshall:ci-operations:github ci wait
-issue-create	python3 .plan/execute-script.py plan-marshall:ci-operations:github issue create
+pr-create	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr create
+pr-reviews	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr reviews
+ci-status	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github ci status
+ci-wait	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github ci wait
+issue-create	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github issue create
 ```
 
 ---
@@ -178,7 +178,7 @@ eval "$COMMAND --title 'Add feature X' --body 'Description' --base main"
 ### Alternative: Direct Script Invocation
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:ci-operations:github pr create \
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr create \
     --title "Add feature X" \
     --body "Description" \
     --base main
@@ -235,7 +235,7 @@ Wait for CI checks to complete with two-layer timeout pattern.
 Use outer shell timeout as safety net:
 
 ```bash
-timeout 600s python3 .plan/execute-script.py plan-marshall:ci-operations:github ci wait \
+timeout 600s python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github ci wait \
     --pr-number 123
 ```
 

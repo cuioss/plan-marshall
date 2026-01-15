@@ -1,4 +1,4 @@
-# CI Operations API Contract
+# Tools Integration CI API Contract
 
 Shared TOON output formats and API specifications for all CI operations.
 
@@ -27,7 +27,7 @@ Detect CI provider from git remote.
 
 **Command**:
 ```bash
-python3 .plan/execute-script.py plan-marshall:ci-operations:ci_health detect
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci_health detect
 ```
 
 **Success Output**:
@@ -53,7 +53,7 @@ Verify CLI tools are installed and authenticated.
 
 **Command**:
 ```bash
-python3 .plan/execute-script.py plan-marshall:ci-operations:ci_health verify [--tool TOOL]
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci_health verify [--tool TOOL]
 ```
 
 **Success Output** (all tools):
@@ -84,7 +84,7 @@ Full health check combining detect and verify.
 
 **Command**:
 ```bash
-python3 .plan/execute-script.py plan-marshall:ci-operations:ci_health status
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci_health status
 ```
 
 **Success Output**:
@@ -110,7 +110,7 @@ Persist configuration to marshal.json with static commands.
 
 **Command**:
 ```bash
-python3 .plan/execute-script.py plan-marshall:ci-operations:ci_health persist [--plan-dir .plan]
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci_health persist [--plan-dir .plan]
 ```
 
 **Success Output**:
@@ -122,12 +122,13 @@ ci_config{key,value}:
 provider	github
 repo_url	https://github.com/org/repo
 
-ci_commands[5]{name,command}:
-pr-create	python3 .plan/execute-script.py plan-marshall:ci-operations:github pr create
-pr-reviews	python3 .plan/execute-script.py plan-marshall:ci-operations:github pr reviews
-ci-status	python3 .plan/execute-script.py plan-marshall:ci-operations:github ci status
-ci-wait	python3 .plan/execute-script.py plan-marshall:ci-operations:github ci wait
-issue-create	python3 .plan/execute-script.py plan-marshall:ci-operations:github issue create
+ci_commands[6]{name,command}:
+pr-create	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr create
+pr-reviews	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr reviews
+pr-comments	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr comments
+ci-status	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github ci status
+ci-wait	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github ci wait
+issue-create	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github issue create
 ```
 
 ---
@@ -140,7 +141,7 @@ Create a pull request.
 
 **Command**:
 ```bash
-python3 .plan/execute-script.py plan-marshall:ci-operations:github pr create \
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr create \
     --title "Add feature X" \
     --body "Description" \
     --base main \
@@ -179,7 +180,7 @@ Get reviews for a pull request.
 
 **Command**:
 ```bash
-python3 .plan/execute-script.py plan-marshall:ci-operations:github pr reviews \
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr reviews \
     --pr-number 123
 ```
 
@@ -202,6 +203,50 @@ bob	CHANGES_REQUESTED	2025-01-15T11:00:00Z
 
 ---
 
+### pr comments
+
+Get inline code review comments (review threads) for a pull request.
+
+**Command**:
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr comments \
+    --pr-number 123 \
+    [--unresolved-only]
+```
+
+**Arguments**:
+| Argument | Required | Description |
+|----------|----------|-------------|
+| `--pr-number` | Yes | PR number |
+| `--unresolved-only` | No | Only return unresolved comments |
+
+**Success Output**:
+```toon
+status: success
+operation: pr_comments
+provider: github
+pr_number: 123
+total: 5
+unresolved: 2
+
+comments[5]{id,author,body,path,line,resolved,created_at}:
+c1	alice	Fix security issue...	src/Auth.java	42	false	2025-01-15T10:30:00Z
+c2	bob	Please rename var	src/Utils.java	15	false	2025-01-15T11:00:00Z
+c3	carol	Looks good	src/Main.java	8	true	2025-01-15T11:30:00Z
+```
+
+**Field Mapping (GitHub vs GitLab)**:
+| Field | GitHub (GraphQL) | GitLab (REST) |
+|-------|------------------|---------------|
+| `id` | `comments.nodes[].id` | `notes[].id` |
+| `author` | `author.login` | `author.username` |
+| `body` | `body` | `body` |
+| `path` | `reviewThreads.nodes[].path` | `position.new_path` |
+| `line` | `reviewThreads.nodes[].line` | `position.new_line` |
+| `resolved` | `isResolved` | `resolved` |
+
+---
+
 ## CI Operations (github.py / gitlab.py)
 
 ### ci status
@@ -210,7 +255,7 @@ Check CI status for a pull request.
 
 **Command**:
 ```bash
-python3 .plan/execute-script.py plan-marshall:ci-operations:github ci status \
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github ci status \
     --pr-number 123
 ```
 
@@ -246,7 +291,7 @@ Wait for CI checks to complete.
 
 **Command**:
 ```bash
-timeout 600s python3 .plan/execute-script.py plan-marshall:ci-operations:github ci wait \
+timeout 600s python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github ci wait \
     --pr-number 123 \
     [--timeout 300] \
     [--interval 30]
@@ -289,7 +334,7 @@ Create an issue.
 
 **Command**:
 ```bash
-python3 .plan/execute-script.py plan-marshall:ci-operations:github issue create \
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github issue create \
     --title "Bug: feature X not working" \
     --body "Description of the issue" \
     [--labels "bug,priority:high"]
@@ -355,11 +400,12 @@ After `persist` command, marshal.json contains:
     "repo_url": "https://github.com/org/repo",
     "detected_at": "2025-01-15T10:00:00Z",
     "commands": {
-      "pr-create": "python3 .plan/execute-script.py plan-marshall:ci-operations:github pr create",
-      "pr-reviews": "python3 .plan/execute-script.py plan-marshall:ci-operations:github pr reviews",
-      "ci-status": "python3 .plan/execute-script.py plan-marshall:ci-operations:github ci status",
-      "ci-wait": "python3 .plan/execute-script.py plan-marshall:ci-operations:github ci wait",
-      "issue-create": "python3 .plan/execute-script.py plan-marshall:ci-operations:github issue create"
+      "pr-create": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr create",
+      "pr-reviews": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr reviews",
+      "pr-comments": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr comments",
+      "ci-status": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github ci status",
+      "ci-wait": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github ci wait",
+      "issue-create": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github issue create"
     }
   }
 }

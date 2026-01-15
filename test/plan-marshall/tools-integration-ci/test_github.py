@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Tests for gitlab.py script.
+"""Tests for github.py script.
 
 Tests command structure and argument parsing.
-Note: Actual glab CLI operations require authentication and network.
+Note: Actual gh CLI operations require authentication and network.
 These tests focus on the script interface, not live operations.
 """
 
@@ -10,7 +10,7 @@ These tests focus on the script interface, not live operations.
 from conftest import get_script_path, run_script
 
 # Get script path
-SCRIPT_PATH = get_script_path('plan-marshall', 'ci-operations', 'gitlab.py')
+SCRIPT_PATH = get_script_path('plan-marshall', 'tools-integration-ci', 'github.py')
 
 
 def test_help_flag():

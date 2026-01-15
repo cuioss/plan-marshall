@@ -291,7 +291,7 @@ glab auth status  # Uses GITLAB_TOKEN automatically
 The script is invoked via the executor:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:ci-operations:gitlab <command> [args]
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:gitlab <command> [args]
 ```
 
 **Commands**:

@@ -221,7 +221,7 @@ Read standards/wait-pattern.md
 # Adaptive mode (timeout managed via run-config)
 # Outer shell timeout (600s) prevents Claude from canceling
 timeout 600s python3 .plan/execute-script.py plan-marshall:script-executor:await-until poll \
-  --check-cmd "python3 .plan/execute-script.py plan-marshall:ci-operations:ci_provider_api ci check-status --pr 123" \
+  --check-cmd "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github ci status --pr-number 123" \
   --success-field "status=success" \
   --failure-field "status=failure" \
   --command-key "ci:pr_checks"

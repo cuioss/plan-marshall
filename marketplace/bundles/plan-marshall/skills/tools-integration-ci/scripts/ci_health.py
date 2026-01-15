@@ -274,11 +274,12 @@ def generate_ci_commands(provider: str) -> dict:
         return {}
 
     executor = 'python3 .plan/execute-script.py'
-    script = f'ci-operations:{provider}'  # Notation: {skill}:{script}
+    script = f'tools-integration-ci:{provider}'  # Notation: {skill}:{script}
 
     return {
         'pr-create': f'{executor} {script} pr create',
         'pr-reviews': f'{executor} {script} pr reviews',
+        'pr-comments': f'{executor} {script} pr comments',
         'ci-status': f'{executor} {script} ci status',
         'ci-wait': f'{executor} {script} ci wait',
         'issue-create': f'{executor} {script} issue create',

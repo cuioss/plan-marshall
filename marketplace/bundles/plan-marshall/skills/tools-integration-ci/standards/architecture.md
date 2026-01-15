@@ -11,7 +11,7 @@ Architecture for unified CI operations using static routing pattern.
 | Domain | Config Example |
 |--------|----------------|
 | **Build** | `"test": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --targets \"test\""` |
-| **CI** | `"pr-create": "python3 .plan/execute-script.py plan-marshall:ci-operations:github pr create"` |
+| **CI** | `"pr-create": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr create"` |
 
 **Benefits**:
 - Single mental model across all domains
@@ -24,7 +24,7 @@ Architecture for unified CI operations using static routing pattern.
 
 ## Skill Boundaries
 
-### ci-operations Skill Owns
+### tools-integration-ci Skill Owns
 
 | Responsibility | Description |
 |----------------|-------------|
@@ -35,7 +35,7 @@ Architecture for unified CI operations using static routing pattern.
 | Provider detection | Detect from git remote |
 | Tool verification | Check CLI tools installed and authenticated |
 
-### ci-operations Skill Does NOT Own
+### tools-integration-ci Skill Does NOT Own
 
 | Responsibility | Owner |
 |----------------|-------|
@@ -59,8 +59,8 @@ Architecture for unified CI operations using static routing pattern.
     │  │    "provider": "github",                            │    │
     │  │    "repo_url": "https://github.com/org/repo",       │    │
     │  │    "commands": {                                    │    │
-    │  │      "pr-create": "...ci-operations:github pr create",│    │
-    │  │      "ci-status": "...ci-operations:github ci status" │    │
+    │  │      "pr-create": "...tools-integration-ci:github pr create",│    │
+    │  │      "ci-status": "...tools-integration-ci:github ci status" │    │
     │  │    }                                                │    │
     │  │  }                                                  │    │
     │  └─────────────────────────────────────────────────────┘    │
@@ -75,7 +75,7 @@ Architecture for unified CI operations using static routing pattern.
               │                               │
               ▼                               ▼
     ┌─────────────────────────────────────────────────────────────┐
-    │                     ci-operations                           │
+    │                     tools-integration-ci                           │
     │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐          │
     │  │  ci_health  │  │   github    │  │   gitlab    │          │
     │  │ (detection) │  │ (gh CLI)    │  │ (glab CLI)  │          │
@@ -126,9 +126,9 @@ The steward wizard:
 
 Example wizard step:
 ```markdown
-1. Call: `plan-marshall:ci-operations:ci_health detect`
+1. Call: `plan-marshall:tools-integration-ci:ci_health detect`
 2. Present detected provider to user
-3. Call: `plan-marshall:ci-operations:ci_health persist`
+3. Call: `plan-marshall:tools-integration-ci:ci_health persist`
    (generates ci.commands for detected provider)
 ```
 

@@ -241,21 +241,21 @@ The CLI provides two modes: **explicit** (manual timeout/interval) and **adaptiv
 # ADAPTIVE MODE (recommended): timeout/interval managed internally via run-config
 # Outer shell timeout (600s) is safety net; inner adaptive timeout controls polling
 timeout 600s python3 .plan/execute-script.py plan-marshall:script-executor:await-until poll \
-    --check-cmd "python3 .plan/execute-script.py plan-marshall:ci-operations:ci_provider_api ci check-status --pr-number 123" \
+    --check-cmd "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github ci check-status --pr-number 123" \
     --success-field "status=success" \
     --failure-field "status=failure" \
     --command-key "ci:pr_checks"
 
 # EXPLICIT MODE: manual timeout/interval (useful for one-off operations)
 timeout 600s python3 .plan/execute-script.py plan-marshall:script-executor:await-until poll \
-    --check-cmd "python3 .plan/execute-script.py plan-marshall:ci-operations:ci_provider_api ci check-status --pr-number 123" \
+    --check-cmd "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github ci check-status --pr-number 123" \
     --success-field "status=success" \
     --timeout 300 \
     --interval 30
 
 # Wait for Sonar analysis completion
 timeout 600s python3 .plan/execute-script.py plan-marshall:script-executor:await-until poll \
-    --check-cmd "python3 .plan/execute-script.py plan-marshall:ci-operations:ci_provider_api sonar get-status --pr-number 123" \
+    --check-cmd "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github sonar get-status --pr-number 123" \
     --success-field "qualityGate=OK" \
     --failure-field "qualityGate=ERROR" \
     --command-key "ci:sonar_analysis"

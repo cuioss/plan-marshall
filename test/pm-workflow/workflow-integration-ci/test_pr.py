@@ -1,4 +1,4 @@
-"""Tests for pr.py - consolidated PR workflow script."""
+"""Tests for pr.py - consolidated PR workflow script (provider-agnostic)."""
 
 import json
 import subprocess
@@ -11,7 +11,7 @@ def get_script_path():
     """Get the path to pr.py."""
     return (
         Path(__file__).parent.parent.parent.parent
-        / 'marketplace/bundles/pm-workflow/skills/workflow-integration-github/scripts/pr.py'
+        / 'marketplace/bundles/pm-workflow/skills/workflow-integration-ci/scripts/pr.py'
     )
 
 
@@ -165,7 +165,8 @@ class TestPRTriage(unittest.TestCase):
 class TestPRFetchComments(unittest.TestCase):
     """Test pr.py fetch-comments subcommand.
 
-    Note: These tests verify argument parsing without actual gh CLI calls.
+    Note: These tests verify argument parsing without actual CI CLI calls.
+    The fetch-comments command now uses marshal.json routing for provider abstraction.
     """
 
     def test_fetch_comments_help(self):
@@ -173,6 +174,7 @@ class TestPRFetchComments(unittest.TestCase):
         stdout, _, code = run_script(['fetch-comments', '--help'])
         self.assertEqual(code, 0)
         self.assertIn('--pr', stdout)
+        self.assertIn('--unresolved-only', stdout)
 
 
 class TestPRMain(unittest.TestCase):

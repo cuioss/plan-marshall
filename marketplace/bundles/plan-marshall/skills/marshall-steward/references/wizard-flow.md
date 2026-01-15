@@ -726,7 +726,7 @@ Verify that all modules have responsibilities and key packages. Missing fields i
 Detect CI provider and verify tools:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:ci-operations:ci_health status
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci_health status
 ```
 
 Display detection result to user. If tool not authenticated, warn:
@@ -735,7 +735,7 @@ Display detection result to user. If tool not authenticated, warn:
 
 Persist CI configuration to marshal.json:
 ```bash
-python3 .plan/execute-script.py plan-marshall:ci-operations:ci_health persist
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci_health persist
 ```
 
 **Output**: CI configuration persisted to marshal.json with detected provider and authenticated tools.

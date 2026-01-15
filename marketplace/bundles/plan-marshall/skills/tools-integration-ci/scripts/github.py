@@ -4,6 +4,7 @@
 Subcommands:
     pr create       Create a pull request
     pr reviews      Get PR reviews
+    pr comments     Get PR review comments (inline code comments)
     ci status       Check CI status for a PR
     ci wait         Wait for CI to complete
     issue create    Create an issue
@@ -11,6 +12,7 @@ Subcommands:
 Usage:
     python3 github.py pr create --title "Title" --body "Body" [--base main] [--draft]
     python3 github.py pr reviews --pr-number 123
+    python3 github.py pr comments --pr-number 123 [--unresolved-only]
     python3 github.py ci status --pr-number 123
     python3 github.py ci wait --pr-number 123 [--timeout 300] [--interval 30]
     python3 github.py issue create --title "Title" --body "Body" [--labels "bug,priority:high"]
@@ -63,6 +65,47 @@ def output_error(operation: str, error: str, context: str = '') -> int:
     if context:
         print(f'context: {context}', file=sys.stderr)
     return 1
+
+
+def get_repo_info() -> tuple[str | None, str | None]:
+    """Get owner and repo name from git remote URL.
+
+    Returns (owner, repo) tuple, or (None, None) if not found.
+    """
+    returncode, stdout, _ = run_gh(['repo', 'view', '--json', 'owner,name'])
+    if returncode != 0:
+        return None, None
+    try:
+        data = json.loads(stdout)
+        return data.get('owner', {}).get('login'), data.get('name')
+    except json.JSONDecodeError:
+        return None, None
+
+
+def run_graphql(query: str, variables: dict) -> tuple[int, dict | None, str]:
+    """Run GraphQL query via gh api graphql.
+
+    Returns (returncode, data, error).
+    """
+    # Build command args
+    args = ['api', 'graphql', '-f', f'query={query}']
+    for key, value in variables.items():
+        if isinstance(value, int):
+            args.extend(['-F', f'{key}={value}'])
+        else:
+            args.extend(['-f', f'{key}={value}'])
+
+    returncode, stdout, stderr = run_gh(args)
+    if returncode != 0:
+        return returncode, None, stderr
+
+    try:
+        data = json.loads(stdout)
+        if 'errors' in data:
+            return 1, None, str(data['errors'])
+        return 0, data.get('data'), ''
+    except json.JSONDecodeError:
+        return 1, None, f'Failed to parse GraphQL response: {stdout[:100]}'
 
 
 def cmd_pr_create(args: argparse.Namespace) -> int:
@@ -134,6 +177,104 @@ def cmd_pr_reviews(args: argparse.Namespace) -> int:
         state = review.get('state', 'UNKNOWN')
         submitted = review.get('submittedAt', '-')
         print(f'{user}\t{state}\t{submitted}')
+    return 0
+
+
+# GraphQL query for PR review threads (inline code comments)
+REVIEW_THREADS_QUERY = """
+query($owner: String!, $repo: String!, $pr: Int!) {
+  repository(owner: $owner, name: $repo) {
+    pullRequest(number: $pr) {
+      reviewThreads(first: 100) {
+        nodes {
+          id
+          isResolved
+          path
+          line
+          comments(first: 10) {
+            nodes {
+              id
+              body
+              author { login }
+              createdAt
+            }
+          }
+        }
+      }
+    }
+  }
+}
+"""
+
+
+def cmd_pr_comments(args: argparse.Namespace) -> int:
+    """Handle 'pr comments' subcommand - fetch inline code review comments."""
+    # Check auth
+    is_auth, err = check_auth()
+    if not is_auth:
+        return output_error('pr_comments', err)
+
+    # Get repo info
+    owner, repo = get_repo_info()
+    if not owner or not repo:
+        return output_error('pr_comments', 'Could not determine repository owner/name')
+
+    # Run GraphQL query
+    returncode, data, err = run_graphql(
+        REVIEW_THREADS_QUERY, {'owner': owner, 'repo': repo, 'pr': args.pr_number}
+    )
+    if returncode != 0 or data is None:
+        return output_error('pr_comments', f'GraphQL query failed: {err}')
+
+    # Extract threads
+    try:
+        threads = data['repository']['pullRequest']['reviewThreads']['nodes']
+    except (KeyError, TypeError) as e:
+        return output_error('pr_comments', f'Failed to parse response: {e}')
+
+    # Normalize comments
+    comments: list[dict] = []
+    for thread in threads:
+        is_resolved = thread.get('isResolved', False)
+
+        # Skip resolved threads if --unresolved-only
+        if args.unresolved_only and is_resolved:
+            continue
+
+        path = thread.get('path', '')
+        line = thread.get('line', 0)
+        thread_id = thread.get('id', '')
+
+        # Process each comment in the thread
+        thread_comments = thread.get('comments', {}).get('nodes', [])
+        for comment in thread_comments:
+            comments.append(
+                {
+                    'id': comment.get('id', ''),
+                    'author': comment.get('author', {}).get('login', 'unknown'),
+                    'body': comment.get('body', ''),
+                    'path': path,
+                    'line': line,
+                    'resolved': is_resolved,
+                    'created_at': comment.get('createdAt', ''),
+                    'thread_id': thread_id,
+                }
+            )
+
+    # Output TOON
+    unresolved_count = sum(1 for c in comments if not c['resolved'])
+    print('status: success')
+    print('operation: pr_comments')
+    print('provider: github')
+    print(f'pr_number: {args.pr_number}')
+    print(f'total: {len(comments)}')
+    print(f'unresolved: {unresolved_count}')
+    print()
+    print(f'comments[{len(comments)}]{{id,author,body,path,line,resolved,created_at}}:')
+    for c in comments:
+        # Escape tabs and newlines in body for TOON format
+        body = c['body'].replace('\t', ' ').replace('\n', ' ')[:100]
+        print(f"{c['id']}\t{c['author']}\t{body}\t{c['path']}\t{c['line']}\t{c['resolved']}\t{c['created_at']}")
     return 0
 
 
@@ -298,6 +439,11 @@ def main() -> int:
     pr_reviews_parser = pr_subparsers.add_parser('reviews', help='Get PR reviews')
     pr_reviews_parser.add_argument('--pr-number', required=True, type=int, help='PR number')
 
+    # pr comments
+    pr_comments_parser = pr_subparsers.add_parser('comments', help='Get PR inline code comments')
+    pr_comments_parser.add_argument('--pr-number', required=True, type=int, help='PR number')
+    pr_comments_parser.add_argument('--unresolved-only', action='store_true', help='Only show unresolved comments')
+
     # ci subcommand
     ci_parser = subparsers.add_parser('ci', help='CI operations')
     ci_subparsers = ci_parser.add_subparsers(dest='ci_command', required=True)
@@ -329,6 +475,8 @@ def main() -> int:
             return cmd_pr_create(args)
         elif args.pr_command == 'reviews':
             return cmd_pr_reviews(args)
+        elif args.pr_command == 'comments':
+            return cmd_pr_comments(args)
     elif args.command == 'ci':
         if args.ci_command == 'status':
             return cmd_ci_status(args)
