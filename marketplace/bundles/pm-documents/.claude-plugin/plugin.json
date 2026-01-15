@@ -13,7 +13,8 @@
   "commands": [
     "./commands/doc-doctor.md",
     "./commands/doc-create.md",
-    "./commands/doc-maintain.md"
+    "./commands/doc-maintain.md",
+    "./commands/tools-verify-architecture-diagrams.md"
   ],
   "skills": [
     "./skills/cui-documentation",

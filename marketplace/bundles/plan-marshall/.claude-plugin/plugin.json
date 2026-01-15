@@ -38,7 +38,6 @@
     "./commands/marshall-steward.md",
     "./commands/tools-fix-intellij-diagnostics.md",
     "./commands/tools-manage-web-permissions.md",
-    "./commands/tools-sync-agents-file.md",
-    "./commands/tools-verify-architecture-diagrams.md"
+    "./commands/tools-sync-agents-file.md"
   ]
 }

@@ -15,7 +15,7 @@ This bundle provides **core infrastructure** organized into functional areas:
 
 ## Components
 
-### Commands (5)
+### Commands (4)
 
 | Command | Description |
 |---------|-------------|
@@ -23,7 +23,6 @@ This bundle provides **core infrastructure** organized into functional areas:
 | `/tools-fix-intellij-diagnostics` | Retrieve and fix IDE diagnostics automatically |
 | `/tools-manage-web-permissions` | Analyze and consolidate WebFetch domain permissions |
 | `/tools-sync-agents-file` | Create or update project-specific agents.md file |
-| `/tools-verify-architecture-diagrams` | Analyze and update PlantUML diagrams |
 
 ### Skills (20)
 

@@ -207,17 +207,17 @@ If the `push` parameter is provided:
 
 **Default directory:**
 ```
-/plan-marshall:tools-verify-architecture-diagrams
+/pm-documents:tools-verify-architecture-diagrams
 ```
 
 **Custom directory:**
 ```
-/plan-marshall:tools-verify-architecture-diagrams plantuml_dir=doc/diagrams
+/pm-documents:tools-verify-architecture-diagrams plantuml_dir=doc/diagrams
 ```
 
 **With auto-push:**
 ```
-/plan-marshall:tools-verify-architecture-diagrams push
+/pm-documents:tools-verify-architecture-diagrams push
 ```
 
 ## Important Notes
