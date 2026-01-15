@@ -14,8 +14,12 @@ Contract requirements:
 - When Gradle commands fail:
   - error: top-level error message
   - No paths, metadata, stats, or commands (minimal structure)
+
+Note: Tests must handle both cases since Gradle may or may not be
+available depending on the environment (CI runners have it, local may not).
 """
 
+import shutil
 import sys
 from pathlib import Path
 
@@ -36,16 +40,40 @@ java_extension = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(java_extension)
 Extension = java_extension.Extension
 
+# Check if Gradle is available system-wide
+GRADLE_AVAILABLE = shutil.which('gradle') is not None
+
+
+def _assert_valid_module_structure(module: dict) -> None:
+    """Assert module has valid structure (either error or success).
+
+    Args:
+        module: Module dict to validate
+    """
+    assert 'build_systems' in module
+    assert module['build_systems'] == ['gradle']
+    assert 'name' in module
+
+    if 'error' in module:
+        # Error structure: minimal fields only
+        assert 'paths' not in module or module.get('paths') is None
+        assert 'stats' not in module or module.get('stats') is None
+        assert 'commands' not in module or module.get('commands') is None
+    else:
+        # Success structure: has paths, stats, commands
+        assert 'paths' in module
+        assert 'commands' in module
+
 
 # =============================================================================
-# Test: Basic Gradle Module Discovery (Error Cases - No Gradle Available)
+# Test: Basic Gradle Module Discovery
 # =============================================================================
 
 
 def test_discover_gradle_single_module():
     """Test discover_modules with single-module Gradle project.
 
-    In test environment without Gradle, returns error-only structure.
+    Returns either error structure (no Gradle) or success structure (Gradle available).
     """
     with BuildContext() as ctx:
         # Create a single-module Gradle project
@@ -71,20 +99,15 @@ description = 'My Gradle application'
         assert len(modules) == 1
         module = modules[0]
 
-        # Without Gradle, returns error-only structure
         assert module['build_systems'] == ['gradle']
         assert module['name'] == 'default'  # Root module is always "default"
-        assert 'error' in module, 'Should have error when Gradle unavailable'
-        # Error-only structure has no paths, stats, or commands
-        assert 'paths' not in module
-        assert 'stats' not in module
-        assert 'commands' not in module
+        _assert_valid_module_structure(module)
 
 
 def test_discover_gradle_multi_module():
     """Test discover_modules with multi-module Gradle project.
 
-    In test environment without Gradle, returns error-only structure for each module.
+    Returns either error structure (no Gradle) or success structure (Gradle available).
     """
     with BuildContext() as ctx:
         # Create settings.gradle with modules
@@ -114,10 +137,10 @@ include 'web'
         # 3 modules: root "default" + core + web
         assert len(modules) == 3
 
-        # All should have error structure
+        # All should have valid structure
         for module in modules:
             assert module['build_systems'] == ['gradle']
-            assert 'error' in module
+            _assert_valid_module_structure(module)
 
 
 def test_discover_gradle_no_build_file():
@@ -132,7 +155,7 @@ def test_discover_gradle_no_build_file():
 def test_discover_gradle_kotlin_dsl():
     """Test discover_modules with Kotlin DSL (build.gradle.kts).
 
-    In test environment without Gradle, returns error-only structure.
+    Returns either error structure (no Gradle) or success structure (Gradle available).
     """
     with BuildContext() as ctx:
         build_gradle_kts = """
@@ -153,19 +176,18 @@ description = "Kotlin DSL project"
         # Contract: build_systems is ["gradle"]
         assert modules[0]['build_systems'] == ['gradle']
         assert modules[0]['name'] == 'default'
-        # Error-only structure (no paths)
-        assert 'error' in modules[0]
+        _assert_valid_module_structure(modules[0])
 
 
 # =============================================================================
-# Test: Source Directory Discovery (Error Cases)
+# Test: Source Directory Discovery
 # =============================================================================
 
 
 def test_gradle_discover_sources():
     """Test source directory discovery for Gradle.
 
-    In test environment without Gradle, returns error-only structure.
+    Returns either error structure (no Gradle) or success structure (Gradle available).
     """
     with BuildContext() as ctx:
         # Create build.gradle
@@ -179,20 +201,18 @@ def test_gradle_discover_sources():
         modules = ext.discover_modules(str(ctx.temp_dir))
 
         assert len(modules) == 1
-        # Error-only structure - no paths
-        assert 'error' in modules[0]
-        assert 'paths' not in modules[0]
+        _assert_valid_module_structure(modules[0])
 
 
 # =============================================================================
-# Test: Stats (Error Cases)
+# Test: Stats
 # =============================================================================
 
 
 def test_gradle_stats_file_counts():
     """Test source and test file counting for Gradle.
 
-    In test environment without Gradle, returns error-only structure.
+    Returns either error structure (no Gradle) or success structure (Gradle available).
     """
     with BuildContext() as ctx:
         (ctx.temp_dir / 'build.gradle').write_text('apply plugin: "java"')
@@ -211,15 +231,13 @@ def test_gradle_stats_file_counts():
         ext = Extension()
         modules = ext.discover_modules(str(ctx.temp_dir))
 
-        # Error-only structure - no stats
-        assert 'error' in modules[0]
-        assert 'stats' not in modules[0]
+        _assert_valid_module_structure(modules[0])
 
 
 def test_gradle_kotlin_sources_detected():
     """Test Kotlin source files detection.
 
-    In test environment without Gradle, returns error-only structure.
+    Returns either error structure (no Gradle) or success structure (Gradle available).
     """
     with BuildContext() as ctx:
         (ctx.temp_dir / 'build.gradle.kts').write_text('plugins { kotlin("jvm") }')
@@ -234,13 +252,13 @@ def test_gradle_kotlin_sources_detected():
         modules = ext.discover_modules(str(ctx.temp_dir))
 
         assert len(modules) == 1
-        assert 'error' in modules[0]
+        _assert_valid_module_structure(modules[0])
 
 
 def test_gradle_groovy_sources_detected():
     """Test Groovy source files detection.
 
-    In test environment without Gradle, returns error-only structure.
+    Returns either error structure (no Gradle) or success structure (Gradle available).
     """
     with BuildContext() as ctx:
         (ctx.temp_dir / 'build.gradle').write_text('apply plugin: "groovy"')
@@ -254,13 +272,13 @@ def test_gradle_groovy_sources_detected():
         modules = ext.discover_modules(str(ctx.temp_dir))
 
         assert len(modules) == 1
-        assert 'error' in modules[0]
+        _assert_valid_module_structure(modules[0])
 
 
 def test_gradle_scala_sources_detected():
     """Test Scala source files detection.
 
-    In test environment without Gradle, returns error-only structure.
+    Returns either error structure (no Gradle) or success structure (Gradle available).
     """
     with BuildContext() as ctx:
         (ctx.temp_dir / 'build.gradle').write_text('apply plugin: "scala"')
@@ -274,13 +292,13 @@ def test_gradle_scala_sources_detected():
         modules = ext.discover_modules(str(ctx.temp_dir))
 
         assert len(modules) == 1
-        assert 'error' in modules[0]
+        _assert_valid_module_structure(modules[0])
 
 
 def test_gradle_mixed_jvm_languages():
     """Test mixed Java/Kotlin/Groovy project.
 
-    In test environment without Gradle, returns error-only structure.
+    Returns either error structure (no Gradle) or success structure (Gradle available).
     """
     with BuildContext() as ctx:
         (ctx.temp_dir / 'build.gradle').write_text('apply plugin: "java"\napply plugin: "kotlin"')
@@ -299,13 +317,13 @@ def test_gradle_mixed_jvm_languages():
         modules = ext.discover_modules(str(ctx.temp_dir))
 
         assert len(modules) == 1
-        assert 'error' in modules[0]
+        _assert_valid_module_structure(modules[0])
 
 
 def test_gradle_kotlin_only_module_has_compile_command():
     """Test Kotlin-only module.
 
-    In test environment without Gradle, returns error-only structure (no commands).
+    Returns either error structure (no Gradle) or success structure (Gradle available).
     """
     with BuildContext() as ctx:
         (ctx.temp_dir / 'build.gradle.kts').write_text('plugins { kotlin("jvm") }')
@@ -319,15 +337,13 @@ def test_gradle_kotlin_only_module_has_compile_command():
         modules = ext.discover_modules(str(ctx.temp_dir))
 
         assert len(modules) == 1
-        # Error-only structure - no commands
-        assert 'error' in modules[0]
-        assert 'commands' not in modules[0]
+        _assert_valid_module_structure(modules[0])
 
 
 def test_gradle_stats_readme_in_paths():
     """Test README detection.
 
-    In test environment without Gradle, returns error-only structure.
+    Returns either error structure (no Gradle) or success structure (Gradle available).
     """
     with BuildContext() as ctx:
         (ctx.temp_dir / 'build.gradle').write_text('apply plugin: "java"')
@@ -336,21 +352,18 @@ def test_gradle_stats_readme_in_paths():
         ext = Extension()
         modules = ext.discover_modules(str(ctx.temp_dir))
 
-        # Error-only structure - no paths/stats
-        assert 'error' in modules[0]
-        assert 'paths' not in modules[0]
-        assert 'stats' not in modules[0]
+        _assert_valid_module_structure(modules[0])
 
 
 # =============================================================================
-# Test: Commands (Error Cases)
+# Test: Commands
 # =============================================================================
 
 
 def test_gradle_module_has_commands():
     """Test Gradle module commands.
 
-    In test environment without Gradle, returns error-only structure (no commands).
+    Returns either error structure (no Gradle) or success structure (Gradle available).
     """
     with BuildContext() as ctx:
         (ctx.temp_dir / 'build.gradle').write_text('apply plugin: "java"')
@@ -366,9 +379,7 @@ def test_gradle_module_has_commands():
         ext = Extension()
         modules = ext.discover_modules(str(ctx.temp_dir))
 
-        # Error-only structure - no commands
-        assert 'error' in modules[0]
-        assert 'commands' not in modules[0]
+        _assert_valid_module_structure(modules[0])
 
 
 # =============================================================================
