@@ -201,6 +201,27 @@ Modules discovered: 10
 
 ---
 
+## Step 4.5: Review Unmatched Build Profiles (Maven Only)
+
+**Condition**: Only if any Maven module was discovered.
+
+Check the `derived-data.json` for profiles with `"canonical": "NO-MATCH-FOUND"` in any `modules.*.metadata.profiles` array.
+
+**If NO-MATCH-FOUND profiles exist**:
+
+Load skill `pm-dev-java:manage-maven-profiles` and follow its workflow to:
+1. Ask user about each unmatched profile (Ignore/Skip/Map)
+2. Apply configuration via `run_config ext-defaults` commands
+3. Re-run discovery to apply changes:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture discover --force
+```
+
+**If no Maven modules OR no unmatched profiles** → Skip to Step 5.
+
+---
+
 ## Step 5: Initialize Marshal.json
 
 ```bash
