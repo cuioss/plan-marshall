@@ -25,11 +25,28 @@
       "packages": {},
       "dependencies": [],
       "stats": {
-        "bundle_count": 8
+        "bundle_count": 9
       },
       "commands": {
-        "module-tests": "python3 test/run-tests.py",
-        "quality-gate": "/plugin-doctor marketplace"
+        "compile": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --commandArgs \"compile\"",
+        "test-compile": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --commandArgs \"test-compile\"",
+        "module-tests": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --commandArgs \"module-tests\"",
+        "quality-gate": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --commandArgs \"quality-gate\"",
+        "verify": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --commandArgs \"verify\"",
+        "coverage": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --commandArgs \"coverage\"",
+        "clean": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --commandArgs \"clean\""
+      }
+    },
+    "documentation": {
+      "name": "documentation",
+      "paths": {
+        "module": "doc"
+      },
+      "build_systems": [
+        "documentation"
+      ],
+      "metadata": {
+        "description": "Project documentation"
       }
     },
     "plan-marshall": {
@@ -52,9 +69,7 @@
       },
       "metadata": {
         "bundle_name": "plan-marshall",
-        "version": "0.1-BETA",
-        "description": "Environment setup, permission management, and cross-cutting utilities",
-        "author": "CUI OSS Project"
+        "description": "Environment setup, permission management, and cross-cutting utilities"
       },
       "packages": {
         "skill:analyze-project-architecture": {
@@ -62,43 +77,18 @@
           "type": "skill",
           "description": "LLM-based architectural analysis that transforms raw project data into meaningful structure"
         },
-        "skill:ci-operations": {
-          "path": "skills/ci-operations",
-          "type": "skill",
-          "description": "CI provider abstraction with unified API for GitHub and GitLab operations (PR, issues, CI status)"
-        },
-        "skill:diagnostic-patterns": {
-          "path": "skills/diagnostic-patterns",
-          "type": "skill",
-          "description": "Tool usage patterns for non-prompting file operations - use Glob, Read, Grep instead of Bash commands to avoid user interruptions in all agents and commands"
-        },
         "skill:extension-api": {
           "path": "skills/extension-api",
           "type": "skill",
           "description": "Extension API for domain bundle discovery, module detection, and canonical command generation"
         },
-        "skill:file-operations-base": {
-          "path": "skills/file-operations-base",
-          "type": "skill",
-          "description": "Base module providing reusable file operations patterns for CUI workflow scripts"
-        },
-        "skill:general-development-rules": {
-          "path": "skills/general-development-rules",
-          "type": "skill",
-          "description": "Core development principles for CUI projects - when to ask users, research best practices, tool usage, and dependency management"
-        },
-        "skill:json-file-operations": {
-          "path": "skills/json-file-operations",
-          "type": "skill",
-          "description": "Generic JSON file CRUD operations with path notation support"
-        },
-        "skill:lessons-learned": {
-          "path": "skills/lessons-learned",
+        "skill:manage-lessons": {
+          "path": "skills/manage-lessons",
           "type": "skill",
           "description": "Manage lessons learned with global scope"
         },
-        "skill:logging": {
-          "path": "skills/logging",
+        "skill:manage-logging": {
+          "path": "skills/manage-logging",
           "type": "skill",
           "description": "Unified logging infrastructure for script execution and work progress tracking"
         },
@@ -107,15 +97,20 @@
           "type": "skill",
           "description": "Memory layer operations for persistent session storage"
         },
-        "skill:marketplace-inventory": {
-          "path": "skills/marketplace-inventory",
+        "skill:manage-plan-marshall-config": {
+          "path": "skills/manage-plan-marshall-config",
           "type": "skill",
-          "description": "Scans and reports complete marketplace inventory (bundles, agents, commands, skills, scripts)"
+          "description": "Project-level infrastructure configuration for marshal.json"
         },
-        "skill:marketplace-sync": {
-          "path": "skills/marketplace-sync",
+        "skill:manage-run-config": {
+          "path": "skills/manage-run-config",
           "type": "skill",
-          "description": "Synchronize marketplace permissions - generate wildcards, manage executor permissions, and migrate to executor pattern."
+          "description": "Run configuration handling for persistent command configuration storage"
+        },
+        "skill:marshall-steward": {
+          "path": "skills/marshall-steward",
+          "type": "skill",
+          "description": "Project configuration wizard for planning system. Manages executor generation, health checks, build systems, and skill domains."
         },
         "skill:permission-doctor": {
           "path": "skills/permission-doctor",
@@ -127,35 +122,50 @@
           "type": "skill",
           "description": "Write operations for fixing and managing Claude Code permissions - add, remove, consolidate, ensure, apply-fixes."
         },
-        "skill:marshall-steward": {
-          "path": "skills/marshall-steward",
+        "skill:permission-web-access": {
+          "path": "skills/permission-web-access",
           "type": "skill",
-          "description": "Project configuration wizard for planning system. Manages executor generation, health checks, build systems, and skill domains."
+          "description": "Trusted domains, security assessment patterns, and domain research standards for WebFetch permissions"
         },
-        "skill:plan-marshall-config": {
-          "path": "skills/plan-marshall-config",
+        "skill:ref-development-standards": {
+          "path": "skills/ref-development-standards",
           "type": "skill",
-          "description": "Project-level infrastructure configuration for marshal.json"
+          "description": "Core development principles for Plan-Marshall projects - when to ask users, research best practices, tool usage, and dependency management"
         },
-        "skill:run-config": {
-          "path": "skills/run-config",
-          "type": "skill",
-          "description": "Run configuration handling for persistent command configuration storage"
-        },
-        "skill:script-executor": {
-          "path": "skills/script-executor",
-          "type": "skill",
-          "description": "Universal script execution pattern via execute-script.py proxy"
-        },
-        "skill:toon-usage": {
-          "path": "skills/toon-usage",
+        "skill:ref-toon-format": {
+          "path": "skills/ref-toon-format",
           "type": "skill",
           "description": "TOON format knowledge and usage patterns for agent communication and memory persistence in plan-marshall marketplace"
         },
-        "skill:web-permissions": {
-          "path": "skills/web-permissions",
+        "skill:tools-file-ops": {
+          "path": "skills/tools-file-ops",
           "type": "skill",
-          "description": "Trusted domains, security assessment patterns, and domain research standards for WebFetch permissions"
+          "description": "Base module providing reusable file operations patterns for CUI workflow scripts"
+        },
+        "skill:tools-integration-ci": {
+          "path": "skills/tools-integration-ci",
+          "type": "skill",
+          "description": "CI provider abstraction with unified API for GitHub and GitLab operations (PR, issues, CI status)"
+        },
+        "skill:tools-json-ops": {
+          "path": "skills/tools-json-ops",
+          "type": "skill",
+          "description": "Generic JSON file CRUD operations with path notation support"
+        },
+        "skill:tools-marketplace-inventory": {
+          "path": "skills/tools-marketplace-inventory",
+          "type": "skill",
+          "description": "Scans and reports complete marketplace inventory (bundles, agents, commands, skills, scripts)"
+        },
+        "skill:tools-permission-sync": {
+          "path": "skills/tools-permission-sync",
+          "type": "skill",
+          "description": "Synchronize marketplace permissions - generate wildcards, manage executor permissions, and migrate to executor pattern."
+        },
+        "skill:tools-script-executor": {
+          "path": "skills/tools-script-executor",
+          "type": "skill",
+          "description": "Universal script execution pattern via execute-script.py proxy"
         },
         "agent:research-best-practices": {
           "path": "agents/research-best-practices.md",
@@ -181,22 +191,22 @@
           "path": "commands/tools-sync-agents-file.md",
           "type": "command",
           "description": "Create or update project-specific agents.md file following OpenAI specification"
-        },
-        "command:tools-verify-architecture-diagrams": {
-          "path": "commands/tools-verify-architecture-diagrams.md",
-          "type": "command",
-          "description": "Analyze and update PlantUML diagrams to reflect current codebase state and regenerate PNG images"
         }
       },
       "dependencies": [],
       "stats": {
-        "skill_count": 20,
+        "skill_count": 19,
         "agent_count": 1,
-        "command_count": 5
+        "command_count": 4
       },
       "commands": {
-        "module-tests": "python3 test/run-tests.py test/plan-marshall",
-        "quality-gate": "/plugin-doctor --bundle plan-marshall"
+        "compile": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --commandArgs \"compile plan-marshall\"",
+        "test-compile": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --commandArgs \"test-compile plan-marshall\"",
+        "module-tests": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --commandArgs \"module-tests plan-marshall\"",
+        "quality-gate": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --commandArgs \"quality-gate plan-marshall\"",
+        "verify": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --commandArgs \"verify plan-marshall\"",
+        "coverage": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --commandArgs \"coverage plan-marshall\"",
+        "clean": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --commandArgs \"clean plan-marshall\""
       }
     },
     "pm-dev-frontend": {
@@ -218,9 +228,7 @@
       },
       "metadata": {
         "bundle_name": "pm-dev-frontend",
-        "version": "0.1-BETA",
-        "description": "JavaScript, CSS, and web component standards for CUI applications",
-        "author": "CUI OSS Project"
+        "description": "JavaScript, CSS, and web component standards for CUI applications"
       },
       "packages": {
         "skill:cui-css": {
@@ -263,8 +271,8 @@
           "type": "skill",
           "description": "JSDoc documentation standards for JavaScript functions, classes, modules, and web components"
         },
-        "skill:javascript-triage": {
-          "path": "skills/javascript-triage",
+        "skill:ext-triage-js": {
+          "path": "skills/ext-triage-js",
           "type": "skill",
           "description": "Triage extension for JavaScript/TypeScript findings during plan-finalize phase"
         },
@@ -316,8 +324,13 @@
         "command_count": 7
       },
       "commands": {
-        "module-tests": "python3 test/run-tests.py test/pm-dev-frontend",
-        "quality-gate": "/plugin-doctor --bundle pm-dev-frontend"
+        "compile": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --commandArgs \"compile pm-dev-frontend\"",
+        "test-compile": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --commandArgs \"test-compile pm-dev-frontend\"",
+        "module-tests": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --commandArgs \"module-tests pm-dev-frontend\"",
+        "quality-gate": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --commandArgs \"quality-gate pm-dev-frontend\"",
+        "verify": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --commandArgs \"verify pm-dev-frontend\"",
+        "coverage": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --commandArgs \"coverage pm-dev-frontend\"",
+        "clean": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --commandArgs \"clean pm-dev-frontend\""
       }
     },
     "pm-dev-java": {
@@ -340,9 +353,7 @@
       },
       "metadata": {
         "bundle_name": "pm-dev-java",
-        "version": "0.1-BETA",
-        "description": "Comprehensive Java development expertise bundle with agent-first architecture for autonomous code implementation, testing, and standards compliance",
-        "author": "CUI OSS Project"
+        "description": "Comprehensive Java development expertise bundle with agent-first architecture for autonomous code implementation, testing, and standards compliance"
       },
       "packages": {
         "skill:java-core": {
@@ -390,8 +401,8 @@
           "type": "skill",
           "description": "Java code maintenance standards including prioritization, refactoring triggers, and compliance verification"
         },
-        "skill:java-triage": {
-          "path": "skills/java-triage",
+        "skill:ext-triage-java": {
+          "path": "skills/ext-triage-java",
           "type": "skill",
           "description": "Triage extension for Java findings during plan-finalize phase"
         },
@@ -400,8 +411,8 @@
           "type": "skill",
           "description": "Java domain extension with Maven/Gradle build operations and workflow integration"
         },
-        "skill:maven-profile-management": {
-          "path": "skills/maven-profile-management",
+        "skill:manage-maven-profiles": {
+          "path": "skills/manage-maven-profiles",
           "type": "skill",
           "description": "Maven build profile classification and user workflow for unmatched profiles"
         },
@@ -488,8 +499,13 @@
         "command_count": 6
       },
       "commands": {
-        "module-tests": "python3 test/run-tests.py test/pm-dev-java",
-        "quality-gate": "/plugin-doctor --bundle pm-dev-java"
+        "compile": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --commandArgs \"compile pm-dev-java\"",
+        "test-compile": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --commandArgs \"test-compile pm-dev-java\"",
+        "module-tests": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --commandArgs \"module-tests pm-dev-java\"",
+        "quality-gate": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --commandArgs \"quality-gate pm-dev-java\"",
+        "verify": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --commandArgs \"verify pm-dev-java\"",
+        "coverage": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --commandArgs \"coverage pm-dev-java\"",
+        "clean": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --commandArgs \"clean pm-dev-java\""
       }
     },
     "pm-dev-java-cui": {
@@ -510,9 +526,7 @@
       },
       "metadata": {
         "bundle_name": "pm-dev-java-cui",
-        "version": "0.1-BETA",
-        "description": "CUI-specific Java development standards covering CuiLogger, test generators, value object contracts, and HTTP client patterns",
-        "author": "CUI OSS Project"
+        "description": "CUI-specific Java development standards covering CuiLogger, test generators, value object contracts, and HTTP client patterns"
       },
       "packages": {
         "skill:cui-logging": {
@@ -548,8 +562,50 @@
         "command_count": 0
       },
       "commands": {
-        "module-tests": "python3 test/run-tests.py test/pm-dev-java-cui",
-        "quality-gate": "/plugin-doctor --bundle pm-dev-java-cui"
+        "compile": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --commandArgs \"compile pm-dev-java-cui\"",
+        "test-compile": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --commandArgs \"test-compile pm-dev-java-cui\"",
+        "module-tests": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --commandArgs \"module-tests pm-dev-java-cui\"",
+        "quality-gate": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --commandArgs \"quality-gate pm-dev-java-cui\"",
+        "verify": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --commandArgs \"verify pm-dev-java-cui\"",
+        "coverage": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --commandArgs \"coverage pm-dev-java-cui\"",
+        "clean": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --commandArgs \"clean pm-dev-java-cui\""
+      }
+    },
+    "pm-dev-python": {
+      "name": "pm-dev-python",
+      "build_systems": [
+        "marshall-plugin"
+      ],
+      "paths": {
+        "module": "marketplace/bundles/pm-dev-python",
+        "descriptor": "marketplace/bundles/pm-dev-python/.claude-plugin/plugin.json",
+        "sources": [
+          "marketplace/bundles/pm-dev-python/skills"
+        ],
+        "tests": [
+          "test/pm-dev-python"
+        ],
+        "readme": "marketplace/bundles/pm-dev-python/README.md"
+      },
+      "metadata": {
+        "bundle_name": "pm-dev-python",
+        "description": "Python domain extension with pyprojectx build operations"
+      },
+      "packages": {},
+      "dependencies": [],
+      "stats": {
+        "skill_count": 0,
+        "agent_count": 0,
+        "command_count": 0
+      },
+      "commands": {
+        "compile": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --commandArgs \"compile pm-dev-python\"",
+        "test-compile": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --commandArgs \"test-compile pm-dev-python\"",
+        "module-tests": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --commandArgs \"module-tests pm-dev-python\"",
+        "quality-gate": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --commandArgs \"quality-gate pm-dev-python\"",
+        "verify": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --commandArgs \"verify pm-dev-python\"",
+        "coverage": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --commandArgs \"coverage pm-dev-python\"",
+        "clean": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --commandArgs \"clean pm-dev-python\""
       }
     },
     "pm-documents": {
@@ -571,25 +627,38 @@
       },
       "metadata": {
         "bundle_name": "pm-documents",
-        "version": "0.1-BETA",
-        "description": "AsciiDoc and documentation standards enforcement for CUI projects",
-        "author": "CUI OSS Project"
+        "description": "AsciiDoc and documentation standards enforcement for CUI projects"
       },
       "packages": {
-        "skill:cui-documentation": {
-          "path": "skills/cui-documentation",
+        "skill:ref-documentation": {
+          "path": "skills/ref-documentation",
           "type": "skill",
           "description": "General documentation standards for README, AsciiDoc, and technical documentation with validation, formatting, link verification, and content review workflows"
         },
-        "skill:adr-management": {
-          "path": "skills/adr-management",
+        "skill:manage-adr": {
+          "path": "skills/manage-adr",
           "type": "skill",
           "description": "Manage Architectural Decision Records (ADRs) with CRUD operations, automatic numbering, and AsciiDoc formatting"
         },
-        "skill:interface-management": {
-          "path": "skills/interface-management",
+        "skill:ext-triage-docs": {
+          "path": "skills/ext-triage-docs",
+          "type": "skill",
+          "description": "Triage extension for documentation findings during plan-finalize phase"
+        },
+        "skill:ext-outline-docs": {
+          "path": "skills/ext-outline-docs",
+          "type": "skill",
+          "description": "Outline extension for documentation domain"
+        },
+        "skill:manage-interface": {
+          "path": "skills/manage-interface",
           "type": "skill",
           "description": "Manage Interface specifications with CRUD operations, automatic numbering, and AsciiDoc formatting"
+        },
+        "skill:plan-marshall-plugin": {
+          "path": "skills/plan-marshall-plugin",
+          "type": "skill",
+          "description": "Documentation domain manifest for plan-marshall workflow integration"
         },
         "command:doc-doctor": {
           "path": "commands/doc-doctor.md",
@@ -605,17 +674,27 @@
           "path": "commands/doc-maintain.md",
           "type": "command",
           "description": "Maintain documentation (sync, cleanup, update)"
+        },
+        "command:tools-verify-architecture-diagrams": {
+          "path": "commands/tools-verify-architecture-diagrams.md",
+          "type": "command",
+          "description": "Analyze and update PlantUML diagrams to reflect current codebase state and regenerate PNG images"
         }
       },
       "dependencies": [],
       "stats": {
-        "skill_count": 3,
+        "skill_count": 6,
         "agent_count": 0,
-        "command_count": 3
+        "command_count": 4
       },
       "commands": {
-        "module-tests": "python3 test/run-tests.py test/pm-documents",
-        "quality-gate": "/plugin-doctor --bundle pm-documents"
+        "compile": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --commandArgs \"compile pm-documents\"",
+        "test-compile": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --commandArgs \"test-compile pm-documents\"",
+        "module-tests": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --commandArgs \"module-tests pm-documents\"",
+        "quality-gate": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --commandArgs \"quality-gate pm-documents\"",
+        "verify": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --commandArgs \"verify pm-documents\"",
+        "coverage": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --commandArgs \"coverage pm-documents\"",
+        "clean": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --commandArgs \"clean pm-documents\""
       }
     },
     "pm-plugin-development": {
@@ -638,9 +717,7 @@
       },
       "metadata": {
         "bundle_name": "pm-plugin-development",
-        "version": "0.1-BETA",
-        "description": "Complete toolchain for creating, diagnosing, fixing, and maintaining Claude Code marketplace components",
-        "author": "CUI OSS Project"
+        "description": "Complete toolchain for creating, diagnosing, fixing, and maintaining Claude Code marketplace components"
       },
       "packages": {
         "skill:plugin-architecture": {
@@ -673,18 +750,18 @@
           "type": "skill",
           "description": "Script development standards covering implementation patterns, testing, and output contracts"
         },
-        "skill:plugin-solution-outline": {
-          "path": "skills/plugin-solution-outline",
+        "skill:ext-outline-plugin": {
+          "path": "skills/ext-outline-plugin",
           "type": "skill",
-          "description": "Analyze plugin codebase and create solution outline with deliverables"
+          "description": "Outline extension for plugin development domain"
         },
         "skill:plugin-task-plan": {
           "path": "skills/plugin-task-plan",
           "type": "skill",
           "description": "Create implementation tasks from deliverables using skill delegation"
         },
-        "skill:plugin-triage": {
-          "path": "skills/plugin-triage",
+        "skill:ext-triage-plugin": {
+          "path": "skills/ext-triage-plugin",
           "type": "skill",
           "description": "Triage extension for marketplace plugin findings during plan-finalize phase"
         },
@@ -731,8 +808,13 @@
         "command_count": 4
       },
       "commands": {
-        "module-tests": "python3 test/run-tests.py test/pm-plugin-development",
-        "quality-gate": "/plugin-doctor --bundle pm-plugin-development"
+        "compile": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --commandArgs \"compile pm-plugin-development\"",
+        "test-compile": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --commandArgs \"test-compile pm-plugin-development\"",
+        "module-tests": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --commandArgs \"module-tests pm-plugin-development\"",
+        "quality-gate": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --commandArgs \"quality-gate pm-plugin-development\"",
+        "verify": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --commandArgs \"verify pm-plugin-development\"",
+        "coverage": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --commandArgs \"coverage pm-plugin-development\"",
+        "clean": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --commandArgs \"clean pm-plugin-development\""
       }
     },
     "pm-requirements": {
@@ -754,11 +836,19 @@
       },
       "metadata": {
         "bundle_name": "pm-requirements",
-        "version": "0.1-BETA",
-        "description": "Requirements engineering and specification standards for CUI projects",
-        "author": "CUI OSS Project"
+        "description": "Requirements engineering and specification standards for CUI projects"
       },
       "packages": {
+        "skill:ext-triage-reqs": {
+          "path": "skills/ext-triage-reqs",
+          "type": "skill",
+          "description": "Triage extension for requirements findings during plan-finalize phase"
+        },
+        "skill:plan-marshall-plugin": {
+          "path": "skills/plan-marshall-plugin",
+          "type": "skill",
+          "description": "Requirements domain manifest for plan-marshall workflow integration"
+        },
         "skill:planning": {
           "path": "skills/planning",
           "type": "skill",
@@ -779,11 +869,6 @@
           "type": "skill",
           "description": "Standards for linking specifications to implementation code and maintaining bidirectional traceability between documentation and source code"
         },
-        "skill:plan-marshall-plugin": {
-          "path": "skills/plan-marshall-plugin",
-          "type": "skill",
-          "description": "Requirements domain manifest for plan-marshall workflow integration"
-        },
         "command:cui-maintain-requirements": {
           "path": "commands/cui-maintain-requirements.md",
           "type": "command",
@@ -792,13 +877,18 @@
       },
       "dependencies": [],
       "stats": {
-        "skill_count": 5,
+        "skill_count": 6,
         "agent_count": 0,
         "command_count": 1
       },
       "commands": {
-        "module-tests": "python3 test/run-tests.py test/pm-requirements",
-        "quality-gate": "/plugin-doctor --bundle pm-requirements"
+        "compile": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --commandArgs \"compile pm-requirements\"",
+        "test-compile": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --commandArgs \"test-compile pm-requirements\"",
+        "module-tests": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --commandArgs \"module-tests pm-requirements\"",
+        "quality-gate": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --commandArgs \"quality-gate pm-requirements\"",
+        "verify": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --commandArgs \"verify pm-requirements\"",
+        "coverage": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --commandArgs \"coverage pm-requirements\"",
+        "clean": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --commandArgs \"clean pm-requirements\""
       }
     },
     "pm-workflow": {
@@ -821,75 +911,68 @@
       },
       "metadata": {
         "bundle_name": "pm-workflow",
-        "version": "0.1-BETA",
-        "description": "Solution-based development workflow from task implementation to PR quality verification",
-        "author": "CUI OSS Project"
+        "description": "Solution-based development workflow from task implementation to PR quality verification"
       },
       "packages": {
-        "skill:git-workflow": {
-          "path": "skills/git-workflow",
+        "skill:workflow-integration-git": {
+          "path": "skills/workflow-integration-git",
           "type": "skill",
           "description": "Git commit workflow with conventional commits, artifact cleanup, and optional push/PR creation"
         },
-        "skill:pr-workflow": {
-          "path": "skills/pr-workflow",
+        "skill:workflow-integration-ci": {
+          "path": "skills/workflow-integration-ci",
           "type": "skill",
-          "description": "PR review response workflow - fetch comments, triage, and respond to review feedback"
+          "description": "PR review response workflow - fetch comments, triage, and respond to review feedback (GitHub and GitLab)"
         },
-        "skill:sonar-workflow": {
-          "path": "skills/sonar-workflow",
+        "skill:workflow-integration-sonar": {
+          "path": "skills/workflow-integration-sonar",
           "type": "skill",
           "description": "Sonar issue workflow - fetch issues, triage, and fix or suppress based on context"
         },
-        "skill:pm-workflow-architecture": {
-          "path": "skills/pm-workflow-architecture",
+        "skill:workflow-architecture": {
+          "path": "skills/workflow-architecture",
           "type": "skill",
           "description": "Centralized architecture documentation for the pm-workflow bundle with visual diagrams"
         },
-        "skill:plan-wf-skill-api": {
-          "path": "skills/plan-wf-skill-api",
+        "skill:workflow-extension-api": {
+          "path": "skills/workflow-extension-api",
           "type": "skill",
-          "description": "Defines the unified API contracts for workflow skills. Workflow skills provide domain-agnostic operations that load domain knowledge from marshal.json."
+          "description": "Defines extension points for domain-specific workflow customization. Covers profile overrides (implementation, testing) and extensions (outline, triage)."
         },
-        "skill:solution-outline": {
-          "path": "skills/solution-outline",
+        "skill:phase-1-init": {
+          "path": "skills/phase-1-init",
           "type": "skill",
-          "description": "Domain-agnostic solution outline creation for thin agent workflow pattern"
+          "description": "Init phase skill. Creates plan directory, request.md, config, and status. Complete initialization in a single agent call."
         },
-        "skill:phase-refine-outline": {
-          "path": "skills/phase-refine-outline",
+        "skill:phase-2-outline": {
+          "path": "skills/phase-2-outline",
           "type": "skill",
           "description": "Architecture-driven solution outline creation with intelligent module selection and Skills by Profile assignment"
         },
-        "skill:task-plan": {
-          "path": "skills/task-plan",
+        "skill:phase-3-plan": {
+          "path": "skills/phase-3-plan",
           "type": "skill",
           "description": "Domain-agnostic task planning from deliverables with skill resolution and optimization"
+        },
+        "skill:phase-4-execute": {
+          "path": "skills/phase-4-execute",
+          "type": "skill",
+          "description": "Execute phase skill for plan management. DUMB TASK RUNNER that executes tasks from TASK-*.toon files sequentially for execute and finalize phases."
+        },
+        "skill:phase-5-finalize": {
+          "path": "skills/phase-5-finalize",
+          "type": "skill",
+          "description": "Complete plan execution with git workflow and PR management"
         },
         "skill:task-implementation": {
           "path": "skills/task-implementation",
           "type": "skill",
           "description": "Domain-agnostic implementation task execution with two-tier skill loading"
         },
-        "skill:task-testing": {
-          "path": "skills/task-testing",
+        "skill:task-module_testing": {
+          "path": "skills/task-module_testing",
           "type": "skill",
-          "description": "Domain-agnostic testing task execution with two-tier skill loading"
-        },
-        "skill:plan-init": {
-          "path": "skills/plan-init",
-          "type": "skill",
-          "description": "Init phase skill. Creates plan directory, request.md, config, and status. Complete initialization in a single agent call."
-        },
-        "skill:plan-execute": {
-          "path": "skills/plan-execute",
-          "type": "skill",
-          "description": "Execute phase skill for plan management. DUMB TASK RUNNER that executes tasks from TASK-*.toon files sequentially for execute and finalize phases."
-        },
-        "skill:plan-finalize": {
-          "path": "skills/plan-finalize",
-          "type": "skill",
-          "description": "Complete plan execution with git workflow and PR management"
+          "description": "Domain-agnostic module testing task execution with two-tier skill loading"
         },
         "skill:manage-tasks": {
           "path": "skills/manage-tasks",
@@ -949,7 +1032,7 @@
         "agent:task-execute-agent": {
           "path": "agents/task-execute-agent.md",
           "type": "agent",
-          "description": "Execute a single task with two-tier skill loading and profile-based workflow routing"
+          "description": "Execute a single task with two-tier skill loading and profile-based task executor routing"
         },
         "command:task-implement": {
           "path": "commands/task-implement.md",
@@ -964,7 +1047,7 @@
         "command:plan-manage": {
           "path": "commands/plan-manage.md",
           "type": "command",
-          "description": "Manage task plans - list, create, refine, and cleanup persisted plans"
+          "description": "Manage task plans - list, create, outline, and cleanup persisted plans"
         },
         "command:plan-execute": {
           "path": "commands/plan-execute.md",
@@ -974,17 +1057,23 @@
       },
       "dependencies": [],
       "stats": {
-        "skill_count": 21,
+        "skill_count": 20,
         "agent_count": 4,
         "command_count": 4
       },
       "commands": {
-        "module-tests": "python3 test/run-tests.py test/pm-workflow",
-        "quality-gate": "/plugin-doctor --bundle pm-workflow"
+        "compile": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --commandArgs \"compile pm-workflow\"",
+        "test-compile": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --commandArgs \"test-compile pm-workflow\"",
+        "module-tests": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --commandArgs \"module-tests pm-workflow\"",
+        "quality-gate": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --commandArgs \"quality-gate pm-workflow\"",
+        "verify": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --commandArgs \"verify pm-workflow\"",
+        "coverage": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --commandArgs \"coverage pm-workflow\"",
+        "clean": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --commandArgs \"clean pm-workflow\""
       }
     }
   },
   "extensions_used": [
+    "pm-documents",
     "pm-plugin-development"
   ]
 }

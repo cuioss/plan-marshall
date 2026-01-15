@@ -1,6 +1,7 @@
 {
   "name": "pm-dev-python",
   "version": "0.1-BETA",
+  "author": "https://github.com/cuioss/plan-marshall",
   "description": "Python domain extension with pyprojectx build operations",
   "skills": [
     "python-best-practices",

@@ -1,6 +1,6 @@
 ---
 name: ref-development-standards
-description: Core development principles for CUI projects - when to ask users, research best practices, tool usage, and dependency management
+description: Core development principles for Plan-Marshall projects - when to ask users, research best practices, tool usage, and dependency management
 allowed-tools: []
 standards:
   - standards/general-development-rules.md

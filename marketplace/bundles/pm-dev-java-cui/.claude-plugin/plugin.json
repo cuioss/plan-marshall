@@ -3,7 +3,7 @@
   "version": "0.1-BETA",
   "description": "CUI-specific Java development standards covering CuiLogger, test generators, value object contracts, and HTTP client patterns",
   "author": {
-    "name": "CUI OSS Project",
+    "name": "https://github.com/cuioss/plan-marshall",
     "email": "contact@cuioss.de"
   },
   "license": "FSL-1.1-ALv2",

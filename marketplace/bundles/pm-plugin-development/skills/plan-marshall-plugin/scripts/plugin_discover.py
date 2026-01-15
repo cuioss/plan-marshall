@@ -419,11 +419,6 @@ def build_bundle_module(plugin_path: Path, project_root: Path, plugin_data: dict
     # Build commands
     commands = build_commands(bundle_name)
 
-    # Extract author name
-    author = plugin_data.get('author')
-    if isinstance(author, dict):
-        author = author.get('name')
-
     return {
         'name': bundle_name,
         'build_systems': [BUILD_SYSTEM],
@@ -436,9 +431,7 @@ def build_bundle_module(plugin_path: Path, project_root: Path, plugin_data: dict
         },
         'metadata': {
             'bundle_name': bundle_name,
-            'version': plugin_data.get('version'),
             'description': plugin_data.get('description'),
-            'author': author,
         },
         'packages': packages,
         'dependencies': [],

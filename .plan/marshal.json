@@ -2,13 +2,14 @@
   "ci": {
     "provider": "github",
     "repo_url": "https://github.com/cuioss/plan-marshall.git",
-    "detected_at": "2026-01-12T17:17:14Z",
+    "detected_at": "2026-01-15T16:11:27Z",
     "commands": {
-      "pr-create": "python3 .plan/execute-script.py ci-operations:github pr create",
-      "pr-reviews": "python3 .plan/execute-script.py ci-operations:github pr reviews",
-      "ci-status": "python3 .plan/execute-script.py ci-operations:github ci status",
-      "ci-wait": "python3 .plan/execute-script.py ci-operations:github ci wait",
-      "issue-create": "python3 .plan/execute-script.py ci-operations:github issue create"
+      "pr-create": "python3 .plan/execute-script.py tools-integration-ci:github pr create",
+      "pr-reviews": "python3 .plan/execute-script.py tools-integration-ci:github pr reviews",
+      "pr-comments": "python3 .plan/execute-script.py tools-integration-ci:github pr comments",
+      "ci-status": "python3 .plan/execute-script.py tools-integration-ci:github ci status",
+      "ci-wait": "python3 .plan/execute-script.py tools-integration-ci:github ci wait",
+      "issue-create": "python3 .plan/execute-script.py tools-integration-ci:github issue create"
     }
   },
   "plan": {
@@ -23,10 +24,10 @@
   "skill_domains": {
     "system": {
       "defaults": [
-        "plan-marshall:general-development-rules"
+        "plan-marshall:ref-development-standards"
       ],
       "optionals": [
-        "plan-marshall:diagnostic-patterns"
+        "plan-marshall:ref-development-standards"
       ],
       "workflow_skills": {
         "1-init": "pm-workflow:phase-1-init",
@@ -36,9 +37,16 @@
         "5-finalize": "pm-workflow:phase-5-finalize"
       },
       "task_executors": {
+        "documentation": "pm-workflow:task-documentation",
         "implementation": "pm-workflow:task-implementation",
-        "module_testing": "pm-workflow:task-module_testing",
-        "integration_testing": "pm-workflow:task-integration_testing"
+        "module_testing": "pm-workflow:task-module_testing"
+      }
+    },
+    "documentation": {
+      "bundle": "pm-documents",
+      "workflow_skill_extensions": {
+        "outline": "pm-documents:ext-outline-docs",
+        "triage": "pm-documents:ext-triage-docs"
       }
     },
     "plan-marshall-plugin-dev": {
