@@ -3,6 +3,19 @@
 :toclevels: 2
 :sectnums:
 
+[CAUTION]
+====
+**Under Development. Not released yet. Alpha-Version**
+====
+
+[.discrete]
+== Status
+
+image:https://github.com/cuioss/plan-marshall/actions/workflows/python-verify.yml/badge.svg[Python Verify,link=https://github.com/cuioss/plan-marshall/actions/workflows/python-verify.yml]
+
+[.discrete]
+== What is it?
+
 An orchestration layer for AI coding assistants (currently Claude Code) that enforces consistency, reliability, and more predictable outputs. 
 
 == Prerequisites
@@ -40,13 +53,7 @@ After installing the marketplace, run the setup wizard:
 /marshall-steward
 ----
 
-This command:
-
-* Configures `.gitignore` for the `.plan/` directory
-* Generates the script executor (`.plan/execute-script.py`)
-* Discovers project architecture and modules
-* Configures skill domains based on detected technologies
-* Sets up CI integration (GitHub/GitLab)
+See <<_marshall_steward>> for details on what this command configures.
 
 == Core Commands
 
