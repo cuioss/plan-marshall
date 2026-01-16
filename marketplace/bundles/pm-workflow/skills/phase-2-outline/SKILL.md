@@ -1,6 +1,6 @@
 ---
 name: phase-2-outline
-description: Architecture-driven solution outline creation with intelligent module selection and Skills by Profile assignment
+description: Architecture-driven solution outline creation with intelligent module selection and profiles list
 allowed-tools: Read, Glob, Grep, Bash
 ---
 
@@ -49,9 +49,9 @@ allowed-tools: Read, Glob, Grep, Bash
 │  Step 5: Determine package placement                             │
 │          → architecture module --name X --full                   │
 │                                                                  │
-│  Step 6: Create deliverables with Skills by Profile              │
+│  Step 6: Create deliverables with Profiles list                  │
 │          → One deliverable per module                            │
-│          → Skills by Profile from module.skills_by_profile       │
+│          → Profiles list (implementation, testing as needed)     │
 │                                                                  │
 │  Step 7: Create IT deliverable (optional)                        │
 │          → architecture modules --command integration-tests      │
@@ -260,9 +260,9 @@ python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:archi
 
 ---
 
-## Step 6: Create Deliverables with Skills by Profile
+## Step 6: Create Deliverables with Profiles List
 
-Create deliverables with module context and skills organized by profile.
+Create deliverables with module context and a profiles list.
 
 **Core constraint**: One deliverable = one module.
 
@@ -276,21 +276,21 @@ python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:archi
 
 Returns list of module names that have unit test infrastructure.
 
-### Skills by Profile Block
+### Profiles Block
 
-- `skills-implementation`: Always included
-- `skills-testing`: Only if module has test infrastructure
+Create `**Profiles:**` block listing which profiles apply:
+- `implementation`: Always included
+- `testing`: Only if module has test infrastructure
 
-**Detail**: See `standards/skills-by-profile.md` for profile design rationale and task-plan integration.
+**Key Design**: Deliverables specify WHAT profiles apply (visible to user). Task-plan resolves WHICH skills from architecture (technical detail).
 
 ### Deliverable Structure
 
 **Contract**: `pm-workflow:manage-solution-outline/standards/deliverable-contract.md` (force load)
 
 Each deliverable MUST include all required fields from the contract:
-- Metadata (change_type, execution_mode, domain, depends)
-- Module Context (module, package, placement_rationale)
-- Skills by Profile (skills-implementation; skills-testing if test infra exists)
+- Metadata (change_type, execution_mode, domain, module, depends)
+- Profiles list (implementation; testing if module has test infra)
 - Affected files (explicit list)
 - Verification (command and criteria)
 
@@ -334,7 +334,7 @@ IT deliverables follow the same contract as implementation deliverables.
 - IT is always a **separate deliverable** - not embedded in implementation deliverable
 - IT targets the **IT module** - found via `architecture modules --command integration-tests`
 - IT depends on implementation - set `depends:` to reference the implementation deliverable
-- IT has only `skills-implementation` - IT code is "implementation" of test code
+- IT has only `implementation` profile - IT code is "implementation" of test code
 
 ---
 
@@ -435,9 +435,9 @@ The workflow skill MUST validate that each deliverable contains all required fie
 - [ ] `change_type` metadata
 - [ ] `execution_mode` metadata
 - [ ] `domain` metadata (valid domain from marshal.json)
+- [ ] `module` metadata (module name from architecture)
 - [ ] `depends` field (`none` or valid deliverable references)
-- [ ] Module context (module, package, placement_rationale)
-- [ ] Skills by Profile (`skills-implementation` always; `skills-testing` if module has test infra)
+- [ ] `**Profiles:**` block with valid profiles (`implementation` always; `testing` if module has test infra)
 - [ ] Explicit file list (not "all files matching X")
 - [ ] Verification command and criteria
 

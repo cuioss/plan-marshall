@@ -16,6 +16,7 @@ import argparse
 import re
 import sys
 from pathlib import Path
+from typing import Any, cast
 
 from file_ops import atomic_write_file, base_path  # type: ignore[import-not-found]
 from toon_parser import parse_toon, serialize_toon  # type: ignore[import-not-found]
@@ -28,15 +29,15 @@ def validate_plan_id(plan_id: str) -> bool:
 
 def get_references_path(plan_id: str) -> Path:
     """Get the references.toon file path."""
-    return base_path('plans', plan_id, 'references.toon')
+    return cast(Path, base_path('plans', plan_id, 'references.toon'))
 
 
-def read_references(plan_id: str) -> dict:
+def read_references(plan_id: str) -> dict[Any, Any]:
     """Read references.toon for a plan."""
     path = get_references_path(plan_id)
     if not path.exists():
         return {}
-    return parse_toon(path.read_text(encoding='utf-8'))
+    return cast(dict[Any, Any], parse_toon(path.read_text(encoding='utf-8')))
 
 
 def write_references(plan_id: str, refs: dict):

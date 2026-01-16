@@ -9,7 +9,7 @@ Each deliverable MUST contain sufficient information for:
 1. **Grouping analysis**: Can this be aggregated with other deliverables?
 2. **Split detection**: Should this be split into multiple tasks?
 3. **Domain routing**: Which domain skills should be loaded?
-4. **Profile routing**: Which workflow profile (implementation, testing, quality)?
+4. **Profile routing**: Which workflow profiles apply (implementation, testing)?
 5. **Verification consolidation**: Can verification commands be merged?
 6. **Dependency ordering**: What order must deliverables execute in?
 7. **Parallelization**: Which deliverables can run concurrently?
@@ -26,8 +26,11 @@ All solution-outline skills MUST produce deliverables following this structure:
 - execution_mode: {automated|manual|mixed}
 - domain: {java|javascript|plan-marshall-plugin-dev}
 - module: {module-name from architecture}
-- profile: {implementation|testing}
 - depends: {none | N. Title | N, M}
+
+**Profiles:**
+- {implementation|testing}
+- {additional profiles as needed}
 
 **Affected files:**
 - `{path/to/file1}`
@@ -57,8 +60,8 @@ All solution-outline skills MUST produce deliverables following this structure:
 | `execution_mode` | Yes | automated/manual/mixed | Split detection |
 | `domain` | Yes | Single domain from config.domains | Domain skill loading |
 | `module` | Yes | Module name from architecture | Skill resolution |
-| `profile` | Yes | Execution profile (implementation/testing) | Task executor routing |
 | `depends` | Yes | Dependencies on other deliverables | Ordering, parallelization |
+| `**Profiles:**` | Yes | List of profiles (implementation, testing) | Task creation (1:N) |
 | `Affected files` | Yes | Explicit file list | Step generation |
 | `Change per file` | Yes | What changes | Task description |
 | `Pattern` | Conditional | Code/format pattern | Implementation guide |
@@ -89,34 +92,49 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-m
 
 Error if domain not found in marshal.json.
 
-## Profile Values
+## Profiles Block
 
-Each deliverable has a single `profile` that determines which skills task-plan loads from architecture:
+Each deliverable has a `**Profiles:**` block listing which profiles apply. Task-plan creates one task per profile (1:N mapping).
 
 | Profile | Description | Architecture Source |
 |---------|-------------|---------------------|
 | `implementation` | Production code task | `module.skills_by_profile.implementation` |
-| `testing` | Unit/integration test task | `module.skills_by_profile.unit-testing` |
+| `testing` | Unit/integration test task | `module.skills_by_profile.testing` |
 
 **Note**: Integration tests are separate deliverables (different module), not embedded profiles.
 
+### 1:N Task Creation
+
+Task-plan creates one task per profile in the deliverable:
+
+```
+solution_outline.md                        TASK-*.toon (created by task-plan)
+┌────────────────────────────┐             ┌────────────────────────┐
+│ **Metadata:**              │             │ TASK-001-IMPL          │
+│ - domain: java             │             │ profile: implementation│
+│ - module: auth-service     │  ───────►   │ skills: [java-core,    │
+│                            │  (1:N)      │          java-cdi]     │
+│ **Profiles:**              │             ├────────────────────────┤
+│ - implementation           │  ───────►   │ TASK-002-TEST          │
+│ - module_testing           │             │ profile: module_testing│
+│                            │             │ skills: [java-core,    │
+└────────────────────────────┘             │          junit-core]   │
+                                           │ depends: TASK-001-IMPL │
+                                           └────────────────────────┘
+```
+
 ### Skill Resolution Flow
 
-Task-plan resolves skills from architecture based on `module` + `profile`:
+Task-plan resolves skills from architecture for each profile:
 
 ```
-solution_outline.md              Architecture                 TASK-*.toon
-┌────────────────────────────┐   ┌────────────────────────┐   ┌────────────────────────┐
-│ **Metadata:**              │   │ {module}:              │   │ TASK-001               │
-│ - domain: java             │   │   skills_by_profile:   │   │ profile: implementation│
-│ - module: auth-service     │──▶│     implementation:    │──▶│ skills:                │
-│ - profile: implementation  │   │       - java-core      │   │   - java-core          │
-│                            │   │       - java-cdi       │   │   - java-cdi           │
-└────────────────────────────┘   └────────────────────────┘   └────────────────────────┘
-                                 task-plan queries architecture.module --name {module}
+For each profile in deliverable.profiles:
+  1. Query architecture: module --name {module}
+  2. Extract: skills_by_profile.{profile}
+  3. Create task with profile + resolved skills
 ```
 
-**Key principle**: Deliverables specify WHAT profile, architecture provides WHICH skills.
+**Key principle**: Deliverables specify WHAT profiles apply, task-plan resolves WHICH skills from architecture.
 
 ## Dependency Specification
 
@@ -164,8 +182,8 @@ Solution outline skills MUST validate that each deliverable contains:
 - [ ] `execution_mode` metadata
 - [ ] `domain` metadata (single value from config.domains)
 - [ ] `module` metadata (module name from architecture)
-- [ ] `profile` metadata (`implementation` or `testing`)
 - [ ] `depends` field (`none` or valid deliverable references)
+- [ ] `**Profiles:**` block with valid profiles (`implementation`, `testing`)
 - [ ] Explicit file list (not "all files matching X")
 - [ ] Verification command and criteria
 
@@ -183,9 +201,10 @@ Solution outline skills MUST validate that each deliverable contains:
 - Missing metadata block
 - Missing `domain` field (prevents domain skill loading)
 - Missing `module` field (prevents skill resolution from architecture)
-- Missing `profile` field (prevents task executor routing)
-- Invalid domain (domain not in marshal.json `skill_domains`)
+- Missing `**Profiles:**` block (prevents task creation)
+- Empty `**Profiles:**` block (must have at least one profile)
 - Invalid profile (not `implementation` or `testing`)
+- Invalid domain (domain not in marshal.json `skill_domains`)
 - System domain (using `system` as deliverable domain - internal only)
 - "Update all agents" without file enumeration
 - Verification: "manual review" for automatable checks
@@ -203,15 +222,19 @@ Solution outline skills MUST validate that each deliverable contains:
 - execution_mode: automated
 - domain: java
 - module: auth-service
-- profile: implementation
 - depends: 1. Create Database Schema
+
+**Profiles:**
+- implementation
+- module_testing
 
 **Affected files:**
 - `auth-service/src/main/java/de/cuioss/auth/AuthController.java`
 - `auth-service/src/main/java/de/cuioss/auth/dto/AuthRequest.java`
 - `auth-service/src/main/java/de/cuioss/auth/dto/AuthResponse.java`
+- `auth-service/src/test/java/de/cuioss/auth/AuthControllerTest.java`
 
-**Change per file:** Create REST endpoint for user authentication with request/response DTOs.
+**Change per file:** Create REST endpoint for user authentication with request/response DTOs. Add unit tests.
 
 **Pattern:**
 ```java
@@ -224,16 +247,19 @@ public class AuthController {
 ```
 
 **Verification:**
-- Command: `mvn compile -pl auth-service`
-- Criteria: Compilation succeeds
+- Command: `mvn verify -pl auth-service`
+- Criteria: Compilation and tests succeed
 
 **Success Criteria:**
 - REST endpoint accepts POST /auth with username/password
 - Returns JWT token on successful authentication
 - Returns 401 on invalid credentials
+- Unit tests cover authentication logic
 ```
 
-**Note**: Skills are resolved from `auth-service.skills_by_profile.implementation` in architecture.
+**Note**: Task-plan creates two tasks from this deliverable:
+- TASK-001-IMPL (implementation): skills from `auth-service.skills_by_profile.implementation`
+- TASK-002-TEST (testing): skills from `auth-service.skills_by_profile.testing`, depends on TASK-001-IMPL
 
 ## Invalid Examples (Anti-patterns)
 
@@ -262,8 +288,10 @@ Update all agent outputs to use TOON format.
 - execution_mode: automated
 - domain: plan-marshall-plugin-dev
 - module: pm-workflow
-- profile: implementation
 - depends: none
+
+**Profiles:**
+- implementation
 
 **Affected files:**
 - All files in marketplace/bundles/planning/agents/
@@ -276,4 +304,29 @@ Update all agent outputs to use TOON format.
 **Why invalid:**
 - `Affected files` uses "All files in..." instead of explicit paths
 - Task-plan cannot generate steps from vague references
+- Validation will reject this deliverable
+
+### Missing Profiles Block
+
+```markdown
+### 3. Fix Authentication Bug
+
+**Metadata:**
+- change_type: modify
+- execution_mode: automated
+- domain: java
+- module: auth-service
+- depends: none
+
+**Affected files:**
+- `auth-service/src/main/java/de/cuioss/auth/AuthController.java`
+
+**Verification:**
+- Command: `mvn test -pl auth-service`
+- Criteria: Tests pass
+```
+
+**Why invalid:**
+- Missing `**Profiles:**` block
+- Task-plan cannot create tasks without knowing which profiles apply
 - Validation will reject this deliverable

@@ -13,7 +13,7 @@ import re
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, TypedDict
+from typing import Any, TypedDict, cast
 
 from file_ops import base_path  # type: ignore[import-not-found]
 
@@ -381,7 +381,7 @@ def parse_verification_block(lines: list[str], start_idx: int) -> tuple[Verifica
 
 def get_tasks_dir(plan_id: str) -> Path:
     """Get the tasks directory for a plan."""
-    return base_path('plans', plan_id, 'tasks')
+    return cast(Path, base_path('plans', plan_id, 'tasks'))
 
 
 def parse_skills_block(lines: list[str], start_idx: int) -> tuple[list[str], int]:

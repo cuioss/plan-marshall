@@ -127,15 +127,15 @@ The task's `profile` field maps to phase for workflow resolution:
 | Task Profile | Resolve Phase | Description |
 |--------------|---------------|-------------|
 | `implementation` | `implementation` | Create/modify production code |
-| `testing` | `testing` | Create/modify test code |
+| `module_testing` | `module_testing` | Create/modify test code |
 | `quality` | `quality` | Documentation, standards |
 
 ```bash
 # Task with profile: implementation
 resolve-workflow-skill --domain java --phase implementation
 
-# Task with profile: testing
-resolve-workflow-skill --domain java --phase testing
+# Task with profile: module_testing
+resolve-workflow-skill --domain java --phase module_testing
 ```
 
 ---
@@ -439,7 +439,7 @@ If verification fails:
 
 - [phase-3-plan SKILL.md](../../../phase-3-plan/SKILL.md) - Previous phase (plan)
 - [phase-5-finalize SKILL.md](../../../phase-5-finalize/SKILL.md) - Next phase (finalize)
-- [testing.md](testing.md) - Testing profile contract
+- [module_testing.md](module_testing.md) - Module testing profile contract
 - [profile-mechanism.md](profile-mechanism.md) - How profile overrides work
 - [task-contract.md](../../../manage-tasks/standards/task-contract.md) - Task structure with domain, profile, skills
 - [config-toon-format.md](../../../manage-config/standards/config-toon-format.md) - Workflow skill configuration

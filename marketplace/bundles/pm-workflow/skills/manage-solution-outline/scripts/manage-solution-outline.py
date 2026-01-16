@@ -21,7 +21,7 @@ import argparse
 import re
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from file_ops import atomic_write_file, base_path  # type: ignore[import-not-found]
 from toon_parser import serialize_toon  # type: ignore[import-not-found]
@@ -39,7 +39,7 @@ def validate_plan_id(plan_id: str) -> bool:
 
 def get_solution_path(plan_id: str) -> Path:
     """Get the solution outline file path."""
-    return base_path('plans', plan_id, SOLUTION_FILE)
+    return cast(Path, base_path('plans', plan_id, SOLUTION_FILE))
 
 
 def parse_document_sections(content: str) -> dict[str, str]:
@@ -91,6 +91,9 @@ def extract_deliverables(deliverables_section: str) -> list[dict[str, Any]]:
         # Extract metadata block
         metadata = extract_metadata_block(content)
 
+        # Extract profiles block (separate from metadata)
+        profiles = extract_profiles(content)
+
         # Extract affected files
         affected_files = extract_affected_files(content)
 
@@ -106,6 +109,7 @@ def extract_deliverables(deliverables_section: str) -> list[dict[str, Any]]:
                 'title': title,
                 'reference': f'{number}. {title}',
                 'metadata': metadata,
+                'profiles': profiles,
                 'affected_files': affected_files,
                 'verification': verification,
                 'has_success_criteria': has_success_criteria,
@@ -180,6 +184,31 @@ def extract_verification(content: str) -> dict[str, str]:
     return verification
 
 
+def extract_profiles(content: str) -> list[str]:
+    """Extract **Profiles:** list from deliverable content.
+
+    Profiles is a separate block (not in Metadata) listing which profiles apply.
+    Task-plan creates one task per profile.
+    """
+    profiles: list[str] = []
+
+    # Look for Profiles block
+    profiles_match = re.search(r'\*\*Profiles:\*\*\s*((?:- [^\n]+\n?)+)', content, re.IGNORECASE)
+    if not profiles_match:
+        return profiles
+
+    profiles_text = profiles_match.group(1)
+
+    # Extract each profile
+    profile_pattern = re.compile(r'-\s*(\w+)')
+    for match in profile_pattern.finditer(profiles_text):
+        profile = match.group(1).strip()
+        if profile:
+            profiles.append(profile)
+
+    return profiles
+
+
 def validate_solution_structure(content: str) -> tuple[list[str], list[str], dict[str, Any]]:
     """Validate solution outline document structure against deliverable contract.
 
@@ -230,7 +259,8 @@ def validate_deliverable_contract(deliverable: dict) -> tuple[list[str], list[st
     """Validate a single deliverable against the deliverable contract.
 
     Contract requires:
-    - Metadata block with 7 fields
+    - Metadata block with required fields
+    - Profiles block with valid profiles
     - Affected files with explicit paths
     - Verification section
     - Success criteria
@@ -246,18 +276,11 @@ def validate_deliverable_contract(deliverable: dict) -> tuple[list[str], list[st
     else:
         # Check 1a: All required metadata fields
         # module is required for skill resolution from architecture
-        # profile is the universal requirement for config-based routing
-        required_fields = ['change_type', 'execution_mode', 'domain', 'module', 'profile', 'depends']
+        # Note: profile is now in separate **Profiles:** block, not in metadata
+        required_fields = ['change_type', 'execution_mode', 'domain', 'module', 'depends']
         for field in required_fields:
             if field not in metadata:
                 errors.append(f'D{num}: Missing metadata field: {field}')
-
-        # Check 1a2: Valid profile values
-        valid_profiles = ['implementation', 'testing']
-        if metadata.get('profile') and metadata['profile'] not in valid_profiles:
-            errors.append(
-                f"D{num}: Invalid profile '{metadata['profile']}' (must be one of: {', '.join(valid_profiles)})"
-            )
 
         # Check 1b: Valid change_type
         valid_change_types = ['create', 'modify', 'refactor', 'migrate', 'delete']
@@ -273,12 +296,24 @@ def validate_deliverable_contract(deliverable: dict) -> tuple[list[str], list[st
                 f"D{num}: Invalid execution_mode '{metadata['execution_mode']}' (must be one of: {', '.join(valid_modes)})"
             )
 
-    # Check 2: Affected files section
+    # Check 2: Profiles block (separate from metadata)
+    profiles = deliverable.get('profiles', [])
+    valid_profiles = ['implementation', 'testing']
+    if not profiles:
+        errors.append(f'D{num}: Missing **Profiles:** block')
+    else:
+        for profile in profiles:
+            if profile not in valid_profiles:
+                errors.append(
+                    f"D{num}: Invalid profile '{profile}' (must be one of: {', '.join(valid_profiles)})"
+                )
+
+    # Check 3: Affected files section
     affected_files = deliverable.get('affected_files', [])
     if not affected_files:
         errors.append(f'D{num}: Missing **Affected files:** section')
     else:
-        # Check 2a: No wildcards or vague references
+        # Check 3a: No wildcards or vague references
         for f in affected_files:
             if '*' in f:
                 errors.append(f'D{num}: Wildcard in affected files: {f}')
@@ -290,7 +325,7 @@ def validate_deliverable_contract(deliverable: dict) -> tuple[list[str], list[st
             if not ('/' in f or f.endswith('.md') or f.endswith('.py')):
                 warnings.append(f'D{num}: Unusual file path format: {f}')
 
-    # Check 3: Verification section
+    # Check 4: Verification section
     verification = deliverable.get('verification', {})
     if not verification:
         errors.append(f'D{num}: Missing **Verification:** section')
@@ -300,7 +335,7 @@ def validate_deliverable_contract(deliverable: dict) -> tuple[list[str], list[st
         if 'criteria' not in verification:
             warnings.append(f'D{num}: Verification missing Criteria')
 
-    # Check 4: Success criteria
+    # Check 5: Success criteria
     if not deliverable.get('has_success_criteria'):
         warnings.append(f'D{num}: Missing **Success Criteria:** section')
 

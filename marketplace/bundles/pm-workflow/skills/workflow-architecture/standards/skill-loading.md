@@ -27,7 +27,7 @@ The pm-workflow bundle uses a two-tier skill loading pattern for domain-agnostic
 │  │   • Loaded from task.skills                                          │  │
 │  │   • Source: module.skills_by_profile (from architecture)             │  │
 │  │   • Example: pm-dev-java:java-core, pm-dev-java:java-cdi             │  │
-│  │   • Selected during solution-outline, split by task-plan per profile │  │
+│  │   • Profiles listed in deliverable, skills resolved by task-plan     │  │
 │  │                                                                      │  │
 │  └──────────────────────────────────────────────────────────────────────┘  │
 │                                                                             │
@@ -54,14 +54,14 @@ The pm-workflow bundle uses a two-tier skill loading pattern for domain-agnostic
 │  │    oauth-sheriff-core:                                               │  │
 │  │      responsibility: "JWT validation logic"                          │  │
 │  │      skills_by_profile:                                              │  │
-│  │        skills-implementation: [java-core, java-cdi]                  │  │
-│  │        skills-testing: [java-core, junit-core]                       │  │
+│  │        implementation: [java-core, java-cdi]                         │  │
+│  │        module_testing: [java-core, junit-core]                       │  │
 │  │                                                                      │  │
 │  │    oauth-sheriff-quarkus:                                            │  │
 │  │      responsibility: "Quarkus CDI integration"                       │  │
 │  │      skills_by_profile:                                              │  │
-│  │        skills-implementation: [java-core, java-cdi-quarkus]          │  │
-│  │        skills-testing: [java-core, junit-core]                       │  │
+│  │        implementation: [java-core, java-cdi-quarkus]                 │  │
+│  │        module_testing: [java-core, junit-core]                       │  │
 │  │                                                                      │  │
 │  └──────────────────────────────────────────────────────────────────────┘  │
 │                              │                                              │
@@ -73,43 +73,46 @@ The pm-workflow bundle uses a two-tier skill loading pattern for domain-agnostic
 │  │                                                                      │  │
 │  │  1. Query architecture for modules                                   │  │
 │  │  2. Select module for each deliverable                               │  │
-│  │  3. Module brings skills_by_profile (skills per profile)             │  │
+│  │  3. List profiles that apply (no skills in deliverable)              │  │
 │  │                                                                      │  │
-│  │  Deliverable output (with Skills by Profile):                        │  │
+│  │  Deliverable output (with Profiles list):                            │  │
 │  │  ────────────────────────────────────────────                        │  │
 │  │  ### 1. Add IssuerValidator class                                    │  │
-│  │  **Module Context:**                                                 │  │
+│  │  **Metadata:**                                                       │  │
 │  │    - module: oauth-sheriff-core                                      │  │
 │  │    - domain: java                                                    │  │
-│  │  **Skills by Profile:**                                              │  │
-│  │    - skills-implementation: [java-core, java-cdi]                    │  │
-│  │    - skills-testing: [java-core, junit-core]                         │  │
+│  │  **Profiles:**                                                       │  │
+│  │    - implementation                                                  │  │
+│  │    - module_testing                                                  │  │
 │  │                                                                      │  │
 │  └──────────────────────────────────────────────────────────────────────┘  │
 │                              │                                              │
 │                              ▼                                              │
 │  ┌──────────────────────────────────────────────────────────────────────┐  │
 │  │                                                                      │  │
-│  │  task-plan (PLAN phase) - Splits by Profile                          │  │
+│  │  task-plan (PLAN phase) - 1:N Task Creation                          │  │
 │  │  ══════════════════════════════════════════                          │  │
 │  │                                                                      │  │
-│  │  Creates one task per profile from each deliverable:                 │  │
+│  │  For each profile in deliverable.profiles:                           │  │
+│  │    1. Query architecture: module --name {module}                     │  │
+│  │    2. Extract: skills_by_profile.{profile}                           │  │
+│  │    3. Create task with profile + resolved skills                     │  │
 │  │                                                                      │  │
-│  │  TASK-001.toon (from skills-implementation):                         │  │
+│  │  TASK-001.toon (profile: implementation):                            │  │
 │  │    deliverables: [1]                                                 │  │
 │  │    module: oauth-sheriff-core                                        │  │
 │  │    domain: java                                                      │  │
 │  │    profile: implementation                                           │  │
-│  │    skills:                                                           │  │
+│  │    skills: ← resolved from architecture                              │  │
 │  │      - pm-dev-java:java-core                                         │  │
 │  │      - pm-dev-java:java-cdi                                          │  │
 │  │                                                                      │  │
-│  │  TASK-002.toon (from skills-testing):                                │  │
+│  │  TASK-002.toon (profile: module_testing):                            │  │
 │  │    deliverables: [1]                                                 │  │
 │  │    module: oauth-sheriff-core                                        │  │
 │  │    domain: java                                                      │  │
-│  │    profile: testing                                                  │  │
-│  │    skills:                                                           │  │
+│  │    profile: module_testing                                           │  │
+│  │    skills: ← resolved from architecture                              │  │
 │  │      - pm-dev-java:java-core                                         │  │
 │  │      - pm-dev-java:junit-core                                        │  │
 │  │    depends_on: TASK-001                                              │  │
@@ -129,7 +132,7 @@ The pm-workflow bundle uses a two-tier skill loading pattern for domain-agnostic
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-**Key Insight**: Skills are associated with modules via `skills_by_profile` in architecture data. Module selection during outline phase determines which skill sets apply. Task-plan splits deliverables into profile-specific tasks (one task = one profile).
+**Key Insight**: Skills are associated with modules via `skills_by_profile` in architecture data. Deliverables list which profiles apply (visible to user). Task-plan resolves skills from architecture for each profile, creating one task per profile (1:N mapping).
 
 ---
 
@@ -184,8 +187,8 @@ The pm-workflow bundle uses a two-tier skill loading pattern for domain-agnostic
 │  │   │  Step 3: Load Workflow Skill                               │    │  │
 │  │   │                                                            │    │  │
 │  │   │  Based on task.profile:                                    │    │  │
-│  │   │    implementation → pm-workflow:task-implementation │    │  │
-│  │   │    testing → pm-workflow:task-testing             │    │  │
+│  │   │    implementation → pm-workflow:task-implementation    │    │  │
+│  │   │    module_testing → pm-workflow:task-module_testing    │    │  │
 │  │   │                                                            │    │  │
 │  │   │  • Determines HOW to execute                               │    │  │
 │  │   │  • Applies domain skill patterns                           │    │  │
@@ -226,8 +229,8 @@ The pm-workflow bundle uses a two-tier skill loading pattern for domain-agnostic
 │  │               │                    │                                  │ │
 │  │ DOMAIN        │ Architecture →     │ Domain knowledge                 │ │
 │  │ (Tier 2)      │ Module →           │ Patterns, conventions            │ │
-│  │               │ Deliverable →      │ Listed in task.skills            │ │
-│  │               │ Task               │                                  │ │
+│  │               │ Task (resolved     │ Listed in task.skills            │ │
+│  │               │ by task-plan)      │                                  │ │
 │  │               │                    │                                  │ │
 │  ├───────────────┼────────────────────┼──────────────────────────────────┤ │
 │  │               │                    │                                  │ │

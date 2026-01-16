@@ -66,7 +66,7 @@ The pm-workflow bundle uses thin agents that delegate to skills for actual work.
 │  │                      │                                                │ │
 │  │ solution-outline-    │ Create solution outline                        │ │
 │  │ agent                │ • Analyzes codebase                            │ │
-│  │                      │ • Creates deliverables with domain/profile     │ │
+│  │                      │ • Creates deliverables with domain/profiles    │ │
 │  │                      │                                                │ │
 │  ├──────────────────────┼────────────────────────────────────────────────┤ │
 │  │                      │                                                │ │

@@ -59,7 +59,7 @@ Profile skills handle the actual implementation/testing work during phase-4-exec
 | Profile | Purpose | System Default |
 |---------|---------|----------------|
 | `implementation` | Create/modify production code | `pm-workflow:task-implementation` |
-| `testing` | Create/modify test code | `pm-workflow:task-testing` |
+| `module_testing` | Create/modify test code | `pm-workflow:task-module_testing` |
 
 ---
 
@@ -166,5 +166,5 @@ Profile skill for implementing Java code.
 ## Related Documents
 
 - [implementation.md](implementation.md) - Implementation profile contract
-- [testing.md](testing.md) - Testing profile contract
+- [module_testing.md](module_testing.md) - Module testing profile contract
 - [workflow-extension-api SKILL.md](../../SKILL.md) - Extension points overview

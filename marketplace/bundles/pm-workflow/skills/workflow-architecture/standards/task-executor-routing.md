@@ -210,9 +210,9 @@ module.skills_by_profile = {
 Phase-2-Outline
        │
        ▼
-deliverable.skills_by_profile (copied from module)
+deliverable.profiles = [implementation, module_testing]
        │
-       ▼ (split by profile)
+       ▼ (create task per profile, resolve skills from architecture)
 Phase-3-Plan
        │
        ▼

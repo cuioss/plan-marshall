@@ -65,15 +65,11 @@ Follows the deliverable contract.
 - change_type: create
 - execution_mode: automated
 - domain: {domain}
+- module: {IT module from architecture}
 - depends: {reference to implementation deliverable}
 
-**Module Context:**
-- module: {IT module from architecture}
-- package: {IT package}
-- placement_rationale: IT module for integration tests
-
-**Skills by Profile:**
-- skills-implementation: [{IT skills from module.skills_by_profile}]
+**Profiles:**
+- implementation
 
 **Affected files:**
 - `{IT module}/src/test/java/{package path}/{ClassName}IT.java`
@@ -96,7 +92,7 @@ Follows the deliverable contract.
 1. **IT is always a separate deliverable** - not embedded in implementation deliverable
 2. **IT targets the IT module** - found via `architecture modules --command integration-tests`
 3. **IT depends on implementation** - set `depends:` to reference the implementation deliverable
-4. **IT has only skills-implementation** - IT code is "implementation" of test code (no unit tests for ITs)
+4. **IT has only `implementation` profile** - IT code is "implementation" of test code (no unit tests for ITs)
 
 ---
 

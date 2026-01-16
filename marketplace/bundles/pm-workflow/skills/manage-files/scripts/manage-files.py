@@ -21,6 +21,7 @@ import argparse
 import re
 import sys
 from pathlib import Path
+from typing import cast
 
 from file_ops import atomic_write_file, base_path  # type: ignore[import-not-found]
 from plan_logging import log_entry  # type: ignore[import-not-found]
@@ -43,7 +44,7 @@ def validate_file_path(file_path: str) -> bool:
 
 def get_plan_dir(plan_id: str) -> Path:
     """Get the plan directory path."""
-    return base_path('plans', plan_id)
+    return cast(Path, base_path('plans', plan_id))
 
 
 def cmd_read(args):

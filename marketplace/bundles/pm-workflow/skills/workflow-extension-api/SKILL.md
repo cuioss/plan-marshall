@@ -30,7 +30,7 @@ allowed-tools: Read
 │  LAYER 2: PROFILE SKILLS (System default, domain CAN override)  │
 │  ┌─────────────────────────────────────────────────────────────┐ │
 │  │ task-implementation (profile=implementation)                 │ │
-│  │ task-testing (profile=testing)                               │ │
+│  │ task-module_testing (profile=module_testing)                │ │
 │  │                                                              │ │
 │  │ Contract: standards/profiles/                                │ │
 │  │ Override: resolve-workflow-skill --domain X --phase Y        │ │
@@ -99,7 +99,7 @@ Profile skills handle the actual implementation/testing work. Domains CAN overri
 | Profile | System Default | Override Example |
 |---------|----------------|------------------|
 | `implementation` | `pm-workflow:task-implementation` | `pm-dev-java:java-implementation` |
-| `testing` | `pm-workflow:task-testing` | `pm-dev-java:java-testing` |
+| `module_testing` | `pm-workflow:task-module_testing` | `pm-dev-java:java-module-testing` |
 
 ### Resolution Mechanism
 
@@ -129,7 +129,7 @@ Profile skills must conform to the contracts defined in:
 | Profile | Contract |
 |---------|----------|
 | implementation | [profiles/implementation.md](standards/profiles/implementation.md) |
-| testing | [profiles/testing.md](standards/profiles/testing.md) |
+| module_testing | [profiles/module_testing.md](standards/profiles/module_testing.md) |
 
 ---
 
@@ -185,7 +185,7 @@ Domain skills are NOT extensions of the workflow - they are knowledge loaded by 
 | [extensions/outline-extension.md](standards/extensions/outline-extension.md) | Outline extension contract |
 | [extensions/triage-extension.md](standards/extensions/triage-extension.md) | Triage extension contract |
 | [profiles/implementation.md](standards/profiles/implementation.md) | Implementation profile contract |
-| [profiles/testing.md](standards/profiles/testing.md) | Testing profile contract |
+| [profiles/module_testing.md](standards/profiles/module_testing.md) | Module testing profile contract |
 | [profiles/profile-mechanism.md](standards/profiles/profile-mechanism.md) | How profile overrides work |
 | [protocols/user-review.md](standards/protocols/user-review.md) | User approval gate protocol |
 

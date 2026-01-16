@@ -52,8 +52,8 @@ File formats and structures for plan data storage.
 │  │  ## Overview (ASCII diagram)                                 │    │
 │  │  ## Deliverables                                             │    │
 │  │    ### 1. Title                                              │    │
-│  │      Metadata: domain, change_type, depends                  │    │
-│  │      Module Context, Skills by Profile                       │    │
+│  │      Metadata: domain, module, change_type, depends          │    │
+│  │      Profiles: implementation, testing                       │    │
 │  │      Affected files, Verification, Success criteria          │    │
 │  │    ### 2. Title                                              │    │
 │  │      ...                                                     │    │
@@ -266,16 +266,13 @@ Solution design document with deliverables.
 │  │   ### 1. {Title}                                        ││
 │  │   **Metadata:**                                         ││
 │  │   - domain: java                                        ││
+│  │   - module: auth-service                                ││
 │  │   - change_type: create                                 ││
 │  │   - depends: none                                       ││
 │  │                                                         ││
-│  │   **Module Context:**                                   ││
-│  │   - module: auth-service                                ││
-│  │   - package: de.cuioss.auth                             ││
-│  │                                                         ││
-│  │   **Skills by Profile:**                                ││
-│  │   - skills-implementation: [java-core, java-cdi]        ││
-│  │   - skills-testing: [java-core, junit-core]             ││
+│  │   **Profiles:**                                         ││
+│  │   - implementation                                      ││
+│  │   - testing                                             ││
 │  │                                                         ││
 │  │   **Affected files:**                                   ││
 │  │   - `src/main/java/...`                                 ││
@@ -299,12 +296,11 @@ Solution design document with deliverables.
 | Field | Location | Description |
 |-------|----------|-------------|
 | `domain` | Metadata | Single domain from config.domains |
+| `module` | Metadata | Target module name (from architecture) |
 | `change_type` | Metadata | create, modify, refactor, migrate, delete |
 | `execution_mode` | Metadata | automated, manual, mixed |
 | `depends` | Metadata | Dependencies: none, N. Title, N, M |
-| `module` | Module Context | Target module name |
-| `package` | Module Context | Target package |
-| `Skills by Profile` | Block | skills-implementation (always), skills-testing (if applicable) |
+| `**Profiles:**` | Block | List of profiles: implementation (always), testing (if applicable) |
 
 ### Manager
 

@@ -49,7 +49,7 @@ verification:
 id: TASK-003-FIX
 title: "Fix: Test failure in CacheTest"
 domain: java
-profile: testing
+profile: module_testing
 skills:
   - pm-dev-java:junit-core
   - pm-dev-java:java-core
@@ -173,36 +173,45 @@ The `profile` field determines the workflow type:
 
 ## Skills Inheritance
 
-Skills are inherited from deliverables (which get them from module.skills_by_profile during solution-outline):
+Skills are resolved by task-plan from architecture based on deliverable's module and profile:
 
 ```
-solution-outline phase               task-plan phase                execute phase
-┌────────────────────────┐           ┌────────────────────────┐     ┌────────────────────────┐
-│ Module selected:       │           │ Inherit from           │     │ Read task.skills       │
-│   oauth-sheriff-core   │──────────▶│ deliverable.skills     │────▶│ Load directly          │
-│ skills from module:    │           │                        │     │ (no resolution call)   │
-│   [java-core, java-cdi]│           │                        │     │                        │
-└────────────────────────┘           └───────────┬────────────┘     └────────────────────────┘
-                                                 │
-                                                 ▼
-                                     ┌────────────────────────┐
-                                     │ TASK-001-IMPL.toon     │
-                                     │ skills:                │
-                                     │   - pm-dev-java:java-core
-                                     │   - pm-dev-java:java-cdi
-                                     └────────────────────────┘
+solution-outline phase               task-plan phase                     execute phase
+┌────────────────────────┐           ┌─────────────────────────────┐     ┌────────────────────────┐
+│ Deliverable:           │           │ For each profile:           │     │ Read task.skills       │
+│   module: auth-service │──────────▶│   1. Query architecture     │────▶│ Load directly          │
+│   profiles:            │           │      module --name {module} │     │ (no resolution call)   │
+│     - implementation   │           │   2. Extract skills_by_     │     │                        │
+│     - testing          │           │      profile.{profile}      │     │                        │
+└────────────────────────┘           │   3. Create task with       │     └────────────────────────┘
+                                     │      resolved skills        │
+                                     └─────────────┬───────────────┘
+                                                   │
+                                     ┌─────────────▼───────────────┐
+                                     │ TASK-001-IMPL.toon          │
+                                     │ profile: implementation     │
+                                     │ skills:                     │
+                                     │   - pm-dev-java:java-core   │
+                                     │   - pm-dev-java:java-cdi    │
+                                     ├─────────────────────────────┤
+                                     │ TASK-002-TEST.toon          │
+                                     │ profile: module_testing     │
+                                     │ skills:                     │
+                                     │   - pm-dev-java:java-core   │
+                                     │   - pm-dev-java:junit-core  │
+                                     │ depends: TASK-001-IMPL      │
+                                     └─────────────────────────────┘
 ```
 
 ## Skills Array
 
-The `skills` array contains domain-specific skills inherited from deliverables:
+The `skills` array contains domain-specific skills resolved from architecture:
 
 | Source | Description |
 |--------|-------------|
-| `deliverable.skills` | Inherited from solution outline |
-| `module.skills_by_profile` | Original source (from architecture) |
+| `architecture.module.skills_by_profile.{profile}` | Resolved by task-plan from architecture |
 
-Task-plan copies the skills from the deliverable to the task.
+Task-plan resolves skills from architecture for each profile in the deliverable's profiles list.
 
 **Two-tier skill loading at execution**:
 - **Tier 1 (implicit)**: System skills loaded by agent automatically
@@ -214,9 +223,9 @@ Tasks and deliverables have a **many-to-many relationship**:
 
 | Pattern | Description | Example |
 |---------|-------------|---------|
-| 1:1 | One deliverable -> one task | Large coherent deliverable |
+| 1:1 | One deliverable -> one task | Single-profile deliverable |
 | N:1 | Multiple deliverables -> one task | Similar small changes (aggregation) |
-| 1:N | One deliverable -> multiple tasks | Mixed execution modes (split) |
+| 1:N | One deliverable -> multiple tasks | Multiple profiles (implementation + testing) |
 
 ### When to Use Each Pattern
 
@@ -232,10 +241,10 @@ Tasks and deliverables have a **many-to-many relationship**:
 - No dependency between them
 - Combined file count < 10
 
-**1:N (Split)**:
-- Mixed execution_mode (auto + manual parts)
-- Different concerns within one deliverable
-- Very large file counts (> 15)
+**1:N (Multiple profiles)**:
+- Deliverable has multiple profiles (implementation + testing)
+- Each profile becomes a separate task
+- Testing task depends on implementation task
 
 ## Optimization Workflow
 
@@ -247,8 +256,8 @@ Extract for each deliverable:
 - `metadata.change_type`
 - `metadata.execution_mode`
 - `metadata.domain`
-- `metadata.profile`
 - `metadata.depends`
+- `profiles` (list of profiles)
 - `affected_files`
 - `verification`
 
@@ -280,12 +289,12 @@ For each deliverable, check:
 
 ### Step 5: Create Optimized Tasks
 
-For each task:
-1. Inherit skills from deliverable(s) - copy `deliverable.skills` to `task.skills`
-2. Set `domain` and `profile` from deliverable
+For each deliverable, for each profile in deliverable.profiles:
+1. Resolve skills from architecture: `module.skills_by_profile.{profile}`
+2. Set `domain` from deliverable, `profile` from current iteration
 3. Consolidate verification commands
 4. Generate steps from file lists
-5. Compute task dependencies from deliverable dependencies
+5. Compute task dependencies (testing depends on implementation)
 6. Identify parallelizable tasks
 
 ### Step 6: Log Optimization Decisions

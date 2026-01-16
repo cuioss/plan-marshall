@@ -8,7 +8,7 @@ allowed-tools: Read, Bash
 
 **Role**: Domain-agnostic workflow skill for transforming solution outline deliverables into optimized, executable tasks. Loaded by `pm-workflow:task-plan-agent`.
 
-**Key Pattern**: Reads deliverables with metadata from `solution_outline.md`, resolves skills from architecture based on `module` + `profile`, applies aggregation/split analysis, creates tasks with explicit skill lists.
+**Key Pattern**: Reads deliverables with metadata and profiles list from `solution_outline.md`, creates one task per profile (1:N mapping), resolves skills from architecture based on `module` + `profile`, applies aggregation/split analysis, creates tasks with explicit skill lists.
 
 ## Contract Compliance
 
@@ -61,8 +61,8 @@ For each deliverable, extract:
 - `metadata.change_type`, `metadata.execution_mode`
 - `metadata.domain` (single value)
 - `metadata.module` (module name from architecture)
-- `metadata.profile` (`implementation` or `testing`)
 - `metadata.depends`
+- `profiles` (list: `implementation`, `testing`)
 - `affected_files`
 - `verification`
 
@@ -78,7 +78,7 @@ Parse `depends` field for each deliverable:
 For each pair of deliverables, check if they can be aggregated:
 - Same `change_type`?
 - Same `domain`?
-- Same `profile`?
+- Same `profiles` list?
 - Same `execution_mode` (must be `automated`)?
 - Combined file count < 10?
 - **NO dependency between them?** (CRITICAL - cannot aggregate if one depends on the other)
@@ -87,38 +87,54 @@ For each pair of deliverables, check if they can be aggregated:
 
 For each deliverable, check for split requirements:
 - `execution_mode: mixed` → MUST split
-- Production + test code combined → SHOULD split (different profiles)
 - File count > 15 → CONSIDER splitting
 
-### Step 5: Resolve Skills from Architecture
+**Note**: Multiple profiles in `**Profiles:**` block naturally create multiple tasks (1:N) - no additional splitting needed for profile differences.
 
-For each task (aggregated or single), resolve skills from architecture using `module` + `profile`:
+### Step 5: Create Tasks from Profiles (1:N Mapping)
 
+For each deliverable, create one task per profile in its `profiles` list:
+
+```
+For each deliverable D:
+  1. Query architecture: module --name {D.module}
+  For each profile P in D.profiles:
+    2. Extract skills: module.skills_by_profile.{P}
+    3. Create task with profile P and resolved skills
+    4. If P = testing, add depends on implementation task
+```
+
+**Query architecture**:
 ```bash
 python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture \
   module --name {deliverable.module}
 ```
 
-Extract `skills_by_profile.{profile}` from the module response:
+**1:N Task Creation Flow**:
 
 ```
-solution_outline.md              Architecture                   TASK.toon
-┌────────────────────────────┐   ┌────────────────────────────┐   ┌────────────────────────────┐
-│ **Metadata:**              │   │ {module}:                  │   │ skills:                    │
-│ - domain: java             │   │   skills_by_profile:       │   │   - pm-dev-java:java-core  │
-│ - module: auth-service     │──▶│     implementation:        │──▶│   - pm-dev-java:java-cdi   │
-│ - profile: implementation  │   │       - java-core          │   │                            │
-│                            │   │       - java-cdi           │   │                            │
-└────────────────────────────┘   └────────────────────────────┘   └────────────────────────────┘
+solution_outline.md                        TASK-*.toon (created by task-plan)
+┌────────────────────────────┐             ┌────────────────────────────┐
+│ **Metadata:**              │             │ TASK-001-IMPL              │
+│ - domain: java             │             │ profile: implementation    │
+│ - module: auth-service     │  ───────►   │ skills: [java-core,        │
+│                            │  (1:N)      │          java-cdi]         │
+│ **Profiles:**              │             ├────────────────────────────┤
+│ - implementation           │  ───────►   │ TASK-002-TEST              │
+│ - module_testing           │             │ profile: module_testing    │
+│                            │             │ skills: [java-core,        │
+└────────────────────────────┘             │          junit-core]       │
+                                           │ depends: TASK-001-IMPL     │
+                                           └────────────────────────────┘
 ```
 
-**Log skill resolution**:
+**Log skill resolution** (for each task created):
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   work {plan_id} INFO "[SKILL] (pm-workflow:phase-3-plan) Resolved skills for TASK-{N} from {module}.{profile}: [{task.skills}]"
 ```
 
-**Aggregation Rule**: When aggregating multiple deliverables from different modules, merge their resolved skills arrays (union).
+**Aggregation Rule**: When aggregating multiple deliverables, they must have same profiles list. Merge resolved skills arrays (union) per profile.
 
 ### Step 6: Create Optimized Tasks
 
@@ -226,16 +242,17 @@ lessons_recorded: {count}
 |--------|-----------|-------|------|
 | Same change_type | Yes | | |
 | Same domain | Yes | | |
-| Same profile | Yes | | |
+| Same profiles list | Yes | | |
 | Combined files < 10 | Yes | | |
 | Same execution_mode | Yes | | |
 | Both depends: none | Yes | | |
 | One depends on other | **Never** | | |
 | execution_mode: mixed | | Yes | |
-| Different profiles | | Yes | |
 | File count > 15 | | Consider | |
 | Large but coherent | | | Yes |
 | Single file | | | Yes |
+
+**Note**: Multiple profiles in one deliverable naturally create multiple tasks (1:N). This is not a "split" - it's the standard task creation pattern.
 
 ## Dependency Rules for Aggregation
 
@@ -253,8 +270,9 @@ Skills are resolved from architecture based on `module` + `profile`:
 
 | Scenario | Behavior |
 |----------|----------|
-| Single deliverable | Query `architecture.module --name {module}`, extract `skills_by_profile.{profile}` |
-| Multiple deliverables (aggregation) | Union of resolved skills from all source modules |
+| Single deliverable, single profile | Query `architecture.module --name {module}`, extract `skills_by_profile.{profile}` |
+| Single deliverable, multiple profiles | Create one task per profile, each with its own resolved skills |
+| Multiple deliverables (aggregation) | Union of resolved skills from all source modules (per profile) |
 | Module not in architecture | Error - module must exist in project architecture |
 | Profile not in module | Error - profile must exist in `module.skills_by_profile` |
 
@@ -274,7 +292,7 @@ If `deliverable.module` is not found in architecture:
 
 ### Profile Not in Module
 
-If `deliverable.profile` is not in `module.skills_by_profile`:
+If a profile from `deliverable.profiles` is not in `module.skills_by_profile`:
 - Error: "Profile '{profile}' not found in {module}.skills_by_profile"
 - Record as lesson learned
 

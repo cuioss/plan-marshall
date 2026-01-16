@@ -19,6 +19,7 @@ import re
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any, cast
 
 from file_ops import atomic_write_file, base_path  # type: ignore[import-not-found]
 from toon_parser import parse_toon, serialize_toon  # type: ignore[import-not-found]
@@ -29,12 +30,12 @@ DOCUMENTS_DIR = SKILL_DIR / 'documents'
 TEMPLATES_DIR = SKILL_DIR / 'templates'
 
 
-def load_document_type(doc_type: str) -> dict | None:
+def load_document_type(doc_type: str) -> dict[Any, Any] | None:
     """Load document definition from documents/{type}.toon"""
     doc_file = DOCUMENTS_DIR / f'{doc_type}.toon'
     if not doc_file.exists():
         return None
-    return parse_toon(doc_file.read_text(encoding='utf-8'))
+    return cast(dict[Any, Any], parse_toon(doc_file.read_text(encoding='utf-8')))
 
 
 def get_available_types() -> list[str]:
@@ -178,7 +179,7 @@ def _cleanup_unreplaced_placeholders(content: str) -> str:
 
 def get_plan_dir(plan_id: str) -> Path:
     """Get the plan directory path."""
-    return base_path('plans', plan_id)
+    return cast(Path, base_path('plans', plan_id))
 
 
 def parse_document_sections(content: str) -> dict[str, str]:

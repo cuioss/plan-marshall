@@ -109,7 +109,7 @@ The pm-workflow bundle implements a 5-phase execution model for structured task 
 │  2. Read request.md and config.toon                                         │
 │  3. Load project architecture via client-api (*)                            │
 │  4. Analyze codebase with architecture context (Glob, Grep, Read)           │
-│  5. Create deliverables with module/domain/profile/skills                   │
+│  5. Create deliverables with module/domain/profiles list                    │
 │  6. Write solution_outline.md                                               │
 │  7. ──────────────────────────────────────────────────                      │
 │     │  ** USER REVIEW GATE **                                               │
@@ -119,7 +119,7 @@ The pm-workflow bundle implements a 5-phase execution model for structured task 
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-**(*) Project Architecture**: Module context from `plan-marshall:analyze-project-architecture` via [client-api.md](../../../../plan-marshall/skills/analyze-project-architecture/standards/client-api.md). Provides module responsibility, key packages, tips, and `skills_by_profile` for each module. Skills are selected when module is chosen and propagated to tasks.
+**(*) Project Architecture**: Module context from `plan-marshall:analyze-project-architecture` via [client-api.md](../../../../plan-marshall/skills/analyze-project-architecture/standards/client-api.md). Provides module responsibility, key packages, tips, and `skills_by_profile` for each module. Task-plan resolves skills from architecture based on module and profile.
 
 ---
 
@@ -161,7 +161,7 @@ The pm-workflow bundle implements a 5-phase execution model for structured task 
 │  2. Build dependency graph                                                  │
 │  3. Analyze for aggregation (same domain/profile/change_type)               │
 │  4. Analyze for splits (mixed execution_mode)                               │
-│  5. Inherit skills from deliverables (from module context)                  │
+│  5. Resolve skills from architecture (per profile)                          │
 │  6. Create TASK-*.toon files                                                │
 │  7. Determine execution order (parallel groups)                             │
 │                                                                             │
@@ -197,7 +197,7 @@ The pm-workflow bundle implements a 5-phase execution model for structured task 
 │  └─────────────────────────────────────────────────────────────────────┘   │
 │                                                                             │
 │  AGENT: task-execute-agent                                                  │
-│  SKILL: pm-workflow:task-implementation (or task-testing)                   │
+│  SKILL: pm-workflow:task-implementation (or task-module_testing)            │
 │                                                                             │
 │  EXECUTION LOOP:                                                            │
 │  ───────────────                                                            │
@@ -340,11 +340,11 @@ TRANSITION TRIGGERS:
 │  │  OUTLINE                                                             │  │
 │  │  ═══════                                                             │  │
 │  │  • Analyzes request + architecture context                           │  │
-│  │  • Selects modules → gets module.skills_by_profile                   │  │
-│  │  • Writes domains + skills to deliverables                           │  │
+│  │  • Selects modules → determines which profiles apply                 │  │
+│  │  • Writes domains + profiles list to deliverables                    │  │
 │  │                                                                      │  │
 │  │  Example: "Add JWT validation" → module: oauth-sheriff-core          │  │
-│  │           → skills: [java-core, java-cdi] from module context        │  │
+│  │           → profiles: [implementation, testing]                      │  │
 │  └──────────────────────────────────────────────────────────────────────┘  │
 │                      │                                                      │
 │                      │ config.toon.domains                                  │
@@ -352,9 +352,9 @@ TRANSITION TRIGGERS:
 │  ┌──────────────────────────────────────────────────────────────────────┐  │
 │  │  PLAN                                                                │  │
 │  │  ════                                                                │  │
-│  │  • Reads deliverable.domain + skills for each deliverable            │  │
-│  │  • Skills inherited from module context (no resolution call)         │  │
-│  │  • Writes domain + skills to TASK-*.toon                             │  │
+│  │  • Reads deliverable.domain + profiles for each deliverable          │  │
+│  │  • Resolves skills from architecture (module.skills_by_profile)      │  │
+│  │  • Writes domain + profile + skills to TASK-*.toon                   │  │
 │  └──────────────────────────────────────────────────────────────────────┘  │
 │                      │                                                      │
 │                      │ task.domain, task.skills                             │

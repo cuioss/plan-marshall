@@ -209,7 +209,7 @@ pm-workflow/
     ├── phase-4-execute/         # Execute phase coordination
     ├── phase-5-finalize/        # Finalize phase skill
     ├── task-implementation/     # Implementation profile workflow
-    ├── task-testing/            # Testing profile workflow
+    ├── task-module_testing/     # Module testing profile workflow
     ├── manage-plan-documents/   # Request/Solution document CRUD
     ├── manage-solution-outline/ # Solution outline queries
     ├── manage-tasks/            # Tasks + steps CRUD

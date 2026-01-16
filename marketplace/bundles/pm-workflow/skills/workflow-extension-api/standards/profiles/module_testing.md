@@ -1,8 +1,8 @@
-# Testing Profile Contract
+# Module Testing Profile Contract
 
-Workflow skill contract for testing profile - implements test creation tasks.
+Workflow skill contract for module_testing profile - implements test creation tasks.
 
-**System Default**: `pm-workflow:task-testing`
+**System Default**: `pm-workflow:task-module_testing`
 
 ---
 
@@ -23,13 +23,13 @@ Testing profile skills:
 
 ## When Used
 
-Tasks with `profile: testing` are routed to testing profile skills:
+Tasks with `profile: module_testing` are routed to module testing profile skills:
 
 ```toon
 id: TASK-002
 title: Add unit tests for UserService
 domain: java
-profile: testing
+profile: module_testing
 skills:
   - pm-dev-java:junit-core
   - pm-dev-java:cui-testing
@@ -42,20 +42,20 @@ deliverables: [2]
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
-  resolve-workflow-skill --domain java --phase testing
+  resolve-workflow-skill --domain java --phase module_testing
 ```
 
 **Result (domain override exists)**:
 ```toon
 status: success
-workflow_skill: pm-dev-java:java-testing
+workflow_skill: pm-dev-java:java-module-testing
 fallback: false
 ```
 
 **Result (no domain override, system fallback)**:
 ```toon
 status: success
-workflow_skill: pm-workflow:task-testing
+workflow_skill: pm-workflow:task-module_testing
 fallback: true
 ```
 

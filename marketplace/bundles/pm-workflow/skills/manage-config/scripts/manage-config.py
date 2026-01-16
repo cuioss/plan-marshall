@@ -18,6 +18,7 @@ import argparse
 import re
 import sys
 from pathlib import Path
+from typing import Any, cast
 
 from _config_core import is_initialized, load_config  # type: ignore[import-not-found]
 from file_ops import atomic_write_file, base_path  # type: ignore[import-not-found]
@@ -82,15 +83,15 @@ def validate_domain(domain: str) -> bool:
 
 def get_config_path(plan_id: str) -> Path:
     """Get the config.toon file path."""
-    return base_path('plans', plan_id, 'config.toon')
+    return cast(Path, base_path('plans', plan_id, 'config.toon'))
 
 
-def read_config(plan_id: str) -> dict:
+def read_config(plan_id: str) -> dict[Any, Any]:
     """Read config.toon for a plan."""
     path = get_config_path(plan_id)
     if not path.exists():
         return {}
-    return parse_toon(path.read_text(encoding='utf-8'))
+    return cast(dict[Any, Any], parse_toon(path.read_text(encoding='utf-8')))
 
 
 def write_config(plan_id: str, config: dict):

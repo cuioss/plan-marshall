@@ -18,6 +18,7 @@ import shutil
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any, cast
 
 from file_ops import atomic_write_file, base_path  # type: ignore[import-not-found]
 from plan_logging import log_entry  # type: ignore[import-not-found]
@@ -40,17 +41,17 @@ def validate_plan_id(plan_id: str) -> bool:
 
 def get_status_path(plan_id: str) -> Path:
     """Get the status.toon file path."""
-    return base_path('plans', plan_id, 'status.toon')
+    return cast(Path, base_path('plans', plan_id, 'status.toon'))
 
 
 def get_plans_dir() -> Path:
     """Get the plans directory."""
-    return base_path('plans')
+    return cast(Path, base_path('plans'))
 
 
 def get_archive_dir() -> Path:
     """Get the archived plans directory."""
-    return base_path('archived-plans')
+    return cast(Path, base_path('archived-plans'))
 
 
 def now_iso() -> str:
@@ -58,12 +59,12 @@ def now_iso() -> str:
     return datetime.now(UTC).strftime('%Y-%m-%dT%H:%M:%SZ')
 
 
-def read_status(plan_id: str) -> dict:
+def read_status(plan_id: str) -> dict[Any, Any]:
     """Read status.toon for a plan."""
     path = get_status_path(plan_id)
     if not path.exists():
         return {}
-    return parse_toon(path.read_text(encoding='utf-8'))
+    return cast(dict[Any, Any], parse_toon(path.read_text(encoding='utf-8')))
 
 
 def write_status(plan_id: str, status: dict):

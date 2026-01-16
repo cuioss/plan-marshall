@@ -56,8 +56,11 @@ Implement the main validation logic.
 - execution_mode: automated
 - domain: java
 - module: jwt-service
-- profile: implementation
 - depends: none
+
+**Profiles:**
+- implementation
+- testing
 
 **Affected files:**
 - `src/main/java/de/cuioss/jwt/JwtValidationService.java`
@@ -78,8 +81,10 @@ Add JWT configuration to application.properties.
 - execution_mode: automated
 - domain: java
 - module: jwt-service
-- profile: implementation
 - depends: 1
+
+**Profiles:**
+- implementation
 
 **Affected files:**
 - `src/main/resources/application.properties`
@@ -100,8 +105,10 @@ Create comprehensive test coverage.
 - execution_mode: automated
 - domain: java
 - module: jwt-service
-- profile: testing
 - depends: 1
+
+**Profiles:**
+- testing
 
 **Affected files:**
 - `src/test/java/de/cuioss/jwt/JwtValidationServiceTest.java`
