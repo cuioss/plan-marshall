@@ -340,11 +340,11 @@ def test_discovers_scripts_from_directory_structure():
 
     # If marketplace exists and has scripts, verify format
     if mappings:
-        # Check format: all keys should be bundle:skill format
+        # Check format: all keys should be bundle:skill:script format
         for notation in mappings:
-            assert ':' in notation, f'Notation should be bundle:skill format, got {notation}'
+            assert ':' in notation, f'Notation should be bundle:skill:script format, got {notation}'
             parts = notation.split(':')
-            assert len(parts) == 2, f'Expected 2 parts in notation, got {parts}'
+            assert len(parts) == 3, f'Expected 3 parts in notation, got {parts}'
         # Check values are paths
         for path in mappings.values():
             assert path.endswith('.py'), f'Script path should end with .py, got {path}'
@@ -371,8 +371,9 @@ def test_skips_test_files():
         mappings = module.discover_scripts_fallback(bundles_dir)
 
         # Should find the real script, not the test
-        if 'bundle:skill' in mappings:
-            assert 'test_' not in mappings['bundle:skill'], 'Should not include test files'
+        expected_key = 'bundle:skill:script'
+        assert expected_key in mappings, f'Expected {expected_key} in {list(mappings.keys())}'
+        assert 'test_' not in mappings[expected_key], 'Should not include test files'
 
 
 def test_skips_private_modules():
@@ -395,8 +396,9 @@ def test_skips_private_modules():
         mappings = module.discover_scripts_fallback(bundles_dir)
 
         # Should find the public script, not the private ones
-        if 'bundle:skill' in mappings:
-            path = mappings['bundle:skill']
-            assert '_internal' not in path, 'Should not include _internal.py'
-            assert '_helper' not in path, 'Should not include _helper.py'
-            assert 'main.py' in path, 'Should include main.py'
+        expected_key = 'bundle:skill:main'
+        assert expected_key in mappings, f'Expected {expected_key} in {list(mappings.keys())}'
+        path = mappings[expected_key]
+        assert '_internal' not in path, 'Should not include _internal.py'
+        assert '_helper' not in path, 'Should not include _helper.py'
+        assert 'main.py' in path, 'Should include main.py'

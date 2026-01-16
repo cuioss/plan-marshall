@@ -247,7 +247,7 @@ def discover_scripts(base_path: Path) -> dict[str, str]:
 
     # Run inventory scan
     result = subprocess.run(
-        ['python3', str(inventory_script), '--scope', scope, '--resource-types', 'scripts'],
+        ['python3', str(inventory_script), '--scope', scope, '--resource-types', 'scripts', '--direct-result', '--format', 'json'],
         capture_output=True,
         text=True,
         env=env,
@@ -312,11 +312,10 @@ def discover_scripts_fallback(base_path: Path) -> dict[str, str]:
                 if script_file.name.startswith('_') or 'test' in script_file.name.lower():
                     continue
 
-                # Use simplified notation
-                notation = f'{bundle_name}:{skill_name}'
+                # Use three-part notation: bundle:skill:script
+                notation = f'{bundle_name}:{skill_name}:{script_file.stem}'
                 abs_path = str(script_file.resolve())
                 mappings[notation] = abs_path
-                break  # Only take first script per skill
 
     return mappings
 

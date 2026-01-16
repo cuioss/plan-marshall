@@ -396,7 +396,13 @@ def main():
     parser.add_argument(
         '--direct-result',
         action='store_true',
-        help='Output JSON directly to stdout (default: write to file)',
+        help='Output directly to stdout (default: write to file)',
+    )
+    parser.add_argument(
+        '--format',
+        choices=['toon', 'json'],
+        default='toon',
+        help='Output format: toon (default) or json',
     )
 
     args = parser.parse_args()
@@ -457,8 +463,13 @@ def main():
     }
 
     if args.direct_result:
-        # Direct mode: TOON to stdout (for small results or piped usage)
-        print(serialize_toon(output))
+        # Direct mode: output to stdout (for small results or piped usage)
+        if args.format == 'json':
+            import json
+
+            print(json.dumps(output, indent=2))
+        else:
+            print(serialize_toon(output))
     else:
         # Default: File mode - write full output to file, print summary
         output_dir = get_temp_dir(DEFAULT_OUTPUT_SUBDIR)
