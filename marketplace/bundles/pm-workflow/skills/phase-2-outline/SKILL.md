@@ -68,7 +68,8 @@ Query project architecture BEFORE any codebase exploration. Architecture data is
 
 **EXECUTE**:
 ```bash
-python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture info
+python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture info \
+  --trace-plan-id {plan_id}
 ```
 
 Output format: `plan-marshall:analyze-project-architecture/standards/client-api.md`
@@ -122,7 +123,8 @@ For each domain in config.toon, check if an outline extension exists and load it
 **EXECUTE**:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
-  resolve-workflow-skill-extension --domain {domain} --type outline
+  resolve-workflow-skill-extension --domain {domain} --type outline \
+  --trace-plan-id {plan_id}
 ```
 
 **Output (TOON)**:
@@ -189,7 +191,8 @@ For complex tasks, load the complete dependency graph to determine execution ord
 
 **EXECUTE**:
 ```bash
-python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture graph
+python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture graph \
+  --trace-plan-id {plan_id}
 ```
 
 Output format: `plan-marshall:analyze-project-architecture/standards/module-graph-format.md` (force load)
@@ -202,9 +205,19 @@ Output format: `plan-marshall:analyze-project-architecture/standards/module-grap
 
 For simple tasks: identify the single affected module. For complex tasks: select module for each sub-task.
 
+### Get Module List
+
+**EXECUTE**:
+```bash
+python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture modules \
+  --trace-plan-id {plan_id}
+```
+
+Returns all module names. Use this list as candidates for evaluation.
+
 ### Module Selection Analysis
 
-For each candidate module, evaluate:
+For each module returned, evaluate:
 
 | Factor | Weight | Score Criteria |
 |--------|--------|----------------|
@@ -222,7 +235,8 @@ For each candidate module:
 **EXECUTE**:
 ```bash
 python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture module \
-  --name {module}
+  --name {module} \
+  --trace-plan-id {plan_id}
 ```
 
 ### Document Selection Reasoning
@@ -240,7 +254,8 @@ For each selected module, determine where new code belongs.
 **EXECUTE**:
 ```bash
 python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture module \
-  --name {module} --full
+  --name {module} --full \
+  --trace-plan-id {plan_id}
 ```
 
 ### Package Selection Decision Matrix
@@ -271,7 +286,8 @@ Create deliverables with module context and a profiles list.
 **EXECUTE**:
 ```bash
 python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture modules \
-  --command module-tests
+  --command module-tests \
+  --trace-plan-id {plan_id}
 ```
 
 Returns list of module names that have unit test infrastructure.
@@ -317,7 +333,8 @@ If integration tests are needed, create a **separate deliverable** targeting the
 **EXECUTE**:
 ```bash
 python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture modules \
-  --command integration-tests
+  --command integration-tests \
+  --trace-plan-id {plan_id}
 ```
 
 **If result is empty**: Skip IT deliverable (no IT module exists).
@@ -345,6 +362,38 @@ Write the solution document using heredoc.
 **Skill**: `pm-workflow:manage-solution-outline` (force load)
 
 Provides complete guidance on solution document structure, diagram patterns, and examples by task type.
+
+### CRITICAL Format Requirements
+
+The write command validates automatically. To pass validation:
+
+**Document Structure** (required sections):
+```markdown
+# Solution: {title}
+
+## Summary        ← REQUIRED (2-3 sentences)
+
+## Overview       ← REQUIRED (ASCII diagram)
+
+## Deliverables   ← REQUIRED (numbered ### headings)
+```
+
+**Deliverable Heading Format**:
+```markdown
+### 1. First Deliverable Title   ← Format: ### N. Title
+### 2. Second Deliverable Title  ← Numbers must be sequential
+```
+
+**Affected Files - NO WILDCARDS**:
+```markdown
+**Affected files:**
+- `path/to/specific/file1.md`     ← CORRECT: explicit path
+- `path/to/specific/file2.md`     ← CORRECT: explicit path
+- `path/to/agents/*.md`           ← INVALID: wildcard pattern
+- All files in path/to/agents/    ← INVALID: vague reference
+```
+
+You MUST enumerate every file explicitly. Use Glob tool to discover files, then list each one.
 
 **EXECUTE**:
 ```bash
@@ -380,7 +429,8 @@ python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lesson add \
   --component-name phase-2-outline \
   --category observation \
   --title "{issue summary}" \
-  --detail "{context and resolution approach}"
+  --detail "{context and resolution approach}" \
+  --trace-plan-id {plan_id}
 ```
 
 ---

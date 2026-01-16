@@ -107,7 +107,8 @@ For each deliverable D:
 **Query architecture**:
 ```bash
 python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture \
-  module --name {deliverable.module}
+  module --name {deliverable.module} \
+  --trace-plan-id {plan_id}
 ```
 
 **1:N Task Creation Flow**:
@@ -207,7 +208,8 @@ python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lesson add \
   --component-name task-plan \
   --category observation \
   --title "{issue summary}" \
-  --detail "{context and resolution approach}"
+  --detail "{context and resolution approach}" \
+  --trace-plan-id {plan_id}
 ```
 
 ### Step 9: Return Results
