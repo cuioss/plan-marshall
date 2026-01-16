@@ -148,7 +148,7 @@ Transition to complete:
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-lifecycle:manage-lifecycle transition \
   --plan-id {plan_id} \
-  --completed finalize
+  --completed 5-finalize
 ```
 
 ### Step 7: Log Completion

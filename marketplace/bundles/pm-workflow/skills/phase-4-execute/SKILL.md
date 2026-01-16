@@ -182,7 +182,7 @@ When transitioning from execute phase to finalize:
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-lifecycle:manage-lifecycle transition \
   --plan-id {plan_id} \
-  --completed execute
+  --completed 4-execute
 ```
 
 This automatically updates status.toon and moves to the next phase.

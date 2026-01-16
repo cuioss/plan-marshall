@@ -255,7 +255,7 @@ The phase transitions from init → outline after configuration completes:
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-lifecycle:manage-lifecycle transition \
   --plan-id {plan_id} \
-  --completed init
+  --completed 1-init
 ```
 
 **After successful transition**, log phase completion:

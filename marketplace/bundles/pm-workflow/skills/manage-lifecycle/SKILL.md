@@ -50,7 +50,7 @@ TOON format with phases table:
 
 ```toon
 title: Implement JWT Authentication
-current_phase: execute
+current_phase: 4-execute
 
 phases[5]{name,status}:
 1-init,done
@@ -105,13 +105,13 @@ plan_id: my-feature
 
 plan:
   title: Implement JWT Authentication
-  current_phase: execute
+  current_phase: 4-execute
   phases[5]{name,status}:
-  init,done
-  outline,done
-  plan,done
-  execute,in_progress
-  finalize,pending
+  1-init,done
+  2-outline,done
+  3-plan,done
+  4-execute,in_progress
+  5-finalize,pending
 ```
 
 ### create
@@ -141,7 +141,7 @@ created: true
 
 plan:
   title: Feature Title
-  current_phase: init
+  current_phase: 1-init
 ```
 
 ### set-phase
@@ -151,15 +151,15 @@ Set the current phase.
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-lifecycle:manage-lifecycle set-phase \
   --plan-id {plan_id} \
-  --phase execute
+  --phase 4-execute
 ```
 
 **Output** (TOON):
 ```toon
 status: success
 plan_id: my-feature
-current_phase: execute
-previous_phase: refine
+current_phase: 4-execute
+previous_phase: 3-plan
 ```
 
 ### update-phase
@@ -196,10 +196,10 @@ status: success
 plan_id: my-feature
 
 progress:
-  total_phases: 4
-  completed_phases: 2
-  current_phase: execute
-  percent: 50
+  total_phases: 5
+  completed_phases: 3
+  current_phase: 4-execute
+  percent: 60
 ```
 
 ---
@@ -212,7 +212,7 @@ Discover all plans.
 
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-lifecycle:manage-lifecycle list \
-  [--filter init,execute]
+  [--filter 1-init,4-execute]
 ```
 
 **Parameters**:
@@ -224,10 +224,10 @@ status: success
 total: 2
 plans:
   - id: my-feature
-    current_phase: execute
+    current_phase: 4-execute
     status: in_progress
   - id: bug-fix-123
-    current_phase: init
+    current_phase: 1-init
     status: in_progress
 ```
 
@@ -238,7 +238,7 @@ Transition to next phase.
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-lifecycle:manage-lifecycle transition \
   --plan-id {plan_id} \
-  --completed init
+  --completed 1-init
 ```
 
 **Output** (TOON):
@@ -325,16 +325,16 @@ Get skill for a phase.
 
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-lifecycle:manage-lifecycle route \
-  --phase execute
+  --phase 4-execute
 ```
 
 **Parameters**:
-- `--phase` (required): Phase name
+- `--phase` (required): Phase name (e.g., 1-init, 2-outline, 3-plan, 4-execute, 5-finalize)
 
 **Output** (TOON):
 ```toon
 status: success
-phase: execute
+phase: 4-execute
 skill: plan-execute
 description: Execute implementation tasks
 ```
@@ -356,21 +356,21 @@ python3 .plan/execute-script.py pm-workflow:manage-lifecycle:manage-lifecycle ge
 status: success
 plan_id: my-feature
 title: Implement JWT Authentication
-current_phase: execute
+current_phase: 4-execute
 skill: plan-execute
 skill_description: Execute implementation tasks
 total_phases: 5
 completed_phases: 3
 phases:
-  - name: init
+  - name: 1-init
     status: done
-  - name: outline
+  - name: 2-outline
     status: done
-  - name: plan
+  - name: 3-plan
     status: done
-  - name: execute
+  - name: 4-execute
     status: in_progress
-  - name: finalize
+  - name: 5-finalize
     status: pending
 ```
 

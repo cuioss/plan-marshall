@@ -398,15 +398,15 @@ blocked_tasks[2]{number,title,waiting_for}:
 
 ## Phase Filtering
 
-Tasks belong to plan phases: `init`, `outline`, `plan`, `execute`, `finalize`
+Tasks belong to plan phases: `1-init`, `2-outline`, `3-plan`, `4-execute`, `5-finalize`
 
 **Filter by phase**:
 ```bash
 # List execute phase tasks only
---phase execute
+--phase 4-execute
 
 # Get next task in finalize phase
-next --phase finalize
+next --phase 5-finalize
 ```
 
 **Phase purpose**:

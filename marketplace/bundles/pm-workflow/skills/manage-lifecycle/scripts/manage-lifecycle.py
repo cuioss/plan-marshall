@@ -7,9 +7,9 @@ Replaces plan.md and absorbs phase-management functionality.
 Usage:
     python3 manage-lifecycle.py read --plan-id my-plan
     python3 manage-lifecycle.py create --plan-id my-plan --title "Title" --phases 1-init,2-outline,3-plan,4-execute,5-finalize
-    python3 manage-lifecycle.py set-phase --plan-id my-plan --phase execute
+    python3 manage-lifecycle.py set-phase --plan-id my-plan --phase 4-execute
     python3 manage-lifecycle.py list
-    python3 manage-lifecycle.py transition --plan-id my-plan --completed init
+    python3 manage-lifecycle.py transition --plan-id my-plan --completed 1-init
 """
 
 import argparse

@@ -390,7 +390,7 @@ current_step: 1
 │ │ number: 1                                                │ │
 │ │ title: Update misc agents...                             │ │
 │ │ status: pending → in_progress → done                     │ │
-│ │ phase: execute                                           │ │
+│ │ phase: 4-execute                                         │ │
 │ │ domain: plan-marshall-plugin-dev                         │ │
 │ │ profile: implementation                                  │ │
 │ │ origin: plan | fix                                       │ │

@@ -59,7 +59,7 @@ current_step: {integer}
 | `number` | Yes | Integer | Unique task identifier (immutable after creation) |
 | `title` | Yes | String | Short descriptive title |
 | `status` | Yes | Enum | Task status (see Status Values) |
-| `phase` | Yes | String | Plan phase: `init`, `outline`, `plan`, `execute`, `finalize` |
+| `phase` | Yes | String | Plan phase: `1-init`, `2-outline`, `3-plan`, `4-execute`, `5-finalize` |
 | `created` | Yes | ISO timestamp | When task was created |
 | `updated` | Yes | ISO timestamp | When task was last modified |
 | `deliverables` | Yes | Integer[] | List of deliverable numbers from solution_outline.md |

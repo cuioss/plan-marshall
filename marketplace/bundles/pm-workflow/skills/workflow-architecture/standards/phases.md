@@ -270,7 +270,7 @@ The pm-workflow bundle implements a 5-phase execution model for structured task 
 │     │     └─▶ Title from request, body from template               │       │
 │     │                                                              │       │
 │     │  6. Mark plan complete                                       │       │
-│     │     └─▶ transition --completed finalize                      │       │
+│     │     └─▶ transition --completed 5-finalize                      │       │
 │     │                                                              │       │
 │     └──────────────────────────────────────────────────────────────┘       │
 │                                                                             │

@@ -447,7 +447,7 @@ action_required: Fix import or add dependency
 
 | Include | Example |
 |---------|---------|
-| Current state | `current_phase: execute` |
+| Current state | `current_phase: 4-execute` |
 | Completed items | `tasks_completed: 3/5` |
 | Created artifacts | `plan_file: <plan-storage>/x/plan.md` |
 | Measurable outcomes | `coverage: 92%` |

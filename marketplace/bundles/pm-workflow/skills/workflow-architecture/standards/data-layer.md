@@ -281,7 +281,7 @@ The pm-workflow bundle uses manage-* skills as the data access layer for all pla
 │  │  deliverables: [1, 2]                                                │  │
 │  │  domain: java                                                        │  │
 │  │  profile: implementation                                             │  │
-│  │  phase: execute                                                      │  │
+│  │  phase: 4-execute                                                    │  │
 │  │  status: pending                                                     │  │
 │  │                                                                      │  │
 │  │  description: |                                                      │  │
