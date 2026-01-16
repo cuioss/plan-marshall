@@ -267,9 +267,11 @@ This domain is relevant when:
 
 ### Discovery Script
 ```bash
-python3 .plan/execute-script.py plan-marshall:tools-marketplace-inventory:scan-marketplace-inventory \
-  --trace-plan-id {plan_id} --include-descriptions
+python3 .plan/execute-script.py pm-plugin-development:tools-marketplace-inventory:scan-marketplace-inventory \
+  --include-descriptions
 ```
+
+The script writes full inventory to a file and returns a TOON summary with `output_file` path. Read that file for the complete inventory.
 ```
 
 ---

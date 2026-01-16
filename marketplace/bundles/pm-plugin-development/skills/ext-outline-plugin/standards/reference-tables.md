@@ -4,7 +4,7 @@ Reference material for the plugin solution outline skill including inventory scr
 
 ## Inventory Script Reference
 
-**Script**: `plan-marshall:tools-marketplace-inventory:scan-marketplace-inventory`
+**Script**: `pm-plugin-development:tools-marketplace-inventory:scan-marketplace-inventory`
 
 **Options**:
 
@@ -22,20 +22,20 @@ Reference material for the plugin solution outline skill including inventory scr
 ```bash
 # All components with descriptions (with plan-scoped logging)
 python3 .plan/execute-script.py \
-  plan-marshall:tools-marketplace-inventory:scan-marketplace-inventory \
+  pm-plugin-development:tools-marketplace-inventory:scan-marketplace-inventory \
   --trace-plan-id {plan_id} \
   --include-descriptions
 
 # Only skills in planning bundle
 python3 .plan/execute-script.py \
-  plan-marshall:tools-marketplace-inventory:scan-marketplace-inventory \
+  pm-plugin-development:tools-marketplace-inventory:scan-marketplace-inventory \
   --trace-plan-id {plan_id} \
   --bundles planning \
   --resource-types skills
 
 # Components matching pattern
 python3 .plan/execute-script.py \
-  plan-marshall:tools-marketplace-inventory:scan-marketplace-inventory \
+  pm-plugin-development:tools-marketplace-inventory:scan-marketplace-inventory \
   --trace-plan-id {plan_id} \
   --name-pattern "*-goals*|*-plan*"
 ```

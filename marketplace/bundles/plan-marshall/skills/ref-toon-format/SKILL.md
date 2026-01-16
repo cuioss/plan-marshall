@@ -87,7 +87,7 @@ Load references progressively based on current task. **Never load all references
 - Nested structures and mixing
 - Advanced features (optional fields, escaping)
 - Conversion examples (Sonar issues, coverage)
-- Implementation libraries (TypeScript, Python, Go, Rust, .NET)
+- Internal `toon_parser.py` module usage
 - Best practices and optimization tips
 - Performance characteristics and trade-offs
 

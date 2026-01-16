@@ -26,13 +26,13 @@ Goals MUST contain explicit file paths. A goal that says "update all X" without 
 ```bash
 # Full inventory with descriptions
 python3 .plan/execute-script.py \
-  plan-marshall:tools-marketplace-inventory:scan-marketplace-inventory \
+  pm-plugin-development:tools-marketplace-inventory:scan-marketplace-inventory \
   --trace-plan-id {plan_id} \
   --include-descriptions
 
 # Or filter by bundles if impact is known to be limited
 python3 .plan/execute-script.py \
-  plan-marshall:tools-marketplace-inventory:scan-marketplace-inventory \
+  pm-plugin-development:tools-marketplace-inventory:scan-marketplace-inventory \
   --trace-plan-id {plan_id} \
   --bundles planning,pm-dev-java \
   --include-descriptions

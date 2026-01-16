@@ -18,6 +18,7 @@ Usage:
     from toon_parser import parse_toon, serialize_toon, ToonParseError
 """
 
+import json
 import re
 from dataclasses import dataclass
 from typing import Any
@@ -76,7 +77,16 @@ def _parse_value(value_str: str) -> Any:
 
     # String (possibly quoted)
     if value_str.startswith('"') and value_str.endswith('"'):
-        return value_str[1:-1]
+        inner = value_str[1:-1]
+        # Unescape internal quotes
+        inner = inner.replace('\\"', '"')
+        # Check if it's an embedded JSON array or object
+        if (inner.startswith('[') and inner.endswith(']')) or (inner.startswith('{') and inner.endswith('}')):
+            try:
+                return json.loads(inner)
+            except json.JSONDecodeError:
+                pass
+        return inner
 
     return value_str
 
@@ -85,19 +95,28 @@ def _parse_csv_row(row: str, fields: list[str]) -> dict[str, Any]:
     """Parse a CSV-style row into a dictionary using field headers."""
     result = {}
 
-    # Handle quoted values with commas
+    # Handle quoted values with commas and escaped quotes
     values = []
     current = ''
     in_quotes = False
+    i = 0
 
-    for char in row:
+    while i < len(row):
+        char = row[i]
+        # Handle escaped quotes within quoted strings
+        if in_quotes and char == '\\' and i + 1 < len(row) and row[i + 1] == '"':
+            current += '\\"'
+            i += 2
+            continue
         if char == '"':
+            current += char
             in_quotes = not in_quotes
         elif char == ',' and not in_quotes:
             values.append(current.strip())
             current = ''
         else:
             current += char
+        i += 1
 
     values.append(current.strip())
 
@@ -375,11 +394,13 @@ def _serialize_value(value: Any, indent: int = 0) -> str:
             return f'"{value}"'
         return value
     if isinstance(value, dict):
-        # Serialize dict as inline or nested based on complexity
-        return str(value)  # Fallback - dicts should be handled by serialize_toon
+        # Serialize dict as JSON string (wrapped in quotes, internal quotes escaped)
+        json_str = json.dumps(value).replace('"', '\\"')
+        return f'"{json_str}"'
     if isinstance(value, list):
-        # Lists should be handled by serialize_toon
-        return str(value)  # Fallback
+        # Serialize list as JSON string (wrapped in quotes, internal quotes escaped)
+        json_str = json.dumps(value).replace('"', '\\"')
+        return f'"{json_str}"'
     return str(value)
 
 

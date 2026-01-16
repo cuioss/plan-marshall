@@ -16,7 +16,8 @@ Usage:
         generate_markdown_metadata,
         get_base_dir,
         set_base_dir,
-        base_path
+        base_path,
+        get_temp_dir
     )
 """
 
@@ -76,6 +77,27 @@ def base_path(*parts: str) -> Path:
         PosixPath('.plan/plans/my-task/plan.md')
     """
     return _BASE_DIR.joinpath(*parts)
+
+
+def get_temp_dir(subdir: str | None = None) -> Path:
+    """Get temp directory under .plan/temp/{subdir}.
+
+    Args:
+        subdir: Optional subdirectory name within temp
+
+    Returns:
+        Path to temp directory (respects PLAN_BASE_DIR env var)
+
+    Example:
+        >>> get_temp_dir()
+        PosixPath('.plan/temp')
+        >>> get_temp_dir('tools-marketplace-inventory')
+        PosixPath('.plan/temp/tools-marketplace-inventory')
+    """
+    temp_path = get_base_dir() / 'temp'
+    if subdir:
+        return temp_path / subdir
+    return temp_path
 
 
 def atomic_write_file(path: str | Path, content: str) -> None:
@@ -309,6 +331,7 @@ if __name__ == '__main__':
     print('- get_base_dir() -> Path')
     print('- set_base_dir(path)')
     print('- base_path(*parts) -> Path')
+    print('- get_temp_dir(subdir?) -> Path')
     print('- atomic_write_file(path, content)')
     print('- ensure_directory(path)')
     print('- output_success(operation, **kwargs)')

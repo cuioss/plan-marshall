@@ -24,6 +24,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from toon_parser import parse_toon  # type: ignore[import-not-found]
+
 # Planning-related name patterns
 PLANNING_PATTERNS = [
     'plan-*',  # Core planning skills (plan-init, plan-execute, plan-finalize, etc.)
@@ -55,9 +57,9 @@ def find_marketplace_inventory_script() -> Path:
 
     inventory_script = (
         marketplace_bundles
-        / 'plan-marshall'
+        / 'pm-plugin-development'
         / 'skills'
-        / 'marketplace-inventory'
+        / 'tools-marketplace-inventory'
         / 'scripts'
         / 'scan-marketplace-inventory.py'
     )
@@ -68,7 +70,7 @@ def find_marketplace_inventory_script() -> Path:
     # Try from cwd
     cwd_path = (
         Path.cwd()
-        / 'marketplace/bundles/plan-marshall/skills/tools-marketplace-inventory/scripts/scan-marketplace-inventory.py'
+        / 'marketplace/bundles/pm-plugin-development/skills/tools-marketplace-inventory/scripts/scan-marketplace-inventory.py'
     )
     if cwd_path.exists():
         return cwd_path
@@ -87,6 +89,7 @@ def run_marketplace_inventory(include_descriptions: bool) -> dict:
         ','.join(PLANNING_BUNDLES),
         '--name-pattern',
         '|'.join(PLANNING_PATTERNS),
+        '--direct-result',  # Get full TOON output directly
     ]
 
     if include_descriptions:
@@ -97,7 +100,7 @@ def run_marketplace_inventory(include_descriptions: bool) -> dict:
     if result.returncode != 0:
         raise RuntimeError(f'marketplace-inventory failed: {result.stderr}')
 
-    data: dict = json.loads(result.stdout)
+    data: dict = parse_toon(result.stdout)
     return data
 
 
@@ -234,8 +237,8 @@ def main():
     except RuntimeError as e:
         print(f'ERROR: {e}', file=sys.stderr)
         return 1
-    except json.JSONDecodeError as e:
-        print(f'ERROR: Invalid JSON from marketplace-inventory: {e}', file=sys.stderr)
+    except (KeyError, ValueError) as e:
+        print(f'ERROR: Invalid TOON from marketplace-inventory: {e}', file=sys.stderr)
         return 1
 
 

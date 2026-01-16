@@ -36,7 +36,6 @@
     "./skills/tools-file-ops",
     "./skills/tools-integration-ci",
     "./skills/tools-json-ops",
-    "./skills/tools-marketplace-inventory",
     "./skills/tools-permission-sync",
     "./skills/tools-script-executor"
   ]

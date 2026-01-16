@@ -13,12 +13,12 @@ from _build_result import (
     ERROR_LOG_FILE_FAILED,
     ERROR_TIMEOUT,
     ERROR_WRAPPER_NOT_FOUND,
-    LOG_BASE_DIR,
     REQUIRED_FIELDS,
     STATUS_ERROR,
     STATUS_SUCCESS,
     STATUS_TIMEOUT,
     TIMESTAMP_FORMAT,
+    _get_log_base_dir,
     create_log_file,
     error_result,
     success_result,
@@ -28,8 +28,8 @@ from _build_result import (
 
 
 def test_log_base_dir():
-    """LOG_BASE_DIR has expected value."""
-    assert LOG_BASE_DIR == '.plan/temp/build-output'
+    """_get_log_base_dir() returns expected value."""
+    assert _get_log_base_dir() == '.plan/temp/build-output'
 
 
 def test_timestamp_format():

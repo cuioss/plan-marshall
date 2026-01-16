@@ -79,9 +79,20 @@ This domain is relevant when:
 ### Discovery Script
 For cross-cutting changes, use the marketplace inventory:
 ```bash
-python3 .plan/execute-script.py plan-marshall:tools-marketplace-inventory:scan-marketplace-inventory \
-  --trace-plan-id {plan_id} --include-descriptions
+python3 .plan/execute-script.py pm-plugin-development:tools-marketplace-inventory:scan-marketplace-inventory \
+  --include-descriptions
 ```
+
+The script writes full inventory to a file and returns a TOON summary:
+```toon
+status: success
+output_file: .plan/temp/tools-marketplace-inventory/inventory-20260116-143022.toon
+statistics:
+  total_bundles: 8
+  total_resources: 111
+```
+
+Read the `output_file` path to get the complete inventory.
 
 ### Batch Analysis Guidelines
 - Process components in batches of 10-15 files

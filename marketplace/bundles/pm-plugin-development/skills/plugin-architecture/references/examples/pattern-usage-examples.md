@@ -20,24 +20,28 @@ skill: marketplace-inventory
 
 ## Step 1: Scan Marketplace Structure
 
-python3 .plan/execute-script.py plan-marshall:tools-marketplace-inventory:scan-marketplace-inventory \
+python3 .plan/execute-script.py pm-plugin-development:tools-marketplace-inventory:scan-marketplace-inventory \
   --scope marketplace \
   --include-descriptions
 
-# Note: JSON is the default output format (no --format flag needed)
+# Script writes full inventory to file and returns TOON summary:
+```toon
+status: success
+output_file: .plan/temp/tools-marketplace-inventory/inventory-20260116-143022.toon
+statistics:
+  total_bundles: 5
+  total_agents: 25
+  total_commands: 45
+  total_skills: 18
+```
 
-Script outputs:
-```json
-{
-  "scope": "marketplace",
-  "bundles": [...],
-  "statistics": {
-    "total_bundles": 5,
-    "total_agents": 25,
-    "total_commands": 45,
-    "total_skills": 18
-  }
-}
+## Step 1.5: Read Full Inventory
+
+Read the output_file path from the summary to get the complete inventory:
+
+Read: {output_file from step 1}
+
+# For small/filtered results, use --direct-result to get TOON directly to stdout
 ```
 
 ## Step 2: Interpret Inventory

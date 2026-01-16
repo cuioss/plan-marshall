@@ -31,8 +31,15 @@ from datetime import datetime
 from pathlib import Path
 from typing import Literal, TypedDict
 
-# Plan directory configuration for test isolation
-_PLAN_DIR_NAME = os.environ.get('PLAN_DIR_NAME', '.plan')
+# =============================================================================
+# Plan Directory Configuration
+# =============================================================================
+
+
+def _get_plan_dir() -> str:
+    """Get the .plan directory name, respecting PLAN_BASE_DIR override."""
+    return os.environ.get('PLAN_BASE_DIR', '.plan')
+
 
 # =============================================================================
 # Type Definitions
@@ -98,8 +105,9 @@ class DirectCommandResult(TypedDict, total=False):
 # Constants
 # =============================================================================
 
-LOG_BASE_DIR = f'{_PLAN_DIR_NAME}/temp/build-output'
-"""Base directory for build log files, relative to project root."""
+def _get_log_base_dir() -> str:
+    """Get base directory for build log files, relative to project root."""
+    return f'{_get_plan_dir()}/temp/build-output'
 
 TIMESTAMP_FORMAT = '%Y-%m-%d-%H%M%S'
 """Timestamp format for log file names."""
@@ -171,7 +179,7 @@ def create_log_file(build_system: str, scope: str = 'default', project_dir: str 
         timestamp = datetime.now().strftime(TIMESTAMP_FORMAT)
         log_filename = f'{build_system}-{timestamp}.log'
 
-        log_dir = project_path / LOG_BASE_DIR / scope
+        log_dir = project_path / _get_log_base_dir() / scope
         log_dir.mkdir(parents=True, exist_ok=True)
 
         log_path = log_dir / log_filename

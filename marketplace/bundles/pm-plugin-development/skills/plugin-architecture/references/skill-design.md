@@ -162,7 +162,7 @@ Parameters: {component_path: "...", component_type: "agent"}
 ```markdown
 Workflow 1: scan-inventory (conceptual)
   Output: List of components
-  # Actual: plan-marshall:tools-marketplace-inventory:scan-marketplace-inventory
+  # Actual: pm-plugin-development:tools-marketplace-inventory:scan-marketplace-inventory
 
 Workflow 2: analyze-component
   Input: Component from Workflow 1

@@ -74,7 +74,7 @@ python3 .plan/execute-script.py pm-workflow:manage-files:manage-files add \
 
 **Example with --trace-plan-id** (logging only, stripped):
 ```bash
-python3 .plan/execute-script.py plan-marshall:tools-marketplace-inventory:scan-marketplace-inventory \
+python3 .plan/execute-script.py pm-plugin-development:tools-marketplace-inventory:scan-marketplace-inventory \
   --trace-plan-id my-plan --include-descriptions
 ```
 

@@ -8,9 +8,6 @@ from pathlib import Path
 # Import fix categorization from fix modules
 from _cmd_categorize import categorize_fix
 
-# Plan directory configuration for test isolation
-_PLAN_DIR_NAME = os.environ.get('PLAN_DIR_NAME', '.plan')
-
 # =============================================================================
 # Constants
 # =============================================================================
@@ -22,13 +19,26 @@ MARKETPLACE_BUNDLES_PATH = 'marketplace/bundles'
 # So bundles directory is 5 levels up from script
 SCRIPT_DIR = Path(__file__).resolve().parent
 _BUNDLES_FROM_SCRIPT = SCRIPT_DIR.parent.parent.parent.parent.parent
-TEMP_DIR = f'{_PLAN_DIR_NAME}/temp'
-REPORT_DIR = 'plugin-doctor-report'
+REPORT_SUBDIR = 'plugin-doctor-report'
+
+
+def _get_plan_dir() -> Path:
+    """Get the .plan directory path, respecting PLAN_BASE_DIR override."""
+    base = os.environ.get('PLAN_BASE_DIR', '.plan')
+    return Path(base)
+
+
+def _get_temp_dir(subdir: str | None = None) -> Path:
+    """Get temp directory under .plan/temp/{subdir}."""
+    temp_path = _get_plan_dir() / 'temp'
+    if subdir:
+        return temp_path / subdir
+    return temp_path
 
 
 def get_report_dir() -> Path:
     """Get the fixed report directory path: .plan/temp/plugin-doctor-report/."""
-    return Path(TEMP_DIR) / REPORT_DIR
+    return _get_temp_dir(REPORT_SUBDIR)
 
 
 def get_report_filename(timestamp: str | None = None, scope: str | None = None) -> str:

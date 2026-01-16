@@ -86,7 +86,7 @@ All 5 workflows follow the same pattern:
    ```
    Skill: plan-marshall:ref-development-standards
    Skill: pm-plugin-development:plugin-architecture
-   Skill: plan-marshall:tools-marketplace-inventory
+   Skill: pm-plugin-development:tools-marketplace-inventory
    ```
 
 2. **MANDATORY - Load Component Reference** (progressive disclosure)
@@ -195,7 +195,7 @@ Read references/fix-catalog.md
 
 **marketplace scope** (default):
 ```
-Skill: plan-marshall:tools-marketplace-inventory
+Skill: pm-plugin-development:tools-marketplace-inventory
 ```
 
 **global/project scope**:
@@ -396,7 +396,7 @@ Read references/fix-catalog.md
 
 **marketplace scope**:
 ```
-Skill: plan-marshall:tools-marketplace-inventory
+Skill: pm-plugin-development:tools-marketplace-inventory
 ```
 
 ### Step 3: Analyze Each Skill

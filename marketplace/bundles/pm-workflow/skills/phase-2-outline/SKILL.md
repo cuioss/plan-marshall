@@ -87,8 +87,8 @@ Load the request document and extract actionable requirements.
 
 **EXECUTE**:
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-plan-documents:manage-plan-documents read \
-  --plan-id {plan_id} --type request
+python3 .plan/execute-script.py pm-workflow:manage-plan-documents:manage-plan-documents request read \
+  --plan-id {plan_id}
 ```
 
 Output format: `pm-workflow:manage-plan-documents/documents/request.toon`
@@ -363,8 +363,8 @@ Validation runs automatically on every write.
 
 **EXECUTE**:
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-config:manage-config set-domains \
-  --plan-id {plan_id} --domains {detected_domains}
+python3 .plan/execute-script.py pm-workflow:manage-config:manage-config set \
+  --plan-id {plan_id} --field domains --value '["domain1", "domain2"]'
 ```
 
 This is an **intelligent decision output** - not a copy of marshal.json domains, but Claude's analysis of which domains are relevant to the specific request.

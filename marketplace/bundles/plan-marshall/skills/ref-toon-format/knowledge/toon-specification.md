@@ -246,57 +246,57 @@ data:
 
 ## Implementation Support
 
-### Official Libraries
+### Internal Module (plan-marshall)
 
-| Language | Package | Status |
-|----------|---------|--------|
-| **TypeScript** | `@toon-format/toon` (npm) | ✅ Stable |
-| **Python** | `toon-format` (PyPI) | ✅ Stable |
-| **Go** | `github.com/toon-format/toon-go` | ✅ Stable |
-| **Rust** | `toon` (crates.io) | ✅ Stable |
-| **.NET** | `ToonFormat` (NuGet) | ✅ Stable |
+The plan-marshall marketplace includes an internal `toon_parser.py` module for TOON serialization:
 
-### TypeScript Example
+**Location**: `marketplace/bundles/plan-marshall/skills/ref-toon-format/scripts/toon_parser.py`
 
-```typescript
-import { parse, stringify } from '@toon-format/toon';
+**Functions**:
+- `parse_toon(content: str) -> dict` - Parse TOON content to Python dict
+- `serialize_toon(data: dict, indent: int = 2) -> str` - Serialize Python dict to TOON
 
-// JSON to TOON
-const data = {
-  users: [
-    { id: 1, name: "Alice", role: "admin" },
-    { id: 2, name: "Bob", role: "user" }
-  ]
-};
-
-const toon = stringify(data);
-// users[2]{id,name,role}:
-// 1,Alice,admin
-// 2,Bob,user
-
-// TOON to JSON
-const parsed = parse(toon);
-// { users: [{ id: 1, name: "Alice", role: "admin" }, ...] }
+**Import Pattern** (from marketplace scripts):
+```python
+from toon_parser import parse_toon, serialize_toon  # type: ignore[import-not-found]
 ```
 
-### Python Example
+Note: The `type: ignore` comment is needed because PYTHONPATH is set at runtime by the executor.
+
+### Usage Example
 
 ```python
-import toon
+from toon_parser import serialize_toon  # type: ignore[import-not-found]
 
-# JSON to TOON
+# Python dict to TOON
 data = {
+    "status": "success",
     "users": [
         {"id": 1, "name": "Alice", "role": "admin"},
         {"id": 2, "name": "Bob", "role": "user"}
     ]
 }
 
-toon_str = toon.dumps(data)
+toon_output = serialize_toon(data)
+# status: success
+# users[2]{id,name,role}:
+# 1,Alice,admin
+# 2,Bob,user
 
-# TOON to JSON
-parsed = toon.loads(toon_str)
+print(toon_output)
 ```
+
+### External Libraries
+
+For non-marketplace use cases, external implementations exist:
+
+| Language | Package | Notes |
+|----------|---------|-------|
+| TypeScript | `@toon-format/toon` (npm) | Community implementation |
+| Python | `toon-format` (PyPI) | Community implementation |
+| Go | `github.com/toon-format/toon-go` | Community implementation |
+
+**Note**: For plan-marshall marketplace scripts, always use the internal `toon_parser.py` module rather than external packages.
 
 ## Best Practices
 

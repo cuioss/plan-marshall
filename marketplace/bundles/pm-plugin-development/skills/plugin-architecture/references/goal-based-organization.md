@@ -379,7 +379,7 @@ Analyzes all components of a specific type.
 **Process**:
 1. Discover components (conceptual example)
    ```bash
-   # Actual API: python3 .plan/execute-script.py plan-marshall:tools-marketplace-inventory:scan-marketplace-inventory --scope {scope}
+   # Actual API: python3 .plan/execute-script.py pm-plugin-development:tools-marketplace-inventory:scan-marketplace-inventory --scope {scope}
    bash scripts/scan-inventory.sh --type {component_type} --scope {scope}
    ```
 
@@ -405,7 +405,7 @@ Complete marketplace health check.
 **Process**:
 1. Scan complete inventory (conceptual example)
    ```bash
-   # Actual API: python3 .plan/execute-script.py plan-marshall:tools-marketplace-inventory:scan-marketplace-inventory --scope marketplace
+   # Actual API: python3 .plan/execute-script.py pm-plugin-development:tools-marketplace-inventory:scan-marketplace-inventory --scope marketplace
    bash scripts/scan-inventory.sh --scope marketplace
    ```
 
@@ -483,7 +483,7 @@ All scripts return JSON for structured parsing.
 }
 ```
 
-**scan-inventory.sh** (conceptual - actual script: `plan-marshall:tools-marketplace-inventory:scan-marketplace-inventory`):
+**scan-inventory.sh** (conceptual - actual script: `pm-plugin-development:tools-marketplace-inventory:scan-marketplace-inventory`):
 ```json
 {
   "scope": "marketplace",

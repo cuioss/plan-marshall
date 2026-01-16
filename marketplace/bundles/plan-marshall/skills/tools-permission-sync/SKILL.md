@@ -22,7 +22,7 @@ Generate Skill and SlashCommand wildcards from marketplace inventory.
 
 ```bash
 # Read inventory from stdin
-python3 .plan/execute-script.py plan-marshall:tools-marketplace-inventory:scan-marketplace-inventory \
+python3 .plan/execute-script.py pm-plugin-development:tools-marketplace-inventory:scan-marketplace-inventory \
   --scope marketplace --resource-types skills,commands | \
 python3 .plan/execute-script.py plan-marshall:tools-permission-sync:marketplace-sync generate-wildcards
 

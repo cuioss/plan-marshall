@@ -15,31 +15,52 @@ Options:
     --include-descriptions   Extract descriptions from YAML frontmatter
     --name-pattern <pattern> Filter resources by name pattern (fnmatch glob, pipe-separated for multiple)
     --bundles <names>        Filter to specific bundles (comma-separated)
+    --direct-result          Output full TOON directly to stdout (default: write to file)
+
+Output Modes:
+    Default:        Writes full inventory to .plan/temp/tools-marketplace-inventory/inventory-{timestamp}.toon
+                    Prints TOON summary with output_file path to stdout
+    --direct-result: Outputs full TOON directly to stdout (for small results or piped usage)
 
 Script Output:
     Scripts include a 'notation' field in {bundle}:{skill}:{script} format for use with
     the script executor (e.g., "pm-workflow:manage-files:manage-files").
 
 Exit codes:
-    0 - Success (JSON output)
+    0 - Success
     1 - Error (invalid parameters, missing directory)
 """
 
 import argparse
 import fnmatch
-import json
+import os
 import re
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Any
+
+from toon_parser import serialize_toon  # type: ignore[import-not-found]
 
 # Constants
 MARKETPLACE_BUNDLES_PATH = 'marketplace/bundles'
 CLAUDE_DIR = '.claude'
 PLUGIN_CACHE_SUBPATH = 'plugins/cache/plan-marshall'
+DEFAULT_OUTPUT_SUBDIR = 'tools-marketplace-inventory'
+
+
+def get_plan_dir() -> Path:
+    """Get the .plan directory path, respecting PLAN_BASE_DIR override."""
+    base = os.environ.get('PLAN_BASE_DIR', '.plan')
+    return Path(base)
+
+
+def get_temp_dir(subdir: str) -> Path:
+    """Get temp directory under .plan/temp/{subdir}."""
+    return get_plan_dir() / 'temp' / subdir
 
 # Script-relative path discovery (works regardless of cwd)
-# Script is at: marketplace/bundles/plan-marshall/skills/tools-marketplace-inventory/scripts/
+# Script is at: marketplace/bundles/pm-plugin-development/skills/tools-marketplace-inventory/scripts/
 # So bundles directory is 5 levels up from script
 SCRIPT_DIR = Path(__file__).resolve().parent
 _BUNDLES_FROM_SCRIPT = SCRIPT_DIR.parent.parent.parent.parent.parent
@@ -329,6 +350,28 @@ def get_base_path(scope: str) -> Path:
     raise ValueError(f'Invalid scope: {scope}')
 
 
+def write_file_output(output: dict, output_dir: Path) -> tuple[Path, str]:
+    """Write full output to TOON file, return (file_path, summary_toon_for_stdout)."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now().strftime('%Y%m%d-%H%M%S')
+    output_file = output_dir / f'inventory-{timestamp}.toon'
+
+    # Write full inventory in TOON format
+    output_file.write_text(serialize_toon(output))
+
+    # Return summary in TOON format
+    summary = {
+        'status': 'success',
+        'output_mode': 'file',
+        'output_file': str(output_file),
+        'scope': output['scope'],
+        'base_path': output['base_path'],
+        'statistics': output['statistics'],
+        'next_step': f'Read {output_file} for full inventory details',
+    }
+    return output_file, serialize_toon(summary)
+
+
 def main():
     parser = argparse.ArgumentParser(description='Scan marketplace directories and return structured inventory')
     parser.add_argument(
@@ -350,6 +393,11 @@ def main():
         help='Filter resources by name pattern (fnmatch glob, pipe-separated for multiple)',
     )
     parser.add_argument('--bundles', default='', help='Filter to specific bundles (comma-separated)')
+    parser.add_argument(
+        '--direct-result',
+        action='store_true',
+        help='Output JSON directly to stdout (default: write to file)',
+    )
 
     args = parser.parse_args()
 
@@ -408,7 +456,18 @@ def main():
         },
     }
 
-    print(json.dumps(output, indent=2))
+    if args.direct_result:
+        # Direct mode: TOON to stdout (for small results or piped usage)
+        print(serialize_toon(output))
+    else:
+        # Default: File mode - write full output to file, print summary
+        output_dir = get_temp_dir(DEFAULT_OUTPUT_SUBDIR)
+        try:
+            _, summary_toon = write_file_output(output, output_dir)
+            print(summary_toon)
+        except OSError as e:
+            print(f'ERROR: Failed to write output file: {e}', file=sys.stderr)
+            return 1
     return 0
 
 

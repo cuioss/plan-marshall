@@ -30,6 +30,7 @@
     "./skills/plugin-plan-implement",
     "./skills/plugin-script-architecture",
     "./skills/plugin-task-plan",
+    "./skills/tools-marketplace-inventory",
     "./skills/verification-mode"
   ],
   "agents": [

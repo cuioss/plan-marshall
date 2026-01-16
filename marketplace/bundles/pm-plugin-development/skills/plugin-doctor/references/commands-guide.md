@@ -308,7 +308,7 @@ Skill: plan-marshall:ref-development-standards
 
 ### Step 2: Load Inventory
 
-Skill: plan-marshall:tools-marketplace-inventory
+Skill: pm-plugin-development:tools-marketplace-inventory
 
 # Load other skills only when needed in specific steps
 ```
@@ -318,7 +318,7 @@ Skill: plan-marshall:tools-marketplace-inventory
 ### Step 1: Load All Prerequisites
 
 Skill: plan-marshall:ref-development-standards
-Skill: plan-marshall:tools-marketplace-inventory
+Skill: pm-plugin-development:tools-marketplace-inventory
 Skill: pm-plugin-development:bundle-orchestration-compliance
 Read references/reporting-templates.md
 Skill: pm-dev-java:java-core
@@ -513,7 +513,7 @@ Else:
 Based on scope parameter:
 
 **marketplace** (default):
-  Skill: plan-marshall:tools-marketplace-inventory
+  Skill: pm-plugin-development:tools-marketplace-inventory
   Parse JSON to extract component paths
 
 **global**:
@@ -605,7 +605,7 @@ Skill: plan-marshall:ref-development-standards
 
 ### Step 2: Discover Components
 
-Skill: plan-marshall:tools-marketplace-inventory
+Skill: pm-plugin-development:tools-marketplace-inventory
 
 # Later steps load additional skills only if needed:
 
