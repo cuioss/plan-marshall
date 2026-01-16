@@ -6,15 +6,27 @@ Contract for domain-specific outline extensions loaded by `phase-2-outline`.
 
 ## Purpose
 
-Outline extensions are **knowledge documents** (not workflow replacements) that provide domain-specific information for deliverable creation. They are loaded as context and applied naturally during the standard workflow.
+Outline extensions implement a **formal protocol** that phase-2-outline calls at defined points. They provide domain-specific knowledge for deliverable creation through explicit protocol sections.
 
-**Key Principle**: Extensions are just skills with a specific structure. They provide information that Claude uses when creating deliverables - no special processing needed.
+**Key Principle**: Extensions are skills with required protocol sections. The phase explicitly calls each section at defined points - no "apply naturally" ambiguity.
 
-Outline extensions provide domain-specific knowledge through three section types:
+---
 
-1. **Domain Constraints** - Rules/restrictions for deliverables (component rules, dependency rules)
-2. **Deliverable Patterns** - Grouping strategies, file structures, verification commands
-3. **Impact Analysis Patterns** - Discovery commands for cross-cutting changes
+## Scope Boundaries
+
+**Extensions provide DELIVERABLE-CREATION knowledge only:**
+- Assessment criteria (simple vs complex workflow selection)
+- Workflow routing (which sub-workflow to load)
+- File discovery patterns (Glob/Grep for finding affected files)
+- Verification command templates
+
+**Extensions do NOT provide:**
+- Component structure rules → Domain reference skills (loaded during execute phase)
+- Architecture patterns → Domain reference skills (loaded during execute phase)
+- Implementation standards → Domain reference skills (loaded during execute phase)
+- Frontmatter requirements → Domain reference skills (loaded during execute phase)
+
+This separation is intentional: outline extensions know HOW TO CREATE DELIVERABLES, while reference skills (like `plugin-architecture`) know HOW TO IMPLEMENT components.
 
 ---
 
@@ -25,7 +37,7 @@ Domains register outline extensions via `provides_outline()` in their `extension
 ```python
 class Extension(ExtensionBase):
     def provides_outline(self) -> str | None:
-        return "pm-dev-java:java-outline-ext"  # or None if no extension
+        return "pm-dev-java:ext-outline-java"  # or None if no extension
 ```
 
 ---
@@ -42,293 +54,90 @@ Returns:
 status: success
 domain: java
 type: outline
-extension: pm-dev-java:java-outline-ext
+extension: pm-dev-java:ext-outline-java
 ```
 
 ---
 
-## Required Sections
+## Required Protocol Sections
 
-| Section | Purpose | Required |
-|---------|---------|----------|
-| `## Domain Detection` | When this domain is relevant | No |
-| `## Domain Constraints` | Rules for deliverable creation | No |
-| `## Deliverable Patterns` | Grouping strategies and file structures | No |
-| `## Impact Analysis Patterns` | Discovery commands for cross-cutting changes | No |
+Every outline extension MUST implement these sections:
 
-All sections are optional - the system skill has defaults for each.
+| Section | Called By | Purpose | Required |
+|---------|-----------|---------|----------|
+| `## Assessment Protocol` | Step 3 | Criteria for simple vs complex | **Yes** |
+| `## Simple Workflow` | Step 4 (if simple) | Reference to path-single-workflow.md | **Yes** |
+| `## Complex Workflow` | Step 4 (if complex) | Reference to path-multi-workflow.md | **Yes** |
+| `## Discovery Patterns` | Both workflows | Domain-specific Glob/Grep patterns | **Yes** |
+| `## Domain Detection` | Step 2.5 | When this domain is relevant | No |
 
 ---
 
 ## Section: Domain Detection
 
+**Called by**: phase-2-outline Step 2.5
 **Purpose**: Determine if this domain is relevant to the current request.
 
-**Expected Content**:
-```markdown
-## Domain Detection
+**Required content**: List of conditions when this extension is relevant.
 
-This domain is relevant when:
-1. {Condition 1 - e.g., marketplace/bundles directory exists}
-2. {Condition 2 - e.g., request mentions "skill", "command", "agent"}
-3. {Condition 3 - e.g., files being modified are in marketplace/bundles/}
-```
-
-**Default Behavior**: Domain is assumed relevant if configured in plan's config.toon.
+**Default behavior**: Domain is assumed relevant if configured in plan's config.toon.
 
 ---
 
-## Section: Domain Constraints
+## Section: Assessment Protocol
 
-**Purpose**: Define rules and restrictions that apply to deliverables in this domain.
+**Called by**: phase-2-outline Step 3
+**Purpose**: Determine which workflow applies (simple vs complex)
 
-**Expected Content**:
-```markdown
-## Domain Constraints
-
-### Component Rules
-- {Rule 1 - e.g., Skills MUST have SKILL.md in skills/skill-name/}
-- {Rule 2 - e.g., Documentation changes do NOT require unit tests}
-
-### Dependency Rules
-- {Rule 1 - e.g., Agents must not depend on commands}
-- {Rule 2 - e.g., Skills should be self-contained}
-
-### Verification Rules
-- Standard verification: `{command template}`
-- {Additional verification guidance}
-```
-
-**Default Behavior**: Standard deliverable contract rules apply.
+**Required subsections**:
+- `### Load Reference Data` - Load standards/reference-tables.md
+- `### Workflow Selection Criteria` - Table of indicators → simple/complex
+- `### Conditional Standards` - Table of conditions → additional standards to layer
 
 ---
 
-## Section: Deliverable Patterns
+## Section: Simple Workflow
 
-**Purpose**: Define how to structure and group deliverables for this domain.
+**Called by**: phase-2-outline Step 4 (when assessment = simple)
+**Purpose**: Create deliverables for isolated changes
 
-**Expected Content**:
-```markdown
-## Deliverable Patterns
-
-### Grouping Strategy
-| Scenario | Grouping |
-|----------|----------|
-| {Scenario 1} | {How to group} |
-| {Scenario 2} | {How to group} |
-
-### Change Type Mappings
-| Request Pattern | change_type | execution_mode |
-|-----------------|-------------|----------------|
-| "add", "create" | create | automated |
-| "fix", "update" | modify | automated |
-
-### Standard File Structures
-{Domain-specific file path patterns}
-```
-
-**Default Behavior**: One deliverable per module with generic structure.
+**Required subsections**:
+- `### Load Workflow` - `Read standards/path-single-workflow.md`
+- `### Domain-Specific Patterns` - Grouping strategy, change type mappings, file paths, verification commands
 
 ---
 
-## Section: Impact Analysis Patterns
+## Section: Complex Workflow
 
-**Purpose**: Provide discovery commands for analyzing cross-cutting changes.
+**Called by**: phase-2-outline Step 4 (when assessment = complex)
+**Purpose**: Create deliverables for cross-cutting changes with file enumeration
 
-**Expected Content**:
-```markdown
-## Impact Analysis Patterns
-
-### Detection Commands
-| Change Type | Discovery Command | Result Interpretation |
-|-------------|-------------------|----------------------|
-| {Change type} | `{grep or glob}` | {What matches mean} |
-
-### Discovery Script (if domain has inventory script)
-```bash
-python3 .plan/execute-script.py {notation} {args}
-```
-
-### Batch Analysis Guidelines
-- Batch size: {recommended batch size}
-- {Additional guidance for large-scale changes}
-```
-
-**Default Behavior**: Standard glob/grep patterns for file discovery.
+**Required subsections**:
+- `### Load Workflow` - `Read standards/path-multi-workflow.md`
+- `### Domain-Specific Patterns` - Grouping strategy, inventory script, batch analysis
 
 ---
 
-## Extension Skill Template
+## Section: Discovery Patterns
 
-```markdown
----
-name: ext-outline-{domain}
-description: Outline extension for {domain} domain
-allowed-tools: Read
----
+**Called by**: Both workflows during file enumeration
+**Purpose**: Provide domain-specific Glob/Grep patterns for finding affected files
 
-# {Domain} Outline Extension
-
-> Extension for phase-2-outline in {domain} domain.
-
-## Domain Detection
-
-This domain is relevant when:
-1. {Condition 1}
-2. {Condition 2}
-
-## Domain Constraints
-
-### Component Rules
-- {Rule 1}
-- {Rule 2}
-
-### Dependency Rules
-- {Rule 1}
-
-### Verification Rules
-- Standard verification: `{command}`
-
-## Deliverable Patterns
-
-### Grouping Strategy
-| Scenario | Grouping |
-|----------|----------|
-| {Scenario 1} | {How to group} |
-
-### Standard File Structures
-{Domain file patterns}
-
-## Impact Analysis Patterns
-
-### Detection Commands
-| Change Type | Discovery Command |
-|-------------|-------------------|
-| {Type 1} | `{command}` |
-
-### Discovery Script
-```bash
-python3 .plan/execute-script.py {notation} {args}
-```
-```
+**Required subsections**:
+- `### Grep Patterns` - Table of change type → discovery command
+- `### Glob Patterns` - Table of component type → glob pattern
 
 ---
 
-## Example: Plugin Development Outline Extension
+## Example Implementation
 
-```markdown
-# Plugin Development Outline Extension
+See: `pm-plugin-development:ext-outline-plugin`
 
-> Extension for phase-2-outline in plugin development domain.
-
-## Domain Detection
-
-This domain is relevant when:
-1. `marketplace/bundles` directory exists
-2. Request mentions "skill", "command", "agent", "bundle"
-3. Files being modified are in `marketplace/bundles/*/` paths
-
-## Domain Constraints
-
-### Component Rules
-- Skills MUST have `SKILL.md` in `skills/{skill-name}/`
-- Commands MUST be single `.md` files in `commands/`
-- Agents MUST be single `.md` files in `agents/`
-- All components require YAML frontmatter
-
-### Dependency Rules
-- Agents delegate to skills (skill loading via `Skill:` directive)
-- Commands orchestrate agents or execute skills directly
-
-### Verification Rules
-- Standard verification: `/plugin-doctor --component {path}`
-
-## Deliverable Patterns
-
-### Grouping Strategy
-| Scenario | Grouping |
-|----------|----------|
-| Creating 1-3 components in single bundle | One deliverable per component |
-| Cross-bundle pattern change | One deliverable per bundle affected |
-| Script changes | Include script + tests in same deliverable |
-
-### Standard File Structures
-- Skills: `marketplace/bundles/{bundle}/skills/{skill-name}/SKILL.md`
-- Commands: `marketplace/bundles/{bundle}/commands/{command-name}.md`
-- Agents: `marketplace/bundles/{bundle}/agents/{agent-name}.md`
-
-## Impact Analysis Patterns
-
-### Detection Commands
-| Change Type | Discovery Command |
-|-------------|-------------------|
-| Script notation rename | `grep -r "old:notation" marketplace/bundles/` |
-| Output format change | `grep -r '```json' marketplace/bundles/*/agents/` |
-
-### Discovery Script
-```bash
-python3 .plan/execute-script.py pm-plugin-development:tools-marketplace-inventory:scan-marketplace-inventory \
-  --include-descriptions
-```
-
-The script writes full inventory to a file and returns a TOON summary with `output_file` path. Read that file for the complete inventory.
-```
-
----
-
-## Example: Documentation Outline Extension
-
-```markdown
-# Documentation Outline Extension
-
-> Extension for phase-2-outline in documentation domain.
-
-## Domain Detection
-
-This domain is relevant when:
-1. `doc/` or `docs/` directory exists
-2. Request mentions "AsciiDoc", "ADR", "interface specification"
-3. Files have `.adoc` extension
-
-## Domain Constraints
-
-### Component Rules
-- AsciiDoc files MUST have blank line before lists
-- Cross-references MUST use `xref:` syntax
-- ADRs MUST follow numbered naming: `ADR-NNN-title.adoc`
-- Interface specs MUST follow numbered naming: `IF-NNN-title.adoc`
-
-### Dependency Rules
-- Documentation changes do NOT require unit tests
-- Changes to doc/ do NOT trigger build verification
-- ADR changes require review of supersedes/superseded-by links
-
-### Verification Rules
-- AsciiDoc validation: `docs validate {path}`
-- Link verification: `docs verify-links --directory {path}`
-
-## Deliverable Patterns
-
-### Grouping Strategy
-| Scenario | Grouping |
-|----------|----------|
-| Single document update | One deliverable |
-| ADR creation with related updates | One deliverable for all related ADRs |
-| Documentation sync with code | Doc deliverable depends on code deliverable |
-
-### Standard File Structures
-- ADRs: `doc/adr/ADR-NNN-{title}.adoc`
-- Interfaces: `doc/interfaces/IF-NNN-{title}.adoc`
-- General: `doc/{topic}/`
-
-## Impact Analysis Patterns
-
-### Detection Commands
-| Change Type | Discovery Command |
-|-------------|-------------------|
-| Broken xrefs | `grep -r 'xref:' doc/*.adoc` |
-| ADR supersedes | `grep -r 'Superseded by' doc/adr/` |
-```
+This extension demonstrates the protocol pattern with:
+- Assessment Protocol with complexity criteria
+- Simple/Complex workflow routing to path-single/path-multi
+- Discovery Patterns for marketplace components
+- Conditional loading of script-verification.md
 
 ---
 

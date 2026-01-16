@@ -2,17 +2,6 @@
 
 Workflow for isolated changes that affect 1-3 components in a single bundle with no cross-references or dependencies.
 
-## Indicators
-
-Use Path-Single when:
-
-| Indicator | Example |
-|-----------|---------|
-| "add", "create", "new" (single component) | "Add new skill" |
-| "fix", "update" (localized) | "Fix command X" |
-| No cross-bundle impact | Single bundle modification |
-| No shared pattern changes | Isolated component work |
-
 ## Workflow Steps
 
 For isolated changes, identify the target components directly:
@@ -73,7 +62,3 @@ Build a deliverables markdown section following the contract from `pm-workflow:m
 | "Add new command" | 1. Create command.md 2. Implement skill delegation 3. Update plugin.json |
 | "Add new agent" | 1. Create agent.md 2. Define tool requirements 3. Update plugin.json |
 | "Fix command X" | 1. Update command with fix |
-
-## Next Step
-
-After building the deliverables section, proceed to **Step 3c: Create Solution Document** in the main workflow.

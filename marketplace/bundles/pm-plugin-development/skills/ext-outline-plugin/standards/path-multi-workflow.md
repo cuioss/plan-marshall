@@ -2,17 +2,6 @@
 
 Workflow for cross-cutting changes that affect shared patterns, interfaces, or conventions across multiple components.
 
-## Indicators
-
-Use Path-Multi when:
-
-| Indicator | Example |
-|-----------|---------|
-| "rename", "migrate", "refactor" | "Rename script notation" |
-| "change format", "update pattern" | "Change output format" |
-| Cross-bundle impact mentioned | Multiple bundles affected |
-| Shared entity changes | Updates to APIs, formats, conventions |
-
 ## Critical Requirement
 
 Goals MUST contain explicit file paths. A goal that says "update all X" without listing the files is INVALID - it just restates the request.
@@ -171,7 +160,3 @@ This restates the request without enumeration. The solution outline phase added 
 | "Rename notation X to Y" | 1. Update core definition 2-N. Update each referencing component |
 | "Change output format" | 1. Define new format 2-N. Update each producer/consumer |
 | "Migrate to new API" | 1. Implement new API 2-N. Migrate each caller |
-
-## Next Step
-
-After building the deliverables section, proceed to **Step 3c: Create Solution Document** in the main workflow.

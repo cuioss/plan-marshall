@@ -120,28 +120,41 @@ def get_base_path(use_marketplace: bool = False) -> Path:
     )
 
 
-def _resolve_plan_marshall_path(base_path: Path, subpath: str) -> Path:
-    """Resolve path within plan-marshall bundle, handling versioned cache structure.
+def _resolve_bundle_path(base_path: Path, bundle_name: str, subpath: str) -> Path:
+    """Resolve path within a bundle, handling versioned cache structure.
 
     Tries versioned path first (plugin-cache with version dir), then non-versioned (marketplace).
-    """
-    plan_marshall_dir = base_path / 'plan-marshall'
 
-    # Try versioned path first (plugin-cache structure: plan-marshall/{version}/...)
-    if plan_marshall_dir.is_dir():
-        for version_dir in plan_marshall_dir.iterdir():
+    Args:
+        base_path: Path to bundles directory (plugin-cache or marketplace)
+        bundle_name: Name of the bundle (e.g., 'plan-marshall', 'pm-plugin-development')
+        subpath: Path within the bundle (e.g., 'skills/foo/scripts/bar.py')
+    """
+    bundle_dir = base_path / bundle_name
+
+    # Try versioned path first (plugin-cache structure: {bundle}/{version}/...)
+    if bundle_dir.is_dir():
+        for version_dir in bundle_dir.iterdir():
             if version_dir.is_dir() and not version_dir.name.startswith('.'):
                 versioned = version_dir / subpath
                 if versioned.exists():
                     return versioned
 
-    # Fall back to non-versioned (marketplace structure: plan-marshall/...)
-    return plan_marshall_dir / subpath
+    # Fall back to non-versioned (marketplace structure: {bundle}/...)
+    return bundle_dir / subpath
+
+
+def _resolve_plan_marshall_path(base_path: Path, subpath: str) -> Path:
+    """Resolve path within plan-marshall bundle, handling versioned cache structure.
+
+    Tries versioned path first (plugin-cache with version dir), then non-versioned (marketplace).
+    """
+    return _resolve_bundle_path(base_path, 'plan-marshall', subpath)
 
 
 def get_inventory_script(base_path: Path) -> Path:
     """Get path to inventory script based on context."""
-    return _resolve_plan_marshall_path(base_path, 'skills/tools-marketplace-inventory/scripts/scan-marketplace-inventory.py')
+    return _resolve_bundle_path(base_path, 'pm-plugin-development', 'skills/tools-marketplace-inventory/scripts/scan-marketplace-inventory.py')
 
 
 def get_templates_dir(base_path: Path) -> Path:
@@ -157,6 +170,53 @@ def get_logging_scripts_dir(base_path: Path) -> Path:
 # ============================================================================
 # SCRIPT DISCOVERY
 # ============================================================================
+
+
+def _build_pythonpath(base_path: Path) -> str:
+    """Build PYTHONPATH from all skill script directories.
+
+    This enables cross-skill imports for scripts called via subprocess.
+
+    Args:
+        base_path: Path to bundles directory (plugin-cache or marketplace)
+
+    Returns:
+        PYTHONPATH string with all skill script directories
+    """
+    script_dirs = []
+
+    for bundle_dir in base_path.iterdir():
+        if not bundle_dir.is_dir() or bundle_dir.name.startswith('.'):
+            continue
+
+        # Handle versioned structure (plugin-cache)
+        # Check if bundle contains version directories
+        has_version_dirs = any(
+            d.is_dir() and not d.name.startswith('.') and (d / 'skills').is_dir() for d in bundle_dir.iterdir()
+        )
+
+        if has_version_dirs:
+            # Plugin-cache structure: bundle/{version}/skills/...
+            for version_dir in bundle_dir.iterdir():
+                if version_dir.is_dir() and not version_dir.name.startswith('.'):
+                    skills_dir = version_dir / 'skills'
+                    if skills_dir.exists():
+                        for skill_dir in skills_dir.iterdir():
+                            if skill_dir.is_dir():
+                                scripts_dir = skill_dir / 'scripts'
+                                if scripts_dir.exists():
+                                    script_dirs.append(str(scripts_dir))
+        else:
+            # Marketplace structure: bundle/skills/...
+            skills_dir = bundle_dir / 'skills'
+            if skills_dir.exists():
+                for skill_dir in skills_dir.iterdir():
+                    if skill_dir.is_dir():
+                        scripts_dir = skill_dir / 'scripts'
+                        if scripts_dir.exists():
+                            script_dirs.append(str(scripts_dir))
+
+    return os.pathsep.join(script_dirs)
 
 
 def discover_scripts(base_path: Path) -> dict[str, str]:
@@ -178,11 +238,19 @@ def discover_scripts(base_path: Path) -> dict[str, str]:
     # Determine scope based on path
     scope = 'marketplace' if 'marketplace' in str(base_path) else 'plugin-cache'
 
+    # Build PYTHONPATH to enable cross-skill imports (e.g., toon_parser)
+    pythonpath = _build_pythonpath(base_path)
+    env = os.environ.copy()
+    if pythonpath:
+        existing = env.get('PYTHONPATH', '')
+        env['PYTHONPATH'] = f'{pythonpath}{os.pathsep}{existing}' if existing else pythonpath
+
     # Run inventory scan
     result = subprocess.run(
         ['python3', str(inventory_script), '--scope', scope, '--resource-types', 'scripts'],
         capture_output=True,
         text=True,
+        env=env,
     )
 
     if result.returncode != 0:

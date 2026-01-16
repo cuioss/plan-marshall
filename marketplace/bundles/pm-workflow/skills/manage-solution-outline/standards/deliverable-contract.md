@@ -14,43 +14,11 @@ Each deliverable MUST contain sufficient information for:
 6. **Dependency ordering**: What order must deliverables execute in?
 7. **Parallelization**: Which deliverables can run concurrently?
 
-## Required Deliverable Structure
+## Template
 
-All solution-outline skills MUST produce deliverables following this structure:
+For the exact fill-in-the-blank structure, see:
 
-```markdown
-### N. {Deliverable Title}
-
-**Metadata:**
-- change_type: {create|modify|refactor|migrate|delete}
-- execution_mode: {automated|manual|mixed}
-- domain: {java|javascript|plan-marshall-plugin-dev}
-- module: {module-name from architecture}
-- depends: {none | N. Title | N, M}
-
-**Profiles:**
-- {implementation|testing}
-- {additional profiles as needed}
-
-**Affected files:**
-- `{path/to/file1}`
-- `{path/to/file2}`
-
-**Change per file:** {specific change description}
-
-**Pattern:** (optional, for format changes)
-```{format}
-{pattern to apply}
-```
-
-**Verification:**
-- Command: `{verification command}`
-- Criteria: {success criteria}
-
-**Success Criteria:**
-- {criterion 1}
-- {criterion 2}
-```
+**Template**: `templates/deliverable-template.md`
 
 ## Field Definitions
 
@@ -212,121 +180,8 @@ Solution outline skills MUST validate that each deliverable contains:
 - Circular dependencies (D1 depends on D2, D2 depends on D1)
 - Forward dependencies (D1 depends on D3, where D3 comes after D1)
 
-## Example Deliverable
+## Examples
 
-```markdown
-### 2. Add Auth Endpoint
-
-**Metadata:**
-- change_type: create
-- execution_mode: automated
-- domain: java
-- module: auth-service
-- depends: 1. Create Database Schema
-
-**Profiles:**
-- implementation
-- module_testing
-
-**Affected files:**
-- `auth-service/src/main/java/de/cuioss/auth/AuthController.java`
-- `auth-service/src/main/java/de/cuioss/auth/dto/AuthRequest.java`
-- `auth-service/src/main/java/de/cuioss/auth/dto/AuthResponse.java`
-- `auth-service/src/test/java/de/cuioss/auth/AuthControllerTest.java`
-
-**Change per file:** Create REST endpoint for user authentication with request/response DTOs. Add unit tests.
-
-**Pattern:**
-```java
-@Path("/auth")
-@ApplicationScoped
-public class AuthController {
-    @POST
-    public AuthResponse authenticate(AuthRequest request) { ... }
-}
-```
-
-**Verification:**
-- Command: `mvn verify -pl auth-service`
-- Criteria: Compilation and tests succeed
-
-**Success Criteria:**
-- REST endpoint accepts POST /auth with username/password
-- Returns JWT token on successful authentication
-- Returns 401 on invalid credentials
-- Unit tests cover authentication logic
-```
-
-**Note**: Task-plan creates two tasks from this deliverable:
-- TASK-001-IMPL (implementation): skills from `auth-service.skills_by_profile.implementation`
-- TASK-002-TEST (testing): skills from `auth-service.skills_by_profile.testing`, depends on TASK-001-IMPL
-
-## Invalid Examples (Anti-patterns)
-
-### Missing Metadata Block
-
-```markdown
-### 1. Update Agent Outputs
-
-Update all agent outputs to use TOON format.
-
-**Verification:** Check manually
-```
-
-**Why invalid:**
-- No `**Metadata:**` block
-- No explicit file list ("all agents" is vague)
-- "Check manually" is not an automatable verification
-
-### Vague File References
-
-```markdown
-### 2. Update Planning Agents
-
-**Metadata:**
-- change_type: modify
-- execution_mode: automated
-- domain: plan-marshall-plugin-dev
-- module: pm-workflow
-- depends: none
-
-**Profiles:**
-- implementation
-
-**Affected files:**
-- All files in marketplace/bundles/planning/agents/
-
-**Verification:**
-- Command: `grep -l '```toon' *.md`
-- Criteria: All files match
-```
-
-**Why invalid:**
-- `Affected files` uses "All files in..." instead of explicit paths
-- Task-plan cannot generate steps from vague references
-- Validation will reject this deliverable
-
-### Missing Profiles Block
-
-```markdown
-### 3. Fix Authentication Bug
-
-**Metadata:**
-- change_type: modify
-- execution_mode: automated
-- domain: java
-- module: auth-service
-- depends: none
-
-**Affected files:**
-- `auth-service/src/main/java/de/cuioss/auth/AuthController.java`
-
-**Verification:**
-- Command: `mvn test -pl auth-service`
-- Criteria: Tests pass
-```
-
-**Why invalid:**
-- Missing `**Profiles:**` block
-- Task-plan cannot create tasks without knowing which profiles apply
-- Validation will reject this deliverable
+For complete examples and anti-patterns, see:
+- `templates/deliverable-template.md` - Template with invalid patterns
+- `examples/*.md` - Domain-specific examples (java, javascript, plugin, etc.)

@@ -34,21 +34,21 @@ Tests:  test/{bundle}/{skill}/test_{script}.py
 After implementing script changes, run the affected tests:
 
 ```bash
-# Run tests for specific skill
-python3 test/run-tests.py test/{bundle}/{skill}/
+# Run tests for specific bundle
+./pw module-tests {bundle}
 
-# Run specific test file
-python3 test/run-tests.py test/{bundle}/{skill}/test_{script}.py
+# Run specific test via pytest -k filter
+./pw module-tests {bundle} -- -k test_{script}
 
 # Run all tests (if changes are cross-cutting)
-python3 test/run-tests.py
+./pw module-tests
 ```
 
 **Deliverable verification must include**:
 ```markdown
 **Script Verification:**
 - Tests: `test/{bundle}/{skill}/test_{script}.py`
-- Run: `python3 test/run-tests.py test/{bundle}/{skill}/`
+- Run: `./pw module-tests {bundle}`
 - Expected: All tests pass
 ```
 
@@ -87,7 +87,7 @@ When a deliverable includes scripts, add this section to the deliverable:
 ```markdown
 **Script Verification:**
 - Tests: Create/update `test/{bundle}/{skill}/test_{script}.py`
-- Run: `python3 test/run-tests.py test/{bundle}/{skill}/`
+- Run: `./pw module-tests {bundle}`
 - Organization: Verify test path matches `test/{bundle}/{skill}/`
 - Expected: All tests pass, no orphaned tests
 ```
@@ -131,7 +131,7 @@ This provides:
 
 **Script Verification:**
 - Tests: Create `test/planning/manage-tasks/test_validate_task.py`
-- Run: `python3 test/run-tests.py test/planning/manage-tasks/`
+- Run: `./pw module-tests pm-workflow`
 - Organization: Verify test path matches component structure
 - Expected: All tests pass
 
@@ -166,7 +166,7 @@ This provides:
 
 **Script Verification:**
 - Tests: Rename `test/planning/manage-goals/test_manage_goal.py` → `test_manage_deliverable.py`
-- Run: `python3 test/run-tests.py test/planning/manage-goals/`
+- Run: `./pw module-tests pm-workflow`
 - Organization: Remove old test file, verify new test file path
 - Expected: All tests pass, no orphaned `test_manage_goal.py`
 

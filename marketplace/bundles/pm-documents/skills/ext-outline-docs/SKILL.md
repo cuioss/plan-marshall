@@ -1,14 +1,15 @@
 ---
 name: ext-outline-docs
-description: Outline extension for documentation domain
+description: Outline extension implementing protocol for documentation domain
+implements: pm-workflow:workflow-extension-api/standards/extensions/outline-extension.md
 allowed-tools: Read
 ---
 
 # Documentation Outline Extension
 
-> Extension for phase-2-outline in documentation domain.
+> Extension implementing outline protocol for documentation domain.
 
-Provides domain-specific knowledge for deliverable creation in documentation tasks. This is a knowledge document loaded as context - it does not replace the workflow.
+Provides domain-specific knowledge for deliverable creation in documentation tasks. Implements the outline extension protocol with defined sections that phase-2-outline calls explicitly.
 
 ## Domain Detection
 
@@ -18,56 +19,99 @@ This domain is relevant when:
 3. Files have `.adoc` extension
 4. Request mentions updating README or technical documentation
 
-## Domain Constraints
+---
 
-### Component Rules
-- AsciiDoc files MUST have blank line before lists
-- Cross-references MUST use `xref:` syntax
-- ADRs MUST follow numbered naming: `ADR-NNN-title.adoc`
-- Interface specs MUST follow numbered naming: `IF-NNN-title.adoc`
-- All documents should have proper heading hierarchy
+## Assessment Protocol
 
-### Dependency Rules
-- Documentation changes do NOT require unit tests
-- Changes to `doc/` directory do NOT trigger build verification
-- ADR changes require review of supersedes/superseded-by links
-- Interface spec changes may require code traceability updates
+**Called by**: phase-2-outline Step 3
+**Purpose**: Determine which workflow applies (simple vs complex)
 
-### Verification Rules
-- AsciiDoc validation: Check for proper formatting and structure
-- Link verification: Validate all internal cross-references
-- Verification commands:
-  - ADRs: Check ADR numbering sequence and status consistency
-  - Interfaces: Check interface numbering and completeness
+### Workflow Selection Criteria
 
-## Deliverable Patterns
+| Indicator | Result | Rationale |
+|-----------|--------|-----------|
+| Single document update | **simple** | Isolated change |
+| ADR creation with supersedes | **simple** | Logically one unit |
+| Interface spec with code traceability | **simple** | One deliverable for spec |
+| Cross-document refactor | **complex** | Multiple files affected |
+| Documentation sync with code | **complex** | Dependencies on code deliverables |
+| "reorganize" keyword | **complex** | Cross-cutting structure change |
 
-### Grouping Strategy
+### Conditional Standards
+
+None - documentation domain has no additional standards to layer.
+
+---
+
+## Simple Workflow
+
+**Called by**: phase-2-outline Step 4 (when assessment = simple)
+**Purpose**: Create deliverables for isolated documentation changes
+
+### Domain-Specific Patterns
+
+**Grouping Strategy**:
 | Scenario | Grouping |
 |----------|----------|
 | Single document update | One deliverable |
 | ADR creation with related updates | One deliverable for all related ADRs |
 | Interface spec with code traceability | One deliverable for spec, separate for code |
-| Documentation sync with code | Doc deliverable depends on code deliverable |
 
-### Change Type Mappings
+**Change Type Mappings**:
 | Request Pattern | change_type | execution_mode |
 |-----------------|-------------|----------------|
 | "add", "create", "new" ADR/doc | create | automated |
 | "update", "fix" documentation | modify | automated |
 | "supersede" ADR | modify | automated |
-| "reorganize" docs | refactor | manual |
 
-### Standard File Structures
+**Standard File Paths**:
 - ADRs: `doc/adr/ADR-NNN-{title}.adoc`
 - Interfaces: `doc/interfaces/IF-NNN-{title}.adoc`
 - Architecture: `doc/architecture/{topic}.adoc`
 - General: `doc/{topic}/`
 - README: `README.md` or `README.adoc`
 
-## Impact Analysis Patterns
+**Verification Commands**:
+- AsciiDoc validation: Check for proper formatting and structure
+- Link verification: Validate all internal cross-references
+- ADRs: Check ADR numbering sequence and status consistency
+- Interfaces: Check interface numbering and completeness
 
-### Detection Commands
+---
+
+## Complex Workflow
+
+**Called by**: phase-2-outline Step 4 (when assessment = complex)
+**Purpose**: Create deliverables for cross-document changes
+
+### Domain-Specific Patterns
+
+**Grouping Strategy**:
+| Scenario | Grouping |
+|----------|----------|
+| Documentation sync with code | Doc deliverable depends on code deliverable |
+| Reorganize docs | One deliverable per logical section |
+
+**Change Type Mappings**:
+| Request Pattern | change_type | execution_mode |
+|-----------------|-------------|----------------|
+| "reorganize" docs | refactor | manual |
+| "sync" with code | modify | automated |
+
+**Batch Analysis**:
+- Process related documents together (e.g., ADR and its superseded docs)
+- Check cross-references when modifying any document
+- Validate heading hierarchy in modified documents
+
+---
+
+## Discovery Patterns
+
+**Called by**: Both workflows during file enumeration
+**Purpose**: Provide domain-specific Glob/Grep patterns
+
+### Grep Patterns
+
 | Change Type | Discovery Command |
 |-------------|-------------------|
 | Broken xrefs | `grep -r 'xref:' doc/*.adoc` |
@@ -75,8 +119,18 @@ This domain is relevant when:
 | Interface refs | `grep -r 'IF-[0-9]' doc/` |
 | README links | `grep -r '\[.*\](.*\.adoc)' README.md` |
 
-### Discovery Script
-For comprehensive documentation analysis:
+### Glob Patterns
+
+| Component Type | Glob Pattern |
+|----------------|--------------|
+| All AsciiDoc | `doc/**/*.adoc` |
+| ADRs | `doc/adr/ADR-*.adoc` |
+| Interfaces | `doc/interfaces/IF-*.adoc` |
+| Architecture | `doc/architecture/*.adoc` |
+
+### Comprehensive Discovery
+
+For cross-cutting documentation changes:
 ```bash
 # Find all AsciiDoc files
 find doc/ -name "*.adoc" -type f
@@ -87,16 +141,3 @@ ls -1 doc/adr/ADR-*.adoc 2>/dev/null | sort
 # Check interface specs
 ls -1 doc/interfaces/IF-*.adoc 2>/dev/null | sort
 ```
-
-### Batch Analysis Guidelines
-- Process related documents together (e.g., ADR and its superseded docs)
-- Check cross-references when modifying any document
-- Validate heading hierarchy in modified documents
-
-## Related Skills
-
-| Skill | Purpose |
-|-------|---------|
-| `pm-documents:ref-documentation` | General documentation standards |
-| `pm-documents:manage-adr` | ADR CRUD and formatting |
-| `pm-documents:manage-interface` | Interface spec CRUD and formatting |

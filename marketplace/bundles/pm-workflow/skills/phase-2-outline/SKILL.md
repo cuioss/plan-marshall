@@ -25,40 +25,9 @@ allowed-tools: Read, Glob, Grep, Bash
 
 ## Workflow Overview
 
-```
-┌──────────────────────────────────────────────────────────────────┐
-│                ARCHITECTURE-DRIVEN WORKFLOW                      │
-├──────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  Step 1: Load architecture context                               │
-│          → architecture info                                     │
-│                                                                  │
-│  Step 2: Load and understand requirements                        │
-│          → manage-plan-documents read --type request             │
-│                                                                  │
-│  Step 2.5: Load outline extension skills (if domain has one)     │
-│          → resolve-workflow-skill-extension --type outline       │
-│          → Extensions provide Domain Constraints, Patterns       │
-│                                                                  │
-│  Step 3: Assess complexity (simple vs complex)                   │
-│          → Decompose if multi-module                             │
-│                                                                  │
-│  Step 4: Select target modules                                   │
-│          → Score by responsibility, purpose, packages            │
-│                                                                  │
-│  Step 5: Determine package placement                             │
-│          → architecture module --name X --full                   │
-│                                                                  │
-│  Step 6: Create deliverables with Profiles list                  │
-│          → One deliverable per module                            │
-│          → Profiles list (implementation, testing as needed)     │
-│                                                                  │
-│  Step 7: Create IT deliverable (optional)                        │
-│          → architecture modules --command integration-tests      │
-│          → Separate deliverable targeting IT module              │
-│                                                                  │
-└──────────────────────────────────────────────────────────────────┘
-```
+Steps 1-7 (gather context, create deliverables) → Step 8 (write solution) → Steps 9-11 (finalize)
+
+**Visual diagram**: `standards/workflow-overview.md` (for human reference)
 
 ---
 
@@ -112,11 +81,11 @@ Extract `domains` array - each deliverable will be assigned a single domain from
 
 ---
 
-## Step 2.5: Load Outline Extension Skills
+## Step 2.5: Load Outline Extension
 
-For each domain in config.toon, check if an outline extension exists and load it as context.
+For each domain in config.toon, check if an outline extension exists and load it.
 
-**Purpose**: Outline extensions provide domain-specific knowledge (Domain Constraints, Deliverable Patterns) that augment the standard workflow. They are skills loaded as context, not workflow replacements.
+**Purpose**: Outline extensions implement a **formal protocol** with defined sections that this workflow calls explicitly at Steps 3 and 4.
 
 **For each domain** from Step 2:
 
@@ -135,26 +104,36 @@ type: outline
 extension: pm-plugin-development:ext-outline-plugin  # or null if no extension
 ```
 
-**If extension exists (not null)**, load it as context:
+**If extension exists (not null)**, load it:
 
 ```
 Skill: {resolved_extension}
 ```
 
-The extension skill provides:
-- **Domain Constraints**: Rules for deliverable creation (component rules, dependency rules)
-- **Deliverable Patterns**: Grouping strategies, file structures, verification commands
-- **Impact Analysis Patterns**: Discovery commands for cross-cutting changes
+The extension implements these **protocol sections** (called in Steps 3-4):
+- **## Assessment Protocol**: Criteria for simple vs complex workflow selection
+- **## Simple Workflow**: Reference to path-single-workflow.md, domain patterns
+- **## Complex Workflow**: Reference to path-multi-workflow.md, inventory usage
+- **## Discovery Patterns**: Domain-specific Glob/Grep patterns
 
-These are applied naturally during deliverable creation (Steps 4-6) - no special processing needed.
+**Contract**: `pm-workflow:workflow-extension-api/standards/extensions/outline-extension.md`
 
-**If no extension exists**: Continue with standard workflow. Most domains (java, javascript) don't need outline extensions.
+**If no extension exists**: Continue with generic workflow (Steps 3-4 use built-in defaults).
 
 ---
 
-## Step 3: Assess Complexity (Simple vs Complex)
+## Step 3: Assess Complexity (via Extension Protocol)
 
-Determine if task is single-module (simple) or multi-module (complex):
+**If extension loaded (from Step 2.5)**: Call the extension's `## Assessment Protocol` section.
+
+1. Locate `## Assessment Protocol` in the loaded extension
+2. Follow its `### Load Reference Data` instruction (load reference-tables.md)
+3. Apply `### Workflow Selection Criteria` table to the request
+4. Note any `### Conditional Standards` to layer later
+
+**If no extension**: Use generic assessment below.
+
+### Generic Assessment (no extension)
 
 | Scope | Workflow | Action |
 |-------|----------|--------|
@@ -201,7 +180,21 @@ Output format: `plan-marshall:analyze-project-architecture/standards/module-grap
 
 ---
 
-## Step 4: Select Target Modules
+## Step 4: Execute Workflow (via Extension Protocol)
+
+**If extension loaded (from Step 2.5)**: Call the appropriate workflow section.
+
+Based on Step 3 assessment:
+- If **simple**: Locate `## Simple Workflow` in extension, load its referenced standards (path-single-workflow.md)
+- If **complex**: Locate `## Complex Workflow` in extension, load its referenced standards (path-multi-workflow.md)
+
+During deliverable creation, use `## Discovery Patterns` from the extension for file enumeration.
+
+**If no extension**: Use generic module selection below.
+
+---
+
+## Step 4b: Select Target Modules (Generic/Module-Based Domains)
 
 For simple tasks: identify the single affected module. For complex tasks: select module for each sub-task.
 
@@ -302,13 +295,16 @@ Create `**Profiles:**` block listing which profiles apply:
 
 ### Deliverable Structure
 
-**Contract**: `pm-workflow:manage-solution-outline/standards/deliverable-contract.md` (force load)
+**Template**: `pm-workflow:manage-solution-outline/templates/deliverable-template.md` (force load)
 
-Each deliverable MUST include all required fields from the contract:
-- Metadata (change_type, execution_mode, domain, module, depends)
-- Profiles list (implementation; testing if module has test infra)
-- Affected files (explicit list)
-- Verification (command and criteria)
+For each deliverable, complete ALL fields in the template. **No field may be omitted.**
+
+The template enforces:
+- Metadata block (change_type, execution_mode, domain, module, depends)
+- Profiles block (implementation; testing if module has test infra)
+- Affected files (explicit paths - no wildcards)
+- Verification section (command and criteria)
+- Success Criteria section
 
 ---
 
@@ -343,9 +339,9 @@ python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:archi
 
 ### IT Deliverable Structure
 
-IT deliverables follow the same contract as implementation deliverables.
+IT deliverables use the same template as implementation deliverables.
 
-**Contract**: `pm-workflow:manage-solution-outline/standards/deliverable-contract.md`
+**Template**: `pm-workflow:manage-solution-outline/templates/deliverable-template.md`
 
 **Key Differences**:
 - IT is always a **separate deliverable** - not embedded in implementation deliverable
