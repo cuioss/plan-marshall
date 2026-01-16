@@ -30,7 +30,7 @@
     "./skills/plugin-plan-implement",
     "./skills/plugin-script-architecture",
     "./skills/plugin-task-plan",
-    "./skills/verification"
+    "./skills/verification-mode"
   ],
   "agents": [
     "./agents/tool-coverage-agent.md"

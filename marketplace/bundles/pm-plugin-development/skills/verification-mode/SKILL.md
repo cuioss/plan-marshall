@@ -1,5 +1,5 @@
 ---
-name: verification
+name: verification-mode
 description: Verification mode that stops and analyzes on failures, workarounds, or resolution issues
 allowed-tools: Read
 ---
@@ -65,7 +65,7 @@ The skill supports different verification scopes via the `scope` parameter:
 ### Base Verification (default)
 
 ```
-Skill: pm-plugin-development:verification
+Skill: pm-plugin-development:verification-mode
 ```
 
 Applies: Script failures, resolution failures, workaround detection
@@ -73,7 +73,7 @@ Applies: Script failures, resolution failures, workaround detection
 ### Planning Verification
 
 ```
-Skill: pm-plugin-development:verification
+Skill: pm-plugin-development:verification-mode
 scope: planning
 ```
 
@@ -271,7 +271,7 @@ No other tools required - this skill modifies behavioral patterns.
 This skill is designed to be loaded alongside other skills:
 
 ```
-Skill: pm-plugin-development:verification
+Skill: pm-plugin-development:verification-mode
 Skill: pm-workflow:phase-2-outline
 ```
 
@@ -344,7 +344,7 @@ When `scope: planning` is specified, apply these additional checks for planning 
 Load and follow the protocol from `standards/planning-compliance.md`:
 
 ```bash
-Read: marketplace/bundles/pm-plugin-development/skills/verification/standards/planning-compliance.md
+Read: marketplace/bundles/pm-plugin-development/skills/verification-mode/standards/planning-compliance.md
 ```
 
 The protocol has **4 steps** - ALL are MANDATORY:
