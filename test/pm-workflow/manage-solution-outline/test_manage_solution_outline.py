@@ -55,10 +55,8 @@ Implement the main validation logic.
 - change_type: create
 - execution_mode: automated
 - domain: java
+- module: jwt-service
 - profile: implementation
-- suggested_skill: pm-dev-java:java-implement
-- suggested_workflow: implement
-- context_skills: []
 - depends: none
 
 **Affected files:**
@@ -79,10 +77,8 @@ Add JWT configuration to application.properties.
 - change_type: create
 - execution_mode: automated
 - domain: java
+- module: jwt-service
 - profile: implementation
-- suggested_skill: pm-dev-java:java-implement
-- suggested_workflow: implement
-- context_skills: []
 - depends: 1
 
 **Affected files:**
@@ -103,10 +99,8 @@ Create comprehensive test coverage.
 - change_type: create
 - execution_mode: automated
 - domain: java
+- module: jwt-service
 - profile: testing
-- suggested_skill: pm-dev-java:java-implement-tests
-- suggested_workflow: implement-tests
-- context_skills: []
 - depends: 1
 
 **Affected files:**

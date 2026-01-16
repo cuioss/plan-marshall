@@ -8,7 +8,7 @@ allowed-tools: Read, Bash
 
 **Role**: Domain-agnostic workflow skill for transforming solution outline deliverables into optimized, executable tasks. Loaded by `pm-workflow:task-plan-agent`.
 
-**Key Pattern**: Reads deliverables with metadata from `solution_outline.md`, inherits skills from deliverables (set during solution-outline from module.skills_by_profile), applies aggregation/split analysis, creates tasks with explicit skill lists.
+**Key Pattern**: Reads deliverables with metadata from `solution_outline.md`, resolves skills from architecture based on `module` + `profile`, applies aggregation/split analysis, creates tasks with explicit skill lists.
 
 ## Contract Compliance
 
@@ -60,8 +60,8 @@ python3 .plan/execute-script.py pm-workflow:manage-solution-outline:manage-solut
 For each deliverable, extract:
 - `metadata.change_type`, `metadata.execution_mode`
 - `metadata.domain` (single value)
+- `metadata.module` (module name from architecture)
 - `metadata.profile` (`implementation` or `testing`)
-- `metadata.skills` (from module.skills_by_profile)
 - `metadata.depends`
 - `affected_files`
 - `verification`
@@ -90,28 +90,35 @@ For each deliverable, check for split requirements:
 - Production + test code combined → SHOULD split (different profiles)
 - File count > 15 → CONSIDER splitting
 
-### Step 5: Inherit Skills from Deliverables
+### Step 5: Resolve Skills from Architecture
 
-For each task (aggregated or single), inherit skills from the source deliverable(s):
+For each task (aggregated or single), resolve skills from architecture using `module` + `profile`:
 
-```
-solution_outline.md                      TASK.toon
-┌──────────────────────────────────────┐ ┌──────────────────────────────────────┐
-│ ### 1. Create CacheConfig class      │ │ skills:                              │
-│ **Metadata:**                        │ │   - pm-dev-java:java-core            │
-│ - domain: java                       │ │   - pm-dev-java:java-cdi             │
-│ - profile: implementation            │ │                                      │
-│ - skills: [java-core, java-cdi]      │ │                                      │
-└──────────────────────────────────────┘ └──────────────────────────────────────┘
+```bash
+python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture \
+  module --name {deliverable.module}
 ```
 
-**Log skill inheritance**:
+Extract `skills_by_profile.{profile}` from the module response:
+
+```
+solution_outline.md              Architecture                   TASK.toon
+┌────────────────────────────┐   ┌────────────────────────────┐   ┌────────────────────────────┐
+│ **Metadata:**              │   │ {module}:                  │   │ skills:                    │
+│ - domain: java             │   │   skills_by_profile:       │   │   - pm-dev-java:java-core  │
+│ - module: auth-service     │──▶│     implementation:        │──▶│   - pm-dev-java:java-cdi   │
+│ - profile: implementation  │   │       - java-core          │   │                            │
+│                            │   │       - java-cdi           │   │                            │
+└────────────────────────────┘   └────────────────────────────┘   └────────────────────────────┘
+```
+
+**Log skill resolution**:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[SKILL] (pm-workflow:phase-3-plan) Inherited skills for TASK-{N}: [{task.skills}]"
+  work {plan_id} INFO "[SKILL] (pm-workflow:phase-3-plan) Resolved skills for TASK-{N} from {module}.{profile}: [{task.skills}]"
 ```
 
-**Aggregation Rule**: When aggregating multiple deliverables, merge their skills arrays (union).
+**Aggregation Rule**: When aggregating multiple deliverables from different modules, merge their resolved skills arrays (union).
 
 ### Step 6: Create Optimized Tasks
 
@@ -136,9 +143,8 @@ steps:
 depends_on: TASK-1, TASK-2
 
 skills:
-  - {skill1 from defaults}
-  - {skill2 from defaults}
-  - {selected optional1}
+  - {skill1 from architecture}
+  - {skill2 from architecture}
 
 verification:
   commands:
@@ -241,15 +247,16 @@ lessons_recorded: {count}
 | D3 | D4 | Yes | Different deps, no conflict |
 | D2 | D1 | **No** | Creates cycle if aggregated |
 
-## Skill Inheritance Guidelines
+## Skill Resolution Guidelines
 
-Skills are inherited from deliverables (which get them from module.skills_by_profile during solution-outline):
+Skills are resolved from architecture based on `module` + `profile`:
 
 | Scenario | Behavior |
 |----------|----------|
-| Single deliverable | Copy `deliverable.skills` directly to `task.skills` |
-| Multiple deliverables (aggregation) | Union of all `deliverable.skills` arrays |
-| Missing `deliverable.skills` | Error - solution outline must set skills |
+| Single deliverable | Query `architecture.module --name {module}`, extract `skills_by_profile.{profile}` |
+| Multiple deliverables (aggregation) | Union of resolved skills from all source modules |
+| Module not in architecture | Error - module must exist in project architecture |
+| Profile not in module | Error - profile must exist in `module.skills_by_profile` |
 
 ## Error Handling
 
@@ -259,10 +266,16 @@ If deliverable dependencies form a cycle:
 - Error: "Circular dependency detected: D1 -> D2 -> D1"
 - Do NOT create tasks
 
-### Missing Deliverable Skills
+### Module Not in Architecture
 
-If deliverable has no `skills` field:
-- Error: "Deliverable N missing skills - solution outline must set skills from module.skills_by_profile"
+If `deliverable.module` is not found in architecture:
+- Error: "Module '{module}' not found in architecture - run architecture discovery"
+- Record as lesson learned
+
+### Profile Not in Module
+
+If `deliverable.profile` is not in `module.skills_by_profile`:
+- Error: "Profile '{profile}' not found in {module}.skills_by_profile"
 - Record as lesson learned
 
 ### Ambiguous Deliverable
@@ -277,7 +290,8 @@ If deliverable metadata incomplete:
 **Invoked by**: `pm-workflow:task-plan-agent` (thin agent)
 
 **Script Notations** (use EXACTLY as shown):
-- `pm-workflow:manage-solution-outline:manage-solution-outline` - Read deliverables with skills (list-deliverables, read)
+- `pm-workflow:manage-solution-outline:manage-solution-outline` - Read deliverables (list-deliverables, read)
+- `plan-marshall:analyze-project-architecture:architecture` - Resolve skills (module --name {module})
 - `pm-workflow:manage-tasks:manage-tasks` - Create tasks (add --plan-id X <<'EOF' ... EOF)
 - `plan-marshall:manage-lessons:manage-lesson` - Record lessons on issues (add)
 

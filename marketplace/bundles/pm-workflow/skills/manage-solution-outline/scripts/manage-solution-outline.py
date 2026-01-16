@@ -97,8 +97,8 @@ def extract_deliverables(deliverables_section: str) -> list[dict[str, Any]]:
         # Extract verification
         verification = extract_verification(content)
 
-        # Check for success criteria
-        has_success_criteria = '**Success Criteria:**' in content or '**Success criteria:**' in content
+        # Check for success criteria (case-insensitive)
+        has_success_criteria = bool(re.search(r'\*\*Success Criteria:\*\*', content, re.IGNORECASE))
 
         deliverables.append(
             {
@@ -161,8 +161,8 @@ def extract_verification(content: str) -> dict[str, str]:
     """Extract **Verification:** section from deliverable content."""
     verification: dict[str, str] = {}
 
-    # Look for Verification block
-    verif_match = re.search(r'\*\*Verification:\*\*\s*((?:- [^\n]+\n?)+)', content, re.IGNORECASE)
+    # Look for Verification block (tolerant of blank lines between header and list)
+    verif_match = re.search(r'\*\*Verification:\*\*\s*\n?((?:- [^\n]+\n?)+)', content, re.IGNORECASE)
     if not verif_match:
         return verification
 
@@ -245,9 +245,9 @@ def validate_deliverable_contract(deliverable: dict) -> tuple[list[str], list[st
         errors.append(f'D{num}: Missing **Metadata:** block')
     else:
         # Check 1a: All required metadata fields
+        # module is required for skill resolution from architecture
         # profile is the universal requirement for config-based routing
-        # suggested_skill/suggested_workflow are optional explicit overrides
-        required_fields = ['change_type', 'execution_mode', 'domain', 'profile', 'depends']
+        required_fields = ['change_type', 'execution_mode', 'domain', 'module', 'profile', 'depends']
         for field in required_fields:
             if field not in metadata:
                 errors.append(f'D{num}: Missing metadata field: {field}')
