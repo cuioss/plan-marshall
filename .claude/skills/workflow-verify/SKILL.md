@@ -104,18 +104,257 @@ workflow-verification/                    # Test cases (version-controlled)
 
 **MANDATORY**: Select workflow based on subcommand and execute IMMEDIATELY.
 
-### If subcommand = "create" or creating new test case
-→ **EXECUTE** Workflow 1: Create Test Case
+### If subcommand = "test"
+→ **EXECUTE** Workflow 1: Test Workflow (execute trigger + verify)
 
-### If subcommand = "run" or verifying existing test case
-→ **EXECUTE** Workflow 2: Run Verification
+### If subcommand = "verify" (with --plan-id)
+→ **EXECUTE** Workflow 2: Verify Plan (verify existing plan)
 
-### If subcommand = "list" or listing test cases
-→ **EXECUTE** Workflow 3: List Test Cases
+### If subcommand = "create"
+→ **EXECUTE** Workflow 3: Create Test Case
+
+### If subcommand = "list"
+→ **EXECUTE** Workflow 4: List Test Cases
 
 ---
 
-## Workflow 1: Create Test Case
+## Workflow 1: Test Workflow
+
+Execute the trigger from test-definition, then verify the output. Full automated test.
+
+### Parameters
+- `--test-id` (required): Test case identifier
+
+### Step 1: Load Test Case
+
+```bash
+TEST_CASE_DIR="workflow-verification/test-cases/{test-id}"
+
+# Verify test case exists
+if [[ ! -d "$TEST_CASE_DIR" ]]; then
+  echo "Error: Test case not found: {test-id}"
+  echo "Available test cases:"
+  ls workflow-verification/test-cases/
+  exit 1
+fi
+```
+
+Read test definition:
+```
+Read: workflow-verification/test-cases/{test-id}/test-definition.toon
+```
+
+### Step 2: Setup Environment
+
+If test definition includes setup_commands:
+```bash
+# Execute each setup command
+{setup_command_1}
+{setup_command_2}
+```
+
+### Step 3: Execute Trigger
+
+Execute the trigger command from test definition. The trigger specifies a command like `/plan-manage create a new plan: ...`.
+
+**IMPORTANT**: Execute this command and capture the resulting plan_id from its output.
+
+### Step 4: Run Verification
+
+Once plan_id is captured, proceed to **Shared Verification Steps** below with the plan_id.
+
+---
+
+## Workflow 2: Verify Plan
+
+Verify an existing plan against test case criteria. No trigger execution.
+
+### Parameters
+- `--test-id` (required): Test case identifier
+- `--plan-id` (required): Existing plan to verify
+
+### Step 1: Load Test Case
+
+```bash
+TEST_CASE_DIR="workflow-verification/test-cases/{test-id}"
+
+if [[ ! -d "$TEST_CASE_DIR" ]]; then
+  echo "Error: Test case not found: {test-id}"
+  exit 1
+fi
+```
+
+### Step 2: Validate Plan Exists
+
+```bash
+# Verify the plan exists
+python3 .plan/execute-script.py pm-workflow:manage-lifecycle:manage-lifecycle \
+  status --plan-id {plan_id}
+```
+
+If plan doesn't exist, report error.
+
+### Step 3: Run Verification
+
+Proceed to **Shared Verification Steps** below with the provided plan_id.
+
+---
+
+## Shared Verification Steps
+
+These steps are used by both Workflow 1 (test) and Workflow 2 (verify).
+
+### Step V1: Run Structural Verification (Script)
+
+Execute structural verification script:
+
+```bash
+python3 .claude/skills/workflow-verify/scripts/verify-structure.py \
+  --plan-id {plan_id} \
+  --test-case workflow-verification/test-cases/{test-id} \
+  --output .plan/temp/verify-{test-id}-structure.toon
+```
+
+Parse output for structural check results.
+
+### Step V2: Collect Artifacts
+
+Collect actual artifacts via manage-* interfaces:
+
+```bash
+python3 .claude/skills/workflow-verify/scripts/collect-artifacts.py \
+  --plan-id {plan_id} \
+  --output .plan/temp/verify-{test-id}-artifacts/
+```
+
+### Step V3: Run Semantic Assessment (LLM-as-Judge)
+
+**READ** the semantic criteria:
+```
+Read: workflow-verification/test-cases/{test-id}/criteria/semantic.md
+```
+
+**READ** the decision quality criteria:
+```
+Read: workflow-verification/test-cases/{test-id}/criteria/decision-quality.md
+```
+
+**READ** the golden reference:
+```
+Read: workflow-verification/test-cases/{test-id}/golden/verified-result.md
+```
+
+**READ** the actual output:
+```
+Read: .plan/temp/verify-{test-id}-artifacts/solution_outline.md
+```
+
+**Perform LLM-as-Judge Assessment**:
+
+For each semantic criterion:
+1. Compare actual output against golden reference
+2. Score on scale 0-100
+3. Explain reasoning for score
+4. Identify specific gaps or errors
+
+Assessment dimensions:
+- **Scope Score (0-100)**: Did it analyze the correct components?
+- **Completeness Score (0-100)**: Are all expected items found?
+- **Quality Score (0-100)**: Are decisions well-reasoned?
+
+### Step V4: Generate Assessment Report
+
+Create timestamp for results:
+```bash
+TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+RESULTS_DIR=".plan/temp/workflow-verification/{test-id}-$TIMESTAMP"
+mkdir -p "$RESULTS_DIR"
+```
+
+**Create assessment-results.toon**:
+
+```toon
+test_id: {test-id}
+timestamp: {timestamp}
+plan_id: {plan_id}
+overall_status: {pass|fail}
+overall_score: {weighted_average}
+
+structural_checks:
+  status: {pass|fail}
+  passed: {count}
+  failed: {count}
+
+semantic_assessment:
+  scope_score: {0-100}
+  completeness_score: {0-100}
+  quality_score: {0-100}
+  overall_score: {average}
+
+findings[N]{severity,category,description,location}:
+{severity},{category},{description},{location}
+...
+
+missing_items[N]:
+{missing_item_1}
+{missing_item_2}
+...
+
+recommendations[N]:
+{recommendation_1}
+{recommendation_2}
+...
+```
+
+**Create assessment-detail.md**:
+
+Full narrative report with:
+- Executive summary
+- Structural check details
+- Semantic assessment reasoning
+- Specific findings with locations
+- Recommendations
+
+### Step V5: Display Results
+
+Show verification summary:
+```
+## Verification Results: {test-id}
+
+**Overall Status**: {PASS|FAIL}
+**Overall Score**: {score}/100
+
+### Structural Checks
+- Passed: {count}
+- Failed: {count}
+
+### Semantic Assessment
+| Dimension | Score |
+|-----------|-------|
+| Scope | {scope}/100 |
+| Completeness | {completeness}/100 |
+| Quality | {quality}/100 |
+
+### Key Findings
+{findings_list}
+
+### Missing Items
+{missing_items_list}
+
+**Full Report**: {results_dir}/assessment-detail.md
+```
+
+### Step V6: Cleanup (Optional)
+
+If test definition specifies `cleanup.archive_plan: true` (only for Workflow 1: test):
+```bash
+# Archive or delete the test plan
+rm -rf .plan/plans/{plan_id}
+```
+
+---
+
+## Workflow 3: Create Test Case
 
 Interactive wizard to create a new verification test case.
 
@@ -259,207 +498,13 @@ Files created:
 - golden/verified-result.md
 
 To run verification:
-  /verify-workflow run --test-id {test-id}
+  /verify-workflow test --test-id {test-id}
+  /verify-workflow verify --test-id {test-id} --plan-id {existing-plan}
 ```
 
 ---
 
-## Workflow 2: Run Verification
-
-Execute verification against an existing test case.
-
-### Parameters
-- `--test-id` (required): Test case identifier
-
-### Step 1: Load Test Case
-
-```bash
-TEST_CASE_DIR="workflow-verification/test-cases/{test-id}"
-
-# Verify test case exists
-if [[ ! -d "$TEST_CASE_DIR" ]]; then
-  echo "Error: Test case not found: {test-id}"
-  echo "Available test cases:"
-  ls workflow-verification/test-cases/
-  exit 1
-fi
-```
-
-Read test definition:
-```
-Read: workflow-verification/test-cases/{test-id}/test-definition.toon
-```
-
-### Step 2: Setup Environment
-
-If test definition includes setup_commands:
-```bash
-# Execute each setup command
-{setup_command_1}
-{setup_command_2}
-```
-
-### Step 3: Execute Trigger
-
-Execute the trigger command from test definition:
-```bash
-# Example: /plan-manage create a new plan: Migrate...
-{trigger_command}
-```
-
-Capture the plan_id from the output.
-
-### Step 4: Run Structural Verification (Script)
-
-Execute structural verification script:
-
-```bash
-python3 .claude/skills/workflow-verify/scripts/verify-structure.py \
-  --plan-id {plan_id} \
-  --test-case workflow-verification/test-cases/{test-id} \
-  --output .plan/temp/verify-{test-id}-structure.toon
-```
-
-Parse output for structural check results.
-
-### Step 5: Collect Artifacts
-
-Collect actual artifacts via manage-* interfaces:
-
-```bash
-python3 .claude/skills/workflow-verify/scripts/collect-artifacts.py \
-  --plan-id {plan_id} \
-  --output .plan/temp/verify-{test-id}-artifacts/
-```
-
-### Step 6: Run Semantic Assessment (LLM-as-Judge)
-
-**READ** the semantic criteria:
-```
-Read: workflow-verification/test-cases/{test-id}/criteria/semantic.md
-```
-
-**READ** the decision quality criteria:
-```
-Read: workflow-verification/test-cases/{test-id}/criteria/decision-quality.md
-```
-
-**READ** the golden reference:
-```
-Read: workflow-verification/test-cases/{test-id}/golden/verified-result.md
-```
-
-**READ** the actual output:
-```
-Read: .plan/temp/verify-{test-id}-artifacts/solution_outline.md
-```
-
-**Perform LLM-as-Judge Assessment**:
-
-For each semantic criterion:
-1. Compare actual output against golden reference
-2. Score on scale 0-100
-3. Explain reasoning for score
-4. Identify specific gaps or errors
-
-Assessment dimensions:
-- **Scope Score (0-100)**: Did it analyze the correct components?
-- **Completeness Score (0-100)**: Are all expected items found?
-- **Quality Score (0-100)**: Are decisions well-reasoned?
-
-### Step 7: Generate Assessment Report
-
-Create timestamp for results:
-```bash
-TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-RESULTS_DIR=".plan/temp/workflow-verification/{test-id}-$TIMESTAMP"
-mkdir -p "$RESULTS_DIR"
-```
-
-**Create assessment-results.toon**:
-
-```toon
-test_id: {test-id}
-timestamp: {timestamp}
-plan_id: {plan_id}
-overall_status: {pass|fail}
-overall_score: {weighted_average}
-
-structural_checks:
-  status: {pass|fail}
-  passed: {count}
-  failed: {count}
-
-semantic_assessment:
-  scope_score: {0-100}
-  completeness_score: {0-100}
-  quality_score: {0-100}
-  overall_score: {average}
-
-findings[N]{severity,category,description,location}:
-{severity},{category},{description},{location}
-...
-
-missing_items[N]:
-{missing_item_1}
-{missing_item_2}
-...
-
-recommendations[N]:
-{recommendation_1}
-{recommendation_2}
-...
-```
-
-**Create assessment-detail.md**:
-
-Full narrative report with:
-- Executive summary
-- Structural check details
-- Semantic assessment reasoning
-- Specific findings with locations
-- Recommendations
-
-### Step 8: Display Results
-
-Show verification summary:
-```
-## Verification Results: {test-id}
-
-**Overall Status**: {PASS|FAIL}
-**Overall Score**: {score}/100
-
-### Structural Checks
-- Passed: {count}
-- Failed: {count}
-
-### Semantic Assessment
-| Dimension | Score |
-|-----------|-------|
-| Scope | {scope}/100 |
-| Completeness | {completeness}/100 |
-| Quality | {quality}/100 |
-
-### Key Findings
-{findings_list}
-
-### Missing Items
-{missing_items_list}
-
-**Full Report**: {results_dir}/assessment-detail.md
-```
-
-### Step 9: Cleanup (Optional)
-
-If test definition specifies `cleanup.archive_plan: true`:
-```bash
-# Archive or delete the test plan
-rm -rf .plan/plans/{plan_id}
-```
-
----
-
-## Workflow 3: List Test Cases
+## Workflow 4: List Test Cases
 
 List available test cases with status.
 

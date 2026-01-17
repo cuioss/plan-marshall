@@ -19,49 +19,59 @@ If you discover issues or improvements during execution, record them:
 
 ## PARAMETERS
 
-- `subcommand` (required): One of: `create`, `run`, `list`
-- `--test-id` (required for create/run): Test case identifier (kebab-case)
+- `subcommand` (required): One of: `test`, `verify`, `create`, `list`
+- `--test-id` (required for test/verify/create): Test case identifier (kebab-case)
+- `--plan-id` (required for verify): Existing plan to verify
 
 ## SUBCOMMAND ROUTING
 
 Parse the user input to determine which subcommand to execute:
 
-- **"create"** or input contains "create" → Execute Create Workflow
-- **"run"** or input contains "run" or "verify" → Execute Run Workflow
-- **"list"** or input contains "list" or "show" → Execute List Workflow
+- **"test"** → Execute trigger from test-definition, then verify (full automated)
+- **"verify"** → Verify existing plan (requires --plan-id)
+- **"create"** → Create new test case
+- **"list"** → List available test cases
 
 ## WORKFLOW
+
+### Subcommand: test
+
+Execute the trigger command from test-definition, then verify the output.
+
+**Activate** the workflow-verify skill:
+```
+Skill: workflow-verify
+```
+
+Execute the "Test Workflow" workflow with the provided `--test-id`.
+
+### Subcommand: verify
+
+Verify an existing plan against test case criteria (no execution).
+
+**Activate** the workflow-verify skill:
+```
+Skill: workflow-verify
+```
+
+Execute the "Verify Plan" workflow with the provided `--test-id` and `--plan-id`.
 
 ### Subcommand: create
 
 Interactive test case creation wizard.
 
-**Activate** the workflow-verify skill and execute the **Create Test Case** workflow:
-
+**Activate** the workflow-verify skill:
 ```
 Skill: workflow-verify
 ```
 
 Execute the "Create Test Case" workflow with the provided `--test-id`.
 
-### Subcommand: run
-
-Execute verification against a test case.
-
-**Activate** the workflow-verify skill and execute the **Run Verification** workflow:
-
-```
-Skill: workflow-verify
-```
-
-Execute the "Run Verification" workflow with the provided `--test-id`.
-
 ### Subcommand: list
 
 List available test cases.
 
-**Activate** the workflow-verify skill and execute the **List Test Cases** workflow:
-
+**Activate** the workflow-verify skill:
 ```
 Skill: workflow-verify
 ```
@@ -71,8 +81,16 @@ Execute the "List Test Cases" workflow.
 ## USAGE EXAMPLES
 
 ```
-/verify-workflow create --test-id migrate-json-to-toon
-/verify-workflow run --test-id migrate-json-to-toon
+# Full automated test (execute trigger + verify)
+/verify-workflow test --test-id migrate-json-to-toon
+
+# Verify existing plan output
+/verify-workflow verify --test-id migrate-json-to-toon --plan-id migrate-outputs-json-to-toon
+
+# Create new test case
+/verify-workflow create --test-id my-new-test
+
+# List available test cases
 /verify-workflow list
 ```
 

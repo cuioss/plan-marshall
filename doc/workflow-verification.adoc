@@ -34,9 +34,17 @@ Phase 1: Structural Checks (Script)     Phase 2: Semantic Assessment (LLM)
 
 [source,bash]
 ----
-/verify-workflow create --test-id my-test   # Create new test case
-/verify-workflow run --test-id my-test      # Run verification
-/verify-workflow list                       # List test cases
+# Full automated test (execute trigger + verify)
+/verify-workflow test --test-id my-test
+
+# Verify existing plan output
+/verify-workflow verify --test-id my-test --plan-id existing-plan
+
+# Create new test case
+/verify-workflow create --test-id my-test
+
+# List available test cases
+/verify-workflow list
 ----
 
 == Test Case Structure
