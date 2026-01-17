@@ -1,14 +1,7 @@
 ---
 name: workflow-verify
 description: Verify workflow outputs using hybrid script + LLM assessment
-allowed-tools:
-  - Read
-  - Write
-  - Edit
-  - Bash
-  - Glob
-  - Grep
-  - AskUserQuestion
+allowed-tools: Read, Write, Edit, Bash, Glob, Grep, AskUserQuestion
 ---
 
 # Workflow Verify Skill
@@ -35,27 +28,27 @@ Verify that workflow outputs (solution_outline.md, references.toon, TASK-*.toon)
 ### test
 Execute trigger from test-definition, then verify.
 ```
-Read: .claude/skills/workflow-verify/workflows/test-and-verify.md
+Read: workflows/test-and-verify.md
 ```
 Execute the **test** workflow section.
 
 ### verify
 Verify existing plan (requires `--plan-id`).
 ```
-Read: .claude/skills/workflow-verify/workflows/test-and-verify.md
+Read: workflows/test-and-verify.md
 ```
 Execute the **verify** workflow section.
 
 ### create
 Create new test case interactively.
 ```
-Read: .claude/skills/workflow-verify/workflows/create-test-case.md
+Read: workflows/create-test-case.md
 ```
 
 ### list
 List available test cases.
 ```
-Read: .claude/skills/workflow-verify/workflows/list-test-cases.md
+Read: workflows/list-test-cases.md
 ```
 
 ## Reference Documentation
@@ -82,5 +75,27 @@ workflow-verification/test-cases/{test-id}/   # Version-controlled
 
 ## Scripts
 
-- `scripts/verify-structure.py` - Structural checks via manage-* tools
-- `scripts/collect-artifacts.py` - Artifact collection via manage-* interfaces
+### verify-structure.py
+Structural verification via manage-* tool interfaces.
+
+**Input**: `--plan-id`, `--test-case`, `--output`
+**Output**: TOON file with structural check results
+
+```bash
+python3 scripts/verify-structure.py \
+  --plan-id {plan_id} \
+  --test-case workflow-verification/test-cases/{test-id} \
+  --output .plan/temp/verify-{test-id}-structure.toon
+```
+
+### collect-artifacts.py
+Artifact collection via manage-* tool interfaces.
+
+**Input**: `--plan-id`, `--output`
+**Output**: Directory with collected artifacts (solution_outline.md, config.toon, etc.)
+
+```bash
+python3 scripts/collect-artifacts.py \
+  --plan-id {plan_id} \
+  --output .plan/temp/verify-{test-id}-artifacts/
+```

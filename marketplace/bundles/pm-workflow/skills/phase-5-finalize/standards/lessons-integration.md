@@ -16,7 +16,7 @@ During triage (Step 2 of verification), learned lessons can:
 Query lessons for similar findings:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-lessons-learned:manage-lessons-learned query \
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lesson query \
   --component {finding_source} \
   --category triage
 ```
@@ -53,7 +53,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 If no matching lesson exists and the triage decision is notable:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-lessons-learned:manage-lessons-learned add \
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lesson add \
   --component {triage_extension} \
   --category triage \
   --summary "{finding_type}: {decision} - {reason}" \
@@ -108,7 +108,7 @@ Lessons complement triage extensions:
 Finding: S1192 - String literal "application/json" duplicated 5 times
 
 1. Query lessons:
-   python3 .plan/execute-script.py plan-marshall:manage-lessons-learned:manage-lessons-learned query \
+   python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lesson query \
      --pattern "S1192" --category triage
 
 2. Result: Match found
@@ -137,7 +137,7 @@ Finding: S3776 - Cognitive complexity too high (method: parseComplexExpression)
    - Alternative would be artificial splitting
 
 4. Record lesson:
-   python3 .plan/execute-script.py plan-marshall:manage-lessons-learned:manage-lessons-learned add \
+   python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lesson add \
      --component "pm-dev-java:ext-triage-java" \
      --category triage \
      --summary "S3776: Complex parser methods acceptable if decomposition artificial" \
@@ -169,4 +169,4 @@ Triage lessons include:
 
 - [triage-integration.md](triage-integration.md) - How triage extensions are loaded and applied
 - [pm-workflow:workflow-extension-api/standards/extensions/triage-extension.md](../../workflow-extension-api/standards/extensions/triage-extension.md) - Extension contract
-- `plan-marshall:manage-lessons-learned` - Lessons storage and query skill
+- `plan-marshall:manage-lessons` - Lessons storage and query skill

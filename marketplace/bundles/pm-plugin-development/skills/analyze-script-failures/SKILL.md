@@ -223,7 +223,7 @@ For each selected action:
 - Verify fix applied correctly
 
 **If Record as lesson**:
-- Activate: `Skill: plan-marshall:manage-lessons-learned`
+- Activate: `Skill: plan-marshall:manage-lessons`
 - Create lesson with:
   ```bash
   python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lesson add \

@@ -11,7 +11,7 @@ Analyzes script failures from the current session to identify the source compone
 
 If you discover issues or improvements during execution, record them:
 
-1. **Activate skill**: `Skill: plan-marshall:manage-lessons-learned`
+1. **Activate skill**: `Skill: plan-marshall:manage-lessons`
 2. **Record lesson** with:
    - Component: `{type: "command", name: "tools-analyze-script-failures", bundle: "pm-plugin-development"}`
    - Category: bug | improvement | pattern | anti-pattern

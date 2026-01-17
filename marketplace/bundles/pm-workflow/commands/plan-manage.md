@@ -322,7 +322,7 @@ When a lesson is selected:
 
 If you discover issues or improvements during execution, record them:
 
-1. **Activate skill**: `Skill: plan-marshall:manage-lessons-learned`
+1. **Activate skill**: `Skill: plan-marshall:manage-lessons`
 2. **Record lesson** with:
    - Component: `{type: "command", name: "plan-manage", bundle: "pm-workflow"}`
    - Category: bug | improvement | pattern | anti-pattern

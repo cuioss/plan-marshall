@@ -9,7 +9,7 @@ The run configuration file stores:
 - Acceptable warnings and skip lists
 - Maven build configurations
 
-> **Note**: Lessons learned are stored separately via `manage-lessons-learned` skill.
+> **Note**: Lessons learned are stored separately via `manage-lessons` skill.
 
 ## Schema
 

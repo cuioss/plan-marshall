@@ -6,7 +6,7 @@ allowed-tools: Skill, Read, Edit, Glob, Bash
 
 # Apply Lessons Learned
 
-Read lessons learned via `manage-lessons-learned` skill and apply them to component documentation.
+Read lessons learned via `manage-lessons` skill and apply them to component documentation.
 
 ## Usage
 
@@ -36,7 +36,7 @@ When you invoke this command, I will:
 
 2. **Load lessons learned skill**:
    ```
-   Skill: plan-marshall:manage-lessons-learned
+   Skill: plan-marshall:manage-lessons
    ```
 
 3. **Query unapplied lessons**:
@@ -169,6 +169,6 @@ Add to warnings or "avoid" sections:
 
 ## Related
 
-- `plan-marshall:manage-lessons-learned` - Skill for lesson storage/retrieval
+- `plan-marshall:manage-lessons` - Skill for lesson storage/retrieval
 - `/plugin-maintain` - General component maintenance
 - `/plugin-doctor` - Diagnose component issues

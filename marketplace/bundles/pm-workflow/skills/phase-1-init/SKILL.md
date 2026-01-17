@@ -303,7 +303,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 status: error
 error: invalid_lesson
 message: Lesson not found: {lesson_id}
-recovery: Check lesson ID with manage-lessons-learned list
+recovery: Check lesson ID with manage-lessons list
 ```
 
 ### Invalid Issue

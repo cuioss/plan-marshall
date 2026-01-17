@@ -180,7 +180,7 @@ Agent template MUST use pattern:
 
 If you discover issues or improvements during execution, record them:
 
-1. **Activate skill**: `Skill: plan-marshall:manage-lessons-learned`
+1. **Activate skill**: `Skill: plan-marshall:manage-lessons`
 2. **Record lesson** with:
    - Component: `{type: "agent", name: "{agent-name}", bundle: "{bundle}"}`
    - Category: bug | improvement | pattern | anti-pattern
@@ -203,7 +203,7 @@ python3 .plan/execute-script.py pm-plugin-development:plugin-create:component va
 Validation checks:
 - Frontmatter format correct (comma-separated tools)
 - No Task tool present
-- CONTINUOUS IMPROVEMENT RULE uses manage-lessons-learned skill pattern
+- CONTINUOUS IMPROVEMENT RULE uses manage-lessons skill pattern
 - All required sections present
 
 If validation fails: Display errors and prompt "[R]etry generation/[A]bort"
@@ -332,7 +332,7 @@ Read assets/templates/command-template.md
 
 If you discover issues or improvements during execution, record them:
 
-1. **Activate skill**: `Skill: plan-marshall:manage-lessons-learned`
+1. **Activate skill**: `Skill: plan-marshall:manage-lessons`
 2. **Record lesson** with:
    - Component: `{type: "command", name: "{command-name}", bundle: "{bundle}"}`
    - Category: bug | improvement | pattern | anti-pattern
@@ -355,7 +355,7 @@ python3 .plan/execute-script.py pm-plugin-development:plugin-create:component va
 Validation checks:
 - Frontmatter format correct
 - All required sections present (WORKFLOW, USAGE EXAMPLES)
-- CONTINUOUS IMPROVEMENT RULE uses manage-lessons-learned skill pattern
+- CONTINUOUS IMPROVEMENT RULE uses manage-lessons skill pattern
 
 #### Step 6: Display Summary
 
@@ -780,8 +780,8 @@ This skill uses the following templates in assets/templates/:
 - Only maven-builder agent can execute Maven (Rule 7)
 
 **CONTINUOUS IMPROVEMENT RULE**:
-- Agents: Use manage-lessons-learned skill to record lessons (report to caller)
-- Commands: Use manage-lessons-learned skill to record lessons
+- Agents: Use manage-lessons skill to record lessons (report to caller)
+- Commands: Use manage-lessons skill to record lessons
 - Skills: No CONTINUOUS IMPROVEMENT RULE
 
 **Validation**:

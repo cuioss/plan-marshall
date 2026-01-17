@@ -58,7 +58,7 @@ description: "Add dark mode toggle to application settings"
 lesson_id: "2025-12-02-001"
 ```
 
-- Fetched via `manage-lessons-learned` skill
+- Fetched via `manage-lessons` skill
 - Extracts: title, category, component, detail, related
 - Context section populated with lesson metadata
 
@@ -124,7 +124,7 @@ AskUserQuestion:
 status: error
 error: invalid_lesson
 message: Lesson not found: {lesson_id}
-recovery: Check lesson ID with manage-lessons-learned list
+recovery: Check lesson ID with manage-lessons list
 ```
 
 ### Invalid Issue URL

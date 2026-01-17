@@ -123,7 +123,7 @@ All 5 workflows follow the same pattern:
 - Missing foundation skill loading (plugin-architecture, diagnostic-patterns)
 - Incorrect section header case (e.g., `## Workflow` → `## WORKFLOW`)
 - Missing CONTINUOUS IMPROVEMENT RULE section (commands only)
-- Legacy CONTINUOUS IMPROVEMENT RULE (uses /plugin-update-* or /plugin-maintain instead of manage-lessons-learned)
+- Legacy CONTINUOUS IMPROVEMENT RULE (uses /plugin-update-* or /plugin-maintain instead of manage-lessons)
 
 **Risky Fixes** (require confirmation):
 - Rule 6 violations (Task tool in agents)
@@ -222,7 +222,7 @@ python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:validate ref
 - Tool fit score >= 70% (good) or >= 90% (excellent)
 - No Rule 6 violations (agents CANNOT use Task tool)
 - No Rule 7 violations (only maven-builder can use Maven)
-- No Pattern 22 violations (must use manage-lessons-learned skill, not self-invoke)
+- No Pattern 22 violations (must use manage-lessons skill, not self-invoke)
 - Bloat thresholds (component-type specific):
   - Agents: NORMAL (<300), LARGE (300-500), BLOATED (500-800), CRITICAL (>800)
   - Commands: NORMAL (<100), LARGE (100-150), BLOATED (150-200), CRITICAL (>200)
@@ -323,7 +323,7 @@ This is NOT a command fix - it's a skill fix. Commands don't load foundation ski
 **Safe fixes** (auto-apply unless --no-fix):
 - Incorrect section header case (`## Workflow` → `## WORKFLOW`, `## Parameter Validation` → `## PARAMETERS`)
 - Missing CONTINUOUS IMPROVEMENT RULE section
-- Legacy CONTINUOUS IMPROVEMENT RULE (uses /plugin-update-* or /plugin-maintain instead of manage-lessons-learned)
+- Legacy CONTINUOUS IMPROVEMENT RULE (uses /plugin-update-* or /plugin-maintain instead of manage-lessons)
 
 **Risky fixes** (require confirmation):
 - **Rule 0 violations** (command contains workflow logic instead of skill delegation)
@@ -340,7 +340,7 @@ Search for `## Workflow`, `## Parameter Validation`, `## Parameters` and replace
 
 If you discover issues or improvements during execution, record them:
 
-1. **Activate skill**: \`Skill: plan-marshall:manage-lessons-learned\`
+1. **Activate skill**: \`Skill: plan-marshall:manage-lessons\`
 2. **Record lesson** with:
    - Component: \`{type: "command", name: "{command-name}", bundle: "{bundle}"}\`
    - Category: bug | improvement | pattern | anti-pattern
@@ -1084,7 +1084,7 @@ Agents CANNOT use Task tool (unavailable at runtime).
 Only maven-builder agent may execute Maven commands.
 
 ### Pattern 22: Agent Lessons Learned Requirement
-Agents MUST record lessons via manage-lessons-learned skill, not self-invoke commands.
+Agents MUST record lessons via manage-lessons skill, not self-invoke commands.
 
 ### Rule 9: Explicit Script Calls in Workflows
 All script/tool invocations in workflow documentation MUST have explicit bash code blocks. Vague instructions like "read the file", "display the content", or "check the status" are NOT acceptable. Every operation requiring a script call MUST document the exact `python3 .plan/execute-script.py` command.

@@ -150,7 +150,7 @@ description: One sentence description (<100 chars)
 
 ## CONTINUOUS IMPROVEMENT RULE for Commands
 
-Commands record lessons learned via the `manage-lessons-learned` skill.
+Commands record lessons learned via the `manage-lessons` skill.
 
 **Pattern for Commands**:
 ```markdown
@@ -158,7 +158,7 @@ Commands record lessons learned via the `manage-lessons-learned` skill.
 
 If you discover issues or improvements during execution, record them:
 
-1. **Activate skill**: `Skill: plan-marshall:manage-lessons-learned`
+1. **Activate skill**: `Skill: plan-marshall:manage-lessons`
 2. **Record lesson** with:
    - Component: `{type: "command", name: "{command-name}", bundle: "{bundle}"}`
    - Category: bug | improvement | pattern | anti-pattern
@@ -167,7 +167,7 @@ If you discover issues or improvements during execution, record them:
 
 **Key Points**:
 - Only activate skill when you have lessons to record
-- Lessons are stored via `manage-lessons-learned` skill (individual Markdown files)
+- Lessons are stored via `manage-lessons` skill (individual Markdown files)
 - Categories: bug, improvement, pattern, anti-pattern
 
 ## Parameter Patterns
@@ -638,7 +638,7 @@ Before creating command, verify:
 - [ ] Name is kebab-case with verb (create-agent, run-tests, diagnose-code)
 - [ ] Description is <100 chars
 - [ ] Frontmatter has only name and description (no tools)
-- [ ] CONTINUOUS IMPROVEMENT RULE uses manage-lessons-learned skill
+- [ ] CONTINUOUS IMPROVEMENT RULE uses manage-lessons skill
 - [ ] All required sections present
 - [ ] Workflow is numbered steps
 - [ ] Parameters documented (if any)
@@ -661,7 +661,7 @@ Before creating command, verify:
 
 ❌ **Wrong**: No continuous improvement section
 
-✅ **Correct**: Includes CONTINUOUS IMPROVEMENT RULE with manage-lessons-learned skill
+✅ **Correct**: Includes CONTINUOUS IMPROVEMENT RULE with manage-lessons skill
 
 ### Pitfall 3: No Parameter Validation
 

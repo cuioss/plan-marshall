@@ -646,7 +646,7 @@ Commands MUST include standard lessons-learned pattern:
 
 If you discover issues or improvements during execution, record them:
 
-1. **Activate skill**: `Skill: plan-marshall:manage-lessons-learned`
+1. **Activate skill**: `Skill: plan-marshall:manage-lessons`
 2. **Record lesson** with:
    - Component: `{type: "command", name: "{command-name}", bundle: "{bundle}"}`
    - Category: bug | improvement | pattern | anti-pattern
@@ -655,7 +655,7 @@ If you discover issues or improvements during execution, record them:
 
 **Key Points**:
 - Only activate skill when you have lessons to record
-- Lessons are stored via `manage-lessons-learned` skill (individual Markdown files)
+- Lessons are stored via `manage-lessons` skill (individual Markdown files)
 - Categories: bug, improvement, pattern, anti-pattern
 
 ## Common Issues and Fixes

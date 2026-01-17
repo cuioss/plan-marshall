@@ -154,7 +154,7 @@ if __name__ == '__main__':
 
 ## Integration
 
-### With manage-lessons-learned
+### With manage-lessons
 
 ```python
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / 'file-operations-base' / 'scripts'))
@@ -191,7 +191,7 @@ Files are stored in `.plan/` directory:
 
 ## Cross-Domain Access Pattern
 
-When scripts in one domain (e.g., `pm-workflow:plan-files`) need to access resources in another domain (e.g., `plan-marshall:manage-lessons-learned`), follow the **ID-based access pattern**.
+When scripts in one domain (e.g., `pm-workflow:plan-files`) need to access resources in another domain (e.g., `plan-marshall:manage-lessons`), follow the **ID-based access pattern**.
 
 ### Principle
 
