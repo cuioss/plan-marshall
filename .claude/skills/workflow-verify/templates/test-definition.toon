@@ -1,0 +1,17 @@
+# Test Definition Template
+# Copy this file to: workflow-verification/test-cases/{test-id}/test-definition.toon
+
+id: {test-id}
+name: {Human-readable test name}
+workflow_phase: 2-outline
+
+trigger:
+  command: /plan-manage
+  args: create a new plan: {description of the task}
+
+setup_commands[1]:
+  python3 .plan/execute-script.py plan-marshall:marshall-steward:marshall-steward init
+
+cleanup:
+  archive_plan: true
+  delete_on_success: false

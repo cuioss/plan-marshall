@@ -1,0 +1,16 @@
+# Expected Artifacts Template
+# Copy this file to: workflow-verification/test-cases/{test-id}/expected-artifacts.toon
+
+# Reference existing skill standards - do not duplicate validation rules
+artifacts[4]{file,standard_ref}:
+solution_outline.md,pm-workflow:manage-solution-outline:deliverable-contract
+config.toon,pm-workflow:manage-config:config-schema
+status.toon,pm-workflow:manage-lifecycle:status-schema
+references.toon,pm-workflow:manage-references:references-schema
+
+# Expected counts (update based on golden reference)
+deliverable_count: 3
+task_count: 0
+
+# Expected affected files (update based on golden reference)
+affected_files[0]:

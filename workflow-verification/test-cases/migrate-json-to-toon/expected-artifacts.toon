@@ -1,0 +1,26 @@
+# Expected artifacts for migrate-json-to-toon test case
+# Based on verified-result.md golden reference
+
+artifacts[4]{file,standard_ref}:
+solution_outline.md,pm-workflow:manage-solution-outline:deliverable-contract
+config.toon,pm-workflow:manage-config:config-schema
+status.toon,pm-workflow:manage-lifecycle:status-schema
+references.toon,pm-workflow:manage-references:references-schema
+
+# Expected deliverables: 3 (pm-dev-java agents, pm-plugin-development agent, pm-dev-frontend command)
+deliverable_count: 3
+
+# Expected affected files: 11 total
+# 9 pm-dev-java agents + 1 pm-plugin-development agent + 1 pm-dev-frontend command
+affected_files[11]:
+marketplace/bundles/pm-dev-java/agents/java-implement-agent.md
+marketplace/bundles/pm-dev-java/agents/java-implement-tests-agent.md
+marketplace/bundles/pm-dev-java/agents/java-refactor-agent.md
+marketplace/bundles/pm-dev-java/agents/java-coverage-agent.md
+marketplace/bundles/pm-dev-java/agents/java-quality-agent.md
+marketplace/bundles/pm-dev-java/agents/java-verify-agent.md
+marketplace/bundles/pm-dev-java/agents/java-fix-build-agent.md
+marketplace/bundles/pm-dev-java/agents/java-fix-tests-agent.md
+marketplace/bundles/pm-dev-java/agents/java-fix-javadoc-agent.md
+marketplace/bundles/pm-plugin-development/agents/tool-coverage-agent.md
+marketplace/bundles/pm-dev-frontend/commands/js-generate-coverage.md

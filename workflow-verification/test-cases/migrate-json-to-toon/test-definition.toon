@@ -1,0 +1,14 @@
+id: migrate-json-to-toon
+name: Verify outline phase for JSON to TOON migration task
+workflow_phase: 2-outline
+
+trigger:
+  command: /plan-manage
+  args: create a new plan: Migrate agent/command/skill outputs from JSON to TOON format
+
+setup_commands[1]:
+  python3 .plan/execute-script.py plan-marshall:marshall-steward:marshall-steward init
+
+cleanup:
+  archive_plan: true
+  delete_on_success: false
