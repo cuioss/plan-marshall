@@ -66,7 +66,7 @@ Verify that workflow outputs (solution_outline.md, references.toon, TASK-*.toon)
 ## Directory Structure
 
 ```
-workflow-verification/                    # Test cases and results (version-controlled)
+workflow-verification/                    # Test cases (version-controlled)
 ├── test-cases/
 │   └── {test-id}/
 │       ├── test-definition.toon         # Input, trigger, setup
@@ -76,12 +76,13 @@ workflow-verification/                    # Test cases and results (version-cont
 │       │   └── decision-quality.md      # Expected decisions
 │       └── golden/
 │           └── verified-result.md       # Expert-verified reference
-└── results/                             # Run results (may be gitignored)
-    └── {test-id}-{timestamp}/
-        ├── actual-artifacts/            # Snapshot of output
-        ├── assessment-results.toon      # Structured scores
-        ├── assessment-detail.md         # Full narrative
-        └── comparison-diff.md           # Actual vs Expected
+
+.plan/temp/workflow-verification/         # Run results (gitignored, ephemeral)
+└── {test-id}-{timestamp}/
+    ├── actual-artifacts/                # Snapshot of output
+    ├── assessment-results.toon          # Structured scores
+    ├── assessment-detail.md             # Full narrative
+    └── comparison-diff.md               # Actual vs Expected
 
 .claude/skills/workflow-verify/          # Skill implementation
 ├── SKILL.md                             # This file
@@ -371,7 +372,7 @@ Assessment dimensions:
 Create timestamp for results:
 ```bash
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-RESULTS_DIR="workflow-verification/results/{test-id}-$TIMESTAMP"
+RESULTS_DIR=".plan/temp/workflow-verification/{test-id}-$TIMESTAMP"
 mkdir -p "$RESULTS_DIR"
 ```
 
@@ -484,7 +485,7 @@ for test_id in $(ls workflow-verification/test-cases/); do
   [[ -f "workflow-verification/test-cases/$test_id/golden/verified-result.md" ]] && has_golden="Yes"
 
   last_run="Never"
-  last_result=$(ls -t workflow-verification/results/${test_id}-* 2>/dev/null | head -1)
+  last_result=$(ls -t .plan/temp/workflow-verification/${test_id}-* 2>/dev/null | head -1)
   [[ -n "$last_result" ]] && last_run=$(basename "$last_result" | cut -d'-' -f2-)
 
   echo "$test_id|$has_golden|$last_run"
@@ -599,11 +600,10 @@ python3 .claude/skills/workflow-verify/scripts/collect-artifacts.py \
 This skill uses project-level paths that require Read/Write permissions:
 
 **File Operations**:
-- `Read(workflow-verification/**)` - Read test cases and results
-- `Write(workflow-verification/**)` - Write results
+- `Read(workflow-verification/**)` - Read test cases
 - `Read(.claude/skills/**)` - Read skill files
 - `Read(.plan/**)` - Read plan artifacts
-- `Write(.plan/temp/**)` - Write temporary files
+- `Write(.plan/temp/**)` - Write results and temporary files
 
 **Script Execution**:
 - Scripts in `.claude/skills/workflow-verify/scripts/`

@@ -1,0 +1,72 @@
+= Workflow Verification System
+:toc:
+:toc-placement: preamble
+
+Hybrid script + LLM-as-judge verification for plan-marshall workflow outputs.
+
+== Overview
+
+Verifies that workflow outputs (solution_outline.md, references.toon, tasks) are correct and complete. Classical assertions cannot work because LLM outputs vary in wording while semantic correctness matters.
+
+[cols="1,3"]
+|===
+| Command | `/verify-workflow`
+| Skill | `.claude/skills/workflow-verify/SKILL.md`
+| Test Cases | `workflow-verification/test-cases/`
+| Results | `.plan/temp/workflow-verification/` (ephemeral)
+|===
+
+== Architecture
+
+----
+Phase 1: Structural Checks (Script)     Phase 2: Semantic Assessment (LLM)
+┌─────────────────────────┐            ┌─────────────────────────┐
+│ • File existence        │            │ • Scope correctness     │
+│ • TOON/MD validation    │────────────│ • Completeness check    │
+│ • Required sections     │            │ • Decision quality      │
+│ • Cross-references      │            │ • Intent alignment      │
+└─────────────────────────┘            └─────────────────────────┘
+----
+
+*Key principle*: Uses manage-* tool interfaces, not direct filesystem access.
+
+== Usage
+
+[source,bash]
+----
+/verify-workflow create --test-id my-test   # Create new test case
+/verify-workflow run --test-id my-test      # Run verification
+/verify-workflow list                       # List test cases
+----
+
+== Test Case Structure
+
+----
+workflow-verification/test-cases/{test-id}/
+├── test-definition.toon      # Trigger command and setup
+├── expected-artifacts.toon   # Expected files with standard refs
+├── criteria/
+│   ├── semantic.md           # LLM-as-judge criteria
+│   └── decision-quality.md   # Expected decisions
+└── golden/
+    └── verified-result.md    # Expert-verified reference
+----
+
+== Scoring
+
+Three dimensions, each 0-100:
+
+* *Scope*: Correct components analyzed
+* *Completeness*: All expected items found
+* *Quality*: Decisions well-reasoned
+
+Overall status: PASS (≥80), WARN (60-79), FAIL (<60)
+
+== Reference
+
+Full implementation details in:
+
+* xref:.claude/skills/workflow-verify/SKILL.md[SKILL.md] - Workflow orchestration
+* xref:.claude/skills/workflow-verify/standards/scoring-guide.md[scoring-guide.md] - Scoring rubric
+* xref:.claude/skills/workflow-verify/standards/test-case-format.md[test-case-format.md] - Test case specification
+* xref:.claude/skills/workflow-verify/standards/criteria-format.md[criteria-format.md] - Criteria authoring
