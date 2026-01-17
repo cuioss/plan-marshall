@@ -20,6 +20,7 @@ from pathlib import Path
 # Base paths
 BUNDLES_DIR = Path('marketplace/bundles')
 TEST_DIR = Path('test')
+CLAUDE_DIR = Path('.claude')
 
 
 def run(cmd: list[str], description: str) -> int:
@@ -55,7 +56,12 @@ def get_test_path(module: str | None) -> str:
 def cmd_compile(module: str | None) -> int:
     """Run mypy on production sources."""
     path = get_bundle_path(module)
-    return run(['uv', 'run', 'mypy', path], f'compile: mypy {path}')
+    # Include .claude/ scripts when running full compile (no module filter)
+    if module:
+        return run(['uv', 'run', 'mypy', path], f'compile: mypy {path}')
+    else:
+        paths = [path, str(CLAUDE_DIR)]
+        return run(['uv', 'run', 'mypy'] + paths, f'compile: mypy {" ".join(paths)}')
 
 
 def cmd_test_compile(module: str | None) -> int:
@@ -84,7 +90,8 @@ def cmd_quality_gate(module: str | None) -> int:
         if Path(test_path).exists():
             paths.append(test_path)
     else:
-        paths = [str(BUNDLES_DIR), str(TEST_DIR)]
+        # Include .claude/ scripts when running full quality-gate
+        paths = [str(BUNDLES_DIR), str(TEST_DIR), str(CLAUDE_DIR)]
 
     return run(['uv', 'run', 'ruff', 'check'] + paths, f'quality-gate: ruff check {" ".join(paths)}')
 

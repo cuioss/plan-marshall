@@ -44,10 +44,10 @@ verify = "uv run python build.py verify"
 clean = "uv run python build.py clean"
 
 # Shortcuts for common operations (no module filtering)
-lint = "ruff check marketplace/bundles/ test/"
-lint-fix = "ruff check marketplace/bundles/ test/ --fix"
-fmt = "ruff format marketplace/bundles/ test/"
-format = "ruff format marketplace/bundles/ test/"
+lint = "ruff check marketplace/bundles/ test/ .claude/"
+lint-fix = "ruff check marketplace/bundles/ test/ .claude/ --fix"
+fmt = "ruff format marketplace/bundles/ test/ .claude/"
+format = "ruff format marketplace/bundles/ test/ .claude/"
 
 # =============================================================================
 # Tool Configurations
@@ -76,7 +76,7 @@ exclude_lines = [
 [tool.ruff]
 target-version = "py312"
 line-length = 120
-src = ["marketplace/bundles", "test"]
+src = ["marketplace/bundles", "test", ".claude"]
 
 [tool.ruff.lint]
 select = ["E", "W", "F", "I", "B", "C4", "UP"]
