@@ -9,8 +9,8 @@ trigger:
   command: /plan-manage
   args: create a new plan: {description of the task}
 
-setup_commands[1]:
-  python3 .plan/execute-script.py plan-marshall:marshall-steward:marshall-steward init
+# setup_commands[N]:  # Optional: commands to run before trigger
+#   {command}
 
 cleanup:
   archive_plan: true
