@@ -66,7 +66,7 @@ Overall status: PASS (≥80), WARN (60-79), FAIL (<60)
 
 Full implementation details in:
 
-* xref:.claude/skills/workflow-verify/SKILL.md[SKILL.md] - Workflow orchestration
-* xref:.claude/skills/workflow-verify/standards/scoring-guide.md[scoring-guide.md] - Scoring rubric
-* xref:.claude/skills/workflow-verify/standards/test-case-format.md[test-case-format.md] - Test case specification
-* xref:.claude/skills/workflow-verify/standards/criteria-format.md[criteria-format.md] - Criteria authoring
+* xref:../.claude/skills/workflow-verify/SKILL.md[SKILL.md] - Workflow orchestration
+* xref:../.claude/skills/workflow-verify/standards/scoring-guide.md[scoring-guide.md] - Scoring rubric
+* xref:../.claude/skills/workflow-verify/standards/test-case-format.md[test-case-format.md] - Test case specification
+* xref:../.claude/skills/workflow-verify/standards/criteria-format.md[criteria-format.md] - Criteria authoring
