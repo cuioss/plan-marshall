@@ -97,6 +97,23 @@ When creating deliverables, use this mapping for `suggested_skill` and `suggeste
 
 ---
 
+## Scoping Decisions
+
+When using `scan-marketplace-inventory`, determine scope from the request analysis:
+
+| Request Indicator | Resource Types | Log Entry |
+|-------------------|----------------|-----------|
+| "agents" mentioned | `--resource-types agents` | Scoped to agents only |
+| "commands" mentioned | `--resource-types commands` | Scoped to commands only |
+| "skills" mentioned | `--resource-types skills` | Scoped to skills only |
+| "outputs" / "returns" | `--resource-types agents,commands` | Agent/command outputs |
+| Single bundle named | `--bundles {name}` | Scoped to {name} bundle |
+| No bundle specified | (no filter) | Full marketplace scan |
+
+Log the scoping decision with rationale from request analysis.
+
+---
+
 ## Error Handling
 
 ### Component Not Found

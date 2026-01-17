@@ -10,6 +10,18 @@ For isolated changes, identify the target components directly:
 2. **Read existing component** (if modify/refactor scope)
 3. **Build deliverables section** for each component to create/modify
 
+## Decision Logging
+
+Log path selection and targets:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  work {plan_id} INFO "[DECISION] (pm-plugin-development:ext-outline-plugin) Path-Single: {N} components, bundle={bundle}"
+
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  work {plan_id} INFO "[ARTIFACT] (pm-plugin-development:ext-outline-plugin) Targets: {component-list}"
+```
+
 ## Deliverable Template
 
 Build a deliverables markdown section following the contract from `pm-workflow:manage-solution-outline/standards/deliverable-contract.md`.

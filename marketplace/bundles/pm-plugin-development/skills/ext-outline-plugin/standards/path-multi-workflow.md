@@ -12,6 +12,18 @@ Goals MUST contain explicit file paths. A goal that says "update all X" without 
 
 **Note**: Use `--trace-plan-id` for plan-scoped logging (the script doesn't have its own `--plan-id` parameter).
 
+### Log Scope Decision
+
+Before scanning, log the scope decision based on request analysis:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  work {plan_id} INFO "[DECISION] (pm-plugin-development:ext-outline-plugin) Scope: resource-types={types}, bundles={all|filtered}
+  detail: {rationale from request analysis}"
+```
+
+### Execute Inventory Scan
+
 ```bash
 # Full inventory with descriptions
 python3 .plan/execute-script.py \
@@ -25,6 +37,17 @@ python3 .plan/execute-script.py \
   --trace-plan-id {plan_id} \
   --bundles planning,pm-dev-java \
   --include-descriptions
+```
+
+### Link Inventory to References
+
+After scan completes, record the scan parameters in references.toon:
+
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-references:manage-references set \
+  --plan-id {plan_id} \
+  --field inventory_scan \
+  --value "{timestamp}:{resource-types}:{bundle-filter}"
 ```
 
 ## Step 3b.2: Analyze Each Component
@@ -77,6 +100,24 @@ affected_files:
     - path/to/file3.md (reason: produces affected format)
 ```
 
+### Document Excluded Components
+
+For files analyzed but NOT affected, log with rationale using `[FINDING]`:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  work {plan_id} INFO "[FINDING] (pm-plugin-development:ext-outline-plugin) Not affected: {file}
+  detail: {rationale}"
+```
+
+The rationale should explain WHY the component is not affected based on request analysis:
+- What was the matching criteria from the request?
+- Why did this file not meet the criteria?
+
+Example patterns:
+- `{file} matched discovery pattern but content analysis shows {criteria} not present`
+- `{file} excluded: {element} is {category}, not {target_category}`
+
 ### Final Verification
 
 After all batches complete, log the summary:
@@ -84,6 +125,17 @@ After all batches complete, log the summary:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   work {plan_id} INFO "[MILESTONE] (pm-plugin-development:ext-outline-plugin) Impact analysis complete: {total_affected} of {total_analyzed} affected"
+```
+
+### Link Affected Files to References
+
+After analysis complete, persist affected files for execute phase:
+
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-references:manage-references add-list \
+  --plan-id {plan_id} \
+  --field affected_files \
+  --values "{comma-separated-paths}"
 ```
 
 ## Step 3b.3: Build Deliverables Section with Enumeration

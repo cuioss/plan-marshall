@@ -46,6 +46,22 @@ Read standards/reference-tables.md
 |-----------|---------------------|
 | Deliverable involves Python scripts | `standards/script-verification.md` |
 
+### Decision Logging
+
+After assessment determines workflow path, log the decision:
+
+**Path Selection:**
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  work {plan_id} INFO "[DECISION] (pm-plugin-development:ext-outline-plugin) {Path} selected: {rationale}"
+```
+
+**Conditional Standards Triggered:**
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  work {plan_id} INFO "[DECISION] (pm-plugin-development:ext-outline-plugin) Conditional standards: {list or 'none'}"
+```
+
 ---
 
 ## Simple Workflow
