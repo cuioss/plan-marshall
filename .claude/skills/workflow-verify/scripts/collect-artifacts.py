@@ -169,7 +169,7 @@ class ArtifactCollector:
     def collect_status(self) -> bool:
         """Collect status.toon via manage-lifecycle."""
         code, stdout, stderr = run_manage_script(
-            'pm-workflow:manage-lifecycle:manage-lifecycle', 'status', '--plan-id', self.plan_id
+            'pm-workflow:manage-lifecycle:manage-lifecycle', 'read', '--plan-id', self.plan_id
         )
 
         if code == 0 and stdout.strip():

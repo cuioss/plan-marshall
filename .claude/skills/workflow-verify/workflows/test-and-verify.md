@@ -70,7 +70,7 @@ fi
 
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-lifecycle:manage-lifecycle \
-  status --plan-id {plan_id}
+  read --plan-id {plan_id}
 ```
 
 If plan doesn't exist, report error.
