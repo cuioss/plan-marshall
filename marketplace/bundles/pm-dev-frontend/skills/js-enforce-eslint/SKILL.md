@@ -1,10 +1,8 @@
 ---
-name: cui-javascript-linting
-description: ESLint, Prettier, and StyleLint configuration standards for JavaScript code quality and formatting, including flat config setup, rule management, and build integration
-allowed-tools:
-  - Read
-  - Grep
-  - Glob
+name: js-enforce-eslint
+description: Enforce ESLint standards by fixing violations systematically
+user-invocable: true
+allowed-tools: Read, Grep, Glob, Write, Edit, Bash
 ---
 
 # JavaScript Linting and Formatting Standards

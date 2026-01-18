@@ -1,10 +1,11 @@
 ---
 name: js-implement-code
 description: Self-contained command for JavaScript code implementation with verification and iteration
+user-invocable: true
 allowed-tools: Skill, Read, Write, Edit, Glob, Grep, Bash, Task
 ---
 
-# JavaScript Implement Code Command
+# JavaScript Implement Code Skill
 
 Self-contained command that implements JavaScript code with full standards compliance, verifies with npm-builder, and iterates until clean.
 

@@ -1,10 +1,8 @@
 ---
 name: cui-css
 description: Modern CSS standards covering essentials, responsive design, quality practices, and tooling for CUI projects
-allowed-tools:
-  - Read
-  - Grep
-  - Glob
+user-invocable: false
+allowed-tools: Read, Grep, Glob
 ---
 
 # CSS Development Standards

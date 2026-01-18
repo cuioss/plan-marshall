@@ -1,29 +1,28 @@
 ---
 name: js-generate-coverage
 description: Self-contained command for coverage generation and analysis
+user-invocable: true
 allowed-tools: Skill, Read, Glob, Grep, Bash
 ---
 
-# JavaScript Coverage Report Command
+# JavaScript Coverage Report Skill
 
-Self-contained command that generates test coverage reports and analyzes results.
+Self-contained skill that generates test coverage reports and analyzes results.
 
-## CONTINUOUS IMPROVEMENT RULE
-
-If you discover issues or improvements during execution, record them:
-
-1. **Activate skill**: `Skill: plan-marshall:manage-lessons`
-2. **Record lesson** with:
-   - Component: `{type: "command", name: "js-generate-coverage", bundle: "pm-dev-frontend"}`
-   - Category: bug | improvement | pattern | anti-pattern
-   - Summary and detail of the finding
-
-## PARAMETERS
+## Parameters
 
 - **files** - (Optional) Specific files to check coverage for
 - **workspace** - (Optional) Workspace name for monorepo projects
 
-## WORKFLOW
+## Usage Examples
+
+```
+/js-generate-coverage
+/js-generate-coverage workspace=frontend
+/js-generate-coverage files=src/utils/validator.js
+```
+
+## Workflow
 
 ### Step 1: Generate Coverage
 
@@ -46,15 +45,15 @@ This generates coverage reports in coverage/ directory.
 
 **Load skill and execute workflow:**
 ```
-Skill: pm-dev-frontend:cui-javascript-unit-testing
+Skill: pm-dev-frontend:js-implement-tests
 Execute workflow: Analyze Coverage
 ```
 
 Or run script directly:
 ```bash
-python3 .plan/execute-script.py pm-dev-frontend:cui-javascript-unit-testing:js-coverage analyze --report coverage/coverage-summary.json
+python3 .plan/execute-script.py pm-dev-frontend:js-implement-tests:js-coverage analyze --report coverage/coverage-summary.json
 # Or for LCOV format:
-python3 .plan/execute-script.py pm-dev-frontend:cui-javascript-unit-testing:js-coverage analyze --report coverage/lcov.info --format lcov
+python3 .plan/execute-script.py pm-dev-frontend:js-implement-tests:js-coverage analyze --report coverage/lcov.info --format lcov
 ```
 
 Script returns structured JSON with overall_coverage, by_file, and low_coverage_files.
@@ -72,8 +71,8 @@ Script returns structured JSON with overall_coverage, by_file, and low_coverage_
 }
 ```
 
-## RELATED
+## Related
 
-- Skill: `pm-dev-frontend:cui-javascript-unit-testing` - Analyze Coverage workflow
+- Skill: `pm-dev-frontend:js-implement-tests` - Analyze Coverage workflow
 - Skill: `pm-dev-frontend:cui-javascript-project` - Parse npm Build Output workflow
-- Command: `/js-implement-tests` - Add tests for low-coverage areas
+- Skill: `/js-implement-tests` - Add tests for low-coverage areas

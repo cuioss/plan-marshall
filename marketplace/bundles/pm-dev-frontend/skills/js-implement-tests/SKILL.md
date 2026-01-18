@@ -1,10 +1,8 @@
 ---
-name: cui-javascript-unit-testing
-description: Jest unit testing standards covering configuration, test structure, testing patterns, and coverage requirements
-allowed-tools:
-  - Read
-  - Grep
-  - Glob
+name: js-implement-tests
+description: Self-contained command for JavaScript test implementation with verification and iteration
+user-invocable: true
+allowed-tools: Read, Grep, Glob, Write, Edit, Bash, Task
 ---
 
 # JavaScript Unit Testing Standards

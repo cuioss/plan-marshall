@@ -1,7 +1,8 @@
 ---
-name: cui-javascript-maintenance
-description: Standards for identifying, prioritizing, and verifying JavaScript code maintenance and refactoring work
-allowed-tools: [Read, Grep, Glob]
+name: js-refactor-code
+description: Execute systematic JavaScript refactoring with standards compliance verification
+user-invocable: true
+allowed-tools: Read, Grep, Glob, Write, Edit, Bash
 ---
 
 # CUI JavaScript Maintenance Skill

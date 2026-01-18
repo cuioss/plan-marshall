@@ -1,11 +1,8 @@
 ---
 name: cui-javascript-project
 description: JavaScript project structure, package.json configuration, dependency management, and Maven integration standards for consistent project setup and builds
-allowed-tools:
-  - Read
-  - Grep
-  - Glob
-  - Bash(python3:*)
+user-invocable: false
+allowed-tools: Read, Grep, Glob, Bash
 ---
 
 # JavaScript Project Structure and Build Standards

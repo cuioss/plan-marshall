@@ -10,7 +10,7 @@ from pathlib import Path
 from conftest import get_script_path, run_script
 
 # Script under test
-SCRIPT_PATH = get_script_path('pm-dev-frontend', 'cui-jsdoc', 'jsdoc.py')
+SCRIPT_PATH = get_script_path('pm-dev-frontend', 'js-fix-jsdoc', 'jsdoc.py')
 FIXTURES_DIR = Path(__file__).parent / 'jsdoc'
 
 

@@ -1,10 +1,11 @@
 ---
 name: js-maintain-tests
 description: Execute systematic JavaScript test quality improvement with NO production code changes
+user-invocable: true
 allowed-tools: Skill, Read, Write, Edit, Glob, Grep, Bash, Task, SlashCommand
 ---
 
-# CUI JavaScript Test Maintain Command
+# JavaScript Test Maintain Skill
 
 Orchestrates systematic JavaScript test quality improvement workflow while ensuring NO production code changes except confirmed bugs (with user approval).
 
