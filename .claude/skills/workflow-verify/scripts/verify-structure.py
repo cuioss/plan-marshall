@@ -217,10 +217,11 @@ class StructuralChecker:
     def check_config_exists(self) -> bool:
         """Check if config.toon exists via manage-config."""
         code, stdout, stderr = run_manage_script(
-            'pm-workflow:manage-config:manage-config', 'exists', '--plan-id', self.plan_id
+            'pm-workflow:manage-config:manage-config', 'read', '--plan-id', self.plan_id
         )
 
-        if code == 0 and 'exists: true' in stdout.lower():
+        # read returns 0 with content if file exists
+        if code == 0 and stdout.strip():
             self.add_check('config_exists', 'pass', 'Config file exists')
             return True
         else:
@@ -231,10 +232,11 @@ class StructuralChecker:
     def check_status_exists(self) -> bool:
         """Check if status.toon exists via manage-lifecycle."""
         code, stdout, stderr = run_manage_script(
-            'pm-workflow:manage-lifecycle:manage-lifecycle', 'status', '--plan-id', self.plan_id
+            'pm-workflow:manage-lifecycle:manage-lifecycle', 'read', '--plan-id', self.plan_id
         )
 
-        if code == 0 and 'status:' in stdout:
+        # read returns 0 with content if file exists
+        if code == 0 and stdout.strip():
             self.add_check('status_exists', 'pass', 'Status file exists')
             return True
         else:
@@ -245,10 +247,11 @@ class StructuralChecker:
     def check_references_exists(self) -> bool:
         """Check if references.toon exists via manage-references."""
         code, stdout, stderr = run_manage_script(
-            'pm-workflow:manage-references:manage-references', 'exists', '--plan-id', self.plan_id
+            'pm-workflow:manage-references:manage-references', 'read', '--plan-id', self.plan_id
         )
 
-        if code == 0 and 'exists: true' in stdout.lower():
+        # read returns 0 with content if file exists
+        if code == 0 and stdout.strip():
             self.add_check('references_exists', 'pass', 'References file exists')
             return True
         else:
