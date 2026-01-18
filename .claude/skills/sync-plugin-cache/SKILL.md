@@ -1,27 +1,27 @@
 ---
 name: sync-plugin-cache
 description: Synchronize all marketplace bundles to the Claude plugin cache
+user-invocable: true
+allowed-tools: Bash
 ---
 
-# Sync Plugin Cache
+# Sync Plugin Cache Skill
 
 Synchronizes all bundles from `marketplace/bundles/` to the Claude plugin cache at `~/.claude/plugins/cache/plan-marshall/`.
 
-## CONTINUOUS IMPROVEMENT RULE
-
-If you discover issues or improvements during execution, record them:
-
-1. **Activate skill**: `Skill: plan-marshall:manage-lessons-learned`
-2. **Record lesson** with:
-   - Component: `{type: "command", name: "sync-plugin-cache", bundle: "project-local"}`
-   - Category: bug | improvement | pattern | anti-pattern
-   - Summary and detail of the finding
-
-## PARAMETERS
+## Parameters
 
 None - Synchronizes all bundles automatically.
 
-## WORKFLOW
+## Usage Examples
+
+```bash
+/sync-plugin-cache
+```
+
+Syncs all bundles after making changes to marketplace components.
+
+## Workflow
 
 ### Step 1: Identify Bundles and Versions
 
@@ -53,11 +53,6 @@ For each bundle found, invoke a separate Bash tool call using the version from S
 rsync -av --delete marketplace/bundles/{bundle}/ ~/.claude/plugins/cache/plan-marshall/{bundle}/{version}/
 ```
 
-Example - send ONE message with MULTIPLE parallel Bash tool calls (one per bundle):
-```
-Bash: rsync -av --delete marketplace/bundles/{bundle}/ ~/.claude/plugins/cache/plan-marshall/{bundle}/{version}/
-```
-
 The `--delete` flag ensures removed files are also removed from cache.
 
 **NOTE**: Always use the version from each bundle's `plugin.json`, not a hardcoded value.
@@ -66,21 +61,13 @@ The `--delete` flag ensures removed files are also removed from cache.
 
 Show sync results listing each bundle synchronized and the cache location.
 
-## CRITICAL RULES
+## Critical Rules
 
 - Always use rsync with `--delete` to ensure cache matches source exactly
 - Do NOT modify source files, only copy to cache
 - If rsync fails, show error and continue with remaining bundles
 
-## USAGE EXAMPLES
+## Related
 
-```
-/sync-plugin-cache
-```
-
-Syncs all bundles after making changes to marketplace components.
-
-## RELATED
-
-- `/plan-marshall` - Project configuration including cache regeneration
+- `/marshall-steward` - Project configuration including cache regeneration
 - CLAUDE.md - Documents the plugin cache sync pattern

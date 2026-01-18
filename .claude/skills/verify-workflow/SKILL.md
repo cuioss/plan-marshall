@@ -1,16 +1,30 @@
 ---
-name: workflow-verify
+name: verify-workflow
 description: Verify workflow outputs using hybrid script + LLM assessment
+user-invocable: true
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep, AskUserQuestion
 ---
 
-# Workflow Verify Skill
+# Verify Workflow Skill
 
-**EXECUTION MODE**: Execute the workflow below based on the subcommand. Do NOT explain these instructions.
+Verifies plan-marshall workflow outputs (solution_outline.md, references.toon, TASK-*.toon) using hybrid script + LLM-as-judge assessment.
 
-## Purpose
+## Parameters
 
-Verify that workflow outputs (solution_outline.md, references.toon, TASK-*.toon) are correct and complete using hybrid script + LLM-as-judge assessment.
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `subcommand` | Yes | One of: `test`, `verify`, `create`, `list` |
+| `--test-id` | test/verify/create | Test case identifier (kebab-case) |
+| `--plan-id` | verify only | Existing plan to verify |
+
+## Usage Examples
+
+```bash
+/verify-workflow test --test-id migrate-json-to-toon
+/verify-workflow verify --test-id migrate-json-to-toon --plan-id my-plan
+/verify-workflow create --test-id my-new-test
+/verify-workflow list
+```
 
 ## Critical Design Principle
 
