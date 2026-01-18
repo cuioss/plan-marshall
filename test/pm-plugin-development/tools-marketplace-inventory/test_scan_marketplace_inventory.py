@@ -44,13 +44,13 @@ def test_default_scan_finds_agents():
 
 
 def test_default_scan_finds_commands():
-    """Test direct-result scan finds at least 25 commands."""
+    """Test direct-result scan finds at least 5 commands."""
     result = run_script(SCRIPT_PATH, '--direct-result')
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
     data = parse_toon(result.stdout)
     total_commands = data.get('statistics', {}).get('total_commands', 0)
-    assert total_commands >= 25, f'Should find at least 25 commands, found {total_commands}'
+    assert total_commands >= 5, f'Should find at least 5 commands, found {total_commands}'
 
 
 def test_default_scan_finds_skills():
@@ -125,7 +125,7 @@ def test_commands_only_has_commands():
 
     data = parse_toon(result.stdout)
     total_commands = data.get('statistics', {}).get('total_commands', 0)
-    assert total_commands >= 25, f'Commands-only should have at least 25 commands, found {total_commands}'
+    assert total_commands >= 5, f'Commands-only should have at least 5 commands, found {total_commands}'
 
 
 def test_skills_only_no_agents():

@@ -1,20 +1,11 @@
 ---
 name: plugin-doctor
 description: Diagnose and fix quality issues in marketplace components with automated safe fixes and prompted risky fixes
-allowed-tools:
-  - Read
-  - Edit
-  - Write
-  - Bash
-  - AskUserQuestion
-  - Glob
-  - Grep
-  - Skill
+user-invocable: true
+allowed-tools: Read, Edit, Write, Bash, AskUserQuestion, Glob, Grep, Skill
 ---
 
 # Plugin Doctor Skill
-
-**EXECUTION MODE**: You are now executing this skill. DO NOT explain or summarize these instructions to the user. IMMEDIATELY begin the workflow below based on the component type.
 
 Comprehensive diagnostic and fix skill for marketplace components. Combines diagnosis, automated safe fixes, prompted risky fixes, and verification into a single workflow.
 

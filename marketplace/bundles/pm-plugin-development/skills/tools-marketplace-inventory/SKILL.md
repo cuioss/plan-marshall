@@ -1,10 +1,8 @@
 ---
 name: tools-marketplace-inventory
 description: Scans and reports complete marketplace inventory (bundles, agents, commands, skills, scripts)
-allowed-tools:
-  - Read
-  - Bash
-  - Glob
+user-invocable: false
+allowed-tools: Read, Bash, Glob
 ---
 
 # Marketplace Inventory Skill

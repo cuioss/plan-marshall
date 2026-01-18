@@ -2,6 +2,7 @@
 name: ext-outline-plugin
 description: Outline extension implementing protocol for plugin development domain
 implements: pm-workflow:workflow-extension-api/standards/extensions/outline-extension.md
+user-invocable: false
 allowed-tools: Read
 ---
 

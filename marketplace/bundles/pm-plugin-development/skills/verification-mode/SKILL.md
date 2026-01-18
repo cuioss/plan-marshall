@@ -1,12 +1,13 @@
 ---
 name: verification-mode
 description: Verification mode that stops and analyzes on failures, workarounds, or resolution issues
+user-invocable: false
 allowed-tools: Read
 ---
 
 # Verification Skill
 
-**EXECUTION MODE**: When this skill is loaded, you are in VERIFICATION MODE. This modifies your behavior for ALL subsequent operations. You MUST follow the verification protocols below.
+When this skill is loaded, you are in VERIFICATION MODE. This modifies your behavior for ALL subsequent operations. You MUST follow the verification protocols below.
 
 Verification mode ensures quality by stopping execution on any failure, workaround, or resolution issue to perform root cause analysis before proceeding.
 

@@ -1,12 +1,11 @@
 ---
-name: analyze-script-failures
+name: tools-analyze-script-failures
 description: Analyze script failures to identify source components and propose fixes
-tools: Read, Grep, Glob, Bash, AskUserQuestion, Skill
+user-invocable: true
+allowed-tools: Read, Grep, Glob, Bash, AskUserQuestion, Skill
 ---
 
 # Analyze Script Failures Skill
-
-**EXECUTION MODE**: You are now executing this skill. DO NOT explain or summarize these instructions to the user. IMMEDIATELY begin the workflow below.
 
 Analyzes script failures from the current session to identify the source component, trace how instructions led to the failed call, and propose fixes.
 

@@ -1,12 +1,11 @@
 ---
 name: plugin-maintain
 description: Comprehensive maintenance skill for marketplace components - update components, manage knowledge, maintain READMEs, restructure, and apply orchestration compliance
-tools: Read, Write, Edit, Glob, Grep, Bash, AskUserQuestion, Skill
+user-invocable: true
+allowed-tools: Read, Write, Edit, Glob, Grep, Bash, AskUserQuestion, Skill
 ---
 
 # Plugin Maintain Skill
-
-**EXECUTION MODE**: You are now executing this skill. DO NOT explain or summarize these instructions to the user. IMMEDIATELY begin the appropriate workflow based on the task type parameter.
 
 Comprehensive maintenance automation for marketplace bundles. Consolidates update, knowledge management, README maintenance, refactoring, and orchestration compliance into a single skill with progressive disclosure.
 

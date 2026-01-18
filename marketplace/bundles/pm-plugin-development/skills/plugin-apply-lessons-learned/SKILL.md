@@ -1,10 +1,11 @@
 ---
 name: plugin-apply-lessons-learned
 description: Apply accumulated lessons learned to component documentation
+user-invocable: true
 allowed-tools: Skill, Read, Edit, Glob, Bash
 ---
 
-# Apply Lessons Learned
+# Apply Lessons Learned Skill
 
 Read lessons learned via `manage-lessons` skill and apply them to component documentation.
 
@@ -28,53 +29,55 @@ Read lessons learned via `manage-lessons` skill and apply them to component docu
 
 ## WORKFLOW
 
-When you invoke this command, I will:
+### Step 1: Parse Parameters
 
-1. **Parse parameters**:
-   - Extract component type and name, or flags (--all, --list)
-   - Validate parameter syntax
+- Extract component type and name, or flags (--all, --list)
+- Validate parameter syntax
 
-2. **Load lessons learned skill**:
-   ```
-   Skill: plan-marshall:manage-lessons
-   ```
+### Step 2: Load Lessons Learned Skill
 
-3. **Query unapplied lessons**:
-   - Use `query-lessons.py` script to filter lesson files
-   - For specific component: Filter by `component.name`
-   - For --all: Filter all where `applied: false`
-   - For --list: Display lessons without applying
+```
+Skill: plan-marshall:manage-lessons
+```
 
-4. **For each unapplied lesson**:
+### Step 3: Query Unapplied Lessons
 
-   a. **Locate component source**:
-      - Commands: `marketplace/bundles/{bundle}/commands/{name}.md`
-      - Agents: `marketplace/bundles/{bundle}/agents/{name}.md`
-      - Skills: `marketplace/bundles/{bundle}/skills/{name}/SKILL.md`
+- Use `query-lessons.py` script to filter lesson files
+- For specific component: Filter by `component.name`
+- For --all: Filter all where `applied: false`
+- For --list: Display lessons without applying
 
-   b. **Analyze lesson category**:
-      - `bug`: Add to CRITICAL RULES or error handling section
-      - `improvement`: Add to workflow or suggest enhancement
-      - `pattern`: Add to best practices or examples
-      - `anti-pattern`: Add to warnings or "do not" section
+### Step 4: For Each Unapplied Lesson
 
-   c. **Determine appropriate placement**:
-      - Read component documentation
-      - Find relevant section for lesson category
-      - Prepare edit that integrates lesson naturally
+a. **Locate component source**:
+   - Commands: `marketplace/bundles/{bundle}/commands/{name}.md`
+   - Agents: `marketplace/bundles/{bundle}/agents/{name}.md`
+   - Skills: `marketplace/bundles/{bundle}/skills/{name}/SKILL.md`
 
-   d. **Apply lesson**:
-      - Edit component documentation
-      - Integrate lesson content (not raw JSON, but natural prose)
-      - Maintain document structure and formatting
+b. **Analyze lesson category**:
+   - `bug`: Add to CRITICAL RULES or error handling section
+   - `improvement`: Add to workflow or suggest enhancement
+   - `pattern`: Add to best practices or examples
+   - `anti-pattern`: Add to warnings or "do not" section
 
-   e. **Mark lesson applied**:
-      - Edit lesson file frontmatter: Change `applied: false` to `applied: true`
+c. **Determine appropriate placement**:
+   - Read component documentation
+   - Find relevant section for lesson category
+   - Prepare edit that integrates lesson naturally
 
-5. **Report results**:
-   - Number of lessons applied per component
-   - Any lessons that couldn't be applied (with reason)
-   - Components updated
+d. **Apply lesson**:
+   - Edit component documentation
+   - Integrate lesson content (not raw JSON, but natural prose)
+   - Maintain document structure and formatting
+
+e. **Mark lesson applied**:
+   - Edit lesson file frontmatter: Change `applied: false` to `applied: true`
+
+### Step 5: Report Results
+
+- Number of lessons applied per component
+- Any lessons that couldn't be applied (with reason)
+- Components updated
 
 ## PARAMETERS
 
@@ -92,19 +95,6 @@ When you invoke this command, I will:
 - Component not found → Error with suggestion
 - No lessons file → Report "no lessons recorded"
 - No unapplied lessons → Report "nothing to apply"
-
-## Examples
-
-```
-User: /plugin-apply-lessons-learned command=maven-build-and-fix
-Result: Applies unapplied lessons to maven-build-and-fix.md
-
-User: /plugin-apply-lessons-learned --list
-Result: Lists all unapplied lessons without modifying files
-
-User: /plugin-apply-lessons-learned --all
-Result: Applies all unapplied lessons to their respective components
-```
 
 ## LESSON APPLICATION RULES
 

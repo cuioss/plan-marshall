@@ -1,8 +1,8 @@
 ---
 name: plugin-architecture
 description: Architecture principles, skill patterns, and design guidance for building goal-based Claude Code marketplace components
-allowed-tools:
-  - Read
+user-invocable: false
+allowed-tools: Read
 ---
 
 # Plugin Architecture Skill
