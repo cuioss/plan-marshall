@@ -14,9 +14,7 @@
     "./agents/research-best-practices.md"
   ],
   "commands": [
-    "./commands/marshall-steward.md",
     "./commands/tools-fix-intellij-diagnostics.md",
-    "./commands/tools-manage-web-permissions.md",
     "./commands/tools-sync-agents-file.md"
   ],
   "skills": [
@@ -30,12 +28,12 @@
     "./skills/marshall-steward",
     "./skills/permission-doctor",
     "./skills/permission-fix",
-    "./skills/permission-web-access",
     "./skills/ref-development-standards",
     "./skills/ref-toon-format",
     "./skills/tools-file-ops",
     "./skills/tools-integration-ci",
     "./skills/tools-json-ops",
+    "./skills/tools-manage-web-permissions",
     "./skills/tools-permission-sync",
     "./skills/tools-script-executor"
   ]

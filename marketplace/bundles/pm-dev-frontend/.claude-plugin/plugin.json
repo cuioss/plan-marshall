@@ -11,25 +11,20 @@
   "repository": "https://github.com/cuioss/plan-marshall.git",
   "keywords": ["javascript", "css", "frontend", "web-components", "testing", "standards"],
   "agents": [],
-  "commands": [
-    "./commands/js-enforce-eslint.md",
-    "./commands/js-fix-jsdoc.md",
-    "./commands/js-generate-coverage.md",
-    "./commands/js-implement-code.md",
-    "./commands/js-implement-tests.md",
-    "./commands/js-maintain-tests.md",
-    "./commands/js-refactor-code.md"
-  ],
+  "commands": [],
   "skills": [
     "./skills/cui-css",
     "./skills/cui-cypress",
     "./skills/cui-javascript",
-    "./skills/cui-javascript-linting",
-    "./skills/cui-javascript-maintenance",
     "./skills/cui-javascript-project",
-    "./skills/cui-javascript-unit-testing",
-    "./skills/cui-jsdoc",
     "./skills/ext-triage-js",
+    "./skills/js-enforce-eslint",
+    "./skills/js-fix-jsdoc",
+    "./skills/js-generate-coverage",
+    "./skills/js-implement-code",
+    "./skills/js-implement-tests",
+    "./skills/js-maintain-tests",
+    "./skills/js-refactor-code",
     "./skills/plan-marshall-plugin"
   ]
 }

@@ -12,12 +12,12 @@
   "keywords": ["documentation", "asciidoc", "standards", "review", "validation", "formatting"],
   "agents": [],
   "commands": [
-    "./commands/doc-create.md",
-    "./commands/doc-doctor.md",
-    "./commands/doc-maintain.md",
     "./commands/tools-verify-architecture-diagrams.md"
   ],
   "skills": [
+    "./skills/doc-create",
+    "./skills/doc-doctor",
+    "./skills/doc-maintain",
     "./skills/ext-outline-docs",
     "./skills/ext-triage-docs",
     "./skills/manage-adr",

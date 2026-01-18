@@ -11,10 +11,9 @@
   "repository": "https://github.com/cuioss/plan-marshall.git",
   "keywords": ["requirements", "specifications", "planning", "traceability", "setup"],
   "agents": [],
-  "commands": [
-    "./commands/cui-maintain-requirements.md"
-  ],
+  "commands": [],
   "skills": [
+    "./skills/cui-maintain-requirements",
     "./skills/ext-triage-reqs",
     "./skills/plan-marshall-plugin",
     "./skills/planning",

@@ -16,16 +16,10 @@
     "./agents/task-execute-agent.md",
     "./agents/task-plan-agent.md"
   ],
-  "commands": [
-    "./commands/plan-execute.md",
-    "./commands/plan-manage.md",
-    "./commands/pr-doctor.md",
-    "./commands/task-implement.md"
-  ],
+  "commands": [],
   "skills": [
     "./skills/manage-config",
     "./skills/manage-files",
-    "./skills/manage-lifecycle",
     "./skills/manage-plan-documents",
     "./skills/manage-references",
     "./skills/manage-solution-outline",
@@ -35,7 +29,11 @@
     "./skills/phase-3-plan",
     "./skills/phase-4-execute",
     "./skills/phase-5-finalize",
+    "./skills/plan-execute",
+    "./skills/plan-manage",
     "./skills/planning-inventory",
+    "./skills/pr-doctor",
+    "./skills/task-implement",
     "./skills/task-implementation",
     "./skills/task-module_testing",
     "./skills/workflow-architecture",
