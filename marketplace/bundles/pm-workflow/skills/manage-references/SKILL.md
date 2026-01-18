@@ -1,6 +1,7 @@
 ---
 name: manage-references
 description: Manage references.toon files with field-level access and list management
+user-invocable: false
 allowed-tools: Read, Glob, Bash
 ---
 

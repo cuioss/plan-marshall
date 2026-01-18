@@ -1,6 +1,7 @@
 ---
 name: task-implementation
 description: Domain-agnostic implementation task execution with two-tier skill loading
+user-invocable: false
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash
 ---
 

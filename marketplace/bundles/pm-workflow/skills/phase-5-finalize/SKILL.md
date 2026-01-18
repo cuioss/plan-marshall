@@ -1,6 +1,7 @@
 ---
 name: phase-5-finalize
 description: Complete plan execution with git workflow and PR management
+user-invocable: false
 allowed-tools: Read, Bash, Glob, SlashCommand
 ---
 

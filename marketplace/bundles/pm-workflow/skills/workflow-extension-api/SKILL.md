@@ -1,6 +1,7 @@
 ---
 name: workflow-extension-api
 description: Defines extension points for domain-specific workflow customization. Covers profile overrides (implementation, testing) and extensions (outline, triage).
+user-invocable: false
 allowed-tools: Read
 ---
 

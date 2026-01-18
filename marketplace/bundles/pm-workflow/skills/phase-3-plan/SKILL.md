@@ -1,6 +1,7 @@
 ---
 name: phase-3-plan
 description: Domain-agnostic task planning from deliverables with skill resolution and optimization
+user-invocable: false
 allowed-tools: Read, Bash
 ---
 

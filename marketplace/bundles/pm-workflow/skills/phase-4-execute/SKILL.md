@@ -1,6 +1,7 @@
 ---
 name: phase-4-execute
 description: Execute phase skill for plan management. DUMB TASK RUNNER that executes tasks from TASK-*.toon files sequentially for execute and finalize phases.
+user-invocable: false
 allowed-tools: Read, Write, Edit, Bash, Skill, Task, AskUserQuestion
 ---
 

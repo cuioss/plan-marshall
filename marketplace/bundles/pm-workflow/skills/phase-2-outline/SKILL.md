@@ -1,12 +1,11 @@
 ---
 name: phase-2-outline
 description: Architecture-driven solution outline creation with intelligent module selection and profiles list
+user-invocable: false
 allowed-tools: Read, Glob, Grep, Bash
 ---
 
 # Phase Refine Outline Skill
-
-**EXECUTION MODE**: You are now executing this skill. DO NOT explain or summarize these instructions to the user. IMMEDIATELY begin executing the workflow steps below, starting with Step 1.
 
 **Role**: Architecture-driven workflow skill for creating solution outlines. Uses pre-computed architecture data to make intelligent module and package placement decisions.
 

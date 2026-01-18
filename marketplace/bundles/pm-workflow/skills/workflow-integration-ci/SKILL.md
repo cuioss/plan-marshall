@@ -1,12 +1,11 @@
 ---
 name: workflow-integration-ci
 description: PR review response workflow - fetch comments, triage, and respond to review feedback (GitHub and GitLab)
+user-invocable: false
 allowed-tools: Read, Edit, Write, Bash, Grep, Glob
 ---
 
 # PR Workflow Skill (Provider-Agnostic)
-
-**EXECUTION MODE**: You are now executing this skill. DO NOT explain or summarize these instructions to the user. IMMEDIATELY begin the workflow below based on the task context.
 
 Handles PR review comment workflows - fetching comments, triaging them, and generating appropriate responses. Works with both GitHub and GitLab via the unified `tools-integration-ci` abstraction.
 

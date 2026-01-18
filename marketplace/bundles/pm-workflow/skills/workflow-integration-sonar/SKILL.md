@@ -1,12 +1,11 @@
 ---
 name: workflow-integration-sonar
 description: Sonar issue workflow - fetch issues, triage, and fix or suppress based on context
+user-invocable: false
 allowed-tools: Read, Edit, Write, Bash(gh:*), Grep, Glob, mcp__sonarqube__search_sonar_issues_in_projects, mcp__sonarqube__change_sonar_issue_status
 ---
 
 # Sonar Workflow Skill
-
-**EXECUTION MODE**: You are now executing this skill. DO NOT explain or summarize these instructions to the user. IMMEDIATELY begin the workflow below based on the task context.
 
 Handles Sonar issue workflows - fetching issues from SonarQube, triaging them, and implementing fixes or suppressions.
 

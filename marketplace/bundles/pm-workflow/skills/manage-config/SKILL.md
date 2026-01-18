@@ -1,6 +1,7 @@
 ---
 name: manage-config
 description: Manage per-plan configuration with schema validation
+user-invocable: false
 allowed-tools: Read, Glob, Bash
 ---
 

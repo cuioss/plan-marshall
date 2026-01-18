@@ -148,20 +148,19 @@ def test_core_has_workflow_skills():
     assert len(task_skills) >= 2, f'Should have at least 2 task-* skills, found {len(task_skills)}'
 
 
-def test_core_has_commands():
-    """Test core bundle contains commands."""
+def test_core_has_user_invocable_skills():
+    """Test core bundle contains user-invocable skills (commands were absorbed into skills)."""
     result = run_script(SCRIPT_PATH)
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
     data = parse_json(result.stdout)
-    core_commands = data.get('core', {}).get('commands', [])
-    assert len(core_commands) >= 4, f'Should have at least 4 commands, found {len(core_commands)}'
+    core_skills = data.get('core', {}).get('skills', [])
 
-    # Verify specific commands are present
-    command_names = [c['name'] for c in core_commands]
-    expected_commands = ['task-implement', 'pr-doctor', 'plan-execute', 'plan-manage']
-    for expected in expected_commands:
-        assert expected in command_names, f'Should have {expected} command'
+    # Commands were absorbed into skills - verify key user-facing skills exist
+    skill_names = [s['name'] for s in core_skills]
+    expected_skills = ['task-implement', 'pr-doctor', 'plan-execute', 'plan-manage']
+    for expected in expected_skills:
+        assert expected in skill_names, f'Should have {expected} skill'
 
 
 # =============================================================================
