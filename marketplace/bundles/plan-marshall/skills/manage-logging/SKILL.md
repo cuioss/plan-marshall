@@ -1,6 +1,7 @@
 ---
 name: manage-logging
 description: Unified logging infrastructure for script execution and work progress tracking
+user-invocable: false
 allowed-tools: Read, Bash
 ---
 

@@ -1,6 +1,7 @@
 ---
 name: tools-script-executor
 description: Universal script execution pattern via execute-script.py proxy
+user-invocable: false
 allowed-tools: Read, Bash
 ---
 

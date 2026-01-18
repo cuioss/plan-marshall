@@ -1,6 +1,7 @@
 ---
 name: extension-api
 description: Extension API for domain bundle discovery, module detection, and canonical command generation
+user-invocable: false
 allowed-tools: Read, Bash
 ---
 

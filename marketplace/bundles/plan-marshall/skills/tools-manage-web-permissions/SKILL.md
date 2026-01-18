@@ -1,33 +1,34 @@
 ---
 name: tools-manage-web-permissions
 description: Analyze and consolidate WebFetch domain permissions across projects with security research and validation
-allowed-tools:
-  - Read
-  - Write
-  - Edit
-  - Skill
-  - WebFetch
-  - WebSearch
-  - AskUserQuestion
+user-invocable: true
+allowed-tools: Read, Write, Edit, Skill, WebFetch, WebSearch, AskUserQuestion
 ---
 
-# Manage Web Permissions Command
+# Manage Web Permissions Skill
 
 Analyzes WebFetch domains across global and project settings, researches domains for security, consolidates permissions, and provides recommendations.
 
-## PARAMETERS
+## Parameters
 
 **scope** - Which settings to analyze (global/local/both, default: both)
    - **Validation**: Must be one of: global, local, both
    - **Error**: If invalid: "Invalid scope '{value}'. Must be: global, local, or both" and retry
 
-## WORKFLOW
+## Usage Examples
+
+```
+/tools-manage-web-permissions           # Analyze all settings
+/tools-manage-web-permissions scope=global
+/tools-manage-web-permissions scope=local
+```
+
+## Workflow
 
 ### Step 1: Load Web Security Standards
 
-```
-Skill: plan-marshall:permission-web-access
-```
+Read: standards/trusted-domains.md
+Read: standards/domain-security-assessment.md
 
 Loads trusted domains, security assessment patterns, and research methodology.
 
@@ -93,7 +94,6 @@ WebFetch: https://domain-name.com (check if accessible)
 
 **A. If domain:* exists globally**:
 ```
-✅ Universal web access enabled
 Recommendation: Remove all specific domains (redundant)
 - Remove {count} specific domains from global
 - Remove {count} specific domains from local
@@ -104,24 +104,23 @@ Recommendation: Remove all specific domains (redundant)
 Recommendations by Category:
 
 MAJOR_DOMAINS ({count}):
-→ Move to global settings (docs.oracle.com, maven.apache.org, ...)
+> Move to global settings (docs.oracle.com, maven.apache.org, ...)
 
 HIGH_REACH ({count}):
-→ Move to global settings (github.com, stackoverflow.com, ...)
+> Move to global settings (github.com, stackoverflow.com, ...)
 
 PROJECT_SPECIFIC ({count}):
-→ Keep in local settings
+> Keep in local settings
 
 SUSPICIOUS ({count}):
-→ Review for removal: {list with reasons}
+> Review for removal: {list with reasons}
 ```
 
 ### Step 6: Display Analysis Report
 
 ```
-╔════════════════════════════════════════════════════════════╗
-║          WebFetch Permission Analysis                      ║
-╚════════════════════════════════════════════════════════════╝
+WebFetch Permission Analysis
+========================================
 
 Global Settings:
 - WebFetch permissions: {count}
@@ -172,9 +171,8 @@ If yes:
 Display summary of changes made and final state:
 
 ```
-╔════════════════════════════════════════════════════════════╗
-║          WebFetch Permission Update Complete               ║
-╚════════════════════════════════════════════════════════════╝
+WebFetch Permission Update Complete
+========================================
 
 Statistics:
 - Domains analyzed: {domains_analyzed}
@@ -190,7 +188,7 @@ Final State:
 - Total unique domains: {count}
 ```
 
-## STATISTICS TRACKING
+## Statistics Tracking
 
 Track throughout workflow:
 - `domains_analyzed`: Total unique domains discovered and analyzed
@@ -200,9 +198,7 @@ Track throughout workflow:
 - `files_read`: Count of settings files successfully read
 - `files_modified`: Count of settings files successfully updated
 
-Display all statistics in Step 8 report.
-
-## CRITICAL RULES
+## Critical Rules
 
 **Security:**
 - Always research unknown domains before approval
@@ -220,38 +216,8 @@ Display all statistics in Step 8 report.
 - Provide clear rationale for recommendations
 - Allow review mode for granular control
 
-## USAGE EXAMPLES
+## Related
 
-**Analyze all settings:**
-```
-/plan-marshall:tools-manage-web-permissions
-```
-
-**Analyze global only:**
-```
-/plan-marshall:tools-manage-web-permissions scope=global
-```
-
-**Analyze local only:**
-```
-/plan-marshall:tools-manage-web-permissions scope=local
-```
-
-## ARCHITECTURE
-
-This command:
-- Uses plan-marshall:permission-web-access skill for domain knowledge
-- Performs web research for unknown domains
-- Provides consolidation recommendations
-- Optionally applies changes
-
-## STANDARDS
-
-References:
-- plan-marshall:permission-web-access skill (trusted domains, security patterns)
-- Permission architecture standards (global vs local)
-
-## RELATED
-
-- `/plan-marshall:marshall-steward` - Permission management wizard
-- `plan-marshall:permission-web-access` skill - Domain security knowledge
+- `/marshall-steward` - Permission management wizard
+- `plan-marshall:permission-doctor` skill - Permission analysis
+- `plan-marshall:permission-fix` skill - Permission fixes

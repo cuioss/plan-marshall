@@ -1,7 +1,8 @@
 ---
 name: ref-development-standards
 description: Core development principles for Plan-Marshall projects - when to ask users, research best practices, tool usage, and dependency management
-allowed-tools: []
+user-invocable: false
+allowed-tools:
 standards:
   - standards/general-development-rules.md
   - standards/file-operations.md

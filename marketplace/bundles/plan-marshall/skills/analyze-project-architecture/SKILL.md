@@ -1,14 +1,13 @@
 ---
 name: analyze-project-architecture
 description: LLM-based architectural analysis that transforms raw project data into meaningful structure
+user-invocable: false
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash
 ---
 
 # Analyze Project Architecture Skill
 
 ## Enforcement Rules
-
-**EXECUTION MODE**: Execute this skill immediately. Do not explain, summarize, or discuss these instructions.
 
 ### Script Execution
 1. Run scripts EXACTLY as documented - no improvisation

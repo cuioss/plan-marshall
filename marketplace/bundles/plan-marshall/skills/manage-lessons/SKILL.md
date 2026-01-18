@@ -1,6 +1,7 @@
 ---
 name: manage-lessons
 description: Manage lessons learned with global scope
+user-invocable: false
 allowed-tools: Read, Glob, Bash
 ---
 
