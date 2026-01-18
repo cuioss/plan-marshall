@@ -1,10 +1,11 @@
 ---
 name: doc-maintain
 description: Maintain documentation (sync, cleanup, update)
+user-invocable: true
 allowed-tools: Skill, Read, Write, Edit, Glob, Grep, Bash
 ---
 
-# Documentation Maintain Command
+# Documentation Maintain Skill
 
 Maintenance operations for existing documentation: sync with code, cleanup stale content, refresh metadata.
 
@@ -116,7 +117,7 @@ Target: {target}
 Code analyzed: {file_count} files
 
 Drift Detected:
-✗ {count} items need attention
+X {count} items need attention
 
 Details:
 - {description of each drift item}
@@ -155,9 +156,9 @@ Target: {target}
 Files processed: {count}
 
 Updates Applied:
-✓ Metadata fixed: {count}
-✓ Cross-references fixed: {count}
-✓ Headers updated: {count}
+Y Metadata fixed: {count}
+Y Cross-references fixed: {count}
+Y Headers updated: {count}
 
 Manual Review Needed:
 - {file}: {reason}
@@ -165,10 +166,10 @@ Manual Review Needed:
 
 ## Architecture
 
-**Pattern**: Thin Orchestrator Command (~110 lines)
+**Pattern**: Thin Orchestrator (~110 lines)
 - Parses action and target
 - Routes to appropriate skill workflow
-- No business logic in command
+- No business logic in skill
 
 **Skill Dependency**: pm-documents:ref-documentation
 - Provides: sync-with-code, cleanup-stale, refresh-metadata workflows

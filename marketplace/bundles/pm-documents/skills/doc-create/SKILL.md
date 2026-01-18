@@ -1,10 +1,11 @@
 ---
 name: doc-create
 description: Create new documentation from templates
+user-invocable: true
 allowed-tools: Skill, Read, Write, Glob
 ---
 
-# Documentation Create Command
+# Documentation Create Skill
 
 Create new AsciiDoc documents from predefined templates.
 
@@ -95,7 +96,7 @@ Document Created
 
 File: {output_path}
 Type: {type}
-Status: ✅ Created and validated
+Status: Created and validated
 
 Next steps:
 1. Open {output_path} in your editor
@@ -105,10 +106,10 @@ Next steps:
 
 ## Architecture
 
-**Pattern**: Thin Orchestrator Command (~80 lines)
+**Pattern**: Thin Orchestrator (~80 lines)
 - Validates parameters
 - Delegates creation to ref-documentation skill
-- No business logic in command
+- No business logic in skill
 
 **Skill Dependency**: pm-documents:ref-documentation
 - Provides: create-from-template workflow

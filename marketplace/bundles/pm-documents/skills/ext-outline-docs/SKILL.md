@@ -2,6 +2,7 @@
 name: ext-outline-docs
 description: Outline extension implementing protocol for documentation domain
 implements: pm-workflow:workflow-extension-api/standards/extensions/outline-extension.md
+user-invocable: false
 allowed-tools: Read
 ---
 

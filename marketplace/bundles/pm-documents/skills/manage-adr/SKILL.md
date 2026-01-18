@@ -1,6 +1,7 @@
 ---
 name: manage-adr
 description: Manage Architectural Decision Records (ADRs) with CRUD operations, automatic numbering, and AsciiDoc formatting
+user-invocable: false
 allowed-tools: Read, Edit, Write, Bash, Grep, Glob, Skill
 ---
 

@@ -1,6 +1,7 @@
 ---
 name: plan-marshall-plugin
 description: Documentation domain manifest for plan-marshall workflow integration
+user-invocable: false
 allowed-tools: Read
 ---
 

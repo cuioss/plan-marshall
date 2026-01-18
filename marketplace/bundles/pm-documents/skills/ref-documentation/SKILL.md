@@ -1,6 +1,7 @@
 ---
 name: ref-documentation
 description: General documentation standards for README, AsciiDoc, and technical documentation with validation, formatting, link verification, and content review workflows
+user-invocable: false
 allowed-tools: Read, Edit, Write, Bash, Grep, Glob, Skill
 ---
 

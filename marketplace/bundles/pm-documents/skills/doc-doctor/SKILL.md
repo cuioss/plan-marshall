@@ -1,12 +1,13 @@
 ---
 name: doc-doctor
 description: Diagnose documentation issues (format, links, content)
+user-invocable: true
 allowed-tools: Skill, Read, Glob, Grep, Bash
 ---
 
-# Documentation Doctor Command
+# Documentation Doctor Skill
 
-Unified diagnostic command for AsciiDoc documentation. Replaces `/doc-review-single-asciidoc` and `/doc-review-technical-docs`.
+Unified diagnostic skill for AsciiDoc documentation.
 
 ## Parameters
 
@@ -75,9 +76,9 @@ Map depth to workflow parameters:
 
 | Depth | Format | Links | Content |
 |-------|--------|-------|---------|
-| quick | ✓ | ✗ | ✗ |
-| standard | ✓ | ✓ | ✗ |
-| thorough | ✓ | ✓ | ✓ |
+| quick | Y | N | N |
+| standard | Y | Y | N |
+| thorough | Y | Y | Y |
 
 **For quick depth:**
 ```
@@ -118,9 +119,9 @@ Scope: {file_count} file(s)
 Depth: {depth}
 
 Summary:
-✓ {clean_count} files clean
-⚠ {warning_count} files with warnings
-✗ {error_count} files with errors
+Y {clean_count} files clean
+! {warning_count} files with warnings
+X {error_count} files with errors
 
 Issues by Category:
 - Format: {format_issue_count}
@@ -136,10 +137,10 @@ Files with Issues:
 
 ## Architecture
 
-**Pattern**: Thin Orchestrator Command (~100 lines)
+**Pattern**: Thin Orchestrator (~100 lines)
 - Parses parameters and determines scope
 - Delegates ALL validation to ref-documentation skill
-- No business logic in command
+- No business logic in skill
 
 **Skill Dependency**: pm-documents:ref-documentation
 - Provides: validate-format, verify-links, review-content, comprehensive-review workflows
