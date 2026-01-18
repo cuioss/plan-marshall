@@ -165,6 +165,7 @@ color: green
 ---
 name: skill-name
 description: Brief description of skill domain
+user-invocable: true
 allowed-tools: Read, Edit, Write, Bash, Grep, Glob
 ---
 ```
@@ -182,6 +183,13 @@ allowed-tools: Read, Edit, Write, Bash, Grep, Glob
 - Should describe the standards domain covered
 - Single-line preferred
 
+**user-invocable** (required):
+- **Values**: `true` or `false`
+- `true`: Skill appears in slash menu and can be invoked directly by users (e.g., `/plugin-doctor`)
+- `false`: Internal skill, not directly user-invocable (e.g., reference libraries, internal utilities)
+- **CRITICAL**: Every skill MUST have this field explicitly set
+- See [User-Invocable Guidelines](#user-invocable-guidelines) for when to use each value
+
 **allowed-tools** (required):
 - **Field name**: `allowed-tools` (NOT `tools`)
 - Format: **Comma-separated list** (NOT array syntax)
@@ -193,13 +201,38 @@ allowed-tools: Read, Edit, Write, Bash, Grep, Glob
 
 Skills do not use `model` or `color` fields (those apply only to agents/commands).
 
-### Complete Skill Example
+### User-Invocable Guidelines
 
+**Use `user-invocable: true` when**:
+- Skill provides a user-facing workflow (e.g., `/plugin-doctor`, `/verify-workflow`)
+- Skill should appear in slash menu for direct invocation
+- Skill is the primary entry point for a capability
+
+**Use `user-invocable: false` when**:
+- Skill is a reference library (Pattern 10) - pure documentation
+- Skill is an internal utility invoked only by other skills/agents
+- Skill is an extension point (e.g., `ext-triage-java`)
+- Skill is a plugin manifest (e.g., `plan-marshall-plugin`)
+
+### Complete Skill Examples
+
+**User-Invocable Skill** (appears in slash menu):
 ```yaml
 ---
-name: cui-java-core
-description: Core Java development standards for CUI projects including coding patterns, null safety, Lombok, modern features, and logging
-allowed-tools: Read, Edit, Write, Bash, Grep, Glob
+name: plugin-doctor
+description: Diagnose and fix quality issues in marketplace components
+user-invocable: true
+allowed-tools: Read, Edit, Write, Bash, Grep, Glob, Skill
+---
+```
+
+**Internal Skill** (not directly invocable):
+```yaml
+---
+name: java-core
+description: Core Java development standards for CUI projects
+user-invocable: false
+allowed-tools: Read
 ---
 ```
 
@@ -558,6 +591,8 @@ Use this checklist when creating or reviewing frontmatter:
 - [ ] `allowed-tools` uses comma-separated format (not array)
 - [ ] Empty list is valid: `allowed-tools:` with no value
 - [ ] No `model` or `color` fields (not applicable to skills)
+- [ ] **`user-invocable` field present** (either `true` or `false`)
+- [ ] `user-invocable` value matches skill purpose (true for user-facing, false for internal)
 
 ## Reference
 

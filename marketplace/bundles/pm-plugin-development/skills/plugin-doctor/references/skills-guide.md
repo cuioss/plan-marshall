@@ -65,6 +65,7 @@ Use `doctor-skill-content` workflow to analyze and reorganize skill content.
 ---
 name: skill-name
 description: Clear, concise description of skill purpose
+user-invocable: true
 allowed-tools: Read, Bash, Glob, Grep, Skill
 ---
 ```
@@ -72,13 +73,20 @@ allowed-tools: Read, Bash, Glob, Grep, Skill
 **Required Fields**:
 - `name`: Skill identifier (kebab-case, matches directory name)
 - `description`: One-sentence purpose statement
+- `user-invocable`: Boolean (`true` or `false`) - controls slash menu visibility
 - `allowed-tools`: Comma-separated list of tools (note: comma-separated, NOT array like agents)
+
+**user-invocable Field**:
+- `true`: Skill appears in slash menu and can be invoked directly by users
+- `false`: Internal skill, not directly user-invocable (reference libraries, internal utilities, extension points)
+- **CRITICAL**: Every skill MUST have this field explicitly set
 
 **Common Errors**:
 - ❌ `allowed-tools: ["Read", "Write"]` (array format - wrong for skills)
 - ✅ `allowed-tools: Read, Write, Glob, Grep` (comma-separated string)
 - ❌ Missing frontmatter (first line not `---`)
 - ❌ Invalid YAML (missing colons, incorrect indentation)
+- ❌ Missing `user-invocable` field (must be explicitly set)
 
 **Validation**:
 ```bash
@@ -835,6 +843,8 @@ Use relative paths instead of absolute paths:
 
 **Before marking skill as "quality approved"**:
 - ✅ SKILL.md exists with valid YAML frontmatter
+- ✅ **`user-invocable` field present** (either `true` or `false`)
+- ✅ `user-invocable` value matches skill purpose (true for user-facing, false for internal)
 - ✅ Structure score >= 90 (Excellent)
 - ✅ No missing files (all referenced files exist)
 - ✅ No unreferenced files (all files referenced or removed)

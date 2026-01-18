@@ -1,4 +1,4 @@
-# Execution Directive Standard
+# Execution Behavior Standards
 
 Standards for ensuring Claude executes skill workflows rather than explaining them.
 
@@ -11,47 +11,31 @@ When commands load skills via the Skill tool, Claude may treat skill content as 
 ## Root Cause
 
 1. Skill content appears as `<command-message>` in conversation
-2. No explicit directive tells Claude to ACT rather than EXPLAIN
-3. Soft language ("you can", "consider") instead of imperative ("EXECUTE", "RUN")
-4. Ambiguity between "reference this file" vs "execute this script"
+2. Soft language ("you can", "consider") instead of imperative ("EXECUTE", "RUN")
+3. Ambiguity between "reference this file" vs "execute this script"
+4. Lack of clear workflow structure with explicit action steps
 
-## Solution: Execution Mode Directive
+## Solution: Structural Execution Pattern
 
-### Required Header for Execution Skills
+Well-structured skills execute naturally without explicit directives. The key is using **action-oriented language** and **clear workflow steps**.
 
-All skills that perform actions (not pure reference skills) MUST include an execution directive immediately after the skill title:
+### Key Principles
 
-```markdown
----
-name: skill-name
-description: Description with execution triggers
-allowed-tools: [Tool1, Tool2]
----
+1. **Action-oriented language**: Use imperatives ("Create", "Run", "Load") not suggestions ("consider", "you might")
+2. **Clear workflow structure**: Numbered steps with explicit actions
+3. **Code-first pattern**: Show executable code BEFORE explanation
+4. **Explicit action modes**: Label operations as EXECUTE, READ, or REFERENCE
 
-# Skill Name
+### Skill Type Guidance
 
-**EXECUTION MODE**: You are now executing this skill. DO NOT explain or summarize these instructions to the user. IMMEDIATELY begin the workflow below.
+**For Execution Skills** (user-invocable: true):
+- Structure with clear workflow sections
+- Use numbered steps with imperative language
+- Include explicit bash/code blocks for actions
 
-## Workflow Decision Tree
-...
-```
-
-### Variations by Skill Type
-
-**For Execution Skills** (Pattern 1-9):
-```markdown
-**EXECUTION MODE**: You are now executing this skill. DO NOT explain or summarize these instructions to the user. IMMEDIATELY begin the workflow below.
-```
-
-**For Reference Skills** (Pattern 10):
-```markdown
-**REFERENCE MODE**: This skill provides reference material. Load specific references on-demand based on current task. Do not load all references at once.
-```
-
-**For Hybrid Skills** (execution + reference):
-```markdown
-**EXECUTION MODE**: You are now executing this skill. Load required references, then IMMEDIATELY execute the workflow. DO NOT explain the workflow to the user.
-```
+**For Reference Skills** (user-invocable: false):
+- Document clearly that content is reference material
+- Use "Load when needed" patterns for progressive disclosure
 
 ## MANDATORY and CRITICAL Markers
 
@@ -165,25 +149,18 @@ Decision trees route Claude immediately to the correct action, preventing delibe
 
 ## Command Handoff Pattern
 
-Commands must explicitly instruct Claude about skill execution:
+Commands delegate to skills via the Skill tool. Well-structured skills with clear workflow steps execute automatically:
 
 ```markdown
 ## WORKFLOW
 
-When you invoke this command, I will:
-
 1. **Parse parameters** from input
 
-2. **Load skill and EXECUTE its workflow**:
+2. **Load and execute skill**:
    ```
    Skill: bundle-name:skill-name
    ```
-
-   **CRITICAL HANDOFF RULES**:
-   - DO NOT summarize or explain the skill content
-   - DO NOT describe what the skill says to do
-   - IMMEDIATELY execute the scripts and tools specified
-   - Your next action after loading must be a tool call, not text output
+   The skill's workflow steps execute immediately.
 ```
 
 ## Imperative Language Guidelines
@@ -259,18 +236,17 @@ After completing the workflow:
 - [ ] Re-ran diagnostics to verify fixes
 ```
 
-## Template: Complete Execution Skill
+## Template: User-Invocable Execution Skill
 
 ```markdown
 ---
 name: example-execution-skill
-description: Performs X when user needs to Y. Triggers on: specific condition A, specific condition B
-allowed-tools: [Read, Bash, Edit, Glob]
+description: Performs X when user needs to Y
+user-invocable: true
+allowed-tools: Read, Bash, Edit, Glob
 ---
 
 # Example Execution Skill
-
-**EXECUTION MODE**: You are now executing this skill. DO NOT explain or summarize these instructions to the user. IMMEDIATELY begin the workflow below.
 
 ## Workflow Decision Tree
 
@@ -335,7 +311,11 @@ This skill helps you analyze components. When loaded, it provides workflows for 
 
 **Good**:
 ```markdown
-**EXECUTION MODE**: IMMEDIATELY begin workflow based on input parameters.
+## Workflow Decision Tree
+
+Based on input parameters, execute the appropriate workflow:
+- If component specified → Workflow 1
+- If scope specified → Workflow 2
 ```
 
 ### 2. Passive Language
@@ -378,7 +358,7 @@ See the standards file for details.
 
 The plugin-doctor skill should check for:
 
-1. **Execution directive present** - Skills must have EXECUTION MODE or REFERENCE MODE
+1. **user-invocable field present** - All skills must have explicit `user-invocable: true` or `user-invocable: false`
 2. **MANDATORY markers used** - Workflow steps should use MANDATORY for critical actions
 3. **Explicit action modes** - Scripts should have EXECUTE/READ/REFERENCE labels
 4. **Imperative language** - Check for passive or suggestive phrasing

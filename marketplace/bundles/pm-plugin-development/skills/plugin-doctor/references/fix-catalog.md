@@ -90,6 +90,21 @@ description: [Description needed]
 
 **Why Safe**: Minimal default doesn't over-promise capabilities.
 
+### 5b. missing-user-invocable-field
+
+**Description**: Skill frontmatter lacks required `user-invocable` field.
+
+**Detection**: Skill file frontmatter present but no `^user-invocable:` line
+
+**Fix Strategy**:
+- Determine appropriate value based on skill characteristics:
+  - If skill name matches known internal patterns (ext-*, manage-*, ref-*, plan-marshall-plugin): use `false`
+  - If skill has workflow logic and clear user-facing purpose: use `true`
+  - Default to `false` if uncertain (safer option)
+- Insert `user-invocable: {value}` after description field
+
+**Why Safe**: Field is required and value can be inferred from skill characteristics. User can always override.
+
 ### 6. array-syntax-tools
 
 **Description**: Tools declared with array syntax `[A, B]` instead of comma-separated.
@@ -319,12 +334,14 @@ def categorize(issue_type):
     SAFE = {
         "missing-frontmatter", "invalid-yaml", "missing-name-field",
         "missing-description-field", "missing-tools-field",
+        "missing-user-invocable-field",
         "array-syntax-tools", "trailing-whitespace",
         "improper-indentation", "missing-blank-line-before-list"
     }
     RISKY = {
         "unused-tool-declared", "tool-not-declared",
         "rule-6-violation", "rule-7-violation", "rule-8-violation",
+        "rule-9-violation",
         "pattern-22-violation", "backup-file-pattern",
         "ci-rule-self-update"
     }
@@ -343,11 +360,11 @@ When multiple fixes needed for same file:
 
 1. **missing-frontmatter** (must exist for other fixes)
 2. **invalid-yaml** (must be valid for field fixes)
-3. **missing-*-field** (complete frontmatter)
+3. **missing-*-field** (complete frontmatter - name, description, user-invocable, tools/allowed-tools)
 4. **array-syntax-tools** (syntax normalization)
 5. **trailing-whitespace** (cleanup)
-6. **Rule violations** (architectural)
-7. **Pattern violations** (behavioral)
+6. **Rule violations** (architectural - Rules 6, 7, 8, 9)
+7. **Pattern violations** (behavioral - Pattern 22)
 
 ## See Also
 

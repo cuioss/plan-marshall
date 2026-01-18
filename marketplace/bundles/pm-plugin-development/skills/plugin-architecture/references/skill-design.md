@@ -35,7 +35,8 @@ Skill: plugin-diagnose
 ---
 name: simple-formatter
 description: Formats files using specific rules
-allowed-tools: [Read, Write, Edit]
+user-invocable: true
+allowed-tools: Read, Write, Edit
 ---
 
 # Simple Formatter
@@ -63,7 +64,8 @@ Step 3: Write formatted output
 ---
 name: plugin-diagnose
 description: Find and understand quality issues in marketplace components
-allowed-tools: [Read, Bash, Glob, Grep, Skill]
+user-invocable: true
+allowed-tools: Read, Bash, Glob, Grep, Skill
 ---
 
 # Plugin Diagnose Skill
@@ -412,13 +414,14 @@ Skill C loads both A and B
 
 ## Examples
 
-### Example 1: Single-Workflow Skill (Pattern 10)
+### Example 1: Internal Reference Skill (Pattern 10)
 
 ```markdown
 ---
 name: plugin-architecture
 description: Architecture principles and patterns for marketplace components
-allowed-tools: [Read]
+user-invocable: false
+allowed-tools: Read
 ---
 
 # Plugin Architecture Skill
@@ -435,13 +438,14 @@ Load specific reference when needed:
 Never load all references at once. Load only what's needed for current task.
 ```
 
-### Example 2: Multi-Workflow Skill (Pattern 3)
+### Example 2: User-Invocable Multi-Workflow Skill (Pattern 3)
 
 ```markdown
 ---
 name: plugin-diagnose
 description: Find and understand quality issues in marketplace components
-allowed-tools: [Read, Bash, Glob, Grep, Skill]
+user-invocable: true
+allowed-tools: Read, Bash, Glob, Grep, Skill
 ---
 
 # Plugin Diagnose Skill
