@@ -1,10 +1,11 @@
 ---
 name: cui-maintain-requirements
 description: Maintain and synchronize requirements and specifications with comprehensive validation
-allowed-tools: Skill, Read, Write, Edit, Glob, Grep, Bash
+user-invocable: true
+allowed-tools: Skill, Read, Write, Edit, Glob, Grep, Bash, Task
 ---
 
-# Requirements and Specifications Maintenance Command
+# Requirements and Specifications Maintenance Skill
 
 Systematic workflow for maintaining requirements and specification documents to ensure continued accuracy, traceability, and alignment with implementation.
 
@@ -14,7 +15,7 @@ If you discover issues or improvements during execution, record them:
 
 1. **Activate skill**: `Skill: plan-marshall:manage-lessons`
 2. **Record lesson** with:
-   - Component: `{type: "command", name: "cui-maintain-requirements", bundle: "pm-requirements"}`
+   - Component: `{type: "skill", name: "cui-maintain-requirements", bundle: "pm-requirements"}`
    - Category: bug | improvement | pattern | anti-pattern
    - Summary and detail of the finding
 
@@ -82,7 +83,7 @@ This loads comprehensive requirements standards including:
 - requirements-documentation.md - Requirements creation patterns
 - specification-documentation.md - Specification structure standards
 
-**On load failure:** Report error and abort command.
+**On load failure:** Report error and abort.
 
 ### Step 2: Pre-Maintenance Discovery
 
@@ -137,23 +138,16 @@ Task:
 
 **3.2 Update Requirements:**
 
-```
-Task:
-  subagent_type: Task
-  description: Apply requirements updates
-  prompt: |
-    Update requirements following patterns from
-    pm-requirements:requirements-documentation skill.
+Apply requirements updates following patterns from pm-requirements:requirements-documentation skill.
 
-    Apply maintenance rules from pm-requirements:requirements-maintenance skill:
-    - NEVER renumber requirement IDs
-    - Ensure SMART compliance
-    - Preserve rationale
-    - Update status indicators
-    - Maintain traceability
+Apply maintenance rules from pm-requirements:requirements-maintenance skill:
+- NEVER renumber requirement IDs
+- Ensure SMART compliance
+- Preserve rationale
+- Update status indicators
+- Maintain traceability
 
-    CRITICAL: Document only existing or approved functionality.
-```
+**CRITICAL: Document only existing or approved functionality.**
 
 **If scenario = "new-feature":** Follow new-feature documentation pattern from requirements-documentation skill.
 
@@ -161,21 +155,11 @@ Task:
 
 **3.3 Verify Specification Alignment:**
 
-```
-Task:
-  subagent_type: Explore
-  model: sonnet
-  description: Check specification links
-  prompt: |
-    Verify requirements link to specifications correctly.
-    Apply verification patterns from pm-requirements:requirements-maintenance skill:
-    - Check xref: links resolve
-    - Verify specifications exist
-    - Confirm bidirectional traceability
-    - Validate implementation references
-
-    Return list of broken or missing links.
-```
+Verify requirements link to specifications correctly. Check:
+- xref: links resolve
+- Specifications exist
+- Bidirectional traceability
+- Implementation references valid
 
 ### Step 4: Specification Maintenance
 
@@ -183,40 +167,23 @@ Task:
 
 **4.1 Analyze Specifications:**
 
-```
-Task:
-  subagent_type: Explore
-  model: sonnet
-  description: Identify specification maintenance needs
-  prompt: |
-    Analyze specification documents for issues.
-    Apply detection criteria from pm-requirements:requirements-maintenance skill:
-    - Alignment with requirements
-    - Accurate implementation references
-    - Complete behavioral descriptions
-    - Valid cross-references
-
-    Return structured analysis with locations.
-```
+Analyze specification documents for issues:
+- Alignment with requirements
+- Accurate implementation references
+- Complete behavioral descriptions
+- Valid cross-references
 
 **4.2 Update Specifications:**
 
-```
-Task:
-  subagent_type: Task
-  description: Apply specification updates
-  prompt: |
-    Update specifications following patterns from
-    pm-requirements:specification-documentation skill.
+Update specifications following patterns from pm-requirements:specification-documentation skill.
 
-    Apply maintenance rules:
-    - Maintain linkage to requirements
-    - Update implementation details
-    - Preserve specification IDs
-    - Keep examples current and valid
+Apply maintenance rules:
+- Maintain linkage to requirements
+- Update implementation details
+- Preserve specification IDs
+- Keep examples current and valid
 
-    CRITICAL: Verify all code references exist.
-```
+**CRITICAL: Verify all code references exist.**
 
 **If scenario = "refactoring":** Update implementation references following refactoring patterns from requirements-maintenance skill.
 
@@ -226,41 +193,19 @@ Task:
 
 **5.1 Verify Document Links:**
 
-```
-Task:
-  subagent_type: Explore
-  model: sonnet
-  description: Validate all xref: links
-  prompt: |
-    Verify all cross-references resolve correctly.
-    Check:
-    - xref: links point to existing sections
-    - Paths are current after restructuring
-    - Section IDs are correct
-    - No references to deleted documents
-
-    Return list of broken links with suggested fixes.
-```
+Verify all cross-references resolve correctly:
+- xref: links point to existing sections
+- Paths are current after restructuring
+- Section IDs are correct
+- No references to deleted documents
 
 **5.2 Validate Code References:**
 
-```
-Task:
-  subagent_type: Explore
-  model: sonnet
-  description: Verify implementation references
-  prompt: |
-    Validate all code references in documentation.
-    Use Grep to verify:
-    - Referenced classes exist
-    - Method signatures correct
-    - Package names current
-    - Line numbers accurate (if specified)
-
-    Pattern: de\.cuioss\.[a-zA-Z.]+
-
-    Return list of invalid references with corrections.
-```
+Validate all code references in documentation using Grep to verify:
+- Referenced classes exist
+- Method signatures correct
+- Package names current
+- Line numbers accurate (if specified)
 
 **CRITICAL:** All code references must resolve to existing code.
 
@@ -268,64 +213,34 @@ Task:
 
 **6.1 Check for Hallucinations:**
 
-```
 For each requirement and specification:
-
 1. Verify feature exists in code OR is in approved roadmap
-2. Flag unverified documentation:
-   - Requirements without implementation
-   - Specifications describing non-existent behavior
-   - Code references to non-existent elements
-
-3. If unverified content found:
-   - STOP maintenance process
-   - Document the unverified content
-   - ASK USER: "Is this documented feature planned or should it be removed?"
-   - WAIT for user decision
-```
+2. Flag unverified documentation
+3. If unverified content found: STOP, ASK USER, WAIT for decision
 
 **6.2 Eliminate Duplications:**
 
-```
-Task:
-  subagent_type: Explore
-  model: sonnet
-  description: Detect duplicate content
-  prompt: |
-    Identify duplicate information across documents.
-    Apply detection patterns from pm-requirements:requirements-maintenance skill.
-
-    For each duplication:
-    - Identify canonical location
-    - Suggest cross-reference replacement
-
-    Return structured list of duplications with canonical sources.
-```
-
-Replace duplicates with xref: links to canonical location.
+Identify duplicate information across documents. For each duplication:
+- Identify canonical location
+- Replace duplicates with xref: links to canonical location
 
 **6.3 Final Link Verification:**
 
 Checklist:
-- [ ] All xref: links resolve
-- [ ] All code references verified
-- [ ] All external links accessible
-- [ ] No broken references remain
+- All xref: links resolve
+- All code references verified
+- All external links accessible
+- No broken references remain
 
 ### Step 7: Quality Verification
 
-Run comprehensive quality checklist from pm-requirements:requirements-maintenance skill:
-
-```
-Quality Verification:
-
-- [ ] Cross-References Validated (all links work)
-- [ ] No Duplicate Information (cross-references used)
-- [ ] Consistent Terminology (same terms for same concepts)
-- [ ] Clear Traceability Maintained (complete requirement-to-implementation chain)
-- [ ] No Hallucinated Functionality (all features verified)
-- [ ] Integrity Maintained (documentation reflects reality)
-```
+Run comprehensive quality checklist:
+- Cross-References Validated (all links work)
+- No Duplicate Information (cross-references used)
+- Consistent Terminology (same terms for same concepts)
+- Clear Traceability Maintained (complete requirement-to-implementation chain)
+- No Hallucinated Functionality (all features verified)
+- Integrity Maintained (documentation reflects reality)
 
 **If ANY check fails:** Document failure, fix issue, re-run verification.
 
@@ -350,20 +265,9 @@ Quality Verification:
 
 ### Step 9: Commit Changes
 
-**9.1 Review Changes:**
+Review changes and create commit:
 
 ```
-Bash: git status
-Bash: git diff
-```
-
-Verify all changes are intentional and requirements-related.
-
-**9.2 Create Commit:**
-
-```
-Bash: git add {affected files}
-Bash: git commit -m "$(cat <<'EOF'
 docs(requirements): [brief description of changes]
 
 [Detailed description of maintenance performed]
@@ -376,19 +280,13 @@ Affected requirements: [list requirement IDs]
 [Optional: Affected specifications: list spec IDs]
 [Optional: Structural changes: describe]
 
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
-
 Co-Authored-By: Claude <noreply@anthropic.com>
-EOF
-)"
 ```
 
 ### Step 10: Display Summary
 
 ```
-╔════════════════════════════════════════════════════════════╗
-║       Requirements Maintenance Summary                     ║
-╚════════════════════════════════════════════════════════════╝
+Requirements Maintenance Summary
 
 Scope: {scope parameter value}
 Scenario: {scenario parameter value if provided}
@@ -412,24 +310,9 @@ Integrity Checks:
 - Duplications removed: {count}
 - Links verified: {total count}
 
-Quality Verification: All checks passed ✓
-Commit Created: {commit hash} ✓
-
-Time Taken: {elapsed_time}
+Quality Verification: All checks passed
+Commit Created: {commit hash}
 ```
-
-## STATISTICS TRACKING
-
-Track throughout workflow:
-- `requirements_reviewed` / `requirements_updated` - Requirements processing
-- `specifications_reviewed` / `specifications_updated` - Specifications processing
-- `broken_links_fixed` - Cross-reference repairs
-- `hallucinations_found` / `hallucinations_resolved` - Integrity issues
-- `duplications_removed` - Content deduplication
-- `scenario_specific_actions` - Scenario workflow steps
-- `elapsed_time` - Total execution time
-
-Display all statistics in final summary.
 
 ## ERROR HANDLING
 
@@ -473,20 +356,8 @@ Display all statistics in final summary.
 /cui-maintain-requirements scope=specifications scenario=refactoring
 ```
 
-## ARCHITECTURE
-
-Orchestrates agents and skills:
-- **pm-requirements:requirements-maintenance skill** - Maintenance standards and integrity rules
-- **pm-requirements:requirements-documentation skill** - Requirements creation patterns
-- **pm-requirements:specification-documentation skill** - Specification structure standards
-- **Explore agent** - Document analysis and issue identification
-- **Task agent** - Requirements and specification updates
-- **Grep** - Code reference verification
-
-## RELATED
+## Related
 
 - `pm-requirements:requirements-maintenance` skill - Maintenance principles
 - `pm-requirements:requirements-documentation` skill - Requirements patterns
 - `pm-requirements:specification-documentation` skill - Specification patterns
-- `/orchestrate-workflow` command - End-to-end issue implementation
-- `/pr-handle-pull-request` command - PR workflow including documentation review

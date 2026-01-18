@@ -1,16 +1,8 @@
 ---
-name: pm-requirements:requirements-authoring
-source_bundle: pm-requirements
+name: requirements-authoring
 description: Comprehensive standards for creating and maintaining requirements and specification documents with SMART principles, proper structure, integrity, and traceability
-version: 0.1-BETA
-allowed-tools: []
-standards:
-  - requirements-format-and-structure
-  - smart-requirements-principles
-  - specification-structure-and-backtracking
-  - documentation-lifecycle-management
-  - integrity-and-quality-standards
-  - maintenance-and-deprecation-handling
+user-invocable: false
+allowed-tools: Read
 ---
 
 # Requirements and Specification Authoring Standards

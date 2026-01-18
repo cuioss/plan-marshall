@@ -1,9 +1,8 @@
 ---
-name: pm-requirements:traceability
-source_bundle: pm-requirements
+name: traceability
 description: Standards for linking specifications to implementation code and maintaining bidirectional traceability between documentation and source code
-version: 0.1-BETA
-allowed-tools: [Read]
+user-invocable: false
+allowed-tools: Read
 ---
 
 # Traceability Standards
