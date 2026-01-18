@@ -1,7 +1,8 @@
 ---
 name: javadoc
 description: JavaDoc documentation standards including class, method, and code example patterns
-allowed-tools: [Read, Grep, Glob]
+user-invocable: false
+allowed-tools: Read, Grep, Glob
 ---
 
 # JavaDoc Skill

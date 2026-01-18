@@ -1,7 +1,8 @@
 ---
 name: junit-core
 description: JUnit 5 core testing patterns with AAA structure, test organization, and coverage standards
-allowed-tools: [Read, Grep, Glob]
+user-invocable: false
+allowed-tools: Read, Grep, Glob
 ---
 
 # JUnit Core Skill

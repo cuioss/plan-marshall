@@ -1,7 +1,8 @@
 ---
-name: java-cdi-quarkus
-description: Quarkus-specific CDI patterns including @QuarkusTest, native image support, and reflection registration
-allowed-tools: [Read, Grep, Glob]
+name: java-optimize-quarkus-native
+description: Systematic Quarkus native image optimization with reflection registration and performance improvements
+user-invocable: true
+allowed-tools: Read, Grep, Glob, Write, Edit, Bash
 ---
 
 # Java CDI Quarkus Skill

@@ -1,7 +1,8 @@
 ---
 name: java-lombok
 description: Lombok patterns including @Delegate, @Builder, @Value, @UtilityClass for reducing boilerplate
-allowed-tools: [Read, Edit, Write, Bash, Grep, Glob]
+user-invocable: false
+allowed-tools: Read, Edit, Write, Bash, Grep, Glob
 ---
 
 # Java Lombok Skill

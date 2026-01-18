@@ -1,6 +1,7 @@
 ---
 name: ext-triage-java
 description: Triage extension for Java findings during plan-finalize phase
+user-invocable: false
 allowed-tools: Read
 ---
 

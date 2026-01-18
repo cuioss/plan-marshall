@@ -1,10 +1,11 @@
 ---
 name: java-full-workflow
 description: Execute complete implement-test-verify workflow with coordinated agents
-tools: Read, Edit, Write, Glob, Grep, Task, Skill
+user-invocable: true
+allowed-tools: Read, Edit, Write, Glob, Grep, Task, Skill
 ---
 
-# Java Full Workflow Command
+# Java Full Workflow Skill
 
 Orchestrates complete feature implementation workflow: implement → test → fix → verify.
 

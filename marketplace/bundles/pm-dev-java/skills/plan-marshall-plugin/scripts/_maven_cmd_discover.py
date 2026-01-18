@@ -560,13 +560,13 @@ def _classify_profile(profile_id: str) -> str:
     # PROFILE_PATTERNS is alias -> canonical (from extension_base.py)
     # Exact match required - no substring matching
     if profile_id in PROFILE_PATTERNS:
-        return PROFILE_PATTERNS[profile_id]
+        return PROFILE_PATTERNS[profile_id]  # type: ignore[no-any-return]
 
     # Case-insensitive exact match
     profile_lower = profile_id.lower()
     for alias, canonical in PROFILE_PATTERNS.items():
         if alias.lower() == profile_lower:
-            return canonical
+            return canonical  # type: ignore[no-any-return]
 
     return 'NO-MATCH-FOUND'
 

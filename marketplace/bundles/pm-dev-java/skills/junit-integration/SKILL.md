@@ -1,7 +1,8 @@
 ---
 name: junit-integration
 description: Maven integration testing with Failsafe plugin, IT naming conventions, and profile configuration
-allowed-tools: [Read, Grep, Glob]
+user-invocable: false
+allowed-tools: Read, Grep, Glob
 ---
 
 # JUnit Integration Skill

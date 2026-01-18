@@ -1,7 +1,8 @@
 ---
-name: java-core
-description: Core Java development patterns including code organization, modern features, performance patterns, and implementation verification
-allowed-tools: [Read, Grep, Glob]
+name: java-create
+description: Interactive wizard for creating Java components with standards compliance
+user-invocable: true
+allowed-tools: Read, Grep, Glob, Write, Edit, Bash
 ---
 
 # Java Core Skill
