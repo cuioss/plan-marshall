@@ -1,7 +1,8 @@
 ---
 name: cui-testing
 description: CUI test library standards for test data generation, value object contracts, and JUL log testing
-allowed-tools: [Read, Grep, Glob]
+user-invocable: false
+allowed-tools: Read, Grep, Glob
 ---
 
 # CUI Testing Skill

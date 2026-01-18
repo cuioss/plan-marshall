@@ -1,7 +1,8 @@
 ---
 name: cui-testing-http
 description: CUI MockWebServer standards for HTTP client testing with JUnit 5 integration
-allowed-tools: [Read, Grep, Glob]
+user-invocable: false
+allowed-tools: Read, Grep, Glob
 ---
 
 # CUI Testing HTTP Skill
