@@ -39,7 +39,7 @@ class Extension(ExtensionBase):
             },
             'profiles': {
                 'core': {
-                    'defaults': ['pm-dev-java:java-core'],
+                    'defaults': ['pm-dev-java:java-create'],
                     'optionals': ['pm-dev-java:java-null-safety', 'pm-dev-java:java-lombok'],
                 },
                 'implementation': {

@@ -49,7 +49,7 @@ def test_skill_domains_get():
         result = run_script(SCRIPT_PATH, 'skill-domains', 'get', '--domain', 'java')
 
         assert result.success, f'Should succeed: {result.stderr}'
-        assert 'pm-dev-java:java-core' in result.stdout
+        assert 'pm-dev-java:java-create' in result.stdout
 
 
 def test_system_retention_get():
@@ -82,7 +82,7 @@ def test_resolve_domain_skills():
         result = run_script(SCRIPT_PATH, 'resolve-domain-skills', '--domain', 'java', '--profile', 'implementation')
 
         assert result.success, f'Should succeed: {result.stderr}'
-        assert 'pm-dev-java:java-core' in result.stdout
+        assert 'pm-dev-java:java-create' in result.stdout
 
 
 def test_get_workflow_skills():

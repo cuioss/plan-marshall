@@ -15,7 +15,7 @@ import pytest
 
 # Load script module directly from project-level path
 PROJECT_ROOT = Path(__file__).parent.parent.parent
-SCRIPT_PATH = PROJECT_ROOT / '.claude' / 'skills' / 'workflow-verify' / 'scripts' / 'collect-artifacts.py'
+SCRIPT_PATH = PROJECT_ROOT / '.claude' / 'skills' / 'verify-workflow' / 'scripts' / 'collect-artifacts.py'
 
 # Load module from file path
 spec = importlib.util.spec_from_file_location('collect_artifacts', SCRIPT_PATH)

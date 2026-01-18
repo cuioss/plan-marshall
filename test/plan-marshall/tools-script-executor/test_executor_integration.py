@@ -267,8 +267,8 @@ def test_execute_script_with_subcommand():
     env = get_test_env()
     env.clear_logs()
 
-    # manage-lifecycle has a 'status' subcommand that should work without a real plan
-    result = env.run_executor('pm-workflow:manage-lifecycle', '--help')
+    # manage-config has a --help that works without a real plan
+    result = env.run_executor('pm-workflow:manage-config', '--help')
 
     assert result.returncode == 0, f'Script failed: {result.stderr}'
 

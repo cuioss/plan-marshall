@@ -43,7 +43,7 @@ def create_marshal_json(fixture_dir: Path, config: dict | None = None) -> Path:
     if config is None:
         config = {
             'skill_domains': {
-                'java': {'defaults': ['pm-dev-java:java-core'], 'optionals': ['pm-dev-java:java-cdi']},
+                'java': {'defaults': ['pm-dev-java:java-create'], 'optionals': ['pm-dev-java:java-cdi']},
                 'java-testing': {'defaults': ['pm-dev-java:junit-core'], 'optionals': []},
             },
             'system': {

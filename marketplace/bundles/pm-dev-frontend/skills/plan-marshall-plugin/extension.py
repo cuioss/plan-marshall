@@ -35,17 +35,17 @@ class Extension(ExtensionBase):
             'profiles': {
                 'core': {
                     'defaults': ['pm-dev-frontend:cui-javascript'],
-                    'optionals': ['pm-dev-frontend:cui-jsdoc', 'pm-dev-frontend:cui-javascript-project'],
+                    'optionals': ['pm-dev-frontend:js-fix-jsdoc', 'pm-dev-frontend:cui-javascript-project'],
                 },
                 'implementation': {
                     'defaults': [],
                     'optionals': [
-                        'pm-dev-frontend:cui-javascript-linting',
-                        'pm-dev-frontend:cui-javascript-maintenance',
+                        'pm-dev-frontend:js-enforce-eslint',
+                        'pm-dev-frontend:js-refactor-code',
                     ],
                 },
                 'module_testing': {
-                    'defaults': ['pm-dev-frontend:cui-javascript-unit-testing'],
+                    'defaults': ['pm-dev-frontend:js-implement-tests'],
                     'optionals': ['pm-dev-frontend:cui-cypress'],
                 },
                 'quality': {'defaults': [], 'optionals': []},
