@@ -11,18 +11,19 @@ Execute the trigger from test-definition, then verify the output. Full automated
 
 ### Step 1: Load Test Case
 
-```bash
-TEST_CASE_DIR="workflow-verification/test-cases/{test-id}"
-
-if [[ ! -d "$TEST_CASE_DIR" ]]; then
-  echo "Error: Test case not found: {test-id}"
-  echo "Available test cases:"
-  ls workflow-verification/test-cases/
-  exit 1
-fi
+Verify test case exists:
+```
+Glob: workflow-verification/test-cases/{test-id}/
 ```
 
-Read test definition:
+If no match found, list available test cases:
+```
+Glob: workflow-verification/test-cases/*/
+```
+
+Display error with available test cases and exit.
+
+If test case exists, read test definition:
 ```
 Read: workflow-verification/test-cases/{test-id}/test-definition.toon
 ```
@@ -57,14 +58,12 @@ Verify an existing plan against test case criteria. No trigger execution.
 
 ### Step 1: Load Test Case
 
-```bash
-TEST_CASE_DIR="workflow-verification/test-cases/{test-id}"
-
-if [[ ! -d "$TEST_CASE_DIR" ]]; then
-  echo "Error: Test case not found: {test-id}"
-  exit 1
-fi
+Verify test case exists:
 ```
+Glob: workflow-verification/test-cases/{test-id}/
+```
+
+If no match found, report error and exit.
 
 ### Step 2: Validate Plan Exists
 
@@ -85,21 +84,67 @@ Proceed to **Shared Verification Steps** below with the provided plan_id.
 
 Used by both `test` and `verify` workflows.
 
+### Step V0: Create Results Directory
+
+Create the results directory for all verification outputs:
+
+```bash
+TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+RESULTS_DIR=".plan/temp/workflow-verification/{test-id}-$TIMESTAMP"
+mkdir -p "$RESULTS_DIR"
+```
+
+All subsequent steps use `{results_dir}` to store outputs.
+
 ### Step V1: Run Structural Verification
 
 ```bash
-python3 .claude/skills/workflow-verify/scripts/verify-structure.py \
+python3 .claude/skills/verify-workflow/scripts/verify-structure.py \
   --plan-id {plan_id} \
   --test-case workflow-verification/test-cases/{test-id} \
-  --output .plan/temp/verify-{test-id}-structure.toon
+  --output {results_dir}/structural-checks.toon
 ```
+
+Parse the output to determine structural check status.
+
+### Step V1.5: Trace Components
+
+Collect all components used during workflow execution.
+
+```
+Read: workflows/trace-components.md
+```
+
+Execute the trace-components workflow to generate:
+- `{results_dir}/component-trace.md`
+
+This creates sequential component IDs (C1, C2, ...) for later attribution.
+
+### Step V1.6: Analyze Structural Failures (Conditional)
+
+**Only execute if Step V1 reports failures.**
+
+Read structural check results:
+```
+Read: {results_dir}/structural-checks.toon
+```
+
+If `status: fail`:
+```
+Read: workflows/analyze-failures.md
+```
+
+Execute the analyze-failures workflow to generate:
+- `{results_dir}/structural-analysis.toon`
+
+This produces categorized failure analysis with origins and fix proposals.
 
 ### Step V2: Collect Artifacts
 
 ```bash
-python3 .claude/skills/workflow-verify/scripts/collect-artifacts.py \
+python3 .claude/skills/verify-workflow/scripts/collect-artifacts.py \
   --plan-id {plan_id} \
-  --output .plan/temp/verify-{test-id}-artifacts/
+  --output {results_dir}/artifacts/
 ```
 
 ### Step V3: Run Semantic Assessment (LLM-as-Judge)
@@ -108,7 +153,7 @@ python3 .claude/skills/workflow-verify/scripts/collect-artifacts.py \
 - `workflow-verification/test-cases/{test-id}/criteria/semantic.md`
 - `workflow-verification/test-cases/{test-id}/criteria/decision-quality.md`
 - `workflow-verification/test-cases/{test-id}/golden/verified-result.md`
-- `.plan/temp/verify-{test-id}-artifacts/solution_outline.md`
+- `{results_dir}/artifacts/solution_outline.md`
 
 **Perform assessment** for each criterion:
 1. Compare actual output against golden reference
@@ -122,13 +167,7 @@ python3 .claude/skills/workflow-verify/scripts/collect-artifacts.py \
 
 ### Step V4: Generate Assessment Report
 
-```bash
-TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-RESULTS_DIR=".plan/temp/workflow-verification/{test-id}-$TIMESTAMP"
-mkdir -p "$RESULTS_DIR"
-```
-
-Create `assessment-results.toon`:
+Create `{results_dir}/assessment-results.toon`:
 ```toon
 test_id: {test-id}
 timestamp: {timestamp}
@@ -140,6 +179,13 @@ structural_checks:
   status: {pass|fail}
   passed: {count}
   failed: {count}
+
+structural_analysis:
+  status: {analyzed|skipped}
+  failure_count: {count}
+
+  failures[N]{check_name,category,origin,description,fix_proposal}:
+  ...
 
 semantic_assessment:
   scope_score: {0-100}
@@ -153,7 +199,23 @@ missing_items[N]:
 ...
 ```
 
-Create `assessment-detail.md` with full narrative.
+Create `{results_dir}/assessment-detail.md` with full narrative.
+
+### Step V4.5: Analyze Issues (Conditional)
+
+**Only execute if findings exist.**
+
+Check if findings array has entries in the assessment results.
+
+If findings exist:
+```
+Read: workflows/analyze-issues.md
+```
+
+Execute the analyze-issues workflow to generate:
+- `{results_dir}/issue-analysis.md`
+
+This traces findings back to specific components using the component trace IDs.
 
 ### Step V5: Display Results
 
@@ -167,6 +229,12 @@ Create `assessment-detail.md` with full narrative.
 - Passed: {count}
 - Failed: {count}
 
+### Structural Analysis (if failures exist)
+| Check | Category | Origin | Fix |
+|-------|----------|--------|-----|
+| {check_name} | {category} | {origin} | {fix_proposal} |
+...
+
 ### Semantic Assessment
 | Dimension | Score |
 |-----------|-------|
@@ -177,7 +245,21 @@ Create `assessment-detail.md` with full narrative.
 ### Key Findings
 {findings_list}
 
-**Full Report**: {results_dir}/assessment-detail.md
+### Issue Analysis (if findings exist)
+| Issue | Origin | Confidence | Component |
+|-------|--------|------------|-----------|
+| {issue} | C{n} | {level} | {name} |
+...
+
+### Results Directory
+All outputs: {results_dir}/
+- assessment-results.toon
+- assessment-detail.md
+- component-trace.md
+- structural-checks.toon
+- structural-analysis.toon (if failures)
+- issue-analysis.md (if findings)
+- artifacts/
 ```
 
 ### Step V6: Cleanup (Optional)

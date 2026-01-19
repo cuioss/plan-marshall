@@ -73,6 +73,15 @@ Load only when needed:
 - `standards/scoring-guide.md` - Scoring rubric (0-100 scale)
 - `standards/test-case-format.md` - Test case specification
 - `standards/criteria-format.md` - Criteria authoring guide
+- `standards/failure-categories.md` - Root cause taxonomy for structural failures
+
+## Analysis Workflows
+
+Loaded conditionally during verification:
+
+- `workflows/trace-components.md` - Component tracing with sequential IDs (C1, C2, ...)
+- `workflows/analyze-failures.md` - Structural failure analysis (runs when checks fail)
+- `workflows/analyze-issues.md` - Issue attribution to components (runs when findings exist)
 
 ## Directory Structure
 
@@ -85,6 +94,13 @@ workflow-verification/test-cases/{test-id}/   # Version-controlled
 
 .plan/temp/workflow-verification/             # Ephemeral results
 └── {test-id}-{timestamp}/
+    ├── assessment-results.toon
+    ├── assessment-detail.md
+    ├── component-trace.md
+    ├── structural-checks.toon
+    ├── structural-analysis.toon    # If failures exist
+    ├── issue-analysis.md           # If findings exist
+    └── artifacts/
 ```
 
 ## Scripts
@@ -99,7 +115,7 @@ Structural verification via manage-* tool interfaces.
 python3 scripts/verify-structure.py \
   --plan-id {plan_id} \
   --test-case workflow-verification/test-cases/{test-id} \
-  --output .plan/temp/verify-{test-id}-structure.toon
+  --output {results_dir}/structural-checks.toon
 ```
 
 ### collect-artifacts.py
@@ -111,5 +127,5 @@ Artifact collection via manage-* tool interfaces.
 ```bash
 python3 scripts/collect-artifacts.py \
   --plan-id {plan_id} \
-  --output .plan/temp/verify-{test-id}-artifacts/
+  --output {results_dir}/artifacts/
 ```

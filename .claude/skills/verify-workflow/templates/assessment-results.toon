@@ -12,6 +12,13 @@ structural_checks:
   passed: {N}
   failed: {N}
 
+structural_analysis:
+  status: {analyzed|skipped}
+  failure_count: {N}
+
+  failures[N]{check_name,category,origin,description,fix_proposal}:
+  {check_name},{category},{origin},{description},{fix_proposal}
+
 semantic_assessment:
   scope_score: {0-100}
   scope_reasoning: {explanation}

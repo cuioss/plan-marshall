@@ -4,12 +4,12 @@ List available test cases with status.
 
 ## Step 1: Discover Test Cases
 
-```bash
-ls -d workflow-verification/test-cases/*/ 2>/dev/null | while read dir; do
-  test_id=$(basename "$dir")
-  echo "$test_id"
-done
+Find all test case directories:
 ```
+Glob: workflow-verification/test-cases/*/
+```
+
+Extract test IDs from the matched paths (directory names).
 
 ## Step 2: Get Status for Each
 
@@ -18,18 +18,26 @@ For each test case, check:
 - Has recent results?
 - Last run status?
 
-```bash
-for test_id in $(ls workflow-verification/test-cases/); do
-  has_golden="No"
-  [[ -f "workflow-verification/test-cases/$test_id/golden/verified-result.md" ]] && has_golden="Yes"
-
-  last_run="Never"
-  last_result=$(ls -t .plan/temp/workflow-verification/${test_id}-* 2>/dev/null | head -1)
-  [[ -n "$last_result" ]] && last_run=$(basename "$last_result" | cut -d'-' -f2-)
-
-  echo "$test_id|$has_golden|$last_run"
-done
+**Check for golden reference:**
 ```
+Read: workflow-verification/test-cases/{test_id}/golden/verified-result.md
+```
+- If file exists: `has_golden = "Yes"`
+- If Read returns error (file not found): `has_golden = "No"`
+
+**Check for recent results:**
+```
+Glob: .plan/temp/workflow-verification/{test_id}-*/
+```
+- If matches found: Extract timestamp from most recent (Glob returns sorted by mtime)
+- If no matches: `last_run = "Never"`
+
+**Check last run status:**
+If recent results exist:
+```
+Read: {most_recent_results_dir}/assessment-results.toon
+```
+Extract `overall_status` field.
 
 ## Step 3: Display Summary
 
@@ -40,6 +48,24 @@ done
 |---------|------------|----------|--------|
 | {test_id} | {Yes/No} | {timestamp} | {status} |
 ...
+
+To run verification:
+  /verify-workflow test --test-id <test-id>
+
+To create new test case:
+  /verify-workflow create --test-id <new-test-id>
+```
+
+## Example Output
+
+```
+## Available Test Cases
+
+| Test ID | Golden Ref | Last Run | Status |
+|---------|------------|----------|--------|
+| migrate-json-to-toon | Yes | 20250119-103000 | pass |
+| add-new-domain | Yes | Never | - |
+| complex-refactor | No | 20250118-142500 | fail |
 
 To run verification:
   /verify-workflow test --test-id <test-id>
