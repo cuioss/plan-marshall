@@ -57,6 +57,13 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   work {plan_id} INFO "[DECISION] (pm-plugin-development:ext-outline-plugin) {Path} selected: {rationale}"
 ```
 
+**Scope (REQUIRED for complex workflow):**
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  work {plan_id} INFO "[DECISION] (pm-plugin-development:ext-outline-plugin) Scope: resource-types={types}, bundles={all|filtered}
+  detail: All listed resource-types will be analyzed individually per checklist rules"
+```
+
 **Conditional Standards Triggered:**
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \

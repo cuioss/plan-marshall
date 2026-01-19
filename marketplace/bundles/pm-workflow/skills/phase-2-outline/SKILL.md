@@ -305,6 +305,20 @@ The template enforces:
 - Verification section (command and criteria)
 - Success Criteria section
 
+### Step 6b: Validate Deliverables Against Request
+
+Before writing solution document, verify each deliverable:
+
+1. **Request alignment**: Does deliverable directly address a request requirement?
+2. **Module verification**: Was module selected through per-candidate scoring (not assumed)?
+3. **Profile accuracy**: Are listed profiles based on actual architecture query (not inferred)?
+
+Log validation:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  work {plan_id} INFO "[VALIDATION] (pm-workflow:phase-2-outline) Deliverable {N} validated: module={module}, profiles={profiles}, request_criteria={matched}"
+```
+
 ---
 
 ## Step 7: Create IT Deliverable (Optional)

@@ -63,8 +63,10 @@ Process components in batches of **10-15 files** per bundle. After each batch:
 ```bash
 # After each batch of 10-15 components
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[STATUS] (pm-plugin-development:ext-outline-plugin) Analyzed batch {N} of {bundle}: {X} affected, {Y} not affected"
+  work {plan_id} INFO "[STATUS] (pm-plugin-development:ext-outline-plugin) Analyzed {component_type} batch {N} of {bundle}: {X} affected, {Y} not affected"
 ```
+
+**All component types must have batch checkpoints** - if inventory includes agents, commands, AND skills, all three types must show batch progress logs.
 
 ### Per-Component Analysis
 
@@ -80,6 +82,30 @@ For each component, execute these steps **in order**:
 - [ ] Does it use the changed script notation?
 - [ ] Does it follow the pattern being modified?
 - [ ] Does it output in the format being changed?
+
+### Checklist Enforcement Rules
+
+**CRITICAL**: The analysis checklist MUST be applied to EVERY component returned by inventory scan.
+
+1. **No blanket exclusions**: You CANNOT exclude an entire component type (agents, commands, skills) with a single decision. Each component must be analyzed individually.
+
+2. **One [FINDING] per component**: Every component gets its own `[FINDING]` log entry - either "Affected" or "Not affected" with component-specific reasoning.
+
+3. **No categorical assumptions**: Statements like "skills are knowledge documents" or "commands don't produce output" are PROHIBITED. Components must be evaluated against the REQUEST criteria, not component-type assumptions.
+
+**Anti-pattern (INVALID):**
+```
+[FINDING] Skills analysis complete: Skills are knowledge documents without output formats
+```
+
+**Correct pattern:**
+```
+[FINDING] Affected: plan-marshall/skills/permission-doctor/SKILL.md
+  detail: Contains "Output JSON" section matching request criteria
+
+[FINDING] Not affected: pm-dev-java/skills/junit-core/SKILL.md
+  detail: No output specification sections found after checking Output, Return, Contract sections
+```
 
 ### Logging Affected Files
 

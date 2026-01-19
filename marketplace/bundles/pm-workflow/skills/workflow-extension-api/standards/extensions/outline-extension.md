@@ -129,6 +129,49 @@ Every outline extension MUST implement these sections:
 
 ---
 
+## Enforcement Requirements
+
+Extensions implementing this protocol MUST follow these rules:
+
+### Per-Component Analysis
+
+When inventory returns components of a type (agents, commands, skills), the extension:
+1. MUST analyze each component individually against request criteria
+2. MUST NOT make blanket assumptions about component types
+3. MUST log individual `[FINDING]` entries for each component (affected or not)
+
+### Prohibited Patterns
+
+Extensions MUST NOT:
+- Exclude entire component types with a single decision (e.g., "skills don't have outputs")
+- Use categorical statements as exclusion rationale
+- Skip analysis steps for any component returned by inventory
+
+**Anti-pattern (PROHIBITED):**
+```
+[FINDING] Skills analysis complete: Skills are knowledge documents without output formats
+```
+
+**Required pattern:**
+```
+[FINDING] Affected: bundle/skills/skill-a/SKILL.md
+  detail: Contains output specification matching request criteria
+
+[FINDING] Not affected: bundle/skills/skill-b/SKILL.md
+  detail: No matching criteria found after checking sections X, Y, Z
+```
+
+### Batch Checkpoint Requirements
+
+If inventory includes multiple component types (e.g., agents, commands, skills), ALL types must show batch progress logs:
+```
+[STATUS] Analyzed agents batch 1 of pm-workflow: 3 affected, 2 not affected
+[STATUS] Analyzed commands batch 1 of pm-workflow: 0 affected, 5 not affected
+[STATUS] Analyzed skills batch 1 of pm-workflow: 2 affected, 8 not affected
+```
+
+---
+
 ## Example Implementation
 
 See: `pm-plugin-development:ext-outline-plugin`
