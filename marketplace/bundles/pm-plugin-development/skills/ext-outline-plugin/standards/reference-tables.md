@@ -99,14 +99,42 @@ When creating deliverables, use this mapping for `suggested_skill` and `suggeste
 
 ## Scoping Decisions
 
-When using `scan-marketplace-inventory`, determine scope from the request analysis:
+When using `scan-marketplace-inventory`, determine scope from request analysis.
+
+**Priority**: Explicit type mentions override keyword matching.
+
+### Explicit Component Type Detection
+
+Parse request for explicit component type patterns:
+
+| Request Pattern | Resource Types | Example |
+|-----------------|----------------|---------|
+| "agent/command/skill" or "agents, commands, and skills" | `--resource-types agents,commands,skills` | "Migrate agent/command/skill outputs" |
+| "agent and command" or "agents/commands" | `--resource-types agents,commands` | "Update agent and command outputs" |
+| "agent and skill" or "agents/skills" | `--resource-types agents,skills` | "Fix agent and skill formatting" |
+| "command and skill" or "commands/skills" | `--resource-types commands,skills` | "Refactor command and skill structure" |
+
+### Single Type Detection
 
 | Request Indicator | Resource Types | Log Entry |
 |-------------------|----------------|-----------|
-| "agents" mentioned | `--resource-types agents` | Scoped to agents only |
-| "commands" mentioned | `--resource-types commands` | Scoped to commands only |
-| "skills" mentioned | `--resource-types skills` | Scoped to skills only |
-| "outputs" / "returns" | `--resource-types agents,commands` | Agent/command outputs |
+| "agents" mentioned (alone) | `--resource-types agents` | Scoped to agents only |
+| "commands" mentioned (alone) | `--resource-types commands` | Scoped to commands only |
+| "skills" mentioned (alone) | `--resource-types skills` | Scoped to skills only |
+
+### Keyword-Based Detection (fallback)
+
+Only use if no explicit types are mentioned:
+
+| Keyword | Resource Types | Log Entry |
+|---------|----------------|-----------|
+| "outputs" / "returns" | `--resource-types agents,commands,skills` | All component outputs |
+| "execution" / "run" | `--resource-types agents,commands` | Executable components |
+
+### Bundle Scope
+
+| Request Indicator | Filter | Log Entry |
+|-------------------|--------|-----------|
 | Single bundle named | `--bundles {name}` | Scoped to {name} bundle |
 | No bundle specified | (no filter) | Full marketplace scan |
 

@@ -2,8 +2,8 @@
 """
 Artifact collection script for workflow verification.
 
-Collects workflow artifacts via manage-* tool interfaces for comparison
-against golden references during verification.
+Collects workflow artifacts for comparison against golden references
+during verification.
 
 Usage:
     python3 collect-artifacts.py --plan-id my-plan --output artifacts/
@@ -13,88 +13,80 @@ Output: Directory containing collected artifacts in original format.
 """
 
 import argparse
-import os
-import subprocess
+import re
 import sys
 from pathlib import Path
 from typing import Any
 
+# Cross-skill imports (executor sets PYTHONPATH)
+from file_ops import base_path  # type: ignore[import-not-found]
+from toon_parser import serialize_toon  # type: ignore[import-not-found]
+
 # =============================================================================
-# TOON Helpers
+# Path Helpers (inline to avoid hyphen-named module imports)
 # =============================================================================
 
 
-def serialize_toon(data: dict[str, Any], indent: int = 0) -> str:
-    """Serialize dict to TOON format."""
-    lines: list[str] = []
-    prefix = '  ' * indent
+def get_solution_path(plan_id: str) -> Path:
+    """Get path to solution_outline.md."""
+    return base_path('plans', plan_id, 'solution_outline.md')
 
-    for key, value in data.items():
-        if isinstance(value, dict):
-            lines.append(f'{prefix}{key}:')
-            lines.append(serialize_toon(value, indent + 1))
-        elif isinstance(value, list):
-            if not value:
-                lines.append(f'{prefix}{key}[0]:')
-            elif all(isinstance(item, dict) for item in value):
-                if value:
-                    keys = list(value[0].keys())
-                    lines.append(f'{prefix}{key}[{len(value)}]{{{",".join(keys)}}}:')
-                    for item in value:
-                        vals = [str(item.get(k, '')) for k in keys]
-                        lines.append(f'{prefix}  {",".join(vals)}')
-            else:
-                lines.append(f'{prefix}{key}[{len(value)}]:')
-                for item in value:
-                    lines.append(f'{prefix}  {item}')
-        elif isinstance(value, bool):
-            lines.append(f'{prefix}{key}: {str(value).lower()}')
+
+def get_config_path(plan_id: str) -> Path:
+    """Get path to config.toon."""
+    return base_path('plans', plan_id, 'config.toon')
+
+
+def get_status_path(plan_id: str) -> Path:
+    """Get path to status.toon."""
+    return base_path('plans', plan_id, 'status.toon')
+
+
+def get_references_path(plan_id: str) -> Path:
+    """Get path to references.toon."""
+    return base_path('plans', plan_id, 'references.toon')
+
+
+def get_log_path(plan_id: str, log_type: str = 'work') -> Path:
+    """Get path to log file."""
+    return base_path('plans', plan_id, f'{log_type}.log')
+
+
+# =============================================================================
+# Parsing Helpers (inline simplified versions)
+# =============================================================================
+
+
+def parse_document_sections(content: str) -> dict[str, str]:
+    """Parse markdown document into sections by ## headers."""
+    sections: dict[str, str] = {}
+    current_section = ''
+    current_content: list[str] = []
+
+    for line in content.split('\n'):
+        if line.startswith('## '):
+            if current_section:
+                sections[current_section] = '\n'.join(current_content)
+            current_section = line[3:].strip()
+            current_content = []
         else:
-            lines.append(f'{prefix}{key}: {value}')
+            current_content.append(line)
 
-    return '\n'.join(lines)
+    if current_section:
+        sections[current_section] = '\n'.join(current_content)
 
-
-# =============================================================================
-# Script Runner
-# =============================================================================
+    return sections
 
 
-def run_manage_script(notation: str, subcommand: str, *args: str) -> tuple[int, str, str]:
-    """
-    Run a manage-* script via the executor.
+def extract_deliverables(content: str) -> list[dict[str, str]]:
+    """Extract deliverables from Deliverables section content."""
+    deliverables: list[dict[str, str]] = []
+    pattern = re.compile(r'^###\s+(\d+)\.\s+(.+)$', re.MULTILINE)
 
-    Args:
-        notation: Script notation (e.g., 'pm-workflow:manage-solution-outline:manage-solution-outline')
-        subcommand: Subcommand to run (e.g., 'read')
-        *args: Additional arguments
+    for match in pattern.finditer(content):
+        deliverables.append({'id': match.group(1), 'title': match.group(2).strip()})
 
-    Returns:
-        (returncode, stdout, stderr)
-    """
-    executor_path = Path('.plan/execute-script.py')
-    if not executor_path.exists():
-        project_root = Path(__file__).parent.parent.parent.parent.parent
-        executor_path = project_root / '.plan' / 'execute-script.py'
-
-    if not executor_path.exists():
-        return 1, '', f'Executor not found at {executor_path}'
-
-    cmd = [sys.executable, str(executor_path), notation, subcommand] + list(args)
-
-    try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=60,
-            cwd=os.getcwd(),
-        )
-        return result.returncode, result.stdout, result.stderr
-    except subprocess.TimeoutExpired:
-        return 1, '', 'Script execution timed out'
-    except Exception as e:
-        return 1, '', str(e)
+    return deliverables
 
 
 # =============================================================================
@@ -103,7 +95,7 @@ def run_manage_script(notation: str, subcommand: str, *args: str) -> tuple[int, 
 
 
 class ArtifactCollector:
-    """Collects workflow artifacts via manage-* interfaces."""
+    """Collects workflow artifacts."""
 
     def __init__(self, plan_id: str, output_dir: Path):
         self.plan_id = plan_id
@@ -112,168 +104,191 @@ class ArtifactCollector:
         self.errors: list[str] = []
 
     def collect_solution_outline(self) -> bool:
-        """Collect solution_outline.md via manage-solution-outline."""
-        code, stdout, stderr = run_manage_script(
-            'pm-workflow:manage-solution-outline:manage-solution-outline',
-            'read',
-            '--plan-id',
-            self.plan_id,
-            '--raw',
-        )
+        """Collect solution_outline.md."""
+        try:
+            solution_path = get_solution_path(self.plan_id)
 
-        if code == 0 and stdout.strip():
-            output_path = self.output_dir / 'solution_outline.md'
-            output_path.write_text(stdout)
-            self.collected.append({'artifact': 'solution_outline.md', 'status': 'success'})
-            return True
-        else:
-            self.errors.append(f'Failed to collect solution_outline.md: {stderr}')
+            if solution_path.exists():
+                content = solution_path.read_text()
+                output_path = self.output_dir / 'solution_outline.md'
+                output_path.write_text(content)
+                self.collected.append({'artifact': 'solution_outline.md', 'status': 'success'})
+                return True
+            else:
+                self.errors.append('Solution outline not found')
+                self.collected.append({'artifact': 'solution_outline.md', 'status': 'failed'})
+                return False
+        except Exception as e:
+            self.errors.append(f'Failed to collect solution_outline.md: {e}')
             self.collected.append({'artifact': 'solution_outline.md', 'status': 'failed'})
             return False
 
     def collect_deliverables(self) -> bool:
-        """Collect deliverables list via manage-solution-outline."""
-        code, stdout, stderr = run_manage_script(
-            'pm-workflow:manage-solution-outline:manage-solution-outline',
-            'list-deliverables',
-            '--plan-id',
-            self.plan_id,
-        )
+        """Collect deliverables list."""
+        try:
+            solution_path = get_solution_path(self.plan_id)
 
-        if code == 0 and stdout.strip():
+            if not solution_path.exists():
+                self.errors.append('Solution outline not found for deliverables')
+                self.collected.append({'artifact': 'deliverables.toon', 'status': 'failed'})
+                return False
+
+            content = solution_path.read_text()
+            sections = parse_document_sections(content)
+            deliverables_section = sections.get('Deliverables', '')
+
+            if not deliverables_section:
+                self.errors.append('No deliverables section found')
+                self.collected.append({'artifact': 'deliverables.toon', 'status': 'failed'})
+                return False
+
+            deliverables = extract_deliverables(deliverables_section)
+
+            # Format as TOON
+            result = {
+                'status': 'success',
+                'plan_id': self.plan_id,
+                'deliverable_count': len(deliverables),
+                'deliverables': deliverables,
+            }
+
             output_path = self.output_dir / 'deliverables.toon'
-            output_path.write_text(stdout)
+            output_path.write_text(serialize_toon(result))
             self.collected.append({'artifact': 'deliverables.toon', 'status': 'success'})
             return True
-        else:
-            self.errors.append(f'Failed to collect deliverables: {stderr}')
+
+        except Exception as e:
+            self.errors.append(f'Failed to collect deliverables: {e}')
             self.collected.append({'artifact': 'deliverables.toon', 'status': 'failed'})
             return False
 
     def collect_config(self) -> bool:
-        """Collect config.toon via manage-config."""
-        code, stdout, stderr = run_manage_script(
-            'pm-workflow:manage-config:manage-config', 'read', '--plan-id', self.plan_id
-        )
+        """Collect config.toon."""
+        try:
+            config_path = get_config_path(self.plan_id)
 
-        if code == 0 and stdout.strip():
-            output_path = self.output_dir / 'config.toon'
-            output_path.write_text(stdout)
-            self.collected.append({'artifact': 'config.toon', 'status': 'success'})
-            return True
-        else:
-            self.errors.append(f'Failed to collect config.toon: {stderr}')
+            if config_path.exists():
+                content = config_path.read_text()
+                output_path = self.output_dir / 'config.toon'
+                output_path.write_text(content)
+                self.collected.append({'artifact': 'config.toon', 'status': 'success'})
+                return True
+            else:
+                self.errors.append('Config file not found')
+                self.collected.append({'artifact': 'config.toon', 'status': 'failed'})
+                return False
+        except Exception as e:
+            self.errors.append(f'Failed to collect config.toon: {e}')
             self.collected.append({'artifact': 'config.toon', 'status': 'failed'})
             return False
 
     def collect_status(self) -> bool:
-        """Collect status.toon via manage-lifecycle."""
-        code, stdout, stderr = run_manage_script(
-            'pm-workflow:manage-lifecycle:manage-lifecycle', 'read', '--plan-id', self.plan_id
-        )
+        """Collect status.toon."""
+        try:
+            status_path = get_status_path(self.plan_id)
 
-        if code == 0 and stdout.strip():
-            output_path = self.output_dir / 'status.toon'
-            output_path.write_text(stdout)
-            self.collected.append({'artifact': 'status.toon', 'status': 'success'})
-            return True
-        else:
-            self.errors.append(f'Failed to collect status.toon: {stderr}')
+            if status_path.exists():
+                content = status_path.read_text()
+                output_path = self.output_dir / 'status.toon'
+                output_path.write_text(content)
+                self.collected.append({'artifact': 'status.toon', 'status': 'success'})
+                return True
+            else:
+                self.errors.append('Status file not found')
+                self.collected.append({'artifact': 'status.toon', 'status': 'failed'})
+                return False
+        except Exception as e:
+            self.errors.append(f'Failed to collect status.toon: {e}')
             self.collected.append({'artifact': 'status.toon', 'status': 'failed'})
             return False
 
     def collect_references(self) -> bool:
-        """Collect references.toon via manage-references."""
-        code, stdout, stderr = run_manage_script(
-            'pm-workflow:manage-references:manage-references', 'read', '--plan-id', self.plan_id
-        )
+        """Collect references.toon."""
+        try:
+            refs_path = get_references_path(self.plan_id)
 
-        if code == 0 and stdout.strip():
-            output_path = self.output_dir / 'references.toon'
-            output_path.write_text(stdout)
-            self.collected.append({'artifact': 'references.toon', 'status': 'success'})
-            return True
-        else:
-            # References may not exist for all plans, treat as warning
-            self.collected.append({'artifact': 'references.toon', 'status': 'not_found'})
+            if refs_path.exists():
+                content = refs_path.read_text()
+                output_path = self.output_dir / 'references.toon'
+                output_path.write_text(content)
+                self.collected.append({'artifact': 'references.toon', 'status': 'success'})
+                return True
+            else:
+                # References may not exist for all plans, treat as not_found
+                self.collected.append({'artifact': 'references.toon', 'status': 'not_found'})
+                return False
+        except Exception as e:
+            self.errors.append(f'Failed to collect references.toon: {e}')
+            self.collected.append({'artifact': 'references.toon', 'status': 'failed'})
             return False
 
     def collect_tasks(self, phase: str = 'execute') -> bool:
-        """Collect tasks via manage-tasks."""
-        code, stdout, stderr = run_manage_script(
-            'pm-workflow:manage-tasks:manage-tasks',
-            'list',
-            '--plan-id',
-            self.plan_id,
-            '--phase',
-            phase,
-        )
+        """Collect tasks."""
+        try:
+            plan_dir = base_path('plans', self.plan_id)
 
-        if code == 0 and stdout.strip():
+            if not plan_dir.exists():
+                self.collected.append({'artifact': 'tasks-list.toon', 'status': 'not_found'})
+                return False
+
+            # Find TASK-*.toon files
+            task_files = sorted(plan_dir.glob('TASK-*.toon'))
+
+            if not task_files:
+                self.collected.append({'artifact': 'tasks-list.toon', 'status': 'not_found'})
+                return False
+
+            # Create tasks list
+            tasks = []
+            for task_file in task_files:
+                tasks.append({
+                    'file': task_file.name,
+                    'path': str(task_file),
+                })
+
+            result = {
+                'status': 'success',
+                'plan_id': self.plan_id,
+                'task_count': len(tasks),
+                'tasks': tasks,
+            }
+
             output_path = self.output_dir / 'tasks-list.toon'
-            output_path.write_text(stdout)
+            output_path.write_text(serialize_toon(result))
             self.collected.append({'artifact': 'tasks-list.toon', 'status': 'success'})
 
-            # Also collect individual task details if we can parse task numbers
-            # Parse task count from list output
-            task_count = 0
-            for line in stdout.split('\n'):
-                if 'task_count:' in line:
-                    try:
-                        task_count = int(line.split(':')[1].strip())
-                    except (ValueError, IndexError):
-                        pass
-
-            # Create tasks subdirectory
+            # Copy individual task files
             tasks_dir = self.output_dir / 'tasks'
             tasks_dir.mkdir(exist_ok=True)
 
-            # Collect individual tasks
-            for i in range(1, task_count + 1):
-                self._collect_single_task(i, tasks_dir, phase)
+            for task_file in task_files:
+                content = task_file.read_text()
+                (tasks_dir / task_file.name).write_text(content)
 
             return True
-        else:
-            self.collected.append({'artifact': 'tasks-list.toon', 'status': 'not_found'})
+
+        except Exception as e:
+            self.errors.append(f'Failed to collect tasks: {e}')
+            self.collected.append({'artifact': 'tasks-list.toon', 'status': 'failed'})
             return False
 
-    def _collect_single_task(self, task_number: int, tasks_dir: Path, phase: str) -> bool:
-        """Collect a single task detail."""
-        code, stdout, stderr = run_manage_script(
-            'pm-workflow:manage-tasks:manage-tasks',
-            'get',
-            '--plan-id',
-            self.plan_id,
-            '--number',
-            str(task_number),
-            '--phase',
-            phase,
-        )
-
-        if code == 0 and stdout.strip():
-            output_path = tasks_dir / f'TASK-{task_number:02d}.toon'
-            output_path.write_text(stdout)
-            return True
-        return False
-
     def collect_work_log(self) -> bool:
-        """Collect work log via manage-logging."""
-        code, stdout, stderr = run_manage_script(
-            'plan-marshall:manage-logging:manage-log',
-            'read',
-            '--plan-id',
-            self.plan_id,
-            '--type',
-            'work',
-        )
+        """Collect work log."""
+        try:
+            log_path = get_log_path(self.plan_id, 'work')
 
-        if code == 0 and stdout.strip():
-            output_path = self.output_dir / 'work.log'
-            output_path.write_text(stdout)
-            self.collected.append({'artifact': 'work.log', 'status': 'success'})
-            return True
-        else:
-            self.collected.append({'artifact': 'work.log', 'status': 'not_found'})
+            if log_path.exists():
+                content = log_path.read_text()
+                output_path = self.output_dir / 'work.log'
+                output_path.write_text(content)
+                self.collected.append({'artifact': 'work.log', 'status': 'success'})
+                return True
+            else:
+                self.collected.append({'artifact': 'work.log', 'status': 'not_found'})
+                return False
+        except Exception as e:
+            self.errors.append(f'Failed to collect work.log: {e}')
+            self.collected.append({'artifact': 'work.log', 'status': 'failed'})
             return False
 
     def collect_all(self, phases: list[str] | None = None) -> dict[str, Any]:
@@ -304,15 +319,19 @@ class ArtifactCollector:
         success_count = len([c for c in self.collected if c['status'] == 'success'])
         failed_count = len([c for c in self.collected if c['status'] == 'failed'])
 
-        return {
+        result: dict[str, Any] = {
             'status': 'success' if failed_count == 0 else 'partial',
             'plan_id': self.plan_id,
             'output_dir': str(self.output_dir),
             'collected_count': success_count,
             'failed_count': failed_count,
             'artifacts': self.collected,
-            'errors': self.errors if self.errors else None,
         }
+
+        if self.errors:
+            result['errors'] = self.errors
+
+        return result
 
 
 # =============================================================================
@@ -333,9 +352,6 @@ def main() -> int:
 
     collector = ArtifactCollector(args.plan_id, output_dir)
     results = collector.collect_all(phases)
-
-    # Filter out None values for clean output
-    results = {k: v for k, v in results.items() if v is not None}
 
     print(serialize_toon(results))
 

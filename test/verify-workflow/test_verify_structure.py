@@ -6,28 +6,19 @@ Tests the structural verification functionality that checks workflow outputs
 via manage-* tool interfaces.
 """
 
-import importlib.util
-import sys
-from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
-# Load script module directly from project-level path
-PROJECT_ROOT = Path(__file__).parent.parent.parent
-SCRIPT_PATH = PROJECT_ROOT / '.claude' / 'skills' / 'verify-workflow' / 'scripts' / 'verify-structure.py'
+# Import the loaded module from conftest (PYTHONPATH is already set up)
+from conftest import verify_structure
 
-# Load module from file path
-spec = importlib.util.spec_from_file_location('verify_structure', SCRIPT_PATH)
-assert spec is not None and spec.loader is not None
-verify_structure = importlib.util.module_from_spec(spec)
-sys.modules['verify_structure'] = verify_structure
-spec.loader.exec_module(verify_structure)
-
-# Import what we need
+# Import what we need from the loaded module
 StructuralChecker = verify_structure.StructuralChecker
 parse_toon_simple = verify_structure.parse_toon_simple
-serialize_toon = verify_structure.serialize_toon
+
+# Import serialize_toon from toon_parser (same as the script does)
+from toon_parser import serialize_toon  # type: ignore[import-not-found]  # noqa: E402
 
 
 class TestSerializeToon:
@@ -148,25 +139,28 @@ class TestStructuralChecker:
         assert 'deliverable_count' in expected
         assert expected['deliverable_count'] == '3'
 
-    @patch('verify_structure.run_manage_script')
-    def test_check_solution_outline_exists_success(self, mock_run, temp_test_case):
+    def test_check_solution_outline_exists_success(self, temp_test_case, tmp_path):
         """Test solution outline existence check - success case."""
-        mock_run.return_value = (0, 'status: success\nexists: true', '')
+        # Create mock solution file
+        solution_path = tmp_path / 'solution_outline.md'
+        solution_path.write_text('# Solution\n\nContent here')
 
-        checker = StructuralChecker('test-plan', temp_test_case)
-        result = checker.check_solution_outline_exists()
+        with patch('verify_structure.get_solution_path', return_value=solution_path):
+            checker = StructuralChecker('test-plan', temp_test_case)
+            result = checker.check_solution_outline_exists()
 
         assert result is True
         assert len(checker.checks) == 1
         assert checker.checks[0]['status'] == 'pass'
 
-    @patch('verify_structure.run_manage_script')
-    def test_check_solution_outline_exists_failure(self, mock_run, temp_test_case):
+    def test_check_solution_outline_exists_failure(self, temp_test_case, tmp_path):
         """Test solution outline existence check - failure case."""
-        mock_run.return_value = (1, '', 'Not found')
+        # Point to non-existent file
+        solution_path = tmp_path / 'nonexistent.md'
 
-        checker = StructuralChecker('test-plan', temp_test_case)
-        result = checker.check_solution_outline_exists()
+        with patch('verify_structure.get_solution_path', return_value=solution_path):
+            checker = StructuralChecker('test-plan', temp_test_case)
+            result = checker.check_solution_outline_exists()
 
         assert result is False
         assert len(checker.checks) == 1
@@ -174,25 +168,83 @@ class TestStructuralChecker:
         assert len(checker.findings) == 1
         assert checker.findings[0]['severity'] == 'error'
 
-    @patch('verify_structure.run_manage_script')
-    def test_check_solution_outline_valid_with_warnings(self, mock_run, temp_test_case):
-        """Test validation check extracts warnings."""
-        mock_run.return_value = (0, 'status: success\nwarnings:\n  - Minor issue', '')
+    def test_check_solution_outline_valid_success(self, temp_test_case, tmp_path):
+        """Test validation check success."""
+        solution_path = tmp_path / 'solution_outline.md'
+        solution_path.write_text('# Solution\n\n## Summary\n\n## Overview\n\n## Deliverables')
 
-        checker = StructuralChecker('test-plan', temp_test_case)
-        result = checker.check_solution_outline_valid()
+        with patch('verify_structure.get_solution_path', return_value=solution_path):
+            with patch('verify_structure.validate_solution_structure', return_value=([], [], {})):
+                checker = StructuralChecker('test-plan', temp_test_case)
+                result = checker.check_solution_outline_valid()
 
         assert result is True
         assert checker.checks[0]['status'] == 'pass'
 
-    @patch('verify_structure.run_manage_script')
-    def test_run_all_checks_calculates_status(self, mock_run, temp_test_case):
-        """Test that run_all_checks calculates overall status."""
-        # All checks pass
-        mock_run.return_value = (0, 'status: success\nexists: true\ndeliverable_count: 3', '')
+    def test_check_solution_outline_valid_with_warnings(self, temp_test_case, tmp_path):
+        """Test validation check extracts warnings."""
+        solution_path = tmp_path / 'solution_outline.md'
+        solution_path.write_text('# Solution\n\nContent')
 
-        checker = StructuralChecker('test-plan', temp_test_case)
-        results = checker.run_all_checks()
+        with patch('verify_structure.get_solution_path', return_value=solution_path):
+            with patch('verify_structure.validate_solution_structure', return_value=([], ['Minor issue'], {})):
+                checker = StructuralChecker('test-plan', temp_test_case)
+                result = checker.check_solution_outline_valid()
+
+        assert result is True
+        assert checker.checks[0]['status'] == 'pass'
+        # Warning should be recorded as finding
+        assert len(checker.findings) == 1
+        assert checker.findings[0]['severity'] == 'warning'
+
+    def test_run_all_checks_calculates_status(self, temp_test_case, tmp_path):
+        """Test that run_all_checks calculates overall status."""
+        # Create mock files with content that passes real validation
+        # Note: Patches don't work for inlined functions, so we use real content
+        solution_content = """# Solution
+
+## Summary
+
+This is the summary section.
+
+## Overview
+
+This is the overview section.
+
+## Deliverables
+
+### 1. First Deliverable
+
+Content for first deliverable.
+
+### 2. Second Deliverable
+
+Content for second deliverable.
+
+### 3. Third Deliverable
+
+Content for third deliverable.
+"""
+        solution_path = tmp_path / 'solution_outline.md'
+        solution_path.write_text(solution_content)
+
+        config_path = tmp_path / 'config.toon'
+        config_path.write_text('plan_type: test')
+
+        status_path = tmp_path / 'status.toon'
+        status_path.write_text('current_phase: execute')
+
+        refs_path = tmp_path / 'references.toon'
+        refs_path.write_text('branch: main')
+
+        with (
+            patch('verify_structure.get_solution_path', return_value=solution_path),
+            patch('verify_structure.get_config_path', return_value=config_path),
+            patch('verify_structure.get_status_path', return_value=status_path),
+            patch('verify_structure.get_references_path', return_value=refs_path),
+        ):
+            checker = StructuralChecker('test-plan', temp_test_case)
+            results = checker.run_all_checks()
 
         assert results['status'] == 'pass'
         assert results['plan_id'] == 'test-plan'

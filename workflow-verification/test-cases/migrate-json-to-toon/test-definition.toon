@@ -7,5 +7,5 @@ trigger:
   args: create a new plan: Migrate agent/command/skill outputs from JSON to TOON format
 
 cleanup:
-  archive_plan: true
+  archive_plan: false
   delete_on_success: false

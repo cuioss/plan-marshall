@@ -7,12 +7,29 @@ config.toon,pm-workflow:manage-config:config-schema
 status.toon,pm-workflow:manage-lifecycle:status-schema
 references.toon,pm-workflow:manage-references:references-schema
 
-# Expected deliverables: 3 (pm-dev-java agents, pm-plugin-development agent, pm-dev-frontend command)
-deliverable_count: 3
+# Expected deliverables: 4
+# 1. pm-dev-java agents (9 files)
+# 2. pm-plugin-development agent (1 file)
+# 3. plan-marshall user-invocable skills (2 files)
+# 4. pm-dev-frontend user-invocable skills (3 files)
+deliverable_count: 4
 
-# Expected affected files: 11 total
-# 9 pm-dev-java agents + 1 pm-plugin-development agent + 1 pm-dev-frontend command
-affected_files[11]:
+# Expected affected files: 15 total
+# 9 pm-dev-java agents + 1 pm-plugin-development agent + 5 user-invocable skills
+#
+# Inclusion criteria:
+# - Agents with JSON output specs (```json in "Output"/"Return Results" sections)
+# - User-invocable skills (user-invocable: true) with JSON output specs
+#
+# Exclusion criteria:
+# - Agents using TOON format (pm-workflow agents)
+# - Agents using markdown format (research-best-practices)
+# - Reference-only skills (non-user-invocable)
+# - Skills with JSON for config/input (not output specs)
+# - Commands (none have JSON output specs currently)
+
+affected_files[15]:
+# pm-dev-java agents (9)
 marketplace/bundles/pm-dev-java/agents/java-implement-agent.md
 marketplace/bundles/pm-dev-java/agents/java-implement-tests-agent.md
 marketplace/bundles/pm-dev-java/agents/java-refactor-agent.md
@@ -22,5 +39,12 @@ marketplace/bundles/pm-dev-java/agents/java-verify-agent.md
 marketplace/bundles/pm-dev-java/agents/java-fix-build-agent.md
 marketplace/bundles/pm-dev-java/agents/java-fix-tests-agent.md
 marketplace/bundles/pm-dev-java/agents/java-fix-javadoc-agent.md
+# pm-plugin-development agent (1)
 marketplace/bundles/pm-plugin-development/agents/tool-coverage-agent.md
-marketplace/bundles/pm-dev-frontend/commands/js-generate-coverage.md
+# plan-marshall user-invocable skills (2)
+marketplace/bundles/plan-marshall/skills/permission-doctor/SKILL.md
+marketplace/bundles/plan-marshall/skills/permission-fix/SKILL.md
+# pm-dev-frontend user-invocable skills (3)
+marketplace/bundles/pm-dev-frontend/skills/js-fix-jsdoc/SKILL.md
+marketplace/bundles/pm-dev-frontend/skills/js-generate-coverage/SKILL.md
+marketplace/bundles/pm-dev-frontend/skills/js-implement-tests/SKILL.md

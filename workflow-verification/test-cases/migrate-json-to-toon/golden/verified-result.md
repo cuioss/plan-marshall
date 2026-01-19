@@ -1,8 +1,8 @@
 # Verified Assessment Result
 
-**Task**: "Migrate agent/command/skill outputs from JSON to TOON format for token efficiency"
+**Task**: "Migrate agent/command/skill outputs from JSON to TOON format"
 
-This is the EXPECTED correct assessment that the improved ext-outline-plugin should produce.
+This is the EXPECTED correct assessment that the outline phase should produce.
 
 ---
 
@@ -11,7 +11,6 @@ This is the EXPECTED correct assessment that the improved ext-outline-plugin sho
 **Request Analysis:**
 - "agent/command/skill outputs" → All three component types
 - "JSON to TOON format" → Find JSON output specifications
-- "token efficiency" → Goal, not constraint
 
 **Scope Decision:**
 ```
@@ -31,7 +30,7 @@ python3 .plan/execute-script.py pm-plugin-development:tools-marketplace-inventor
 
 **Reference:**
 ```
-inventory_scan: 2026-01-17T08:53:20Z:agents,commands,skills:all
+inventory_scan: {timestamp}:agents,commands,skills:all
 ```
 
 ---
@@ -55,50 +54,105 @@ All correctly identified:
 
 ---
 
-## Commands with JSON Output Specs (1 file)
+## Commands with JSON Output Specs (0 files)
 
-**MISSED by original assessment:**
-
-| File | Reason |
-|------|--------|
-| pm-dev-frontend/commands/js-generate-coverage.md | "Step 3: Return Coverage Results" with ```json |
+No commands currently have JSON output specifications.
 
 **Exclusion Log Required:**
 ```
-[FINDING] (pm-plugin-development:ext-outline-plugin) Not affected: pm-dev-java/commands/java-enforce-logrecords.md
-  detail: JSON block is configuration structure example, not command output specification
-
 [FINDING] (pm-plugin-development:ext-outline-plugin) Not affected: pm-plugin-development/commands/tools-analyze-user-prompted.md
-  detail: JSON blocks are permission file format examples, not command output specification
+  detail: JSON blocks are solution examples showing permission format, not command output specification
 ```
 
 ---
 
-## Skills with JSON Blocks - Scope Decision
+## Skills with JSON Output Specs (5 files)
 
-**Critical Decision Point**: Skills are knowledge documents, not executors. JSON blocks in skills represent:
+| File | Reason |
+|------|--------|
+| plan-marshall/skills/permission-doctor/SKILL.md | "Output JSON" sections (3 blocks) |
+| plan-marshall/skills/permission-fix/SKILL.md | "Output (JSON)" sections (5+ blocks) |
+| pm-dev-frontend/skills/js-fix-jsdoc/SKILL.md | "JSON Output Contract" section |
+| pm-dev-frontend/skills/js-generate-coverage/SKILL.md | "Step 3: Return Coverage Results" with ```json |
+| pm-dev-frontend/skills/js-implement-tests/SKILL.md | "JSON Output Contract" section |
 
-1. **Script output documentation** - The skill documents what a SCRIPT returns
-2. **External API response examples** - Documentation of third-party responses
-3. **Schema/contract definitions** - Format specifications
-4. **Configuration examples** - File format documentation
+**Inclusion Log Required:**
+```
+[FINDING] (pm-plugin-development:ext-outline-plugin) Affected: plan-marshall/skills/permission-doctor/SKILL.md
+  detail: Skill with "Output JSON" sections containing ```json output blocks
+
+[FINDING] (pm-plugin-development:ext-outline-plugin) Affected: plan-marshall/skills/permission-fix/SKILL.md
+  detail: Skill with "Output (JSON)" sections containing ```json output blocks
+
+[FINDING] (pm-plugin-development:ext-outline-plugin) Affected: pm-dev-frontend/skills/js-fix-jsdoc/SKILL.md
+  detail: Skill with "JSON Output Contract" section containing ```json output block
+
+[FINDING] (pm-plugin-development:ext-outline-plugin) Affected: pm-dev-frontend/skills/js-generate-coverage/SKILL.md
+  detail: Skill with "Step 3: Return Coverage Results" section containing ```json output block
+
+[FINDING] (pm-plugin-development:ext-outline-plugin) Affected: pm-dev-frontend/skills/js-implement-tests/SKILL.md
+  detail: Skill with "JSON Output Contract" section containing ```json output block
+```
+
+---
+
+## Agents with Non-JSON Output - Exclusion Required
+
+**Exclusion Log Required:**
+```
+[FINDING] (pm-plugin-development:ext-outline-plugin) Not affected: plan-marshall/agents/research-best-practices.md
+  detail: Agent uses markdown-formatted output (```), not JSON output specification
+
+[FINDING] (pm-plugin-development:ext-outline-plugin) Not affected: pm-workflow/agents/plan-init-agent.md
+  detail: Agent already uses TOON format for output (2 ```toon blocks)
+
+[FINDING] (pm-plugin-development:ext-outline-plugin) Not affected: pm-workflow/agents/task-plan-agent.md
+  detail: Agent already uses TOON format for output
+
+[FINDING] (pm-plugin-development:ext-outline-plugin) Not affected: pm-workflow/agents/task-execute-agent.md
+  detail: Agent already uses TOON format for output
+
+[FINDING] (pm-plugin-development:ext-outline-plugin) Not affected: pm-workflow/agents/solution-outline-agent.md
+  detail: Agent already uses TOON format for output
+```
+
+---
+
+## Skills with Config/Input JSON - Exclusion Required
+
+**Exclusion Log Required:**
+```
+[FINDING] (pm-plugin-development:ext-outline-plugin) Not affected: pm-dev-frontend/skills/js-enforce-eslint/SKILL.md
+  detail: JSON block is "Required npm Scripts" (package.json config), not skill output specification
+
+[FINDING] (pm-plugin-development:ext-outline-plugin) Not affected: pm-dev-java/skills/java-enforce-logrecords/SKILL.md
+  detail: JSON block is "Configuration structure" (input config), not skill output specification
+
+[FINDING] (pm-plugin-development:ext-outline-plugin) Not affected: pm-plugin-development/skills/plugin-create/SKILL.md
+  detail: JSON block is "answers_json contains" (input format), not skill output specification
+```
+
+---
+
+## Skills Scope Decision
+
+**Key distinction**: Output specs vs config/input JSON
+
+| JSON Context | Include? |
+|--------------|----------|
+| "Output JSON", "JSON Output Contract", "Return...Results" | YES |
+| "Configuration", "Required", "Input", "contains" | NO |
 
 **Decision:**
 ```
-[DECISION] (pm-plugin-development:ext-outline-plugin) Skills excluded from deliverables
-  detail: Skills document formats but don't have outputs themselves. JSON blocks in skills are:
-  - Script output docs: Scripts already support TOON, skill docs are examples
-  - API docs: External formats, not controllable
-  - Schemas: Contract definitions must remain stable
-  - Configs: External file formats, not outputs
+[DECISION] (pm-plugin-development:ext-outline-plugin) Skills with JSON output specs included
+  detail: Skills that have JSON output specifications in "Output JSON", "JSON Output Contract",
+  or "Return...Results" sections should be migrated
+
+[DECISION] (pm-plugin-development:ext-outline-plugin) Skills with config/input JSON excluded
+  detail: Skills with JSON in "Configuration", "Required", or "contains" context
+  are documenting inputs, not outputs
 ```
-
-**Rationale**: Converting skill JSON documentation to TOON would:
-- Break reference documentation (external APIs return JSON)
-- Create inconsistency (script returns JSON, but docs show TOON)
-- Require coordinated script changes (out of scope)
-
-If script outputs should change, that's a separate task with broader scope.
 
 ---
 
@@ -114,8 +168,13 @@ If script outputs should change, that's a separate task with broader scope.
 - Domain: plan-marshall-plugin-dev
 - Module: pm-plugin-development
 
-**Deliverable 3**: Migrate js-generate-coverage command to TOON output format
-- Files: 1 command
+**Deliverable 3**: Migrate plan-marshall skills to TOON output format
+- Files: 2 skills (permission-doctor, permission-fix)
+- Domain: plan-marshall-plugin-dev
+- Module: plan-marshall
+
+**Deliverable 4**: Migrate pm-dev-frontend skills to TOON output format
+- Files: 3 skills (js-fix-jsdoc, js-generate-coverage, js-implement-tests)
 - Domain: plan-marshall-plugin-dev
 - Module: pm-dev-frontend
 
@@ -124,8 +183,9 @@ If script outputs should change, that's a separate task with broader scope.
 ## Expected References.toon
 
 ```toon
-inventory_scan: 2026-01-17T08:53:20Z:agents,commands,skills:all
-affected_files[11]:
+inventory_scan: {timestamp}:agents,commands,skills:all
+affected_files[15]:
+  # pm-dev-java agents (9)
   marketplace/bundles/pm-dev-java/agents/java-implement-agent.md
   marketplace/bundles/pm-dev-java/agents/java-implement-tests-agent.md
   marketplace/bundles/pm-dev-java/agents/java-refactor-agent.md
@@ -135,8 +195,15 @@ affected_files[11]:
   marketplace/bundles/pm-dev-java/agents/java-fix-build-agent.md
   marketplace/bundles/pm-dev-java/agents/java-fix-tests-agent.md
   marketplace/bundles/pm-dev-java/agents/java-fix-javadoc-agent.md
+  # pm-plugin-development agent (1)
   marketplace/bundles/pm-plugin-development/agents/tool-coverage-agent.md
-  marketplace/bundles/pm-dev-frontend/commands/js-generate-coverage.md
+  # plan-marshall skills (2)
+  marketplace/bundles/plan-marshall/skills/permission-doctor/SKILL.md
+  marketplace/bundles/plan-marshall/skills/permission-fix/SKILL.md
+  # pm-dev-frontend skills (3)
+  marketplace/bundles/pm-dev-frontend/skills/js-fix-jsdoc/SKILL.md
+  marketplace/bundles/pm-dev-frontend/skills/js-generate-coverage/SKILL.md
+  marketplace/bundles/pm-dev-frontend/skills/js-implement-tests/SKILL.md
 ```
 
 ---
@@ -144,21 +211,41 @@ affected_files[11]:
 ## Expected Work.log Entries
 
 ```
-[DECISION] (pm-plugin-development:ext-outline-plugin) Path-Multi selected: cross-bundle impact, 3 modules affected
+[DECISION] (pm-plugin-development:ext-outline-plugin) Path-Multi selected: cross-bundle impact, 4 modules affected
 [DECISION] (pm-plugin-development:ext-outline-plugin) Scope: resource-types=agents,commands,skills, bundles=all
   detail: Request explicitly mentions "agent/command/skill outputs"
 [STATUS] (pm-plugin-development:ext-outline-plugin) Scanning marketplace inventory
 [FINDING] (pm-plugin-development:ext-outline-plugin) Affected: pm-dev-java/agents/java-implement-agent.md
   detail: "Step 3: Return Results" section contains ```json output block
-[FINDING] ... (9 more agent entries)
-[FINDING] (pm-plugin-development:ext-outline-plugin) Affected: pm-dev-frontend/commands/js-generate-coverage.md
-  detail: "Step 3: Return Coverage Results" section contains ```json output block
-[FINDING] (pm-plugin-development:ext-outline-plugin) Not affected: pm-dev-java/commands/java-enforce-logrecords.md
-  detail: JSON block is configuration structure, not command output
+[FINDING] ... (8 more pm-dev-java agent entries)
+[FINDING] (pm-plugin-development:ext-outline-plugin) Affected: pm-plugin-development/agents/tool-coverage-agent.md
+  detail: "Output" section contains ```json output block
+[FINDING] (pm-plugin-development:ext-outline-plugin) Affected: plan-marshall/skills/permission-doctor/SKILL.md
+  detail: Skill with "Output JSON" sections containing ```json output blocks
+[FINDING] (pm-plugin-development:ext-outline-plugin) Affected: plan-marshall/skills/permission-fix/SKILL.md
+  detail: Skill with "Output (JSON)" sections containing ```json output blocks
+[FINDING] (pm-plugin-development:ext-outline-plugin) Affected: pm-dev-frontend/skills/js-fix-jsdoc/SKILL.md
+  detail: Skill with "JSON Output Contract" section containing ```json output block
+[FINDING] (pm-plugin-development:ext-outline-plugin) Affected: pm-dev-frontend/skills/js-generate-coverage/SKILL.md
+  detail: Skill with "Step 3: Return Coverage Results" containing ```json output block
+[FINDING] (pm-plugin-development:ext-outline-plugin) Affected: pm-dev-frontend/skills/js-implement-tests/SKILL.md
+  detail: Skill with "JSON Output Contract" section containing ```json output block
+[FINDING] (pm-plugin-development:ext-outline-plugin) Not affected: plan-marshall/agents/research-best-practices.md
+  detail: Agent uses markdown-formatted output, not JSON
+[FINDING] (pm-plugin-development:ext-outline-plugin) Not affected: pm-workflow/agents/plan-init-agent.md
+  detail: Agent already uses TOON format
 [FINDING] (pm-plugin-development:ext-outline-plugin) Not affected: pm-plugin-development/commands/tools-analyze-user-prompted.md
-  detail: JSON blocks are permission examples, not command output
-[DECISION] (pm-plugin-development:ext-outline-plugin) Skills excluded from deliverables
-  detail: Skills document formats but don't have outputs themselves
-[MILESTONE] (pm-plugin-development:ext-outline-plugin) Impact analysis complete: 11 of 93 components affected
-[ARTIFACT] (pm-plugin-development:ext-outline-plugin) Created solution_outline.md with 3 deliverables
+  detail: JSON blocks are solution examples, not command output
+[FINDING] (pm-plugin-development:ext-outline-plugin) Not affected: pm-dev-frontend/skills/js-enforce-eslint/SKILL.md
+  detail: JSON block is npm scripts config, not output specification
+[FINDING] (pm-plugin-development:ext-outline-plugin) Not affected: pm-dev-java/skills/java-enforce-logrecords/SKILL.md
+  detail: JSON block is configuration structure, not output specification
+[FINDING] (pm-plugin-development:ext-outline-plugin) Not affected: pm-plugin-development/skills/plugin-create/SKILL.md
+  detail: JSON block is input format, not output specification
+[DECISION] (pm-plugin-development:ext-outline-plugin) Skills with JSON output specs included
+  detail: Skills that have JSON output specs should be migrated
+[DECISION] (pm-plugin-development:ext-outline-plugin) Skills with config/input JSON excluded
+  detail: Skills with JSON in "Configuration", "Required", "contains" are documenting inputs
+[MILESTONE] (pm-plugin-development:ext-outline-plugin) Impact analysis complete: 15 of {total} components affected
+[ARTIFACT] (pm-plugin-development:ext-outline-plugin) Created solution_outline.md with 4 deliverables
 ```

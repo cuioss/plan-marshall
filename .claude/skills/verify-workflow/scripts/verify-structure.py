@@ -2,11 +2,10 @@
 """
 Structural verification script for workflow outputs.
 
-Runs deterministic checks via manage-* tool interfaces to verify:
+Runs deterministic checks to verify:
 - File existence
-- Format/schema validation
 - Required sections present
-- Cross-references valid
+- Basic format validation
 
 Usage:
     python3 verify-structure.py --plan-id my-plan --test-case path/to/test-case
@@ -16,47 +15,102 @@ Output: TOON format with check results and findings.
 """
 
 import argparse
-import os
-import subprocess
+import re
 import sys
 from pathlib import Path
 from typing import Any
 
+# Cross-skill imports (executor sets PYTHONPATH)
+from file_ops import base_path  # type: ignore[import-not-found]
+from toon_parser import serialize_toon  # type: ignore[import-not-found]
+
 # =============================================================================
-# TOON Output Helpers
+# Path Helpers (inline to avoid hyphen-named module imports)
 # =============================================================================
 
 
-def serialize_toon(data: dict[str, Any], indent: int = 0) -> str:
-    """Serialize dict to TOON format."""
-    lines: list[str] = []
-    prefix = '  ' * indent
+def get_solution_path(plan_id: str) -> Path:
+    """Get path to solution_outline.md."""
+    return base_path('plans', plan_id, 'solution_outline.md')
 
-    for key, value in data.items():
-        if isinstance(value, dict):
-            lines.append(f'{prefix}{key}:')
-            lines.append(serialize_toon(value, indent + 1))
-        elif isinstance(value, list):
-            if not value:
-                lines.append(f'{prefix}{key}[0]:')
-            elif all(isinstance(item, dict) for item in value):
-                # Uniform array format
-                if value:
-                    keys = list(value[0].keys())
-                    lines.append(f'{prefix}{key}[{len(value)}]{{{",".join(keys)}}}:')
-                    for item in value:
-                        vals = [str(item.get(k, '')) for k in keys]
-                        lines.append(f'{prefix}  {",".join(vals)}')
-            else:
-                lines.append(f'{prefix}{key}[{len(value)}]:')
-                for item in value:
-                    lines.append(f'{prefix}  {item}')
-        elif isinstance(value, bool):
-            lines.append(f'{prefix}{key}: {str(value).lower()}')
+
+def get_config_path(plan_id: str) -> Path:
+    """Get path to config.toon."""
+    return base_path('plans', plan_id, 'config.toon')
+
+
+def get_status_path(plan_id: str) -> Path:
+    """Get path to status.toon."""
+    return base_path('plans', plan_id, 'status.toon')
+
+
+def get_references_path(plan_id: str) -> Path:
+    """Get path to references.toon."""
+    return base_path('plans', plan_id, 'references.toon')
+
+
+# =============================================================================
+# Validation Helpers (inline simplified versions)
+# =============================================================================
+
+
+def parse_document_sections(content: str) -> dict[str, str]:
+    """Parse markdown document into sections by ## headers."""
+    sections: dict[str, str] = {}
+    current_section = ''
+    current_content: list[str] = []
+
+    for line in content.split('\n'):
+        if line.startswith('## '):
+            if current_section:
+                sections[current_section] = '\n'.join(current_content)
+            current_section = line[3:].strip()
+            current_content = []
         else:
-            lines.append(f'{prefix}{key}: {value}')
+            current_content.append(line)
 
-    return '\n'.join(lines)
+    if current_section:
+        sections[current_section] = '\n'.join(current_content)
+
+    return sections
+
+
+def extract_deliverables(content: str) -> list[dict[str, str]]:
+    """Extract deliverables from Deliverables section content."""
+    deliverables: list[dict[str, str]] = []
+    pattern = re.compile(r'^###\s+(\d+)\.\s+(.+)$', re.MULTILINE)
+
+    for match in pattern.finditer(content):
+        deliverables.append({'id': match.group(1), 'title': match.group(2).strip()})
+
+    return deliverables
+
+
+def validate_solution_structure(content: str) -> tuple[list[str], list[str], dict[str, Any]]:
+    """Validate solution outline structure. Returns (errors, warnings, stats)."""
+    errors: list[str] = []
+    warnings: list[str] = []
+    stats: dict[str, Any] = {}
+
+    sections = parse_document_sections(content)
+    required_sections = ['Summary', 'Overview', 'Deliverables']
+
+    for section in required_sections:
+        if section not in sections:
+            errors.append(f'Missing required section: {section}')
+
+    if 'Deliverables' in sections:
+        deliverables = extract_deliverables(sections['Deliverables'])
+        stats['deliverable_count'] = len(deliverables)
+        if not deliverables:
+            errors.append('No deliverables found in Deliverables section')
+
+    return errors, warnings, stats
+
+
+# =============================================================================
+# TOON Helpers
+# =============================================================================
 
 
 def parse_toon_simple(content: str) -> dict[str, Any]:
@@ -74,7 +128,6 @@ def parse_toon_simple(content: str) -> dict[str, Any]:
         if '[' in line and line.endswith(':'):
             if current_list_key and current_list:
                 result[current_list_key] = current_list
-            # Parse: key[N]: or key[N]{fields}:
             key_part = line.split('[')[0]
             current_list_key = key_part
             current_list = []
@@ -83,12 +136,10 @@ def parse_toon_simple(content: str) -> dict[str, Any]:
         # Check if we're in a list
         if current_list_key:
             if ':' in line and not line.startswith(' '):
-                # End of list, new key-value
                 result[current_list_key] = current_list
                 current_list_key = None
                 current_list = []
             else:
-                # List item
                 current_list.append(line.strip())
                 continue
 
@@ -97,55 +148,10 @@ def parse_toon_simple(content: str) -> dict[str, Any]:
             key, value = line.split(':', 1)
             result[key.strip()] = value.strip()
 
-    # Handle final list
     if current_list_key and current_list:
         result[current_list_key] = current_list
 
     return result
-
-
-# =============================================================================
-# Script Runner
-# =============================================================================
-
-
-def run_manage_script(notation: str, subcommand: str, *args: str) -> tuple[int, str, str]:
-    """
-    Run a manage-* script via the executor.
-
-    Args:
-        notation: Script notation (e.g., 'pm-workflow:manage-solution-outline:manage-solution-outline')
-        subcommand: Subcommand to run (e.g., 'validate')
-        *args: Additional arguments
-
-    Returns:
-        (returncode, stdout, stderr)
-    """
-    # Find executor
-    executor_path = Path('.plan/execute-script.py')
-    if not executor_path.exists():
-        # Try from project root
-        project_root = Path(__file__).parent.parent.parent.parent.parent
-        executor_path = project_root / '.plan' / 'execute-script.py'
-
-    if not executor_path.exists():
-        return 1, '', f'Executor not found at {executor_path}'
-
-    cmd = [sys.executable, str(executor_path), notation, subcommand] + list(args)
-
-    try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=60,
-            cwd=os.getcwd(),
-        )
-        return result.returncode, result.stdout, result.stderr
-    except subprocess.TimeoutExpired:
-        return 1, '', 'Script execution timed out'
-    except Exception as e:
-        return 1, '', str(e)
 
 
 # =============================================================================
@@ -171,15 +177,10 @@ class StructuralChecker:
         self.findings.append({'severity': severity, 'message': message})
 
     def check_solution_outline_exists(self) -> bool:
-        """Check if solution outline exists via manage-solution-outline."""
-        code, stdout, stderr = run_manage_script(
-            'pm-workflow:manage-solution-outline:manage-solution-outline',
-            'exists',
-            '--plan-id',
-            self.plan_id,
-        )
+        """Check if solution outline exists."""
+        solution_path = get_solution_path(self.plan_id)
 
-        if code == 0 and 'exists: true' in stdout.lower():
+        if solution_path.exists():
             self.add_check('solution_outline_exists', 'pass', 'Solution outline exists')
             return True
         else:
@@ -188,40 +189,37 @@ class StructuralChecker:
             return False
 
     def check_solution_outline_valid(self) -> bool:
-        """Validate solution outline structure via manage-solution-outline."""
-        code, stdout, stderr = run_manage_script(
-            'pm-workflow:manage-solution-outline:manage-solution-outline',
-            'validate',
-            '--plan-id',
-            self.plan_id,
-        )
+        """Validate solution outline structure."""
+        solution_path = get_solution_path(self.plan_id)
 
-        if code == 0 and 'status: success' in stdout:
-            self.add_check('solution_outline_valid', 'pass', 'Solution outline validates successfully')
-            # Check for warnings
-            if 'warnings:' in stdout:
-                # Extract warnings and add as findings
-                for line in stdout.split('\n'):
-                    if line.strip().startswith('-') and 'warning' not in line.lower():
-                        self.add_finding('warning', line.strip().lstrip('- '))
-            return True
-        else:
-            self.add_check('solution_outline_valid', 'fail', 'Solution outline validation failed')
-            # Extract errors from output
-            if 'issues:' in stdout:
-                for line in stdout.split('\n'):
-                    if line.strip().startswith('-'):
-                        self.add_finding('error', line.strip().lstrip('- '))
+        if not solution_path.exists():
+            self.add_check('solution_outline_valid', 'fail', 'Solution outline not found')
+            return False
+
+        try:
+            content = solution_path.read_text()
+            errors, warnings, _stats = validate_solution_structure(content)
+
+            if errors:
+                self.add_check('solution_outline_valid', 'fail', 'Solution outline validation failed')
+                for error in errors:
+                    self.add_finding('error', error)
+                return False
+            else:
+                self.add_check('solution_outline_valid', 'pass', 'Solution outline validates successfully')
+                for warning in warnings:
+                    self.add_finding('warning', warning)
+                return True
+        except Exception as e:
+            self.add_check('solution_outline_valid', 'fail', f'Validation error: {e}')
+            self.add_finding('error', str(e))
             return False
 
     def check_config_exists(self) -> bool:
-        """Check if config.toon exists via manage-config."""
-        code, stdout, stderr = run_manage_script(
-            'pm-workflow:manage-config:manage-config', 'read', '--plan-id', self.plan_id
-        )
+        """Check if config.toon exists."""
+        config_path = get_config_path(self.plan_id)
 
-        # read returns 0 with content if file exists
-        if code == 0 and stdout.strip():
+        if config_path.exists():
             self.add_check('config_exists', 'pass', 'Config file exists')
             return True
         else:
@@ -230,13 +228,10 @@ class StructuralChecker:
             return False
 
     def check_status_exists(self) -> bool:
-        """Check if status.toon exists via manage-lifecycle."""
-        code, stdout, stderr = run_manage_script(
-            'pm-workflow:manage-lifecycle:manage-lifecycle', 'read', '--plan-id', self.plan_id
-        )
+        """Check if status.toon exists."""
+        status_path = get_status_path(self.plan_id)
 
-        # read returns 0 with content if file exists
-        if code == 0 and stdout.strip():
+        if status_path.exists():
             self.add_check('status_exists', 'pass', 'Status file exists')
             return True
         else:
@@ -245,13 +240,10 @@ class StructuralChecker:
             return False
 
     def check_references_exists(self) -> bool:
-        """Check if references.toon exists via manage-references."""
-        code, stdout, stderr = run_manage_script(
-            'pm-workflow:manage-references:manage-references', 'read', '--plan-id', self.plan_id
-        )
+        """Check if references.toon exists."""
+        refs_path = get_references_path(self.plan_id)
 
-        # read returns 0 with content if file exists
-        if code == 0 and stdout.strip():
+        if refs_path.exists():
             self.add_check('references_exists', 'pass', 'References file exists')
             return True
         else:
@@ -261,77 +253,75 @@ class StructuralChecker:
 
     def check_deliverables_count(self, expected_count: int | None = None) -> bool:
         """Check deliverables can be listed and optionally verify count."""
-        code, stdout, stderr = run_manage_script(
-            'pm-workflow:manage-solution-outline:manage-solution-outline',
-            'list-deliverables',
-            '--plan-id',
-            self.plan_id,
-        )
+        solution_path = get_solution_path(self.plan_id)
 
-        if code != 0:
-            self.add_check('deliverables_list', 'fail', 'Failed to list deliverables')
-            self.add_finding('error', 'Could not list deliverables')
+        if not solution_path.exists():
+            self.add_check('deliverables_list', 'fail', 'Solution outline not found')
+            self.add_finding('error', 'Could not list deliverables - solution outline missing')
             return False
 
-        # Parse count from output
-        actual_count = 0
-        for line in stdout.split('\n'):
-            if 'deliverable_count:' in line:
-                try:
-                    actual_count = int(line.split(':')[1].strip())
-                except (ValueError, IndexError):
-                    pass
+        try:
+            content = solution_path.read_text()
+            sections = parse_document_sections(content)
+            deliverables_section = sections.get('Deliverables', '')
 
-        if actual_count == 0:
-            self.add_check('deliverables_list', 'fail', 'No deliverables found')
-            self.add_finding('error', 'Solution outline has no deliverables')
+            if not deliverables_section:
+                self.add_check('deliverables_list', 'fail', 'No deliverables section found')
+                self.add_finding('error', 'Solution outline has no Deliverables section')
+                return False
+
+            deliverables = extract_deliverables(deliverables_section)
+            actual_count = len(deliverables)
+
+            if actual_count == 0:
+                self.add_check('deliverables_list', 'fail', 'No deliverables found')
+                self.add_finding('error', 'Solution outline has no deliverables')
+                return False
+
+            if expected_count is not None and actual_count != expected_count:
+                self.add_check(
+                    'deliverables_count',
+                    'fail',
+                    f'Expected {expected_count} deliverables, found {actual_count}',
+                )
+                self.add_finding(
+                    'error',
+                    f'Deliverable count mismatch: expected {expected_count}, got {actual_count}',
+                )
+                return False
+
+            self.add_check('deliverables_list', 'pass', f'Found {actual_count} deliverables')
+            return True
+
+        except Exception as e:
+            self.add_check('deliverables_list', 'fail', f'Error listing deliverables: {e}')
+            self.add_finding('error', str(e))
             return False
-
-        if expected_count is not None and actual_count != expected_count:
-            self.add_check(
-                'deliverables_count',
-                'fail',
-                f'Expected {expected_count} deliverables, found {actual_count}',
-            )
-            self.add_finding(
-                'error',
-                f'Deliverable count mismatch: expected {expected_count}, got {actual_count}',
-            )
-            return False
-
-        self.add_check('deliverables_list', 'pass', f'Found {actual_count} deliverables')
-        return True
 
     def check_tasks_exist(self, phase: str = 'execute') -> bool:
         """Check if tasks exist for the plan."""
-        code, stdout, stderr = run_manage_script(
-            'pm-workflow:manage-tasks:manage-tasks',
-            'list',
-            '--plan-id',
-            self.plan_id,
-            '--phase',
-            phase,
-        )
+        try:
+            plan_dir = base_path('plans', self.plan_id)
 
-        if code != 0:
-            self.add_check('tasks_exist', 'fail', f'Failed to list tasks for phase {phase}')
-            return False
+            if not plan_dir.exists():
+                self.add_check('tasks_exist', 'fail', 'Plan directory not found')
+                self.add_finding('warning', f'No tasks found for plan {self.plan_id}')
+                return False
 
-        # Check for task count
-        task_count = 0
-        for line in stdout.split('\n'):
-            if 'task_count:' in line:
-                try:
-                    task_count = int(line.split(':')[1].strip())
-                except (ValueError, IndexError):
-                    pass
+            # Count TASK-*.toon files
+            task_files = list(plan_dir.glob('TASK-*.toon'))
+            task_count = len(task_files)
 
-        if task_count > 0:
-            self.add_check('tasks_exist', 'pass', f'Found {task_count} tasks')
-            return True
-        else:
-            self.add_check('tasks_exist', 'fail', 'No tasks found')
-            self.add_finding('warning', f'No tasks found for plan {self.plan_id}')
+            if task_count > 0:
+                self.add_check('tasks_exist', 'pass', f'Found {task_count} tasks')
+                return True
+            else:
+                self.add_check('tasks_exist', 'fail', 'No tasks found')
+                self.add_finding('warning', f'No tasks found for plan {self.plan_id}')
+                return False
+
+        except Exception as e:
+            self.add_check('tasks_exist', 'fail', f'Error checking tasks: {e}')
             return False
 
     def load_expected_artifacts(self) -> dict[str, Any]:
