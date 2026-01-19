@@ -141,11 +141,19 @@ This produces categorized failure analysis with origins and fix proposals.
 
 ### Step V2: Collect Artifacts
 
+Read the `workflow_phase` from test-definition.toon to determine which phases to collect:
+- `2-outline` → collect outline artifacts only
+- `3-plan` → collect planning artifacts only
+- `2-outline,3-plan` → collect both outline and planning artifacts
+
 ```bash
 python3 .claude/skills/verify-workflow/scripts/collect-artifacts.py \
   --plan-id {plan_id} \
-  --output {results_dir}/artifacts/
+  --output {results_dir}/artifacts/ \
+  --phases {workflow_phase from test-definition}
 ```
+
+**Note**: The `--phases` parameter must match the `workflow_phase` field in test-definition.toon. Tasks are only collected when `3-plan` is included.
 
 ### Step V3: Run Semantic Assessment (LLM-as-Judge)
 

@@ -1,6 +1,6 @@
 id: migrate-json-to-toon
-name: Verify outline phase for JSON to TOON migration task
-workflow_phase: 2-outline
+name: Verify outline and planning phases for JSON to TOON migration task
+workflow_phase: 2-outline,3-plan
 
 trigger:
   command: /plan-manage
