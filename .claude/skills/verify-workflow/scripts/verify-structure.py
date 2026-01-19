@@ -15,75 +15,22 @@ Output: TOON format with check results and findings.
 """
 
 import argparse
-import re
 import sys
 from pathlib import Path
 from typing import Any
 
 # Cross-skill imports (executor sets PYTHONPATH)
+from _plan_parsing import (  # type: ignore[import-not-found]
+    extract_deliverable_headings,
+    parse_document_sections,
+    parse_toon_simple,
+)
 from file_ops import base_path  # type: ignore[import-not-found]
 from toon_parser import serialize_toon  # type: ignore[import-not-found]
 
 # =============================================================================
-# Path Helpers (inline to avoid hyphen-named module imports)
+# Validation Helpers
 # =============================================================================
-
-
-def get_solution_path(plan_id: str) -> Path:
-    """Get path to solution_outline.md."""
-    return base_path('plans', plan_id, 'solution_outline.md')
-
-
-def get_config_path(plan_id: str) -> Path:
-    """Get path to config.toon."""
-    return base_path('plans', plan_id, 'config.toon')
-
-
-def get_status_path(plan_id: str) -> Path:
-    """Get path to status.toon."""
-    return base_path('plans', plan_id, 'status.toon')
-
-
-def get_references_path(plan_id: str) -> Path:
-    """Get path to references.toon."""
-    return base_path('plans', plan_id, 'references.toon')
-
-
-# =============================================================================
-# Validation Helpers (inline simplified versions)
-# =============================================================================
-
-
-def parse_document_sections(content: str) -> dict[str, str]:
-    """Parse markdown document into sections by ## headers."""
-    sections: dict[str, str] = {}
-    current_section = ''
-    current_content: list[str] = []
-
-    for line in content.split('\n'):
-        if line.startswith('## '):
-            if current_section:
-                sections[current_section] = '\n'.join(current_content)
-            current_section = line[3:].strip()
-            current_content = []
-        else:
-            current_content.append(line)
-
-    if current_section:
-        sections[current_section] = '\n'.join(current_content)
-
-    return sections
-
-
-def extract_deliverables(content: str) -> list[dict[str, str]]:
-    """Extract deliverables from Deliverables section content."""
-    deliverables: list[dict[str, str]] = []
-    pattern = re.compile(r'^###\s+(\d+)\.\s+(.+)$', re.MULTILINE)
-
-    for match in pattern.finditer(content):
-        deliverables.append({'id': match.group(1), 'title': match.group(2).strip()})
-
-    return deliverables
 
 
 def validate_solution_structure(content: str) -> tuple[list[str], list[str], dict[str, Any]]:
@@ -93,65 +40,20 @@ def validate_solution_structure(content: str) -> tuple[list[str], list[str], dic
     stats: dict[str, Any] = {}
 
     sections = parse_document_sections(content)
-    required_sections = ['Summary', 'Overview', 'Deliverables']
+    # Section keys are lowercase (from shared parse_document_sections)
+    required_sections = ['summary', 'overview', 'deliverables']
 
     for section in required_sections:
         if section not in sections:
-            errors.append(f'Missing required section: {section}')
+            errors.append(f'Missing required section: {section.title()}')
 
-    if 'Deliverables' in sections:
-        deliverables = extract_deliverables(sections['Deliverables'])
+    if 'deliverables' in sections:
+        deliverables = extract_deliverable_headings(sections['deliverables'])
         stats['deliverable_count'] = len(deliverables)
         if not deliverables:
             errors.append('No deliverables found in Deliverables section')
 
     return errors, warnings, stats
-
-
-# =============================================================================
-# TOON Helpers
-# =============================================================================
-
-
-def parse_toon_simple(content: str) -> dict[str, Any]:
-    """Parse simple TOON format (key: value pairs)."""
-    result: dict[str, Any] = {}
-    current_list_key: str | None = None
-    current_list: list[str] = []
-
-    for line in content.strip().split('\n'):
-        line = line.strip()
-        if not line or line.startswith('#'):
-            continue
-
-        # Check for list header
-        if '[' in line and line.endswith(':'):
-            if current_list_key and current_list:
-                result[current_list_key] = current_list
-            key_part = line.split('[')[0]
-            current_list_key = key_part
-            current_list = []
-            continue
-
-        # Check if we're in a list
-        if current_list_key:
-            if ':' in line and not line.startswith(' '):
-                result[current_list_key] = current_list
-                current_list_key = None
-                current_list = []
-            else:
-                current_list.append(line.strip())
-                continue
-
-        # Key-value pair
-        if ':' in line:
-            key, value = line.split(':', 1)
-            result[key.strip()] = value.strip()
-
-    if current_list_key and current_list:
-        result[current_list_key] = current_list
-
-    return result
 
 
 # =============================================================================
@@ -178,7 +80,7 @@ class StructuralChecker:
 
     def check_solution_outline_exists(self) -> bool:
         """Check if solution outline exists."""
-        solution_path = get_solution_path(self.plan_id)
+        solution_path = base_path('plans', self.plan_id, 'solution_outline.md')
 
         if solution_path.exists():
             self.add_check('solution_outline_exists', 'pass', 'Solution outline exists')
@@ -190,7 +92,7 @@ class StructuralChecker:
 
     def check_solution_outline_valid(self) -> bool:
         """Validate solution outline structure."""
-        solution_path = get_solution_path(self.plan_id)
+        solution_path = base_path('plans', self.plan_id, 'solution_outline.md')
 
         if not solution_path.exists():
             self.add_check('solution_outline_valid', 'fail', 'Solution outline not found')
@@ -217,7 +119,7 @@ class StructuralChecker:
 
     def check_config_exists(self) -> bool:
         """Check if config.toon exists."""
-        config_path = get_config_path(self.plan_id)
+        config_path = base_path('plans', self.plan_id, 'config.toon')
 
         if config_path.exists():
             self.add_check('config_exists', 'pass', 'Config file exists')
@@ -229,7 +131,7 @@ class StructuralChecker:
 
     def check_status_exists(self) -> bool:
         """Check if status.toon exists."""
-        status_path = get_status_path(self.plan_id)
+        status_path = base_path('plans', self.plan_id, 'status.toon')
 
         if status_path.exists():
             self.add_check('status_exists', 'pass', 'Status file exists')
@@ -241,7 +143,7 @@ class StructuralChecker:
 
     def check_references_exists(self) -> bool:
         """Check if references.toon exists."""
-        refs_path = get_references_path(self.plan_id)
+        refs_path = base_path('plans', self.plan_id, 'references.toon')
 
         if refs_path.exists():
             self.add_check('references_exists', 'pass', 'References file exists')
@@ -253,7 +155,7 @@ class StructuralChecker:
 
     def check_deliverables_count(self, expected_count: int | None = None) -> bool:
         """Check deliverables can be listed and optionally verify count."""
-        solution_path = get_solution_path(self.plan_id)
+        solution_path = base_path('plans', self.plan_id, 'solution_outline.md')
 
         if not solution_path.exists():
             self.add_check('deliverables_list', 'fail', 'Solution outline not found')
@@ -263,14 +165,15 @@ class StructuralChecker:
         try:
             content = solution_path.read_text()
             sections = parse_document_sections(content)
-            deliverables_section = sections.get('Deliverables', '')
+            # Section keys are lowercase
+            deliverables_section = sections.get('deliverables', '')
 
             if not deliverables_section:
                 self.add_check('deliverables_list', 'fail', 'No deliverables section found')
                 self.add_finding('error', 'Solution outline has no Deliverables section')
                 return False
 
-            deliverables = extract_deliverables(deliverables_section)
+            deliverables = extract_deliverable_headings(deliverables_section)
             actual_count = len(deliverables)
 
             if actual_count == 0:

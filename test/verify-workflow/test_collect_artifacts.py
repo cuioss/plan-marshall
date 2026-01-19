@@ -6,6 +6,7 @@ Tests the artifact collection functionality that gathers workflow outputs
 via manage-* tool interfaces for verification.
 """
 
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -18,6 +19,15 @@ ArtifactCollector = collect_artifacts.ArtifactCollector
 
 # Import serialize_toon from toon_parser (same as the script does)
 from toon_parser import serialize_toon  # type: ignore[import-not-found]  # noqa: E402
+
+
+def make_base_path_mock(tmp_path: Path):
+    """Create a mock base_path function that returns paths in tmp_path."""
+
+    def mock_base_path(*args) -> Path:
+        return tmp_path.joinpath(*args)
+
+    return mock_base_path
 
 
 class TestArtifactCollector:
@@ -40,11 +50,13 @@ class TestArtifactCollector:
 
     def test_collect_solution_outline_success(self, output_dir, tmp_path):
         """Test successful solution outline collection."""
-        # Create mock solution file
-        solution_path = tmp_path / 'solution_outline.md'
+        # Create mock plan directory structure
+        plan_dir = tmp_path / 'plans' / 'test-plan'
+        plan_dir.mkdir(parents=True)
+        solution_path = plan_dir / 'solution_outline.md'
         solution_path.write_text('# Solution Outline\n\nContent here')
 
-        with patch('collect_artifacts.get_solution_path', return_value=solution_path):
+        with patch('collect_artifacts.base_path', make_base_path_mock(tmp_path)):
             collector = ArtifactCollector('test-plan', output_dir)
             result = collector.collect_solution_outline()
 
@@ -55,10 +67,11 @@ class TestArtifactCollector:
 
     def test_collect_solution_outline_failure(self, output_dir, tmp_path):
         """Test failed solution outline collection."""
-        # Point to non-existent file
-        solution_path = tmp_path / 'nonexistent.md'
+        # Create plan dir but no solution file
+        plan_dir = tmp_path / 'plans' / 'test-plan'
+        plan_dir.mkdir(parents=True)
 
-        with patch('collect_artifacts.get_solution_path', return_value=solution_path):
+        with patch('collect_artifacts.base_path', make_base_path_mock(tmp_path)):
             collector = ArtifactCollector('test-plan', output_dir)
             result = collector.collect_solution_outline()
 
@@ -69,10 +82,12 @@ class TestArtifactCollector:
 
     def test_collect_config_success(self, output_dir, tmp_path):
         """Test successful config collection."""
-        config_path = tmp_path / 'config.toon'
+        plan_dir = tmp_path / 'plans' / 'test-plan'
+        plan_dir.mkdir(parents=True)
+        config_path = plan_dir / 'config.toon'
         config_path.write_text('plan_type: implementation\ndomains: java,docs')
 
-        with patch('collect_artifacts.get_config_path', return_value=config_path):
+        with patch('collect_artifacts.base_path', make_base_path_mock(tmp_path)):
             collector = ArtifactCollector('test-plan', output_dir)
             result = collector.collect_config()
 
@@ -83,9 +98,11 @@ class TestArtifactCollector:
 
     def test_collect_references_not_found(self, output_dir, tmp_path):
         """Test references collection when file doesn't exist (acceptable)."""
-        refs_path = tmp_path / 'nonexistent.toon'
+        plan_dir = tmp_path / 'plans' / 'test-plan'
+        plan_dir.mkdir(parents=True)
+        # No references.toon file created
 
-        with patch('collect_artifacts.get_references_path', return_value=refs_path):
+        with patch('collect_artifacts.base_path', make_base_path_mock(tmp_path)):
             collector = ArtifactCollector('test-plan', output_dir)
             result = collector.collect_references()
 
@@ -97,12 +114,12 @@ class TestArtifactCollector:
     def test_collect_tasks_creates_subdirectory(self, output_dir, tmp_path):
         """Test that task collection creates tasks subdirectory."""
         # Create mock plan directory with task files
-        plan_dir = tmp_path / 'plan'
-        plan_dir.mkdir()
+        plan_dir = tmp_path / 'plans' / 'test-plan'
+        plan_dir.mkdir(parents=True)
         (plan_dir / 'TASK-01.toon').write_text('id: TASK-01')
         (plan_dir / 'TASK-02.toon').write_text('id: TASK-02')
 
-        with patch('collect_artifacts.base_path', return_value=plan_dir):
+        with patch('collect_artifacts.base_path', make_base_path_mock(tmp_path)):
             collector = ArtifactCollector('test-plan', output_dir)
             collector.collect_tasks()
 
@@ -111,34 +128,19 @@ class TestArtifactCollector:
 
     def test_collect_all_returns_summary(self, output_dir, tmp_path):
         """Test that collect_all returns proper summary."""
-        # Create mock files
-        solution_path = tmp_path / 'solution_outline.md'
-        solution_path.write_text('# Solution\n\n## Summary\n\n## Overview\n\n## Deliverables')
+        # Create mock plan directory with all files
+        plan_dir = tmp_path / 'plans' / 'test-plan'
+        plan_dir.mkdir(parents=True)
 
-        config_path = tmp_path / 'config.toon'
-        config_path.write_text('plan_type: test')
+        (plan_dir / 'solution_outline.md').write_text(
+            '# Solution\n\n## Summary\n\nSummary.\n\n## Overview\n\nOverview.\n\n## Deliverables\n\n### 1. Test\n\nContent.'
+        )
+        (plan_dir / 'config.toon').write_text('plan_type: test')
+        (plan_dir / 'status.toon').write_text('current_phase: execute')
+        (plan_dir / 'references.toon').write_text('branch: main')
+        (plan_dir / 'work.log').write_text('[INFO] Started')
 
-        status_path = tmp_path / 'status.toon'
-        status_path.write_text('current_phase: execute')
-
-        refs_path = tmp_path / 'references.toon'
-        refs_path.write_text('branch: main')
-
-        log_path = tmp_path / 'work.log'
-        log_path.write_text('[INFO] Started')
-
-        with (
-            patch('collect_artifacts.get_solution_path', return_value=solution_path),
-            patch('collect_artifacts.get_config_path', return_value=config_path),
-            patch('collect_artifacts.get_status_path', return_value=status_path),
-            patch('collect_artifacts.get_references_path', return_value=refs_path),
-            patch('collect_artifacts.get_log_path', return_value=log_path),
-            patch(
-                'collect_artifacts.parse_document_sections',
-                return_value={'Deliverables': '### 1. Test\n\n**Metadata:**\n- domain: test'},
-            ),
-            patch('collect_artifacts.extract_deliverables', return_value=[{'id': '1', 'title': 'Test'}]),
-        ):
+        with patch('collect_artifacts.base_path', make_base_path_mock(tmp_path)):
             collector = ArtifactCollector('test-plan', output_dir)
             results = collector.collect_all()
 
@@ -150,36 +152,18 @@ class TestArtifactCollector:
 
     def test_collect_all_includes_tasks_for_plan_phase(self, output_dir, tmp_path):
         """Test that tasks are collected when 3-plan phase specified."""
-        # Create mock files
-        solution_path = tmp_path / 'solution_outline.md'
-        solution_path.write_text('# Solution')
+        # Create mock plan directory with all files
+        plan_dir = tmp_path / 'plans' / 'test-plan'
+        plan_dir.mkdir(parents=True)
 
-        config_path = tmp_path / 'config.toon'
-        config_path.write_text('plan_type: test')
-
-        status_path = tmp_path / 'status.toon'
-        status_path.write_text('current_phase: execute')
-
-        refs_path = tmp_path / 'references.toon'
-        refs_path.write_text('branch: main')
-
-        log_path = tmp_path / 'work.log'
-        log_path.write_text('[INFO] Started')
-
-        plan_dir = tmp_path / 'plan'
-        plan_dir.mkdir()
+        (plan_dir / 'solution_outline.md').write_text('# Solution\n\n## Summary\n\n## Overview\n\n## Deliverables')
+        (plan_dir / 'config.toon').write_text('plan_type: test')
+        (plan_dir / 'status.toon').write_text('current_phase: execute')
+        (plan_dir / 'references.toon').write_text('branch: main')
+        (plan_dir / 'work.log').write_text('[INFO] Started')
         (plan_dir / 'TASK-01.toon').write_text('id: TASK-01')
 
-        with (
-            patch('collect_artifacts.get_solution_path', return_value=solution_path),
-            patch('collect_artifacts.get_config_path', return_value=config_path),
-            patch('collect_artifacts.get_status_path', return_value=status_path),
-            patch('collect_artifacts.get_references_path', return_value=refs_path),
-            patch('collect_artifacts.get_log_path', return_value=log_path),
-            patch('collect_artifacts.base_path', return_value=plan_dir),
-            patch('collect_artifacts.parse_document_sections', return_value={'Deliverables': ''}),
-            patch('collect_artifacts.extract_deliverables', return_value=[]),
-        ):
+        with patch('collect_artifacts.base_path', make_base_path_mock(tmp_path)):
             collector = ArtifactCollector('test-plan', output_dir)
             collector.collect_all(phases=['3-plan'])
 
@@ -187,31 +171,17 @@ class TestArtifactCollector:
 
     def test_collect_all_skips_tasks_for_outline_only(self, output_dir, tmp_path):
         """Test that tasks are not collected for outline-only phase."""
-        # Create mock files
-        solution_path = tmp_path / 'solution_outline.md'
-        solution_path.write_text('# Solution')
+        # Create mock plan directory with all files
+        plan_dir = tmp_path / 'plans' / 'test-plan'
+        plan_dir.mkdir(parents=True)
 
-        config_path = tmp_path / 'config.toon'
-        config_path.write_text('plan_type: test')
+        (plan_dir / 'solution_outline.md').write_text('# Solution\n\n## Summary\n\n## Overview\n\n## Deliverables')
+        (plan_dir / 'config.toon').write_text('plan_type: test')
+        (plan_dir / 'status.toon').write_text('current_phase: execute')
+        (plan_dir / 'references.toon').write_text('branch: main')
+        (plan_dir / 'work.log').write_text('[INFO] Started')
 
-        status_path = tmp_path / 'status.toon'
-        status_path.write_text('current_phase: execute')
-
-        refs_path = tmp_path / 'references.toon'
-        refs_path.write_text('branch: main')
-
-        log_path = tmp_path / 'work.log'
-        log_path.write_text('[INFO] Started')
-
-        with (
-            patch('collect_artifacts.get_solution_path', return_value=solution_path),
-            patch('collect_artifacts.get_config_path', return_value=config_path),
-            patch('collect_artifacts.get_status_path', return_value=status_path),
-            patch('collect_artifacts.get_references_path', return_value=refs_path),
-            patch('collect_artifacts.get_log_path', return_value=log_path),
-            patch('collect_artifacts.parse_document_sections', return_value={'Deliverables': ''}),
-            patch('collect_artifacts.extract_deliverables', return_value=[]),
-        ):
+        with patch('collect_artifacts.base_path', make_base_path_mock(tmp_path)):
             collector = ArtifactCollector('test-plan', output_dir)
             collector.collect_all(phases=['2-outline'])
 
@@ -251,31 +221,18 @@ class TestEdgeCases:
         """Test that collector creates output directory if it doesn't exist."""
         output_dir = tmp_path / 'new' / 'nested' / 'dir'
 
-        # Create mock files
-        solution_path = tmp_path / 'solution.md'
-        solution_path.write_text('# Solution')
+        # Create mock plan directory with files
+        plan_dir = tmp_path / 'plans' / 'test-plan'
+        plan_dir.mkdir(parents=True)
 
-        config_path = tmp_path / 'config.toon'
-        config_path.write_text('plan_type: test')
-
-        status_path = tmp_path / 'status.toon'
-        status_path.write_text('current_phase: execute')
-
-        refs_path = tmp_path / 'refs.toon'
-
-        log_path = tmp_path / 'work.log'
+        (plan_dir / 'solution_outline.md').write_text('# Solution\n\n## Summary\n\n## Overview\n\n## Deliverables')
+        (plan_dir / 'config.toon').write_text('plan_type: test')
+        (plan_dir / 'status.toon').write_text('current_phase: execute')
+        # No references.toon or work.log
 
         collector = ArtifactCollector('test-plan', output_dir)
 
-        with (
-            patch('collect_artifacts.get_solution_path', return_value=solution_path),
-            patch('collect_artifacts.get_config_path', return_value=config_path),
-            patch('collect_artifacts.get_status_path', return_value=status_path),
-            patch('collect_artifacts.get_references_path', return_value=refs_path),
-            patch('collect_artifacts.get_log_path', return_value=log_path),
-            patch('collect_artifacts.parse_document_sections', return_value={'Deliverables': ''}),
-            patch('collect_artifacts.extract_deliverables', return_value=[]),
-        ):
+        with patch('collect_artifacts.base_path', make_base_path_mock(tmp_path)):
             collector.collect_all()
 
         assert output_dir.exists()
@@ -285,13 +242,14 @@ class TestEdgeCases:
         output_dir = tmp_path / 'artifacts'
         output_dir.mkdir()
 
-        # Create empty solution file
-        solution_path = tmp_path / 'solution.md'
-        solution_path.write_text('')
+        # Create plan dir with empty solution file
+        plan_dir = tmp_path / 'plans' / 'test-plan'
+        plan_dir.mkdir(parents=True)
+        (plan_dir / 'solution_outline.md').write_text('')
 
         collector = ArtifactCollector('test-plan', output_dir)
 
-        with patch('collect_artifacts.get_solution_path', return_value=solution_path):
+        with patch('collect_artifacts.base_path', make_base_path_mock(tmp_path)):
             result = collector.collect_solution_outline()
 
         # Empty content is still collected (file exists)

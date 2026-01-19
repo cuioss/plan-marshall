@@ -6,6 +6,7 @@ Tests the structural verification functionality that checks workflow outputs
 via manage-* tool interfaces.
 """
 
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -15,10 +16,21 @@ from conftest import verify_structure
 
 # Import what we need from the loaded module
 StructuralChecker = verify_structure.StructuralChecker
-parse_toon_simple = verify_structure.parse_toon_simple
+
+# Import shared parsing function (now from _plan_parsing)
+from _plan_parsing import parse_toon_simple  # type: ignore[import-not-found]  # noqa: E402
 
 # Import serialize_toon from toon_parser (same as the script does)
 from toon_parser import serialize_toon  # type: ignore[import-not-found]  # noqa: E402
+
+
+def make_base_path_mock(tmp_path: Path):
+    """Create a mock base_path function that returns paths in tmp_path."""
+
+    def mock_base_path(*args) -> Path:
+        return tmp_path.joinpath(*args)
+
+    return mock_base_path
 
 
 class TestSerializeToon:
@@ -141,11 +153,13 @@ class TestStructuralChecker:
 
     def test_check_solution_outline_exists_success(self, temp_test_case, tmp_path):
         """Test solution outline existence check - success case."""
-        # Create mock solution file
-        solution_path = tmp_path / 'solution_outline.md'
+        # Create mock plan directory structure
+        plan_dir = tmp_path / 'plans' / 'test-plan'
+        plan_dir.mkdir(parents=True)
+        solution_path = plan_dir / 'solution_outline.md'
         solution_path.write_text('# Solution\n\nContent here')
 
-        with patch('verify_structure.get_solution_path', return_value=solution_path):
+        with patch('verify_structure.base_path', make_base_path_mock(tmp_path)):
             checker = StructuralChecker('test-plan', temp_test_case)
             result = checker.check_solution_outline_exists()
 
@@ -155,10 +169,11 @@ class TestStructuralChecker:
 
     def test_check_solution_outline_exists_failure(self, temp_test_case, tmp_path):
         """Test solution outline existence check - failure case."""
-        # Point to non-existent file
-        solution_path = tmp_path / 'nonexistent.md'
+        # Create plan dir but no solution file
+        plan_dir = tmp_path / 'plans' / 'test-plan'
+        plan_dir.mkdir(parents=True)
 
-        with patch('verify_structure.get_solution_path', return_value=solution_path):
+        with patch('verify_structure.base_path', make_base_path_mock(tmp_path)):
             checker = StructuralChecker('test-plan', temp_test_case)
             result = checker.check_solution_outline_exists()
 
@@ -170,37 +185,41 @@ class TestStructuralChecker:
 
     def test_check_solution_outline_valid_success(self, temp_test_case, tmp_path):
         """Test validation check success."""
-        solution_path = tmp_path / 'solution_outline.md'
-        solution_path.write_text('# Solution\n\n## Summary\n\n## Overview\n\n## Deliverables')
+        plan_dir = tmp_path / 'plans' / 'test-plan'
+        plan_dir.mkdir(parents=True)
+        solution_path = plan_dir / 'solution_outline.md'
+        solution_path.write_text('# Solution\n\n## Summary\n\nSummary text.\n\n## Overview\n\nOverview text.\n\n## Deliverables\n\n### 1. Test\n\nContent.')
 
-        with patch('verify_structure.get_solution_path', return_value=solution_path):
-            with patch('verify_structure.validate_solution_structure', return_value=([], [], {})):
-                checker = StructuralChecker('test-plan', temp_test_case)
-                result = checker.check_solution_outline_valid()
+        with patch('verify_structure.base_path', make_base_path_mock(tmp_path)):
+            checker = StructuralChecker('test-plan', temp_test_case)
+            result = checker.check_solution_outline_valid()
 
         assert result is True
         assert checker.checks[0]['status'] == 'pass'
 
     def test_check_solution_outline_valid_with_warnings(self, temp_test_case, tmp_path):
-        """Test validation check extracts warnings."""
-        solution_path = tmp_path / 'solution_outline.md'
-        solution_path.write_text('# Solution\n\nContent')
+        """Test validation with missing section produces errors (not just warnings)."""
+        plan_dir = tmp_path / 'plans' / 'test-plan'
+        plan_dir.mkdir(parents=True)
+        # Missing required sections
+        solution_path = plan_dir / 'solution_outline.md'
+        solution_path.write_text('# Solution\n\nContent only, no sections')
 
-        with patch('verify_structure.get_solution_path', return_value=solution_path):
-            with patch('verify_structure.validate_solution_structure', return_value=([], ['Minor issue'], {})):
-                checker = StructuralChecker('test-plan', temp_test_case)
-                result = checker.check_solution_outline_valid()
+        with patch('verify_structure.base_path', make_base_path_mock(tmp_path)):
+            checker = StructuralChecker('test-plan', temp_test_case)
+            result = checker.check_solution_outline_valid()
 
-        assert result is True
-        assert checker.checks[0]['status'] == 'pass'
-        # Warning should be recorded as finding
-        assert len(checker.findings) == 1
-        assert checker.findings[0]['severity'] == 'warning'
+        # Should fail due to missing required sections
+        assert result is False
+        assert checker.checks[0]['status'] == 'fail'
+        assert len(checker.findings) >= 1
 
     def test_run_all_checks_calculates_status(self, temp_test_case, tmp_path):
         """Test that run_all_checks calculates overall status."""
-        # Create mock files with content that passes real validation
-        # Note: Patches don't work for inlined functions, so we use real content
+        # Create mock plan directory with all required files
+        plan_dir = tmp_path / 'plans' / 'test-plan'
+        plan_dir.mkdir(parents=True)
+
         solution_content = """# Solution
 
 ## Summary
@@ -225,24 +244,12 @@ Content for second deliverable.
 
 Content for third deliverable.
 """
-        solution_path = tmp_path / 'solution_outline.md'
-        solution_path.write_text(solution_content)
+        (plan_dir / 'solution_outline.md').write_text(solution_content)
+        (plan_dir / 'config.toon').write_text('plan_type: test')
+        (plan_dir / 'status.toon').write_text('current_phase: execute')
+        (plan_dir / 'references.toon').write_text('branch: main')
 
-        config_path = tmp_path / 'config.toon'
-        config_path.write_text('plan_type: test')
-
-        status_path = tmp_path / 'status.toon'
-        status_path.write_text('current_phase: execute')
-
-        refs_path = tmp_path / 'references.toon'
-        refs_path.write_text('branch: main')
-
-        with (
-            patch('verify_structure.get_solution_path', return_value=solution_path),
-            patch('verify_structure.get_config_path', return_value=config_path),
-            patch('verify_structure.get_status_path', return_value=status_path),
-            patch('verify_structure.get_references_path', return_value=refs_path),
-        ):
+        with patch('verify_structure.base_path', make_base_path_mock(tmp_path)):
             checker = StructuralChecker('test-plan', temp_test_case)
             results = checker.run_all_checks()
 

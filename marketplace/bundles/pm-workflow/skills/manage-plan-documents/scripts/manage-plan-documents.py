@@ -21,6 +21,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
 
+from _plan_parsing import parse_document_sections  # type: ignore[import-not-found]
 from file_ops import atomic_write_file, base_path  # type: ignore[import-not-found]
 from toon_parser import parse_toon, serialize_toon  # type: ignore[import-not-found]
 
@@ -180,30 +181,6 @@ def _cleanup_unreplaced_placeholders(content: str) -> str:
 def get_plan_dir(plan_id: str) -> Path:
     """Get the plan directory path."""
     return cast(Path, base_path('plans', plan_id))
-
-
-def parse_document_sections(content: str) -> dict[str, str]:
-    """Parse markdown document into sections by heading."""
-    sections: dict[str, str] = {}
-    current_section = '_header'
-    current_content: list[str] = []
-
-    for line in content.split('\n'):
-        if line.startswith('## '):
-            # Save previous section
-            if current_content:
-                sections[current_section] = '\n'.join(current_content).strip()
-            # Start new section
-            current_section = line[3:].strip().lower().replace(' ', '_')
-            current_content = []
-        else:
-            current_content.append(line)
-
-    # Save last section
-    if current_content:
-        sections[current_section] = '\n'.join(current_content).strip()
-
-    return sections
 
 
 # =============================================================================

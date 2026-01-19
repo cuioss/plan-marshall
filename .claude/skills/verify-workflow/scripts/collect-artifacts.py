@@ -13,81 +13,17 @@ Output: Directory containing collected artifacts in original format.
 """
 
 import argparse
-import re
 import sys
 from pathlib import Path
 from typing import Any
 
 # Cross-skill imports (executor sets PYTHONPATH)
+from _plan_parsing import (  # type: ignore[import-not-found]
+    extract_deliverable_headings,
+    parse_document_sections,
+)
 from file_ops import base_path  # type: ignore[import-not-found]
 from toon_parser import serialize_toon  # type: ignore[import-not-found]
-
-# =============================================================================
-# Path Helpers (inline to avoid hyphen-named module imports)
-# =============================================================================
-
-
-def get_solution_path(plan_id: str) -> Path:
-    """Get path to solution_outline.md."""
-    return base_path('plans', plan_id, 'solution_outline.md')
-
-
-def get_config_path(plan_id: str) -> Path:
-    """Get path to config.toon."""
-    return base_path('plans', plan_id, 'config.toon')
-
-
-def get_status_path(plan_id: str) -> Path:
-    """Get path to status.toon."""
-    return base_path('plans', plan_id, 'status.toon')
-
-
-def get_references_path(plan_id: str) -> Path:
-    """Get path to references.toon."""
-    return base_path('plans', plan_id, 'references.toon')
-
-
-def get_log_path(plan_id: str, log_type: str = 'work') -> Path:
-    """Get path to log file."""
-    return base_path('plans', plan_id, f'{log_type}.log')
-
-
-# =============================================================================
-# Parsing Helpers (inline simplified versions)
-# =============================================================================
-
-
-def parse_document_sections(content: str) -> dict[str, str]:
-    """Parse markdown document into sections by ## headers."""
-    sections: dict[str, str] = {}
-    current_section = ''
-    current_content: list[str] = []
-
-    for line in content.split('\n'):
-        if line.startswith('## '):
-            if current_section:
-                sections[current_section] = '\n'.join(current_content)
-            current_section = line[3:].strip()
-            current_content = []
-        else:
-            current_content.append(line)
-
-    if current_section:
-        sections[current_section] = '\n'.join(current_content)
-
-    return sections
-
-
-def extract_deliverables(content: str) -> list[dict[str, str]]:
-    """Extract deliverables from Deliverables section content."""
-    deliverables: list[dict[str, str]] = []
-    pattern = re.compile(r'^###\s+(\d+)\.\s+(.+)$', re.MULTILINE)
-
-    for match in pattern.finditer(content):
-        deliverables.append({'id': match.group(1), 'title': match.group(2).strip()})
-
-    return deliverables
-
 
 # =============================================================================
 # Artifact Collector
@@ -106,7 +42,7 @@ class ArtifactCollector:
     def collect_solution_outline(self) -> bool:
         """Collect solution_outline.md."""
         try:
-            solution_path = get_solution_path(self.plan_id)
+            solution_path = base_path('plans', self.plan_id, 'solution_outline.md')
 
             if solution_path.exists():
                 content = solution_path.read_text()
@@ -126,7 +62,7 @@ class ArtifactCollector:
     def collect_deliverables(self) -> bool:
         """Collect deliverables list."""
         try:
-            solution_path = get_solution_path(self.plan_id)
+            solution_path = base_path('plans', self.plan_id, 'solution_outline.md')
 
             if not solution_path.exists():
                 self.errors.append('Solution outline not found for deliverables')
@@ -135,14 +71,15 @@ class ArtifactCollector:
 
             content = solution_path.read_text()
             sections = parse_document_sections(content)
-            deliverables_section = sections.get('Deliverables', '')
+            # Section keys are lowercase
+            deliverables_section = sections.get('deliverables', '')
 
             if not deliverables_section:
                 self.errors.append('No deliverables section found')
                 self.collected.append({'artifact': 'deliverables.toon', 'status': 'failed'})
                 return False
 
-            deliverables = extract_deliverables(deliverables_section)
+            deliverables = extract_deliverable_headings(deliverables_section)
 
             # Format as TOON
             result = {
@@ -165,7 +102,7 @@ class ArtifactCollector:
     def collect_config(self) -> bool:
         """Collect config.toon."""
         try:
-            config_path = get_config_path(self.plan_id)
+            config_path = base_path('plans', self.plan_id, 'config.toon')
 
             if config_path.exists():
                 content = config_path.read_text()
@@ -185,7 +122,7 @@ class ArtifactCollector:
     def collect_status(self) -> bool:
         """Collect status.toon."""
         try:
-            status_path = get_status_path(self.plan_id)
+            status_path = base_path('plans', self.plan_id, 'status.toon')
 
             if status_path.exists():
                 content = status_path.read_text()
@@ -205,7 +142,7 @@ class ArtifactCollector:
     def collect_references(self) -> bool:
         """Collect references.toon."""
         try:
-            refs_path = get_references_path(self.plan_id)
+            refs_path = base_path('plans', self.plan_id, 'references.toon')
 
             if refs_path.exists():
                 content = refs_path.read_text()
@@ -275,7 +212,7 @@ class ArtifactCollector:
     def collect_work_log(self) -> bool:
         """Collect work log."""
         try:
-            log_path = get_log_path(self.plan_id, 'work')
+            log_path = base_path('plans', self.plan_id, 'work.log')
 
             if log_path.exists():
                 content = log_path.read_text()
