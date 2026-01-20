@@ -28,14 +28,17 @@ All expected items must be found:
 - [ ] All 9 pm-dev-java agents identified
 - [ ] 1 pm-plugin-development agent identified (tool-coverage-agent)
 
-### Skills with JSON Output Specs (5 files)
-- [ ] 2 plan-marshall skills identified (permission-doctor, permission-fix)
-- [ ] 3 pm-dev-frontend skills identified (js-fix-jsdoc, js-generate-coverage, js-implement-tests)
+### Commands (1 file)
+- [ ] tools-analyze-user-prompted.md identified
 
-### Commands (0 files)
-- [ ] Correctly identifies NO commands have JSON output specs
+### Skills with JSON Output Specs (20 files)
+- [ ] 7 plan-marshall skills identified
+- [ ] 3 pm-dev-frontend skills identified
+- [ ] 5 pm-workflow skills identified
+- [ ] 3 pm-documents skills identified
+- [ ] 2 pm-plugin-development skills identified
 
-**Expected count**: 15 affected files total
+**Expected count**: 31 affected files total
 
 **Critical checks - Must be found**:
 
@@ -47,7 +50,7 @@ All expected items must be found:
 | plan-marshall/skills/permission-fix/SKILL.md | "Output (JSON)" sections (5+ blocks) |
 | pm-dev-frontend/skills/js-fix-jsdoc/SKILL.md | "JSON Output Contract" section |
 | pm-dev-frontend/skills/js-generate-coverage/SKILL.md | "Step 3: Return Coverage Results" with ```json |
-| pm-dev-frontend/skills/js-implement-tests/SKILL.md | "JSON Output Contract" section |
+| pm-workflow/skills/workflow-integration-ci/SKILL.md | Workflow outputs with ```json |
 
 ## Exclusion Criteria
 
@@ -60,13 +63,17 @@ All expected items must be found:
 - `pm-workflow/agents/task-execute-agent.md` - Uses TOON format
 - `pm-workflow/agents/solution-outline-agent.md` - Uses TOON format
 
-### Commands excluded (JSON is not output spec):
-- `pm-plugin-development/commands/tools-analyze-user-prompted.md` - JSON blocks are solution examples showing permission format
+### Skills excluded (no JSON blocks at all):
+- `pm-dev-frontend/skills/ext-triage-js/SKILL.md` - Knowledge-only skill, no JSON
+- `pm-dev-frontend/skills/js-enforce-eslint/SKILL.md` - Reference skill, no JSON
+- `pm-documents/skills/ext-triage-docs/SKILL.md` - Knowledge-only skill, no JSON
+- `pm-dev-java/skills/ext-triage-java/SKILL.md` - Knowledge-only skill, no JSON
+- `pm-dev-java/skills/java-enforce-logrecords/SKILL.md` - No JSON blocks
+- `pm-requirements/skills/ext-triage-reqs/SKILL.md` - Knowledge-only skill, no JSON
 
-### Skills excluded (JSON is config/input, not output):
-- `pm-dev-frontend/skills/js-enforce-eslint/SKILL.md` - JSON is "Required npm Scripts" (package.json config)
-- `pm-dev-java/skills/java-enforce-logrecords/SKILL.md` - JSON is "Configuration structure" (input config)
-- `pm-plugin-development/skills/plugin-create/SKILL.md` - JSON is "answers_json contains" (input format)
+### Skills excluded (JSON is config/documentation, not output):
+- `pm-plugin-development/skills/ext-triage-plugin/SKILL.md` - JSON is Extension Registration config
+- `pm-dev-java/skills/manage-maven-profiles/SKILL.md` - JSON is storage schema documentation
 
 ## Skills Inclusion/Exclusion Decision
 
@@ -76,6 +83,8 @@ All expected items must be found:
 |--------------|----------|
 | "Output JSON", "JSON Output Contract", "Return...Results" | YES |
 | "Configuration", "Required", "Input", "contains" | NO |
+| Extension Registration / Storage schema | NO |
+| No JSON blocks at all | NO |
 
 **Expected decision logs**:
 ```
@@ -83,29 +92,33 @@ All expected items must be found:
   detail: Skill with "Output JSON" sections containing ```json output blocks
 
 [FINDING] Excluded: pm-dev-frontend/skills/js-enforce-eslint/SKILL.md
-  detail: JSON block is npm scripts configuration, not skill output specification
+  detail: No JSON blocks found in file - nothing to migrate
+
+[FINDING] Excluded: pm-plugin-development/skills/ext-triage-plugin/SKILL.md
+  detail: JSON block is Extension Registration config, not skill output
 ```
 
 ## Scoring Guidance
 
 **90-100 (Excellent)**:
-- All 15 files found (10 agents + 5 skills)
+- 28-31 files found (allowing minor variance)
 - All critical checks passed
 - Inclusion/exclusion distinction documented with context analysis
-- Non-JSON agent exclusions logged
-- Config/input JSON exclusions logged
+- Non-JSON files excluded
+- Config/documentation JSON exclusions logged
 
 **70-89 (Good)**:
-- 13-15 files found
+- 24-27 files found
 - Minor documentation gaps
 - Distinction mentioned but rationale brief
 
 **50-69 (Partial)**:
-- 10-12 files found
+- 18-23 files found
 - Missing multiple skills OR multiple agents
 - Exclusion decisions undocumented
 
 **0-49 (Poor)**:
-- Fewer than 10 files found
+- Fewer than 18 files found
 - Wrong scope (e.g., skills excluded entirely)
 - No exclusion reasoning
+- Files with no JSON blocks included as false positives

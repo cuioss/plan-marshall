@@ -144,78 +144,112 @@ The criteria determine WHAT to look for. Step 4 applies those criteria to EACH c
 
 After logging, the criteria become the **benchmark** for all Step 4 findings. Every `[FINDING]` log MUST reference these criteria.
 
-## Step 4: Analyze Each Component
+## Step 4: Analyze Each Component (via Agent Delegation)
 
-### Batch Processing
+**Purpose**: Delegate component analysis to specialized agents that have structured output contracts. This enforces per-component analysis and prevents categorical assumptions.
 
-Process components in batches of **10-15 files** per bundle. After each batch:
+**Contract**: See `standards/component-analysis-contract.md` for agent input/output specifications.
 
-1. Log a checkpoint to work-log
-2. Review findings before continuing
-3. Do NOT skip components or rush through batches
+### Step 4.1: Group Components by Type
 
-```bash
-# After each batch of 10-15 components
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[STATUS] (pm-plugin-development:ext-outline-plugin) Analyzed {component_type} batch {N} of {bundle}: {X} affected, {Y} not affected"
+From inventory results, group files by component type:
+
+```
+skills_files = [paths from inventory where type == "skill"]
+command_files = [paths from inventory where type == "command"]
+agent_files = [paths from inventory where type == "agent"]
 ```
 
-**All component types must have batch checkpoints** - if inventory includes agents, commands, AND skills, all three types must show batch progress logs.
-
-### Per-Component Analysis
-
-For each component, execute these steps **in order**:
-
-1. **Read** the component file completely
-2. **Search** for match indicators from Step 3 criteria
-3. **Check** for exclude indicators from Step 3 criteria
-4. **Evaluate** against the criteria statement (not generic assumptions)
-5. **Record** the result with criteria reference
-
-**Analysis checklist per component** (derived from Step 3):
-- [ ] Does it contain any `match_indicators`?
-- [ ] Does it contain any `exclude_indicators`?
-- [ ] Does it satisfy the `criteria` statement?
-- [ ] What specific evidence supports the finding?
-
-**CRITICAL**: The checklist items are populated FROM the Step 3 criteria extraction. Do NOT use categorical statements without referencing the specific criteria derived from the request.
-
-### Checklist Enforcement Rules
-
-**CRITICAL**: The analysis checklist MUST be applied to EVERY component in `affected_artifacts` from `bundle_scope`.
-
-1. **Scope already determined**: Components outside `affected_artifacts` or `bundle_scope` are SKIPPED (not analyzed). Only analyze what Step 1 identified.
-
-2. **One [FINDING] per component**: Every component within scope gets its own `[FINDING]` log entry - either "Affected" or "Not affected" with component-specific reasoning.
-
-3. **Reference Step 3 criteria**: Findings must explain why based on the criteria extracted in Step 3, not categorical assumptions.
-
-**Anti-pattern (INVALID):**
-```
-[FINDING] Skills analysis complete: Skills are knowledge documents without output formats
-```
-
-**Correct pattern:**
-```
-[FINDING] Affected: {path}
-  criteria_match: {which match_indicator triggered} - {evidence}
-
-[FINDING] Not affected: {path}
-  criteria_check: {which indicators were checked}
-  result: No match - {specific evidence of non-match}
-```
-
-### Logging Affected Files
-
-For each **affected** file, log immediately:
+Log the grouping:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[FINDING] (pm-plugin-development:ext-outline-plugin) Affected: {file_path}
-  criteria_match: {which match_indicator} - {evidence}"
+  work {plan_id} INFO "[STATUS] (pm-plugin-development:ext-outline-plugin) Component grouping:
+  skills: {len(skills_files)} files
+  commands: {len(command_files)} files
+  agents: {len(agent_files)} files"
 ```
 
-**Build affected files list** as you analyze:
+### Step 4.2: Spawn Analysis Agents (MANDATORY)
+
+**CRITICAL**: You MUST use the **Task tool** to spawn analysis agents. Do NOT perform inline analysis. Do NOT skip agent spawning. The Task tool invocation is REQUIRED for each component type with files.
+
+For each component type with files, invoke the Task tool with these parameters:
+
+**Skills Analysis** (if skills_files not empty):
+
+| Parameter | Value |
+|-----------|-------|
+| `description` | "Analyze skills batch {N}" |
+| `subagent_type` | `pm-plugin-development:skill-analysis-agent` |
+| `prompt` | See template below |
+
+Prompt template:
+```
+Analyze skills against criteria.
+
+file_paths:
+  {list all skills_files in this batch, one per line}
+
+criteria:
+  request_fragment: "{request_fragment from Step 3}"
+  criteria_statement: "{criteria from Step 3}"
+  match_indicators: {match_indicators from Step 3}
+  exclude_indicators: {exclude_indicators from Step 3}
+
+batch_id: skills-{N}-{bundle}
+plan_id: {plan_id}
+```
+
+**Commands Analysis** (if command_files not empty):
+
+| Parameter | Value |
+|-----------|-------|
+| `description` | "Analyze commands batch {N}" |
+| `subagent_type` | `pm-plugin-development:command-analysis-agent` |
+| `prompt` | Same template structure with command_files |
+
+**Agents Analysis** (if agent_files not empty):
+
+| Parameter | Value |
+|-----------|-------|
+| `description` | "Analyze agents batch {N}" |
+| `subagent_type` | `pm-plugin-development:agent-analysis-agent` |
+| `prompt` | Same template structure with agent_files |
+
+**Batching**: If a component type has more than 15 files, invoke multiple Task tools with batches of 10-15 files each. Run batches in parallel when possible.
+
+**Verification**: After invoking Task tools, you will receive TOON-formatted results from each agent. Proceed to Step 4.3 to validate these results.
+
+### Step 4.3: Validate Agent Results
+
+For each agent response, validate the output contract:
+
+1. **Completeness check**: `findings.length == file_paths.length`
+2. **Evidence check**: Each finding has `evidence` populated
+3. **Count check**: `affected_count + not_affected_count == total_analyzed`
+
+**If validation fails**:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  work {plan_id} ERROR "[VALIDATION] (pm-plugin-development:ext-outline-plugin) Agent validation failed: {batch_id}
+  expected_findings: {file_paths.length}
+  actual_findings: {findings.length}
+  action: Retry or escalate"
+```
+
+**If validation succeeds**, log batch checkpoint:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  work {plan_id} INFO "[STATUS] (pm-plugin-development:ext-outline-plugin) Analyzed {component_type} batch {N}: {affected_count} affected, {not_affected_count} not affected"
+```
+
+### Step 4.4: Aggregate Findings
+
+Merge all agent findings into unified structure:
+
 ```
 affected_files:
   bundle-a:
@@ -223,41 +257,25 @@ affected_files:
     - path/to/file2.md (criteria_match: {indicator} - {evidence})
   bundle-b:
     - path/to/file3.md (criteria_match: {indicator} - {evidence})
+
+analysis_summary:
+  skills: {total} analyzed, {affected} affected
+  commands: {total} analyzed, {affected} affected
+  agents: {total} analyzed, {affected} affected
 ```
 
-### Document Excluded Components
+### Step 4.5: Final Verification
 
-For files analyzed but NOT affected, log with criteria reference:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[FINDING] (pm-plugin-development:ext-outline-plugin) Not affected: {file}
-  criteria_check: {which indicators were checked}
-  result: No match - {specific evidence}"
-```
-
-The rationale should explain WHY the component does not match the Step 3 criteria:
-- What match_indicators were checked?
-- What exclude_indicators were found?
-- Why does it not satisfy the criteria statement?
-
-Example patterns:
-- `Checked for "{match_indicator}" - not found in Output sections`
-- `Found "{exclude_indicator}" - already uses TOON format`
-- `JSON present but context is "Configuration" not "Output" (exclude_indicator)`
-
-### Final Verification
-
-After all batches complete, log the summary:
+After all agents complete, log the milestone:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   work {plan_id} INFO "[MILESTONE] (pm-plugin-development:ext-outline-plugin) Impact analysis complete: {total_affected} of {total_analyzed} affected"
 ```
 
-### Link Affected Files to References
+### Step 4.6: Link Affected Files to References
 
-After analysis complete, persist affected files for execute phase:
+Persist affected files for execute phase:
 
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-references:manage-references add-list \

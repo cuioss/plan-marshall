@@ -30,6 +30,9 @@
     "./skills/verification-mode"
   ],
   "agents": [
+    "./agents/agent-analysis-agent.md",
+    "./agents/command-analysis-agent.md",
+    "./agents/skill-analysis-agent.md",
     "./agents/tool-coverage-agent.md"
   ]
 }

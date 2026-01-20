@@ -1,5 +1,5 @@
 # Expected artifacts for migrate-json-to-toon test case
-# Based on verified-result.md golden reference
+# Updated 2026-01-20 after agent delegation fix and verification
 
 artifacts[4]{file,standard_ref}:
 solution_outline.md,pm-workflow:manage-solution-outline:deliverable-contract
@@ -7,44 +7,74 @@ config.toon,pm-workflow:manage-config:config-schema
 status.toon,pm-workflow:manage-lifecycle:status-schema
 references.toon,pm-workflow:manage-references:references-schema
 
-# Expected deliverables: 4
+# Expected deliverables: 7 (grouped by bundle)
 # 1. pm-dev-java agents (9 files)
-# 2. pm-plugin-development agent (1 file)
-# 3. plan-marshall user-invocable skills (2 files)
-# 4. pm-dev-frontend user-invocable skills (3 files)
-deliverable_count: 4
+# 2. pm-plugin-development components (3 files - after false positive removal)
+# 3. plan-marshall skills (7 files)
+# 4. pm-dev-frontend skills (3 files - after false positive removal)
+# 5. pm-workflow skills (5 files)
+# 6. pm-documents and pm-dev-java skills (5 files - after false positive removal)
+# 7. pm-requirements skills (0 files - all were false positives)
+deliverable_count: 7
 
-# Expected affected files: 15 total
-# 9 pm-dev-java agents + 1 pm-plugin-development agent + 5 user-invocable skills
+# Expected affected files: 31 total (verified 2026-01-20)
+# After removing 8 false positives:
+# - 6 files with NO JSON blocks (nothing to migrate)
+# - 2 files with config/documentation JSON (not output)
 #
 # Inclusion criteria:
-# - Agents with JSON output specs (```json in "Output"/"Return Results" sections)
-# - User-invocable skills (user-invocable: true) with JSON output specs
+# - Components with JSON output specs (```json in "Output"/"Return"/"Result" sections)
+# - Any component type (agents, commands, skills) - not limited to user-invocable
 #
 # Exclusion criteria:
-# - Agents using TOON format (pm-workflow agents)
-# - Agents using markdown format (research-best-practices)
-# - Reference-only skills (non-user-invocable)
-# - Skills with JSON for config/input (not output specs)
-# - Commands (none have JSON output specs currently)
+# - Components using TOON format already
+# - Components with JSON for config/input (not output specs)
+# - Components with no JSON blocks at all
+#
+# Known false positives to exclude:
+# - ext-triage-* skills (knowledge-only, no JSON output)
+# - js-enforce-eslint (no JSON blocks)
+# - java-enforce-logrecords (no JSON blocks)
+# - ext-triage-plugin (JSON is config registration)
+# - manage-maven-profiles (JSON is storage schema)
 
-affected_files[15]:
-# pm-dev-java agents (9)
+affected_files[31]:
+# Deliverable 1: pm-dev-java agents (9)
+marketplace/bundles/pm-dev-java/agents/java-coverage-agent.md
+marketplace/bundles/pm-dev-java/agents/java-fix-build-agent.md
+marketplace/bundles/pm-dev-java/agents/java-fix-javadoc-agent.md
+marketplace/bundles/pm-dev-java/agents/java-fix-tests-agent.md
 marketplace/bundles/pm-dev-java/agents/java-implement-agent.md
 marketplace/bundles/pm-dev-java/agents/java-implement-tests-agent.md
-marketplace/bundles/pm-dev-java/agents/java-refactor-agent.md
-marketplace/bundles/pm-dev-java/agents/java-coverage-agent.md
 marketplace/bundles/pm-dev-java/agents/java-quality-agent.md
+marketplace/bundles/pm-dev-java/agents/java-refactor-agent.md
 marketplace/bundles/pm-dev-java/agents/java-verify-agent.md
-marketplace/bundles/pm-dev-java/agents/java-fix-build-agent.md
-marketplace/bundles/pm-dev-java/agents/java-fix-tests-agent.md
-marketplace/bundles/pm-dev-java/agents/java-fix-javadoc-agent.md
-# pm-plugin-development agent (1)
+# Deliverable 2: pm-plugin-development (3) - removed ext-triage-plugin false positive
 marketplace/bundles/pm-plugin-development/agents/tool-coverage-agent.md
-# plan-marshall user-invocable skills (2)
+marketplace/bundles/pm-plugin-development/commands/tools-analyze-user-prompted.md
+marketplace/bundles/pm-plugin-development/skills/plugin-create/SKILL.md
+marketplace/bundles/pm-plugin-development/skills/plugin-task-plan/SKILL.md
+# Deliverable 3: plan-marshall skills (6) - removed manage-maven-profiles false positive
+marketplace/bundles/plan-marshall/skills/analyze-project-architecture/SKILL.md
+marketplace/bundles/plan-marshall/skills/manage-memories/SKILL.md
+marketplace/bundles/plan-marshall/skills/manage-plan-marshall-config/SKILL.md
+marketplace/bundles/plan-marshall/skills/manage-run-config/SKILL.md
 marketplace/bundles/plan-marshall/skills/permission-doctor/SKILL.md
 marketplace/bundles/plan-marshall/skills/permission-fix/SKILL.md
-# pm-dev-frontend user-invocable skills (3)
+marketplace/bundles/plan-marshall/skills/tools-permission-sync/SKILL.md
+# Deliverable 4: pm-dev-frontend skills (3) - removed ext-triage-js, js-enforce-eslint
 marketplace/bundles/pm-dev-frontend/skills/js-fix-jsdoc/SKILL.md
 marketplace/bundles/pm-dev-frontend/skills/js-generate-coverage/SKILL.md
 marketplace/bundles/pm-dev-frontend/skills/js-implement-tests/SKILL.md
+# Deliverable 5: pm-workflow skills (5)
+marketplace/bundles/pm-workflow/skills/manage-tasks/SKILL.md
+marketplace/bundles/pm-workflow/skills/planning-inventory/SKILL.md
+marketplace/bundles/pm-workflow/skills/workflow-integration-ci/SKILL.md
+marketplace/bundles/pm-workflow/skills/workflow-integration-git/SKILL.md
+marketplace/bundles/pm-workflow/skills/workflow-integration-sonar/SKILL.md
+# Deliverable 6: pm-documents skills (4) - removed ext-triage-docs
+marketplace/bundles/pm-documents/skills/manage-adr/SKILL.md
+marketplace/bundles/pm-documents/skills/manage-interface/SKILL.md
+marketplace/bundles/pm-documents/skills/ref-documentation/SKILL.md
+# Note: ext-triage-java, java-enforce-logrecords removed (no JSON)
+# Note: ext-triage-reqs removed (no JSON) - deliverable 7 now empty

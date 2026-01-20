@@ -1,7 +1,7 @@
 ---
 name: solution-outline-agent
 description: Create solution outline with deliverables, each assigned a single domain from config.toon
-tools: Read, Glob, Grep, Bash, Skill
+tools: Read, Glob, Grep, Bash, Skill, Task
 model: sonnet
 skills: plan-marshall:ref-development-standards
 ---
