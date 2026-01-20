@@ -261,7 +261,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 status: success
 plan_id: {plan_id}
 domain: {domain}
-next_phase: outline
+next_phase: 2-outline
 
 source:
   type: {description|lesson|issue}

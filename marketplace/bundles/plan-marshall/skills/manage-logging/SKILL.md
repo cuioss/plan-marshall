@@ -81,7 +81,7 @@ entries:
     level: INFO
     category: DECISION
     message: Detected domain: java
-    phase: init
+    phase: 1-init
   - timestamp: 2025-12-11T11:15:20Z
     level: INFO
     category: ARTIFACT

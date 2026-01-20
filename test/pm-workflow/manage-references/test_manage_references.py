@@ -160,3 +160,90 @@ def test_get_context_not_found():
     with TestContext():
         result = run_script(SCRIPT_PATH, 'get-context', '--plan-id', 'nonexistent')
         assert not result.success, 'Expected failure for missing plan'
+
+
+# =============================================================================
+# Test: Add List Command
+# =============================================================================
+
+
+def test_add_list_new_field():
+    """Test adding multiple values to a new list field."""
+    with TestContext():
+        run_script(SCRIPT_PATH, 'create', '--plan-id', 'test-plan', '--branch', 'feature/test')
+        result = run_script(
+            SCRIPT_PATH,
+            'add-list',
+            '--plan-id',
+            'test-plan',
+            '--field',
+            'affected_files',
+            '--values',
+            'file1.md,file2.md,file3.md',
+        )
+        assert result.success, f'Script failed: {result.stderr}'
+        data = parse_toon(result.stdout)
+        assert data['status'] == 'success'
+        assert data['field'] == 'affected_files'
+        assert data['added_count'] == 3
+        assert data['total'] == 3
+
+
+def test_add_list_existing_field():
+    """Test adding values to an existing list field."""
+    with TestContext():
+        run_script(SCRIPT_PATH, 'create', '--plan-id', 'test-plan', '--branch', 'feature/test')
+        run_script(
+            SCRIPT_PATH,
+            'add-list',
+            '--plan-id',
+            'test-plan',
+            '--field',
+            'affected_files',
+            '--values',
+            'file1.md,file2.md',
+        )
+        result = run_script(
+            SCRIPT_PATH,
+            'add-list',
+            '--plan-id',
+            'test-plan',
+            '--field',
+            'affected_files',
+            '--values',
+            'file3.md,file4.md',
+        )
+        assert result.success, f'Script failed: {result.stderr}'
+        data = parse_toon(result.stdout)
+        assert data['added_count'] == 2
+        assert data['total'] == 4
+
+
+def test_add_list_no_duplicates():
+    """Test that add-list skips duplicate values."""
+    with TestContext():
+        run_script(SCRIPT_PATH, 'create', '--plan-id', 'test-plan', '--branch', 'feature/test')
+        run_script(
+            SCRIPT_PATH,
+            'add-list',
+            '--plan-id',
+            'test-plan',
+            '--field',
+            'affected_files',
+            '--values',
+            'file1.md,file2.md',
+        )
+        result = run_script(
+            SCRIPT_PATH,
+            'add-list',
+            '--plan-id',
+            'test-plan',
+            '--field',
+            'affected_files',
+            '--values',
+            'file1.md,file3.md',
+        )
+        assert result.success, f'Script failed: {result.stderr}'
+        data = parse_toon(result.stdout)
+        assert data['added_count'] == 1  # Only file3.md is new
+        assert data['total'] == 3

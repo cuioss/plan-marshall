@@ -203,6 +203,36 @@ removed: src/main/java/OldClass.java
 total: 2
 ```
 
+### add-list
+
+Add multiple values to a list field.
+
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-references:manage-references add-list \
+  --plan-id {plan_id} \
+  --field affected_files \
+  --values "path/to/file1.md,path/to/file2.md,path/to/file3.md"
+```
+
+**Parameters**:
+- `--plan-id` (required): Plan identifier
+- `--field` (required): List field name (e.g., `affected_files`, `modified_files`)
+- `--values` (required): Comma-separated values to add
+
+**Output** (TOON):
+```toon
+status: success
+plan_id: my-feature
+field: affected_files
+added_count: 3
+total: 3
+```
+
+**Notes**:
+- Creates the field as an empty list if it doesn't exist
+- Skips values that already exist in the list (no duplicates)
+- Returns error if the field exists but is not a list
+
 ### get-context
 
 Get all references context in one call. Useful for getting comprehensive plan context.
@@ -264,6 +294,7 @@ test_files:
 | `set` | `--plan-id --field --value` | Set specific field value |
 | `add-file` | `--plan-id --file` | Add file to modified_files |
 | `remove-file` | `--plan-id --file` | Remove file from modified_files |
+| `add-list` | `--plan-id --field --values` | Add multiple values to a list field |
 | `get-context` | `--plan-id [--include-files]` | Get all references context |
 
 ---

@@ -62,7 +62,7 @@ Returns:
 ```toon
 status: success
 plan_id: {plan_id}
-current_phase: execute
+current_phase: 4-execute
 skill: pm-workflow:phase-4-execute
 skill_description: Execute phase skill for task implementation
 total_phases: 4

@@ -149,7 +149,7 @@ title: {aggregated title}
 deliverables: [{n1}, {n2}, {n3}]
 domain: {domain from deliverable}
 profile: {profile from deliverable}
-phase: execute
+phase: 4-execute
 description: |
   {combined description}
 

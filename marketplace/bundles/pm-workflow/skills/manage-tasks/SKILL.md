@@ -52,7 +52,7 @@ Tasks are stored in the plan directory:
 number: 1
 title: Update misc agents to TOON output
 status: pending
-phase: execute
+phase: 4-execute
 domain: plan-marshall-plugin-dev
 profile: implementation
 origin: plan
@@ -143,7 +143,7 @@ deliverables: [1, 2, 3]
 domain: plan-marshall-plugin-dev
 profile: implementation
 type: IMPL
-phase: execute
+phase: 4-execute
 origin: plan
 description: |
   Multi-line task description here.
@@ -291,7 +291,7 @@ python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks next \
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks next \
   --plan-id my-feature \
-  --phase execute
+  --phase 4-execute
 ```
 
 ### List ready tasks only

@@ -14,7 +14,7 @@ Display progress as structured summaries with clear fields:
 
 ```
 plan_status:
-  current_phase: execute
+  current_phase: 4-execute
   current_task: task-1
   phase_completed: init
 
@@ -59,7 +59,7 @@ artifacts:
   plan_file: <plan-storage>/feature-auth/plan.md
   config_file: <plan-storage>/feature-auth/config.md
 plan_status:
-  current_phase: init
+  current_phase: 1-init
   current_task: task-1
 next_action: Complete init phase, then start execute phase
 ```
@@ -355,7 +355,7 @@ Used after plan operations (create, transition, complete):
 
 ```
 plan_status:
-  current_phase: execute
+  current_phase: 4-execute
   current_task: task-1
   init_completed: true
 
@@ -375,7 +375,7 @@ artifacts:
   config_file: <plan-storage>/feature-auth/config.md
 
 plan_status:
-  current_phase: execute
+  current_phase: 4-execute
   current_task: task-1
 
 next_action: Begin execute phase
@@ -396,7 +396,7 @@ artifacts:
   references_file: <plan-storage>/feature-auth/references.toon
 
 plan_status:
-  current_phase: init
+  current_phase: 1-init
   current_task: task-1
 
 next_action: Complete init phase, then start execute phase

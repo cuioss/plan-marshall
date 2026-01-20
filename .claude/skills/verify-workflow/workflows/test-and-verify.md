@@ -140,6 +140,44 @@ Execute the analyze-failures workflow to generate:
 
 This produces categorized failure analysis with origins and fix proposals.
 
+### Step V1.7: Analyze Script Failures
+
+Check for script execution errors during workflow execution.
+
+**Read script execution log:**
+```
+Read: .plan/plans/{plan_id}/script-execution.log
+```
+
+**Parse for ERROR entries:**
+Extract lines matching pattern `[ERROR]` with subsequent indented lines (exit_code, args, stderr).
+
+**For each error found:**
+1. Extract: script notation, exit_code, args, stderr message
+2. Categorize error type:
+   - `Missing API`: "invalid choice" or "unrecognized arguments"
+   - `Invalid Parameters`: "Invalid", "Must be one of"
+   - `Script Bug`: Other execution errors
+3. Trace origin using component-trace.md (which component called this script)
+
+**If errors exist, optionally invoke deep analysis:**
+```
+Skill: pm-plugin-development:tools-analyze-script-failures
+```
+
+This provides detailed root cause analysis and fix proposals.
+
+**Output:**
+Add to `{results_dir}/assessment-results.toon`:
+```toon
+script_errors:
+  count: {N}
+  errors[N]{script,exit_code,category,message}:
+  {notation},{code},{category},{short_message}
+```
+
+Add script errors to `findings[]` array with severity `error`.
+
 ### Step V2: Collect Artifacts
 
 Read the `workflow_phase` from test-definition.toon to determine which phases to collect:
@@ -196,6 +234,11 @@ structural_analysis:
   failures[N]{check_name,category,origin,description,fix_proposal}:
   ...
 
+script_errors:
+  count: {N}
+  errors[N]{script,exit_code,category,message}:
+  ...
+
 semantic_assessment:
   scope_score: {0-100}
   completeness_score: {0-100}
@@ -244,6 +287,12 @@ This traces findings back to specific components using the component trace IDs.
 | {check_name} | {category} | {origin} | {fix_proposal} |
 ...
 
+### Script Errors (if any)
+| Script | Exit Code | Category | Message |
+|--------|-----------|----------|---------|
+| {script} | {code} | {category} | {message} |
+...
+
 ### Semantic Assessment
 | Dimension | Score |
 |-----------|-------|
@@ -267,6 +316,7 @@ All outputs: {results_dir}/
 - component-trace.md
 - structural-checks.toon
 - structural-analysis.toon (if failures)
+- script-errors.toon (if script errors)
 - issue-analysis.md (if findings)
 - artifacts/
 ```

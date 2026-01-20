@@ -17,7 +17,7 @@ Note: `workflow_skills` are NOT stored in config.toon. They are resolved at runt
 ```toon
 # Plan identification
 plan_id: my-feature-123
-phase: execute
+phase: 4-execute
 
 # Multiple domains supported (e.g., fullstack feature)
 domains:
@@ -145,7 +145,7 @@ resolve-workflow-skill --domain java --phase implementation  # → system fallba
 
 ```toon
 plan_id: add-caching-feature
-phase: execute
+phase: 4-execute
 
 domains:
   - java
@@ -161,7 +161,7 @@ branch_strategy: feature
 
 ```toon
 plan_id: metrics-dashboard
-phase: plan
+phase: 3-plan
 
 domains:
   - java
@@ -178,7 +178,7 @@ branch_strategy: feature
 
 ```toon
 plan_id: new-skill-creation
-phase: outline
+phase: 2-outline
 
 domains:
   - plan-marshall-plugin-dev

@@ -29,7 +29,7 @@ Add command usage (stdin-based API):
   title: My Task Title
   deliverables: [1, 2, 3]
   domain: plan-marshall-plugin-dev
-  phase: execute
+  phase: 4-execute
   description: |
     Task description here
   steps:

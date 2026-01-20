@@ -337,7 +337,7 @@ TASK-001-IMPL.toon
 number: 1
 title: Update misc agents to TOON output
 status: pending
-phase: execute
+phase: 4-execute
 domain: plan-marshall-plugin-dev
 profile: implementation
 origin: plan
@@ -530,18 +530,18 @@ Semantic work progress tracking across all phases.
 
 ```
 [2025-12-11T11:14:30Z] [INFO] [PROGRESS] Starting init phase
-  phase: init
+  phase: 1-init
 
 [2025-12-11T11:14:48Z] [INFO] [DECISION] Detected domain: java
-  phase: init
+  phase: 1-init
   detail: pom.xml found in project root
 
 [2025-12-11T11:15:24Z] [INFO] [ARTIFACT] Created deliverable: auth module
-  phase: outline
+  phase: 2-outline
   detail: Source: request.md, domain: java
 
 [2025-12-11T11:17:55Z] [INFO] [OUTCOME] Task completed: 3 files modified
-  phase: execute
+  phase: 4-execute
 ```
 
 ### Categories

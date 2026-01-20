@@ -10,6 +10,7 @@ Usage:
     python3 manage-references.py get --plan-id my-plan --field branch
     python3 manage-references.py set --plan-id my-plan --field branch --value feature/x
     python3 manage-references.py add-file --plan-id my-plan --file src/Main.java
+    python3 manage-references.py add-list --plan-id my-plan --field affected_files --values file1.md,file2.md
 """
 
 import argparse
@@ -272,6 +273,57 @@ def cmd_remove_file(args):
     )
 
 
+def cmd_add_list(args):
+    """Add multiple values to a list field."""
+    if not validate_plan_id(args.plan_id):
+        output_toon(
+            {
+                'status': 'error',
+                'plan_id': args.plan_id,
+                'error': 'invalid_plan_id',
+                'message': f'Invalid plan_id format: {args.plan_id}',
+            }
+        )
+        sys.exit(1)
+
+    refs = read_references(args.plan_id)
+
+    # Initialize field as list if not exists
+    if args.field not in refs:
+        refs[args.field] = []
+    elif not isinstance(refs[args.field], list):
+        output_toon(
+            {
+                'status': 'error',
+                'plan_id': args.plan_id,
+                'field': args.field,
+                'error': 'not_a_list',
+                'message': f"Field '{args.field}' is not a list",
+            }
+        )
+        sys.exit(1)
+
+    # Parse comma-separated values
+    values = [v.strip() for v in args.values.split(',') if v.strip()]
+    added = []
+    for value in values:
+        if value not in refs[args.field]:
+            refs[args.field].append(value)
+            added.append(value)
+
+    write_references(args.plan_id, refs)
+
+    output_toon(
+        {
+            'status': 'success',
+            'plan_id': args.plan_id,
+            'field': args.field,
+            'added_count': len(added),
+            'total': len(refs[args.field]),
+        }
+    )
+
+
 def cmd_get_context(args):
     """Get all references context in one call."""
     if not validate_plan_id(args.plan_id):
@@ -364,6 +416,13 @@ def main():
     remove_file_parser.add_argument('--plan-id', required=True, help='Plan identifier')
     remove_file_parser.add_argument('--file', required=True, help='File path to remove')
     remove_file_parser.set_defaults(func=cmd_remove_file)
+
+    # add-list
+    add_list_parser = subparsers.add_parser('add-list', help='Add multiple values to a list field')
+    add_list_parser.add_argument('--plan-id', required=True, help='Plan identifier')
+    add_list_parser.add_argument('--field', required=True, help='List field name')
+    add_list_parser.add_argument('--values', required=True, help='Comma-separated values to add')
+    add_list_parser.set_defaults(func=cmd_add_list)
 
     # get-context
     get_context_parser = subparsers.add_parser('get-context', help='Get all references context in one call')

@@ -29,7 +29,7 @@ Examples:
     # Read operations
     python3 manage-log.py read --plan-id my-plan --type work
     python3 manage-log.py read --plan-id my-plan --type work --limit 5
-    python3 manage-log.py read --plan-id my-plan --type work --phase init
+    python3 manage-log.py read --plan-id my-plan --type work --phase 1-init
 """
 
 import sys

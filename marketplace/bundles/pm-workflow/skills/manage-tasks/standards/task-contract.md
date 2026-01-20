@@ -331,7 +331,7 @@ profile: {profile}
 skills:
   - pm-dev-java:java-core
   - pm-dev-java:java-cdi
-phase: execute
+phase: 4-execute
 description: |
   {combined description}
 

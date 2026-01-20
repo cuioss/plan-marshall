@@ -192,7 +192,7 @@ Resolves the system workflow skill for a phase. Always returns from the `system`
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
-  resolve-workflow-skill --phase outline
+  resolve-workflow-skill --phase 2-outline
 ```
 
 **Parameters**:

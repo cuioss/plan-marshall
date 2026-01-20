@@ -198,7 +198,7 @@ verification:
 number: 2
 title: Add Auth Endpoint
 status: in_progress
-phase: execute
+phase: 4-execute
 created: 2025-12-02T10:30:00Z
 updated: 2025-12-02T11:00:00Z
 
