@@ -96,17 +96,23 @@ mkdir -p "$RESULTS_DIR"
 
 All subsequent steps use `{results_dir}` to store outputs.
 
-### Step V1: Run Structural Verification
+### Step V1: Collect Artifacts
+
+Collect all artifacts to local directory first. All subsequent verification reads from this copy.
+
+Read the `workflow_phase` from test-definition.toon to determine which phases to collect:
+- `2-outline` → collect outline artifacts only
+- `3-plan` → collect planning artifacts only
+- `2-outline,3-plan` → collect both outline and planning artifacts
 
 ```bash
-python3 .plan/execute-script.py local:verify-workflow:verify-structure \
+python3 .plan/execute-script.py local:verify-workflow:collect-artifacts \
   --plan-id {plan_id} \
-  --test-case workflow-verification/test-cases/{test-id} \
-  --output {results_dir}/structural-checks.toon \
+  --output {results_dir}/artifacts/ \
   --phases {workflow_phase from test-definition}
 ```
 
-Parse the output to determine structural check status.
+**Note**: The `--phases` parameter must match the `workflow_phase` field in test-definition.toon. Tasks are only collected when `3-plan` is included.
 
 ### Step V1.5: Trace Components
 
@@ -121,9 +127,24 @@ Execute the trace-components workflow to generate:
 
 This creates sequential component IDs (C1, C2, ...) for later attribution.
 
-### Step V1.6: Analyze Structural Failures (Conditional)
+### Step V2: Run Structural Verification
 
-**Only execute if Step V1 reports failures.**
+Verify against the locally collected artifacts (from Step V1).
+
+```bash
+python3 .plan/execute-script.py local:verify-workflow:verify-structure \
+  --plan-id {plan_id} \
+  --test-case workflow-verification/test-cases/{test-id} \
+  --artifacts-dir {results_dir}/artifacts/ \
+  --output {results_dir}/structural-checks.toon \
+  --phases {workflow_phase from test-definition}
+```
+
+Parse the output to determine structural check status.
+
+### Step V2.5: Analyze Structural Failures (Conditional)
+
+**Only execute if Step V2 reports failures.**
 
 Read structural check results:
 ```
@@ -140,7 +161,7 @@ Execute the analyze-failures workflow to generate:
 
 This produces categorized failure analysis with origins and fix proposals.
 
-### Step V1.7: Analyze Script Failures
+### Step V2.6: Analyze Script Failures
 
 Check for script execution errors during workflow execution.
 
@@ -177,22 +198,6 @@ script_errors:
 ```
 
 Add script errors to `findings[]` array with severity `error`.
-
-### Step V2: Collect Artifacts
-
-Read the `workflow_phase` from test-definition.toon to determine which phases to collect:
-- `2-outline` → collect outline artifacts only
-- `3-plan` → collect planning artifacts only
-- `2-outline,3-plan` → collect both outline and planning artifacts
-
-```bash
-python3 .plan/execute-script.py local:verify-workflow:collect-artifacts \
-  --plan-id {plan_id} \
-  --output {results_dir}/artifacts/ \
-  --phases {workflow_phase from test-definition}
-```
-
-**Note**: The `--phases` parameter must match the `workflow_phase` field in test-definition.toon. Tasks are only collected when `3-plan` is included.
 
 ### Step V3: Run Semantic Assessment (LLM-as-Judge)
 

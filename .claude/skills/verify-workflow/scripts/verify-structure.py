@@ -64,11 +64,18 @@ def validate_solution_structure(content: str) -> tuple[list[str], list[str], dic
 class StructuralChecker:
     """Runs structural verification checks."""
 
-    def __init__(self, plan_id: str, test_case_dir: Path):
+    def __init__(self, plan_id: str, test_case_dir: Path, artifacts_dir: Path | None = None):
         self.plan_id = plan_id
         self.test_case_dir = test_case_dir
+        self.artifacts_dir = artifacts_dir
         self.checks: list[dict[str, str]] = []
         self.findings: list[dict[str, str]] = []
+
+    def _get_artifact_path(self, *parts: str) -> Path:
+        """Get path to artifact - from artifacts_dir if set, else from plan dir."""
+        if self.artifacts_dir:
+            return self.artifacts_dir / Path(*parts)
+        return base_path('plans', self.plan_id, *parts)
 
     def add_check(self, name: str, status: str, message: str) -> None:
         """Record a check result."""
@@ -80,7 +87,7 @@ class StructuralChecker:
 
     def check_solution_outline_exists(self) -> bool:
         """Check if solution outline exists."""
-        solution_path = base_path('plans', self.plan_id, 'solution_outline.md')
+        solution_path = self._get_artifact_path('solution_outline.md')
 
         if solution_path.exists():
             self.add_check('solution_outline_exists', 'pass', 'Solution outline exists')
@@ -92,7 +99,7 @@ class StructuralChecker:
 
     def check_solution_outline_valid(self) -> bool:
         """Validate solution outline structure."""
-        solution_path = base_path('plans', self.plan_id, 'solution_outline.md')
+        solution_path = self._get_artifact_path('solution_outline.md')
 
         if not solution_path.exists():
             self.add_check('solution_outline_valid', 'fail', 'Solution outline not found')
@@ -119,7 +126,7 @@ class StructuralChecker:
 
     def check_config_exists(self) -> bool:
         """Check if config.toon exists."""
-        config_path = base_path('plans', self.plan_id, 'config.toon')
+        config_path = self._get_artifact_path('config.toon')
 
         if config_path.exists():
             self.add_check('config_exists', 'pass', 'Config file exists')
@@ -131,7 +138,7 @@ class StructuralChecker:
 
     def check_status_exists(self) -> bool:
         """Check if status.toon exists."""
-        status_path = base_path('plans', self.plan_id, 'status.toon')
+        status_path = self._get_artifact_path('status.toon')
 
         if status_path.exists():
             self.add_check('status_exists', 'pass', 'Status file exists')
@@ -143,7 +150,7 @@ class StructuralChecker:
 
     def check_references_exists(self) -> bool:
         """Check if references.toon exists."""
-        refs_path = base_path('plans', self.plan_id, 'references.toon')
+        refs_path = self._get_artifact_path('references.toon')
 
         if refs_path.exists():
             self.add_check('references_exists', 'pass', 'References file exists')
@@ -155,7 +162,7 @@ class StructuralChecker:
 
     def check_deliverables_count(self, expected_count: int | None = None) -> bool:
         """Check deliverables can be listed and optionally verify count."""
-        solution_path = base_path('plans', self.plan_id, 'solution_outline.md')
+        solution_path = self._get_artifact_path('solution_outline.md')
 
         if not solution_path.exists():
             self.add_check('deliverables_list', 'fail', 'Solution outline not found')
@@ -204,15 +211,15 @@ class StructuralChecker:
     def check_tasks_exist(self, phase: str = 'execute') -> bool:
         """Check if tasks exist for the plan."""
         try:
-            plan_dir = base_path('plans', self.plan_id)
+            tasks_dir = self._get_artifact_path('tasks')
 
-            if not plan_dir.exists():
-                self.add_check('tasks_exist', 'fail', 'Plan directory not found')
+            if not tasks_dir.exists():
+                self.add_check('tasks_exist', 'fail', 'Tasks directory not found')
                 self.add_finding('warning', f'No tasks found for plan {self.plan_id}')
                 return False
 
-            # Count TASK-*.toon files
-            task_files = list(plan_dir.glob('TASK-*.toon'))
+            # Count TASK-*.toon files in tasks/ subdirectory
+            task_files = list(tasks_dir.glob('TASK-*.toon'))
             task_count = len(task_files)
 
             if task_count > 0:
@@ -291,6 +298,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description='Run structural verification checks')
     parser.add_argument('--plan-id', required=True, help='Plan identifier')
     parser.add_argument('--test-case', required=True, help='Path to test case directory')
+    parser.add_argument('--artifacts-dir', help='Directory containing collected artifacts (reads from here instead of plan dir)')
     parser.add_argument('--output', help='Output file path (default: stdout)')
     parser.add_argument('--phases', default='2-outline', help='Phases to verify (comma-separated)')
 
@@ -301,9 +309,14 @@ def main() -> int:
         print(serialize_toon({'status': 'error', 'message': f'Test case not found: {args.test_case}'}))
         return 1
 
+    artifacts_dir = Path(args.artifacts_dir) if args.artifacts_dir else None
+    if artifacts_dir and not artifacts_dir.exists():
+        print(serialize_toon({'status': 'error', 'message': f'Artifacts directory not found: {args.artifacts_dir}'}))
+        return 1
+
     phases = args.phases.split(',')
 
-    checker = StructuralChecker(args.plan_id, test_case_dir)
+    checker = StructuralChecker(args.plan_id, test_case_dir, artifacts_dir)
     results = checker.run_all_checks(phases)
 
     output = serialize_toon(results)

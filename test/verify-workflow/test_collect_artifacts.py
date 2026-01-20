@@ -113,11 +113,12 @@ class TestArtifactCollector:
 
     def test_collect_tasks_creates_subdirectory(self, output_dir, tmp_path):
         """Test that task collection creates tasks subdirectory."""
-        # Create mock plan directory with task files
+        # Create mock plan directory with task files in tasks/ subdirectory
         plan_dir = tmp_path / 'plans' / 'test-plan'
-        plan_dir.mkdir(parents=True)
-        (plan_dir / 'TASK-01.toon').write_text('id: TASK-01')
-        (plan_dir / 'TASK-02.toon').write_text('id: TASK-02')
+        tasks_dir = plan_dir / 'tasks'
+        tasks_dir.mkdir(parents=True)
+        (tasks_dir / 'TASK-01.toon').write_text('id: TASK-01')
+        (tasks_dir / 'TASK-02.toon').write_text('id: TASK-02')
 
         with patch('collect_artifacts.base_path', make_base_path_mock(tmp_path)):
             collector = ArtifactCollector('test-plan', output_dir)
@@ -161,7 +162,10 @@ class TestArtifactCollector:
         (plan_dir / 'status.toon').write_text('current_phase: execute')
         (plan_dir / 'references.toon').write_text('branch: main')
         (plan_dir / 'work.log').write_text('[INFO] Started')
-        (plan_dir / 'TASK-01.toon').write_text('id: TASK-01')
+        # Tasks are in tasks/ subdirectory
+        tasks_dir = plan_dir / 'tasks'
+        tasks_dir.mkdir(parents=True)
+        (tasks_dir / 'TASK-01.toon').write_text('id: TASK-01')
 
         with patch('collect_artifacts.base_path', make_base_path_mock(tmp_path)):
             collector = ArtifactCollector('test-plan', output_dir)

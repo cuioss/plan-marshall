@@ -162,14 +162,14 @@ class ArtifactCollector:
     def collect_tasks(self, phase: str = 'execute') -> bool:
         """Collect tasks."""
         try:
-            plan_dir = base_path('plans', self.plan_id)
+            tasks_dir = base_path('plans', self.plan_id, 'tasks')
 
-            if not plan_dir.exists():
+            if not tasks_dir.exists():
                 self.collected.append({'artifact': 'tasks-list.toon', 'status': 'not_found'})
                 return False
 
             # Find TASK-*.toon files
-            task_files = sorted(plan_dir.glob('TASK-*.toon'))
+            task_files = sorted(tasks_dir.glob('TASK-*.toon'))
 
             if not task_files:
                 self.collected.append({'artifact': 'tasks-list.toon', 'status': 'not_found'})
