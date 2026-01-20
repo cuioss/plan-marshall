@@ -26,19 +26,50 @@ This extension is relevant when:
 **Called by**: phase-2-outline Step 3
 **Purpose**: Determine which artifacts and bundles are affected, extract change_type
 
-### Delegate to Inventory Assessment Agent
+### Step 1: Spawn Inventory Assessment Agent
 
-The assessment logic is implemented by the `inventory-assessment-agent`. Spawn it to perform:
-- Artifact Type Analysis (plugin.json, commands, skills, agents, scripts)
+The assessment logic is implemented by the `inventory-assessment-agent`:
+
+```
+Task: pm-plugin-development:inventory-assessment-agent
+  Input:
+    plan_id: {plan_id}
+    request_text: {request content from request.md}
+  Output:
+    scope: affected_artifacts, bundle_scope
+    inventory: grouped by type (skills, commands, agents)
+    output_file: path to raw inventory file
+```
+
+The agent performs:
+- Artifact Type Analysis (which component types are affected)
 - Bundle Scope determination (explicit mentions, implicit derivation)
 - Inventory scan via `scan-marketplace-inventory` script
-- Grouping by component type
+- Grouping by component type with full file paths
 
-**Agent**: `pm-plugin-development:inventory-assessment-agent`
+### Step 2: Persist Filtered Inventory
 
-See agent documentation for full implementation details.
+After agent returns, persist the inventory to the plan directory for workflow consumption:
 
-### Determine Change Type
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-files:manage-files write \
+  --plan-id {plan_id} \
+  --file inventory_filtered.toon \
+  --content "{agent TOON output}"
+```
+
+Then store the reference:
+
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-references:manage-references set \
+  --plan-id {plan_id} \
+  --field inventory_filtered \
+  --value "inventory_filtered.toon"
+```
+
+This creates a contract: workflow.md reads `inventory_filtered.toon` from the plan directory.
+
+### Step 3: Determine Change Type
 
 After agent returns, determine `change_type` from request:
 

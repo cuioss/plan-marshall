@@ -8,13 +8,17 @@ Deliverables MUST contain explicit file paths. A deliverable that says "update a
 
 ## Inputs from Assessment
 
-The following are provided by Assessment Protocol and MUST be used:
+The Assessment Protocol (SKILL.md) provides these inputs:
 
 | Input | Source | Description |
 |-------|--------|-------------|
-| `affected_artifacts` | Assessment Step 1.6 | Component types to target |
-| `bundle_scope` | Assessment Step 2.3 | Bundles to target (all or specific list) |
-| `change_type` | Assessment | create, modify, migrate, refactor |
+| `change_type` | Assessment Step 3 | create, modify, migrate, refactor |
+| `inventory_filtered.toon` | Plan directory | Persisted inventory with scope and file paths |
+
+The `inventory_filtered.toon` file contains:
+- `scope.affected_artifacts` - Component types to target
+- `scope.bundle_scope` - Bundles to target (all or specific list)
+- `inventory.skills`, `inventory.commands`, `inventory.agents` - File paths
 
 ## Workflow Routing
 
@@ -53,40 +57,38 @@ Create one deliverable per component to create. Use the deliverable template bel
 
 For modifying, migrating, or refactoring existing components. Uses discovery and analysis.
 
-### Step 1: Run Inventory Assessment
+### Step 1: Load Persisted Inventory
 
-Spawn the inventory-assessment-agent to discover components:
-
-```
-Task: pm-plugin-development:inventory-assessment-agent
-  Input:
-    plan_id: {plan_id}
-    request_text: {request content}
-  Output:
-    scope: affected_artifacts, bundle_scope
-    inventory: grouped by type (skills, commands, agents)
-    output_file: path to inventory file
-```
-
-The agent:
-- Runs `scan-marketplace-inventory` with appropriate filters
-- Returns file paths grouped by type
-- Returns `output_file` for reference linking
-
-### Step 2: Link Inventory to References
-
-Store the inventory file path for other phases:
+The Assessment Protocol (SKILL.md) already ran the inventory-assessment-agent and persisted results. Read the filtered inventory:
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-references:manage-references set \
+# Check reference exists
+python3 .plan/execute-script.py pm-workflow:manage-references:manage-references get \
   --plan-id {plan_id} \
-  --field inventory_scan \
-  --value "{output_file from agent}"
+  --field inventory_filtered
 ```
 
-### Step 3: Extract Matching Criteria
+If `inventory_filtered` is not set, ERROR: "Assessment incomplete - inventory_filtered not persisted"
+
+```bash
+# Read the inventory file
+python3 .plan/execute-script.py pm-workflow:manage-files:manage-files read \
+  --plan-id {plan_id} \
+  --file inventory_filtered.toon
+```
+
+Parse the TOON content to extract:
+- `scope.affected_artifacts` - Component types
+- `scope.bundle_scope` - Bundle filter (all or specific)
+- `inventory.skills` - Skill file paths
+- `inventory.commands` - Command file paths
+- `inventory.agents` - Agent file paths
+
+### Step 2: Extract Matching Criteria
 
 **CRITICAL**: This step is MANDATORY. Skipping to analysis without criteria is a workflow violation.
+
+**Note**: The request text comes from `request.md` - read it if not already loaded.
 
 Analyze the request text to extract:
 
@@ -129,29 +131,29 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 **CRITICAL**: Never use component TYPES as exclude indicators.
 
-### Step 4: Parallel Component Analysis
+### Step 3: Parallel Component Analysis
 
-Spawn analysis agents for each component type with inventory:
+Spawn analysis agents for each component type from the loaded inventory:
 
 ```
 Task: pm-plugin-development:skill-analysis-agent
   Input:
-    file_paths: {inventory.skills}
-    criteria: {from Step 3}
+    file_paths: {inventory.skills from Step 1}
+    criteria: {from Step 2}
     batch_id: "skills"
     plan_id: {plan_id}
 
 Task: pm-plugin-development:command-analysis-agent
   Input:
-    file_paths: {inventory.commands}
-    criteria: {from Step 3}
+    file_paths: {inventory.commands from Step 1}
+    criteria: {from Step 2}
     batch_id: "commands"
     plan_id: {plan_id}
 
 Task: pm-plugin-development:agent-analysis-agent
   Input:
-    file_paths: {inventory.agents}
-    criteria: {from Step 3}
+    file_paths: {inventory.agents from Step 1}
+    criteria: {from Step 2}
     batch_id: "agents"
     plan_id: {plan_id}
 ```
@@ -160,7 +162,7 @@ Task: pm-plugin-development:agent-analysis-agent
 
 Only spawn agents for types that have files in inventory. Skip empty types.
 
-### Step 5: Aggregate and Validate
+### Step 4: Aggregate and Validate
 
 Collect findings from each agent:
 
@@ -178,7 +180,7 @@ IF total_analyzed != expected_total:
   ERROR: "Analysis incomplete: {total_analyzed}/{expected_total}"
 ```
 
-### Step 6: Link Affected Files
+### Step 5: Link Affected Files
 
 Persist affected files for execute phase:
 
@@ -189,7 +191,7 @@ python3 .plan/execute-script.py pm-workflow:manage-references:manage-references 
   --values "{comma-separated-paths}"
 ```
 
-### Step 7: Build Deliverables
+### Step 6: Build Deliverables
 
 Create deliverables from affected files, grouped by bundle (or ~5-8 files per deliverable).
 
