@@ -32,6 +32,7 @@
   "agents": [
     "./agents/agent-analysis-agent.md",
     "./agents/command-analysis-agent.md",
+    "./agents/inventory-assessment-agent.md",
     "./agents/skill-analysis-agent.md",
     "./agents/tool-coverage-agent.md"
   ]

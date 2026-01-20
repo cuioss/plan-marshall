@@ -1,6 +1,6 @@
 # Component Analysis Contract
 
-Defines the input/output contract for component analysis agents used in path-multi-workflow Step 4.
+Defines the input/output contract for component analysis agents used in the Modify Flow of `workflow.md`.
 
 ## Purpose
 
@@ -147,57 +147,47 @@ FOR each file_path in file_paths:
 
 ## Logging Integration
 
-Agents SHOULD log findings to work-log for audit trail:
+Agents MUST log each finding to work-log immediately after evaluation. The logging commands are embedded in Step 6 of each agent's Task section:
 
+**If affected:**
 ```bash
-# For affected files
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[FINDING] ({agent_name}) Affected: {file_path}
-  criteria_match: {match_indicators_found} - {evidence}"
-
-# For not-affected files
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[FINDING] ({agent_name}) Not affected: {file_path}
-  criteria_check: {indicators_checked}
-  result: No match - {evidence}"
+  work {plan_id} INFO "[FINDING] ({agent_name}) Affected: {file_path} - criteria_match: {match_indicators_found} - {evidence}"
 ```
 
-## Usage in path-multi-workflow.md
+**If not affected:**
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  work {plan_id} INFO "[FINDING] ({agent_name}) Not affected: {file_path} - {evidence}"
+```
 
-Step 4 spawns agents with this contract:
+## Usage in Modify Flow
+
+The Modify Flow in `workflow.md` Step 4 uses analysis agents implementing this contract:
 
 ```markdown
-Task:
-  subagent_type: pm-plugin-development:skill-analysis-agent
-  prompt: |
-    Analyze skills against criteria.
+Skill: pm-plugin-development:component-analysis-dispatch
 
-    file_paths:
-      - marketplace/bundles/pm-workflow/skills/skill-a/SKILL.md
-      - marketplace/bundles/pm-workflow/skills/skill-b/SKILL.md
-
-    criteria:
-      request_fragment: "Migrate outputs from JSON to TOON"
-      criteria_statement: "Component has JSON output specification"
-      match_indicators:
-        - "```json in Output/Return sections"
-        - "Output JSON header"
-      exclude_indicators:
-        - "```toon already present"
-        - "JSON is configuration not output"
-
-    batch_id: skills-1-pm-workflow
-    plan_id: migrate-json-to-toon
+Input:
+  plan_id: migrate-json-to-toon
+  inventory: [file list from scan-marketplace-inventory]
+  criteria:
+    request_fragment: "Migrate outputs from JSON to TOON"
+    criteria_statement: "Component has JSON output specification"
+    match_indicators:
+      - "```json in Output/Return sections"
+      - "Output JSON header"
+    exclude_indicators:
+      - "```toon already present"
+      - "JSON is configuration not output"
 ```
 
-## Implementing Agents
+## Implementation
 
-Three agents implement this contract:
+The `component-analysis-dispatch` skill implements this contract:
 
-| Agent | Component Type | Location |
-|-------|----------------|----------|
-| `skill-analysis-agent` | SKILL.md files | pm-plugin-development/agents/ |
-| `command-analysis-agent` | Command .md files | pm-plugin-development/agents/ |
-| `agent-analysis-agent` | Agent .md files | pm-plugin-development/agents/ |
+| Skill | Purpose | Location |
+|-------|---------|----------|
+| `component-analysis-dispatch` | Unified analysis for all component types | pm-plugin-development/skills/ |
 
-Each agent adds component-type-specific patterns while following the common contract.
+The skill dispatches to type-specific patterns (skills, commands, agents) while following the common contract.

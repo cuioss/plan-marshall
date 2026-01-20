@@ -105,13 +105,14 @@ python3 .plan/execute-script.py pm-workflow:manage-config:manage-config get \
 
 ---
 
-**Step 2**: Invoke solution outline agent
+**Step 2**: Load outline phase skill directly (maintains main context)
 
 ```
-Task: pm-workflow:solution-outline-agent
-  Input: plan_id={plan_id}
-  Output: deliverables created, solution_outline.md path
+Skill: pm-workflow:phase-2-outline
+  Arguments: --plan-id {plan_id}
 ```
+
+The skill runs in main conversation context and CAN spawn Task agents for parallel analysis.
 
 Log solution outline creation:
 ```bash
@@ -159,7 +160,7 @@ AskUserQuestion:
 - **If "Proceed to create tasks"**: Continue to Step 4
 - **If "Request changes"** or user provides custom feedback:
   - Capture the user's feedback
-  - Re-invoke the solution outline agent with feedback
+  - Re-invoke phase-2-outline skill with feedback parameter
   - **Loop back to Step 3a**
 
 ---
@@ -330,5 +331,6 @@ If you discover issues or improvements during execution, record them:
 | Agent | Purpose |
 |-------|---------|
 | `pm-workflow:phase-init-agent` | Init phase: creates plan, detects domains |
-| `pm-workflow:solution-outline-agent` | Outline phase: creates deliverables |
 | `pm-workflow:task-plan-agent` | Plan phase: creates tasks |
+
+**Note**: Outline phase uses skill-direct invocation (`Skill: phase-2-outline`) instead of a Task agent. This allows the outline skill to spawn Task agents for parallel component analysis.
