@@ -33,7 +33,7 @@ def finish(status, start, polls, command_key, error=None):
         output['error'] = error
 
     print(serialize_toon(output))
-    sys.exit(0 if status == 'success' else 1)
+    sys.exit(0)  # Status modeled in output, not exit code
 
 
 def main():

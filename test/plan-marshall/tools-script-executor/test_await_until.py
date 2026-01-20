@@ -151,7 +151,7 @@ def test_failure_detection():
             ],
             cwd=tmpdir,
         )
-        assert result.returncode != 0, 'Should fail on failure condition'
+        assert result.returncode == 0, 'Exit code should be 0 - status is in output'
 
         parsed = parse_toon_result(result.stdout)
         assert parsed.get('status') == 'failure', f'Expected status=failure, got {parsed.get("status")}'

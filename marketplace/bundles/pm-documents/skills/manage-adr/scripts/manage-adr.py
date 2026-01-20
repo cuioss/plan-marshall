@@ -47,7 +47,7 @@ def output_json(data: dict, success: bool = True, to_stderr: bool = False):
     data['success'] = success
     stream = sys.stderr if to_stderr else sys.stdout
     print(json.dumps(data, indent=2), file=stream)
-    sys.exit(0 if success else 1)
+    sys.exit(0)  # Status modeled in output, not exit code
 
 
 def get_template_path() -> Path:

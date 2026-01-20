@@ -53,31 +53,52 @@ Use JSON instead of TOON only for:
 
 ## Exit Codes
 
-| Code | Meaning | Output Stream |
-|------|---------|---------------|
-| `0` | Success | stdout |
-| `1` | Error | stderr |
+Exit codes indicate whether the **script executed successfully**, not whether the operation succeeded.
 
-### Success Output (exit 0)
+| Code | Meaning | When to Use |
+|------|---------|-------------|
+| `0` | Script completed | Operation success OR failure (check `status` field) |
+| `1` | Script error | Crash, missing required file, permission denied |
+| `2` | Invalid arguments | argparse validation failure (automatic) |
+
+**Key principle**: If the script ran and produced a meaningful result (even "not found" or "validation failed"), exit 0. Only exit non-zero for actual execution errors.
+
+### Operation Success (exit 0, status: success)
 
 ```python
 import sys
 
-# Success - output to stdout
+# Operation succeeded
 print("status: success")
 print("items_processed: 42")
 sys.exit(0)
 ```
 
-### Error Output (exit 1)
+### Operation Failure (exit 0, status: error)
 
 ```python
-import json
 import sys
 
-# Error - output to stderr
-print(json.dumps({"error": "File not found: config.toon"}), file=sys.stderr)
-sys.exit(1)
+# Operation failed but script ran successfully
+# Example: item not found, validation failed, requires --force
+print("status: error")
+print("error: Task not found: TASK-999")
+print("plan_id: my-plan")
+sys.exit(0)  # Exit 0 - status is in output
+```
+
+### Script Execution Error (exit 1)
+
+```python
+import sys
+
+# Real error - script cannot execute properly
+# Example: required file missing, permission denied, crash
+try:
+    config = load_required_config()
+except FileNotFoundError:
+    print("error: Required config file not found", file=sys.stderr)
+    sys.exit(1)  # Exit 1 - script couldn't run
 ```
 
 ## Error Message Format
@@ -183,10 +204,9 @@ python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:fix extract 
 Before marking output as compliant:
 
 - [ ] Uses TOON format (unless complex nesting required)
-- [ ] Exit code 0 for success
-- [ ] Exit code 1 for error
-- [ ] Success output to stdout
-- [ ] Error output to stderr
+- [ ] Exit code 0 when script completes (success OR operation failure)
+- [ ] Exit code 1 only for script execution errors (crash, missing required file)
+- [ ] Status field present (`status: success|error`) in output
+- [ ] Operation failures use `status: error` with exit 0, not exit 1
 - [ ] Error messages are clear and actionable
 - [ ] Includes relevant context in errors
-- [ ] Status field present (`status: success|error`)

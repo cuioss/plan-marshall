@@ -292,7 +292,7 @@ def main() -> int:
 
     print(serialize_toon(results))
 
-    return 0 if results['status'] == 'success' else 1
+    return 0  # Status modeled in output, not exit code
 
 
 if __name__ == '__main__':

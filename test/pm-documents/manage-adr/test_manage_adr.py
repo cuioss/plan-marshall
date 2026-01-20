@@ -131,7 +131,7 @@ class TestManageAdr(unittest.TestCase):
     def test_read_adr_not_found(self):
         """Test reading non-existent ADR."""
         result = self.run_adr('read', '--number', '999')
-        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(result.returncode, 0)  # Exit code 0, status in output
         output = json.loads(result.stderr)
         self.assertFalse(output['success'])
         self.assertIn('not found', output['error'].lower())
@@ -155,7 +155,7 @@ class TestManageAdr(unittest.TestCase):
         self.run_adr('create', '--title', 'Delete Test')
 
         result = self.run_adr('delete', '--number', '1')
-        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(result.returncode, 0)  # Exit code 0, status in output
         output = json.loads(result.stderr)
         self.assertIn('--force', output['error'])
 

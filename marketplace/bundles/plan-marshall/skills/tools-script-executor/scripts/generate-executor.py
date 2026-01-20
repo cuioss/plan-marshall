@@ -723,11 +723,10 @@ def cmd_drift(args):
     if added or removed or changed:
         print('\nstatus\tadded\tremoved\tchanged')
         print(f'drift\t{len(added)}\t{len(removed)}\t{len(changed)}')
-        sys.exit(1)
     else:
         print('\nstatus\tadded\tremoved\tchanged')
         print('ok\t0\t0\t0')
-        sys.exit(0)
+    sys.exit(0)  # Status modeled in output, not exit code
 
 
 def cmd_paths(args):
@@ -750,12 +749,11 @@ def cmd_paths(args):
             print(f'  {notation} -> {path}')
 
         print('\nstatus\texisting\tmissing')
-        print(f'error\t{len(existing)}\t{len(missing)}')
-        sys.exit(1)
+        print(f'missing\t{len(existing)}\t{len(missing)}')
     else:
         print('\nstatus\texisting\tmissing')
         print(f'ok\t{len(existing)}\t0')
-        sys.exit(0)
+    sys.exit(0)  # Status modeled in output, not exit code
 
 
 def cmd_cleanup(args):
