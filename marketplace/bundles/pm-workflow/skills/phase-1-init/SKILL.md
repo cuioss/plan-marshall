@@ -32,7 +32,7 @@ Activate when:
 | manage-lessons | `plan-marshall:manage-lessons` |
 | manage-log | `plan-marshall:manage-logging:manage-log` |
 | manage-config | `pm-workflow:manage-config` |
-| manage-lifecycle | `pm-workflow:manage-lifecycle` |
+| manage-lifecycle | `pm-workflow:plan-manage:manage-lifecycle` |
 
 ---
 
@@ -215,7 +215,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 Create status.toon with phases (5-phase model):
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-lifecycle:manage-lifecycle create \
+python3 .plan/execute-script.py pm-workflow:plan-manage:manage-lifecycle create \
   --plan-id {plan_id} \
   --title "{title_from_task_md}" \
   --phases 1-init,2-outline,3-plan,4-execute,5-finalize
@@ -254,7 +254,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 The phase transitions from init → outline after configuration completes:
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-lifecycle:manage-lifecycle transition \
+python3 .plan/execute-script.py pm-workflow:plan-manage:manage-lifecycle transition \
   --plan-id {plan_id} \
   --completed 1-init
 ```
@@ -347,7 +347,7 @@ This skill is called by `pm-workflow:phase-1-init-agent`. The agent completes th
 | `plan-marshall:manage-logging:manage-log` | Log creation |
 | `plan-marshall:manage-lessons` | Read lesson (if source=lesson) |
 | `pm-workflow:manage-config` | Create config.toon |
-| `pm-workflow:manage-lifecycle` | Create status.toon, phase transitions |
+| `pm-workflow:plan-manage:manage-lifecycle` | Create status.toon, phase transitions |
 
 ### Related Skills
 

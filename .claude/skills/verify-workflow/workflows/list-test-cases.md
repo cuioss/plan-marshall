@@ -6,10 +6,10 @@ List available test cases with status.
 
 Find all test case directories:
 ```
-Glob: workflow-verification/test-cases/*/
+Glob: workflow-verification/test-cases/*/test-definition.toon
 ```
 
-Extract test IDs from the matched paths (directory names).
+Extract test IDs from the parent directory of each matched path.
 
 ## Step 2: Get Status for Each
 
@@ -27,7 +27,7 @@ Read: workflow-verification/test-cases/{test_id}/golden/verified-result.md
 
 **Check for recent results:**
 ```
-Glob: .plan/temp/workflow-verification/{test_id}-*/
+Glob: .plan/temp/workflow-verification/{test_id}-*/assessment-results.toon
 ```
 - If matches found: Extract timestamp from most recent (Glob returns sorted by mtime)
 - If no matches: `last_run = "Never"`

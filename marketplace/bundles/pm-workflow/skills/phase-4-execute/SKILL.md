@@ -22,7 +22,7 @@ allowed-tools: Read, Write, Edit, Bash, Skill, Task, AskUserQuestion
 | Script | Purpose |
 |--------|---------|
 | `pm-workflow:manage-config:manage-config` | Config field access |
-| `pm-workflow:manage-lifecycle:manage-lifecycle` | Phase routing and transitions |
+| `pm-workflow:plan-manage:manage-lifecycle` | Phase routing and transitions |
 | `plan-marshall:manage-logging:manage-log` | Work log entries |
 | `pm-workflow:manage-tasks:manage-tasks` | Task and step management |
 | `pm-workflow:manage-references:manage-references` | Reference file CRUD |
@@ -66,7 +66,7 @@ These fields are written during init based on domain configuration.
 Get current phase, skill routing, and progress in a single call:
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-lifecycle:manage-lifecycle get-routing-context \
+python3 .plan/execute-script.py pm-workflow:plan-manage:manage-lifecycle get-routing-context \
   --plan-id {plan_id}
 ```
 
@@ -181,7 +181,7 @@ Execute continuously without user prompts except:
 When transitioning from execute phase to finalize:
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-lifecycle:manage-lifecycle transition \
+python3 .plan/execute-script.py pm-workflow:plan-manage:manage-lifecycle transition \
   --plan-id {plan_id} \
   --completed 4-execute
 ```
@@ -225,7 +225,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 | Skill | Command | Purpose |
 |-------|---------|---------|
-| `pm-workflow:manage-lifecycle` | `get-routing-context` | Phase, skill routing, progress |
+| `pm-workflow:plan-manage:manage-lifecycle` | `get-routing-context` | Phase, skill routing, progress |
 | `pm-workflow:manage-config` | `get-multi` | Finalize config fields |
 | `pm-workflow:manage-tasks` | `next --include-context` | Task with goal context |
 | `plan-marshall:manage-logging:manage-log` | `work` | Work log entries |

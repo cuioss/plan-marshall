@@ -26,7 +26,7 @@ Activate when:
 |--------|---------|
 | `pm-workflow:manage-config:manage-config` | Config field access |
 | `pm-workflow:manage-references:manage-references` | Reference file CRUD |
-| `pm-workflow:manage-lifecycle:manage-lifecycle` | Phase transitions |
+| `pm-workflow:plan-manage:manage-lifecycle` | Phase transitions |
 | `plan-marshall:manage-logging:manage-log` | Work log entries |
 | `pm-workflow:workflow-integration-git:git-workflow` | Commit, push, PR creation |
 
@@ -147,7 +147,7 @@ This handles CI monitoring and review addressing.
 Transition to complete:
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-lifecycle:manage-lifecycle transition \
+python3 .plan/execute-script.py pm-workflow:plan-manage:manage-lifecycle transition \
   --plan-id {plan_id} \
   --completed 5-finalize
 ```
@@ -315,7 +315,7 @@ Contains: How lessons inform triage decisions, lesson query before decisions, re
 |--------|---------|---------|
 | `pm-workflow:manage-config:manage-config` | `get-multi` | Read finalize config fields |
 | `pm-workflow:manage-references:manage-references` | `get-context` | Read branch, issue info |
-| `pm-workflow:manage-lifecycle:manage-lifecycle` | `transition` | Phase transition |
+| `pm-workflow:plan-manage:manage-lifecycle` | `transition` | Phase transition |
 | `plan-marshall:manage-logging:manage-log` | `work` | Log completion |
 | `pm-workflow:workflow-integration-git:git-workflow` | `format-commit`, `analyze-diff` | Commit message generation |
 
@@ -328,7 +328,7 @@ Contains: How lessons inform triage decisions, lesson query before decisions, re
 This skill is invoked when plan is in `5-finalize` phase:
 
 ```
-pm-workflow:manage-lifecycle route --phase 5-finalize → pm-workflow:phase-5-finalize
+pm-workflow:plan-manage:manage-lifecycle route --phase 5-finalize → pm-workflow:phase-5-finalize
 ```
 
 ### Command Integration

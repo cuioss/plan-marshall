@@ -59,7 +59,7 @@ Route based on action parameter:
 Display all plans with numbered selection.
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-lifecycle:manage-lifecycle list
+python3 .plan/execute-script.py pm-workflow:plan-manage:manage-lifecycle list
 ```
 
 Shows:
@@ -211,7 +211,7 @@ When a lesson is selected:
 
 ## Script API Reference
 
-Script: `pm-workflow:manage-lifecycle:manage-lifecycle`
+Script: `pm-workflow:plan-manage:manage-lifecycle`
 
 | Command | Parameters | Description |
 |---------|------------|-------------|
