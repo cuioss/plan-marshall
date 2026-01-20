@@ -24,7 +24,7 @@ This extension is relevant when:
 ## Assessment Protocol
 
 **Called by**: phase-2-outline Step 3
-**Purpose**: Determine which workflow applies (simple vs complex)
+**Purpose**: Determine which artifacts and bundles are affected, then select workflow path
 
 ### Load Reference Data
 
@@ -32,14 +32,144 @@ This extension is relevant when:
 Read standards/reference-tables.md
 ```
 
-### Workflow Selection Criteria
+### Step 1: Artifact Type Analysis
 
-| Indicator | Result | Rationale |
-|-----------|--------|-----------|
-| 1-3 components, single bundle | **simple** | Isolated changes, direct path |
-| "rename", "migrate", "refactor" keywords | **complex** | Cross-cutting, needs inventory |
-| Cross-bundle mentions | **complex** | Multiple bundles affected |
-| Shared pattern changes | **complex** | Requires file enumeration |
+For EACH artifact type, derive from the request whether it is affected. No assumptions - all must be explicit.
+
+#### 1.1 Plugin Manifest (plugin.json)
+
+```
+ANALYZE request for plugin.json impact:
+  - Are components being ADDED? (new skill, command, agent)
+  - Are components being REMOVED?
+  - Are components being RENAMED?
+
+LOG: [DECISION] plugin.json: {AFFECTED|NOT_AFFECTED}
+  reasoning: {explicit derivation from request}
+  evidence: "{request fragment}" or "No mention of add/remove/rename"
+```
+
+#### 1.2 Commands
+
+```
+ANALYZE request for Commands impact:
+  - Are commands EXPLICITLY mentioned in request?
+  - Are commands IMPLICITLY affected? (derive how)
+
+LOG: [DECISION] Commands: {AFFECTED|NOT_AFFECTED}
+  explicit_mention: {yes|no} - "{quote}" or "none"
+  implicit_impact: {yes|no} - "{derivation}" or "none"
+  reasoning: {full reasoning chain}
+```
+
+#### 1.3 Skills
+
+```
+ANALYZE request for Skills impact:
+  - Are skills EXPLICITLY mentioned in request?
+  - Are skills IMPLICITLY affected? (derive how)
+
+LOG: [DECISION] Skills: {AFFECTED|NOT_AFFECTED}
+  explicit_mention: {yes|no} - "{quote}" or "none"
+  implicit_impact: {yes|no} - "{derivation}" or "none"
+  reasoning: {full reasoning chain}
+```
+
+#### 1.4 Agents
+
+```
+ANALYZE request for Agents impact:
+  - Are agents EXPLICITLY mentioned in request?
+  - Are agents IMPLICITLY affected? (derive how)
+
+LOG: [DECISION] Agents: {AFFECTED|NOT_AFFECTED}
+  explicit_mention: {yes|no} - "{quote}" or "none"
+  implicit_impact: {yes|no} - "{derivation}" or "none"
+  reasoning: {full reasoning chain}
+```
+
+#### 1.5 Scripts
+
+```
+ANALYZE request for Scripts impact:
+  - Are scripts EXPLICITLY mentioned in request?
+  - Are scripts IMPLICITLY affected? (derive how)
+
+LOG: [DECISION] Scripts: {AFFECTED|NOT_AFFECTED}
+  explicit_mention: {yes|no} - "{quote}" or "none"
+  implicit_impact: {yes|no} - "{derivation}" or "none"
+  reasoning: {full reasoning chain}
+```
+
+#### 1.6 Determine Affected Artifacts
+
+```
+affected_artifacts = [types where decision = AFFECTED]
+
+LOG: [DECISION] Affected artifacts: {affected_artifacts}
+  count: {N}
+```
+
+### Step 2: Bundle/Module Selection
+
+Determine which bundles are potentially affected. Bundles are persisted in architecture as modules.
+
+#### 2.1 Explicit Bundle Mentions
+
+```
+ANALYZE request for bundle/module references:
+  - Direct bundle names: "pm-dev-java", "pm-workflow", "plan-marshall"
+  - Module paths: "marketplace/bundles/{bundle}"
+
+LOG: [DECISION] Explicit bundles: {list or "none"}
+  evidence: "{quotes}" or "No bundle names mentioned"
+```
+
+#### 2.2 Implicit Bundle Derivation (via Components)
+
+```
+ANALYZE request for component references that imply bundles:
+  - Specific component names imply their containing bundle
+  - Component patterns may span multiple bundles
+
+LOG: [DECISION] Implicit bundles (via components): {list or "none"}
+  derivation: "{component} → {bundle}" for each
+```
+
+#### 2.3 Determine Bundle Scope
+
+```
+explicit_bundles = [from 2.1]
+implicit_bundles = [from 2.2]
+all_bundles = union(explicit_bundles, implicit_bundles)
+
+IF all_bundles is empty AND affected_artifacts is not empty:
+  bundle_scope = "all"
+ELSE:
+  bundle_scope = all_bundles
+
+LOG: [DECISION] Bundle scope: {bundle_scope}
+  explicit: {explicit_bundles}
+  implicit: {implicit_bundles}
+```
+
+### Step 3: Path Selection
+
+Based on Steps 1-2 results:
+
+```
+IF affected_artifacts is empty:
+  ERROR: "No artifacts affected - clarify request"
+ELSE IF len(bundle_scope) == 1 AND len(affected_artifacts) <= 2:
+  path = "single"
+ELSE:
+  path = "multi"
+
+LOG: [DECISION] Workflow path: {path}
+  affected_artifacts: {affected_artifacts}
+  affected_bundles: {bundle_scope}
+  reasoning: {derivation}
+```
 
 ### Conditional Standards
 
@@ -47,35 +177,29 @@ Read standards/reference-tables.md
 |-----------|---------------------|
 | Deliverable involves Python scripts | `standards/script-verification.md` |
 
-### Decision Logging
-
-After assessment determines workflow path, log the decision:
-
-**Path Selection:**
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[DECISION] (pm-plugin-development:ext-outline-plugin) {Path} selected: {rationale}"
-```
-
-**Scope (REQUIRED for complex workflow):**
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[DECISION] (pm-plugin-development:ext-outline-plugin) Scope: resource-types={types}, bundles={all|filtered}
-  detail: All listed resource-types will be analyzed individually per checklist rules"
-```
-
-**Conditional Standards Triggered:**
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   work {plan_id} INFO "[DECISION] (pm-plugin-development:ext-outline-plugin) Conditional standards: {list or 'none'}"
 ```
 
+### Key Principle: No Preconditions
+
+**PROHIBITED patterns** (violations fail the assessment):
+- "{type} not affected" without explicit reasoning → WRONG (derive from request)
+- "Commands are procedural" → WRONG (analyze each type per Steps 1.1-1.5)
+- "Only analyzing {type}" → WRONG if other types in affected_artifacts
+- Skipping Step 1 or Step 2 → WRONG (all steps are mandatory)
+
 ---
 
 ## Simple Workflow
 
-**Called by**: phase-2-outline Step 4 (when assessment = simple)
+**Called by**: phase-2-outline Step 4 (when path = single)
 **Purpose**: Create deliverables for isolated changes
+
+**Inputs from Assessment**:
+- `affected_artifacts`: From Step 1.6 - constrains which component types to target
+- `bundle_scope`: From Step 2.3 - constrains which bundles to target
 
 ### Load Workflow
 
@@ -112,14 +236,20 @@ Read standards/path-single-workflow.md
 
 ## Complex Workflow
 
-**Called by**: phase-2-outline Step 4 (when assessment = complex)
+**Called by**: phase-2-outline Step 4 (when path = multi)
 **Purpose**: Create deliverables for cross-cutting changes with file enumeration
+
+**Inputs from Assessment**:
+- `affected_artifacts`: From Step 1.6 - constrains which component types to scan
+- `bundle_scope`: From Step 2.3 - constrains which bundles to scan
 
 ### Load Workflow
 
 ```
 Read standards/path-multi-workflow.md
 ```
+
+**CRITICAL**: The workflow receives `affected_artifacts` and `bundle_scope` from Steps 1-2. It MUST use these values to constrain the inventory scan and component analysis - do NOT re-derive scope.
 
 ### Domain-Specific Patterns
 
@@ -164,8 +294,8 @@ Returns TOON with `output_file` path to complete inventory.
 
 | Change Type | Discovery Command |
 |-------------|-------------------|
-| Script notation rename | `grep -r "old:notation" marketplace/bundles/` |
-| Output format change | `grep -r '```json' marketplace/bundles/*/agents/` |
+| Script notation rename | `grep -r "{old_notation}" marketplace/bundles/` |
+| Content pattern search | `grep -r '{pattern_from_request}' marketplace/bundles/` |
 | Skill reference update | `grep -r "Skill: {skill}" marketplace/bundles/` |
 | Command usage | `grep -r "/{command}" marketplace/bundles/` |
 

@@ -2,13 +2,31 @@
 
 Workflow for isolated changes that affect 1-3 components in a single bundle with no cross-references or dependencies.
 
+## Inputs from Initial Analysis
+
+The following are provided by Assessment Steps 1-3 and MUST be used:
+
+| Input | Source | Description |
+|-------|--------|-------------|
+| `affected_artifacts` | Step 1.6 | Component types to target (e.g., [Commands]) |
+| `bundle_scope` | Step 2.3 | Bundles to target (e.g., [pm-dev-java]) |
+
+**CRITICAL**: Do NOT re-derive scope. Use the values from Steps 1-2 directly.
+
+```
+LOG: [STATUS] Using scope from initial analysis:
+  affected_artifacts: {affected_artifacts}
+  bundle_scope: {bundle_scope}
+```
+
 ## Workflow Steps
 
-For isolated changes, identify the target components directly:
+For isolated changes, use the provided scope:
 
-1. **Identify target bundle and component type**
-2. **Read existing component** (if modify/refactor scope)
-3. **Build deliverables section** for each component to create/modify
+1. **Use provided artifact types** - Only create deliverables for types in `affected_artifacts`
+2. **Use provided bundle scope** - Only target bundles in `bundle_scope`
+3. **Read existing component** (if modify/refactor scope)
+4. **Build deliverables section** for each component to create/modify
 
 ## Decision Logging
 
