@@ -8,6 +8,7 @@ Subcommands:
     ci status       Check pipeline status for a MR
     ci wait         Wait for pipeline to complete
     issue create    Create an issue
+    issue view      View issue details
 
 Usage:
     python3 gitlab.py pr create --title "Title" --body "Body" [--base main] [--draft]
@@ -16,6 +17,7 @@ Usage:
     python3 gitlab.py ci status --pr-number 123
     python3 gitlab.py ci wait --pr-number 123 [--timeout 300] [--interval 30]
     python3 gitlab.py issue create --title "Title" --body "Body" [--labels "bug,priority::high"]
+    python3 gitlab.py issue view --issue 123
 
 Note: Uses GitHub terminology (pr, issue) for API consistency.
       Internally maps to GitLab equivalents (mr, issue).
@@ -426,6 +428,63 @@ def cmd_issue_create(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_issue_view(args: argparse.Namespace) -> int:
+    """Handle 'issue view' subcommand."""
+    # Check auth
+    is_auth, err = check_auth()
+    if not is_auth:
+        return output_error('issue_view', err)
+
+    # Get issue details
+    returncode, stdout, stderr = run_glab(['issue', 'view', str(args.issue), '--output', 'json'])
+    if returncode != 0:
+        return output_error('issue_view', f'Failed to view issue {args.issue}', stderr.strip())
+
+    # Parse JSON
+    try:
+        data = json.loads(stdout)
+    except json.JSONDecodeError:
+        return output_error('issue_view', 'Failed to parse glab output', stdout[:100])
+
+    # Map GitLab state to unified state
+    state = data.get('state', 'unknown')
+    if state == 'opened':
+        state = 'open'
+
+    # Output TOON
+    print('status: success')
+    print('operation: issue_view')
+    print(f'issue_number: {data.get("iid", "unknown")}')
+    print(f'issue_url: {data.get("web_url", "")}')
+    print(f'title: {data.get("title", "")}')
+    print(f'body: {data.get("description", "")}')  # GitLab uses 'description'
+    print(f'author: {data.get("author", {}).get("username", "unknown")}')
+    print(f'state: {state}')
+    print(f'created_at: {data.get("created_at", "")}')
+    print(f'updated_at: {data.get("updated_at", "")}')
+
+    # Labels (GitLab: direct string array)
+    labels = data.get('labels', [])
+    if labels:
+        print(f'\nlabels[{len(labels)}]:')
+        for label in labels:
+            print(f'- {label}')
+
+    # Assignees
+    assignees = data.get('assignees', [])
+    if assignees:
+        print(f'\nassignees[{len(assignees)}]:')
+        for assignee in assignees:
+            print(f'- {assignee.get("username", "")}')
+
+    # Milestone
+    milestone = data.get('milestone')
+    if milestone:
+        print(f'\nmilestone: {milestone.get("title", "")}')
+
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description='GitLab operations via glab CLI')
     subparsers = parser.add_subparsers(dest='command', required=True)
@@ -474,6 +533,10 @@ def main() -> int:
     issue_create_parser.add_argument('--body', required=True, help='Issue description')
     issue_create_parser.add_argument('--labels', help='Comma-separated labels')
 
+    # issue view
+    issue_view_parser = issue_subparsers.add_parser('view', help='View issue details')
+    issue_view_parser.add_argument('--issue', required=True, help='Issue number (iid) or URL')
+
     args = parser.parse_args()
 
     if args.command == 'pr':
@@ -491,6 +554,8 @@ def main() -> int:
     elif args.command == 'issue':
         if args.issue_command == 'create':
             return cmd_issue_create(args)
+        elif args.issue_command == 'view':
+            return cmd_issue_view(args)
 
     parser.print_help()
     return 1

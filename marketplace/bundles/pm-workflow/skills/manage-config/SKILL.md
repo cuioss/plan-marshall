@@ -183,14 +183,6 @@ branch_strategy: feature
 
 ---
 
-## Scripts
-
-| Script | Purpose | Usage |
-|--------|---------|-------|
-| `pm-workflow:manage-config:manage-config` | Per-plan config.toon operations | `python3 .plan/execute-script.py pm-workflow:manage-config:manage-config {subcommand} --help` |
-
----
-
 ## Validation Rules
 
 | Field | Valid Values |

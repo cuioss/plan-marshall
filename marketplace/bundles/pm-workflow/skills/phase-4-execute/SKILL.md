@@ -17,18 +17,6 @@ allowed-tools: Read, Write, Edit, Bash, Skill, Task, AskUserQuestion
 
 ---
 
-## Scripts
-
-| Script | Purpose |
-|--------|---------|
-| `pm-workflow:manage-config:manage-config` | Config field access |
-| `pm-workflow:plan-manage:manage-lifecycle` | Phase routing and transitions |
-| `plan-marshall:manage-logging:manage-log` | Work log entries |
-| `pm-workflow:manage-tasks:manage-tasks` | Task and step management |
-| `pm-workflow:manage-references:manage-references` | Reference file CRUD |
-
----
-
 ## Standards (Load On-Demand)
 
 ### Workflow
@@ -220,17 +208,6 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 ### Command Integration
 - **/plan-execute** - Primary command invoking this skill
-
-### Skills Used
-
-| Skill | Command | Purpose |
-|-------|---------|---------|
-| `pm-workflow:plan-manage:manage-lifecycle` | `get-routing-context` | Phase, skill routing, progress |
-| `pm-workflow:manage-config` | `get-multi` | Finalize config fields |
-| `pm-workflow:manage-tasks` | `next --include-context` | Task with goal context |
-| `plan-marshall:manage-logging:manage-log` | `work` | Work log entries |
-| `pm-workflow:manage-references` | - | Reference file CRUD |
-| `pm-workflow:workflow-integration-git` | - | Commit operations |
 
 ### Related Skills
 - **plan-init** - Creates plan structure (request.md, config, status)

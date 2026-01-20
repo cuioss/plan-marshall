@@ -177,6 +177,51 @@ gh issue create --title "Title" --body "Body" --json number,url
 }
 ```
 
+### issue view
+
+View issue details using `gh issue view`.
+
+**CLI Command**:
+```bash
+gh issue view 123 --json number,url,title,body,author,state,createdAt,updatedAt,labels,assignees,milestone
+```
+
+**Response**:
+```json
+{
+  "number": 123,
+  "url": "https://github.com/org/repo/issues/123",
+  "title": "Bug in authentication",
+  "body": "Description...",
+  "author": {"login": "username"},
+  "state": "OPEN",
+  "createdAt": "2025-01-15T10:30:00Z",
+  "updatedAt": "2025-01-18T14:20:00Z",
+  "labels": [{"name": "bug"}, {"name": "priority:high"}],
+  "assignees": [{"login": "alice"}],
+  "milestone": {"title": "v2.0"}
+}
+```
+
+**Field Mapping**:
+| TOON Field | JSON Path |
+|------------|-----------|
+| issue_number | `.number` |
+| issue_url | `.url` |
+| title | `.title` |
+| body | `.body` |
+| author | `.author.login` |
+| state | `.state` (lowercase) |
+| labels[] | `.labels[].name` |
+| assignees[] | `.assignees[].login` |
+| milestone | `.milestone.title` (or null) |
+
+**State Values**:
+| State | Meaning |
+|-------|---------|
+| OPEN | Issue is open |
+| CLOSED | Issue is closed |
+
 ---
 
 ## Error Handling
@@ -250,3 +295,4 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github <comma
 | `ci status` | Check CI status |
 | `ci wait` | Wait for CI completion |
 | `issue create` | Create issue |
+| `issue view` | View issue details |

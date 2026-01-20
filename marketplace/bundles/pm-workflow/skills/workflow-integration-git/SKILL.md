@@ -120,13 +120,12 @@ git push
 
 If `create-pr` parameter:
 ```bash
-gh pr create --title "{title}" --body "$(cat <<'EOF'
-## Summary
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr create \
+  --title "{title}" \
+  --body "## Summary
 {summary}
 
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
-EOF
-)"
+🤖 Generated with [Claude Code](https://claude.com/claude-code)"
 ```
 
 ### Output

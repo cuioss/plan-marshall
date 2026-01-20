@@ -123,6 +123,9 @@ def main():
     ci_sub.add_parser('get-provider', help='Get CI provider')
     ci_sub.add_parser('get-tools', help='Get authenticated tools')
 
+    ci_get_cmd = ci_sub.add_parser('get-command', help='Get CI command by name')
+    ci_get_cmd.add_argument('--name', required=True, help='Command name (e.g., issue-view, pr-create)')
+
     ci_set_prov = ci_sub.add_parser('set-provider', help='Set CI provider')
     ci_set_prov.add_argument('--provider', required=True, help='Provider name (github, gitlab, unknown)')
     ci_set_prov.add_argument('--repo-url', required=True, help='Repository URL')

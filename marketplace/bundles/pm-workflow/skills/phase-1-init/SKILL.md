@@ -22,20 +22,6 @@ Activate when:
 
 ---
 
-## Scripts
-
-| Script | Notation |
-|--------|----------|
-| manage-plan-document | `pm-workflow:manage-plan-documents` |
-| manage-files | `pm-workflow:manage-files` |
-| manage-references | `pm-workflow:manage-references` |
-| manage-lessons | `plan-marshall:manage-lessons` |
-| manage-log | `plan-marshall:manage-logging:manage-log` |
-| manage-config | `pm-workflow:manage-config` |
-| manage-lifecycle | `pm-workflow:plan-manage:manage-lifecycle` |
-
----
-
 ## Operation: create
 
 **Input** (exactly ONE required):
@@ -122,10 +108,11 @@ Extract: title, category, component, detail, related
 **From Issue**:
 
 ```bash
-gh issue view {issue} --json title,body,labels,milestone,assignees
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github issue view \
+  --issue {issue}
 ```
 
-Extract: title, body, labels, milestone, assignees
+Parse TOON output to extract: title, body, labels, milestone, assignees
 
 ### Step 5: Write request.md
 
@@ -336,18 +323,6 @@ This skill is called by `pm-workflow:phase-1-init-agent`. The agent completes th
 ### Command Integration
 
 - **/plan-manage action=init** - Orchestrates the init agent
-
-### Scripts Used
-
-| Script | Purpose |
-|--------|---------|
-| `pm-workflow:manage-plan-documents` | Write request.md (typed document) |
-| `pm-workflow:manage-files` | Create/reference plan directory |
-| `pm-workflow:manage-references` | Initialize references |
-| `plan-marshall:manage-logging:manage-log` | Log creation |
-| `plan-marshall:manage-lessons` | Read lesson (if source=lesson) |
-| `pm-workflow:manage-config` | Create config.toon |
-| `pm-workflow:plan-manage:manage-lifecycle` | Create status.toon, phase transitions |
 
 ### Related Skills
 

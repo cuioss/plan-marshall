@@ -20,18 +20,6 @@ Activate when:
 
 ---
 
-## Scripts
-
-| Script | Purpose |
-|--------|---------|
-| `pm-workflow:manage-config:manage-config` | Config field access |
-| `pm-workflow:manage-references:manage-references` | Reference file CRUD |
-| `pm-workflow:plan-manage:manage-lifecycle` | Phase transitions |
-| `plan-marshall:manage-logging:manage-log` | Work log entries |
-| `pm-workflow:workflow-integration-git:git-workflow` | Commit, push, PR creation |
-
----
-
 ## Configuration Source
 
 All finalize configuration is read from config.toon (written during init phase):
@@ -306,18 +294,6 @@ Contains: How lessons inform triage decisions, lesson query before decisions, re
 | Template | Purpose |
 |----------|---------|
 | `templates/pr-template.md` | PR body format |
-
----
-
-## Scripts Used
-
-| Script | Command | Purpose |
-|--------|---------|---------|
-| `pm-workflow:manage-config:manage-config` | `get-multi` | Read finalize config fields |
-| `pm-workflow:manage-references:manage-references` | `get-context` | Read branch, issue info |
-| `pm-workflow:plan-manage:manage-lifecycle` | `transition` | Phase transition |
-| `plan-marshall:manage-logging:manage-log` | `work` | Log completion |
-| `pm-workflow:workflow-integration-git:git-workflow` | `format-commit`, `analyze-diff` | Commit message generation |
 
 ---
 

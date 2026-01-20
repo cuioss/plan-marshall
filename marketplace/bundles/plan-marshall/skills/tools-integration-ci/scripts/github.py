@@ -8,6 +8,7 @@ Subcommands:
     ci status       Check CI status for a PR
     ci wait         Wait for CI to complete
     issue create    Create an issue
+    issue view      View issue details
 
 Usage:
     python3 github.py pr create --title "Title" --body "Body" [--base main] [--draft]
@@ -16,6 +17,7 @@ Usage:
     python3 github.py ci status --pr-number 123
     python3 github.py ci wait --pr-number 123 [--timeout 300] [--interval 30]
     python3 github.py issue create --title "Title" --body "Body" [--labels "bug,priority:high"]
+    python3 github.py issue view --issue 123
 
 Output: TOON format
 """
@@ -420,6 +422,66 @@ def cmd_issue_create(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_issue_view(args: argparse.Namespace) -> int:
+    """Handle 'issue view' subcommand."""
+    # Check auth
+    is_auth, err = check_auth()
+    if not is_auth:
+        return output_error('issue_view', err)
+
+    # Get issue details - request all relevant fields
+    gh_args = [
+        'issue',
+        'view',
+        str(args.issue),
+        '--json',
+        'number,url,title,body,author,state,createdAt,updatedAt,labels,assignees,milestone',
+    ]
+
+    returncode, stdout, stderr = run_gh(gh_args)
+    if returncode != 0:
+        return output_error('issue_view', f'Failed to view issue {args.issue}', stderr.strip())
+
+    # Parse JSON
+    try:
+        data = json.loads(stdout)
+    except json.JSONDecodeError:
+        return output_error('issue_view', 'Failed to parse gh output', stdout[:100])
+
+    # Output TOON
+    print('status: success')
+    print('operation: issue_view')
+    print(f'issue_number: {data.get("number", "unknown")}')
+    print(f'issue_url: {data.get("url", "")}')
+    print(f'title: {data.get("title", "")}')
+    print(f'body: {data.get("body", "")}')
+    print(f'author: {data.get("author", {}).get("login", "unknown")}')
+    print(f'state: {data.get("state", "unknown").lower()}')
+    print(f'created_at: {data.get("createdAt", "")}')
+    print(f'updated_at: {data.get("updatedAt", "")}')
+
+    # Labels
+    labels = data.get('labels', [])
+    if labels:
+        print(f'\nlabels[{len(labels)}]:')
+        for label in labels:
+            print(f'- {label.get("name", "")}')
+
+    # Assignees
+    assignees = data.get('assignees', [])
+    if assignees:
+        print(f'\nassignees[{len(assignees)}]:')
+        for assignee in assignees:
+            print(f'- {assignee.get("login", "")}')
+
+    # Milestone
+    milestone = data.get('milestone')
+    if milestone:
+        print(f'\nmilestone: {milestone.get("title", "")}')
+
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description='GitHub operations via gh CLI')
     subparsers = parser.add_subparsers(dest='command', required=True)
@@ -468,6 +530,10 @@ def main() -> int:
     issue_create_parser.add_argument('--body', required=True, help='Issue description')
     issue_create_parser.add_argument('--labels', help='Comma-separated labels')
 
+    # issue view
+    issue_view_parser = issue_subparsers.add_parser('view', help='View issue details')
+    issue_view_parser.add_argument('--issue', required=True, help='Issue number or URL')
+
     args = parser.parse_args()
 
     if args.command == 'pr':
@@ -485,6 +551,8 @@ def main() -> int:
     elif args.command == 'issue':
         if args.issue_command == 'create':
             return cmd_issue_create(args)
+        elif args.issue_command == 'view':
+            return cmd_issue_view(args)
 
     parser.print_help()
     return 1

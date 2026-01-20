@@ -125,6 +125,45 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-m
 
 ---
 
+## Workflow: CI Command Lookup
+
+**Pattern**: Lookup and Execute
+
+Get a CI command by name, then execute with arguments.
+
+### Get CI Command
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+  ci get-command --name issue-view
+```
+
+**Output**:
+```toon
+status: success
+name: issue-view
+command: python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github issue view
+```
+
+### Execute the Command
+
+Parse the `command` field from output, then execute with arguments:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github issue view --issue 123
+```
+
+**Available CI commands** (registered via `ci_health persist`):
+- `pr-create` - Create pull request
+- `pr-reviews` - Get PR reviews
+- `pr-comments` - Get PR comments
+- `ci-status` - Check CI status
+- `ci-wait` - Wait for CI completion
+- `issue-create` - Create issue
+- `issue-view` - View issue details
+
+---
+
 ## API Reference
 
 ### Noun: skill-domains
@@ -196,6 +235,7 @@ Returns null (not error) if extension doesn't exist for the domain.
 | `get` | (none) | Get full CI config |
 | `get-provider` | (none) | Get CI provider and repo URL |
 | `get-tools` | (none) | Get authenticated tools list |
+| `get-command` | `--name` | Get single CI command by name (ready to execute) |
 | `set-provider` | `--provider --repo-url` | Set CI provider |
 | `set-tools` | `--tools` | Set authenticated tools (comma-separated) |
 

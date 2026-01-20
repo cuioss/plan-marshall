@@ -199,14 +199,6 @@ message: Plan directory does not exist: /path/to/.plan/plans/my-feature
 
 ---
 
-## Scripts
-
-| Script | Purpose | Usage |
-|--------|---------|-------|
-| `pm-workflow:manage-files:manage-files` | All file operations via subcommands | `python3 .plan/execute-script.py pm-workflow:manage-files:manage-files {subcommand} --help` |
-
----
-
 ## Key Design Principles
 
 1. **plan_id only** - Never pass full paths, script resolves base via `base_path()`

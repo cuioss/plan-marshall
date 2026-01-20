@@ -49,7 +49,7 @@ If pending found: Prompt "[R]esume / [S]tart fresh / [A]bort"
 
 ### Step 3: Execute Mode-Specific Workflow
 
-**FULL**: Load issue (`gh issue view`), Review requirements, Plan implementation, Execute tasks, save progress to memory.
+**FULL**: Load issue (via `tools-integration-ci:issue-view`), Review requirements, Plan implementation, Execute tasks, save progress to memory.
 
 **PLAN**: Plan implementation, Execute tasks, save progress to memory.
 

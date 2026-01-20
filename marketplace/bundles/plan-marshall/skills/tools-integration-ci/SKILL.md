@@ -305,6 +305,43 @@ issue_url: https://github.com/org/repo/issues/789
 
 ---
 
+## Workflow: View Issue
+
+**Pattern**: Config-Driven Execution
+
+View issue details.
+
+### Step 1: Resolve and Execute
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github issue view \
+    --issue 123
+```
+
+### Step 2: Process Result
+
+```toon
+status: success
+operation: issue_view
+issue_number: 123
+issue_url: https://github.com/org/repo/issues/123
+title: Bug in authentication flow
+body: When users try to login...
+author: username
+state: open
+created_at: 2025-01-15T10:30:00Z
+updated_at: 2025-01-18T14:20:00Z
+
+labels[2]:
+- bug
+- priority:high
+
+assignees[1]:
+- alice
+```
+
+---
+
 ## Storage Pattern
 
 **Split storage** (shared vs local):

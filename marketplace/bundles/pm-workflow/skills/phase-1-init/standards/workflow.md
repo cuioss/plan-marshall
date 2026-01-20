@@ -67,7 +67,7 @@ lesson_id: "2025-12-02-001"
 issue: "https://github.com/org/repo/issues/123"
 ```
 
-- Fetched via `gh issue view`
+- Fetched via `tools-integration-ci:issue-view` operation
 - Extracts: title, body, labels, milestone, assignees
 - Context section populated with issue metadata
 

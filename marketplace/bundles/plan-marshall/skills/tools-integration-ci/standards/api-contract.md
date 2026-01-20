@@ -122,13 +122,14 @@ ci_config{key,value}:
 provider	github
 repo_url	https://github.com/org/repo
 
-ci_commands[6]{name,command}:
+ci_commands[7]{name,command}:
 pr-create	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr create
 pr-reviews	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr reviews
 pr-comments	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr comments
 ci-status	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github ci status
 ci-wait	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github ci wait
 issue-create	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github issue create
+issue-view	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github issue view
 ```
 
 ---
@@ -357,6 +358,56 @@ issue_url: https://github.com/org/repo/issues/789
 
 ---
 
+### issue view
+
+View issue details.
+
+**Command**:
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github issue view \
+    --issue 123
+```
+
+**Arguments**:
+| Argument | Required | Description |
+|----------|----------|-------------|
+| `--issue` | Yes | Issue number or URL |
+
+**Success Output**:
+```toon
+status: success
+operation: issue_view
+issue_number: 123
+issue_url: https://github.com/org/repo/issues/123
+title: Bug in authentication flow
+body: When users try to login...
+author: username
+state: open
+created_at: 2025-01-15T10:30:00Z
+updated_at: 2025-01-18T14:20:00Z
+
+labels[2]:
+- bug
+- priority:high
+
+assignees[1]:
+- alice
+```
+
+**Field Mapping (GitHub vs GitLab)**:
+| Field | GitHub | GitLab |
+|-------|--------|--------|
+| `issue_number` | `.number` | `.iid` |
+| `issue_url` | `.url` | `.web_url` |
+| `body` | `.body` | `.description` |
+| `author` | `.author.login` | `.author.username` |
+| `state` | `.state` (lowercase) | `.state` ("opened"→"open") |
+| `labels[]` | `.labels[].name` | `.labels[]` (direct strings) |
+| `assignees[]` | `.assignees[].login` | `.assignees[].username` |
+| `milestone` | `.milestone.title` | `.milestone.title` |
+
+---
+
 ## Exit Codes
 
 | Code | Meaning | Output Stream |
@@ -405,7 +456,8 @@ After `persist` command, marshal.json contains:
       "pr-comments": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr comments",
       "ci-status": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github ci status",
       "ci-wait": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github ci wait",
-      "issue-create": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github issue create"
+      "issue-create": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github issue create",
+      "issue-view": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github issue view"
     }
   }
 }

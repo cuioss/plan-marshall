@@ -83,8 +83,9 @@ push: true
 **Trigger**: "create PR", "pull request"
 
 ```bash
-gh pr create --title "{task-title}" --body "$(cat <<'EOF'
-## Summary
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr create \
+  --title "{task-title}" \
+  --body "## Summary
 {description}
 
 **Related Issue**: {issue-link}
@@ -92,9 +93,7 @@ gh pr create --title "{task-title}" --body "$(cat <<'EOF'
 ## Changes
 {key changes}
 
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
-EOF
-)"
+🤖 Generated with [Claude Code](https://claude.com/claude-code)"
 ```
 
 ## Plugin Operations

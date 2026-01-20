@@ -283,6 +283,7 @@ def generate_ci_commands(provider: str) -> dict:
         'ci-status': f'{executor} {script} ci status',
         'ci-wait': f'{executor} {script} ci wait',
         'issue-create': f'{executor} {script} issue create',
+        'issue-view': f'{executor} {script} issue view',
     }
 
 

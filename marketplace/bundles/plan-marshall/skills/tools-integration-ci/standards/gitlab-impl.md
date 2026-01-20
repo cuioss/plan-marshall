@@ -212,6 +212,50 @@ glab issue create --title "Title" --description "Body" --json iid,web_url
 
 **Note**: GitLab uses `iid` (internal ID) for issue numbers within a project.
 
+### issue view
+
+View issue details using `glab issue view`.
+
+**CLI Command**:
+```bash
+glab issue view 123 --output json
+```
+
+**Response**:
+```json
+{
+  "iid": 123,
+  "web_url": "https://gitlab.com/org/repo/-/issues/123",
+  "title": "Bug in authentication",
+  "description": "Description...",
+  "author": {"username": "username"},
+  "state": "opened",
+  "created_at": "2025-01-15T10:30:00Z",
+  "updated_at": "2025-01-18T14:20:00Z",
+  "labels": ["bug", "priority::high"],
+  "assignees": [{"username": "alice"}],
+  "milestone": {"title": "v2.0"}
+}
+```
+
+**Field Mapping**:
+| TOON Field | GitLab Field | Notes |
+|------------|--------------|-------|
+| issue_number | `iid` | Internal ID within project |
+| issue_url | `web_url` | |
+| body | `description` | GitLab uses "description" not "body" |
+| author | `author.username` | |
+| state | `state` | "opened"→"open", "closed"→"closed" |
+| labels[] | `labels[]` | Direct array of strings |
+| assignees[] | `assignees[].username` | |
+| milestone | `milestone.title` | |
+
+**State Mapping**:
+| GitLab State | API Contract State |
+|--------------|-------------------|
+| opened | open |
+| closed | closed |
+
 ---
 
 ## Error Handling
@@ -302,5 +346,6 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:gitlab <comma
 | `ci status` | Check pipeline status |
 | `ci wait` | Wait for pipeline completion |
 | `issue create` | Create issue |
+| `issue view` | View issue details |
 
 **Note**: Commands use GitHub terminology (pr, not mr) for API consistency. The script translates to GitLab equivalents internally.
