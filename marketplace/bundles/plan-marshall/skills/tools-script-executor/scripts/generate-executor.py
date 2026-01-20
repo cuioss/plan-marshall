@@ -320,6 +320,49 @@ def discover_scripts_fallback(base_path: Path) -> dict[str, str]:
     return mappings
 
 
+def discover_local_scripts(cwd: Path | None = None) -> dict[str, str]:
+    """
+    Discover scripts from .claude/skills/*/scripts/ in project root.
+
+    Uses 'local:{skill}:{script}' notation to distinguish from marketplace.
+
+    Args:
+        cwd: Working directory to search from. Defaults to Path.cwd().
+
+    Returns:
+        dict mapping notation to absolute path
+    """
+    if cwd is None:
+        cwd = Path.cwd()
+
+    local_skills = cwd / '.claude' / 'skills'
+    if not local_skills.is_dir():
+        return {}
+
+    mappings: dict[str, str] = {}
+
+    for skill_dir in local_skills.iterdir():
+        if not skill_dir.is_dir() or skill_dir.name.startswith('.'):
+            continue
+
+        skill_name = skill_dir.name
+        scripts_dir = skill_dir / 'scripts'
+
+        if not scripts_dir.exists():
+            continue
+
+        # Find .py files (skip private modules starting with _)
+        for script_file in scripts_dir.glob('*.py'):
+            if script_file.name.startswith('_'):
+                continue
+            if script_file.is_file():
+                notation = f'local:{skill_name}:{script_file.stem}'
+                abs_path = str(script_file.resolve())
+                mappings[notation] = abs_path
+
+    return mappings
+
+
 # ============================================================================
 # GENERATION
 # ============================================================================
@@ -559,15 +602,26 @@ def cmd_generate(args):
         print(f'Error: {e}', file=sys.stderr)
         sys.exit(1)
 
-    # Discover scripts
-    print('Discovering scripts...')
+    # Discover marketplace scripts
+    print('Discovering marketplace scripts...')
     try:
         mappings = discover_scripts(base_path)
     except Exception as e:
         print(f'Falling back to glob discovery: {e}', file=sys.stderr)
         mappings = discover_scripts_fallback(base_path)
 
-    print(f'Found {len(mappings)} scripts')
+    marketplace_count = len(mappings)
+    print(f'Found {marketplace_count} marketplace scripts')
+
+    # Discover project-local scripts
+    print('Discovering project-local scripts...')
+    local_mappings = discover_local_scripts()
+    local_count = len(local_mappings)
+    if local_count > 0:
+        mappings.update(local_mappings)
+        print(f'Found {local_count} local scripts')
+
+    print(f'Total: {len(mappings)} scripts ({marketplace_count} marketplace, {local_count} local)')
 
     if args.dry_run:
         print('\n=== Script Mappings ===')

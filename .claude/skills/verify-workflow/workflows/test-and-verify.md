@@ -13,12 +13,12 @@ Execute the trigger from test-definition, then verify the output. Full automated
 
 Verify test case exists:
 ```
-Glob: workflow-verification/test-cases/{test-id}/
+Glob: workflow-verification/test-cases/{test-id}/test-definition.toon
 ```
 
 If no match found, list available test cases:
 ```
-Glob: workflow-verification/test-cases/*/
+Glob: workflow-verification/test-cases/*/test-definition.toon
 ```
 
 Display error with available test cases and exit.
@@ -60,7 +60,7 @@ Verify an existing plan against test case criteria. No trigger execution.
 
 Verify test case exists:
 ```
-Glob: workflow-verification/test-cases/{test-id}/
+Glob: workflow-verification/test-cases/{test-id}/test-definition.toon
 ```
 
 If no match found, report error and exit.
@@ -99,10 +99,11 @@ All subsequent steps use `{results_dir}` to store outputs.
 ### Step V1: Run Structural Verification
 
 ```bash
-python3 .claude/skills/verify-workflow/scripts/verify-structure.py \
+python3 .plan/execute-script.py local:verify-workflow:verify-structure \
   --plan-id {plan_id} \
   --test-case workflow-verification/test-cases/{test-id} \
-  --output {results_dir}/structural-checks.toon
+  --output {results_dir}/structural-checks.toon \
+  --phases {workflow_phase from test-definition}
 ```
 
 Parse the output to determine structural check status.
@@ -147,7 +148,7 @@ Read the `workflow_phase` from test-definition.toon to determine which phases to
 - `2-outline,3-plan` → collect both outline and planning artifacts
 
 ```bash
-python3 .claude/skills/verify-workflow/scripts/collect-artifacts.py \
+python3 .plan/execute-script.py local:verify-workflow:collect-artifacts \
   --plan-id {plan_id} \
   --output {results_dir}/artifacts/ \
   --phases {workflow_phase from test-definition}
