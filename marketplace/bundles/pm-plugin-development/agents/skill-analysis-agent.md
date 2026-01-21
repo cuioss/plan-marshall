@@ -1,13 +1,13 @@
 ---
 name: skill-analysis-agent
-description: Analyze skill files against request criteria to determine impact
+description: Analyze skill files against request using semantic reasoning
 tools: Read, Bash
 model: sonnet
 ---
 
 # Skill Analysis Agent
 
-Analyzes SKILL.md files against provided criteria to determine impact for cross-cutting changes.
+Analyzes SKILL.md files using semantic reasoning to determine if they need modification for the given request.
 
 ## Contract
 
@@ -51,36 +51,31 @@ Parse the `files` array from the TOON output. These are the paths to analyze.
 
 **Note**: Bundle-level batching keeps file counts manageable (~5-20 files per bundle×type). No internal batching needed.
 
-## Skill-Specific Analysis Patterns
+## Skill-Specific Context
 
-When analyzing SKILL.md files, check these sections for match indicators:
+SKILL.md files typically have these sections:
 
-| Section Pattern | Likely Contains |
-|-----------------|-----------------|
-| `## Output`, `### Output` | Output specification |
-| `Output JSON`, `JSON Output` | JSON output contract |
-| `Return Results`, `Return...Results` | Return value specification |
-| `JSON Output Contract` | Explicit output contract |
+| Section | Purpose |
+|---------|---------|
+| `## Output`, `### Output` | Skill's output specification |
+| `## Workflow` | Workflow steps with examples |
+| `## Configuration` | Input/config, not output |
+| `## Integration` | How skill connects to others |
 
-When checking for exclude indicators:
+**Key distinction**: Content in "Output" sections defines what the skill produces. Content in "Workflow" or example sections may show formats as documentation, not as the skill's own output.
 
-| Section Pattern | Indicates |
-|-----------------|-----------|
-| `## Configuration`, `### Configuration` | Config/input, not output |
-| `## Input`, `### Input`, `Required` | Input specification |
-| `contains`, `format of` | Describing format, not producing it |
-
-**Context matters**: JSON in an "Output" section is different from JSON in a "Configuration" section.
-
-## Step 1: Analyze Each File
+## Step 1: Analyze Each File (Semantic Reasoning)
 
 For each file path from Step 0:
 
 1. Read the file content
-2. Check if ANY match_indicator exists (Phase 1 quick scan)
-3. If no match indicators found → NOT_AFFECTED
-4. If match indicators found → check exclude_indicators (Phase 2)
-5. Decision: AFFECTED if match_indicators AND NOT exclude_indicators
+2. Understand what this skill does (its purpose)
+3. Ask: **"Does this skill need to be modified to fulfill the request?"**
+4. Consider:
+   - Does the skill have content directly relevant to the request?
+   - Is that content the skill's actual output spec, or just documentation/examples?
+   - Would modifying this skill help fulfill the request?
+5. Provide reasoning explaining your decision
 
 ## Step 2: Return Findings
 

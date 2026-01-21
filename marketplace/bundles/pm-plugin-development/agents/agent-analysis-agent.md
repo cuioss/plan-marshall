@@ -1,13 +1,13 @@
 ---
 name: agent-analysis-agent
-description: Analyze agent files against request criteria to determine impact
+description: Analyze agent files against request using semantic reasoning
 tools: Read, Bash
 model: sonnet
 ---
 
 # Agent Analysis Agent
 
-Analyzes agent .md files against provided criteria to determine impact for cross-cutting changes.
+Analyzes agent .md files using semantic reasoning to determine if they need modification for the given request.
 
 ## Contract
 
@@ -51,35 +51,31 @@ Parse the `files` array from the TOON output. These are the paths to analyze.
 
 **Note**: Bundle-level batching keeps file counts manageable (~5-20 files per bundle×type). No internal batching needed.
 
-## Agent-Specific Analysis Patterns
+## Agent-Specific Context
 
-When analyzing agent files, check these sections for match indicators:
+Agent .md files typically have these sections:
 
-| Section Pattern | Likely Contains |
-|-----------------|-----------------|
-| `## Output`, `### Output` | Output specification |
-| `## Return Results`, `### Return Results` | Return value specification |
+| Section | Purpose |
+|---------|---------|
+| `## Output`, `### Return Results` | Agent's output specification |
+| `## Input` | Input parameters |
+| `## Task` | Task description |
 | `Step N: Return` | Final step with return format |
 
-When checking for exclude indicators:
+**Key distinction**: Content in "Output" or "Return Results" sections defines what the agent produces. Agents may have both success and error output formats.
 
-| Section Pattern | Indicates |
-|-----------------|-----------|
-| `## Input`, `### Input` | Input parameters |
-| `## Task`, `### Task` | Task description |
-| Already uses target format | Already migrated/compliant |
-
-**Context matters**: Agents may have both success and error output formats - check both.
-
-## Step 1: Analyze Each File
+## Step 1: Analyze Each File (Semantic Reasoning)
 
 For each file path from Step 0:
 
 1. Read the file content
-2. Check if ANY match_indicator exists (Phase 1 quick scan)
-3. If no match indicators found → NOT_AFFECTED
-4. If match indicators found → check exclude_indicators (Phase 2)
-5. Decision: AFFECTED if match_indicators AND NOT exclude_indicators
+2. Understand what this agent does (its purpose)
+3. Ask: **"Does this agent need to be modified to fulfill the request?"**
+4. Consider:
+   - Does the agent have content directly relevant to the request?
+   - Is that content the agent's actual output spec?
+   - Would modifying this agent help fulfill the request?
+5. Provide reasoning explaining your decision
 
 ## Step 2: Return Findings
 

@@ -84,52 +84,24 @@ Parse the TOON content to extract:
 - `inventory.commands` - Command file paths
 - `inventory.agents` - Agent file paths
 
-### Step 2: Extract Matching Criteria
+### Step 2: Load Request Text
 
-**CRITICAL**: This step is MANDATORY. Skipping to analysis without criteria is a workflow violation.
+Read the request text from `request.md` if not already loaded:
 
-**Note**: The request text comes from `request.md` - read it if not already loaded.
-
-Analyze the request text to extract:
-
-1. **Request fragment**: Exact quote defining the change scope
-2. **Criteria statement**: What makes a component "affected" - in objective terms
-3. **Match indicators**: Concrete patterns that indicate a match
-4. **Exclude indicators**: Patterns that indicate non-match
-
-```
-ANALYZE request text:
-  1. Identify the ACTION (migrate, rename, update, change)
-  2. Identify the SUBJECT (what is being changed)
-  3. Identify the SCOPE (outputs, references, usages)
-
-Derive:
-  request_fragment = "{exact quote from request}"
-  criteria = "{subject} in {scope} context"
-  match_indicators = [concrete patterns]
-  exclude_indicators = [concrete patterns]
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-plan-documents:manage-plan-documents request read \
+  --plan-id {plan_id}
 ```
 
-**Log the criteria**:
+Extract the request text - this will be passed directly to analysis agents for semantic reasoning.
+
+**Log the analysis start**:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(pm-plugin-development:ext-outline-plugin) Matching Criteria:
-  request_fragment: \"{request_fragment}\"
-  criteria: \"{criteria}\"
-  match_indicators: {match_indicators}
-  exclude_indicators: {exclude_indicators}"
+  decision {plan_id} INFO "(pm-plugin-development:ext-outline-plugin) Starting semantic analysis
+  request: \"{request_text}\""
 ```
-
-### Criteria Quality Rules
-
-| Requirement | Valid | Invalid |
-|-------------|-------|---------|
-| **Derived from request** | "Has JSON output blocks" | "Is documentation" |
-| **Objective** | "Contains ```json in Output section" | "Seems to use JSON" |
-| **Content-based** | "No Output section found" | "Commands don't have outputs" |
-
-**CRITICAL**: Never use component TYPES as exclude indicators.
 
 ### Step 3: Parallel Component Analysis
 
@@ -171,7 +143,7 @@ Skip if `file_count: 0`.
 
 **Step 3c: Spawn Analysis Agents**
 
-For each bundle with files, spawn an agent. Pass only: `plan_id`, `bundle`, `criteria`.
+For each bundle with files, spawn an agent. Pass: `plan_id`, `bundle`, `request_text`.
 
 ```
 FOR each bundle where filter returned file_count > 0:
@@ -180,26 +152,26 @@ FOR each bundle where filter returned file_count > 0:
       Input:
         plan_id: {plan_id}
         bundle: {bundle}
-        criteria: {criteria object from Step 2}
+        request_text: {request text from Step 2}
 
   IF has commands:
     Task: pm-plugin-development:command-analysis-agent
       Input:
         plan_id: {plan_id}
         bundle: {bundle}
-        criteria: {criteria object from Step 2}
+        request_text: {request text from Step 2}
 
   IF has agents:
     Task: pm-plugin-development:agent-analysis-agent
       Input:
         plan_id: {plan_id}
         bundle: {bundle}
-        criteria: {criteria object from Step 2}
+        request_text: {request text from Step 2}
 ```
 
 **IMPORTANT**: Launch all agents in a SINGLE message for true parallelism.
 
-**Agent Responsibility**: Each agent runs the filter script to get its file paths, analyzes those files using LLM reasoning, and returns findings per the contract. Agents do NOT log - logging is centralized in Step 4a.
+**Agent Responsibility**: Each agent runs the filter script to get its file paths, uses semantic reasoning to evaluate each file against the request, and returns findings per the contract. Agents do NOT log - logging is centralized in Step 4a.
 
 **Step 3d: Error Handling**
 
@@ -252,14 +224,12 @@ FOR each finding in all_findings:
   IF finding.status == "affected":
     python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
       decision {plan_id} INFO "(pm-plugin-development:ext-outline-plugin) AFFECTED: {finding.file_path}
-      match_indicators: {finding.match_indicators_found}
-      exclude_indicators: {finding.exclude_indicators_found}
+      reasoning: {finding.reasoning}
       evidence: {finding.evidence}"
   ELSE:
     python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
       decision {plan_id} INFO "(pm-plugin-development:ext-outline-plugin) NOT_AFFECTED: {finding.file_path}
-      match_indicators: {finding.match_indicators_found}
-      exclude_indicators: {finding.exclude_indicators_found}
+      reasoning: {finding.reasoning}
       evidence: {finding.evidence}"
 ```
 

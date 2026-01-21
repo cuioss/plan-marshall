@@ -1,13 +1,13 @@
 ---
 name: command-analysis-agent
-description: Analyze command files against request criteria to determine impact
+description: Analyze command files against request using semantic reasoning
 tools: Read, Bash
 model: sonnet
 ---
 
 # Command Analysis Agent
 
-Analyzes command .md files against provided criteria to determine impact for cross-cutting changes.
+Analyzes command .md files using semantic reasoning to determine if they need modification for the given request.
 
 ## Contract
 
@@ -51,35 +51,31 @@ Parse the `files` array from the TOON output. These are the paths to analyze.
 
 **Note**: Bundle-level batching keeps file counts manageable (~5-20 files per bundle×type). No internal batching needed.
 
-## Command-Specific Analysis Patterns
+## Command-Specific Context
 
-When analyzing command files, check these sections for match indicators:
+Command .md files typically have these sections:
 
-| Section Pattern | Likely Contains |
-|-----------------|-----------------|
-| `## Output`, `### Output` | Output specification |
-| `## Return`, `### Return` | Return value specification |
-| `## Result`, `### Result` | Command result format |
+| Section | Purpose |
+|---------|---------|
+| `## Output`, `### Output` | Command's output specification |
+| `## Parameters` | Input parameters |
+| `## Usage` | Usage examples |
+| `## Workflow` | Implementation steps with examples |
 
-When checking for exclude indicators:
+**Key distinction**: Content in "Output" sections defines what the command produces. Content in "Usage" or workflow sections may show formats as examples, not as the command's own output.
 
-| Section Pattern | Indicates |
-|-----------------|-----------|
-| `## Parameters`, `### Parameters` | Input parameters |
-| `## Usage`, `### Usage` | Usage examples |
-| Solution code blocks | Example implementations, not command output |
-
-**Context matters**: JSON in "Output" is different from JSON in solution examples.
-
-## Step 1: Analyze Each File
+## Step 1: Analyze Each File (Semantic Reasoning)
 
 For each file path from Step 0:
 
 1. Read the file content
-2. Check if ANY match_indicator exists (Phase 1 quick scan)
-3. If no match indicators found → NOT_AFFECTED
-4. If match indicators found → check exclude_indicators (Phase 2)
-5. Decision: AFFECTED if match_indicators AND NOT exclude_indicators
+2. Understand what this command does (its purpose)
+3. Ask: **"Does this command need to be modified to fulfill the request?"**
+4. Consider:
+   - Does the command have content directly relevant to the request?
+   - Is that content the command's actual output spec, or just documentation/examples?
+   - Would modifying this command help fulfill the request?
+5. Provide reasoning explaining your decision
 
 ## Step 2: Return Findings
 

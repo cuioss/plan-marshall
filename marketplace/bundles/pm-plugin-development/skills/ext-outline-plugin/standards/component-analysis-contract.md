@@ -4,21 +4,17 @@ Defines the input/output contract for component analysis agents used in the Modi
 
 ## Purpose
 
-Component analysis agents enforce per-component evaluation against request-derived criteria. By delegating to agents with structured contracts, we prevent the parent workflow from skipping component types or making categorical assumptions.
+Component analysis agents evaluate each component against the original request using semantic reasoning. By passing the actual request (not derived criteria), agents can reason about intent and context rather than pattern matching.
 
 ## Input Parameters
 
-Agents receive minimal parameters. File paths are loaded via script.
+Agents receive the request text directly for semantic reasoning.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `plan_id` | str | Yes | Plan identifier for script access and logging |
 | `bundle` | str | Yes | Bundle name to analyze (e.g., `pm-dev-java`) |
-| `criteria` | object | Yes | Matching criteria from extraction step |
-| `criteria.request_fragment` | str | Yes | Exact quote from request defining scope |
-| `criteria.criteria_statement` | str | Yes | What makes a component "affected" |
-| `criteria.match_indicators` | List[str] | Yes | Patterns that indicate a match |
-| `criteria.exclude_indicators` | List[str] | Yes | Patterns that indicate non-match |
+| `request_text` | str | Yes | The original request text from request.md |
 
 ## Agent Step 0: Load File Paths via Script
 
@@ -50,14 +46,14 @@ All analysis agents MUST return this structure:
 
 ```toon
 status: success
-batch_id: {batch_id}
-total_analyzed: {file_paths.length}
+bundle: {bundle}
+total_analyzed: {count}
 affected_count: {count}
 not_affected_count: {count}
 
-findings[N]{file_path,status,match_indicators_found,exclude_indicators_found,evidence}:
-  {path},affected,[indicator1],[],Lines 45-50 contain JSON output block
-  {path},not_affected,[],[exclude1],Already uses TOON format in Return section
+findings[N]{file_path,status,reasoning,evidence}:
+  {path},affected,Component has JSON output specification that needs migration,Lines 45-50 contain JSON in Output section
+  {path},not_affected,JSON is workflow documentation not component output,Lines 30-40 show JSON as example in workflow
 ```
 
 ### Field Definitions
@@ -65,10 +61,10 @@ findings[N]{file_path,status,match_indicators_found,exclude_indicators_found,evi
 | Field | Type | Description |
 |-------|------|-------------|
 | `status` | enum | `success` or `error` |
-| `batch_id` | str | Echo of input batch_id |
-| `total_analyzed` | int | Must equal `file_paths.length` |
-| `affected_count` | int | Files matching criteria |
-| `not_affected_count` | int | Files not matching criteria |
+| `bundle` | str | Bundle that was analyzed |
+| `total_analyzed` | int | Must equal file count from filter script |
+| `affected_count` | int | Files that need modification |
+| `not_affected_count` | int | Files that don't need modification |
 | `findings` | table | One row per file analyzed |
 
 ### Finding Fields
@@ -77,18 +73,18 @@ findings[N]{file_path,status,match_indicators_found,exclude_indicators_found,evi
 |-------|-------------|
 | `file_path` | Full path to analyzed file |
 | `status` | `affected` or `not_affected` |
-| `match_indicators_found` | Which match_indicators were found (empty if none) |
-| `exclude_indicators_found` | Which exclude_indicators were found (empty if none) |
+| `reasoning` | Why the component does or does not need modification for this request |
 | `evidence` | Specific line numbers, section names, or content excerpts |
 
 ## Validation Rules
 
 The calling workflow MUST validate agent output:
 
-1. **Completeness**: `findings.length == file_paths.length` - no skipping
-2. **Evidence required**: Each finding MUST have `evidence` populated
-3. **Consistency**: `affected_count + not_affected_count == total_analyzed`
-4. **Status check**: `status` must be `success` for results to be used
+1. **Completeness**: `findings.length == total_analyzed` - no skipping
+2. **Reasoning required**: Each finding MUST have `reasoning` populated
+3. **Evidence required**: Each finding MUST have `evidence` populated
+4. **Consistency**: `affected_count + not_affected_count == total_analyzed`
+5. **Status check**: `status` must be `success` for results to be used
 
 ### Validation Failure Handling
 
@@ -96,8 +92,8 @@ If validation fails:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} ERROR "[VALIDATION] (pm-plugin-development:ext-outline-plugin) Agent validation failed: {batch_id}
-  expected_findings: {file_paths.length}
+  work {plan_id} ERROR "[VALIDATION] (pm-plugin-development:ext-outline-plugin) Agent validation failed: {bundle}
+  expected_findings: {file_count}
   actual_findings: {findings.length}
   action: Retry or escalate"
 ```
@@ -106,97 +102,72 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 ### Critical Rules
 
-1. **MUST** analyze every file in `file_paths` - no skipping allowed
+1. **MUST** analyze every file returned by filter script - no skipping allowed
 2. **MUST** read each file completely before evaluating
-3. **MUST** check ALL `match_indicators` for each file
-4. **MUST** check ALL `exclude_indicators` for each file
+3. **MUST** reason about whether the component needs modification for the request
+4. **MUST** provide specific reasoning explaining the decision
 5. **MUST** provide specific evidence (line numbers, section names)
 6. **MUST NOT** assume behavior based on component type name
 7. **MUST NOT** return without completing all files
 8. **MUST NOT** use categorical exclusions
 
-### Analysis Algorithm (Two-Phase)
+### Analysis Approach (Semantic Reasoning)
 
-**CRITICAL**: Use two-phase analysis to avoid false positives.
+For each file, answer the question: **"Does this component need to be modified to fulfill the request?"**
 
 ```
-FOR each file_path in file_paths:
+FOR each file_path from filter script:
   content = READ(file_path)
 
-  # PHASE 1: Quick Match Indicator Scan
-  # Check if ANY match_indicator pattern exists in content
-  any_match_possible = FALSE
-  FOR each indicator in criteria.match_indicators:
-    IF contains_pattern(content, indicator):
-      any_match_possible = TRUE
-      BREAK
+  # Semantic Analysis
+  # Consider the request intent and the component's actual content
 
-  IF NOT any_match_possible:
-    # No match indicators found - file cannot be affected
-    findings.append({
-      file_path,
-      status: "not_affected",
-      match_found: [],
-      exclude_found: [],
-      evidence: "No match indicators found in file"
-    })
-    CONTINUE to next file
+  reasoning = REASON_ABOUT(
+    request_text,
+    content,
+    questions=[
+      "What is this component's purpose?",
+      "Does it have content relevant to the request?",
+      "Would modifying it help fulfill the request?",
+      "Is there context that makes it NOT applicable?"
+    ]
+  )
 
-  # PHASE 2: Context Analysis (only if match possible)
-  match_found = []
-  exclude_found = []
-
-  FOR each indicator in criteria.match_indicators:
-    IF indicator found in content:
-      match_found.append(indicator)
-      record_evidence(indicator, location)
-
-  FOR each indicator in criteria.exclude_indicators:
-    IF indicator found in content:
-      exclude_found.append(indicator)
-      record_evidence(indicator, location)
-
-  # Decision: Match indicators found AND no exclude indicators
-  IF match_found AND NOT exclude_found:
+  # Decision based on semantic understanding
+  IF component needs modification for request:
     status = "affected"
+    evidence = specific lines/sections that need change
   ELSE:
     status = "not_affected"
+    evidence = why the component is not applicable
 
-  findings.append({file_path, status, match_found, exclude_found, evidence})
+  findings.append({file_path, status, reasoning, evidence})
 ```
 
 **Key Points**:
-1. **Phase 1 is mandatory** - quickly eliminates files with no match indicators
-2. **Phase 2 only runs if match possible** - avoids wasted context analysis
-3. **Evidence must be specific** - line numbers and section names
+1. **Full request context** - agents see the original request, not derived patterns
+2. **Semantic reasoning** - agents reason about intent, not pattern match
+3. **Context-aware** - agents can distinguish output specs from documentation examples
+4. **Explicit reasoning** - every decision includes explanation
 
 ## Usage in Modify Flow
 
-The Modify Flow in `workflow.md` Step 4 uses analysis agents implementing this contract:
+The Modify Flow in `workflow.md` Step 3c spawns analysis agents with this contract:
 
-```markdown
-Skill: pm-plugin-development:component-analysis-dispatch
-
-Input:
-  plan_id: migrate-json-to-toon
-  inventory: [file list from scan-marketplace-inventory]
-  criteria:
-    request_fragment: "Migrate outputs from JSON to TOON"
-    criteria_statement: "Component has JSON output specification"
-    match_indicators:
-      - "```json in Output/Return sections"
-      - "Output JSON header"
-    exclude_indicators:
-      - "```toon already present"
-      - "JSON is configuration not output"
+```
+Task: pm-plugin-development:skill-analysis-agent
+  Input:
+    plan_id: migrate-json-to-toon
+    bundle: pm-dev-java
+    request_text: "Migrate agent/command/skill outputs from JSON to TOON format"
 ```
 
-## Implementation
+## Agents Implementing This Contract
 
-The `component-analysis-dispatch` skill implements this contract:
+| Agent | Component Type |
+|-------|----------------|
+| `skill-analysis-agent` | SKILL.md files |
+| `command-analysis-agent` | Command .md files |
+| `agent-analysis-agent` | Agent .md files |
 
-| Skill | Purpose | Location |
-|-------|---------|----------|
-| `component-analysis-dispatch` | Unified analysis for all component types | pm-plugin-development/skills/ |
-
-The skill dispatches to type-specific patterns (skills, commands, agents) while following the common contract.
+Each agent uses semantic reasoning to evaluate components against the request.
