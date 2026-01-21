@@ -8,16 +8,41 @@ Component analysis agents enforce per-component evaluation against request-deriv
 
 ## Input Parameters
 
+Agents receive minimal parameters. File paths are loaded via script.
+
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `file_paths` | List[str] | Yes | Files to analyze (batches of 10-15) |
-| `criteria` | object | Yes | Matching criteria from Step 3 extraction |
+| `plan_id` | str | Yes | Plan identifier for script access and logging |
+| `bundle` | str | Yes | Bundle name to analyze (e.g., `pm-dev-java`) |
+| `criteria` | object | Yes | Matching criteria from extraction step |
 | `criteria.request_fragment` | str | Yes | Exact quote from request defining scope |
 | `criteria.criteria_statement` | str | Yes | What makes a component "affected" |
 | `criteria.match_indicators` | List[str] | Yes | Patterns that indicate a match |
 | `criteria.exclude_indicators` | List[str] | Yes | Patterns that indicate non-match |
-| `batch_id` | str | Yes | Progress tracking (e.g., "skills-1-pm-workflow") |
-| `plan_id` | str | Yes | Plan identifier for logging |
+
+## Agent Step 0: Load File Paths via Script
+
+Each agent runs the filter script to get its file paths:
+
+```bash
+python3 .plan/execute-script.py pm-plugin-development:ext-outline-plugin:filter-inventory filter \
+  --plan-id {plan_id} --bundle {bundle} --component-type {skills|commands|agents}
+```
+
+**Output** (TOON):
+```toon
+status: success
+bundle: pm-dev-java
+component_type: skills
+file_count: 17
+files[17]:
+  marketplace/bundles/pm-dev-java/skills/java-cdi/SKILL.md
+  ...
+```
+
+Parse the `files` array. These are the paths to analyze.
+
+**Note**: Bundle-level batching keeps file counts manageable (~5-20 files per bundle×type). No internal batching needed.
 
 ## Output Contract
 

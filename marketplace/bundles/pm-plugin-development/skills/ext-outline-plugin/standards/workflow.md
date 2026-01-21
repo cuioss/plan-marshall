@@ -133,34 +133,73 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 ### Step 3: Parallel Component Analysis
 
-Spawn analysis agents for each component type from the loaded inventory:
+Analysis is split into two phases: **script filtering** (deterministic) and **agent analysis** (LLM reasoning).
+
+**Step 3a: Extract Bundles**
+
+Parse `inventory_filtered.toon` to get unique bundles:
+```python
+bundles = set()
+for component_type in ['skills', 'commands', 'agents']:
+    for path in inventory.get(component_type, []):
+        # path: marketplace/bundles/{bundle}/...
+        bundle = path.split('/')[2]
+        bundles.add(bundle)
+```
+
+**Step 3b: Filter by Bundle (Script)**
+
+For each bundle × component_type combination, run the filter script:
+
+```bash
+python3 .plan/execute-script.py pm-plugin-development:ext-outline-plugin:filter-inventory filter \
+  --plan-id {plan_id} --bundle {bundle} --component-type {type}
+```
+
+**Output** (TOON):
+```toon
+status: success
+bundle: pm-dev-java
+component_type: skills
+file_count: 17
+files[17]:
+  marketplace/bundles/pm-dev-java/skills/java-cdi/SKILL.md
+  ...
+```
+
+Skip if `file_count: 0`.
+
+**Step 3c: Spawn Analysis Agents**
+
+For each bundle with files, spawn an agent. Pass only: `plan_id`, `bundle`, `criteria`.
 
 ```
-Task: pm-plugin-development:skill-analysis-agent
-  Input:
-    file_paths: {inventory.skills from Step 1}
-    criteria: {from Step 2}
-    batch_id: "skills"
-    plan_id: {plan_id}
+FOR each bundle where filter returned file_count > 0:
+  IF has skills:
+    Task: pm-plugin-development:skill-analysis-agent
+      Input:
+        plan_id: {plan_id}
+        bundle: {bundle}
+        criteria: {criteria object from Step 2}
 
-Task: pm-plugin-development:command-analysis-agent
-  Input:
-    file_paths: {inventory.commands from Step 1}
-    criteria: {from Step 2}
-    batch_id: "commands"
-    plan_id: {plan_id}
+  IF has commands:
+    Task: pm-plugin-development:command-analysis-agent
+      Input:
+        plan_id: {plan_id}
+        bundle: {bundle}
+        criteria: {criteria object from Step 2}
 
-Task: pm-plugin-development:agent-analysis-agent
-  Input:
-    file_paths: {inventory.agents from Step 1}
-    criteria: {from Step 2}
-    batch_id: "agents"
-    plan_id: {plan_id}
+  IF has agents:
+    Task: pm-plugin-development:agent-analysis-agent
+      Input:
+        plan_id: {plan_id}
+        bundle: {bundle}
+        criteria: {criteria object from Step 2}
 ```
 
 **IMPORTANT**: Launch all agents in a SINGLE message for true parallelism.
 
-Only spawn agents for types that have files in inventory. Skip empty types.
+**Agent Responsibility**: Each agent runs the filter script to get its file paths, then analyzes those files using LLM reasoning.
 
 ### Step 4: Aggregate and Validate
 
@@ -209,8 +248,11 @@ Create deliverables from affected files, grouped by bundle (or ~5-8 files per de
 - change_type: {create|modify|migrate|refactor}
 - execution_mode: automated
 - domain: plan-marshall-plugin-dev
-- profile: implementation
+- module: {bundle-name}
 - depends: none
+
+**Profiles:**
+- implementation
 
 **Affected files:**
 - `{explicit/path/to/file1.md}`
@@ -234,8 +276,9 @@ Create deliverables from affected files, grouped by bundle (or ~5-8 files per de
 | `change_type` | create, modify, migrate, refactor |
 | `execution_mode` | automated, manual, mixed |
 | `domain` | plan-marshall-plugin-dev |
-| `profile` | implementation |
+| `module` | Bundle name (e.g., pm-dev-java, pm-workflow) |
 | `depends` | none, or deliverable number(s) |
+| `**Profiles:**` | Block with: implementation, testing |
 
 ---
 

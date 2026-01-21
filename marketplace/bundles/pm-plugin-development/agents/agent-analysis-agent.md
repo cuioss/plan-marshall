@@ -15,6 +15,19 @@ Analyzes agent .md files against provided criteria to determine impact for cross
 
 Follow the contract for: Input parameters, Task steps, Output format, Critical Rules.
 
+## Step 0: Load File Paths via Script
+
+Run the filter script to get file paths for this bundle:
+
+```bash
+python3 .plan/execute-script.py pm-plugin-development:ext-outline-plugin:filter-inventory filter \
+  --plan-id {plan_id} --bundle {bundle} --component-type agents
+```
+
+Parse the `files` array from the TOON output. These are the paths to analyze.
+
+**Note**: Bundle-level batching keeps file counts manageable (~5-20 files per bundle×type). No internal batching needed.
+
 ## Agent-Specific Analysis Patterns
 
 When analyzing agent files, check these sections for match indicators:
