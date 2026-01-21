@@ -268,7 +268,144 @@ This skill is designed to run without user prompts. Required permissions:
 - Writes inventory to `.plan/temp/` (covered by `Write(.plan/**)` permission)
 - All output is TOON format
 
+---
+
+## Dependency Resolution
+
+The `resolve-dependencies.py` script tracks and resolves all dependency relationships across marketplace components.
+
+### Dependency Types
+
+| Type | Pattern | Detection Method |
+|------|---------|------------------|
+| `script` | `bundle:skill:script` | Regex in markdown/python |
+| `skill` | `skills:` frontmatter, `Skill: bundle:skill` | YAML + regex |
+| `import` | `from module import ...` | AST parsing |
+| `path` | `../../skill/file.md` | Markdown link regex |
+| `implements` | `implements: bundle:skill/path` frontmatter | YAML parsing |
+
+### Component Notation
+
+```
+bundle:skill                    # Skill (e.g., pm-workflow:phase-1-init)
+bundle:skill:script             # Script (e.g., pm-workflow:manage-files:manage-files)
+bundle:agents:name              # Agent (e.g., pm-workflow:agents:plan-init-agent)
+bundle:commands:name            # Command (e.g., plan-marshall:commands:tools-fix)
+```
+
+### Subcommands
+
+#### deps - Get Dependencies
+
+Get direct and transitive dependencies of a component:
+
+```bash
+python3 .plan/execute-script.py pm-plugin-development:tools-marketplace-inventory:resolve-dependencies \
+  deps --component pm-workflow:manage-files --direct-result
+```
+
+**Output**:
+```toon
+status: success
+component: pm-workflow:manage-files
+component_type: skill
+file_path: marketplace/bundles/pm-workflow/skills/manage-files/SKILL.md
+
+direct_dependencies[4]:
+  - target: plan-marshall:ref-toon-format:toon_parser, type: import, context: line:28
+  - target: plan-marshall:tools-file-ops:file_ops, type: import, context: line:26
+
+transitive_dependencies[2]:
+  - target: plan-marshall:ref-toon-format, depth: 2, via: plan-marshall:ref-toon-format:toon_parser
+
+statistics:
+  direct_count: 4
+  transitive_count: 2
+  by_type: {import: 3, path: 1}
+```
+
+#### rdeps - Get Reverse Dependencies
+
+Get components that depend on a given component:
+
+```bash
+python3 .plan/execute-script.py pm-plugin-development:tools-marketplace-inventory:resolve-dependencies \
+  rdeps --component plan-marshall:ref-toon-format:toon_parser --direct-result
+```
+
+#### tree - Visual Dependency Tree
+
+Generate a visual dependency tree:
+
+```bash
+python3 .plan/execute-script.py pm-plugin-development:tools-marketplace-inventory:resolve-dependencies \
+  tree --component pm-workflow:manage-files --depth 3 --direct-result
+```
+
+**Output**:
+```
+pm-workflow:manage-files
+├── plan-marshall:ref-toon-format:toon_parser (import)
+│   └── plan-marshall:ref-toon-format (skill)
+├── plan-marshall:tools-file-ops:file_ops (import)
+└── plan-marshall:manage-logging:plan_logging (import)
+```
+
+#### validate - Check for Issues
+
+Validate all dependencies and check for broken or circular references:
+
+```bash
+python3 .plan/execute-script.py pm-plugin-development:tools-marketplace-inventory:resolve-dependencies \
+  validate --scope marketplace --direct-result
+```
+
+**Output**:
+```toon
+status: success
+validation_result: passed
+total_components: 95
+total_dependencies: 234
+resolved: 231
+unresolved_count: 3
+
+unresolved[3]:
+  - source: pm-workflow:manage-files, target: nonexistent:skill, type: skill, context: frontmatter
+```
+
+### Options
+
+| Option | Description |
+|--------|-------------|
+| `--component <notation>` | Component to resolve (required for deps/rdeps/tree) |
+| `--scope <value>` | auto, marketplace, plugin-cache, project (default: auto) |
+| `--format <value>` | toon (default), json |
+| `--direct-result` | Output to stdout |
+| `--depth <N>` | Max transitive depth (default: 10) |
+| `--dep-types <types>` | Filter: script,skill,import,path,implements (comma-separated) |
+
+### Examples
+
+```bash
+# Get all dependencies of a skill
+python3 .plan/execute-script.py pm-plugin-development:tools-marketplace-inventory:resolve-dependencies \
+  deps --component pm-workflow:phase-1-init --direct-result
+
+# Get only import dependencies
+python3 .plan/execute-script.py pm-plugin-development:tools-marketplace-inventory:resolve-dependencies \
+  deps --component pm-workflow:manage-files --dep-types import --direct-result
+
+# Find what depends on a module
+python3 .plan/execute-script.py pm-plugin-development:tools-marketplace-inventory:resolve-dependencies \
+  rdeps --component plan-marshall:ref-toon-format:toon_parser --direct-result --format json
+
+# Validate entire marketplace
+python3 .plan/execute-script.py pm-plugin-development:tools-marketplace-inventory:resolve-dependencies \
+  validate --scope marketplace
+```
+
 ## References
 
 - Script location: scripts/scan-marketplace-inventory.py
+- Dependency resolution: scripts/resolve-dependencies.py
 - Marketplace root: marketplace/bundles/
