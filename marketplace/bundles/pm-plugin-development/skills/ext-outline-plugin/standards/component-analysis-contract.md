@@ -36,8 +36,8 @@ bundle: pm-dev-java
 component_type: skills
 file_count: 17
 files[17]:
-  marketplace/bundles/pm-dev-java/skills/java-cdi/SKILL.md
-  ...
+  - marketplace/bundles/pm-dev-java/skills/java-cdi/SKILL.md
+  - ...
 ```
 
 Parse the `files` array. These are the paths to analyze.

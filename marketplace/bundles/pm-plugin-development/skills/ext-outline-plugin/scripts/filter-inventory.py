@@ -10,17 +10,15 @@ Output (TOON):
     component_type: skills
     file_count: 17
     files[17]:
-      marketplace/bundles/pm-dev-java/skills/java-cdi/SKILL.md
-      ...
+      - marketplace/bundles/pm-dev-java/skills/java-cdi/SKILL.md
+      - ...
 """
 
 import argparse
 import sys
 from pathlib import Path
 
-# Add plan-marshall modules to path
-sys.path.insert(0, str(Path(__file__).parents[5]))
-from marketplace.bundles.plan_marshall.skills.ref_toon_format.scripts.toon_parser import parse_toon
+from toon_parser import parse_toon  # type: ignore[import-not-found]
 
 
 def filter_inventory(plan_id: str, bundle: str, component_type: str) -> None:
@@ -60,7 +58,7 @@ def filter_inventory(plan_id: str, bundle: str, component_type: str) -> None:
     print(f"file_count: {len(filtered)}")
     print(f"files[{len(filtered)}]:")
     for path in filtered:
-        print(f"  {path}")
+        print(f"  - {path}")
 
 
 def main() -> None:
