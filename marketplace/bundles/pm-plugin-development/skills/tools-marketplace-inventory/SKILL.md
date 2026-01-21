@@ -44,25 +44,43 @@ The script will:
 
 ### Step 2: Read Full Inventory
 
-The script outputs a TOON summary to stdout:
+The script outputs a TOON summary to stdout. Bundles are top-level keys (not a list):
 
 ```toon
 status: success
-output_mode: file
-output_file: .plan/temp/tools-marketplace-inventory/inventory-20260116-143022.toon
 scope: marketplace
 base_path: /path/to/marketplace/bundles
+
+plan-marshall:
+  path: marketplace/bundles/plan-marshall
+  agents[1]:
+    - research-best-practices
+  commands[2]:
+    - tools-fix-intellij-diagnostics
+    - tools-sync-agents-file
+  skills[18]:
+    - analyze-project-architecture
+    - extension-api
+    - manage-lessons
+
+pm-dev-java:
+  path: marketplace/bundles/pm-dev-java
+  agents[9]:
+    - java-coverage-agent
+    - java-implement-agent
+  skills[15]:
+    - cui-java-core
+    - java-cdi
+
 statistics:
   total_bundles: 8
   total_agents: 28
   total_commands: 46
   total_skills: 30
   total_scripts: 7
-  total_resources: 111
-next_step: Read .plan/temp/tools-marketplace-inventory/inventory-20260116-143022.toon for full inventory details
 ```
 
-Read the `output_file` to get the full inventory in TOON format.
+In file mode (default), a summary is printed and full inventory is written to `.plan/temp/tools-marketplace-inventory/inventory-{timestamp}.toon`.
 
 ## Script Parameters
 
@@ -105,18 +123,45 @@ python3 .plan/execute-script.py pm-plugin-development:tools-marketplace-inventor
 
 ### --include-descriptions (optional flag)
 
-When specified, extracts description fields from YAML frontmatter of each resource file.
+When specified, extracts description fields from YAML frontmatter of each resource file. Requires `--format json` to see structured output.
 
 **Example**:
 ```bash
-python3 .plan/execute-script.py pm-plugin-development:tools-marketplace-inventory:scan-marketplace-inventory --include-descriptions
+python3 .plan/execute-script.py pm-plugin-development:tools-marketplace-inventory:scan-marketplace-inventory \
+  --include-descriptions --format json
 ```
 
-**Output with descriptions** (excerpt from file):
-```toon
-agents[1]{name,path,description}:
-java-implement-agent,marketplace/bundles/pm-dev-java/agents/java-implement-agent.md,Implements Java code following CUI standards
+### --full (optional flag)
+
+When specified, includes full details: frontmatter fields and skill subdirectory contents with nested file listings. This is useful when you need to see what files exist within skill directories.
+
+**Example**:
+```bash
+python3 .plan/execute-script.py pm-plugin-development:tools-marketplace-inventory:scan-marketplace-inventory \
+  --full --bundles plan-marshall
 ```
+
+**Output with --full** (excerpt):
+```toon
+plan-marshall:
+  path: marketplace/bundles/plan-marshall
+
+  skills[18]:
+    - name: permission-doctor
+      path: marketplace/bundles/plan-marshall/skills/permission-doctor
+      description: Diagnose permission issues across settings files
+      user_invocable: true
+      allowed_tools: Read, Grep, Bash
+      standards[2]:
+        - permission-syntax.md
+        - security-patterns.md
+      scripts[1]:
+        - permission-doctor.py
+```
+
+**Full mode includes:**
+- Skill frontmatter: `user_invocable`, `allowed_tools`, `model`
+- Skill subdirectories with their files: `standards/`, `templates/`, `scripts/`, `references/`, `knowledge/`, `examples/`, `documents/`
 
 ### --name-pattern (optional)
 
@@ -169,6 +214,37 @@ Output full TOON directly to stdout instead of writing to file.
 # Get full TOON directly (for small/filtered results)
 python3 .plan/execute-script.py pm-plugin-development:tools-marketplace-inventory:scan-marketplace-inventory \
   --bundles pm-workflow --direct-result
+```
+
+### --format (optional)
+
+Output format. Default: `toon`
+
+| Value | Description |
+|-------|-------------|
+| `toon` | TOON format with bundles as top-level keys (default) |
+| `json` | JSON format with `bundles` as dict keyed by bundle name |
+
+**JSON output structure:**
+```json
+{
+  "status": "success",
+  "scope": "marketplace",
+  "bundles": {
+    "plan-marshall": {
+      "path": "marketplace/bundles/plan-marshall",
+      "agents": ["research-best-practices"],
+      "skills": ["permission-doctor", "manage-lessons"]
+    }
+  },
+  "statistics": {...}
+}
+```
+
+**Example**:
+```bash
+python3 .plan/execute-script.py pm-plugin-development:tools-marketplace-inventory:scan-marketplace-inventory \
+  --format json --bundles pm-workflow
 ```
 
 ## Error Handling

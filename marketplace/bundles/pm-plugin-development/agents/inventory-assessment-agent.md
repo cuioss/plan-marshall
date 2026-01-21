@@ -214,20 +214,36 @@ python3 .plan/execute-script.py pm-workflow:manage-files:manage-files read \
   --file work/inventory_raw.toon
 ```
 
-The inventory script returns skill DIRECTORIES (e.g., `marketplace/bundles/X/skills/Y`).
-Convert and group into actual file paths:
+The inventory output uses bundle-block format where bundles are top-level keys:
 
-**CRITICAL**: Skills are directories - append `/SKILL.md` to get the file path:
-```
-inventory_skill_dir: marketplace/bundles/pm-dev-java/skills/java-cdi
-actual_file_path:    marketplace/bundles/pm-dev-java/skills/java-cdi/SKILL.md
+```toon
+plan-marshall:
+  path: marketplace/bundles/plan-marshall
+  skills[N]:
+    - skill-name1
+    - skill-name2
+  commands[N]:
+    - command-name1
+  agents[N]:
+    - agent-name1
 ```
 
-Group by component type:
-- Skills: `{skill_directory}/SKILL.md` for each skill directory
-- Commands: Already file paths (`/commands/*.md`)
-- Agents: Already file paths (`/agents/*.md`)
-- Scripts: Already file paths (`/scripts/*.py`)
+Extract components from each bundle and convert to file paths:
+
+**Skills**: Construct path as `{bundle_path}/skills/{skill_name}/SKILL.md`:
+```
+bundle_path: marketplace/bundles/pm-dev-java
+skill_name: java-cdi
+file_path: marketplace/bundles/pm-dev-java/skills/java-cdi/SKILL.md
+```
+
+**Commands**: Construct path as `{bundle_path}/commands/{command_name}.md`
+
+**Agents**: Construct path as `{bundle_path}/agents/{agent_name}.md`
+
+**Scripts**: Default mode doesn't include scripts with full paths. Use bundle notation from statistics if needed.
+
+Group all paths by component type across all bundles.
 
 ### Step 5: Persist Filtered Inventory
 

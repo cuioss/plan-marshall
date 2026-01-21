@@ -13,6 +13,7 @@ Options:
                              'auto' tries marketplace/bundles first, then falls back to plugin-cache
     --resource-types <types> Resource types: agents, commands, skills, scripts, or comma-separated (default: all)
     --include-descriptions   Extract descriptions from YAML frontmatter
+    --full                   Include full details: frontmatter fields and skill subdirectory contents
     --name-pattern <pattern> Filter resources by name pattern (fnmatch glob, pipe-separated for multiple)
     --bundles <names>        Filter to specific bundles (comma-separated)
     --output <path>          Custom output file path (default: .plan/temp/.../inventory-{timestamp}.toon)
@@ -22,6 +23,10 @@ Output Modes:
     Default:        Writes full inventory to .plan/temp/tools-marketplace-inventory/inventory-{timestamp}.toon
                     Prints TOON summary with output_file path to stdout
     --direct-result: Outputs full TOON directly to stdout (for small results or piped usage)
+
+Output Format:
+    Bundles are top-level keys in the output. Each bundle contains agents, commands, skills, scripts.
+    Default mode shows simple name lists. With --full, includes frontmatter and skill subdirectories.
 
 Script Output:
     Scripts include a 'notation' field in {bundle}:{skill}:{script} format for use with
@@ -41,7 +46,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from toon_parser import serialize_toon  # type: ignore[import-not-found]
+# Note: toon_parser not needed - using custom serialize_inventory_toon for hierarchical output
 
 # Constants
 MARKETPLACE_BUNDLES_PATH = 'marketplace/bundles'
@@ -117,7 +122,65 @@ def extract_description(file_path: Path) -> str | None:
     return None
 
 
-def discover_agents(bundle_dir: Path, include_descriptions: bool) -> list[dict]:
+def extract_frontmatter_fields(file_path: Path) -> dict[str, Any]:
+    """Extract additional frontmatter fields for --full output.
+
+    Returns dict with optional fields: user_invocable, allowed_tools, model
+    """
+    result: dict[str, Any] = {}
+    if not file_path.exists():
+        return result
+
+    try:
+        content = file_path.read_text()
+    except (OSError, UnicodeDecodeError):
+        return result
+
+    if not content.startswith('---'):
+        return result
+
+    match = re.match(r'^---\s*\n(.*?)\n---', content, re.DOTALL)
+    if not match:
+        return result
+
+    frontmatter = match.group(1)
+
+    for line in frontmatter.split('\n'):
+        line = line.strip()
+        if line.startswith('user-invocable:'):
+            value = line[len('user-invocable:') :].strip().lower()
+            result['user_invocable'] = value == 'true'
+        elif line.startswith('allowed-tools:'):
+            # Parse YAML list format: [Read, Write, Bash] or - Read\n- Write
+            value = line[len('allowed-tools:') :].strip()
+            if value.startswith('[') and value.endswith(']'):
+                # Inline list format
+                tools = [t.strip() for t in value[1:-1].split(',') if t.strip()]
+                result['allowed_tools'] = tools
+        elif line.startswith('model:'):
+            result['model'] = line[len('model:') :].strip()
+
+    return result
+
+
+def discover_skill_subdirs(skill_dir: Path) -> dict[str, list[str]]:
+    """Discover subdirectories in a skill and list their files.
+
+    Returns dict mapping subdir name to list of file names.
+    Excludes 'scripts' directory (handled separately).
+    """
+    subdirs: dict[str, list[str]] = {}
+
+    for subdir in sorted(skill_dir.iterdir()):
+        if subdir.is_dir() and subdir.name != 'scripts':
+            files = sorted([f.name for f in subdir.iterdir() if f.is_file()])
+            if files:
+                subdirs[subdir.name] = files
+
+    return subdirs
+
+
+def discover_agents(bundle_dir: Path, include_descriptions: bool, full: bool = False) -> list[dict]:
     """Discover agent .md files in bundle/agents/."""
     agents_dir = bundle_dir / 'agents'
     if not agents_dir.is_dir():
@@ -126,14 +189,19 @@ def discover_agents(bundle_dir: Path, include_descriptions: bool) -> list[dict]:
     agents = []
     for agent_file in sorted(agents_dir.glob('*.md')):
         if agent_file.is_file():
-            agent: dict[str, Any] = {'name': agent_file.stem, 'path': safe_relative_path(agent_file)}
-            if include_descriptions:
+            agent: dict[str, Any] = {'name': agent_file.stem}
+            if full:
+                agent['path'] = safe_relative_path(agent_file)
+                agent['description'] = extract_description(agent_file)
+                agent.update(extract_frontmatter_fields(agent_file))
+            elif include_descriptions:
+                agent['path'] = safe_relative_path(agent_file)
                 agent['description'] = extract_description(agent_file)
             agents.append(agent)
     return agents
 
 
-def discover_commands(bundle_dir: Path, include_descriptions: bool) -> list[dict]:
+def discover_commands(bundle_dir: Path, include_descriptions: bool, full: bool = False) -> list[dict]:
     """Discover command .md files in bundle/commands/."""
     commands_dir = bundle_dir / 'commands'
     if not commands_dir.is_dir():
@@ -142,14 +210,19 @@ def discover_commands(bundle_dir: Path, include_descriptions: bool) -> list[dict
     commands = []
     for command_file in sorted(commands_dir.glob('*.md')):
         if command_file.is_file():
-            command: dict[str, Any] = {'name': command_file.stem, 'path': safe_relative_path(command_file)}
-            if include_descriptions:
+            command: dict[str, Any] = {'name': command_file.stem}
+            if full:
+                command['path'] = safe_relative_path(command_file)
+                command['description'] = extract_description(command_file)
+                command.update(extract_frontmatter_fields(command_file))
+            elif include_descriptions:
+                command['path'] = safe_relative_path(command_file)
                 command['description'] = extract_description(command_file)
             commands.append(command)
     return commands
 
 
-def discover_skills(bundle_dir: Path, include_descriptions: bool) -> list[dict]:
+def discover_skills(bundle_dir: Path, include_descriptions: bool, full: bool = False) -> list[dict]:
     """Discover skill directories containing SKILL.md."""
     skills_dir = bundle_dir / 'skills'
     if not skills_dir.is_dir():
@@ -158,8 +231,16 @@ def discover_skills(bundle_dir: Path, include_descriptions: bool) -> list[dict]:
     skills = []
     for skill_md in sorted(skills_dir.glob('*/SKILL.md')):
         skill_dir = skill_md.parent
-        skill: dict[str, Any] = {'name': skill_dir.name, 'path': safe_relative_path(skill_dir)}
-        if include_descriptions:
+        skill: dict[str, Any] = {'name': skill_dir.name}
+        if full:
+            skill['path'] = safe_relative_path(skill_dir)
+            skill['description'] = extract_description(skill_md)
+            skill.update(extract_frontmatter_fields(skill_md))
+            # Add subdirectory contents
+            subdirs = discover_skill_subdirs(skill_dir)
+            skill.update(subdirs)
+        elif include_descriptions:
+            skill['path'] = safe_relative_path(skill_dir)
             skill['description'] = extract_description(skill_md)
         skills.append(skill)
     return skills
@@ -259,16 +340,16 @@ def _extract_bundle_name(bundle_dir: Path) -> str:
 
 
 def process_bundle(
-    bundle_dir: Path, include: dict[str, bool], include_descriptions: bool, name_patterns: list[str]
+    bundle_dir: Path, include: dict[str, bool], include_descriptions: bool, name_patterns: list[str], full: bool = False
 ) -> dict[str, Any]:
     """Process a single bundle directory and return its data."""
     bundle_name = _extract_bundle_name(bundle_dir)
     bundle: dict[str, Any] = {'name': bundle_name, 'path': safe_relative_path(bundle_dir)}
 
     # Discover and filter resources
-    agents = discover_agents(bundle_dir, include_descriptions) if include['agents'] else []
-    commands = discover_commands(bundle_dir, include_descriptions) if include['commands'] else []
-    skills = discover_skills(bundle_dir, include_descriptions) if include['skills'] else []
+    agents = discover_agents(bundle_dir, include_descriptions, full) if include['agents'] else []
+    commands = discover_commands(bundle_dir, include_descriptions, full) if include['commands'] else []
+    skills = discover_skills(bundle_dir, include_descriptions, full) if include['skills'] else []
     scripts = discover_scripts(bundle_dir, bundle_name) if include['scripts'] else []
 
     # Apply name pattern filter
@@ -276,15 +357,6 @@ def process_bundle(
     bundle['commands'] = filter_resources_by_pattern(commands, name_patterns)
     bundle['skills'] = filter_resources_by_pattern(skills, name_patterns)
     bundle['scripts'] = filter_resources_by_pattern(scripts, name_patterns)
-
-    # Bundle statistics
-    bundle['statistics'] = {
-        'agents': len(bundle['agents']),
-        'commands': len(bundle['commands']),
-        'skills': len(bundle['skills']),
-        'scripts': len(bundle['scripts']),
-        'total_resources': sum(len(bundle[k]) for k in ['agents', 'commands', 'skills', 'scripts']),
-    }
 
     return bundle
 
@@ -351,13 +423,77 @@ def get_base_path(scope: str) -> Path:
     raise ValueError(f'Invalid scope: {scope}')
 
 
-def write_file_output(output: dict, output_dir: Path, custom_output: str = '') -> tuple[Path, str]:
+def serialize_inventory_toon(data: dict, full: bool = False) -> str:
+    """Serialize inventory to TOON with bundle-block structure.
+
+    Bundles are top-level keys. Components are nested lists.
+    Default mode shows simple name lists.
+    Full mode includes paths, descriptions, frontmatter, and skill subdirs.
+    """
+    lines: list[str] = []
+    lines.append('status: success')
+    lines.append(f"scope: {data['scope']}")
+    lines.append(f"base_path: {data['base_path']}")
+    lines.append('')
+
+    for bundle in data['bundles']:
+        bundle_name = bundle['name']
+        lines.append(f'{bundle_name}:')
+        lines.append(f"  path: {bundle['path']}")
+
+        for resource_type in ['agents', 'commands', 'skills', 'scripts']:
+            items = bundle.get(resource_type, [])
+            if items:
+                lines.append(f'  {resource_type}[{len(items)}]:')
+                for item in items:
+                    if full:
+                        # Detailed format with frontmatter
+                        lines.append(f"    - name: {item['name']}")
+                        if item.get('path'):
+                            lines.append(f"      path: {item['path']}")
+                        if item.get('description'):
+                            lines.append(f"      description: {item['description']}")
+                        if item.get('user_invocable') is not None:
+                            lines.append(f"      user_invocable: {str(item['user_invocable']).lower()}")
+                        if item.get('allowed_tools'):
+                            lines.append(f"      allowed_tools: [{', '.join(item['allowed_tools'])}]")
+                        if item.get('model'):
+                            lines.append(f"      model: {item['model']}")
+                        # Scripts have additional fields
+                        if item.get('skill'):
+                            lines.append(f"      skill: {item['skill']}")
+                        if item.get('notation'):
+                            lines.append(f"      notation: {item['notation']}")
+                        if item.get('type'):
+                            lines.append(f"      type: {item['type']}")
+                        # Skill subdirectories
+                        for subdir_name in ['standards', 'templates', 'references', 'knowledge', 'examples', 'documents']:
+                            if item.get(subdir_name):
+                                subdir_files = item[subdir_name]
+                                lines.append(f'      {subdir_name}[{len(subdir_files)}]:')
+                                for file_name in subdir_files:
+                                    lines.append(f'        - {file_name}')
+                    else:
+                        # Simple format - just names
+                        lines.append(f"    - {item['name']}")
+        lines.append('')
+
+    # Statistics
+    lines.append('statistics:')
+    for key, value in data['statistics'].items():
+        lines.append(f'  {key}: {value}')
+
+    return '\n'.join(lines)
+
+
+def write_file_output(output: dict, output_dir: Path, custom_output: str = '', full: bool = False) -> tuple[Path, str]:
     """Write full output to TOON file, return (file_path, summary_toon_for_stdout).
 
     Args:
         output: The inventory data to write
         output_dir: Default directory for timestamped output files
         custom_output: Optional custom output file path (overrides output_dir)
+        full: Whether to include full details in output
     """
     if custom_output:
         # Use custom output path
@@ -369,20 +505,24 @@ def write_file_output(output: dict, output_dir: Path, custom_output: str = '') -
         timestamp = datetime.now().strftime('%Y%m%d-%H%M%S')
         output_file = output_dir / f'inventory-{timestamp}.toon'
 
-    # Write full inventory in TOON format
-    output_file.write_text(serialize_toon(output))
+    # Write full inventory in TOON format with bundle-block structure
+    output_file.write_text(serialize_inventory_toon(output, full))
 
     # Return summary in TOON format
-    summary = {
-        'status': 'success',
-        'output_mode': 'file',
-        'output_file': str(output_file),
-        'scope': output['scope'],
-        'base_path': output['base_path'],
-        'statistics': output['statistics'],
-        'next_step': f'Read {output_file} for full inventory details',
-    }
-    return output_file, serialize_toon(summary)
+    summary_lines = [
+        'status: success',
+        'output_mode: file',
+        f'output_file: {output_file}',
+        f"scope: {output['scope']}",
+        f"base_path: {output['base_path']}",
+        '',
+        'statistics:',
+    ]
+    for key, value in output['statistics'].items():
+        summary_lines.append(f'  {key}: {value}')
+    summary_lines.append('')
+    summary_lines.append(f'next_step: Read {output_file} for full inventory details')
+    return output_file, '\n'.join(summary_lines)
 
 
 def main():
@@ -399,6 +539,11 @@ def main():
     )
     parser.add_argument(
         '--include-descriptions', action='store_true', help='Extract descriptions from YAML frontmatter'
+    )
+    parser.add_argument(
+        '--full',
+        action='store_true',
+        help='Include full details: frontmatter fields and skill subdirectory contents',
     )
     parser.add_argument(
         '--name-pattern',
@@ -456,16 +601,17 @@ def main():
 
     # Build inventory
     bundles_data = [
-        process_bundle(bundle_dir, include, args.include_descriptions, name_patterns) for bundle_dir in bundle_dirs
+        process_bundle(bundle_dir, include, args.include_descriptions, name_patterns, args.full)
+        for bundle_dir in bundle_dirs
     ]
 
     # Calculate totals
-    total_agents = sum(b['statistics']['agents'] for b in bundles_data)
-    total_commands = sum(b['statistics']['commands'] for b in bundles_data)
-    total_skills = sum(b['statistics']['skills'] for b in bundles_data)
-    total_scripts = sum(b['statistics']['scripts'] for b in bundles_data)
+    total_agents = sum(len(b.get('agents', [])) for b in bundles_data)
+    total_commands = sum(len(b.get('commands', [])) for b in bundles_data)
+    total_skills = sum(len(b.get('skills', [])) for b in bundles_data)
+    total_scripts = sum(len(b.get('scripts', [])) for b in bundles_data)
 
-    # Output
+    # Output structure (bundles remain as list internally, serialization handles format)
     output = {
         'scope': args.scope,
         'base_path': str(base_path),
@@ -485,14 +631,24 @@ def main():
         if args.format == 'json':
             import json
 
-            print(json.dumps(output, indent=2))
+            # For JSON, convert bundles list to dict keyed by name
+            json_output = {
+                'status': 'success',
+                'scope': output['scope'],
+                'base_path': output['base_path'],
+                'bundles': {
+                    b['name']: {k: v for k, v in b.items() if k != 'name'} for b in bundles_data
+                },
+                'statistics': output['statistics'],
+            }
+            print(json.dumps(json_output, indent=2))
         else:
-            print(serialize_toon(output))
+            print(serialize_inventory_toon(output, args.full))
     else:
         # Default: File mode - write full output to file, print summary
         output_dir = get_temp_dir(DEFAULT_OUTPUT_SUBDIR)
         try:
-            _, summary_toon = write_file_output(output, output_dir, args.output)
+            _, summary_toon = write_file_output(output, output_dir, args.output, args.full)
             print(summary_toon)
         except OSError as e:
             print(f'ERROR: Failed to write output file: {e}', file=sys.stderr)

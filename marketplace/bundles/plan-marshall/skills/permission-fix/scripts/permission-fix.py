@@ -512,24 +512,22 @@ def has_commands(bundle: dict) -> bool:
 def generate_required_wildcards(marketplace: dict) -> list[str]:
     """Generate list of required wildcard permissions from marketplace.
 
-    Supports both 'bundles' key (from scan-marketplace-inventory output)
-    and 'plugins' key (from marketplace.json format).
+    Expects 'bundles' as a dict where keys are bundle names and values
+    are bundle data (from scan-marketplace-inventory JSON output).
 
-    For real marketplace.json format (no skills/commands arrays),
-    assumes all bundles have both skills and commands.
+    For bundles without explicit skills/commands arrays,
+    assumes the bundle has both skills and commands.
     """
     wildcards = []
-    # Support both 'bundles' (inventory output) and 'plugins' (marketplace.json)
-    bundles = marketplace.get('bundles', marketplace.get('plugins', []))
+    bundles = marketplace.get('bundles', {})
 
-    for bundle in bundles:
-        bundle_name = bundle.get('name', '')
+    for bundle_name, bundle_data in bundles.items():
         if not bundle_name:
             continue
 
-        if has_skills(bundle):
+        if has_skills(bundle_data):
             wildcards.append(f'Skill({bundle_name}:*)')
-        if has_commands(bundle):
+        if has_commands(bundle_data):
             wildcards.append(f'SlashCommand(/{bundle_name}:*)')
 
     return wildcards
@@ -567,8 +565,8 @@ def cmd_ensure_wildcards(args) -> int:
         else:
             added.append(wildcard)
 
-    # Count bundles from either 'bundles' or 'plugins' key
-    bundles = marketplace.get('bundles', marketplace.get('plugins', []))
+    # Count bundles from dict
+    bundles = marketplace.get('bundles', {})
 
     result = {
         'added': added,

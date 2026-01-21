@@ -89,23 +89,37 @@ def run_marketplace_inventory(include_descriptions: bool) -> dict:
         ','.join(PLANNING_BUNDLES),
         '--name-pattern',
         '|'.join(PLANNING_PATTERNS),
-        '--direct-result',  # Get full TOON output directly
+        '--direct-result',  # Get full output directly
     ]
 
     if include_descriptions:
-        args.append('--include-descriptions')
+        # Descriptions require JSON format for structured output
+        args.extend(['--include-descriptions', '--format', 'json'])
+    # TOON is default format
 
     result = subprocess.run(args, capture_output=True, text=True)
 
     if result.returncode != 0:
         raise RuntimeError(f'marketplace-inventory failed: {result.stderr}')
 
-    data: dict = parse_toon(result.stdout)
+    if include_descriptions:
+        # Parse JSON when using --format json
+        data: dict = json.loads(result.stdout)
+    else:
+        # Parse TOON for default format
+        data = parse_toon(result.stdout)
     return data
 
 
 def categorize_components(inventory: dict) -> dict:
-    """Categorize components into core and derived."""
+    """Categorize components into core and derived.
+
+    Handles two formats:
+    - TOON: bundles are top-level keys (e.g., inventory['pm-workflow'])
+    - JSON: bundles are in 'bundles' dict (e.g., inventory['bundles']['pm-workflow'])
+
+    Items may be strings (default mode) or dicts (with --include-descriptions).
+    """
     core = {
         'bundle': CORE_BUNDLE,
         'agents': [],
@@ -115,25 +129,38 @@ def categorize_components(inventory: dict) -> dict:
     }
     derived = []
 
-    for bundle in inventory.get('bundles', []):
-        bundle_name = bundle['name']
+    # Normalize items to dicts with 'name' key for consistent processing
+    def normalize_items(items):
+        """Convert items to dicts with 'name' key."""
+        if not items:
+            return []
+        return [{'name': item} if isinstance(item, str) else item for item in items]
 
+    # Get bundles dict - either from 'bundles' key (JSON) or as top-level keys (TOON)
+    if 'bundles' in inventory and isinstance(inventory['bundles'], dict):
+        # JSON format: bundles are in 'bundles' dict
+        bundles_dict = inventory['bundles']
+    else:
+        # TOON format: bundles are top-level keys, skip metadata
+        metadata_keys = {'status', 'scope', 'base_path', 'statistics'}
+        bundles_dict = {k: v for k, v in inventory.items() if k not in metadata_keys and isinstance(v, dict)}
+
+    for bundle_name, bundle_data in bundles_dict.items():
         if bundle_name == CORE_BUNDLE:
-            core['agents'] = bundle.get('agents', [])
-            core['commands'] = bundle.get('commands', [])
-            core['skills'] = bundle.get('skills', [])
-            core['scripts'] = bundle.get('scripts', [])
+            core['agents'] = normalize_items(bundle_data.get('agents', []))
+            core['commands'] = normalize_items(bundle_data.get('commands', []))
+            core['skills'] = normalize_items(bundle_data.get('skills', []))
+            core['scripts'] = normalize_items(bundle_data.get('scripts', []))
         else:
             # Derived bundle - only include if it has planning components
-            if any(bundle.get(k) for k in ['agents', 'commands', 'skills', 'scripts']):
+            if any(bundle_data.get(k) for k in ['agents', 'commands', 'skills', 'scripts']):
                 derived.append(
                     {
                         'bundle': bundle_name,
-                        'agents': bundle.get('agents', []),
-                        'commands': bundle.get('commands', []),
-                        'skills': bundle.get('skills', []),
-                        'scripts': bundle.get('scripts', []),
-                        'statistics': bundle.get('statistics', {}),
+                        'agents': normalize_items(bundle_data.get('agents', [])),
+                        'commands': normalize_items(bundle_data.get('commands', [])),
+                        'skills': normalize_items(bundle_data.get('skills', [])),
+                        'scripts': normalize_items(bundle_data.get('scripts', [])),
                     }
                 )
 

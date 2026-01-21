@@ -117,9 +117,15 @@ class TestEnsureWildcards(ScriptTestCase):
         settings_file = self.temp_dir / 'settings.json'
         settings_file.write_text(json.dumps({'permissions': {'allow': ['Bash(git:*)'], 'deny': [], 'ask': []}}))
 
+        # Use new dict format: bundles are keys, not list items
         marketplace_file = self.temp_dir / 'marketplace.json'
         marketplace_file.write_text(
-            json.dumps({'bundles': [{'path': 'bundles/builder'}, {'path': 'bundles/planning'}]})
+            json.dumps({
+                'bundles': {
+                    'builder': {'path': 'marketplace/bundles/builder', 'skills': ['some-skill']},
+                    'planning': {'path': 'marketplace/bundles/planning', 'commands': ['some-cmd']},
+                }
+            })
         )
 
         result = run_script(
@@ -136,6 +142,9 @@ class TestEnsureWildcards(ScriptTestCase):
 
         self.assertIn('added', data)
         # Should suggest adding wildcards for bundles
+        added = data['added']
+        self.assertIn('Skill(builder:*)', added)
+        self.assertIn('SlashCommand(/planning:*)', added)
 
     def test_reports_already_present(self):
         """Should report wildcards already present."""
@@ -146,8 +155,15 @@ class TestEnsureWildcards(ScriptTestCase):
             )
         )
 
+        # Use new dict format: bundles are keys
         marketplace_file = self.temp_dir / 'marketplace.json'
-        marketplace_file.write_text(json.dumps({'bundles': [{'path': 'bundles/builder'}]}))
+        marketplace_file.write_text(
+            json.dumps({
+                'bundles': {
+                    'builder': {'path': 'marketplace/bundles/builder', 'skills': ['skill1'], 'commands': ['cmd1']},
+                }
+            })
+        )
 
         result = run_script(
             SCRIPT_PATH,
@@ -162,40 +178,34 @@ class TestEnsureWildcards(ScriptTestCase):
         data = result.json()
 
         self.assertIn('already_present', data)
+        self.assertEqual(data['already_present'], 2)  # Both Skill and SlashCommand already exist
 
-    def test_supports_plugins_key_with_embedded_skills_commands(self):
-        """Should support 'plugins' key with embedded skills/commands arrays.
+    def test_bundles_with_skills_and_commands_arrays(self):
+        """Should generate wildcards for bundles with skills/commands arrays.
 
-        This tests a format where plugins have skills and commands arrays
-        directly in the plugin entry (used by scan-marketplace-inventory output).
+        Tests the scan-marketplace-inventory JSON output format where bundles
+        are dict keys and values contain skills/commands arrays.
         """
         settings_file = self.temp_dir / 'settings.json'
         settings_file.write_text(json.dumps({'permissions': {'allow': ['Bash(git:*)'], 'deny': [], 'ask': []}}))
 
-        # Use 'plugins' key with embedded skills/commands
+        # Use new dict format with skills/commands arrays
         marketplace_file = self.temp_dir / 'marketplace.json'
         marketplace_file.write_text(
-            json.dumps(
-                {
-                    'name': 'plan-marshall',
-                    'plugins': [
-                        {
-                            'name': 'pm-workflow',
-                            'description': 'Workflow management',
-                            'source': './bundles/pm-workflow',
-                            'skills': [{'name': 'manage-lifecycle'}],
-                            'commands': [{'name': 'plan-manage'}],
-                        },
-                        {
-                            'name': 'pm-dev-java',
-                            'description': 'Java development',
-                            'source': './bundles/pm-dev-java',
-                            'skills': [{'name': 'cui-java-core'}],
-                            'commands': [{'name': 'java-create'}],
-                        },
-                    ],
+            json.dumps({
+                'bundles': {
+                    'pm-workflow': {
+                        'path': 'marketplace/bundles/pm-workflow',
+                        'skills': ['manage-lifecycle', 'plan-manage'],
+                        'commands': ['plan-manage'],
+                    },
+                    'pm-dev-java': {
+                        'path': 'marketplace/bundles/pm-dev-java',
+                        'skills': ['cui-java-core'],
+                        'commands': ['java-create'],
+                    },
                 }
-            )
+            })
         )
 
         result = run_script(
@@ -219,49 +229,28 @@ class TestEnsureWildcards(ScriptTestCase):
         self.assertIn('SlashCommand(/pm-dev-java:*)', added)
         self.assertEqual(data['total'], 4)  # 2 bundles × 2 wildcards each
 
-    def test_supports_real_marketplace_json_format(self):
-        """Should support REAL marketplace.json format without skills/commands arrays.
+    def test_bundles_without_skills_commands_arrays(self):
+        """Should assume bundles have both skills and commands when arrays absent.
 
-        The actual marketplace/.claude-plugin/marketplace.json uses this format:
-        {
-            "plugins": [
-                {
-                    "name": "pm-workflow",
-                    "description": "...",
-                    "source": "./bundles/pm-workflow",
-                    "strict": false
-                }
-            ]
-        }
-
-        Note: NO skills or commands arrays in the plugin entries.
-        The script should generate wildcards for ALL bundles in this case.
+        When bundles dict entries don't have explicit skills/commands arrays,
+        the script should assume the bundle has both and generate wildcards for each.
         """
         settings_file = self.temp_dir / 'settings.json'
         settings_file.write_text(json.dumps({'permissions': {'allow': ['Bash(git:*)'], 'deny': [], 'ask': []}}))
 
-        # Use REAL marketplace.json format - NO skills/commands arrays
+        # Bundles without skills/commands arrays
         marketplace_file = self.temp_dir / 'marketplace.json'
         marketplace_file.write_text(
-            json.dumps(
-                {
-                    'name': 'plan-marshall',
-                    'plugins': [
-                        {
-                            'name': 'pm-workflow',
-                            'description': 'Workflow management',
-                            'source': './bundles/pm-workflow',
-                            'strict': False,
-                        },
-                        {
-                            'name': 'pm-dev-java',
-                            'description': 'Java development',
-                            'source': './bundles/pm-dev-java',
-                            'strict': False,
-                        },
-                    ],
+            json.dumps({
+                'bundles': {
+                    'pm-workflow': {
+                        'path': 'marketplace/bundles/pm-workflow',
+                    },
+                    'pm-dev-java': {
+                        'path': 'marketplace/bundles/pm-dev-java',
+                    },
                 }
-            )
+            })
         )
 
         result = run_script(

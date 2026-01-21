@@ -7,6 +7,7 @@ TOON validity, bundle structure, script discovery, and error handling.
 """
 
 from pathlib import Path
+from typing import Any
 
 from toon_parser import parse_toon  # type: ignore[import-not-found]
 
@@ -16,6 +17,25 @@ from conftest import get_script_path, run_script
 # Script under test
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 SCRIPT_PATH = get_script_path('pm-plugin-development', 'tools-marketplace-inventory', 'scan-marketplace-inventory.py')
+
+# Keys that are metadata, not bundle names
+METADATA_KEYS = {'status', 'scope', 'base_path', 'statistics'}
+
+
+def get_bundles(data: dict) -> list[dict[str, Any]]:
+    """Extract bundle dicts from data where bundles are top-level keys.
+
+    The new format has bundles as top-level keys (e.g., 'plan-marshall:', 'pm-workflow:')
+    rather than a 'bundles' list. This helper extracts them as a list of dicts
+    with 'name' field added for backward compatibility with tests.
+    """
+    bundles = []
+    for key, value in data.items():
+        if key not in METADATA_KEYS and isinstance(value, dict):
+            # Add name field from key for compatibility
+            bundle = {'name': key, **value}
+            bundles.append(bundle)
+    return bundles
 
 
 # =============================================================================
@@ -169,10 +189,15 @@ def test_no_descriptions_returns_null():
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
     data = parse_toon(result.stdout)
+    bundles = get_bundles(data)
 
-    # Check if any agent has description field
+    # In default mode (no --full), agents are just strings (names only), no description field
+    # Check that no agent is a dict with a description field
     has_desc_count = sum(
-        1 for bundle in data.get('bundles', []) for agent in bundle.get('agents', []) if 'description' in agent
+        1
+        for bundle in bundles
+        for agent in bundle.get('agents', [])
+        if isinstance(agent, dict) and 'description' in agent
     )
     assert has_desc_count == 0, (
         f'Should have no description fields without --include-descriptions, found {has_desc_count}'
@@ -180,20 +205,24 @@ def test_no_descriptions_returns_null():
 
 
 def test_with_descriptions_extracts_desc():
-    """Test --include-descriptions extracts descriptions."""
-    result = run_script(SCRIPT_PATH, '--direct-result', '--include-descriptions')
+    """Test --full extracts descriptions."""
+    import json
+
+    # Use --full with --format json to get proper dict structure
+    result = run_script(SCRIPT_PATH, '--direct-result', '--full', '--format', 'json')
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
-    data = parse_toon(result.stdout)
+    data = json.loads(result.stdout)
+    bundles_dict = data.get('bundles', {})
 
-    # Count agents with descriptions
+    # Count agents with descriptions (JSON format has bundles as dict)
     desc_count = sum(
         1
-        for bundle in data.get('bundles', [])
+        for bundle in bundles_dict.values()
         for agent in bundle.get('agents', [])
-        if agent.get('description') is not None
+        if isinstance(agent, dict) and agent.get('description') is not None
     )
-    assert desc_count > 0, f'Should find descriptions with --include-descriptions, found {desc_count}'
+    assert desc_count > 0, f'Should find descriptions with --full, found {desc_count}'
 
 
 # =============================================================================
@@ -245,16 +274,14 @@ def test_bundles_have_required_fields():
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
     data = parse_toon(result.stdout)
-    bundles = data.get('bundles', [])
+    bundles = get_bundles(data)
     assert len(bundles) > 0, 'Should have at least one bundle'
 
     first_bundle = bundles[0]
     assert 'name' in first_bundle, 'Bundle should have name'
     assert 'path' in first_bundle, 'Bundle should have path'
-    assert 'agents' in first_bundle, 'Bundle should have agents'
-    assert 'commands' in first_bundle, 'Bundle should have commands'
-    assert 'skills' in first_bundle, 'Bundle should have skills'
-    assert 'statistics' in first_bundle, 'Bundle should have statistics'
+    # Note: agents/commands/skills/scripts may not be present if empty
+    # The new format only includes resource types that have entries
 
 
 # =============================================================================
@@ -302,18 +329,22 @@ def test_script_count_matches_filesystem():
 
 
 def test_scripts_have_path_formats():
-    """Test scripts have path_formats structure."""
-    result = run_script(SCRIPT_PATH, '--direct-result')
+    """Test scripts have path_formats structure when using --full flag."""
+    import json
+
+    # Note: Scripts always have path_formats structure (both in default and --full mode)
+    result = run_script(SCRIPT_PATH, '--direct-result', '--full', '--format', 'json')
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
-    data = parse_toon(result.stdout)
+    data = json.loads(result.stdout)
+    bundles_dict = data.get('bundles', {})
 
-    # Count scripts with path_formats.absolute
+    # Count scripts with path_formats.absolute (JSON format)
     scripts_with_paths = sum(
         1
-        for bundle in data.get('bundles', [])
+        for bundle in bundles_dict.values()
         for script in bundle.get('scripts', [])
-        if script.get('path_formats', {}).get('absolute') is not None
+        if isinstance(script, dict) and script.get('path_formats', {}).get('absolute') is not None
     )
     total_scripts = data.get('statistics', {}).get('total_scripts', 0)
 
@@ -324,14 +355,16 @@ def test_scripts_have_path_formats():
 
 def test_scripts_have_notation_field():
     """Test all scripts have notation field in {bundle}:{skill}:{script} format."""
-    result = run_script(SCRIPT_PATH, '--direct-result', '--resource-types', 'scripts')
+    import json
+
+    result = run_script(SCRIPT_PATH, '--direct-result', '--resource-types', 'scripts', '--full', '--format', 'json')
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
-    data = parse_toon(result.stdout)
+    data = json.loads(result.stdout)
+    bundles_dict = data.get('bundles', {})
 
-    # Verify all scripts have notation field
-    for bundle in data.get('bundles', []):
-        bundle_name = bundle['name']
+    # Verify all scripts have notation field (JSON format has bundles as dict)
+    for bundle_name, bundle in bundles_dict.items():
         for script in bundle.get('scripts', []):
             assert 'notation' in script, f'Script {script["name"]} missing notation field'
             notation = script['notation']
@@ -343,12 +376,15 @@ def test_scripts_have_notation_field():
 
 def test_scripts_notation_format_valid():
     """Test notation follows {bundle}:{skill}:{script} format with two colons."""
-    result = run_script(SCRIPT_PATH, '--direct-result', '--resource-types', 'scripts')
+    import json
+
+    result = run_script(SCRIPT_PATH, '--direct-result', '--resource-types', 'scripts', '--full', '--format', 'json')
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
-    data = parse_toon(result.stdout)
+    data = json.loads(result.stdout)
+    bundles_dict = data.get('bundles', {})
 
-    for bundle in data.get('bundles', []):
+    for bundle in bundles_dict.values():
         for script in bundle.get('scripts', []):
             notation = script.get('notation', '')
             parts = notation.split(':')
@@ -364,11 +400,13 @@ def test_scripts_exclude_private_modules():
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
     data = parse_toon(result.stdout)
+    bundles = get_bundles(data)
 
     # Verify no script names start with underscore
-    for bundle in data.get('bundles', []):
+    # In default mode, scripts are strings (just names)
+    for bundle in bundles:
         for script in bundle.get('scripts', []):
-            script_name = script.get('name', '')
+            script_name = script if isinstance(script, str) else script.get('name', '')
             assert not script_name.startswith('_'), (
                 f"Private module '{script_name}' should not be included (underscore prefix = internal)"
             )
@@ -385,13 +423,15 @@ def test_name_pattern_filters_agents():
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
     data = parse_toon(result.stdout)
+    bundles = get_bundles(data)
     total_agents = data.get('statistics', {}).get('total_agents', 0)
     assert total_agents >= 1, 'Should find at least 1 plan-related agent'
 
-    # Verify all agents match the pattern
-    for bundle in data.get('bundles', []):
+    # Verify all agents match the pattern (agents are strings in default mode)
+    for bundle in bundles:
         for agent in bundle.get('agents', []):
-            assert '-plan-' in agent['name'], f'Agent {agent["name"]} should match *-plan-* pattern'
+            agent_name = agent if isinstance(agent, str) else agent.get('name', '')
+            assert '-plan-' in agent_name, f'Agent {agent_name} should match *-plan-* pattern'
 
 
 def test_name_pattern_multiple_patterns():
@@ -400,14 +440,16 @@ def test_name_pattern_multiple_patterns():
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
     data = parse_toon(result.stdout)
+    bundles = get_bundles(data)
     total_agents = data.get('statistics', {}).get('total_agents', 0)
     assert total_agents >= 2, 'Should find at least 2 agents matching plan-* or task-* patterns'
 
-    # Verify all agents match one of the patterns
-    for bundle in data.get('bundles', []):
+    # Verify all agents match one of the patterns (agents are strings in default mode)
+    for bundle in bundles:
         for agent in bundle.get('agents', []):
-            assert agent['name'].startswith('plan-') or agent['name'].startswith('task-'), (
-                f'Agent {agent["name"]} should match plan-* or task-* pattern'
+            agent_name = agent if isinstance(agent, str) else agent.get('name', '')
+            assert agent_name.startswith('plan-') or agent_name.startswith('task-'), (
+                f'Agent {agent_name} should match plan-* or task-* pattern'
             )
 
 
@@ -427,13 +469,15 @@ def test_name_pattern_skills_filter():
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
     data = parse_toon(result.stdout)
+    bundles = get_bundles(data)
     total_skills = data.get('statistics', {}).get('total_skills', 0)
     assert total_skills >= 1, 'Should find at least 1 skill starting with plan-'
 
-    # Verify all skills match the pattern
-    for bundle in data.get('bundles', []):
+    # Verify all skills match the pattern (skills are strings in default mode)
+    for bundle in bundles:
         for skill in bundle.get('skills', []):
-            assert skill['name'].startswith('plan-'), f'Skill {skill["name"]} should start with plan-'
+            skill_name = skill if isinstance(skill, str) else skill.get('name', '')
+            assert skill_name.startswith('plan-'), f'Skill {skill_name} should start with plan-'
 
 
 # =============================================================================
@@ -447,7 +491,7 @@ def test_bundles_filter_single():
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
     data = parse_toon(result.stdout)
-    bundles = data.get('bundles', [])
+    bundles = get_bundles(data)
     assert len(bundles) == 1, f'Should have exactly 1 bundle, found {len(bundles)}'
     assert bundles[0]['name'] == 'pm-workflow', f"Bundle should be 'pm-workflow', got '{bundles[0]['name']}'"
 
@@ -458,7 +502,7 @@ def test_bundles_filter_multiple():
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
     data = parse_toon(result.stdout)
-    bundles = data.get('bundles', [])
+    bundles = get_bundles(data)
     bundle_names = {b['name'] for b in bundles}
     assert bundle_names == {'pm-workflow', 'pm-dev-java'}, f'Expected pm-workflow and pm-dev-java, got {bundle_names}'
 
@@ -469,7 +513,7 @@ def test_bundles_filter_nonexistent():
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
     data = parse_toon(result.stdout)
-    bundles = data.get('bundles', [])
+    bundles = get_bundles(data)
     assert len(bundles) == 0, f'Should have 0 bundles for nonexistent filter, found {len(bundles)}'
 
 
@@ -486,7 +530,7 @@ def test_combined_bundle_and_name_pattern():
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
     data = parse_toon(result.stdout)
-    bundles = data.get('bundles', [])
+    bundles = get_bundles(data)
     assert len(bundles) == 1, 'Should have exactly 1 bundle'
     assert bundles[0]['name'] == 'pm-workflow', 'Bundle should be pm-workflow'
 
@@ -494,7 +538,8 @@ def test_combined_bundle_and_name_pattern():
     agents = bundles[0].get('agents', [])
     assert len(agents) >= 1, 'Should find at least 1 plan-* agent in pm-workflow'
     for agent in agents:
-        assert agent['name'].startswith('plan-'), f'Agent {agent["name"]} should match plan-*'
+        agent_name = agent if isinstance(agent, str) else agent.get('name', '')
+        assert agent_name.startswith('plan-'), f'Agent {agent_name} should match plan-*'
 
 
 # =============================================================================
@@ -610,8 +655,9 @@ def test_output_param_creates_file_at_path(tmp_path):
     # Verify content is valid TOON
     content = output_file.read_text()
     data = parse_toon(content)
-    assert len(data.get('bundles', [])) == 1, 'Should have one bundle'
-    assert data['bundles'][0]['name'] == 'pm-workflow', 'Bundle should be pm-workflow'
+    bundles = get_bundles(data)
+    assert len(bundles) == 1, 'Should have one bundle'
+    assert bundles[0]['name'] == 'pm-workflow', 'Bundle should be pm-workflow'
 
 
 def test_output_param_creates_parent_dirs(tmp_path):
@@ -672,15 +718,16 @@ def test_output_param_with_filters(tmp_path):
     assert output_file.exists(), f'Should create file at {output_file}'
 
     data = parse_toon(output_file.read_text())
-    bundles = data.get('bundles', [])
+    bundles = get_bundles(data)
     assert len(bundles) == 1, 'Should have one bundle'
 
     # Verify skills only (no agents, commands, scripts)
     bundle = bundles[0]
-    assert bundle.get('statistics', {}).get('agents', 0) == 0, 'Should have 0 agents'
-    assert bundle.get('statistics', {}).get('commands', 0) == 0, 'Should have 0 commands'
-    assert bundle.get('statistics', {}).get('scripts', 0) == 0, 'Should have 0 scripts'
-    assert bundle.get('statistics', {}).get('skills', 0) >= 1, 'Should have at least 1 skill'
+    # In the new format, empty arrays aren't included, so check count
+    assert len(bundle.get('agents', [])) == 0, 'Should have 0 agents'
+    assert len(bundle.get('commands', [])) == 0, 'Should have 0 commands'
+    assert len(bundle.get('scripts', [])) == 0, 'Should have 0 scripts'
+    assert len(bundle.get('skills', [])) >= 1, 'Should have at least 1 skill'
 
 
 # =============================================================================
