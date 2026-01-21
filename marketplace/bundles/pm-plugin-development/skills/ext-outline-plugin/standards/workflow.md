@@ -201,6 +201,28 @@ FOR each bundle where filter returned file_count > 0:
 
 **Agent Responsibility**: Each agent runs the filter script to get its file paths, then analyzes those files using LLM reasoning.
 
+**Step 3d: Error Handling**
+
+**CRITICAL**: If ANY analysis agent fails due to API errors, **HALT the workflow immediately**.
+
+```
+IF any agent returns API error (529, timeout, connection error):
+  HALT with error:
+    status: error
+    error_type: api_unavailable
+    message: "Analysis agent failed due to API error. Retry later."
+    failed_agent: {agent_name}
+    bundle: {bundle}
+
+  DO NOT:
+    - Fall back to grep/search
+    - Skip the failed bundle
+    - Continue with partial analysis
+    - Attempt manual file inspection
+```
+
+**Rationale**: Semantic analysis requires LLM reasoning. Simple grep cannot distinguish output specs from config/input JSON, leading to false positives that corrupt downstream deliverables.
+
 ### Step 4: Aggregate and Validate
 
 Collect findings from each agent:

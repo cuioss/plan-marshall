@@ -50,6 +50,25 @@ The agent:
 
 **Contract**: After agent returns, `work/inventory_filtered.toon` exists and is linked in references.
 
+### Error Handling
+
+**CRITICAL**: If the agent fails due to API errors (529 overload, timeout, etc.), **HALT the workflow immediately**.
+
+```
+IF agent returns API error (529, timeout, connection error):
+  HALT with error:
+    status: error
+    error_type: api_unavailable
+    message: "Assessment agent failed due to API error. Retry later."
+
+  DO NOT:
+    - Fall back to manual grep/search
+    - Attempt simplified analysis
+    - Continue with partial data
+```
+
+**Rationale**: Fallback approaches produce degraded output (false positives/negatives) that downstream phases cannot detect. Better to fail clearly than produce incorrect results.
+
 ### Step 2: Determine Change Type
 
 After agent returns, determine `change_type` from request:
