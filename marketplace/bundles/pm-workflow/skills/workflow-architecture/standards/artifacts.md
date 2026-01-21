@@ -14,6 +14,10 @@ File formats and structures for plan data storage.
 │
 ├── solution_outline.md      Phase: outline
 │
+├── work/                    Phase: outline+ (working files)
+│   ├── inventory_raw.toon       Raw inventory from scan
+│   └── inventory_filtered.toon  Filtered/transformed inventory
+│
 ├── tasks/                   Phase: plan
 │   ├── TASK-001-IMPL.toon
 │   ├── TASK-002-IMPL.toon
@@ -58,6 +62,14 @@ File formats and structures for plan data storage.
 │  │    ### 2. Title                                              │    │
 │  │      ...                                                     │    │
 │  └─────────────────────────────────────────────────────────────┘    │
+│                                                                      │
+│  work/                                                               │
+│  ┌──────────────────────┐  ┌───────────────────────┐                │
+│  │ inventory_raw.toon   │  │ inventory_filtered    │                │
+│  ├──────────────────────┤  ├───────────────────────┤                │
+│  │ Raw scan output      │  │ Transformed paths     │                │
+│  │ from marketplace     │  │ grouped by type       │                │
+│  └──────────────────────┘  └───────────────────────┘                │
 │                                                                      │
 ├─────────────────────────────────────────────────────────────────────┤
 │                        PLAN PHASE                                    │
@@ -307,6 +319,44 @@ Solution design document with deliverables.
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-solution-outline:manage-solution-outline \
   {write|read|validate|list-deliverables|exists} --plan-id {id}
+```
+
+---
+
+## work/ Directory
+
+Working files directory for intermediate data during outline and later phases.
+
+### Location
+
+```
+.plan/plans/{plan_id}/work/
+```
+
+### Purpose
+
+The `work/` directory stores intermediate files that are:
+- Generated during outline phase (inventory scans, analysis results)
+- Referenced by other artifacts via `references.toon`
+- Plan-specific working data (not archived artifacts)
+
+### Common Files
+
+| File | Phase | Description |
+|------|-------|-------------|
+| `inventory_raw.toon` | outline | Raw marketplace inventory from scan-marketplace-inventory |
+| `inventory_filtered.toon` | outline | Transformed inventory with file paths grouped by type |
+
+### Manager
+
+```bash
+# Create work directory
+python3 .plan/execute-script.py pm-workflow:manage-files:manage-files mkdir \
+  --plan-id {plan_id} --dir work
+
+# Read/write files in work directory
+python3 .plan/execute-script.py pm-workflow:manage-files:manage-files read \
+  --plan-id {plan_id} --file work/inventory_filtered.toon
 ```
 
 ---
