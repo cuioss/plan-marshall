@@ -29,9 +29,11 @@ ANALYZE request for plugin.json impact:
   - Are components being REMOVED?
   - Are components being RENAMED?
 
-LOG: [DECISION] (inventory-assessment-agent) plugin.json: {AFFECTED|NOT_AFFECTED}
-  reasoning: {explicit derivation from request}
-  evidence: "{request fragment}" or "No mention of add/remove/rename"
+```
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  work {plan_id} INFO "[DECISION] (inventory-assessment-agent) plugin.json: {AFFECTED|NOT_AFFECTED} - reasoning: {explicit derivation}, evidence: {request fragment or 'No mention of add/remove/rename'}"
 ```
 
 #### 1.2 Commands
@@ -41,9 +43,11 @@ ANALYZE request for Commands impact:
   - Are commands EXPLICITLY mentioned in request?
   - Are commands IMPLICITLY affected? (derive how)
 
-LOG: [DECISION] (inventory-assessment-agent) Commands: {AFFECTED|NOT_AFFECTED}
-  explicit_mention: {yes|no} - "{quote}" or "none"
-  implicit_impact: {yes|no} - "{derivation}" or "none"
+```
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  work {plan_id} INFO "[DECISION] (inventory-assessment-agent) Commands: {AFFECTED|NOT_AFFECTED} - explicit: {yes|no} '{quote}', implicit: {yes|no} '{derivation}'"
 ```
 
 #### 1.3 Skills
@@ -53,9 +57,11 @@ ANALYZE request for Skills impact:
   - Are skills EXPLICITLY mentioned in request?
   - Are skills IMPLICITLY affected? (derive how)
 
-LOG: [DECISION] (inventory-assessment-agent) Skills: {AFFECTED|NOT_AFFECTED}
-  explicit_mention: {yes|no} - "{quote}" or "none"
-  implicit_impact: {yes|no} - "{derivation}" or "none"
+```
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  work {plan_id} INFO "[DECISION] (inventory-assessment-agent) Skills: {AFFECTED|NOT_AFFECTED} - explicit: {yes|no} '{quote}', implicit: {yes|no} '{derivation}'"
 ```
 
 #### 1.4 Agents
@@ -65,9 +71,11 @@ ANALYZE request for Agents impact:
   - Are agents EXPLICITLY mentioned in request?
   - Are agents IMPLICITLY affected? (derive how)
 
-LOG: [DECISION] (inventory-assessment-agent) Agents: {AFFECTED|NOT_AFFECTED}
-  explicit_mention: {yes|no} - "{quote}" or "none"
-  implicit_impact: {yes|no} - "{derivation}" or "none"
+```
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  work {plan_id} INFO "[DECISION] (inventory-assessment-agent) Agents: {AFFECTED|NOT_AFFECTED} - explicit: {yes|no} '{quote}', implicit: {yes|no} '{derivation}'"
 ```
 
 #### 1.5 Scripts
@@ -77,17 +85,22 @@ ANALYZE request for Scripts impact:
   - Are scripts EXPLICITLY mentioned in request?
   - Are scripts IMPLICITLY affected? (derive how)
 
-LOG: [DECISION] (inventory-assessment-agent) Scripts: {AFFECTED|NOT_AFFECTED}
-  explicit_mention: {yes|no} - "{quote}" or "none"
-  implicit_impact: {yes|no} - "{derivation}" or "none"
+```
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  work {plan_id} INFO "[DECISION] (inventory-assessment-agent) Scripts: {AFFECTED|NOT_AFFECTED} - explicit: {yes|no} '{quote}', implicit: {yes|no} '{derivation}'"
 ```
 
 #### 1.6 Determine Affected Artifacts
 
 ```
 affected_artifacts = [types where decision = AFFECTED]
+```
 
-LOG: [DECISION] (inventory-assessment-agent) Affected artifacts: {affected_artifacts}
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  work {plan_id} INFO "[DECISION] (inventory-assessment-agent) Affected artifacts: {affected_artifacts}"
 ```
 
 ### Step 2: Bundle/Module Selection
@@ -98,8 +111,11 @@ LOG: [DECISION] (inventory-assessment-agent) Affected artifacts: {affected_artif
 ANALYZE request for bundle/module references:
   - Direct bundle names: "pm-dev-java", "pm-workflow", "plan-marshall"
   - Module paths: "marketplace/bundles/{bundle}"
+```
 
-LOG: [DECISION] (inventory-assessment-agent) Explicit bundles: {list or "none"}
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  work {plan_id} INFO "[DECISION] (inventory-assessment-agent) Explicit bundles: {list or 'none'}"
 ```
 
 #### 2.2 Implicit Bundle Derivation (via Components)
@@ -108,8 +124,11 @@ LOG: [DECISION] (inventory-assessment-agent) Explicit bundles: {list or "none"}
 ANALYZE request for component references that imply bundles:
   - Specific component names imply their containing bundle
   - Component patterns may span multiple bundles
+```
 
-LOG: [DECISION] (inventory-assessment-agent) Implicit bundles: {list or "none"}
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  work {plan_id} INFO "[DECISION] (inventory-assessment-agent) Implicit bundles: {list or 'none'}"
 ```
 
 #### 2.3 Determine Bundle Scope
@@ -123,8 +142,11 @@ IF all_bundles is empty AND affected_artifacts is not empty:
   bundle_scope = "all"
 ELSE:
   bundle_scope = all_bundles
+```
 
-LOG: [DECISION] (inventory-assessment-agent) Bundle scope: {bundle_scope}
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  work {plan_id} INFO "[DECISION] (inventory-assessment-agent) Bundle scope: {bundle_scope}"
 ```
 
 ### Step 3: Create Work Directory and Run Inventory Scan
