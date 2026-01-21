@@ -134,7 +134,17 @@ python3 .plan/execute-script.py pm-workflow:manage-files:manage-files mkdir \
   --dir requirements
 ```
 
-**Output**: Confirmation message to stderr, exit code 0 on success
+**Output** (TOON format):
+
+```toon
+status: success
+plan_id: my-feature
+action: created
+dir: requirements
+path: /path/to/.plan/plans/my-feature/requirements
+```
+
+The `action` field is `created` if the directory was newly created, or `exists` if it already existed.
 
 ### create-or-reference
 

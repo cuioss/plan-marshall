@@ -171,20 +171,44 @@ def cmd_exists(args):
 
 
 def cmd_mkdir(args):
-    """Create subdirectory in plan directory."""
+    """Create subdirectory in plan directory.
+
+    Returns TOON output with the created directory path.
+    """
     if not validate_plan_id(args.plan_id):
-        print(f'Error: Invalid plan_id format: {args.plan_id}', file=sys.stderr)
+        result = {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'invalid_plan_id',
+            'message': f'Invalid plan_id format: {args.plan_id}',
+        }
+        print(serialize_toon(result))
         sys.exit(1)
 
     if not validate_file_path(args.dir):
-        print(f'Error: Invalid directory path: {args.dir}', file=sys.stderr)
+        result = {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'invalid_path',
+            'message': f'Invalid directory path: {args.dir}',
+        }
+        print(serialize_toon(result))
         sys.exit(1)
 
     plan_dir = get_plan_dir(args.plan_id)
     target_dir = plan_dir / args.dir
 
+    already_exists = target_dir.exists()
     target_dir.mkdir(parents=True, exist_ok=True)
-    print(f'Created: {target_dir}/', file=sys.stderr)
+
+    result = {
+        'status': 'success',
+        'plan_id': args.plan_id,
+        'action': 'exists' if already_exists else 'created',
+        'dir': args.dir,
+        'path': str(target_dir),
+    }
+    print(serialize_toon(result))
 
 
 def cmd_create_or_reference(args):

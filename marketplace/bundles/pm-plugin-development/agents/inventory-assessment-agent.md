@@ -129,7 +129,7 @@ LOG: [DECISION] (inventory-assessment-agent) Bundle scope: {bundle_scope}
 
 ### Step 3: Create Work Directory and Run Inventory Scan
 
-First, create the work directory:
+First, create the work directory and capture the path:
 
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-files:manage-files mkdir \
@@ -137,7 +137,18 @@ python3 .plan/execute-script.py pm-workflow:manage-files:manage-files mkdir \
   --dir work
 ```
 
-Then execute the inventory script with `--output` to write directly to the plan's work directory:
+**Output** (TOON):
+```toon
+status: success
+plan_id: {plan_id}
+action: created
+dir: work
+path: {work_dir_path}
+```
+
+Extract `path` from the result - this is the full path to the work directory.
+
+Then execute the inventory script with `--output` using the captured path:
 
 **If bundle_scope is "all"** (scan all bundles):
 ```bash
@@ -146,7 +157,7 @@ python3 .plan/execute-script.py \
   --trace-plan-id {plan_id} \
   --resource-types {affected_artifacts} \
   --include-descriptions \
-  --output .plan/plans/{plan_id}/work/inventory_raw.toon
+  --output {work_dir_path}/inventory_raw.toon
 ```
 
 **If bundle_scope is specific bundles**:
@@ -157,7 +168,7 @@ python3 .plan/execute-script.py \
   --resource-types {affected_artifacts} \
   --bundles {comma-separated-bundle-names} \
   --include-descriptions \
-  --output .plan/plans/{plan_id}/work/inventory_raw.toon
+  --output {work_dir_path}/inventory_raw.toon
 ```
 
 Note: Omit `--bundles` to scan all bundles. Use `--bundles pm-dev-java,pm-workflow` for specific bundles.
