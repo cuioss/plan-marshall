@@ -300,6 +300,93 @@ python3 .plan/execute-script.py {bundle}:{skill}:apply-changes --input results.j
 - [ ] Changes verified
 ```
 
+## Explicit Item Sections Pattern
+
+### The Problem
+
+When agents need to execute bash commands for each item in a list (e.g., logging per-file analysis decisions), generic loop patterns fail:
+
+**Bad - Loop Pattern:**
+```markdown
+## Process Files
+
+For each file in the list:
+1. Read the file
+2. Analyze against request
+3. Execute logging command
+
+Files: [file1.md, file2.md, file3.md, ...]
+```
+
+**Why It Fails:**
+- Agents batch-analyze all files, then skip logging
+- Loop instructions treated as suggestions, not mandates
+- No enforcement mechanism for per-item execution
+
+### The Solution
+
+Parent workflows must generate **explicit numbered sections** where each item has its own heading and dedicated bash command:
+
+**Good - Explicit Sections:**
+```markdown
+## Files to Analyze
+
+Process these files IN ORDER. For EACH file, you MUST:
+1. Read the file
+2. Analyze it against the request
+3. Execute the logging bash command IMMEDIATELY (before next file)
+4. Record the finding
+
+### File 1: path/to/file1.md
+
+**1a. Analyze**: Read and analyze against request. Decide AFFECTED or NOT_AFFECTED.
+
+**1b. Log (EXECUTE IMMEDIATELY)**:
+```bash
+python3 script.py log decision "File 1 decision with reasoning"
+```
+
+### File 2: path/to/file2.md
+
+**2a. Analyze**: Read and analyze against request.
+
+**2b. Log (EXECUTE IMMEDIATELY)**:
+```bash
+python3 script.py log decision "File 2 decision with reasoning"
+```
+```
+
+### Why This Works
+
+1. **Explicit structure** - Each file has its own `### File N:` section
+2. **Dedicated commands** - Each section contains its own bash command
+3. **Sequential enforcement** - "IMMEDIATELY (before next file)" creates ordering
+4. **Visual separation** - Numbered headings make skipping obvious
+
+### When to Use
+
+Use explicit item sections when:
+- Agents must execute bash commands per item (logging, API calls, file operations)
+- Order matters (sequential processing required)
+- Each item needs individual treatment (not batch-able)
+- Reliability is critical (can't skip items)
+
+### Implementation
+
+The parent workflow (not the agent) generates the explicit sections:
+
+```python
+# Parent workflow generates prompt for agent
+prompt = "## Files to Analyze\n\n"
+for i, file in enumerate(files, 1):
+    prompt += f"### File {i}: {file}\n\n"
+    prompt += f"**{i}a. Analyze**: Read and analyze.\n\n"
+    prompt += f"**{i}b. Log (EXECUTE IMMEDIATELY)**:\n"
+    prompt += f"```bash\npython3 log.py decision \"{file}\"\n```\n\n"
+```
+
+The agent receives explicit sections, not a generic loop instruction.
+
 ## Anti-Patterns to Avoid
 
 ### 1. Meta-Explanation

@@ -141,9 +141,49 @@ files[17]:
 
 Skip if `file_count: 0`.
 
-**Step 3c: Spawn Analysis Agents**
+**Step 3c: Spawn Analysis Agents with Explicit File Sections**
 
-For each bundle with files, spawn an agent. Pass: `plan_id`, `bundle`, `request_text`.
+For each bundle × component_type with files, build an explicit prompt with numbered file sections. Each file gets its own section with a mandatory logging command.
+
+**Build Agent Prompt Pattern**:
+
+For each file from the filter script output (Step 3b), generate a numbered section:
+
+```markdown
+## Files to Analyze
+
+Request: {request_text}
+
+Process these files IN ORDER. For EACH file, you MUST:
+1. Read the file
+2. Analyze it against the request
+3. Execute the logging bash command IMMEDIATELY (before next file)
+4. Record the finding
+
+### File 1: {file_path_1}
+
+**1a. Analyze**: Read and analyze against request. Decide AFFECTED or NOT_AFFECTED.
+
+**1b. Log (EXECUTE IMMEDIATELY)**:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  decision {plan_id} INFO "({agent_name}) {DECISION}: {file_path_1} | reasoning: {your_reasoning} | evidence: {your_evidence}"
+```
+
+### File 2: {file_path_2}
+
+**2a. Analyze**: Read and analyze against request. Decide AFFECTED or NOT_AFFECTED.
+
+**2b. Log (EXECUTE IMMEDIATELY)**:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  decision {plan_id} INFO "({agent_name}) {DECISION}: {file_path_2} | reasoning: {your_reasoning} | evidence: {your_evidence}"
+```
+
+[...continue for all files...]
+```
+
+**Spawn Pattern**:
 
 ```
 FOR each bundle where filter returned file_count > 0:
@@ -151,27 +191,27 @@ FOR each bundle where filter returned file_count > 0:
     Task: pm-plugin-development:skill-analysis-agent
       Input:
         plan_id: {plan_id}
-        bundle: {bundle}
         request_text: {request text from Step 2}
+        files_prompt: {generated prompt with explicit file sections}
 
   IF has commands:
     Task: pm-plugin-development:command-analysis-agent
       Input:
         plan_id: {plan_id}
-        bundle: {bundle}
         request_text: {request text from Step 2}
+        files_prompt: {generated prompt with explicit file sections}
 
   IF has agents:
     Task: pm-plugin-development:agent-analysis-agent
       Input:
         plan_id: {plan_id}
-        bundle: {bundle}
         request_text: {request text from Step 2}
+        files_prompt: {generated prompt with explicit file sections}
 ```
 
 **IMPORTANT**: Launch all agents in a SINGLE message for true parallelism.
 
-**Agent Responsibility**: Each agent runs the filter script to get its file paths, uses semantic reasoning to evaluate each file against the request, and returns findings per the contract. Agents do NOT log - logging is centralized in Step 4a.
+**Agent Responsibility**: Each agent receives explicit numbered file sections from the parent workflow. For each section, the agent reads the file, analyzes it, executes the logging command, and records the finding. The explicit numbered sections with bash commands ensure logging cannot be skipped.
 
 **Step 3d: Error Handling**
 
@@ -213,34 +253,18 @@ IF total_analyzed != expected_total:
   ERROR: "Analysis incomplete: {total_analyzed}/{expected_total}"
 ```
 
-### Step 4a: Log All Decisions (Centralized)
+### Step 4a: Verify Decision Logging
 
-**CRITICAL**: The parent workflow logs all decisions. Agents return findings; parent handles logging.
+Each analysis agent logs its own decisions during Step 2. The parent workflow verifies the audit trail exists.
 
-**Why centralized?** Subagents cannot be relied upon to execute "secondary" script calls (logging). By centralizing logging in the parent workflow, we guarantee the audit trail exists.
+**Validation**: After agents complete, verify decision.log has entries:
 
-```
-FOR each finding in all_findings:
-  IF finding.status == "affected":
-    python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-      decision {plan_id} INFO "(pm-plugin-development:ext-outline-plugin) AFFECTED: {finding.file_path}
-      reasoning: {finding.reasoning}
-      evidence: {finding.evidence}"
-  ELSE:
-    python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-      decision {plan_id} INFO "(pm-plugin-development:ext-outline-plugin) NOT_AFFECTED: {finding.file_path}
-      reasoning: {finding.reasoning}
-      evidence: {finding.evidence}"
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  read --plan-id {plan_id} --type decision
 ```
 
-**Validation**: After logging, verify count:
-```
-logged_count = count of AFFECTED/NOT_AFFECTED logged
-expected_count = total_analyzed from Step 4
-
-IF logged_count != expected_count:
-  ERROR: "Logging incomplete: {logged_count}/{expected_count}"
-```
+Check that decision.log contains AFFECTED/NOT_AFFECTED entries for each analyzed file. If missing, agent execution failed to log properly.
 
 ### Step 5: Link Affected Files
 

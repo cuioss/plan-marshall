@@ -25,31 +25,25 @@ Skill: plan-marshall:ref-development-standards
 
 This provides core principles for tool usage and file operations.
 
-## Step 0: Load File Paths
+## Input Format
 
-**Option A - Files provided in prompt**: If the parent workflow provides a file list directly in the prompt, use those paths. Skip script execution.
+The parent workflow provides explicit numbered file sections in the prompt. Each section includes:
+- File path to analyze
+- Pre-generated logging command with placeholders
 
-**Option B - Run filter script**: If no file list is provided, run the filter script:
-
-```bash
-python3 .plan/execute-script.py pm-plugin-development:ext-outline-plugin:filter-inventory filter \
-  --plan-id {plan_id} --bundle {bundle} --component-type commands
+**Expected prompt structure**:
 ```
+## Files to Analyze
 
-**Script Output** (TOON format):
-```toon
-status: success
-bundle: {bundle}
-component_type: commands
-file_count: N
-files[N]:
-  - marketplace/bundles/{bundle}/commands/{command}.md
-  ...
+Request: {request_text}
+
+### File 1: {path}
+**1a. Analyze**: [instructions]
+**1b. Log (EXECUTE IMMEDIATELY)**: [bash command]
+
+### File 2: {path}
+...
 ```
-
-Parse the `files` array from the TOON output. These are the paths to analyze.
-
-**Note**: Bundle-level batching keeps file counts manageable (~5-20 files per bundle×type). No internal batching needed.
 
 ## Command-Specific Context
 
@@ -64,21 +58,26 @@ Command .md files typically have these sections:
 
 **Key distinction**: Content in "Output" sections defines what the command produces. Content in "Usage" or workflow sections may show formats as examples, not as the command's own output.
 
-## Step 1: Analyze Each File (Semantic Reasoning)
+## Task Execution
 
-For each file path from Step 0:
+Process each numbered file section IN ORDER as provided by the parent workflow.
 
-1. Read the file content
-2. Understand what this command does (its purpose)
-3. Ask: **"Does this command need to be modified to fulfill the request?"**
-4. Consider:
-   - Does the command have content directly relevant to the request?
-   - Is that content the command's actual output spec, or just documentation/examples?
-   - Would modifying this command help fulfill the request?
-5. Provide reasoning explaining your decision
+For each `### File N:` section:
 
-## Step 2: Return Findings
+1. **Read the file** at the specified path
+2. **Analyze** against the request:
+   - What does this command do?
+   - Does it have content relevant to the request?
+   - Is that content the command's actual output spec (not just examples)?
+   - Decision: AFFECTED or NOT_AFFECTED
+3. **Execute the logging command** from section Nb - fill in the placeholders:
+   - `{DECISION}`: AFFECTED or NOT_AFFECTED
+   - `{your_reasoning}`: Why this decision
+   - `{your_evidence}`: Specific lines/sections
+4. **Record finding** for final output
 
-Return TOON output per contract with all findings. Include evidence for each decision.
+**CRITICAL**: Execute the bash logging command IMMEDIATELY after analyzing each file, BEFORE moving to the next file section.
 
-**Note**: Do NOT log decisions. The parent workflow handles centralized logging from the findings you return.
+## Return Findings
+
+After ALL file sections have been processed with logging executed, return TOON output per contract.
