@@ -169,41 +169,83 @@ Group by component type:
 - Agents: Already file paths (`/agents/*.md`)
 - Scripts: Already file paths (`/scripts/*.py`)
 
-### Step 5: Log Results
+### Step 5: Persist Inventory to Plan Directory
+
+Create the work subdirectory and persist the filtered inventory:
+
+```bash
+# Create work directory
+python3 .plan/execute-script.py pm-workflow:manage-files:manage-files mkdir \
+  --plan-id {plan_id} \
+  --dir work
+```
+
+Build the inventory TOON content and persist it:
+
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-files:manage-files write \
+  --plan-id {plan_id} \
+  --file work/inventory_filtered.toon \
+  --content "# Filtered Inventory
+
+scope:
+  affected_artifacts: [{affected_artifacts}]
+  bundle_scope: {bundle_scope}
+
+inventory:
+  skills[{skill_count}]:
+{skill_file_paths_indented}
+  commands[{command_count}]:
+{command_file_paths_indented}
+  agents[{agent_count}]:
+{agent_file_paths_indented}
+
+total_files: {total_count}
+"
+```
+
+### Step 6: Store Reference
+
+Link the persisted file in references.toon:
+
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-references:manage-references set \
+  --plan-id {plan_id} \
+  --field inventory_filtered \
+  --value "work/inventory_filtered.toon"
+```
+
+### Step 7: Log Completion
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[CHECKPOINT] (inventory-assessment-agent) Inventory loaded: {total_files} files (skills={skill_count}, commands={command_count}, agents={agent_count})"
+  work {plan_id} INFO "[ARTIFACT] (inventory-assessment-agent) Persisted inventory: work/inventory_filtered.toon ({total_files} files)"
 ```
 
 ## Output
 
-Return TOON format with **complete file paths** (not directories):
+Return TOON summary with persisted file path:
 
 ```toon
 status: success
 plan_id: {plan_id}
-output_file: .plan/temp/tools-marketplace-inventory/inventory-{timestamp}.toon
+inventory_file: work/inventory_filtered.toon
 
 scope:
   affected_artifacts: [skills, commands, agents]
   bundle_scope: all
 
-inventory:
-  skills[N]:
-    - marketplace/bundles/pm-dev-java/skills/java-cdi/SKILL.md
-    - marketplace/bundles/pm-dev-java/skills/java-lombok/SKILL.md
-  commands[N]:
-    - marketplace/bundles/pm-workflow/commands/pr-doctor.md
-  agents[N]:
-    - marketplace/bundles/pm-dev-java/agents/java-implement-agent.md
-
-total_files: {count}
+counts:
+  skills: {N}
+  commands: {N}
+  agents: {N}
+  total: {N}
 ```
 
 **Notes**:
-- `output_file`: Path to the full inventory file (from scan-marketplace-inventory script)
-- Skills MUST be full file paths ending in `/SKILL.md`, not directory paths
+- `inventory_file`: Relative path within plan directory (use with manage-files read)
+- Full inventory data is in the persisted file, not in this output
+- Caller can read full file paths from `work/inventory_filtered.toon`
 
 ## Critical Rules
 

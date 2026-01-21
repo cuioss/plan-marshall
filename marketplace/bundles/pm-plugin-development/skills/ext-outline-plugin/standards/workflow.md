@@ -12,10 +12,10 @@ The Assessment Protocol (SKILL.md) provides these inputs:
 
 | Input | Source | Description |
 |-------|--------|-------------|
-| `change_type` | Assessment Step 3 | create, modify, migrate, refactor |
-| `inventory_filtered.toon` | Plan directory | Persisted inventory with scope and file paths |
+| `change_type` | Assessment Step 2 | create, modify, migrate, refactor |
+| `work/inventory_filtered.toon` | Plan directory | Persisted inventory with scope and file paths |
 
-The `inventory_filtered.toon` file contains:
+The `work/inventory_filtered.toon` file contains:
 - `scope.affected_artifacts` - Component types to target
 - `scope.bundle_scope` - Bundles to target (all or specific list)
 - `inventory.skills`, `inventory.commands`, `inventory.agents` - File paths
@@ -59,7 +59,7 @@ For modifying, migrating, or refactoring existing components. Uses discovery and
 
 ### Step 1: Load Persisted Inventory
 
-The Assessment Protocol (SKILL.md) already ran the inventory-assessment-agent and persisted results. Read the filtered inventory:
+The Assessment Protocol (SKILL.md) already ran the inventory-assessment-agent which persisted results. Read the filtered inventory:
 
 ```bash
 # Check reference exists
@@ -74,7 +74,7 @@ If `inventory_filtered` is not set, ERROR: "Assessment incomplete - inventory_fi
 # Read the inventory file
 python3 .plan/execute-script.py pm-workflow:manage-files:manage-files read \
   --plan-id {plan_id} \
-  --file inventory_filtered.toon
+  --file work/inventory_filtered.toon
 ```
 
 Parse the TOON content to extract:

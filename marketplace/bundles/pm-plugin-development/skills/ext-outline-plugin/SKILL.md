@@ -36,40 +36,21 @@ Task: pm-plugin-development:inventory-assessment-agent
     plan_id: {plan_id}
     request_text: {request content from request.md}
   Output:
+    inventory_file: work/inventory_filtered.toon
     scope: affected_artifacts, bundle_scope
-    inventory: grouped by type (skills, commands, agents)
-    output_file: path to raw inventory file
+    counts: skills, commands, agents, total
 ```
 
-The agent performs:
-- Artifact Type Analysis (which component types are affected)
-- Bundle Scope determination (explicit mentions, implicit derivation)
-- Inventory scan via `scan-marketplace-inventory` script
-- Grouping by component type with full file paths
+The agent:
+- Analyzes request to determine affected artifact types and bundle scope
+- Runs `scan-marketplace-inventory` with appropriate filters
+- Converts skill directories to file paths
+- **Persists** inventory to `work/inventory_filtered.toon` in plan directory
+- **Stores reference** as `inventory_filtered` in references.toon
 
-### Step 2: Persist Filtered Inventory
+**Contract**: After agent returns, `work/inventory_filtered.toon` exists and is linked in references.
 
-After agent returns, persist the inventory to the plan directory for workflow consumption:
-
-```bash
-python3 .plan/execute-script.py pm-workflow:manage-files:manage-files write \
-  --plan-id {plan_id} \
-  --file inventory_filtered.toon \
-  --content "{agent TOON output}"
-```
-
-Then store the reference:
-
-```bash
-python3 .plan/execute-script.py pm-workflow:manage-references:manage-references set \
-  --plan-id {plan_id} \
-  --field inventory_filtered \
-  --value "inventory_filtered.toon"
-```
-
-This creates a contract: workflow.md reads `inventory_filtered.toon` from the plan directory.
-
-### Step 3: Determine Change Type
+### Step 2: Determine Change Type
 
 After agent returns, determine `change_type` from request:
 
