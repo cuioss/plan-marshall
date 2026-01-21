@@ -170,22 +170,6 @@ FOR each file_path in file_paths:
 2. **Phase 2 only runs if match possible** - avoids wasted context analysis
 3. **Evidence must be specific** - line numbers and section names
 
-## Logging Integration
-
-Agents MUST log each finding to work-log immediately after evaluation. The logging commands are embedded in Step 6 of each agent's Task section:
-
-**If affected:**
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[FINDING] ({agent_name}) Affected: {file_path} - criteria_match: {match_indicators_found} - {evidence}"
-```
-
-**If not affected:**
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[FINDING] ({agent_name}) Not affected: {file_path} - {evidence}"
-```
-
 ## Usage in Modify Flow
 
 The Modify Flow in `workflow.md` Step 4 uses analysis agents implementing this contract:

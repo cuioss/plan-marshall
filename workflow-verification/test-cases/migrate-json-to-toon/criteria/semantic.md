@@ -28,17 +28,14 @@ All expected items must be found:
 - [ ] All 9 pm-dev-java agents identified
 - [ ] 1 pm-plugin-development agent identified (tool-coverage-agent)
 
-### Commands (1 file)
-- [ ] tools-analyze-user-prompted.md identified
+### Commands (0 files)
+- [ ] tools-analyze-user-prompted.md correctly EXCLUDED (JSON is solution examples, not output)
 
-### Skills with JSON Output Specs (20 files)
-- [ ] 7 plan-marshall skills identified
-- [ ] 3 pm-dev-frontend skills identified
-- [ ] 5 pm-workflow skills identified
-- [ ] 3 pm-documents skills identified
-- [ ] 2 pm-plugin-development skills identified
+### Skills with JSON Output Specs (5 files)
+- [ ] 2 plan-marshall skills identified (permission-doctor, permission-fix)
+- [ ] 3 pm-dev-frontend skills identified (js-fix-jsdoc, js-generate-coverage, js-implement-tests)
 
-**Expected count**: 31 affected files total
+**Expected count**: 15 affected files total
 
 **Critical checks - Must be found**:
 
@@ -50,7 +47,6 @@ All expected items must be found:
 | plan-marshall/skills/permission-fix/SKILL.md | "Output (JSON)" sections (5+ blocks) |
 | pm-dev-frontend/skills/js-fix-jsdoc/SKILL.md | "JSON Output Contract" section |
 | pm-dev-frontend/skills/js-generate-coverage/SKILL.md | "Step 3: Return Coverage Results" with ```json |
-| pm-workflow/skills/workflow-integration-ci/SKILL.md | Workflow outputs with ```json |
 
 ## Exclusion Criteria
 
@@ -58,10 +54,14 @@ All expected items must be found:
 
 ### Agents excluded (use TOON or markdown output):
 - `plan-marshall/agents/research-best-practices.md` - Uses markdown format (```), not JSON
+- `pm-plugin-development/agents/inventory-assessment-agent.md` - Output section uses ```toon (line 296)
 - `pm-workflow/agents/plan-init-agent.md` - Uses TOON format (2 ```toon blocks)
 - `pm-workflow/agents/task-plan-agent.md` - Uses TOON format
 - `pm-workflow/agents/task-execute-agent.md` - Uses TOON format
 - `pm-workflow/agents/solution-outline-agent.md` - Uses TOON format
+
+### Commands excluded (JSON is solution examples, not output):
+- `pm-plugin-development/commands/tools-analyze-user-prompted.md` - JSON blocks show permission format examples in solutions, not command output specification
 
 ### Skills excluded (no JSON blocks at all):
 - `pm-dev-frontend/skills/ext-triage-js/SKILL.md` - Knowledge-only skill, no JSON
@@ -101,24 +101,24 @@ All expected items must be found:
 ## Scoring Guidance
 
 **90-100 (Excellent)**:
-- 28-31 files found (allowing minor variance)
+- 14-15 files found (allowing minor variance)
 - All critical checks passed
 - Inclusion/exclusion distinction documented with context analysis
-- Non-JSON files excluded
-- Config/documentation JSON exclusions logged
+- TOON-format components excluded
+- Solution example JSON exclusions logged
 
 **70-89 (Good)**:
-- 24-27 files found
+- 12-14 files found
 - Minor documentation gaps
 - Distinction mentioned but rationale brief
 
 **50-69 (Partial)**:
-- 18-23 files found
+- 10-12 files found
 - Missing multiple skills OR multiple agents
 - Exclusion decisions undocumented
 
 **0-49 (Poor)**:
-- Fewer than 18 files found
+- Fewer than 10 files found
 - Wrong scope (e.g., skills excluded entirely)
 - No exclusion reasoning
-- Files with no JSON blocks included as false positives
+- Files with TOON output included as false positives

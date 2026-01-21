@@ -199,7 +199,7 @@ FOR each bundle where filter returned file_count > 0:
 
 **IMPORTANT**: Launch all agents in a SINGLE message for true parallelism.
 
-**Agent Responsibility**: Each agent runs the filter script to get its file paths, then analyzes those files using LLM reasoning.
+**Agent Responsibility**: Each agent runs the filter script to get its file paths, analyzes those files using LLM reasoning, and returns findings per the contract. Agents do NOT log - logging is centralized in Step 4a.
 
 **Step 3d: Error Handling**
 
@@ -239,6 +239,37 @@ expected_total = sum of all inventory files
 
 IF total_analyzed != expected_total:
   ERROR: "Analysis incomplete: {total_analyzed}/{expected_total}"
+```
+
+### Step 4a: Log All Decisions (Centralized)
+
+**CRITICAL**: The parent workflow logs all decisions. Agents return findings; parent handles logging.
+
+**Why centralized?** Subagents cannot be relied upon to execute "secondary" script calls (logging). By centralizing logging in the parent workflow, we guarantee the audit trail exists.
+
+```
+FOR each finding in all_findings:
+  IF finding.status == "affected":
+    python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+      decision {plan_id} INFO "(pm-plugin-development:ext-outline-plugin) AFFECTED: {finding.file_path}
+      match_indicators: {finding.match_indicators_found}
+      exclude_indicators: {finding.exclude_indicators_found}
+      evidence: {finding.evidence}"
+  ELSE:
+    python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+      decision {plan_id} INFO "(pm-plugin-development:ext-outline-plugin) NOT_AFFECTED: {finding.file_path}
+      match_indicators: {finding.match_indicators_found}
+      exclude_indicators: {finding.exclude_indicators_found}
+      evidence: {finding.evidence}"
+```
+
+**Validation**: After logging, verify count:
+```
+logged_count = count of AFFECTED/NOT_AFFECTED logged
+expected_count = total_analyzed from Step 4
+
+IF logged_count != expected_count:
+  ERROR: "Logging incomplete: {logged_count}/{expected_count}"
 ```
 
 ### Step 5: Link Affected Files

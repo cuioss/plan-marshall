@@ -61,3 +61,19 @@ When checking for exclude indicators:
 | `contains`, `format of` | Describing format, not producing it |
 
 **Context matters**: JSON in an "Output" section is different from JSON in a "Configuration" section.
+
+## Step 1: Analyze Each File
+
+For each file path from Step 0:
+
+1. Read the file content
+2. Check if ANY match_indicator exists (Phase 1 quick scan)
+3. If no match indicators found → NOT_AFFECTED
+4. If match indicators found → check exclude_indicators (Phase 2)
+5. Decision: AFFECTED if match_indicators AND NOT exclude_indicators
+
+## Step 2: Return Findings
+
+Return TOON output per contract with all findings. Include evidence for each decision.
+
+**Note**: Do NOT log decisions. The parent workflow handles centralized logging from the findings you return.

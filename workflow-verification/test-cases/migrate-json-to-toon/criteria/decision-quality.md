@@ -81,17 +81,19 @@ In work.log:
 
 **Must document exclusions for**:
 
-### Agents:
+### Agents with TOON output (not JSON):
 - `plan-marshall/agents/research-best-practices.md` - uses markdown format output
+- `pm-plugin-development/agents/inventory-assessment-agent.md` - Output section uses ```toon
 - `pm-workflow/agents/*` - already use TOON format (4 agents)
 
-### Commands:
-- `pm-plugin-development/commands/tools-analyze-user-prompted.md` - JSON is solution examples
+### Commands with solution-example JSON (not output specs):
+- `pm-plugin-development/commands/tools-analyze-user-prompted.md` - JSON shows permission format in solution steps
 
-### Skills with config/input JSON:
-- `pm-dev-frontend/skills/js-enforce-eslint/SKILL.md` - JSON is npm scripts config
-- `pm-dev-java/skills/java-enforce-logrecords/SKILL.md` - JSON is configuration structure
-- `pm-plugin-development/skills/plugin-create/SKILL.md` - JSON is input format
+### Skills with config/input JSON (not output specs):
+- `pm-dev-frontend/skills/js-enforce-eslint/SKILL.md` - no JSON blocks at all
+- `pm-dev-java/skills/java-enforce-logrecords/SKILL.md` - no JSON blocks at all
+- `pm-plugin-development/skills/plugin-create/SKILL.md` - already uses TOON format
+- `pm-plugin-development/skills/plugin-task-plan/SKILL.md` - already uses TOON format
 
 **Format** (in work.log):
 ```
@@ -112,11 +114,12 @@ In work.log:
 **Total**: 4 deliverables covering 15 files
 
 **Acceptable variations**:
-- May split pm-dev-java further if justified
-- May combine skills across bundles if clearly documented
-- May separate permission-doctor and permission-fix if rationale provided
+- May split pm-dev-java further if justified (max 2 deliverables)
+- May combine plan-marshall and pm-dev-frontend skills if same change pattern
+- Total deliverables in range 3-5
 
 **NOT acceptable**:
 - 15 separate deliverables (one per file)
 - Combining agents and skills in same deliverable
-- Including skills with config/input JSON
+- Including TOON-format components (inventory-assessment-agent)
+- Including solution-example JSON (tools-analyze-user-prompted)
