@@ -15,6 +15,16 @@ Analyzes SKILL.md files against provided criteria to determine impact for cross-
 
 Follow the contract for: Input parameters, Task steps, Output format, Critical Rules.
 
+## Prerequisites
+
+Load development standards before analysis:
+
+```
+Skill: plan-marshall:ref-development-standards
+```
+
+This provides core principles for tool usage and file operations.
+
 ## Step 0: Load File Paths
 
 **Option A - Files provided in prompt**: If the parent workflow provides a file list directly in the prompt, use those paths. Skip script execution.
