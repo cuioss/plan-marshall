@@ -178,7 +178,7 @@ python3 .plan/execute-script.py \
   pm-plugin-development:tools-marketplace-inventory:scan-marketplace-inventory \
   --trace-plan-id {plan_id} \
   --resource-types {affected_artifacts} \
-  --include-descriptions \
+  --full \
   --output {work_dir_path}/inventory_raw.toon
 ```
 
@@ -189,7 +189,7 @@ python3 .plan/execute-script.py \
   --trace-plan-id {plan_id} \
   --resource-types {affected_artifacts} \
   --bundles {comma-separated-bundle-names} \
-  --include-descriptions \
+  --full \
   --output {work_dir_path}/inventory_raw.toon
 ```
 
