@@ -33,7 +33,7 @@ ANALYZE request for plugin.json impact:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[DECISION] (inventory-assessment-agent) plugin.json: {AFFECTED|NOT_AFFECTED} - reasoning: {explicit derivation}, evidence: {request fragment or 'No mention of add/remove/rename'}"
+  decision {plan_id} INFO "(inventory-assessment-agent) plugin.json: {AFFECTED|NOT_AFFECTED} - reasoning: {explicit derivation}, evidence: {request fragment or 'No mention of add/remove/rename'}"
 ```
 
 #### 1.2 Commands
@@ -47,7 +47,7 @@ ANALYZE request for Commands impact:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[DECISION] (inventory-assessment-agent) Commands: {AFFECTED|NOT_AFFECTED} - explicit: {yes|no} '{quote}', implicit: {yes|no} '{derivation}'"
+  decision {plan_id} INFO "(inventory-assessment-agent) Commands: {AFFECTED|NOT_AFFECTED} - explicit: {yes|no} '{quote}', implicit: {yes|no} '{derivation}'"
 ```
 
 #### 1.3 Skills
@@ -61,7 +61,7 @@ ANALYZE request for Skills impact:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[DECISION] (inventory-assessment-agent) Skills: {AFFECTED|NOT_AFFECTED} - explicit: {yes|no} '{quote}', implicit: {yes|no} '{derivation}'"
+  decision {plan_id} INFO "(inventory-assessment-agent) Skills: {AFFECTED|NOT_AFFECTED} - explicit: {yes|no} '{quote}', implicit: {yes|no} '{derivation}'"
 ```
 
 #### 1.4 Agents
@@ -75,7 +75,7 @@ ANALYZE request for Agents impact:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[DECISION] (inventory-assessment-agent) Agents: {AFFECTED|NOT_AFFECTED} - explicit: {yes|no} '{quote}', implicit: {yes|no} '{derivation}'"
+  decision {plan_id} INFO "(inventory-assessment-agent) Agents: {AFFECTED|NOT_AFFECTED} - explicit: {yes|no} '{quote}', implicit: {yes|no} '{derivation}'"
 ```
 
 #### 1.5 Scripts
@@ -89,7 +89,7 @@ ANALYZE request for Scripts impact:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[DECISION] (inventory-assessment-agent) Scripts: {AFFECTED|NOT_AFFECTED} - explicit: {yes|no} '{quote}', implicit: {yes|no} '{derivation}'"
+  decision {plan_id} INFO "(inventory-assessment-agent) Scripts: {AFFECTED|NOT_AFFECTED} - explicit: {yes|no} '{quote}', implicit: {yes|no} '{derivation}'"
 ```
 
 #### 1.6 Determine Affected Artifacts
@@ -100,7 +100,7 @@ affected_artifacts = [types where decision = AFFECTED]
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[DECISION] (inventory-assessment-agent) Affected artifacts: {affected_artifacts}"
+  decision {plan_id} INFO "(inventory-assessment-agent) Affected artifacts: {affected_artifacts}"
 ```
 
 ### Step 2: Bundle/Module Selection
@@ -115,7 +115,7 @@ ANALYZE request for bundle/module references:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[DECISION] (inventory-assessment-agent) Explicit bundles: {list or 'none'}"
+  decision {plan_id} INFO "(inventory-assessment-agent) Explicit bundles: {list or 'none'}"
 ```
 
 #### 2.2 Implicit Bundle Derivation (via Components)
@@ -128,7 +128,7 @@ ANALYZE request for component references that imply bundles:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[DECISION] (inventory-assessment-agent) Implicit bundles: {list or 'none'}"
+  decision {plan_id} INFO "(inventory-assessment-agent) Implicit bundles: {list or 'none'}"
 ```
 
 #### 2.3 Determine Bundle Scope
@@ -146,7 +146,7 @@ ELSE:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[DECISION] (inventory-assessment-agent) Bundle scope: {bundle_scope}"
+  decision {plan_id} INFO "(inventory-assessment-agent) Bundle scope: {bundle_scope}"
 ```
 
 ### Step 3: Create Work Directory and Run Inventory Scan

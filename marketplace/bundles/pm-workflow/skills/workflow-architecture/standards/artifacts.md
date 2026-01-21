@@ -23,8 +23,10 @@ File formats and structures for plan data storage.
 │   ├── TASK-002-IMPL.toon
 │   └── TASK-003-FIX.toon
 │
-├── work.log                 Phase: all (semantic progress)
-└── script-execution.log     Phase: all (technical tracing)
+└── logs/                    Phase: all (logging)
+    ├── work.log                 Semantic progress tracking
+    ├── decision.log             Decision entries
+    └── script-execution.log     Technical script tracing
 ```
 
 ---
@@ -565,7 +567,7 @@ Semantic work progress tracking across all phases.
 ### Location
 
 ```
-.plan/plans/{plan_id}/work.log
+.plan/plans/{plan_id}/logs/work.log
 ```
 
 ### Format
@@ -582,10 +584,6 @@ Semantic work progress tracking across all phases.
 [2025-12-11T11:14:30Z] [INFO] [PROGRESS] Starting init phase
   phase: 1-init
 
-[2025-12-11T11:14:48Z] [INFO] [DECISION] Detected domain: java
-  phase: 1-init
-  detail: pom.xml found in project root
-
 [2025-12-11T11:15:24Z] [INFO] [ARTIFACT] Created deliverable: auth module
   phase: 2-outline
   detail: Source: request.md, domain: java
@@ -599,11 +597,12 @@ Semantic work progress tracking across all phases.
 | Category | Purpose |
 |----------|---------|
 | `PROGRESS` | Phase/step start/end |
-| `DECISION` | Reasoning and choices made |
 | `ARTIFACT` | Files/documents created or modified |
 | `OUTCOME` | Results and summaries |
 | `FINDING` | Issues or observations |
 | `ERROR` | Failures with details |
+
+**Note**: Decision entries go to `decision.log`, not `work.log`.
 
 ### Manager
 
@@ -619,6 +618,51 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 ---
 
+## decision.log
+
+Dedicated log for decision entries tracking reasoning and choices made during execution.
+
+### Location
+
+```
+.plan/plans/{plan_id}/logs/decision.log
+```
+
+### Format
+
+Decision entries do NOT include a `[DECISION]` prefix since the file itself indicates the entry type.
+
+```
+[{timestamp}] [{level}] {message}
+  phase: {phase}
+  [detail: {additional context}]
+```
+
+### Example
+
+```
+[2025-12-11T11:14:48Z] [INFO] (pm-workflow:phase-1-init) Detected domain: java - pom.xml found
+  phase: 1-init
+
+[2025-12-11T11:20:15Z] [INFO] (pm-plugin-development:ext-outline-plugin) Scope: bundles=all
+  phase: 2-outline
+  detail: marketplace/bundles structure detected
+```
+
+### Manager
+
+```bash
+# Write decision entry
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  decision {plan_id} {level} "{message}"
+
+# Read decision entries
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  read --plan-id {id} --type decision [--limit N] [--phase PHASE]
+```
+
+---
+
 ## script-execution.log
 
 Technical script execution tracing (automatic).
@@ -626,7 +670,7 @@ Technical script execution tracing (automatic).
 ### Location
 
 ```
-.plan/plans/{plan_id}/script-execution.log
+.plan/plans/{plan_id}/logs/script-execution.log
 ```
 
 ### Format
@@ -718,4 +762,4 @@ archive     .plan/archived-plans/{date}-{plan_id}/
 | `pm-workflow:plan-manage:manage-lifecycle` | status.toon operations |
 | `pm-workflow:manage-tasks` | TASK-*.toon operations |
 | `pm-workflow:manage-solution-outline` | solution_outline.md operations |
-| `plan-marshall:manage-logging` | work.log and script-execution.log operations |
+| `plan-marshall:manage-logging` | work.log, decision.log, and script-execution.log operations |

@@ -77,7 +77,7 @@ Returns: `branch`, `base_branch`, `issue_url`, `build_system`, and file counts i
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[DECISION] (pm-workflow:phase-5-finalize) Finalize strategy: verification={verification_required}, PR={create_pr}, branch={branch_strategy}"
+  decision {plan_id} INFO "(pm-workflow:phase-5-finalize) Finalize strategy: verification={verification_required}, PR={create_pr}, branch={branch_strategy}"
 ```
 
 ### Step 2: Run Verification (if required)

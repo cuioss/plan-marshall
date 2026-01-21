@@ -1,31 +1,40 @@
 ---
 name: manage-logging
-description: Unified logging infrastructure for script execution and work progress tracking
+description: Unified logging infrastructure for script execution, work progress, and decision tracking
 user-invocable: false
 allowed-tools: Read, Bash
 ---
 
 # Logging Skill
 
-Unified logging infrastructure providing script execution logging and semantic work progress tracking.
+Unified logging infrastructure providing script execution logging, semantic work progress tracking, and decision logging.
 
 ## Overview
 
-This skill provides a single unified API for two logging concerns:
+This skill provides a single unified API for three logging concerns:
 
 1. **Script Execution Logging**: Tracking of script executor invocations (type: `script`)
 2. **Work Logging**: Semantic tracking of work progress (type: `work`)
+3. **Decision Logging**: Tracking of decisions made during execution (type: `decision`)
 
 ## Log Files
 
+All plan-scoped logs are stored in the `logs/` subdirectory of the plan.
+
 ### Script Execution Log
 
-**File**: `.plan/plans/{plan-id}/script-execution.log` (plan-scoped)
+**File**: `.plan/plans/{plan-id}/logs/script-execution.log` (plan-scoped)
 **Fallback**: `.plan/logs/script-execution-YYYY-MM-DD.log` (global)
 
 ### Work Log
 
-**File**: `.plan/plans/{plan-id}/work.log`
+**File**: `.plan/plans/{plan-id}/logs/work.log`
+**Fallback**: `.plan/logs/work-YYYY-MM-DD.log` (global)
+
+### Decision Log
+
+**File**: `.plan/plans/{plan-id}/logs/decision.log`
+**Fallback**: `.plan/logs/decision-YYYY-MM-DD.log` (global)
 
 ---
 
@@ -44,7 +53,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 | Argument | Values | Description |
 |----------|--------|-------------|
-| `type` | `script`, `work` | Log type (determines output file) |
+| `type` | `script`, `work`, `decision` | Log type (determines output file) |
 | `plan_id` | kebab-case | Plan identifier |
 | `level` | `INFO`, `WARN`, `ERROR` | Log level |
 | `message` | string | Log message |
@@ -55,7 +64,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  read --plan-id {plan_id} --type {work|script} [--limit N] [--phase PHASE]
+  read --plan-id {plan_id} --type {work|script|decision} [--limit N] [--phase PHASE]
 ```
 
 **Arguments**:
@@ -63,9 +72,9 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 | Argument | Required | Description |
 |----------|----------|-------------|
 | `--plan-id` | Yes | Plan identifier |
-| `--type` | Yes | Log type: `work` or `script` |
+| `--type` | Yes | Log type: `work`, `script`, or `decision` |
 | `--limit` | No | Max entries to return (most recent) |
-| `--phase` | No | Filter by phase (work logs only) |
+| `--phase` | No | Filter by phase (work/decision logs only) |
 
 **Output** (TOON):
 
@@ -79,8 +88,8 @@ showing: 3
 entries:
   - timestamp: 2025-12-11T11:14:30Z
     level: INFO
-    category: DECISION
-    message: Detected domain: java
+    category: STATUS
+    message: Starting init phase
     phase: 1-init
   - timestamp: 2025-12-11T11:15:20Z
     level: INFO
@@ -98,16 +107,27 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   script my-plan ERROR "pm-workflow:manage-task:manage-task add failed (exit 1)"
 
-# Write: Work logging (include [TAG] (caller) prefix)
+# Write: Work logging (include [CATEGORY] (caller) prefix)
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   work my-plan INFO "[ARTIFACT] (pm-workflow:phase-1-init) Created deliverable: auth module"
 
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   work my-plan WARN "[STATUS] (pm-workflow:phase-4-execute) Skipped validation step"
 
+# Write: Decision logging (NO [DECISION] prefix - file is the category)
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  decision my-plan INFO "(pm-workflow:phase-1-init) Detected domain: java - pom.xml found"
+
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  decision my-plan INFO "(pm-plugin-development:ext-outline-plugin) Scope: bundles=all"
+
 # Read: All work log entries
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   read --plan-id my-plan --type work
+
+# Read: All decision log entries
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  read --plan-id my-plan --type decision
 
 # Read: Last 5 work log entries
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
@@ -128,7 +148,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 [{timestamp}] [{level}] {message}
 ```
 
-Since entries go to separate files (`script-execution.log` vs `work.log`), redundant type tags are omitted.
+Since entries go to separate files, redundant type tags are omitted.
 
 ### Example Output
 
@@ -141,9 +161,17 @@ Since entries go to separate files (`script-execution.log` vs `work.log`), redun
 **work.log**:
 ```
 [2025-12-11T11:14:30Z] [INFO] [STATUS] (pm-workflow:phase-1-init) Starting init phase
-[2025-12-11T11:14:48Z] [INFO] [DECISION] (pm-workflow:phase-1-init) Detected domain: java (pom.xml found)
 [2025-12-11T11:15:20Z] [INFO] [ARTIFACT] (pm-workflow:phase-1-init) Created deliverable: auth module
+[2025-12-11T11:17:30Z] [INFO] [PROGRESS] (pm-workflow:phase-4-execute) Task 1 completed
 ```
+
+**decision.log**:
+```
+[2025-12-11T11:14:48Z] [INFO] (pm-workflow:phase-1-init) Detected domain: java - pom.xml found
+[2025-12-11T11:20:15Z] [INFO] (pm-plugin-development:ext-outline-plugin) Scope: bundles=all
+```
+
+Note: Decision entries do NOT include a `[DECISION]` prefix - the file itself indicates the entry type.
 
 ### Log Levels
 
@@ -179,8 +207,10 @@ log_entry('work', 'my-plan', 'INFO', '[ARTIFACT] Created deliverable')
 
 ```
 .plan/plans/{plan-id}/
-├── script-execution.log    # Script execution tracking
-└── work.log                # Work progress tracking
+└── logs/
+    ├── script-execution.log    # Script execution tracking
+    ├── work.log                # Work progress tracking
+    └── decision.log            # Decision tracking
 ```
 
 ### Global Logs
@@ -188,7 +218,8 @@ log_entry('work', 'my-plan', 'INFO', '[ARTIFACT] Created deliverable')
 ```
 .plan/logs/
 ├── script-execution-YYYY-MM-DD.log    # Daily global script logs
-└── work-YYYY-MM-DD.log                # Daily global work logs (when no plan)
+├── work-YYYY-MM-DD.log                # Daily global work logs (when no plan)
+└── decision-YYYY-MM-DD.log            # Daily global decision logs
 ```
 
 **Scope Selection**:

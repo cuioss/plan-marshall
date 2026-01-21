@@ -212,7 +212,8 @@ class ArtifactCollector:
     def collect_work_log(self) -> bool:
         """Collect work log."""
         try:
-            log_path = base_path('plans', self.plan_id, 'work.log')
+            # Work logs are now in logs/ subdirectory
+            log_path = base_path('plans', self.plan_id, 'logs', 'work.log')
 
             if log_path.exists():
                 content = log_path.read_text()
@@ -226,6 +227,26 @@ class ArtifactCollector:
         except Exception as e:
             self.errors.append(f'Failed to collect work.log: {e}')
             self.collected.append({'artifact': 'work.log', 'status': 'failed'})
+            return False
+
+    def collect_decision_log(self) -> bool:
+        """Collect decision log."""
+        try:
+            # Decision logs are in logs/ subdirectory
+            log_path = base_path('plans', self.plan_id, 'logs', 'decision.log')
+
+            if log_path.exists():
+                content = log_path.read_text()
+                output_path = self.output_dir / 'decision.log'
+                output_path.write_text(content)
+                self.collected.append({'artifact': 'decision.log', 'status': 'success'})
+                return True
+            else:
+                self.collected.append({'artifact': 'decision.log', 'status': 'not_found'})
+                return False
+        except Exception as e:
+            self.errors.append(f'Failed to collect decision.log: {e}')
+            self.collected.append({'artifact': 'decision.log', 'status': 'failed'})
             return False
 
     def collect_all(self, phases: list[str] | None = None) -> dict[str, Any]:
@@ -247,6 +268,7 @@ class ArtifactCollector:
         self.collect_status()
         self.collect_references()
         self.collect_work_log()
+        self.collect_decision_log()
 
         # Collect tasks if planning phase included
         if '3-plan' in phases or 'both' in phases:

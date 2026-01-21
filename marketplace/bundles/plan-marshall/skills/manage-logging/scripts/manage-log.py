@@ -7,37 +7,39 @@ Usage:
         python3 manage-log.py {type} {plan_id} {level} "{message}"
 
     Read:
-        python3 manage-log.py read --plan-id {plan_id} --type {work|script} [--limit N] [--phase PHASE]
+        python3 manage-log.py read --plan-id {plan_id} --type {work|script|decision} [--limit N] [--phase PHASE]
 
 Arguments (write):
-    type      - Log type: 'script' or 'work'
+    type      - Log type: 'script', 'work', or 'decision'
     plan_id   - Plan identifier
     level     - Log level: INFO, WARN, ERROR
     message   - Log message
 
 Arguments (read):
     --plan-id - Plan identifier (required)
-    --type    - Log type: 'script' or 'work' (required)
+    --type    - Log type: 'script', 'work', or 'decision' (required)
     --limit   - Max entries to return (optional, default: all)
-    --phase   - Filter by phase (optional, work logs only)
+    --phase   - Filter by phase (optional, work/decision logs only)
 
 Examples:
     # Write operations
     python3 manage-log.py script my-plan INFO "pm-workflow:manage-task:manage-task add (0.15s)"
-    python3 manage-log.py work my-plan INFO "Created deliverable: auth module"
+    python3 manage-log.py work my-plan INFO "[ARTIFACT] Created deliverable: auth module"
+    python3 manage-log.py decision my-plan INFO "(skill-name) Detected domain: java"
 
     # Read operations
     python3 manage-log.py read --plan-id my-plan --type work
+    python3 manage-log.py read --plan-id my-plan --type decision
     python3 manage-log.py read --plan-id my-plan --type work --limit 5
-    python3 manage-log.py read --plan-id my-plan --type work --phase 1-init
+    python3 manage-log.py read --plan-id my-plan --type decision --phase 1-init
 """
 
 import sys
 
 # Direct imports from same directory (local imports)
-from plan_logging import get_log_path, list_recent_work, log_entry, read_work_log
+from plan_logging import get_log_path, list_recent_work, log_entry, read_decision_log, read_work_log
 
-VALID_TYPES = ('script', 'work')
+VALID_TYPES = ('script', 'work', 'decision')
 VALID_LEVELS = ('INFO', 'WARN', 'ERROR')
 
 
@@ -159,14 +161,19 @@ def handle_read(args: list) -> None:
         print(f'message: type must be one of {VALID_TYPES}', file=sys.stderr)
         sys.exit(1)
 
-    # Currently only work logs support full parsing
+    # Work and decision logs support full parsing
     if parsed['log_type'] == 'work':
         if parsed['limit']:
             result = list_recent_work(parsed['plan_id'], limit=parsed['limit'])
         else:
             result = read_work_log(parsed['plan_id'], phase=parsed['phase'])
-
         result['log_type'] = 'work'
+    elif parsed['log_type'] == 'decision':
+        result = read_decision_log(parsed['plan_id'], phase=parsed['phase'])
+        if parsed['limit'] and result.get('entries'):
+            result['entries'] = result['entries'][-parsed['limit'] :]
+            result['showing'] = len(result['entries'])
+        result['log_type'] = 'decision'
     else:
         # Script logs - read raw file content for now
         log_file = get_log_path(parsed['plan_id'], 'script')
@@ -230,7 +237,7 @@ def handle_write(args: list) -> None:
 
 def main():
     if len(sys.argv) < 2:
-        print(f'Usage: {sys.argv[0]} read --plan-id {{id}} --type {{work|script}}', file=sys.stderr)
+        print(f'Usage: {sys.argv[0]} read --plan-id {{id}} --type {{work|script|decision}}', file=sys.stderr)
         print(f'       {sys.argv[0]} {{type}} {{plan_id}} {{level}} "{{message}}"', file=sys.stderr)
         sys.exit(1)
 

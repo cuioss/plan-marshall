@@ -67,7 +67,7 @@ def test_get_log_path_plan_scoped_script():
         os.environ['PLAN_BASE_DIR'] = str(plan_base)
         try:
             path = module.get_log_path('my-plan', 'script')
-            assert path == plan_dir / 'script-execution.log'
+            assert path == plan_dir / 'logs' / 'script-execution.log'
         finally:
             del os.environ['PLAN_BASE_DIR']
 
@@ -82,7 +82,22 @@ def test_get_log_path_plan_scoped_work():
         os.environ['PLAN_BASE_DIR'] = str(plan_base)
         try:
             path = module.get_log_path('my-plan', 'work')
-            assert path == plan_dir / 'work.log'
+            assert path == plan_dir / 'logs' / 'work.log'
+        finally:
+            del os.environ['PLAN_BASE_DIR']
+
+
+def test_get_log_path_plan_scoped_decision():
+    """Decision log path for existing plan."""
+    with tempfile.TemporaryDirectory() as tmp:
+        plan_base = Path(tmp)
+        plan_dir = plan_base / 'plans' / 'my-plan'
+        plan_dir.mkdir(parents=True)
+
+        os.environ['PLAN_BASE_DIR'] = str(plan_base)
+        try:
+            path = module.get_log_path('my-plan', 'decision')
+            assert path == plan_dir / 'logs' / 'decision.log'
         finally:
             del os.environ['PLAN_BASE_DIR']
 
@@ -150,7 +165,7 @@ def test_log_script_execution_success():
                 duration=0.15,
             )
 
-            log_file = plan_dir / 'script-execution.log'
+            log_file = plan_dir / 'logs' / 'script-execution.log'
             assert log_file.exists(), 'Log file not created'
 
             content = log_file.read_text()
@@ -179,7 +194,7 @@ def test_log_script_execution_error_with_details():
                 stderr='FileNotFoundError: missing.md',
             )
 
-            log_file = plan_dir / 'script-execution.log'
+            log_file = plan_dir / 'logs' / 'script-execution.log'
             content = log_file.read_text()
             assert '[ERROR]' in content
             assert 'exit_code: 1' in content
@@ -257,7 +272,7 @@ def test_log_work_default_category():
             assert result['category'] == 'PROGRESS'
             assert result['total_entries'] == 1
 
-            log_file = plan_dir / 'work.log'
+            log_file = plan_dir / 'logs' / 'work.log'
             content = log_file.read_text()
             assert '[INFO]' in content
             assert '[PROGRESS]' in content
@@ -269,7 +284,8 @@ def test_log_work_default_category():
 
 def test_log_work_all_categories():
     """Log work with each valid category."""
-    categories = ['DECISION', 'ARTIFACT', 'PROGRESS', 'ERROR', 'OUTCOME', 'FINDING']
+    # DECISION now goes to decision.log, not work.log
+    categories = ['ARTIFACT', 'PROGRESS', 'ERROR', 'OUTCOME', 'FINDING']
 
     with tempfile.TemporaryDirectory() as tmp:
         plan_base = Path(tmp)
@@ -283,7 +299,7 @@ def test_log_work_all_categories():
                 assert result['status'] == 'success', f'Failed for {cat}'
                 assert result['category'] == cat
 
-            log_file = plan_dir / 'work.log'
+            log_file = plan_dir / 'logs' / 'work.log'
             content = log_file.read_text()
             for cat in categories:
                 assert f'[{cat}]' in content, f'Missing {cat}'
@@ -328,9 +344,9 @@ def test_read_work_log_all_entries():
 
         os.environ['PLAN_BASE_DIR'] = str(plan_base)
         try:
-            # Add some entries
+            # Add some entries (DECISION is now separate log)
             module.log_work('test-plan', 'PROGRESS', 'Entry 1', 'init')
-            module.log_work('test-plan', 'DECISION', 'Entry 2', 'refine')
+            module.log_work('test-plan', 'OUTCOME', 'Entry 2', 'refine')
             module.log_work('test-plan', 'ARTIFACT', 'Entry 3', 'execute')
 
             result = module.read_work_log('test-plan')
@@ -351,7 +367,7 @@ def test_read_work_log_filtered_by_phase():
         os.environ['PLAN_BASE_DIR'] = str(plan_base)
         try:
             module.log_work('test-plan', 'PROGRESS', 'Init entry', 'init')
-            module.log_work('test-plan', 'DECISION', 'Refine entry', 'refine')
+            module.log_work('test-plan', 'OUTCOME', 'Refine entry', 'refine')
             module.log_work('test-plan', 'PROGRESS', 'Another init', 'init')
 
             result = module.read_work_log('test-plan', phase='init')

@@ -41,7 +41,7 @@ For creating new components. No discovery needed because files don't exist yet.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[DECISION] (pm-plugin-development:ext-outline-plugin) Create flow: {affected_artifacts} in {bundle_scope}"
+  decision {plan_id} INFO "(pm-plugin-development:ext-outline-plugin) Create flow: {affected_artifacts} in {bundle_scope}"
 ```
 
 ### Step 2: Build Deliverables
@@ -114,7 +114,7 @@ Derive:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[DECISION] (pm-plugin-development:ext-outline-plugin) Matching Criteria:
+  decision {plan_id} INFO "(pm-plugin-development:ext-outline-plugin) Matching Criteria:
   request_fragment: \"{request_fragment}\"
   criteria: \"{criteria}\"
   match_indicators: {match_indicators}

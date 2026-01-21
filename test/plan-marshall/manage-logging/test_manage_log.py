@@ -20,9 +20,14 @@ SCRIPT_PATH = get_script_path('plan-marshall', 'manage-logging', 'manage-log.py'
 
 
 def read_log_file(plan_dir: Path, log_type: str) -> str:
-    """Read log file content."""
-    filename = 'work.log' if log_type == 'work' else 'script-execution.log'
-    log_file = plan_dir / filename
+    """Read log file content from logs/ subdirectory."""
+    if log_type == 'work':
+        filename = 'work.log'
+    elif log_type == 'decision':
+        filename = 'decision.log'
+    else:
+        filename = 'script-execution.log'
+    log_file = plan_dir / 'logs' / filename
     if log_file.exists():
         return log_file.read_text()
     return ''

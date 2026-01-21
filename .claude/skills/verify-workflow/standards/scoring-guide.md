@@ -30,7 +30,7 @@ Evaluates whether the workflow analyzed the correct scope.
 ### Key Indicators
 
 **Good Scope:**
-- `[DECISION]` log entry explaining scope determination
+- Entry in `decision.log` explaining scope determination
 - All component types from request are represented
 - Bundle scope matches request (all vs specific)
 
@@ -73,14 +73,14 @@ Evaluates the quality of decisions and rationale.
 | **70-89** | Good decisions, some rationale gaps | Correct exclusions but rationale is brief |
 | **50-69** | Questionable decisions, missing rationale | Items excluded without explanation |
 | **30-49** | Poor decisions, contradictory rationale | Exclusions contradict stated criteria |
-| **0-29** | No decisions documented, or completely wrong decisions | No `[DECISION]` logs, or wrong inclusions/exclusions |
+| **0-29** | No decisions documented, or completely wrong decisions | No entries in `decision.log`, or wrong inclusions/exclusions |
 
 ### Key Indicators
 
 **Good Quality:**
-- `[DECISION]` entries explain "why" not just "what"
+- Entries in `decision.log` explain "why" not just "what"
 - Exclusions have specific rationale
-- Decision trail is traceable through work log
+- Decision trail is traceable through `decision.log`
 
 **Poor Quality:**
 - Decisions without rationale

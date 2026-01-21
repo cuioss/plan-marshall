@@ -128,14 +128,6 @@ Additional data is provided as indented key-value pairs:
   phase: 1-init
 ```
 
-#### DECISION
-
-```
-[2025-12-11T11:14:48Z] [INFO] [DECISION] Detected domain: plan-marshall-plugin-dev
-  phase: 1-init
-  detail: marketplace/bundles structure detected
-```
-
 #### ARTIFACT
 
 ```
@@ -166,6 +158,42 @@ Additional data is provided as indented key-value pairs:
 [2025-12-11T11:17:48Z] [INFO] [FINDING] Affected: gradle-builder.md
   phase: 2-outline
   detail: Agent returns JSON output in Step 4. Should be migrated to TOON format.
+```
+
+### Fields
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `phase` | Yes | Current workflow phase |
+| `detail` | No | Additional context or reasoning |
+
+---
+
+## Decision Log Format
+
+**File**: `decision.log`
+
+Decision entries are written to a dedicated log file. They do NOT include a `[DECISION]` category prefix since the file itself indicates the entry type.
+
+### Standard Entry
+
+```
+[{timestamp}] [{level}] {message}
+  phase: {phase}
+  [detail: {detail}]
+```
+
+### Examples
+
+```
+[2025-12-11T11:14:48Z] [INFO] (pm-workflow:phase-1-init) Detected domain: java - pom.xml found
+  phase: 1-init
+```
+
+```
+[2025-12-11T11:20:15Z] [INFO] (pm-plugin-development:ext-outline-plugin) Scope: bundles=all
+  phase: 2-outline
+  detail: marketplace/bundles structure detected
 ```
 
 ### Fields
@@ -240,10 +268,13 @@ def parse_log_file(content: str) -> list[dict]:
 
 ## File Naming
 
+All plan-scoped logs are stored in the `logs/` subdirectory of the plan.
+
 | Log Type | Plan-Scoped | Global |
 |----------|-------------|--------|
-| Script Execution | `script-execution.log` | `script-execution-YYYY-MM-DD.log` |
-| Work | `work.log` | N/A |
+| Script Execution | `logs/script-execution.log` | `script-execution-YYYY-MM-DD.log` |
+| Work | `logs/work.log` | `work-YYYY-MM-DD.log` |
+| Decision | `logs/decision.log` | `decision-YYYY-MM-DD.log` |
 
 ---
 

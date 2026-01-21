@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
 """
-Unified logging module for script execution and work progress tracking.
+Unified logging module for script execution, work progress, and decision tracking.
 
 Provides:
 - Script execution logging (automatic via executor)
-- Work progress logging (semantic entries for decisions, artifacts, etc.)
+- Work progress logging (semantic entries for artifacts, progress, etc.)
+- Decision logging (dedicated log for decision entries)
+
+Log file locations:
+- Plan-scoped: .plan/plans/{plan_id}/logs/{script-execution,work,decision}.log
+- Global fallback: .plan/logs/{type}-YYYY-MM-DD.log
 
 Configuration via environment variables:
 - PLAN_BASE_DIR: Base directory for .plan structure (default: .plan)
@@ -110,25 +115,35 @@ def get_log_path(plan_id: str | None, log_type: str = 'script') -> Path:
 
     Args:
         plan_id: Plan identifier (None for global)
-        log_type: 'script' or 'work'
+        log_type: 'script', 'work', or 'decision'
 
     Returns:
-        Path to log file (script-execution.log or work.log)
+        Path to log file in logs/ subdirectory
     """
     log_type = log_type.lower()
-    filename = 'work.log' if log_type == 'work' else 'script-execution.log'
+
+    # Map log type to filename
+    if log_type == 'work':
+        filename = 'work.log'
+    elif log_type == 'decision':
+        filename = 'decision.log'
+    else:
+        filename = 'script-execution.log'
 
     if plan_id:
         plan_dir = get_plans_dir() / plan_id
         if plan_dir.exists():
-            return plan_dir / filename
+            # Plan-scoped logs go in logs/ subdirectory
+            return plan_dir / 'logs' / filename
 
-    # Global fallback for both script and work logs
+    # Global fallback with date suffix
     global_log_dir = get_global_log_dir()
     global_log_dir.mkdir(parents=True, exist_ok=True)
 
     if log_type == 'work':
         return global_log_dir / f'work-{date.today()}.log'
+    elif log_type == 'decision':
+        return global_log_dir / f'decision-{date.today()}.log'
 
     return global_log_dir / f'script-execution-{date.today()}.log'
 
@@ -137,7 +152,7 @@ def get_log_path(plan_id: str | None, log_type: str = 'script') -> Path:
 # UNIFIED LOG ENTRY (SIMPLIFIED API)
 # =============================================================================
 
-VALID_TYPES = ('script', 'work')
+VALID_TYPES = ('script', 'work', 'decision')
 VALID_LEVELS = ('INFO', 'WARN', 'ERROR')
 
 
@@ -212,6 +227,7 @@ def log_script_execution(
                 stderr=stderr[:max_output].replace('\n', ' ')[:500] if stderr else None,
             )
 
+        log_file.parent.mkdir(parents=True, exist_ok=True)
         with open(log_file, 'a', encoding='utf-8') as f:
             f.write(entry)
 
@@ -254,7 +270,7 @@ def cleanup_old_script_logs(max_age_days: int | None = None) -> int:
 # WORK LOGGING
 # =============================================================================
 
-VALID_CATEGORIES = ['DECISION', 'ARTIFACT', 'PROGRESS', 'ERROR', 'OUTCOME', 'FINDING']
+VALID_CATEGORIES = ['ARTIFACT', 'PROGRESS', 'ERROR', 'OUTCOME', 'FINDING']
 
 
 def log_work(plan_id: str, category: str, message: str, phase: str, detail: str | None = None) -> dict:
@@ -263,13 +279,16 @@ def log_work(plan_id: str, category: str, message: str, phase: str, detail: str 
 
     Args:
         plan_id: Plan identifier (kebab-case)
-        category: Entry category (DECISION, ARTIFACT, PROGRESS, ERROR, OUTCOME, FINDING)
+        category: Entry category (ARTIFACT, PROGRESS, ERROR, OUTCOME, FINDING)
         message: Summary text
         phase: Current workflow phase
         detail: Additional context (optional)
 
     Returns:
         Result dict with status and entry info
+
+    Note:
+        For decision logging, use log_decision() instead which writes to decision.log.
     """
     if not validate_plan_id(plan_id):
         return {
@@ -387,6 +406,100 @@ def list_recent_work(plan_id: str, limit: int = 10) -> dict:
 
 
 # =============================================================================
+# DECISION LOGGING
+# =============================================================================
+
+
+def log_decision(plan_id: str, message: str, phase: str, detail: str | None = None) -> dict:
+    """
+    Add entry to decision.log.
+
+    Args:
+        plan_id: Plan identifier (kebab-case)
+        message: Decision message (should NOT include [DECISION] prefix)
+        phase: Current workflow phase
+        detail: Additional context (optional)
+
+    Returns:
+        Result dict with status and entry info
+    """
+    if not validate_plan_id(plan_id):
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'invalid_plan_id',
+            'message': f'Invalid plan_id format: {plan_id}',
+        }
+
+    try:
+        log_file = get_log_path(plan_id, 'decision')
+        log_file.parent.mkdir(parents=True, exist_ok=True)
+
+        # Decision entries use INFO level, no category prefix (file is the category)
+        entry = format_log_entry('INFO', message, phase=phase, detail=detail)
+
+        with open(log_file, 'a', encoding='utf-8') as f:
+            f.write(entry)
+
+        # Count entries
+        total_entries = _count_entries(log_file)
+
+        result = {
+            'status': 'success',
+            'plan_id': plan_id,
+            'log_type': 'decision',
+            'phase': phase,
+            'timestamp': format_timestamp(),
+            'message': message,
+            'total_entries': total_entries,
+        }
+        if detail:
+            result['detail'] = detail
+
+        return result
+
+    except Exception as e:
+        return {'status': 'error', 'plan_id': plan_id, 'error': 'write_failed', 'message': str(e)}
+
+
+def read_decision_log(plan_id: str, phase: str | None = None) -> dict:
+    """
+    Read decision log entries.
+
+    Args:
+        plan_id: Plan identifier
+        phase: Filter by phase (optional)
+
+    Returns:
+        Result dict with entries
+    """
+    if not validate_plan_id(plan_id):
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'invalid_plan_id',
+            'message': f'Invalid plan_id format: {plan_id}',
+        }
+
+    try:
+        log_file = get_log_path(plan_id, 'decision')
+
+        if not log_file.exists():
+            return {'status': 'success', 'plan_id': plan_id, 'total_entries': 0, 'entries': []}
+
+        entries = _parse_log_file(log_file)
+
+        # Filter by phase if specified
+        if phase:
+            entries = [e for e in entries if e.get('phase') == phase]
+
+        return {'status': 'success', 'plan_id': plan_id, 'total_entries': len(entries), 'entries': entries}
+
+    except Exception as e:
+        return {'status': 'error', 'plan_id': plan_id, 'error': 'read_failed', 'message': str(e)}
+
+
+# =============================================================================
 # PARSING HELPERS
 # =============================================================================
 
@@ -446,9 +559,13 @@ if __name__ == '__main__':
     print(f'\nPlan Base Directory: {get_plan_base_dir()}')
     print(f'Max Output Capture: {get_max_output()}')
     print(f'Retention Days: {get_retention_days()}')
+    print('\nLog locations (plan-scoped):')
+    print('  .plan/plans/{plan_id}/logs/script-execution.log')
+    print('  .plan/plans/{plan_id}/logs/work.log')
+    print('  .plan/plans/{plan_id}/logs/decision.log')
     print('\nAvailable functions:')
     print('- format_timestamp() -> str')
-    print('- format_log_entry(level, category, message, **fields) -> str')
+    print('- format_log_entry(level, message, **fields) -> str')
     print('- extract_plan_id(args) -> str | None')
     print('- get_log_path(plan_id, log_type) -> Path')
     print('- log_script_execution(...)')
@@ -456,3 +573,5 @@ if __name__ == '__main__':
     print('- log_work(plan_id, category, message, phase, detail) -> dict')
     print('- read_work_log(plan_id, phase) -> dict')
     print('- list_recent_work(plan_id, limit) -> dict')
+    print('- log_decision(plan_id, message, phase, detail) -> dict')
+    print('- read_decision_log(plan_id, phase) -> dict')

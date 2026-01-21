@@ -25,7 +25,7 @@ The workflow must analyze the correct scope:
 
 1. **Component Types**: Request mentions "agents, commands, and skills" - all three types must be analyzed
 2. **Bundle Scope**: Request doesn't specify bundles - should scan all bundles
-3. **Decision Logging**: Scope decisions must be logged with `[DECISION]` tag
+3. **Decision Logging**: Scope decisions must be logged to `decision.log`
 ```
 
 ### 2. Completeness Criteria
@@ -63,7 +63,7 @@ Evaluate the quality of decisions and their rationale.
 
 Decisions must have clear rationale:
 
-1. **Exclusion Documentation**: If items are excluded, `[DECISION]` log must explain why
+1. **Exclusion Documentation**: If items are excluded, `decision.log` must contain an explanation
 2. **Rationale Depth**: Must explain reasoning, not just state the decision
 3. **Traceability**: Each decision should reference the source analysis
 ```

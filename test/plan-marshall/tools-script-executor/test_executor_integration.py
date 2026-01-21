@@ -547,8 +547,8 @@ def test_plan_scoped_log_when_plan_exists():
 
         env.run_executor('pm-workflow:manage-config', 'get', '--plan-id', plan_id, '--key', 'test')
 
-        # Check if plan-scoped log was created
-        plan_log = plan_dir / 'script-execution.log'
+        # Check if plan-scoped log was created (now in logs/ subdirectory)
+        plan_log = plan_dir / 'logs' / 'script-execution.log'
         assert plan_log.exists(), f'Plan-scoped log not created at {plan_log}'
 
         log_content = plan_log.read_text()

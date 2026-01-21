@@ -12,9 +12,9 @@ This is the EXPECTED correct assessment that the outline phase should produce.
 - "agent/command/skill outputs" → All three component types
 - "JSON to TOON format" → Find JSON output specifications
 
-**Scope Decision:**
+**Scope Decision** (in decision.log):
 ```
-[DECISION] (pm-plugin-development:ext-outline-plugin) Scope: resource-types=agents,commands,skills, bundles=all
+(pm-plugin-development:ext-outline-plugin) Scope: resource-types=agents,commands,skills, bundles=all
   detail: Request explicitly mentions "agent/command/skill outputs" - scanning all three types
 ```
 
@@ -143,13 +143,13 @@ No commands currently have JSON output specifications.
 | "Output JSON", "JSON Output Contract", "Return...Results" | YES |
 | "Configuration", "Required", "Input", "contains" | NO |
 
-**Decision:**
+**Decision** (in decision.log):
 ```
-[DECISION] (pm-plugin-development:ext-outline-plugin) Skills with JSON output specs included
+(pm-plugin-development:ext-outline-plugin) Skills with JSON output specs included
   detail: Skills that have JSON output specifications in "Output JSON", "JSON Output Contract",
   or "Return...Results" sections should be migrated
 
-[DECISION] (pm-plugin-development:ext-outline-plugin) Skills with config/input JSON excluded
+(pm-plugin-development:ext-outline-plugin) Skills with config/input JSON excluded
   detail: Skills with JSON in "Configuration", "Required", or "contains" context
   are documenting inputs, not outputs
 ```
@@ -208,12 +208,23 @@ affected_files[15]:
 
 ---
 
-## Expected Work.log Entries
+## Expected Log Entries
+
+### decision.log Entries
 
 ```
-[DECISION] (pm-plugin-development:ext-outline-plugin) Path-Multi selected: cross-bundle impact, 4 modules affected
-[DECISION] (pm-plugin-development:ext-outline-plugin) Scope: resource-types=agents,commands,skills, bundles=all
+(pm-plugin-development:ext-outline-plugin) Path-Multi selected: cross-bundle impact, 4 modules affected
+(pm-plugin-development:ext-outline-plugin) Scope: resource-types=agents,commands,skills, bundles=all
   detail: Request explicitly mentions "agent/command/skill outputs"
+(pm-plugin-development:ext-outline-plugin) Skills with JSON output specs included
+  detail: Skills that have JSON output specs should be migrated
+(pm-plugin-development:ext-outline-plugin) Skills with config/input JSON excluded
+  detail: Skills with JSON in "Configuration", "Required", "contains" are documenting inputs
+```
+
+### work.log Entries
+
+```
 [STATUS] (pm-plugin-development:ext-outline-plugin) Scanning marketplace inventory
 [FINDING] (pm-plugin-development:ext-outline-plugin) Affected: pm-dev-java/agents/java-implement-agent.md
   detail: "Step 3: Return Results" section contains ```json output block
@@ -242,10 +253,6 @@ affected_files[15]:
   detail: JSON block is configuration structure, not output specification
 [FINDING] (pm-plugin-development:ext-outline-plugin) Not affected: pm-plugin-development/skills/plugin-create/SKILL.md
   detail: JSON block is input format, not output specification
-[DECISION] (pm-plugin-development:ext-outline-plugin) Skills with JSON output specs included
-  detail: Skills that have JSON output specs should be migrated
-[DECISION] (pm-plugin-development:ext-outline-plugin) Skills with config/input JSON excluded
-  detail: Skills with JSON in "Configuration", "Required", "contains" are documenting inputs
-[MILESTONE] (pm-plugin-development:ext-outline-plugin) Impact analysis complete: 15 of {total} components affected
+[PROGRESS] (pm-plugin-development:ext-outline-plugin) Impact analysis complete: 15 of {total} components affected
 [ARTIFACT] (pm-plugin-development:ext-outline-plugin) Created solution_outline.md with 4 deliverables
 ```

@@ -12,11 +12,11 @@ The workflow must analyze the correct scope:
 - [ ] Analyzes **commands** (request says "agent/command/skill outputs")
 - [ ] Analyzes **skills** (request says "agent/command/skill outputs")
 - [ ] Scans **all bundles** (request doesn't specify bundles)
-- [ ] Logs scope decision with `[DECISION]` tag
+- [ ] Logs scope decision to `decision.log`
 
-**Expected scope decision**:
+**Expected scope decision** (in decision.log):
 ```
-[DECISION] Scope: resource-types=agents,commands,skills, bundles=all
+(pm-plugin-development:ext-outline-plugin) Scope: resource-types=agents,commands,skills, bundles=all
   detail: Request explicitly mentions "agent/command/skill outputs" - scanning all three types
 ```
 

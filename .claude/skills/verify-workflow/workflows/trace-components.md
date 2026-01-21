@@ -6,7 +6,7 @@ Collects all components (commands, skills, agents) and scripts used during workf
 
 ## Purpose
 
-After running a workflow trigger, this workflow parses both conversation history AND work.log to build a complete inventory of all invoked components. The resulting trace enables precise attribution of findings to specific components.
+After running a workflow trigger, this workflow parses both conversation history AND plan logs (work.log, decision.log) to build a complete inventory of all invoked components. The resulting trace enables precise attribution of findings to specific components.
 
 ## Output
 
@@ -56,14 +56,20 @@ Review the conversation history from the workflow execution. Identify **componen
 
 **Note**: Scripts are tracked separately in Step 2.5.
 
-## Step 2.5: Extract Components from work.log
+## Step 2.5: Extract Components from Plan Logs
 
-The conversation history only shows top-level component invocations. Skills loaded internally by agents log their activity to work.log with component identifiers.
+The conversation history only shows top-level component invocations. Skills loaded internally by agents log their activity to the logs/ subdirectory with component identifiers.
 
 **Read the work.log:**
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   read --plan-id {plan_id} --type work
+```
+
+**Read the decision.log:**
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  read --plan-id {plan_id} --type decision
 ```
 
 This returns structured TOON output with parsed log entries including timestamp, level, category, and message fields.
@@ -81,7 +87,7 @@ Example extractions:
 - `(pm-workflow:phase-3-plan)` → skill: phase-3-plan
 
 **Build invocation hierarchy:**
-For each component found in work.log:
+For each component found in work.log or decision.log:
 1. Check if it appears in conversation-visible components
 2. If not, add it as an internal component
 3. Determine parent by examining which agent was active when the skill logged
@@ -90,12 +96,12 @@ For each component found in work.log:
 - Skills with `ext-outline-*` pattern → loaded by solution-outline-agent
 - Skills with `ext-triage-*` pattern → loaded by finalize workflows
 
-**Extract scripts from work.log:**
+**Extract scripts from plan logs:**
 Scripts are identified by `[MANAGE-*]` tags or execute-script.py invocations. Track separately with S1, S2, ... IDs.
 
 ## Step 3: Build Component Sequence
 
-Merge components from conversation history (Step 2) and work.log (Step 2.5).
+Merge components from conversation history (Step 2) and plan logs (Step 2.5).
 
 **Component types** (use C1, C2, C3... namespace):
 - command: User-invocable entry points

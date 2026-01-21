@@ -10,7 +10,7 @@ The workflow must analyze the correct scope:
 
 - [ ] All component types mentioned in request are analyzed
 - [ ] Scope boundaries are correctly determined
-- [ ] Explicit scope decisions are logged with `[DECISION]` tag
+- [ ] Explicit scope decisions are logged to `decision.log`
 
 **Expected scope**: {Describe the expected scope}
 

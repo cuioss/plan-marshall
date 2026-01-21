@@ -194,7 +194,7 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-m
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[DECISION] (pm-workflow:phase-1-init) Detected domain: {domain} - {reasoning}"
+  decision {plan_id} INFO "(pm-workflow:phase-1-init) Detected domain: {domain} - {reasoning}"
 ```
 
 ### Step 8: Create Status

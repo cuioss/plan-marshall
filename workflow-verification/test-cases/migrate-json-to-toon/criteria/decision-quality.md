@@ -59,6 +59,14 @@ For skills:
 - Include if skill has actual output specification
 
 **Decision trail should show**:
+
+In decision.log:
+```
+({component}) Scope: ...
+  detail: ...
+```
+
+In work.log:
 ```
 [FINDING] Affected: {path}
   detail: "{section name}" section contains ```json output block
@@ -85,7 +93,7 @@ For skills:
 - `pm-dev-java/skills/java-enforce-logrecords/SKILL.md` - JSON is configuration structure
 - `pm-plugin-development/skills/plugin-create/SKILL.md` - JSON is input format
 
-**Format**:
+**Format** (in work.log):
 ```
 [FINDING] Not affected: {path}
   detail: {reason this JSON block is not an output specification}
