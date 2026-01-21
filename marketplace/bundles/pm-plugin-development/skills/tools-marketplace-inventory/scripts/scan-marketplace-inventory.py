@@ -166,14 +166,14 @@ def extract_frontmatter_fields(file_path: Path) -> dict[str, Any]:
 def discover_skill_subdirs(skill_dir: Path) -> dict[str, list[str]]:
     """Discover subdirectories in a skill and list their files.
 
-    Returns dict mapping subdir name to list of file names.
+    Returns dict mapping subdir name to list of repo-relative file paths.
     Excludes 'scripts' directory (handled separately).
     """
     subdirs: dict[str, list[str]] = {}
 
     for subdir in sorted(skill_dir.iterdir()):
         if subdir.is_dir() and subdir.name != 'scripts':
-            files = sorted([f.name for f in subdir.iterdir() if f.is_file()])
+            files = sorted([safe_relative_path(f) for f in subdir.iterdir() if f.is_file()])
             if files:
                 subdirs[subdir.name] = files
 
