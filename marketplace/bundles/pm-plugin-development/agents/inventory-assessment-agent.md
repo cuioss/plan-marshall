@@ -127,9 +127,17 @@ ELSE:
 LOG: [DECISION] (inventory-assessment-agent) Bundle scope: {bundle_scope}
 ```
 
-### Step 3: Run Inventory Scan
+### Step 3: Create Work Directory and Run Inventory Scan
 
-Execute the inventory script with appropriate filters:
+First, create the work directory:
+
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-files:manage-files mkdir \
+  --plan-id {plan_id} \
+  --dir work
+```
+
+Then execute the inventory script with `--output` to write directly to the plan's work directory:
 
 **If bundle_scope is "all"** (scan all bundles):
 ```bash
@@ -137,7 +145,8 @@ python3 .plan/execute-script.py \
   pm-plugin-development:tools-marketplace-inventory:scan-marketplace-inventory \
   --trace-plan-id {plan_id} \
   --resource-types {affected_artifacts} \
-  --include-descriptions
+  --include-descriptions \
+  --output .plan/plans/{plan_id}/work/inventory_raw.toon
 ```
 
 **If bundle_scope is specific bundles**:
@@ -147,12 +156,30 @@ python3 .plan/execute-script.py \
   --trace-plan-id {plan_id} \
   --resource-types {affected_artifacts} \
   --bundles {comma-separated-bundle-names} \
-  --include-descriptions
+  --include-descriptions \
+  --output .plan/plans/{plan_id}/work/inventory_raw.toon
 ```
 
 Note: Omit `--bundles` to scan all bundles. Use `--bundles pm-dev-java,pm-workflow` for specific bundles.
 
+Store reference to the raw inventory:
+
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-references:manage-references set \
+  --plan-id {plan_id} \
+  --field inventory_raw \
+  --value "work/inventory_raw.toon"
+```
+
 ### Step 4: Convert and Group Inventory by Type
+
+Read the raw inventory file:
+
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-files:manage-files read \
+  --plan-id {plan_id} \
+  --file work/inventory_raw.toon
+```
 
 The inventory script returns skill DIRECTORIES (e.g., `marketplace/bundles/X/skills/Y`).
 Convert and group into actual file paths:
@@ -169,18 +196,9 @@ Group by component type:
 - Agents: Already file paths (`/agents/*.md`)
 - Scripts: Already file paths (`/scripts/*.py`)
 
-### Step 5: Persist Inventory to Plan Directory
+### Step 5: Persist Filtered Inventory
 
-Create the work subdirectory and persist the filtered inventory:
-
-```bash
-# Create work directory
-python3 .plan/execute-script.py pm-workflow:manage-files:manage-files mkdir \
-  --plan-id {plan_id} \
-  --dir work
-```
-
-Build the inventory TOON content and persist it:
+Build the filtered inventory TOON content and persist it (work directory already created in Step 3):
 
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-files:manage-files write \

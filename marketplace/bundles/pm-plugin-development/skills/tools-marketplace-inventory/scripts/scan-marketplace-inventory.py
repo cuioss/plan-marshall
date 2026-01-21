@@ -15,6 +15,7 @@ Options:
     --include-descriptions   Extract descriptions from YAML frontmatter
     --name-pattern <pattern> Filter resources by name pattern (fnmatch glob, pipe-separated for multiple)
     --bundles <names>        Filter to specific bundles (comma-separated)
+    --output <path>          Custom output file path (default: .plan/temp/.../inventory-{timestamp}.toon)
     --direct-result          Output full TOON directly to stdout (default: write to file)
 
 Output Modes:
@@ -350,11 +351,23 @@ def get_base_path(scope: str) -> Path:
     raise ValueError(f'Invalid scope: {scope}')
 
 
-def write_file_output(output: dict, output_dir: Path) -> tuple[Path, str]:
-    """Write full output to TOON file, return (file_path, summary_toon_for_stdout)."""
-    output_dir.mkdir(parents=True, exist_ok=True)
-    timestamp = datetime.now().strftime('%Y%m%d-%H%M%S')
-    output_file = output_dir / f'inventory-{timestamp}.toon'
+def write_file_output(output: dict, output_dir: Path, custom_output: str = '') -> tuple[Path, str]:
+    """Write full output to TOON file, return (file_path, summary_toon_for_stdout).
+
+    Args:
+        output: The inventory data to write
+        output_dir: Default directory for timestamped output files
+        custom_output: Optional custom output file path (overrides output_dir)
+    """
+    if custom_output:
+        # Use custom output path
+        output_file = Path(custom_output)
+        output_file.parent.mkdir(parents=True, exist_ok=True)
+    else:
+        # Use default timestamped path
+        output_dir.mkdir(parents=True, exist_ok=True)
+        timestamp = datetime.now().strftime('%Y%m%d-%H%M%S')
+        output_file = output_dir / f'inventory-{timestamp}.toon'
 
     # Write full inventory in TOON format
     output_file.write_text(serialize_toon(output))
@@ -393,6 +406,11 @@ def main():
         help='Filter resources by name pattern (fnmatch glob, pipe-separated for multiple)',
     )
     parser.add_argument('--bundles', default='', help='Filter to specific bundles (comma-separated)')
+    parser.add_argument(
+        '--output',
+        default='',
+        help='Custom output file path (default: .plan/temp/.../inventory-{timestamp}.toon)',
+    )
     parser.add_argument(
         '--direct-result',
         action='store_true',
@@ -474,7 +492,7 @@ def main():
         # Default: File mode - write full output to file, print summary
         output_dir = get_temp_dir(DEFAULT_OUTPUT_SUBDIR)
         try:
-            _, summary_toon = write_file_output(output, output_dir)
+            _, summary_toon = write_file_output(output, output_dir, args.output)
             print(summary_toon)
         except OSError as e:
             print(f'ERROR: Failed to write output file: {e}', file=sys.stderr)

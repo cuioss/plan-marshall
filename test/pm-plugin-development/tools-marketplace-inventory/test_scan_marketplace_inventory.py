@@ -593,6 +593,97 @@ def test_file_output_respects_plan_base_dir(tmp_path, monkeypatch):
 
 
 # =============================================================================
+# Tests - Custom Output Path (--output)
+# =============================================================================
+
+
+def test_output_param_creates_file_at_path(tmp_path):
+    """Test --output parameter writes to specified path."""
+    output_file = tmp_path / 'custom-inventory.toon'
+
+    result = run_script(SCRIPT_PATH, '--output', str(output_file), '--bundles', 'pm-workflow')
+    assert result.returncode == 0, f'Script returned error: {result.stderr}'
+
+    # Verify file was created at specified path
+    assert output_file.exists(), f'Should create file at {output_file}'
+
+    # Verify content is valid TOON
+    content = output_file.read_text()
+    data = parse_toon(content)
+    assert len(data.get('bundles', [])) == 1, 'Should have one bundle'
+    assert data['bundles'][0]['name'] == 'pm-workflow', 'Bundle should be pm-workflow'
+
+
+def test_output_param_creates_parent_dirs(tmp_path):
+    """Test --output parameter creates parent directories if needed."""
+    output_file = tmp_path / 'nested' / 'deeply' / 'inventory.toon'
+
+    result = run_script(SCRIPT_PATH, '--output', str(output_file), '--bundles', 'plan-marshall')
+    assert result.returncode == 0, f'Script returned error: {result.stderr}'
+
+    # Verify file was created at specified path
+    assert output_file.exists(), f'Should create file and parent dirs at {output_file}'
+
+
+def test_output_param_summary_shows_custom_path(tmp_path):
+    """Test --output parameter summary includes the custom path."""
+    output_file = tmp_path / 'my-inventory.toon'
+
+    result = run_script(SCRIPT_PATH, '--output', str(output_file), '--bundles', 'pm-workflow')
+    assert result.returncode == 0, f'Script returned error: {result.stderr}'
+
+    # Verify summary contains custom path
+    summary = parse_toon(result.stdout)
+    assert summary.get('output_file') == str(output_file), f'Summary should show custom path, got {summary.get("output_file")}'
+
+
+def test_output_param_ignores_plan_base_dir(tmp_path, monkeypatch):
+    """Test --output parameter takes precedence over PLAN_BASE_DIR."""
+    # Set PLAN_BASE_DIR to one location
+    plan_dir = tmp_path / 'plan-base'
+    monkeypatch.setenv('PLAN_BASE_DIR', str(plan_dir))
+
+    # But specify --output to a different location
+    output_file = tmp_path / 'custom-output' / 'inventory.toon'
+
+    result = run_script(SCRIPT_PATH, '--output', str(output_file), '--bundles', 'pm-workflow')
+    assert result.returncode == 0, f'Script returned error: {result.stderr}'
+
+    # Verify file was created at custom path, not PLAN_BASE_DIR
+    assert output_file.exists(), 'Should create file at --output path'
+    plan_base_files = list((plan_dir / 'temp').glob('**/*.toon')) if plan_dir.exists() else []
+    assert len(plan_base_files) == 0, 'Should NOT create file in PLAN_BASE_DIR when --output is specified'
+
+
+def test_output_param_with_filters(tmp_path):
+    """Test --output parameter works with resource and bundle filters."""
+    output_file = tmp_path / 'filtered-inventory.toon'
+
+    result = run_script(
+        SCRIPT_PATH,
+        '--output', str(output_file),
+        '--bundles', 'pm-workflow',
+        '--resource-types', 'skills',
+        '--name-pattern', 'plan-*',
+    )
+    assert result.returncode == 0, f'Script returned error: {result.stderr}'
+
+    # Verify file was created with filtered content
+    assert output_file.exists(), f'Should create file at {output_file}'
+
+    data = parse_toon(output_file.read_text())
+    bundles = data.get('bundles', [])
+    assert len(bundles) == 1, 'Should have one bundle'
+
+    # Verify skills only (no agents, commands, scripts)
+    bundle = bundles[0]
+    assert bundle.get('statistics', {}).get('agents', 0) == 0, 'Should have 0 agents'
+    assert bundle.get('statistics', {}).get('commands', 0) == 0, 'Should have 0 commands'
+    assert bundle.get('statistics', {}).get('scripts', 0) == 0, 'Should have 0 scripts'
+    assert bundle.get('statistics', {}).get('skills', 0) >= 1, 'Should have at least 1 skill'
+
+
+# =============================================================================
 # Tests - Error Handling
 # =============================================================================
 
