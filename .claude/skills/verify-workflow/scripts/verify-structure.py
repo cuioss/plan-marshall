@@ -160,8 +160,15 @@ class StructuralChecker:
             self.add_finding('warning', f'References file not found for plan {self.plan_id}')
             return False
 
-    def check_deliverables_count(self, expected_count: int | None = None) -> bool:
-        """Check deliverables can be listed and optionally verify count."""
+    def check_deliverables_count(
+        self, expected_count: int | None = None, count_check_mode: str = 'strict'
+    ) -> bool:
+        """Check deliverables can be listed and optionally verify count.
+
+        Args:
+            expected_count: Expected number of deliverables
+            count_check_mode: 'strict' (fail on mismatch) or 'informational' (note only)
+        """
         solution_path = self._get_artifact_path('solution_outline.md')
 
         if not solution_path.exists():
@@ -189,22 +196,107 @@ class StructuralChecker:
                 return False
 
             if expected_count is not None and actual_count != expected_count:
-                self.add_check(
-                    'deliverables_count',
-                    'fail',
-                    f'Expected {expected_count} deliverables, found {actual_count}',
-                )
-                self.add_finding(
-                    'error',
-                    f'Deliverable count mismatch: expected {expected_count}, got {actual_count}',
-                )
-                return False
+                if count_check_mode == 'informational':
+                    # Informational - note but don't fail
+                    self.add_check(
+                        'deliverables_count',
+                        'info',
+                        f'Expected {expected_count} deliverables, found {actual_count} (informational)',
+                    )
+                    self.add_finding(
+                        'info',
+                        f'Deliverable count differs: expected {expected_count}, got {actual_count} (packaging difference)',
+                    )
+                else:
+                    # Strict - fail on mismatch
+                    self.add_check(
+                        'deliverables_count',
+                        'fail',
+                        f'Expected {expected_count} deliverables, found {actual_count}',
+                    )
+                    self.add_finding(
+                        'error',
+                        f'Deliverable count mismatch: expected {expected_count}, got {actual_count}',
+                    )
+                    return False
 
             self.add_check('deliverables_list', 'pass', f'Found {actual_count} deliverables')
             return True
 
         except Exception as e:
             self.add_check('deliverables_list', 'fail', f'Error listing deliverables: {e}')
+            self.add_finding('error', str(e))
+            return False
+
+    def check_affected_files(self, expected_files: list[str]) -> bool:
+        """Check affected files accuracy - the key correctness metric.
+
+        Compares expected affected files against actual affected files in references.toon.
+        """
+        refs_path = self._get_artifact_path('references.toon')
+
+        if not refs_path.exists():
+            self.add_check('affected_files', 'fail', 'References file not found')
+            self.add_finding('error', 'Cannot verify affected files - references.toon missing')
+            return False
+
+        try:
+            content = refs_path.read_text()
+            refs = parse_toon_simple(content)
+
+            actual_files = refs.get('affected_files', [])
+            if isinstance(actual_files, str):
+                actual_files = [actual_files]
+
+            # Clean TOON list formatting - strip leading '- ' if present
+            def clean_path(p: str) -> str:
+                p = p.strip()
+                if p.startswith('- '):
+                    p = p[2:]
+                return p.strip()
+
+            expected_set = {clean_path(f) for f in expected_files}
+            actual_set = {clean_path(f) for f in actual_files}
+
+            # Calculate accuracy metrics
+            correct = expected_set & actual_set
+            missing = expected_set - actual_set  # False negatives
+            extra = actual_set - expected_set  # False positives
+
+            accuracy = len(correct) / len(expected_set) * 100 if expected_set else 100
+
+            # Record detailed results
+            if missing:
+                self.add_finding('error', f'Missing expected files ({len(missing)}): {sorted(missing)[:5]}...')
+            if extra:
+                self.add_finding('warning', f'Extra files included ({len(extra)}): {sorted(extra)[:5]}...')
+
+            # Pass if recall >= 90% (found most expected files)
+            # Note: precision (false positives) is less critical than recall (false negatives)
+            if accuracy >= 90 and not missing:
+                self.add_check(
+                    'affected_files',
+                    'pass',
+                    f'Found {len(correct)}/{len(expected_set)} expected files (accuracy: {accuracy:.0f}%)',
+                )
+                return True
+            elif accuracy >= 70:
+                self.add_check(
+                    'affected_files',
+                    'partial',
+                    f'Found {len(correct)}/{len(expected_set)} expected files (accuracy: {accuracy:.0f}%)',
+                )
+                return True  # Partial pass
+            else:
+                self.add_check(
+                    'affected_files',
+                    'fail',
+                    f'Found only {len(correct)}/{len(expected_set)} expected files (accuracy: {accuracy:.0f}%)',
+                )
+                return False
+
+        except Exception as e:
+            self.add_check('affected_files', 'fail', f'Error checking affected files: {e}')
             self.add_finding('error', str(e))
             return False
 
@@ -262,20 +354,28 @@ class StructuralChecker:
         # Load expected artifacts for comparison
         expected = self.load_expected_artifacts()
 
-        # Check deliverables
+        # Check deliverables - determine if count check is informational
         expected_deliverable_count = None
+        count_check_mode = expected.get('deliverable_count_check', 'strict')
         if 'deliverable_count' in expected:
             try:
                 expected_deliverable_count = int(expected['deliverable_count'])
             except (ValueError, TypeError):
                 pass
-        self.check_deliverables_count(expected_deliverable_count)
+        self.check_deliverables_count(expected_deliverable_count, count_check_mode)
+
+        # Check affected files - the key correctness metric
+        expected_files = expected.get('affected_files', [])
+        if isinstance(expected_files, str):
+            expected_files = [expected_files]
+        if expected_files:
+            self.check_affected_files(expected_files)
 
         # Check tasks if planning phase included
         if '3-plan' in phases or 'both' in phases:
             self.check_tasks_exist()
 
-        # Calculate overall status
+        # Calculate overall status (excluding 'info' checks from failure count)
         failed_checks = [c for c in self.checks if c['status'] == 'fail']
         overall_status = 'pass' if not failed_checks else 'fail'
 

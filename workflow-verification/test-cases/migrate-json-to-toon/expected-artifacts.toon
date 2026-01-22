@@ -7,12 +7,14 @@ config.toon,pm-workflow:manage-config:config-schema
 status.toon,pm-workflow:manage-lifecycle:status-schema
 references.toon,pm-workflow:manage-references:references-schema
 
-# Expected deliverables: 4 (grouped by bundle)
+# Expected deliverables: 4 (grouped by bundle) - INFORMATIONAL ONLY
+# Deliverable count is packaging, not correctness. What matters is affected_files.
 # 1. pm-dev-java agents (9 files)
 # 2. pm-plugin-development agent (1 file)
 # 3. plan-marshall skills (2 files)
 # 4. pm-dev-frontend skills (3 files)
 deliverable_count: 4
+deliverable_count_check: informational
 
 # Expected affected files: 15 total
 #
