@@ -277,6 +277,32 @@ python3 .plan/execute-script.py pm-workflow:manage-references:manage-references 
   --values "{comma-separated-paths}"
 ```
 
+### Step 5.5: Compute Deliverable Dependencies (if available)
+
+Check if dependency analysis was performed:
+
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-files:manage-files exists \
+  --plan-id {plan_id} \
+  --file work/dependency_analysis.toon
+```
+
+Parse the TOON output and check `exists: true/false` to determine if the file is present.
+
+If `exists: true`, read it to determine deliverable ordering:
+
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-files:manage-files read \
+  --plan-id {plan_id} \
+  --file work/dependency_analysis.toon
+```
+
+**Assign `depends:` field**:
+- Components with no dependencies in scope: `depends: none`
+- Components depending on earlier deliverables: `depends: N` (deliverable number)
+
+**Ordering Principle**: Primary affected components should be processed before their dependents. When a dependent component references a primary component, the dependent's deliverable should have `depends: N` where N is the primary's deliverable number.
+
 ### Step 6: Build Deliverables
 
 Create deliverables from affected files, grouped by bundle (or ~5-8 files per deliverable).

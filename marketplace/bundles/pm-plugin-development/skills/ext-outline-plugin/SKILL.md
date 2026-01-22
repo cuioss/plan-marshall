@@ -87,11 +87,72 @@ IF affected_artifacts is empty:
   ERROR: "No artifacts affected - clarify request"
 ```
 
+### Step 3: Impact Analysis (Optional)
+
+**Condition**: Run if inventory has < 20 files AND change_type is "modify", "migrate", or "refactor".
+
+**Purpose**: Discover components that directly depend on affected components (1 level only, no transitive chains).
+
+#### 3.1: Convert Paths to Notations
+
+Parse `work/inventory_filtered.toon` and convert file paths:
+- `marketplace/bundles/{b}/skills/{s}/SKILL.md` → `{b}:{s}`
+- `marketplace/bundles/{b}/commands/{c}.md` → `{b}:commands:{c}`
+- `marketplace/bundles/{b}/agents/{a}.md` → `{b}:agents:{a}`
+
+#### 3.2: Resolve and Expand (Single Script Call)
+
+The script handles everything: resolves reverse dependencies, expands inventory, and writes results directly.
+
+```bash
+python3 .plan/execute-script.py pm-plugin-development:ext-outline-plugin:filter-inventory \
+  impact-analysis --plan-id {plan_id}
+```
+
+The script:
+1. Reads `work/inventory_filtered.toon` to get primary affected components
+2. Converts file paths to component notations
+3. Calls resolve-dependencies rdeps for each component
+4. Collects unique direct dependents
+5. Expands inventory with dependents
+6. Writes `work/dependency_analysis.toon` with results
+7. Logs decision to decision.log
+
+**Output** (TOON):
+```toon
+status: success
+primary_count: 5
+dependents_found: 3
+dependents_added: 2  # May be fewer if already in scope
+```
+
+**Rationale**: Single script call avoids routing data through context. For operations like renaming, not including dependents would break them - expansion is inherently necessary for correctness.
+
+#### Error Handling
+
+**CRITICAL**: If resolve-dependencies fails, **HALT the workflow immediately**.
+
+```
+IF resolve-dependencies returns error or fails:
+  HALT with error:
+    status: error
+    error_type: dependency_resolution_failed
+    message: "Impact analysis failed. Retry later."
+
+  DO NOT:
+    - Continue without dependency data
+    - Fall back to skip impact analysis
+    - Proceed with partial scope
+```
+
+**Rationale**: Consistent with existing ext-outline-plugin pattern - no workarounds, fail loudly.
+
 ### Conditional Standards
 
 | Condition | Additional Standard |
 |-----------|---------------------|
 | Deliverable involves Python scripts | `standards/script-verification.md` |
+| Impact analysis enabled | `standards/impact-analysis.md` |
 
 ---
 

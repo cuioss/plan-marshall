@@ -152,22 +152,44 @@ def cmd_list(args):
 
 
 def cmd_exists(args):
-    """Check if file exists in plan directory."""
+    """Check if file exists in plan directory.
+
+    Returns TOON output with exists: true/false.
+    Always exits 0 for expected outcomes (exists, not exists, validation errors).
+    Only exits non-zero for unexpected runtime errors.
+    """
     if not validate_plan_id(args.plan_id):
-        print(f'Error: Invalid plan_id format: {args.plan_id}', file=sys.stderr)
-        sys.exit(1)
+        result = {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'invalid_plan_id',
+            'message': f'Invalid plan_id format: {args.plan_id}',
+        }
+        print(serialize_toon(result))
+        return
 
     if not validate_file_path(args.file):
-        print(f'Error: Invalid file path: {args.file}', file=sys.stderr)
-        sys.exit(1)
+        result = {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'file': args.file,
+            'error': 'invalid_path',
+            'message': f'Invalid file path: {args.file}',
+        }
+        print(serialize_toon(result))
+        return
 
     plan_dir = get_plan_dir(args.plan_id)
     file_path = plan_dir / args.file
 
-    if file_path.exists():
-        sys.exit(0)
-    else:
-        sys.exit(1)
+    result = {
+        'status': 'success',
+        'plan_id': args.plan_id,
+        'file': args.file,
+        'exists': file_path.exists(),
+        'path': str(file_path),
+    }
+    print(serialize_toon(result))
 
 
 def cmd_mkdir(args):

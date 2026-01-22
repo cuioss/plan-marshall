@@ -83,16 +83,47 @@ def test_exists_present():
 
         result = run_script(SCRIPT_PATH, 'exists', '--plan-id', 'file-exists', '--file', 'test.md')
         assert result.success, f'Script failed: {result.stderr}'
-        # Output should indicate file exists
-        assert 'true' in result.stdout.lower() or result.returncode == 0
+        data = parse_toon(result.stdout)
+        assert data['status'] == 'success'
+        assert data['exists'] is True
+        assert data['plan_id'] == 'file-exists'
+        assert data['file'] == 'test.md'
+        assert 'path' in data
 
 
 def test_exists_absent():
     """Test checking if file exists (absent)."""
     with TestContext(plan_id='file-absent'):
         result = run_script(SCRIPT_PATH, 'exists', '--plan-id', 'file-absent', '--file', 'missing.md')
-        # Script returns exit code 1 when file doesn't exist
-        assert not result.success, 'Expected exit code 1 for missing file'
+        # Query succeeds with exists: false
+        assert result.success, f'Script failed: {result.stderr}'
+        data = parse_toon(result.stdout)
+        assert data['status'] == 'success'
+        assert data['exists'] is False
+        assert data['plan_id'] == 'file-absent'
+        assert data['file'] == 'missing.md'
+
+
+def test_exists_invalid_plan_id():
+    """Test exists with invalid plan ID returns TOON error."""
+    with TestContext():
+        result = run_script(SCRIPT_PATH, 'exists', '--plan-id', 'Invalid_Plan', '--file', 'test.md')
+        # Validation errors also exit 0 with TOON error output
+        assert result.success, f'Script failed unexpectedly: {result.stderr}'
+        data = parse_toon(result.stdout)
+        assert data['status'] == 'error'
+        assert data['error'] == 'invalid_plan_id'
+
+
+def test_exists_invalid_file_path():
+    """Test exists with invalid file path returns TOON error."""
+    with TestContext(plan_id='file-exists'):
+        result = run_script(SCRIPT_PATH, 'exists', '--plan-id', 'file-exists', '--file', '../escape.md')
+        # Validation errors also exit 0 with TOON error output
+        assert result.success, f'Script failed unexpectedly: {result.stderr}'
+        data = parse_toon(result.stdout)
+        assert data['status'] == 'error'
+        assert data['error'] == 'invalid_path'
 
 
 # =============================================================================

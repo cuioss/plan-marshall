@@ -163,3 +163,56 @@ If bundle doesn't exist:
 If multiple components match:
 - List all matches with paths
 - Ask user to select correct one
+
+---
+
+## Dependency Resolution Reference
+
+**Script**: `pm-plugin-development:tools-marketplace-inventory:resolve-dependencies`
+
+| Subcommand | Purpose |
+|------------|---------|
+| `rdeps` | Get what depends on component (reverse dependencies) |
+| `deps` | Get what component depends on (forward dependencies) |
+| `tree` | Visual dependency tree output |
+| `validate` | Check for broken/circular dependencies |
+
+### Common Options
+
+| Option | Description |
+|--------|-------------|
+| `--component <notation>` | Component to resolve (required for deps/rdeps/tree) |
+| `--dep-types <types>` | Filter: script,skill,import,path,implements |
+| `--direct-result` | Output to stdout |
+| `--format <value>` | toon (default), json |
+| `--depth <N>` | Max transitive depth (default: 10) |
+
+### Example: Get Reverse Dependencies
+
+```bash
+python3 .plan/execute-script.py pm-plugin-development:tools-marketplace-inventory:resolve-dependencies \
+  rdeps --component pm-workflow:manage-files --dep-types skill,script --direct-result --format json
+```
+
+**Output** (JSON):
+```json
+{
+  "status": "success",
+  "component": "pm-workflow:manage-files",
+  "dependent_count": 5,
+  "dependents": [
+    {"component": "pm-workflow:phase-2-outline", "references": [...]},
+    {"component": "pm-workflow:phase-4-execute", "references": [...]}
+  ]
+}
+```
+
+### Dependency Type Mapping
+
+| CLI Type | Internal Type | Matches |
+|----------|---------------|---------|
+| `skill` | SKILL_REFERENCE | Skill tool calls, frontmatter refs |
+| `script` | SCRIPT_NOTATION | execute-script.py calls |
+| `import` | PYTHON_IMPORT | Python module imports |
+| `path` | RELATIVE_PATH | Documentation path refs |
+| `implements` | IMPLEMENTS | Protocol implementations |

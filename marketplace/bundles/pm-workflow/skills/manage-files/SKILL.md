@@ -114,7 +114,7 @@ python3 .plan/execute-script.py pm-workflow:manage-files:manage-files list \
 
 ### exists
 
-Check if a file exists.
+Check if a file exists. Returns TOON output with `exists: true/false`.
 
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-files:manage-files exists \
@@ -122,7 +122,35 @@ python3 .plan/execute-script.py pm-workflow:manage-files:manage-files exists \
   --file config.toon
 ```
 
-**Output**: Exit code 0 if exists, 1 if not
+**Output** (TOON format):
+
+When file exists:
+```toon
+status: success
+plan_id: my-feature
+file: config.toon
+exists: true
+path: .plan/plans/my-feature/config.toon
+```
+
+When file does not exist:
+```toon
+status: success
+plan_id: my-feature
+file: missing.md
+exists: false
+path: .plan/plans/my-feature/missing.md
+```
+
+On validation error (invalid plan_id or path):
+```toon
+status: error
+plan_id: Invalid_Plan
+error: invalid_plan_id
+message: Invalid plan_id format: Invalid_Plan
+```
+
+**Note**: Always exits 0 for expected outcomes. Check `status` and `exists` fields to determine result
 
 ### mkdir
 
