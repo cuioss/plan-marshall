@@ -95,7 +95,7 @@ For each `### File N:` section:
 
 ## Return Summary
 
-**OUTPUT RULE**: Do NOT output any text except the final TOON summary below. All analysis, reasoning, and findings are logged to decision.log via bash commands. The parent workflow reads decision.log for details.
+**OUTPUT RULE**: Do NOT output any text except the final TOON summary below. All analysis, reasoning, and assessments are logged to assessments.jsonl via bash commands. The parent workflow reads assessments.jsonl for details.
 
 After ALL file sections have been processed with logging executed, return TOON summary per contract:
 
@@ -106,5 +106,5 @@ total_analyzed: {count}
 certain_include: {count}
 certain_exclude: {count}
 uncertain: {count}
-decision_log_entries: {count}
+assessments_logged: {count}
 ```

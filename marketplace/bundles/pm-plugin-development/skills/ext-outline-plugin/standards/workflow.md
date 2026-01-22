@@ -170,10 +170,9 @@ Process these files IN ORDER. For EACH file, you MUST:
 
 **1b. Log (EXECUTE IMMEDIATELY)**:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "({agent_name}) {file_path_1}: {CERTAINTY} ({CONFIDENCE}%)
-  detail: {your_reasoning}
-  evidence: {your_evidence}"
+python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
+  assessment add {plan_id} {file_path_1} {CERTAINTY} {CONFIDENCE} \
+  --agent {agent_name} --detail "{your_reasoning}" --evidence "{your_evidence}"
 ```
 
 ### File 2: {file_path_2}
@@ -182,10 +181,9 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 **2b. Log (EXECUTE IMMEDIATELY)**:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "({agent_name}) {file_path_2}: {CERTAINTY} ({CONFIDENCE}%)
-  detail: {your_reasoning}
-  evidence: {your_evidence}"
+python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
+  assessment add {plan_id} {file_path_2} {CERTAINTY} {CONFIDENCE} \
+  --agent {agent_name} --detail "{your_reasoning}" --evidence "{your_evidence}"
 ```
 
 [...continue for all files...]
@@ -247,7 +245,7 @@ IF any agent returns API error (529, timeout, connection error):
 
 ### Step 4: Aggregate and Validate
 
-Collect summary counts from each agent (detailed findings are in decision.log):
+Collect summary counts from each agent (detailed assessments in assessments.jsonl):
 
 ```
 total_analyzed = sum of all agent total_analyzed counts
@@ -267,23 +265,23 @@ IF certain_include + certain_exclude + uncertain != total_analyzed:
   ERROR: "Count mismatch in agent summaries"
 ```
 
-**Note**: Agents return summary counts; detailed findings with reasoning are in decision.log.
+**Note**: Agents return summary counts; detailed assessments with reasoning are in assessments.jsonl.
 
 ### Step 4a: Resolve Uncertainties
 
 **Trigger**: Run if `uncertain > 0` from Step 4 aggregation.
 
-**Purpose**: Convert UNCERTAIN findings to CERTAIN through user clarification.
+**Purpose**: Convert UNCERTAIN assessments to CERTAIN through user clarification.
 
-#### 4a.1: Read UNCERTAIN Findings
+#### 4a.1: Read UNCERTAIN Assessments
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  read-findings {plan_id} --certainty UNCERTAIN
+python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
+  assessment query {plan_id} --certainty UNCERTAIN
 ```
 
-Parse the output to get list of uncertain findings with:
-- `hash_id`: Finding identifier
+Parse the output to get list of uncertain assessments with:
+- `hash_id`: Assessment identifier
 - `file_path`: Component path
 - `confidence`: Original confidence percentage
 - `detail`: Reason for uncertainty
@@ -319,25 +317,25 @@ Display specific examples with confidence levels to help user decide.
 
 #### 4a.4: Apply Resolutions
 
-For each user answer, update affected findings:
+For each user answer, update affected assessments:
 
 ```python
-for finding in group_findings:
+for assessment in group_assessments:
     if user_chose_exclude:
         new_certainty = "CERTAIN_EXCLUDE"
     else:
         new_certainty = "CERTAIN_INCLUDE"
 
-    # Log resolution
-    log_resolution(finding.hash_id, finding.file_path,
-                   finding.confidence, new_certainty, user_choice)
+    # Log new assessment with resolution
+    log_assessment(assessment.file_path, new_certainty, 85, user_choice)
 ```
 
-Log each resolution:
+Log each resolution as a new assessment:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(pm-plugin-development:ext-outline-plugin) {file_path}: UNCERTAIN ({confidence}%) → {new_certainty} (85%)
-  detail: User clarified: {user_choice}"
+python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
+  assessment add {plan_id} {file_path} {new_certainty} 85 \
+  --agent pm-plugin-development:ext-outline-plugin \
+  --detail "User clarified: {user_choice}" --evidence "From: {original_hash_id}"
 ```
 
 #### 4a.5: Store Clarifications
@@ -365,7 +363,7 @@ uncertain = 0  # All resolved
 
 **Trigger**: Run after uncertainty resolution, if `certain_include > 0`.
 
-**Purpose**: Validate remaining CERTAIN_INCLUDE findings to catch false positives that uncertainty resolution didn't cover.
+**Purpose**: Validate remaining CERTAIN_INCLUDE assessments to catch false positives that uncertainty resolution didn't cover.
 
 #### Spawn Q-Gate Agent
 
@@ -377,12 +375,12 @@ Task: pm-workflow:q-gate-validation-agent
   Output:
     confirmed_count: Files passing validation
     filtered_count: False positives caught
-    decision_log_entries: Count of Q-GATE entries in decision.log
+    assessments_validated: Count of validated assessments
 ```
 
 #### Process Results
 
-The agent validates each CERTAIN_INCLUDE finding and logs (hash auto-generated):
+The agent validates each CERTAIN_INCLUDE assessment and logs to decision.log:
 - `CONFIRMED`: Include in affected_files
 - `FILTERED`: Exclude (false positive)
 
@@ -396,46 +394,45 @@ false_positives = filtered_count
 
 **CRITICAL**: If Q-Gate agent fails, **HALT the workflow** - do not proceed with potentially incorrect affected_files.
 
-### Step 4c: Verify Decision Logging
+### Step 4c: Verify Assessment Logging
 
-Each analysis agent logs its own decisions during execution. The parent workflow verifies the audit trail exists.
+Each analysis agent logs its own assessments during execution. The parent workflow verifies the audit trail exists.
 
-**Validation**: After agents complete, verify decision.log has entries:
+**Validation**: After agents complete, verify assessments.jsonl has entries:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  read --plan-id {plan_id} --type decision
+python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
+  assessment query {plan_id}
 ```
 
-Check that decision.log contains entries for each analyzed file. Each entry has an auto-generated hash ID in the header: `[{timestamp}] [{level}] [{hash_id}] ...`
+Check that total_count matches expected number of analyzed files.
 
-Expected entry types:
-1. Finding entries: `({agent_name}) {file_path}: {CERTAINTY} ({CONFIDENCE}%)`
-2. Resolution entries (if any uncertainties resolved): `UNCERTAIN → {new_certainty}`
-3. Q-Gate entries (if validation ran): `CONFIRMED` or `FILTERED`
+Expected assessment types:
+1. Analysis assessments: certainty in {CERTAIN_INCLUDE, CERTAIN_EXCLUDE, UNCERTAIN}
+2. Resolution assessments (if any uncertainties resolved): confidence 85%, detail starts with "User clarified"
 
-If entries are missing, agent execution failed to log properly.
+If count mismatches, agent execution failed to log properly.
 
 ### Step 5: Link Affected Files
 
-Read CERTAIN_INCLUDE findings from decision.log and persist for execute phase:
+Read CERTAIN_INCLUDE assessments from assessments.jsonl and persist for execute phase:
 
 ```bash
-# Read findings with certainty=CERTAIN_INCLUDE
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  read-findings {plan_id} --stage analysis --certainty CERTAIN_INCLUDE
+# Read assessments with certainty=CERTAIN_INCLUDE
+python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
+  assessment query {plan_id} --certainty CERTAIN_INCLUDE
 ```
 
-Then persist:
+Extract `file_paths` from the output, then persist:
 
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-references:manage-references add-list \
   --plan-id {plan_id} \
   --field affected_files \
-  --values "{comma-separated-paths-from-CERTAIN_INCLUDE}"
+  --values "{comma-separated-file_paths-from-CERTAIN_INCLUDE}"
 ```
 
-**Note**: UNCERTAIN findings require user clarification before inclusion. See Uncertainty Resolution (Part 1d in plan).
+**Note**: UNCERTAIN assessments require user clarification before inclusion. See Uncertainty Resolution (Part 1d in plan).
 
 ### Step 5.5: Compute Deliverable Dependencies (if available)
 

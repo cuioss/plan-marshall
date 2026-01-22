@@ -97,60 +97,6 @@ entries:
     message: [ARTIFACT] (pm-workflow:phase-1-init) Created deliverable: auth module
 ```
 
-### Read Findings API
-
-Read analysis findings from decision.log with filtering. Used for uncertainty resolution flow.
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  read-findings {plan_id} [--stage STAGE] [--certainty CERTAINTY] [--status STATUS]
-```
-
-**Arguments**:
-
-| Argument | Required | Description |
-|----------|----------|-------------|
-| `plan_id` | Yes | Plan identifier (positional) |
-| `--stage` | No | Filter by stage: `analysis` or `q-gate` |
-| `--certainty` | No | Filter by certainty: `CERTAIN_INCLUDE`, `CERTAIN_EXCLUDE`, `UNCERTAIN` |
-| `--status` | No | Filter by Q-Gate status: `CONFIRMED`, `FILTERED` |
-
-**Output** (TOON):
-
-```toon
-status: success
-plan_id: my-plan
-total_findings: 30
-filtered_count: 15
-filters_applied:
-  certainty: CERTAIN_INCLUDE
-
-findings[15]{hash_id,file_path,certainty,confidence}:
-  a3f2c1,marketplace/bundles/pm-dev-java/agents/java-coverage-agent.md,CERTAIN_INCLUDE,95
-  b7e4d9,marketplace/bundles/pm-dev-java/agents/java-fix-build-agent.md,CERTAIN_INCLUDE,92
-  ...
-
-file_paths:
-  - marketplace/bundles/pm-dev-java/agents/java-coverage-agent.md
-  - marketplace/bundles/pm-dev-java/agents/java-fix-build-agent.md
-```
-
-**Usage examples**:
-
-```bash
-# Get all UNCERTAIN findings for user clarification
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  read-findings my-plan --certainty UNCERTAIN
-
-# Get CERTAIN_INCLUDE findings for affected_files
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  read-findings my-plan --certainty CERTAIN_INCLUDE
-
-# Get Q-Gate confirmed findings
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  read-findings my-plan --stage q-gate --status CONFIRMED
-```
-
 ### Examples
 
 ```bash
@@ -325,4 +271,3 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 |---------|------------|-------------|
 | (positional) | `{type} {plan_id} {level} "{message}"` | Write log entry |
 | `read` | `--plan-id --type [--limit] [--phase]` | Read log entries (TOON output) |
-| `read-findings` | `{plan_id} [--stage] [--certainty] [--status]` | Read and filter analysis findings |

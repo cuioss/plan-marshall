@@ -199,11 +199,11 @@ The workflow routes based on `change_type`:
 ## Uncertainty Resolution
 
 **Called by**: workflow.md Step 4a (between analysis and aggregation)
-**Purpose**: Resolve UNCERTAIN findings through user clarification
+**Purpose**: Resolve UNCERTAIN assessments through user clarification
 
 ### Uncertainty Grouping
 
-Group UNCERTAIN findings by ambiguity pattern:
+Group UNCERTAIN assessments by ambiguity pattern:
 
 | Pattern | Question Type |
 |---------|---------------|
@@ -239,21 +239,22 @@ Examples found:
 
 After user answers:
 
-1. Read UNCERTAIN findings from decision.log:
+1. Read UNCERTAIN assessments from assessments.jsonl:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  read-findings {plan_id} --certainty UNCERTAIN
+python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
+  assessment query {plan_id} --certainty UNCERTAIN
 ```
 
-2. For each finding matching the clarification:
+2. For each assessment matching the clarification:
    - If user chose exclusion: UNCERTAIN → CERTAIN_EXCLUDE
    - If user chose inclusion: UNCERTAIN → CERTAIN_INCLUDE
 
-3. Log resolution with hash ID reference:
+3. Log resolution as new assessment with reference to original:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "[RESOLUTION:{finding_hash_id}] (pm-plugin-development:ext-outline-plugin) {file_path}: UNCERTAIN ({old_confidence}%) → {new_certainty} (85%)
-  detail: User clarified: {user_choice}"
+python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
+  assessment add {plan_id} {file_path} {new_certainty} 85 \
+  --agent pm-plugin-development:ext-outline-plugin \
+  --detail "User clarified: {user_choice}" --evidence "From: {original_hash_id}"
 ```
 
 4. Store clarifications in request.md:
