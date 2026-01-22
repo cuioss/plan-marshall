@@ -36,6 +36,16 @@ Conduct comprehensive web research for the specified TOPIC by:
 
 Your output must be factual, evidence-based, and fully referenced.
 
+## Prerequisites
+
+Load development standards before any work:
+
+```
+Skill: plan-marshall:ref-development-standards
+```
+
+This ensures proper tool usage (Read instead of cat, etc.).
+
 ## WORKFLOW (FOLLOW EXACTLY)
 
 ### Step 1: Execute Initial Web Search

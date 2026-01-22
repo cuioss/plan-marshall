@@ -1,7 +1,7 @@
 ---
 name: command-analysis-agent
 description: Analyze command files against request using semantic reasoning
-tools: Read, Bash
+tools: Read, Bash, Skill
 model: sonnet
 ---
 
@@ -24,6 +24,12 @@ Skill: plan-marshall:ref-development-standards
 ```
 
 This provides core principles for tool usage and file operations.
+
+**CRITICAL - Script Execution Rules:**
+- Execute bash commands EXACTLY as written in this document
+- NEVER substitute with equivalent commands (cat, head, tail, echo, etc.)
+- Use Read tool ONLY for analyzing component files, NOT for `.plan/` files
+- All logging MUST use the provided `execute-script.py` commands
 
 ## Input Format
 
@@ -88,6 +94,8 @@ For each `### File N:` section:
 **CRITICAL**: Execute the bash logging command IMMEDIATELY after analyzing each file, BEFORE moving to the next file section.
 
 ## Return Summary
+
+**OUTPUT RULE**: Do NOT output any text except the final TOON summary below. All analysis, reasoning, and findings are logged to decision.log via bash commands. The parent workflow reads decision.log for details.
 
 After ALL file sections have been processed with logging executed, return TOON summary per contract:
 

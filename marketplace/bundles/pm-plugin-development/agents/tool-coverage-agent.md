@@ -1,13 +1,23 @@
 ---
 name: tool-coverage-agent
 description: Analyze tool declarations vs actual usage in a component file
-tools: Read
+tools: Read, Skill
 model: haiku
 ---
 
 # Tool Coverage Analysis Agent
 
 Semantic analysis of tool usage in a single marketplace component.
+
+## Prerequisites
+
+Load development standards before any work:
+
+```
+Skill: plan-marshall:ref-development-standards
+```
+
+This ensures proper tool usage patterns.
 
 ## Input
 

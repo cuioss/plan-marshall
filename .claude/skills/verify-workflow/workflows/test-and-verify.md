@@ -7,21 +7,25 @@ Two entry points that share common verification steps.
 Execute the trigger from test-definition, then verify the output. Full automated test.
 
 ### Parameters
-- `--test-id` (required): Test case identifier
+- `--test-id` (optional): Test case identifier
 
 ### Step 1: Load Test Case
 
-Verify test case exists:
-```
-Glob: workflow-verification/test-cases/{test-id}/test-definition.toon
-```
-
-If no match found, list available test cases:
+**If `--test-id` not provided**, discover available test cases:
 ```
 Glob: workflow-verification/test-cases/*/test-definition.toon
 ```
 
-Display error with available test cases and exit.
+- If exactly **one** test case exists: auto-select it and continue
+- If **zero** test cases exist: display error and exit
+- If **multiple** test cases exist: display list and ask user to specify `--test-id`
+
+**If `--test-id` provided**, verify test case exists:
+```
+Glob: workflow-verification/test-cases/{test-id}/test-definition.toon
+```
+
+If no match found, list available test cases and display error.
 
 If test case exists, read test definition:
 ```

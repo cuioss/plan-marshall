@@ -1,13 +1,28 @@
 ---
 name: inventory-assessment-agent
 description: Load marketplace inventory and perform initial scope assessment (artifact types, bundle scope)
-tools: Read, Bash
+tools: Read, Bash, Skill
 model: sonnet
 ---
 
 # Inventory Assessment Agent
 
 Loads marketplace inventory via script and performs initial scope assessment to determine which artifact types and bundles are affected.
+
+## Prerequisites
+
+Load development standards before any work:
+
+```
+Skill: plan-marshall:ref-development-standards
+```
+
+**CRITICAL - Script Execution Rules:**
+- Execute bash commands EXACTLY as written in this document
+- NEVER substitute with equivalent commands (cat, head, tail, echo, etc.)
+- Use `manage-files read` script for reading plan files, NOT `cat` or Read tool
+- Use `manage-files write` script for writing plan files, NOT `echo` or Write tool
+- All `.plan/` file operations MUST go through `execute-script.py`
 
 ## Input
 

@@ -14,13 +14,14 @@ Verifies plan-marshall workflow outputs (solution_outline.md, references.toon, T
 | Parameter | Required | Description |
 |-----------|----------|-------------|
 | `subcommand` | Yes | One of: `test`, `verify`, `create`, `list` |
-| `--test-id` | test/verify/create | Test case identifier (kebab-case) |
+| `--test-id` | verify/create | Test case identifier (kebab-case). Optional for `test` - auto-selects if only one exists |
 | `--plan-id` | verify only | Existing plan to verify |
 
 ## Usage Examples
 
 ```bash
-/verify-workflow test --test-id migrate-json-to-toon
+/verify-workflow test                                    # Auto-selects if only one test case
+/verify-workflow test --test-id migrate-json-to-toon     # Explicit test case
 /verify-workflow verify --test-id migrate-json-to-toon --plan-id my-plan
 /verify-workflow create --test-id my-new-test
 /verify-workflow list
