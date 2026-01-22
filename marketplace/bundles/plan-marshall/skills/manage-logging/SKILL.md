@@ -88,13 +88,13 @@ showing: 3
 entries:
   - timestamp: 2025-12-11T11:14:30Z
     level: INFO
-    category: STATUS
-    message: Starting init phase
+    hash_id: c8d3e2
+    message: [STATUS] (pm-workflow:phase-1-init) Starting init phase
     phase: 1-init
   - timestamp: 2025-12-11T11:15:20Z
     level: INFO
-    category: ARTIFACT
-    message: Created deliverable: auth module
+    hash_id: f1a9b3
+    message: [ARTIFACT] (pm-workflow:phase-1-init) Created deliverable: auth module
 ```
 
 ### Read Findings API
@@ -199,33 +199,36 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 ### Standard Entry Structure
 
 ```
-[{timestamp}] [{level}] {message}
+[{timestamp}] [{level}] [{hash}] {message}
 ```
 
-Since entries go to separate files, redundant type tags are omitted.
+Every log entry automatically includes a 6-character hash computed from the message content. This provides:
+- **Transparent ID generation**: Callers don't need to compute or track hashes
+- **Deterministic**: Same message always produces the same hash
+- **Traceability**: Findings can be linked across stages (analysis → resolution → Q-gate)
 
 ### Example Output
 
 **script-execution.log**:
 ```
-[2025-12-11T12:14:26Z] [INFO] pm-workflow:manage-files:manage-files create (0.19s)
-[2025-12-11T12:17:50Z] [ERROR] pm-workflow:manage-task:manage-task add failed (exit 1)
+[2025-12-11T12:14:26Z] [INFO] [a3f2c1] pm-workflow:manage-files:manage-files create (0.19s)
+[2025-12-11T12:17:50Z] [ERROR] [b7e4d9] pm-workflow:manage-task:manage-task add failed (exit 1)
 ```
 
 **work.log**:
 ```
-[2025-12-11T11:14:30Z] [INFO] [STATUS] (pm-workflow:phase-1-init) Starting init phase
-[2025-12-11T11:15:20Z] [INFO] [ARTIFACT] (pm-workflow:phase-1-init) Created deliverable: auth module
-[2025-12-11T11:17:30Z] [INFO] [PROGRESS] (pm-workflow:phase-4-execute) Task 1 completed
+[2025-12-11T11:14:30Z] [INFO] [c8d3e2] [STATUS] (pm-workflow:phase-1-init) Starting init phase
+[2025-12-11T11:15:20Z] [INFO] [f1a9b3] [ARTIFACT] (pm-workflow:phase-1-init) Created deliverable: auth module
+[2025-12-11T11:17:30Z] [INFO] [e5c7d4] [PROGRESS] (pm-workflow:phase-4-execute) Task 1 completed
 ```
 
 **decision.log**:
 ```
-[2025-12-11T11:14:48Z] [INFO] (pm-workflow:phase-1-init) Detected domain: java - pom.xml found
-[2025-12-11T11:20:15Z] [INFO] (pm-plugin-development:ext-outline-plugin) Scope: bundles=all
+[2025-12-11T11:14:48Z] [INFO] [d2e8f1] (pm-workflow:phase-1-init) Detected domain: java - pom.xml found
+[2025-12-11T11:20:15Z] [INFO] [a4b6c8] (pm-plugin-development:ext-outline-plugin) Scope: bundles=all
 ```
 
-Note: Decision entries do NOT include a `[DECISION]` prefix - the file itself indicates the entry type.
+Note: Decision entries do NOT include a `[DECISION]` prefix - the file itself indicates the entry type. The hash ID (e.g., `[d2e8f1]`) is automatically generated from the message content.
 
 ### Log Levels
 

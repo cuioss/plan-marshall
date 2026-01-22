@@ -94,8 +94,8 @@ def format_toon_output(result: dict) -> str:
         for entry in entries:
             lines.append(f'  - timestamp: {entry.get("timestamp", "")}')
             lines.append(f'    level: {entry.get("level", "")}')
-            if entry.get('category'):
-                lines.append(f'    category: {entry.get("category", "")}')
+            if entry.get('hash_id'):
+                lines.append(f'    hash_id: {entry.get("hash_id", "")}')
             lines.append(f'    message: {entry.get("message", "")}')
             if entry.get('phase'):
                 lines.append(f'    phase: {entry.get("phase", "")}')
@@ -199,7 +199,8 @@ def handle_read_findings(args: list) -> None:
     """Handle read-findings subcommand.
 
     Reads findings from decision.log with filtering by stage, certainty, and status.
-    Parses [FINDING:{hash_id}] entries and extracts structured data.
+    Hash IDs are automatically present in every log entry (in the standard header position).
+    Finding messages follow format: ({agent}) {file_path}: {CERTAINTY} ({CONFIDENCE}%)
     """
     import re
 
@@ -220,19 +221,21 @@ def handle_read_findings(args: list) -> None:
 
     entries = result.get('entries', [])
 
-    # Filter for FINDING entries
+    # Pattern for finding messages (hash_id comes from parsed entry, not message)
+    # Message format: ({agent}) {file_path}: {CERTAINTY} ({CONFIDENCE}%)
     finding_pattern = re.compile(
-        r'\[FINDING:([a-f0-9]{6})\]\s*\(([^)]+)\)\s*([^:]+):\s*(CERTAIN_INCLUDE|CERTAIN_EXCLUDE|UNCERTAIN)\s*\((\d+)%\)'
+        r'^\(([^)]+)\)\s*([^:]+):\s*(CERTAIN_INCLUDE|CERTAIN_EXCLUDE|UNCERTAIN)\s*\((\d+)%\)'
     )
 
     findings = []
     for entry in entries:
         message = entry.get('message', '')
         detail = entry.get('detail', '')
+        hash_id = entry.get('hash_id', '')
 
-        match = finding_pattern.search(message)
+        match = finding_pattern.match(message)
         if match:
-            hash_id, agent_name, file_path, certainty, confidence = match.groups()
+            agent_name, file_path, certainty, confidence = match.groups()
             finding = {
                 'hash_id': hash_id,
                 'agent': agent_name,

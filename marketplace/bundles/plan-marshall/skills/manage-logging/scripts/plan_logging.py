@@ -17,6 +17,7 @@ Configuration via environment variables:
 - LOG_RETENTION_DAYS: Days to keep global logs (default: 7)
 """
 
+import hashlib
 import os
 import re
 import time
@@ -65,9 +66,14 @@ def format_timestamp() -> str:
     return datetime.now(UTC).strftime('%Y-%m-%dT%H:%M:%SZ')
 
 
+def compute_entry_hash(message: str) -> str:
+    """Compute 6-digit hash from message content."""
+    return hashlib.sha256(message.encode()).hexdigest()[:6]
+
+
 def format_log_entry(level: str, message: str, **fields) -> str:
     """
-    Format a standard log entry.
+    Format a standard log entry with auto-generated hash.
 
     Args:
         level: Log level (INFO, WARN, ERROR)
@@ -75,10 +81,11 @@ def format_log_entry(level: str, message: str, **fields) -> str:
         **fields: Additional fields to include as indented lines
 
     Returns:
-        Formatted log entry string with trailing newline
+        Formatted log entry: [{timestamp}] [{level}] [{hash}] {message}
     """
     timestamp = format_timestamp()
-    lines = [f'[{timestamp}] [{level}] {message}']
+    hash_id = compute_entry_hash(message)
+    lines = [f'[{timestamp}] [{level}] [{hash_id}] {message}']
 
     for key, value in fields.items():
         if value is not None and value != '':
@@ -503,11 +510,13 @@ def read_decision_log(plan_id: str, phase: str | None = None) -> dict:
 # PARSING HELPERS
 # =============================================================================
 
-# Matches both old format [timestamp] [level] [category] message
-# and new format [timestamp] [level] message (with optional [CATEGORY] in message)
+# New format: [timestamp] [level] [hash] message
+# Hash is always present as 6 hex chars
 HEADER_PATTERN = re.compile(
     r'^\[(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z)\] '
-    r'\[(\w+)\] (?:\[(\w+)\] )?(.+)$',
+    r'\[(\w+)\] '
+    r'\[([a-f0-9]{6})\] '
+    r'(.+)$',
     re.MULTILINE,
 )
 FIELD_PATTERN = re.compile(r'^  (\w+): (.+)$', re.MULTILINE)
@@ -527,7 +536,7 @@ def _parse_log_file(log_file: Path) -> list:
             current = {
                 'timestamp': header_match.group(1),
                 'level': header_match.group(2),
-                'category': header_match.group(3),
+                'hash_id': header_match.group(3),
                 'message': header_match.group(4),
             }
         elif current:

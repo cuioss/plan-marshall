@@ -30,11 +30,16 @@ def test_format_timestamp_iso8601():
 
 
 def test_format_log_entry_basic():
-    """Log entry has correct structure."""
+    """Log entry has correct structure with hash."""
     entry = module.format_log_entry('INFO', 'test message')
     assert '[INFO]' in entry, 'Missing level'
     assert 'test message' in entry, 'Missing message'
     assert entry.endswith('\n'), 'Should end with newline'
+    # Hash should be present (6 hex chars in brackets)
+    import re
+
+    hash_match = re.search(r'\[[a-f0-9]{6}\]', entry)
+    assert hash_match, f'Missing hash in entry: {entry}'
 
 
 def test_format_log_entry_with_fields():
@@ -50,6 +55,51 @@ def test_format_log_entry_skips_empty_fields():
     assert '  phase: init' in entry, 'Missing phase field'
     assert 'detail' not in entry, 'Should skip None field'
     assert 'empty' not in entry, 'Should skip empty field'
+
+
+# =============================================================================
+# TESTS: compute_entry_hash
+# =============================================================================
+
+
+def test_compute_entry_hash_deterministic():
+    """Same message always produces same hash."""
+    message = 'test message content'
+    hash1 = module.compute_entry_hash(message)
+    hash2 = module.compute_entry_hash(message)
+    assert hash1 == hash2, f'Hash not deterministic: {hash1} != {hash2}'
+
+
+def test_compute_entry_hash_length():
+    """Hash is exactly 6 hex characters."""
+    message = 'any message'
+    hash_id = module.compute_entry_hash(message)
+    assert len(hash_id) == 6, f'Expected 6 chars, got {len(hash_id)}'
+    assert all(c in '0123456789abcdef' for c in hash_id), f'Not hex: {hash_id}'
+
+
+def test_compute_entry_hash_different_messages():
+    """Different messages produce different hashes."""
+    hash1 = module.compute_entry_hash('message one')
+    hash2 = module.compute_entry_hash('message two')
+    assert hash1 != hash2, 'Different messages should have different hashes'
+
+
+def test_format_log_entry_hash_deterministic():
+    """Same message in format_log_entry produces same hash."""
+    import re
+
+    message = 'consistent test message'
+    entry1 = module.format_log_entry('INFO', message)
+    entry2 = module.format_log_entry('INFO', message)
+
+    # Extract hashes
+    hash_pattern = re.compile(r'\[([a-f0-9]{6})\]')
+    match1 = hash_pattern.search(entry1)
+    match2 = hash_pattern.search(entry2)
+
+    assert match1 and match2, 'Hash not found in entries'
+    assert match1.group(1) == match2.group(1), 'Hashes should match for same message'
 
 
 # =============================================================================
@@ -353,6 +403,10 @@ def test_read_work_log_all_entries():
             assert result['status'] == 'success'
             assert result['total_entries'] == 3
             assert len(result['entries']) == 3
+            # Each entry should have hash_id
+            for entry in result['entries']:
+                assert 'hash_id' in entry, f'Missing hash_id in entry: {entry}'
+                assert len(entry['hash_id']) == 6, f'Invalid hash_id: {entry["hash_id"]}'
         finally:
             del os.environ['PLAN_BASE_DIR']
 

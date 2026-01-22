@@ -40,6 +40,8 @@ def read_log_file(plan_dir: Path, log_type: str) -> str:
 
 def test_script_success():
     """Test script type logs INFO entry for success."""
+    import re
+
     with PlanContext(plan_id='log-script-success') as ctx:
         result = run_script(SCRIPT_PATH, 'script', 'log-script-success', 'INFO', 'test:skill:script add (0.15s)')
         assert result.success, f'Script failed: {result.stderr}'
@@ -48,6 +50,8 @@ def test_script_success():
         log_content = read_log_file(ctx.plan_dir, 'script')
         assert '[INFO]' in log_content
         assert 'test:skill:script add (0.15s)' in log_content
+        # Verify hash is present in log format
+        assert re.search(r'\[[a-f0-9]{6}\]', log_content), 'Hash should be in log entry'
 
 
 def test_script_error():
@@ -147,6 +151,8 @@ def test_read_work_log():
         assert 'total_entries: 2' in result.stdout
         assert 'Test entry one' in result.stdout
         assert 'Test entry two' in result.stdout
+        # Verify hash_id is present in output
+        assert 'hash_id:' in result.stdout, 'hash_id should be in parsed output'
 
 
 def test_read_work_log_with_limit():
