@@ -157,30 +157,44 @@ Request: {request_text}
 Process these files IN ORDER. For EACH file, you MUST:
 1. Read the file
 2. Analyze it against the request
-3. Execute the logging bash command IMMEDIATELY (before next file)
-4. Record the finding
+3. Assess confidence (0-100%) and determine certainty gate
+4. Execute the logging bash command IMMEDIATELY (before next file)
+5. Track counts for final summary
 
 ### File 1: {file_path_1}
 
-**1a. Analyze**: Read and analyze against request. Decide AFFECTED or NOT_AFFECTED.
+**1a. Analyze**: Read and analyze against request. Assess confidence and determine certainty:
+- confidence >= 80% AND matches criteria → CERTAIN_INCLUDE
+- confidence >= 80% AND doesn't match → CERTAIN_EXCLUDE
+- confidence < 80% → UNCERTAIN
 
 **1b. Log (EXECUTE IMMEDIATELY)**:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "({agent_name}) {DECISION}: {file_path_1} | reasoning: {your_reasoning} | evidence: {your_evidence}"
+  decision {plan_id} INFO "[FINDING:{hash_id}] ({agent_name}) {file_path_1}: {CERTAINTY} ({CONFIDENCE}%)
+  detail: {your_reasoning}
+  evidence: {your_evidence}"
 ```
 
 ### File 2: {file_path_2}
 
-**2a. Analyze**: Read and analyze against request. Decide AFFECTED or NOT_AFFECTED.
+**2a. Analyze**: Read and analyze against request. Assess confidence and determine certainty.
 
 **2b. Log (EXECUTE IMMEDIATELY)**:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "({agent_name}) {DECISION}: {file_path_2} | reasoning: {your_reasoning} | evidence: {your_evidence}"
+  decision {plan_id} INFO "[FINDING:{hash_id}] ({agent_name}) {file_path_2}: {CERTAINTY} ({CONFIDENCE}%)
+  detail: {your_reasoning}
+  evidence: {your_evidence}"
 ```
 
 [...continue for all files...]
+```
+
+**Hash ID Computation**: Each finding gets a 6-digit hash computed from the complete log message:
+```python
+import hashlib
+hash_id = hashlib.sha256(complete_message.encode()).hexdigest()[:6]
 ```
 
 **Spawn Pattern**:
@@ -237,25 +251,158 @@ IF any agent returns API error (529, timeout, connection error):
 
 ### Step 4: Aggregate and Validate
 
-Collect findings from each agent:
+Collect summary counts from each agent (detailed findings are in decision.log):
 
 ```
-all_findings = skill_findings + command_findings + agent_findings
-affected_files = [f for f in all_findings where f.status == "affected"]
+total_analyzed = sum of all agent total_analyzed counts
+certain_include = sum of all agent certain_include counts
+certain_exclude = sum of all agent certain_exclude counts
+uncertain = sum of all agent uncertain counts
 ```
 
 **Validate completeness**:
 ```
-total_analyzed = sum of all findings
 expected_total = sum of all inventory files
 
 IF total_analyzed != expected_total:
   ERROR: "Analysis incomplete: {total_analyzed}/{expected_total}"
+
+IF certain_include + certain_exclude + uncertain != total_analyzed:
+  ERROR: "Count mismatch in agent summaries"
 ```
 
-### Step 4a: Verify Decision Logging
+**Note**: Agents return summary counts; detailed findings with reasoning are in decision.log.
 
-Each analysis agent logs its own decisions during Step 2. The parent workflow verifies the audit trail exists.
+### Step 4a: Resolve Uncertainties
+
+**Trigger**: Run if `uncertain > 0` from Step 4 aggregation.
+
+**Purpose**: Convert UNCERTAIN findings to CERTAIN through user clarification.
+
+#### 4a.1: Read UNCERTAIN Findings
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  read-findings {plan_id} --certainty UNCERTAIN
+```
+
+Parse the output to get list of uncertain findings with:
+- `hash_id`: Finding identifier
+- `file_path`: Component path
+- `confidence`: Original confidence percentage
+- `detail`: Reason for uncertainty
+
+#### 4a.2: Group by Ambiguity Pattern
+
+Group findings by similar uncertainty reasons:
+
+| Ambiguity Pattern | Example |
+|-------------------|---------|
+| "JSON in workflow context" | manage-adr/SKILL.md, workflow-integration-ci/SKILL.md |
+| "Output in examples section" | plugin-create/SKILL.md |
+| "Script output documentation" | manage-logging/SKILL.md |
+
+#### 4a.3: Ask Clarification Questions
+
+For each ambiguity group, use AskUserQuestion:
+
+```
+AskUserQuestion:
+  questions:
+    - question: "Should files with JSON in workflow context be included?"
+      header: "Scope"
+      options:
+        - label: "Exclude workflow JSON (Recommended)"
+          description: "Only include explicit ## Output sections"
+        - label: "Include all JSON"
+          description: "Include any ```json block regardless of context"
+      multiSelect: false
+```
+
+Display specific examples with confidence levels to help user decide.
+
+#### 4a.4: Apply Resolutions
+
+For each user answer, update affected findings:
+
+```python
+for finding in group_findings:
+    if user_chose_exclude:
+        new_certainty = "CERTAIN_EXCLUDE"
+    else:
+        new_certainty = "CERTAIN_INCLUDE"
+
+    # Log resolution
+    log_resolution(finding.hash_id, finding.file_path,
+                   finding.confidence, new_certainty, user_choice)
+```
+
+Log each resolution:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  decision {plan_id} INFO "[RESOLUTION:{hash_id}] (pm-plugin-development:ext-outline-plugin) {file_path}: UNCERTAIN ({confidence}%) → {new_certainty} (85%)
+  detail: User clarified: {user_choice}"
+```
+
+#### 4a.5: Store Clarifications
+
+Write clarifications to request.md:
+
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-plan-documents:manage-plan-documents \
+  request clarify \
+  --plan-id {plan_id} \
+  --clarifications "{formatted Q&A pairs}" \
+  --clarified-request "{synthesized scope statement}"
+```
+
+#### 4a.6: Update Counts
+
+After resolution, recalculate:
+```
+certain_include = original_certain_include + resolved_to_include
+certain_exclude = original_certain_exclude + resolved_to_exclude
+uncertain = 0  # All resolved
+```
+
+### Step 4b: Q-Gate Validation (Optional Final Safety Net)
+
+**Trigger**: Run after uncertainty resolution, if `certain_include > 0`.
+
+**Purpose**: Validate remaining CERTAIN_INCLUDE findings to catch false positives that uncertainty resolution didn't cover.
+
+#### Spawn Q-Gate Agent
+
+```
+Task: pm-workflow:q-gate-validation-agent
+  Input:
+    plan_id: {plan_id}
+    domains: {domains from config.toon}
+  Output:
+    confirmed_count: Files passing validation
+    filtered_count: False positives caught
+    decision_log_entries: Count of Q-GATE entries in decision.log
+```
+
+#### Process Results
+
+The agent validates each CERTAIN_INCLUDE finding and logs:
+- `[Q-GATE:{hash_id}] ... CONFIRMED`: Include in affected_files
+- `[Q-GATE:{hash_id}] ... FILTERED`: Exclude (false positive)
+
+Update counts after Q-Gate:
+```
+final_affected = confirmed_count
+false_positives = filtered_count
+```
+
+#### Error Handling
+
+**CRITICAL**: If Q-Gate agent fails, **HALT the workflow** - do not proceed with potentially incorrect affected_files.
+
+### Step 4c: Verify Decision Logging
+
+Each analysis agent logs its own decisions during execution. The parent workflow verifies the audit trail exists.
 
 **Validation**: After agents complete, verify decision.log has entries:
 
@@ -264,18 +411,33 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   read --plan-id {plan_id} --type decision
 ```
 
-Check that decision.log contains AFFECTED/NOT_AFFECTED entries for each analyzed file. If missing, agent execution failed to log properly.
+Check that decision.log contains:
+1. `[FINDING:{hash_id}]` entries for each analyzed file
+2. `[RESOLUTION:{hash_id}]` entries for each uncertainty resolved (if any)
+3. `[Q-GATE:{hash_id}]` entries for each validated finding (if Q-Gate ran)
+
+If entries are missing, agent execution failed to log properly.
 
 ### Step 5: Link Affected Files
 
-Persist affected files for execute phase:
+Read CERTAIN_INCLUDE findings from decision.log and persist for execute phase:
+
+```bash
+# Read findings with certainty=CERTAIN_INCLUDE
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  read-findings {plan_id} --stage analysis --certainty CERTAIN_INCLUDE
+```
+
+Then persist:
 
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-references:manage-references add-list \
   --plan-id {plan_id} \
   --field affected_files \
-  --values "{comma-separated-paths}"
+  --values "{comma-separated-paths-from-CERTAIN_INCLUDE}"
 ```
+
+**Note**: UNCERTAIN findings require user clarification before inclusion. See Uncertainty Resolution (Part 1d in plan).
 
 ### Step 5.5: Compute Deliverable Dependencies (if available)
 

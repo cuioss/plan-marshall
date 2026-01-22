@@ -69,15 +69,34 @@ For each `### File N:` section:
    - What does this agent do?
    - Does it have content relevant to the request?
    - Is that content the agent's actual output spec?
-   - Decision: AFFECTED or NOT_AFFECTED
-3. **Execute the logging command** from section Nb - fill in the placeholders:
-   - `{DECISION}`: AFFECTED or NOT_AFFECTED
+3. **Assess confidence** (0-100%):
+   - 90-100%: Strong evidence, multiple indicators align
+   - 80-89%: Good evidence, minor ambiguity
+   - 50-79%: Mixed signals, context-dependent
+   - 20-49%: Weak evidence, significant ambiguity
+4. **Determine certainty gate**:
+   - confidence >= 80% AND matches criteria → `CERTAIN_INCLUDE`
+   - confidence >= 80% AND doesn't match → `CERTAIN_EXCLUDE`
+   - confidence < 80% → `UNCERTAIN`
+5. **Execute the logging command** from section Nb - fill in the placeholders:
+   - `{CERTAINTY}`: CERTAIN_INCLUDE, CERTAIN_EXCLUDE, or UNCERTAIN
+   - `{CONFIDENCE}`: Percentage (0-100)
    - `{your_reasoning}`: Why this decision
    - `{your_evidence}`: Specific lines/sections
-4. **Record finding** for final output
+6. **Track counts** for final summary
 
 **CRITICAL**: Execute the bash logging command IMMEDIATELY after analyzing each file, BEFORE moving to the next file section.
 
-## Return Findings
+## Return Summary
 
-After ALL file sections have been processed with logging executed, return TOON output per contract.
+After ALL file sections have been processed with logging executed, return TOON summary per contract:
+
+```toon
+status: success
+bundle: {bundle}
+total_analyzed: {count}
+certain_include: {count}
+certain_exclude: {count}
+uncertain: {count}
+decision_log_entries: {count}
+```

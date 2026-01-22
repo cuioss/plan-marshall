@@ -193,3 +193,74 @@ The workflow routes based on `change_type`:
 
 - Components: `/pm-plugin-development:plugin-doctor --component {path}`
 - Scripts: `./pw module-tests {bundle}`
+
+---
+
+## Uncertainty Resolution
+
+**Called by**: workflow.md Step 4a (between analysis and aggregation)
+**Purpose**: Resolve UNCERTAIN findings through user clarification
+
+### Uncertainty Grouping
+
+Group UNCERTAIN findings by ambiguity pattern:
+
+| Pattern | Question Type |
+|---------|---------------|
+| JSON in workflow context vs output spec | "Should workflow-context JSON be included?" |
+| Script output documentation vs skill output | "Should documented script outputs count as skill outputs?" |
+| Example format vs actual output format | "Should example formats be treated as outputs?" |
+
+### Question Templates
+
+For each uncertainty group, use AskUserQuestion with specific examples:
+
+```
+AskUserQuestion:
+  questions:
+    - question: "Should files with JSON in workflow context be included?"
+      header: "Scope"
+      options:
+        - label: "Exclude workflow JSON (Recommended)"
+          description: "Only include explicit ## Output sections"
+        - label: "Include all JSON"
+          description: "Include any ```json block regardless of context"
+      multiSelect: false
+```
+
+**Include actual file examples with confidence**:
+```
+Examples found:
+- manage-adr/SKILL.md (45%): JSON in "## Create ADR" workflow step
+- workflow-integration-ci/SKILL.md (52%): JSON in "## Fetch Comments" step
+```
+
+### Resolution Application
+
+After user answers:
+
+1. Read UNCERTAIN findings from decision.log:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  read-findings {plan_id} --certainty UNCERTAIN
+```
+
+2. For each finding matching the clarification:
+   - If user chose exclusion: UNCERTAIN → CERTAIN_EXCLUDE
+   - If user chose inclusion: UNCERTAIN → CERTAIN_INCLUDE
+
+3. Log resolution with hash ID reference:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  decision {plan_id} INFO "[RESOLUTION:{finding_hash_id}] (pm-plugin-development:ext-outline-plugin) {file_path}: UNCERTAIN ({old_confidence}%) → {new_certainty} (85%)
+  detail: User clarified: {user_choice}"
+```
+
+4. Store clarifications in request.md:
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-plan-documents:manage-plan-documents \
+  request clarify \
+  --plan-id {plan_id} \
+  --clarifications "{formatted Q&A}" \
+  --clarified-request "{synthesized request}"
+```

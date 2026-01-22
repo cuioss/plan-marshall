@@ -12,6 +12,7 @@
   "keywords": ["workflow", "task", "pr", "implementation", "quality", "orchestration"],
   "agents": [
     "./agents/plan-init-agent.md",
+    "./agents/q-gate-validation-agent.md",
     "./agents/task-execute-agent.md",
     "./agents/task-plan-agent.md"
   ],

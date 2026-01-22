@@ -9,6 +9,9 @@ Usage:
     Read:
         python3 manage-log.py read --plan-id {plan_id} --type {work|script|decision} [--limit N] [--phase PHASE]
 
+    Read Findings:
+        python3 manage-log.py read-findings {plan_id} [--stage STAGE] [--certainty CERTAINTY] [--status STATUS]
+
 Arguments (write):
     type      - Log type: 'script', 'work', or 'decision'
     plan_id   - Plan identifier
@@ -21,6 +24,12 @@ Arguments (read):
     --limit   - Max entries to return (optional, default: all)
     --phase   - Filter by phase (optional, work/decision logs only)
 
+Arguments (read-findings):
+    plan_id       - Plan identifier (positional, required)
+    --stage       - Filter by stage: 'analysis' or 'q-gate' (optional)
+    --certainty   - Filter by certainty: CERTAIN_INCLUDE, CERTAIN_EXCLUDE, UNCERTAIN (optional)
+    --status      - Filter by Q-Gate status: CONFIRMED, FILTERED (optional)
+
 Examples:
     # Write operations
     python3 manage-log.py script my-plan INFO "pm-workflow:manage-task:manage-task add (0.15s)"
@@ -32,6 +41,11 @@ Examples:
     python3 manage-log.py read --plan-id my-plan --type decision
     python3 manage-log.py read --plan-id my-plan --type work --limit 5
     python3 manage-log.py read --plan-id my-plan --type decision --phase 1-init
+
+    # Read findings (for uncertainty resolution flow)
+    python3 manage-log.py read-findings my-plan --certainty UNCERTAIN
+    python3 manage-log.py read-findings my-plan --stage analysis --certainty CERTAIN_INCLUDE
+    python3 manage-log.py read-findings my-plan --stage q-gate --status CONFIRMED
 """
 
 import sys
@@ -138,6 +152,152 @@ def parse_read_args(args: list) -> dict:
     return result
 
 
+def parse_findings_args(args: list) -> dict:
+    """Parse named arguments for read-findings command."""
+    result: dict[str, str | None] = {
+        'plan_id': None,
+        'stage': None,
+        'certainty': None,
+        'status': None,
+    }
+
+    i = 0
+    while i < len(args):
+        arg = args[i]
+
+        if arg == '--plan-id' and i + 1 < len(args):
+            result['plan_id'] = args[i + 1]
+            i += 2
+        elif arg.startswith('--plan-id='):
+            result['plan_id'] = arg.split('=', 1)[1]
+            i += 1
+        elif arg == '--stage' and i + 1 < len(args):
+            result['stage'] = args[i + 1]
+            i += 2
+        elif arg.startswith('--stage='):
+            result['stage'] = arg.split('=', 1)[1]
+            i += 1
+        elif arg == '--certainty' and i + 1 < len(args):
+            result['certainty'] = args[i + 1]
+            i += 2
+        elif arg.startswith('--certainty='):
+            result['certainty'] = arg.split('=', 1)[1]
+            i += 1
+        elif arg == '--status' and i + 1 < len(args):
+            result['status'] = args[i + 1]
+            i += 2
+        elif arg.startswith('--status='):
+            result['status'] = arg.split('=', 1)[1]
+            i += 1
+        else:
+            i += 1
+
+    return result
+
+
+def handle_read_findings(args: list) -> None:
+    """Handle read-findings subcommand.
+
+    Reads findings from decision.log with filtering by stage, certainty, and status.
+    Parses [FINDING:{hash_id}] entries and extracts structured data.
+    """
+    import re
+
+    parsed = parse_findings_args(args)
+
+    if not parsed['plan_id']:
+        print('status: error', file=sys.stderr)
+        print('error: missing_argument', file=sys.stderr)
+        print('message: --plan-id is required', file=sys.stderr)
+        sys.exit(1)
+
+    # Read decision log
+    result = read_decision_log(parsed['plan_id'], phase=None)
+
+    if result.get('status') == 'error':
+        print(format_toon_output(result), file=sys.stderr)
+        sys.exit(1)
+
+    entries = result.get('entries', [])
+
+    # Filter for FINDING entries
+    finding_pattern = re.compile(
+        r'\[FINDING:([a-f0-9]{6})\]\s*\(([^)]+)\)\s*([^:]+):\s*(CERTAIN_INCLUDE|CERTAIN_EXCLUDE|UNCERTAIN)\s*\((\d+)%\)'
+    )
+
+    findings = []
+    for entry in entries:
+        message = entry.get('message', '')
+        detail = entry.get('detail', '')
+
+        match = finding_pattern.search(message)
+        if match:
+            hash_id, agent_name, file_path, certainty, confidence = match.groups()
+            finding = {
+                'hash_id': hash_id,
+                'agent': agent_name,
+                'file_path': file_path.strip(),
+                'certainty': certainty,
+                'confidence': int(confidence),
+                'detail': detail,
+            }
+            findings.append(finding)
+
+    # Apply filters
+    filtered = findings
+
+    if parsed['certainty']:
+        filtered = [f for f in filtered if f['certainty'] == parsed['certainty']]
+
+    if parsed['status']:
+        # status maps: CONFIRMED/FILTERED for Q-Gate results
+        # For analysis stage, we might filter by certainty directly
+        pass  # Status filtering reserved for Q-Gate stage
+
+    # Prepare output
+    output = {
+        'status': 'success',
+        'plan_id': parsed['plan_id'],
+        'total_findings': len(findings),
+        'filtered_count': len(filtered),
+        'filters_applied': {
+            k: v for k, v in [
+                ('stage', parsed['stage']),
+                ('certainty', parsed['certainty']),
+                ('status', parsed['status']),
+            ] if v
+        },
+        'findings': filtered,
+    }
+
+    # Format output
+    lines = [
+        f'status: {output["status"]}',
+        f'plan_id: {output["plan_id"]}',
+        f'total_findings: {output["total_findings"]}',
+        f'filtered_count: {output["filtered_count"]}',
+    ]
+
+    if output['filters_applied']:
+        lines.append('filters_applied:')
+        for k, v in output['filters_applied'].items():
+            lines.append(f'  {k}: {v}')
+
+    if filtered:
+        lines.append('')
+        lines.append(f'findings[{len(filtered)}]{{hash_id,file_path,certainty,confidence}}:')
+        for f in filtered:
+            lines.append(f'  {f["hash_id"]},{f["file_path"]},{f["certainty"]},{f["confidence"]}')
+
+        # Also output file paths for easy consumption
+        lines.append('')
+        lines.append('file_paths:')
+        for f in filtered:
+            lines.append(f'  - {f["file_path"]}')
+
+    print('\n'.join(lines))
+
+
 def handle_read(args: list) -> None:
     """Handle read subcommand."""
     parsed = parse_read_args(args)
@@ -238,12 +398,15 @@ def handle_write(args: list) -> None:
 def main():
     if len(sys.argv) < 2:
         print(f'Usage: {sys.argv[0]} read --plan-id {{id}} --type {{work|script|decision}}', file=sys.stderr)
+        print(f'       {sys.argv[0]} read-findings {{plan_id}} [--stage {{analysis|q-gate}}] [--certainty {{CERTAIN_INCLUDE|CERTAIN_EXCLUDE|UNCERTAIN}}]', file=sys.stderr)
         print(f'       {sys.argv[0]} {{type}} {{plan_id}} {{level}} "{{message}}"', file=sys.stderr)
         sys.exit(1)
 
-    # Check if first arg is 'read' subcommand
+    # Check if first arg is a subcommand
     if sys.argv[1] == 'read':
         handle_read(sys.argv[2:])
+    elif sys.argv[1] == 'read-findings':
+        handle_read_findings(sys.argv[2:])
     else:
         # Legacy positional write
         handle_write(sys.argv[1:])

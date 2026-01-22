@@ -308,6 +308,36 @@ def cmd_read(doc_type: str, args) -> int:
     if getattr(args, 'raw', False):
         # Output raw content
         print(content)
+    elif getattr(args, 'section', None):
+        # Extract specific section
+        section_name = args.section.lower().replace(' ', '_')
+        sections = parse_document_sections(content)
+        section_content = sections.get(section_name, '')
+        if not section_content:
+            print(
+                serialize_toon(
+                    {
+                        'status': 'error',
+                        'error': 'section_not_found',
+                        'plan_id': args.plan_id,
+                        'document': doc_type,
+                        'section': section_name,
+                        'available_sections': list(sections.keys()),
+                    }
+                )
+            )
+            return 1
+        print(
+            serialize_toon(
+                {
+                    'status': 'success',
+                    'plan_id': args.plan_id,
+                    'document': doc_type,
+                    'section': section_name,
+                    'content': section_content,
+                }
+            )
+        )
     else:
         # Parse into sections
         sections = parse_document_sections(content)
@@ -393,6 +423,97 @@ def cmd_update(doc_type: str, args) -> int:
     print(
         serialize_toon(
             {'status': 'success', 'plan_id': args.plan_id, 'document': doc_type, 'section': section, 'updated': True}
+        )
+    )
+    return 0
+
+
+def cmd_clarify(doc_type: str, args) -> int:
+    """Add clarifications and clarified request to a document.
+
+    This command adds:
+    1. A ## Clarifications section with Q&A pairs
+    2. A ## Clarified Request section with the synthesized request
+
+    Expected for request documents to support the uncertainty resolution flow.
+    """
+    doc_def = load_document_type(doc_type)
+    if not doc_def:
+        print(serialize_toon({'status': 'error', 'error': 'unknown_document_type', 'document': doc_type}))
+        return 1
+
+    if not validate_plan_id(args.plan_id):
+        print(serialize_toon({'status': 'error', 'error': 'invalid_plan_id', 'plan_id': args.plan_id}))
+        return 1
+
+    plan_dir = get_plan_dir(args.plan_id)
+    file_name = doc_def.get('file', f'{doc_type}.md')
+    file_path = plan_dir / file_name
+
+    if not file_path.exists():
+        print(
+            serialize_toon(
+                {'status': 'error', 'error': 'document_not_found', 'plan_id': args.plan_id, 'document': doc_type}
+            )
+        )
+        return 1
+
+    content = file_path.read_text(encoding='utf-8')
+    lines = content.split('\n')
+
+    # Check if clarifications section already exists
+    has_clarifications = any(line.strip().lower() == '## clarifications' for line in lines)
+    has_clarified_request = any(line.strip().lower() == '## clarified request' for line in lines)
+
+    # Build new sections
+    new_sections = []
+
+    # Add Clarifications section if provided and doesn't exist
+    clarifications = getattr(args, 'clarifications', None)
+    if clarifications:
+        if has_clarifications:
+            # Update existing section via cmd_update
+            args_update = type('Args', (), {'plan_id': args.plan_id, 'section': 'clarifications', 'content': clarifications})()
+            return cmd_update(doc_type, args_update)
+        else:
+            new_sections.append('\n## Clarifications\n')
+            new_sections.append(clarifications)
+
+    # Add Clarified Request section if provided and doesn't exist
+    clarified_request = getattr(args, 'clarified_request', None)
+    if clarified_request:
+        if has_clarified_request:
+            # Update existing section via cmd_update
+            args_update = type('Args', (), {'plan_id': args.plan_id, 'section': 'clarified_request', 'content': clarified_request})()
+            return cmd_update(doc_type, args_update)
+        else:
+            new_sections.append('\n## Clarified Request\n')
+            new_sections.append(clarified_request)
+
+    if not new_sections:
+        print(
+            serialize_toon(
+                {
+                    'status': 'error',
+                    'error': 'no_content',
+                    'message': 'Provide --clarifications and/or --clarified-request',
+                }
+            )
+        )
+        return 1
+
+    # Append new sections to content
+    new_content = content.rstrip() + '\n' + '\n'.join(new_sections) + '\n'
+    atomic_write_file(file_path, new_content)
+
+    print(
+        serialize_toon(
+            {
+                'status': 'success',
+                'plan_id': args.plan_id,
+                'document': doc_type,
+                'sections_added': [s.strip().replace('## ', '') for s in new_sections if s.startswith('\n##')],
+            }
         )
     )
     return 0
@@ -524,6 +645,7 @@ def main():
         read_parser = type_subparsers.add_parser('read', help='Read document')
         read_parser.add_argument('--plan-id', required=True, help='Plan identifier')
         read_parser.add_argument('--raw', action='store_true', help='Output raw content')
+        read_parser.add_argument('--section', help='Read specific section (e.g., clarified_request)')
         read_parser.set_defaults(func=lambda args, dt=doc_type: cmd_read(dt, args))
 
         # Update
@@ -542,6 +664,13 @@ def main():
         remove_parser = type_subparsers.add_parser('remove', help='Remove document')
         remove_parser.add_argument('--plan-id', required=True, help='Plan identifier')
         remove_parser.set_defaults(func=lambda args, dt=doc_type: cmd_remove(dt, args))
+
+        # Clarify (add clarifications and clarified request)
+        clarify_parser = type_subparsers.add_parser('clarify', help='Add clarifications to document')
+        clarify_parser.add_argument('--plan-id', required=True, help='Plan identifier')
+        clarify_parser.add_argument('--clarifications', help='Q&A clarifications content')
+        clarify_parser.add_argument('--clarified-request', dest='clarified_request', help='Synthesized clarified request')
+        clarify_parser.set_defaults(func=lambda args, dt=doc_type: cmd_clarify(dt, args))
 
     args = parser.parse_args()
 

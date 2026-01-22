@@ -193,6 +193,58 @@ During deliverable creation, use `## Discovery Patterns` from the extension for 
 
 ---
 
+## Step 4a: Synthesize Clarified Request (After Extension Workflow)
+
+**Trigger**: Run after extension workflow completes, if clarifications were collected.
+
+**Purpose**: Generate a synthesized "Clarified Request" that combines the original request with user clarifications.
+
+### Check for Clarifications
+
+Read request.md to check if clarifications were added:
+
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-plan-documents:manage-plan-documents \
+  request read \
+  --plan-id {plan_id} \
+  --section clarifications
+```
+
+**If no clarifications section**: Skip this step.
+
+### Synthesize Clarified Request
+
+If clarifications exist, synthesize a clarified request that:
+1. States the original intent
+2. Lists scope inclusions (what is IN scope based on clarifications)
+3. Lists scope exclusions (what is OUT of scope based on clarifications)
+
+**Synthesis pattern**:
+```markdown
+{Original request intent restated clearly}
+
+**Scope:**
+- {Specific inclusion from clarification 1}
+- {Specific inclusion from clarification 2}
+
+**Exclusions (based on clarifications):**
+- {Exclusion from clarification 1}
+- {Exclusion from clarification 2}
+```
+
+### Store Clarified Request
+
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-plan-documents:manage-plan-documents \
+  request clarify \
+  --plan-id {plan_id} \
+  --clarified-request "{synthesized clarified request}"
+```
+
+**Note**: If the extension workflow already stored a clarified request, this step updates it with any additional synthesis.
+
+---
+
 ## Step 4b: Select Target Modules (Generic/Module-Based Domains)
 
 For simple tasks: identify the single affected module. For complex tasks: select module for each sub-task.

@@ -129,6 +129,73 @@ Every outline extension MUST implement these sections:
 
 ---
 
+## Section: Uncertainty Resolution (Optional)
+
+**Called by**: Domain extension workflow Step 4a (between analysis and aggregation)
+**Purpose**: Resolve UNCERTAIN findings from analysis agents through user clarification
+
+**Trigger**: Called when any analysis agent returns UNCERTAIN findings (confidence < 80%).
+
+**Default behavior**: If section not implemented, treat UNCERTAIN as CERTAIN_INCLUDE.
+
+**Required subsections** (if implemented):
+- `### Uncertainty Grouping` - How to group similar uncertainties for efficient questioning
+- `### Question Templates` - AskUserQuestion templates for each uncertainty type
+- `### Resolution Application` - How user answers resolve UNCERTAIN → CERTAIN_INCLUDE or CERTAIN_EXCLUDE
+
+### Uncertainty Grouping
+
+Group UNCERTAIN findings by similar patterns to minimize questions. Common groupings:
+
+| Grouping Type | Description |
+|---------------|-------------|
+| Same ambiguity reason | e.g., "JSON in workflow context" |
+| Same file section | e.g., "Content in ## Workflow steps" |
+| Same bundle | e.g., "All findings in pm-workflow" |
+
+### Question Templates
+
+Use AskUserQuestion with specific examples from findings:
+
+```
+"Should files with JSON in workflow context be included?"
+
+Examples found:
+- manage-adr/SKILL.md (45%): JSON in "## Create ADR" workflow step
+- workflow-integration-ci/SKILL.md (52%): JSON in "## Fetch Comments" step
+
+Options:
+1. Exclude workflow JSON (Recommended) - Only include explicit ## Output sections
+2. Include all JSON - Include any ```json regardless of context
+```
+
+### Resolution Application
+
+After user answers:
+1. Update each UNCERTAIN finding in the group to CERTAIN_INCLUDE or CERTAIN_EXCLUDE
+2. Set confidence to 85% (reflects user clarification)
+3. Log resolution decision with hash ID reference
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  decision {plan_id} INFO "[RESOLUTION:{finding_hash_id}] (ext-outline-plugin) {file_path}: UNCERTAIN ({old_confidence}%) → {new_certainty} (85%)
+  detail: User clarified: {user_choice}"
+```
+
+### Storage
+
+Store clarifications in request.md via manage-plan-documents:
+
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-plan-documents:manage-plan-documents \
+  request clarify \
+  --plan-id {plan_id} \
+  --clarifications "{formatted Q&A pairs}" \
+  --clarified-request "{synthesized request with scope and exclusions}"
+```
+
+---
+
 ## Enforcement Requirements
 
 Extensions implementing this protocol MUST follow these rules:

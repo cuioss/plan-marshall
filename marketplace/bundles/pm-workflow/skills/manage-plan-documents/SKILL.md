@@ -121,7 +121,28 @@ content:
   context: Additional context...
 ```
 
-Add `--raw` for raw markdown output.
+**Options:**
+- `--raw`: Output raw markdown content
+- `--section {section_name}`: Read specific section only (e.g., `clarified_request`)
+
+**Read specific section:**
+
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-plan-documents:manage-plan-documents \
+  request read \
+  --plan-id {plan_id} \
+  --section clarified_request
+```
+
+**Output:**
+
+```toon
+status: success
+plan_id: my-feature
+document: request
+section: clarified_request
+content: Migrate JSON output specifications to TOON format...
+```
 
 ### update
 
@@ -148,6 +169,79 @@ plan_id: my-feature
 document: request
 section: context
 updated: true
+```
+
+### clarify
+
+Add clarifications and clarified request sections to a document. Used in the uncertainty resolution flow.
+
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-plan-documents:manage-plan-documents \
+  request clarify \
+  --plan-id {plan_id} \
+  --clarifications "**Q: Should JSON in workflow context be included?**
+Examples: manage-adr/SKILL.md, workflow-integration-ci/SKILL.md
+A: Exclude workflow JSON - Only include explicit ## Output sections" \
+  --clarified-request "Migrate JSON output specifications to TOON format in all marketplace bundles.
+
+**Scope:**
+- Components with explicit ## Output sections
+- All bundles
+
+**Exclusions:**
+- JSON in workflow documentation"
+```
+
+**Parameters:**
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `--plan-id` | Yes | Plan identifier |
+| `--clarifications` | No | Q&A clarifications content |
+| `--clarified-request` | No | Synthesized clarified request |
+
+At least one of `--clarifications` or `--clarified-request` must be provided.
+
+**Output:**
+
+```toon
+status: success
+plan_id: my-feature
+document: request
+sections_added:
+  - Clarifications
+  - Clarified Request
+```
+
+**Resulting request.md structure:**
+
+```markdown
+# Request: Migrate JSON to TOON
+
+## Original Input
+
+Migrate agent/command/skill outputs from JSON to TOON format
+
+## Context
+
+...
+
+## Clarifications
+
+**Q: Should files with JSON in workflow context be included?**
+Examples: manage-adr/SKILL.md, workflow-integration-ci/SKILL.md
+A: Exclude workflow JSON - Only include explicit ## Output sections
+
+## Clarified Request
+
+Migrate JSON output specifications to TOON format in all marketplace bundles.
+
+**Scope:**
+- Components with explicit `## Output` sections
+- All bundles
+
+**Exclusions (based on clarifications):**
+- JSON in workflow documentation
 ```
 
 ### exists
@@ -236,8 +330,9 @@ suggestions[2]:
 | Command | Parameters | Description |
 |---------|------------|-------------|
 | `request create` | `--plan-id --title --source --body [--source-id] [--context] [--force]` | Create request document |
-| `request read` | `--plan-id [--raw]` | Read document (parsed or raw) |
+| `request read` | `--plan-id [--raw] [--section]` | Read document (parsed, raw, or specific section) |
 | `request update` | `--plan-id --section --content` | Update specific section |
+| `request clarify` | `--plan-id [--clarifications] [--clarified-request]` | Add clarifications and clarified request |
 | `request exists` | `--plan-id` | Check if document exists |
 | `request remove` | `--plan-id` | Delete document |
 | `list-types` | (none) | List available document types |
