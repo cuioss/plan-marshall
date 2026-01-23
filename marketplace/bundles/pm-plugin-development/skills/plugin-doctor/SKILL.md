@@ -89,19 +89,17 @@ All 5 workflows follow the same pattern:
    - global scope: Glob ~/.claude/{component}/
    - project scope: Glob .claude/{component}/
 
-4. **MANDATORY - Analyze Each Component** (using scripts)
+4. **MANDATORY - Analyze Components** (using doctor-marketplace)
 
-   Scripts:
-   - `pm-plugin-development:plugin-doctor` → `analyze.py markdown`
-   - `pm-plugin-development:plugin-doctor` → `analyze.py coverage`
-   - `pm-plugin-development:plugin-doctor` → `validate.py references`
+   Use the batch analyze command with appropriate filters:
 
    **EXECUTE**:
    ```bash
-   python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:analyze markdown --file {path} --type {type}
-   python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:analyze coverage --file {path}
-   python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:validate references --file {path}
+   python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marketplace analyze \
+     --bundles {bundle} --type {component_type}
    ```
+
+   This performs markdown analysis, coverage extraction, and reference validation for all matching components. The output includes per-component analysis results in JSON format.
 
 ### Phase 2: Categorize Issues
 
@@ -152,11 +150,14 @@ All 5 workflows follow the same pattern:
 
 1. **Verify Fixes**
 
-   Script: `pm-plugin-development:plugin-doctor` → `fix.py verify`
+   Re-run analysis to verify fixes resolved issues:
 
    ```bash
-   python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:fix verify --fix-type {type} --file {path}
+   python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marketplace analyze \
+     --bundles {bundle} --type {component_type}
    ```
+
+   Compare issue counts before and after to verify resolution.
 
 2. **Generate Summary**
    ```
@@ -194,20 +195,16 @@ Skill: pm-plugin-development:tools-marketplace-inventory
 Glob: pattern="*.md", path="{scope_path}/agents"
 ```
 
-### Step 3: Analyze Each Agent
+### Step 3: Analyze Agents
 
-For each agent file, execute:
-
-Scripts:
-- `pm-plugin-development:plugin-doctor` → `analyze.py markdown`
-- `pm-plugin-development:plugin-doctor` → `analyze.py coverage`
-- `pm-plugin-development:plugin-doctor` → `validate.py references`
+Use the batch analyze command filtered to agents:
 
 ```bash
-python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:analyze markdown --file {agent_path} --type agent
-python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:analyze coverage --file {agent_path}
-python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:validate references --file {agent_path}
+python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marketplace analyze \
+  --bundles {bundle} --type agents
 ```
+
+This returns JSON with per-agent analysis including markdown structure, tool coverage, and reference validation.
 
 **Check against agents-guide.md**:
 - Tool fit score >= 70% (good) or >= 90% (excellent)
@@ -262,16 +259,16 @@ Read references/fix-catalog.md
 
 Same pattern as doctor-agents.
 
-### Step 3: Analyze Each Command
+### Step 3: Analyze Commands
 
-Scripts:
-- `pm-plugin-development:plugin-doctor` → `analyze.py markdown`
-- `pm-plugin-development:plugin-doctor` → `validate.py references`
+Use the batch analyze command filtered to commands:
 
 ```bash
-python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:analyze markdown --file {cmd_path} --type command
-python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:validate references --file {cmd_path}
+python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marketplace analyze \
+  --bundles {bundle} --type commands
 ```
+
+This returns JSON with per-command analysis including markdown structure and reference validation.
 
 **Check against commands-guide.md**:
 
@@ -390,18 +387,16 @@ Read references/fix-catalog.md
 Skill: pm-plugin-development:tools-marketplace-inventory
 ```
 
-### Step 3: Analyze Each Skill
+### Step 3: Analyze Skills
 
-Scripts:
-- `pm-plugin-development:plugin-doctor` → `analyze.py structure`
-- `pm-plugin-development:plugin-doctor` → `analyze.py markdown`
-- `pm-plugin-development:plugin-doctor` → `validate.py references`
+Use the batch analyze command filtered to skills:
 
 ```bash
-python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:analyze structure --directory {skill_dir}
-python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:analyze markdown --file {skill_dir}/SKILL.md --type skill
-python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:validate references --file {skill_dir}/SKILL.md
+python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marketplace analyze \
+  --bundles {bundle} --type skills
 ```
+
+This returns JSON with per-skill analysis including structure validation, markdown analysis, and reference checking.
 
 **Check against skills-guide.md**:
 - Structure score >= 70 (good) or >= 90 (excellent)
@@ -611,17 +606,18 @@ Read references/content-classification-guide.md
 Read references/content-quality-guide.md
 ```
 
-### Step 2: Phase 1 - Inventory (SCRIPT)
+### Step 2: Phase 1 - Inventory (LLM)
 
-Script: `pm-plugin-development:plugin-doctor` → `validate.py inventory`
+Use Glob and Read tools to inventory skill content:
 
 ```bash
-python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:validate inventory --skill-path {skill_path}
+# List all markdown files in skill subdirectories
+Glob: pattern="**/*.md", path={skill_path}
 ```
 
-Parse JSON output to get:
-- List of directories and files
-- Line counts per file
+For each file, collect:
+- File path and directory
+- Line count (via Read tool)
 - Extension statistics
 
 ### Step 3: Phase 2 - Classify (LLM)
@@ -651,15 +647,16 @@ Needs Splitting: {yes|no}
 
 Skip if `--skip-quality` specified.
 
-**Step 4a: Run Cross-File Analysis Script**
+**Step 4a: Cross-File Analysis (LLM)**
 
-Script: `pm-plugin-development:plugin-doctor` → `analyze.py cross-file`
+Perform cross-file analysis by reading and comparing content:
 
-```bash
-python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:analyze cross-file --skill-path {skill_path}
-```
+1. Read all markdown files in skill subdirectories
+2. Compute content hashes to detect exact duplicates
+3. Compare section headers and content blocks for similarity
+4. Identify extraction candidates (repeated patterns)
 
-Parse JSON output for:
+Produce analysis with:
 - `exact_duplicates`: Report directly (no LLM needed - hash-verified matches)
 - `similarity_candidates`: Queue for LLM semantic analysis
 - `extraction_candidates`: Queue for LLM extraction recommendations
@@ -694,12 +691,11 @@ Read each content file and analyze:
 
 **Step 4d: Verify LLM Findings**
 
-Script: `pm-plugin-development:plugin-doctor` → `validate.py cross-file`
+Verify LLM findings by re-reading referenced files:
 
-Pipe LLM findings JSON to verification:
-```bash
-echo '{llm_findings_json}' | python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:validate cross-file --analysis {cross_file_analysis_json}
-```
+1. For each claimed duplicate, read both files and compare content
+2. For each similarity claim, verify the specific sections exist
+3. For each extraction candidate, verify the pattern appears as claimed
 
 **Reject any LLM claims that can't be verified** against actual content.
 
@@ -739,13 +735,13 @@ AskUserQuestion:
 1. Grep for old paths in SKILL.md and all content files
 2. Update references using Edit tool
 
-### Step 6: Phase 5 - Verify Links (SCRIPT)
+### Step 6: Phase 5 - Verify Links (LLM)
 
-Script: `pm-plugin-development:plugin-doctor` → `validate.py references`
+Use Grep and Read tools to verify references:
 
-```bash
-python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:validate references --file {skill_path}/SKILL.md
-```
+1. Extract all relative path references from SKILL.md (pattern: `Read `, `references/`, `scripts/`)
+2. For each reference, verify the target file exists using Glob
+3. Report any broken references
 
 For each content file, verify:
 - Internal cross-references valid
@@ -959,23 +955,30 @@ Display final summary:
 
 ### Scripts (scripts/)
 
+**IMPORTANT**: Only `doctor-marketplace.py` is registered in the executor. The other scripts (`_analyze.py`, `_validate.py`, `_fix.py`) are internal modules with underscore prefix and are accessed via `doctor-marketplace` subcommands.
+
+**Registered Script** (callable via executor):
+
 | Script | Subcommand | Mode | Purpose |
 |--------|------------|------|---------|
-| `analyze.py` | `markdown` | **EXECUTE** | Structural analysis, bloat, Rule 6/7/Pattern 22 |
-| `analyze.py` | `coverage` | **EXECUTE** | Extract declared tools (semantic analysis via agent) |
-| `analyze.py` | `structure` | **EXECUTE** | Skill directory structure validation |
-| `analyze.py` | `cross-file` | **EXECUTE** | Cross-file duplication, similarity, extraction analysis |
-| `validate.py` | `references` | **EXECUTE** | Reference extraction and validation |
-| `validate.py` | `cross-file` | **EXECUTE** | Verify LLM cross-file claims against actual content |
-| `validate.py` | `inventory` | **EXECUTE** | Skill content inventory for doctor-skill-content |
-| `fix.py` | `extract` | **EXECUTE** | Filter fixable issues from analysis |
-| `fix.py` | `categorize` | **EXECUTE** | Categorize as safe/risky |
-| `fix.py` | `apply` | **EXECUTE** | Apply single fix with backup |
-| `fix.py` | `verify` | **EXECUTE** | Verify fix resolved issue |
 | `doctor-marketplace.py` | `scan` | **EXECUTE** | Batch discovery of all marketplace components |
 | `doctor-marketplace.py` | `analyze` | **EXECUTE** | Batch analysis of all components for issues |
 | `doctor-marketplace.py` | `fix` | **EXECUTE** | Auto-apply safe fixes across marketplace |
 | `doctor-marketplace.py` | `report` | **EXECUTE** | Generate comprehensive report for LLM review |
+
+**Notation**: `pm-plugin-development:plugin-doctor:doctor-marketplace {subcommand}`
+
+**Internal Modules** (NOT directly callable - used internally by doctor-marketplace):
+
+| Module | Purpose |
+|--------|---------|
+| `_analyze.py` | Structural analysis, bloat, Rule 6/7/Pattern 22 |
+| `_analyze_markdown.py` | Markdown structure analysis |
+| `_analyze_coverage.py` | Tool coverage extraction |
+| `_analyze_structure.py` | Skill directory structure validation |
+| `_analyze_crossfile.py` | Cross-file duplication analysis |
+| `_validate.py` | Reference extraction and validation |
+| `_fix.py` | Fix application and verification |
 
 #### Hybrid Batch Processing (doctor-marketplace.py)
 
