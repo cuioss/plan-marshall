@@ -105,9 +105,9 @@ All subsequent steps use `{results_dir}` to store outputs.
 Collect all artifacts to local directory first. All subsequent verification reads from this copy.
 
 Read the `workflow_phase` from test-definition.toon to determine which phases to collect:
-- `2-outline` → collect outline artifacts only
-- `3-plan` → collect planning artifacts only
-- `2-outline,3-plan` → collect both outline and planning artifacts
+- `3-outline` → collect outline artifacts only
+- `4-plan` → collect planning artifacts only
+- `3-outline,4-plan` → collect both outline and planning artifacts
 
 ```bash
 python3 .plan/execute-script.py local:verify-workflow:collect-artifacts \
@@ -116,7 +116,7 @@ python3 .plan/execute-script.py local:verify-workflow:collect-artifacts \
   --phases {workflow_phase from test-definition}
 ```
 
-**Note**: The `--phases` parameter must match the `workflow_phase` field in test-definition.toon. Tasks are only collected when `3-plan` is included.
+**Note**: The `--phases` parameter must match the `workflow_phase` field in test-definition.toon. Tasks are only collected when `4-plan` is included.
 
 ### Step V1.5: Trace Components
 

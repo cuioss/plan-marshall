@@ -339,10 +339,10 @@ class StructuralChecker:
         """Run all structural checks.
 
         Args:
-            phases: List of phases to verify ['2-outline', '3-plan']
+            phases: List of phases to verify ['3-outline', '4-plan']
         """
         if phases is None:
-            phases = ['2-outline']
+            phases = ['3-outline']
 
         # Basic existence checks
         self.check_solution_outline_exists()
@@ -372,7 +372,7 @@ class StructuralChecker:
             self.check_affected_files(expected_files)
 
         # Check tasks if planning phase included
-        if '3-plan' in phases or 'both' in phases:
+        if '4-plan' in phases or 'both' in phases:
             self.check_tasks_exist()
 
         # Calculate overall status (excluding 'info' checks from failure count)
@@ -400,7 +400,7 @@ def main() -> int:
     parser.add_argument('--test-case', required=True, help='Path to test case directory')
     parser.add_argument('--artifacts-dir', help='Directory containing collected artifacts (reads from here instead of plan dir)')
     parser.add_argument('--output', help='Output file path (default: stdout)')
-    parser.add_argument('--phases', default='2-outline', help='Phases to verify (comma-separated)')
+    parser.add_argument('--phases', default='3-outline', help='Phases to verify (comma-separated)')
 
     args = parser.parse_args()
 

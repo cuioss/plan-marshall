@@ -124,7 +124,7 @@ analysis_status: analyzed
 failure_count: 2
 
 failures[2]{check_name,category,origin,description,fix_proposal}:
-deliverable_count,Count Mismatch,phase-2-outline,Expected 5 deliverables but found 3,Review module detection in phase-2-outline; check domain filtering in config.toon
+deliverable_count,Count Mismatch,phase-3-outline,Expected 5 deliverables but found 3,Review module detection in phase-3-outline; check domain filtering in config.toon
 config_domains,Missing Artifact,phase-1-init,config.toon missing domains field,Ensure phase-1-init writes domains to config.toon during initialization
 ```
 

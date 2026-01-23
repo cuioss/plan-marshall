@@ -48,7 +48,7 @@ Review the conversation history from the workflow execution. Identify **componen
 
 **Skills** (loaded via Skill tool):
 - Pattern: `Skill: bundle:skill-name` or direct skill loading
-- Example: `Skill: pm-workflow:phase-2-outline`
+- Example: `Skill: pm-workflow:phase-3-outline`
 
 **Agents** (Task tool with subagent):
 - Pattern: Task tool invocation with `subagent_type`
@@ -84,7 +84,7 @@ Parse log entries for the pattern `({bundle}:{skill})` to identify components:
 Example extractions:
 - `(pm-workflow:phase-1-init)` → skill: phase-1-init
 - `(pm-plugin-development:ext-outline-plugin)` → skill: ext-outline-plugin
-- `(pm-workflow:phase-3-plan)` → skill: phase-3-plan
+- `(pm-workflow:phase-4-plan)` → skill: phase-4-plan
 
 **Build invocation hierarchy:**
 For each component found in work.log or decision.log:
@@ -143,7 +143,7 @@ For each script invocation found:
 | C4 | agent | solution-outline-agent | pm-workflow:solution-outline-agent | C1 |
 | C5 | skill | ext-outline-plugin | pm-plugin-development:ext-outline-plugin | C4 |
 | C6 | agent | task-plan-agent | pm-workflow:task-plan-agent | C1 |
-| C7 | skill | phase-3-plan | pm-workflow:phase-3-plan | C6 |
+| C7 | skill | phase-4-plan | pm-workflow:phase-4-plan | C6 |
 ```
 
 **Scripts Used** (separate table):
@@ -207,7 +207,7 @@ Plan ID: migrate-outputs-to-toon
 | C4 | agent | solution-outline-agent | pm-workflow:solution-outline-agent | C1 |
 | C5 | skill | ext-outline-plugin | pm-plugin-development:ext-outline-plugin | C4 |
 | C6 | agent | task-plan-agent | pm-workflow:task-plan-agent | C1 |
-| C7 | skill | phase-3-plan | pm-workflow:phase-3-plan | C6 |
+| C7 | skill | phase-4-plan | pm-workflow:phase-4-plan | C6 |
 
 ## Scripts Used
 
@@ -238,7 +238,7 @@ Use these IDs to reference specific components in test criteria:
 - C4: Solution outline agent (solution-outline-agent)
 - C5: Plugin outline extension (ext-outline-plugin) ← internal skill loaded by C4
 - C6: Task planning agent (task-plan-agent)
-- C7: Task planning skill (phase-3-plan)
+- C7: Task planning skill (phase-4-plan)
 ```
 
 ## Usage

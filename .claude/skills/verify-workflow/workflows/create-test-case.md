@@ -37,8 +37,8 @@ AskUserQuestion:
   question: "Which phase(s) should be verified?"
   header: "Phases"
   options:
-    - label: "2-outline" description: "Verify solution outline only"
-    - label: "3-plan" description: "Verify task planning only"
+    - label: "3-outline" description: "Verify solution outline only"
+    - label: "4-plan" description: "Verify task planning only"
     - label: "both" description: "Verify outline and planning"
 ```
 

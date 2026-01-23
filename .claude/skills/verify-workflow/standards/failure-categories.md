@@ -25,7 +25,7 @@ For each failure category, trace backwards through the component chain to identi
 |----------|---------------|
 | `solution_outline.md` | `manage-solution-outline` skill/script |
 | `config.toon` | `phase-1-init` or `manage-config` |
-| `TASK-*.toon` | `phase-3-plan` or `manage-tasks` |
+| `TASK-*.toon` | `phase-4-plan` or `manage-tasks` |
 | `references.toon` | `manage-references` skill/script |
 
 ### Schema Violation
@@ -51,7 +51,7 @@ Check:
 **Trace to**: Component that selects or filters components for analysis.
 
 Check:
-- Module detection logic in `phase-2-outline`
+- Module detection logic in `phase-3-outline`
 - Domain filtering in `config.toon`
 - Component selection criteria
 

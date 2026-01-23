@@ -24,7 +24,7 @@ Defines the test case metadata and trigger configuration.
 ```toon
 id: {test-id}
 name: {Human-readable test name}
-workflow_phase: {2-outline|3-plan|2-outline,3-plan}
+workflow_phase: {3-outline|4-plan|3-outline,4-plan}
 
 trigger:
   command: {Command that triggers the workflow}
@@ -45,7 +45,7 @@ cleanup:
 |-------|----------|-------------|
 | `id` | Yes | Unique identifier (kebab-case) |
 | `name` | Yes | Human-readable description |
-| `workflow_phase` | Yes | Phase(s) to verify: `2-outline`, `3-plan`, or `2-outline,3-plan` for both. Passed to collect-artifacts.py `--phases` parameter. Tasks are only collected when `3-plan` is included. |
+| `workflow_phase` | Yes | Phase(s) to verify: `3-outline`, `4-plan`, or `3-outline,4-plan` for both. Passed to collect-artifacts.py `--phases` parameter. Tasks are only collected when `4-plan` is included. |
 | `trigger.command` | Yes | Command to execute |
 | `trigger.args` | No | Arguments for the command |
 | `setup_commands` | No | Commands to run before trigger |

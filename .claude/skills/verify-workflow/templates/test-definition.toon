@@ -3,7 +3,7 @@
 
 id: {test-id}
 name: {Human-readable test name}
-workflow_phase: 2-outline
+workflow_phase: 3-outline
 
 trigger:
   command: /plan-manage
