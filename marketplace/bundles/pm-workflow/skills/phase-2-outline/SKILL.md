@@ -24,69 +24,60 @@ allowed-tools: Read, Glob, Grep, Bash
 
 ## Workflow Overview
 
-Steps 1-7 (gather context, create deliverables) → Step 8 (write solution) → Steps 9-11 (finalize)
+```
+Step 1: Analyze Request (iterative) → Step 2: Load Extension → Steps 3-4: Create Deliverables → Step 5: Write Solution → Steps 6-8: Finalize
+```
 
 **Visual diagram**: `standards/workflow-overview.md` (for human reference)
 
 ---
 
-## Step 1: Load Architecture Context
+## Step 1: Analyze Request
 
-Query project architecture BEFORE any codebase exploration. Architecture data is pre-computed and compact (~500 tokens).
+**Purpose**: Ensure requirements are 100% clear before creating deliverables.
 
-**EXECUTE**:
-```bash
-python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture info \
-  --trace-plan-id {plan_id}
-```
+**Workflow**: `workflow/request-analysis.md` (force load)
 
-Output format: `plan-marshall:analyze-project-architecture/standards/client-api.md`
+This iterative workflow:
+1. Loads architecture context
+2. Loads domain skills for each configured domain
+3. Analyzes request for: correctness, completeness, consistency, non-duplication, ambiguity
+4. Maps requirements to architecture (modules, feasibility, scope)
+5. Uses AskUserQuestion to clarify any issues
+6. Updates request.md with clarifications
+7. Loops until confidence = 100%
 
-**If status=error or architecture not found**: Return error and abort:
+**Execute the complete request-analysis workflow** before proceeding.
+
+**Output** (from request-analysis workflow):
 ```toon
-status: error
-message: Run /marshall-steward first
+status: success
+confidence: 100
+iterations: {count}
+domains: [{detected domains}]
+module_mapping:
+  - requirement: "{req1}"
+    modules: [{module1}]
+scope_estimate: {Small|Medium|Large}
+```
+
+**If confidence < 100% after max iterations**: Return error for manual review.
+
+**Log**:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  work {plan_id} INFO "[STEP-1] (pm-workflow:phase-2-outline) Request analysis complete. Confidence: 100%. Domains: {domains}"
 ```
 
 ---
 
-## Step 2: Load and Understand Requirements
+## Step 2: Load Outline Extension
 
-Load the request document and extract actionable requirements.
-
-**EXECUTE**:
-```bash
-python3 .plan/execute-script.py pm-workflow:manage-plan-documents:manage-plan-documents request read \
-  --plan-id {plan_id}
-```
-
-Output format: `pm-workflow:manage-plan-documents/documents/request.toon`
-
-**Parse for**:
-- Functional requirements (what to build)
-- Constraints (technology, patterns, compatibility)
-- Explicit test requirements (unit, integration, E2E)
-- Acceptance criteria
-
-**EXECUTE**:
-```bash
-python3 .plan/execute-script.py pm-workflow:manage-config:manage-config read \
-  --plan-id {plan_id}
-```
-
-Output format: `pm-workflow:manage-config`
-
-Extract `domains` array - each deliverable will be assigned a single domain from this array.
-
----
-
-## Step 2.5: Load Outline Extension
-
-For each domain in config.toon, check if an outline extension exists and load it.
+For each domain from Step 1 output, check if an outline extension exists and load it.
 
 **Purpose**: Outline extensions implement a **formal protocol** with defined sections that this workflow calls explicitly at Steps 3 and 4.
 
-**For each domain** from Step 2:
+**For each domain** from Step 1 `domains` array:
 
 **EXECUTE**:
 ```bash
@@ -110,10 +101,9 @@ Skill: {resolved_extension}
 ```
 
 The extension implements these **protocol sections** (called in Steps 3-4):
-- **## Assessment Protocol**: Criteria for simple vs complex workflow selection
-- **## Simple Workflow**: Reference to path-single-workflow.md, domain patterns
-- **## Complex Workflow**: Reference to path-multi-workflow.md, inventory usage
-- **## Discovery Patterns**: Domain-specific Glob/Grep patterns
+- **## Assessment Protocol**: Determine scope and change_type before workflow starts
+- **## Workflow**: Orchestrate complete outline workflow (routes internally based on change_type)
+- **## Discovery Patterns**: Domain-specific Glob/Grep patterns (optional)
 
 **Contract**: `pm-workflow:workflow-extension-api/standards/extensions/outline-extension.md`
 
@@ -123,12 +113,12 @@ The extension implements these **protocol sections** (called in Steps 3-4):
 
 ## Step 3: Assess Complexity (via Extension Protocol)
 
-**If extension loaded (from Step 2.5)**: Call the extension's `## Assessment Protocol` section.
+**If extension loaded (from Step 2)**: Call the extension's `## Assessment Protocol` section.
 
-1. Locate `## Assessment Protocol` in the loaded extension
-2. Follow its `### Load Reference Data` instruction (load reference-tables.md)
-3. Apply `### Workflow Selection Criteria` table to the request
-4. Note any `### Conditional Standards` to layer later
+The extension's Assessment Protocol determines:
+- `change_type`: create, modify, migrate, or refactor
+- Scope of affected components
+- Any conditional standards to load
 
 **If no extension**: Use generic assessment below.
 
@@ -181,71 +171,28 @@ Output format: `plan-marshall:analyze-project-architecture/standards/module-grap
 
 ## Step 4: Execute Workflow (via Extension Protocol)
 
-**If extension loaded (from Step 2.5)**: Call the appropriate workflow section.
+**Purpose**: Call extension to orchestrate complete outline workflow.
 
-Based on Step 3 assessment:
-- If **simple**: Locate `## Simple Workflow` in extension, load its referenced standards (path-single-workflow.md)
-- If **complex**: Locate `## Complex Workflow` in extension, load its referenced standards (path-multi-workflow.md)
+**If extension loaded** (from Step 2):
 
-During deliverable creation, use `## Discovery Patterns` from the extension for file enumeration.
+  Call extension's `## Workflow` section (based on Step 3 assessment).
 
-**If no extension**: Use generic module selection below.
+  Extension orchestrates complete workflow:
+  - Discovery and analysis
+  - Uncertainty resolution + Synthesize clarified request
+  - Call Q-Gate agent (generic, reusable tool)
+  - Build deliverables using affected_files from Q-Gate
+  - Return deliverables
 
----
+  Extension returns deliverables list.
 
-## Step 4a: Synthesize Clarified Request (After Extension Workflow)
+**If no extension** (generic module-based workflow):
 
-**Trigger**: Run after extension workflow completes, if clarifications were collected.
-
-**Purpose**: Generate a synthesized "Clarified Request" that combines the original request with user clarifications.
-
-### Check for Clarifications
-
-Read request.md to check if clarifications were added:
-
-```bash
-python3 .plan/execute-script.py pm-workflow:manage-plan-documents:manage-plan-documents \
-  request read \
-  --plan-id {plan_id} \
-  --section clarifications
-```
-
-**If no clarifications section**: Skip this step.
-
-### Synthesize Clarified Request
-
-If clarifications exist, synthesize a clarified request that:
-1. States the original intent
-2. Lists scope inclusions (what is IN scope based on clarifications)
-3. Lists scope exclusions (what is OUT of scope based on clarifications)
-
-**Synthesis pattern**:
-```markdown
-{Original request intent restated clearly}
-
-**Scope:**
-- {Specific inclusion from clarification 1}
-- {Specific inclusion from clarification 2}
-
-**Exclusions (based on clarifications):**
-- {Exclusion from clarification 1}
-- {Exclusion from clarification 2}
-```
-
-### Store Clarified Request
-
-```bash
-python3 .plan/execute-script.py pm-workflow:manage-plan-documents:manage-plan-documents \
-  request clarify \
-  --plan-id {plan_id} \
-  --clarified-request "{synthesized clarified request}"
-```
-
-**Note**: If the extension workflow already stored a clarified request, this step updates it with any additional synthesis.
+  Run module-based workflow (Steps 4a-4d below):
 
 ---
 
-## Step 4b: Select Target Modules (Generic/Module-Based Domains)
+### Step 4a: Select Target Modules (Generic/Module-Based Domains)
 
 For simple tasks: identify the single affected module. For complex tasks: select module for each sub-task.
 
@@ -289,7 +236,7 @@ python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:archi
 
 ---
 
-## Step 5: Determine Package Placement
+### Step 4b: Determine Package Placement
 
 For each selected module, determine where new code belongs.
 
@@ -319,7 +266,7 @@ python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:archi
 
 ---
 
-## Step 6: Create Deliverables with Profiles List
+### Step 4c: Create Deliverables with Profiles List
 
 Create deliverables with module context and a profiles list.
 
@@ -357,7 +304,7 @@ The template enforces:
 - Verification section (command and criteria)
 - Success Criteria section
 
-### Step 6b: Validate Deliverables Against Request
+### Validate Deliverables Against Request
 
 Before writing solution document, verify each deliverable:
 
@@ -373,7 +320,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 ---
 
-## Step 7: Create IT Deliverable (Optional)
+### Step 4d: Create IT Deliverable (Optional)
 
 If integration tests are needed, create a **separate deliverable** targeting the IT module.
 
@@ -414,11 +361,15 @@ IT deliverables use the same template as implementation deliverables.
 - IT depends on implementation - set `depends:` to reference the implementation deliverable
 - IT has only `implementation` profile - IT code is "implementation" of test code
 
+**Return deliverables list** from generic workflow.
+
 ---
 
-## Step 8: Write Solution Document
+## Step 5: Write Solution Document
 
-Write the solution document using heredoc.
+**Purpose**: Write solution_outline.md using deliverables from extension (or generic workflow).
+
+Write the solution document using heredoc with deliverables from Step 4.
 
 **Skill**: `pm-workflow:manage-solution-outline` (force load)
 
@@ -469,7 +420,7 @@ Validation runs automatically on every write.
 
 ---
 
-## Step 9: Set Detected Domains
+## Step 6: Set Detected Domains
 
 **EXECUTE**:
 ```bash
@@ -481,7 +432,7 @@ This is an **intelligent decision output** - not a copy of marshal.json domains,
 
 ---
 
-## Step 10: Record Issues as Lessons
+## Step 7: Record Issues as Lessons
 
 **EXECUTE**:
 ```bash
@@ -496,7 +447,7 @@ python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lesson add \
 
 ---
 
-## Step 11: Return Results
+## Step 8: Return Results
 
 Return structured output:
 ```toon

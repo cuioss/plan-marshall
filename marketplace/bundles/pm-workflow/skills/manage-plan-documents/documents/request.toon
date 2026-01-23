@@ -3,15 +3,19 @@ name: request
 file: request.md
 template: templates/request.md
 
-fields[5]{name,type,required,default}:
+fields[7]{name,type,required,default}:
 title,string,true,
 source,enum(description|lesson|issue),true,
 source_id,string,false,
 body,text,true,
 context,text,false,
+clarifications,text,false,
+clarified_request,text,false,
 
-sections[4]{name,heading,order}:
+sections[6]{name,heading,order}:
 title,# Request: {title},1
 metadata,source: {source},2
 body,## Original Input,3
 context,## Context,4
+clarifications,## Clarifications,5
+clarified_request,## Clarified Request,6

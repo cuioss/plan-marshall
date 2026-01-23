@@ -105,7 +105,7 @@ The decision.log receives all detailed findings via the logging commands.
 Each finding MUST be logged as an assessment via `manage-plan-artifacts`. Hash IDs are automatically generated.
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
+python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:artifact_store \
   assessment add {plan_id} {file_path} {certainty} {confidence} \
   --agent {agent_name} --detail "{reasoning}" --evidence "{evidence}"
 ```

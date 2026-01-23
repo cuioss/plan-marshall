@@ -359,30 +359,84 @@ certain_exclude = original_certain_exclude + resolved_to_exclude
 uncertain = 0  # All resolved
 ```
 
-### Step 4b: Q-Gate Validation (Optional Final Safety Net)
+### Step 5: Synthesize Clarified Request
 
-**Trigger**: Run after uncertainty resolution, if `certain_include > 0`.
+**Trigger**: Run after uncertainty resolution (Step 4a), if clarifications were collected.
 
-**Purpose**: Validate remaining CERTAIN_INCLUDE assessments to catch false positives that uncertainty resolution didn't cover.
+**Purpose**: Consolidate user clarifications into a clarified request that Q-Gate will use for validation.
 
-#### Spawn Q-Gate Agent
+If clarifications were collected in Step 4a.5, synthesize them into a clarified request:
+
+1. Read the original request and clarifications
+2. Synthesize a clarified request that:
+   - States the original intent
+   - Lists scope inclusions (what is IN scope based on clarifications)
+   - Lists scope exclusions (what is OUT of scope based on clarifications)
+
+**Synthesis pattern**:
+```markdown
+{Original request intent restated clearly}
+
+**Scope:**
+- {Specific inclusion from clarification 1}
+- {Specific inclusion from clarification 2}
+
+**Exclusions (based on clarifications):**
+- {Exclusion from clarification 1}
+- {Exclusion from clarification 2}
+```
+
+Write the synthesized clarified request:
+
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-plan-documents:manage-plan-documents \
+  request clarify \
+  --plan-id {plan_id} \
+  --clarified-request "{synthesized clarified request}"
+```
+
+**Note**: If Step 4a.5 already wrote clarifications, this step updates with the synthesized version. If no uncertainties were resolved, this step can be skipped.
+
+### Step 6: Call Q-Gate Agent
+
+**Trigger**: ALWAYS run when `certain_include > 0` from Step 4.
+
+**Purpose**: Validate CERTAIN_INCLUDE assessments using generic Q-Gate agent (reusable across domains).
+
+**Step 6a**: Resolve domain skills for validation:
+
+For each domain in config.toon, resolve the domain skill:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+  resolve-workflow-skill --domain {domain} --profile implementation
+```
+
+Collect the returned skill notations into an array.
+
+**Step 6b**: Spawn Q-Gate agent with resolved skills:
 
 ```
 Task: pm-workflow:q-gate-validation-agent
   Input:
     plan_id: {plan_id}
-    domains: {domains from config.toon}
+    skills: [{resolved_skill_1}, {resolved_skill_2}, ...]
   Output:
     confirmed_count: Files passing validation
     filtered_count: False positives caught
     assessments_validated: Count of validated assessments
 ```
 
-#### Process Results
+**What Q-Gate Does**:
+- Loads provided domain skills for validation context
+- Reads clarified request (from Step 5) or original request
+- Validates each CERTAIN_INCLUDE assessment using validation criteria
+- Writes CONFIRMED/FILTERED assessments to assessments.jsonl
+- Persists affected_files to references.toon (only Q-Gate knows final decisions)
+- Logs its own lifecycle (agent logs itself, not orchestrator)
+- Returns statistics
 
-The agent validates each CERTAIN_INCLUDE assessment and logs to decision.log:
-- `CONFIRMED`: Include in affected_files
-- `FILTERED`: Exclude (false positive)
+**Process Results**:
 
 Update counts after Q-Gate:
 ```
@@ -390,51 +444,23 @@ final_affected = confirmed_count
 false_positives = filtered_count
 ```
 
-#### Error Handling
+**Error Handling**:
 
 **CRITICAL**: If Q-Gate agent fails, **HALT the workflow** - do not proceed with potentially incorrect affected_files.
 
-### Step 4c: Verify Assessment Logging
+### Step 7: Build Deliverables
 
-Each analysis agent logs its own assessments during execution. The parent workflow verifies the audit trail exists.
+**Purpose**: Group CONFIRMED files into domain-specific deliverables.
 
-**Validation**: After agents complete, verify assessments.jsonl has entries:
-
-```bash
-python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
-  assessment query {plan_id}
-```
-
-Check that total_count matches expected number of analyzed files.
-
-Expected assessment types:
-1. Analysis assessments: certainty in {CERTAIN_INCLUDE, CERTAIN_EXCLUDE, UNCERTAIN}
-2. Resolution assessments (if any uncertainties resolved): confidence 85%, detail starts with "User clarified"
-
-If count mismatches, agent execution failed to log properly.
-
-### Step 5: Link Affected Files
-
-Read CERTAIN_INCLUDE assessments from assessments.jsonl and persist for execute phase:
+Read affected_files from references.toon (persisted by Q-Gate in Step 6):
 
 ```bash
-# Read assessments with certainty=CERTAIN_INCLUDE
-python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
-  assessment query {plan_id} --certainty CERTAIN_INCLUDE
-```
-
-Extract `file_paths` from the output, then persist:
-
-```bash
-python3 .plan/execute-script.py pm-workflow:manage-references:manage-references add-list \
+python3 .plan/execute-script.py pm-workflow:manage-references:manage-references get \
   --plan-id {plan_id} \
-  --field affected_files \
-  --values "{comma-separated-file_paths-from-CERTAIN_INCLUDE}"
+  --field affected_files
 ```
 
-**Note**: UNCERTAIN assessments require user clarification before inclusion. See Uncertainty Resolution (Part 1d in plan).
-
-### Step 5.5: Compute Deliverable Dependencies (if available)
+**Compute Deliverable Dependencies** (if available):
 
 Check if dependency analysis was performed:
 
@@ -443,8 +469,6 @@ python3 .plan/execute-script.py pm-workflow:manage-files:manage-files exists \
   --plan-id {plan_id} \
   --file work/dependency_analysis.toon
 ```
-
-Parse the TOON output and check `exists: true/false` to determine if the file is present.
 
 If `exists: true`, read it to determine deliverable ordering:
 
@@ -458,14 +482,20 @@ python3 .plan/execute-script.py pm-workflow:manage-files:manage-files read \
 - Components with no dependencies in scope: `depends: none`
 - Components depending on earlier deliverables: `depends: N` (deliverable number)
 
-**Ordering Principle**: Primary affected components should be processed before their dependents. When a dependent component references a primary component, the dependent's deliverable should have `depends: N` where N is the primary's deliverable number.
+**Ordering Principle**: Primary affected components should be processed before their dependents.
 
-### Step 6: Build Deliverables
+**Group files** using domain-specific patterns (e.g., by bundle for plugins, ~5-8 files per deliverable).
 
-Create deliverables from affected files, grouped by bundle (or ~5-8 files per deliverable).
+Create deliverables list with metadata, profiles, and verification using the Deliverable Template below.
 
 **Execution Skills** (deliverables delegate to these):
 - `pm-plugin-development:plugin-maintain` - For modifying existing components
+
+### Step 8: Return Deliverables
+
+Return deliverables list to phase-2-outline for solution document creation.
+
+The extension's workflow is complete. Control returns to phase-2-outline which will write solution_outline.md using the deliverables.
 
 ---
 

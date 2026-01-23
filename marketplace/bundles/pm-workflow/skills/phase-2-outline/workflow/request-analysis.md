@@ -1,0 +1,465 @@
+# Request Analysis Workflow
+
+Iterative workflow for analyzing and refining the request until requirements are 100% clear.
+
+## Purpose
+
+Before creating deliverables, ensure the request is:
+- **Correct**: Requirements are technically valid
+- **Complete**: All necessary information is present
+- **Consistent**: No contradictory requirements
+- **Non-duplicative**: No redundant requirements
+- **Unambiguous**: Clear, single interpretation possible
+
+---
+
+## Input Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `plan_id` | string | Yes | Plan identifier |
+| `feedback` | string | No | User feedback from review (for revision iterations) |
+
+**Feedback handling**: When `feedback` is provided, it represents user feedback from a previous outline review. This feedback:
+- Takes priority in the analysis (addresses user's explicit concerns first)
+- Is logged at workflow start
+- Is incorporated into the clarified request
+
+---
+
+## Workflow
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    REQUEST ANALYSIS LOOP                        │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  Step 1: Load Architecture Context                              │
+│      ↓                                                          │
+│  Step 2: Load Request                                           │
+│      ↓                                                          │
+│  Step 3: Analyze Request Quality                                │
+│      ↓                                                          │
+│  Step 4: Analyze Request in Architecture Context                │
+│      ↓                                                          │
+│  Step 5: Evaluate Confidence                                    │
+│      │                                                          │
+│      ├── confidence = 100% → EXIT LOOP (proceed to outline)     │
+│      │                                                          │
+│      └── confidence < 100% → Step 6: Clarify with User          │
+│              ↓                                                  │
+│          Step 7: Update Request                                 │
+│              ↓                                                  │
+│          (loop back to Step 3)                                  │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Step 1: Load Architecture Context
+
+Query project architecture BEFORE any analysis. Architecture data is pre-computed and compact (~500 tokens).
+
+**EXECUTE**:
+```bash
+python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture info \
+  --trace-plan-id {plan_id}
+```
+
+Output format: `plan-marshall:analyze-project-architecture/standards/client-api.md`
+
+**If status=error or architecture not found**: Return error and abort:
+```toon
+status: error
+message: Run /marshall-steward first
+```
+
+**Log**:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  work {plan_id} INFO "[REQUEST-ANALYSIS:1] (pm-workflow:phase-2-outline) Loaded Architecture Context"
+```
+
+**If feedback provided**, log it:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  work {plan_id} INFO "[REQUEST-ANALYSIS:1] (pm-workflow:phase-2-outline) Processing with feedback: {feedback}"
+```
+
+---
+
+## Step 2: Load Request
+
+Load the request document.
+
+**EXECUTE**:
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-plan-documents:manage-plan-documents request read \
+  --plan-id {plan_id}
+```
+
+Output format: `pm-workflow:manage-plan-documents/documents/request.toon`
+
+**Extract**:
+- `title`: Request title
+- `description`: Full request text
+- `clarifications`: Any existing clarifications (from prior iterations)
+- `clarified_request`: Synthesized request (if exists from prior iterations)
+
+**Log**:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  work {plan_id} INFO "[REQUEST-ANALYSIS:2] (pm-workflow:phase-2-outline) Loaded request: {title}"
+```
+
+---
+
+## Step 3: Analyze Request Quality
+
+Evaluate the request against five quality dimensions.
+
+### 3.0 Feedback Analysis (if feedback provided)
+
+**When `feedback` parameter is present**, categorize it to determine handling:
+
+| Feedback Type | Example | Action |
+|---------------|---------|--------|
+| **Requirement gap** | "You missed that it also needs X" | Treat as Completeness issue → clarify with user |
+| **Scope correction** | "Module Y shouldn't be affected" | Pass to outline creation |
+| **Approach preference** | "Use pattern Z instead" | Pass to outline creation |
+
+**Finding format**:
+```
+FEEDBACK_TYPE: {REQUIREMENT_GAP|SCOPE_CORRECTION|APPROACH_PREFERENCE}
+  - Issue raised: {feedback summary}
+  - Action: {clarify_request | pass_to_outline}
+```
+
+**Note**: Only REQUIREMENT_GAP feedback affects request analysis (surfaces as Completeness issue). Other feedback types are passed through to outline creation without blocking request confidence.
+
+### 3.1 Correctness
+
+**Check**: Are requirements technically valid?
+
+| Aspect | Check |
+|--------|-------|
+| Technology references | Do mentioned technologies/frameworks exist and apply? |
+| API references | Are referenced APIs/methods valid in the codebase? |
+| Pattern references | Are mentioned patterns appropriate for the domain? |
+| Constraint validity | Are constraints achievable (not mutually exclusive)? |
+
+**Finding format**:
+```
+CORRECTNESS: {PASS|ISSUE}
+  - {specific finding with evidence}
+```
+
+### 3.2 Completeness
+
+**Check**: Is all necessary information present?
+
+| Aspect | Check |
+|--------|-------|
+| Scope clarity | Is it clear what IS and IS NOT in scope? |
+| Success criteria | Are acceptance criteria defined or inferrable? |
+| Test requirements | Are testing expectations stated (or can be inferred from domain)? |
+| Dependencies | Are prerequisite changes or dependencies mentioned? |
+
+**Finding format**:
+```
+COMPLETENESS: {PASS|MISSING}
+  - {what is missing and why it matters}
+```
+
+### 3.3 Consistency
+
+**Check**: Are requirements internally consistent?
+
+| Aspect | Check |
+|--------|-------|
+| No contradictions | Requirements don't conflict with each other |
+| Aligned constraints | Technology choices don't conflict |
+| Coherent scope | All parts work toward same goal |
+
+**Finding format**:
+```
+CONSISTENCY: {PASS|CONFLICT}
+  - {conflicting requirements with explanation}
+```
+
+### 3.4 Non-Duplication
+
+**Check**: Are there redundant requirements?
+
+| Aspect | Check |
+|--------|-------|
+| No repeated asks | Same thing not requested multiple ways |
+| No overlapping scope | Requirements don't cover same ground differently |
+
+**Finding format**:
+```
+DUPLICATION: {PASS|REDUNDANT}
+  - {duplicated requirements and recommendation}
+```
+
+### 3.5 Ambiguity
+
+**Check**: Is there only one valid interpretation?
+
+| Aspect | Check |
+|--------|-------|
+| Clear terminology | Domain terms are unambiguous |
+| Specific scope | "All X" or "some X" is clear |
+| Measurable criteria | Success is objectively determinable |
+| Clear boundaries | Where changes start/stop is explicit |
+
+**Finding format**:
+```
+AMBIGUITY: {PASS|UNCLEAR}
+  - {ambiguous element and possible interpretations}
+```
+
+---
+
+## Step 4: Analyze Request in Architecture Context
+
+With architecture loaded (Step 1), analyze how the request maps to the codebase.
+
+### 4.1 Module Mapping
+
+**Question**: Which modules are affected by this request?
+
+**EXECUTE**:
+```bash
+python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture modules \
+  --trace-plan-id {plan_id}
+```
+
+For each requirement, identify candidate modules:
+- Does the request mention specific modules?
+- Does the request mention functionality that maps to known module responsibilities?
+- Are there implicit module dependencies?
+
+**Finding format**:
+```
+MODULE_MAPPING: {CLEAR|NEEDS_CLARIFICATION}
+  - Requirement: "{requirement text}"
+  - Candidate modules: [{module1}, {module2}]
+  - Confidence: {percentage}
+  - Reason: {why these modules, or why unclear}
+```
+
+### 4.2 Feasibility Check
+
+**Question**: Can this request be implemented given the architecture?
+
+| Aspect | Check |
+|--------|-------|
+| Module boundaries | Does request respect existing module boundaries? |
+| Dependency direction | Does request respect dependency flow? |
+| Extension points | Are there appropriate extension points for the change? |
+
+**Finding format**:
+```
+FEASIBILITY: {FEASIBLE|CONCERN}
+  - {concern and architectural constraint}
+```
+
+### 4.3 Scope Size Estimation
+
+**Question**: What is the approximate scope?
+
+| Size | Criteria |
+|------|----------|
+| Small | 1 module, < 5 files |
+| Medium | 1-2 modules, 5-15 files |
+| Large | 3+ modules, 15+ files |
+| Needs decomposition | Cross-cutting, unclear boundaries |
+
+**Finding format**:
+```
+SCOPE_ESTIMATE: {Small|Medium|Large|Needs decomposition}
+  - Modules affected: {count}
+  - Estimated files: {range}
+  - Rationale: {brief explanation}
+```
+
+---
+
+## Step 5: Evaluate Confidence
+
+Aggregate findings from Steps 3-4 into confidence score.
+
+### Confidence Calculation
+
+**If feedback was provided** (revision iteration):
+
+| Dimension | Weight | Score |
+|-----------|--------|-------|
+| Feedback addressed | 30% | 100 if CLEAR and addressed, 0 if unresolved |
+| Correctness | 15% | 100 if PASS, 0 if ISSUE |
+| Completeness | 15% | 100 if PASS, 50 if minor missing, 0 if major missing |
+| Consistency | 15% | 100 if PASS, 0 if CONFLICT |
+| Ambiguity | 15% | 100 if PASS, 0 if UNCLEAR |
+| Module Mapping | 10% | Use confidence from Step 4.1 |
+
+**If no feedback** (initial analysis):
+
+| Dimension | Weight | Score |
+|-----------|--------|-------|
+| Correctness | 20% | 100 if PASS, 0 if ISSUE |
+| Completeness | 20% | 100 if PASS, 50 if minor missing, 0 if major missing |
+| Consistency | 20% | 100 if PASS, 0 if CONFLICT |
+| Non-Duplication | 10% | 100 if PASS, 80 if REDUNDANT |
+| Ambiguity | 20% | 100 if PASS, 0 if UNCLEAR |
+| Module Mapping | 10% | Use confidence from Step 4.1 |
+
+**Confidence = weighted sum**
+
+### Decision
+
+```
+IF confidence == 100%:
+  Log: "[REQUEST-ANALYSIS:5] Request analysis complete. Confidence: 100%"
+  RETURN: proceed_to_outline = true
+
+ELSE:
+  Log: "[REQUEST-ANALYSIS:5] Request needs clarification. Confidence: {confidence}%"
+  CONTINUE to Step 6
+```
+
+**Log**:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  work {plan_id} INFO "[REQUEST-ANALYSIS:5] (pm-workflow:phase-2-outline) Confidence: {confidence}%. Issues: {issue_summary}"
+```
+
+---
+
+## Step 6: Clarify with User
+
+For each issue found in Steps 3-4, formulate a clarification question.
+
+### Question Formulation
+
+**From Correctness issues**: "Is {X} the correct {technology/API/pattern}?"
+**From Completeness issues**: "What should happen when {missing scenario}?"
+**From Consistency issues**: "You mentioned both {A} and {B} which conflict. Which takes priority?"
+**From Ambiguity issues**: "When you say {ambiguous term}, do you mean {interpretation A} or {interpretation B}?"
+**From Module Mapping issues**: "Should this change affect {module A}, {module B}, or both?"
+
+### Ask User
+
+Use AskUserQuestion with specific options derived from the analysis:
+
+```
+AskUserQuestion:
+  questions:
+    - question: "{formulated question based on issue}"
+      header: "{dimension}" # e.g., "Scope", "Behavior", "Priority"
+      options:
+        - label: "{option 1}"
+          description: "{what this option means for implementation}"
+        - label: "{option 2}"
+          description: "{what this option means for implementation}"
+      multiSelect: false
+```
+
+**Guidelines**:
+- Ask at most 4 questions per iteration (AskUserQuestion limit)
+- Prioritize: Correctness > Consistency > Completeness > Ambiguity > Duplication
+- Provide concrete examples from the codebase when possible
+
+---
+
+## Step 7: Update Request
+
+After receiving user answers, update request.md with clarifications.
+
+### 7.1 Record Clarifications
+
+**EXECUTE**:
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-plan-documents:manage-plan-documents \
+  request clarify \
+  --plan-id {plan_id} \
+  --clarifications "{formatted Q&A pairs}"
+```
+
+**Format for clarifications**:
+```
+Q: {question asked}
+A: {user's answer}
+```
+
+### 7.2 Synthesize Clarified Request
+
+If significant clarifications were made, synthesize an updated request:
+
+**EXECUTE**:
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-plan-documents:manage-plan-documents \
+  request clarify \
+  --plan-id {plan_id} \
+  --clarified-request "{synthesized request incorporating clarifications}"
+```
+
+**Synthesis pattern**:
+```
+{Original intent restated clearly}
+
+**Scope:**
+- {Specific inclusion from clarification}
+- {Specific inclusion from clarification}
+
+**Exclusions:**
+- {Specific exclusion from clarification}
+
+**Constraints:**
+- {Constraint from clarification}
+```
+
+### 7.3 Log and Loop
+
+**Log**:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  work {plan_id} INFO "[REQUEST-ANALYSIS:7] (pm-workflow:phase-2-outline) Updated request with {N} clarifications. Returning to analysis."
+```
+
+**Loop**: Return to Step 3 with updated request.
+
+---
+
+## Output
+
+When confidence reaches 100%, return:
+
+```toon
+status: success
+confidence: 100
+iterations: {count}
+domains: [{detected domains}]
+module_mapping:
+  - requirement: "{req1}"
+    modules: [{module1}]
+  - requirement: "{req2}"
+    modules: [{module2}]
+scope_estimate: {Small|Medium|Large}
+outline_guidance: [{feedback items for outline creation, if any}]
+```
+
+This output feeds into the next phase (extension loading and deliverable creation).
+
+**outline_guidance**: Contains SCOPE_CORRECTION and APPROACH_PREFERENCE feedback (from revision iterations) that should influence outline creation but didn't affect request confidence.
+
+---
+
+## Error Handling
+
+| Error | Action |
+|-------|--------|
+| Architecture not found | Abort with "Run /marshall-steward first" |
+| Request not found | Abort with "Request document missing" |
+| Max iterations reached (5) | Return with current confidence, flag for manual review |

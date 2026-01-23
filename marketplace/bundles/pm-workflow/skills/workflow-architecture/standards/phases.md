@@ -105,12 +105,22 @@ The pm-workflow bundle implements a 5-phase execution model for structured task 
 │                                                                             │
 │  STEPS:                                                                     │
 │  ──────                                                                     │
-│  1. Load manage-solution-outline skill (structure/examples)                 │
-│  2. Read request.md and config.toon                                         │
-│  3. Load project architecture via client-api (*)                            │
-│  4. Analyze codebase with architecture context (Glob, Grep, Read)           │
-│  5. Create deliverables with module/domain/profiles list                    │
-│  6. Write solution_outline.md                                               │
+│  1. Load architecture context                                               │
+│  2. Load request and config                                                 │
+│  3. Load outline extension (if available)                                   │
+│  4. Execute workflow:                                                       │
+│     • Extension orchestrates (single call):                                 │
+│       - Discovery and analysis                                              │
+│       - Uncertainty resolution + Synthesize clarified request               │
+│       - Call Q-Gate agent (generic, reusable tool)                          │
+│       - Build deliverables                                                  │
+│       - Return deliverables                                                 │
+│     • Generic workflow (if no extension):                                   │
+│       - Module selection                                                    │
+│       - Package placement                                                   │
+│       - Deliverable creation                                                │
+│  5. Write solution_outline.md (using deliverables from step 4)              │
+│  6. Set domains, record lessons, return results                             │
 │  7. ──────────────────────────────────────────────────                      │
 │     │  ** USER REVIEW GATE **                                               │
 │     │  User must approve before proceeding to 3-plan phase                  │
@@ -376,6 +386,54 @@ TRANSITION TRIGGERS:
 │  │  • Loads triage extensions for each domain                           │  │
 │  │  • Applies domain-specific verification                              │  │
 │  └──────────────────────────────────────────────────────────────────────┘  │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Q-Gate Validation Agent
+
+Q-Gate is a GENERIC AGENT TOOL that extensions call during Phase 2 (Outline) to validate assessments.
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                                                                             │
+│                        Q-GATE VALIDATION AGENT                              │
+│                                                                             │
+│  TYPE: Generic agent tool (NOT a workflow step)                             │
+│  CALLED BY: Extensions during their workflow                                │
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │                                                                     │   │
+│  │  INPUT                           OUTPUT                             │   │
+│  │  ═════                           ══════                             │   │
+│  │                                                                     │   │
+│  │  • plan_id                       • CONFIRMED assessments            │   │
+│  │  • domains                       • FILTERED assessments             │   │
+│  │  • CERTAIN_INCLUDE assessments   • affected_files in references.toon│   │
+│  │                                  • Statistics (confirmed/filtered)  │   │
+│  │                                                                     │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+│  STEPS:                                                                     │
+│  ──────                                                                     │
+│  1. Load domain skills (via resolve-workflow-skill)                         │
+│  2. Read clarified request (or original request)                            │
+│  3. Validate each CERTAIN_INCLUDE assessment:                               │
+│     • Output Ownership - Component documents another's output               │
+│     • Consumer vs Producer - Component consumes, not produces               │
+│     • Request Intent Match - Modification fulfills request                  │
+│     • Duplicate Detection - Not already covered                             │
+│  4. Write CONFIRMED/FILTERED assessments to assessments.jsonl               │
+│  5. Persist affected_files to references.toon                               │
+│  6. Log lifecycle and return statistics                                     │
+│                                                                             │
+│  WHY GENERIC:                                                               │
+│  ───────────                                                                │
+│  • Same validation criteria across all domains                              │
+│  • Reusable by all domain extensions                                        │
+│  • Loads domain skills for context (but validation logic is generic)        │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```

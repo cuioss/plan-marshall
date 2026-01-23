@@ -23,7 +23,7 @@ This extension is relevant when:
 
 ## Assessment Protocol
 
-**Called by**: phase-2-outline Step 3
+**Called by**: phase-2-outline Step 3 (Assess Complexity)
 **Purpose**: Determine which artifacts and bundles are affected, extract change_type
 
 ### Step 1: Spawn Inventory Assessment Agent
@@ -158,7 +158,7 @@ IF resolve-dependencies returns error or fails:
 
 ## Workflow
 
-**Called by**: phase-2-outline Step 4
+**Called by**: phase-2-outline Step 4 (Execute Workflow)
 **Purpose**: Create deliverables based on change_type
 
 ### Load Workflow

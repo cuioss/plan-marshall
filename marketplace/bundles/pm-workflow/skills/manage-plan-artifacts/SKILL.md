@@ -63,17 +63,17 @@ Unified storage for lessons and bugs. All types optionally promotable.
 
 ```bash
 # Add assessment
-python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
+python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:artifact_store \
   assessment add {plan_id} {file_path} {certainty} {confidence} \
   [--agent AGENT] [--detail DETAIL] [--evidence EVIDENCE]
 
 # Query assessments
-python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
+python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:artifact_store \
   assessment query {plan_id} [--certainty C] [--min-confidence N] \
   [--max-confidence N] [--file-pattern PATTERN]
 
 # Get single assessment
-python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
+python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:artifact_store \
   assessment get {plan_id} {hash_id}
 ```
 
@@ -81,26 +81,26 @@ python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifac
 
 ```bash
 # Add finding
-python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
+python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:artifact_store \
   finding add {plan_id} {type} {title} --detail DETAIL \
   [--file-path PATH] [--line N] [--component C] \
   [--module M] [--rule R] [--severity S]
 
 # Query findings
-python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
+python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:artifact_store \
   finding query {plan_id} [--type T] [--resolution R] \
   [--promoted BOOL] [--file-pattern PATTERN]
 
 # Get single finding
-python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
+python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:artifact_store \
   finding get {plan_id} {hash_id}
 
 # Resolve finding
-python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
+python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:artifact_store \
   finding resolve {plan_id} {hash_id} {resolution} [--detail DETAIL]
 
 # Promote finding
-python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
+python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:artifact_store \
   finding promote {plan_id} {hash_id} {promoted_to}
 ```
 

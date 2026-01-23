@@ -65,83 +65,158 @@ Every outline extension MUST implement these sections:
 
 | Section | Called By | Purpose | Required |
 |---------|-----------|---------|----------|
-| `## Assessment Protocol` | Step 3 | Criteria for simple vs complex | **Yes** |
-| `## Simple Workflow` | Step 4 (if simple) | Reference to path-single-workflow.md | **Yes** |
-| `## Complex Workflow` | Step 4 (if complex) | Reference to path-multi-workflow.md | **Yes** |
-| `## Discovery Patterns` | Both workflows | Domain-specific Glob/Grep patterns | **Yes** |
-| `## Domain Detection` | Step 2.5 | When this domain is relevant | No |
-
----
-
-## Section: Domain Detection
-
-**Called by**: phase-2-outline Step 2.5
-**Purpose**: Determine if this domain is relevant to the current request.
-
-**Required content**: List of conditions when this extension is relevant.
-
-**Default behavior**: Domain is assumed relevant if configured in plan's config.toon.
+| `## Assessment Protocol` | phase-2-outline Step 3 | Determine scope and change_type | **Yes** |
+| `## Workflow` | phase-2-outline Step 4 | Orchestrate complete outline workflow | **Yes** |
+| `## Discovery Patterns` | Within workflow | Domain-specific Glob/Grep patterns | No |
 
 ---
 
 ## Section: Assessment Protocol
 
-**Called by**: phase-2-outline Step 3
-**Purpose**: Determine which workflow applies (simple vs complex)
+**Called by**: phase-2-outline Step 3 (Assess Complexity)
+**Purpose**: Determine scope and change_type BEFORE extension workflow starts
 
 **Required subsections**:
-- `### Load Reference Data` - Load standards/reference-tables.md
-- `### Workflow Selection Criteria` - Table of indicators → simple/complex
-- `### Conditional Standards` - Table of conditions → additional standards to layer
+- `### Load Reference Data` - Load domain-specific reference data (optional)
+- `### Scope Determination` - Identify affected artifacts and bundles
+- `### Change Type Classification` - Classify as create, modify, migrate, or refactor
+
+**Output**:
+- `change_type` - One of: create, modify, migrate, refactor
+- `work/inventory_filtered.toon` - Persisted inventory with scope and file paths
 
 ---
 
-## Section: Simple Workflow
+## Section: Workflow (Complete Orchestration)
 
-**Called by**: phase-2-outline Step 4 (when assessment = simple)
-**Purpose**: Create deliverables for isolated changes
+**Called by**: phase-2-outline Step 4 (Execute Workflow)
+**Purpose**: Orchestrate complete outline workflow from discovery to deliverables
+
+Extensions orchestrate the COMPLETE workflow in a single call. NO ping-pong between phase-2-outline and extension.
+
+**Workflow MUST include these steps**:
+
+### a. Discovery and Analysis
+- Find files using domain-specific patterns
+- Spawn domain analysis agents
+- Collect assessments (CERTAIN_INCLUDE, CERTAIN_EXCLUDE, UNCERTAIN)
+
+### b. Uncertainty Resolution
+- Resolve UNCERTAIN assessments via user clarification (if any)
+- Store clarifications via manage-plan-documents
+
+### c. Synthesize Clarified Request
+- Consolidate clarifications into clarified request
+- Use manage-plan-documents API
+
+### d. Call Q-Gate Agent (Generic Tool)
+- Resolve domain skills for validation (resolve-workflow-skill --domain X --profile implementation)
+- Spawn pm-workflow:q-gate-validation-agent with resolved skills
+- Q-Gate loads provided skills, reads clarified request
+- Q-Gate validates assessments, persists affected_files
+- Returns CONFIRMED/FILTERED counts
+
+### e. Build Deliverables
+- Read affected_files from references.toon (persisted by Q-Gate)
+- Apply domain-specific grouping (by bundle, module, etc.)
+- Create deliverables list with metadata, profiles, verification
+
+### f. Return Deliverables
+- Return deliverables list to phase-2-outline
+- phase-2-outline writes solution_outline.md
 
 **Required subsections**:
-- `### Load Workflow` - `Read standards/path-single-workflow.md`
-- `### Domain-Specific Patterns` - Grouping strategy, change type mappings, file paths, verification commands
+- `### Load Persisted Inventory` - Read inventory from assessment phase
+- `### Load Request Text` - Read request for analysis
+- `### Parallel Component Analysis` - Spawn analysis agents
+- `### Aggregate and Validate` - Collect assessment results
+- `### Resolve Uncertainties` - User clarification (if needed)
+- `### Synthesize Clarified Request` - Consolidate clarifications
+- `### Call Q-Gate Agent` - Validate assessments
+- `### Build Deliverables` - Create deliverables from affected_files
+- `### Return Deliverables` - Return to phase-2-outline
 
 ---
 
-## Section: Complex Workflow
+## Section: Discovery Patterns (Optional)
 
-**Called by**: phase-2-outline Step 4 (when assessment = complex)
-**Purpose**: Create deliverables for cross-cutting changes with file enumeration
-
-**Required subsections**:
-- `### Load Workflow` - `Read standards/path-multi-workflow.md`
-- `### Domain-Specific Patterns` - Grouping strategy, inventory script, batch analysis
-
----
-
-## Section: Discovery Patterns
-
-**Called by**: Both workflows during file enumeration
+**Called by**: Workflow during file enumeration
 **Purpose**: Provide domain-specific Glob/Grep patterns for finding affected files
 
-**Required subsections**:
+**Subsections** (if implemented):
 - `### Grep Patterns` - Table of change type → discovery command
 - `### Glob Patterns` - Table of component type → glob pattern
 
 ---
 
-## Section: Uncertainty Resolution (Optional)
+## Q-Gate Agent (Generic Tool)
 
-**Called by**: Domain extension workflow Step 4a (between analysis and aggregation)
+Q-Gate is a GENERIC AGENT TOOL that extensions call during their workflow (Step d).
+
+**Purpose**: Validate CERTAIN_INCLUDE assessments to filter false positives that uncertainty resolution didn't catch.
+
+**How Extensions Call Q-Gate**:
+
+1. First, resolve domain skills:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+  resolve-workflow-skill --domain {domain} --profile implementation
+```
+
+2. Then spawn Q-Gate with resolved skills:
+```
+Task: pm-workflow:q-gate-validation-agent
+  Input:
+    plan_id: {plan_id}
+    skills: [{resolved_skill_1}, {resolved_skill_2}, ...]
+  Output:
+    confirmed_count: Files passing validation
+    filtered_count: False positives caught
+    assessments_validated: Count of validated assessments
+```
+
+**What Q-Gate Does**:
+
+1. Loads domain skills (via resolve-workflow-skill)
+2. Reads clarified request (via manage-plan-documents)
+3. Validates each CERTAIN_INCLUDE assessment using validation criteria:
+   - **Output Ownership**: Component documents another's output
+   - **Consumer vs Producer**: Component consumes, not produces
+   - **Request Intent Match**: Modification fulfills request
+   - **Duplicate Detection**: Not already covered
+4. Writes CONFIRMED/FILTERED assessments to assessments.jsonl
+5. Persists affected_files to references.toon (only Q-Gate knows final decisions)
+6. Logs its own lifecycle (agent logs itself, not orchestrator)
+7. Returns statistics
+
+**Why Generic**:
+- Same validation criteria across all domains
+- Reusable by all extensions
+- Loads domain skills for context (but validation logic is generic)
+
+**Extension Responsibilities**:
+- Call Q-Gate as a tool during workflow (Step d)
+- Use affected_files from Q-Gate (not CERTAIN_INCLUDE assessments)
+- Build deliverables using only CONFIRMED files
+
+**phase-2-outline Responsibilities**:
+- Call extension once (Step 4)
+- Write solution_outline.md with deliverables from extension (Step 5)
+- Set domains, record lessons, return results (Steps 6-8)
+
+---
+
+## Uncertainty Resolution Pattern
+
+**Implemented by**: Domain extension workflow (Step b - between analysis and Q-Gate)
 **Purpose**: Resolve UNCERTAIN findings from analysis agents through user clarification
 
-**Trigger**: Called when any analysis agent returns UNCERTAIN findings (confidence < 80%).
+**Trigger**: Run when analysis agents return UNCERTAIN findings (confidence < 80%).
 
-**Default behavior**: If section not implemented, treat UNCERTAIN as CERTAIN_INCLUDE.
-
-**Required subsections** (if implemented):
-- `### Uncertainty Grouping` - How to group similar uncertainties for efficient questioning
-- `### Question Templates` - AskUserQuestion templates for each uncertainty type
-- `### Resolution Application` - How user answers resolve UNCERTAIN → CERTAIN_INCLUDE or CERTAIN_EXCLUDE
+**Pattern components**:
+- Uncertainty Grouping - How to group similar uncertainties for efficient questioning
+- Question Templates - AskUserQuestion templates for each uncertainty type
+- Resolution Application - How user answers resolve UNCERTAIN → CERTAIN_INCLUDE or CERTAIN_EXCLUDE
 
 ### Uncertainty Grouping
 
@@ -244,10 +319,9 @@ If inventory includes multiple component types (e.g., agents, commands, skills),
 See: `pm-plugin-development:ext-outline-plugin`
 
 This extension demonstrates the protocol pattern with:
-- Assessment Protocol with complexity criteria
-- Simple/Complex workflow routing to path-single/path-multi
-- Discovery Patterns for marketplace components
-- Conditional loading of script-verification.md
+- Assessment Protocol with change_type classification (create, modify, migrate, refactor)
+- Unified Workflow section with internal routing based on change_type
+- Conditional loading of script-verification.md for script changes
 
 ---
 
