@@ -5,9 +5,18 @@ Artifact collection script for workflow verification.
 Collects workflow artifacts for comparison against golden references
 during verification.
 
+Phases (6-phase model):
+    1-init:    config.toon, status.toon, request.md
+    2-refine:  request.md with clarifications, work.log with [REFINE:*] entries
+    3-outline: solution_outline.md, deliverables, references.toon
+    4-plan:    TASK-*.toon files
+    5-execute: Modified files tracked in references.toon
+    6-finalize: Git commit, PR artifacts
+
 Usage:
     python3 collect-artifacts.py --plan-id my-plan --output artifacts/
     python3 collect-artifacts.py --plan-id my-plan --output artifacts/ --phases 3-outline,4-plan
+    python3 collect-artifacts.py --plan-id my-plan --output artifacts/ --phases 1-init,2-refine,3-outline
 
 Output: Directory containing collected artifacts in original format.
 """
@@ -249,11 +258,41 @@ class ArtifactCollector:
             self.collected.append({'artifact': 'decision.log', 'status': 'failed'})
             return False
 
+    def collect_request(self) -> bool:
+        """Collect request.md (for 1-init and 2-refine phases)."""
+        try:
+            request_path = base_path('plans', self.plan_id, 'request.md')
+
+            if request_path.exists():
+                content = request_path.read_text()
+                output_path = self.output_dir / 'request.md'
+                output_path.write_text(content)
+                self.collected.append({'artifact': 'request.md', 'status': 'success'})
+                return True
+            else:
+                self.errors.append('Request file not found')
+                self.collected.append({'artifact': 'request.md', 'status': 'failed'})
+                return False
+        except Exception as e:
+            self.errors.append(f'Failed to collect request.md: {e}')
+            self.collected.append({'artifact': 'request.md', 'status': 'failed'})
+            return False
+
     def collect_all(self, phases: list[str] | None = None) -> dict[str, Any]:
-        """Collect all artifacts.
+        """Collect all artifacts based on requested phases.
 
         Args:
-            phases: List of phases to collect artifacts for ['3-outline', '4-plan']
+            phases: List of phases to collect artifacts for.
+                    Valid phases: 1-init, 2-refine, 3-outline, 4-plan, 5-execute, 6-finalize
+                    Default: ['3-outline']
+
+        Phase artifact mapping:
+            1-init:    config.toon, status.toon, request.md
+            2-refine:  request.md (with clarifications), work.log
+            3-outline: solution_outline.md, deliverables.toon, references.toon
+            4-plan:    TASK-*.toon files
+            5-execute: references.toon (with modified files)
+            6-finalize: (git artifacts not collected by this script)
         """
         if phases is None:
             phases = ['3-outline']
@@ -261,18 +300,42 @@ class ArtifactCollector:
         # Ensure output directory exists
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
-        # Always collect core artifacts
-        self.collect_solution_outline()
-        self.collect_deliverables()
-        self.collect_config()
-        self.collect_status()
-        self.collect_references()
-        self.collect_work_log()
-        self.collect_decision_log()
+        # Collect artifacts based on phases requested
+        # 1-init artifacts: config, status, request
+        if '1-init' in phases:
+            self.collect_config()
+            self.collect_status()
+            self.collect_request()
 
-        # Collect tasks if planning phase included
+        # 2-refine artifacts: request (with clarifications), work log
+        if '2-refine' in phases:
+            self.collect_request()
+            self.collect_work_log()
+
+        # 3-outline artifacts: solution outline, deliverables, references
+        if '3-outline' in phases or 'both' in phases:
+            self.collect_solution_outline()
+            self.collect_deliverables()
+            self.collect_config()  # Also needed for outline verification
+            self.collect_status()
+            self.collect_references()
+            self.collect_work_log()
+            self.collect_decision_log()
+
+        # 4-plan artifacts: tasks
         if '4-plan' in phases or 'both' in phases:
             self.collect_tasks()
+            # Also collect outline artifacts if not already collected
+            if '3-outline' not in phases and 'both' not in phases:
+                self.collect_solution_outline()
+                self.collect_deliverables()
+
+        # 5-execute artifacts: references with modified files
+        if '5-execute' in phases:
+            self.collect_references()
+            self.collect_work_log()
+
+        # 6-finalize: git artifacts not collected here (use git commands)
 
         # Generate collection summary
         success_count = len([c for c in self.collected if c['status'] == 'success'])

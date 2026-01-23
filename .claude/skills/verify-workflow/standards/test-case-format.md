@@ -24,7 +24,7 @@ Defines the test case metadata and trigger configuration.
 ```toon
 id: {test-id}
 name: {Human-readable test name}
-workflow_phase: {3-outline|4-plan|3-outline,4-plan}
+workflow_phase: {1-init|2-refine|3-outline|4-plan|5-execute|6-finalize|comma-separated}
 
 trigger:
   command: {Command that triggers the workflow}
@@ -45,12 +45,29 @@ cleanup:
 |-------|----------|-------------|
 | `id` | Yes | Unique identifier (kebab-case) |
 | `name` | Yes | Human-readable description |
-| `workflow_phase` | Yes | Phase(s) to verify: `3-outline`, `4-plan`, or `3-outline,4-plan` for both. Passed to collect-artifacts.py `--phases` parameter. Tasks are only collected when `4-plan` is included. |
+| `workflow_phase` | Yes | Phase(s) to verify (comma-separated). Passed to collect-artifacts.py `--phases` parameter. |
 | `trigger.command` | Yes | Command to execute |
 | `trigger.args` | No | Arguments for the command |
 | `setup_commands` | No | Commands to run before trigger |
 | `cleanup.archive_plan` | No | Archive plan after verification |
 | `cleanup.delete_on_success` | No | Delete plan if verification passes |
+
+### Workflow Phases
+
+The 6-phase model supports verification at each stage:
+
+| Phase | Artifacts Collected | Verification Checks |
+|-------|---------------------|---------------------|
+| `1-init` | config.toon, status.toon, request.md | Files exist, proper structure |
+| `2-refine` | request.md, work.log | Clarifications present, [REFINE:*] log entries, domains in config |
+| `3-outline` | solution_outline.md, deliverables, references.toon | Structure valid, deliverable count, affected files |
+| `4-plan` | TASK-*.toon files | Tasks exist, match deliverables |
+| `5-execute` | references.toon with modified files | Affected files tracked |
+| `6-finalize` | git commit artifacts | (Not verified by script - use git commands) |
+
+**Common combinations**:
+- `3-outline,4-plan` - Verify outline and planning phases together
+- `1-init,2-refine,3-outline` - Verify early phases including request refinement
 
 ## Expected Artifacts (expected-artifacts.toon)
 

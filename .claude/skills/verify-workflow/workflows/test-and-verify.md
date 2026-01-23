@@ -104,10 +104,24 @@ All subsequent steps use `{results_dir}` to store outputs.
 
 Collect all artifacts to local directory first. All subsequent verification reads from this copy.
 
-Read the `workflow_phase` from test-definition.toon to determine which phases to collect:
+Read the `workflow_phase` from test-definition.toon to determine which phases to collect.
+
+**6-Phase Model Artifact Collection:**
+
+| Phase | Artifacts Collected |
+|-------|---------------------|
+| `1-init` | config.toon, status.toon, request.md |
+| `2-refine` | request.md (with clarifications), work.log |
+| `3-outline` | solution_outline.md, deliverables.toon, config.toon, status.toon, references.toon, work.log, decision.log |
+| `4-plan` | TASK-*.toon files, tasks-list.toon |
+| `5-execute` | references.toon (with modified files), work.log |
+| `6-finalize` | (git artifacts - not collected by script) |
+
+**Common combinations:**
 - `3-outline` → collect outline artifacts only
 - `4-plan` → collect planning artifacts only
 - `3-outline,4-plan` → collect both outline and planning artifacts
+- `1-init,2-refine,3-outline` → verify early phases including request refinement
 
 ```bash
 python3 .plan/execute-script.py local:verify-workflow:collect-artifacts \

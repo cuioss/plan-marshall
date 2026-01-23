@@ -7,8 +7,17 @@ Runs deterministic checks to verify:
 - Required sections present
 - Basic format validation
 
+Phases (6-phase model):
+    1-init:    config.toon, status.toon, request.md exist
+    2-refine:  request.md has clarifications, work.log has [REFINE:*] entries
+    3-outline: solution_outline.md, deliverables, references.toon
+    4-plan:    TASK-*.toon files exist
+    5-execute: Modified files tracked in references.toon
+    6-finalize: Git commit artifacts (not verified by this script)
+
 Usage:
     python3 verify-structure.py --plan-id my-plan --test-case path/to/test-case
+    python3 verify-structure.py --plan-id my-plan --test-case path/to/test-case --phases 1-init,2-refine
     python3 verify-structure.py --plan-id my-plan --test-case path/to/test-case --output results.toon
 
 Output: TOON format with check results and findings.
@@ -326,6 +335,133 @@ class StructuralChecker:
             self.add_check('tasks_exist', 'fail', f'Error checking tasks: {e}')
             return False
 
+    # =========================================================================
+    # Phase 1-init and 2-refine checks
+    # =========================================================================
+
+    def check_request_exists(self) -> bool:
+        """Check if request.md exists (for 1-init and 2-refine phases)."""
+        request_path = self._get_artifact_path('request.md')
+
+        if request_path.exists():
+            self.add_check('request_exists', 'pass', 'Request file exists')
+            return True
+        else:
+            self.add_check('request_exists', 'fail', 'Request file not found')
+            self.add_finding('error', f'Request file not found for plan {self.plan_id}')
+            return False
+
+    def check_request_has_clarifications(self) -> bool:
+        """Check if request.md contains clarifications (for 2-refine phase).
+
+        After the refine phase, request.md should have a clarifications section
+        or clarified_request field populated.
+        """
+        request_path = self._get_artifact_path('request.md')
+
+        if not request_path.exists():
+            self.add_check('request_clarifications', 'fail', 'Request file not found')
+            return False
+
+        try:
+            content = request_path.read_text()
+            sections = parse_document_sections(content)
+
+            # Check for clarifications section or clarified_request
+            has_clarifications = (
+                'clarifications' in sections
+                or 'clarified_request' in sections
+                or 'clarified request' in sections
+            )
+
+            if has_clarifications:
+                self.add_check('request_clarifications', 'pass', 'Request has clarifications')
+                return True
+            else:
+                # Also check for inline clarification markers
+                if '[clarification]' in content.lower() or '**clarified**' in content.lower():
+                    self.add_check('request_clarifications', 'pass', 'Request has clarification markers')
+                    return True
+
+                self.add_check('request_clarifications', 'fail', 'No clarifications found in request')
+                self.add_finding('warning', 'Request.md has no clarifications section after refine phase')
+                return False
+
+        except Exception as e:
+            self.add_check('request_clarifications', 'fail', f'Error checking clarifications: {e}')
+            self.add_finding('error', str(e))
+            return False
+
+    def check_refine_logged(self) -> bool:
+        """Check if work.log contains [REFINE:*] entries (for 2-refine phase).
+
+        The refine phase logs its iterations using [REFINE:N] tags where N is the
+        iteration number.
+        """
+        # Work logs are in logs/ subdirectory
+        log_path = self._get_artifact_path('logs', 'work.log')
+
+        # Fallback to collected artifact location
+        if not log_path.exists():
+            log_path = self._get_artifact_path('work.log')
+
+        if not log_path.exists():
+            self.add_check('refine_logged', 'fail', 'Work log not found')
+            self.add_finding('warning', f'Work log not found for plan {self.plan_id}')
+            return False
+
+        try:
+            content = log_path.read_text()
+
+            # Look for [REFINE:N] entries
+            import re
+
+            refine_entries = re.findall(r'\[REFINE:(\d+)\]', content)
+
+            if refine_entries:
+                iterations = max(int(n) for n in refine_entries)
+                self.add_check('refine_logged', 'pass', f'Found {iterations} refine iteration(s) in work log')
+                return True
+            else:
+                self.add_check('refine_logged', 'fail', 'No [REFINE:*] entries in work log')
+                self.add_finding('warning', 'Work log has no [REFINE:*] entries from refine phase')
+                return False
+
+        except Exception as e:
+            self.add_check('refine_logged', 'fail', f'Error checking refine log: {e}')
+            self.add_finding('error', str(e))
+            return False
+
+    def check_config_has_domains(self) -> bool:
+        """Check if config.toon contains domains field (set during 2-refine phase)."""
+        config_path = self._get_artifact_path('config.toon')
+
+        if not config_path.exists():
+            self.add_check('config_domains', 'fail', 'Config file not found')
+            return False
+
+        try:
+            content = config_path.read_text()
+            config = parse_toon_simple(content)
+
+            if 'domains' in config and config['domains']:
+                domains = config['domains']
+                if isinstance(domains, list):
+                    domain_count = len(domains)
+                else:
+                    domain_count = 1
+                self.add_check('config_domains', 'pass', f'Config has {domain_count} domain(s)')
+                return True
+            else:
+                self.add_check('config_domains', 'fail', 'Config missing domains field')
+                self.add_finding('warning', 'Config.toon missing domains - refine phase may not have completed')
+                return False
+
+        except Exception as e:
+            self.add_check('config_domains', 'fail', f'Error checking config domains: {e}')
+            self.add_finding('error', str(e))
+            return False
+
     def load_expected_artifacts(self) -> dict[str, Any]:
         """Load expected artifacts from test case."""
         expected_path = self.test_case_dir / 'expected-artifacts.toon'
@@ -336,44 +472,85 @@ class StructuralChecker:
         return parse_toon_simple(content)
 
     def run_all_checks(self, phases: list[str] | None = None) -> dict[str, Any]:
-        """Run all structural checks.
+        """Run all structural checks based on requested phases.
 
         Args:
-            phases: List of phases to verify ['3-outline', '4-plan']
+            phases: List of phases to verify. Valid phases:
+                    1-init, 2-refine, 3-outline, 4-plan, 5-execute, 6-finalize
+                    Default: ['3-outline']
+
+        Phase verification mapping:
+            1-init:    config.toon, status.toon, request.md exist
+            2-refine:  request.md has clarifications, work.log has [REFINE:*], domains in config
+            3-outline: solution_outline.md valid, deliverables listed, references.toon
+            4-plan:    TASK-*.toon files exist
+            5-execute: references.toon with modified files, work.log
+            6-finalize: (git artifacts - not verified by this script)
         """
         if phases is None:
             phases = ['3-outline']
 
-        # Basic existence checks
-        self.check_solution_outline_exists()
-        self.check_solution_outline_valid()
-        self.check_config_exists()
-        self.check_status_exists()
-        self.check_references_exists()
-
         # Load expected artifacts for comparison
         expected = self.load_expected_artifacts()
 
-        # Check deliverables - determine if count check is informational
-        expected_deliverable_count = None
-        count_check_mode = expected.get('deliverable_count_check', 'strict')
-        if 'deliverable_count' in expected:
-            try:
-                expected_deliverable_count = int(expected['deliverable_count'])
-            except (ValueError, TypeError):
-                pass
-        self.check_deliverables_count(expected_deliverable_count, count_check_mode)
+        # Phase 1-init checks: basic plan artifacts exist
+        if '1-init' in phases:
+            self.check_config_exists()
+            self.check_status_exists()
+            self.check_request_exists()
 
-        # Check affected files - the key correctness metric
-        expected_files = expected.get('affected_files', [])
-        if isinstance(expected_files, str):
-            expected_files = [expected_files]
-        if expected_files:
-            self.check_affected_files(expected_files)
+        # Phase 2-refine checks: request refined with clarifications
+        if '2-refine' in phases:
+            self.check_request_exists()
+            self.check_request_has_clarifications()
+            self.check_refine_logged()
+            self.check_config_has_domains()
 
-        # Check tasks if planning phase included
+        # Phase 3-outline checks: solution outline and deliverables
+        if '3-outline' in phases or 'both' in phases:
+            self.check_solution_outline_exists()
+            self.check_solution_outline_valid()
+            self.check_config_exists()
+            self.check_status_exists()
+            self.check_references_exists()
+
+            # Check deliverables - determine if count check is informational
+            expected_deliverable_count = None
+            count_check_mode = expected.get('deliverable_count_check', 'strict')
+            if 'deliverable_count' in expected:
+                try:
+                    expected_deliverable_count = int(expected['deliverable_count'])
+                except (ValueError, TypeError):
+                    pass
+            self.check_deliverables_count(expected_deliverable_count, count_check_mode)
+
+            # Check affected files - the key correctness metric
+            expected_files = expected.get('affected_files', [])
+            if isinstance(expected_files, str):
+                expected_files = [expected_files]
+            if expected_files:
+                self.check_affected_files(expected_files)
+
+        # Phase 4-plan checks: tasks created
         if '4-plan' in phases or 'both' in phases:
             self.check_tasks_exist()
+            # Also verify outline artifacts if not already checked
+            if '3-outline' not in phases and 'both' not in phases:
+                self.check_solution_outline_exists()
+                self.check_deliverables_count()
+
+        # Phase 5-execute checks: implementation tracked
+        if '5-execute' in phases:
+            self.check_references_exists()
+            # Check affected files if expected
+            expected_files = expected.get('affected_files', [])
+            if isinstance(expected_files, str):
+                expected_files = [expected_files]
+            if expected_files:
+                self.check_affected_files(expected_files)
+
+        # Phase 6-finalize: git artifacts not verified by this script
+        # (use git commands to verify commit/PR)
 
         # Calculate overall status (excluding 'info' checks from failure count)
         failed_checks = [c for c in self.checks if c['status'] == 'fail']
@@ -382,6 +559,7 @@ class StructuralChecker:
         return {
             'status': overall_status,
             'plan_id': self.plan_id,
+            'phases_verified': phases,
             'passed': len([c for c in self.checks if c['status'] == 'pass']),
             'failed': len(failed_checks),
             'checks': self.checks,

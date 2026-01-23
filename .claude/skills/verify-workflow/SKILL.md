@@ -7,7 +7,18 @@ allowed-tools: Read, Write, Edit, Bash, Glob, Grep, AskUserQuestion
 
 # Verify Workflow Skill
 
-Verifies plan-marshall workflow outputs (solution_outline.md, references.toon, TASK-*.toon) using hybrid script + LLM-as-judge assessment.
+Verifies plan-marshall workflow outputs using hybrid script + LLM-as-judge assessment.
+
+## Supported Phases (6-Phase Model)
+
+| Phase | Artifacts Verified | Checks |
+|-------|-------------------|--------|
+| `1-init` | config.toon, status.toon, request.md | Files exist, proper structure |
+| `2-refine` | request.md, work.log | Clarifications present, [REFINE:*] log entries, domains in config |
+| `3-outline` | solution_outline.md, deliverables, references.toon | Structure valid, deliverable count, affected files |
+| `4-plan` | TASK-*.toon files | Tasks exist, match deliverables |
+| `5-execute` | references.toon with modified files | Affected files tracked |
+| `6-finalize` | git commit artifacts | (Not verified by script - use git commands) |
 
 ## Parameters
 

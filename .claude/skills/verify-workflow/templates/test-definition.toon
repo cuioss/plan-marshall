@@ -3,6 +3,8 @@
 
 id: {test-id}
 name: {Human-readable test name}
+# Valid phases: 1-init, 2-refine, 3-outline, 4-plan, 5-execute, 6-finalize
+# Common: 3-outline,4-plan (outline and plan) or 1-init,2-refine,3-outline (early phases)
 workflow_phase: 3-outline
 
 trigger:

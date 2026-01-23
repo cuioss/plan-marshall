@@ -2,15 +2,32 @@
 # Copy this file to: workflow-verification/test-cases/{test-id}/expected-artifacts.toon
 
 # Reference existing skill standards - do not duplicate validation rules
+# Include artifacts based on workflow_phase in test-definition.toon:
+#   1-init:    config.toon, status.toon, request.md
+#   2-refine:  request.md with clarifications, work.log
+#   3-outline: solution_outline.md, config.toon, status.toon, references.toon
+#   4-plan:    TASK-*.toon files
+#   5-execute: references.toon with modified files
+#   6-finalize: git artifacts
+
 artifacts[4]{file,standard_ref}:
 solution_outline.md,pm-workflow:manage-solution-outline:deliverable-contract
 config.toon,pm-workflow:manage-config:config-schema
 status.toon,pm-workflow:manage-lifecycle:status-schema
 references.toon,pm-workflow:manage-references:references-schema
 
-# Expected counts (update based on golden reference)
+# Phase 3-outline: Expected counts (update based on golden reference)
 deliverable_count: 3
+# deliverable_count_check: strict   # strict (default) or informational
 task_count: 0
+
+# Phase 2-refine: Expected domains (set during refine phase)
+# expected_domains[N]:
+#   java
+#   documentation
+
+# Phase 2-refine: Expected confidence threshold met
+# refine_confidence_threshold: 95
 
 # Expected affected files (update based on golden reference)
 affected_files[0]:
