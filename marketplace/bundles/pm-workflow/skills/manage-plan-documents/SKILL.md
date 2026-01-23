@@ -125,6 +125,8 @@ content:
 - `--raw`: Output raw markdown content
 - `--section {section_name}`: Read specific section only (e.g., `clarified_request`)
 
+**Fallback behavior**: When `--section clarified_request` is used but the section doesn't exist, automatically falls back to `body`. This simplifies callers who want the clarified request if available, otherwise the original body.
+
 **Read specific section:**
 
 ```bash
@@ -140,7 +142,8 @@ python3 .plan/execute-script.py pm-workflow:manage-plan-documents:manage-plan-do
 status: success
 plan_id: my-feature
 document: request
-section: clarified_request
+section: body                    # actual section returned
+requested_section: clarified_request  # what was requested
 content: Migrate JSON output specifications to TOON format...
 ```
 

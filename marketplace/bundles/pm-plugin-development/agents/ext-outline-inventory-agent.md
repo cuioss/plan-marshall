@@ -1,11 +1,11 @@
 ---
-name: inventory-assessment-agent
+name: ext-outline-inventory-agent
 description: Load marketplace inventory and perform initial scope assessment (artifact types, bundle scope)
 tools: Read, Bash, Skill
 model: sonnet
 ---
 
-# Inventory Assessment Agent
+# Ext-Outline Inventory Agent
 
 Loads marketplace inventory via script and performs initial scope assessment to determine which artifact types and bundles are affected.
 
@@ -48,7 +48,7 @@ ANALYZE request for plugin.json impact:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(inventory-assessment-agent) plugin.json: {AFFECTED|NOT_AFFECTED} - reasoning: {explicit derivation}, evidence: {request fragment or 'No mention of add/remove/rename'}"
+  decision {plan_id} INFO "(ext-outline-inventory-agent) plugin.json: {AFFECTED|NOT_AFFECTED} - reasoning: {explicit derivation}, evidence: {request fragment or 'No mention of add/remove/rename'}"
 ```
 
 #### 1.2 Commands
@@ -62,7 +62,7 @@ ANALYZE request for Commands impact:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(inventory-assessment-agent) Commands: {AFFECTED|NOT_AFFECTED} - explicit: {yes|no} '{quote}', implicit: {yes|no} '{derivation}'"
+  decision {plan_id} INFO "(ext-outline-inventory-agent) Commands: {AFFECTED|NOT_AFFECTED} - explicit: {yes|no} '{quote}', implicit: {yes|no} '{derivation}'"
 ```
 
 #### 1.3 Skills
@@ -76,7 +76,7 @@ ANALYZE request for Skills impact:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(inventory-assessment-agent) Skills: {AFFECTED|NOT_AFFECTED} - explicit: {yes|no} '{quote}', implicit: {yes|no} '{derivation}'"
+  decision {plan_id} INFO "(ext-outline-inventory-agent) Skills: {AFFECTED|NOT_AFFECTED} - explicit: {yes|no} '{quote}', implicit: {yes|no} '{derivation}'"
 ```
 
 #### 1.4 Agents
@@ -90,7 +90,7 @@ ANALYZE request for Agents impact:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(inventory-assessment-agent) Agents: {AFFECTED|NOT_AFFECTED} - explicit: {yes|no} '{quote}', implicit: {yes|no} '{derivation}'"
+  decision {plan_id} INFO "(ext-outline-inventory-agent) Agents: {AFFECTED|NOT_AFFECTED} - explicit: {yes|no} '{quote}', implicit: {yes|no} '{derivation}'"
 ```
 
 #### 1.5 Scripts
@@ -104,7 +104,7 @@ ANALYZE request for Scripts impact:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(inventory-assessment-agent) Scripts: {AFFECTED|NOT_AFFECTED} - explicit: {yes|no} '{quote}', implicit: {yes|no} '{derivation}'"
+  decision {plan_id} INFO "(ext-outline-inventory-agent) Scripts: {AFFECTED|NOT_AFFECTED} - explicit: {yes|no} '{quote}', implicit: {yes|no} '{derivation}'"
 ```
 
 #### 1.6 Determine Affected Artifacts
@@ -115,7 +115,7 @@ affected_artifacts = [types where decision = AFFECTED]
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(inventory-assessment-agent) Affected artifacts: {affected_artifacts}"
+  decision {plan_id} INFO "(ext-outline-inventory-agent) Affected artifacts: {affected_artifacts}"
 ```
 
 ### Step 2: Bundle/Module Selection
@@ -130,7 +130,7 @@ ANALYZE request for bundle/module references:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(inventory-assessment-agent) Explicit bundles: {list or 'none'}"
+  decision {plan_id} INFO "(ext-outline-inventory-agent) Explicit bundles: {list or 'none'}"
 ```
 
 #### 2.2 Implicit Bundle Derivation (via Components)
@@ -143,7 +143,7 @@ ANALYZE request for component references that imply bundles:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(inventory-assessment-agent) Implicit bundles: {list or 'none'}"
+  decision {plan_id} INFO "(ext-outline-inventory-agent) Implicit bundles: {list or 'none'}"
 ```
 
 #### 2.3 Determine Bundle Scope
@@ -161,7 +161,7 @@ ELSE:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(inventory-assessment-agent) Bundle scope: {bundle_scope}"
+  decision {plan_id} INFO "(ext-outline-inventory-agent) Bundle scope: {bundle_scope}"
 ```
 
 ### Step 3: Create Work Directory and Run Inventory Scan
@@ -301,7 +301,7 @@ python3 .plan/execute-script.py pm-workflow:manage-references:manage-references 
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[ARTIFACT] (inventory-assessment-agent) Persisted inventory: work/inventory_filtered.toon ({total_files} files)"
+  work {plan_id} INFO "[ARTIFACT] (ext-outline-inventory-agent) Persisted inventory: work/inventory_filtered.toon ({total_files} files)"
 ```
 
 ## Output

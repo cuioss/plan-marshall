@@ -72,10 +72,15 @@ Store as `confidence_threshold` for use in Step 6.
 │  Step 4: Analyze Request Quality ←── technologies, modules      │
 │      ↓                                        │          │      │
 │  Step 5: Analyze in Architecture Context ←────┘──────────┘      │
+│      │   5.1 Module Mapping                                     │
+│      │   5.2 Feasibility Check                                  │
+│      │   5.3 Scope Size Estimation                              │
+│      │   5.4 Track Selection ─────────→ decision.log            │
 │      ↓                    (module details on demand)            │
 │  Step 6: Evaluate Confidence                                    │
 │      │                                                          │
-│      ├── confidence >= threshold → Step 9: Return Results       │
+│      ├── confidence >= threshold → Step 9: Persist & Return     │
+│      │                              (track, scope → references) │
 │      │                                                          │
 │      └── confidence < threshold → Step 7: Clarify with User     │
 │              ↓                                                  │
@@ -94,8 +99,11 @@ Store as `confidence_threshold` for use in Step 6.
 | Step 2 | architecture info | project + modules + technologies | `arch_context` |
 | Step 3 | request.md | title, description, clarifications | `request` |
 | Step 4 | `request` + `arch_context` | quality findings | `quality_findings` |
-| Step 5 | `request` + `arch_context` + detailed queries | mapping findings | `mapping_findings` |
+| Step 5.1-5.2 | `request` + `arch_context` + detailed queries | mapping findings | `mapping_findings` |
+| Step 5.3 | `mapping_findings` | scope estimate | `scope_estimate` |
+| Step 5.4 | `scope_estimate` + `request` + `domains` | track selection | `track` + decision.log |
 | Step 6 | all findings | confidence score | decision |
+| Step 9 | all results | - | references.toon, decision.log
 
 ---
 
@@ -384,19 +392,64 @@ FEASIBILITY: {FEASIBLE|CONCERN}
 
 **Question**: What is the approximate scope?
 
-| Size | Criteria |
-|------|----------|
-| Small | 1 module, < 5 files |
-| Medium | 1-2 modules, 5-15 files |
-| Large | 3+ modules, 15+ files |
-| Needs decomposition | Cross-cutting, unclear boundaries |
+| Scope | Criteria |
+|-------|----------|
+| `single_file` | 1 specific file clearly identified |
+| `single_module` | 1 module, < 5 files |
+| `few_files` | 1-2 modules, 5-15 files with clear targets |
+| `multi_module` | 3+ modules, 15+ files |
+| `codebase_wide` | Cross-cutting, unclear boundaries, "all X" pattern |
 
 **Finding format**:
 ```
-SCOPE_ESTIMATE: {Small|Medium|Large|Needs decomposition}
+SCOPE_ESTIMATE: {single_file|single_module|few_files|multi_module|codebase_wide}
   - Modules affected: {count}
   - Estimated files: {range}
   - Rationale: {brief explanation}
+```
+
+### 5.4 Track Selection
+
+**Question**: Does this request need complex discovery or can targets be determined directly?
+
+**Track Selection Logic**:
+
+```
+Simple Track when ALL of:
+  - scope_estimate is single_file, single_module, or few_files
+  - module_mapping explicitly specifies target file(s)
+  - Request is localized (add, create, implement specific thing)
+
+Complex Track when ANY of:
+  - scope_estimate is multi_module or codebase_wide
+  - Request contains scope words: "all", "everywhere", "across", "migrate"
+  - module_mapping is broad or missing
+  - Domain requires discovery (plugins, documentation, requirements)
+```
+
+**Scope Words Detection**:
+Scan request text for: `all`, `every`, `everywhere`, `across`, `migrate`, `update all`, `refactor`, `replace all`
+
+**Domain Discovery Requirements**:
+Some domains have no standard structure and always need discovery:
+- `plan-marshall-plugin-dev` (marketplace plugins)
+- `documentation` (AsciiDoc, ADR locations vary)
+- `requirements` (specs can be anywhere)
+
+**Finding format**:
+```
+TRACK_SELECTION: {simple|complex}
+  - Scope: {scope_estimate}
+  - Scope words found: {yes/no - which words}
+  - Module mapping explicit: {yes/no}
+  - Domain requires discovery: {yes/no}
+  - Reasoning: {why this track}
+```
+
+**Log track decision** (to decision.log):
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  decision {plan_id} INFO "(pm-workflow:phase-2-refine) Track: {track} - {reasoning}"
 ```
 
 ---
@@ -546,40 +599,92 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 ---
 
-## Step 9: Return Results
+## Step 9: Persist and Return Results
 
-When confidence reaches threshold, log completion and return results.
+When confidence reaches threshold, persist results to sinks and return minimal status.
 
-### 9.1 Log Completion
+### 9.1 Persist to references.toon
 
-**Log**:
+**Persist track selection**:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[REFINE:9] (pm-workflow:phase-2-refine) Refinement complete. Confidence: {confidence}%. Iterations: {iteration_count}. Domains: [{domains}]"
+python3 .plan/execute-script.py pm-workflow:manage-references:manage-references set \
+  --plan-id {plan_id} \
+  --field track \
+  --value "{track}"
+
+python3 .plan/execute-script.py pm-workflow:manage-references:manage-references set \
+  --plan-id {plan_id} \
+  --field track_reasoning \
+  --value "{track_reasoning}"
 ```
 
-### 9.2 Return Output
+**Persist scope estimate**:
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-references:manage-references set \
+  --plan-id {plan_id} \
+  --field scope_estimate \
+  --value "{scope_estimate}"
+```
 
-Return the following TOON structure:
+**Persist module mapping**:
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-references:manage-references set \
+  --plan-id {plan_id} \
+  --field module_mapping \
+  --value "{module_mapping_json}"
+```
+
+### 9.2 Log Decisions
+
+**Log to decision.log** (scope and track decisions):
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  decision {plan_id} INFO "(pm-workflow:phase-2-refine) Scope: {scope_estimate} - Modules: {module_count}, Files: {file_estimate}"
+
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  decision {plan_id} INFO "(pm-workflow:phase-2-refine) Track: {track} - {track_reasoning}"
+
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  decision {plan_id} INFO "(pm-workflow:phase-2-refine) Domains: {domains}"
+```
+
+**Log to work.log** (completion status):
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  work {plan_id} INFO "[REFINE:9] (pm-workflow:phase-2-refine) Complete. Confidence: {confidence}%. Track: {track}. Iterations: {iteration_count}"
+```
+
+### 9.3 Return Minimal Output
+
+Return minimal status - consumers load details from sinks:
 
 ```toon
 status: success
+plan_id: {plan_id}
 confidence: {achieved_confidence}
-threshold: {confidence_threshold}
-iterations: {count}
+track: {simple|complex}
 domains: [{detected domains}]
-module_mapping:
-  - requirement: "{req1}"
-    modules: [{module1}]
-  - requirement: "{req2}"
-    modules: [{module2}]
-scope_estimate: {Small|Medium|Large}
-outline_guidance: [{feedback items for outline creation, if any}]
 ```
+
+**Data Location Reference**:
+- Track selection: `references.toon` → `track`, `track_reasoning`
+- Scope estimate: `references.toon` → `scope_estimate`
+- Module mapping: `references.toon` → `module_mapping`
+- Decisions: `decision.log` filtered by `(pm-workflow:phase-2-refine)`
+- Clarifications: `request.md` → `clarifications`, `clarified_request`
 
 This output feeds into the next phase (phase-3-outline).
 
-**outline_guidance**: Contains SCOPE_CORRECTION and APPROACH_PREFERENCE feedback (from revision iterations) that should influence outline creation but didn't affect request confidence.
+### 9.4 Outline Guidance (if applicable)
+
+If revision feedback contained SCOPE_CORRECTION or APPROACH_PREFERENCE items, persist to references:
+
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-references:manage-references set \
+  --plan-id {plan_id} \
+  --field outline_guidance \
+  --value "{guidance_items_json}"
+```
 
 ---
 
@@ -600,8 +705,15 @@ This output feeds into the next phase (phase-3-outline).
 **Script Notations** (use EXACTLY as shown):
 - `plan-marshall:analyze-project-architecture:architecture` - Architecture queries
 - `pm-workflow:manage-plan-documents:manage-plan-documents` - Request operations
-- `plan-marshall:manage-logging:manage-log` - Work logging
+- `pm-workflow:manage-references:manage-references` - References persistence (track, scope, module_mapping)
+- `plan-marshall:manage-logging:manage-log` - Work and decision logging
 - `plan-marshall:manage-plan-marshall-config:plan-marshall-config` - Project config (threshold)
 
+**Persistence Locations**:
+- `references.toon`: track, track_reasoning, scope_estimate, module_mapping, outline_guidance
+- `decision.log`: scope/track decisions, domain detection
+- `work.log`: workflow progress (REFINE:N entries)
+- `request.md`: clarifications, clarified_request
+
 **Consumed By**:
-- `pm-workflow:phase-3-outline` skill (receives refined request)
+- `pm-workflow:phase-3-outline` skill (loads track and module_mapping from references.toon)

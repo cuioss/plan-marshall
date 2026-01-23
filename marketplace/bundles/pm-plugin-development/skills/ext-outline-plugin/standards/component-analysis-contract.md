@@ -1,6 +1,6 @@
 # Component Analysis Contract
 
-Defines the input/output contract for component analysis agents used in the Modify Flow of `workflow.md`.
+Defines the input/output contract for component analysis agents used in the analysis step (Step 3) of `ext-outline-plugin`.
 
 ## Purpose
 
@@ -8,37 +8,42 @@ Component analysis agents evaluate each component against the original request u
 
 ## Input Parameters
 
-Agents receive the request text directly for semantic reasoning.
+Agents receive explicit file sections from the parent workflow (ext-outline-plugin).
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `plan_id` | str | Yes | Plan identifier for script access and logging |
-| `bundle` | str | Yes | Bundle name to analyze (e.g., `pm-dev-java`) |
 | `request_text` | str | Yes | The original request text from request.md |
+| `files_prompt` | str | Yes | Pre-generated prompt with explicit numbered file sections |
 
-## Agent Step 0: Load File Paths via Script
+## Input Format
 
-Each agent runs the filter script to get its file paths:
+The parent workflow (ext-outline-plugin) generates a `files_prompt` containing explicit numbered file sections. Each section includes:
+- File path to analyze
+- Pre-generated logging command with placeholders
 
-```bash
-python3 .plan/execute-script.py pm-plugin-development:ext-outline-plugin:filter-inventory filter \
-  --plan-id {plan_id} --bundle {bundle} --component-type {skills|commands|agents}
+**Expected prompt structure**:
+```markdown
+## Files to Analyze
+
+Request: {request_text}
+
+Process these files IN ORDER. For EACH file, you MUST:
+1. Read the file
+2. Analyze it against the request
+3. Assess confidence (0-100%) and determine certainty gate
+4. Execute the logging bash command IMMEDIATELY (before next file)
+5. Track counts for final summary
+
+### File 1: {path}
+**1a. Analyze**: [instructions]
+**1b. Log (EXECUTE IMMEDIATELY)**: [bash command]
+
+### File 2: {path}
+...
 ```
 
-**Output** (TOON):
-```toon
-status: success
-bundle: pm-dev-java
-component_type: skills
-file_count: 17
-files[17]:
-  - marketplace/bundles/pm-dev-java/skills/java-cdi/SKILL.md
-  - ...
-```
-
-Parse the `files` array. These are the paths to analyze.
-
-**Note**: Bundle-level batching keeps file counts manageable (~5-20 files per bundle×type). No internal batching needed.
+**Note**: The parent workflow runs the filter script and builds `files_prompt`. Agents do NOT run filter scripts themselves.
 
 ## Output Contract
 
@@ -58,14 +63,14 @@ assessments_logged: {count}
 
 ### Critical Output Rule
 
-**Agents MUST NOT output verbose text.** All reasoning and analysis details belong in decision.log, not in the agent's text output.
+**Agents MUST NOT output verbose text.** All reasoning and analysis details belong in `assessments.jsonl`, not in the agent's text output.
 
 - Do NOT narrate what you're doing ("Now I'll analyze...")
 - Do NOT output per-file analysis text
 - Do NOT explain decisions in text output
 - ONLY output the final TOON summary block
 
-The decision.log receives all detailed findings via the logging commands.
+The `artifacts/assessments.jsonl` receives all detailed assessments via the artifact_store commands.
 
 ### Field Definitions
 
@@ -204,24 +209,36 @@ FOR each file_path from filter script:
 5. **Confidence assessment** - explicit numeric confidence drives certainty gate
 6. **Traceability** - auto-generated hash IDs enable linking decisions across stages
 
-## Usage in Modify Flow
+## Usage in Analysis Step
 
-The Modify Flow in `workflow.md` Step 3c spawns analysis agents with this contract:
+The analysis step in `ext-outline-plugin` (Step 3, via workflow.md) spawns analysis agents with this contract:
 
 ```
-Task: pm-plugin-development:skill-analysis-agent
+Task: pm-plugin-development:ext-outline-skill-agent
   Input:
     plan_id: migrate-json-to-toon
-    bundle: pm-dev-java
     request_text: "Migrate agent/command/skill outputs from JSON to TOON format"
+    files_prompt: |
+      ## Files to Analyze
+
+      Request: Migrate agent/command/skill outputs from JSON to TOON format
+
+      ### File 1: marketplace/bundles/pm-dev-java/skills/java-cdi/SKILL.md
+      **1a. Analyze**: Read and analyze against request...
+      **1b. Log (EXECUTE IMMEDIATELY)**: python3 .plan/execute-script.py ...
+
+      ### File 2: marketplace/bundles/pm-dev-java/skills/java-create/SKILL.md
+      ...
 ```
+
+The parent workflow (ext-outline-plugin) runs the filter script and builds `files_prompt` before spawning agents.
 
 ## Agents Implementing This Contract
 
 | Agent | Component Type |
 |-------|----------------|
-| `skill-analysis-agent` | SKILL.md files |
-| `command-analysis-agent` | Command .md files |
-| `agent-analysis-agent` | Agent .md files |
+| `ext-outline-skill-agent` | SKILL.md files |
+| `ext-outline-command-agent` | Command .md files |
+| `ext-outline-agent-agent` | Agent .md files |
 
 Each agent uses semantic reasoning to evaluate components against the request.

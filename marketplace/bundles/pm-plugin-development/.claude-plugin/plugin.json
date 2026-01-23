@@ -30,10 +30,10 @@
     "./skills/verification-mode"
   ],
   "agents": [
-    "./agents/agent-analysis-agent.md",
-    "./agents/command-analysis-agent.md",
-    "./agents/inventory-assessment-agent.md",
-    "./agents/skill-analysis-agent.md",
+    "./agents/ext-outline-agent-agent.md",
+    "./agents/ext-outline-command-agent.md",
+    "./agents/ext-outline-inventory-agent.md",
+    "./agents/ext-outline-skill-agent.md",
     "./agents/tool-coverage-agent.md"
   ]
 }

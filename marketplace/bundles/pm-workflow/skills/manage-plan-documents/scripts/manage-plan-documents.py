@@ -313,6 +313,13 @@ def cmd_read(doc_type: str, args) -> int:
         section_name = args.section.lower().replace(' ', '_')
         sections = parse_document_sections(content)
         section_content = sections.get(section_name, '')
+
+        # Special case: clarified_request falls back to body if not found
+        actual_section = section_name
+        if not section_content and section_name == 'clarified_request':
+            section_content = sections.get('body', '')
+            actual_section = 'body'
+
         if not section_content:
             print(
                 serialize_toon(
@@ -333,7 +340,8 @@ def cmd_read(doc_type: str, args) -> int:
                     'status': 'success',
                     'plan_id': args.plan_id,
                     'document': doc_type,
-                    'section': section_name,
+                    'section': actual_section,
+                    'requested_section': section_name,
                     'content': section_content,
                 }
             )

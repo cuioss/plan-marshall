@@ -1,17 +1,26 @@
 ---
 name: phase-3-outline
-description: Architecture-driven solution outline creation with intelligent module selection and profiles list
+description: Two-track solution outline creation - Simple Track for localized changes, Complex Track for codebase-wide discovery
 user-invocable: false
-allowed-tools: Read, Glob, Grep, Bash
+allowed-tools: Read, Glob, Grep, Bash, Task, AskUserQuestion
 ---
 
 # Phase Outline Skill
 
-**Role**: Architecture-driven workflow skill for creating solution outlines. Uses pre-computed architecture data to make intelligent module and package placement decisions.
+**Role**: Two-track workflow skill for creating solution outlines. Routes based on track selection from phase-2-refine.
 
-**Key Insight**: Module and package matching is **semantic analysis** that requires LLM reasoning. Scripts provide DATA, the LLM provides REASONING.
+**Prerequisite**: Request must be refined (phase-2-refine completed) with track field set.
 
-**Prerequisite**: Request must be refined (phase-2-refine completed).
+---
+
+## Two-Track Design
+
+| Track | When Used | Approach |
+|-------|-----------|----------|
+| **Simple** | Localized changes (single_file, single_module, few_files) | Direct deliverable creation from module_mapping |
+| **Complex** | Codebase-wide changes (multi_module, codebase_wide) | Load domain skill for discovery/analysis |
+
+**Track determined by**: phase-2-refine (stored in references.toon)
 
 ---
 
@@ -20,433 +29,438 @@ allowed-tools: Read, Glob, Grep, Bash
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `plan_id` | string | Yes | Plan identifier |
-| `feedback` | string | No | User feedback from review (for revision iterations) |
 
 ---
 
 ## Workflow Overview
 
 ```
-Step 1: Load Refined Request → Step 2: Load Extension → Steps 3-4: Create Deliverables → Step 5: Write Solution → Steps 6-8: Finalize
+Step 1: Load Inputs → Step 2: Route by Track → {Simple: Steps 3-5 | Complex: Steps 6-9} → Step 10: Return
 ```
-
-**Visual diagram**: `standards/workflow-overview.md` (for human reference)
 
 ---
 
-## Step 1: Load Refined Request
+## Step 1: Load Inputs
 
-**Purpose**: Load the refined request from phase-2-refine output.
+**Purpose**: Load track, request, and context from sinks.
 
-The request has already been clarified during phase-2-refine. Load it for deliverable creation.
+### 1.1 Read Track Selection
 
-**EXECUTE**:
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-references:manage-references get \
+  --plan-id {plan_id} --field track
+```
+
+Parse the output to get `track` value (simple | complex).
+
+### 1.2 Read Request
+
+Read request (automatically uses clarified_request if available, otherwise body):
+
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-plan-documents:manage-plan-documents request read \
   --plan-id {plan_id} \
   --section clarified_request
 ```
 
-If clarified_request not found, read full request:
+### 1.3 Read Module Mapping
+
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-plan-documents:manage-plan-documents request read \
-  --plan-id {plan_id}
+python3 .plan/execute-script.py pm-workflow:manage-references:manage-references get \
+  --plan-id {plan_id} --field module_mapping
 ```
 
-**Log**:
+### 1.4 Read Domains
+
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-config:manage-config get \
+  --plan-id {plan_id} --key domains
+```
+
+### 1.5 Log Context
+
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[STEP-1] (pm-workflow:phase-3-outline) Loaded refined request"
+  decision {plan_id} INFO "(pm-workflow:phase-3-outline) Track: {track}, domains: {domains}"
 ```
 
 ---
 
-## Step 2: Load Outline Extension
+## Step 2: Route by Track
 
-For each domain from Step 1 output, check if an outline extension exists and load it.
+Based on `track` from Step 1.1:
 
-**Purpose**: Outline extensions implement a **formal protocol** with defined sections that this workflow calls explicitly at Steps 3 and 4.
-
-**For each domain** from Step 1 `domains` array:
-
-**EXECUTE**:
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
-  resolve-workflow-skill-extension --domain {domain} --type outline \
-  --trace-plan-id {plan_id}
+```
+IF track == "simple":
+  → Execute Simple Track (Steps 3-5)
+ELSE:  # track == "complex"
+  → Execute Complex Track (Steps 6-9)
 ```
 
-**Output (TOON)**:
+---
+
+# Simple Track (Steps 3-5)
+
+For localized changes where targets are already known from module_mapping.
+
+---
+
+## Step 3: Validate Targets
+
+**Purpose**: Verify target files/modules exist and match domain.
+
+### 3.1 Validate Target Files Exist
+
+For each target in module_mapping:
+
+```bash
+# For file targets
+ls -la {target_path}
+```
+
+If target doesn't exist, ERROR: "Target not found: {target}"
+
+### 3.2 Log Validation
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  decision {plan_id} INFO "(pm-workflow:phase-3-outline) Validated {N} targets in {domain}"
+```
+
+---
+
+## Step 4: Create Deliverables
+
+**Purpose**: Direct mapping from module_mapping to deliverables.
+
+### 4.1 Build Deliverables from Module Mapping
+
+For each entry in module_mapping:
+
+1. Determine change_type from request (create, modify, migrate, refactor)
+2. Determine execution_mode (automated)
+3. Map domain from config.toon
+4. Use module from module_mapping
+
+### 4.2 Deliverable Structure
+
+Use template from `pm-workflow:manage-solution-outline/templates/deliverable-template.md`:
+
+```markdown
+### {N}. {Action Verb} {Component Type}: {Name}
+
+**Metadata:**
+- change_type: {create|modify|migrate|refactor}
+- execution_mode: automated
+- domain: {domain}
+- module: {module}
+- depends: none
+
+**Profiles:**
+- implementation
+- testing (if module has test infrastructure)
+
+**Affected files:**
+- `{explicit/path/to/file1}`
+- `{explicit/path/to/file2}`
+
+**Change per file:** {What will be created or modified}
+
+**Verification:**
+- Command: {verification command}
+- Criteria: {success criteria}
+
+**Success Criteria:**
+- {Specific criterion 1}
+- {Specific criterion 2}
+```
+
+### 4.3 Log Deliverable Creation
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  decision {plan_id} INFO "(pm-workflow:phase-3-outline) Created deliverable for {target}"
+```
+
+---
+
+## Step 5: Simple Q-Gate
+
+**Purpose**: Lightweight verification for simple track.
+
+### 5.1 Verify Deliverables
+
+For each deliverable:
+
+1. **Target exists?** - Already validated in Step 3
+2. **Deliverable aligns with request intent?** - Compare deliverable scope with request
+
+### 5.2 Log Q-Gate Result
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  decision {plan_id} INFO "(pm-workflow:phase-3-outline:qgate) Simple: Deliverable {N}: pass"
+```
+
+→ **Continue to Step 10** (Write Solution and Return)
+
+---
+
+# Complex Track (Steps 6-9)
+
+For codebase-wide changes requiring discovery and analysis.
+
+---
+
+## Step 6: Resolve Domain Skill
+
+**Purpose**: Find the outline skill for each domain.
+
+### 6.1 Resolve Skill
+
+For each domain in config.toon:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:extension-api:extension-api \
+  resolve --domain {domain} --type outline
+```
+
+**Output** (TOON):
 ```toon
 status: success
 domain: {domain}
 type: outline
-extension: pm-plugin-development:ext-outline-plugin  # or null if no extension
+skill: pm-plugin-development:ext-outline-plugin  # or null if no skill
 ```
 
-**If extension exists (not null)**, load it:
+### 6.2 Log Resolution
 
-```
-Skill: {resolved_extension}
-```
-
-The extension implements these **protocol sections** (called in Steps 3-4):
-- **## Assessment Protocol**: Determine scope and change_type before workflow starts
-- **## Workflow**: Orchestrate complete outline workflow (routes internally based on change_type)
-- **## Discovery Patterns**: Domain-specific Glob/Grep patterns (optional)
-
-**Contract**: `pm-workflow:workflow-extension-api/standards/extensions/outline-extension.md`
-
-**If no extension exists**: Continue with generic workflow (Steps 3-4 use built-in defaults).
-
----
-
-## Step 3: Assess Complexity (via Extension Protocol)
-
-**If extension loaded (from Step 2)**: Call the extension's `## Assessment Protocol` section.
-
-The extension's Assessment Protocol determines:
-- `change_type`: create, modify, migrate, or refactor
-- Scope of affected components
-- Any conditional standards to load
-
-**If no extension**: Use generic assessment below.
-
-### Generic Assessment (no extension)
-
-| Scope | Workflow | Action |
-|-------|----------|--------|
-| Single module affected | **Simple** | Proceed to module selection |
-| Multiple modules affected | **Complex** | Decompose first, then simple workflow per sub-task |
-
-### Simple Workflow (single module)
-
-```
-┌───────────────────────────────┐
-│       SIMPLE WORKFLOW         │
-├───────────────────────────────┤
-│ 1. Select target module       │
-│ 2. Select target package      │
-│ 3. Create deliverables        │
-└───────────────────────────────┘
-```
-
-### Complex Workflow (multi-module)
-
-```
-┌───────────────────────────────┐
-│       COMPLEX WORKFLOW        │
-├───────────────────────────────┤
-│ 1. Load dependency graph      │
-│ 2. Decompose into sub-tasks   │
-│ 3. Run simple workflow each   │
-│ 4. Aggregate deliverables     │
-│ 5. Order by layers (graph)    │
-└───────────────────────────────┘
-```
-
-For complex tasks, load the complete dependency graph to determine execution ordering.
-
-**EXECUTE**:
 ```bash
-python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture graph \
-  --trace-plan-id {plan_id}
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  decision {plan_id} INFO "(pm-workflow:phase-3-outline) Resolved skill: {skill_notation}"
 ```
 
-Output format: `plan-marshall:analyze-project-architecture/standards/module-graph-format.md` (force load)
-
-**Detail**: See `standards/module-selection.md` for decomposition patterns and dependency ordering.
+**If no skill found**: Use generic module-based workflow (see "Generic Workflow" section below).
 
 ---
 
-## Step 4: Execute Workflow (via Extension Protocol)
+## Step 7: Load Domain Skill
 
-**Purpose**: Call extension to orchestrate complete outline workflow.
+**Purpose**: Load the resolved outline skill to handle discovery, analysis, and deliverable creation.
 
-**If extension loaded** (from Step 2):
+### 7.1 Load Skill
 
-  Call extension's `## Workflow` section (based on Step 3 assessment).
+```
+Skill: {resolved_skill_notation}
+  Input:
+    plan_id: {plan_id}
+```
 
-  Extension orchestrates complete workflow:
-  - Discovery and analysis
-  - Uncertainty resolution + Synthesize clarified request
-  - Call Q-Gate agent (generic, reusable tool)
-  - Build deliverables using affected_files from Q-Gate
-  - Return deliverables
+The skill handles the complete Complex Track workflow internally:
+- Discovery (using domain-specific scripts)
+- Analysis (spawning sub-agents if needed via Task tool)
+- Persist assessments → assessments.jsonl
+- Confirm uncertainties with user
+- Group into deliverables
+- Write solution_outline.md
 
-  Extension returns deliverables list.
+### 7.2 Log Skill Load
 
-**If no extension** (generic module-based workflow):
-
-  Run module-based workflow (Steps 4a-4d below):
-
----
-
-### Step 4a: Select Target Modules (Generic/Module-Based Domains)
-
-For simple tasks: identify the single affected module. For complex tasks: select module for each sub-task.
-
-### Get Module List
-
-**EXECUTE**:
 ```bash
-python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture modules \
-  --trace-plan-id {plan_id}
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  decision {plan_id} INFO "(pm-workflow:phase-3-outline) Loaded {skill} for {domain}"
 ```
-
-Returns all module names. Use this list as candidates for evaluation.
-
-### Module Selection Analysis
-
-For each module returned, evaluate:
-
-| Factor | Weight | Score Criteria |
-|--------|--------|----------------|
-| responsibility match | 3 | Keywords in task match responsibility |
-| purpose fit | 2 | Purpose compatible with change type |
-| key_packages match | 3 | Task aligns with package descriptions |
-| dependency position | 2 | Correct layer for the change |
-
-**Selection threshold**: Modules with weighted score >= 6 are candidates.
-
-### Query Module Details
-
-For each candidate module:
-
-**EXECUTE**:
-```bash
-python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture module \
-  --name {module} \
-  --trace-plan-id {plan_id}
-```
-
-### Document Selection Reasoning
-
-**Template**: `templates/module-selection-analysis.md` (force load)
 
 ---
 
-### Step 4b: Determine Package Placement
+## Step 8: Skill Completion
 
-For each selected module, determine where new code belongs.
+**Purpose**: Skill returns minimal status; data is in sinks.
 
-### Load Complete Package Structure
+### 8.1 Skill Return Value
 
-**EXECUTE**:
-```bash
-python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture module \
-  --name {module} --full \
-  --trace-plan-id {plan_id}
+```toon
+status: success
+plan_id: {plan_id}
+deliverable_count: {N}
 ```
 
-### Package Selection Decision Matrix
+### 8.2 Log Skill Completion
 
-| Scenario | Action |
-|----------|--------|
-| Task matches key_package description | Place in that key_package |
-| Task needs utility location | Check for existing util package |
-| New cross-cutting concern | Create new package (document reasoning) |
-| Unclear placement | Check has_package_info packages first |
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  decision {plan_id} INFO "(pm-workflow:phase-3-outline) Skill complete: {deliverable_count} deliverables"
+```
 
-**Detail**: See `standards/module-selection.md` for key_packages guidance and validation checklist.
-
-### Document Package Reasoning
-
-**Template**: `templates/package-selection.md` (force load)
+**If skill returns error**: HALT and return error.
 
 ---
 
-### Step 4c: Create Deliverables with Profiles List
+## Step 9: Q-Gate Verification
 
-Create deliverables with module context and a profiles list.
+**Purpose**: Verify skill output meets quality standards.
 
-**Core constraint**: One deliverable = one module.
+### 9.1 Spawn Q-Gate Agent
+
+```
+Task: pm-workflow:q-gate-validation-agent
+  Input:
+    plan_id: {plan_id}
+```
+
+**Q-Gate reads from**:
+- `solution_outline.md` (written by domain skill)
+- `artifacts/assessments.jsonl` (written by domain skill)
+- `request.md` (clarified_request or body)
+
+**Q-Gate verifies**:
+- Each deliverable fulfills request intent
+- Deliverables respect architecture constraints
+- No false positives (files that shouldn't be changed)
+- No missing coverage (files that should be changed but aren't)
+
+**Q-Gate writes**:
+- `artifacts/findings.jsonl` - Any triage findings
+- `logs/decision.log` - Q-Gate verification results
+
+### 9.2 Q-Gate Return Value
+
+```toon
+status: success
+plan_id: {plan_id}
+deliverables_verified: {N}
+passed: {count}
+flagged: {count}
+```
+
+### 9.3 Log Q-Gate Result
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  decision {plan_id} INFO "(pm-workflow:phase-3-outline:qgate) Full: {passed} passed, {flagged} flagged"
+```
+
+→ **Continue to Step 10**
+
+---
+
+# Generic Workflow (No Domain Skill)
+
+For domains without outline skills (e.g., Java, frontend), use module-based workflow.
+
+---
+
+## Generic Step A: Read Module Mapping
+
+Module mapping from phase-2-refine specifies target modules.
+
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-references:manage-references get \
+  --plan-id {plan_id} --field module_mapping
+```
+
+---
+
+## Generic Step B: Create Deliverables per Module
+
+For each module in module_mapping:
+
+1. Create deliverable with appropriate profile
+2. No discovery needed - modules already identified in phase-2-refine
 
 ### Check Module Test Infrastructure
 
-**EXECUTE**:
 ```bash
 python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture modules \
   --command module-tests \
   --trace-plan-id {plan_id}
 ```
 
-Returns list of module names that have unit test infrastructure.
-
-### Profiles Block
-
-Create `**Profiles:**` block listing which profiles apply:
-- `implementation`: Always included
-- `testing`: Only if module has test infrastructure
-
-**Key Design**: Deliverables specify WHAT profiles apply (visible to user). Task-plan resolves WHICH skills from architecture (technical detail).
+Use result to determine if `testing` profile applies.
 
 ### Deliverable Structure
 
-**Template**: `pm-workflow:manage-solution-outline/templates/deliverable-template.md` (force load)
-
-For each deliverable, complete ALL fields in the template. **No field may be omitted.**
-
-The template enforces:
-- Metadata block (change_type, execution_mode, domain, module, depends)
-- Profiles block (implementation; testing if module has test infra)
-- Affected files (explicit paths - no wildcards)
-- Verification section (command and criteria)
-- Success Criteria section
-
-### Validate Deliverables Against Request
-
-Before writing solution document, verify each deliverable:
-
-1. **Request alignment**: Does deliverable directly address a request requirement?
-2. **Module verification**: Was module selected through per-candidate scoring (not assumed)?
-3. **Profile accuracy**: Are listed profiles based on actual architecture query (not inferred)?
-
-Log validation:
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[VALIDATION] (pm-workflow:phase-3-outline) Deliverable {N} validated: module={module}, profiles={profiles}, request_criteria={matched}"
-```
+Use same template as Simple Track (Step 4.2).
 
 ---
 
-### Step 4d: Create IT Deliverable (Optional)
+## Generic Step C: Write Solution Outline
 
-If integration tests are needed, create a **separate deliverable** targeting the IT module.
-
-### When to Create IT Deliverable
-
-| Change Type | IT Needed? | Rationale |
-|-------------|------------|-----------|
-| API endpoint (REST, GraphQL) | **YES** | External contract |
-| UI component | **YES** | User-facing behavior |
-| Public library API | **YES** | Consumer contract |
-| Configuration/properties | **YES** | Runtime behavior |
-| Internal implementation | NO | No external impact |
-| Refactoring (same behavior) | NO | Behavior unchanged |
-| Private/internal classes | NO | Not externally visible |
-
-### Check IT Infrastructure
-
-**EXECUTE**:
 ```bash
-python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture modules \
-  --command integration-tests \
-  --trace-plan-id {plan_id}
-```
-
-**If result is empty**: Skip IT deliverable (no IT module exists).
-
-**Detail**: See `standards/integration-tests.md` for IT decision flow, module patterns, and verification commands.
-
-### IT Deliverable Structure
-
-IT deliverables use the same template as implementation deliverables.
-
-**Template**: `pm-workflow:manage-solution-outline/templates/deliverable-template.md`
-
-**Key Differences**:
-- IT is always a **separate deliverable** - not embedded in implementation deliverable
-- IT targets the **IT module** - found via `architecture modules --command integration-tests`
-- IT depends on implementation - set `depends:` to reference the implementation deliverable
-- IT has only `implementation` profile - IT code is "implementation" of test code
-
-**Return deliverables list** from generic workflow.
-
----
-
-## Step 5: Write Solution Document
-
-**Purpose**: Write solution_outline.md using deliverables from extension (or generic workflow).
-
-Write the solution document using heredoc with deliverables from Step 4.
-
-**Skill**: `pm-workflow:manage-solution-outline` (force load)
-
-Provides complete guidance on solution document structure, diagram patterns, and examples by task type.
-
-### CRITICAL Format Requirements
-
-The write command validates automatically. To pass validation:
-
-**Document Structure** (required sections):
-```markdown
-# Solution: {title}
-
-## Summary        ← REQUIRED (2-3 sentences)
-
-## Overview       ← REQUIRED (ASCII diagram)
-
-## Deliverables   ← REQUIRED (numbered ### headings)
-```
-
-**Deliverable Heading Format**:
-```markdown
-### 1. First Deliverable Title   ← Format: ### N. Title
-### 2. Second Deliverable Title  ← Numbers must be sequential
-```
-
-**Affected Files - NO WILDCARDS**:
-```markdown
-**Affected files:**
-- `path/to/specific/file1.md`     ← CORRECT: explicit path
-- `path/to/specific/file2.md`     ← CORRECT: explicit path
-- `path/to/agents/*.md`           ← INVALID: wildcard pattern
-- All files in path/to/agents/    ← INVALID: vague reference
-```
-
-You MUST enumerate every file explicitly. Use Glob tool to discover files, then list each one.
-
-**EXECUTE**:
-```bash
-python3 .plan/execute-script.py pm-workflow:manage-solution-outline:manage-solution-outline \
-  write \
+python3 .plan/execute-script.py pm-workflow:manage-solution-outline:manage-solution-outline write \
   --plan-id {plan_id} <<'EOF'
-{content per manage-solution-outline skill with deliverables per deliverable-contract.md}
+{solution document with deliverables}
 EOF
 ```
 
-Validation runs automatically on every write.
-
 ---
 
-## Step 6: Set Detected Domains
+## Generic Step D: Log Completion
 
-**EXECUTE**:
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-config:manage-config set \
-  --plan-id {plan_id} --field domains --value '["domain1", "domain2"]'
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  decision {plan_id} INFO "(pm-workflow:phase-3-outline) Generic workflow: {N} deliverables"
 ```
 
-This is an **intelligent decision output** - not a copy of marshal.json domains, but Claude's analysis of which domains are relevant to the specific request.
+→ **Continue to Step 10**
 
 ---
 
-## Step 7: Record Issues as Lessons
+# Step 10: Write Solution and Return
 
-**EXECUTE**:
+---
+
+## Step 10.1: Write Solution Document (Simple Track only)
+
+For Simple Track, write solution_outline.md:
+
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lesson add \
-  --component-type skill \
-  --component-name phase-3-outline \
-  --category observation \
-  --title "{issue summary}" \
-  --detail "{context and resolution approach}" \
-  --trace-plan-id {plan_id}
+python3 .plan/execute-script.py pm-workflow:manage-solution-outline:manage-solution-outline write \
+  --plan-id {plan_id} <<'EOF'
+# Solution: {title}
+
+## Summary
+
+{2-3 sentence summary of the solution}
+
+## Overview
+
+{ASCII diagram showing solution structure}
+
+## Deliverables
+
+{deliverables from Step 4}
+EOF
+```
+
+**Note**: Complex Track - skill already wrote solution_outline.md in Step 7.
+
+---
+
+## Step 10.2: Log Completion
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  work {plan_id} INFO "[ARTIFACT] (pm-workflow:phase-3-outline) Created solution_outline.md"
+```
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  decision {plan_id} INFO "(pm-workflow:phase-3-outline) Complete: {N} deliverables, Q-Gate: {pass/fail}"
 ```
 
 ---
 
-## Step 8: Return Results
+## Step 10.3: Return Results
 
-Return structured output:
+Return minimal status - all data is in sinks:
+
 ```toon
 status: success
 plan_id: {plan_id}
+track: {simple|complex}
 deliverable_count: {N}
-domains_detected: [{detected_domains}]
-lessons_recorded: {count}
-message: {error message if status=error}
+qgate_passed: {true|false}
 ```
 
 ---
@@ -455,11 +469,14 @@ message: {error message if status=error}
 
 | Scenario | Action |
 |----------|--------|
-| Architecture not found | Return `{status: error, message: "Run /marshall-steward first"}` and abort |
+| Track not set | Return `{status: error, message: "phase-2-refine incomplete - track not set"}` |
+| Target not found (Simple) | Return error with invalid target |
+| Skill not found (Complex) | Fall back to Generic Workflow |
+| Skill fails (Complex) | Return error, do not fall back |
+| Q-Gate fails | Return with `qgate_passed: false` and findings |
 | Request not found | Return `{status: error, message: "Request not found"}` |
-| Validation fails | Fix issues or return partial with error list |
-| Domain unknown | Return error with valid domains |
-| Script execution fails | Record lesson-learned, return error |
+
+**CRITICAL**: If Complex Track skill fails, do NOT fall back to grep/search. Fail clearly.
 
 ---
 
@@ -468,37 +485,26 @@ message: {error message if status=error}
 **Invoked by**: `pm-workflow:solution-outline-agent` (thin agent)
 
 **Script Notations** (use EXACTLY as shown):
-- `plan-marshall:analyze-project-architecture:architecture` - Architecture queries
+- `pm-workflow:manage-references:manage-references` - Read track, module_mapping
+- `pm-workflow:manage-plan-documents:manage-plan-documents` - Read request
+- `pm-workflow:manage-config:manage-config` - Read domains
 - `pm-workflow:manage-solution-outline:manage-solution-outline` - Write solution document
-- `pm-workflow:manage-plan-documents:manage-plan-documents` - Request operations
-- `pm-workflow:manage-config:manage-config` - Plan config operations
-- `pm-workflow:manage-references:manage-references` - Plan references
-- `plan-marshall:manage-lessons:manage-lesson` - Record lessons on issues
+- `plan-marshall:extension-api:extension-api` - Resolve domain skill
+- `plan-marshall:manage-logging:manage-log` - Decision and work logging
+
+**Loads** (Complex Track):
+- Domain outline skill (e.g., `pm-plugin-development:ext-outline-plugin`)
+
+**Spawns** (Complex Track):
+- `pm-workflow:q-gate-validation-agent` (Q-Gate verification)
 
 **Consumed By**:
 - `pm-workflow:phase-4-plan` skill (reads deliverables for task creation)
 
 ---
 
-## Output Validation
-
-The workflow skill MUST validate that each deliverable contains all required fields from the deliverable contract:
-
-- [ ] `change_type` metadata
-- [ ] `execution_mode` metadata
-- [ ] `domain` metadata (valid domain from marshal.json)
-- [ ] `module` metadata (module name from architecture)
-- [ ] `depends` field (`none` or valid deliverable references)
-- [ ] `**Profiles:**` block with valid profiles (`implementation` always; `testing` if module has test infra)
-- [ ] Explicit file list (not "all files matching X")
-- [ ] Verification command and criteria
-
----
-
 ## Related Documents
 
-- `pm-workflow:workflow-extension-api/standards/extensions/outline-extension.md` - Outline extension contract
-- `pm-workflow:manage-solution-outline/standards/deliverable-contract.md` - Deliverable structure
-- `pm-workflow:workflow-architecture` - Workflow architecture overview
-- `plan-marshall:analyze-project-architecture` - Architecture API documentation
-- `plan-marshall:analyze-project-architecture/standards/module-graph-format.md` - Module dependency graph format
+- [outline-extension.md](../../workflow-extension-api/standards/extensions/outline-extension.md) - Skill-based extension contract
+- [deliverable-contract.md](../../manage-solution-outline/standards/deliverable-contract.md) - Deliverable structure
+- [workflow-architecture](../../workflow-architecture) - Workflow architecture overview

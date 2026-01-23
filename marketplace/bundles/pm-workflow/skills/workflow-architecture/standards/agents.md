@@ -214,7 +214,7 @@ The outline phase uses skill-direct invocation to enable parallel agent spawning
 │  │  │    │  • For complex workflow (path-multi):                  │ │ │  │
 │  │  │    │                                                        │ │ │  │
 │  │  │    │  ┌──────────────────────────────────────────────────┐ │ │ │  │
-│  │  │    │  │ Step 1: Task: inventory-assessment-agent         │ │ │ │  │
+│  │  │    │  │ Step 1: Task: ext-outline-inventory-agent         │ │ │ │  │
 │  │  │    │  │ → Returns grouped inventory                      │ │ │ │  │
 │  │  │    │  └──────────────────────────────────────────────────┘ │ │ │  │
 │  │  │    │                          │                             │ │ │  │
@@ -223,9 +223,9 @@ The outline phase uses skill-direct invocation to enable parallel agent spawning
 │  │  │    │  │ Step 3: Parallel Analysis (3 Task agents)        │ │ │ │  │
 │  │  │    │  │                                                  │ │ │ │  │
 │  │  │    │  │  ┌────────────┐ ┌────────────┐ ┌────────────┐   │ │ │ │  │
-│  │  │    │  │  │ skill-     │ │ command-   │ │ agent-     │   │ │ │ │  │
-│  │  │    │  │  │ analysis-  │ │ analysis-  │ │ analysis-  │   │ │ │ │  │
-│  │  │    │  │  │ agent      │ │ agent      │ │ agent      │   │ │ │ │  │
+│  │  │    │  │  │ ext-out-   │ │ ext-out-   │ │ ext-out-   │   │ │ │ │  │
+│  │  │    │  │  │ line-skill │ │ line-cmd   │ │ line-agent │   │ │ │ │  │
+│  │  │    │  │  │ -agent     │ │ -agent     │ │ -agent     │   │ │ │ │  │
 │  │  │    │  │  └────────────┘ └────────────┘ └────────────┘   │ │ │ │  │
 │  │  │    │  │                                                  │ │ │ │  │
 │  │  │    │  └──────────────────────────────────────────────────┘ │ │ │  │

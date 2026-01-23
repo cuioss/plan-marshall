@@ -1,11 +1,11 @@
 ---
-name: command-analysis-agent
+name: ext-outline-command-agent
 description: Analyze command files against request using semantic reasoning
 tools: Read, Bash, Skill
 model: sonnet
 ---
 
-# Command Analysis Agent
+# Ext-Outline Command Agent
 
 Analyzes command .md files using semantic reasoning to determine if they need modification for the given request.
 

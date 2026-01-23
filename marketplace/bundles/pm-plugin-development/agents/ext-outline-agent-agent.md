@@ -1,11 +1,11 @@
 ---
-name: agent-analysis-agent
+name: ext-outline-agent-agent
 description: Analyze agent files against request using semantic reasoning
 tools: Read, Bash, Skill
 model: sonnet
 ---
 
-# Agent Analysis Agent
+# Ext-Outline Agent Agent
 
 Analyzes agent .md files using semantic reasoning to determine if they need modification for the given request.
 

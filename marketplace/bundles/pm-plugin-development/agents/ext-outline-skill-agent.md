@@ -1,11 +1,11 @@
 ---
-name: skill-analysis-agent
+name: ext-outline-skill-agent
 description: Analyze skill files against request using semantic reasoning
 tools: Read, Bash, Skill
 model: sonnet
 ---
 
-# Skill Analysis Agent
+# Ext-Outline Skill Agent
 
 Analyzes SKILL.md files using semantic reasoning to determine if they need modification for the given request.
 

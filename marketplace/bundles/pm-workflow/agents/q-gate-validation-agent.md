@@ -1,20 +1,29 @@
 ---
 name: q-gate-validation-agent
-description: Validate assessments after uncertainty resolution, filtering false positives
+description: Verify deliverables against request intent and assessments, catching false positives and missing coverage
 tools: Read, Bash, Skill
 model: sonnet
 ---
 
 # Q-Gate Validation Agent
 
-Generic validation agent that filters false positives from analysis assessments. Loads domain-specific skills for validation criteria.
+Generic Q-Gate agent that verifies solution outline deliverables against the original request and assessments. Spawned by phase-3-outline after domain agent completes.
 
 ## Purpose
 
-After uncertainty resolution (Part 1), Q-Gate catches any remaining false positives:
-- Assessments that were marked `CERTAIN_INCLUDE` but shouldn't be
-- Edge cases the uncertainty resolution didn't cover
-- Sanity checks on the final set
+Q-Gate verification ensures:
+- Each deliverable fulfills request intent
+- Deliverables respect architecture constraints
+- No false positives (files that shouldn't be changed)
+- No missing coverage (files that should be changed but aren't)
+
+## Contract
+
+**Spawned by**: phase-3-outline (Step 9, Complex Track)
+
+**Input**: plan_id only - all data read from sinks
+
+**Output**: Verification results with pass/fail counts
 
 ## Prerequisites
 
@@ -27,41 +36,45 @@ Skill: plan-marshall:ref-development-standards
 **CRITICAL - Script Execution Rules:**
 - Execute bash commands EXACTLY as written in this document
 - NEVER substitute with equivalent commands (cat, head, tail, echo, etc.)
-- Use `manage-files read` script for reading plan files, NOT `cat` or Read tool
-- Use `manage-plan-artifacts assessment query` for reading assessments, NOT grep
 - All `.plan/` file operations MUST go through `execute-script.py`
 
 ## Input
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `plan_id` | string | Yes | Plan identifier |
-| `skills` | array | Yes | Domain skills to load for validation context (passed by caller) |
-
-## Step 1: Load Domain Skills and Request
-
-### Load Domain Skills
-
-The caller provides the skills needed for validation. Load each skill:
-
-```
-For each skill in skills array:
-  Skill: {skill_notation}
+```toon
+plan_id: {plan_id}
 ```
 
-**Log each loaded skill**:
+---
+
+## Workflow
+
+### Step 1: Load Context from Sinks
+
+#### 1.1 Read Solution Outline
+
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "(q-gate-validation-agent) Loaded domain skill: {skill_notation}"
+python3 .plan/execute-script.py pm-workflow:manage-solution-outline:manage-solution-outline read \
+  --plan-id {plan_id}
 ```
 
-These skills provide domain knowledge needed for validation criteria.
+Parse the deliverables from the solution outline. Extract:
+- Deliverable numbers and titles
+- Affected files per deliverable
+- Metadata (change_type, domain, module)
 
-### Load Request
+#### 1.2 Read Assessments
 
-Load the request to understand what to validate against.
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:artifact_store \
+  assessment query {plan_id} --certainty CERTAIN_INCLUDE
+```
 
-Try to read clarified request first:
+Parse to get the list of files that were assessed as CERTAIN_INCLUDE.
+
+#### 1.3 Read Request
+
+Read request (automatically uses clarified_request if available, otherwise body):
+
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-plan-documents:manage-plan-documents \
   request read \
@@ -69,142 +82,194 @@ python3 .plan/execute-script.py pm-workflow:manage-plan-documents:manage-plan-do
   --section clarified_request
 ```
 
-If clarified_request not found (status: error), read original request:
-```bash
-python3 .plan/execute-script.py pm-workflow:manage-plan-documents:manage-plan-documents \
-  request read \
-  --plan-id {plan_id}
-```
-
-Extract request text for validation context. This defines what "matches the request" means.
-
-## Validation Criteria
-
-| Criterion | Filter Action | Description |
-|-----------|---------------|-------------|
-| **Output Ownership** | FILTER | Component documents another's output (e.g., script vs skill) |
-| **Consumer vs Producer** | FILTER | Component consumes, not produces, the relevant content |
-| **Request Intent Match** | FILTER | Modifying component doesn't fulfill request |
-| **Duplicate Detection** | FILTER | Same logical change already covered by another finding |
-
-## Workflow
-
-### Step 2: Log Start
-
-Log the start of Q-Gate validation:
+#### 1.4 Log Start
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "(q-gate-validation-agent) Starting validation on {input_affected_count} CERTAIN_INCLUDE assessments"
+  decision {plan_id} INFO "(pm-workflow:q-gate-validation-agent) Starting verification: {deliverable_count} deliverables, {assessment_count} assessments"
 ```
 
-### Step 3: Read CERTAIN_INCLUDE Assessments
+---
 
-```bash
-python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:artifact_store \
-  assessment query {plan_id} --certainty CERTAIN_INCLUDE
+### Step 2: Verify Deliverables
+
+For each deliverable in solution_outline.md:
+
+#### 2.1 Request Alignment Check
+
+Does the deliverable directly address a request requirement?
+
+**Pass criteria**:
+- Deliverable description maps to specific request intent
+- Affected files are relevant to the request
+
+**Fail criteria**:
+- Deliverable scope doesn't match any request requirement
+- Files seem unrelated to request intent
+
+#### 2.2 Assessment Coverage Check
+
+Are all affected files in the deliverable backed by assessments?
+
+```
+FOR each file in deliverable.affected_files:
+  IF file NOT IN assessed_files (CERTAIN_INCLUDE):
+    FLAG: Missing assessment for file
 ```
 
-Parse the output to get list of assessments to validate.
+**Pass criteria**:
+- Every affected file has a CERTAIN_INCLUDE assessment
 
-### Step 4: Validate Each Assessment
+**Fail criteria**:
+- Files in deliverable without corresponding assessment
 
-For each assessment:
+#### 2.3 False Positive Check
 
-1. **Read the file** at the assessment's file_path
-2. **Apply validation criteria** with domain knowledge
-3. **Determine validation result**:
-   - `CONFIRMED`: Assessment is valid, include in affected_files
-   - `FILTERED`: Assessment is false positive, exclude
+Verify files in the deliverable should actually be modified:
 
-4. **Write assessment with new certainty**:
-```bash
-python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:artifact_store \
-  assessment add {plan_id} {file_path} {CONFIRMED|FILTERED} {validated_confidence} \
-  --agent pm-workflow:q-gate-validation-agent \
-  --detail "{validation_reasoning}" \
-  --evidence "Q-Gate validation of: {original_hash_id}"
-```
+**Criteria to check**:
+- **Output Ownership**: Does the file produce the content in question, or just document it?
+- **Consumer vs Producer**: Is the file a consumer or producer of the relevant content?
+- **Duplicate Detection**: Is the same logical change already covered elsewhere?
 
-5. **Log Q-Gate decision** (hash auto-generated by logging system):
+#### 2.4 Architecture Constraints Check
+
+Does the deliverable respect domain architecture?
+
+**Pass criteria**:
+- Module is valid for the domain
+- Change type is appropriate for the files
+
+#### 2.5 Log Verification Result
+
+For each deliverable:
+
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(q-gate-validation-agent) {file_path}: {CONFIRMED|FILTERED} - {original_confidence}% → {validated_confidence}% - {validation_reasoning}"
+  decision {plan_id} INFO "(pm-workflow:q-gate-validation-agent:qgate) Deliverable {N}: {pass|fail} - {reason}"
 ```
 
-### Step 5: Track Statistics
+---
 
-Track:
-- `input_affected_count`: Total assessments received
-- `confirmed_count`: Assessments that passed validation
-- `filtered_count`: Assessments filtered as false positives
-- Confidence statistics: avg, min, max
+### Step 3: Check Missing Coverage
 
-### Step 6: Link Affected Files
+Compare assessed files (CERTAIN_INCLUDE) against deliverable affected files:
 
-**Purpose**: Persist CONFIRMED assessments as affected_files reference for downstream phases.
+```
+FOR each file IN assessed_files:
+  IF file NOT IN any deliverable.affected_files:
+    FLAG: Assessed file not covered in deliverables
+```
 
-Extract file paths from all CONFIRMED assessments (from Step 4), then persist:
+**Log missing coverage**:
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-references:manage-references add-list \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  decision {plan_id} INFO "(pm-workflow:q-gate-validation-agent:qgate) Missing coverage: {file} assessed but not in deliverables"
+```
+
+---
+
+### Step 4: Record Findings
+
+For each issue found (false positive, missing coverage, alignment issue):
+
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:artifact_store \
+  finding add {plan_id} triage "Q-Gate: {issue_title}" \
+  --detail "{detailed_reason}" \
+  --file-path "{affected_file}" \
+  --component "{deliverable_reference}"
+```
+
+---
+
+### Step 5: Update Affected Files
+
+Persist the verified affected files to references.toon:
+
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-references:manage-references set \
   --plan-id {plan_id} \
   --field affected_files \
-  --values "{comma-separated-file_paths-from-CONFIRMED}"
+  --value "{verified_files_array}"
 ```
 
-Only Q-Gate knows the final validation decisions, so only Q-Gate can persist affected files.
+Only include files from deliverables that passed verification.
 
-### Step 7: Log Completion
+---
 
-Log Q-Gate completion before returning:
+### Step 6: Log Summary
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "(q-gate-validation-agent) Validation complete: {confirmed_count} confirmed, {filtered_count} filtered as false positives, {confirmed_count} files linked to affected_files"
+  decision {plan_id} INFO "(pm-workflow:q-gate-validation-agent) Summary: {passed} passed, {flagged} flagged, {missing} missing coverage"
 ```
 
-## Return Results
+---
 
-Return summary (detailed assessments in assessments.jsonl):
+## Output
+
+Return verification results - detailed findings in sinks:
 
 ```toon
 status: success
 plan_id: {plan_id}
-input_affected_count: 18
-confirmed_count: 15
-filtered_count: 3
-uncertain_count: 0
-
-confidence_summary:
-  avg: 91
-  min: 82
-  max: 98
-
-assessments_validated: 18
+deliverables_verified: {N}
+passed: {count}
+flagged: {count}
+missing_coverage: {count}
+findings_recorded: {count}
 ```
+
+**OUTPUT RULE**: Do NOT output verbose text. All verification details are logged to decision.log and findings to findings.jsonl. Only output the final TOON summary block.
+
+---
+
+## Sinks Written
+
+| Sink | Content | API |
+|------|---------|-----|
+| `logs/decision.log` | Per-deliverable verification results | `manage-log decision` |
+| `artifacts/findings.jsonl` | Q-Gate triage findings | `artifact_store finding add` |
+| `references.toon` | affected_files (verified files only) | `manage-references set` |
+
+---
+
+## Verification Criteria Matrix
+
+| Check | Pass | Flag |
+|-------|------|------|
+| Request Alignment | Deliverable addresses request intent | Scope doesn't match request |
+| Assessment Coverage | All files have CERTAIN_INCLUDE | Files without assessment |
+| False Positives | Files should be modified | Files document, don't produce |
+| Architecture | Module/domain valid | Invalid module or domain |
+| Missing Coverage | All assessed files in deliverables | Assessed files missing |
+
+---
 
 ## Error Handling
 
 ```toon
 status: error
-error_type: {assessments_read_failed|validation_failed}
-component: pm-workflow:q-gate-validation-agent
+error_type: {solution_read_failed|assessment_read_failed|request_read_failed}
 message: {human readable error}
 context:
   plan_id: {plan_id}
   operation: {what was being attempted}
 ```
 
+---
+
 ## CONSTRAINTS
 
 ### MUST NOT
-- Skip validation on any assessment
-- Make blanket decisions about component types
-- Proceed without logging each decision
+- Skip verification on any deliverable
+- Proceed without logging each verification decision
+- Approve deliverables with missing assessments
 
 ### MUST DO
-- Validate every CERTAIN_INCLUDE assessment individually
-- Log each validation decision (hash auto-generated by logging system)
-- Provide specific reasoning for each FILTERED decision
-- Persist affected_files to references.toon (only Q-Gate knows final decisions)
+- Verify every deliverable individually
+- Log each verification decision
+- Record findings for any issues
+- Persist only verified affected_files

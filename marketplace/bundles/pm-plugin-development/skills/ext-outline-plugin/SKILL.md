@@ -1,40 +1,85 @@
 ---
 name: ext-outline-plugin
-description: Outline extension implementing protocol for plugin development domain
+description: Outline extension skill for plugin development domain - discovery, analysis, deliverable creation
 implements: pm-workflow:workflow-extension-api/standards/extensions/outline-extension.md
 user-invocable: false
-allowed-tools: Read
+allowed-tools: Read, Bash, AskUserQuestion, Task
 ---
 
 # Plugin Outline Extension
 
-> Extension implementing outline protocol for plugin development domain.
+Domain-specific outline workflow for marketplace plugin development. Handles discovery, analysis, uncertainty resolution, and deliverable creation for Complex Track requests.
 
-Provides domain-specific knowledge for deliverable creation in marketplace plugin development tasks. Implements the outline extension protocol with defined sections that phase-3-outline calls explicitly.
-
-## Domain Detection
-
-This extension is relevant when:
-1. `marketplace/bundles` directory exists
-2. Request mentions "skill", "command", "agent", "bundle"
-3. Files being modified are in `marketplace/bundles/*/` paths
+**Loaded by**: `pm-workflow:phase-3-outline` (Complex Track)
 
 ---
 
-## Assessment Protocol
+## Input
 
-**Called by**: phase-3-outline Step 3 (Assess Complexity)
-**Purpose**: Determine which artifacts and bundles are affected, extract change_type
+```toon
+plan_id: {plan_id}
+```
 
-### Step 1: Spawn Inventory Assessment Agent
+All other data read from sinks (references.toon, config.toon, request.md).
 
-The assessment logic is implemented by the `inventory-assessment-agent`:
+---
+
+## Workflow Overview
 
 ```
-Task: pm-plugin-development:inventory-assessment-agent
+Step 1: Load Context      → Read request, module_mapping, domains
+Step 2: Discovery         → Spawn ext-outline-inventory-agent
+Step 3: Determine Type    → Extract change_type from request
+Step 4: Execute Workflow  → Route based on change_type (Create/Modify Flow)
+Step 5: Write Solution    → Persist solution_outline.md
+```
+
+**Detailed workflow**: Load `standards/workflow.md` for Create Flow and Modify Flow logic.
+
+---
+
+## Step 1: Load Context
+
+Read request (uses clarified_request if available):
+
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-plan-documents:manage-plan-documents request read \
+  --plan-id {plan_id} \
+  --section clarified_request
+```
+
+Read module_mapping (for bundle filtering hints):
+
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-references:manage-references get \
+  --plan-id {plan_id} --field module_mapping
+```
+
+Read domains:
+
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-config:manage-config get \
+  --plan-id {plan_id} --key domains
+```
+
+Log context:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  decision {plan_id} INFO "(pm-plugin-development:ext-outline-plugin) Context loaded: domains={domains}"
+```
+
+---
+
+## Step 2: Discovery
+
+Spawn ext-outline-inventory-agent to discover and filter marketplace components:
+
+```
+Task: pm-plugin-development:ext-outline-inventory-agent
   Input:
     plan_id: {plan_id}
-    request_text: {request content from request.md}
+    request_text: {request content from Step 1}
   Output:
     inventory_file: work/inventory_filtered.toon
     scope: affected_artifacts, bundle_scope
@@ -44,34 +89,33 @@ Task: pm-plugin-development:inventory-assessment-agent
 The agent:
 - Analyzes request to determine affected artifact types and bundle scope
 - Runs `scan-marketplace-inventory` with appropriate filters
-- Converts skill directories to file paths
-- **Persists** inventory to `work/inventory_filtered.toon` in plan directory
-- **Stores reference** as `inventory_filtered` in references.toon
+- Uses `--bundles` filter if module_mapping specifies specific bundles
+- Persists inventory to `work/inventory_filtered.toon`
+- Stores reference as `inventory_filtered` in references.toon
 
-**Contract**: After agent returns, `work/inventory_filtered.toon` exists and is linked in references.
+**Contract**: After agent returns, `work/inventory_filtered.toon` exists.
 
 ### Error Handling
 
-**CRITICAL**: If the agent fails due to API errors (529 overload, timeout, etc.), **HALT the workflow immediately**.
+**CRITICAL**: If agent fails due to API errors, **HALT immediately**.
 
 ```
 IF agent returns API error (529, timeout, connection error):
   HALT with error:
     status: error
     error_type: api_unavailable
-    message: "Assessment agent failed due to API error. Retry later."
+    message: "Discovery agent failed. Retry later."
 
   DO NOT:
-    - Fall back to manual grep/search
-    - Attempt simplified analysis
+    - Fall back to grep/search
     - Continue with partial data
 ```
 
-**Rationale**: Fallback approaches produce degraded output (false positives/negatives) that downstream phases cannot detect. Better to fail clearly than produce incorrect results.
+---
 
-### Step 2: Determine Change Type
+## Step 3: Determine Change Type
 
-After agent returns, determine `change_type` from request:
+Extract `change_type` from request:
 
 | Request Pattern | change_type |
 |-----------------|-------------|
@@ -80,6 +124,13 @@ After agent returns, determine `change_type` from request:
 | "rename", "migrate" | migrate |
 | "refactor", "restructure" | refactor |
 
+Log decision:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  decision {plan_id} INFO "(pm-plugin-development:ext-outline-plugin) Change type: {change_type}"
+```
+
 ### Validation
 
 ```
@@ -87,171 +138,122 @@ IF affected_artifacts is empty:
   ERROR: "No artifacts affected - clarify request"
 ```
 
-### Step 3: Impact Analysis (Optional)
-
-**Condition**: Run if inventory has < 20 files AND change_type is "modify", "migrate", or "refactor".
-
-**Purpose**: Discover components that directly depend on affected components (1 level only, no transitive chains).
-
-#### 3.1: Convert Paths to Notations
-
-Parse `work/inventory_filtered.toon` and convert file paths:
-- `marketplace/bundles/{b}/skills/{s}/SKILL.md` → `{b}:{s}`
-- `marketplace/bundles/{b}/commands/{c}.md` → `{b}:commands:{c}`
-- `marketplace/bundles/{b}/agents/{a}.md` → `{b}:agents:{a}`
-
-#### 3.2: Resolve and Expand (Single Script Call)
-
-The script handles everything: resolves reverse dependencies, expands inventory, and writes results directly.
-
-```bash
-python3 .plan/execute-script.py pm-plugin-development:ext-outline-plugin:filter-inventory \
-  impact-analysis --plan-id {plan_id}
-```
-
-The script:
-1. Reads `work/inventory_filtered.toon` to get primary affected components
-2. Converts file paths to component notations
-3. Calls resolve-dependencies rdeps for each component
-4. Collects unique direct dependents
-5. Expands inventory with dependents
-6. Writes `work/dependency_analysis.toon` with results
-7. Logs decision to decision.log
-
-**Output** (TOON):
-```toon
-status: success
-primary_count: 5
-dependents_found: 3
-dependents_added: 2  # May be fewer if already in scope
-```
-
-**Rationale**: Single script call avoids routing data through context. For operations like renaming, not including dependents would break them - expansion is inherently necessary for correctness.
-
-#### Error Handling
-
-**CRITICAL**: If resolve-dependencies fails, **HALT the workflow immediately**.
-
-```
-IF resolve-dependencies returns error or fails:
-  HALT with error:
-    status: error
-    error_type: dependency_resolution_failed
-    message: "Impact analysis failed. Retry later."
-
-  DO NOT:
-    - Continue without dependency data
-    - Fall back to skip impact analysis
-    - Proceed with partial scope
-```
-
-**Rationale**: Consistent with existing ext-outline-plugin pattern - no workarounds, fail loudly.
-
-### Conditional Standards
-
-| Condition | Additional Standard |
-|-----------|---------------------|
-| Deliverable involves Python scripts | `standards/script-verification.md` |
-| Impact analysis enabled | `standards/impact-analysis.md` |
-
 ---
 
-## Workflow
+## Step 4: Execute Workflow
 
-**Called by**: phase-3-outline Step 4 (Execute Workflow)
-**Purpose**: Create deliverables based on change_type
-
-### Load Workflow
+Load detailed workflow:
 
 ```
 Read standards/workflow.md
 ```
 
 The workflow routes based on `change_type`:
-- **create**: Build deliverables directly (files don't exist yet)
-- **modify/migrate/refactor**: Run analysis agents, then build deliverables
 
-### Change Type Mappings
+| change_type | Flow | Description |
+|-------------|------|-------------|
+| create | Create Flow | Build deliverables directly (files don't exist) |
+| modify, migrate, refactor | Modify Flow | Analysis → Uncertainty → Grouping → Deliverables |
 
-| change_type | execution_mode | Execution Skill |
-|-------------|----------------|-----------------|
-| create | automated | `pm-plugin-development:plugin-create` |
-| modify | automated | `pm-plugin-development:plugin-maintain` |
-| migrate | automated | `pm-plugin-development:plugin-maintain` |
-| refactor | automated | `pm-plugin-development:plugin-maintain` |
+### Create Flow Summary
 
-### Grouping Strategy
+- No analysis needed (files don't exist yet)
+- Build deliverables directly from request
+- One deliverable per component to create
 
-| Scenario | Grouping |
-|----------|----------|
-| Creating components | One deliverable per component |
-| Script changes | Include script + tests in same deliverable |
-| Cross-bundle pattern change | One deliverable per bundle |
-| Rename/migration | Group by logical unit |
+### Modify Flow Summary
 
-### Verification Commands
+- Load persisted inventory
+- Spawn analysis agents per bundle/type
+- Persist assessments to `artifacts/assessments.jsonl`
+- Resolve uncertainties via AskUserQuestion
+- Group into deliverables
+- Write solution_outline.md
 
-- Components: `/pm-plugin-development:plugin-doctor --component {path}`
-- Scripts: `./pw module-tests {bundle}`
+---
+
+## Step 5: Write Solution Outline
+
+After deliverables are built, write solution_outline.md:
+
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-solution-outline:manage-solution-outline write \
+  --plan-id {plan_id} --deliverables "{deliverables_json}"
+```
+
+Log completion:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  decision {plan_id} INFO "(pm-plugin-development:ext-outline-plugin) Complete: {N} deliverables"
+```
+
+---
+
+## Output
+
+Return minimal status - all data in sinks:
+
+```toon
+status: success
+plan_id: {plan_id}
+deliverable_count: {N}
+```
+
+---
+
+## Sinks Written
+
+| Sink | Content | API |
+|------|---------|-----|
+| `work/inventory_filtered.toon` | Filtered marketplace inventory | via ext-outline-inventory-agent |
+| `artifacts/assessments.jsonl` | Component assessments (Modify Flow) | `artifact_store assessment add` |
+| `logs/decision.log` | All decisions | `manage-log decision` |
+| `solution_outline.md` | Final deliverables | `manage-solution-outline write` |
+
+---
+
+## Impact Analysis (Optional)
+
+**Condition**: Run if inventory has < 20 files AND change_type is "modify", "migrate", or "refactor".
+
+**Purpose**: Discover components that depend on affected components.
+
+```bash
+python3 .plan/execute-script.py pm-plugin-development:ext-outline-plugin:filter-inventory \
+  impact-analysis --plan-id {plan_id}
+```
+
+For detailed rules, see `standards/impact-analysis.md`.
 
 ---
 
 ## Uncertainty Resolution
 
-**Called by**: workflow.md Step 4a (between analysis and aggregation)
-**Purpose**: Resolve UNCERTAIN assessments through user clarification
+**Trigger**: Run if `uncertain > 0` after analysis.
 
-### Uncertainty Grouping
+**Purpose**: Convert UNCERTAIN findings to CERTAIN through user clarification.
 
-Group UNCERTAIN assessments by ambiguity pattern:
+### Grouping Patterns
 
 | Pattern | Question Type |
 |---------|---------------|
 | JSON in workflow context vs output spec | "Should workflow-context JSON be included?" |
-| Script output documentation vs skill output | "Should documented script outputs count as skill outputs?" |
+| Script output documentation vs skill output | "Should documented script outputs count?" |
 | Example format vs actual output format | "Should example formats be treated as outputs?" |
-
-### Question Templates
-
-For each uncertainty group, use AskUserQuestion with specific examples:
-
-```
-AskUserQuestion:
-  questions:
-    - question: "Should files with JSON in workflow context be included?"
-      header: "Scope"
-      options:
-        - label: "Exclude workflow JSON (Recommended)"
-          description: "Only include explicit ## Output sections"
-        - label: "Include all JSON"
-          description: "Include any ```json block regardless of context"
-      multiSelect: false
-```
-
-**Include actual file examples with confidence**:
-```
-Examples found:
-- manage-adr/SKILL.md (45%): JSON in "## Create ADR" workflow step
-- workflow-integration-ci/SKILL.md (52%): JSON in "## Fetch Comments" step
-```
 
 ### Resolution Application
 
-After user answers:
-
-1. Read UNCERTAIN assessments from assessments.jsonl:
+1. Query UNCERTAIN assessments:
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
+python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:artifact_store \
   assessment query {plan_id} --certainty UNCERTAIN
 ```
 
-2. For each assessment matching the clarification:
-   - If user chose exclusion: UNCERTAIN → CERTAIN_EXCLUDE
-   - If user chose inclusion: UNCERTAIN → CERTAIN_INCLUDE
-
-3. Log resolution as new assessment with reference to original:
+2. Use AskUserQuestion with specific file examples
+3. Log resolutions as new assessments:
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
+python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:artifact_store \
   assessment add {plan_id} {file_path} {new_certainty} 85 \
   --agent pm-plugin-development:ext-outline-plugin \
   --detail "User clarified: {user_choice}" --evidence "From: {original_hash_id}"
@@ -265,3 +267,35 @@ python3 .plan/execute-script.py pm-workflow:manage-plan-documents:manage-plan-do
   --clarifications "{formatted Q&A}" \
   --clarified-request "{synthesized request}"
 ```
+
+---
+
+## Error Handling
+
+**CRITICAL**: If any operation fails, HALT immediately.
+
+| Failure | Action |
+|---------|--------|
+| Discovery fails | `status: error, error_type: discovery_failed` |
+| Analysis agent fails | `status: error, error_type: api_unavailable` |
+| Write fails | `status: error, error_type: write_failed` |
+
+**DO NOT**: Fall back to grep/search, skip failed bundles, continue with partial data.
+
+---
+
+## Conditional Standards
+
+| Condition | Standard |
+|-----------|----------|
+| Deliverable involves Python scripts | `standards/script-verification.md` |
+| Impact analysis enabled | `standards/impact-analysis.md` |
+| Component analysis details | `standards/component-analysis-contract.md` |
+
+---
+
+## Related
+
+- [workflow.md](standards/workflow.md) - Create Flow and Modify Flow details
+- [outline-extension.md](../../../pm-workflow/skills/workflow-extension-api/standards/extensions/outline-extension.md) - Contract this skill implements
+- [component-analysis-contract.md](standards/component-analysis-contract.md) - Analysis agent contract
