@@ -46,6 +46,12 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-m
 
 **Default**: If not configured, use `95` (95% confidence required).
 
+**Log**:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  work {plan_id} INFO "[REFINE:1] (pm-workflow:phase-2-refine) Using confidence threshold: {confidence_threshold}%"
+```
+
 Store as `confidence_threshold` for use in Step 6.
 
 ---
