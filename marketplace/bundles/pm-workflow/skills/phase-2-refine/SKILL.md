@@ -65,14 +65,14 @@ Store as `confidence_threshold` for use in Step 6.
 │                                                                 │
 │  Step 1: Load Confidence Threshold                              │
 │      ↓                                                          │
-│  Step 2: Load Architecture Context                              │
-│      ↓                                                          │
-│  Step 3: Load Request                                           │
-│      ↓                                                          │
-│  Step 4: Analyze Request Quality                                │
-│      ↓                                                          │
-│  Step 5: Analyze Request in Architecture Context                │
-│      ↓                                                          │
+│  Step 2: Load Architecture Context ──────────────────────┐      │
+│      ↓                                   arch_context    │      │
+│  Step 3: Load Request                         │          │      │
+│      ↓                                        ↓          ↓      │
+│  Step 4: Analyze Request Quality ←── technologies, modules      │
+│      ↓                                        │          │      │
+│  Step 5: Analyze in Architecture Context ←────┘──────────┘      │
+│      ↓                    (module details on demand)            │
 │  Step 6: Evaluate Confidence                                    │
 │      │                                                          │
 │      ├── confidence >= threshold → Step 9: Return Results       │
@@ -85,6 +85,17 @@ Store as `confidence_threshold` for use in Step 6.
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
+
+### Data Flow
+
+| Step | Input | Output | Stored As |
+|------|-------|--------|-----------|
+| Step 1 | marshal.json | threshold value | `confidence_threshold` |
+| Step 2 | architecture info | project + modules + technologies | `arch_context` |
+| Step 3 | request.md | title, description, clarifications | `request` |
+| Step 4 | `request` + `arch_context` | quality findings | `quality_findings` |
+| Step 5 | `request` + `arch_context` + detailed queries | mapping findings | `mapping_findings` |
+| Step 6 | all findings | confidence score | decision |
 
 ---
 
@@ -106,10 +117,39 @@ status: error
 message: Run /marshall-steward first
 ```
 
+### 2.1 Extract Architecture Summary
+
+From the `architecture info` output, extract and store:
+
+| Field | Source | Use In |
+|-------|--------|--------|
+| `project_name` | `project.name` | Context for questions |
+| `project_description` | `project.description` | Scope validation |
+| `technologies` | `technologies[]` | Step 4.1 Correctness validation |
+| `module_names` | `modules[].name` | Step 5.1 Module Mapping |
+| `module_purposes` | `modules[].purpose` | Step 5.2 Feasibility Check |
+
+**Store as** `arch_context` for use in Steps 4-5.
+
+**Example extraction**:
+```
+arch_context:
+  project_name: oauth-sheriff
+  project_description: JWT validation library for Quarkus
+  technologies: [maven]
+  modules:
+    - name: oauth-sheriff-core
+      purpose: library
+    - name: oauth-sheriff-quarkus
+      purpose: extension
+```
+
+### 2.2 Log Completion
+
 **Log**:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[REFINE:2] (pm-workflow:phase-2-refine) Loaded Architecture Context"
+  work {plan_id} INFO "[REFINE:2] (pm-workflow:phase-2-refine) Loaded architecture: {project_name} ({module_count} modules)"
 ```
 
 **If feedback provided**, log it:
@@ -171,19 +211,26 @@ FEEDBACK_TYPE: {REQUIREMENT_GAP|SCOPE_CORRECTION|APPROACH_PREFERENCE}
 
 ### 4.1 Correctness
 
-**Check**: Are requirements technically valid?
+**Check**: Are requirements technically valid? **Use `arch_context` from Step 2**.
 
-| Aspect | Check |
-|--------|-------|
-| Technology references | Do mentioned technologies/frameworks exist and apply? |
-| API references | Are referenced APIs/methods valid in the codebase? |
-| Pattern references | Are mentioned patterns appropriate for the domain? |
-| Constraint validity | Are constraints achievable (not mutually exclusive)? |
+| Aspect | Check | Architecture Data Used |
+|--------|-------|------------------------|
+| Technology references | Do mentioned technologies/frameworks exist? | `arch_context.technologies` |
+| Module references | Do mentioned modules exist in the project? | `arch_context.modules[].name` |
+| API references | Are referenced APIs/methods valid in the codebase? | Query if unclear |
+| Pattern references | Are mentioned patterns appropriate for the domain? | `arch_context.project_description` |
+| Constraint validity | Are constraints achievable (not mutually exclusive)? | Module purposes |
+
+**Validation against architecture**:
+- If request mentions "Maven" but `technologies` doesn't include `maven` → ISSUE
+- If request mentions module "foo-bar" but it's not in `modules` → ISSUE
+- If request mentions "Quarkus CDI" but project is plain Java library → ISSUE
 
 **Finding format**:
 ```
 CORRECTNESS: {PASS|ISSUE}
   - {specific finding with evidence}
+  - Architecture reference: {what was checked against}
 ```
 
 ### 4.2 Completeness
@@ -255,22 +302,48 @@ AMBIGUITY: {PASS|UNCLEAR}
 
 ## Step 5: Analyze Request in Architecture Context
 
-With architecture loaded (Step 2), analyze how the request maps to the codebase.
+With `arch_context` from Step 2, analyze how the request maps to the codebase.
 
 ### 5.1 Module Mapping
 
 **Question**: Which modules are affected by this request?
 
-**EXECUTE**:
-```bash
-python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture modules \
-  --trace-plan-id {plan_id}
-```
+**Initial mapping** (use `arch_context.modules` from Step 2):
 
 For each requirement, identify candidate modules:
-- Does the request mention specific modules?
-- Does the request mention functionality that maps to known module responsibilities?
+- Does the request mention specific modules? → Check against `arch_context.modules[].name`
+- Does the request mention functionality? → Match against `arch_context.modules[].purpose`
 - Are there implicit module dependencies?
+
+**When to query detailed module info**:
+
+If mapping is unclear (confidence < 70%), query detailed module info:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture module \
+  --name {candidate_module} --trace-plan-id {plan_id}
+```
+
+This provides:
+- `responsibility`: What the module does (e.g., "Core JWT validation logic")
+- `key_packages`: Package structure and descriptions
+- `key_dependencies`: External dependencies that indicate functionality
+- `internal_dependencies`: Dependencies on other project modules
+
+**Decision tree for detailed queries**:
+
+| Situation | Action |
+|-----------|--------|
+| Request mentions specific module by name | No query needed (direct match) |
+| Request mentions functionality, multiple modules possible | Query candidates to compare `responsibility` |
+| Request is cross-cutting (affects multiple modules) | Query graph to understand dependencies |
+| Request scope unclear | Query detailed info for all candidate modules |
+
+**Graph query** (for cross-module changes):
+```bash
+python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture graph \
+  --trace-plan-id {plan_id}
+```
 
 **Finding format**:
 ```
@@ -279,22 +352,32 @@ MODULE_MAPPING: {CLEAR|NEEDS_CLARIFICATION}
   - Candidate modules: [{module1}, {module2}]
   - Confidence: {percentage}
   - Reason: {why these modules, or why unclear}
+  - Detailed query: {yes/no - whether module details were retrieved}
 ```
 
 ### 5.2 Feasibility Check
 
 **Question**: Can this request be implemented given the architecture?
 
-| Aspect | Check |
-|--------|-------|
-| Module boundaries | Does request respect existing module boundaries? |
-| Dependency direction | Does request respect dependency flow? |
-| Extension points | Are there appropriate extension points for the change? |
+**Use architecture data to validate**:
+
+| Aspect | Check | Data Source |
+|--------|-------|-------------|
+| Module boundaries | Does request respect existing module boundaries? | `arch_context.modules[].purpose` |
+| Dependency direction | Does request respect dependency flow? | `architecture graph` output |
+| Extension points | Are there appropriate extension points for the change? | Module details `internal_dependencies` |
+| Technology fit | Does request match project technologies? | `arch_context.technologies` |
+
+**Common feasibility concerns**:
+- Request asks to modify `library` module but change requires runtime context → CONCERN
+- Request requires dependency from leaf module to root module (wrong direction) → CONCERN
+- Request assumes framework feature not present in `technologies` → CONCERN
 
 **Finding format**:
 ```
 FEASIBILITY: {FEASIBLE|CONCERN}
   - {concern and architectural constraint}
+  - Architecture check: {what was validated}
 ```
 
 ### 5.3 Scope Size Estimation
