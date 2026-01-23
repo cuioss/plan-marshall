@@ -34,7 +34,7 @@ Before creating deliverables (phase-3-outline), ensure the request is:
 
 ---
 
-## Step 0: Load Confidence Threshold
+## Step 1: Load Confidence Threshold
 
 Read the confidence threshold from project configuration.
 
@@ -46,7 +46,7 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-m
 
 **Default**: If not configured, use `95` (95% confidence required).
 
-Store as `confidence_threshold` for use in Step 5.
+Store as `confidence_threshold` for use in Step 6.
 
 ---
 
@@ -57,30 +57,32 @@ Store as `confidence_threshold` for use in Step 5.
 │                    REQUEST REFINE LOOP                          │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
-│  Step 1: Load Architecture Context                              │
+│  Step 1: Load Confidence Threshold                              │
 │      ↓                                                          │
-│  Step 2: Load Request                                           │
+│  Step 2: Load Architecture Context                              │
 │      ↓                                                          │
-│  Step 3: Analyze Request Quality                                │
+│  Step 3: Load Request                                           │
 │      ↓                                                          │
-│  Step 4: Analyze Request in Architecture Context                │
+│  Step 4: Analyze Request Quality                                │
 │      ↓                                                          │
-│  Step 5: Evaluate Confidence                                    │
+│  Step 5: Analyze Request in Architecture Context                │
+│      ↓                                                          │
+│  Step 6: Evaluate Confidence                                    │
 │      │                                                          │
-│      ├── confidence >= threshold → EXIT LOOP (proceed)          │
+│      ├── confidence >= threshold → Step 9: Return Results       │
 │      │                                                          │
-│      └── confidence < threshold → Step 6: Clarify with User     │
+│      └── confidence < threshold → Step 7: Clarify with User     │
 │              ↓                                                  │
-│          Step 7: Update Request                                 │
+│          Step 8: Update Request                                 │
 │              ↓                                                  │
-│          (loop back to Step 3)                                  │
+│          (loop back to Step 4)                                  │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Step 1: Load Architecture Context
+## Step 2: Load Architecture Context
 
 Query project architecture BEFORE any analysis. Architecture data is pre-computed and compact (~500 tokens).
 
@@ -101,18 +103,18 @@ message: Run /marshall-steward first
 **Log**:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[REFINE:1] (pm-workflow:phase-2-refine) Loaded Architecture Context"
+  work {plan_id} INFO "[REFINE:2] (pm-workflow:phase-2-refine) Loaded Architecture Context"
 ```
 
 **If feedback provided**, log it:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[REFINE:1] (pm-workflow:phase-2-refine) Processing with feedback: {feedback}"
+  work {plan_id} INFO "[REFINE:2] (pm-workflow:phase-2-refine) Processing with feedback: {feedback}"
 ```
 
 ---
 
-## Step 2: Load Request
+## Step 3: Load Request
 
 Load the request document.
 
@@ -133,16 +135,16 @@ Output format: `pm-workflow:manage-plan-documents/documents/request.toon`
 **Log**:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[REFINE:2] (pm-workflow:phase-2-refine) Loaded request: {title}"
+  work {plan_id} INFO "[REFINE:3] (pm-workflow:phase-2-refine) Loaded request: {title}"
 ```
 
 ---
 
-## Step 3: Analyze Request Quality
+## Step 4: Analyze Request Quality
 
 Evaluate the request against five quality dimensions.
 
-### 3.0 Feedback Analysis (if feedback provided)
+### 4.0 Feedback Analysis (if feedback provided)
 
 **When `feedback` parameter is present**, categorize it to determine handling:
 
@@ -161,7 +163,7 @@ FEEDBACK_TYPE: {REQUIREMENT_GAP|SCOPE_CORRECTION|APPROACH_PREFERENCE}
 
 **Note**: Only REQUIREMENT_GAP feedback affects request analysis (surfaces as Completeness issue). Other feedback types are passed through to outline creation without blocking request confidence.
 
-### 3.1 Correctness
+### 4.1 Correctness
 
 **Check**: Are requirements technically valid?
 
@@ -178,7 +180,7 @@ CORRECTNESS: {PASS|ISSUE}
   - {specific finding with evidence}
 ```
 
-### 3.2 Completeness
+### 4.2 Completeness
 
 **Check**: Is all necessary information present?
 
@@ -195,7 +197,7 @@ COMPLETENESS: {PASS|MISSING}
   - {what is missing and why it matters}
 ```
 
-### 3.3 Consistency
+### 4.3 Consistency
 
 **Check**: Are requirements internally consistent?
 
@@ -211,7 +213,7 @@ CONSISTENCY: {PASS|CONFLICT}
   - {conflicting requirements with explanation}
 ```
 
-### 3.4 Non-Duplication
+### 4.4 Non-Duplication
 
 **Check**: Are there redundant requirements?
 
@@ -226,7 +228,7 @@ DUPLICATION: {PASS|REDUNDANT}
   - {duplicated requirements and recommendation}
 ```
 
-### 3.5 Ambiguity
+### 4.5 Ambiguity
 
 **Check**: Is there only one valid interpretation?
 
@@ -245,11 +247,11 @@ AMBIGUITY: {PASS|UNCLEAR}
 
 ---
 
-## Step 4: Analyze Request in Architecture Context
+## Step 5: Analyze Request in Architecture Context
 
-With architecture loaded (Step 1), analyze how the request maps to the codebase.
+With architecture loaded (Step 2), analyze how the request maps to the codebase.
 
-### 4.1 Module Mapping
+### 5.1 Module Mapping
 
 **Question**: Which modules are affected by this request?
 
@@ -273,7 +275,7 @@ MODULE_MAPPING: {CLEAR|NEEDS_CLARIFICATION}
   - Reason: {why these modules, or why unclear}
 ```
 
-### 4.2 Feasibility Check
+### 5.2 Feasibility Check
 
 **Question**: Can this request be implemented given the architecture?
 
@@ -289,7 +291,7 @@ FEASIBILITY: {FEASIBLE|CONCERN}
   - {concern and architectural constraint}
 ```
 
-### 4.3 Scope Size Estimation
+### 5.3 Scope Size Estimation
 
 **Question**: What is the approximate scope?
 
@@ -310,9 +312,9 @@ SCOPE_ESTIMATE: {Small|Medium|Large|Needs decomposition}
 
 ---
 
-## Step 5: Evaluate Confidence
+## Step 6: Evaluate Confidence
 
-Aggregate findings from Steps 3-4 into confidence score.
+Aggregate findings from Steps 4-5 into confidence score.
 
 ### Confidence Calculation
 
@@ -325,7 +327,7 @@ Aggregate findings from Steps 3-4 into confidence score.
 | Completeness | 15% | 100 if PASS, 50 if minor missing, 0 if major missing |
 | Consistency | 15% | 100 if PASS, 0 if CONFLICT |
 | Ambiguity | 15% | 100 if PASS, 0 if UNCLEAR |
-| Module Mapping | 10% | Use confidence from Step 4.1 |
+| Module Mapping | 10% | Use confidence from Step 5.1 |
 
 **If no feedback** (initial analysis):
 
@@ -336,7 +338,7 @@ Aggregate findings from Steps 3-4 into confidence score.
 | Consistency | 20% | 100 if PASS, 0 if CONFLICT |
 | Non-Duplication | 10% | 100 if PASS, 80 if REDUNDANT |
 | Ambiguity | 20% | 100 if PASS, 0 if UNCLEAR |
-| Module Mapping | 10% | Use confidence from Step 4.1 |
+| Module Mapping | 10% | Use confidence from Step 5.1 |
 
 **Confidence = weighted sum**
 
@@ -344,25 +346,25 @@ Aggregate findings from Steps 3-4 into confidence score.
 
 ```
 IF confidence >= confidence_threshold:
-  Log: "[REFINE:5] Request refinement complete. Confidence: {confidence}%"
-  RETURN: proceed_to_outline = true
+  Log: "[REFINE:6] Request refinement complete. Confidence: {confidence}%"
+  CONTINUE to Step 9 (Return Results)
 
 ELSE:
-  Log: "[REFINE:5] Request needs clarification. Confidence: {confidence}%"
-  CONTINUE to Step 6
+  Log: "[REFINE:6] Request needs clarification. Confidence: {confidence}%"
+  CONTINUE to Step 7
 ```
 
 **Log**:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[REFINE:5] (pm-workflow:phase-2-refine) Confidence: {confidence}%. Threshold: {confidence_threshold}%. Issues: {issue_summary}"
+  work {plan_id} INFO "[REFINE:6] (pm-workflow:phase-2-refine) Confidence: {confidence}%. Threshold: {confidence_threshold}%. Issues: {issue_summary}"
 ```
 
 ---
 
-## Step 6: Clarify with User
+## Step 7: Clarify with User
 
-For each issue found in Steps 3-4, formulate a clarification question.
+For each issue found in Steps 4-5, formulate a clarification question.
 
 ### Question Formulation
 
@@ -396,11 +398,11 @@ AskUserQuestion:
 
 ---
 
-## Step 7: Update Request
+## Step 8: Update Request
 
 After receiving user answers, update request.md with clarifications.
 
-### 7.1 Record Clarifications
+### 8.1 Record Clarifications
 
 **EXECUTE**:
 ```bash
@@ -416,7 +418,7 @@ Q: {question asked}
 A: {user's answer}
 ```
 
-### 7.2 Synthesize Clarified Request
+### 8.2 Synthesize Clarified Request
 
 If significant clarifications were made, synthesize an updated request:
 
@@ -443,21 +445,33 @@ python3 .plan/execute-script.py pm-workflow:manage-plan-documents:manage-plan-do
 - {Constraint from clarification}
 ```
 
-### 7.3 Log and Loop
+### 8.3 Log and Loop
 
 **Log**:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[REFINE:7] (pm-workflow:phase-2-refine) Updated request with {N} clarifications. Returning to analysis."
+  work {plan_id} INFO "[REFINE:8] (pm-workflow:phase-2-refine) Updated request with {N} clarifications. Returning to analysis."
 ```
 
-**Loop**: Return to Step 3 with updated request.
+**Loop**: Return to Step 4 with updated request.
 
 ---
 
-## Output
+## Step 9: Return Results
 
-When confidence reaches threshold, return:
+When confidence reaches threshold, log completion and return results.
+
+### 9.1 Log Completion
+
+**Log**:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  work {plan_id} INFO "[REFINE:9] (pm-workflow:phase-2-refine) Refinement complete. Confidence: {confidence}%. Iterations: {iteration_count}. Domains: [{domains}]"
+```
+
+### 9.2 Return Output
+
+Return the following TOON structure:
 
 ```toon
 status: success
