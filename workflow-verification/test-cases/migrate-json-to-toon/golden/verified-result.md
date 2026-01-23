@@ -66,7 +66,7 @@ No commands currently have JSON output specifications.
 
 ---
 
-## Skills with JSON Output Specs (5 files)
+## Skills with JSON Output Specs (8 files)
 
 | File | Reason |
 |------|--------|
@@ -75,6 +75,9 @@ No commands currently have JSON output specifications.
 | pm-dev-frontend/skills/js-fix-jsdoc/SKILL.md | "JSON Output Contract" section |
 | pm-dev-frontend/skills/js-generate-coverage/SKILL.md | "Step 3: Return Coverage Results" with ```json |
 | pm-dev-frontend/skills/js-implement-tests/SKILL.md | "JSON Output Contract" section |
+| pm-documents/skills/manage-adr/SKILL.md | "### Output" section with ```json |
+| pm-documents/skills/manage-interface/SKILL.md | "### Output" section with ```json |
+| pm-documents/skills/ref-documentation/SKILL.md | "Step 4: Parse JSON Output" with ```json |
 
 **Inclusion Log Required:**
 ```
@@ -92,6 +95,15 @@ No commands currently have JSON output specifications.
 
 [FINDING] (pm-plugin-development:ext-outline-plugin) Affected: pm-dev-frontend/skills/js-implement-tests/SKILL.md
   detail: Skill with "JSON Output Contract" section containing ```json output block
+
+[FINDING] (pm-plugin-development:ext-outline-plugin) Affected: pm-documents/skills/manage-adr/SKILL.md
+  detail: Skill with "### Output" section containing ```json output block
+
+[FINDING] (pm-plugin-development:ext-outline-plugin) Affected: pm-documents/skills/manage-interface/SKILL.md
+  detail: Skill with "### Output" section containing ```json output block
+
+[FINDING] (pm-plugin-development:ext-outline-plugin) Affected: pm-documents/skills/ref-documentation/SKILL.md
+  detail: Skill with "Step 4: Parse JSON Output" section containing ```json output block
 ```
 
 ---
@@ -178,13 +190,18 @@ No commands currently have JSON output specifications.
 - Domain: plan-marshall-plugin-dev
 - Module: pm-dev-frontend
 
+**Deliverable 5**: Migrate pm-documents skills to TOON output format
+- Files: 3 skills (manage-adr, manage-interface, ref-documentation)
+- Domain: plan-marshall-plugin-dev
+- Module: pm-documents
+
 ---
 
 ## Expected References.toon
 
 ```toon
 inventory_scan: {timestamp}:agents,commands,skills:all
-affected_files[15]:
+affected_files[18]:
   # pm-dev-java agents (9)
   marketplace/bundles/pm-dev-java/agents/java-implement-agent.md
   marketplace/bundles/pm-dev-java/agents/java-implement-tests-agent.md
@@ -204,6 +221,10 @@ affected_files[15]:
   marketplace/bundles/pm-dev-frontend/skills/js-fix-jsdoc/SKILL.md
   marketplace/bundles/pm-dev-frontend/skills/js-generate-coverage/SKILL.md
   marketplace/bundles/pm-dev-frontend/skills/js-implement-tests/SKILL.md
+  # pm-documents skills (3)
+  marketplace/bundles/pm-documents/skills/manage-adr/SKILL.md
+  marketplace/bundles/pm-documents/skills/manage-interface/SKILL.md
+  marketplace/bundles/pm-documents/skills/ref-documentation/SKILL.md
 ```
 
 ---
@@ -213,7 +234,7 @@ affected_files[15]:
 ### decision.log Entries
 
 ```
-(pm-plugin-development:ext-outline-plugin) Path-Multi selected: cross-bundle impact, 4 modules affected
+(pm-plugin-development:ext-outline-plugin) Path-Multi selected: cross-bundle impact, 5 modules affected
 (pm-plugin-development:ext-outline-plugin) Scope: resource-types=agents,commands,skills, bundles=all
   detail: Request explicitly mentions "agent/command/skill outputs"
 (pm-plugin-development:ext-outline-plugin) Skills with JSON output specs included
@@ -241,6 +262,12 @@ affected_files[15]:
   detail: Skill with "Step 3: Return Coverage Results" containing ```json output block
 [FINDING] (pm-plugin-development:ext-outline-plugin) Affected: pm-dev-frontend/skills/js-implement-tests/SKILL.md
   detail: Skill with "JSON Output Contract" section containing ```json output block
+[FINDING] (pm-plugin-development:ext-outline-plugin) Affected: pm-documents/skills/manage-adr/SKILL.md
+  detail: Skill with "### Output" section containing ```json output block
+[FINDING] (pm-plugin-development:ext-outline-plugin) Affected: pm-documents/skills/manage-interface/SKILL.md
+  detail: Skill with "### Output" section containing ```json output block
+[FINDING] (pm-plugin-development:ext-outline-plugin) Affected: pm-documents/skills/ref-documentation/SKILL.md
+  detail: Skill with "Step 4: Parse JSON Output" section containing ```json output block
 [FINDING] (pm-plugin-development:ext-outline-plugin) Not affected: plan-marshall/agents/research-best-practices.md
   detail: Agent uses markdown-formatted output, not JSON
 [FINDING] (pm-plugin-development:ext-outline-plugin) Not affected: pm-workflow/agents/plan-init-agent.md
@@ -253,6 +280,6 @@ affected_files[15]:
   detail: JSON block is configuration structure, not output specification
 [FINDING] (pm-plugin-development:ext-outline-plugin) Not affected: pm-plugin-development/skills/plugin-create/SKILL.md
   detail: JSON block is input format, not output specification
-[PROGRESS] (pm-plugin-development:ext-outline-plugin) Impact analysis complete: 15 of {total} components affected
-[ARTIFACT] (pm-plugin-development:ext-outline-plugin) Created solution_outline.md with 4 deliverables
+[PROGRESS] (pm-plugin-development:ext-outline-plugin) Impact analysis complete: 18 of {total} components affected
+[ARTIFACT] (pm-plugin-development:ext-outline-plugin) Created solution_outline.md with 5 deliverables
 ```

@@ -31,11 +31,12 @@ All expected items must be found:
 ### Commands (0 files)
 - [ ] tools-analyze-user-prompted.md correctly EXCLUDED (JSON is solution examples, not output)
 
-### Skills with JSON Output Specs (5 files)
+### Skills with JSON Output Specs (8 files)
 - [ ] 2 plan-marshall skills identified (permission-doctor, permission-fix)
 - [ ] 3 pm-dev-frontend skills identified (js-fix-jsdoc, js-generate-coverage, js-implement-tests)
+- [ ] 3 pm-documents skills identified (manage-adr, manage-interface, ref-documentation)
 
-**Expected count**: 15 affected files total
+**Expected count**: 18 affected files total
 
 **Critical checks - Must be found**:
 
@@ -47,6 +48,9 @@ All expected items must be found:
 | plan-marshall/skills/permission-fix/SKILL.md | "Output (JSON)" sections (5+ blocks) |
 | pm-dev-frontend/skills/js-fix-jsdoc/SKILL.md | "JSON Output Contract" section |
 | pm-dev-frontend/skills/js-generate-coverage/SKILL.md | "Step 3: Return Coverage Results" with ```json |
+| pm-documents/skills/manage-adr/SKILL.md | "### Output" section with ```json |
+| pm-documents/skills/manage-interface/SKILL.md | "### Output" section with ```json |
+| pm-documents/skills/ref-documentation/SKILL.md | "Step 4: Parse JSON Output" with ```json |
 
 ## Exclusion Criteria
 
@@ -101,19 +105,19 @@ All expected items must be found:
 ## Scoring Guidance
 
 **90-100 (Excellent)**:
-- 14-15 files found (allowing minor variance)
+- 17-18 files found (allowing minor variance)
 - All critical checks passed
 - Inclusion/exclusion distinction documented with context analysis
 - TOON-format components excluded
 - Solution example JSON exclusions logged
 
 **70-89 (Good)**:
-- 12-14 files found
+- 14-17 files found
 - Minor documentation gaps
 - Distinction mentioned but rationale brief
 
 **50-69 (Partial)**:
-- 10-12 files found
+- 10-14 files found
 - Missing multiple skills OR multiple agents
 - Exclusion decisions undocumented
 

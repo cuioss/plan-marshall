@@ -110,16 +110,17 @@ In work.log:
 - 1 pm-plugin-development agent → 1 deliverable
 - 2 plan-marshall skills → 1 deliverable
 - 3 pm-dev-frontend skills → 1 deliverable
+- 3 pm-documents skills → 1 deliverable
 
-**Total**: 4 deliverables covering 15 files
+**Total**: 5 deliverables covering 18 files
 
 **Acceptable variations**:
 - May split pm-dev-java further if justified (max 2 deliverables)
 - May combine plan-marshall and pm-dev-frontend skills if same change pattern
-- Total deliverables in range 3-5
+- Total deliverables in range 4-6
 
 **NOT acceptable**:
-- 15 separate deliverables (one per file)
+- 18 separate deliverables (one per file)
 - Combining agents and skills in same deliverable
 - Including TOON-format components (inventory-assessment-agent)
 - Including solution-example JSON (tools-analyze-user-prompted)
