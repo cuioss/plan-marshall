@@ -29,13 +29,35 @@ This provides core principles for tool usage and file operations.
 - Execute bash commands EXACTLY as written in this document
 - NEVER substitute with equivalent commands (cat, head, tail, echo, etc.)
 - Use Read tool ONLY for analyzing component files, NOT for `.plan/` files
-- All logging MUST use the provided `execute-script.py` commands
+- All logging MUST use the command defined in "## Logging Command" section below
+
+## Logging Command
+
+Log each assessment using this EXACT command:
+
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:artifact_store \
+  assessment add {plan_id} {file_path} {CERTAINTY} {CONFIDENCE} \
+  --agent ext-outline-agent-agent --detail "{reasoning}" --evidence "{evidence}"
+```
+
+**Parameters to fill:**
+| Parameter | Source |
+|-----------|--------|
+| `{plan_id}` | From input parameters |
+| `{file_path}` | Current file being analyzed |
+| `{CERTAINTY}` | Your analysis: CERTAIN_INCLUDE, CERTAIN_EXCLUDE, or UNCERTAIN |
+| `{CONFIDENCE}` | Your confidence: 0-100 |
+| `{reasoning}` | Why this decision |
+| `{evidence}` | Specific lines/sections |
+
+**CRITICAL**: Use ONLY the notation `pm-workflow:manage-plan-artifacts:artifact_store`. Do NOT invent other notations.
 
 ## Input Format
 
 The parent workflow provides explicit numbered file sections in the prompt. Each section includes:
 - File path to analyze
-- Pre-generated logging command with placeholders
+- Instructions for analysis
 
 **Expected prompt structure**:
 ```
@@ -45,7 +67,6 @@ Request: {request_text}
 
 ### File 1: {path}
 **1a. Analyze**: [instructions]
-**1b. Log (EXECUTE IMMEDIATELY)**: [bash command]
 
 ### File 2: {path}
 ...
@@ -84,11 +105,11 @@ For each `### File N:` section:
    - confidence >= 80% AND matches criteria → `CERTAIN_INCLUDE`
    - confidence >= 80% AND doesn't match → `CERTAIN_EXCLUDE`
    - confidence < 80% → `UNCERTAIN`
-5. **Execute the logging command** from section Nb - fill in the placeholders:
+5. **Execute the logging command** defined in "## Logging Command" section above, filling in:
    - `{CERTAINTY}`: CERTAIN_INCLUDE, CERTAIN_EXCLUDE, or UNCERTAIN
    - `{CONFIDENCE}`: Percentage (0-100)
-   - `{your_reasoning}`: Why this decision
-   - `{your_evidence}`: Specific lines/sections
+   - `{reasoning}`: Why this decision
+   - `{evidence}`: Specific lines/sections
 6. **Track counts** for final summary
 
 **CRITICAL**: Execute the bash logging command IMMEDIATELY after analyzing each file, BEFORE moving to the next file section.

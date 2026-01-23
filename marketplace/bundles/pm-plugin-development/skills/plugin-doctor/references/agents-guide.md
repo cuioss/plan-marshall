@@ -218,6 +218,79 @@ If you discover improvements, invoke `/plugin-update-agent` directly to update y
 - Remove any `/plugin-update-agent` invocation instructions
 - Add "return structured improvement suggestion" guidance
 
+## Rule 10: Self-Contained Command Definition
+
+**CRITICAL RULE**: Agents MUST have all script commands explicitly defined within themselves with EXACT notation format `bundle:skill:script`.
+
+**Rationale**: When agents rely on parent-passed commands or generic descriptions, they:
+- Invent incorrect notations (wrong bundle, wrong skill)
+- Use malformed notations (missing bundle:skill prefix)
+- Fail silently with wrong script paths
+
+**Four Detection Modes**:
+
+| Mode | What It Catches | Example Violation |
+|------|-----------------|-------------------|
+| A: Delegation | Parent-passed commands | "Execute command from section Nb" |
+| B: Notation | Malformed notations | `execute-script.py artifact_store` |
+| C: Missing Section | Script ops without explicit commands | "Log the assessment" (no command section) |
+| D: Parameters | Wrong parameters vs --help | `--plan-id` when positional (via --help) |
+
+**Notation Format Requirement**:
+```
+✅ pm-workflow:manage-plan-artifacts:artifact_store
+✅ plan-marshall:manage-logging:manage-log
+❌ artifact_store (missing bundle:skill)
+❌ manage-files:artifact-store (missing bundle)
+```
+
+**Violation Examples**:
+```markdown
+# Mode A violation (delegation)
+5. Execute the logging command from section Nb - fill in the placeholders
+
+# Mode B violation (malformed notation)
+```bash
+python3 .plan/execute-script.py artifact_store assessment add...
+```
+
+# Mode C violation (missing section)
+[Has "log the assessment" instruction but no ## Logging Command section]
+```
+
+**Required Fix Pattern**:
+```markdown
+## Logging Command
+
+Use this EXACT command:
+
+\`\`\`bash
+python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:artifact_store \
+  assessment add {plan_id} {file_path} {certainty} {confidence} \
+  --agent {agent_name} --detail "{reasoning}" --evidence "{evidence}"
+\`\`\`
+
+**Parameters to fill:**
+| Parameter | Source |
+|-----------|--------|
+| `{plan_id}` | From input parameters |
+| `{file_path}` | Current file being analyzed |
+
+**CRITICAL**: Use ONLY this notation. Do NOT invent other notations.
+```
+
+**Detection**:
+- Mode A: Search for patterns like "execute.*command.*from.*section", "fill in.*placeholders.*from"
+- Mode B: Search for `execute-script.py` calls and verify notation matches `bundle:skill:script` format
+- Mode C: Search for script action verbs (log, store, persist, record) without explicit command section
+- Mode D: Run `--help` on each script call and compare parameters against actual usage
+
+**Fix**:
+- Add explicit "## Logging Command" or "## Script Commands" section to the agent
+- Include full bash block with complete `bundle:skill:script` notation
+- Add parameter table showing where each value comes from
+- Add CRITICAL warning about not inventing notations
+
 ## Bloat Detection
 
 **Classification**:
@@ -557,6 +630,11 @@ Apply anti-bloat strategies:
 - ✅ No Rule 6 violations (no Task tool)
 - ✅ No Rule 7 violations (no Maven unless maven-builder)
 - ✅ No Pattern 22 violations (caller-reporting pattern)
+- ✅ No Rule 10 violations (self-contained command definitions)
+- ✅ All script commands have explicit bash blocks
+- ✅ All notations match `bundle:skill:script` format
+- ✅ Has "## Logging Command" or "## Script Commands" section if performs script operations
+- ✅ No delegation patterns ("command from section", "placeholders from prompt")
 - ✅ Bloat classification NORMAL (<300 lines)
 - ✅ Clear workflow with step-by-step logic
 - ✅ Proper error handling

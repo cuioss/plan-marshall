@@ -162,6 +162,93 @@ def check_rule_9_violations(content: str) -> list:
     return violations
 
 
+def check_command_self_containment(content: str) -> dict:
+    """Check for self-contained command definition violations (Rule 10).
+
+    Mode A: Detect delegation patterns (parent-passed commands)
+    Mode B: Verify explicit notation format (bundle:skill:script)
+    Mode C: Detect script action verbs without explicit command section
+    """
+    violations = []
+
+    # ============================================
+    # MODE A: Delegation Pattern Detection
+    # ============================================
+    delegation_patterns = [
+        (r'execute.*command.*from.*section', "Delegation: 'command from section'"),
+        (r'fill in.*placeholders.*from.*prompt', "Delegation: 'placeholders from prompt'"),
+        (r'command.*provided by.*parent', "Delegation: 'provided by parent'"),
+        (r'use.*the.*command.*from', "Delegation: 'use command from'"),
+        (r'logging command.*from.*section', "Delegation: 'logging command from section'"),
+    ]
+
+    for pattern, description in delegation_patterns:
+        if re.search(pattern, content, re.IGNORECASE):
+            violations.append({'mode': 'delegation', 'detail': description})
+
+    # ============================================
+    # MODE B: Notation Enforcement
+    # ============================================
+    # Find all bash blocks containing execute-script.py
+    bash_blocks = re.findall(r'```bash\s*(.*?)```', content, re.DOTALL | re.MULTILINE)
+
+    notation_pattern = r'execute-script\.py\s+(\S+)'
+    # Valid notation: bundle:skill:script (all lowercase with hyphens/underscores)
+    valid_notation = r'^[a-z][a-z0-9\-]+:[a-z][a-z0-9\-]+:[a-z][a-z0-9\-_]+$'
+
+    for block in bash_blocks:
+        if 'execute-script.py' in block:
+            # Extract the notation argument
+            match = re.search(notation_pattern, block)
+            if match:
+                notation = match.group(1)
+                # Verify it matches bundle:skill:script format
+                if not re.match(valid_notation, notation):
+                    violations.append({
+                        'mode': 'notation',
+                        'detail': f"Invalid notation format: '{notation}' (expected bundle:skill:script)",
+                    })
+            else:
+                violations.append({'mode': 'notation', 'detail': 'execute-script.py without notation argument'})
+
+    # ============================================
+    # MODE C: Action Verb Without Explicit Command Section
+    # ============================================
+    # Script-related action verbs that require explicit command definitions
+    script_actions = [
+        (r'log\s+(the\s+)?assessment', 'log assessment'),
+        (r'store\s+(the\s+)?finding', 'store finding'),
+        (r'persist\s+(the\s+)?result', 'persist result'),
+        (r'record\s+(the\s+)?(assessment|finding|result)', 'record assessment'),
+        (r'save\s+(the\s+)?analysis', 'save analysis'),
+        (r'log\s+(each|the|every)\s+', 'log operation'),
+    ]
+
+    # Check if component has explicit command section
+    has_command_section = bool(
+        re.search(r'##\s*(Logging\s+Command|Script\s+Commands?|Commands?\s+Reference)', content, re.IGNORECASE)
+    )
+
+    for action_pattern, action_name in script_actions:
+        if re.search(action_pattern, content, re.IGNORECASE):
+            if not has_command_section:
+                violations.append({
+                    'mode': 'missing_section',
+                    'detail': f"Action '{action_name}' without ## Logging Command section",
+                })
+                break  # Only report once per file
+
+    return {
+        'command_self_containment': len(violations) > 0,
+        'command_self_containments': violations,
+        'containment_summary': {
+            'delegation_issues': len([v for v in violations if v['mode'] == 'delegation']),
+            'notation_issues': len([v for v in violations if v['mode'] == 'notation']),
+            'missing_section_issues': len([v for v in violations if v['mode'] == 'missing_section']),
+        },
+    }
+
+
 def check_rule_violations(content: str, frontmatter: str, component_type: str, has_tools: bool, file_path: str) -> dict:
     """Check for rule violations."""
     rule_6_violation = False
@@ -188,11 +275,17 @@ def check_rule_violations(content: str, frontmatter: str, component_type: str, h
     if component_type == 'skill':
         rule_9_violations = check_rule_9_violations(content)
 
+    # Rule 10: Self-contained command definition (applies to agents primarily)
+    rule_10_result = {}
+    if component_type == 'agent':
+        rule_10_result = check_command_self_containment(content)
+
     return {
         'rule_6_violation': rule_6_violation,
         'rule_7_violation': rule_7_violation,
         'rule_8_violation': rule_8_violation,
         'rule_9_violations': rule_9_violations,
+        'rule_10_violations': rule_10_result,
     }
 
 

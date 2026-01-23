@@ -281,6 +281,25 @@ Recorded lessons:
 - Category should reflect nature: bug, improvement, anti-pattern
 - Include enough detail for future reference
 
+## Querying Assessments (if needed)
+
+To query assessments for context during failure analysis:
+
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:artifact_store \
+  assessment query {plan_id} --certainty {CERTAIN_INCLUDE|CERTAIN_EXCLUDE|UNCERTAIN}
+```
+
+**Parameters:**
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `{plan_id}` | positional | Plan identifier (NOT `--plan-id`) |
+| `--certainty` | optional flag | Filter by certainty level |
+
+**Note**: `plan_id` is positional (not `--plan-id`), certainty is an optional filter flag.
+
+---
+
 ## Non-Prompting Requirements
 
 This skill is designed to run without user prompts for analysis operations.

@@ -1097,6 +1097,32 @@ python3 .plan/execute-script.py pm-workflow:manage-solution-outline:manage-solut
 ```
 ```
 
+### Rule 10: Self-Contained Command Definition
+
+Components that execute scripts MUST have the EXACT notation (`bundle:skill:script`) explicitly defined WITHIN themselves.
+
+**Four Detection Modes**:
+
+| Mode | Catches |
+|------|---------|
+| A: Delegation | "Execute command from section Nb" - parent-passed |
+| B: Notation | `execute-script.py artifact_store` - missing bundle:skill |
+| C: Missing Section | "Log the assessment" without ## Logging Command section |
+| D: Parameters | `--plan-id` when should be positional (via --help) |
+
+**Notation Format**:
+- ✅ `pm-workflow:manage-plan-artifacts:artifact_store`
+- ❌ `artifact_store` (missing bundle:skill)
+- ❌ `manage-files:artifact-store` (missing bundle)
+
+**Required Pattern**:
+- Explicit "## Logging Command" or "## Script Commands" section
+- Full bash block with `python3 .plan/execute-script.py {bundle}:{skill}:{script}`
+- Every notation MUST match format: `bundle:skill:script`
+- Parameter table showing where values come from
+
+**CRITICAL**: Do NOT invent notations. Use only documented notations from the skill being called.
+
 ---
 
 ## Non-Prompting Requirements
