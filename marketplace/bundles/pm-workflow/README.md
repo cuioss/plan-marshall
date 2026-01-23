@@ -1,6 +1,6 @@
 # CUI Task Workflow
 
-Plan-based task management system that transforms high-level task descriptions into executable action sequences through progressive 5-phase workflow using thin agents and domain-agnostic workflow skills.
+Plan-based task management system that transforms high-level task descriptions into executable action sequences through progressive 6-phase workflow using thin agents and domain-agnostic workflow skills.
 
 ## Architecture
 
@@ -10,19 +10,20 @@ Plan-based task management system that transforms high-level task descriptions i
 User Request → [Thin Agents] → Workflow Skills (from system domain) → Domain Skills (from task.skills) → Result
 ```
 
-### 5-Phase Execution Model
+### 6-Phase Execution Model
 
 ```
-1-init → 2-outline → 3-plan → 4-execute → 5-finalize
+1-init → 2-refine → 3-outline → 4-plan → 5-execute → 6-finalize
 ```
 
 | Phase | Purpose | Output |
 |-------|---------|--------|
 | `1-init` | Initialize plan | config.toon, status.toon, request.md |
-| `2-outline` | Create solution outline | solution_outline.md |
-| `3-plan` | Decompose into tasks | TASK-*.toon |
-| `4-execute` | Run implementation | Modified project files |
-| `5-finalize` | Commit, PR, quality | Git commit, PR |
+| `2-refine` | Clarify request | Refined request with confidence score |
+| `3-outline` | Create solution outline | solution_outline.md |
+| `4-plan` | Decompose into tasks | TASK-*.toon |
+| `5-execute` | Run implementation | Modified project files |
+| `6-finalize` | Commit, PR, quality | Git commit, PR |
 
 ## Commands
 
@@ -40,7 +41,7 @@ Execute task plans - implement, verify, finalize.
 
 ```bash
 /plan-execute                         # Continue current plan
-/plan-execute phase=4-execute         # Execute specific phase
+/plan-execute phase=5-execute         # Execute specific phase
 ```
 
 ### /pr-doctor
@@ -66,10 +67,11 @@ All agents are domain-agnostic wrappers that load skills via system domain resol
 | Agent | Skill Resolution | Purpose |
 |-------|-----------------|---------|
 | `plan-init-agent` | System defaults only | Creates plan, detects domains |
-| `solution-outline-agent` | `resolve-workflow-skill --phase 2-outline` | Creates deliverables from request |
-| `task-plan-agent` | `resolve-workflow-skill --phase 3-plan` | Creates tasks from deliverables |
-| `task-execute-agent` | `resolve-workflow-skill --phase 4-execute` + `task.skills` | Executes single task |
-| `plan-finalize-agent` | `resolve-workflow-skill --phase 5-finalize` | Commit, PR, triage |
+| `request-refine-agent` | `resolve-workflow-skill --phase 2-refine` | Clarifies request until confidence threshold |
+| `solution-outline-agent` | `resolve-workflow-skill --phase 3-outline` | Creates deliverables from request |
+| `task-plan-agent` | `resolve-workflow-skill --phase 4-plan` | Creates tasks from deliverables |
+| `task-execute-agent` | `resolve-workflow-skill --phase 5-execute` + `task.skills` | Executes single task |
+| `plan-finalize-agent` | `resolve-workflow-skill --phase 6-finalize` | Commit, PR, triage |
 
 ## Skills
 
@@ -86,10 +88,11 @@ Workflow skills are resolved from `system.workflow_skills`:
 | Phase | Skill | Purpose |
 |-------|-------|---------|
 | `1-init` | `pm-workflow:phase-1-init` | Create plan structure |
-| `2-outline` | `pm-workflow:phase-2-outline` | Domain-agnostic solution outline creation |
-| `3-plan` | `pm-workflow:phase-3-plan` | Domain-agnostic task planning |
-| `4-execute` | `pm-workflow:phase-4-execute` | Domain-agnostic task execution |
-| `5-finalize` | `pm-workflow:phase-5-finalize` | Domain-agnostic finalization |
+| `2-refine` | `pm-workflow:phase-2-refine` | Clarify request until confidence threshold |
+| `3-outline` | `pm-workflow:phase-3-outline` | Domain-agnostic solution outline creation |
+| `4-plan` | `pm-workflow:phase-4-plan` | Domain-agnostic task planning |
+| `5-execute` | `pm-workflow:phase-5-execute` | Domain-agnostic task execution |
+| `6-finalize` | `pm-workflow:phase-6-finalize` | Domain-agnostic finalization |
 
 ### Workflow Skill Extensions
 
@@ -132,10 +135,11 @@ The system domain contains workflow skills in `marshal.json`:
     "system": {
       "workflow_skills": {
         "1-init": "pm-workflow:phase-1-init",
-        "2-outline": "pm-workflow:phase-2-outline",
-        "3-plan": "pm-workflow:phase-3-plan",
-        "4-execute": "pm-workflow:phase-4-execute",
-        "5-finalize": "pm-workflow:phase-5-finalize"
+        "2-refine": "pm-workflow:phase-2-refine",
+        "3-outline": "pm-workflow:phase-3-outline",
+        "4-plan": "pm-workflow:phase-4-plan",
+        "5-execute": "pm-workflow:phase-5-execute",
+        "6-finalize": "pm-workflow:phase-6-finalize"
       }
     }
   }
@@ -176,7 +180,7 @@ Task execution uses two-tier skill loading:
 
 | Tier | Source | Purpose |
 |------|--------|---------|
-| **Tier 1** | `resolve-workflow-skill --phase 4-execute` | System workflow skill |
+| **Tier 1** | `resolve-workflow-skill --phase 5-execute` | System workflow skill |
 | **Tier 2** | `task.skills` array | Domain-specific skills (resolved by task-plan) |
 
 Task-plan inherits skills from deliverables (selected during outline from module.skills_by_profile):
@@ -195,7 +199,7 @@ pm-workflow/
 │   ├── task-plan-agent.md       # Creates tasks
 │   └── task-execute-agent.md    # Executes single task
 ├── commands/
-│   ├── plan-manage.md           # 1-init + 2-outline + 3-plan phases
+│   ├── plan-manage.md           # 1-init + 2-refine + 3-outline + 4-plan phases
 │   ├── plan-execute.md          # Execute + finalize phases
 │   ├── pr-doctor.md
 │   └── task-implement.md
@@ -204,10 +208,11 @@ pm-workflow/
     │   ├── SKILL.md
     │   └── standards/           # Extension and profile contracts
     ├── phase-1-init/            # Init phase skill
-    ├── phase-2-outline/         # Solution outline workflow skill
-    ├── phase-3-plan/            # Task planning workflow skill
-    ├── phase-4-execute/         # Execute phase coordination
-    ├── phase-5-finalize/        # Finalize phase skill
+    ├── phase-2-refine/          # Request refinement workflow skill
+    ├── phase-3-outline/         # Solution outline workflow skill
+    ├── phase-4-plan/            # Task planning workflow skill
+    ├── phase-5-execute/         # Execute phase coordination
+    ├── phase-6-finalize/        # Finalize phase skill
     ├── task-implementation/     # Implementation profile workflow
     ├── task-module_testing/     # Module testing profile workflow
     ├── manage-plan-documents/   # Request/Solution document CRUD

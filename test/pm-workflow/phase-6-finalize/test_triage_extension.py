@@ -42,10 +42,11 @@ def test_resolve_triage_extension_java():
                         'defaults': ['plan-marshall:general-development-rules'],
                         'workflow_skills': {
                             '1-init': 'pm-workflow:phase-1-init',
-                            '2-outline': 'pm-workflow:phase-2-outline',
-                            '3-plan': 'pm-workflow:phase-3-plan',
-                            '4-execute': 'pm-workflow:phase-4-execute',
-                            '5-finalize': 'pm-workflow:phase-5-finalize',
+                            '2-refine': 'pm-workflow:phase-2-refine',
+                            '3-outline': 'pm-workflow:phase-3-outline',
+                            '4-plan': 'pm-workflow:phase-4-plan',
+                            '5-execute': 'pm-workflow:phase-5-execute',
+                            '6-finalize': 'pm-workflow:phase-6-finalize',
                         },
                     },
                     'java': {
@@ -79,10 +80,11 @@ def test_resolve_triage_extension_javascript():
                         'defaults': ['plan-marshall:general-development-rules'],
                         'workflow_skills': {
                             '1-init': 'pm-workflow:phase-1-init',
-                            '2-outline': 'pm-workflow:phase-2-outline',
-                            '3-plan': 'pm-workflow:phase-3-plan',
-                            '4-execute': 'pm-workflow:phase-4-execute',
-                            '5-finalize': 'pm-workflow:phase-5-finalize',
+                            '2-refine': 'pm-workflow:phase-2-refine',
+                            '3-outline': 'pm-workflow:phase-3-outline',
+                            '4-plan': 'pm-workflow:phase-4-plan',
+                            '5-execute': 'pm-workflow:phase-5-execute',
+                            '6-finalize': 'pm-workflow:phase-6-finalize',
                         },
                     },
                     'javascript': {
@@ -116,10 +118,11 @@ def test_resolve_triage_extension_plugin_dev():
                         'defaults': ['plan-marshall:general-development-rules'],
                         'workflow_skills': {
                             '1-init': 'pm-workflow:phase-1-init',
-                            '2-outline': 'pm-workflow:phase-2-outline',
-                            '3-plan': 'pm-workflow:phase-3-plan',
-                            '4-execute': 'pm-workflow:phase-4-execute',
-                            '5-finalize': 'pm-workflow:phase-5-finalize',
+                            '2-refine': 'pm-workflow:phase-2-refine',
+                            '3-outline': 'pm-workflow:phase-3-outline',
+                            '4-plan': 'pm-workflow:phase-4-plan',
+                            '5-execute': 'pm-workflow:phase-5-execute',
+                            '6-finalize': 'pm-workflow:phase-6-finalize',
                         },
                     },
                     'plan-marshall-plugin-dev': {
@@ -151,10 +154,11 @@ def test_resolve_triage_extension_null_for_missing():
                         'defaults': ['plan-marshall:general-development-rules'],
                         'workflow_skills': {
                             '1-init': 'pm-workflow:phase-1-init',
-                            '2-outline': 'pm-workflow:phase-2-outline',
-                            '3-plan': 'pm-workflow:phase-3-plan',
-                            '4-execute': 'pm-workflow:phase-4-execute',
-                            '5-finalize': 'pm-workflow:phase-5-finalize',
+                            '2-refine': 'pm-workflow:phase-2-refine',
+                            '3-outline': 'pm-workflow:phase-3-outline',
+                            '4-plan': 'pm-workflow:phase-4-plan',
+                            '5-execute': 'pm-workflow:phase-5-execute',
+                            '6-finalize': 'pm-workflow:phase-6-finalize',
                         },
                     },
                     'documentation': {
@@ -190,10 +194,11 @@ def test_resolve_triage_extension_null_for_unknown_domain():
                         'defaults': ['plan-marshall:general-development-rules'],
                         'workflow_skills': {
                             '1-init': 'pm-workflow:phase-1-init',
-                            '2-outline': 'pm-workflow:phase-2-outline',
-                            '3-plan': 'pm-workflow:phase-3-plan',
-                            '4-execute': 'pm-workflow:phase-4-execute',
-                            '5-finalize': 'pm-workflow:phase-5-finalize',
+                            '2-refine': 'pm-workflow:phase-2-refine',
+                            '3-outline': 'pm-workflow:phase-3-outline',
+                            '4-plan': 'pm-workflow:phase-4-plan',
+                            '5-execute': 'pm-workflow:phase-5-execute',
+                            '6-finalize': 'pm-workflow:phase-6-finalize',
                         },
                     }
                 }

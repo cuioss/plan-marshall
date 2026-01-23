@@ -158,7 +158,7 @@ def test_get_routing_context():
             '--title',
             'Routing Test',
             '--phases',
-            '1-init,2-outline,3-plan,4-execute,5-finalize',
+            '1-init,2-refine,3-outline,4-plan,5-execute,6-finalize',
         )
         result = run_script(SCRIPT_PATH, 'get-routing-context', '--plan-id', 'routing-plan')
         assert result.success, f'Script failed: {result.stderr}'
@@ -186,14 +186,14 @@ def test_get_routing_context_after_transition():
             '--title',
             'Transition Test',
             '--phases',
-            '1-init,2-outline,3-plan,4-execute,5-finalize',
+            '1-init,2-refine,3-outline,4-plan,5-execute,6-finalize',
         )
         run_script(SCRIPT_PATH, 'transition', '--plan-id', 'transition-routing', '--completed', '1-init')
         result = run_script(SCRIPT_PATH, 'get-routing-context', '--plan-id', 'transition-routing')
         assert result.success, f'Script failed: {result.stderr}'
         data = parse_toon(result.stdout)
-        assert data['current_phase'] == '2-outline'
-        assert data['skill'] == 'solution-outline'
+        assert data['current_phase'] == '2-refine'
+        assert data['skill'] == 'request-refine'
         assert data['completed_phases'] == 1
 
 

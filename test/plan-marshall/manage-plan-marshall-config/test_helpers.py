@@ -98,10 +98,11 @@ def create_nested_marshal_json(fixture_dir: Path) -> Path:
                 'optionals': ['plan-marshall:diagnostic-patterns'],
                 'workflow_skills': {
                     '1-init': 'pm-workflow:phase-1-init',
-                    '2-outline': 'pm-workflow:phase-2-outline',
-                    '3-plan': 'pm-workflow:phase-3-plan',
-                    '4-execute': 'pm-workflow:phase-4-execute',
-                    '5-finalize': 'pm-workflow:phase-5-finalize',
+                    '2-refine': 'pm-workflow:phase-2-refine',
+                    '3-outline': 'pm-workflow:phase-3-outline',
+                    '4-plan': 'pm-workflow:phase-4-plan',
+                    '5-execute': 'pm-workflow:phase-5-execute',
+                    '6-finalize': 'pm-workflow:phase-6-finalize',
                 },
                 'task_executors': {
                     'implementation': 'pm-workflow:task-implementation',

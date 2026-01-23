@@ -112,7 +112,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   work my-plan INFO "[ARTIFACT] (pm-workflow:phase-1-init) Created deliverable: auth module"
 
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work my-plan WARN "[STATUS] (pm-workflow:phase-4-execute) Skipped validation step"
+  work my-plan WARN "[STATUS] (pm-workflow:phase-5-execute) Skipped validation step"
 
 # Write: Decision logging (NO [DECISION] prefix - file is the category)
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
@@ -165,7 +165,7 @@ Every log entry automatically includes a 6-character hash computed from the mess
 ```
 [2025-12-11T11:14:30Z] [INFO] [c8d3e2] [STATUS] (pm-workflow:phase-1-init) Starting init phase
 [2025-12-11T11:15:20Z] [INFO] [f1a9b3] [ARTIFACT] (pm-workflow:phase-1-init) Created deliverable: auth module
-[2025-12-11T11:17:30Z] [INFO] [e5c7d4] [PROGRESS] (pm-workflow:phase-4-execute) Task 1 completed
+[2025-12-11T11:17:30Z] [INFO] [e5c7d4] [PROGRESS] (pm-workflow:phase-5-execute) Task 1 completed
 ```
 
 **decision.log**:
@@ -253,7 +253,7 @@ Planning skills call the simplified API:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work my-plan INFO "[ARTIFACT] (pm-workflow:phase-3-plan) Created task: implement auth module"
+  work my-plan INFO "[ARTIFACT] (pm-workflow:phase-4-plan) Created task: implement auth module"
 ```
 
 ---

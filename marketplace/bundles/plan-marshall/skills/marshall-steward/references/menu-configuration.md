@@ -94,7 +94,7 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-m
 ```
 
 This configures:
-- `system` domain (always) with workflow_skills for 5 phases
+- `system` domain (always) with workflow_skills for 6 phases
 - Each selected domain with profile structure from bundle manifest
 
 **Note**: The `configure` command replaces all existing domains with the selected ones.
@@ -282,17 +282,17 @@ This regenerates `.plan/project-architecture/derived-data.json` from current bui
 
 ---
 
-## Thin Agent Architecture (5-Phase Model)
+## Thin Agent Architecture (6-Phase Model)
 
 The pm-workflow bundle uses thin agents that load skills from system domain:
 
 | Agent | Purpose | Skill Source |
 |-------|---------|--------------|
 | `plan-init-agent` | Initialize plan, detect domains | System defaults only |
-| `solution-outline-agent` | Create deliverables | `resolve-workflow-skill --phase 2-outline` |
-| `task-plan-agent` | Create tasks from deliverables | `resolve-workflow-skill --phase 3-plan` |
-| `task-execute-agent` | Execute single task | `resolve-workflow-skill --phase 4-execute` + `task.skills` |
-| `plan-finalize-agent` | Commit, PR, triage | `resolve-workflow-skill --phase 5-finalize` |
+| `solution-outline-agent` | Create deliverables | `resolve-workflow-skill --phase 3-outline` |
+| `task-plan-agent` | Create tasks from deliverables | `resolve-workflow-skill --phase 4-plan` |
+| `task-execute-agent` | Execute single task | `resolve-workflow-skill --phase 5-execute` + `task.skills` |
+| `plan-finalize-agent` | Commit, PR, triage | `resolve-workflow-skill --phase 6-finalize` |
 
 Workflow skills are resolved from `system.workflow_skills`. Domain-specific extensions are loaded via `resolve-workflow-skill-extension --domain {domain} --type {outline|triage}`.
 

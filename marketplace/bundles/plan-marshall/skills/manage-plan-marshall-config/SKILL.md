@@ -211,7 +211,7 @@ Returns null (not error) if extension doesn't exist for the domain.
 
 | Parameters | Purpose |
 |------------|---------|
-| (none) | Get all workflow skills from system domain (5-phase model: init, outline, plan, execute, finalize) |
+| (none) | Get all workflow skills from system domain (6-phase model: init, outline, plan, execute, finalize) |
 
 ### Noun: system
 
@@ -268,10 +268,10 @@ The defaults template contains only `system` domain. Technical domains (java, ja
       "optionals": ["plan-marshall:ref-development-standards"],
       "workflow_skills": {
         "1-init": "pm-workflow:phase-1-init",
-        "2-outline": "pm-workflow:phase-2-outline",
-        "3-plan": "pm-workflow:phase-3-plan",
-        "4-execute": "pm-workflow:phase-4-execute",
-        "5-finalize": "pm-workflow:phase-5-finalize"
+        "3-outline": "pm-workflow:phase-3-outline",
+        "4-plan": "pm-workflow:phase-4-plan",
+        "5-execute": "pm-workflow:phase-5-execute",
+        "6-finalize": "pm-workflow:phase-6-finalize"
       }
     },
     "java": {
@@ -323,7 +323,7 @@ The defaults template contains only `system` domain. Technical domains (java, ja
 
 ### System Domain
 
-The `system` domain contains workflow skills (5-phase model) and base skills applied to all tasks.
+The `system` domain contains workflow skills (6-phase model) and base skills applied to all tasks.
 
 | Field | Purpose |
 |-------|---------|

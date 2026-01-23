@@ -13,6 +13,7 @@
   "agents": [
     "./agents/plan-init-agent.md",
     "./agents/q-gate-validation-agent.md",
+    "./agents/request-refine-agent.md",
     "./agents/task-execute-agent.md",
     "./agents/task-plan-agent.md"
   ],
@@ -25,10 +26,11 @@
     "./skills/manage-solution-outline",
     "./skills/manage-tasks",
     "./skills/phase-1-init",
-    "./skills/phase-2-outline",
-    "./skills/phase-3-plan",
-    "./skills/phase-4-execute",
-    "./skills/phase-5-finalize",
+    "./skills/phase-2-refine",
+    "./skills/phase-3-outline",
+    "./skills/phase-4-plan",
+    "./skills/phase-5-execute",
+    "./skills/phase-6-finalize",
     "./skills/plan-execute",
     "./skills/plan-manage",
     "./skills/planning-inventory",

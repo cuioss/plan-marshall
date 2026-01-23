@@ -1,10 +1,17 @@
-# Request Analysis Workflow
+---
+name: phase-2-refine
+description: Iterative request clarification until confidence threshold reached
+user-invocable: false
+allowed-tools: Read, Glob, Grep, Bash, AskUserQuestion
+---
 
-Iterative workflow for analyzing and refining the request until requirements are 100% clear.
+# Phase 2: Refine Request
+
+Iterative workflow for analyzing and refining the request until requirements meet confidence threshold.
 
 ## Purpose
 
-Before creating deliverables, ensure the request is:
+Before creating deliverables (phase-3-outline), ensure the request is:
 - **Correct**: Requirements are technically valid
 - **Complete**: All necessary information is present
 - **Consistent**: No contradictory requirements
@@ -27,11 +34,27 @@ Before creating deliverables, ensure the request is:
 
 ---
 
+## Step 0: Load Confidence Threshold
+
+Read the confidence threshold from project configuration.
+
+**EXECUTE**:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+  get --key plan.defaults.refine_confidence_threshold
+```
+
+**Default**: If not configured, use `95` (95% confidence required).
+
+Store as `confidence_threshold` for use in Step 5.
+
+---
+
 ## Workflow
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                    REQUEST ANALYSIS LOOP                        │
+│                    REQUEST REFINE LOOP                          │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
 │  Step 1: Load Architecture Context                              │
@@ -44,9 +67,9 @@ Before creating deliverables, ensure the request is:
 │      ↓                                                          │
 │  Step 5: Evaluate Confidence                                    │
 │      │                                                          │
-│      ├── confidence = 100% → EXIT LOOP (proceed to outline)     │
+│      ├── confidence >= threshold → EXIT LOOP (proceed)          │
 │      │                                                          │
-│      └── confidence < 100% → Step 6: Clarify with User          │
+│      └── confidence < threshold → Step 6: Clarify with User     │
 │              ↓                                                  │
 │          Step 7: Update Request                                 │
 │              ↓                                                  │
@@ -78,13 +101,13 @@ message: Run /marshall-steward first
 **Log**:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[REQUEST-ANALYSIS:1] (pm-workflow:phase-2-outline) Loaded Architecture Context"
+  work {plan_id} INFO "[REFINE:1] (pm-workflow:phase-2-refine) Loaded Architecture Context"
 ```
 
 **If feedback provided**, log it:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[REQUEST-ANALYSIS:1] (pm-workflow:phase-2-outline) Processing with feedback: {feedback}"
+  work {plan_id} INFO "[REFINE:1] (pm-workflow:phase-2-refine) Processing with feedback: {feedback}"
 ```
 
 ---
@@ -110,7 +133,7 @@ Output format: `pm-workflow:manage-plan-documents/documents/request.toon`
 **Log**:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[REQUEST-ANALYSIS:2] (pm-workflow:phase-2-outline) Loaded request: {title}"
+  work {plan_id} INFO "[REFINE:2] (pm-workflow:phase-2-refine) Loaded request: {title}"
 ```
 
 ---
@@ -320,19 +343,19 @@ Aggregate findings from Steps 3-4 into confidence score.
 ### Decision
 
 ```
-IF confidence == 100%:
-  Log: "[REQUEST-ANALYSIS:5] Request analysis complete. Confidence: 100%"
+IF confidence >= confidence_threshold:
+  Log: "[REFINE:5] Request refinement complete. Confidence: {confidence}%"
   RETURN: proceed_to_outline = true
 
 ELSE:
-  Log: "[REQUEST-ANALYSIS:5] Request needs clarification. Confidence: {confidence}%"
+  Log: "[REFINE:5] Request needs clarification. Confidence: {confidence}%"
   CONTINUE to Step 6
 ```
 
 **Log**:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[REQUEST-ANALYSIS:5] (pm-workflow:phase-2-outline) Confidence: {confidence}%. Issues: {issue_summary}"
+  work {plan_id} INFO "[REFINE:5] (pm-workflow:phase-2-refine) Confidence: {confidence}%. Threshold: {confidence_threshold}%. Issues: {issue_summary}"
 ```
 
 ---
@@ -425,7 +448,7 @@ python3 .plan/execute-script.py pm-workflow:manage-plan-documents:manage-plan-do
 **Log**:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[REQUEST-ANALYSIS:7] (pm-workflow:phase-2-outline) Updated request with {N} clarifications. Returning to analysis."
+  work {plan_id} INFO "[REFINE:7] (pm-workflow:phase-2-refine) Updated request with {N} clarifications. Returning to analysis."
 ```
 
 **Loop**: Return to Step 3 with updated request.
@@ -434,11 +457,12 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 ## Output
 
-When confidence reaches 100%, return:
+When confidence reaches threshold, return:
 
 ```toon
 status: success
-confidence: 100
+confidence: {achieved_confidence}
+threshold: {confidence_threshold}
 iterations: {count}
 domains: [{detected domains}]
 module_mapping:
@@ -450,7 +474,7 @@ scope_estimate: {Small|Medium|Large}
 outline_guidance: [{feedback items for outline creation, if any}]
 ```
 
-This output feeds into the next phase (extension loading and deliverable creation).
+This output feeds into the next phase (phase-3-outline).
 
 **outline_guidance**: Contains SCOPE_CORRECTION and APPROACH_PREFERENCE feedback (from revision iterations) that should influence outline creation but didn't affect request confidence.
 
@@ -460,6 +484,21 @@ This output feeds into the next phase (extension loading and deliverable creatio
 
 | Error | Action |
 |-------|--------|
-| Architecture not found | Abort with "Run /marshall-steward first" |
-| Request not found | Abort with "Request document missing" |
+| Architecture not found | Return `{status: error, message: "Run /marshall-steward first"}` and abort |
+| Request not found | Return `{status: error, message: "Request document missing"}` |
 | Max iterations reached (5) | Return with current confidence, flag for manual review |
+
+---
+
+## Integration
+
+**Invoked by**: `pm-workflow:request-refine-agent` (thin agent wrapper)
+
+**Script Notations** (use EXACTLY as shown):
+- `plan-marshall:analyze-project-architecture:architecture` - Architecture queries
+- `pm-workflow:manage-plan-documents:manage-plan-documents` - Request operations
+- `plan-marshall:manage-logging:manage-log` - Work logging
+- `plan-marshall:manage-plan-marshall-config:plan-marshall-config` - Project config (threshold)
+
+**Consumed By**:
+- `pm-workflow:phase-3-outline` skill (receives refined request)

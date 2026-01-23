@@ -16,10 +16,10 @@ JSON structure and field definitions for project configuration.
       "optionals": ["plan-marshall:ref-development-standards"],
       "workflow_skills": {
         "1-init": "pm-workflow:phase-1-init",
-        "2-outline": "pm-workflow:phase-2-outline",
-        "3-plan": "pm-workflow:phase-3-plan",
-        "4-execute": "pm-workflow:phase-4-execute",
-        "5-finalize": "pm-workflow:phase-5-finalize"
+        "3-outline": "pm-workflow:phase-3-outline",
+        "4-plan": "pm-workflow:phase-4-plan",
+        "5-execute": "pm-workflow:phase-5-execute",
+        "6-finalize": "pm-workflow:phase-6-finalize"
       }
     },
     "java": {
@@ -76,7 +76,7 @@ JSON structure and field definitions for project configuration.
 
 ## Section: skill_domains
 
-Skill configuration per domain using the 5-phase model.
+Skill configuration per domain using the 6-phase model.
 
 ### System Domain Structure
 
@@ -90,10 +90,10 @@ The `system` domain contains workflow skills and base skills applied globally.
       "optionals": ["bundle:skill", ...],
       "workflow_skills": {
         "1-init": "pm-workflow:phase-1-init",
-        "2-outline": "pm-workflow:phase-2-outline",
-        "3-plan": "pm-workflow:phase-3-plan",
-        "4-execute": "pm-workflow:phase-4-execute",
-        "5-finalize": "pm-workflow:phase-5-finalize"
+        "3-outline": "pm-workflow:phase-3-outline",
+        "4-plan": "pm-workflow:phase-4-plan",
+        "5-execute": "pm-workflow:phase-5-execute",
+        "6-finalize": "pm-workflow:phase-6-finalize"
       }
     }
   }

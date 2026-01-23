@@ -49,8 +49,8 @@ When you need users to either select from options OR provide custom input.
 ```markdown
 Question: "Select a plan, or use 'Type something' to enter a new task description:"
 Options:
-1. existing-plan-1 - [4-execute] in_progress
-2. existing-plan-2 - [2-outline] pending
+1. existing-plan-1 - [5-execute] in_progress
+2. existing-plan-2 - [3-outline] pending
 3. Cleanup completed plans - Remove finished plans
 [Auto-added: Type something.]
 ```
@@ -88,7 +88,7 @@ When user must choose between distinct types/modes.
 Question: "What type of plan for this task?"
 Options:
 1. Simple - 3-phase workflow (init, execute, finalize)
-2. Implementation - 5-phase workflow with verification
+2. Implementation - 6-phase workflow with verification
 [Auto-added: Type something.]
 ```
 
@@ -235,7 +235,7 @@ Help users understand what happens when they select each option.
 ```markdown
 Options:
 1. Simple - 3-phase workflow (init, execute, finalize) - for quick tasks
-2. Implementation - 5-phase workflow with build verification - for code changes
+2. Implementation - 6-phase workflow with build verification - for code changes
 ```
 
 ### 5. Handle "Type something" Gracefully

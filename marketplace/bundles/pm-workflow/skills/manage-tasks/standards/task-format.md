@@ -59,7 +59,7 @@ current_step: {integer}
 | `number` | Yes | Integer | Unique task identifier (immutable after creation) |
 | `title` | Yes | String | Short descriptive title |
 | `status` | Yes | Enum | Task status (see Status Values) |
-| `phase` | Yes | String | Plan phase: `1-init`, `2-outline`, `3-plan`, `4-execute`, `5-finalize` |
+| `phase` | Yes | String | Plan phase: `1-init`, `2-refine`, `3-outline`, `4-plan`, `5-execute`, `6-finalize` |
 | `created` | Yes | ISO timestamp | When task was created |
 | `updated` | Yes | ISO timestamp | When task was last modified |
 | `deliverables` | Yes | Integer[] | List of deliverable numbers from solution_outline.md |
@@ -198,7 +198,7 @@ verification:
 number: 2
 title: Add Auth Endpoint
 status: in_progress
-phase: 4-execute
+phase: 5-execute
 created: 2025-12-02T10:30:00Z
 updated: 2025-12-02T11:00:00Z
 

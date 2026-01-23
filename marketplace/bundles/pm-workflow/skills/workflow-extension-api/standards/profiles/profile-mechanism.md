@@ -6,7 +6,7 @@ How domains can override default profile skills.
 
 ## Overview
 
-Profile skills handle the actual implementation/testing work during phase-4-execute. Unlike phase skills (which are system-only), profile skills CAN be overridden by domains.
+Profile skills handle the actual implementation/testing work during phase-5-execute. Unlike phase skills (which are system-only), profile skills CAN be overridden by domains.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐

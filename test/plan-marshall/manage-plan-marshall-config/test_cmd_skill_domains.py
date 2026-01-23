@@ -394,21 +394,21 @@ def test_get_workflow_skills():
         assert 'finalize' in result.stdout
         # Verify skill references
         assert 'pm-workflow:phase-1-init' in result.stdout
-        assert 'pm-workflow:phase-2-outline' in result.stdout
-        assert 'pm-workflow:phase-3-plan' in result.stdout
+        assert 'pm-workflow:phase-3-outline' in result.stdout
+        assert 'pm-workflow:phase-4-plan' in result.stdout
 
 
 def test_get_workflow_skills_output_format():
-    """Test get-workflow-skills returns all 5 workflow skill references."""
+    """Test get-workflow-skills returns all 6 workflow skill references."""
     with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
 
         result = run_script(SCRIPT_PATH, 'get-workflow-skills')
 
         assert result.success, f'Should succeed: {result.stderr}'
-        # Verify all 5 workflow skills are returned
-        assert 'pm-workflow:phase-4-execute' in result.stdout
-        assert 'pm-workflow:phase-5-finalize' in result.stdout
+        # Verify all 6 workflow skills are returned
+        assert 'pm-workflow:phase-5-execute' in result.stdout
+        assert 'pm-workflow:phase-6-finalize' in result.stdout
 
 
 # =============================================================================
@@ -437,7 +437,7 @@ def test_resolve_workflow_skill_outline():
         result = run_script(SCRIPT_PATH, 'resolve-workflow-skill', '--phase', 'outline')
 
         assert result.success, f'Should succeed: {result.stderr}'
-        assert 'pm-workflow:phase-2-outline' in result.stdout
+        assert 'pm-workflow:phase-3-outline' in result.stdout
 
 
 def test_resolve_workflow_skill_plan():
@@ -448,7 +448,7 @@ def test_resolve_workflow_skill_plan():
         result = run_script(SCRIPT_PATH, 'resolve-workflow-skill', '--phase', 'plan')
 
         assert result.success, f'Should succeed: {result.stderr}'
-        assert 'pm-workflow:phase-3-plan' in result.stdout
+        assert 'pm-workflow:phase-4-plan' in result.stdout
 
 
 def test_resolve_workflow_skill_execute():
@@ -459,7 +459,7 @@ def test_resolve_workflow_skill_execute():
         result = run_script(SCRIPT_PATH, 'resolve-workflow-skill', '--phase', 'execute')
 
         assert result.success, f'Should succeed: {result.stderr}'
-        assert 'pm-workflow:phase-4-execute' in result.stdout
+        assert 'pm-workflow:phase-5-execute' in result.stdout
 
 
 def test_resolve_workflow_skill_finalize():
@@ -470,7 +470,7 @@ def test_resolve_workflow_skill_finalize():
         result = run_script(SCRIPT_PATH, 'resolve-workflow-skill', '--phase', 'finalize')
 
         assert result.success, f'Should succeed: {result.stderr}'
-        assert 'pm-workflow:phase-5-finalize' in result.stdout
+        assert 'pm-workflow:phase-6-finalize' in result.stdout
 
 
 def test_resolve_workflow_skill_no_system_domain():

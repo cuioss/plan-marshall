@@ -7,7 +7,7 @@ project initialization and detection.
 
 # Reserved keys in nested domain config (not profile names)
 # bundle: Reference to bundle providing this domain (e.g., 'pm-dev-java')
-# workflow_skills: System domain only - 5 workflow phases
+# workflow_skills: System domain only - 6 workflow phases
 # task_executors: System domain only - profile to task skill mapping
 # workflow_skill_extensions: Domain extensions (outline, triage)
 # defaults/optionals: System domain top-level skills
@@ -23,10 +23,11 @@ RESERVED_DOMAIN_KEYS = [
 # System workflow skills (always from system domain)
 DEFAULT_SYSTEM_WORKFLOW_SKILLS = {
     '1-init': 'pm-workflow:phase-1-init',
-    '2-outline': 'pm-workflow:phase-2-outline',
-    '3-plan': 'pm-workflow:phase-3-plan',
-    '4-execute': 'pm-workflow:phase-4-execute',
-    '5-finalize': 'pm-workflow:phase-5-finalize',
+    '2-refine': 'pm-workflow:phase-2-refine',
+    '3-outline': 'pm-workflow:phase-3-outline',
+    '4-plan': 'pm-workflow:phase-4-plan',
+    '5-execute': 'pm-workflow:phase-5-execute',
+    '6-finalize': 'pm-workflow:phase-6-finalize',
 }
 
 # Task executors map profile -> workflow skill
@@ -56,6 +57,7 @@ DEFAULT_PLAN_DEFAULTS = {
     'create_pr': False,
     'verification_required': True,
     'branch_strategy': 'direct',
+    'refine_confidence_threshold': 95,
 }
 
 # Build system defaults (detection reference only - commands are in modules)

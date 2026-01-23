@@ -17,7 +17,7 @@ Planning operations MUST use the official manage-* APIs for all .plan directory 
 
 ## MANDATORY: Post-Phase Verification Protocol
 
-**CRITICAL**: Execute this protocol after EVERY phase transition (1-init→2-outline, 3-plan→4-execute, 4-execute→5-finalize). This is NOT optional.
+**CRITICAL**: Execute this protocol after EVERY phase transition (1-init→3-outline, 4-plan→5-execute, 5-execute→6-finalize). This is NOT optional.
 
 ### Step 1: Chat History Error Check
 
@@ -68,9 +68,9 @@ Skill: pm-workflow:workflow-extension-api
 | Completed Phase | Contract to Verify |
 |-----------------|-------------------|
 | 1-init | domain-frontmatter-contract.md |
-| 2-outline | deliverable-contract.md |
-| 3-plan | task-contract.md |
-| 4-execute | task verification criteria |
+| 3-outline | deliverable-contract.md |
+| 4-plan | task-contract.md |
+| 5-execute | task verification criteria |
 
 **Exact Verification Commands** (copy-paste ready):
 
@@ -584,8 +584,8 @@ Actively scan execution logs to detect script issues:
 |-------|----------|--------|--------|
 | current_phase | {phase} | {actual} | Pass/Fail |
 | phases[1-init] | done | {actual} | Pass/Fail |
-| phases[2-outline] | done | {actual} | Pass/Fail |
-| phases[4-execute] | in_progress | {actual} | Pass/Fail |
+| phases[3-outline] | done | {actual} | Pass/Fail |
+| phases[5-execute] | in_progress | {actual} | Pass/Fail |
 | updated | recent | {timestamp} | Pass/Fail |
 
 ### Assessment
@@ -748,9 +748,9 @@ When `/plan-manage` executes, verify after each action:
 | Action | Expected Work-Log Entry | Expected Status Change |
 |--------|------------------------|----------------------|
 | `1-init` | type=artifact, summary=plan created | phases[1-init]=in_progress |
-| configure complete | type=progress, summary=configuration complete | phases[1-init]=done, current_phase=2-outline |
-| `2-outline` | type=artifact per deliverable created | phases[2-outline] progress updates |
-| outline complete | type=outcome, summary=2-outline complete | phases[2-outline]=done, current_phase=3-plan |
+| configure complete | type=progress, summary=configuration complete | phases[1-init]=done, current_phase=3-outline |
+| `3-outline` | type=artifact per deliverable created | phases[3-outline] progress updates |
+| outline complete | type=outcome, summary=3-outline complete | phases[3-outline]=done, current_phase=4-plan |
 
 ### plan-execute Command
 
@@ -763,7 +763,7 @@ When `/plan-execute` executes, verify after each task:
 | Task completed | type=outcome, summary=task completion | task status=done |
 | Build verified | type=outcome, summary=verification passed | - |
 | Error occurred | type=error, detail=error info | may set blocked state |
-| All tasks done | type=progress, summary=4-execute phase complete | current_phase=5-finalize |
+| All tasks done | type=progress, summary=5-execute phase complete | current_phase=6-finalize |
 
 ## Common Violations
 
@@ -790,9 +790,9 @@ Work-log: No entry found for artifact creation
 ### Violation 3: Stale Status After Transition
 
 ```
-Operation: Completed all 4-execute phase tasks
-Expected: current_phase=5-finalize
-Actual: current_phase=4-execute (not updated)
+Operation: Completed all 5-execute phase tasks
+Expected: current_phase=6-finalize
+Actual: current_phase=5-execute (not updated)
 ```
 
 **Why It Matters**: Phase routing will execute wrong phase, plan lifecycle is broken.

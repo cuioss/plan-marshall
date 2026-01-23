@@ -10,7 +10,7 @@ allowed-tools: Read
 
 > Extension implementing outline protocol for plugin development domain.
 
-Provides domain-specific knowledge for deliverable creation in marketplace plugin development tasks. Implements the outline extension protocol with defined sections that phase-2-outline calls explicitly.
+Provides domain-specific knowledge for deliverable creation in marketplace plugin development tasks. Implements the outline extension protocol with defined sections that phase-3-outline calls explicitly.
 
 ## Domain Detection
 
@@ -23,7 +23,7 @@ This extension is relevant when:
 
 ## Assessment Protocol
 
-**Called by**: phase-2-outline Step 3 (Assess Complexity)
+**Called by**: phase-3-outline Step 3 (Assess Complexity)
 **Purpose**: Determine which artifacts and bundles are affected, extract change_type
 
 ### Step 1: Spawn Inventory Assessment Agent
@@ -158,7 +158,7 @@ IF resolve-dependencies returns error or fails:
 
 ## Workflow
 
-**Called by**: phase-2-outline Step 4 (Execute Workflow)
+**Called by**: phase-3-outline Step 4 (Execute Workflow)
 **Purpose**: Create deliverables based on change_type
 
 ### Load Workflow

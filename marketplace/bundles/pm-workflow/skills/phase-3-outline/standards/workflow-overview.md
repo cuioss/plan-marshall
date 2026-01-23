@@ -1,6 +1,6 @@
 # Workflow Overview Diagram
 
-Visual summary of the phase-2-outline workflow for human reference.
+Visual summary of the phase-3-outline workflow for human reference.
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
@@ -42,7 +42,7 @@ Visual summary of the phase-2-outline workflow for human reference.
 ## Extension Protocol Interaction
 
 ```
-phase-2-outline                           ext-outline-{domain}
+phase-3-outline                           ext-outline-{domain}
 ═══════════════                           ════════════════════
 
 Step 1-2: Load architecture, requirements

@@ -1,5 +1,5 @@
 ---
-name: phase-5-finalize
+name: phase-6-finalize
 description: Complete plan execution with git workflow and PR management
 user-invocable: false
 allowed-tools: Read, Bash, Glob, SlashCommand
@@ -51,7 +51,7 @@ Returns only the required finalize fields in a single call.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[STATUS] (pm-workflow:phase-5-finalize) Starting finalize phase"
+  work {plan_id} INFO "[STATUS] (pm-workflow:phase-6-finalize) Starting finalize phase"
 ```
 
 ### Step 1: Read Configuration
@@ -77,7 +77,7 @@ Returns: `branch`, `base_branch`, `issue_url`, `build_system`, and file counts i
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(pm-workflow:phase-5-finalize) Finalize strategy: verification={verification_required}, PR={create_pr}, branch={branch_strategy}"
+  decision {plan_id} INFO "(pm-workflow:phase-6-finalize) Finalize strategy: verification={verification_required}, PR={create_pr}, branch={branch_strategy}"
 ```
 
 ### Step 2: Run Verification (if required)
@@ -137,14 +137,14 @@ Transition to complete:
 ```bash
 python3 .plan/execute-script.py pm-workflow:plan-manage:manage-lifecycle transition \
   --plan-id {plan_id} \
-  --completed 5-finalize
+  --completed 6-finalize
 ```
 
 ### Step 7: Log Completion
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[STATUS] (pm-workflow:phase-5-finalize) Plan completed: commit={commit_hash}, PR={pr_url|skipped}"
+  work {plan_id} INFO "[STATUS] (pm-workflow:phase-6-finalize) Plan completed: commit={commit_hash}, PR={pr_url|skipped}"
 ```
 
 ---
@@ -185,7 +185,7 @@ On any error, **first log the error** to work-log:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} ERROR "[ERROR] (pm-workflow:phase-5-finalize) {step} failed - {error_type}: {error_context}"
+  work {plan_id} ERROR "[ERROR] (pm-workflow:phase-6-finalize) {step} failed - {error_type}: {error_context}"
 ```
 
 ### Verification Failure
@@ -301,10 +301,10 @@ Contains: How lessons inform triage decisions, lesson query before decisions, re
 
 ### Phase Routing
 
-This skill is invoked when plan is in `5-finalize` phase:
+This skill is invoked when plan is in `6-finalize` phase:
 
 ```
-pm-workflow:plan-manage:manage-lifecycle route --phase 5-finalize → pm-workflow:phase-5-finalize
+pm-workflow:plan-manage:manage-lifecycle route --phase 6-finalize → pm-workflow:phase-6-finalize
 ```
 
 ### Command Integration

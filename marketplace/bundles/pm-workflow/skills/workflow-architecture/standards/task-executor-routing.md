@@ -1,6 +1,6 @@
 # Task Executor Routing
 
-How tasks are routed to the appropriate task executor skill during phase-4-execute.
+How tasks are routed to the appropriate task executor skill during phase-5-execute.
 
 ---
 
@@ -207,13 +207,13 @@ module.skills_by_profile = {
 }
        │
        ▼
-Phase-2-Outline
+Phase-3-Outline
        │
        ▼
 deliverable.profiles = [implementation, module_testing]
        │
        ▼ (create task per profile, resolve skills from architecture)
-Phase-3-Plan
+Phase-4-Plan
        │
        ▼
 TASK-001.toon
@@ -221,7 +221,7 @@ TASK-001.toon
   skills: [java-core, java-cdi]
        │
        ▼
-Phase-4-Execute
+Phase-5-Execute
        │
        ▼
 resolve-task-executor --profile implementation

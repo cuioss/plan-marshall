@@ -93,9 +93,9 @@ def test_get_workflow_skills():
         result = run_script(SCRIPT_PATH, 'get-workflow-skills')
 
         assert result.success, f'Should succeed: {result.stderr}'
-        # Verify 5-phase model output
+        # Verify 6-phase model output
         assert 'outline' in result.stdout
-        assert 'pm-workflow:phase-2-outline' in result.stdout
+        assert 'pm-workflow:phase-3-outline' in result.stdout
 
 
 def test_error_without_marshal_json():

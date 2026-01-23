@@ -22,7 +22,7 @@ The extension API allows domains to **extend** system workflow skills without **
 │                                                                              │
 │  ┌──────────────────────────────────────────────────────────────────────┐   │
 │  │  SYSTEM WORKFLOW SKILL (owns process)                                 │   │
-│  │  pm-workflow:phase-2-outline                                         │   │
+│  │  pm-workflow:phase-3-outline                                         │   │
 │  │                                                                       │   │
 │  │  Process:                                                             │   │
 │  │  1. Load extensions for all configured domains                        │   │
@@ -63,16 +63,16 @@ The extension API allows domains to **extend** system workflow skills without **
 
 | Extension Key | Phase | Purpose |
 |---------------|-------|---------|
-| `outline` | 2-outline | Domain detection, codebase analysis, deliverable patterns |
-| `triage` | 5-finalize | Decision-making knowledge for findings (suppression syntax, severity rules) |
+| `outline` | 3-outline | Domain detection, codebase analysis, deliverable patterns |
+| `triage` | 6-finalize | Decision-making knowledge for findings (suppression syntax, severity rules) |
 
 **Phases without extensions:**
 
 | Phase | Knowledge Source |
 |-------|------------------|
 | 1-init | No domain knowledge needed |
-| 3-plan | `planning` profile - task decomposition patterns |
-| 4-execute | `task.profile` - implementation guidance |
+| 4-plan | `planning` profile - task decomposition patterns |
+| 5-execute | `task.profile` - implementation guidance |
 
 ---
 
@@ -135,7 +135,7 @@ Instructions for this extension point...
 
 ### Phase Overview
 
-**System Skill**: `pm-workflow:phase-2-outline`
+**System Skill**: `pm-workflow:phase-3-outline`
 
 **Purpose**: Transform user request into solution outline with deliverables.
 
@@ -225,7 +225,7 @@ Each deliverable should:
 ```markdown
 # Java Outline Extension
 
-> Extension for 2-outline phase in Java domain.
+> Extension for 3-outline phase in Java domain.
 
 ## Domain Detection
 
@@ -450,8 +450,8 @@ At extension point "Deliverable Patterns":
 
 ## Related Documents
 
-- [phase-2-outline SKILL.md](../../../phase-2-outline/SKILL.md) - Outline phase skill (self-documenting)
-- [phase-5-finalize SKILL.md](../../../phase-5-finalize/SKILL.md) - Finalize phase skill (self-documenting)
+- [phase-3-outline SKILL.md](../../../phase-3-outline/SKILL.md) - Outline phase skill (self-documenting)
+- [phase-6-finalize SKILL.md](../../../phase-6-finalize/SKILL.md) - Finalize phase skill (self-documenting)
 - [triage-extension.md](triage-extension.md) - Triage extension contract
 - [outline-extension.md](outline-extension.md) - Outline extension contract
 - [deliverable-contract.md](../../../manage-solution-outline/standards/deliverable-contract.md) - Deliverable structure

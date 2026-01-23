@@ -152,7 +152,7 @@ class TestArtifactCollector:
         assert 'artifacts' in results
 
     def test_collect_all_includes_tasks_for_plan_phase(self, output_dir, tmp_path):
-        """Test that tasks are collected when 3-plan phase specified."""
+        """Test that tasks are collected when 4-plan phase specified."""
         # Create mock plan directory with all files
         plan_dir = tmp_path / 'plans' / 'test-plan'
         plan_dir.mkdir(parents=True)
@@ -169,7 +169,7 @@ class TestArtifactCollector:
 
         with patch('collect_artifacts.base_path', make_base_path_mock(tmp_path)):
             collector = ArtifactCollector('test-plan', output_dir)
-            collector.collect_all(phases=['3-plan'])
+            collector.collect_all(phases=['4-plan'])
 
         assert (output_dir / 'tasks-list.toon').exists()
 
@@ -187,7 +187,7 @@ class TestArtifactCollector:
 
         with patch('collect_artifacts.base_path', make_base_path_mock(tmp_path)):
             collector = ArtifactCollector('test-plan', output_dir)
-            collector.collect_all(phases=['2-outline'])
+            collector.collect_all(phases=['3-outline'])
 
         # Should not have tasks-list.toon
         assert not (output_dir / 'tasks-list.toon').exists()

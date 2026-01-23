@@ -1,15 +1,17 @@
 ---
-name: phase-2-outline
+name: phase-3-outline
 description: Architecture-driven solution outline creation with intelligent module selection and profiles list
 user-invocable: false
 allowed-tools: Read, Glob, Grep, Bash
 ---
 
-# Phase Refine Outline Skill
+# Phase Outline Skill
 
 **Role**: Architecture-driven workflow skill for creating solution outlines. Uses pre-computed architecture data to make intelligent module and package placement decisions.
 
 **Key Insight**: Module and package matching is **semantic analysis** that requires LLM reasoning. Scripts provide DATA, the LLM provides REASONING.
+
+**Prerequisite**: Request must be refined (phase-2-refine completed).
 
 ---
 
@@ -25,48 +27,36 @@ allowed-tools: Read, Glob, Grep, Bash
 ## Workflow Overview
 
 ```
-Step 1: Analyze Request (iterative) → Step 2: Load Extension → Steps 3-4: Create Deliverables → Step 5: Write Solution → Steps 6-8: Finalize
+Step 1: Load Refined Request → Step 2: Load Extension → Steps 3-4: Create Deliverables → Step 5: Write Solution → Steps 6-8: Finalize
 ```
 
 **Visual diagram**: `standards/workflow-overview.md` (for human reference)
 
 ---
 
-## Step 1: Analyze Request
+## Step 1: Load Refined Request
 
-**Purpose**: Ensure requirements are 100% clear before creating deliverables.
+**Purpose**: Load the refined request from phase-2-refine output.
 
-**Workflow**: `workflow/request-analysis.md` (force load)
+The request has already been clarified during phase-2-refine. Load it for deliverable creation.
 
-This iterative workflow:
-1. Loads architecture context
-2. Loads domain skills for each configured domain
-3. Analyzes request for: correctness, completeness, consistency, non-duplication, ambiguity
-4. Maps requirements to architecture (modules, feasibility, scope)
-5. Uses AskUserQuestion to clarify any issues
-6. Updates request.md with clarifications
-7. Loops until confidence = 100%
-
-**Execute the complete request-analysis workflow** before proceeding.
-
-**Output** (from request-analysis workflow):
-```toon
-status: success
-confidence: 100
-iterations: {count}
-domains: [{detected domains}]
-module_mapping:
-  - requirement: "{req1}"
-    modules: [{module1}]
-scope_estimate: {Small|Medium|Large}
+**EXECUTE**:
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-plan-documents:manage-plan-documents request read \
+  --plan-id {plan_id} \
+  --section clarified_request
 ```
 
-**If confidence < 100% after max iterations**: Return error for manual review.
+If clarified_request not found, read full request:
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-plan-documents:manage-plan-documents request read \
+  --plan-id {plan_id}
+```
 
 **Log**:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[STEP-1] (pm-workflow:phase-2-outline) Request analysis complete. Confidence: 100%. Domains: {domains}"
+  work {plan_id} INFO "[STEP-1] (pm-workflow:phase-3-outline) Loaded refined request"
 ```
 
 ---
@@ -315,7 +305,7 @@ Before writing solution document, verify each deliverable:
 Log validation:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[VALIDATION] (pm-workflow:phase-2-outline) Deliverable {N} validated: module={module}, profiles={profiles}, request_criteria={matched}"
+  work {plan_id} INFO "[VALIDATION] (pm-workflow:phase-3-outline) Deliverable {N} validated: module={module}, profiles={profiles}, request_criteria={matched}"
 ```
 
 ---
@@ -438,7 +428,7 @@ This is an **intelligent decision output** - not a copy of marshal.json domains,
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lesson add \
   --component-type skill \
-  --component-name phase-2-outline \
+  --component-name phase-3-outline \
   --category observation \
   --title "{issue summary}" \
   --detail "{context and resolution approach}" \
@@ -486,7 +476,7 @@ message: {error message if status=error}
 - `plan-marshall:manage-lessons:manage-lesson` - Record lessons on issues
 
 **Consumed By**:
-- `pm-workflow:phase-3-plan` skill (reads deliverables for task creation)
+- `pm-workflow:phase-4-plan` skill (reads deliverables for task creation)
 
 ---
 

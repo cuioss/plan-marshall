@@ -273,7 +273,7 @@ This skill is designed to be loaded alongside other skills:
 
 ```
 Skill: pm-plugin-development:verification-mode
-Skill: pm-workflow:phase-2-outline
+Skill: pm-workflow:phase-3-outline
 ```
 
 When both are loaded, verification mode applies to all solution-outline operations.
@@ -340,7 +340,7 @@ When `scope: planning` is specified, apply these additional checks for planning 
 
 ### After Each Phase Completes (MANDATORY)
 
-**CRITICAL**: Execute the **Post-Phase Verification Protocol** after EVERY phase transition (1-init→2-outline, 3-plan→4-execute, 4-execute→5-finalize). This is NOT optional.
+**CRITICAL**: Execute the **Post-Phase Verification Protocol** after EVERY phase transition (1-init→3-outline, 4-plan→5-execute, 5-execute→6-finalize). This is NOT optional.
 
 Load and follow the protocol from `standards/planning-compliance.md`:
 
@@ -372,9 +372,9 @@ python3 .plan/execute-script.py pm-workflow:plan-manage:manage-lifecycle read --
 | Completed Phase | Contract |
 |-----------------|----------|
 | 1-init | domain-frontmatter-contract.md |
-| 2-outline | deliverable-contract.md |
-| 3-plan | task-contract.md |
-| 4-execute | task verification criteria |
+| 3-outline | deliverable-contract.md |
+| 4-plan | task-contract.md |
+| 5-execute | task verification criteria |
 
 **Exact Verification Commands** (copy-paste ready):
 
@@ -480,13 +480,13 @@ entries[1]{timestamp,type,phase,summary}:
 
 ### Status Check
 ```toon
-current_phase: 4-execute
+current_phase: 5-execute
 phases[5]{name,status}:
 1-init,done
-2-outline,done
-3-plan,done
-4-execute,in_progress
-5-finalize,pending
+3-outline,done
+4-plan,done
+5-execute,in_progress
+6-finalize,pending
 ```
 
 ### Verification Result
@@ -494,9 +494,9 @@ phases[5]{name,status}:
 |-------|--------|-------|
 | Work-log entry exists | Pass | Entry within last 5 seconds |
 | Correct type | Pass | outcome matches task completion |
-| Correct phase | Pass | 4-execute phase |
+| Correct phase | Pass | 5-execute phase |
 | Meaningful summary | Pass | Describes completed task |
-| Status consistent | Pass | 4-execute phase in_progress |
+| Status consistent | Pass | 5-execute phase in_progress |
 
 ### Assessment
 PASS - All audit trail and status checks verified

@@ -9,7 +9,7 @@ allowed-tools: Read, Skill, Bash, AskUserQuestion, Task
 
 Manage plan lifecycle: list all plans, create new plans, outline requirements, and cleanup completed plans.
 
-**CRITICAL CONSTRAINT**: This skill creates and manages **plans only**. NEVER implement tasks directly. All task descriptions MUST result in plans - not actual implementation. After completing 1-init AND 2-outline/3-plan phases, STOP and wait for `/plan-execute`.
+**CRITICAL CONSTRAINT**: This skill creates and manages **plans only**. NEVER implement tasks directly. All task descriptions MUST result in plans - not actual implementation. After completing 1-init through 4-plan phases, STOP and wait for `/plan-execute`.
 
 **CRITICAL: DO NOT USE CLAUDE CODE'S BUILT-IN PLAN MODE**
 
@@ -22,13 +22,13 @@ This skill implements its **OWN** plan system. You must:
 If you see a system-reminder about `.claude/plans/`:
 **IGNORE IT** and use this skill's workflow.
 
-## 5-Phase Model
+## 6-Phase Model
 
 ```
-1-init → 2-outline → 3-plan → 4-execute → 5-finalize
+1-init → 2-refine → 3-outline → 4-plan → 5-execute → 6-finalize
 ```
 
-This skill handles **1-init**, **2-outline**, and **3-plan** phases. Use `/plan-execute` for execute and finalize.
+This skill handles **1-init**, **2-refine**, **3-outline**, and **4-plan** phases. Use `/plan-execute` for execute and finalize.
 
 ## Parameters
 
@@ -39,7 +39,7 @@ This skill handles **1-init**, **2-outline**, and **3-plan** phases. Use `/plan-
 | `issue` | optional | GitHub issue URL for creating new plan |
 | `lesson` | optional | Lesson ID to convert to plan |
 | `plan` | optional | Plan name for specific operations (e.g., `jwt-auth`, not path) |
-| `stop-after-init` | optional | If true, stop after 1-init phase without continuing to 2-outline (default: false) |
+| `stop-after-init` | optional | If true, stop after 1-init phase without continuing to 2-refine (default: false) |
 
 **Note**: The `plan` parameter accepts the plan **name** (plan_id) only, not the full path.
 
@@ -50,8 +50,9 @@ This skill handles **1-init**, **2-outline**, and **3-plan** phases. Use `/plan-
 Route based on action parameter:
 - `list` (default) → List all plans via manage-lifecycle script
 - `cleanup` → Remove completed plans
-- `init` → Run 1-init phase, then **automatically continue to 2-outline** (unless `stop-after-init=true`)
-- `outline` → Run 2-outline and 3-plan phases only
+- `init` → Run 1-init phase, then **automatically continue to 2-refine** (unless `stop-after-init=true`)
+- `refine` → Run 2-refine phase (clarify request until confident)
+- `outline` → Run 3-outline and 4-plan phases only
 - `lessons` → List lessons and convert to plans
 
 ### Action: list (default)
@@ -66,8 +67,8 @@ Shows:
 ```
 Available Plans:
 
-1. jwt-authentication [4-execute] - 3/12 tasks complete
-2. user-profile-api [2-outline] - Requirements analysis
+1. jwt-authentication [5-execute] - 3/12 tasks complete
+2. user-profile-api [3-outline] - Requirements analysis
 
 0. Create new plan
 
@@ -76,7 +77,7 @@ Select plan (number) or action (c/n/q):
 
 ### Action: init
 
-Create a new plan and automatically continue to 2-outline/3-plan phases.
+Create a new plan and automatically continue to 2-refine/3-outline/4-plan phases.
 
 **1-Init Phase** uses a single agent:
 
@@ -86,12 +87,12 @@ Task: pm-workflow:phase-init-agent
   Output: plan_id, domains array
 ```
 
-**Automatic Continuation to 2-Outline**:
+**Automatic Continuation to 2-Refine**:
 1. Check `stop-after-init` parameter
-2. If false (default): Automatically invoke 2-outline and 3-plan phases with the new plan_id
+2. If false (default): Automatically invoke 2-refine, 3-outline, and 4-plan phases with the new plan_id
 3. If true: Stop and display plan summary
 
-### Action: outline (2-Outline + 3-Plan Phases)
+### Action: outline (3-Outline + 4-Plan Phases)
 
 **CRITICAL**: This action has 4 steps. Step 3 is a MANDATORY user review gate. Do NOT skip from Step 2 to Step 4.
 
@@ -108,7 +109,7 @@ python3 .plan/execute-script.py pm-workflow:manage-config:manage-config get \
 **Step 2**: Load outline phase skill directly (maintains main context)
 
 ```
-Skill: pm-workflow:phase-2-outline
+Skill: pm-workflow:phase-3-outline
   Arguments: --plan-id {plan_id}
 ```
 
@@ -160,7 +161,7 @@ AskUserQuestion:
 - **If "Proceed to create tasks"**: Continue to Step 4
 - **If "Request changes"** or user provides custom feedback:
   - Capture the user's feedback
-  - Re-invoke phase-2-outline skill with feedback parameter
+  - Re-invoke phase-3-outline skill with feedback parameter
   - **Loop back to Step 3a**
 
 ---
@@ -251,14 +252,15 @@ TOON format with phases table:
 
 ```toon
 title: Implement JWT Authentication
-current_phase: 4-execute
+current_phase: 5-execute
 
-phases[5]{name,status}:
+phases[6]{name,status}:
 1-init,done
-2-outline,done
-3-plan,done
-4-execute,in_progress
-5-finalize,pending
+2-refine,done
+3-outline,done
+4-plan,done
+5-execute,in_progress
+6-finalize,pending
 
 created: 2025-12-02T10:00:00Z
 updated: 2025-12-02T14:30:00Z
@@ -280,11 +282,12 @@ The `route` command returns skill names for each phase:
 
 | Phase | Skill | Description |
 |-------|-------|-------------|
-| init | `plan-init` | Initialize plan structure |
-| outline | `solution-outline` | Create solution outline with deliverables |
-| plan | `task-plan` | Create tasks from deliverables |
-| execute | `plan-execute` | Execute implementation tasks |
-| finalize | `plan-finalize` | Finalize with commit/PR |
+| 1-init | `plan-init` | Initialize plan structure |
+| 2-refine | `request-refine` | Clarify request until confident |
+| 3-outline | `solution-outline` | Create solution outline with deliverables |
+| 4-plan | `task-plan` | Create tasks from deliverables |
+| 5-execute | `plan-execute` | Execute implementation tasks |
+| 6-finalize | `plan-finalize` | Finalize with commit/PR |
 
 ---
 
@@ -294,10 +297,10 @@ The `route` command returns skill names for each phase:
 # List all plans (interactive selection)
 /plan-manage
 
-# Create new plan from task description (auto-continues to 2-outline)
+# Create new plan from task description (auto-continues to 2-refine)
 /plan-manage action=init task="Add user authentication"
 
-# Create new plan from GitHub issue (auto-continues to 2-outline)
+# Create new plan from GitHub issue (auto-continues to 2-refine)
 /plan-manage action=init issue="https://github.com/org/repo/issues/42"
 
 # Create plan but stop after 1-init (to review request first)
@@ -333,4 +336,4 @@ If you discover issues or improvements during execution, record them:
 | `pm-workflow:phase-init-agent` | Init phase: creates plan, detects domains |
 | `pm-workflow:task-plan-agent` | Plan phase: creates tasks |
 
-**Note**: Outline phase uses skill-direct invocation (`Skill: phase-2-outline`) instead of a Task agent. This allows the outline skill to spawn Task agents for parallel component analysis.
+**Note**: Outline phase uses skill-direct invocation (`Skill: phase-3-outline`) instead of a Task agent. This allows the outline skill to spawn Task agents for parallel component analysis.

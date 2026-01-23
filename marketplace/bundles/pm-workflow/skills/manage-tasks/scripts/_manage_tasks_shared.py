@@ -76,7 +76,7 @@ class TaskDict(TypedDict, total=False):
 # =============================================================================
 
 # Domains are arbitrary strings - defined in marshal.json, not hardcoded
-VALID_PHASES = ['1-init', '2-outline', '3-plan', '4-execute', '5-finalize']
+VALID_PHASES = ['1-init', '2-refine', '3-outline', '4-plan', '5-execute', '6-finalize']
 # Profiles are arbitrary strings - defined in marshal.json per-domain, not hardcoded
 VALID_ORIGINS = ['plan', 'fix']
 # Task types per target architecture

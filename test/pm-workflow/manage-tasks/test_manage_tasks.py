@@ -46,7 +46,7 @@ def build_task_toon(
     domain='java',
     description='Task description',
     steps=None,
-    phase='4-execute',
+    phase='5-execute',
     depends_on='none',
     delegation_skill='',
     delegation_workflow='',
@@ -542,8 +542,8 @@ def test_list_with_tasks():
         assert 'total: 2' in result.stdout
         assert 'tasks[2]' in result.stdout
         # Format: {number,title,domain,profile,phase,deliverables,status,progress}
-        assert '1,First,java,implementation,4-execute,[1],pending,0/1' in result.stdout
-        assert '2,Second,java,implementation,4-execute,[2],pending,0/2' in result.stdout
+        assert '1,First,java,implementation,5-execute,[1],pending,0/1' in result.stdout
+        assert '2,Second,java,implementation,5-execute,[2],pending,0/2' in result.stdout
     finally:
         cleanup(temp_dir)
 
@@ -602,7 +602,7 @@ def test_list_filter_by_phase():
             title='Execute Task',
             deliverables=[2],
             domain='java',
-            phase='4-execute',
+            phase='5-execute',
             description='D2',
             steps=['src/main/java/File.java'],
         )
@@ -815,14 +815,14 @@ def test_next_filter_by_phase():
             title='Execute Task',
             deliverables=[2],
             domain='java',
-            phase='4-execute',
+            phase='5-execute',
             description='D2',
             steps=['src/main/java/File.java'],
         )
         run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon_init)
         run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon_exec)
 
-        result = run_script(SCRIPT_PATH, 'next', '--plan-id', 'test-plan', '--phase', '4-execute')
+        result = run_script(SCRIPT_PATH, 'next', '--plan-id', 'test-plan', '--phase', '5-execute')
 
         assert result.returncode == 0
         assert 'Execute Task' in result.stdout
@@ -1213,7 +1213,7 @@ def test_file_contains_new_fields():
             title='Test task',
             deliverables=[1, 2],
             domain='java',
-            phase='4-execute',
+            phase='5-execute',
             description='Test description',
             steps=['src/main/java/File1.java', 'src/main/java/File2.java'],
             depends_on='none',
@@ -1230,7 +1230,7 @@ def test_file_contains_new_fields():
 
         assert 'number: 1' in content
         assert 'status: pending' in content
-        assert 'phase: 4-execute' in content
+        assert 'phase: 5-execute' in content
         assert 'deliverables[2]:' in content
         assert '- 1' in content
         assert '- 2' in content

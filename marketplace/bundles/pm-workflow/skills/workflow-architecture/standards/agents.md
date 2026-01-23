@@ -82,7 +82,7 @@ Understanding when to use `Skill:` vs `Task:` is critical for proper context man
 │  │  ═══════════════════════════════════════════════════                 │  │
 │  │                                                                      │  │
 │  │  Main Conversation                                                   │  │
-│  │    → Skill: phase-2-outline      ← STAYS in main context             │  │
+│  │    → Skill: phase-3-outline      ← STAYS in main context             │  │
 │  │      → Skill: ext-outline-plugin ← STAYS in main context             │  │
 │  │        → Task: analysis-agent    ← CAN spawn (from main context) ✓   │  │
 │  │                                                                      │  │
@@ -137,7 +137,7 @@ Understanding when to use `Skill:` vs `Task:` is critical for proper context man
 │  │                      │                                                │ │
 │  └──────────────────────┴────────────────────────────────────────────────┘ │
 │                                                                             │
-│  NOTE: Outline phase (2-outline) uses skill-direct invocation instead      │
+│  NOTE: Outline phase (3-outline) uses skill-direct invocation instead      │
 │  of an agent. This allows the skill to spawn analysis agents.              │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
@@ -203,7 +203,7 @@ The outline phase uses skill-direct invocation to enable parallel agent spawning
 │  │         │                                                            │  │
 │  │         ▼                                                            │  │
 │  │  ┌────────────────────────────────────────────────────────────────┐ │  │
-│  │  │ Skill: pm-workflow:phase-2-outline   ← DIRECT (stays in main)  │ │  │
+│  │  │ Skill: pm-workflow:phase-3-outline   ← DIRECT (stays in main)  │ │  │
 │  │  │                                                                │ │  │
 │  │  │  • Loads domain extension                                      │ │  │
 │  │  │  • Determines workflow path (simple/complex)                   │ │  │
@@ -385,5 +385,5 @@ Each agent follows the same pattern:
 | Document | Purpose |
 |----------|---------|
 | [skill-loading.md](skill-loading.md) | Two-tier skill loading pattern |
-| [phases.md](phases.md) | 5-phase execution model |
+| [phases.md](phases.md) | 6-phase execution model |
 | `pm-workflow:workflow-extension-api` | Extension points |

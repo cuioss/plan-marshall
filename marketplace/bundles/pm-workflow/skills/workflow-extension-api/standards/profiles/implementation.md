@@ -2,7 +2,7 @@
 
 Workflow skill for execute phase - implements tasks using two-tier skill loading.
 
-**Implementation**: `pm-workflow:phase-4-execute`
+**Implementation**: `pm-workflow:phase-5-execute`
 
 ---
 
@@ -24,11 +24,11 @@ Task execution skills:
 
 ## Invocation
 
-**Phase**: `4-execute`
+**Phase**: `5-execute`
 
 **Agent invocation**:
 ```bash
-plan-phase-agent plan_id={plan_id} phase=4-execute task_number={task_number}
+plan-phase-agent plan_id={plan_id} phase=5-execute task_number={task_number}
 ```
 
 **Skill resolution**:
@@ -437,8 +437,8 @@ If verification fails:
 
 ## Related Documents
 
-- [phase-3-plan SKILL.md](../../../phase-3-plan/SKILL.md) - Previous phase (plan)
-- [phase-5-finalize SKILL.md](../../../phase-5-finalize/SKILL.md) - Next phase (finalize)
+- [phase-4-plan SKILL.md](../../../phase-4-plan/SKILL.md) - Previous phase (plan)
+- [phase-6-finalize SKILL.md](../../../phase-6-finalize/SKILL.md) - Next phase (finalize)
 - [module_testing.md](module_testing.md) - Module testing profile contract
 - [profile-mechanism.md](profile-mechanism.md) - How profile overrides work
 - [task-contract.md](../../../manage-tasks/standards/task-contract.md) - Task structure with domain, profile, skills

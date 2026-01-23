@@ -9,17 +9,17 @@ Skill domains configure which implementation skills are loaded when working on c
 - **System Domain**: Contains workflow skills for the 5-phase execution model
 - **Technical Domains**: Language-specific with profiles and workflow skill extensions (java, javascript)
 
-## 5-Phase Workflow Model
+## 6-Phase Workflow Model
 
-The system domain contains workflow skills for the 5 execution phases:
+The system domain contains workflow skills for the 6 execution phases:
 
 | Phase | Purpose | Workflow Skill |
 |-------|---------|----------------|
 | `1-init` | Initialize plan | `pm-workflow:phase-1-init` |
-| `2-outline` | Create solution outline | `pm-workflow:phase-2-outline` |
-| `3-plan` | Decompose into tasks | `pm-workflow:phase-3-plan` |
-| `4-execute` | Run implementation | `pm-workflow:phase-4-execute` |
-| `5-finalize` | Commit, PR, quality | `pm-workflow:phase-5-finalize` |
+| `3-outline` | Create solution outline | `pm-workflow:phase-3-outline` |
+| `4-plan` | Decompose into tasks | `pm-workflow:phase-4-plan` |
+| `5-execute` | Run implementation | `pm-workflow:phase-5-execute` |
+| `6-finalize` | Commit, PR, quality | `pm-workflow:phase-6-finalize` |
 
 ## Structure
 
@@ -33,10 +33,10 @@ The system domain contains workflow skills for the 5 execution phases:
       "optionals": ["plan-marshall:ref-development-standards"],
       "workflow_skills": {
         "1-init": "pm-workflow:phase-1-init",
-        "2-outline": "pm-workflow:phase-2-outline",
-        "3-plan": "pm-workflow:phase-3-plan",
-        "4-execute": "pm-workflow:phase-4-execute",
-        "5-finalize": "pm-workflow:phase-5-finalize"
+        "3-outline": "pm-workflow:phase-3-outline",
+        "4-plan": "pm-workflow:phase-4-plan",
+        "5-execute": "pm-workflow:phase-5-execute",
+        "6-finalize": "pm-workflow:phase-6-finalize"
       }
     }
   }
@@ -112,7 +112,7 @@ Applied to all agents and skills. Contains workflow skills for the 5-phase model
 |-------|---------|
 | defaults | `plan-marshall:ref-development-standards` |
 | optionals | `plan-marshall:ref-development-standards` |
-| workflow_skills | 5 phases: init, outline, plan, execute, finalize |
+| workflow_skills | 6 phases: init, outline, plan, execute, finalize |
 
 ## Technical Domains
 
@@ -192,25 +192,25 @@ Resolves the system workflow skill for a phase. Always returns from the `system`
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
-  resolve-workflow-skill --phase 2-outline
+  resolve-workflow-skill --phase 3-outline
 ```
 
 **Parameters**:
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `--phase` | string | Yes | Phase name (1-init, 2-outline, 3-plan, 4-execute, 5-finalize) |
+| `--phase` | string | Yes | Phase name (1-init, 3-outline, 4-plan, 5-execute, 6-finalize) |
 
 **Output**:
 ```toon
 status: success
-phase: 2-outline
-workflow_skill: pm-workflow:phase-2-outline
+phase: 3-outline
+workflow_skill: pm-workflow:phase-3-outline
 ```
 
 **Error Cases**:
 - System domain missing → `error: System domain not configured. Run /marshall-steward to initialize.`
-- Unknown phase → `error: Unknown phase: {phase}. Available: 1-init, 2-outline, 3-plan, 4-execute, 5-finalize`
+- Unknown phase → `error: Unknown phase: {phase}. Available: 1-init, 3-outline, 4-plan, 5-execute, 6-finalize`
 
 ### resolve-workflow-skill-extension Command
 
@@ -274,10 +274,10 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-m
 ```toon
 status: success
 1-init: pm-workflow:phase-1-init
-2-outline: pm-workflow:phase-2-outline
-3-plan: pm-workflow:phase-3-plan
-4-execute: pm-workflow:phase-4-execute
-5-finalize: pm-workflow:phase-5-finalize
+3-outline: pm-workflow:phase-3-outline
+4-plan: pm-workflow:phase-4-plan
+5-execute: pm-workflow:phase-5-execute
+6-finalize: pm-workflow:phase-6-finalize
 ```
 
 ### Aggregation Logic

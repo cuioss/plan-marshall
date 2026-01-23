@@ -20,8 +20,8 @@ allowed-tools: Read
 │                                                                  │
 │  LAYER 1: PHASE SKILLS (System only - NO domain override)       │
 │  ┌─────────────────────────────────────────────────────────────┐ │
-│  │ phase-1-init → phase-2-outline → phase-3-plan               │ │
-│  │      → phase-4-execute (coordinator) → phase-5-finalize     │ │
+│  │ phase-1-init → phase-2-refine → phase-3-outline → phase-4-plan │ │
+│  │      → phase-5-execute (coordinator) → phase-6-finalize     │ │
 │  │                                                              │ │
 │  │ Self-documenting: SKILL.md IS the contract                  │ │
 │  └─────────────────────────────────────────────────────────────┘ │
@@ -42,10 +42,10 @@ allowed-tools: Read
 │  LAYER 3: EXTENSIONS (Domain provides, loaded BY system skills) │
 │  ┌─────────────────────────────────────────────────────────────┐ │
 │  │ outline-ext: Codebase analysis, deliverable patterns         │ │
-│  │   → Loaded by phase-2-outline                                │ │
+│  │   → Loaded by phase-3-outline                                │ │
 │  │                                                              │ │
 │  │ triage-ext: Suppression syntax, severity guidelines          │ │
-│  │   → Loaded by phase-5-finalize                               │ │
+│  │   → Loaded by phase-6-finalize                               │ │
 │  │                                                              │ │
 │  │ Contract: standards/extensions/                              │ │
 │  │ Discovery: provides_triage(), provides_outline() in ext.py   │ │
@@ -57,8 +57,8 @@ allowed-tools: Read
 │  ┌─────────────────────────────────────────────────────────────┐ │
 │  │ java-core, java-cdi, junit-core, cui-javascript, etc.        │ │
 │  │                                                              │ │
-│  │ Selected during 2-outline (from module.skills_by_profile)    │ │
-│  │ Propagated to tasks, loaded during 4-execute                 │ │
+│  │ Selected during 3-outline (from module.skills_by_profile)    │ │
+│  │ Propagated to tasks, loaded during 5-execute                 │ │
 │  └─────────────────────────────────────────────────────────────┘ │
 │                                                                  │
 └─────────────────────────────────────────────────────────────────┘
@@ -84,10 +84,11 @@ Phase skills are **system-only** - domains cannot override them. Each phase skil
 | Phase | Skill | Responsibility |
 |-------|-------|----------------|
 | 1-init | `pm-workflow:phase-1-init` | Create plan, config, status |
-| 2-outline | `pm-workflow:phase-2-outline` | Create solution outline with deliverables |
-| 3-plan | `pm-workflow:phase-3-plan` | Transform deliverables into tasks |
-| 4-execute | `pm-workflow:phase-4-execute` | Coordinate task execution |
-| 5-finalize | `pm-workflow:phase-5-finalize` | Verify, triage, commit, PR |
+| 2-refine | `pm-workflow:phase-2-refine` | Clarify request until confidence threshold |
+| 3-outline | `pm-workflow:phase-3-outline` | Create solution outline with deliverables |
+| 4-plan | `pm-workflow:phase-4-plan` | Transform deliverables into tasks |
+| 5-execute | `pm-workflow:phase-5-execute` | Coordinate task execution |
+| 6-finalize | `pm-workflow:phase-6-finalize` | Verify, triage, commit, PR |
 
 **Key Pattern**: Phase skills delegate to profile skills (Layer 2) for actual work and load extensions (Layer 3) for domain-specific knowledge.
 
@@ -140,8 +141,8 @@ Extensions are **additive** - domains provide additional knowledge that system s
 
 | Extension Type | Purpose | Loaded By | Contract |
 |----------------|---------|-----------|----------|
-| outline-ext | Codebase patterns, deliverable templates | phase-2-outline | [extensions/outline-extension.md](standards/extensions/outline-extension.md) |
-| triage-ext | Suppression syntax, severity rules | phase-5-finalize | [extensions/triage-extension.md](standards/extensions/triage-extension.md) |
+| outline-ext | Codebase patterns, deliverable templates | phase-3-outline | [extensions/outline-extension.md](standards/extensions/outline-extension.md) |
+| triage-ext | Suppression syntax, severity rules | phase-6-finalize | [extensions/triage-extension.md](standards/extensions/triage-extension.md) |
 
 ### Extension Discovery
 
@@ -169,9 +170,9 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-m
 
 Domain skills contain the actual coding standards and patterns. They are:
 
-1. **Selected** during phase-2-outline based on `module.skills_by_profile`
+1. **Selected** during phase-3-outline based on `module.skills_by_profile`
 2. **Stored** in deliverables and propagated to tasks
-3. **Loaded** during phase-4-execute from `task.skills` array
+3. **Loaded** during phase-5-execute from `task.skills` array
 
 Domain skills are NOT extensions of the workflow - they are knowledge loaded by profile skills during execution.
 
@@ -196,10 +197,11 @@ Domain skills are NOT extensions of the workflow - they are knowledge loaded by 
 
 **Phase Skills** (self-documenting):
 - `pm-workflow:phase-1-init` - Initializes plan
-- `pm-workflow:phase-2-outline` - Creates solution outline, loads outline extensions
-- `pm-workflow:phase-3-plan` - Creates tasks from deliverables
-- `pm-workflow:phase-4-execute` - Coordinates execution, delegates to profile skills
-- `pm-workflow:phase-5-finalize` - Verifies, loads triage extensions, commits
+- `pm-workflow:phase-2-refine` - Clarifies request until confidence threshold
+- `pm-workflow:phase-3-outline` - Creates solution outline, loads outline extensions
+- `pm-workflow:phase-4-plan` - Creates tasks from deliverables
+- `pm-workflow:phase-5-execute` - Coordinates execution, delegates to profile skills
+- `pm-workflow:phase-6-finalize` - Verifies, loads triage extensions, commits
 
 **Profile Resolution**:
 - `plan-marshall:manage-plan-marshall-config resolve-workflow-skill` - Resolves profile skill with fallback

@@ -1,11 +1,11 @@
 ---
-name: phase-3-plan
+name: phase-4-plan
 description: Domain-agnostic task planning from deliverables with skill resolution and optimization
 user-invocable: false
 allowed-tools: Read, Bash
 ---
 
-# Phase Refine Plan Skill
+# Phase Plan Skill
 
 **Role**: Domain-agnostic workflow skill for transforming solution outline deliverables into optimized, executable tasks. Loaded by `pm-workflow:task-plan-agent`.
 
@@ -133,7 +133,7 @@ solution_outline.md                        TASK-*.toon (created by task-plan)
 **Log skill resolution** (for each task created):
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[SKILL] (pm-workflow:phase-3-plan) Resolved skills for TASK-{N} from {module}.{profile}: [{task.skills}]"
+  work {plan_id} INFO "[SKILL] (pm-workflow:phase-4-plan) Resolved skills for TASK-{N} from {module}.{profile}: [{task.skills}]"
 ```
 
 **Aggregation Rule**: When aggregating multiple deliverables, they must have same profiles list. Merge resolved skills arrays (union) per profile.
@@ -149,7 +149,7 @@ title: {aggregated title}
 deliverables: [{n1}, {n2}, {n3}]
 domain: {domain from deliverable}
 profile: {profile from deliverable}
-phase: 4-execute
+phase: 5-execute
 description: |
   {combined description}
 
@@ -174,7 +174,7 @@ EOF
 **MANDATORY - Log each task creation**:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[ARTIFACT] (pm-workflow:phase-3-plan) Created TASK-{N}: {title}"
+  work {plan_id} INFO "[ARTIFACT] (pm-workflow:phase-4-plan) Created TASK-{N}: {title}"
 ```
 
 **Key Fields**:

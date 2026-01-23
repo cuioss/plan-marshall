@@ -1,12 +1,12 @@
 # Outline Extension Contract
 
-Contract for domain-specific outline extensions loaded by `phase-2-outline`.
+Contract for domain-specific outline extensions loaded by `phase-3-outline`.
 
 ---
 
 ## Purpose
 
-Outline extensions implement a **formal protocol** that phase-2-outline calls at defined points. They provide domain-specific knowledge for deliverable creation through explicit protocol sections.
+Outline extensions implement a **formal protocol** that phase-3-outline calls at defined points. They provide domain-specific knowledge for deliverable creation through explicit protocol sections.
 
 **Key Principle**: Extensions are skills with required protocol sections. The phase explicitly calls each section at defined points - no "apply naturally" ambiguity.
 
@@ -65,15 +65,15 @@ Every outline extension MUST implement these sections:
 
 | Section | Called By | Purpose | Required |
 |---------|-----------|---------|----------|
-| `## Assessment Protocol` | phase-2-outline Step 3 | Determine scope and change_type | **Yes** |
-| `## Workflow` | phase-2-outline Step 4 | Orchestrate complete outline workflow | **Yes** |
+| `## Assessment Protocol` | phase-3-outline Step 3 | Determine scope and change_type | **Yes** |
+| `## Workflow` | phase-3-outline Step 4 | Orchestrate complete outline workflow | **Yes** |
 | `## Discovery Patterns` | Within workflow | Domain-specific Glob/Grep patterns | No |
 
 ---
 
 ## Section: Assessment Protocol
 
-**Called by**: phase-2-outline Step 3 (Assess Complexity)
+**Called by**: phase-3-outline Step 3 (Assess Complexity)
 **Purpose**: Determine scope and change_type BEFORE extension workflow starts
 
 **Required subsections**:
@@ -89,10 +89,10 @@ Every outline extension MUST implement these sections:
 
 ## Section: Workflow (Complete Orchestration)
 
-**Called by**: phase-2-outline Step 4 (Execute Workflow)
+**Called by**: phase-3-outline Step 4 (Execute Workflow)
 **Purpose**: Orchestrate complete outline workflow from discovery to deliverables
 
-Extensions orchestrate the COMPLETE workflow in a single call. NO ping-pong between phase-2-outline and extension.
+Extensions orchestrate the COMPLETE workflow in a single call. NO ping-pong between phase-3-outline and extension.
 
 **Workflow MUST include these steps**:
 
@@ -122,8 +122,8 @@ Extensions orchestrate the COMPLETE workflow in a single call. NO ping-pong betw
 - Create deliverables list with metadata, profiles, verification
 
 ### f. Return Deliverables
-- Return deliverables list to phase-2-outline
-- phase-2-outline writes solution_outline.md
+- Return deliverables list to phase-3-outline
+- phase-3-outline writes solution_outline.md
 
 **Required subsections**:
 - `### Load Persisted Inventory` - Read inventory from assessment phase
@@ -134,7 +134,7 @@ Extensions orchestrate the COMPLETE workflow in a single call. NO ping-pong betw
 - `### Synthesize Clarified Request` - Consolidate clarifications
 - `### Call Q-Gate Agent` - Validate assessments
 - `### Build Deliverables` - Create deliverables from affected_files
-- `### Return Deliverables` - Return to phase-2-outline
+- `### Return Deliverables` - Return to phase-3-outline
 
 ---
 
@@ -199,7 +199,7 @@ Task: pm-workflow:q-gate-validation-agent
 - Use affected_files from Q-Gate (not CERTAIN_INCLUDE assessments)
 - Build deliverables using only CONFIRMED files
 
-**phase-2-outline Responsibilities**:
+**phase-3-outline Responsibilities**:
 - Call extension once (Step 4)
 - Write solution_outline.md with deliverables from extension (Step 5)
 - Set domains, record lessons, return results (Steps 6-8)
@@ -329,4 +329,4 @@ This extension demonstrates the protocol pattern with:
 
 - [extension-mechanism.md](extension-mechanism.md) - How extensions work
 - [triage-extension.md](triage-extension.md) - Triage extension contract
-- [phase-2-outline SKILL.md](../../../phase-2-outline/SKILL.md) - Phase that loads this extension
+- [phase-3-outline SKILL.md](../../../phase-3-outline/SKILL.md) - Phase that loads this extension

@@ -9,13 +9,13 @@ allowed-tools: Read, Skill, Bash, AskUserQuestion, Task
 
 Execute task plans through the execute phase (task implementation) and finalize phase (commit, PR).
 
-## 5-Phase Model
+## 6-Phase Model
 
 ```
-1-init → 2-outline → 3-plan → 4-execute → 5-finalize
+1-init → 3-outline → 4-plan → 5-execute → 6-finalize
 ```
 
-This skill handles **4-execute** and **5-finalize** phases. Use `/plan-manage` for 1-init, 2-outline, and 3-plan phases.
+This skill handles **5-execute** and **6-finalize** phases. Use `/plan-manage` for 1-init, 3-outline, and 4-plan phases.
 
 ## Parameters
 
@@ -53,12 +53,12 @@ Select plan to execute:
 
 Execute specific plan from its current phase:
 
-If plan is in 1-init, 2-outline, or 3-plan phase:
+If plan is in 1-init, 3-outline, or 4-plan phase:
 ```
-Plan 'jwt-auth' is in '2-outline' phase.
+Plan 'jwt-auth' is in '3-outline' phase.
 
-This skill handles 4-execute/5-finalize phases only.
-Use /plan-manage to complete 1-init/2-outline/3-plan phases first.
+This skill handles 5-execute/6-finalize phases only.
+Use /plan-manage to complete 1-init/3-outline/4-plan phases first.
 ```
 
 ---
@@ -95,7 +95,7 @@ For each task:
 ## Finalize Phase
 
 ```
-Skill: pm-workflow:phase-5-finalize
+Skill: pm-workflow:phase-6-finalize
 operation: finalize
 plan_id: {plan_id}
 ```
@@ -139,7 +139,7 @@ Complete all tasks first, then run:
 |-------|---------|
 | `pm-workflow:plan-manage` | Manage plans (init, outline, list, cleanup) |
 | `pm-workflow:manage-tasks` | Task iteration (next, check) |
-| `pm-workflow:phase-5-finalize` | Finalize phase execution |
+| `pm-workflow:phase-6-finalize` | Finalize phase execution |
 
 | Agent | Purpose |
 |-------|---------|

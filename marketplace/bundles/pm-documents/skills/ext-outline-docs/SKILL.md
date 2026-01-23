@@ -10,7 +10,7 @@ allowed-tools: Read
 
 > Extension implementing outline protocol for documentation domain.
 
-Provides domain-specific knowledge for deliverable creation in documentation tasks. Implements the outline extension protocol with defined sections that phase-2-outline calls explicitly.
+Provides domain-specific knowledge for deliverable creation in documentation tasks. Implements the outline extension protocol with defined sections that phase-3-outline calls explicitly.
 
 ## Domain Detection
 
@@ -24,7 +24,7 @@ This domain is relevant when:
 
 ## Assessment Protocol
 
-**Called by**: phase-2-outline Step 3
+**Called by**: phase-3-outline Step 3
 **Purpose**: Determine which workflow applies (simple vs complex)
 
 ### Workflow Selection Criteria
@@ -46,7 +46,7 @@ None - documentation domain has no additional standards to layer.
 
 ## Simple Workflow
 
-**Called by**: phase-2-outline Step 4 (when assessment = simple)
+**Called by**: phase-3-outline Step 4 (when assessment = simple)
 **Purpose**: Create deliverables for isolated documentation changes
 
 ### Domain-Specific Patterns
@@ -82,7 +82,7 @@ None - documentation domain has no additional standards to layer.
 
 ## Complex Workflow
 
-**Called by**: phase-2-outline Step 4 (when assessment = complex)
+**Called by**: phase-3-outline Step 4 (when assessment = complex)
 **Purpose**: Create deliverables for cross-document changes
 
 ### Domain-Specific Patterns

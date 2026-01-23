@@ -199,16 +199,16 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 ### Step 8: Create Status
 
-Create status.toon with phases (5-phase model):
+Create status.toon with phases (6-phase model):
 
 ```bash
 python3 .plan/execute-script.py pm-workflow:plan-manage:manage-lifecycle create \
   --plan-id {plan_id} \
   --title "{title_from_task_md}" \
-  --phases 1-init,2-outline,3-plan,4-execute,5-finalize
+  --phases 1-init,2-refine,3-outline,4-plan,5-execute,6-finalize
 ```
 
-**Note**: Domain information is stored in `config.toon` (as a `domains` array), not in `status.toon`. All plans use the standard 5-phase model.
+**Note**: Domain information is stored in `config.toon` (as a `domains` array), not in `status.toon`. All plans use the standard 6-phase model.
 
 ### Step 9: Create Configuration
 
@@ -238,7 +238,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 ### Step 11: Transition Phase
 
-The phase transitions from init → outline after configuration completes:
+The phase transitions from init → refine after configuration completes:
 
 ```bash
 python3 .plan/execute-script.py pm-workflow:plan-manage:manage-lifecycle transition \
@@ -261,7 +261,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 status: success
 plan_id: {plan_id}
 domain: {domain}
-next_phase: 2-outline
+next_phase: 2-refine
 
 source:
   type: {description|lesson|issue}

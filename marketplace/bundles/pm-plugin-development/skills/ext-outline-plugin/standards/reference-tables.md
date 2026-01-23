@@ -201,8 +201,8 @@ python3 .plan/execute-script.py pm-plugin-development:tools-marketplace-inventor
   "component": "pm-workflow:manage-files",
   "dependent_count": 5,
   "dependents": [
-    {"component": "pm-workflow:phase-2-outline", "references": [...]},
-    {"component": "pm-workflow:phase-4-execute", "references": [...]}
+    {"component": "pm-workflow:phase-4-plan", "references": [...]},
+    {"component": "pm-workflow:phase-5-execute", "references": [...]}
   ]
 }
 ```

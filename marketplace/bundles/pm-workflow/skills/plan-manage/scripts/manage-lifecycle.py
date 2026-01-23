@@ -6,8 +6,8 @@ Replaces plan.md and absorbs phase-management functionality.
 
 Usage:
     python3 manage-lifecycle.py read --plan-id my-plan
-    python3 manage-lifecycle.py create --plan-id my-plan --title "Title" --phases 1-init,2-outline,3-plan,4-execute,5-finalize
-    python3 manage-lifecycle.py set-phase --plan-id my-plan --phase 4-execute
+    python3 manage-lifecycle.py create --plan-id my-plan --title "Title" --phases 1-init,2-refine,3-outline,4-plan,5-execute,6-finalize
+    python3 manage-lifecycle.py set-phase --plan-id my-plan --phase 5-execute
     python3 manage-lifecycle.py list
     python3 manage-lifecycle.py transition --plan-id my-plan --completed 1-init
 """
@@ -27,10 +27,11 @@ from toon_parser import parse_toon, serialize_toon  # type: ignore[import-not-fo
 # Phase routing maps phase names to skills (for route command)
 PHASE_ROUTING = {
     '1-init': ('plan-init', 'Initialize plan structure'),
-    '2-outline': ('solution-outline', 'Create solution outline with deliverables'),
-    '3-plan': ('task-plan', 'Create tasks from deliverables'),
-    '4-execute': ('plan-execute', 'Execute implementation tasks'),
-    '5-finalize': ('plan-finalize', 'Finalize with commit/PR'),
+    '2-refine': ('request-refine', 'Clarify request until confident'),
+    '3-outline': ('solution-outline', 'Create solution outline with deliverables'),
+    '4-plan': ('task-plan', 'Create tasks from deliverables'),
+    '5-execute': ('plan-execute', 'Execute implementation tasks'),
+    '6-finalize': ('plan-finalize', 'Finalize with commit/PR'),
 }
 
 
@@ -507,7 +508,7 @@ def main():
     create_parser.add_argument(
         '--phases',
         required=True,
-        help='Comma-separated phase names (e.g., 1-init,2-outline,3-plan,4-execute,5-finalize)',
+        help='Comma-separated phase names (e.g., 1-init,2-refine,3-outline,4-plan,5-execute,6-finalize)',
     )
     create_parser.add_argument('--force', action='store_true', help='Overwrite existing status')
     create_parser.set_defaults(func=cmd_create)

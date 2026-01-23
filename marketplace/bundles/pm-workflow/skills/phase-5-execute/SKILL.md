@@ -1,5 +1,5 @@
 ---
-name: phase-4-execute
+name: phase-5-execute
 description: Execute phase skill for plan management. DUMB TASK RUNNER that executes tasks from TASK-*.toon files sequentially for execute and finalize phases.
 user-invocable: false
 allowed-tools: Read, Write, Edit, Bash, Skill, Task, AskUserQuestion
@@ -62,8 +62,8 @@ Returns:
 ```toon
 status: success
 plan_id: {plan_id}
-current_phase: 4-execute
-skill: pm-workflow:phase-4-execute
+current_phase: 5-execute
+skill: pm-workflow:phase-5-execute
 skill_description: Execute phase skill for task implementation
 total_phases: 4
 completed_phases: 2
@@ -82,7 +82,7 @@ At the start of execute or finalize phase:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[STATUS] (pm-workflow:phase-4-execute) Starting {phase} phase"
+  work {plan_id} INFO "[STATUS] (pm-workflow:phase-5-execute) Starting {phase} phase"
 ```
 
 For each task in current phase:
@@ -119,7 +119,7 @@ After each task completes:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[OUTCOME] (pm-workflow:phase-4-execute) Completed {task_id}: {task_title} ({steps_completed} steps)"
+  work {plan_id} INFO "[OUTCOME] (pm-workflow:phase-5-execute) Completed {task_id}: {task_title} ({steps_completed} steps)"
 ```
 
 ### Step 4: Next Task or Phase
@@ -132,7 +132,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[STATUS] (pm-workflow:phase-4-execute) Completed {phase} phase: {tasks_completed} tasks"
+  work {plan_id} INFO "[STATUS] (pm-workflow:phase-5-execute) Completed {phase} phase: {tasks_completed} tasks"
 ```
 
 ---
@@ -171,7 +171,7 @@ When transitioning from execute phase to finalize:
 ```bash
 python3 .plan/execute-script.py pm-workflow:plan-manage:manage-lifecycle transition \
   --plan-id {plan_id} \
-  --completed 4-execute
+  --completed 5-execute
 ```
 
 This automatically updates status.toon and moves to the next phase.
@@ -184,7 +184,7 @@ On any error, **first log the error** to work-log:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} ERROR "[ERROR] (pm-workflow:phase-4-execute) {task_id} failed - {error_type}: {error_context}"
+  work {plan_id} ERROR "[ERROR] (pm-workflow:phase-5-execute) {task_id} failed - {error_type}: {error_context}"
 ```
 
 ### Script Failure (Lessons-Learned Capture)

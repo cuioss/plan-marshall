@@ -240,5 +240,5 @@ If verification fails:
 - Context skills from task delegation (loaded dynamically)
 
 ### Related Skills
-- `pm-workflow:phase-4-execute` - Generic plan execution orchestrator
+- `pm-workflow:phase-5-execute` - Generic plan execution orchestrator
 - `pm-plugin-development:plugin-maintain` - Plugin maintenance operations

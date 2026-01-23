@@ -1,6 +1,6 @@
 # Task Contract
 
-Standard structure for tasks created by task-plan skills. Tasks represent committable units of work derived from deliverables with pre-resolved skills for 5-phase workflow execution.
+Standard structure for tasks created by task-plan skills. Tasks represent committable units of work derived from deliverables with pre-resolved skills for 6-phase workflow execution.
 
 ## Purpose
 
@@ -331,7 +331,7 @@ profile: {profile}
 skills:
   - pm-dev-java:java-core
   - pm-dev-java:java-cdi
-phase: 4-execute
+phase: 5-execute
 description: |
   {combined description}
 

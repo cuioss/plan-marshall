@@ -45,7 +45,7 @@ If a matching lesson exists:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[TRIAGE] (pm-workflow:phase-5-finalize) Applied lesson {lesson_id}: {decision} for {finding}"
+  work {plan_id} INFO "[TRIAGE] (pm-workflow:phase-6-finalize) Applied lesson {lesson_id}: {decision} for {finding}"
 ```
 
 ### Record New Lesson

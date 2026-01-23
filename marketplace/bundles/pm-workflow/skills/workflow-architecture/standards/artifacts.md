@@ -152,14 +152,15 @@ Plan lifecycle status with phase tracking.
 
 ```toon
 title: Implement JWT Authentication
-current_phase: 4-execute
+current_phase: 5-execute
 
-phases[5]{name,status}:
+phases[6]{name,status}:
 1-init,done
-2-outline,done
-3-plan,done
-4-execute,in_progress
-5-finalize,pending
+2-refine,done
+3-outline,done
+4-plan,done
+5-execute,in_progress
+6-finalize,pending
 
 created: 2025-12-02T10:00:00Z
 updated: 2025-12-02T14:30:00Z
@@ -389,7 +390,7 @@ TASK-001-IMPL.toon
 number: 1
 title: Update misc agents to TOON output
 status: pending
-phase: 4-execute
+phase: 5-execute
 domain: plan-marshall-plugin-dev
 profile: implementation
 origin: plan
@@ -442,7 +443,7 @@ current_step: 1
 │ │ number: 1                                                │ │
 │ │ title: Update misc agents...                             │ │
 │ │ status: pending → in_progress → done                     │ │
-│ │ phase: 4-execute                                         │ │
+│ │ phase: 5-execute                                         │ │
 │ │ domain: plan-marshall-plugin-dev                         │ │
 │ │ profile: implementation                                  │ │
 │ │ origin: plan | fix                                       │ │
@@ -585,11 +586,11 @@ Semantic work progress tracking across all phases.
   phase: 1-init
 
 [2025-12-11T11:15:24Z] [INFO] [ARTIFACT] Created deliverable: auth module
-  phase: 2-outline
+  phase: 3-outline
   detail: Source: request.md, domain: java
 
 [2025-12-11T11:17:55Z] [INFO] [OUTCOME] Task completed: 3 files modified
-  phase: 4-execute
+  phase: 5-execute
 ```
 
 ### Categories
@@ -645,7 +646,7 @@ Decision entries do NOT include a `[DECISION]` prefix since the file itself indi
   phase: 1-init
 
 [2025-12-11T11:20:15Z] [INFO] (pm-plugin-development:ext-outline-plugin) Scope: bundles=all
-  phase: 2-outline
+  phase: 3-outline
   detail: marketplace/bundles structure detected
 ```
 
@@ -755,7 +756,7 @@ archive     .plan/archived-plans/{date}-{plan_id}/
 
 | Document | Purpose |
 |----------|---------|
-| [phases.md](phases.md) | 5-phase execution model |
+| [phases.md](phases.md) | 6-phase execution model |
 | [data-layer.md](data-layer.md) | manage-* skills that access these files |
 | [skill-loading.md](skill-loading.md) | How skills from tasks are loaded |
 | `pm-workflow:manage-config` | config.toon operations |

@@ -304,7 +304,7 @@ domains: java,java-cui,javascript
 ```
 
 This populates `skill_domains` in marshal.json with:
-- `system` domain (always) with workflow_skills for 5 phases and task_executors
+- `system` domain (always) with workflow_skills for 6 phases and task_executors
 - Each selected domain with nested structure from bundle manifest:
   - `workflow_skill_extensions` (outline, triage)
   - `core` (defaults + optionals)
@@ -340,7 +340,7 @@ This auto-discovers profiles from configured domains and registers default task 
 
 ## Step 7: Verify Skill Domain Configuration
 
-Skill domains configure which implementation skills are loaded during plan execution. The 5-phase model uses:
+Skill domains configure which implementation skills are loaded during plan execution. The 6-phase model uses:
 - **System domain**: Contains workflow_skills (init, outline, plan, execute, finalize) and task_executors
 - **Technical domains**: Profile-based skills and workflow_skill_extensions
 
@@ -354,10 +354,10 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-m
   "system": {
     "workflow_skills": {
       "1-init": "pm-workflow:phase-1-init",
-      "2-outline": "pm-workflow:phase-2-outline",
-      "3-plan": "pm-workflow:phase-3-plan",
-      "4-execute": "pm-workflow:phase-4-execute",
-      "5-finalize": "pm-workflow:phase-5-finalize"
+      "3-outline": "pm-workflow:phase-3-outline",
+      "4-plan": "pm-workflow:phase-4-plan",
+      "5-execute": "pm-workflow:phase-5-execute",
+      "6-finalize": "pm-workflow:phase-6-finalize"
     },
     "task_executors": {
       "implementation": "pm-workflow:task-implementation",

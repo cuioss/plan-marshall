@@ -15,7 +15,7 @@ The pm-workflow bundle uses manage-* skills as the data access layer for all pla
 │  │                                                                      │  │
 │  │   WORKFLOW SKILLS                                                    │  │
 │  │   ═══════════════                                                    │  │
-│  │   phase-1-init  phase-2-outline  phase-3-plan  phase-4-execute  phase-5-finalize │
+│  │   phase-1-init  phase-2-refine  phase-3-outline  phase-4-plan  phase-5-execute  phase-6-finalize │
 │  │       │           │               │            │             │       │  │
 │  │       │           │               │            │             │       │  │
 │  │       ▼           ▼               ▼            ▼             ▼       │  │
@@ -230,14 +230,15 @@ The pm-workflow bundle uses manage-* skills as the data access layer for all pla
 │  ┌──────────────────────────────────────────────────────────────────────┐  │
 │  │                                                                      │  │
 │  │  title: Implement JWT Authentication                                 │  │
-│  │  current_phase: 4-execute                                            │  │
+│  │  current_phase: 5-execute                                            │  │
 │  │                                                                      │  │
-│  │  phases[5]{name,status}:                                             │  │
+│  │  phases[6]{name,status}:                                             │  │
 │  │  1-init,done                                                         │  │
-│  │  2-outline,done                                                      │  │
-│  │  3-plan,done                                                         │  │
-│  │  4-execute,in_progress                                               │  │
-│  │  5-finalize,pending                                                  │  │
+│  │  2-refine,done                                                       │  │
+│  │  3-outline,done                                                      │  │
+│  │  4-plan,done                                                         │  │
+│  │  5-execute,in_progress                                               │  │
+│  │  6-finalize,pending                                                  │  │
 │  │                                                                      │  │
 │  │  created: 2025-12-02T10:00:00Z                                       │  │
 │  │  updated: 2025-12-02T14:30:00Z                                       │  │
@@ -281,7 +282,7 @@ The pm-workflow bundle uses manage-* skills as the data access layer for all pla
 │  │  deliverables: [1, 2]                                                │  │
 │  │  domain: java                                                        │  │
 │  │  profile: implementation                                             │  │
-│  │  phase: 4-execute                                                    │  │
+│  │  phase: 5-execute                                                    │  │
 │  │  status: pending                                                     │  │
 │  │                                                                      │  │
 │  │  description: |                                                      │  │

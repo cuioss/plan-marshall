@@ -4,7 +4,7 @@ JSON schema definition for the `skill_domains` section of marshal.json.
 
 ## Overview
 
-The skill domains configuration uses a 5-phase workflow model with profile-based skill resolution. The `system` domain contains workflow skills, while technical domains (java, javascript, etc.) contain profile-based skills and optional workflow extensions.
+The skill domains configuration uses a 6-phase workflow model with profile-based skill resolution. The `system` domain contains workflow skills, while technical domains (java, javascript, etc.) contain profile-based skills and optional workflow extensions.
 
 ## Schema Structure
 
@@ -16,10 +16,10 @@ The skill domains configuration uses a 5-phase workflow model with profile-based
       "optionals": ["bundle:skill"],
       "workflow_skills": {
         "1-init": "pm-workflow:phase-1-init",
-        "2-outline": "pm-workflow:phase-2-outline",
-        "3-plan": "pm-workflow:phase-3-plan",
-        "4-execute": "pm-workflow:phase-4-execute",
-        "5-finalize": "pm-workflow:phase-5-finalize"
+        "3-outline": "pm-workflow:phase-3-outline",
+        "4-plan": "pm-workflow:phase-4-plan",
+        "5-execute": "pm-workflow:phase-5-execute",
+        "6-finalize": "pm-workflow:phase-6-finalize"
       },
       "task_executors": {
         "implementation": "pm-workflow:task-implementation",
@@ -53,7 +53,7 @@ The `system` domain is required and contains:
 |-------|------|----------|-------------|
 | `defaults` | array | No | Base skills loaded for all tasks |
 | `optionals` | array | No | Optional base skills available for selection |
-| `workflow_skills` | object | Yes | Maps 5 phases to workflow skill references |
+| `workflow_skills` | object | Yes | Maps 6 phases to workflow skill references |
 | `task_executors` | object | Yes | Maps profiles to task executor skills |
 
 ### Workflow Skills (5-Phase Model)
@@ -62,10 +62,10 @@ The `system` domain is required and contains:
 {
   "workflow_skills": {
     "1-init": "pm-workflow:phase-1-init",
-    "2-outline": "pm-workflow:phase-2-outline",
-    "3-plan": "pm-workflow:phase-3-plan",
-    "4-execute": "pm-workflow:phase-4-execute",
-    "5-finalize": "pm-workflow:phase-5-finalize"
+    "3-outline": "pm-workflow:phase-3-outline",
+    "4-plan": "pm-workflow:phase-4-plan",
+    "5-execute": "pm-workflow:phase-5-execute",
+    "6-finalize": "pm-workflow:phase-6-finalize"
   }
 }
 ```
@@ -73,10 +73,10 @@ The `system` domain is required and contains:
 | Phase | Purpose | Workflow Skill |
 |-------|---------|----------------|
 | `1-init` | Initialize plan, detect artifacts | `pm-workflow:phase-1-init` |
-| `2-outline` | Create solution outline with deliverables | `pm-workflow:phase-2-outline` |
-| `3-plan` | Transform deliverables into executable tasks | `pm-workflow:phase-3-plan` |
-| `4-execute` | Execute individual tasks | `pm-workflow:phase-4-execute` |
-| `5-finalize` | Verify, document, commit | `pm-workflow:phase-5-finalize` |
+| `3-outline` | Create solution outline with deliverables | `pm-workflow:phase-3-outline` |
+| `4-plan` | Transform deliverables into executable tasks | `pm-workflow:phase-4-plan` |
+| `5-execute` | Execute individual tasks | `pm-workflow:phase-5-execute` |
+| `6-finalize` | Verify, document, commit | `pm-workflow:phase-6-finalize` |
 
 ### Task Executors
 
@@ -180,8 +180,8 @@ plan-marshall-config resolve-task-executor --profile module_testing
 
 ```bash
 # Always resolves from system domain
-plan-marshall-config resolve-workflow-skill --phase 2-outline
-# Returns: pm-workflow:phase-2-outline
+plan-marshall-config resolve-workflow-skill --phase 3-outline
+# Returns: pm-workflow:phase-3-outline
 ```
 
 ### Workflow Extension Resolution
@@ -268,7 +268,7 @@ plan-marshall-config resolve-domain-skills --domain java --profile implementatio
 ## Validation Rules
 
 1. **System domain required**: `skill_domains.system` must exist
-2. **Workflow skills required**: `system.workflow_skills` must have all 5 phases
+2. **Workflow skills required**: `system.workflow_skills` must have all 6 phases
 3. **Task executors required**: `system.task_executors` must exist with at least `implementation`
 4. **Profile structure**: If domain has profiles, must have at least `core`
 5. **Extension types**: Only `outline` and `triage` are valid extension types

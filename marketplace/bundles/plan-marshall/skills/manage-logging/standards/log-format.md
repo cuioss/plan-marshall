@@ -48,7 +48,7 @@ Additional data is provided as indented key-value pairs:
 ```
 [2025-12-11T12:14:26Z] [ERROR] [SCRIPT] pm-workflow:manage-log add (0.16s)
   exit_code: 2
-  args: add --plan-id test --phase 2-outline
+  args: add --plan-id test --phase 3-outline
   stderr: error: invalid argument
 ```
 
@@ -89,7 +89,7 @@ Additional data is provided as indented key-value pairs:
 ```
 [2025-12-11T12:17:50Z] [ERROR] [SCRIPT] pm-workflow:manage-log:manage-work-log add (0.16s)
   exit_code: 2
-  args: add --plan-id test --phase 2-outline --type milestone
+  args: add --plan-id test --phase 3-outline --type milestone
   stderr: error: argument --type: invalid choice: 'milestone'
 ```
 
@@ -140,7 +140,7 @@ Additional data is provided as indented key-value pairs:
 
 ```
 [2025-12-11T11:17:50Z] [ERROR] [ERROR] Skill load failed
-  phase: 2-outline
+  phase: 3-outline
   detail: plugin-solution-outline skill not found in config.toon
 ```
 
@@ -148,7 +148,7 @@ Additional data is provided as indented key-value pairs:
 
 ```
 [2025-12-11T11:17:55Z] [INFO] [OUTCOME] Impact analysis complete: 19 agents identified
-  phase: 2-outline
+  phase: 3-outline
   detail: Categories: 3 builder, 9 Java, 2 JS, 3 plan-marshall-plugin-dev, 2 workflow
 ```
 
@@ -156,7 +156,7 @@ Additional data is provided as indented key-value pairs:
 
 ```
 [2025-12-11T11:17:48Z] [INFO] [FINDING] Affected: gradle-builder.md
-  phase: 2-outline
+  phase: 3-outline
   detail: Agent returns JSON output in Step 4. Should be migrated to TOON format.
 ```
 
@@ -192,7 +192,7 @@ Decision entries are written to a dedicated log file. They do NOT include a `[DE
 
 ```
 [2025-12-11T11:20:15Z] [INFO] (pm-plugin-development:ext-outline-plugin) Scope: bundles=all
-  phase: 2-outline
+  phase: 3-outline
   detail: marketplace/bundles structure detected
 ```
 

@@ -7,7 +7,7 @@ during verification.
 
 Usage:
     python3 collect-artifacts.py --plan-id my-plan --output artifacts/
-    python3 collect-artifacts.py --plan-id my-plan --output artifacts/ --phases 2-outline,3-plan
+    python3 collect-artifacts.py --plan-id my-plan --output artifacts/ --phases 3-outline,4-plan
 
 Output: Directory containing collected artifacts in original format.
 """
@@ -253,10 +253,10 @@ class ArtifactCollector:
         """Collect all artifacts.
 
         Args:
-            phases: List of phases to collect artifacts for ['2-outline', '3-plan']
+            phases: List of phases to collect artifacts for ['3-outline', '4-plan']
         """
         if phases is None:
-            phases = ['2-outline']
+            phases = ['3-outline']
 
         # Ensure output directory exists
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -271,7 +271,7 @@ class ArtifactCollector:
         self.collect_decision_log()
 
         # Collect tasks if planning phase included
-        if '3-plan' in phases or 'both' in phases:
+        if '4-plan' in phases or 'both' in phases:
             self.collect_tasks()
 
         # Generate collection summary
@@ -302,7 +302,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description='Collect workflow artifacts for verification')
     parser.add_argument('--plan-id', required=True, help='Plan identifier')
     parser.add_argument('--output', required=True, help='Output directory path')
-    parser.add_argument('--phases', default='2-outline', help='Phases to collect (comma-separated)')
+    parser.add_argument('--phases', default='3-outline', help='Phases to collect (comma-separated)')
 
     args = parser.parse_args()
 

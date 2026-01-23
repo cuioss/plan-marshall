@@ -84,7 +84,7 @@ plan-marshall-config skill-domains set \
   --optionals "pm-dev-java:java-lombok,pm-dev-java:javadoc"
 ```
 
-**Profile-based update (5-phase model):**
+**Profile-based update (6-phase model):**
 ```bash
 plan-marshall-config skill-domains set \
   --domain java \
@@ -240,17 +240,17 @@ domains: java,javascript
 
 Resolve system workflow skill for a phase. Always returns from the `system` domain.
 
-**Phases:** 1-init, 2-outline, 3-plan, 4-execute, 5-finalize
+**Phases:** 1-init, 3-outline, 4-plan, 5-execute, 6-finalize
 
 ```bash
-plan-marshall-config resolve-workflow-skill --phase 2-outline
+plan-marshall-config resolve-workflow-skill --phase 3-outline
 ```
 
 **Output:**
 ```toon
 status: success
-phase: 2-outline
-workflow_skill: pm-workflow:phase-2-outline
+phase: 3-outline
+workflow_skill: pm-workflow:phase-3-outline
 ```
 
 ### resolve-workflow-skill-extension
@@ -310,7 +310,7 @@ optionals[2]:
 
 ### get-workflow-skills
 
-Get all workflow skills from the system domain (5-phase model).
+Get all workflow skills from the system domain (6-phase model).
 
 ```bash
 plan-marshall-config get-workflow-skills
@@ -320,10 +320,10 @@ plan-marshall-config get-workflow-skills
 ```toon
 status: success
 1-init: pm-workflow:phase-1-init
-2-outline: pm-workflow:phase-2-outline
-3-plan: pm-workflow:phase-3-plan
-4-execute: pm-workflow:phase-4-execute
-5-finalize: pm-workflow:phase-5-finalize
+3-outline: pm-workflow:phase-3-outline
+4-plan: pm-workflow:phase-4-plan
+5-execute: pm-workflow:phase-5-execute
+6-finalize: pm-workflow:phase-6-finalize
 ```
 
 ---

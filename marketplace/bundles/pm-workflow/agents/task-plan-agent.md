@@ -3,7 +3,7 @@ name: task-plan-agent
 description: Transform deliverables into optimized tasks with explicit domain skills
 tools: Read, Bash, Skill
 model: sonnet
-skills: pm-workflow:phase-3-plan, plan-marshall:ref-development-standards
+skills: pm-workflow:phase-4-plan, plan-marshall:ref-development-standards
 ---
 
 # Task Plan Agent
@@ -16,7 +16,7 @@ Load these skills using the Skill tool BEFORE any other action:
 
 ```
 Skill: plan-marshall:ref-development-standards
-Skill: pm-workflow:phase-3-plan
+Skill: pm-workflow:phase-4-plan
 ```
 
 If skill loading fails, STOP and report the error. Do NOT proceed without skills loaded.
@@ -24,7 +24,7 @@ If skill loading fails, STOP and report the error. Do NOT proceed without skills
 **Log skill selection**:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[SKILL] (pm-workflow:phase-3-plan-agent) Using workflow_skill: pm-workflow:phase-3-plan from phase: plan"
+  work {plan_id} INFO "[SKILL] (pm-workflow:task-plan-agent) Using workflow_skill: pm-workflow:phase-4-plan from phase: 4-plan"
 ```
 
 ## Role Boundaries
@@ -96,7 +96,7 @@ lessons_recorded: {count}
 ```toon
 status: error
 error_type: {outline_not_found|circular_dependency|skill_load_failure}
-component: "pm-workflow:phase-3-plan-agent"
+component: "pm-workflow:phase-4-plan-agent"
 message: "{human readable error}"
 context:
   operation: "{what was being attempted}"

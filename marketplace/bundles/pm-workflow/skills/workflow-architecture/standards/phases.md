@@ -1,6 +1,6 @@
-# 5-Phase Execution Model
+# 6-Phase Execution Model
 
-The pm-workflow bundle implements a 5-phase execution model for structured task completion.
+The pm-workflow bundle implements a 6-phase execution model for structured task completion.
 
 ---
 
@@ -9,20 +9,29 @@ The pm-workflow bundle implements a 5-phase execution model for structured task 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                                                                             │
-│                         5-PHASE EXECUTION MODEL                             │
+│                         6-PHASE EXECUTION MODEL                             │
 │                                                                             │
 │  ┌──────────────────────────────────────────────────────────────────────┐  │
 │  │                                                                      │  │
-│  │   ┌────────┐   ┌───────────┐   ┌────────┐   ┌───────────┐   ┌───────┐│  │
-│  │   │ 1-INIT │──▶│ 2-OUTLINE │──▶│ 3-PLAN │──▶│ 4-EXECUTE │──▶│5-FINAL││  │
-│  │   └────────┘   └───────────┘   └────────┘   └───────────┘   └───────┘│  │
-│  │       │              │              │              │            │    │  │
-│  │       │              │              │              │            │    │  │
-│  │   ┌───▼───┐     ┌────▼────┐    ┌────▼────┐   ┌────▼────┐   ┌───▼───┐│  │
-│  │   │config │     │solution │    │ TASK-*  │   │ project │   │commit ││  │
-│  │   │status │     │outline  │    │ .toon   │   │  files  │   │  PR   ││  │
-│  │   │request│     │   .md   │    │  files  │   │modified │   │       ││  │
-│  │   └───────┘     └─────────┘    └─────────┘   └─────────┘   └───────┘│  │
+│  │   ┌────────┐   ┌─────────┐   ┌───────────┐   ┌────────┐              │  │
+│  │   │ 1-INIT │──▶│2-REFINE │──▶│ 3-OUTLINE │──▶│ 4-PLAN │──▶          │  │
+│  │   └────────┘   └─────────┘   └───────────┘   └────────┘              │  │
+│  │       │             │              │              │                  │  │
+│  │   ┌───▼───┐    ┌────▼────┐    ┌────▼────┐   ┌────▼────┐             │  │
+│  │   │config │    │clarified│    │solution │   │ TASK-*  │             │  │
+│  │   │status │    │ request │    │outline  │   │ .toon   │             │  │
+│  │   │request│    │         │    │   .md   │   │  files  │             │  │
+│  │   └───────┘    └─────────┘    └─────────┘   └─────────┘             │  │
+│  │                                                                      │  │
+│  │       ┌───────────┐   ┌──────────┐                                  │  │
+│  │   ───▶│ 5-EXECUTE │──▶│6-FINALIZE│                                  │  │
+│  │       └───────────┘   └──────────┘                                  │  │
+│  │            │               │                                        │  │
+│  │       ┌────▼────┐     ┌───▼───┐                                    │  │
+│  │       │ project │     │commit │                                    │  │
+│  │       │  files  │     │  PR   │                                    │  │
+│  │       │modified │     │       │                                    │  │
+│  │       └─────────┘     └───────┘                                    │  │
 │  │                                                                      │  │
 │  └──────────────────────────────────────────────────────────────────────┘  │
 │                                                                             │
@@ -66,29 +75,75 @@ The pm-workflow bundle implements a 5-phase execution model for structured task 
 │  5. Write request.md                                                        │
 │  6. Initialize references.toon                                              │
 │  7. Detect domain                                                           │
-│  8. Create status.toon (5-phase model)                                      │
+│  8. Create status.toon (6-phase model)                                      │
 │  9. Create config.toon (with domains)                                       │
-│  10. Transition to 2-outline phase                                          │
+│  10. Transition to 2-refine phase                                           │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-### Phase 2: 2-OUTLINE
+### Phase 2: 2-REFINE
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                                                                             │
-│  PHASE: 2-OUTLINE                                                           │
-│  ══════════════                                                             │
+│  PHASE: 2-REFINE                                                            │
+│  ═════════════                                                              │
 │                                                                             │
 │  ┌─────────────────────────────────────────────────────────────────────┐   │
 │  │                                                                     │   │
 │  │  INPUT                           OUTPUT                             │   │
 │  │  ═════                           ══════                             │   │
 │  │                                                                     │   │
-│  │  • request.md                    solution_outline.md                │   │
+│  │  • request.md                    • clarified_request (in request.md)│   │
+│  │  • config.toon                   • clarifications (Q&A pairs)       │   │
+│  │  • project-architecture (*)      • module_mapping                   │   │
+│  │                                  • scope_estimate                   │   │
+│  │                                  • confidence >= threshold          │   │
+│  │                                                                     │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+│  AGENT: request-refine-agent                                                │
+│  SKILL: pm-workflow:phase-2-refine                                          │
+│                                                                             │
+│  STEPS:                                                                     │
+│  ──────                                                                     │
+│  0. Load confidence threshold from marshal.json (default: 95%)              │
+│  1. Load architecture context                                               │
+│  2. Load request                                                            │
+│  3. Analyze request quality (correctness, completeness, consistency,        │
+│     non-duplication, ambiguity)                                             │
+│  4. Analyze in architecture context (module mapping, feasibility, scope)    │
+│  5. Evaluate confidence                                                     │
+│     IF confidence >= threshold → proceed to 3-outline                       │
+│     ELSE → Step 6                                                           │
+│  6. Clarify with user (AskUserQuestion)                                     │
+│  7. Update request with clarifications                                      │
+│     Loop back to Step 3                                                     │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+**(*) Project Architecture**: Module context from `plan-marshall:analyze-project-architecture`.
+
+---
+
+### Phase 3: 3-OUTLINE
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                                                                             │
+│  PHASE: 3-OUTLINE                                                           │
+│  ═══════════════                                                            │
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │                                                                     │   │
+│  │  INPUT                           OUTPUT                             │   │
+│  │  ═════                           ══════                             │   │
+│  │                                                                     │   │
+│  │  • clarified_request             solution_outline.md                │   │
 │  │  • config.toon                     └── Summary                      │   │
 │  │  • project-architecture (*)        └── Overview (ASCII diagram)     │   │
 │  │                                    └── Deliverables                 │   │
@@ -101,14 +156,13 @@ The pm-workflow bundle implements a 5-phase execution model for structured task 
 │  └─────────────────────────────────────────────────────────────────────┘   │
 │                                                                             │
 │  AGENT: solution-outline-agent                                              │
-│  SKILL: pm-workflow:phase-2-outline (or domain-specific extension)          │
+│  SKILL: pm-workflow:phase-3-outline (or domain-specific extension)          │
 │                                                                             │
 │  STEPS:                                                                     │
 │  ──────                                                                     │
-│  1. Load architecture context                                               │
-│  2. Load request and config                                                 │
-│  3. Load outline extension (if available)                                   │
-│  4. Execute workflow:                                                       │
+│  1. Load refined request (clarified_request from phase-2-refine)           │
+│  2. Load outline extension (if available)                                   │
+│  3. Execute workflow:                                                       │
 │     • Extension orchestrates (single call):                                 │
 │       - Discovery and analysis                                              │
 │       - Uncertainty resolution + Synthesize clarified request               │
@@ -119,27 +173,25 @@ The pm-workflow bundle implements a 5-phase execution model for structured task 
 │       - Module selection                                                    │
 │       - Package placement                                                   │
 │       - Deliverable creation                                                │
-│  5. Write solution_outline.md (using deliverables from step 4)              │
-│  6. Set domains, record lessons, return results                             │
-│  7. ──────────────────────────────────────────────────                      │
+│  4. Write solution_outline.md (using deliverables from step 3)              │
+│  5. Set domains, record lessons, return results                             │
+│  6. ──────────────────────────────────────────────────                      │
 │     │  ** USER REVIEW GATE **                                               │
-│     │  User must approve before proceeding to 3-plan phase                  │
+│     │  User must approve before proceeding to 4-plan phase                  │
 │     └──────────────────────────────────────────────────                     │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-**(*) Project Architecture**: Module context from `plan-marshall:analyze-project-architecture` via [client-api.md](../../../../plan-marshall/skills/analyze-project-architecture/standards/client-api.md). Provides module responsibility, key packages, tips, and `skills_by_profile` for each module. Task-plan resolves skills from architecture based on module and profile.
-
 ---
 
-### Phase 3: 3-PLAN
+### Phase 4: 4-PLAN
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                                                                             │
-│  PHASE: 3-PLAN                                                              │
-│  ═══════════                                                                │
+│  PHASE: 4-PLAN                                                              │
+│  ════════════                                                               │
 │                                                                             │
 │  ┌─────────────────────────────────────────────────────────────────────┐   │
 │  │                                                                     │   │
@@ -163,7 +215,7 @@ The pm-workflow bundle implements a 5-phase execution model for structured task 
 │  └─────────────────────────────────────────────────────────────────────┘   │
 │                                                                             │
 │  AGENT: task-plan-agent                                                     │
-│  SKILL: pm-workflow:phase-3-plan                                            │
+│  SKILL: pm-workflow:phase-4-plan                                            │
 │                                                                             │
 │  STEPS:                                                                     │
 │  ──────                                                                     │
@@ -180,12 +232,12 @@ The pm-workflow bundle implements a 5-phase execution model for structured task 
 
 ---
 
-### Phase 4: 4-EXECUTE
+### Phase 5: 5-EXECUTE
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                                                                             │
-│  PHASE: 4-EXECUTE                                                           │
+│  PHASE: 5-EXECUTE                                                           │
 │  ══════════════                                                             │
 │                                                                             │
 │  ┌─────────────────────────────────────────────────────────────────────┐   │
@@ -234,12 +286,12 @@ The pm-workflow bundle implements a 5-phase execution model for structured task 
 
 ---
 
-### Phase 5: 5-FINALIZE
+### Phase 6: 6-FINALIZE
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                                                                             │
-│  PHASE: 5-FINALIZE                                                          │
+│  PHASE: 6-FINALIZE                                                          │
 │  ═══════════════                                                            │
 │                                                                             │
 │  ┌─────────────────────────────────────────────────────────────────────┐   │
@@ -258,7 +310,7 @@ The pm-workflow bundle implements a 5-phase execution model for structured task 
 │  │                                                                     │   │
 │  └─────────────────────────────────────────────────────────────────────┘   │
 │                                                                             │
-│  SKILL: pm-workflow:phase-5-finalize                                        │
+│  SKILL: pm-workflow:phase-6-finalize                                        │
 │                                                                             │
 │  FINALIZE FLOW:                                                             │
 │  ──────────────                                                             │
@@ -280,7 +332,7 @@ The pm-workflow bundle implements a 5-phase execution model for structured task 
 │     │     └─▶ Title from request, body from template               │       │
 │     │                                                              │       │
 │     │  6. Mark plan complete                                       │       │
-│     │     └─▶ transition --completed 5-finalize                      │       │
+│     │     └─▶ transition --completed 6-finalize                    │       │
 │     │                                                              │       │
 │     └──────────────────────────────────────────────────────────────┘       │
 │                                                                             │
@@ -296,23 +348,27 @@ The pm-workflow bundle implements a 5-phase execution model for structured task 
 │                                                                             │
 │                          PHASE TRANSITIONS                                  │
 │                                                                             │
-│  ┌────────┐    ┌───────────┐    ┌────────┐    ┌───────────┐   ┌──────────┐ │
-│  │ 1-INIT │───▶│ 2-OUTLINE │───▶│ 3-PLAN │───▶│ 4-EXECUTE │──▶│5-FINALIZE│ │
-│  └────────┘    └───────────┘    └────────┘    └───────────┘   └──────────┘ │
-│       │              │               │              │               │       │
-│       │              │               │              │               │       │
-│       │         ┌────┴────┐          │              │               │       │
-│       │         │  USER   │          │              │               │       │
-│       │         │ REVIEW  │          │              │               │       │
-│       │         │  GATE   │          │              │               │       │
-│       │         └────┬────┘          │              │               │       │
-│       │              │               │              │               │       │
-│  auto-continue  user-approval   auto-continue  auto-continue       │       │
-│                                                                     │       │
-│                                                                     ▼       │
-│                                                              ┌──────────┐   │
-│                                                              │ COMPLETE │   │
-│                                                              └──────────┘   │
+│  ┌────────┐    ┌─────────┐    ┌───────────┐    ┌────────┐                  │
+│  │ 1-INIT │───▶│2-REFINE │───▶│ 3-OUTLINE │───▶│ 4-PLAN │───▶              │
+│  └────────┘    └─────────┘    └───────────┘    └────────┘                  │
+│       │             │               │              │                        │
+│       │             │          ┌────┴────┐         │                        │
+│       │             │          │  USER   │         │                        │
+│       │             │          │ REVIEW  │         │                        │
+│       │             │          │  GATE   │         │                        │
+│       │             │          └────┬────┘         │                        │
+│       │             │               │              │                        │
+│  auto-continue  threshold met  user-approval  auto-continue                 │
+│                                                                             │
+│       ┌───────────┐   ┌──────────┐                                         │
+│   ───▶│ 5-EXECUTE │──▶│6-FINALIZE│                                         │
+│       └───────────┘   └──────────┘                                         │
+│            │               │                                                │
+│       auto-continue        │                                                │
+│                            ▼                                                │
+│                      ┌──────────┐                                           │
+│                      │ COMPLETE │                                           │
+│                      └──────────┘                                           │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 
@@ -322,12 +378,13 @@ TRANSITION TRIGGERS:
 ┌───────────────┬──────────────┬───────────────────────────────────────────┐
 │ From          │ To           │ Trigger                                   │
 ├───────────────┼──────────────┼───────────────────────────────────────────┤
-│ 1-init        │ 2-outline    │ Auto-continue (config/status created)     │
-│ 2-outline     │ 3-plan       │ USER APPROVAL of solution outline         │
-│ 3-plan        │ 4-execute    │ Auto-continue (tasks created)             │
-│ 4-execute     │ 5-finalize   │ All tasks completed                       │
-│ 5-finalize    │ COMPLETE     │ Commit/PR done (or no findings)           │
-│ 5-finalize    │ 4-execute    │ Findings detected → create fix tasks      │
+│ 1-init        │ 2-refine     │ Auto-continue (config/status created)     │
+│ 2-refine      │ 3-outline    │ Confidence >= threshold (default 95%)     │
+│ 3-outline     │ 4-plan       │ USER APPROVAL of solution outline         │
+│ 4-plan        │ 5-execute    │ Auto-continue (tasks created)             │
+│ 5-execute     │ 6-finalize   │ All tasks completed                       │
+│ 6-finalize    │ COMPLETE     │ Commit/PR done (or no findings)           │
+│ 6-finalize    │ 5-execute    │ Findings detected → create fix tasks      │
 └───────────────┴──────────────┴───────────────────────────────────────────┘
 ```
 
@@ -347,9 +404,20 @@ TRANSITION TRIGGERS:
 │                      │ all possible domains (project-level)                 │
 │                      ▼                                                      │
 │  ┌──────────────────────────────────────────────────────────────────────┐  │
+│  │  REFINE                                                              │  │
+│  │  ══════                                                              │  │
+│  │  • Loads architecture context                                        │  │
+│  │  • Clarifies request until confidence >= threshold                   │  │
+│  │  • Maps requirements to modules                                      │  │
+│  │  • Updates request.md with clarifications                            │  │
+│  └──────────────────────────────────────────────────────────────────────┘  │
+│                      │                                                      │
+│                      │ clarified_request                                    │
+│                      ▼                                                      │
+│  ┌──────────────────────────────────────────────────────────────────────┐  │
 │  │  OUTLINE                                                             │  │
 │  │  ═══════                                                             │  │
-│  │  • Analyzes request + architecture context                           │  │
+│  │  • Analyzes clarified request + architecture context                 │  │
 │  │  • Selects modules → determines which profiles apply                 │  │
 │  │  • Writes domains + profiles list to deliverables                    │  │
 │  │                                                                      │  │
@@ -394,7 +462,7 @@ TRANSITION TRIGGERS:
 
 ## Q-Gate Validation Agent
 
-Q-Gate is a GENERIC AGENT TOOL that extensions call during Phase 2 (Outline) to validate assessments.
+Q-Gate is a GENERIC AGENT TOOL that extensions call during Phase 3 (Outline) to validate assessments.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐

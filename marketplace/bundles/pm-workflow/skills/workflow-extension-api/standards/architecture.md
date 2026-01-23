@@ -1,31 +1,33 @@
 # Architecture Overview
 
-Contract specification for the 5-phase workflow execution model.
+Contract specification for the 6-phase workflow execution model.
 
 **Visual diagrams and detailed explanations**: See [workflow-architecture](../../workflow-architecture/SKILL.md). This document provides **API contracts** only.
 
 ---
 
-## 5-Phase Execution Model
+## 6-Phase Execution Model
 
 | Phase | Agent Call | Purpose | Output |
 |-------|------------|---------|--------|
 | **1-init** | `plan-phase-agent phase=1-init` | Initialize plan | config.toon, status.toon, request.md |
-| **2-outline** | `plan-phase-agent phase=2-outline` | Create solution outline | solution_outline.md |
-| **3-plan** | `plan-phase-agent phase=3-plan` | Decompose into tasks | TASK-*.toon |
-| **4-execute** | `plan-phase-agent phase=4-execute task_id=TASK-001` | Run implementation | Modified project files |
-| **5-finalize** | `plan-phase-agent phase=5-finalize` | Commit, PR, quality | Git commit, PR |
+| **2-refine** | `plan-phase-agent phase=2-refine` | Clarify request | Refined request with confidence score |
+| **3-outline** | `plan-phase-agent phase=3-outline` | Create solution outline | solution_outline.md |
+| **4-plan** | `plan-phase-agent phase=4-plan` | Decompose into tasks | TASK-*.toon |
+| **5-execute** | `plan-phase-agent phase=5-execute task_id=TASK-001` | Run implementation | Modified project files |
+| **6-finalize** | `plan-phase-agent phase=6-finalize` | Commit, PR, quality | Git commit, PR |
 
 ### Phase Transitions
 
 | From | To | Trigger |
 |------|------|---------|
-| 1-init | 2-outline | Auto-continue (unless `stop-after=1-init`) |
-| 2-outline | 3-plan | User approval of solution outline |
-| 3-plan | 4-execute | Auto-continue (unless `stop-after=3-plan`) |
-| 4-execute | 5-finalize | All tasks completed |
-| 5-finalize | 4-execute | Findings detected → create fix tasks |
-| 5-finalize | COMPLETE | No findings |
+| 1-init | 2-refine | Auto-continue |
+| 2-refine | 3-outline | Confidence threshold reached |
+| 3-outline | 4-plan | User approval of solution outline |
+| 4-plan | 5-execute | Auto-continue (unless `stop-after=4-plan`) |
+| 5-execute | 6-finalize | All tasks completed |
+| 6-finalize | 5-execute | Findings detected → create fix tasks |
+| 6-finalize | COMPLETE | No findings |
 
 ---
 
@@ -39,19 +41,20 @@ For visual diagrams of component interactions, see:
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `plan_id` | string | Yes | Plan identifier |
-| `phase` | string | Yes | Phase: 1-init, 2-outline, 3-plan, 4-execute, 5-finalize |
-| `task_id` | string | 4-execute only | Task identifier (required when phase=4-execute), format: `TASK-{SEQ}` |
-| `deliverable_id` | integer | 3-plan only | Deliverable sequence number (required when phase=3-plan), e.g., `1`, `2`, `3` |
+| `phase` | string | Yes | Phase: 1-init, 2-refine, 3-outline, 4-plan, 5-execute, 6-finalize |
+| `task_id` | string | 5-execute only | Task identifier (required when phase=5-execute), format: `TASK-{SEQ}` |
+| `deliverable_id` | integer | 4-plan only | Deliverable sequence number (required when phase=4-plan), e.g., `1`, `2`, `3` |
 
 ### Workflow Skills
 
 | Phase | Workflow Skill | Specification |
 |-------|----------------|---------------|
 | **1-init** | `pm-workflow:phase-1-init` | `pm-workflow:phase-1-init/SKILL.md` |
-| **2-outline** | `pm-workflow:phase-2-outline` | [phase-2-outline-contract.md](phase-2-outline-contract.md) |
-| **3-plan** | `pm-workflow:phase-3-plan` | [phase-3-plan-contract.md](phase-3-plan-contract.md) |
-| **4-execute** | `pm-workflow:phase-4-execute` | `pm-workflow:manage-tasks/standards/task-execution-contract.md` |
-| **5-finalize** | `pm-workflow:phase-5-finalize` | [phase-5-finalize-contract.md](phase-5-finalize-contract.md) |
+| **2-refine** | `pm-workflow:phase-2-refine` | `pm-workflow:phase-2-refine/SKILL.md` |
+| **3-outline** | `pm-workflow:phase-3-outline` | [phase-3-outline-contract.md](phase-3-outline-contract.md) |
+| **4-plan** | `pm-workflow:phase-4-plan` | [phase-4-plan-contract.md](phase-4-plan-contract.md) |
+| **5-execute** | `pm-workflow:phase-5-execute` | `pm-workflow:manage-tasks/standards/task-execution-contract.md` |
+| **6-finalize** | `pm-workflow:phase-6-finalize` | [phase-6-finalize-contract.md](phase-6-finalize-contract.md) |
 
 ---
 
@@ -87,8 +90,8 @@ Extensions add domain-specific knowledge without replacing workflow skills.
 
 | Extension Type | Phase | Purpose |
 |----------------|-------|---------|
-| `outline` | 2-outline | Domain detection, deliverable patterns |
-| `triage` | 5-finalize | Finding decision-making (fix/suppress/accept) |
+| `outline` | 3-outline | Domain detection, deliverable patterns |
+| `triage` | 6-finalize | Finding decision-making (fix/suppress/accept) |
 
 ### Extension Loading
 
@@ -161,10 +164,11 @@ recoverable: {true|false}
 ## Related Documents
 
 - `pm-workflow:phase-1-init/SKILL.md` - Init phase skill
-- [phase-2-outline-contract.md](phase-2-outline-contract.md) - Outline phase contract
-- [phase-3-plan-contract.md](phase-3-plan-contract.md) - Plan phase contract
+- `pm-workflow:phase-2-refine/SKILL.md` - Refine phase skill
+- [phase-3-outline-contract.md](phase-3-outline-contract.md) - Outline phase contract
+- [phase-4-plan-contract.md](phase-4-plan-contract.md) - Plan phase contract
 - `pm-workflow:manage-tasks/standards/task-execution-contract.md` - Task execution contract
-- [phase-5-finalize-contract.md](phase-5-finalize-contract.md) - Finalize phase contract
+- [phase-6-finalize-contract.md](phase-6-finalize-contract.md) - Finalize phase contract
 - [extension-api.md](extension-api.md) - Extension mechanism
 - [deliverable-contract.md](../../manage-solution-outline/standards/deliverable-contract.md) - Deliverable structure
 - [task-contract.md](../../manage-tasks/standards/task-contract.md) - Task structure

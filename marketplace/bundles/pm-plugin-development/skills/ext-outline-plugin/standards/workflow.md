@@ -493,9 +493,9 @@ Create deliverables list with metadata, profiles, and verification using the Del
 
 ### Step 8: Return Deliverables
 
-Return deliverables list to phase-2-outline for solution document creation.
+Return deliverables list to phase-3-outline for solution document creation.
 
-The extension's workflow is complete. Control returns to phase-2-outline which will write solution_outline.md using the deliverables.
+The extension's workflow is complete. Control returns to phase-3-outline which will write solution_outline.md using the deliverables.
 
 ---
 
