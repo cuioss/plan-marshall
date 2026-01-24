@@ -55,10 +55,12 @@ If no matching lesson exists and the triage decision is notable:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lesson add \
   --component {triage_extension} \
-  --category triage \
-  --summary "{finding_type}: {decision} - {reason}" \
+  --category improvement \
+  --title "{finding_type}: {decision} - {reason}" \
   --detail "{detailed_context_and_rationale}"
 ```
+
+**Valid categories**: `bug`, `improvement`, `anti-pattern`
 
 **Notable decisions to record**:
 - Non-obvious suppressions with specific context
@@ -139,8 +141,8 @@ Finding: S3776 - Cognitive complexity too high (method: parseComplexExpression)
 4. Record lesson:
    python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lesson add \
      --component "pm-dev-java:ext-triage-java" \
-     --category triage \
-     --summary "S3776: Complex parser methods acceptable if decomposition artificial" \
+     --category improvement \
+     --title "S3776: Complex parser methods acceptable if decomposition artificial" \
      --detail "Parser methods that handle grammar rules are inherently complex. Splitting into smaller methods just for metrics often obscures the algorithm."
 ```
 

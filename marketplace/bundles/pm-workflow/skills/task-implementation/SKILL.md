@@ -193,12 +193,13 @@ python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks update \
 On issues or unexpected patterns:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lesson add \
-  --component-type skill \
-  --component-name task-implementation \
-  --category observation \
+  --component "pm-workflow:task-implementation" \
+  --category improvement \
   --title "{issue summary}" \
   --detail "{context and resolution}"
 ```
+
+**Valid categories**: `bug`, `improvement`, `anti-pattern`
 
 ### Step 9: Return Results
 

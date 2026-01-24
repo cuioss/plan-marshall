@@ -205,13 +205,13 @@ On ambiguous deliverable or planning issues:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lesson add \
-  --component-type skill \
-  --component-name task-plan \
-  --category observation \
+  --component "pm-workflow:phase-4-plan" \
+  --category improvement \
   --title "{issue summary}" \
-  --detail "{context and resolution approach}" \
-  --trace-plan-id {plan_id}
+  --detail "{context and resolution approach}"
 ```
+
+**Valid categories**: `bug`, `improvement`, `anti-pattern`
 
 ### Step 9: Return Results
 

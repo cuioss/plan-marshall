@@ -41,10 +41,10 @@ Read the confidence threshold from project configuration.
 **EXECUTE**:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
-  get --key plan.defaults.refine_confidence_threshold
+  plan defaults get --field refine_confidence_threshold
 ```
 
-**Default**: If not configured, use `95` (95% confidence required).
+**Default**: If not configured or field not found, use `95` (95% confidence required).
 
 **Log**:
 ```bash

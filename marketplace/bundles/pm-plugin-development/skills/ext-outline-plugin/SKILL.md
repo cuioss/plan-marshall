@@ -280,6 +280,36 @@ The workflow routes based on `change_type`:
 - Group into deliverables
 - Write solution_outline.md
 
+### Test Deliverables (CRITICAL)
+
+**MANDATORY**: Test deliverables MUST list explicit file paths, not descriptive text.
+
+When tests are in component scope:
+
+1. **Discover test files** from inventory `tests` section
+2. **For each affected script**, find corresponding test files:
+   ```bash
+   # Pattern: test/{bundle}/{skill}/test_*.py
+   # Example: test/pm-workflow/manage-tasks/test_manage_tasks.py
+   ```
+3. **List explicit paths** in the deliverable's `Affected files:` section
+
+**INVALID** (descriptive text):
+```markdown
+**Affected files:**
+- Tests that assert on JSON output format
+- Tests that use json.loads() to parse output
+```
+
+**VALID** (explicit paths):
+```markdown
+**Affected files:**
+- `test/pm-workflow/manage-tasks/test_manage_tasks.py`
+- `test/pm-plugin-development/plugin-doctor/test_doctor_marketplace.py`
+```
+
+**Note**: Task contract validation rejects non-file-path steps. Descriptive text will cause task creation to fail.
+
 ---
 
 ## Step 5: Write Solution Outline
