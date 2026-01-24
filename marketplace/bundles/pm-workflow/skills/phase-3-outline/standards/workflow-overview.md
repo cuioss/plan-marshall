@@ -1,75 +1,135 @@
 # Workflow Overview Diagram
 
-Visual summary of the phase-3-outline workflow for human reference.
+Visual summary of the phase-3-outline two-track workflow for human reference.
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│                ARCHITECTURE-DRIVEN WORKFLOW                      │
+│                    TWO-TRACK OUTLINE WORKFLOW                     │
 ├──────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  Step 1: Load architecture context                               │
-│          → architecture info                                     │
-│                                                                  │
-│  Step 2: Load and understand requirements                        │
-│          → manage-plan-documents read --type request             │
-│                                                                  │
-│  Step 2.5: Load outline extension (if domain has one)            │
-│          → resolve-workflow-skill-extension --type outline       │
-│          → Extensions implement protocol with defined sections   │
-│                                                                  │
-│  Step 3: Assess complexity via extension protocol                │
-│          → Call extension's ## Assessment Protocol               │
-│          → Returns: simple|complex, conditional standards        │
-│                                                                  │
-│  Step 4: Execute workflow via extension protocol                 │
-│          → Call ## Simple Workflow or ## Complex Workflow        │
-│          → Use ## Discovery Patterns for file enumeration        │
-│                                                                  │
-│  Step 5: Determine package placement (for module-based domains)  │
-│          → architecture module --name X --full                   │
-│                                                                  │
-│  Step 6: Create deliverables with Profiles list                  │
-│          → One deliverable per module                            │
-│          → Profiles list (implementation, testing as needed)     │
-│                                                                  │
-│  Step 7: Create IT deliverable (optional)                        │
-│          → architecture modules --command integration-tests      │
-│          → Separate deliverable targeting IT module              │
-│                                                                  │
+│                                                                   │
+│  Step 1: Load Inputs                                              │
+│          → Read track from references.toon (set by phase-2)      │
+│          → Read request (clarified_request or body)              │
+│          → Read module_mapping, domains                          │
+│                                                                   │
+│  Step 2: Route by Track                                           │
+│          ┌──────────────────┬──────────────────┐                 │
+│          │  track = simple  │  track = complex │                 │
+│          │        ↓         │        ↓         │                 │
+│          │   Steps 3-5      │   Steps 6-9      │                 │
+│          └──────────────────┴──────────────────┘                 │
+│                                                                   │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
-## Extension Protocol Interaction
+## Simple Track (Steps 3-5)
+
+For localized changes where targets are already known from module_mapping.
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                      SIMPLE TRACK                                │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  Step 3: Validate Targets                                        │
+│          → Verify target files/modules exist                     │
+│          → Match domain                                          │
+│                                                                  │
+│  Step 4: Create Deliverables                                     │
+│          → Direct mapping from module_mapping                    │
+│          → Use deliverable template                              │
+│          → One deliverable per target                            │
+│                                                                  │
+│  Step 5: Simple Q-Gate                                           │
+│          → Lightweight verification                              │
+│          → Verify deliverable aligns with request                │
+│                                                                  │
+│  → Continue to Step 10                                           │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+## Complex Track (Steps 6-9)
+
+For codebase-wide changes requiring discovery and analysis via domain skills.
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                      COMPLEX TRACK                               │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  Step 6: Resolve Domain Skill                                    │
+│          → extension-api resolve --domain X --type outline       │
+│          → Returns skill notation (e.g., ext-outline-plugin)     │
+│                                                                  │
+│  Step 7: Load Domain Skill                                       │
+│          → Skill: {resolved_skill_notation}                      │
+│          → Skill handles: discovery, analysis, deliverables      │
+│          → Skill writes: solution_outline.md, assessments.jsonl  │
+│                                                                  │
+│  Step 8: Skill Completion                                        │
+│          → Verify skill returned success                         │
+│          → Log completion                                        │
+│                                                                  │
+│  Step 9: Q-Gate Verification                                     │
+│          → Task: pm-workflow:q-gate-validation-agent             │
+│          → Verifies deliverables against request                 │
+│                                                                  │
+│  → Continue to Step 10                                           │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+## Domain Skill Interaction (Complex Track)
 
 ```
 phase-3-outline                           ext-outline-{domain}
 ═══════════════                           ════════════════════
 
-Step 1-2: Load architecture, requirements
+Step 1: Load track, request
               │
               ▼
-Step 2.5: Load extension ────────────────► SKILL.md loaded
+Step 2: Route → complex
               │
               ▼
-Step 3: ┌─────────────────────────────┐
-        │ Call: ## Assessment Protocol │
-        │                              │────► Evaluates criteria
-        │ "Which workflow applies?"    │      Returns: simple|complex
-        └─────────────────────────────┘
+Step 6: Resolve skill ───────────────────► {domain}:ext-outline-{domain}
               │
               ▼
-Step 4: ┌─────────────────────────────┐
-        │ Call: ## Simple/Complex      │
-        │ Workflow (based on Step 3)   │────► Loads path-single or
-        └─────────────────────────────┘      path-multi workflow
+Step 7: ┌─────────────────────────────┐
+        │ Skill: ext-outline-{domain}  │
+        │                              │────► Discovery
+        │ Input: plan_id               │      Analysis
+        └─────────────────────────────┘      Deliverables
+              │                              ↓
+              │                         solution_outline.md
+              │                         assessments.jsonl
+              ▼
+Step 8-9: Validate skill output
               │
               ▼
-Step 4b: ┌─────────────────────────────┐
-         │ Use: ## Discovery Patterns   │────► Provides Glob/Grep
-         │ "Find affected files"        │      for file enumeration
-         └─────────────────────────────┘
-              │
-              ▼
-Step 5+: Load conditional standards
-Step 8:  Write solution document
+Step 10: Return results
+```
+
+## Step 10: Write Solution and Return
+
+Both tracks converge at Step 10:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    STEP 10: FINALIZE                             │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  Step 10.1: Write Solution Document (Simple Track only)         │
+│          → Complex Track: skill already wrote it                 │
+│                                                                  │
+│  Step 10.2: Log Completion                                       │
+│          → Log artifact and decision                            │
+│                                                                  │
+│  Step 10.3: Return Results                                       │
+│          → status: success                                       │
+│          → track: {simple|complex}                               │
+│          → deliverable_count: {N}                                │
+│          → qgate_passed: {true|false}                            │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
 ```

@@ -14,6 +14,7 @@
     "./agents/plan-init-agent.md",
     "./agents/q-gate-validation-agent.md",
     "./agents/request-refine-agent.md",
+    "./agents/solution-outline-agent.md",
     "./agents/task-execute-agent.md",
     "./agents/task-plan-agent.md"
   ],

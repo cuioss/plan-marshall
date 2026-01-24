@@ -115,22 +115,23 @@ This provides:
 - change_type: create
 - execution_mode: automated
 - domain: plan-marshall-plugin-dev
-- suggested_skill: pm-plugin-development:plugin-create
-- suggested_workflow: create-script
-- context_skills: [pm-plugin-development:plugin-script-architecture]
+- module: pm-workflow
 - depends: 1
 
+**Profiles:**
+- implementation
+
 **Affected files:**
-- `marketplace/bundles/planning/skills/manage-tasks/scripts/validate-task.py`
+- `marketplace/bundles/pm-workflow/skills/manage-tasks/scripts/validate-task.py`
 
 **Change per file:** Create new validation script for task file format
 
 **Verification:**
-- Command: `/pm-plugin-development:plugin-doctor --component marketplace/bundles/planning/skills/manage-tasks`
+- Command: `/pm-plugin-development:plugin-doctor --component marketplace/bundles/pm-workflow/skills/manage-tasks`
 - Criteria: No quality issues detected
 
 **Script Verification:**
-- Tests: Create `test/planning/manage-tasks/test_validate_task.py`
+- Tests: Create `test/pm-workflow/manage-tasks/test_validate_task.py`
 - Run: `./pw module-tests pm-workflow`
 - Organization: Verify test path matches component structure
 - Expected: All tests pass
@@ -150,22 +151,23 @@ This provides:
 - change_type: refactor
 - execution_mode: automated
 - domain: plan-marshall-plugin-dev
-- suggested_skill: pm-plugin-development:plugin-maintain
-- suggested_workflow: update-component
-- context_skills: []
+- module: pm-workflow
 - depends: none
 
+**Profiles:**
+- implementation
+
 **Affected files:**
-- `marketplace/bundles/planning/skills/manage-goals/scripts/manage-goal.py` → `manage-deliverable.py`
+- `marketplace/bundles/pm-workflow/skills/manage-goals/scripts/manage-goal.py` → `manage-deliverable.py`
 
 **Change per file:** Rename script file and update internal references
 
 **Verification:**
-- Command: `/pm-plugin-development:plugin-doctor --component marketplace/bundles/planning/skills/manage-goals`
+- Command: `/pm-plugin-development:plugin-doctor --component marketplace/bundles/pm-workflow/skills/manage-goals`
 - Criteria: No quality issues detected
 
 **Script Verification:**
-- Tests: Rename `test/planning/manage-goals/test_manage_goal.py` → `test_manage_deliverable.py`
+- Tests: Rename `test/pm-workflow/manage-goals/test_manage_goal.py` → `test_manage_deliverable.py`
 - Run: `./pw module-tests pm-workflow`
 - Organization: Remove old test file, verify new test file path
 - Expected: All tests pass, no orphaned `test_manage_goal.py`

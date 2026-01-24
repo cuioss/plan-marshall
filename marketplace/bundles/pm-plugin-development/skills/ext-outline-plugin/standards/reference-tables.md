@@ -42,25 +42,20 @@ python3 .plan/execute-script.py \
 
 ---
 
-## Skill and Workflow Mapping
+## Execution Skill Mapping
 
-When creating deliverables, use this mapping for `suggested_skill` and `suggested_workflow`:
+When creating deliverables, the `**Profiles:**` block determines which execution skill is used at task execution time (resolved via architecture from `module`).
 
-| Change Type | Component Type | Skill | Workflow |
-|-------------|----------------|-------|----------|
-| create | skill | pm-plugin-development:plugin-create | create-skill |
-| create | command | pm-plugin-development:plugin-create | create-command |
-| create | agent | pm-plugin-development:plugin-create | create-agent |
-| create | bundle | pm-plugin-development:plugin-create | create-bundle |
-| modify | any | pm-plugin-development:plugin-maintain | update-component |
-| refactor | any | pm-plugin-development:plugin-maintain | refactor-structure |
-| migrate | format | pm-plugin-development:plugin-maintain | update-component |
-| delete | any | pm-plugin-development:plugin-maintain | remove-component |
+| Change Type | Execution Skill | Used For |
+|-------------|-----------------|----------|
+| create | pm-plugin-development:plugin-create | Creating new components |
+| modify, migrate, refactor | pm-plugin-development:plugin-maintain | Modifying existing components |
 
-### Domain and Context Skills
+### Deliverable Metadata
 
 - **domain**: Always `plan-marshall-plugin-dev` for marketplace components
-- **context_skills**: Usually empty (`[]`). Add `pm-plugin-development:plugin-script-architecture` when deliverable involves Python scripts
+- **module**: Bundle name (e.g., `pm-dev-java`, `pm-workflow`)
+- **Profiles block**: Contains `implementation` and optionally `testing` (determines task profile at execution)
 
 ---
 
