@@ -314,11 +314,11 @@ def cmd_read(doc_type: str, args) -> int:
         sections = parse_document_sections(content)
         section_content = sections.get(section_name, '')
 
-        # Special case: clarified_request falls back to body if not found
+        # Special case: clarified_request falls back to original_input if not found
         actual_section = section_name
         if not section_content and section_name == 'clarified_request':
-            section_content = sections.get('body', '')
-            actual_section = 'body'
+            section_content = sections.get('original_input', '')
+            actual_section = 'original_input'
 
         if not section_content:
             print(

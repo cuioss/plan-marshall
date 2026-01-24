@@ -321,3 +321,94 @@ def test_unknown_document_type():
         result = run_script(SCRIPT_PATH, 'unknown', 'create', '--plan-id', 'test')
         # argparse will fail before reaching our code
         assert not result.success
+
+
+# =============================================================================
+# Test: Section Read with Fallback
+# =============================================================================
+
+
+def test_read_section_clarified_request_fallback():
+    """Test that clarified_request falls back to original_input when not present."""
+    with TestContext(plan_id='fallback-test'):
+        # Create request without clarified_request section
+        result = run_script(
+            SCRIPT_PATH,
+            'request',
+            'create',
+            '--plan-id',
+            'fallback-test',
+            '--title',
+            'Test',
+            '--source',
+            'description',
+            '--body',
+            'Original body content',
+        )
+        assert result.success, f'Create failed: {result.stderr}'
+
+        # Request clarified_request - should return original_input
+        result = run_script(
+            SCRIPT_PATH,
+            'request',
+            'read',
+            '--plan-id',
+            'fallback-test',
+            '--section',
+            'clarified_request',
+        )
+        assert result.success, f'Expected fallback to work: {result.stderr}'
+        data = parse_toon(result.stdout)
+        assert data['status'] == 'success'
+        assert data['section'] == 'original_input'  # actual section returned
+        assert data['requested_section'] == 'clarified_request'
+        assert 'Original body content' in data['content']
+
+
+def test_read_section_clarified_request_when_present():
+    """Test that clarified_request returns actual section when present."""
+    with TestContext(plan_id='clarified-present'):
+        # Create request
+        result = run_script(
+            SCRIPT_PATH,
+            'request',
+            'create',
+            '--plan-id',
+            'clarified-present',
+            '--title',
+            'Test',
+            '--source',
+            'description',
+            '--body',
+            'Original body',
+        )
+        assert result.success, f'Create failed: {result.stderr}'
+
+        # Add clarified_request via clarify command
+        result = run_script(
+            SCRIPT_PATH,
+            'request',
+            'clarify',
+            '--plan-id',
+            'clarified-present',
+            '--clarifications',
+            'Q: What? A: This.',
+            '--clarified-request',
+            'Clarified version of the request',
+        )
+        assert result.success, f'Clarify failed: {result.stderr}'
+
+        # Request clarified_request - should return the actual section
+        result = run_script(
+            SCRIPT_PATH,
+            'request',
+            'read',
+            '--plan-id',
+            'clarified-present',
+            '--section',
+            'clarified_request',
+        )
+        assert result.success, f'Read failed: {result.stderr}'
+        data = parse_toon(result.stdout)
+        assert data['section'] == 'clarified_request'
+        assert 'Clarified version' in data['content']

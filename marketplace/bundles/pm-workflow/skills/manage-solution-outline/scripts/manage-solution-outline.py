@@ -328,6 +328,51 @@ def cmd_read(args) -> int:
 
     content = file_path.read_text(encoding='utf-8')
 
+    # Handle --deliverable-number: read specific deliverable
+    deliverable_number = getattr(args, 'deliverable_number', None)
+    if deliverable_number is not None:
+        sections = parse_document_sections(content)
+        if 'deliverables' not in sections:
+            print(
+                serialize_toon(
+                    {
+                        'status': 'error',
+                        'error': 'section_not_found',
+                        'plan_id': args.plan_id,
+                        'message': 'Deliverables section not found',
+                    }
+                )
+            )
+            return 1
+
+        deliverables = extract_deliverables(sections['deliverables'])
+
+        for d in deliverables:
+            if d['number'] == deliverable_number:
+                print(
+                    serialize_toon(
+                        {
+                            'status': 'success',
+                            'plan_id': args.plan_id,
+                            'deliverable': d,
+                        }
+                    )
+                )
+                return 0
+
+        print(
+            serialize_toon(
+                {
+                    'status': 'error',
+                    'error': 'deliverable_not_found',
+                    'plan_id': args.plan_id,
+                    'number': deliverable_number,
+                    'available': [d['number'] for d in deliverables],
+                }
+            )
+        )
+        return 1
+
     if getattr(args, 'raw', False):
         print(content)
     else:
@@ -541,6 +586,7 @@ def main():
     read_parser = subparsers.add_parser('read', help='Read solution outline')
     read_parser.add_argument('--plan-id', required=True, help='Plan identifier')
     read_parser.add_argument('--raw', action='store_true', help='Output raw content')
+    read_parser.add_argument('--deliverable-number', type=int, help='Read specific deliverable by number')
     read_parser.set_defaults(func=cmd_read)
 
     # exists

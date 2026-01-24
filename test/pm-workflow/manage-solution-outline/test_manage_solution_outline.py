@@ -297,6 +297,68 @@ def test_read_not_found():
         assert data['error'] == 'document_not_found'
 
 
+def test_read_deliverable_by_number():
+    """Test reading a specific deliverable by number."""
+    with TestContext(plan_id='deliverable-num') as ctx:
+        # Write valid solution with multiple deliverables
+        (ctx.plan_dir / 'solution_outline.md').write_text(VALID_SOLUTION)
+
+        # Read deliverable 1
+        result = run_script(
+            SCRIPT_PATH,
+            'read',
+            '--plan-id',
+            'deliverable-num',
+            '--deliverable-number',
+            '1',
+        )
+        assert result.success, f'Script failed: {result.stderr}'
+        data = parse_toon(result.stdout)
+        assert data['status'] == 'success'
+        assert data['deliverable']['number'] == 1
+        assert 'JwtValidationService' in data['deliverable']['title']
+
+
+def test_read_deliverable_by_number_second():
+    """Test reading the second deliverable by number."""
+    with TestContext(plan_id='deliverable-num-2') as ctx:
+        (ctx.plan_dir / 'solution_outline.md').write_text(VALID_SOLUTION)
+
+        # Read deliverable 2
+        result = run_script(
+            SCRIPT_PATH,
+            'read',
+            '--plan-id',
+            'deliverable-num-2',
+            '--deliverable-number',
+            '2',
+        )
+        assert result.success, f'Script failed: {result.stderr}'
+        data = parse_toon(result.stdout)
+        assert data['status'] == 'success'
+        assert data['deliverable']['number'] == 2
+        assert 'configuration properties' in data['deliverable']['title']
+
+
+def test_read_deliverable_not_found():
+    """Test reading non-existent deliverable number."""
+    with TestContext(plan_id='deliverable-notfound') as ctx:
+        (ctx.plan_dir / 'solution_outline.md').write_text(VALID_SOLUTION)
+
+        result = run_script(
+            SCRIPT_PATH,
+            'read',
+            '--plan-id',
+            'deliverable-notfound',
+            '--deliverable-number',
+            '999',
+        )
+        assert not result.success
+        data = parse_toon(result.stdout)
+        assert data['error'] == 'deliverable_not_found'
+        assert 'available' in data  # Should list available deliverable numbers
+
+
 # =============================================================================
 # Test: Exists Command
 # =============================================================================
