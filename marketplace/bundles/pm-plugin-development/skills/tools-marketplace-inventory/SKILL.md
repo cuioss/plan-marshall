@@ -182,6 +182,78 @@ python3 .plan/execute-script.py pm-plugin-development:tools-marketplace-inventor
 python3 .plan/execute-script.py pm-plugin-development:tools-marketplace-inventory:scan-marketplace-inventory --name-pattern "*-plan-*|*-specify-*|plan-*|manage-*"
 ```
 
+### --content-pattern (optional)
+
+Filter resources by content using regex patterns. Use pipe (`|`) to separate multiple patterns (OR logic). **Requires `--include-descriptions` or `--full`** to enable path resolution.
+
+| Pattern | Matches |
+|---------|---------|
+| `` ```json `` | Files containing JSON code blocks |
+| `` ```toon `` | Files containing TOON code blocks |
+| `## Output.*```json` | Output sections with JSON blocks (multiline) |
+
+**Note**: Uses Python `re.search()` with `re.MULTILINE` flag. Scripts (.py, .sh) are NOT content-filtered.
+
+**Examples**:
+```bash
+# Find files with JSON code blocks
+python3 .plan/execute-script.py pm-plugin-development:tools-marketplace-inventory:scan-marketplace-inventory \
+  --resource-types agents,skills \
+  --content-pattern '```json' \
+  --include-descriptions \
+  --direct-result
+
+# Multiple patterns (OR logic)
+python3 .plan/execute-script.py pm-plugin-development:tools-marketplace-inventory:scan-marketplace-inventory \
+  --resource-types skills \
+  --content-pattern '```json|```toon' \
+  --full \
+  --direct-result
+```
+
+**Output with content filtering** includes filter stats:
+```toon
+status: success
+scope: marketplace
+content_pattern: "```json"
+content_filter_stats:
+  input_count: 188
+  matched_count: 32
+  excluded_count: 156
+```
+
+### --content-exclude (optional)
+
+Exclude resources matching content patterns (OR logic). Use pipe (`|`) to separate multiple patterns. **Requires `--include-descriptions` or `--full`**.
+
+**Examples**:
+```bash
+# Find JSON blocks but exclude already-migrated files
+python3 .plan/execute-script.py pm-plugin-development:tools-marketplace-inventory:scan-marketplace-inventory \
+  --resource-types agents \
+  --content-pattern '```json' \
+  --content-exclude 'format: toon|output-format: toon' \
+  --include-descriptions \
+  --direct-result
+```
+
+### Combining --content-pattern and --content-exclude
+
+When both are specified:
+1. **Include filter**: File must match at least one include pattern
+2. **Exclude filter**: File must NOT match any exclude pattern
+
+```bash
+# Find files with JSON but not configuration JSON
+python3 .plan/execute-script.py pm-plugin-development:tools-marketplace-inventory:scan-marketplace-inventory \
+  --bundles pm-dev-java,pm-plugin-development \
+  --resource-types agents \
+  --content-pattern '```json' \
+  --content-exclude '## Configuration.*```json' \
+  --full \
+  --direct-result
+```
+
 ### --bundles (optional)
 
 Filter to specific bundles by name (comma-separated).
@@ -245,6 +317,64 @@ Output format. Default: `toon`
 ```bash
 python3 .plan/execute-script.py pm-plugin-development:tools-marketplace-inventory:scan-marketplace-inventory \
   --format json --bundles pm-workflow
+```
+
+### --include-tests (optional flag)
+
+When specified, includes test files from `test/{bundle-name}/` directories. Discovers `test_*.py` and `conftest.py` files and adds them as `tests` resource type to each bundle.
+
+**Example**:
+```bash
+python3 .plan/execute-script.py pm-plugin-development:tools-marketplace-inventory:scan-marketplace-inventory \
+  --include-tests --bundles pm-plugin-development --direct-result
+```
+
+**Output with --include-tests** (excerpt):
+```toon
+pm-plugin-development:
+  path: marketplace/bundles/pm-plugin-development
+  skills[14]:
+    - ext-outline-plugin
+    - ...
+  tests[12]:
+    - conftest
+    - test_scan_marketplace_inventory
+    - test_filter_inventory
+    - ...
+```
+
+### --include-project-skills (optional flag)
+
+When specified, includes project-level skills from `.claude/skills/` directory. Creates a `project-skills` pseudo-bundle containing skills and their scripts.
+
+**Example**:
+```bash
+python3 .plan/execute-script.py pm-plugin-development:tools-marketplace-inventory:scan-marketplace-inventory \
+  --include-project-skills --direct-result
+```
+
+**Output with --include-project-skills** (excerpt):
+```toon
+project-skills:
+  path: .claude/skills
+  skills[2]:
+    - verify-workflow
+    - sync-plugin-cache
+  scripts[2]:
+    - collect-artifacts
+    - verify-structure
+```
+
+### Combining --include-tests and --include-project-skills
+
+Both flags can be used together for a comprehensive scan:
+
+```bash
+python3 .plan/execute-script.py pm-plugin-development:tools-marketplace-inventory:scan-marketplace-inventory \
+  --include-tests \
+  --include-project-skills \
+  --full \
+  --direct-result
 ```
 
 ## Error Handling

@@ -105,58 +105,38 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 ### Step 3: Parallel Component Analysis
 
-Analysis is split into two phases: **script filtering** (deterministic) and **agent analysis** (LLM reasoning).
+Analysis uses the consolidated **ext-outline-component-agent** for all component types.
 
-**Step 3a: Extract Bundles**
+**Step 3a: Extract Files by Component Type**
 
-Parse `inventory_filtered.toon` to get unique bundles:
+Parse `inventory_filtered.toon` to get file paths grouped by component type:
+
 ```python
-bundles = set()
-for component_type in ['skills', 'commands', 'agents']:
-    for path in inventory.get(component_type, []):
-        # path: marketplace/bundles/{bundle}/...
-        bundle = path.split('/')[2]
-        bundles.add(bundle)
+skills_files = inventory.get('inventory', {}).get('skills', [])
+commands_files = inventory.get('inventory', {}).get('commands', [])
+agents_files = inventory.get('inventory', {}).get('agents', [])
+tests_files = inventory.get('inventory', {}).get('tests', [])
 ```
 
-**Step 3b: Filter by Bundle (Script)**
+Note: Content filtering (if configured) was already applied during discovery (Step 2 via ext-outline-inventory-agent).
 
-For each bundle × component_type combination, run the filter script:
+**Step 3b: Spawn Analysis Agents with Explicit File Sections**
 
-```bash
-python3 .plan/execute-script.py pm-plugin-development:ext-outline-plugin:filter-inventory filter \
-  --plan-id {plan_id} --bundle {bundle} --component-type {type}
-```
-
-**Output** (TOON):
-```toon
-status: success
-bundle: pm-dev-java
-component_type: skills
-file_count: 17
-files[17]:
-  marketplace/bundles/pm-dev-java/skills/java-cdi/SKILL.md
-  ...
-```
-
-Skip if `file_count: 0`.
-
-**Step 3c: Spawn Analysis Agents with Explicit File Sections**
-
-For each bundle × component_type with files, build an explicit prompt with numbered file sections. Each file gets its own section with a mandatory logging command.
+For each component_type with files, build an explicit prompt with numbered file sections. Each file gets its own section with a mandatory logging command.
 
 **Build Agent Prompt Pattern**:
 
-For each file from the filter script output (Step 3b), generate a numbered section:
+For each file in the component type list, generate a numbered section:
 
 ```markdown
 ## Files to Analyze
 
+Component Type: {component_type}
 Request: {request_text}
 
 Process these files IN ORDER. For EACH file, you MUST:
 1. Read the file
-2. Analyze it against the request
+2. Analyze it against the request using component-specific context
 3. Assess confidence (0-100%) and determine certainty gate
 4. Execute the logging bash command IMMEDIATELY (before next file)
 5. Track counts for final summary
@@ -172,7 +152,7 @@ Process these files IN ORDER. For EACH file, you MUST:
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:artifact_store \
   assessment add {plan_id} {file_path_1} {CERTAINTY} {CONFIDENCE} \
-  --agent {agent_name} --detail "{your_reasoning}" --evidence "{your_evidence}"
+  --agent ext-outline-component-agent/{component_type} --detail "{your_reasoning}" --evidence "{your_evidence}"
 ```
 
 ### File 2: {file_path_2}
@@ -183,7 +163,7 @@ python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:artifact_store
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:artifact_store \
   assessment add {plan_id} {file_path_2} {CERTAINTY} {CONFIDENCE} \
-  --agent {agent_name} --detail "{your_reasoning}" --evidence "{your_evidence}"
+  --agent ext-outline-component-agent/{component_type} --detail "{your_reasoning}" --evidence "{your_evidence}"
 ```
 
 [...continue for all files...]
@@ -194,32 +174,20 @@ python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:artifact_store
 **Spawn Pattern**:
 
 ```
-FOR each bundle where filter returned file_count > 0:
-  IF has skills:
-    Task: pm-plugin-development:ext-outline-skill-agent
+FOR each component_type IN [skills, commands, agents, tests]:
+  IF component_type has files:
+    Task: pm-plugin-development:ext-outline-component-agent
       Input:
         plan_id: {plan_id}
+        component_type: {component_type}
         request_text: {request text from Step 2}
-        files_prompt: {generated prompt with explicit file sections}
-
-  IF has commands:
-    Task: pm-plugin-development:ext-outline-command-agent
-      Input:
-        plan_id: {plan_id}
-        request_text: {request text from Step 2}
-        files_prompt: {generated prompt with explicit file sections}
-
-  IF has agents:
-    Task: pm-plugin-development:ext-outline-agent-agent
-      Input:
-        plan_id: {plan_id}
-        request_text: {request text from Step 2}
+        files: {file paths for this component type}
         files_prompt: {generated prompt with explicit file sections}
 ```
 
 **IMPORTANT**: Launch all agents in a SINGLE message for true parallelism.
 
-**Agent Responsibility**: Each agent receives explicit numbered file sections from the parent workflow. For each section, the agent reads the file, analyzes it, executes the logging command, and records the finding. The explicit numbered sections with bash commands ensure logging cannot be skipped.
+**Agent Responsibility**: The ext-outline-component-agent receives the component_type and uses component-specific context (skill/agent/command section patterns) for analysis. For each file section, the agent reads the file, analyzes it, executes the logging command, and records the finding. The explicit numbered sections with bash commands ensure logging cannot be skipped.
 
 **Step 3d: Error Handling**
 

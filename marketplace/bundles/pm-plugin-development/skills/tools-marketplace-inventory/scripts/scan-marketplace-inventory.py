@@ -292,6 +292,77 @@ def discover_scripts(bundle_dir: Path, bundle_name: str) -> list[dict]:
     return scripts
 
 
+def discover_tests(bundle_name: str) -> list[dict]:
+    """Discover test files for a bundle from test/{bundle-name}/ directory.
+
+    Returns test files (test_*.py, conftest.py) with type indicator.
+    """
+    test_dir = Path('test') / bundle_name
+    if not test_dir.is_dir():
+        return []
+
+    tests = []
+    # Test files (test_*.py)
+    for test_file in test_dir.rglob('test_*.py'):
+        if test_file.is_file():
+            tests.append({
+                'name': test_file.stem,
+                'path': safe_relative_path(test_file),
+                'type': 'test',
+            })
+    # conftest.py files
+    for conftest in test_dir.rglob('conftest.py'):
+        if conftest.is_file():
+            tests.append({
+                'name': 'conftest',
+                'path': safe_relative_path(conftest),
+                'type': 'conftest',
+            })
+    return sorted(tests, key=lambda x: (x['name'], x['path']))
+
+
+def discover_project_skills() -> dict | None:
+    """Discover project-level skills from .claude/skills/ directory.
+
+    Returns a pseudo-bundle dict for project-skills, or None if no skills found.
+    """
+    claude_skills = Path('.claude/skills')
+    if not claude_skills.is_dir():
+        return None
+
+    bundle: dict[str, Any] = {
+        'name': 'project-skills',
+        'path': '.claude/skills',
+        'skills': [],
+        'scripts': [],
+    }
+
+    for skill_dir in sorted(claude_skills.iterdir()):
+        if not skill_dir.is_dir():
+            continue
+        skill_md = skill_dir / 'SKILL.md'
+        if skill_md.exists():
+            skill_entry: dict[str, Any] = {
+                'name': skill_dir.name,
+                'path': safe_relative_path(skill_dir),
+            }
+            bundle['skills'].append(skill_entry)
+
+            # Also discover scripts
+            scripts_dir = skill_dir / 'scripts'
+            if scripts_dir.is_dir():
+                for script in sorted(scripts_dir.glob('*.py')):
+                    if script.is_file() and not script.name.startswith('_'):
+                        bundle['scripts'].append({
+                            'name': script.stem,
+                            'skill': skill_dir.name,
+                            'path': safe_relative_path(script),
+                            'notation': f'project-skills:{skill_dir.name}:{script.stem}',
+                        })
+
+    return bundle if bundle['skills'] else None
+
+
 def matches_name_pattern(name: str, patterns: list[str]) -> bool:
     """Check if name matches any of the given fnmatch patterns."""
     if not patterns:
@@ -306,7 +377,77 @@ def filter_resources_by_pattern(resources: list[dict], patterns: list[str]) -> l
     return [r for r in resources if matches_name_pattern(r.get('name', ''), patterns)]
 
 
-VALID_RESOURCE_TYPES = ('agents', 'commands', 'skills', 'scripts')
+def matches_any_content_pattern(content: str, patterns: list[str]) -> bool:
+    """Check if content matches any of the regex patterns (OR logic)."""
+    return any(re.search(p, content, re.MULTILINE) for p in patterns)
+
+
+def filter_resources_by_content(
+    resources: list[dict],
+    include_patterns: list[str],
+    exclude_patterns: list[str],
+) -> tuple[list[dict], dict[str, int]]:
+    """Filter resources by content patterns.
+
+    Args:
+        resources: List of resource dicts (must have 'path' key)
+        include_patterns: Include if matches any (OR). Empty = include all.
+        exclude_patterns: Exclude if matches any (OR). Empty = exclude none.
+
+    Returns:
+        Tuple of (filtered_resources, stats_dict)
+        stats_dict has keys: input_count, matched_count, excluded_count
+
+    Note: Resource paths are expected to be relative from cwd (as produced by safe_relative_path).
+    """
+    stats = {'input_count': len(resources), 'matched_count': 0, 'excluded_count': 0}
+
+    if not include_patterns and not exclude_patterns:
+        stats['matched_count'] = len(resources)
+        return resources, stats
+
+    result = []
+    for r in resources:
+        path_str = r.get('path')
+        if not path_str:
+            # Resources without path can't be content-filtered, skip
+            stats['excluded_count'] += 1
+            continue
+
+        file_path = Path(path_str)
+
+        # For skills, the path points to directory; read SKILL.md instead
+        if file_path.is_dir():
+            skill_md = file_path / 'SKILL.md'
+            if skill_md.exists():
+                file_path = skill_md
+            else:
+                stats['excluded_count'] += 1
+                continue
+
+        try:
+            content = file_path.read_text()
+        except (OSError, UnicodeDecodeError):
+            stats['excluded_count'] += 1
+            continue
+
+        # Include logic: if patterns specified, must match at least one
+        if include_patterns and not matches_any_content_pattern(content, include_patterns):
+            stats['excluded_count'] += 1
+            continue
+
+        # Exclude logic: if matches any exclude pattern, skip
+        if exclude_patterns and matches_any_content_pattern(content, exclude_patterns):
+            stats['excluded_count'] += 1
+            continue
+
+        result.append(r)
+        stats['matched_count'] += 1
+
+    return result, stats
+
+
+VALID_RESOURCE_TYPES = ('agents', 'commands', 'skills', 'scripts', 'tests')
 
 
 def parse_resource_types(resource_types_str: str) -> tuple[dict, str | None]:
@@ -340,9 +481,21 @@ def _extract_bundle_name(bundle_dir: Path) -> str:
 
 
 def process_bundle(
-    bundle_dir: Path, include: dict[str, bool], include_descriptions: bool, name_patterns: list[str], full: bool = False
-) -> dict[str, Any]:
-    """Process a single bundle directory and return its data."""
+    bundle_dir: Path,
+    include: dict[str, bool],
+    include_descriptions: bool,
+    name_patterns: list[str],
+    full: bool = False,
+    content_include: list[str] | None = None,
+    content_exclude: list[str] | None = None,
+    include_tests: bool = False,
+) -> tuple[dict[str, Any], dict[str, int]]:
+    """Process a single bundle directory and return its data.
+
+    Returns:
+        Tuple of (bundle_data, content_filter_stats)
+        content_filter_stats has keys: input_count, matched_count, excluded_count
+    """
     bundle_name = _extract_bundle_name(bundle_dir)
     bundle: dict[str, Any] = {'name': bundle_name, 'path': safe_relative_path(bundle_dir)}
 
@@ -351,14 +504,47 @@ def process_bundle(
     commands = discover_commands(bundle_dir, include_descriptions, full) if include['commands'] else []
     skills = discover_skills(bundle_dir, include_descriptions, full) if include['skills'] else []
     scripts = discover_scripts(bundle_dir, bundle_name) if include['scripts'] else []
+    tests = discover_tests(bundle_name) if include_tests and include.get('tests', True) else []
 
     # Apply name pattern filter
     bundle['agents'] = filter_resources_by_pattern(agents, name_patterns)
     bundle['commands'] = filter_resources_by_pattern(commands, name_patterns)
     bundle['skills'] = filter_resources_by_pattern(skills, name_patterns)
     bundle['scripts'] = filter_resources_by_pattern(scripts, name_patterns)
+    bundle['tests'] = filter_resources_by_pattern(tests, name_patterns)
 
-    return bundle
+    # Track content filter stats
+    total_stats = {'input_count': 0, 'matched_count': 0, 'excluded_count': 0}
+
+    # Apply content pattern filters (requires paths - enabled by --include-descriptions or --full)
+    if content_include or content_exclude:
+        inc = content_include or []
+        exc = content_exclude or []
+
+        # Filter agents
+        bundle['agents'], stats = filter_resources_by_content(bundle['agents'], inc, exc)
+        total_stats['input_count'] += stats['input_count']
+        total_stats['matched_count'] += stats['matched_count']
+        total_stats['excluded_count'] += stats['excluded_count']
+
+        # Filter commands
+        bundle['commands'], stats = filter_resources_by_content(bundle['commands'], inc, exc)
+        total_stats['input_count'] += stats['input_count']
+        total_stats['matched_count'] += stats['matched_count']
+        total_stats['excluded_count'] += stats['excluded_count']
+
+        # Filter skills
+        bundle['skills'], stats = filter_resources_by_content(bundle['skills'], inc, exc)
+        total_stats['input_count'] += stats['input_count']
+        total_stats['matched_count'] += stats['matched_count']
+        total_stats['excluded_count'] += stats['excluded_count']
+
+        # Note: Scripts are NOT content-filtered (they're Python/Bash, not markdown)
+        # Just track their counts for completeness
+        total_stats['input_count'] += len(bundle['scripts'])
+        total_stats['matched_count'] += len(bundle['scripts'])
+
+    return bundle, total_stats
 
 
 def _find_marketplace_path() -> Path | None:
@@ -434,6 +620,19 @@ def serialize_inventory_toon(data: dict, full: bool = False) -> str:
     lines.append('status: success')
     lines.append(f"scope: {data['scope']}")
     lines.append(f"base_path: {data['base_path']}")
+
+    # Add content filter info if present
+    if data.get('content_pattern'):
+        lines.append(f"content_pattern: \"{data['content_pattern']}\"")
+    if data.get('content_exclude'):
+        lines.append(f"content_exclude: \"{data['content_exclude']}\"")
+    if data.get('content_filter_stats'):
+        stats = data['content_filter_stats']
+        lines.append('content_filter_stats:')
+        lines.append(f"  input_count: {stats['input_count']}")
+        lines.append(f"  matched_count: {stats['matched_count']}")
+        lines.append(f"  excluded_count: {stats['excluded_count']}")
+
     lines.append('')
 
     for bundle in data['bundles']:
@@ -441,7 +640,7 @@ def serialize_inventory_toon(data: dict, full: bool = False) -> str:
         lines.append(f'{bundle_name}:')
         lines.append(f"  path: {bundle['path']}")
 
-        for resource_type in ['agents', 'commands', 'skills', 'scripts']:
+        for resource_type in ['agents', 'commands', 'skills', 'scripts', 'tests']:
             items = bundle.get(resource_type, [])
             if items:
                 lines.append(f'  {resource_type}[{len(items)}]:')
@@ -552,6 +751,16 @@ def main():
     )
     parser.add_argument('--bundles', default='', help='Filter to specific bundles (comma-separated)')
     parser.add_argument(
+        '--content-pattern',
+        default='',
+        help='Include only files matching content pattern(s). Regex, pipe-separated for multiple (OR logic).',
+    )
+    parser.add_argument(
+        '--content-exclude',
+        default='',
+        help='Exclude files matching content pattern(s). Regex, pipe-separated for multiple (OR logic).',
+    )
+    parser.add_argument(
         '--output',
         default='',
         help='Custom output file path (default: .plan/temp/.../inventory-{timestamp}.toon)',
@@ -567,11 +776,34 @@ def main():
         default='toon',
         help='Output format: toon (default) or json',
     )
+    parser.add_argument(
+        '--include-tests',
+        action='store_true',
+        help='Include test files from test/{bundle-name}/ directories. Adds tests resource type.',
+    )
+    parser.add_argument(
+        '--include-project-skills',
+        action='store_true',
+        help='Include project-level skills from .claude/skills/. Adds project-skills pseudo-bundle.',
+    )
 
     args = parser.parse_args()
 
     # Parse name patterns (pipe-separated for multiple patterns)
     name_patterns = [p.strip() for p in args.name_pattern.split('|') if p.strip()] if args.name_pattern else []
+
+    # Parse content patterns (pipe-separated for multiple regex patterns)
+    content_include = (
+        [p.strip() for p in args.content_pattern.split('|') if p.strip()] if args.content_pattern else []
+    )
+    content_exclude = (
+        [p.strip() for p in args.content_exclude.split('|') if p.strip()] if args.content_exclude else []
+    )
+
+    # Content filtering requires paths - enforce --include-descriptions or --full
+    if (content_include or content_exclude) and not (args.include_descriptions or args.full):
+        print('ERROR: --content-pattern/--content-exclude require --include-descriptions or --full', file=sys.stderr)
+        return 1
 
     # Parse bundle filter
     bundle_filter = {b.strip() for b in args.bundles.split(',') if b.strip()} if args.bundles else set()
@@ -600,19 +832,48 @@ def main():
         bundle_dirs = [b for b in bundle_dirs if b.name in bundle_filter]
 
     # Build inventory
-    bundles_data = [
-        process_bundle(bundle_dir, include, args.include_descriptions, name_patterns, args.full)
-        for bundle_dir in bundle_dirs
-    ]
+    bundles_data = []
+    total_content_stats = {'input_count': 0, 'matched_count': 0, 'excluded_count': 0}
+    for bundle_dir in bundle_dirs:
+        bundle, stats = process_bundle(
+            bundle_dir,
+            include,
+            args.include_descriptions,
+            name_patterns,
+            args.full,
+            content_include,
+            content_exclude,
+            args.include_tests,
+        )
+        bundles_data.append(bundle)
+        total_content_stats['input_count'] += stats['input_count']
+        total_content_stats['matched_count'] += stats['matched_count']
+        total_content_stats['excluded_count'] += stats['excluded_count']
+
+    # Add project-skills pseudo-bundle if requested
+    if args.include_project_skills:
+        project_skills = discover_project_skills()
+        if project_skills:
+            # Apply bundle filter if specified
+            if not bundle_filter or 'project-skills' in bundle_filter:
+                # Apply name pattern filter
+                project_skills['skills'] = filter_resources_by_pattern(
+                    project_skills['skills'], name_patterns
+                )
+                project_skills['scripts'] = filter_resources_by_pattern(
+                    project_skills['scripts'], name_patterns
+                )
+                bundles_data.append(project_skills)
 
     # Calculate totals
     total_agents = sum(len(b.get('agents', [])) for b in bundles_data)
     total_commands = sum(len(b.get('commands', [])) for b in bundles_data)
     total_skills = sum(len(b.get('skills', [])) for b in bundles_data)
     total_scripts = sum(len(b.get('scripts', [])) for b in bundles_data)
+    total_tests = sum(len(b.get('tests', [])) for b in bundles_data)
 
     # Output structure (bundles remain as list internally, serialization handles format)
-    output = {
+    output: dict[str, Any] = {
         'scope': args.scope,
         'base_path': str(base_path),
         'bundles': bundles_data,
@@ -622,9 +883,18 @@ def main():
             'total_commands': total_commands,
             'total_skills': total_skills,
             'total_scripts': total_scripts,
-            'total_resources': total_agents + total_commands + total_skills + total_scripts,
+            'total_tests': total_tests,
+            'total_resources': total_agents + total_commands + total_skills + total_scripts + total_tests,
         },
     }
+
+    # Add content filter stats if content filtering was used
+    if content_include or content_exclude:
+        output['content_filter_stats'] = total_content_stats
+        if content_include:
+            output['content_pattern'] = '|'.join(content_include)
+        if content_exclude:
+            output['content_exclude'] = '|'.join(content_exclude)
 
     if args.direct_result:
         # Direct mode: output to stdout (for small results or piped usage)

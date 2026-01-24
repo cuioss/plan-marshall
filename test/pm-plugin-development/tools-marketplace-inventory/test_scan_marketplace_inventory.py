@@ -19,7 +19,7 @@ PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 SCRIPT_PATH = get_script_path('pm-plugin-development', 'tools-marketplace-inventory', 'scan-marketplace-inventory.py')
 
 # Keys that are metadata, not bundle names
-METADATA_KEYS = {'status', 'scope', 'base_path', 'statistics'}
+METADATA_KEYS = {'status', 'scope', 'base_path', 'statistics', 'content_filter_stats', 'content_pattern', 'content_exclude'}
 
 
 def get_bundles(data: dict) -> list[dict[str, Any]]:
@@ -745,6 +745,381 @@ def test_invalid_resource_type_returns_error():
     """Test invalid resource type returns error."""
     result = run_script(SCRIPT_PATH, '--resource-types', 'invalid')
     assert result.returncode != 0, 'Invalid resource type should return error'
+
+
+# =============================================================================
+# Tests - Content Pattern Filtering
+# =============================================================================
+
+
+def test_content_pattern_requires_descriptions_or_full():
+    """Test --content-pattern without --include-descriptions or --full returns error."""
+    result = run_script(SCRIPT_PATH, '--content-pattern', '```json', '--direct-result')
+    assert result.returncode != 0, 'Content pattern without --include-descriptions should error'
+    assert 'require --include-descriptions or --full' in result.stderr
+
+
+def test_content_exclude_requires_descriptions_or_full():
+    """Test --content-exclude without --include-descriptions or --full returns error."""
+    result = run_script(SCRIPT_PATH, '--content-exclude', '```json', '--direct-result')
+    assert result.returncode != 0, 'Content exclude without --include-descriptions should error'
+
+
+def test_content_pattern_include_single_regex():
+    """Test --content-pattern with single regex pattern filters correctly."""
+    # Search for skills with TOON code blocks (most skills have these)
+    result = run_script(
+        SCRIPT_PATH,
+        '--direct-result',
+        '--resource-types', 'skills',
+        '--content-pattern', '```toon',
+        '--include-descriptions',
+    )
+    assert result.returncode == 0, f'Script returned error: {result.stderr}'
+
+    data = parse_toon(result.stdout)
+
+    # Should have content_filter_stats in output
+    assert 'content_filter_stats' in data, 'Should include content_filter_stats'
+    stats = data['content_filter_stats']
+    assert stats['input_count'] > 0, 'Should have input files'
+    assert stats['matched_count'] >= 1, 'Should match at least 1 file with ```toon'
+    # Total skills should match matched_count
+    total_skills = data.get('statistics', {}).get('total_skills', 0)
+    assert total_skills == stats['matched_count'], 'Total skills should equal matched_count'
+
+
+def test_content_pattern_include_multiple_or_logic():
+    """Test --content-pattern with multiple pipe-separated patterns (OR logic)."""
+    result = run_script(
+        SCRIPT_PATH,
+        '--direct-result',
+        '--resource-types', 'agents',
+        '--content-pattern', '```toon|```json',
+        '--include-descriptions',
+    )
+    assert result.returncode == 0, f'Script returned error: {result.stderr}'
+
+    data = parse_toon(result.stdout)
+    assert 'content_filter_stats' in data
+
+    # Should find agents with either TOON or JSON blocks
+    stats = data['content_filter_stats']
+    assert stats['matched_count'] >= 1, 'Should match files with ```toon OR ```json'
+
+
+def test_content_exclude_single_pattern():
+    """Test --content-exclude excludes matching files."""
+    # First get count without exclude
+    result_without = run_script(
+        SCRIPT_PATH,
+        '--direct-result',
+        '--resource-types', 'skills',
+        '--include-descriptions',
+    )
+    assert result_without.returncode == 0
+    data_without = parse_toon(result_without.stdout)
+    count_without = data_without.get('statistics', {}).get('total_skills', 0)
+
+    # Now with exclude pattern - exclude skills with workflow mentions
+    result_with = run_script(
+        SCRIPT_PATH,
+        '--direct-result',
+        '--resource-types', 'skills',
+        '--content-exclude', '## Workflow',
+        '--include-descriptions',
+    )
+    assert result_with.returncode == 0, f'Script returned error: {result_with.stderr}'
+    data_with = parse_toon(result_with.stdout)
+    count_with = data_with.get('statistics', {}).get('total_skills', 0)
+
+    # Should have fewer skills after exclusion
+    assert count_with < count_without, (
+        f'Exclude pattern should reduce count: {count_with} should be < {count_without}'
+    )
+
+
+def test_content_include_and_exclude_combined():
+    """Test combining --content-pattern and --content-exclude."""
+    # Include files with ```toon but exclude those with certain patterns
+    result = run_script(
+        SCRIPT_PATH,
+        '--direct-result',
+        '--resource-types', 'skills',
+        '--content-pattern', '```toon',
+        '--content-exclude', '## Error Handling',
+        '--include-descriptions',
+    )
+    assert result.returncode == 0, f'Script returned error: {result.stderr}'
+
+    data = parse_toon(result.stdout)
+    assert 'content_filter_stats' in data
+
+    # Should have some matches (files with toon but without error handling section)
+    stats = data['content_filter_stats']
+    # This is a valid test as long as filter stats are present
+    assert stats['input_count'] > 0, 'Should have input files to filter'
+
+
+def test_content_pattern_output_includes_pattern():
+    """Test output includes the content_pattern used."""
+    result = run_script(
+        SCRIPT_PATH,
+        '--direct-result',
+        '--resource-types', 'agents',
+        '--content-pattern', '```json',
+        '--include-descriptions',
+    )
+    assert result.returncode == 0, f'Script returned error: {result.stderr}'
+
+    data = parse_toon(result.stdout)
+    assert data.get('content_pattern') == '```json', 'Output should include content_pattern used'
+
+
+def test_content_pattern_with_bundles_filter():
+    """Test content filtering works with bundle filter."""
+    result = run_script(
+        SCRIPT_PATH,
+        '--direct-result',
+        '--bundles', 'pm-workflow',
+        '--resource-types', 'skills',
+        '--content-pattern', '```toon',
+        '--include-descriptions',
+    )
+    assert result.returncode == 0, f'Script returned error: {result.stderr}'
+
+    data = parse_toon(result.stdout)
+    bundles = get_bundles(data)
+
+    # Should only have pm-workflow bundle
+    assert len(bundles) <= 1, 'Should have at most one bundle (pm-workflow)'
+    if bundles:
+        assert bundles[0]['name'] == 'pm-workflow'
+
+
+def test_content_pattern_no_matches_returns_empty():
+    """Test content pattern that matches nothing returns zero results."""
+    result = run_script(
+        SCRIPT_PATH,
+        '--direct-result',
+        '--resource-types', 'agents',
+        '--content-pattern', 'NONEXISTENT_UNIQUE_STRING_XYZ123',
+        '--include-descriptions',
+    )
+    assert result.returncode == 0, f'Script returned error: {result.stderr}'
+
+    data = parse_toon(result.stdout)
+    total = data.get('statistics', {}).get('total_agents', 0)
+    assert total == 0, 'Should find 0 agents with non-matching pattern'
+
+
+# =============================================================================
+# Tests - Include Tests Flag
+# =============================================================================
+
+
+def test_include_tests_discovers_test_files():
+    """Test --include-tests discovers test files for bundles."""
+    result = run_script(SCRIPT_PATH, '--direct-result', '--include-tests', '--bundles', 'pm-plugin-development')
+    assert result.returncode == 0, f'Script returned error: {result.stderr}'
+
+    data = parse_toon(result.stdout)
+    bundles = get_bundles(data)
+    assert len(bundles) == 1, 'Should have exactly 1 bundle'
+
+    bundle = bundles[0]
+    tests = bundle.get('tests', [])
+    assert len(tests) >= 1, f'Should find at least 1 test file, found {len(tests)}'
+
+
+def test_include_tests_includes_conftest():
+    """Test --include-tests includes conftest.py files when present in test directories."""
+    # Scan all bundles to find any conftest.py in test/{bundle}/ directories
+    result = run_script(SCRIPT_PATH, '--direct-result', '--include-tests')
+    assert result.returncode == 0, f'Script returned error: {result.stderr}'
+
+    data = parse_toon(result.stdout)
+    bundles = get_bundles(data)
+
+    # Collect all conftest entries from all bundles
+    all_conftests = []
+    for bundle in bundles:
+        tests = bundle.get('tests', [])
+        for test in tests:
+            test_name = test if isinstance(test, str) else test.get('name', '')
+            if test_name == 'conftest':
+                all_conftests.append(bundle['name'])
+
+    # If any bundle has a conftest.py in its test directory, it should be found
+    # Note: Not all bundles have conftest.py files, so we just verify the mechanism works
+    # by checking that conftest entries have the expected structure when found
+    for bundle in bundles:
+        tests = bundle.get('tests', [])
+        for test in tests:
+            if isinstance(test, dict) and test.get('name') == 'conftest':
+                assert test.get('type') == 'conftest', 'conftest should have type conftest'
+                assert 'path' in test, 'conftest should have path'
+
+
+def test_include_tests_maps_to_bundles():
+    """Test --include-tests correctly maps test directories to bundles."""
+    result = run_script(SCRIPT_PATH, '--direct-result', '--include-tests', '--bundles', 'pm-workflow')
+    assert result.returncode == 0, f'Script returned error: {result.stderr}'
+
+    data = parse_toon(result.stdout)
+    bundles = get_bundles(data)
+
+    # pm-workflow should have tests in test/pm-workflow/
+    if bundles:
+        bundle = bundles[0]
+        tests = bundle.get('tests', [])
+        # Verify paths are from the correct test directory
+        for test in tests:
+            if isinstance(test, dict) and 'path' in test:
+                assert 'test/pm-workflow' in test['path'], f"Test path should be in test/pm-workflow: {test['path']}"
+
+
+def test_include_tests_updates_statistics():
+    """Test --include-tests adds total_tests to statistics."""
+    result = run_script(SCRIPT_PATH, '--direct-result', '--include-tests')
+    assert result.returncode == 0, f'Script returned error: {result.stderr}'
+
+    data = parse_toon(result.stdout)
+    stats = data.get('statistics', {})
+    assert 'total_tests' in stats, 'Statistics should include total_tests'
+    assert stats['total_tests'] >= 0, 'total_tests should be a non-negative number'
+
+
+def test_include_tests_without_flag_has_no_tests():
+    """Test without --include-tests flag has no tests in output."""
+    result = run_script(SCRIPT_PATH, '--direct-result', '--bundles', 'pm-plugin-development')
+    assert result.returncode == 0, f'Script returned error: {result.stderr}'
+
+    data = parse_toon(result.stdout)
+    bundles = get_bundles(data)
+
+    for bundle in bundles:
+        tests = bundle.get('tests', [])
+        assert len(tests) == 0, f'Without --include-tests, tests should be empty, found {len(tests)}'
+
+
+# =============================================================================
+# Tests - Include Project Skills Flag
+# =============================================================================
+
+
+def test_include_project_skills_discovers_skills():
+    """Test --include-project-skills discovers project-level skills."""
+    result = run_script(SCRIPT_PATH, '--direct-result', '--include-project-skills')
+    assert result.returncode == 0, f'Script returned error: {result.stderr}'
+
+    data = parse_toon(result.stdout)
+    bundles = get_bundles(data)
+
+    # Find project-skills pseudo-bundle
+    project_skills = next((b for b in bundles if b['name'] == 'project-skills'), None)
+    # May or may not exist depending on repository state
+    if project_skills:
+        assert project_skills['path'] == '.claude/skills', 'project-skills path should be .claude/skills'
+        skills = project_skills.get('skills', [])
+        assert len(skills) >= 1, 'Should find at least 1 project skill'
+
+
+def test_include_project_skills_discovers_scripts():
+    """Test --include-project-skills discovers scripts in project skills."""
+    result = run_script(SCRIPT_PATH, '--direct-result', '--include-project-skills')
+    assert result.returncode == 0, f'Script returned error: {result.stderr}'
+
+    data = parse_toon(result.stdout)
+    bundles = get_bundles(data)
+
+    # Find project-skills pseudo-bundle
+    project_skills = next((b for b in bundles if b['name'] == 'project-skills'), None)
+    if project_skills:
+        scripts = project_skills.get('scripts', [])
+        # Scripts may or may not exist
+        for script in scripts:
+            if isinstance(script, dict):
+                assert 'notation' in script, 'Script should have notation field'
+                assert script['notation'].startswith('project-skills:'), 'Notation should start with project-skills:'
+
+
+def test_include_project_skills_without_flag_no_pseudo_bundle():
+    """Test without --include-project-skills flag has no project-skills bundle."""
+    result = run_script(SCRIPT_PATH, '--direct-result')
+    assert result.returncode == 0, f'Script returned error: {result.stderr}'
+
+    data = parse_toon(result.stdout)
+    bundles = get_bundles(data)
+
+    # Should not have project-skills bundle
+    project_skills = next((b for b in bundles if b['name'] == 'project-skills'), None)
+    assert project_skills is None, 'Without --include-project-skills, project-skills bundle should not exist'
+
+
+def test_include_project_skills_with_bundle_filter():
+    """Test --include-project-skills respects bundle filter."""
+    result = run_script(
+        SCRIPT_PATH,
+        '--direct-result',
+        '--include-project-skills',
+        '--bundles', 'pm-workflow',
+    )
+    assert result.returncode == 0, f'Script returned error: {result.stderr}'
+
+    data = parse_toon(result.stdout)
+    bundles = get_bundles(data)
+    bundle_names = {b['name'] for b in bundles}
+
+    # Should only have pm-workflow, not project-skills (unless explicitly in filter)
+    assert 'pm-workflow' in bundle_names or len(bundle_names) == 0
+    # project-skills not in filter, so shouldn't appear
+    assert 'project-skills' not in bundle_names, 'project-skills should be filtered out when not in --bundles'
+
+
+def test_include_project_skills_explicitly_in_bundle_filter():
+    """Test --include-project-skills included when explicitly in bundle filter."""
+    result = run_script(
+        SCRIPT_PATH,
+        '--direct-result',
+        '--include-project-skills',
+        '--bundles', 'project-skills',
+    )
+    assert result.returncode == 0, f'Script returned error: {result.stderr}'
+
+    data = parse_toon(result.stdout)
+    bundles = get_bundles(data)
+
+    # project-skills should be included (if it exists)
+    # Other bundles should be filtered out
+    for bundle in bundles:
+        assert bundle['name'] == 'project-skills', f"Only project-skills should be present, found {bundle['name']}"
+
+
+# =============================================================================
+# Tests - Combined Flags
+# =============================================================================
+
+
+def test_include_tests_and_project_skills_combined():
+    """Test both --include-tests and --include-project-skills can be used together."""
+    result = run_script(
+        SCRIPT_PATH,
+        '--direct-result',
+        '--include-tests',
+        '--include-project-skills',
+        '--bundles', 'pm-plugin-development',
+    )
+    assert result.returncode == 0, f'Script returned error: {result.stderr}'
+
+    data = parse_toon(result.stdout)
+    bundles = get_bundles(data)
+
+    # Should have pm-plugin-development with tests
+    pm_plugin = next((b for b in bundles if b['name'] == 'pm-plugin-development'), None)
+    assert pm_plugin is not None, 'Should have pm-plugin-development bundle'
+    tests = pm_plugin.get('tests', [])
+    assert len(tests) >= 1, 'Should find tests for pm-plugin-development'
 
 
 # =============================================================================

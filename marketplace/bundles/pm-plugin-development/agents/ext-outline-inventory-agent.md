@@ -7,7 +7,7 @@ model: sonnet
 
 # Ext-Outline Inventory Agent
 
-Loads marketplace inventory via script and performs initial scope assessment to determine which artifact types and bundles are affected.
+Loads marketplace inventory via script with component types and optional content filter provided by the parent skill.
 
 ## Prerequisites
 
@@ -28,145 +28,17 @@ Skill: plan-marshall:ref-development-standards
 
 You will receive:
 - `plan_id`: Plan identifier for logging
-- `request_text`: The request content (from request.md) describing the task
+- `component_types`: List of component types to include (e.g., [skills, agents, commands])
+- `content_pattern`: Optional regex pattern for content filtering (may be empty)
+- `bundle_scope`: Bundle scope ("all" or comma-separated bundle names)
+- `include_tests`: Boolean - include test files from test/{bundle-name}/ directories
+- `include_project_skills`: Boolean - include project-level skills from .claude/skills/
 
 ## Task
 
-### Step 1: Artifact Type Analysis
+### Step 1: Create Work Directory
 
-For EACH artifact type, derive from the request whether it is affected. No assumptions - all must be explicit.
-
-#### 1.1 Plugin Manifest (plugin.json)
-
-```
-ANALYZE request for plugin.json impact:
-  - Are components being ADDED? (new skill, command, agent)
-  - Are components being REMOVED?
-  - Are components being RENAMED?
-
-```
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(ext-outline-inventory-agent) plugin.json: {AFFECTED|NOT_AFFECTED} - reasoning: {explicit derivation}, evidence: {request fragment or 'No mention of add/remove/rename'}"
-```
-
-#### 1.2 Commands
-
-```
-ANALYZE request for Commands impact:
-  - Are commands EXPLICITLY mentioned in request?
-  - Are commands IMPLICITLY affected? (derive how)
-
-```
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(ext-outline-inventory-agent) Commands: {AFFECTED|NOT_AFFECTED} - explicit: {yes|no} '{quote}', implicit: {yes|no} '{derivation}'"
-```
-
-#### 1.3 Skills
-
-```
-ANALYZE request for Skills impact:
-  - Are skills EXPLICITLY mentioned in request?
-  - Are skills IMPLICITLY affected? (derive how)
-
-```
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(ext-outline-inventory-agent) Skills: {AFFECTED|NOT_AFFECTED} - explicit: {yes|no} '{quote}', implicit: {yes|no} '{derivation}'"
-```
-
-#### 1.4 Agents
-
-```
-ANALYZE request for Agents impact:
-  - Are agents EXPLICITLY mentioned in request?
-  - Are agents IMPLICITLY affected? (derive how)
-
-```
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(ext-outline-inventory-agent) Agents: {AFFECTED|NOT_AFFECTED} - explicit: {yes|no} '{quote}', implicit: {yes|no} '{derivation}'"
-```
-
-#### 1.5 Scripts
-
-```
-ANALYZE request for Scripts impact:
-  - Are scripts EXPLICITLY mentioned in request?
-  - Are scripts IMPLICITLY affected? (derive how)
-
-```
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(ext-outline-inventory-agent) Scripts: {AFFECTED|NOT_AFFECTED} - explicit: {yes|no} '{quote}', implicit: {yes|no} '{derivation}'"
-```
-
-#### 1.6 Determine Affected Artifacts
-
-```
-affected_artifacts = [types where decision = AFFECTED]
-```
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(ext-outline-inventory-agent) Affected artifacts: {affected_artifacts}"
-```
-
-### Step 2: Bundle/Module Selection
-
-#### 2.1 Explicit Bundle Mentions
-
-```
-ANALYZE request for bundle/module references:
-  - Direct bundle names: "pm-dev-java", "pm-workflow", "plan-marshall"
-  - Module paths: "marketplace/bundles/{bundle}"
-```
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(ext-outline-inventory-agent) Explicit bundles: {list or 'none'}"
-```
-
-#### 2.2 Implicit Bundle Derivation (via Components)
-
-```
-ANALYZE request for component references that imply bundles:
-  - Specific component names imply their containing bundle
-  - Component patterns may span multiple bundles
-```
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(ext-outline-inventory-agent) Implicit bundles: {list or 'none'}"
-```
-
-#### 2.3 Determine Bundle Scope
-
-```
-explicit_bundles = [from 2.1]
-implicit_bundles = [from 2.2]
-all_bundles = union(explicit_bundles, implicit_bundles)
-
-IF all_bundles is empty AND affected_artifacts is not empty:
-  bundle_scope = "all"
-ELSE:
-  bundle_scope = all_bundles
-```
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(ext-outline-inventory-agent) Bundle scope: {bundle_scope}"
-```
-
-### Step 3: Create Work Directory and Run Inventory Scan
-
-First, create the work directory and capture the path:
+Create the work directory and capture the path:
 
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-files:manage-files mkdir \
@@ -185,30 +57,46 @@ path: {work_dir_path}
 
 Extract `path` from the result - this is the full path to the work directory.
 
-Then execute the inventory script with `--output` using the captured path:
+### Step 2: Run Inventory Scan
 
-**If bundle_scope is "all"** (scan all bundles):
+Execute the inventory script with provided parameters.
+
+**Base command structure:**
+
 ```bash
 python3 .plan/execute-script.py \
   pm-plugin-development:tools-marketplace-inventory:scan-marketplace-inventory \
   --trace-plan-id {plan_id} \
-  --resource-types {affected_artifacts} \
+  --resource-types {component_types as comma-separated} \
   --full \
   --output {work_dir_path}/inventory_raw.toon
 ```
 
-**If bundle_scope is specific bundles**:
+**Add optional flags based on inputs:**
+
+| Input | Flag to Add |
+|-------|-------------|
+| `content_pattern` is set | `--content-pattern "{content_pattern}"` |
+| `bundle_scope` is specific bundles | `--bundles {bundle_scope}` |
+| `include_tests` is true | `--include-tests` |
+| `include_project_skills` is true | `--include-project-skills` |
+
+**Example with all flags:**
+
 ```bash
 python3 .plan/execute-script.py \
   pm-plugin-development:tools-marketplace-inventory:scan-marketplace-inventory \
   --trace-plan-id {plan_id} \
-  --resource-types {affected_artifacts} \
-  --bundles {comma-separated-bundle-names} \
+  --resource-types {component_types as comma-separated} \
+  --content-pattern "{content_pattern}" \
+  --bundles {bundle_scope} \
+  --include-tests \
+  --include-project-skills \
   --full \
   --output {work_dir_path}/inventory_raw.toon
 ```
 
-Note: Omit `--bundles` to scan all bundles. Use `--bundles pm-dev-java,pm-workflow` for specific bundles.
+Note: Combine flags as needed based on input parameters.
 
 Store reference to the raw inventory:
 
@@ -219,7 +107,7 @@ python3 .plan/execute-script.py pm-workflow:manage-references:manage-references 
   --value "work/inventory_raw.toon"
 ```
 
-### Step 4: Convert and Group Inventory by Type
+### Step 3: Convert and Group Inventory by Type
 
 Read the raw inventory file:
 
@@ -241,6 +129,17 @@ plan-marshall:
     - command-name1
   agents[N]:
     - agent-name1
+  tests[N]:
+    - test_some_feature
+    - conftest
+
+project-skills:
+  path: .claude/skills
+  skills[N]:
+    - verify-workflow
+    - sync-plugin-cache
+  scripts[N]:
+    - collect-artifacts
 ```
 
 Extract components from each bundle and convert to file paths:
@@ -258,11 +157,15 @@ file_path: marketplace/bundles/pm-dev-java/skills/java-cdi/SKILL.md
 
 **Scripts**: Default mode doesn't include scripts with full paths. Use bundle notation from statistics if needed.
 
+**Tests**: Test entries already have `path` field from inventory. Use directly.
+
+**Project-skills**: For `project-skills` pseudo-bundle, skill paths are in `.claude/skills/{skill_name}/SKILL.md`
+
 Group all paths by component type across all bundles.
 
-### Step 5: Persist Filtered Inventory
+### Step 4: Persist Filtered Inventory
 
-Build the filtered inventory TOON content and persist it (work directory already created in Step 3):
+Build the filtered inventory TOON content and persist it:
 
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-files:manage-files write \
@@ -271,8 +174,10 @@ python3 .plan/execute-script.py pm-workflow:manage-files:manage-files write \
   --content "# Filtered Inventory
 
 scope:
-  affected_artifacts: [{affected_artifacts}]
+  affected_artifacts: [{component_types}]
   bundle_scope: {bundle_scope}
+  include_tests: {true|false}
+  include_project_skills: {true|false}
 
 inventory:
   skills[{skill_count}]:
@@ -281,12 +186,16 @@ inventory:
 {command_file_paths_indented}
   agents[{agent_count}]:
 {agent_file_paths_indented}
+  tests[{test_count}]:
+{test_file_paths_indented}
 
 total_files: {total_count}
 "
 ```
 
-### Step 6: Store Reference
+Note: Include `tests` section only when `include_tests` is true and tests were discovered.
+
+### Step 5: Store Reference
 
 Link the persisted file in references.toon:
 
@@ -297,7 +206,7 @@ python3 .plan/execute-script.py pm-workflow:manage-references:manage-references 
   --value "work/inventory_filtered.toon"
 ```
 
-### Step 7: Log Completion
+### Step 6: Log Completion
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
@@ -314,13 +223,16 @@ plan_id: {plan_id}
 inventory_file: work/inventory_filtered.toon
 
 scope:
-  affected_artifacts: [skills, commands, agents]
+  affected_artifacts: [skills, commands, agents, tests]
   bundle_scope: all
+  include_tests: true
+  include_project_skills: false
 
 counts:
   skills: {N}
   commands: {N}
   agents: {N}
+  tests: {N}
   total: {N}
 ```
 
@@ -331,7 +243,6 @@ counts:
 
 ## Critical Rules
 
-- **Derive from request**: Every artifact type decision must cite evidence from the request
-- **No assumptions**: "Skills are documentation" or "Agents don't have X" are PROHIBITED
-- **Log all decisions**: Every Step 1.x and 2.x determination must be logged
+- **Use provided parameters**: Do NOT re-analyze the request - component_types and content_pattern are already determined by the parent skill
 - **Use script for inventory**: Do NOT use ad-hoc Glob/Grep for component discovery
+- **Log completion**: Always log the artifact creation for audit trail

@@ -1,13 +1,13 @@
 ---
-name: ext-outline-command-agent
-description: Analyze command files against request using semantic reasoning
+name: ext-outline-component-agent
+description: Analyze component files against request using semantic reasoning
 tools: Read, Bash, Skill
 model: sonnet
 ---
 
-# Ext-Outline Command Agent
+# Ext-Outline Component Agent
 
-Analyzes command .md files using semantic reasoning to determine if they need modification for the given request.
+Analyzes marketplace component files (skills, agents, commands) using semantic reasoning to determine if they need modification for the given request.
 
 ## Contract
 
@@ -38,7 +38,7 @@ Log each assessment using this EXACT command:
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:artifact_store \
   assessment add {plan_id} {file_path} {CERTAINTY} {CONFIDENCE} \
-  --agent ext-outline-command-agent --detail "{reasoning}" --evidence "{evidence}"
+  --agent ext-outline-component-agent/{component_type} --detail "{reasoning}" --evidence "{evidence}"
 ```
 
 **Parameters to fill:**
@@ -46,6 +46,7 @@ python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:artifact_store
 |-----------|--------|
 | `{plan_id}` | From input parameters |
 | `{file_path}` | Current file being analyzed |
+| `{component_type}` | From input parameters (skills, agents, commands) |
 | `{CERTAINTY}` | Your analysis: CERTAIN_INCLUDE, CERTAIN_EXCLUDE, or UNCERTAIN |
 | `{CONFIDENCE}` | Your confidence: 0-100 |
 | `{reasoning}` | Why this decision |
@@ -55,6 +56,12 @@ python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:artifact_store
 
 ## Input Format
 
+You will receive:
+- `plan_id`: Plan identifier for logging
+- `component_type`: Type of components to analyze (skills, agents, or commands)
+- `request_text`: The request describing what needs to be changed
+- `files`: List of file paths to analyze
+
 The parent workflow provides explicit numbered file sections in the prompt. Each section includes:
 - File path to analyze
 - Instructions for analysis
@@ -63,6 +70,7 @@ The parent workflow provides explicit numbered file sections in the prompt. Each
 ```
 ## Files to Analyze
 
+Component Type: {component_type}
 Request: {request_text}
 
 ### File 1: {path}
@@ -72,7 +80,37 @@ Request: {request_text}
 ...
 ```
 
-## Command-Specific Context
+## Component-Specific Context
+
+Select context based on `component_type` input:
+
+### If component_type == skills:
+
+SKILL.md files typically have these sections:
+
+| Section | Purpose |
+|---------|---------|
+| `## Output`, `### Output` | Skill's output specification |
+| `## Workflow` | Workflow steps with examples |
+| `## Configuration` | Input/config, not output |
+| `## Integration` | How skill connects to others |
+
+**Key distinction**: Content in "Output" sections defines what the skill produces. Content in "Workflow" or example sections may show formats as documentation, not as the skill's own output.
+
+### If component_type == agents:
+
+Agent .md files typically have these sections:
+
+| Section | Purpose |
+|---------|---------|
+| `## Output`, `### Return Results` | Agent's output specification |
+| `## Input` | Input parameters |
+| `## Task` | Task description |
+| `Step N: Return` | Final step with return format |
+
+**Key distinction**: Content in "Output" or "Return Results" sections defines what the agent produces. Agents may have both success and error output formats.
+
+### If component_type == commands:
 
 Command .md files typically have these sections:
 
@@ -85,6 +123,22 @@ Command .md files typically have these sections:
 
 **Key distinction**: Content in "Output" sections defines what the command produces. Content in "Usage" or workflow sections may show formats as examples, not as the command's own output.
 
+### If component_type == tests:
+
+Test files (test_*.py, conftest.py) have these patterns:
+
+| Section | Purpose |
+|---------|---------|
+| Test functions (`def test_*`) | Individual test cases |
+| Fixtures (`@pytest.fixture`) | Test setup/teardown |
+| Parametrize decorators | Test data variations |
+| Assert statements | Verification logic |
+
+**Key distinction**: Changes to tested components may require test updates. Tests for modified skills/agents should be analyzed for compatibility. Look for:
+- Tests that verify the behavior being changed
+- Tests that use formats/patterns being modified
+- conftest.py fixtures that provide test data in affected formats
+
 ## Task Execution
 
 Process each numbered file section IN ORDER as provided by the parent workflow.
@@ -92,10 +146,10 @@ Process each numbered file section IN ORDER as provided by the parent workflow.
 For each `### File N:` section:
 
 1. **Read the file** at the specified path
-2. **Analyze** against the request:
-   - What does this command do?
+2. **Analyze** against the request using component-specific context:
+   - What does this component do?
    - Does it have content relevant to the request?
-   - Is that content the command's actual output spec (not just examples)?
+   - Is that content the component's actual output spec (not just examples)?
 3. **Assess confidence** (0-100%):
    - 90-100%: Strong evidence, multiple indicators align
    - 80-89%: Good evidence, minor ambiguity
@@ -122,6 +176,7 @@ After ALL file sections have been processed with logging executed, return TOON s
 
 ```toon
 status: success
+component_type: {component_type}
 bundle: {bundle}
 total_analyzed: {count}
 certain_include: {count}

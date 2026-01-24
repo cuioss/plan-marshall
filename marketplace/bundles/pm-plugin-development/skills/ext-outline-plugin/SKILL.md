@@ -71,15 +71,118 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 ---
 
+## Step 1.5: Determine Component Scope
+
+Analyze the request to determine which component types are affected.
+
+### Component Types (all must be considered)
+
+| Type | Sub-documents | Include if... |
+|------|---------------|---------------|
+| skills | standards/, templates/, scripts/, references/ | Request mentions skill, standard, workflow, template |
+| agents | (none) | Request mentions agent, task executor |
+| commands | (none) | Request mentions command, slash command, user-invokable |
+| scripts | (none) | Request mentions script, Python, automation |
+| plugin.json | (none) | Components added/removed/renamed |
+| tests | conftest.py, test_*.py | Request mentions test, testing, coverage, pytest |
+| project-skills | .claude/skills/* | Request mentions verify-workflow, project skill, sync-plugin-cache |
+
+### Decision Logic
+
+FOR EACH component_type IN [skills, agents, commands, scripts, plugin.json, tests, project-skills]:
+  ANALYZE request for explicit OR implicit mentions
+  LOG decision with evidence
+
+### Log Decisions
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  decision {plan_id} INFO "(pm-plugin-development:ext-outline-plugin) Component scope: [{component_types_list}]"
+
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  decision {plan_id} INFO "(pm-plugin-development:ext-outline-plugin) Skills: {AFFECTED|NOT_AFFECTED} - {evidence}"
+
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  decision {plan_id} INFO "(pm-plugin-development:ext-outline-plugin) Agents: {AFFECTED|NOT_AFFECTED} - {evidence}"
+
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  decision {plan_id} INFO "(pm-plugin-development:ext-outline-plugin) Commands: {AFFECTED|NOT_AFFECTED} - {evidence}"
+
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  decision {plan_id} INFO "(pm-plugin-development:ext-outline-plugin) Scripts: {AFFECTED|NOT_AFFECTED} - {evidence}"
+
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  decision {plan_id} INFO "(pm-plugin-development:ext-outline-plugin) plugin.json: {AFFECTED|NOT_AFFECTED} - {evidence}"
+
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  decision {plan_id} INFO "(pm-plugin-development:ext-outline-plugin) Tests: {AFFECTED|NOT_AFFECTED} - {evidence}"
+
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  decision {plan_id} INFO "(pm-plugin-development:ext-outline-plugin) Project-skills: {AFFECTED|NOT_AFFECTED} - {evidence}"
+```
+
+### Skill Sub-Documents
+
+IF skills are in scope:
+  ALSO include skill sub-documents:
+  - standards/*.md
+  - templates/*
+  - references/*
+  - knowledge/*
+
+This uses --full mode in inventory scan to enumerate sub-documents.
+
+---
+
+## Step 1.6: Derive Content Filter Criteria (if applicable)
+
+For certain change_types, derive a content filter pattern to reduce LLM analysis load.
+
+### When to Apply
+
+| change_type | Apply Content Filter? |
+|-------------|----------------------|
+| create | NO - files don't exist yet |
+| modify | MAYBE - if request mentions specific content |
+| migrate | YES - migration targets specific patterns |
+| refactor | MAYBE - if request mentions specific patterns |
+
+### Pattern Derivation Examples
+
+| Request Keywords | Derived Pattern | Rationale |
+|-----------------|-----------------|-----------|
+| "JSON to TOON", "migrate JSON" | `` ```json `` | Files with JSON code blocks |
+| "TOON output", "add TOON" | `` ```toon `` | Files with TOON code blocks |
+| "update imports", "refactor imports" | `^import\|^from` | Files with import statements |
+| "change output format" | `## Output` | Files with Output sections |
+
+### Log Decision
+
+IF content filter is derived:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  decision {plan_id} INFO "(pm-plugin-development:ext-outline-plugin) Content filter: pattern='{pattern}', derived from '{request_keywords}'"
+```
+
+IF no content filter applicable:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  decision {plan_id} INFO "(pm-plugin-development:ext-outline-plugin) Content filter: NONE (change_type={change_type} does not benefit from content filtering)"
+```
+
+---
+
 ## Step 2: Discovery
 
-Spawn ext-outline-inventory-agent to discover and filter marketplace components:
+Spawn ext-outline-inventory-agent with component scope and content filter from Steps 1.5/1.6:
 
 ```
 Task: pm-plugin-development:ext-outline-inventory-agent
   Input:
     plan_id: {plan_id}
-    request_text: {request content from Step 1}
+    component_types: [{component_types from Step 1.5}]
+    content_pattern: "{pattern from Step 1.6 or empty}"
+    bundle_scope: {from module_mapping or "all"}
   Output:
     inventory_file: work/inventory_filtered.toon
     scope: affected_artifacts, bundle_scope
@@ -87,13 +190,20 @@ Task: pm-plugin-development:ext-outline-inventory-agent
 ```
 
 The agent:
-- Analyzes request to determine affected artifact types and bundle scope
-- Runs `scan-marketplace-inventory` with appropriate filters
+- Runs `scan-marketplace-inventory` with `--resource-types` from component_types
+- Uses `--content-pattern` if provided (enables pre-filtering)
 - Uses `--bundles` filter if module_mapping specifies specific bundles
 - Persists inventory to `work/inventory_filtered.toon`
 - Stores reference as `inventory_filtered` in references.toon
 
 **Contract**: After agent returns, `work/inventory_filtered.toon` exists.
+
+### Filter Result Logging
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  work {plan_id} INFO "[PROGRESS] (pm-plugin-development:ext-outline-plugin) Inventory: {total} files, content filter: {input} → {matched} ({excluded} excluded)"
+```
 
 ### Error Handling
 
