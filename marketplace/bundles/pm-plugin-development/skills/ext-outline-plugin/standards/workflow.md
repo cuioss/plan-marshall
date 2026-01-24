@@ -105,7 +105,10 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 ### Step 3: Parallel Component Analysis
 
-Analysis uses the consolidated **ext-outline-component-agent** for all component types.
+Analysis uses a single unified agent with component-type-specific context:
+- `pm-plugin-development:ext-outline-component-agent` - analyzes all component types
+
+The agent receives `component_type` as input and applies appropriate context for skills, agents, or commands.
 
 **Step 3a: Extract Files by Component Type**
 
@@ -122,59 +125,12 @@ Note: Content filtering (if configured) was already applied during discovery (St
 
 **Step 3b: Spawn Analysis Agents with Explicit File Sections**
 
-For each component_type with files, build an explicit prompt with numbered file sections. Each file gets its own section with a mandatory logging command.
-
-**Build Agent Prompt Pattern**:
-
-For each file in the component type list, generate a numbered section:
-
-```markdown
-## Files to Analyze
-
-Component Type: {component_type}
-Request: {request_text}
-
-Process these files IN ORDER. For EACH file, you MUST:
-1. Read the file
-2. Analyze it against the request using component-specific context
-3. Assess confidence (0-100%) and determine certainty gate
-4. Execute the logging bash command IMMEDIATELY (before next file)
-5. Track counts for final summary
-
-### File 1: {file_path_1}
-
-**1a. Analyze**: Read and analyze against request. Assess confidence and determine certainty:
-- confidence >= 80% AND matches criteria → CERTAIN_INCLUDE
-- confidence >= 80% AND doesn't match → CERTAIN_EXCLUDE
-- confidence < 80% → UNCERTAIN
-
-**1b. Log (EXECUTE IMMEDIATELY)**:
-```bash
-python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:artifact_store \
-  assessment add {plan_id} {file_path_1} {CERTAINTY} {CONFIDENCE} \
-  --agent ext-outline-component-agent/{component_type} --detail "{your_reasoning}" --evidence "{your_evidence}"
-```
-
-### File 2: {file_path_2}
-
-**2a. Analyze**: Read and analyze against request. Assess confidence and determine certainty.
-
-**2b. Log (EXECUTE IMMEDIATELY)**:
-```bash
-python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:artifact_store \
-  assessment add {plan_id} {file_path_2} {CERTAINTY} {CONFIDENCE} \
-  --agent ext-outline-component-agent/{component_type} --detail "{your_reasoning}" --evidence "{your_evidence}"
-```
-
-[...continue for all files...]
-```
-
-**Hash ID**: The artifact_store automatically generates a 6-digit hash ID for each assessment.
+For each component_type with files, spawn one instance of `ext-outline-component-agent` with the component type and its file list. The agent builds explicit numbered sections internally.
 
 **Spawn Pattern**:
 
 ```
-FOR each component_type IN [skills, commands, agents, tests]:
+FOR each component_type IN [skills, commands, agents]:
   IF component_type has files:
     Task: pm-plugin-development:ext-outline-component-agent
       Input:
@@ -182,14 +138,13 @@ FOR each component_type IN [skills, commands, agents, tests]:
         component_type: {component_type}
         request_text: {request text from Step 2}
         files: {file paths for this component type}
-        files_prompt: {generated prompt with explicit file sections}
 ```
 
-**IMPORTANT**: Launch all agents in a SINGLE message for true parallelism.
+**IMPORTANT**: Launch all agent instances in a SINGLE message for true parallelism.
 
-**Agent Responsibility**: The ext-outline-component-agent receives the component_type and uses component-specific context (skill/agent/command section patterns) for analysis. For each file section, the agent reads the file, analyzes it, executes the logging command, and records the finding. The explicit numbered sections with bash commands ensure logging cannot be skipped.
+**Agent Responsibility**: The component agent analyzes files against the request using component-type-specific context. For each file, the agent reads it, analyzes against request criteria, executes the logging command, and records the finding. The agent uses the logging command defined in its contract to persist assessments.
 
-**Step 3d: Error Handling**
+**Step 3c: Error Handling**
 
 **CRITICAL**: If ANY analysis agent fails due to API errors, **HALT the workflow immediately**.
 

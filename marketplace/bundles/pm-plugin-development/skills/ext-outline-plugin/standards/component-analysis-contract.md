@@ -214,31 +214,20 @@ FOR each file_path from filter script:
 The analysis step in `ext-outline-plugin` (Step 3, via workflow.md) spawns analysis agents with this contract:
 
 ```
-Task: pm-plugin-development:ext-outline-skill-agent
+Task: pm-plugin-development:ext-outline-component-agent
   Input:
     plan_id: migrate-json-to-toon
+    component_type: skills
     request_text: "Migrate agent/command/skill outputs from JSON to TOON format"
-    files_prompt: |
-      ## Files to Analyze
-
-      Request: Migrate agent/command/skill outputs from JSON to TOON format
-
-      ### File 1: marketplace/bundles/pm-dev-java/skills/java-cdi/SKILL.md
-      **1a. Analyze**: Read and analyze against request...
-      **1b. Log (EXECUTE IMMEDIATELY)**: python3 .plan/execute-script.py ...
-
-      ### File 2: marketplace/bundles/pm-dev-java/skills/java-create/SKILL.md
-      ...
+    files: [list of skill file paths]
 ```
 
-The parent workflow (ext-outline-plugin) runs the filter script and builds `files_prompt` before spawning agents.
+The parent workflow (ext-outline-plugin) spawns one agent instance per component type (skills, commands, agents) in parallel.
 
-## Agents Implementing This Contract
+## Agent Implementing This Contract
 
-| Agent | Component Type |
-|-------|----------------|
-| `ext-outline-skill-agent` | SKILL.md files |
-| `ext-outline-command-agent` | Command .md files |
-| `ext-outline-agent-agent` | Agent .md files |
+| Agent | Component Types |
+|-------|-----------------|
+| `ext-outline-component-agent` | skills, commands, agents (via `component_type` parameter) |
 
-Each agent uses semantic reasoning to evaluate components against the request.
+The unified agent receives `component_type` as input and applies appropriate context for each type. See the agent definition for component-specific analysis context.
