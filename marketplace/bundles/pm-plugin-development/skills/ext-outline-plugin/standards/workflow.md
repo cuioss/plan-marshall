@@ -199,7 +199,7 @@ IF certain_include + certain_exclude + uncertain != total_analyzed:
 #### 4a.1: Read UNCERTAIN Assessments
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:artifact_store \
+python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
   assessment query {plan_id} --certainty UNCERTAIN
 ```
 
@@ -256,7 +256,7 @@ for finding in group_findings:
 
 Log each resolution as new assessment:
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:artifact_store \
+python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
   assessment add {plan_id} {file_path} {new_certainty} 85 \
   --agent pm-plugin-development:ext-outline-plugin \
   --detail "User clarified: {user_choice}" --evidence "From: {original_hash_id}"
@@ -296,7 +296,7 @@ Each analysis agent persists assessments during execution. The parent workflow v
 **Validation**: After agents complete, verify assessments.jsonl has entries:
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:artifact_store \
+python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
   assessment query {plan_id}
 ```
 
@@ -312,7 +312,7 @@ Query CERTAIN_INCLUDE assessments and persist for execute phase:
 
 ```bash
 # Query assessments with certainty=CERTAIN_INCLUDE
-python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:artifact_store \
+python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
   assessment query {plan_id} --certainty CERTAIN_INCLUDE
 ```
 

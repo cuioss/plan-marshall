@@ -386,14 +386,14 @@ For detailed rules, see `standards/impact-analysis.md`.
 
 1. Query UNCERTAIN assessments:
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:artifact_store \
+python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
   assessment query {plan_id} --certainty UNCERTAIN
 ```
 
 2. Use AskUserQuestion with specific file examples
 3. Log resolutions as new assessments:
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:artifact_store \
+python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
   assessment add {plan_id} {file_path} {new_certainty} 85 \
   --agent pm-plugin-development:ext-outline-plugin \
   --detail "User clarified: {user_choice}" --evidence "From: {original_hash_id}"

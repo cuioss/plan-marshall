@@ -74,7 +74,7 @@ python3 .plan/execute-script.py pm-workflow:manage-references:manage-references 
 
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-config:manage-config get \
-  --plan-id {plan_id} --key domains
+  --plan-id {plan_id} --field domains
 ```
 
 ### 1.5 Log Context
@@ -221,8 +221,8 @@ For codebase-wide changes requiring discovery and analysis.
 For each domain in config.toon:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:extension-api:extension-api \
-  resolve --domain {domain} --type outline
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+  resolve-workflow-skill-extension --domain {domain} --type outline
 ```
 
 **Output** (TOON):
@@ -230,7 +230,7 @@ python3 .plan/execute-script.py plan-marshall:extension-api:extension-api \
 status: success
 domain: {domain}
 type: outline
-skill: pm-plugin-development:ext-outline-plugin  # or null if no skill
+extension: pm-plugin-development:ext-outline-plugin  # or null if no extension
 ```
 
 ### 6.2 Log Resolution
@@ -489,7 +489,7 @@ qgate_passed: {true|false}
 - `pm-workflow:manage-plan-documents:manage-plan-documents` - Read request
 - `pm-workflow:manage-config:manage-config` - Read domains
 - `pm-workflow:manage-solution-outline:manage-solution-outline` - Write solution document
-- `plan-marshall:extension-api:extension-api` - Resolve domain skill
+- `plan-marshall:manage-plan-marshall-config:plan-marshall-config` - Resolve domain skill
 - `plan-marshall:manage-logging:manage-log` - Decision and work logging
 
 **Loads** (Complex Track):

@@ -33,8 +33,8 @@ def provides_outline(self) -> str | None:
 
 **Resolution**:
 ```bash
-python3 .plan/execute-script.py plan-marshall:extension-api:extension-api \
-  resolve --domain plan-marshall-plugin-dev --type outline
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+  resolve-workflow-skill-extension --domain plan-marshall-plugin-dev --type outline
 ```
 
 Returns:
@@ -42,7 +42,7 @@ Returns:
 status: success
 domain: plan-marshall-plugin-dev
 type: outline
-skill: pm-plugin-development:ext-outline-plugin
+extension: pm-plugin-development:ext-outline-plugin
 ```
 
 ---
@@ -81,7 +81,7 @@ The skill MUST execute these steps in order:
 #### 3. Persist Assessments
 - Write ALL assessments to artifacts/assessments.jsonl:
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:artifact_store \
+python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
   assessment add {plan_id} {file} {certainty} {confidence} \
   --agent {skill_name} --detail "{reason}" --evidence "{evidence}"
 ```

@@ -110,7 +110,7 @@ The `artifacts/assessments.jsonl` receives all detailed assessments via the arti
 Each finding MUST be logged as an assessment via `manage-plan-artifacts`. Hash IDs are automatically generated.
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:artifact_store \
+python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
   assessment add {plan_id} {file_path} {certainty} {confidence} \
   --agent {agent_name} --detail "{reasoning}" --evidence "{evidence}"
 ```
