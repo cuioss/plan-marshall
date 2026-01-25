@@ -1,6 +1,6 @@
 # Task Contract
 
-Standard structure for tasks created by task-plan skills. Tasks represent committable units of work derived from deliverables with pre-resolved skills for 6-phase workflow execution.
+Standard structure for tasks created by task-plan skills. Tasks represent committable units of work derived from deliverables with pre-resolved skills for 7-phase workflow execution.
 
 ## Purpose
 

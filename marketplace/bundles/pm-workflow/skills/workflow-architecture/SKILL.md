@@ -17,19 +17,25 @@ allowed-tools: Read
 │  ┌───────────────────────────────────────────────────────────────────────┐  │
 │  │                      7-PHASE EXECUTION MODEL                          │  │
 │  │                                                                       │  │
-│  │ ┌────────┐┌─────────┐┌───────────┐┌────────┐┌───────────┐┌────────┐  │  │
-│  │ │ 1-init ││2-refine ││ 3-outline ││ 4-plan ││ 5-execute ││6-verify│  │  │
-│  │ └────────┘└─────────┘└───────────┘└────────┘└───────────┘└────────┘  │  │
-│  │       │           │            │            │             │          │  │
-│  │       ▼           ▼            ▼           ▼            ▼          ▼│  │
-│  │   config     refined     solution    TASK-*      project    quality │  │
-│  │   status     request     outline     .toon        files     checks  │  │
-│  │   request                                                     ↓     │  │
-│  │                                                          ┌──────────┐│  │
-│  │                                                          │7-finalize││  │
-│  │                                                          └────┬─────┘│  │
-│  │                                                               ▼      │  │
-│  │                                                          commit/PR   │  │
+│  │  1-init → 2-refine → 3-outline → 4-plan → 5-execute                   │  │
+│  │                                                ↓                       │  │
+│  │                                           6-verify ←────┐             │  │
+│  │                                              ↓          │             │  │
+│  │                                      [findings?]        │             │  │
+│  │                                       ↓       ↓         │             │  │
+│  │                                     yes      no         │             │  │
+│  │                                      ↓        ↓         │             │  │
+│  │                              create fix  7-finalize     │             │  │
+│  │                              tasks       (max 3x)       │             │  │
+│  │                                 ↓          ↓            │             │  │
+│  │                              5-execute  [PR issues?]    │             │  │
+│  │                              (loop)      ↓       ↓      │             │  │
+│  │                                 ↑       yes     no      │             │  │
+│  │                                 │        │      ↓       │             │  │
+│  │                                 │   fix tasks  COMPLETE │             │  │
+│  │                                 └────────┴──────────────┘             │  │
+│  │                                                                       │  │
+│  │  Iteration Limits: 6-verify (max 5x) | 7-finalize (max 3x)           │  │
 │  └───────────────────────────────────────────────────────────────────────┘  │
 │                                                                             │
 │  ┌───────────────────────────────────────────────────────────────────────┐  │
@@ -63,7 +69,7 @@ allowed-tools: Read
 | Document | Focus | Key Visuals |
 |----------|-------|-------------|
 | [standards/phases.md](standards/phases.md) | 7-phase model | Phase flow, transitions, outputs |
-| [standards/agents.md](standards/agents.md) | Thin agent pattern | Agent structure, delegation |
+| [standards/agents.md](standards/agents.md) | Thin agent pattern | Agent structure, skill invocation |
 | [standards/data-layer.md](standards/data-layer.md) | manage-* skills | File operations, TOON format |
 | [standards/skill-loading.md](standards/skill-loading.md) | Two-tier loading | System vs domain skills |
 | [standards/artifacts.md](standards/artifacts.md) | Plan file formats | config.toon, status.toon, TASK-*.toon |

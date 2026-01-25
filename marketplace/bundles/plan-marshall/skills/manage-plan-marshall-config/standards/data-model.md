@@ -16,10 +16,12 @@ JSON structure and field definitions for project configuration.
       "optionals": ["plan-marshall:ref-development-standards"],
       "workflow_skills": {
         "1-init": "pm-workflow:phase-1-init",
+        "2-refine": "pm-workflow:phase-2-refine",
         "3-outline": "pm-workflow:phase-3-outline",
         "4-plan": "pm-workflow:phase-4-plan",
         "5-execute": "pm-workflow:phase-5-execute",
-        "6-finalize": "pm-workflow:phase-6-finalize"
+        "6-verify": "pm-workflow:phase-6-verify",
+        "7-finalize": "pm-workflow:phase-7-finalize"
       }
     },
     "java": {
@@ -76,7 +78,7 @@ JSON structure and field definitions for project configuration.
 
 ## Section: skill_domains
 
-Skill configuration per domain using the 6-phase model.
+Skill configuration per domain using the 7-phase model.
 
 ### System Domain Structure
 
@@ -90,10 +92,12 @@ The `system` domain contains workflow skills and base skills applied globally.
       "optionals": ["bundle:skill", ...],
       "workflow_skills": {
         "1-init": "pm-workflow:phase-1-init",
+        "2-refine": "pm-workflow:phase-2-refine",
         "3-outline": "pm-workflow:phase-3-outline",
         "4-plan": "pm-workflow:phase-4-plan",
         "5-execute": "pm-workflow:phase-5-execute",
-        "6-finalize": "pm-workflow:phase-6-finalize"
+        "6-verify": "pm-workflow:phase-6-verify",
+        "7-finalize": "pm-workflow:phase-7-finalize"
       }
     }
   }
@@ -150,7 +154,36 @@ Extensions provide domain-specific behavior without replacing workflow skills:
 | Type | Phase | Description |
 |------|-------|-------------|
 | `outline` | outline | Domain patterns and deliverable identification |
-| `triage` | finalize | Finding decision logic (fix/suppress/accept) |
+| `triage` | verify | Finding decision logic (fix/suppress/accept) |
+
+### Capabilities (Domain Resolution)
+
+Each domain can define capabilities for `${domain}` placeholder resolution:
+
+```json
+{
+  "skill_domains": {
+    "java": {
+      "capabilities": {
+        "quality-gate": "pm-dev-java:java-quality-agent",
+        "build-verify": "pm-dev-java:java-verify-agent",
+        "impl-verify": "pm-dev-java:java-verify-agent",
+        "test-verify": "pm-dev-java:java-coverage-agent",
+        "triage": "pm-dev-java:ext-triage-java"
+      }
+    },
+    "javascript": {
+      "capabilities": {
+        "quality-gate": "pm-dev-frontend:js-quality-agent",
+        "build-verify": "pm-dev-frontend:js-verify-agent",
+        "triage": "pm-dev-frontend:ext-triage-js"
+      }
+    }
+  }
+}
+```
+
+When a step specifies `skill: "${domain}:quality-gate"` and `config.toon.domains: ["java"]`, the resolved skill is `pm-dev-java:java-quality-agent`.
 
 ## Section: system
 
@@ -260,6 +293,87 @@ CI provider configuration (project-level, shared via git).
 ### Note: Authenticated Tools
 
 Tool availability (`authenticated_tools`) is stored in `run-configuration.json` (local, not shared via git) since it varies per developer machine. See run-config skill for the `ci` section schema.
+
+## Section: verification
+
+Step pipeline configuration for the 6-verify phase.
+
+### Structure
+
+```json
+{
+  "verification": {
+    "max_iterations": 5,
+    "steps": [
+      { "name": "quality_check", "skill": "${domain}:quality-gate", "type": "build" },
+      { "name": "build_verify", "skill": "${domain}:build-verify", "type": "build" },
+      { "name": "technical_impl", "skill": "${domain}:impl-verify", "type": "agent" },
+      { "name": "technical_test", "skill": "${domain}:test-verify", "type": "agent" },
+      { "name": "doc_sync", "skill": "pm-documents:doc-verify", "type": "advisory" },
+      { "name": "formal_spec", "skill": "pm-requirements:spec-verify", "type": "advisory" }
+    ]
+  }
+}
+```
+
+### Step Types
+
+| Type | Purpose | Can Block | Can Loop Back |
+|------|---------|-----------|---------------|
+| `build` | Build/compile commands | Yes | Yes |
+| `agent` | Verification agents | Yes | Yes |
+| `advisory` | Info capture | No | No |
+
+### Domain Placeholder
+
+The `${domain}` placeholder is resolved at runtime using capabilities from `skill_domains.{domain}.capabilities`.
+
+### Fields
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `max_iterations` | int | 5 | Maximum verify→execute→verify loops |
+| `steps` | array | - | Ordered step definitions |
+| `steps[].name` | string | - | Step identifier |
+| `steps[].skill` | string | - | Skill to invoke (supports `${domain}` placeholder) |
+| `steps[].type` | string | - | Step type: `build`, `agent`, `advisory` |
+
+## Section: finalize
+
+Step pipeline configuration for the 7-finalize phase.
+
+### Structure
+
+```json
+{
+  "finalize": {
+    "max_iterations": 3,
+    "steps": [
+      { "name": "commit_push", "skill": "pm-workflow:workflow-integration-git", "type": "action" },
+      { "name": "create_pr", "skill": "pm-workflow:workflow-integration-git", "type": "action" },
+      { "name": "automated_review", "skill": "pm-workflow:workflow-integration-ci", "type": "api" },
+      { "name": "sonar_roundtrip", "skill": "pm-workflow:workflow-integration-sonar", "type": "api" },
+      { "name": "knowledge_capture", "skill": "plan-marshall:manage-memories", "type": "advisory" },
+      { "name": "lessons_capture", "skill": "plan-marshall:manage-lessons", "type": "advisory" }
+    ]
+  }
+}
+```
+
+### Step Types
+
+| Type | Purpose | Can Block | Can Loop Back |
+|------|---------|-----------|---------------|
+| `action` | Binary success/fail | Yes | No |
+| `api` | External APIs (CI, Sonar) | Yes | Yes |
+| `advisory` | Info capture | No | No |
+
+### Fields
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `max_iterations` | int | 3 | Maximum finalize→verify→finalize loops |
+| `steps` | array | - | Ordered step definitions |
 
 ## Default Values
 

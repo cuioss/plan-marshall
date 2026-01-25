@@ -1,174 +1,110 @@
-# Lessons Integration for Triage
+# Lessons Integration
 
-How lessons learned inform triage decisions during the finalize phase.
+How lessons learned are captured during the finalize phase.
 
 ## Purpose
 
-During triage (Step 2 of verification), learned lessons can:
-1. **Inform decisions** - Previous similar findings may have documented resolutions
-2. **Provide context** - Historical decisions help consistency
-3. **Record outcomes** - New triage decisions can become lessons for future reference
+At plan completion (Step 7 - Lessons Capture), notable patterns, decisions, and improvements discovered during implementation should be recorded for future reference.
 
-## Lesson Query Flow
+## When to Capture Lessons
 
-### Before Triage Decision
+Lessons are captured as an **advisory step** near plan completion:
 
-Query lessons for similar findings:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lesson query \
-  --component {finding_source} \
-  --category triage
+```
+Step 6: Knowledge Capture (advisory)
+Step 7: Lessons Capture (advisory) ← This step
+Step 8: Mark Plan Complete
 ```
 
-**Output**:
-```toon
-status: success
-matches[2]:
-  - id: 2025-12-01-001
-    summary: "S1192: String literals should not be duplicated - suppress in test code"
-    decision: suppress
-    context: "Test assertions often duplicate strings intentionally"
-  - id: 2025-11-28-003
-    summary: "S1192: Duplicate strings in constants acceptable"
-    decision: accept
-    context: "Constants file deliberately groups related strings"
-```
+## Lesson Categories
 
-### Apply Learned Decision
+| Category | Description | Examples |
+|----------|-------------|----------|
+| `bug` | Issues found and fixed | Build failures, edge cases |
+| `improvement` | Better approaches discovered | Refactoring patterns, tool usage |
+| `anti-pattern` | Patterns to avoid | Code smells, workflow issues |
 
-If a matching lesson exists:
+## Automatic Lesson Detection
 
-1. **Evaluate relevance** - Does the lesson context match current situation?
-2. **Apply decision** - Use the documented decision (fix/suppress/accept)
-3. **Log application** - Record that lesson was applied
+Review the plan's work-log for lesson candidates:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[TRIAGE] (pm-workflow:phase-7-finalize) Applied lesson {lesson_id}: {decision} for {finding}"
+  read work {plan_id}
 ```
 
-### Record New Lesson
+**Look for**:
+- `[ERROR]` entries that were resolved
+- `[DECISION]` entries with non-obvious choices
+- Repeated patterns across multiple tasks
 
-If no matching lesson exists and the triage decision is notable:
+## Recording Lessons
+
+For each notable finding:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lesson add \
-  --component {triage_extension} \
-  --category improvement \
-  --title "{finding_type}: {decision} - {reason}" \
-  --detail "{detailed_context_and_rationale}"
+  --component {component_identifier} \
+  --category {bug|improvement|anti-pattern} \
+  --title "{concise_summary}" \
+  --detail "{detailed_context_and_resolution}"
 ```
 
-**Valid categories**: `bug`, `improvement`, `anti-pattern`
-
-**Notable decisions to record**:
-- Non-obvious suppressions with specific context
-- Patterns that apply across multiple findings
-- Decisions requiring domain expertise
-- Exceptions to standard severity rules
-
-## Decision Matrix
-
-| Lesson Exists | Context Matches | Action |
-|---------------|-----------------|--------|
-| Yes | Yes | Apply lesson decision |
-| Yes | No | Make fresh decision (different context) |
-| No | - | Apply triage extension rules |
-| No | - | Optionally record if notable |
+**Component identifier** follows the pattern:
+- Skills: `{bundle}:{skill-name}` (e.g., `pm-dev-java:java-implement-code`)
+- Scripts: `{bundle}:{skill}:{script}` (e.g., `pm-workflow:manage-tasks:manage-tasks`)
+- Build: `{build-system}` (e.g., `maven`, `npm`)
 
 ## Recording Criteria
 
 **Record a lesson when**:
-- The decision required domain expertise
-- The finding will likely recur
-- The decision deviates from default severity rules
-- Team discussion was needed
+- The solution required significant investigation
+- The pattern will likely recur in future plans
+- Team discussion or external research was needed
+- A workaround was applied (document why)
 
 **Don't record when**:
-- Standard severity rules were applied
-- The fix was obvious and mechanical
-- The finding is one-off (won't recur)
+- Standard procedure was followed
+- The issue was trivial and obvious
+- The finding is project-specific (won't apply elsewhere)
 
-## Integration with Triage Extensions
+## Example: Recording Bug Lesson
 
-Lessons complement triage extensions:
-
-| Source | Content |
-|--------|---------|
-| Triage extension | Generic rules (severity guidelines, suppression syntax) |
-| Lessons learned | Specific cases and contextual decisions |
-
-**Priority**: Lessons override triage extension defaults when:
-1. Lesson is more specific to current context
-2. Lesson represents team consensus
-3. Lesson captures exception to general rule
-
-## Example: Query Before Suppress
-
-```
-Finding: S1192 - String literal "application/json" duplicated 5 times
-
-1. Query lessons:
-   python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lesson query \
-     --pattern "S1192" --category triage
-
-2. Result: Match found
-   - Lesson: "S1192: HTTP content types acceptable to duplicate in test mocks"
-   - Decision: accept
-   - Context: "Test mock setup often repeats content types"
-
-3. Apply: Accept the finding (don't fix, don't suppress)
-
-4. Log: "[TRIAGE] Applied lesson 2025-12-01-005: accept for S1192 duplicate content-type"
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lesson add \
+  --component "pm-workflow:manage-tasks:manage-tasks" \
+  --category bug \
+  --title "Shell metacharacters in verification commands need quoting" \
+  --detail "When verification commands contain pipes or wildcards, they must be quoted in HEREDOC to prevent shell expansion during task creation."
 ```
 
-## Example: Record New Decision
+## Example: Recording Improvement
 
-```
-Finding: S3776 - Cognitive complexity too high (method: parseComplexExpression)
-
-1. Query lessons: No match found
-
-2. Apply triage extension (java-triage):
-   - Severity: MAJOR
-   - Default action: Fix if reasonable effort
-
-3. Decision: Accept with reason
-   - Reason: "Parser method inherently complex, no clean decomposition"
-   - Alternative would be artificial splitting
-
-4. Record lesson:
-   python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lesson add \
-     --component "pm-dev-java:ext-triage-java" \
-     --category improvement \
-     --title "S3776: Complex parser methods acceptable if decomposition artificial" \
-     --detail "Parser methods that handle grammar rules are inherently complex. Splitting into smaller methods just for metrics often obscures the algorithm."
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lesson add \
+  --component "pm-dev-java:java-implement-agent" \
+  --category improvement \
+  --title "Use constructor injection over field injection for CDI beans" \
+  --detail "Constructor injection makes dependencies explicit and testable. Field injection hides dependencies and makes unit testing harder."
 ```
 
-## Lessons Storage
+## Advisory Nature
 
-Lessons with `category=triage` are stored in:
+Lessons capture is **advisory only**:
+- Does not block finalize if skipped
+- Does not require user interaction
+- Logged but failure does not affect plan status
+
+## Logging
+
+Log lesson capture:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  work {plan_id} INFO "[ARTIFACT] (pm-workflow:phase-7-finalize) Captured {count} lessons"
 ```
-.plan/lessons-learned/{date}-{seq}.md
-```
 
-Triage lessons include:
-- `component`: The triage extension that applies
-- `category`: `triage`
-- `summary`: Finding ID and decision summary
-- `detail`: Context and rationale
+## Related Skills
 
-## Query Parameters
-
-| Parameter | Purpose |
-|-----------|---------|
-| `--pattern` | Match finding ID (e.g., "S1192") |
-| `--category triage` | Filter to triage decisions |
-| `--component {ext}` | Filter by triage extension |
-
-## Related Documents
-
-- [triage-integration.md](triage-integration.md) - How triage extensions are loaded and applied
-- [pm-workflow:workflow-extension-api/standards/extensions/triage-extension.md](../../workflow-extension-api/standards/extensions/triage-extension.md) - Extension contract
-- `plan-marshall:manage-lessons` - Lessons storage and query skill
+- `plan-marshall:manage-lessons` - Lessons storage and query
+- `plan-marshall:manage-memories` - Knowledge/memory capture (Step 6)

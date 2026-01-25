@@ -166,7 +166,7 @@ Execute continuously without user prompts except:
 
 ## Phase Transition
 
-When transitioning from execute phase to finalize:
+When transitioning from execute phase to verify:
 
 ```bash
 python3 .plan/execute-script.py pm-workflow:plan-manage:manage-lifecycle transition \
