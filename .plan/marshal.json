@@ -18,7 +18,8 @@
       "commit_strategy": "per_task",
       "create_pr": false,
       "verification_required": true,
-      "branch_strategy": "direct"
+      "branch_strategy": "direct",
+      "refine_confidence_threshold": 95
     }
   },
   "skill_domains": {
