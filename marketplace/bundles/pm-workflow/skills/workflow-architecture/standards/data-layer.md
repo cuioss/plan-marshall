@@ -15,7 +15,7 @@ The pm-workflow bundle uses manage-* skills as the data access layer for all pla
 │  │                                                                      │  │
 │  │   WORKFLOW SKILLS                                                    │  │
 │  │   ═══════════════                                                    │  │
-│  │   phase-1-init  phase-2-refine  phase-3-outline  phase-4-plan  phase-5-execute  phase-6-finalize │
+│  │   phase-1-init  phase-2-refine  phase-3-outline  phase-4-plan  phase-5-execute  phase-6-verify  phase-7-finalize │
 │  │       │           │               │            │             │       │  │
 │  │       │           │               │            │             │       │  │
 │  │       ▼           ▼               ▼            ▼             ▼       │  │
@@ -232,13 +232,14 @@ The pm-workflow bundle uses manage-* skills as the data access layer for all pla
 │  │  title: Implement JWT Authentication                                 │  │
 │  │  current_phase: 5-execute                                            │  │
 │  │                                                                      │  │
-│  │  phases[6]{name,status}:                                             │  │
+│  │  phases[7]{name,status}:                                             │  │
 │  │  1-init,done                                                         │  │
 │  │  2-refine,done                                                       │  │
 │  │  3-outline,done                                                      │  │
 │  │  4-plan,done                                                         │  │
 │  │  5-execute,in_progress                                               │  │
-│  │  6-finalize,pending                                                  │  │
+│  │  6-verify,pending                                                    │  │
+│  │  7-finalize,pending                                                  │  │
 │  │                                                                      │  │
 │  │  created: 2025-12-02T10:00:00Z                                       │  │
 │  │  updated: 2025-12-02T14:30:00Z                                       │  │

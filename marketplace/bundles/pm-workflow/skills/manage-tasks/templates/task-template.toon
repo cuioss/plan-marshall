@@ -14,12 +14,14 @@ depends_on: {DEPENDS_ON}
 description: |
   {DESCRIPTION}
 
-delegation:
-  skill: {BUNDLE}:{SKILL}
-  workflow: {WORKFLOW}
-  domain: {DOMAIN}
-  context_skills:
-  - {CONTEXT_SKILL_1}
+domain: {DOMAIN}
+profile: {PROFILE}
+type: {TYPE}
+origin: {ORIGIN}
+
+skills[{SKILL_COUNT}]:
+- {SKILL_1}
+- {SKILL_2}
 
 steps[{STEP_COUNT}]{number,title,status}:
 1,{STEP_1_TITLE},pending

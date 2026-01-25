@@ -73,12 +73,10 @@ depends_on: TASK-1, TASK-2
 description: |
   Migrate miscellaneous agents from JSON to TOON output format.
 
-delegation:
-  skill: pm-plugin-development:plugin-maintain
-  workflow: update-component
-  domain: plan-marshall-plugin-dev
-  context_skills:
-  - pm-plugin-development:plugin-architecture
+domain: plan-marshall-plugin-dev
+profile: implementation
+type: IMPL
+origin: plan
 
 steps[3]{number,title,status}:
 1,pm-plugin-development/agents/tool-coverage-agent.md,pending
@@ -102,9 +100,7 @@ current_step: 1
 | `profile` | string | Task profile (arbitrary string, e.g., `implementation`, `testing`) |
 | `type` | string | Task type for filename: `IMPL`, `FIX`, `SONAR`, `PR`, `LINT`, `SEC`, `DOC` |
 | `skills` | list | Pre-resolved skills for task execution |
-| `origin` | string | Task origin: `plan` (from task-plan phase) or `fix` (from finalize) |
-| `priority` | int | Optional priority for fix tasks (1=high, 2=medium, 3=low) |
-| `finding` | object | Optional finding details for fix tasks |
+| `origin` | string | Task origin: `plan` (from task-plan phase) or `fix` (from verify) |
 
 ---
 
@@ -160,12 +156,6 @@ steps:
 
 depends_on: none
 
-delegation:
-  skill: pm-plugin-development:plugin-maintain
-  workflow: update-component
-  context_skills:
-    - pm-plugin-development:plugin-architecture
-
 verification:
   commands:
     - grep -l '```json' marketplace/bundles/*.md | wc -l
@@ -176,7 +166,7 @@ verification:
 
 **Required fields**: `title`, `deliverables`, `domain`, `profile`, `skills`, `steps`
 
-**Optional fields**: `phase` (default: execute), `description`, `depends_on`, `delegation`, `verification`, `origin` (default: plan), `priority`, `finding`
+**Optional fields**: `phase` (default: execute), `description`, `depends_on`, `verification`, `origin` (default: plan)
 
 **Field values**:
 - `deliverables`: Array of integers `[1, 2, 3]`
@@ -185,7 +175,7 @@ verification:
 - `skills`: Array of `bundle:skill` format strings
 - `phase`: One of `init`, `outline`, `plan`, `execute`, `finalize`
 - `depends_on`: `none` or task references like `TASK-1, TASK-2`
-- `origin`: `plan` (from task-plan phase) or `fix` (from finalize phase)
+- `origin`: `plan` (from task-plan phase) or `fix` (from verify phase)
 
 ### List/Next Filters
 
@@ -215,10 +205,6 @@ steps:
   - file1.md
   - file2.md
   - file3.md
-
-delegation:
-  skill: pm-plugin-development:plugin-maintain
-  workflow: update-component
 
 verification:
   commands:
@@ -266,10 +252,6 @@ steps:
   - Update java-implement-agent.md
   - Update java-verify-agent.md
   - Update gradle-builder.md
-
-delegation:
-  skill: pm-plugin-development:plugin-maintain
-  workflow: update-component
 
 verification:
   commands:
@@ -399,15 +381,18 @@ blocked_tasks[2]{number,title,waiting_for}:
 
 ## Phase Filtering
 
-Tasks belong to plan phases: `1-init`, `2-refine`, `3-outline`, `4-plan`, `5-execute`, `6-finalize`
+Tasks belong to plan phases: `1-init`, `2-refine`, `3-outline`, `4-plan`, `5-execute`, `6-verify`, `7-finalize`
 
 **Filter by phase**:
 ```bash
 # List execute phase tasks only
 --phase 5-execute
 
+# Get next task in verify phase
+next --phase 6-verify
+
 # Get next task in finalize phase
-next --phase 6-finalize
+next --phase 7-finalize
 ```
 
 **Phase purpose**:
@@ -415,7 +400,8 @@ next --phase 6-finalize
 - `outline`: Solution outline creation
 - `plan`: Task planning and skill resolution
 - `execute`: Implementation tasks (code changes)
-- `finalize`: Cleanup tasks (docs, release)
+- `verify`: Quality verification tasks (build, lint, tests)
+- `finalize`: Shipping tasks (commit, PR, knowledge capture)
 
 ---
 

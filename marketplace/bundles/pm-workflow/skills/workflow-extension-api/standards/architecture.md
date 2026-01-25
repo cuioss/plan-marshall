@@ -1,12 +1,12 @@
 # Architecture Overview
 
-Contract specification for the 6-phase workflow execution model.
+Contract specification for the 7-phase workflow execution model.
 
 **Visual diagrams and detailed explanations**: See [workflow-architecture](../../workflow-architecture/SKILL.md). This document provides **API contracts** only.
 
 ---
 
-## 6-Phase Execution Model
+## 7-Phase Execution Model
 
 | Phase | Agent Call | Purpose | Output |
 |-------|------------|---------|--------|
@@ -15,7 +15,8 @@ Contract specification for the 6-phase workflow execution model.
 | **3-outline** | `plan-phase-agent phase=3-outline` | Create solution outline | solution_outline.md |
 | **4-plan** | `plan-phase-agent phase=4-plan` | Decompose into tasks | TASK-*.toon |
 | **5-execute** | `plan-phase-agent phase=5-execute task_id=TASK-001` | Run implementation | Modified project files |
-| **6-finalize** | `plan-phase-agent phase=6-finalize` | Commit, PR, quality | Git commit, PR |
+| **6-verify** | `plan-phase-agent phase=6-verify` | Verify quality | Verification results |
+| **7-finalize** | `plan-phase-agent phase=7-finalize` | Commit, PR, triage | Git commit, PR |
 
 ### Phase Transitions
 
@@ -25,9 +26,11 @@ Contract specification for the 6-phase workflow execution model.
 | 2-refine | 3-outline | Confidence threshold reached |
 | 3-outline | 4-plan | User approval of solution outline |
 | 4-plan | 5-execute | Auto-continue (unless `stop-after=4-plan`) |
-| 5-execute | 6-finalize | All tasks completed |
-| 6-finalize | 5-execute | Findings detected → create fix tasks |
-| 6-finalize | COMPLETE | No findings |
+| 5-execute | 6-verify | All tasks completed |
+| 6-verify | 7-finalize | All verification passed |
+| 6-verify | 5-execute | Findings detected → create fix tasks |
+| 7-finalize | COMPLETE | Commit/PR done (or no findings) |
+| 7-finalize | 5-execute | Findings detected → create fix tasks |
 
 ---
 
@@ -41,7 +44,7 @@ For visual diagrams of component interactions, see:
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `plan_id` | string | Yes | Plan identifier |
-| `phase` | string | Yes | Phase: 1-init, 2-refine, 3-outline, 4-plan, 5-execute, 6-finalize |
+| `phase` | string | Yes | Phase: 1-init, 2-refine, 3-outline, 4-plan, 5-execute, 6-verify, 7-finalize |
 | `task_id` | string | 5-execute only | Task identifier (required when phase=5-execute), format: `TASK-{SEQ}` |
 | `deliverable_id` | integer | 4-plan only | Deliverable sequence number (required when phase=4-plan), e.g., `1`, `2`, `3` |
 
@@ -54,7 +57,8 @@ For visual diagrams of component interactions, see:
 | **3-outline** | `pm-workflow:phase-3-outline` | [phase-3-outline-contract.md](phase-3-outline-contract.md) |
 | **4-plan** | `pm-workflow:phase-4-plan` | [phase-4-plan-contract.md](phase-4-plan-contract.md) |
 | **5-execute** | `pm-workflow:phase-5-execute` | `pm-workflow:manage-tasks/standards/task-execution-contract.md` |
-| **6-finalize** | `pm-workflow:phase-6-finalize` | [phase-6-finalize-contract.md](phase-6-finalize-contract.md) |
+| **6-verify** | `pm-workflow:phase-6-verify` | [phase-6-verify-contract.md](phase-6-verify-contract.md) |
+| **7-finalize** | `pm-workflow:phase-7-finalize` | [phase-7-finalize-contract.md](phase-7-finalize-contract.md) |
 
 ---
 
@@ -91,7 +95,7 @@ Extensions add domain-specific knowledge without replacing workflow skills.
 | Extension Type | Phase | Purpose |
 |----------------|-------|---------|
 | `outline` | 3-outline | Domain detection, deliverable patterns |
-| `triage` | 6-finalize | Finding decision-making (fix/suppress/accept) |
+| `triage` | 6-verify, 7-finalize | Finding decision-making (fix/suppress/accept) |
 
 ### Extension Loading
 
@@ -168,7 +172,8 @@ recoverable: {true|false}
 - [phase-3-outline-contract.md](phase-3-outline-contract.md) - Outline phase contract
 - [phase-4-plan-contract.md](phase-4-plan-contract.md) - Plan phase contract
 - `pm-workflow:manage-tasks/standards/task-execution-contract.md` - Task execution contract
-- [phase-6-finalize-contract.md](phase-6-finalize-contract.md) - Finalize phase contract
+- [phase-6-verify-contract.md](phase-6-verify-contract.md) - Verify phase contract
+- [phase-7-finalize-contract.md](phase-7-finalize-contract.md) - Finalize phase contract
 - [extension-api.md](extension-api.md) - Extension mechanism
 - [deliverable-contract.md](../../manage-solution-outline/standards/deliverable-contract.md) - Deliverable structure
 - [task-contract.md](../../manage-tasks/standards/task-contract.md) - Task structure

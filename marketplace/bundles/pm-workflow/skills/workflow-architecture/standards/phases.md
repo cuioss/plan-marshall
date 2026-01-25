@@ -1,6 +1,6 @@
-# 6-Phase Execution Model
+# 7-Phase Execution Model
 
-The pm-workflow bundle implements a 6-phase execution model for structured task completion.
+The pm-workflow bundle implements a 7-phase execution model for structured task completion.
 
 ---
 
@@ -9,7 +9,7 @@ The pm-workflow bundle implements a 6-phase execution model for structured task 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                                                                             │
-│                         6-PHASE EXECUTION MODEL                             │
+│                         7-PHASE EXECUTION MODEL                             │
 │                                                                             │
 │  ┌──────────────────────────────────────────────────────────────────────┐  │
 │  │                                                                      │  │
@@ -23,15 +23,15 @@ The pm-workflow bundle implements a 6-phase execution model for structured task 
 │  │   │request│    │         │    │   .md   │   │  files  │             │  │
 │  │   └───────┘    └─────────┘    └─────────┘   └─────────┘             │  │
 │  │                                                                      │  │
-│  │       ┌───────────┐   ┌──────────┐                                  │  │
-│  │   ───▶│ 5-EXECUTE │──▶│6-FINALIZE│                                  │  │
-│  │       └───────────┘   └──────────┘                                  │  │
-│  │            │               │                                        │  │
-│  │       ┌────▼────┐     ┌───▼───┐                                    │  │
-│  │       │ project │     │commit │                                    │  │
-│  │       │  files  │     │  PR   │                                    │  │
-│  │       │modified │     │       │                                    │  │
-│  │       └─────────┘     └───────┘                                    │  │
+│  │       ┌───────────┐   ┌──────────┐   ┌──────────┐                  │  │
+│  │   ───▶│ 5-EXECUTE │──▶│ 6-VERIFY │──▶│7-FINALIZE│                  │  │
+│  │       └───────────┘   └──────────┘   └──────────┘                  │  │
+│  │            │               │               │                        │  │
+│  │       ┌────▼────┐     ┌───▼───┐      ┌───▼───┐                     │  │
+│  │       │ project │     │quality│      │commit │                     │  │
+│  │       │  files  │     │checks │      │  PR   │                     │  │
+│  │       │modified │     │       │      │       │                     │  │
+│  │       └─────────┘     └───────┘      └───────┘                     │  │
 │  │                                                                      │  │
 │  └──────────────────────────────────────────────────────────────────────┘  │
 │                                                                             │
@@ -75,7 +75,7 @@ The pm-workflow bundle implements a 6-phase execution model for structured task 
 │  5. Write request.md                                                        │
 │  6. Initialize references.toon                                              │
 │  7. Detect domain                                                           │
-│  8. Create status.toon (6-phase model)                                      │
+│  8. Create status.toon (7-phase model)                                      │
 │  9. Create config.toon (with domains)                                       │
 │  10. Transition to 2-refine phase                                           │
 │                                                                             │
@@ -286,12 +286,69 @@ The pm-workflow bundle implements a 6-phase execution model for structured task 
 
 ---
 
-### Phase 6: 6-FINALIZE
+### Phase 6: 6-VERIFY
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                                                                             │
-│  PHASE: 6-FINALIZE                                                          │
+│  PHASE: 6-VERIFY                                                            │
+│  ══════════════                                                             │
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │                                                                     │   │
+│  │  INPUT                           OUTPUT                             │   │
+│  │  ═════                           ══════                             │   │
+│  │                                                                     │   │
+│  │  • Modified project files        • Verification passed              │   │
+│  │  • config.toon                   • OR: Fix tasks created            │   │
+│  │    └── domains                     (loop back to 5-execute)         │   │
+│  │  • Completed tasks                                                  │   │
+│  │                                                                     │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+│  SKILL: pm-workflow:phase-6-verify                                          │
+│                                                                             │
+│  VERIFY PIPELINE:                                                           │
+│  ────────────────                                                           │
+│                                                                             │
+│     ┌──────────────────────────────────────────────────────────────┐       │
+│     │                                                              │       │
+│     │  1. quality_check                                            │       │
+│     │     └─▶ Lint, format, static analysis                        │       │
+│     │                                                              │       │
+│     │  2. build_verify                                             │       │
+│     │     └─▶ Compile, unit tests, integration tests               │       │
+│     │                                                              │       │
+│     │  3. technical_impl                                           │       │
+│     │     └─▶ Standards compliance verification                    │       │
+│     │                                                              │       │
+│     │  4. technical_test                                           │       │
+│     │     └─▶ Test structure, coverage verification                │       │
+│     │                                                              │       │
+│     │  5. doc_sync                                                 │       │
+│     │     └─▶ Documentation synchronization (advisory)             │       │
+│     │                                                              │       │
+│     │  6. formal_spec                                              │       │
+│     │     └─▶ Specification drift check                            │       │
+│     │                                                              │       │
+│     │  ON FINDINGS:                                                │       │
+│     │    → Create fix tasks                                        │       │
+│     │    → Loop back to 5-execute                                  │       │
+│     │    → Max iterations: 5 (configurable)                        │       │
+│     │                                                              │       │
+│     └──────────────────────────────────────────────────────────────┘       │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### Phase 7: 7-FINALIZE
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                                                                             │
+│  PHASE: 7-FINALIZE                                                          │
 │  ═══════════════                                                            │
 │                                                                             │
 │  ┌─────────────────────────────────────────────────────────────────────┐   │
@@ -301,38 +358,43 @@ The pm-workflow bundle implements a 6-phase execution model for structured task 
 │  │                                                                     │   │
 │  │  • config.toon                   • Git commit                       │   │
 │  │    ├── create_pr                 • Branch pushed                    │   │
-│  │    ├── verification_required     • Pull request (if enabled)        │   │
-│  │    └── branch_strategy           • Plan status: complete            │   │
-│  │  • references.toon                                                  │   │
+│  │    └── branch_strategy           • Pull request (if enabled)        │   │
+│  │  • references.toon               • Plan status: complete            │   │
 │  │    ├── branch                                                       │   │
 │  │    └── issue_url                                                    │   │
-│  │  • Modified project files                                           │   │
+│  │  • Verified project files                                           │   │
 │  │                                                                     │   │
 │  └─────────────────────────────────────────────────────────────────────┘   │
 │                                                                             │
-│  SKILL: pm-workflow:phase-6-finalize                                        │
+│  SKILL: pm-workflow:phase-7-finalize                                        │
 │                                                                             │
-│  FINALIZE FLOW:                                                             │
-│  ──────────────                                                             │
+│  FINALIZE PIPELINE:                                                         │
+│  ──────────────────                                                         │
 │                                                                             │
 │     ┌──────────────────────────────────────────────────────────────┐       │
 │     │                                                              │       │
-│     │  1. Read configuration (get-multi)                           │       │
-│     │     └─▶ create_pr, verification_required, branch_strategy    │       │
+│     │  1. commit_push                                              │       │
+│     │     └─▶ Stage, commit, push to remote                        │       │
 │     │                                                              │       │
-│     │  2. Run verification (if required)                           │       │
-│     │     └─▶ /builder-build-and-fix or domain-specific            │       │
+│     │  2. automated_review                                         │       │
+│     │     └─▶ Create PR, wait for CI, collect bot feedback         │       │
 │     │                                                              │       │
-│     │  3. Git commit (via git-workflow)                            │       │
-│     │     └─▶ Stage, commit with conventional message              │       │
+│     │  3. sonar_roundtrip                                          │       │
+│     │     └─▶ Wait for analysis, fetch issues, triage              │       │
 │     │                                                              │       │
-│     │  4. Push to remote                                           │       │
+│     │  4. knowledge_capture                                        │       │
+│     │     └─▶ Update project-structure.toon (advisory)             │       │
 │     │                                                              │       │
-│     │  5. Create PR (if enabled)                                   │       │
-│     │     └─▶ Title from request, body from template               │       │
+│     │  5. lessons_capture                                          │       │
+│     │     └─▶ Record notable triage decisions (advisory)           │       │
+│     │                                                              │       │
+│     │  ON FINDINGS (automated_review/sonar):                       │       │
+│     │    → Create fix tasks                                        │       │
+│     │    → Loop back to 5-execute (then 6-verify)                  │       │
+│     │    → Max iterations: 3 (configurable)                        │       │
 │     │                                                              │       │
 │     │  6. Mark plan complete                                       │       │
-│     │     └─▶ transition --completed 6-finalize                    │       │
+│     │     └─▶ transition --completed 7-finalize                    │       │
 │     │                                                              │       │
 │     └──────────────────────────────────────────────────────────────┘       │
 │                                                                             │
@@ -360,15 +422,18 @@ The pm-workflow bundle implements a 6-phase execution model for structured task 
 │       │             │               │              │                        │
 │  auto-continue  threshold met  user-approval  auto-continue                 │
 │                                                                             │
-│       ┌───────────┐   ┌──────────┐                                         │
-│   ───▶│ 5-EXECUTE │──▶│6-FINALIZE│                                         │
-│       └───────────┘   └──────────┘                                         │
-│            │               │                                                │
-│       auto-continue        │                                                │
-│                            ▼                                                │
-│                      ┌──────────┐                                           │
-│                      │ COMPLETE │                                           │
-│                      └──────────┘                                           │
+│       ┌───────────┐   ┌─────────┐   ┌───────────┐                          │
+│   ───▶│ 5-EXECUTE │──▶│6-VERIFY │──▶│7-FINALIZE │                          │
+│       └───────────┘   └─────────┘   └───────────┘                          │
+│            │               │              │                                 │
+│       auto-continue   pass/fail     pass/fail                               │
+│                            │              │                                 │
+│                  ┌─────────┘              │                                 │
+│                  │ loop_back              │                                 │
+│                  ▼                        ▼                                 │
+│              5-EXECUTE               ┌──────────┐                           │
+│           (fix tasks)                │ COMPLETE │                           │
+│                                      └──────────┘                           │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 
@@ -382,9 +447,11 @@ TRANSITION TRIGGERS:
 │ 2-refine      │ 3-outline    │ Confidence >= threshold (default 95%)     │
 │ 3-outline     │ 4-plan       │ USER APPROVAL of solution outline         │
 │ 4-plan        │ 5-execute    │ Auto-continue (tasks created)             │
-│ 5-execute     │ 6-finalize   │ All tasks completed                       │
-│ 6-finalize    │ COMPLETE     │ Commit/PR done (or no findings)           │
-│ 6-finalize    │ 5-execute    │ Findings detected → create fix tasks      │
+│ 5-execute     │ 6-verify     │ All tasks completed                       │
+│ 6-verify      │ 7-finalize   │ All verification passed                   │
+│ 6-verify      │ 5-execute    │ Findings detected → create fix tasks      │
+│ 7-finalize    │ COMPLETE     │ Commit/PR done (or no findings)           │
+│ 7-finalize    │ 5-execute    │ Findings detected → create fix tasks      │
 └───────────────┴──────────────┴───────────────────────────────────────────┘
 ```
 
@@ -448,11 +515,22 @@ TRANSITION TRIGGERS:
 │                      │ config.toon.domains                                  │
 │                      ▼                                                      │
 │  ┌──────────────────────────────────────────────────────────────────────┐  │
-│  │  FINALIZE                                                            │  │
-│  │  ════════                                                            │  │
+│  │  VERIFY                                                              │  │
+│  │  ══════                                                              │  │
 │  │  • Reads domains from config.toon                                    │  │
 │  │  • Loads triage extensions for each domain                           │  │
 │  │  • Applies domain-specific verification                              │  │
+│  └──────────────────────────────────────────────────────────────────────┘  │
+│                      │                                                      │
+│                      │ verified code                                        │
+│                      ▼                                                      │
+│  ┌──────────────────────────────────────────────────────────────────────┐  │
+│  │  FINALIZE                                                            │  │
+│  │  ════════                                                            │  │
+│  │  • Commits verified code                                             │  │
+│  │  • Pushes to remote, creates PR                                      │  │
+│  │  • Handles automated review and Sonar feedback                       │  │
+│  │  • Captures knowledge and lessons                                    │  │
 │  └──────────────────────────────────────────────────────────────────────┘  │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘

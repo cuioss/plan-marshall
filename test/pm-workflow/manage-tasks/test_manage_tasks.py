@@ -48,9 +48,6 @@ def build_task_toon(
     steps=None,
     phase='5-execute',
     depends_on='none',
-    delegation_skill='',
-    delegation_workflow='',
-    context_skills=None,
     verification_commands=None,
     verification_criteria='',
 ):
@@ -63,8 +60,6 @@ def build_task_toon(
     if steps is None:
         # Default steps must be file paths (contract enforcement)
         steps = ['src/main/java/TestFile.java']
-    if context_skills is None:
-        context_skills = []
     if verification_commands is None:
         verification_commands = []
 
@@ -84,17 +79,6 @@ def build_task_toon(
         lines.append(f'  - {step}')
 
     lines.append(f'depends_on: {depends_on}')
-
-    if delegation_skill or delegation_workflow or context_skills:
-        lines.append('delegation:')
-        if delegation_skill:
-            lines.append(f'  skill: {delegation_skill}')
-        if delegation_workflow:
-            lines.append(f'  workflow: {delegation_workflow}')
-        if context_skills:
-            lines.append('  context_skills:')
-            for skill in context_skills:
-                lines.append(f'    - {skill}')
 
     if verification_commands or verification_criteria:
         lines.append('verification:')
@@ -342,29 +326,6 @@ def test_add_with_dependencies():
         cleanup(temp_dir)
 
 
-def test_add_with_delegation():
-    """Add task with delegation block."""
-    temp_dir = setup_plan_dir()
-    try:
-        toon = build_task_toon(
-            title='Delegated task',
-            deliverables=[1],
-            domain='java',
-            description='Task with delegation',
-            steps=['src/main/java/Component.java'],
-            delegation_skill='pm-dev-java:java-implement',
-            delegation_workflow='implement',
-            context_skills=['pm-dev-java:java-cdi'],
-        )
-        result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
-
-        assert result.returncode == 0
-        # Task created successfully
-        assert 'status: success' in result.stdout
-    finally:
-        cleanup(temp_dir)
-
-
 def test_add_with_verification():
     """Add task with verification block."""
     temp_dir = setup_plan_dir()
@@ -396,8 +357,6 @@ def test_add_with_shell_metacharacters_in_verification():
             domain='plan-marshall-plugin-dev',
             description='Migrate outputs from JSON to TOON',
             steps=['Update agent1.md', 'Update agent2.md'],
-            delegation_skill='pm-plugin-development:plugin-maintain',
-            delegation_workflow='update-component',
             verification_commands=["grep -l '```json' marketplace/bundles/*.md | wc -l"],
             verification_criteria='All grep commands return 0',
         )
@@ -457,33 +416,6 @@ def test_get_nonexistent_returns_error():
         assert result.returncode == 1
         assert 'error' in result.stderr.lower()
         assert 'TASK-99' in result.stderr
-    finally:
-        cleanup(temp_dir)
-
-
-def test_get_returns_delegation_block():
-    """Get returns delegation block details."""
-    temp_dir = setup_plan_dir()
-    try:
-        toon = build_task_toon(
-            title='Delegated task',
-            deliverables=[1],
-            domain='plan-marshall-plugin-dev',
-            description='Task with delegation',
-            steps=['src/main/java/Component.java'],
-            delegation_skill='pm-plugin-development:plugin-create',
-            delegation_workflow='create-skill',
-            context_skills=['pm-plugin-development:plugin-architecture'],
-        )
-        run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
-
-        result = run_script(SCRIPT_PATH, 'get', '--plan-id', 'test-plan', '--number', '1')
-
-        assert result.returncode == 0
-        assert 'delegation:' in result.stdout
-        assert 'skill: pm-plugin-development:plugin-create' in result.stdout
-        assert 'workflow: create-skill' in result.stdout
-        assert 'domain: plan-marshall-plugin-dev' in result.stdout
     finally:
         cleanup(temp_dir)
 
@@ -1217,8 +1149,6 @@ def test_file_contains_new_fields():
             description='Test description',
             steps=['src/main/java/File1.java', 'src/main/java/File2.java'],
             depends_on='none',
-            delegation_skill='pm-dev-java:java-implement',
-            delegation_workflow='implement',
             verification_commands=['mvn test'],
             verification_criteria='Tests pass',
         )
@@ -1235,9 +1165,6 @@ def test_file_contains_new_fields():
         assert '- 1' in content
         assert '- 2' in content
         assert 'depends_on: none' in content
-        assert 'delegation:' in content
-        assert 'skill: pm-dev-java:java-implement' in content
-        assert 'workflow: implement' in content
         assert 'domain: java' in content
         assert 'verification:' in content
         assert 'criteria: Tests pass' in content

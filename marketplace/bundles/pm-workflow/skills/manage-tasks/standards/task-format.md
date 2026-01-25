@@ -30,13 +30,14 @@ depends_on: {none | TASK-N, TASK-M}
 description: |
   {multiline_text}
 
-delegation:
-  skill: {bundle}:{skill-name}
-  workflow: {workflow-name}
-  domain: {domain_name}
-  context_skills:
-  - {optional-skill-1}
-  - {optional-skill-2}
+domain: {domain_name}
+profile: {profile_name}
+type: {task_type}
+origin: {origin_type}
+
+skills[{count}]:
+- {skill-1}
+- {skill-2}
 
 steps[{count}]{number,title,status}:
 {step_number},{step_title},{step_status}
@@ -59,16 +60,17 @@ current_step: {integer}
 | `number` | Yes | Integer | Unique task identifier (immutable after creation) |
 | `title` | Yes | String | Short descriptive title |
 | `status` | Yes | Enum | Task status (see Status Values) |
-| `phase` | Yes | String | Plan phase: `1-init`, `2-refine`, `3-outline`, `4-plan`, `5-execute`, `6-finalize` |
+| `phase` | Yes | String | Plan phase: `1-init`, `2-refine`, `3-outline`, `4-plan`, `5-execute`, `6-verify`, `7-finalize` |
 | `created` | Yes | ISO timestamp | When task was created |
 | `updated` | Yes | ISO timestamp | When task was last modified |
 | `deliverables` | Yes | Integer[] | List of deliverable numbers from solution_outline.md |
 | `depends_on` | Yes | String | Task dependencies: `none` or TASK-N references |
 | `description` | Yes | Multiline | Detailed task description |
-| `delegation.skill` | Yes | String | Skill to load for execution (`{bundle}:{skill}`) |
-| `delegation.workflow` | Yes | String | Workflow within the skill |
-| `delegation.domain` | Yes | String | Skill domain for loading defaults |
-| `delegation.context_skills` | No | String[] | Optional skills from domain's optionals |
+| `domain` | Yes | String | Task domain (java, javascript, plugin, etc.) |
+| `profile` | Yes | String | Task profile for executor routing (implementation, module_testing) |
+| `type` | Yes | String | Task type (IMPL, FIX, SONAR, etc.) |
+| `origin` | Yes | String | Task origin: `plan` (from task-plan) or `fix` (from verify) |
+| `skills` | Yes | String[] | Skills to load for execution (`{bundle}:{skill}`) |
 | `steps` | Yes | Array | Ordered list of steps (at least one) |
 | `verification.commands` | Yes | String[] | Commands to verify completion |
 | `verification.criteria` | Yes | String | Success criteria description |
@@ -213,12 +215,14 @@ description: |
   Endpoint should accept username/password and
   return JWT token on successful auth.
 
-delegation:
-  skill: pm-dev-java:java-implement
-  workflow: implement
-  domain: java
-  context_skills:
-  - pm-dev-java:java-cdi
+domain: java
+profile: implementation
+type: IMPL
+origin: plan
+
+skills[2]:
+- pm-dev-java:java-core
+- pm-dev-java:java-cdi
 
 steps[3]{number,title,status}:
 1,Create AuthController class,done
@@ -240,7 +244,8 @@ current_step: 2
 1. At least one step is required
 2. `current_step` must be within valid step range (1 to step_count)
 3. `deliverables` must be non-empty list of positive integers
-4. `delegation.skill` must follow `{bundle}:{skill}` format
-5. `delegation.domain` must be a valid domain value
-6. Task `done` status requires all steps to be `done` or `skipped`
-7. Task `done` status requires verification to have passed
+4. `skills` entries must follow `{bundle}:{skill}` format
+5. `domain` must be a valid domain value
+6. `profile` must be a valid profile value (implementation, module_testing)
+7. Task `done` status requires all steps to be `done` or `skipped`
+8. Task `done` status requires verification to have passed

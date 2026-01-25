@@ -22,24 +22,10 @@ from file_ops import base_path  # type: ignore[import-not-found]
 # =============================================================================
 
 
-class DelegationDict(TypedDict, total=False):
-    skill: str
-    workflow: str
-    domain: str
-    context_skills: list[str]
-
-
 class VerificationDict(TypedDict, total=False):
     commands: list[str]
     criteria: str
     manual: bool
-
-
-class FindingDict(TypedDict, total=False):
-    type: str
-    file: str
-    line: int
-    message: str
 
 
 class StepDict(TypedDict):
@@ -59,14 +45,11 @@ class TaskDict(TypedDict, total=False):
     origin: str
     created: str
     updated: str
-    priority: str | None
     description: str
     steps: list[StepDict]
     deliverables: list[int]
     depends_on: list[str]
     skills: list[str]
-    finding: FindingDict | None
-    delegation: DelegationDict
     verification: VerificationDict
     current_step: int
 
@@ -76,7 +59,7 @@ class TaskDict(TypedDict, total=False):
 # =============================================================================
 
 # Domains are arbitrary strings - defined in marshal.json, not hardcoded
-VALID_PHASES = ['1-init', '2-refine', '3-outline', '4-plan', '5-execute', '6-finalize']
+VALID_PHASES = ['1-init', '2-refine', '3-outline', '4-plan', '5-execute', '6-verify', '7-finalize']
 # Profiles are arbitrary strings - defined in marshal.json per-domain, not hardcoded
 VALID_ORIGINS = ['plan', 'fix']
 # Task types per target architecture
@@ -313,37 +296,6 @@ def parse_deliverables_block(lines: list[str], start_idx: int) -> tuple[list[int
     return deliverables, i
 
 
-def parse_delegation_block(lines: list[str], start_idx: int) -> tuple[DelegationDict, int]:
-    """Parse delegation block from TOON format."""
-    context_skills: list[str] = []
-    delegation: DelegationDict = {'skill': '', 'workflow': '', 'domain': '', 'context_skills': context_skills}
-    i = start_idx + 1
-
-    while i < len(lines):
-        line = lines[i]
-        if not line.startswith('  '):
-            break
-
-        stripped = line.strip()
-        if stripped.startswith('skill:'):
-            delegation['skill'] = stripped[6:].strip()
-        elif stripped.startswith('workflow:'):
-            delegation['workflow'] = stripped[9:].strip()
-        elif stripped.startswith('domain:'):
-            delegation['domain'] = stripped[7:].strip()
-        elif stripped.startswith('context_skills:'):
-            i += 1
-            while i < len(lines) and lines[i].startswith('  - '):
-                skill = lines[i].strip()[2:].strip()
-                if skill:
-                    context_skills.append(skill)
-                i += 1
-            continue
-        i += 1
-
-    return delegation, i
-
-
 def parse_verification_block(lines: list[str], start_idx: int) -> tuple[VerificationDict, int]:
     """Parse verification block from TOON format."""
     commands: list[str] = []
@@ -404,40 +356,12 @@ def parse_skills_block(lines: list[str], start_idx: int) -> tuple[list[str], int
     return skills, i
 
 
-def parse_finding_block(lines: list[str], start_idx: int) -> tuple[FindingDict, int]:
-    """Parse finding block from TOON format (for fix tasks)."""
-    finding: FindingDict = {'type': '', 'file': '', 'line': 0, 'message': ''}
-    i = start_idx + 1
-
-    while i < len(lines):
-        line = lines[i]
-        if not line.startswith('  '):
-            break
-
-        stripped = line.strip()
-        if stripped.startswith('type:'):
-            finding['type'] = stripped[5:].strip()
-        elif stripped.startswith('file:'):
-            finding['file'] = stripped[5:].strip()
-        elif stripped.startswith('line:'):
-            try:
-                finding['line'] = int(stripped[5:].strip())
-            except ValueError:
-                finding['line'] = 0
-        elif stripped.startswith('message:'):
-            finding['message'] = stripped[8:].strip()
-        i += 1
-
-    return finding, i
-
-
 def parse_task_file(content: str) -> dict[str, Any]:
     """Parse a task TOON file into a dictionary."""
     steps: list[StepDict] = []
     deliverables: list[int] = []
     depends_on: list[str] = []
     skills: list[str] = []
-    delegation_context_skills: list[str] = []
     verification_commands: list[str] = []
 
     result: dict[str, Any] = {
@@ -449,9 +373,6 @@ def parse_task_file(content: str) -> dict[str, Any]:
         'type': 'IMPL',
         'skills': skills,
         'origin': 'plan',
-        'priority': None,
-        'finding': None,
-        'delegation': {'skill': '', 'workflow': '', 'domain': '', 'context_skills': delegation_context_skills},
         'verification': {'commands': verification_commands, 'criteria': '', 'manual': False},
     }
     lines = content.split('\n')
@@ -480,10 +401,6 @@ def parse_task_file(content: str) -> dict[str, Any]:
             result['deliverables'], i = parse_deliverables_block(lines, i)
         elif line.startswith('skills[') or line.startswith('skills:'):
             result['skills'], i = parse_skills_block(lines, i)
-        elif line.startswith('finding:'):
-            result['finding'], i = parse_finding_block(lines, i)
-        elif line.startswith('delegation:'):
-            result['delegation'], i = parse_delegation_block(lines, i)
         elif line.startswith('verification:'):
             result['verification'], i = parse_verification_block(lines, i)
         elif line.startswith('steps['):
@@ -532,10 +449,6 @@ def format_task_file(task: dict) -> str:
         f'updated: {task["updated"]}',
     ]
 
-    # Add priority if present (for fix tasks)
-    if task.get('priority'):
-        lines.append(f'priority: {task["priority"]}')
-
     lines.append('')
 
     # Skills array
@@ -561,29 +474,6 @@ def format_task_file(task: dict) -> str:
     lines.append('description: |')
     for desc_line in task.get('description', '').split('\n'):
         lines.append(f'  {desc_line}')
-
-    lines.append('')
-
-    # Add finding block if present (for fix tasks)
-    finding = task.get('finding')
-    if finding:
-        lines.append('finding:')
-        lines.append(f'  type: {finding.get("type", "")}')
-        lines.append(f'  file: {finding.get("file", "")}')
-        lines.append(f'  line: {finding.get("line", 0)}')
-        lines.append(f'  message: {finding.get("message", "")}')
-        lines.append('')
-
-    delegation = task.get('delegation', {})
-    lines.append('delegation:')
-    lines.append(f'  skill: {delegation.get("skill", "")}')
-    lines.append(f'  workflow: {delegation.get("workflow", "")}')
-    lines.append(f'  domain: {delegation.get("domain", "")}')
-    context_skills = delegation.get('context_skills', [])
-    if context_skills:
-        lines.append('  context_skills:')
-        for skill in context_skills:
-            lines.append(f'  - {skill}')
 
     lines.append('')
 
@@ -665,15 +555,8 @@ def parse_stdin_task(stdin_content: str) -> dict[str, Any]:
     skills: list[str] = []
     steps: list[str] = []
     depends_on: list[str] = []
-    delegation_context_skills: list[str] = []
     verification_commands: list[str] = []
 
-    delegation: dict[str, Any] = {
-        'skill': '',
-        'workflow': '',
-        'domain': '',
-        'context_skills': delegation_context_skills,
-    }
     verification: dict[str, Any] = {'commands': verification_commands, 'criteria': '', 'manual': False}
 
     result: dict[str, Any] = {
@@ -688,9 +571,6 @@ def parse_stdin_task(stdin_content: str) -> dict[str, Any]:
         'description': '',
         'steps': steps,
         'depends_on': depends_on,
-        'priority': None,
-        'finding': None,
-        'delegation': delegation,
         'verification': verification,
     }
 
@@ -736,10 +616,6 @@ def parse_stdin_task(stdin_content: str) -> dict[str, Any]:
             result['type'] = line[5:].strip()
             i += 1
 
-        elif line.startswith('priority:'):
-            result['priority'] = line[9:].strip()
-            i += 1
-
         elif line.startswith('skills:'):
             i += 1
             while i < len(lines) and lines[i].startswith('  - '):
@@ -779,24 +655,6 @@ def parse_stdin_task(stdin_content: str) -> dict[str, Any]:
             result['depends_on'] = parse_depends_on(value)
             i += 1
 
-        elif line.startswith('delegation:'):
-            i += 1
-            while i < len(lines) and lines[i].startswith('  '):
-                stripped = lines[i].strip()
-                if stripped.startswith('skill:'):
-                    delegation['skill'] = stripped[6:].strip()
-                elif stripped.startswith('workflow:'):
-                    delegation['workflow'] = stripped[9:].strip()
-                elif stripped.startswith('context_skills:'):
-                    i += 1
-                    while i < len(lines) and lines[i].startswith('    - '):
-                        skill = lines[i][6:].strip()
-                        if skill:
-                            delegation_context_skills.append(skill)
-                        i += 1
-                    continue
-                i += 1
-
         elif line.startswith('verification:'):
             i += 1
             while i < len(lines) and lines[i].startswith('  '):
@@ -818,10 +676,6 @@ def parse_stdin_task(stdin_content: str) -> dict[str, Any]:
 
         else:
             i += 1
-
-    # Copy domain to delegation block
-    if result['domain']:
-        delegation['domain'] = result['domain']
 
     # Validate required fields
     if not result['title']:
@@ -946,15 +800,6 @@ def output_toon(data: dict) -> None:
                 lines.append('  depends_on: none')
         if 'description' in task:
             lines.append(f'  description: {task["description"]}')
-        if 'delegation' in task:
-            deleg = task['delegation']
-            lines.append('  delegation:')
-            lines.append(f'    skill: {deleg.get("skill", "")}')
-            lines.append(f'    workflow: {deleg.get("workflow", "")}')
-            lines.append(f'    domain: {deleg.get("domain", "")}')
-            ctx_skills = deleg.get('context_skills', [])
-            if ctx_skills:
-                lines.append(f'    context_skills: {format_list_value(ctx_skills)}')
         if 'steps' in task:
             steps = task['steps']
             lines.append(f'  steps[{len(steps)}]{{number,title,status}}:')

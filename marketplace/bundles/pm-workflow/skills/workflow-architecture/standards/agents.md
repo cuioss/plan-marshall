@@ -385,5 +385,5 @@ Each agent follows the same pattern:
 | Document | Purpose |
 |----------|---------|
 | [skill-loading.md](skill-loading.md) | Two-tier skill loading pattern |
-| [phases.md](phases.md) | 6-phase execution model |
+| [phases.md](phases.md) | 7-phase execution model |
 | `pm-workflow:workflow-extension-api` | Extension points |

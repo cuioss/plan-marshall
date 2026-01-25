@@ -191,7 +191,7 @@ Log triage decisions to work-log:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[TRIAGE] (pm-workflow:phase-6-finalize) {file}:{line} - {finding_type}: {decision} - {reason}"
+  work {plan_id} INFO "[TRIAGE] (pm-workflow:phase-7-finalize) {file}:{line} - {finding_type}: {decision} - {reason}"
 ```
 
 ## Related Documents

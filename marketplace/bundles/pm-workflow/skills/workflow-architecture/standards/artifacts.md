@@ -154,13 +154,14 @@ Plan lifecycle status with phase tracking.
 title: Implement JWT Authentication
 current_phase: 5-execute
 
-phases[6]{name,status}:
+phases[7]{name,status}:
 1-init,done
 2-refine,done
 3-outline,done
 4-plan,done
 5-execute,in_progress
-6-finalize,pending
+6-verify,pending
+7-finalize,pending
 
 created: 2025-12-02T10:00:00Z
 updated: 2025-12-02T14:30:00Z
@@ -173,9 +174,11 @@ updated: 2025-12-02T14:30:00Z
 │   Phase   │   Status    │
 ├───────────┼─────────────┤
 │ init      │ done        │ ✓
+│ refine    │ done        │ ✓
 │ outline   │ done        │ ✓
 │ plan      │ done        │ ✓
 │ execute   │ in_progress │ ◄── current
+│ verify    │ pending     │
 │ finalize  │ pending     │
 └───────────┴─────────────┘
 ```
@@ -411,13 +414,6 @@ depends_on: TASK-1, TASK-2
 description: |
   Migrate miscellaneous agents from JSON to TOON output format.
 
-delegation:
-  skill: pm-plugin-development:plugin-maintain
-  workflow: update-component
-  domain: plan-marshall-plugin-dev
-  context_skills:
-  - pm-plugin-development:plugin-architecture
-
 steps[3]{number,title,status}:
 1,pm-plugin-development/agents/tool-coverage-agent.md,pending
 2,pm-dev-builder/agents/gradle-builder.md,pending
@@ -457,15 +453,6 @@ current_step: 1
 │ │                                                          │ │
 │ │ deliverables[3]: 1, 2, 4  References to solution outline │ │
 │ │ depends_on: TASK-1, TASK-2                               │ │
-│ └─────────────────────────────────────────────────────────┘ │
-│                                                              │
-│ DELEGATION                                                   │
-│ ┌─────────────────────────────────────────────────────────┐ │
-│ │ delegation:               Execution routing info         │ │
-│ │   skill: pm-plugin-dev:plugin-maintain                   │ │
-│ │   workflow: update-component                             │ │
-│ │   context_skills:                                        │ │
-│ │     - pm-plugin-dev:plugin-architecture                  │ │
 │ └─────────────────────────────────────────────────────────┘ │
 │                                                              │
 │ STEPS TABLE                                                  │
@@ -756,7 +743,7 @@ archive     .plan/archived-plans/{date}-{plan_id}/
 
 | Document | Purpose |
 |----------|---------|
-| [phases.md](phases.md) | 6-phase execution model |
+| [phases.md](phases.md) | 7-phase execution model |
 | [data-layer.md](data-layer.md) | manage-* skills that access these files |
 | [skill-loading.md](skill-loading.md) | How skills from tasks are loaded |
 | `pm-workflow:manage-config` | config.toon operations |

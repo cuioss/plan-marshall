@@ -126,7 +126,6 @@ def cmd_get(args) -> int:
                 'created': task.get('created', ''),
                 'updated': task.get('updated', ''),
                 'description': task.get('description', ''),
-                'delegation': task.get('delegation', {}),
                 'steps': task.get('steps', []),
                 'verification': task.get('verification', {}),
             },

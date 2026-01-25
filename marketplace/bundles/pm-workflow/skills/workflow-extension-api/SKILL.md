@@ -21,7 +21,7 @@ allowed-tools: Read
 │  LAYER 1: PHASE SKILLS (System only - NO domain override)       │
 │  ┌─────────────────────────────────────────────────────────────┐ │
 │  │ phase-1-init → phase-2-refine → phase-3-outline → phase-4-plan │ │
-│  │      → phase-5-execute (coordinator) → phase-6-finalize     │ │
+│  │    → phase-5-execute → phase-6-verify → phase-7-finalize    │ │
 │  │                                                              │ │
 │  │ Self-documenting: SKILL.md IS the contract                  │ │
 │  └─────────────────────────────────────────────────────────────┘ │
@@ -45,7 +45,7 @@ allowed-tools: Read
 │  │   → Loaded by phase-3-outline                                │ │
 │  │                                                              │ │
 │  │ triage-ext: Suppression syntax, severity guidelines          │ │
-│  │   → Loaded by phase-6-finalize                               │ │
+│  │   → Loaded by phase-6-verify and phase-7-finalize            │ │
 │  │                                                              │ │
 │  │ Contract: standards/extensions/                              │ │
 │  │ Discovery: provides_triage(), provides_outline() in ext.py   │ │
@@ -88,7 +88,8 @@ Phase skills are **system-only** - domains cannot override them. Each phase skil
 | 3-outline | `pm-workflow:phase-3-outline` | Create solution outline with deliverables |
 | 4-plan | `pm-workflow:phase-4-plan` | Transform deliverables into tasks |
 | 5-execute | `pm-workflow:phase-5-execute` | Coordinate task execution |
-| 6-finalize | `pm-workflow:phase-6-finalize` | Verify, triage, commit, PR |
+| 6-verify | `pm-workflow:phase-6-verify` | Verify implementation quality |
+| 7-finalize | `pm-workflow:phase-7-finalize` | Triage, commit, PR |
 
 **Key Pattern**: Phase skills delegate to profile skills (Layer 2) for actual work and load extensions (Layer 3) for domain-specific knowledge.
 
@@ -142,7 +143,7 @@ Extensions are **additive** - domains provide additional knowledge that system s
 | Extension Type | Purpose | Loaded By | Contract |
 |----------------|---------|-----------|----------|
 | outline-ext | Codebase patterns, deliverable templates | phase-3-outline | [extensions/outline-extension.md](standards/extensions/outline-extension.md) |
-| triage-ext | Suppression syntax, severity rules | phase-6-finalize | [extensions/triage-extension.md](standards/extensions/triage-extension.md) |
+| triage-ext | Suppression syntax, severity rules | phase-6-verify, phase-7-finalize | [extensions/triage-extension.md](standards/extensions/triage-extension.md) |
 
 ### Extension Discovery
 
@@ -201,7 +202,8 @@ Domain skills are NOT extensions of the workflow - they are knowledge loaded by 
 - `pm-workflow:phase-3-outline` - Creates solution outline, loads outline extensions
 - `pm-workflow:phase-4-plan` - Creates tasks from deliverables
 - `pm-workflow:phase-5-execute` - Coordinates execution, delegates to profile skills
-- `pm-workflow:phase-6-finalize` - Verifies, loads triage extensions, commits
+- `pm-workflow:phase-6-verify` - Verifies implementation, loads triage extensions
+- `pm-workflow:phase-7-finalize` - Triages findings, commits, creates PR
 
 **Profile Resolution**:
 - `plan-marshall:manage-plan-marshall-config resolve-workflow-skill` - Resolves profile skill with fallback

@@ -16,7 +16,7 @@ Plan-level artifact storage providing structured JSONL persistence for assessmen
 | **Project-level** | `.plan/lessons-learned/` | Persists across plans |
 | **Plan-level** | `.plan/plans/{plan_id}/artifacts/` | Temporary, promoted or discarded |
 
-Plan artifacts are working data during plan execution. Notable findings are promoted to project-level at `phase-6-finalize`.
+Plan artifacts are working data during plan execution. Notable findings are promoted to project-level at `7-finalize`.
 
 ## Storage Structure
 
@@ -136,19 +136,19 @@ b4e3d2,sonar-issue,TODO comment,fixed
 | Analysis agents | assessment | add |
 | Sonar integration | finding (sonar-issue) | add, resolve |
 | CI integration | finding (pr-comment) | add, resolve |
-| Phase-6-finalize | finding | add, promote |
+| phase-7-finalize | finding | add, promote |
 
 ### Consumers
 
 | Client | Artifact | Operation |
 |--------|----------|-----------|
 | Q-Gate agent | assessment | query |
-| Phase-6-finalize | finding | query, resolve, promote |
+| phase-7-finalize | finding | query, resolve, promote |
 | Workflow orchestration | assessment | query |
 
 ## Promotion Workflow
 
-At `phase-6-finalize`:
+At `7-finalize`:
 
 1. Query unpromoted findings: `finding query {plan_id} --promoted false`
 2. For each finding to promote:

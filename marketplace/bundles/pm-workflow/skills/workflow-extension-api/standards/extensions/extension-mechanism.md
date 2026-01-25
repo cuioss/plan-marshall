@@ -64,7 +64,7 @@ The extension API allows domains to **extend** system workflow skills without **
 | Extension Key | Phase | Purpose |
 |---------------|-------|---------|
 | `outline` | 3-outline | Domain detection, codebase analysis, deliverable patterns |
-| `triage` | 6-finalize | Decision-making knowledge for findings (suppression syntax, severity rules) |
+| `triage` | 6-verify, 7-finalize | Decision-making knowledge for findings (suppression syntax, severity rules) |
 
 **Phases without extensions:**
 
@@ -109,7 +109,7 @@ extension: pm-dev-java:java-outline-ext
 | Key | Purpose | Used By |
 |-----|---------|---------|
 | `outline` | Domain detection, codebase analysis, deliverable patterns | Outline phase |
-| `triage` | Domain-specific findings handling | Finalize phase |
+| `triage` | Domain-specific findings handling | Verify, Finalize phases |
 
 ---
 
@@ -451,7 +451,8 @@ At extension point "Deliverable Patterns":
 ## Related Documents
 
 - [phase-3-outline SKILL.md](../../../phase-3-outline/SKILL.md) - Outline phase skill (self-documenting)
-- [phase-6-finalize SKILL.md](../../../phase-6-finalize/SKILL.md) - Finalize phase skill (self-documenting)
+- [phase-6-verify SKILL.md](../../../phase-6-verify/SKILL.md) - Verify phase skill (self-documenting)
+- [phase-7-finalize SKILL.md](../../../phase-7-finalize/SKILL.md) - Finalize phase skill (self-documenting)
 - [triage-extension.md](triage-extension.md) - Triage extension contract
 - [outline-extension.md](outline-extension.md) - Outline extension contract
 - [deliverable-contract.md](../../../manage-solution-outline/standards/deliverable-contract.md) - Deliverable structure

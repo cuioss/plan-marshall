@@ -438,7 +438,8 @@ If verification fails:
 ## Related Documents
 
 - [phase-4-plan SKILL.md](../../../phase-4-plan/SKILL.md) - Previous phase (plan)
-- [phase-6-finalize SKILL.md](../../../phase-6-finalize/SKILL.md) - Next phase (finalize)
+- [phase-6-verify SKILL.md](../../../phase-6-verify/SKILL.md) - Next phase (verify)
+- [phase-7-finalize SKILL.md](../../../phase-7-finalize/SKILL.md) - Finalize phase
 - [module_testing.md](module_testing.md) - Module testing profile contract
 - [profile-mechanism.md](profile-mechanism.md) - How profile overrides work
 - [task-contract.md](../../../manage-tasks/standards/task-contract.md) - Task structure with domain, profile, skills

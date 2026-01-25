@@ -7,22 +7,22 @@ allowed-tools: Read, Skill, Bash, AskUserQuestion, Task
 
 # Plan Execute Skill
 
-Execute task plans through the execute phase (task implementation) and finalize phase (commit, PR).
+Execute task plans through the execute phase (task implementation), verify phase (quality checks), and finalize phase (commit, PR).
 
-## 6-Phase Model
+## 7-Phase Model
 
 ```
-1-init → 3-outline → 4-plan → 5-execute → 6-finalize
+1-init → 2-refine → 3-outline → 4-plan → 5-execute → 6-verify → 7-finalize
 ```
 
-This skill handles **5-execute** and **6-finalize** phases. Use `/plan-manage` for 1-init, 3-outline, and 4-plan phases.
+This skill handles **5-execute**, **6-verify**, and **7-finalize** phases. Use `/plan-manage` for 1-init through 4-plan phases.
 
 ## Parameters
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `plan` | optional | Plan name to execute (e.g., `jwt-auth`, not path) |
-| `action` | optional | Explicit action: `execute`, `finalize` (default: execute) |
+| `action` | optional | Explicit action: `execute`, `verify`, `finalize` (default: execute) |
 
 **Note**: The `plan` parameter accepts the plan **name** (plan_id) only, not the full path.
 
@@ -32,6 +32,7 @@ This skill handles **5-execute** and **6-finalize** phases. Use `/plan-manage` f
 
 Route based on action parameter:
 - `execute` (default) → Run execute phase (task iteration)
+- `verify` → Run verify phase (quality checks)
 - `finalize` → Run finalize phase (commit, PR)
 
 ### Default (no parameters)
@@ -57,8 +58,8 @@ If plan is in 1-init, 3-outline, or 4-plan phase:
 ```
 Plan 'jwt-auth' is in '3-outline' phase.
 
-This skill handles 5-execute/6-finalize phases only.
-Use /plan-manage to complete 1-init/3-outline/4-plan phases first.
+This skill handles 5-execute/6-verify/7-finalize phases only.
+Use /plan-manage to complete 1-init through 4-plan phases first.
 ```
 
 ---
@@ -92,20 +93,43 @@ For each task:
 
 ---
 
+## Verify Phase
+
+Load the verify phase skill:
+
+```
+Skill: pm-workflow:phase-6-verify
+```
+
+**Input**: `plan_id`
+
+The verify skill handles:
+- Quality check (lint, format, analysis)
+- Build verify (compile, tests)
+- Technical implementation verification
+- Technical test verification
+- Documentation sync (advisory)
+- Formal spec drift check
+
+On findings: Creates fix tasks and loops back to execute phase (max 5 iterations).
+
+---
+
 ## Finalize Phase
 
 ```
-Skill: pm-workflow:phase-6-finalize
+Skill: pm-workflow:phase-7-finalize
 operation: finalize
 plan_id: {plan_id}
 ```
 
 Handles:
-- Run verification (if configured)
-- Commit changes
-- Push to remote
+- Commit and push changes
 - Create PR (if configured)
-- Run PR workflow (if configured)
+- Automated review (CI, bot feedback)
+- Sonar roundtrip (if configured)
+- Knowledge capture (advisory)
+- Lessons capture (advisory)
 - Mark plan complete
 
 ### Finalize Validation
@@ -129,6 +153,9 @@ Complete all tasks first, then run:
 # Execute specific plan (continues current phase)
 /plan-execute plan="jwt-auth"
 
+# Run verify phase
+/plan-execute plan="jwt-auth" action="verify"
+
 # Run finalize phase directly
 /plan-execute plan="jwt-auth" action="finalize"
 ```
@@ -139,7 +166,8 @@ Complete all tasks first, then run:
 |-------|---------|
 | `pm-workflow:plan-manage` | Manage plans (init, outline, list, cleanup) |
 | `pm-workflow:manage-tasks` | Task iteration (next, check) |
-| `pm-workflow:phase-6-finalize` | Finalize phase execution |
+| `pm-workflow:phase-6-verify` | Verify phase execution |
+| `pm-workflow:phase-7-finalize` | Finalize phase execution |
 
 | Agent | Purpose |
 |-------|---------|

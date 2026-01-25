@@ -38,7 +38,7 @@ branch_strategy: feature
 | Field | Type | Description |
 |-------|------|-------------|
 | `plan_id` | string | Unique plan identifier |
-| `phase` | string | Current phase: 1-init, 3-outline, 4-plan, 5-execute, 6-finalize |
+| `phase` | string | Current phase: 1-init, 3-outline, 4-plan, 5-execute, 7-finalize |
 | `domains` | list | Array of detected domains (set during outline phase) |
 | `commit_strategy` | string | per_task, per_plan, or none |
 | `create_pr` | boolean | Whether to create PR on finalize |
@@ -54,7 +54,7 @@ branch_strategy: feature
 | `3-outline` | Solution outline creation | `domains`, `phase=3-outline` |
 | `4-plan` | Task planning | `phase=4-plan` |
 | `5-execute` | Task execution | `phase=5-execute` |
-| `6-finalize` | Verification and commit | `phase=6-finalize` |
+| `7-finalize` | Verification and commit | `phase=7-finalize` |
 
 ## Domains Array
 
@@ -93,7 +93,7 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-m
 resolve-workflow-skill --phase 1-init       # → pm-workflow:phase-1-init
 resolve-workflow-skill --phase 3-outline    # → pm-workflow:phase-3-outline
 resolve-workflow-skill --phase 4-plan       # → pm-workflow:phase-4-plan
-resolve-workflow-skill --phase 6-finalize   # → pm-workflow:phase-6-finalize
+resolve-workflow-skill --phase 7-finalize   # → pm-workflow:phase-7-finalize
 
 # Execute phase uses domain and profile from task
 resolve-workflow-skill --domain java --phase implementation  # → system fallback or domain override
