@@ -247,7 +247,7 @@ python3 .plan/execute-script.py pm-workflow:manage-references:manage-references 
 **Parameters**:
 - `--plan-id` (required): Plan identifier
 - `--field` (required): List field name (e.g., `affected_files`, `modified_files`)
-- `--values` (required): Comma-separated values OR JSON array string
+- `--values` (required): Comma-separated values
 
 **Output** (TOON):
 ```toon
@@ -260,7 +260,6 @@ count: 2
 
 **Notes**:
 - Replaces the entire list (does not append like `add-list`)
-- Accepts both comma-separated values (`file1.md,file2.md`) and JSON arrays (`["file1.md","file2.md"]`)
 - Empty `--values ""` clears the list
 - Returns `previous_count` showing how many items were replaced
 

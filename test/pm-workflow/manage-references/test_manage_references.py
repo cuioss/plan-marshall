@@ -275,26 +275,6 @@ def test_set_list_comma_separated():
         assert data['count'] == 3
 
 
-def test_set_list_json_array():
-    """Test set-list with JSON array input."""
-    with TestContext():
-        run_script(SCRIPT_PATH, 'create', '--plan-id', 'test-plan', '--branch', 'feature/test')
-        result = run_script(
-            SCRIPT_PATH,
-            'set-list',
-            '--plan-id',
-            'test-plan',
-            '--field',
-            'affected_files',
-            '--values',
-            '["file1.md", "file2.md", "file3.md"]',
-        )
-        assert result.success, f'Script failed: {result.stderr}'
-        data = parse_toon(result.stdout)
-        assert data['status'] == 'success'
-        assert data['count'] == 3
-
-
 def test_set_list_replaces_existing():
     """Test that set-list replaces existing list (not appends)."""
     with TestContext():
