@@ -121,6 +121,12 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   work {plan_id} INFO "[ARTIFACT] (pm-workflow:plan-manage) Created solution_outline.md - pending user review"
 ```
 
+**Step 2b**: Transition phase after outline completes:
+```bash
+python3 .plan/execute-script.py pm-workflow:plan-manage:manage-lifecycle transition \
+  --plan-id {plan_id} --completed 3-outline
+```
+
 ---
 
 ## ⛔ Step 3: MANDATORY USER REVIEW
@@ -180,6 +186,12 @@ Log task plan agent invocation:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   work {plan_id} INFO "[STATUS] (pm-workflow:plan-manage) Invoked task-plan-agent"
+```
+
+**Step 4b**: Transition phase after tasks created:
+```bash
+python3 .plan/execute-script.py pm-workflow:plan-manage:manage-lifecycle transition \
+  --plan-id {plan_id} --completed 4-plan
 ```
 
 ### Action: cleanup
