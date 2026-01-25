@@ -2,127 +2,124 @@
 
 ## Overview
 
-Verifies that the outline phase correctly identifies all marketplace components with JSON output specifications that should be migrated to TOON format.
+Verifies that the outline phase correctly identifies all pm-workflow components with JSON **stdout output** that should be migrated to TOON format. This includes both documentation (SKILL.md files) AND Python scripts.
+
+**Key distinction**: Only scripts that use `print(json.dumps())` for stdout output are in scope. Scripts that write JSON to files (internal storage) are NOT in scope.
 
 ## Scope Correctness
 
 The workflow must analyze the correct scope:
 
-- [ ] Analyzes **agents** (request says "agent/command/skill outputs")
-- [ ] Analyzes **commands** (request says "agent/command/skill outputs")
-- [ ] Analyzes **skills** (request says "agent/command/skill outputs")
-- [ ] Scans **all bundles** (request doesn't specify bundles)
+- [ ] Analyzes **agents** (request says "agents/commands/skills outputs")
+- [ ] Analyzes **commands** (request says "agents/commands/skills outputs")
+- [ ] Analyzes **skills** (request says "agents/commands/skills outputs")
+- [ ] Analyzes **scripts** (clarification: "Both docs and scripts")
+- [ ] Scans **pm-workflow bundle ONLY** (clarification: "pm-workflow only")
 - [ ] Logs scope decision to `decision.log`
 
 **Expected scope decision** (in decision.log):
 ```
-(pm-plugin-development:ext-outline-plugin) Scope: resource-types=agents,commands,skills, bundles=all
-  detail: Request explicitly mentions "agent/command/skill outputs" - scanning all three types
+(pm-plugin-development:ext-outline-plugin) Component scope: [skills, agents, commands, scripts, tests]
+(pm-plugin-development:ext-outline-plugin) Context loaded: domains=[plan-marshall-plugin-dev], bundle=pm-workflow
 ```
 
 ## Completeness
 
 All expected items must be found:
 
-### Agents (10 files)
-- [ ] All 9 pm-dev-java agents identified
-- [ ] 1 pm-plugin-development agent identified (tool-coverage-agent)
+### Skills Documentation (4 files)
+- [ ] planning-inventory/SKILL.md identified
+- [ ] workflow-integration-ci/SKILL.md identified
+- [ ] workflow-integration-git/SKILL.md identified
+- [ ] workflow-integration-sonar/SKILL.md identified
 
-### Commands (0 files)
-- [ ] tools-analyze-user-prompted.md correctly EXCLUDED (JSON is solution examples, not output)
+### Python Scripts (4 files)
+- [ ] scan-planning-inventory.py identified (has print(json.dumps()))
+- [ ] pr.py identified (has print(json.dumps()))
+- [ ] git-workflow.py identified (has print(json.dumps()))
+- [ ] sonar.py identified (has print(json.dumps()))
 
-### Skills with JSON Output Specs (8 files)
-- [ ] 2 plan-marshall skills identified (permission-doctor, permission-fix)
-- [ ] 3 pm-dev-frontend skills identified (js-fix-jsdoc, js-generate-coverage, js-implement-tests)
-- [ ] 3 pm-documents skills identified (manage-adr, manage-interface, ref-documentation)
+### Test Files (4 files)
+- [ ] test_scan_planning_inventory.py identified
+- [ ] test_pr.py identified
+- [ ] test_git_workflow.py identified
+- [ ] test_sonar.py identified
 
-**Expected count**: 18 affected files total
+### Agents and Commands (0 files)
+- [ ] No pm-workflow agents/commands have JSON output specs that need migration
+
+**Expected count**: 12 affected files total
 
 **Critical checks - Must be found**:
 
 | File | Reason |
 |------|--------|
-| pm-dev-java/agents/java-implement-agent.md | "Step 3: Return Results" with ```json |
-| pm-plugin-development/agents/tool-coverage-agent.md | "Output" with ```json |
-| plan-marshall/skills/permission-doctor/SKILL.md | "Output JSON" sections (3 blocks) |
-| plan-marshall/skills/permission-fix/SKILL.md | "Output (JSON)" sections (5+ blocks) |
-| pm-dev-frontend/skills/js-fix-jsdoc/SKILL.md | "JSON Output Contract" section |
-| pm-dev-frontend/skills/js-generate-coverage/SKILL.md | "Step 3: Return Coverage Results" with ```json |
-| pm-documents/skills/manage-adr/SKILL.md | "### Output" section with ```json |
-| pm-documents/skills/manage-interface/SKILL.md | "### Output" section with ```json |
-| pm-documents/skills/ref-documentation/SKILL.md | "Step 4: Parse JSON Output" with ```json |
+| pm-workflow/skills/planning-inventory/SKILL.md | JSON output documentation |
+| pm-workflow/skills/planning-inventory/scripts/scan-planning-inventory.py | print(json.dumps()) |
+| pm-workflow/skills/workflow-integration-ci/SKILL.md | JSON output documentation |
+| pm-workflow/skills/workflow-integration-ci/scripts/pr.py | print(json.dumps()) |
 
 ## Exclusion Criteria
 
 **Files that MUST NOT be included**:
 
-### Agents excluded (use TOON or markdown output):
-- `plan-marshall/agents/research-best-practices.md` - Uses markdown format (```), not JSON
-- `pm-plugin-development/agents/inventory-assessment-agent.md` - Output section uses ```toon (line 296)
-- `pm-workflow/agents/plan-init-agent.md` - Uses TOON format (2 ```toon blocks)
+### Other bundles (OUT OF SCOPE per user clarification):
+- `pm-dev-java/agents/*` - Wrong bundle
+- `pm-plugin-development/agents/*` - Wrong bundle
+- `plan-marshall/skills/*` - Wrong bundle
+
+### pm-workflow agents (all use TOON already):
+- `pm-workflow/agents/plan-init-agent.md` - Uses TOON format
 - `pm-workflow/agents/task-plan-agent.md` - Uses TOON format
-- `pm-workflow/agents/task-execute-agent.md` - Uses TOON format
 - `pm-workflow/agents/solution-outline-agent.md` - Uses TOON format
+- `pm-workflow/agents/q-gate-validation-agent.md` - Uses TOON format
 
-### Commands excluded (JSON is solution examples, not output):
-- `pm-plugin-development/commands/tools-analyze-user-prompted.md` - JSON blocks show permission format examples in solutions, not command output specification
+### pm-workflow scripts that write JSON to files (not stdout):
+- `manage-plan-artifacts/scripts/artifact_store.py` - Uses f.write(json.dumps()), not print()
+  - This writes to JSONL files for internal storage, not script output
 
-### Skills excluded (no JSON blocks at all):
-- `pm-dev-frontend/skills/ext-triage-js/SKILL.md` - Knowledge-only skill, no JSON
-- `pm-dev-frontend/skills/js-enforce-eslint/SKILL.md` - Reference skill, no JSON
-- `pm-documents/skills/ext-triage-docs/SKILL.md` - Knowledge-only skill, no JSON
-- `pm-dev-java/skills/ext-triage-java/SKILL.md` - Knowledge-only skill, no JSON
-- `pm-dev-java/skills/java-enforce-logrecords/SKILL.md` - No JSON blocks
-- `pm-requirements/skills/ext-triage-reqs/SKILL.md` - Knowledge-only skill, no JSON
+### pm-workflow skills already using TOON output:
+- `manage-config/scripts/manage-config.py` - Outputs TOON
+- `manage-tasks/scripts/manage-tasks.py` - Outputs TOON
+- `manage-references/scripts/manage-references.py` - Outputs TOON
+- `manage-solution-outline/scripts/manage_solution_outline.py` - Outputs TOON
 
-### Skills excluded (JSON is config/documentation, not output):
-- `pm-plugin-development/skills/ext-triage-plugin/SKILL.md` - JSON is Extension Registration config
-- `pm-dev-java/skills/manage-maven-profiles/SKILL.md` - JSON is storage schema documentation
+## Script Discovery
 
-## Skills Inclusion/Exclusion Decision
+**Key distinction for scripts**:
 
-**Key distinction for skills**:
-
-| JSON Context | Include? |
-|--------------|----------|
-| "Output JSON", "JSON Output Contract", "Return...Results" | YES |
-| "Configuration", "Required", "Input", "contains" | NO |
-| Extension Registration / Storage schema | NO |
-| No JSON blocks at all | NO |
+| Pattern | Include? | Reason |
+|---------|----------|--------|
+| `print(json.dumps())` | YES | Stdout output consumed by callers |
+| `f.write(json.dumps())` | NO | File write for internal storage |
+| `json.loads()` | NO | Input parsing only |
 
 **Expected decision logs**:
 ```
-[FINDING] Affected: plan-marshall/skills/permission-doctor/SKILL.md
-  detail: Skill with "Output JSON" sections containing ```json output blocks
-
-[FINDING] Excluded: pm-dev-frontend/skills/js-enforce-eslint/SKILL.md
-  detail: No JSON blocks found in file - nothing to migrate
-
-[FINDING] Excluded: pm-plugin-development/skills/ext-triage-plugin/SKILL.md
-  detail: JSON block is Extension Registration config, not skill output
+[PROGRESS] (pm-plugin-development:ext-outline-plugin) Inventory: 4-5 skills with JSON code blocks in pm-workflow
 ```
 
 ## Scoring Guidance
 
 **90-100 (Excellent)**:
-- 17-18 files found (allowing minor variance)
+- All 12 files found (4 SKILL.md + 4 scripts + 4 tests)
 - All critical checks passed
-- Inclusion/exclusion distinction documented with context analysis
-- TOON-format components excluded
-- Solution example JSON exclusions logged
+- Scope correctly limited to pm-workflow bundle
+- Both docs and scripts included
+- File-write JSON correctly excluded
 
 **70-89 (Good)**:
-- 14-17 files found
+- 10-12 files found
 - Minor documentation gaps
-- Distinction mentioned but rationale brief
+- Scope correct but reasoning brief
 
 **50-69 (Partial)**:
-- 10-14 files found
-- Missing multiple skills OR multiple agents
-- Exclusion decisions undocumented
+- 8-10 files found
+- Missing some scripts OR docs
+- May have included file-write JSON incorrectly
 
 **0-49 (Poor)**:
-- Fewer than 10 files found
-- Wrong scope (e.g., skills excluded entirely)
-- No exclusion reasoning
-- Files with TOON output included as false positives
+- Fewer than 8 files found
+- Wrong scope (e.g., all bundles included despite clarification)
+- Scripts ignored despite clarification
+- Included artifact_store.py (file write, not stdout)

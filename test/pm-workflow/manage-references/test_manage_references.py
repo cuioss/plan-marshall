@@ -247,3 +247,166 @@ def test_add_list_no_duplicates():
         data = parse_toon(result.stdout)
         assert data['added_count'] == 1  # Only file3.md is new
         assert data['total'] == 3
+
+
+# =============================================================================
+# Test: Set List Command (NEW - replaces list entirely)
+# =============================================================================
+
+
+def test_set_list_comma_separated():
+    """Test set-list with comma-separated values."""
+    with TestContext():
+        run_script(SCRIPT_PATH, 'create', '--plan-id', 'test-plan', '--branch', 'feature/test')
+        result = run_script(
+            SCRIPT_PATH,
+            'set-list',
+            '--plan-id',
+            'test-plan',
+            '--field',
+            'affected_files',
+            '--values',
+            'file1.md,file2.md,file3.md',
+        )
+        assert result.success, f'Script failed: {result.stderr}'
+        data = parse_toon(result.stdout)
+        assert data['status'] == 'success'
+        assert data['field'] == 'affected_files'
+        assert data['count'] == 3
+
+
+def test_set_list_json_array():
+    """Test set-list with JSON array input."""
+    with TestContext():
+        run_script(SCRIPT_PATH, 'create', '--plan-id', 'test-plan', '--branch', 'feature/test')
+        result = run_script(
+            SCRIPT_PATH,
+            'set-list',
+            '--plan-id',
+            'test-plan',
+            '--field',
+            'affected_files',
+            '--values',
+            '["file1.md", "file2.md", "file3.md"]',
+        )
+        assert result.success, f'Script failed: {result.stderr}'
+        data = parse_toon(result.stdout)
+        assert data['status'] == 'success'
+        assert data['count'] == 3
+
+
+def test_set_list_replaces_existing():
+    """Test that set-list replaces existing list (not appends)."""
+    with TestContext():
+        run_script(SCRIPT_PATH, 'create', '--plan-id', 'test-plan', '--branch', 'feature/test')
+        # First add some files
+        run_script(
+            SCRIPT_PATH,
+            'add-list',
+            '--plan-id',
+            'test-plan',
+            '--field',
+            'affected_files',
+            '--values',
+            'old1.md,old2.md,old3.md',
+        )
+        # Now set-list should REPLACE, not append
+        result = run_script(
+            SCRIPT_PATH,
+            'set-list',
+            '--plan-id',
+            'test-plan',
+            '--field',
+            'affected_files',
+            '--values',
+            'new1.md,new2.md',
+        )
+        assert result.success, f'Script failed: {result.stderr}'
+        data = parse_toon(result.stdout)
+        assert data['count'] == 2  # Only the new files, not 5
+
+        # Verify by reading the field
+        get_result = run_script(SCRIPT_PATH, 'get', '--plan-id', 'test-plan', '--field', 'affected_files')
+        get_data = parse_toon(get_result.stdout)
+        assert len(get_data['value']) == 2
+        assert 'new1.md' in get_data['value']
+        assert 'new2.md' in get_data['value']
+        assert 'old1.md' not in get_data['value']
+
+
+def test_set_list_empty_clears():
+    """Test that set-list with empty values clears the list."""
+    with TestContext():
+        run_script(SCRIPT_PATH, 'create', '--plan-id', 'test-plan', '--branch', 'feature/test')
+        run_script(
+            SCRIPT_PATH,
+            'add-list',
+            '--plan-id',
+            'test-plan',
+            '--field',
+            'affected_files',
+            '--values',
+            'file1.md,file2.md',
+        )
+        # Set to empty
+        result = run_script(
+            SCRIPT_PATH,
+            'set-list',
+            '--plan-id',
+            'test-plan',
+            '--field',
+            'affected_files',
+            '--values',
+            '',
+        )
+        assert result.success, f'Script failed: {result.stderr}'
+        data = parse_toon(result.stdout)
+        assert data['count'] == 0
+
+
+def test_set_list_nonexistent_plan():
+    """Test set-list on non-existent plan fails."""
+    with TestContext():
+        result = run_script(
+            SCRIPT_PATH,
+            'set-list',
+            '--plan-id',
+            'nonexistent',
+            '--field',
+            'affected_files',
+            '--values',
+            'file1.md',
+        )
+        assert not result.success, 'Expected failure for non-existent plan'
+        data = parse_toon(result.stdout)
+        assert data['status'] == 'error'
+
+
+def test_set_list_returns_previous_count():
+    """Test that set-list returns the previous count when replacing."""
+    with TestContext():
+        run_script(SCRIPT_PATH, 'create', '--plan-id', 'test-plan', '--branch', 'feature/test')
+        run_script(
+            SCRIPT_PATH,
+            'add-list',
+            '--plan-id',
+            'test-plan',
+            '--field',
+            'affected_files',
+            '--values',
+            'old1.md,old2.md,old3.md',
+        )
+        result = run_script(
+            SCRIPT_PATH,
+            'set-list',
+            '--plan-id',
+            'test-plan',
+            '--field',
+            'affected_files',
+            '--values',
+            'new1.md,new2.md',
+        )
+        assert result.success, f'Script failed: {result.stderr}'
+        data = parse_toon(result.stdout)
+        assert data['previous_count'] == 3
+        assert data['count'] == 2

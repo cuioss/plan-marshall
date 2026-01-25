@@ -233,6 +233,41 @@ total: 3
 - Skips values that already exist in the list (no duplicates)
 - Returns error if the field exists but is not a list
 
+### set-list
+
+Set a list field to new values, replacing any existing content.
+
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-references:manage-references set-list \
+  --plan-id {plan_id} \
+  --field affected_files \
+  --values "path/to/file1.md,path/to/file2.md"
+```
+
+**Parameters**:
+- `--plan-id` (required): Plan identifier
+- `--field` (required): List field name (e.g., `affected_files`, `modified_files`)
+- `--values` (required): Comma-separated values OR JSON array string
+
+**Output** (TOON):
+```toon
+status: success
+plan_id: my-feature
+field: affected_files
+previous_count: 5
+count: 2
+```
+
+**Notes**:
+- Replaces the entire list (does not append like `add-list`)
+- Accepts both comma-separated values (`file1.md,file2.md`) and JSON arrays (`["file1.md","file2.md"]`)
+- Empty `--values ""` clears the list
+- Returns `previous_count` showing how many items were replaced
+
+**When to use `set-list` vs `add-list`**:
+- Use `set-list` when you have the complete list of values to store
+- Use `add-list` when appending to an existing list without knowing its contents
+
 ### get-context
 
 Get all references context in one call. Useful for getting comprehensive plan context.
@@ -295,6 +330,7 @@ test_files:
 | `add-file` | `--plan-id --file` | Add file to modified_files |
 | `remove-file` | `--plan-id --file` | Remove file from modified_files |
 | `add-list` | `--plan-id --field --values` | Add multiple values to a list field |
+| `set-list` | `--plan-id --field --values` | Set a list field (replaces existing) |
 | `get-context` | `--plan-id [--include-files]` | Get all references context |
 
 ---

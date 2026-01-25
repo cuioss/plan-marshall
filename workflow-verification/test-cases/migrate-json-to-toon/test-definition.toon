@@ -1,10 +1,15 @@
 id: migrate-json-to-toon
-name: Verify outline and planning phases for JSON to TOON migration task
+name: Verify outline and planning phases for JSON to TOON migration task (pm-workflow)
 workflow_phase: 3-outline,4-plan
 
 trigger:
   command: /plan-manage
-  args: create a new plan: Migrate agent/command/skill outputs from JSON to TOON format
+  args: create a new plan: Migrate agents / commands / skills outputs from JSON to TOON format for token efficiency. It is about output consumed by agents / commands / skills, not the one used / persisted / read elsewhere
+
+# User clarification answers (expected during 2-refine phase):
+# - Output type: "Both docs and scripts"
+# - Bundles in scope: "pm-workflow only"
+# - Script migration: "Yes - full migration"
 
 cleanup:
   archive_plan: false

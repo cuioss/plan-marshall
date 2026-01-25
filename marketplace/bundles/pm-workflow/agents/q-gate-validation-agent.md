@@ -190,10 +190,10 @@ python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifac
 Persist the verified affected files to references.toon:
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-references:manage-references set \
+python3 .plan/execute-script.py pm-workflow:manage-references:manage-references set-list \
   --plan-id {plan_id} \
   --field affected_files \
-  --value "{verified_files_array}"
+  --values "{verified_files_list}"
 ```
 
 Only include files from deliverables that passed verification.

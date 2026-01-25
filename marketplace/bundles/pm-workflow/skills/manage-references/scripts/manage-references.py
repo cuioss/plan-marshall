@@ -11,6 +11,7 @@ Usage:
     python3 manage-references.py set --plan-id my-plan --field branch --value feature/x
     python3 manage-references.py add-file --plan-id my-plan --file src/Main.java
     python3 manage-references.py add-list --plan-id my-plan --field affected_files --values file1.md,file2.md
+    python3 manage-references.py set-list --plan-id my-plan --field affected_files --values file1.md,file2.md
 """
 
 import argparse
@@ -324,6 +325,67 @@ def cmd_add_list(args):
     )
 
 
+def cmd_set_list(args):
+    """Set a list field to new values (replaces existing list)."""
+    import json as json_module
+
+    if not validate_plan_id(args.plan_id):
+        output_toon(
+            {
+                'status': 'error',
+                'plan_id': args.plan_id,
+                'error': 'invalid_plan_id',
+                'message': f'Invalid plan_id format: {args.plan_id}',
+            }
+        )
+        sys.exit(1)
+
+    refs = read_references(args.plan_id)
+    if not refs:
+        output_toon(
+            {
+                'status': 'error',
+                'plan_id': args.plan_id,
+                'error': 'file_not_found',
+                'message': 'references.toon not found',
+            }
+        )
+        sys.exit(1)
+
+    # Get previous count if field exists
+    previous_count = 0
+    if args.field in refs and isinstance(refs[args.field], list):
+        previous_count = len(refs[args.field])
+
+    # Parse values - support both comma-separated and JSON array
+    values_str = args.values.strip()
+    if values_str.startswith('['):
+        # Try to parse as JSON array
+        try:
+            values = json_module.loads(values_str)
+            if not isinstance(values, list):
+                values = [v.strip() for v in values_str.split(',') if v.strip()]
+        except json_module.JSONDecodeError:
+            values = [v.strip() for v in values_str.split(',') if v.strip()]
+    else:
+        # Parse as comma-separated
+        values = [v.strip() for v in values_str.split(',') if v.strip()]
+
+    # Set the field to the new list (replaces existing)
+    refs[args.field] = values
+    write_references(args.plan_id, refs)
+
+    output_toon(
+        {
+            'status': 'success',
+            'plan_id': args.plan_id,
+            'field': args.field,
+            'previous_count': previous_count,
+            'count': len(values),
+        }
+    )
+
+
 def cmd_get_context(args):
     """Get all references context in one call."""
     if not validate_plan_id(args.plan_id):
@@ -423,6 +485,13 @@ def main():
     add_list_parser.add_argument('--field', required=True, help='List field name')
     add_list_parser.add_argument('--values', required=True, help='Comma-separated values to add')
     add_list_parser.set_defaults(func=cmd_add_list)
+
+    # set-list
+    set_list_parser = subparsers.add_parser('set-list', help='Set a list field (replaces existing)')
+    set_list_parser.add_argument('--plan-id', required=True, help='Plan identifier')
+    set_list_parser.add_argument('--field', required=True, help='List field name')
+    set_list_parser.add_argument('--values', required=True, help='Comma-separated or JSON array values')
+    set_list_parser.set_defaults(func=cmd_set_list)
 
     # get-context
     get_context_parser = subparsers.add_parser('get-context', help='Get all references context in one call')
