@@ -38,7 +38,7 @@ This skill provides comprehensive ESLint, Prettier, and StyleLint configuration 
 - StyleLint setup for CSS-in-JS patterns
 - postcss-lit parser for Lit components
 - CSS property ordering and validation
-- CSS custom property enforcement
+- Color name enforcement (`color-named: never`)
 - Environment-specific CSS rules
 
 ## Standards Documents
@@ -133,14 +133,14 @@ export default {
 
 1. Install dependencies:
 ```bash
-npm install --save-dev stylelint stylelint-config-standard stylelint-order stylelint-declaration-strict-value postcss-lit
+npm install --save-dev stylelint stylelint-config-standard stylelint-order postcss-lit
 ```
 
 2. Create `.stylelintrc.js`:
 ```javascript
 export default {
   extends: ['stylelint-config-standard'],
-  plugins: ['stylelint-order', 'stylelint-declaration-strict-value'],
+  plugins: ['stylelint-order'],
   customSyntax: 'postcss-lit',
   rules: { /* configuration */ }
 };
@@ -192,7 +192,7 @@ This skill complements:
 1. Use **stylelint-setup.md** for StyleLint configuration
 2. Install StyleLint with postcss-lit parser
 3. Configure CSS property ordering
-4. Enforce CSS custom property usage
+4. Enforce color naming rules
 5. Integrate with Maven build
 
 ## Best Practices

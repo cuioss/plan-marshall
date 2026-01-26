@@ -23,11 +23,10 @@ Install StyleLint and essential plugins:
 ```json
 {
   "devDependencies": {
-    "stylelint": "^16.10.0",
-    "stylelint-config-standard": "^36.0.1",
-    "stylelint-order": "^6.0.3",
-    "stylelint-declaration-strict-value": "^1.10.6",
-    "postcss-lit": "^1.0.0"
+    "stylelint": "^17.0.0",
+    "stylelint-config-standard": "^40.0.0",
+    "stylelint-order": "^7.0.1",
+    "postcss-lit": "^1.3.1"
   }
 }
 ```
@@ -37,8 +36,8 @@ Install StyleLint and essential plugins:
 - **stylelint**: Core StyleLint engine for CSS linting
 - **stylelint-config-standard**: Standard CSS rules and best practices
 - **stylelint-order**: CSS property ordering and organization
-- **stylelint-declaration-strict-value**: CSS custom property enforcement
 - **postcss-lit**: PostCSS parser for CSS in Lit template literals
+
 
 ## StyleLint Configuration
 
@@ -60,8 +59,7 @@ export default {
   ],
 
   plugins: [
-    'stylelint-order',
-    'stylelint-declaration-strict-value'
+    'stylelint-order'
   ],
 
   // Custom syntax for CSS-in-JS
@@ -70,6 +68,7 @@ export default {
   rules: {
     // Modern CSS formatting
     'color-hex-length': 'short',
+    'color-named': 'never',
 
     // Logical property ordering
     'order/properties-order': [
@@ -77,16 +76,6 @@ export default {
       'z-index', 'flex', 'flex-grow', 'flex-shrink', 'flex-basis',
       'width', 'height', 'margin', 'padding', 'border', 'background',
       'color', 'font', 'text-align', 'opacity', 'transform', 'transition'
-    ],
-
-    // CSS Custom Properties enforcement
-    'scale-unlimited/declaration-strict-value': [
-      ['/color$/', 'fill', 'stroke', 'background-color'],
-      {
-        'ignoreValues': [
-          'currentColor', 'transparent', 'inherit', 'initial', 'unset'
-        ]
-      }
     ],
 
     // CSS Custom Properties patterns
@@ -181,26 +170,15 @@ Enforce logical CSS property order for consistency and readability:
 ]
 ```
 
-### CSS Custom Properties
+### Color Enforcement
 
-Enforce use of CSS custom properties (variables) for colors and theming:
+Prevent hardcoded color names using the built-in rule:
 
 ```javascript
-'scale-unlimited/declaration-strict-value': [
-  // Properties that must use custom properties
-  ['/color$/', 'fill', 'stroke', 'background-color'],
-  {
-    // Allowed standard values
-    'ignoreValues': [
-      'currentColor',   // Inherit current text color
-      'transparent',    // Fully transparent
-      'inherit',        // Inherit from parent
-      'initial',        // CSS initial value
-      'unset'          // Unset value
-    ]
-  }
-]
+'color-named': 'never'
 ```
+
+This prevents using named colors like `red`, `blue`, `green` etc. Projects should use CSS custom properties (`var(--*)`) for all color values by convention.
 
 **Example**:
 ```javascript
@@ -212,15 +190,14 @@ static styles = css`
   }
 `;
 
-// Incorrect - hardcoded color
+// Incorrect - hardcoded named color
 static styles = css`
   .button {
-    background-color: #007bff;  // Error: use CSS custom property
-    color: #ffffff;              // Error: use CSS custom property
+    background-color: blue;     // Error: named colors not allowed
+    color: red;                  // Error: named colors not allowed
   }
 `;
 ```
-
 ### Custom Property Naming
 
 Enforce kebab-case naming for CSS custom properties:
@@ -455,7 +432,7 @@ export default {
 
 ## Best Practices
 
-1. **Use CSS custom properties** - Enforce variables for colors and theming
+1. **Use CSS custom properties** - Use `var()` for colors and theming by convention; enforce with `color-named: never`
 2. **Order properties logically** - Group related properties together
 3. **Limit nesting depth** - Keep CSS flat and maintainable (max 3 levels)
 4. **Avoid ID selectors** - Use classes for component styling
@@ -468,7 +445,7 @@ export default {
 
 ## Validation Checklist
 
-- [ ] StyleLint installed with all required plugins
+- [ ] StyleLint 17+ installed with stylelint-order and postcss-lit plugins
 - [ ] .stylelintrc.js configured with ES module syntax
 - [ ] postcss-lit configured as customSyntax
 - [ ] CSS custom property pattern defined

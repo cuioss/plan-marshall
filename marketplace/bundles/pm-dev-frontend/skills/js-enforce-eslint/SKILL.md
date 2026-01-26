@@ -67,7 +67,7 @@ This skill includes the following standards documents:
 
 ### StyleLint Configuration
 - **CSS-in-JS Linting**: StyleLint for CSS within JavaScript/Lit components
-- **Plugin Setup**: postcss-lit, stylelint-order, declaration-strict-value
+- **Plugin Setup**: postcss-lit, stylelint-order
 - **Rule Configuration**: Property ordering, custom properties, web component selectors
 - **Environment Overrides**: Production vs test file configurations
 - **Build Integration**: npm scripts and Maven execution
@@ -128,9 +128,9 @@ When this skill is activated:
 
 ### 6. Configure CSS-in-JS Linting (Optional)
 - Use **stylelint-setup.md** if using CSS-in-JS or Lit components
-- Install StyleLint dependencies (stylelint, stylelint-config-standard, postcss-lit)
+- Install StyleLint dependencies (stylelint 17+, stylelint-config-standard, stylelint-order, postcss-lit)
 - Configure StyleLint with ES module syntax
-- Add CSS property ordering and custom property validation
+- Add CSS property ordering and color-named enforcement
 - Integrate StyleLint into build pipeline
 
 ### 7. Validate Configuration
