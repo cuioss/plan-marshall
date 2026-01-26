@@ -250,13 +250,24 @@ EOF
 ### Step 8: Loop or Continue
 
 If fix tasks were created:
-1. Increment `verify_iteration`
-2. Transition back to `5-execute` phase
-3. Exit - plan-execute will run the fix tasks
+
+```bash
+# Increment verify iteration and transition back to execute
+python3 .plan/execute-script.py pm-workflow:plan-manage:manage-lifecycle set-phase \
+  --plan-id {plan_id} --phase 5-execute
+```
+
+Exit - plan-execute will run the fix tasks.
 
 If no fix tasks (all passed or suppressed):
-1. Transition to `7-finalize` phase
-2. Exit successfully
+
+```bash
+# Transition to finalize phase
+python3 .plan/execute-script.py pm-workflow:plan-manage:manage-lifecycle transition \
+  --plan-id {plan_id} --completed 6-verify
+```
+
+Exit successfully.
 
 ### Step 9: Log Completion
 

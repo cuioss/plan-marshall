@@ -6,7 +6,7 @@ Implementation skill management with profile-based structure and workflow skill 
 
 Skill domains configure which implementation skills are loaded when working on code in different domains. The structure supports:
 
-- **System Domain**: Contains workflow skills for the 5-phase execution model
+- **System Domain**: Contains workflow skills for the 7-phase execution model
 - **Technical Domains**: Language-specific with profiles and workflow skill extensions (java, javascript)
 
 ## 6-Phase Workflow Model
@@ -95,7 +95,7 @@ Domain-specific extensions that augment workflow skills. Only in technical domai
 |---------|------------|---------|
 | `implementation` | execute (impl tasks) | Production code patterns |
 | `testing` | execute (test tasks) | Test code patterns |
-| `quality` | finalize | Verification, documentation standards |
+| `quality` | verify | Verification, documentation standards |
 
 ### core
 
@@ -110,13 +110,13 @@ Foundation skills always included when the domain is selected.
 
 ## System Domain
 
-Applied to all agents and skills. Contains workflow skills for the 5-phase model.
+Applied to all agents and skills. Contains workflow skills for the 7-phase model.
 
 | Field | Content |
 |-------|---------|
 | defaults | `plan-marshall:ref-development-standards` |
 | optionals | `plan-marshall:ref-development-standards` |
-| workflow_skills | 6 phases: init, outline, plan, execute, finalize |
+| workflow_skills | 7 phases: init, refine, outline, plan, execute, verify, finalize |
 
 ## Technical Domains
 
@@ -267,7 +267,7 @@ optionals:
 
 ### get-workflow-skills Command
 
-Returns all workflow skills from the system domain (5-phase model).
+Returns all workflow skills from the system domain (7-phase model).
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \

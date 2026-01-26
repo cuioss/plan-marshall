@@ -771,7 +771,7 @@ def cmd_configure_task_executors(args) -> int:
     # Build task_executors mapping using convention: profile X → pm-workflow:task-X
     task_executors = {}
     for profile in sorted(discovered_profiles):
-        # Skip quality profile - it's handled by finalize phase, not task execution
+        # Skip quality profile - it's handled by verify phase, not task execution
         if profile == 'quality':
             continue
         task_executors[profile] = f'pm-workflow:task-{profile}'

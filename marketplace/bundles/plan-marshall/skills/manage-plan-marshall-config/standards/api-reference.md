@@ -84,7 +84,7 @@ plan-marshall-config skill-domains set \
   --optionals "pm-dev-java:java-lombok,pm-dev-java:javadoc"
 ```
 
-**Profile-based update (6-phase model):**
+**Profile-based update (7-phase model):**
 ```bash
 plan-marshall-config skill-domains set \
   --domain java \
@@ -310,7 +310,7 @@ optionals[2]:
 
 ### get-workflow-skills
 
-Get all workflow skills from the system domain (6-phase model).
+Get all workflow skills from the system domain (7-phase model).
 
 ```bash
 plan-marshall-config get-workflow-skills

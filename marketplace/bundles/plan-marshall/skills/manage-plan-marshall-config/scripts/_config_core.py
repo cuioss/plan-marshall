@@ -151,7 +151,7 @@ def is_nested_domain(domain_config: dict) -> bool:
 
     Nested domains have one of:
     - 'bundle' key (technical domains with profiles in extension.py)
-    - 'workflow_skills' key (system domain with 5-phase workflow)
+    - 'workflow_skills' key (system domain with 7-phase workflow)
     - 'workflow_skill_extensions' key (domain extensions for outline/triage)
     """
     return (

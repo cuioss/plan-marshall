@@ -389,6 +389,6 @@ On PR issues (CI failures, review comments, Sonar findings):
 | `pm-workflow:workflow-integration-ci` | CI monitoring, review handling |
 | `pm-workflow:workflow-integration-sonar` | Sonar quality gate |
 | `pm-workflow:phase-6-verify` | Loop-back target for fix verification |
-| `pm-workflow:manage-lifecycle` | Phase transitions |
+| `pm-workflow:plan-manage` | Phase transitions (manage-lifecycle script) |
 | `plan-marshall:manage-memories` | Knowledge capture |
 | `plan-marshall:manage-lessons` | Lessons capture |

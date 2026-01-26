@@ -195,7 +195,7 @@ Standard profiles: `implementation`, `testing`, `quality`.
 
 | Parameters | Purpose |
 |------------|---------|
-| `--phase` | Resolve system workflow skill for phase (init, outline, plan, execute, finalize) |
+| `--phase` | Resolve system workflow skill for phase (init, refine, outline, plan, execute, verify, finalize) |
 
 Always returns from the `system` domain's `workflow_skills`.
 
@@ -211,7 +211,7 @@ Returns null (not error) if extension doesn't exist for the domain.
 
 | Parameters | Purpose |
 |------------|---------|
-| (none) | Get all workflow skills from system domain (6-phase model: init, outline, plan, execute, finalize) |
+| (none) | Get all workflow skills from system domain (7-phase model) |
 
 ### Noun: system
 
@@ -325,15 +325,15 @@ The defaults template contains only `system` domain. Technical domains (java, ja
 
 ### System Domain
 
-The `system` domain contains workflow skills (6-phase model) and base skills applied to all tasks.
+The `system` domain contains workflow skills (7-phase model) and base skills applied to all tasks.
 
 | Field | Purpose |
 |-------|---------|
 | `defaults` | Base skills loaded for all tasks (`plan-marshall:ref-development-standards`) |
 | `optionals` | Optional base skills available for selection |
-| `workflow_skills` | Maps 5 phases to workflow skill references |
+| `workflow_skills` | Maps 7 phases to workflow skill references |
 
-**Workflow Phases**: `init`, `outline`, `plan`, `execute`, `finalize`
+**Workflow Phases**: `init`, `refine`, `outline`, `plan`, `execute`, `verify`, `finalize`
 
 ### Technical Domains (Profile Structure)
 
@@ -344,7 +344,7 @@ Technical domains use nested structure with `workflow_skill_extensions` and prof
 | `core` | all | Skills loaded for all profiles |
 | `implementation` | execute | Production code tasks |
 | `testing` | execute | Test code tasks |
-| `quality` | finalize | Documentation, verification |
+| `quality` | verify | Documentation, verification |
 
 **Available Domains**:
 

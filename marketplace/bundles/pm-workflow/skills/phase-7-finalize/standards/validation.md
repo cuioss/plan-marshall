@@ -3,15 +3,8 @@
 ## Configuration
 
 - [ ] Accept `plan_id` parameter (never paths)
-- [ ] Read domain and finalize config from config.toon
-- [ ] Finalize config fields: `create_pr`, `verification_required`, `verification_command`, `branch_strategy`
-- [ ] Handle all domains: java, javascript, plan-marshall-plugin-dev, generic
-
-## Verification (if verification_required)
-
-- [ ] Run verification command (from config.toon)
-- [ ] Handle verification failures with retry option
-- [ ] Record lessons-learned on persistent verification failures
+- [ ] Read finalize config from config.toon: `create_pr`, `branch_strategy`
+- [ ] Read context from references.toon: `branch`, `base_branch`, `issue_url`, `build_system`
 
 ## Commit Workflow (ALWAYS)
 
@@ -30,16 +23,20 @@
 - [ ] Link PR to issue if present (Closes #N format)
 - [ ] Set appropriate labels/reviewers if configured
 
-## PR Workflow (if pr_workflow expected)
+## Automated Review (if PR created)
 
-- [ ] Execute /pm-workflow:pr-doctor command
-- [ ] Monitor CI status
-- [ ] Address review comments (iterative - may require user intervention)
-- [ ] Handle Sonar quality gate
+- [ ] Monitor CI status via workflow-integration-ci
+- [ ] Address review comments (iterative - may require looping back to execute)
+- [ ] Handle Sonar quality gate via workflow-integration-sonar
+- [ ] Create fix tasks and loop back to 5-execute if issues found (max 3 iterations)
+
+## Knowledge and Lessons (Advisory)
+
+- [ ] Capture significant patterns via manage-memories (advisory, non-blocking)
+- [ ] Capture lessons learned via manage-lessons (advisory, non-blocking)
 
 ## Completion
 
-- [ ] Verify all tasks marked complete
 - [ ] Mark plan complete via manage-lifecycle transition
 - [ ] Write final work-log entry
 - [ ] Return completion status with commit hash, PR URL (if created)
@@ -49,17 +46,18 @@
 - [ ] Handle git conflicts with user guidance
 - [ ] Handle network failures with retry
 - [ ] Handle PR creation failures (duplicate, permissions)
-- [ ] Record lessons-learned on failures
+- [ ] Handle max iteration limit (3 cycles)
 - [ ] Support resume after error resolution
 
 ## Resumability
 
 The skill checks current state before each step:
 
-- [ ] Has verification passed? Skip if already verified
 - [ ] Are there uncommitted changes? Skip commit if clean
 - [ ] Is branch pushed? Skip push if remote is current
 - [ ] Does PR exist? Skip creation if PR exists
+- [ ] Is automated review complete? Skip if already processed
+- [ ] Is Sonar roundtrip complete? Skip if already processed
 - [ ] Is plan already complete? Skip if finalize done
 
 ## Output Format
@@ -71,13 +69,26 @@ status: success
 plan_id: {plan_id}
 
 actions:
-  verification: {passed|skipped}
   commit: {commit_hash}
   push: success
   pr: {created #{number}|skipped}
-  pr_workflow: {completed|skipped}
+  automated_review: {completed|skipped|loop_back}
+  sonar: {passed|skipped|loop_back}
+  knowledge_capture: done
+  lessons_capture: done
 
 next_state: complete
+```
+
+### Loop Back
+
+```toon
+status: loop_back
+plan_id: {plan_id}
+iteration: {current_iteration}
+reason: {ci_failure|review_comments|sonar_issues}
+next_phase: 5-execute
+fix_tasks_created: {count}
 ```
 
 ### Error
@@ -85,7 +96,7 @@ next_state: complete
 ```toon
 status: error
 plan_id: {plan_id}
-step: {verification|commit|push|pr}
+step: {commit|push|pr|automated_review|sonar|iteration_limit}
 message: {error_description}
 recovery: {recovery_suggestion}
 ```
