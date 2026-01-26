@@ -30,7 +30,7 @@ Review the plan's work-log for lesson candidates:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  read work {plan_id}
+  read --plan-id {plan_id} --type work
 ```
 
 **Look for**:

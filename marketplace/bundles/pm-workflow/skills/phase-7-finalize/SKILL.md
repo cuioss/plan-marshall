@@ -24,9 +24,9 @@ Activate when:
 
 ```
 1-init → 2-refine → 3-outline → 4-plan → 5-execute → 6-verify → 7-finalize
-                                                         ↑           │
-                                                         └───────────┘
-                                                         (loop on PR issues)
+                                              ↑                       │
+                                              └───────────────────────┘
+                                              (loop on PR issues)
 ```
 
 **Iteration limit**: 3 cycles max for PR issue resolution.
@@ -49,6 +49,25 @@ python3 .plan/execute-script.py pm-workflow:manage-config:manage-config get-mult
 |-------|--------|-------------|
 | `create_pr` | true/false | Whether to create a pull request |
 | `branch_strategy` | feature/direct | Branch strategy |
+
+---
+
+## Pipeline Configuration
+
+Read step pipeline from marshal.json (if configured):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-json-ops:manage-json-file \
+  read-field .plan/marshal.json --field finalize
+```
+
+For step definitions and types:
+
+```
+Read: plan-marshall:manage-plan-marshall-config/standards/data-model.md → Section: finalize
+```
+
+When marshal.json has no `finalize` section, use the default pipeline documented below.
 
 ---
 
@@ -124,7 +143,7 @@ This monitors CI status and handles review comments.
 
 **On findings** (CI failures, review comments):
 1. Create fix tasks via manage-tasks
-2. Loop back to phase-6-verify (iteration + 1)
+2. Loop back to phase-5-execute (iteration + 1)
 3. Continue until clean or max iterations (3)
 
 ```bash
@@ -132,9 +151,9 @@ This monitors CI status and handles review comments.
 python3 .plan/execute-script.py pm-workflow:manage-config:manage-config get \
   --plan-id {plan_id} --field finalize_iteration
 
-# If issues and iteration < 3, loop back to verify
+# If issues and iteration < 3, loop back to execute
 python3 .plan/execute-script.py pm-workflow:plan-manage:manage-lifecycle set-phase \
-  --plan-id {plan_id} --phase 6-verify
+  --plan-id {plan_id} --phase 5-execute
 ```
 
 ### Step 5: Sonar Roundtrip (if configured)
@@ -209,7 +228,7 @@ status: loop_back
 plan_id: {plan_id}
 iteration: {current_iteration}
 reason: {ci_failure|review_comments|sonar_issues}
-next_phase: 6-verify
+next_phase: 5-execute
 fix_tasks_created: {count}
 ```
 
@@ -307,7 +326,7 @@ The skill checks current state before each step:
 │          │                     │                        │
 │          ↓                     ↓                        │
 │   create fix tasks       COMPLETE                       │
-│   loop → 6-verify                                       │
+│   loop → 5-execute                                       │
 │   (max 3 iterations)                                    │
 └─────────────────────────────────────────────────────────┘
 ```
@@ -348,13 +367,13 @@ This skill is invoked when plan is in `7-finalize` phase:
 pm-workflow:plan-manage:manage-lifecycle route --phase 7-finalize → pm-workflow:phase-7-finalize
 ```
 
-### Loop-Back to Verify
+### Loop-Back to Execute
 
 On PR issues (CI failures, review comments, Sonar findings):
 1. Create fix tasks via `pm-workflow:manage-tasks`
 2. Increment `finalize_iteration` counter
-3. Transition to `6-verify` phase
-4. After verify passes, returns to `7-finalize`
+3. Transition to `5-execute` phase
+4. Fix tasks run, then re-verify (6-verify), then return to `7-finalize`
 5. Repeat until clean or max iterations (3)
 
 ### Command Integration

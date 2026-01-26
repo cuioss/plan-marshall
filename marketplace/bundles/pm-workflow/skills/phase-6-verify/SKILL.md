@@ -49,6 +49,25 @@ python3 .plan/execute-script.py pm-workflow:manage-config:manage-config get-mult
 
 ---
 
+## Pipeline Configuration
+
+Read step pipeline from marshal.json (if configured):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-json-ops:manage-json-file \
+  read-field .plan/marshal.json --field verification
+```
+
+For step definitions, types, and `${domain}` placeholder resolution:
+
+```
+Read: plan-marshall:manage-plan-marshall-config/standards/data-model.md → Section: verification
+```
+
+When marshal.json has no `verification` section, use the default pipeline documented below.
+
+---
+
 ## Operation: verify
 
 **Input**: `plan_id`

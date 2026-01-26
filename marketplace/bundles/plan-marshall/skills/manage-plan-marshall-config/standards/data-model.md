@@ -145,7 +145,7 @@ Profiles determine which skills to load based on task context:
 |---------|-------|-------------|
 | `implementation` | execute | Production code development |
 | `testing` | execute | Test code development |
-| `quality` | finalize | Documentation and verification |
+| `quality` | verify | Documentation and verification |
 
 ### Extension Types
 
@@ -296,6 +296,8 @@ Tool availability (`authenticated_tools`) is stored in `run-configuration.json` 
 
 ## Section: verification
 
+**Optional**: These sections override the hardcoded defaults in the phase skills. When absent, phase-6-verify and phase-7-finalize use their built-in pipeline.
+
 Step pipeline configuration for the 6-verify phase.
 
 ### Structure
@@ -340,6 +342,8 @@ The `${domain}` placeholder is resolved at runtime using capabilities from `skil
 
 ## Section: finalize
 
+**Optional**: These sections override the hardcoded defaults in the phase skills. When absent, phase-7-finalize uses its built-in pipeline.
+
 Step pipeline configuration for the 7-finalize phase.
 
 ### Structure
@@ -380,7 +384,7 @@ Step pipeline configuration for the 7-finalize phase.
 Default values are defined in:
 
 ```
-plan-marshall/skills/manage-plan-marshall-config/scripts/config_defaults.py
+plan-marshall/skills/manage-plan-marshall-config/scripts/_config_defaults.py
 ```
 
 The `get_default_config()` function returns the complete default configuration used during `init`.
