@@ -92,7 +92,7 @@ python3 .plan/execute-script.py pm-workflow:manage-config:manage-config get-mult
 Read current verify iteration:
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:plan-manage:manage-lifecycle read \
+python3 .plan/execute-script.py pm-workflow:plan-marshall:manage-lifecycle read \
   --plan-id {plan_id}
 ```
 
@@ -253,7 +253,7 @@ If fix tasks were created:
 
 ```bash
 # Increment verify iteration and transition back to execute
-python3 .plan/execute-script.py pm-workflow:plan-manage:manage-lifecycle set-phase \
+python3 .plan/execute-script.py pm-workflow:plan-marshall:manage-lifecycle set-phase \
   --plan-id {plan_id} --phase 5-execute
 ```
 
@@ -263,7 +263,7 @@ If no fix tasks (all passed or suppressed):
 
 ```bash
 # Transition to finalize phase
-python3 .plan/execute-script.py pm-workflow:plan-manage:manage-lifecycle transition \
+python3 .plan/execute-script.py pm-workflow:plan-marshall:manage-lifecycle transition \
   --plan-id {plan_id} --completed 6-verify
 ```
 
@@ -376,7 +376,7 @@ Contains: How to load domain-specific triage extensions, findings routing, decis
 This skill is invoked when plan is in `6-verify` phase:
 
 ```
-pm-workflow:plan-manage:manage-lifecycle route --phase 6-verify → pm-workflow:phase-6-verify
+pm-workflow:plan-marshall:manage-lifecycle route --phase 6-verify → pm-workflow:phase-6-verify
 ```
 
 ### Command Integration

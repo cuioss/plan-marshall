@@ -42,7 +42,7 @@ If test definition includes setup_commands:
 
 ### Step 3: Execute Trigger
 
-Execute the trigger command from test definition (e.g., `/plan-manage create a new plan: ...`).
+Execute the trigger command from test definition (e.g., `/plan-marshall create a new plan: ...`).
 
 **IMPORTANT**: Capture the resulting plan_id from its output.
 
@@ -72,7 +72,7 @@ If no match found, report error and exit.
 ### Step 2: Validate Plan Exists
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-lifecycle:manage-lifecycle \
+python3 .plan/execute-script.py pm-workflow:plan-marshall:manage-lifecycle \
   read --plan-id {plan_id}
 ```
 

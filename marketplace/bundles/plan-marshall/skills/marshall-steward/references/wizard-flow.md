@@ -234,6 +234,64 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-m
 
 ---
 
+## Step 5b: Plan Defaults
+
+Configure plan defaults for PR creation and branching strategy.
+
+```
+AskUserQuestion:
+  question: "Configure plan defaults for this project?"
+  header: "Plan Config"
+  options:
+    - label: "Use defaults (Recommended)"
+      description: "create_pr=false, branch=direct, verify=true"
+    - label: "Configure"
+      description: "Set PR creation and branching strategy"
+  multiSelect: false
+```
+
+If user selects "Use defaults" → Skip to Step 6.
+
+If user selects "Configure":
+
+```
+AskUserQuestion:
+  question: "Create PR automatically after plan finalization?"
+  header: "PR Creation"
+  options:
+    - label: "No (Recommended)"
+      description: "Commit only, create PR manually when ready"
+    - label: "Yes"
+      description: "Automatically create PR during finalize"
+  multiSelect: false
+```
+
+Apply selection:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+  plan defaults set --field create_pr --value {true|false}
+```
+
+```
+AskUserQuestion:
+  question: "Branch strategy for plan execution?"
+  header: "Branching"
+  options:
+    - label: "Direct (Recommended)"
+      description: "Work on current branch"
+    - label: "Feature branch"
+      description: "Create feature branch per plan"
+  multiSelect: false
+```
+
+Apply selection:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+  plan defaults set --field branch_strategy --value {direct|feature}
+```
+
+---
+
 ## Step 6: Skill Domain Configuration
 
 Skill domains are determined from the architecture analysis results. The `extensions_used` field in `derived-data.json` (populated during Step 4) contains the bundles whose extensions detected applicable modules in this project.

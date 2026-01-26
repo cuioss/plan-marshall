@@ -159,6 +159,32 @@ def provides_outline(self) -> str | None:
     """
 ```
 
+#### provides_capabilities
+
+```python
+def provides_capabilities(self) -> dict[str, str]:
+    """Return capability map for ${domain} placeholder resolution.
+
+    Keys are capability names used in verification/finalize pipeline steps.
+    Values are fully-qualified skill/agent references (bundle:skill).
+
+    Standard capability keys:
+        - quality-gate: Static analysis and quality checks
+        - build-verify: Build verification
+        - impl-verify: Implementation standards verification
+        - test-verify: Test coverage verification
+        - triage: Finding categorization during verify phase
+
+    Returns:
+        Dict mapping capability names to skill references.
+        Only include capabilities this domain actually provides.
+
+    Default: Derives triage from provides_triage().
+    """
+```
+
+Capabilities are persisted to `marshal.json` under `skill_domains.{domain}.capabilities` during domain configuration. They enable `${domain}` placeholder resolution in verification and finalize pipeline steps.
+
 ---
 
 ## Canonical Constants
@@ -281,14 +307,14 @@ Some domain bundles are **additive** - they extend a base domain bundle rather t
 
 ## Existing Extensions
 
-| Bundle | Domain Key | Triage | Outline | Notes |
-|--------|------------|--------|---------|-------|
-| pm-dev-java | java | java-triage | - | Base Java bundle |
-| pm-dev-java-cui | java-cui | - | - | Additive to pm-dev-java |
-| pm-dev-frontend | javascript | javascript-triage | - | |
-| pm-documents | documentation | documentation-triage | - | |
-| pm-requirements | requirements | requirements-triage | - | |
-| pm-plugin-development | plan-marshall-plugin-dev | plugin-triage | plugin-solution-outline | |
+| Bundle | Domain Key | Triage | Outline | Capabilities | Notes |
+|--------|------------|--------|---------|-------------|-------|
+| pm-dev-java | java | ext-triage-java | - | quality-gate, build-verify, impl-verify, test-verify, triage | Base Java bundle |
+| pm-dev-java-cui | java-cui | - | - | (none) | Additive to pm-dev-java |
+| pm-dev-frontend | javascript | ext-triage-js | - | triage (default) | |
+| pm-documents | documentation | ext-triage-docs | ext-outline-docs | triage (default) | |
+| pm-requirements | requirements | ext-triage-reqs | - | triage (default) | |
+| pm-plugin-development | plan-marshall-plugin-dev | ext-triage-plugin | ext-outline-plugin | triage (default) | |
 
 ---
 

@@ -151,7 +151,7 @@ The pm-workflow bundle uses manage-* skills as the data access layer for all pla
 │  │                                                                      │  │
 │  │  # Transition phase                                                  │  │
 │  │  python3 .plan/execute-script.py \                                   │  │
-│  │    pm-workflow:plan-manage:manage-lifecycle \                   │  │
+│  │    pm-workflow:plan-marshall:manage-lifecycle \                   │  │
 │  │    transition --plan-id my-feature --completed 1-init                │  │
 │  │                                                                      │  │
 │  └──────────────────────────────────────────────────────────────────────┘  │
@@ -207,7 +207,7 @@ The pm-workflow bundle uses manage-* skills as the data access layer for all pla
 │                                                                             │
 │                     MANAGE-LIFECYCLE COMMANDS                               │
 │                                                                             │
-│  Script: pm-workflow:plan-manage:manage-lifecycle                      │
+│  Script: pm-workflow:plan-marshall:manage-lifecycle                      │
 │                                                                             │
 │  ┌────────────────────┬─────────────────────────┬────────────────────────┐ │
 │  │ COMMAND            │ PARAMETERS              │ PURPOSE                │ │
@@ -399,6 +399,6 @@ The pm-workflow bundle uses manage-* skills as the data access layer for all pla
 | [artifacts.md](artifacts.md) | Plan file formats in detail |
 | [phases.md](phases.md) | Which phase uses which files |
 | `pm-workflow:manage-config/SKILL.md` | Full config commands |
-| `pm-workflow:plan-manage/SKILL.md` | Full lifecycle commands |
+| `pm-workflow:plan-marshall/SKILL.md` | Full lifecycle commands |
 | `pm-workflow:manage-tasks/SKILL.md` | Full task commands |
 | `plan-marshall:manage-logging/SKILL.md` | Work log and script execution logging |

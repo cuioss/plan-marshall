@@ -13,6 +13,9 @@ AskUserQuestion:
     - label: "Skill Domains"
       description: "Configure implementation skills per domain"
       value: "skill-domains"
+    - label: "Plan Defaults"
+      description: "PR creation, branching, verification"
+      value: "plan-defaults"
     - label: "Project Structure"
       description: "View, regenerate, and enrich architecture data"
       value: "structure"
@@ -26,8 +29,102 @@ AskUserQuestion:
 | Selection | Action |
 |-----------|--------|
 | skill-domains | Execute "Configuration: Skill Domains" below |
+| plan-defaults | Execute "Configuration: Plan Defaults" below |
 | structure | Execute "Configuration: Project Structure" below |
 | wizard | Load and execute: `Read references/wizard-flow.md` |
+
+---
+
+## Configuration: Plan Defaults
+
+Manage default values applied to new plans.
+
+### Step 1: Show Current Defaults
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+  plan defaults list
+```
+
+### Step 2: Select Field to Edit
+
+```
+AskUserQuestion:
+  question: "Which plan default to change?"
+  header: "Plan Default"
+  options:
+    - label: "create_pr"
+      description: "Auto-create PR during finalize (true/false)"
+    - label: "branch_strategy"
+      description: "Branch strategy (direct/feature)"
+    - label: "verification_required"
+      description: "Require verification phase (true/false)"
+    - label: "commit_strategy"
+      description: "Commit strategy (phase-specific/single)"
+  multiSelect: false
+```
+
+### Step 3: Set Value
+
+Based on user selection:
+
+**create_pr**:
+```
+AskUserQuestion:
+  question: "Create PR automatically after plan finalization?"
+  header: "PR Creation"
+  options:
+    - label: "No"
+      description: "Commit only, create PR manually"
+    - label: "Yes"
+      description: "Auto-create PR during finalize"
+  multiSelect: false
+```
+
+**branch_strategy**:
+```
+AskUserQuestion:
+  question: "Branch strategy for plan execution?"
+  header: "Branching"
+  options:
+    - label: "Direct"
+      description: "Work on current branch"
+    - label: "Feature branch"
+      description: "Create feature branch per plan"
+  multiSelect: false
+```
+
+**verification_required**:
+```
+AskUserQuestion:
+  question: "Require verification phase (phase 6)?"
+  header: "Verification"
+  options:
+    - label: "Yes"
+      description: "Run quality checks before finalize"
+    - label: "No"
+      description: "Skip verification phase"
+  multiSelect: false
+```
+
+**commit_strategy**:
+```
+AskUserQuestion:
+  question: "Commit strategy during execution?"
+  header: "Commits"
+  options:
+    - label: "Phase-specific"
+      description: "Commit at phase boundaries"
+    - label: "Single"
+      description: "Single commit at finalize"
+  multiSelect: false
+```
+
+Apply:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+  plan defaults set --field {field} --value {value}
+```
 
 ---
 

@@ -9,7 +9,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from conftest import PlanContext, get_script_path, run_script  # noqa: E402
 
 # Get script path
-SCRIPT_PATH = get_script_path('pm-workflow', 'plan-manage', 'manage-lifecycle.py')
+SCRIPT_PATH = get_script_path('pm-workflow', 'plan-marshall', 'manage-lifecycle.py')
 
 # Import toon_parser - conftest sets up PYTHONPATH
 from toon_parser import parse_toon  # type: ignore[import-not-found]  # noqa: E402

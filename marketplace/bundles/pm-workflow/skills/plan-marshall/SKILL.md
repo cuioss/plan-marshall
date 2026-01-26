@@ -7,7 +7,7 @@ allowed-tools: Read, Skill, Bash, AskUserQuestion, Task
 
 # Plan Marshall Skill
 
-Unified entry point for plan lifecycle management. Routes to the appropriate internal skill based on action and plan phase.
+Unified entry point for plan lifecycle management covering all 7 phases.
 
 **CRITICAL: DO NOT USE CLAUDE CODE'S BUILT-IN PLAN MODE**
 
@@ -40,53 +40,45 @@ This skill implements its **OWN** plan system. You must:
 
 ### Action Routing
 
-Route based on action parameter:
+Route based on action parameter. Load the appropriate workflow document and follow its instructions:
 
-| Action | Routes To | Description |
-|--------|-----------|-------------|
-| `list` (default) | `pm-workflow:plan-manage` | List all plans |
-| `init` | `pm-workflow:plan-manage` | Create new plan, auto-continue to refine |
-| `outline` | `pm-workflow:plan-manage` | Run outline and plan phases |
-| `execute` | `pm-workflow:plan-execute` | Execute implementation tasks |
-| `verify` | `pm-workflow:plan-execute` | Run quality verification |
-| `finalize` | `pm-workflow:plan-execute` | Commit, push, PR |
-| `cleanup` | `pm-workflow:plan-manage` | Remove completed plans |
-| `lessons` | `pm-workflow:plan-manage` | List and convert lessons |
+| Action | Workflow Document | Description |
+|--------|-------------------|-------------|
+| `list` (default) | `Read workflows/planning.md` | List all plans |
+| `init` | `Read workflows/planning.md` | Create new plan, auto-continue to refine |
+| `outline` | `Read workflows/planning.md` | Run outline and plan phases |
+| `cleanup` | `Read workflows/planning.md` | Remove completed plans |
+| `lessons` | `Read workflows/planning.md` | List and convert lessons |
+| `execute` | `Read workflows/execution.md` | Execute implementation tasks |
+| `verify` | `Read workflows/execution.md` | Run quality verification |
+| `finalize` | `Read workflows/execution.md` | Commit, push, PR |
 
 ### Auto-Detection (plan parameter without action)
 
 When `plan` is specified but no `action`, auto-detect from plan phase:
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:plan-manage:manage-lifecycle get-routing-context \
+python3 .plan/execute-script.py pm-workflow:plan-marshall:manage-lifecycle get-routing-context \
   --plan-id {plan_id}
 ```
 
-| Current Phase | Routes To | Action |
-|---------------|-----------|--------|
-| 1-init | `pm-workflow:plan-manage` | `init` |
-| 2-refine | `pm-workflow:plan-manage` | `init` (continues refine) |
-| 3-outline | `pm-workflow:plan-manage` | `outline` |
-| 4-plan | `pm-workflow:plan-manage` | `outline` (continues plan) |
-| 5-execute | `pm-workflow:plan-execute` | `execute` |
-| 6-verify | `pm-workflow:plan-execute` | `verify` |
-| 7-finalize | `pm-workflow:plan-execute` | `finalize` |
+| Current Phase | Workflow Document | Action |
+|---------------|-------------------|--------|
+| 1-init | `Read workflows/planning.md` | `init` |
+| 2-refine | `Read workflows/planning.md` | `init` (continues refine) |
+| 3-outline | `Read workflows/planning.md` | `outline` |
+| 4-plan | `Read workflows/planning.md` | `outline` (continues plan) |
+| 5-execute | `Read workflows/execution.md` | `execute` |
+| 6-verify | `Read workflows/execution.md` | `verify` |
+| 7-finalize | `Read workflows/execution.md` | `finalize` |
 
 ### Execution
 
-After routing, activate the target skill with the resolved action and all parameters:
+After determining the action and workflow document:
 
-**For phases 1-4**:
-```
-Skill: pm-workflow:plan-manage
-```
-Pass: action, task, issue, lesson, plan, stop-after-init as applicable.
-
-**For phases 5-7**:
-```
-Skill: pm-workflow:plan-execute
-```
-Pass: action, plan as applicable.
+1. **Read** the workflow document (`workflows/planning.md` or `workflows/execution.md`)
+2. **Navigate** to the section for the resolved action
+3. **Follow** the workflow instructions in that section
 
 ## Usage Examples
 
@@ -136,6 +128,15 @@ If you discover issues or improvements during execution, record them:
 
 | Skill | Purpose |
 |-------|---------|
-| `pm-workflow:plan-manage` | Internal: phases 1-4 (init, refine, outline, plan, list, cleanup, lessons) |
-| `pm-workflow:plan-execute` | Internal: phases 5-7 (execute, verify, finalize) |
+| `pm-workflow:phase-1-init` | Init phase implementation |
+| `pm-workflow:phase-3-outline` | Outline phase implementation |
+| `pm-workflow:phase-6-verify` | Verify phase implementation |
+| `pm-workflow:phase-7-finalize` | Finalize phase implementation |
 | `pm-workflow:workflow-extension-api` | Extension points for domain customization |
+
+| Agent | Purpose |
+|-------|---------|
+| `pm-workflow:phase-init-agent` | Init phase: creates plan, detects domains |
+| `pm-workflow:task-plan-agent` | Plan phase: creates tasks from deliverables |
+| `pm-dev-java:java-implement-agent` | Java task implementation |
+| `pm-dev-frontend:js-implement-agent` | JavaScript task implementation |

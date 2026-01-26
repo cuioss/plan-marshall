@@ -112,7 +112,7 @@ python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks get --plan
 Verify plan status reflects the transition:
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:plan-manage:manage-lifecycle read \
+python3 .plan/execute-script.py pm-workflow:plan-marshall:manage-lifecycle read \
   --plan-id {plan_id}
 ```
 
@@ -203,7 +203,7 @@ Examples:
 
 | Tool | Prohibited Pattern | Correct Alternative |
 |------|-------------------|---------------------|
-| Read | `.plan/plans/{id}/status.toon` | `python3 .plan/execute-script.py pm-workflow:plan-manage:manage-lifecycle read --plan-id {id}` |
+| Read | `.plan/plans/{id}/status.toon` | `python3 .plan/execute-script.py pm-workflow:plan-marshall:manage-lifecycle read --plan-id {id}` |
 | Read | `.plan/plans/{id}/config.toon` | `python3 .plan/execute-script.py pm-workflow:manage-config:manage-config read --plan-id {id}` |
 | Read | `.plan/plans/{id}/work.log` | `python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log read --plan-id {id} --type work` |
 | Read | `.plan/plans/{id}/solution_outline.md` | `python3 .plan/execute-script.py pm-workflow:manage-solution-outline:manage-solution-outline read --plan-id {id}` |
@@ -239,7 +239,7 @@ Direct .plan file access bypassing manage-* API
 ### Context
 - **Operation**: [Read/Write/Edit/Glob]
 - **Target**: [.plan/plans/{id}/status.toon]
-- **Expected**: Use `python3 .plan/execute-script.py pm-workflow:plan-manage:manage-lifecycle read`
+- **Expected**: Use `python3 .plan/execute-script.py pm-workflow:plan-marshall:manage-lifecycle read`
 - **Actual**: Direct file read attempted
 
 ### Root Cause Analysis
@@ -341,7 +341,7 @@ python3 .plan/execute-script.py {notation} {subcommand} {args...}
 | `manage-plan-documents` | `manage-plan-document` | `pm-workflow:manage-plan-documents:manage-plan-documents` |
 | `manage-tasks` | `manage-task` | `pm-workflow:manage-tasks:manage-tasks` |
 | `manage-lessons` | `manage-lesson` | `plan-marshall:manage-lessons:manage-lesson` |
-| `manage-lifecycle` | `manage-lifecycle` | `pm-workflow:plan-manage:manage-lifecycle` |
+| `manage-lifecycle` | `manage-lifecycle` | `pm-workflow:plan-marshall:manage-lifecycle` |
 | `manage-config` | `manage-config` | `pm-workflow:manage-config:manage-config` |
 | `manage-files` | `manage-files` | `pm-workflow:manage-files:manage-files` |
 | `logging` | `manage-log` | `plan-marshall:manage-logging:manage-log` |
@@ -556,7 +556,7 @@ Actively scan execution logs to detect script issues:
 
 1. After phase-affecting operation, query status:
    ```bash
-   python3 .plan/execute-script.py pm-workflow:plan-manage:manage-lifecycle read --plan-id {plan_id}
+   python3 .plan/execute-script.py pm-workflow:plan-marshall:manage-lifecycle read --plan-id {plan_id}
    ```
 
 2. Verify status consistency:
@@ -576,7 +576,7 @@ Actively scan execution logs to detect script issues:
 
 ### Actual State
 ```toon
-[Output from pm-workflow:plan-manage:manage-lifecycle read]
+[Output from pm-workflow:plan-marshall:manage-lifecycle read]
 ```
 
 ### Consistency Check
@@ -771,10 +771,10 @@ When `/plan-marshall` executes execute/verify/finalize actions, verify after eac
 
 ```
 Claude uses: Read .plan/plans/my-plan/status.toon
-Should use: python3 .plan/execute-script.py pm-workflow:plan-manage:manage-lifecycle read --plan-id my-plan
+Should use: python3 .plan/execute-script.py pm-workflow:plan-marshall:manage-lifecycle read --plan-id my-plan
 ```
 
-**Note**: Script notation is `pm-workflow:plan-manage:manage-lifecycle` (skill name matches script name).
+**Note**: Script notation is `pm-workflow:plan-marshall:manage-lifecycle` (skill name matches script name).
 
 **Why It Matters**: Direct reads bypass the managed parser, may read stale data during atomic writes, and don't leverage script validation.
 
@@ -855,7 +855,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log read \
   --plan-id {plan_id} --type work --limit 20
 
 # Verify status is consistent
-python3 .plan/execute-script.py pm-workflow:plan-manage:manage-lifecycle read \
+python3 .plan/execute-script.py pm-workflow:plan-marshall:manage-lifecycle read \
   --plan-id {plan_id}
 
 # Verify no orphaned files (optional)

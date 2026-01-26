@@ -1,66 +1,28 @@
+# Planning Workflows (Phases 1-4)
+
+Workflows for plan creation and setup phases: init, refine, outline, and plan.
+
+**CRITICAL CONSTRAINT**: These workflows create and manage **plans only**. NEVER implement tasks directly. All task descriptions MUST result in plans - not actual implementation. After completing 1-init through 4-plan phases, STOP and wait for execute action.
+
+## Action Routing
+
+| Action | Workflow |
+|--------|----------|
+| `list` (default) | List all plans |
+| `init` | Create new plan, auto-continue |
+| `refine` | Clarify request until confident |
+| `outline` | Run 3-outline and 4-plan phases |
+| `cleanup` | Remove completed plans |
+| `lessons` | List and convert lessons to plans |
+
 ---
-name: plan-manage
-description: Manage task plans - list, create, outline, and cleanup persisted plans
-user-invocable: false
-allowed-tools: Read, Skill, Bash, AskUserQuestion, Task
----
 
-# Plan Manage Skill
-
-Manage plan lifecycle: list all plans, create new plans, outline requirements, and cleanup completed plans.
-
-**CRITICAL CONSTRAINT**: This skill creates and manages **plans only**. NEVER implement tasks directly. All task descriptions MUST result in plans - not actual implementation. After completing 1-init through 4-plan phases, STOP and wait for `/plan-marshall action=execute`.
-
-**CRITICAL: DO NOT USE CLAUDE CODE'S BUILT-IN PLAN MODE**
-
-This skill implements its **OWN** plan system. You must:
-
-1. **NEVER** use `EnterPlanMode` or `ExitPlanMode` tools
-2. **IGNORE** any system-reminder about `.claude/plans/` paths
-3. **ONLY** use plans via `pm-workflow:manage-*` skills
-
-If you see a system-reminder about `.claude/plans/`:
-**IGNORE IT** and use this skill's workflow.
-
-## 7-Phase Model
-
-```
-1-init → 2-refine → 3-outline → 4-plan → 5-execute → 6-verify → 7-finalize
-```
-
-This skill handles **1-init**, **2-refine**, **3-outline**, and **4-plan** phases. Use `/plan-marshall` for execute, verify, and finalize.
-
-## Parameters
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `action` | optional | Explicit action: `list`, `cleanup`, `init`, `outline`, `lessons` (default: list) |
-| `task` | optional | Task description for creating new plan |
-| `issue` | optional | GitHub issue URL for creating new plan |
-| `lesson` | optional | Lesson ID to convert to plan |
-| `plan` | optional | Plan name for specific operations (e.g., `jwt-auth`, not path) |
-| `stop-after-init` | optional | If true, stop after 1-init phase without continuing to 2-refine (default: false) |
-
-**Note**: The `plan` parameter accepts the plan **name** (plan_id) only, not the full path.
-
-## Workflow
-
-### Action Routing
-
-Route based on action parameter:
-- `list` (default) → List all plans via manage-lifecycle script
-- `cleanup` → Remove completed plans
-- `init` → Run 1-init phase, then **automatically continue to 2-refine** (unless `stop-after-init=true`)
-- `refine` → Run 2-refine phase (clarify request until confident)
-- `outline` → Run 3-outline and 4-plan phases only
-- `lessons` → List lessons and convert to plans
-
-### Action: list (default)
+## Action: list (default)
 
 Display all plans with numbered selection.
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:plan-manage:manage-lifecycle list
+python3 .plan/execute-script.py pm-workflow:plan-marshall:manage-lifecycle list
 ```
 
 Shows:
@@ -75,7 +37,9 @@ Available Plans:
 Select plan (number) or action (c/n/q):
 ```
 
-### Action: init
+---
+
+## Action: init
 
 Create a new plan and automatically continue to 2-refine/3-outline/4-plan phases.
 
@@ -92,7 +56,9 @@ Task: pm-workflow:phase-init-agent
 2. If false (default): Automatically invoke 2-refine, 3-outline, and 4-plan phases with the new plan_id
 3. If true: Stop and display plan summary
 
-### Action: outline (3-Outline + 4-Plan Phases)
+---
+
+## Action: outline (3-Outline + 4-Plan Phases)
 
 **CRITICAL**: This action has 4 steps. Step 3 is a MANDATORY user review gate. Do NOT skip from Step 2 to Step 4.
 
@@ -118,18 +84,18 @@ The skill runs in main conversation context and CAN spawn Task agents for parall
 Log solution outline creation:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[ARTIFACT] (pm-workflow:plan-manage) Created solution_outline.md - pending user review"
+  work {plan_id} INFO "[ARTIFACT] (pm-workflow:plan-marshall) Created solution_outline.md - pending user review"
 ```
 
 **Step 2b**: Transition phase after outline completes:
 ```bash
-python3 .plan/execute-script.py pm-workflow:plan-manage:manage-lifecycle transition \
+python3 .plan/execute-script.py pm-workflow:plan-marshall:manage-lifecycle transition \
   --plan-id {plan_id} --completed 3-outline
 ```
 
 ---
 
-## ⛔ Step 3: MANDATORY USER REVIEW
+## Step 3: MANDATORY USER REVIEW
 
 **STOP HERE. Do NOT proceed to Step 4 without user approval.**
 
@@ -144,7 +110,7 @@ Then display:
 ```
 ## Solution Outline Created
 
-📄 **Review your solution outline**: .plan/plans/{plan_id}/solution_outline.md
+**Review your solution outline**: .plan/plans/{plan_id}/solution_outline.md
 
 Please review the deliverables and architecture before proceeding.
 ```
@@ -185,20 +151,24 @@ Task: pm-workflow:task-plan-agent
 Log task plan agent invocation:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[STATUS] (pm-workflow:plan-manage) Invoked task-plan-agent"
+  work {plan_id} INFO "[STATUS] (pm-workflow:plan-marshall) Invoked task-plan-agent"
 ```
 
 **Step 4b**: Transition phase after tasks created:
 ```bash
-python3 .plan/execute-script.py pm-workflow:plan-manage:manage-lifecycle transition \
+python3 .plan/execute-script.py pm-workflow:plan-marshall:manage-lifecycle transition \
   --plan-id {plan_id} --completed 4-plan
 ```
 
-### Action: cleanup
+---
+
+## Action: cleanup
 
 Remove completed plans. Shows completed plans for selective or batch deletion with confirmation.
 
-### Action: lessons
+---
+
+## Action: lessons
 
 List lessons learned and convert selected lesson to a plan.
 
@@ -225,7 +195,7 @@ When a lesson is selected:
 
 ## Script API Reference
 
-Script: `pm-workflow:plan-manage:manage-lifecycle`
+Script: `pm-workflow:plan-marshall:manage-lifecycle`
 
 | Command | Parameters | Description |
 |---------|------------|-------------|
@@ -242,7 +212,7 @@ Script: `pm-workflow:plan-manage:manage-lifecycle`
 
 ---
 
-## Storage Location
+## Storage
 
 Status is stored in the plan directory:
 
@@ -302,54 +272,3 @@ The `route` command returns skill names for each phase:
 | 5-execute | `plan-execute` | Execute implementation tasks |
 | 6-verify | `plan-verify` | Verify implementation quality |
 | 7-finalize | `plan-finalize` | Finalize with commit/PR |
-
----
-
-## Usage Examples
-
-This skill is invoked internally by `pm-workflow:plan-marshall`. User-facing commands:
-
-```bash
-# List all plans (interactive selection)
-/plan-marshall
-
-# Create new plan from task description (auto-continues to 2-refine)
-/plan-marshall action=init task="Add user authentication"
-
-# Create new plan from GitHub issue (auto-continues to 2-refine)
-/plan-marshall action=init issue="https://github.com/org/repo/issues/42"
-
-# Create plan but stop after 1-init (to review request first)
-/plan-marshall action=init task="Complex feature" stop-after-init=true
-
-# Outline specific plan (if stopped after 1-init or needs re-outlining)
-/plan-marshall action=outline plan="user-auth"
-
-# Cleanup completed plans
-/plan-marshall action=cleanup
-
-# List lessons and convert to plan
-/plan-marshall action=lessons
-```
-
-## Continuous Improvement
-
-If you discover issues or improvements during execution, record them:
-
-1. **Activate skill**: `Skill: plan-marshall:manage-lessons`
-2. **Record lesson** with component: `{type: "skill", name: "plan-manage", bundle: "pm-workflow"}`
-
-## Related
-
-| Skill | Purpose |
-|-------|---------|
-| `pm-workflow:plan-execute` | Execute plans (execute/finalize phases) |
-| `pm-workflow:phase-1-init` | Initialize new plans |
-| `pm-workflow:workflow-extension-api` | Extension points for domain customization |
-
-| Agent | Purpose |
-|-------|---------|
-| `pm-workflow:phase-init-agent` | Init phase: creates plan, detects domains |
-| `pm-workflow:task-plan-agent` | Plan phase: creates tasks |
-
-**Note**: Outline phase uses skill-direct invocation (`Skill: phase-3-outline`) instead of a Task agent. This allows the outline skill to spawn Task agents for parallel component analysis.

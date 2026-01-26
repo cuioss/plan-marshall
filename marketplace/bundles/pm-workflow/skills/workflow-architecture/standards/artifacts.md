@@ -194,7 +194,7 @@ updated: 2025-12-02T14:30:00Z
 ### Manager
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:plan-manage:manage-lifecycle \
+python3 .plan/execute-script.py pm-workflow:plan-marshall:manage-lifecycle \
   {create|read|set-phase|update-phase|progress|transition} --plan-id {id}
 ```
 
@@ -753,7 +753,7 @@ archive     .plan/archived-plans/{date}-{plan_id}/
 | [data-layer.md](data-layer.md) | manage-* skills that access these files |
 | [skill-loading.md](skill-loading.md) | How skills from tasks are loaded |
 | `pm-workflow:manage-config` | config.toon operations |
-| `pm-workflow:plan-manage:manage-lifecycle` | status.toon operations |
+| `pm-workflow:plan-marshall:manage-lifecycle` | status.toon operations |
 | `pm-workflow:manage-tasks` | TASK-*.toon operations |
 | `pm-workflow:manage-solution-outline` | solution_outline.md operations |
 | `plan-marshall:manage-logging` | work.log, decision.log, and script-execution.log operations |

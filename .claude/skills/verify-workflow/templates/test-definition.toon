@@ -8,7 +8,7 @@ name: {Human-readable test name}
 workflow_phase: 3-outline
 
 trigger:
-  command: /plan-manage
+  command: /plan-marshall
   args: create a new plan: {description of the task}
 
 # setup_commands[N]:  # Optional: commands to run before trigger

@@ -158,7 +158,7 @@ def test_core_has_user_invocable_skills():
 
     # Commands were absorbed into skills - verify key user-facing skills exist
     skill_names = [s['name'] for s in core_skills]
-    expected_skills = ['task-implement', 'pr-doctor', 'plan-execute', 'plan-manage']
+    expected_skills = ['task-implement', 'pr-doctor', 'plan-marshall']
     for expected in expected_skills:
         assert expected in skill_names, f'Should have {expected} skill'
 

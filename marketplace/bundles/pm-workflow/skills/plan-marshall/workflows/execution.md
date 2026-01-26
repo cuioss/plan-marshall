@@ -1,39 +1,14 @@
----
-name: plan-execute
-description: Execute task plans - execute and finalize phases
-user-invocable: false
-allowed-tools: Read, Skill, Bash, AskUserQuestion, Task
----
+# Execution Workflows (Phases 5-7)
 
-# Plan Execute Skill
+Workflows for plan execution phases: execute (task implementation), verify (quality checks), and finalize (commit, PR).
 
-Execute task plans through the execute phase (task implementation), verify phase (quality checks), and finalize phase (commit, PR).
+## Action Routing
 
-## 7-Phase Model
-
-```
-1-init → 2-refine → 3-outline → 4-plan → 5-execute → 6-verify → 7-finalize
-```
-
-This skill handles **5-execute**, **6-verify**, and **7-finalize** phases. Use `/plan-marshall` for 1-init through 4-plan phases.
-
-## Parameters
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `plan` | optional | Plan name to execute (e.g., `jwt-auth`, not path) |
-| `action` | optional | Explicit action: `execute`, `verify`, `finalize` (default: execute) |
-
-**Note**: The `plan` parameter accepts the plan **name** (plan_id) only, not the full path.
-
-## Workflow
-
-### Action Routing
-
-Route based on action parameter:
-- `execute` (default) → Run execute phase (task iteration)
-- `verify` → Run verify phase (quality checks)
-- `finalize` → Run finalize phase (commit, PR)
+| Action | Workflow |
+|--------|----------|
+| `execute` (default) | Run execute phase (task iteration) |
+| `verify` | Run verify phase (quality checks) |
+| `finalize` | Run finalize phase (commit, PR) |
 
 ### Default (no parameters)
 
@@ -58,7 +33,7 @@ If plan is in 1-init, 3-outline, or 4-plan phase:
 ```
 Plan 'jwt-auth' is in '3-outline' phase.
 
-This skill handles 5-execute/6-verify/7-finalize phases only.
+This workflow handles 5-execute/6-verify/7-finalize phases only.
 Use /plan-marshall to complete 1-init through 4-plan phases first.
 ```
 
@@ -141,37 +116,3 @@ Cannot finalize: 5 tasks remaining.
 Complete all tasks first, then run:
   /plan-marshall plan="jwt-auth" action="finalize"
 ```
-
----
-
-## Usage Examples
-
-This skill is invoked internally by `pm-workflow:plan-marshall`. User-facing commands:
-
-```bash
-# Select from executable plans (interactive)
-/plan-marshall
-
-# Execute specific plan (continues current phase)
-/plan-marshall plan="jwt-auth"
-
-# Run verify phase
-/plan-marshall plan="jwt-auth" action="verify"
-
-# Run finalize phase directly
-/plan-marshall plan="jwt-auth" action="finalize"
-```
-
-## Related
-
-| Skill | Purpose |
-|-------|---------|
-| `pm-workflow:plan-manage` | Manage plans (init, outline, list, cleanup) |
-| `pm-workflow:manage-tasks` | Task iteration (next, check) |
-| `pm-workflow:phase-6-verify` | Verify phase execution |
-| `pm-workflow:phase-7-finalize` | Finalize phase execution |
-
-| Agent | Purpose |
-|-------|---------|
-| `pm-dev-java:java-implement-agent` | Java task implementation |
-| `pm-dev-frontend:js-implement-agent` | JavaScript task implementation |

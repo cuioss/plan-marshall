@@ -110,7 +110,7 @@ python3 .plan/execute-script.py pm-workflow:planning-inventory:scan-planning-inv
   "core_components": [
     {"type": "skills", "names": ["plan-init", "plan-execute", "plan-finalize", ...]},
     {"type": "agents", "names": ["plan-init-agent", "solution-outline-agent", "task-plan-agent", "task-execute-agent"]},
-    {"type": "commands", "names": ["task-implement", "plan-manage", "plan-execute", "pr-doctor"]}
+    {"type": "commands", "names": ["task-implement", "plan-marshall", "pr-doctor"]}
   ],
   "derived_bundles": [
     {"bundle": "pm-plugin-development", "agents": [], "skills": ["plugin-task-plan", "plugin-solution-outline", "plugin-plan-implement"]}

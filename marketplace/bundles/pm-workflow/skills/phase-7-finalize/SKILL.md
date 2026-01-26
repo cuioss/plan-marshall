@@ -152,7 +152,7 @@ python3 .plan/execute-script.py pm-workflow:manage-config:manage-config get \
   --plan-id {plan_id} --field finalize_iteration
 
 # If issues and iteration < 3, loop back to execute
-python3 .plan/execute-script.py pm-workflow:plan-manage:manage-lifecycle set-phase \
+python3 .plan/execute-script.py pm-workflow:plan-marshall:manage-lifecycle set-phase \
   --plan-id {plan_id} --phase 5-execute
 ```
 
@@ -187,7 +187,7 @@ Records lessons learned from the implementation. Advisory only—does not block.
 Transition to complete:
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:plan-manage:manage-lifecycle transition \
+python3 .plan/execute-script.py pm-workflow:plan-marshall:manage-lifecycle transition \
   --plan-id {plan_id} \
   --completed 7-finalize
 ```
@@ -364,7 +364,7 @@ Contains: How lessons are captured at plan completion, knowledge extraction patt
 This skill is invoked when plan is in `7-finalize` phase:
 
 ```
-pm-workflow:plan-manage:manage-lifecycle route --phase 7-finalize → pm-workflow:phase-7-finalize
+pm-workflow:plan-marshall:manage-lifecycle route --phase 7-finalize → pm-workflow:phase-7-finalize
 ```
 
 ### Loop-Back to Execute
@@ -389,6 +389,6 @@ On PR issues (CI failures, review comments, Sonar findings):
 | `pm-workflow:workflow-integration-ci` | CI monitoring, review handling |
 | `pm-workflow:workflow-integration-sonar` | Sonar quality gate |
 | `pm-workflow:phase-6-verify` | Loop-back target for fix verification |
-| `pm-workflow:plan-manage` | Phase transitions (manage-lifecycle script) |
+| `pm-workflow:plan-marshall` | Phase transitions (manage-lifecycle script) |
 | `plan-marshall:manage-memories` | Knowledge capture |
 | `plan-marshall:manage-lessons` | Lessons capture |

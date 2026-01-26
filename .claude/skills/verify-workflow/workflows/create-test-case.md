@@ -26,7 +26,7 @@ AskUserQuestion:
   question: "What command triggers this workflow?"
   header: "Trigger"
   options:
-    - label: "/plan-manage create" description: "Create a new plan"
+    - label: "/plan-marshall create" description: "Create a new plan"
     - label: "Custom command" description: "Specify a different command"
 ```
 

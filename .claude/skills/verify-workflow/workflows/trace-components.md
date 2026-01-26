@@ -44,7 +44,7 @@ Review the conversation history from the workflow execution. Identify **componen
 
 **Commands** (user-invocable entry points):
 - Pattern: `/command-name` or `Skill: skill-name` activation
-- Example: `/plan-manage create`, `/verify-workflow test`
+- Example: `/plan-marshall create`, `/verify-workflow test`
 
 **Skills** (loaded via Skill tool):
 - Pattern: `Skill: bundle:skill-name` or direct skill loading
@@ -137,7 +137,7 @@ For each script invocation found:
 ```markdown
 | ID | Type | Component | Notation | Invoked By |
 |----|------|-----------|----------|------------|
-| C1 | command | plan-manage | /plan-manage | user |
+| C1 | command | plan-manage | /plan-marshall | user |
 | C2 | agent | plan-init-agent | pm-workflow:plan-init-agent | C1 |
 | C3 | skill | phase-1-init | pm-workflow:phase-1-init | C2 |
 | C4 | agent | solution-outline-agent | pm-workflow:solution-outline-agent | C1 |
@@ -201,7 +201,7 @@ Plan ID: migrate-outputs-to-toon
 
 | ID | Type | Component | Notation | Invoked By |
 |----|------|-----------|----------|------------|
-| C1 | command | plan-manage | /plan-manage | user |
+| C1 | command | plan-manage | /plan-marshall | user |
 | C2 | agent | plan-init-agent | pm-workflow:plan-init-agent | C1 |
 | C3 | skill | phase-1-init | pm-workflow:phase-1-init | C2 |
 | C4 | agent | solution-outline-agent | pm-workflow:solution-outline-agent | C1 |

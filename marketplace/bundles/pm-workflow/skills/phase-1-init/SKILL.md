@@ -202,7 +202,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 Create status.toon with phases (7-phase model):
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:plan-manage:manage-lifecycle create \
+python3 .plan/execute-script.py pm-workflow:plan-marshall:manage-lifecycle create \
   --plan-id {plan_id} \
   --title "{title_from_task_md}" \
   --phases 1-init,2-refine,3-outline,4-plan,5-execute,6-verify,7-finalize
@@ -241,7 +241,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 The phase transitions from init → refine after configuration completes:
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:plan-manage:manage-lifecycle transition \
+python3 .plan/execute-script.py pm-workflow:plan-marshall:manage-lifecycle transition \
   --plan-id {plan_id} \
   --completed 1-init
 ```
