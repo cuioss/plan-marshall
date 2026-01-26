@@ -70,6 +70,15 @@ export default {
     'color-hex-length': 'short',
     'color-named': 'never',
 
+    // Enforce CSS custom properties for color values
+    'declaration-property-value-allowed-list': {
+      'color': ['/^var\\(--/', 'currentColor', 'inherit', 'initial', 'unset', 'transparent'],
+      'background-color': ['/^var\\(--/', 'currentColor', 'inherit', 'initial', 'unset', 'transparent'],
+      'border-color': ['/^var\\(--/', 'currentColor', 'inherit', 'initial', 'unset', 'transparent'],
+      'fill': ['/^var\\(--/', 'currentColor', 'inherit', 'initial', 'unset', 'transparent'],
+      'stroke': ['/^var\\(--/', 'currentColor', 'inherit', 'initial', 'unset', 'transparent'],
+    },
+
     // Logical property ordering
     'order/properties-order': [
       'content', 'display', 'position', 'top', 'right', 'bottom', 'left',
@@ -172,13 +181,21 @@ Enforce logical CSS property order for consistency and readability:
 
 ### Color Enforcement
 
-Prevent hardcoded color names using the built-in rule:
+Enforce CSS custom properties for color values using two built-in rules:
 
 ```javascript
-'color-named': 'never'
+'color-named': 'never',
+'declaration-property-value-allowed-list': {
+  'color': ['/^var\\(--/', 'currentColor', 'inherit', 'initial', 'unset', 'transparent'],
+  'background-color': ['/^var\\(--/', 'currentColor', 'inherit', 'initial', 'unset', 'transparent'],
+  'border-color': ['/^var\\(--/', 'currentColor', 'inherit', 'initial', 'unset', 'transparent'],
+  'fill': ['/^var\\(--/', 'currentColor', 'inherit', 'initial', 'unset', 'transparent'],
+  'stroke': ['/^var\\(--/', 'currentColor', 'inherit', 'initial', 'unset', 'transparent'],
+}
 ```
 
-This prevents using named colors like `red`, `blue`, `green` etc. Projects should use CSS custom properties (`var(--*)`) for all color values by convention.
+- `color-named: never` prevents named colors like `red`, `blue`, `green`
+- `declaration-property-value-allowed-list` restricts color properties to `var(--*)` custom properties and standard CSS keywords
 
 **Example**:
 ```javascript
@@ -190,10 +207,10 @@ static styles = css`
   }
 `;
 
-// Incorrect - hardcoded named color
+// Incorrect - hardcoded color values
 static styles = css`
   .button {
-    background-color: blue;     // Error: named colors not allowed
+    background-color: #007bff;  // Error: must use var(--)
     color: red;                  // Error: named colors not allowed
   }
 `;
