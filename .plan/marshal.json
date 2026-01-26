@@ -17,7 +17,7 @@
   "plan": {
     "defaults": {
       "compatibility": "breaking",
-      "commit_strategy": "per_task",
+      "commit_strategy": "per_deliverable",
       "create_pr": false,
       "verification_required": true,
       "branch_strategy": "direct",

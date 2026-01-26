@@ -310,7 +310,7 @@ The defaults template contains only `system` domain. Technical domains (java, ja
   "plan": {
     "defaults": {
       "compatibility": "deprecations",
-      "commit_strategy": "phase-specific",
+      "commit_strategy": "per_deliverable",
       "create_pr": false,
       "verification_required": true,
       "branch_strategy": "direct"

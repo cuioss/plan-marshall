@@ -62,6 +62,18 @@ phases:
 
 Use `current_phase` for logging, `skill` for dynamic routing, and `completed_phases/total_phases` for progress display.
 
+### Step 0.1: Read Commit Strategy (Once at start)
+
+Cache the commit strategy for the entire execute loop:
+
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-config:manage-config get \
+  --plan-id {plan_id} \
+  --field commit_strategy
+```
+
+Extract `value` from output. Valid values: `per_deliverable`, `per_plan`, `none`.
+
 ### Step 0.5: Log Phase Start (Once per phase)
 
 At the start of execute or finalize phase:
@@ -107,6 +119,31 @@ After each task completes:
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   work {plan_id} INFO "[OUTCOME] (pm-workflow:phase-5-execute) Completed {task_id}: {task_title} ({steps_completed} steps)"
 ```
+
+### Step 3.6: Conditional Per-Deliverable Commit
+
+If `commit_strategy == per_deliverable` (cached from Step 0.1):
+
+1. **Check dependency chain**: Does any other pending/in-progress task have `depends_on` pointing to the just-completed task?
+   - **YES** → Skip commit (a downstream task still needs to run)
+   - **NO** → This is the chain tail (all tasks for this deliverable are done) → Commit
+
+2. **Commit** (only when chain tail):
+   ```
+   Skill: pm-workflow:workflow-integration-git
+   Parameters:
+     - message: conventional commit derived from task title
+     - push: false
+     - create-pr: false
+   ```
+
+3. **Log commit outcome**:
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+     work {plan_id} INFO "[OUTCOME] (pm-workflow:phase-5-execute) Per-deliverable commit: {task_id} ({commit_hash})"
+   ```
+
+If `commit_strategy` is `per_plan` or `none` → Skip this step entirely.
 
 ### Step 4: Next Task or Phase
 

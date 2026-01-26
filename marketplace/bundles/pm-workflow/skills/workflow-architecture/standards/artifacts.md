@@ -111,7 +111,7 @@ Plan-specific configuration created during init phase.
 domains[1]:
 - java
 
-commit_strategy: per_task
+commit_strategy: per_deliverable
 create_pr: true
 verification_required: true
 verification_command: /pm-dev-builder:builder-build-and-fix
@@ -123,7 +123,7 @@ branch_strategy: feature
 | Field | Type | Required | Values |
 |-------|------|----------|--------|
 | `domains` | array | Yes | Domain identifiers (java, javascript, etc.) |
-| `commit_strategy` | enum | Yes | `per_task`, `per_plan`, `none` |
+| `commit_strategy` | enum | Yes | `per_deliverable`, `per_plan`, `none` |
 | `create_pr` | bool | No | true/false (default: true) |
 | `verification_required` | bool | No | true/false (default: true) |
 | `verification_command` | string | No | Command to run |

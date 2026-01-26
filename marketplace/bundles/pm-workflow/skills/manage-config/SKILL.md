@@ -62,7 +62,7 @@ python3 .plan/execute-script.py pm-workflow:manage-config:manage-config create \
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `--domains` | string (comma-separated) | Yes | Domain list (e.g., `java` or `java,javascript`) |
-| `--commit-strategy` | enum | No | `per_task` (default), `per_plan`, `none` |
+| `--commit-strategy` | enum | No | `per_deliverable` (default), `per_plan`, `none` |
 | `--create-pr` | bool | No | Create PR on finalize (default from marshal.json) |
 | `--verification-required` | bool | No | Require verification (default from marshal.json) |
 | `--verification-command` | string | No | Verification command |
@@ -79,7 +79,7 @@ created: true
 config:
   domains[1]:
   - java
-  commit_strategy: per_task
+  commit_strategy: per_deliverable
   create_pr: true
   verification_required: true
   branch_strategy: feature
@@ -121,7 +121,7 @@ plan_id: my-feature
 config:
   domains[1]:
   - java
-  commit_strategy: per_task
+  commit_strategy: per_deliverable
 ```
 
 ### get
@@ -140,7 +140,7 @@ python3 .plan/execute-script.py pm-workflow:manage-config:manage-config get \
 status: success
 plan_id: my-feature
 field: commit_strategy
-value: per_task
+value: per_deliverable
 ```
 
 ### set
@@ -160,7 +160,7 @@ status: success
 plan_id: my-feature
 field: commit_strategy
 value: per_plan
-previous: per_task
+previous: per_deliverable
 ```
 
 ### get-multi
@@ -177,7 +177,7 @@ python3 .plan/execute-script.py pm-workflow:manage-config:manage-config get-mult
 ```toon
 status: success
 plan_id: my-feature
-commit_strategy: per_task
+commit_strategy: per_deliverable
 branch_strategy: feature
 ```
 
@@ -188,7 +188,7 @@ branch_strategy: feature
 | Field | Valid Values |
 |-------|--------------|
 | domains | lowercase identifiers (e.g., java, javascript, plan-marshall-plugin-dev, generic) |
-| commit_strategy | per_task, per_plan, none |
+| commit_strategy | per_deliverable, per_plan, none |
 | create_pr | true, false |
 | verification_required | true, false |
 | verification_command | any string |

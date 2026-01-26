@@ -60,7 +60,7 @@ AskUserQuestion:
     - label: "verification_required"
       description: "Require verification phase (true/false)"
     - label: "commit_strategy"
-      description: "Commit strategy (phase-specific/single)"
+      description: "Commit strategy (per_deliverable/per_plan/none)"
   multiSelect: false
 ```
 
@@ -110,15 +110,19 @@ AskUserQuestion:
 **commit_strategy**:
 ```
 AskUserQuestion:
-  question: "Commit strategy during execution?"
+  question: "Commit strategy during plan execution?"
   header: "Commits"
   options:
-    - label: "Phase-specific"
-      description: "Commit at phase boundaries"
-    - label: "Single"
-      description: "Single commit at finalize"
+    - label: "Per deliverable (Recommended)"
+      description: "Commit after all tasks for each deliverable complete (impl + tests)"
+    - label: "Per plan"
+      description: "Single commit of all changes at finalize"
+    - label: "None"
+      description: "No automatic commits"
   multiSelect: false
 ```
+
+Maps to values: `per_deliverable`, `per_plan`, `none`
 
 Apply:
 ```bash

@@ -381,7 +381,7 @@ plan-marshall-config plan defaults list
 status: success
 defaults:
   compatibility: deprecations
-  commit_strategy: phase-specific
+  commit_strategy: per_deliverable
   create_pr: false
   verification_required: true
   branch_strategy: direct

@@ -58,7 +58,7 @@ JSON structure and field definitions for project configuration.
   "plan": {
     "defaults": {
       "compatibility": "deprecations",
-      "commit_strategy": "phase-specific",
+      "commit_strategy": "per_deliverable",
       "create_pr": false,
       "verification_required": true,
       "branch_strategy": "direct"
@@ -234,7 +234,7 @@ Plan-related configuration including execution defaults and finalize behavior.
   "plan": {
     "defaults": {
       "compatibility": "deprecations",
-      "commit_strategy": "phase-specific",
+      "commit_strategy": "per_deliverable",
       "create_pr": false,
       "verification_required": true,
       "branch_strategy": "direct"
@@ -251,7 +251,7 @@ Plan-related configuration including execution defaults and finalize behavior.
 | Field | Type | Default | Values |
 |-------|------|---------|--------|
 | `compatibility` | string | "breaking" | deprecations, breaking |
-| `commit_strategy` | string | "phase-specific" | fine-granular, phase-specific, complete |
+| `commit_strategy` | string | "per_deliverable" | per_deliverable, per_plan, none |
 | `create_pr` | bool | false | true, false |
 | `verification_required` | bool | true | true, false |
 | `branch_strategy` | string | "direct" | direct, feature |

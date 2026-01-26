@@ -222,7 +222,7 @@ python3 .plan/execute-script.py pm-workflow:manage-config:manage-config create \
 
 This creates config.toon with:
 - `domains`: Array of detected domains (used for workflow_skill resolution from marshal.json)
-- `commit_strategy`: From marshal.json plan.defaults (per_task)
+- `commit_strategy`: From marshal.json plan.defaults (per_deliverable)
 - Finalize fields: `create_pr`, `verification_required`, `branch_strategy` (from marshal.json plan.defaults)
 
 Note: `workflow_skills` are NOT stored in config.toon. They are resolved at runtime from `marshal.json` via `plan-marshall-config resolve-workflow-skill`.

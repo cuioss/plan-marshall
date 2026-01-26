@@ -81,7 +81,7 @@ Show configuration summaries for user confirmation before proceeding:
 
 **Defaults Applied**:
 - Compatibility: breaking
-- Commit Strategy: fine-granular
+- Commit Strategy: per_deliverable
 - Finalizing: commit-only
 
 Proceed with this configuration? (yes/no)

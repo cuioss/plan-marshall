@@ -54,7 +54,7 @@ DEFAULT_SYSTEM_RETENTION = {'logs_days': 1, 'archived_plans_days': 5, 'memory_da
 # Plan defaults
 DEFAULT_PLAN_DEFAULTS = {
     'compatibility': 'breaking',
-    'commit_strategy': 'phase-specific',
+    'commit_strategy': 'per_deliverable',
     'create_pr': False,
     'verification_required': True,
     'branch_strategy': 'direct',

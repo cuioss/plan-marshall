@@ -52,7 +52,7 @@ def create_marshal_json(fixture_dir: Path, config: dict | None = None) -> Path:
             'plan': {
                 'defaults': {
                     'compatibility': 'deprecations',
-                    'commit_strategy': 'phase-specific',
+                    'commit_strategy': 'per_deliverable',
                     'create_pr': False,
                     'verification_required': True,
                     'branch_strategy': 'direct',
@@ -137,7 +137,7 @@ def create_nested_marshal_json(fixture_dir: Path) -> Path:
         'plan': {
             'defaults': {
                 'compatibility': 'breaking',
-                'commit_strategy': 'phase-specific',
+                'commit_strategy': 'per_deliverable',
                 'create_pr': False,
                 'verification_required': True,
                 'branch_strategy': 'direct',

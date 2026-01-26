@@ -187,7 +187,7 @@ The pm-workflow bundle uses manage-* skills as the data access layer for all pla
 │  │                                                                      │  │
 │  │  domains: [java]                                                     │  │
 │  │                                                                      │  │
-│  │  commit_strategy: per_task                                           │  │
+│  │  commit_strategy: per_deliverable                                     │  │
 │  │  create_pr: true                                                     │  │
 │  │  verification_required: true                                         │  │
 │  │  verification_command: /pm-dev-builder:builder-build-and-fix         │  │

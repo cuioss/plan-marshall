@@ -40,13 +40,14 @@ All finalize configuration is read from config.toon (written during init phase):
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-config:manage-config get-multi \
   --plan-id {plan_id} \
-  --fields create_pr,branch_strategy
+  --fields commit_strategy,create_pr,branch_strategy
 ```
 
 **Config Fields Used**:
 
 | Field | Values | Description |
 |-------|--------|-------------|
+| `commit_strategy` | per_deliverable/per_plan/none | When to commit changes |
 | `create_pr` | true/false | Whether to create a pull request |
 | `branch_strategy` | feature/direct | Branch strategy |
 
@@ -87,7 +88,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-config:manage-config get-multi \
   --plan-id {plan_id} \
-  --fields create_pr,branch_strategy
+  --fields commit_strategy,create_pr,branch_strategy
 ```
 
 Also read references context for branch and issue information:
@@ -103,12 +104,25 @@ Returns: `branch`, `base_branch`, `issue_url`, `build_system`, and file counts i
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(pm-workflow:phase-7-finalize) Finalize strategy: PR={create_pr}, branch={branch_strategy}"
+  decision {plan_id} INFO "(pm-workflow:phase-7-finalize) Finalize strategy: commit={commit_strategy}, PR={create_pr}, branch={branch_strategy}"
 ```
 
-### Step 2: Commit Workflow
+### Step 2: Conditional Commit Workflow
 
-Load the git-workflow skill for commit operations:
+**If `commit_strategy == none`**: Skip commit entirely.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  decision {plan_id} INFO "(pm-workflow:phase-7-finalize) Commit skipped: commit_strategy=none"
+```
+
+Proceed directly to Step 3.
+
+**If `commit_strategy == per_deliverable`**: Only commit if there are uncommitted changes remaining (some changes may already be committed per-deliverable during execute phase).
+
+**If `commit_strategy == per_plan`**: Commit all changes as a single commit (current default behavior).
+
+For `per_deliverable` and `per_plan`, load the git-workflow skill:
 
 ```
 Skill: pm-workflow:workflow-integration-git

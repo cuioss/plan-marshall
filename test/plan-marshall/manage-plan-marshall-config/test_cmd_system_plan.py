@@ -70,7 +70,7 @@ def test_plan_defaults_list():
 
         assert result.success, f'Should succeed: {result.stderr}'
         assert 'commit_strategy' in result.stdout
-        assert 'phase-specific' in result.stdout
+        assert 'per_deliverable' in result.stdout
 
 
 def test_plan_defaults_get():
@@ -81,7 +81,7 @@ def test_plan_defaults_get():
         result = run_script(SCRIPT_PATH, 'plan', 'defaults', 'get', '--field', 'commit_strategy')
 
         assert result.success, f'Should succeed: {result.stderr}'
-        assert 'phase-specific' in result.stdout
+        assert 'per_deliverable' in result.stdout
 
 
 def test_plan_defaults_get_all():

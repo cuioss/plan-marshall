@@ -7,7 +7,7 @@ Provides typed configuration for plan execution with enum validation.
 Usage:
     python3 manage-config.py read --plan-id my-plan
     python3 manage-config.py get --plan-id my-plan --field commit_strategy
-    python3 manage-config.py set --plan-id my-plan --field commit_strategy --value per_task
+    python3 manage-config.py set --plan-id my-plan --field commit_strategy --value per_deliverable
     python3 manage-config.py create --plan-id my-plan --domains java
     python3 manage-config.py get-domains --plan-id my-plan
 
@@ -27,7 +27,7 @@ from toon_parser import parse_toon, serialize_toon  # type: ignore[import-not-fo
 
 # Schema validation - enum fields
 SCHEMA = {
-    'commit_strategy': ['per_task', 'per_plan', 'none'],
+    'commit_strategy': ['per_deliverable', 'per_plan', 'none'],
     'branch_strategy': ['feature', 'direct'],
 }
 
@@ -37,7 +37,7 @@ OPTIONAL_FIELDS = ['create_pr', 'verification_required', 'verification_command',
 
 # Fallback defaults (used when marshal.json doesn't exist)
 FALLBACK_DEFAULTS = {
-    'commit_strategy': 'per_task',
+    'commit_strategy': 'per_deliverable',
     'create_pr': True,
     'verification_required': True,
     'branch_strategy': 'feature',
@@ -458,8 +458,8 @@ def main():
     )
     create_parser.add_argument(
         '--commit-strategy',
-        choices=['per_task', 'per_plan', 'none'],
-        help='Commit strategy (default: per_task, none=no commits)',
+        choices=['per_deliverable', 'per_plan', 'none'],
+        help='Commit strategy (default: per_deliverable, none=no commits)',
     )
     create_parser.add_argument('--create-pr', help='Create PR on finalize (default: true)')
     create_parser.add_argument('--verification-required', help='Require verification (default: true)')

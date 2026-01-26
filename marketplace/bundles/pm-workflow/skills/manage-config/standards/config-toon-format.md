@@ -24,7 +24,7 @@ domains:
   - java
   - javascript
 
-commit_strategy: per_task
+commit_strategy: per_deliverable
 
 # Finalize settings
 create_pr: true
@@ -40,7 +40,7 @@ branch_strategy: feature
 | `plan_id` | string | Unique plan identifier |
 | `phase` | string | Current phase: 1-init, 3-outline, 4-plan, 5-execute, 7-finalize |
 | `domains` | list | Array of detected domains (set during outline phase) |
-| `commit_strategy` | string | per_task, per_plan, or none |
+| `commit_strategy` | string | per_deliverable, per_plan, or none |
 | `create_pr` | boolean | Whether to create PR on finalize |
 | `verification_required` | boolean | Whether to run verification before PR |
 | `verification_command` | string | Command to run for verification |
@@ -113,7 +113,7 @@ resolve-workflow-skill --domain java --phase implementation  # → system fallba
 
 | Strategy | Behavior |
 |----------|----------|
-| `per_task` | One commit per completed task |
+| `per_deliverable` | One commit per completed deliverable (after impl + tests) |
 | `per_plan` | Single commit for all tasks |
 | `none` | No commits (manual) |
 
@@ -150,7 +150,7 @@ phase: 5-execute
 domains:
   - java
 
-commit_strategy: per_task
+commit_strategy: per_deliverable
 create_pr: true
 verification_required: true
 verification_command: /pm-dev-builder:builder-build-and-fix
@@ -167,7 +167,7 @@ domains:
   - java
   - javascript
 
-commit_strategy: per_task
+commit_strategy: per_deliverable
 create_pr: true
 verification_required: true
 verification_command: /pm-dev-builder:builder-build-and-fix
@@ -183,7 +183,7 @@ phase: 3-outline
 domains:
   - plan-marshall-plugin-dev
 
-commit_strategy: per_task
+commit_strategy: per_deliverable
 create_pr: true
 verification_required: true
 verification_command: python3 test/run-tests.py
