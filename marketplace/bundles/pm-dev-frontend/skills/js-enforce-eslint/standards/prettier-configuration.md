@@ -35,8 +35,7 @@ Prettier must be integrated with ESLint (see eslint-configuration.md):
 ```json
 {
   "devDependencies": {
-    "eslint-plugin-prettier": "^5.0.0",
-    "eslint-config-prettier": "^9.0.0"
+    "eslint-plugin-prettier": "^5.0.0"
   }
 }
 ```

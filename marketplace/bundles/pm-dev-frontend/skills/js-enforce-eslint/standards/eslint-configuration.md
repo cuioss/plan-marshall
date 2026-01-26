@@ -102,8 +102,7 @@ All projects must include these core dependencies in `package.json`:
 {
   "devDependencies": {
     "eslint": "^9.14.0",
-    "@eslint/js": "^9.14.0",
-    "eslint-config-prettier": "^9.0.0"
+    "@eslint/js": "^9.14.0"
   }
 }
 ```
