@@ -9,6 +9,9 @@ Usage:
     plan-marshall-config.py skill-domains get --domain java
     plan-marshall-config.py system retention get
     plan-marshall-config.py plan defaults list
+    plan-marshall-config.py plan finalize get
+    plan-marshall-config.py verification get
+    plan-marshall-config.py finalize get
     plan-marshall-config.py init
 """
 
@@ -18,6 +21,7 @@ import sys
 from _cmd_ci import cmd_ci
 from _cmd_ext_defaults import cmd_ext_defaults
 from _cmd_init import cmd_init
+from _cmd_quality_phases import cmd_quality_phases
 from _cmd_skill_domains import (
     cmd_configure_task_executors,
     cmd_get_skills_by_profile,
@@ -115,6 +119,15 @@ def main():
     def_set.add_argument('--field', required=True, help='Field name')
     def_set.add_argument('--value', required=True, help='Field value')
 
+    p_fin = plan_sub.add_parser('finalize', help='Manage plan finalize settings')
+    fin_sub = p_fin.add_subparsers(dest='verb', help='Operation')
+
+    fin_sub.add_parser('get', help='Get finalize settings')
+
+    fin_set = fin_sub.add_parser('set', help='Set finalize field')
+    fin_set.add_argument('--field', required=True, help='Field name')
+    fin_set.add_argument('--value', required=True, help='Field value')
+
     # --- ci ---
     p_ci = subparsers.add_parser('ci', help='Manage CI provider configuration')
     ci_sub = p_ci.add_subparsers(dest='verb', help='Operation')
@@ -159,6 +172,24 @@ def main():
 
     ext_remove = ext_sub.add_parser('remove', help='Remove extension default')
     ext_remove.add_argument('--key', required=True, help='Key to remove')
+
+    # --- verification (top-level pipeline) ---
+    p_verif = subparsers.add_parser('verification', help='Manage verification pipeline config')
+    verif_sub = p_verif.add_subparsers(dest='verb', help='Operation')
+
+    verif_sub.add_parser('get', help='Get verification pipeline config')
+
+    verif_set_iter = verif_sub.add_parser('set-max-iterations', help='Set max iterations')
+    verif_set_iter.add_argument('--value', required=True, type=int, help='Max iterations value')
+
+    # --- finalize (top-level pipeline) ---
+    p_final = subparsers.add_parser('finalize', help='Manage finalize pipeline config')
+    final_sub = p_final.add_subparsers(dest='verb', help='Operation')
+
+    final_sub.add_parser('get', help='Get finalize pipeline config')
+
+    final_set_iter = final_sub.add_parser('set-max-iterations', help='Set max iterations')
+    final_set_iter.add_argument('--value', required=True, type=int, help='Max iterations value')
 
     # --- init ---
     p_init = subparsers.add_parser('init', help='Initialize marshal.json')
@@ -233,6 +264,16 @@ def main():
             p_ext.print_help()
             return EXIT_ERROR
         return cmd_ext_defaults(args)
+    elif args.noun == 'verification':
+        if not args.verb:
+            p_verif.print_help()
+            return EXIT_ERROR
+        return cmd_quality_phases(args, 'verification')
+    elif args.noun == 'finalize':
+        if not args.verb:
+            p_final.print_help()
+            return EXIT_ERROR
+        return cmd_quality_phases(args, 'finalize')
     elif args.noun == 'init':
         return cmd_init(args)
     elif args.noun == 'resolve-domain-skills':

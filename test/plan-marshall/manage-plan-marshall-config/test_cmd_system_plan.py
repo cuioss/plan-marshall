@@ -138,5 +138,35 @@ def test_plan_defaults_get_unknown_field():
 
 
 # =============================================================================
+# plan finalize Command Tests
+# =============================================================================
+
+
+def test_plan_finalize_get():
+    """Test plan finalize get."""
+    with PlanContext() as ctx:
+        create_marshal_json(ctx.fixture_dir)
+
+        result = run_script(SCRIPT_PATH, 'plan', 'finalize', 'get')
+
+        assert result.success, f'Should succeed: {result.stderr}'
+        assert 'commit' in result.stdout
+
+
+def test_plan_finalize_set():
+    """Test plan finalize set."""
+    with PlanContext() as ctx:
+        create_marshal_json(ctx.fixture_dir)
+
+        result = run_script(SCRIPT_PATH, 'plan', 'finalize', 'set', '--field', 'commit', '--value', 'false')
+
+        assert result.success, f'Should succeed: {result.stderr}'
+
+        # Verify changed
+        verify = run_script(SCRIPT_PATH, 'plan', 'finalize', 'get')
+        assert 'false' in verify.stdout.lower()
+
+
+# =============================================================================
 # Main
 # =============================================================================

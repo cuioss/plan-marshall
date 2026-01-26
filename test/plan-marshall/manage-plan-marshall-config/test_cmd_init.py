@@ -102,7 +102,7 @@ def test_init_no_build_systems_key():
 def test_init_key_ordering():
     """Test init creates marshal.json with correct key order.
 
-    Canonical order: ci, plan, skill_domains, modules, system
+    Canonical order: extension_defaults, finalize, plan, skill_domains, system, verification
     """
     with PlanContext() as ctx:
         result = run_script(SCRIPT_PATH, 'init')
@@ -116,14 +116,55 @@ def test_init_key_ordering():
         # Get actual key order from JSON
         actual_keys = list(config.keys())
 
-        # Expected order (only keys that exist after init)
-        expected_order = ['plan', 'skill_domains', 'modules', 'system']
+        # Expected canonical order (alphabetical)
+        expected_order = ['extension_defaults', 'finalize', 'plan', 'skill_domains', 'system', 'verification']
 
         # Filter to only keys that exist
         actual_order = [k for k in actual_keys if k in expected_order]
         expected_filtered = [k for k in expected_order if k in actual_keys]
 
         assert actual_order == expected_filtered, f'Key order should be {expected_filtered}, got {actual_order}'
+
+
+def test_init_includes_verification_section():
+    """Test init creates marshal.json with verification pipeline section."""
+    with PlanContext() as ctx:
+        result = run_script(SCRIPT_PATH, 'init')
+        assert result.success, f'Init should succeed: {result.stderr}'
+
+        marshal_path = ctx.fixture_dir / 'marshal.json'
+        config = json.loads(marshal_path.read_text())
+        assert 'verification' in config, 'Should have verification section'
+        assert 'steps' in config['verification'], 'Should have verification steps'
+        assert 'max_iterations' in config['verification'], 'Should have max_iterations'
+        assert config['verification']['max_iterations'] == 5
+
+
+def test_init_includes_finalize_section():
+    """Test init creates marshal.json with finalize pipeline section."""
+    with PlanContext() as ctx:
+        result = run_script(SCRIPT_PATH, 'init')
+        assert result.success, f'Init should succeed: {result.stderr}'
+
+        marshal_path = ctx.fixture_dir / 'marshal.json'
+        config = json.loads(marshal_path.read_text())
+        assert 'finalize' in config, 'Should have finalize section'
+        assert 'steps' in config['finalize'], 'Should have finalize steps'
+        assert 'max_iterations' in config['finalize'], 'Should have max_iterations'
+        assert config['finalize']['max_iterations'] == 3
+
+
+def test_init_includes_plan_finalize_section():
+    """Test init creates marshal.json with plan.finalize section."""
+    with PlanContext() as ctx:
+        result = run_script(SCRIPT_PATH, 'init')
+        assert result.success, f'Init should succeed: {result.stderr}'
+
+        marshal_path = ctx.fixture_dir / 'marshal.json'
+        config = json.loads(marshal_path.read_text())
+        plan = config.get('plan', {})
+        assert 'finalize' in plan, 'Should have plan.finalize section'
+        assert plan['finalize']['commit'] is True, 'Should have commit=true'
 
 
 # =============================================================================

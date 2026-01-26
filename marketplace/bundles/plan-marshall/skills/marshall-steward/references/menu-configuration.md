@@ -19,6 +19,9 @@ AskUserQuestion:
     - label: "Project Structure"
       description: "View, regenerate, and enrich architecture data"
       value: "structure"
+    - label: "Quality Pipelines"
+      description: "Verification and finalize step pipelines"
+      value: "quality-pipelines"
     - label: "Full Reconfigure"
       description: "Run first-run wizard again"
       value: "wizard"
@@ -30,6 +33,7 @@ AskUserQuestion:
 |-----------|--------|
 | skill-domains | Execute "Configuration: Skill Domains" below |
 | plan-defaults | Execute "Configuration: Plan Defaults" below |
+| quality-pipelines | Execute "Configuration: Quality Pipelines" below |
 | structure | Execute "Configuration: Project Structure" below |
 | wizard | Load and execute: `Read references/wizard-flow.md` |
 
@@ -148,6 +152,84 @@ Apply:
 python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
   plan defaults set --field {field} --value {value}
 ```
+
+---
+
+## Configuration: Quality Pipelines
+
+Manage verification (phase 6) and finalize (phase 7) step pipeline settings.
+
+### Step 1: Show Current Pipeline Config
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+  verification get
+```
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+  finalize get
+```
+
+### Step 2: Select Pipeline to Edit
+
+```
+AskUserQuestion:
+  question: "Which pipeline to configure?"
+  header: "Pipeline"
+  options:
+    - label: "Verification"
+      description: "Phase 6: quality checks, build verify, doc sync (max_iterations)"
+    - label: "Finalize"
+      description: "Phase 7: commit, PR, CI, Sonar, knowledge capture (max_iterations)"
+  multiSelect: false
+```
+
+### Step 3: Set Max Iterations
+
+**Verification**:
+```
+AskUserQuestion:
+  question: "Max iterations for verification phase?"
+  header: "Verify Iterations"
+  options:
+    - label: "5 (Default)"
+      description: "Standard retry limit for quality checks"
+    - label: "3"
+      description: "Fewer retries, faster completion"
+    - label: "10"
+      description: "More retries for complex projects"
+  multiSelect: false
+```
+
+Apply:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+  verification set-max-iterations --value {5|3|10}
+```
+
+**Finalize**:
+```
+AskUserQuestion:
+  question: "Max iterations for finalize phase?"
+  header: "Finalize Iterations"
+  options:
+    - label: "3 (Default)"
+      description: "Standard retry limit for commit/PR/CI"
+    - label: "1"
+      description: "Single attempt, fail fast"
+    - label: "5"
+      description: "More retries for CI roundtrips"
+  multiSelect: false
+```
+
+Apply:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+  finalize set-max-iterations --value {3|1|5}
+```
+
+**Note**: Step lists are read-only in this menu. To customize individual steps, edit the `verification.steps` or `finalize.steps` arrays directly in `.plan/marshal.json`.
 
 ---
 

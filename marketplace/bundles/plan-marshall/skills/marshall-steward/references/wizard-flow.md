@@ -236,7 +236,7 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-m
 
 ## Step 5b: Plan Defaults
 
-Configure plan defaults for PR creation and branching strategy.
+Configure plan defaults for PR creation, branching, compatibility, commit strategy, and verification.
 
 ```
 AskUserQuestion:
@@ -244,9 +244,9 @@ AskUserQuestion:
   header: "Plan Config"
   options:
     - label: "Use defaults (Recommended)"
-      description: "create_pr=false, branch=direct, verify=true"
+      description: "create_pr=false, branch=direct, compatibility=breaking, commits=per_deliverable, verify=true"
     - label: "Configure"
-      description: "Set PR creation and branching strategy"
+      description: "Set PR creation, branching, compatibility, commit strategy, and verification"
   multiSelect: false
 ```
 
@@ -288,6 +288,130 @@ Apply selection:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
   plan defaults set --field branch_strategy --value {direct|feature}
+```
+
+```
+AskUserQuestion:
+  question: "Backward compatibility approach during plan execution?"
+  header: "Compat"
+  options:
+    - label: "Breaking (Recommended)"
+      description: "Clean-slate approach, no deprecation nor transitionary comments"
+    - label: "Deprecation"
+      description: "Add deprecation markers to old code, provide migration path"
+    - label: "Smart and ask"
+      description: "Assess impact and ask user when backward compatibility is uncertain"
+  multiSelect: false
+```
+
+Maps to values: `breaking`, `deprecation`, `smart_and_ask`
+
+Apply selection:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+  plan defaults set --field compatibility --value {breaking|deprecation|smart_and_ask}
+```
+
+```
+AskUserQuestion:
+  question: "Commit strategy during plan execution?"
+  header: "Commits"
+  options:
+    - label: "Per deliverable (Recommended)"
+      description: "Commit after all tasks for each deliverable complete (impl + tests)"
+    - label: "Per plan"
+      description: "Single commit of all changes at finalize"
+    - label: "None"
+      description: "No automatic commits"
+  multiSelect: false
+```
+
+Maps to values: `per_deliverable`, `per_plan`, `none`
+
+Apply selection:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+  plan defaults set --field commit_strategy --value {per_deliverable|per_plan|none}
+```
+
+```
+AskUserQuestion:
+  question: "Require verification phase (phase 6)?"
+  header: "Verification"
+  options:
+    - label: "Yes (Recommended)"
+      description: "Run quality checks before finalize"
+    - label: "No"
+      description: "Skip verification phase"
+  multiSelect: false
+```
+
+Apply selection:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+  plan defaults set --field verification_required --value {true|false}
+```
+
+---
+
+## Step 5c: Quality Pipeline Configuration
+
+Configure verification and finalize step pipelines (max iterations).
+
+```
+AskUserQuestion:
+  question: "Configure verification and finalize pipelines?"
+  header: "Pipelines"
+  options:
+    - label: "Use defaults (Recommended)"
+      description: "Verification: 5 max iterations, Finalize: 3 max iterations"
+    - label: "Configure"
+      description: "Customize max iterations for verification and finalize phases"
+  multiSelect: false
+```
+
+If user selects "Use defaults" → Skip to Step 6.
+
+If user selects "Configure":
+
+```
+AskUserQuestion:
+  question: "Max iterations for verification phase (phase 6)?"
+  header: "Verify Iterations"
+  options:
+    - label: "5 (Recommended)"
+      description: "Standard retry limit for quality checks"
+    - label: "3"
+      description: "Fewer retries, faster completion"
+    - label: "10"
+      description: "More retries for complex projects"
+  multiSelect: false
+```
+
+Apply selection:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+  verification set-max-iterations --value {5|3|10}
+```
+
+```
+AskUserQuestion:
+  question: "Max iterations for finalize phase (phase 7)?"
+  header: "Finalize Iterations"
+  options:
+    - label: "3 (Recommended)"
+      description: "Standard retry limit for commit/PR/CI"
+    - label: "1"
+      description: "Single attempt, fail fast"
+    - label: "5"
+      description: "More retries for CI roundtrips"
+  multiSelect: false
+```
+
+Apply selection:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+  finalize set-max-iterations --value {3|1|5}
 ```
 
 ---

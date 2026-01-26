@@ -93,4 +93,26 @@ def cmd_plan(args) -> int:
             save_config(config)
             return success_exit({'field': field, 'value': value})
 
+    elif args.sub_noun == 'finalize':
+        finalize = plan_config.get('finalize', {})
+
+        if args.verb == 'get':
+            return success_exit({'finalize': finalize})
+
+        elif args.verb == 'set':
+            field = args.field
+            value = args.value
+
+            # Type coercion
+            if value.lower() == 'true':
+                value = True
+            elif value.lower() == 'false':
+                value = False
+
+            finalize[field] = value
+            plan_config['finalize'] = finalize
+            config['plan'] = plan_config
+            save_config(config)
+            return success_exit({'field': field, 'value': value})
+
     return EXIT_ERROR

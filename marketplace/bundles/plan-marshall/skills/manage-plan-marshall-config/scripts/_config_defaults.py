@@ -61,6 +61,15 @@ DEFAULT_PLAN_DEFAULTS = {
     'refine_confidence_threshold': 95,
 }
 
+# Plan finalize settings
+DEFAULT_PLAN_FINALIZE = {
+    'commit': True,
+}
+
+# Default max iterations for verification and finalize phases
+DEFAULT_VERIFICATION_MAX_ITERATIONS = 5
+DEFAULT_FINALIZE_MAX_ITERATIONS = 3
+
 # Default verification pipeline steps (6-verify phase)
 # Used by phase-6-verify when marshal.json has no 'verification' override.
 # ${domain} placeholders are resolved via skill_domains.{domain}.capabilities
@@ -114,5 +123,16 @@ def get_default_config() -> dict:
         'extension_defaults': {},
         'skill_domains': {'system': copy.deepcopy(DEFAULT_SYSTEM_DOMAIN)},
         'system': {'retention': copy.deepcopy(DEFAULT_SYSTEM_RETENTION)},
-        'plan': {'defaults': copy.deepcopy(DEFAULT_PLAN_DEFAULTS)},
+        'plan': {
+            'defaults': copy.deepcopy(DEFAULT_PLAN_DEFAULTS),
+            'finalize': copy.deepcopy(DEFAULT_PLAN_FINALIZE),
+        },
+        'verification': {
+            'max_iterations': DEFAULT_VERIFICATION_MAX_ITERATIONS,
+            'steps': copy.deepcopy(DEFAULT_VERIFICATION_STEPS),
+        },
+        'finalize': {
+            'max_iterations': DEFAULT_FINALIZE_MAX_ITERATIONS,
+            'steps': copy.deepcopy(DEFAULT_FINALIZE_STEPS),
+        },
     }

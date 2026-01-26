@@ -56,12 +56,25 @@ def create_marshal_json(fixture_dir: Path, config: dict | None = None) -> Path:
                     'create_pr': False,
                     'verification_required': True,
                     'branch_strategy': 'direct',
-                }
+                },
+                'finalize': {'commit': True},
             },
             'ci': {
                 'repo_url': 'https://github.com/test/repo',
                 'provider': 'github',
                 'detected_at': '2025-01-15T10:30:00Z',
+            },
+            'verification': {
+                'max_iterations': 5,
+                'steps': [
+                    {'name': 'quality_check', 'skill': '${domain}:quality-gate', 'type': 'build'},
+                ],
+            },
+            'finalize': {
+                'max_iterations': 3,
+                'steps': [
+                    {'name': 'commit_push', 'skill': 'pm-workflow:workflow-integration-git', 'type': 'action'},
+                ],
             },
         }
     marshal_path = fixture_dir / 'marshal.json'
@@ -141,9 +154,22 @@ def create_nested_marshal_json(fixture_dir: Path) -> Path:
                 'create_pr': False,
                 'verification_required': True,
                 'branch_strategy': 'direct',
-            }
+            },
+            'finalize': {'commit': True},
         },
         'ci': {'repo_url': None, 'provider': 'unknown', 'detected_at': None},
+        'verification': {
+            'max_iterations': 5,
+            'steps': [
+                {'name': 'quality_check', 'skill': '${domain}:quality-gate', 'type': 'build'},
+            ],
+        },
+        'finalize': {
+            'max_iterations': 3,
+            'steps': [
+                {'name': 'commit_push', 'skill': 'pm-workflow:workflow-integration-git', 'type': 'action'},
+            ],
+        },
     }
     marshal_path = fixture_dir / 'marshal.json'
     marshal_path.write_text(json.dumps(config, indent=2))
