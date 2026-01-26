@@ -16,7 +16,7 @@ The pm-workflow bundle uses thin agents that delegate to skills for actual work.
 │  │   ORCHESTRATOR                                                       │  │
 │  │   ════════════                                                       │  │
 │  │                                                                      │  │
-│  │   /plan-manage action=outline plan=X                                 │  │
+│  │   /plan-marshall action=outline plan=X                                │  │
 │  │         │                                                            │  │
 │  │         ▼                                                            │  │
 │  │   ┌──────────────────────────────────────────────────────────────┐  │  │
@@ -199,7 +199,7 @@ The outline phase uses skill-direct invocation to enable parallel agent spawning
 │                                                                             │
 │  ┌──────────────────────────────────────────────────────────────────────┐  │
 │  │                                                                      │  │
-│  │  /plan-manage action=outline                                         │  │
+│  │  /plan-marshall action=outline                                        │  │
 │  │         │                                                            │  │
 │  │         ▼                                                            │  │
 │  │  ┌────────────────────────────────────────────────────────────────┐ │  │

@@ -61,6 +61,29 @@ DEFAULT_PLAN_DEFAULTS = {
     'refine_confidence_threshold': 95,
 }
 
+# Default verification pipeline steps (6-verify phase)
+# Used by phase-6-verify when marshal.json has no 'verification' override.
+# ${domain} placeholders are resolved via skill_domains.{domain}.capabilities
+DEFAULT_VERIFICATION_STEPS = [
+    {'name': 'quality_check', 'skill': '${domain}:quality-gate', 'type': 'build'},
+    {'name': 'build_verify', 'skill': '${domain}:build-verify', 'type': 'build'},
+    {'name': 'technical_impl', 'skill': '${domain}:impl-verify', 'type': 'agent'},
+    {'name': 'technical_test', 'skill': '${domain}:test-verify', 'type': 'agent'},
+    {'name': 'doc_sync', 'skill': 'pm-documents:doc-verify', 'type': 'advisory'},
+    {'name': 'formal_spec', 'skill': 'pm-requirements:spec-verify', 'type': 'advisory'},
+]
+
+# Default finalize pipeline steps (7-finalize phase)
+# Used by phase-7-finalize when marshal.json has no 'finalize' override.
+DEFAULT_FINALIZE_STEPS = [
+    {'name': 'commit_push', 'skill': 'pm-workflow:workflow-integration-git', 'type': 'action'},
+    {'name': 'create_pr', 'skill': 'pm-workflow:workflow-integration-git', 'type': 'action'},
+    {'name': 'automated_review', 'skill': 'pm-workflow:workflow-integration-ci', 'type': 'api'},
+    {'name': 'sonar_roundtrip', 'skill': 'pm-workflow:workflow-integration-sonar', 'type': 'api'},
+    {'name': 'knowledge_capture', 'skill': 'plan-marshall:manage-memories', 'type': 'advisory'},
+    {'name': 'lessons_capture', 'skill': 'plan-marshall:manage-lessons', 'type': 'advisory'},
+]
+
 # Build system defaults (detection reference only - commands are in modules)
 BUILD_SYSTEM_DEFAULTS = {
     'maven': {'skill': 'pm-dev-java:plan-marshall-plugin'},

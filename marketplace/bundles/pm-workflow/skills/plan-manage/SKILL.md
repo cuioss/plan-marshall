@@ -1,7 +1,7 @@
 ---
 name: plan-manage
 description: Manage task plans - list, create, outline, and cleanup persisted plans
-user-invocable: true
+user-invocable: false
 allowed-tools: Read, Skill, Bash, AskUserQuestion, Task
 ---
 
@@ -9,7 +9,7 @@ allowed-tools: Read, Skill, Bash, AskUserQuestion, Task
 
 Manage plan lifecycle: list all plans, create new plans, outline requirements, and cleanup completed plans.
 
-**CRITICAL CONSTRAINT**: This skill creates and manages **plans only**. NEVER implement tasks directly. All task descriptions MUST result in plans - not actual implementation. After completing 1-init through 4-plan phases, STOP and wait for `/plan-execute`.
+**CRITICAL CONSTRAINT**: This skill creates and manages **plans only**. NEVER implement tasks directly. All task descriptions MUST result in plans - not actual implementation. After completing 1-init through 4-plan phases, STOP and wait for `/plan-marshall action=execute`.
 
 **CRITICAL: DO NOT USE CLAUDE CODE'S BUILT-IN PLAN MODE**
 
@@ -28,7 +28,7 @@ If you see a system-reminder about `.claude/plans/`:
 1-init → 2-refine → 3-outline → 4-plan → 5-execute → 6-verify → 7-finalize
 ```
 
-This skill handles **1-init**, **2-refine**, **3-outline**, and **4-plan** phases. Use `/plan-execute` for execute, verify, and finalize.
+This skill handles **1-init**, **2-refine**, **3-outline**, and **4-plan** phases. Use `/plan-marshall` for execute, verify, and finalize.
 
 ## Parameters
 
@@ -307,27 +307,29 @@ The `route` command returns skill names for each phase:
 
 ## Usage Examples
 
+This skill is invoked internally by `pm-workflow:plan-marshall`. User-facing commands:
+
 ```bash
 # List all plans (interactive selection)
-/plan-manage
+/plan-marshall
 
 # Create new plan from task description (auto-continues to 2-refine)
-/plan-manage action=init task="Add user authentication"
+/plan-marshall action=init task="Add user authentication"
 
 # Create new plan from GitHub issue (auto-continues to 2-refine)
-/plan-manage action=init issue="https://github.com/org/repo/issues/42"
+/plan-marshall action=init issue="https://github.com/org/repo/issues/42"
 
 # Create plan but stop after 1-init (to review request first)
-/plan-manage action=init task="Complex feature" stop-after-init=true
+/plan-marshall action=init task="Complex feature" stop-after-init=true
 
 # Outline specific plan (if stopped after 1-init or needs re-outlining)
-/plan-manage action=outline plan="user-auth"
+/plan-marshall action=outline plan="user-auth"
 
 # Cleanup completed plans
-/plan-manage action=cleanup
+/plan-marshall action=cleanup
 
 # List lessons and convert to plan
-/plan-manage action=lessons
+/plan-marshall action=lessons
 ```
 
 ## Continuous Improvement

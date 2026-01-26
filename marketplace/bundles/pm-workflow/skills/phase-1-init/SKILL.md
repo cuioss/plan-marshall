@@ -322,7 +322,7 @@ This skill is called by `pm-workflow:phase-1-init-agent`. The agent completes th
 
 ### Command Integration
 
-- **/plan-manage action=init** - Orchestrates the init agent
+- **/plan-marshall action=init** - Orchestrates the init agent
 
 ### Related Skills
 

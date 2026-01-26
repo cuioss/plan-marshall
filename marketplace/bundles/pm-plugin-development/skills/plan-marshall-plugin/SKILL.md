@@ -81,6 +81,18 @@ All configuration is in `extension.py` which implements the Extension API:
 | `provides_triage()` | Triage skill reference |
 | `provides_outline()` | Outline skill reference |
 
+### Capabilities
+
+Domain capabilities for `${domain}` placeholder resolution:
+
+```json
+"capabilities": {
+  "triage": "pm-plugin-development:ext-triage-plugin"
+}
+```
+
+Only triage capability is provided. Verification steps requiring `quality-gate` or `build-verify` are skipped for this domain.
+
 ## Dependencies
 
 This skill depends on:

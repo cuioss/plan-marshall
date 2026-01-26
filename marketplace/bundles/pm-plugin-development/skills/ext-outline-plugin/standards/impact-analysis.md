@@ -88,7 +88,7 @@ dependents_found: 3
 dependents_added: 2
 added_files[2]:
   - marketplace/bundles/pm-workflow/skills/phase-3-outline/SKILL.md
-  - marketplace/bundles/pm-workflow/commands/plan-manage.md
+  - marketplace/bundles/pm-workflow/skills/plan-marshall/SKILL.md
 ```
 
 ### Updated inventory_filtered.toon

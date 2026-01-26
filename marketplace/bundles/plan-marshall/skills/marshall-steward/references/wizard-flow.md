@@ -519,7 +519,7 @@ skill_domains:
   - plan-marshall-plugin-dev
 
 next_steps:
-  - Run /plan-manage to create a new plan
+  - Run /plan-marshall to create a new plan
   - Use /marshall-steward for maintenance tasks
 ```
 

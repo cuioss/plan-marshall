@@ -426,7 +426,7 @@ If verification fails:
 
 **Callers**:
 - `plan-execute` skill → spawns task-execute-agent
-- `/plan-execute` command → orchestrates execution
+- `/plan-marshall` command → orchestrates execution
 
 **Dependencies**:
 - `manage-tasks` → task retrieval and progress tracking

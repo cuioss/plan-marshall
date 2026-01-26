@@ -1,7 +1,7 @@
 ---
 name: plan-execute
 description: Execute task plans - execute and finalize phases
-user-invocable: true
+user-invocable: false
 allowed-tools: Read, Skill, Bash, AskUserQuestion, Task
 ---
 
@@ -15,7 +15,7 @@ Execute task plans through the execute phase (task implementation), verify phase
 1-init → 2-refine → 3-outline → 4-plan → 5-execute → 6-verify → 7-finalize
 ```
 
-This skill handles **5-execute**, **6-verify**, and **7-finalize** phases. Use `/plan-manage` for 1-init through 4-plan phases.
+This skill handles **5-execute**, **6-verify**, and **7-finalize** phases. Use `/plan-marshall` for 1-init through 4-plan phases.
 
 ## Parameters
 
@@ -45,7 +45,7 @@ Executable Plans:
 1. jwt-authentication [execute] - Task 3/12: "Add token validation"
 2. user-profile-api [finalize] - Ready to commit
 
-0. Exit (use /plan-manage to create or refine plans)
+0. Exit (use /plan-marshall to create or refine plans)
 
 Select plan to execute:
 ```
@@ -59,7 +59,7 @@ If plan is in 1-init, 3-outline, or 4-plan phase:
 Plan 'jwt-auth' is in '3-outline' phase.
 
 This skill handles 5-execute/6-verify/7-finalize phases only.
-Use /plan-manage to complete 1-init through 4-plan phases first.
+Use /plan-marshall to complete 1-init through 4-plan phases first.
 ```
 
 ---
@@ -139,25 +139,27 @@ If finalize requested but tasks incomplete:
 Cannot finalize: 5 tasks remaining.
 
 Complete all tasks first, then run:
-  /plan-execute plan="jwt-auth" action="finalize"
+  /plan-marshall plan="jwt-auth" action="finalize"
 ```
 
 ---
 
 ## Usage Examples
 
+This skill is invoked internally by `pm-workflow:plan-marshall`. User-facing commands:
+
 ```bash
 # Select from executable plans (interactive)
-/plan-execute
+/plan-marshall
 
 # Execute specific plan (continues current phase)
-/plan-execute plan="jwt-auth"
+/plan-marshall plan="jwt-auth"
 
 # Run verify phase
-/plan-execute plan="jwt-auth" action="verify"
+/plan-marshall plan="jwt-auth" action="verify"
 
 # Run finalize phase directly
-/plan-execute plan="jwt-auth" action="finalize"
+/plan-marshall plan="jwt-auth" action="finalize"
 ```
 
 ## Related

@@ -4,7 +4,7 @@ Standard protocol for mandatory user review after solution outline creation.
 
 ## Purpose
 
-This protocol defines the **required interaction** between the `/plan-manage` command and the user after the solution outline agent completes. User review ensures alignment before task creation.
+This protocol defines the **required interaction** between the `/plan-marshall` command and the user after the solution outline agent completes. User review ensures alignment before task creation.
 
 **Rationale**: Solution outlines define deliverables that become tasks. User review ensures alignment before committing to implementation scope.
 
@@ -18,7 +18,7 @@ This protocol defines the **required interaction** between the `/plan-manage` co
 
 ## Command Responsibility
 
-After the solution outline agent completes, the `/plan-manage` command MUST:
+After the solution outline agent completes, the `/plan-marshall` command MUST:
 
 ### Step 1: Display the Solution Outline
 
@@ -94,6 +94,6 @@ Command: Invokes task plan agent
 
 **Implements**: Command responsibility in [Solution Outline Agent Contract](solution-outline-agent-contract.md)
 
-**Callers**: `/plan-manage action=outline` command
+**Callers**: `/plan-marshall action=outline` command
 
 **Next Step**: [Task Plan Agent](task-plan-agent-contract.md) invocation after approval

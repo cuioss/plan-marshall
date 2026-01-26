@@ -174,9 +174,19 @@ Each domain can define capabilities for `${domain}` placeholder resolution:
     },
     "javascript": {
       "capabilities": {
-        "quality-gate": "pm-dev-frontend:js-quality-agent",
-        "build-verify": "pm-dev-frontend:js-verify-agent",
+        "quality-gate": null,
+        "build-verify": null,
         "triage": "pm-dev-frontend:ext-triage-js"
+      }
+    },
+    "plan-marshall-plugin-dev": {
+      "capabilities": {
+        "triage": "pm-plugin-development:ext-triage-plugin"
+      }
+    },
+    "documentation": {
+      "capabilities": {
+        "triage": "pm-documents:ext-triage-docs"
       }
     }
   }

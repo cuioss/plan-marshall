@@ -741,9 +741,9 @@ After each planning command/skill execution, verify:
 
 ## Integration with Commands
 
-### plan-manage Command
+### plan-marshall Command (Phases 1-4)
 
-When `/plan-manage` executes, verify after each action:
+When `/plan-marshall` executes init/outline actions, verify after each action:
 
 | Action | Expected Work-Log Entry | Expected Status Change |
 |--------|------------------------|----------------------|
@@ -752,9 +752,9 @@ When `/plan-manage` executes, verify after each action:
 | `3-outline` | type=artifact per deliverable created | phases[3-outline] progress updates |
 | outline complete | type=outcome, summary=3-outline complete | phases[3-outline]=done, current_phase=4-plan |
 
-### plan-execute Command
+### plan-marshall Command (Phases 5-7)
 
-When `/plan-execute` executes, verify after each task:
+When `/plan-marshall` executes execute/verify/finalize actions, verify after each task:
 
 | Event | Expected Work-Log Entry | Expected Status Change |
 |-------|------------------------|----------------------|

@@ -126,7 +126,7 @@ allowed-tools: Read
 │  ┌─────────────────────────────────────────────────────────────────────┐   │
 │  │  COMMANDS (User-facing)                                              │   │
 │  │  ══════════════════════                                              │   │
-│  │  /plan-manage  /plan-execute  /pr-doctor                             │   │
+│  │  /plan-marshall  /pr-doctor                                          │   │
 │  └─────────────────────────────────────────────────────────────────────┘   │
 │                                     │                                       │
 │                                     ▼                                       │
@@ -173,6 +173,7 @@ allowed-tools: Read
 
 | Skill | Purpose |
 |-------|---------|
+| `pm-workflow:plan-marshall` | Unified user-facing entry point for plan lifecycle |
 | `pm-workflow:workflow-extension-api` | Extension points for domain customization |
 | `pm-workflow:phase-1-init` | Init phase implementation |
 | `pm-workflow:phase-2-refine` | Refine phase implementation |

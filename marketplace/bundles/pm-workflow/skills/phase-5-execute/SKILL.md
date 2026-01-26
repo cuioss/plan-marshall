@@ -193,7 +193,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 ## Integration
 
 ### Command Integration
-- **/plan-execute** - Primary command invoking this skill
+- **/plan-marshall action=execute** - Primary entry point invoking this skill
 
 ### Related Skills
 - **phase-4-plan** - Creates tasks from deliverables (previous phase)

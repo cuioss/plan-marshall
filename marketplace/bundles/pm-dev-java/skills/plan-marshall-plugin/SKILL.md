@@ -26,6 +26,22 @@ Configuration in `extension.py` implements the Extension API contract:
 | `provides_triage()` | Returns `pm-dev-java:ext-triage-java` |
 | `discover_modules(project_root)` | Discover Maven/Gradle modules with metadata, commands |
 
+### Capabilities
+
+Domain capabilities for `${domain}` placeholder resolution in verification/finalize pipelines:
+
+```json
+"capabilities": {
+  "quality-gate": "pm-dev-java:java-quality-agent",
+  "build-verify": "pm-dev-java:java-verify-agent",
+  "impl-verify": "pm-dev-java:java-verify-agent",
+  "test-verify": "pm-dev-java:java-coverage-agent",
+  "triage": "pm-dev-java:ext-triage-java"
+}
+```
+
+When a step specifies `skill: "${domain}:quality-gate"` and the plan's domains include `java`, the resolved skill is `pm-dev-java:java-quality-agent`.
+
 ---
 
 ## Scripts Overview

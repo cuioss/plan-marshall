@@ -378,7 +378,7 @@ On PR issues (CI failures, review comments, Sonar findings):
 
 ### Command Integration
 
-- **/plan-execute action=finalize** - Invokes this skill
+- **/plan-marshall action=finalize** - Invokes this skill
 - **/pr-doctor** - Used during automated review step
 
 ### Related Skills

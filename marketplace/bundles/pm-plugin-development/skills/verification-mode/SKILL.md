@@ -85,7 +85,7 @@ Applies: All base checks PLUS:
 - **Post-Phase Verification Protocol (4 steps) after EVERY phase completes**
 - **Workflow Skill API Contract Verification (Step 3) is MANDATORY**
 
-Use this scope when testing `/plan-manage`, `/plan-execute`, or any planning-related skills.
+Use this scope when testing `/plan-marshall` or any planning-related skills.
 
 **CRITICAL**: After each phase completes, you MUST execute ALL 4 steps of the Post-Phase Verification Protocol, including verifying artifacts against workflow skill API contracts. See "After Each Phase Completes" section below.
 

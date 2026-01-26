@@ -28,21 +28,17 @@ User Request → [Thin Agents] → Workflow Skills (from system domain) → Doma
 
 ## Commands
 
-### /plan-manage
-Manage task plans - list, create, outline.
+### /plan-marshall
+Unified plan lifecycle management - create, outline, execute, verify, finalize.
 
 ```bash
-/plan-manage action=list              # List active plans
-/plan-manage action=init task="..."   # Create new plan and outline
-/plan-manage action=outline           # Outline specific plan
-```
-
-### /plan-execute
-Execute task plans - implement, verify, finalize.
-
-```bash
-/plan-execute                         # Continue current plan
-/plan-execute phase=5-execute         # Execute specific phase
+/plan-marshall                                # List active plans
+/plan-marshall action=init task="..."         # Create new plan and outline
+/plan-marshall action=outline plan="X"        # Outline specific plan
+/plan-marshall action=execute plan="X"        # Execute tasks
+/plan-marshall action=verify plan="X"         # Quality verification
+/plan-marshall action=finalize plan="X"       # Commit, PR
+/plan-marshall plan="X"                       # Auto-detect phase and continue
 ```
 
 ### /pr-doctor
@@ -203,8 +199,6 @@ pm-workflow/
 │   ├── task-plan-agent.md       # Creates tasks
 │   └── task-execute-agent.md    # Executes single task
 ├── commands/
-│   ├── plan-manage.md           # 1-init + 2-refine + 3-outline + 4-plan phases
-│   ├── plan-execute.md          # Execute + finalize phases
 │   ├── pr-doctor.md
 │   └── task-implement.md
 └── skills/

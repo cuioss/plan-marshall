@@ -381,8 +381,8 @@ pm-workflow:plan-manage:manage-lifecycle route --phase 6-verify → pm-workflow:
 
 ### Command Integration
 
-- **/plan-execute action=verify** - Invokes this skill
-- **/plan-manage** - Shows plans ready for verify
+- **/plan-marshall action=verify** - Invokes this skill
+- **/plan-marshall** - Shows plans ready for verify
 
 ### Related Skills
 
