@@ -51,7 +51,7 @@ def create_marshal_json(fixture_dir: Path, config: dict | None = None) -> Path:
             },
             'plan': {
                 'defaults': {
-                    'compatibility': 'deprecations',
+                    'compatibility': 'deprecation',
                     'commit_strategy': 'per_deliverable',
                     'create_pr': False,
                     'verification_required': True,

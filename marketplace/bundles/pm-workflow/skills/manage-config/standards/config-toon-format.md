@@ -24,6 +24,7 @@ domains:
   - java
   - javascript
 
+compatibility: breaking
 commit_strategy: per_deliverable
 
 # Finalize settings
@@ -40,6 +41,7 @@ branch_strategy: feature
 | `plan_id` | string | Unique plan identifier |
 | `phase` | string | Current phase: 1-init, 3-outline, 4-plan, 5-execute, 7-finalize |
 | `domains` | list | Array of detected domains (set during outline phase) |
+| `compatibility` | string | breaking, deprecation, or smart_and_ask |
 | `commit_strategy` | string | per_deliverable, per_plan, or none |
 | `create_pr` | boolean | Whether to create PR on finalize |
 | `verification_required` | boolean | Whether to run verification before PR |
@@ -109,6 +111,14 @@ resolve-workflow-skill --domain java --phase implementation  # → system fallba
 | 4-Execute | Reads domains | Executes tasks using task.skills |
 | 5-Finalize | Reads settings | Runs verification, creates PR |
 
+## Compatibility Strategy
+
+| Strategy | Behavior |
+|----------|----------|
+| `breaking` | Clean-slate approach, no deprecation nor transitionary comments |
+| `deprecation` | Add deprecation markers to old code, provide migration path |
+| `smart_and_ask` | Assess impact and ask user when backward compatibility is uncertain |
+
 ## Commit Strategy
 
 | Strategy | Behavior |
@@ -150,6 +160,7 @@ phase: 5-execute
 domains:
   - java
 
+compatibility: breaking
 commit_strategy: per_deliverable
 create_pr: true
 verification_required: true
@@ -167,6 +178,7 @@ domains:
   - java
   - javascript
 
+compatibility: breaking
 commit_strategy: per_deliverable
 create_pr: true
 verification_required: true
@@ -183,6 +195,7 @@ phase: 3-outline
 domains:
   - plan-marshall-plugin-dev
 
+compatibility: breaking
 commit_strategy: per_deliverable
 create_pr: true
 verification_required: true

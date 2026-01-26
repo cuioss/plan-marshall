@@ -274,3 +274,70 @@ def test_create_config_force_overwrite():
         assert result.success, f'Script failed: {result.stderr}'
         data = parse_toon(result.stdout)
         assert data['config']['domains'] == ['javascript']
+
+
+# =============================================================================
+# Test: Compatibility Field
+# =============================================================================
+
+
+def test_get_compatibility_returns_description():
+    """Test that get --field compatibility returns value and behavioral description."""
+    with TestContext(plan_id='config-compat-desc'):
+        run_script(SCRIPT_PATH, 'create', '--plan-id', 'config-compat-desc', '--domains', 'java')
+        result = run_script(SCRIPT_PATH, 'get', '--plan-id', 'config-compat-desc', '--field', 'compatibility')
+        assert result.success, f'Script failed: {result.stderr}'
+        data = parse_toon(result.stdout)
+        assert data['value'] == 'breaking'
+        assert 'description' in data
+        assert 'Clean-slate' in data['description']
+
+
+def test_create_config_with_compatibility():
+    """Test creating config with explicit --compatibility flag."""
+    with TestContext(plan_id='config-compat-create'):
+        result = run_script(
+            SCRIPT_PATH,
+            'create',
+            '--plan-id',
+            'config-compat-create',
+            '--domains',
+            'java',
+            '--compatibility',
+            'deprecation',
+        )
+        assert result.success, f'Script failed: {result.stderr}'
+        data = parse_toon(result.stdout)
+        assert data['config']['compatibility'] == 'deprecation'
+
+
+def test_create_config_invalid_compatibility():
+    """Test that invalid compatibility value is rejected."""
+    with TestContext(plan_id='config-compat-invalid'):
+        result = run_script(
+            SCRIPT_PATH,
+            'create',
+            '--plan-id',
+            'config-compat-invalid',
+            '--domains',
+            'java',
+            '--compatibility',
+            'foo',
+        )
+        assert not result.success, 'Expected failure for invalid compatibility'
+
+
+def test_set_compatibility_validates():
+    """Test that set validates compatibility values."""
+    with TestContext(plan_id='config-compat-set'):
+        run_script(SCRIPT_PATH, 'create', '--plan-id', 'config-compat-set', '--domains', 'java')
+        # Valid value
+        result = run_script(
+            SCRIPT_PATH, 'set', '--plan-id', 'config-compat-set', '--field', 'compatibility', '--value', 'smart_and_ask'
+        )
+        assert result.success, f'Set failed: {result.stderr}'
+        # Invalid value
+        result = run_script(
+            SCRIPT_PATH, 'set', '--plan-id', 'config-compat-set', '--field', 'compatibility', '--value', 'invalid'
+        )
+        assert not result.success, 'Expected failure for invalid compatibility'

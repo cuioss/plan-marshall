@@ -174,7 +174,7 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github issue 
 | `get` | `--domain` | Get full domain config (returns nested structure for technical domains) |
 | `get-defaults` | `--domain` | Get default skills (returns `core.defaults` for nested domains) |
 | `get-optionals` | `--domain` | Get optional skills (returns `core.optionals` for nested domains) |
-| `set` | `--domain [--profile] [--defaults] [--optionals]` | Set domain config (use `--profile` for nested domains) |
+| `set` | `--domain [--profile] [--defaults] [--optionals]` | Set domain config (profiles read from extension.py, system domain only) |
 | `add` | `--domain --defaults [--optionals]` | Add new domain |
 | `validate` | `--domain --skill` | Check if skill valid (searches all profiles for nested domains) |
 | `detect` | (none) | Auto-detect domains from project files |
@@ -189,7 +189,7 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github issue 
 |------------|---------|
 | `--domain --profile` | Resolve skills for domain and profile (aggregates `{domain}.core` + `{domain}.{profile}`) |
 
-Standard profiles: `implementation`, `testing`, `quality`.
+Standard profiles: `implementation`, `module_testing`, `integration_testing`, `quality`.
 
 ### resolve-workflow-skill
 
@@ -212,6 +212,34 @@ Returns null (not error) if extension doesn't exist for the domain.
 | Parameters | Purpose |
 |------------|---------|
 | (none) | Get all workflow skills from system domain (7-phase model) |
+
+### get-skills-by-profile
+
+| Parameters | Purpose |
+|------------|---------|
+| `--domain` | Get skills organized by profile for architecture enrichment |
+
+### configure-task-executors
+
+| Parameters | Purpose |
+|------------|---------|
+| (none) | Auto-discover profiles and register task executors (convention: profile X -> `pm-workflow:task-X`) |
+
+### resolve-task-executor
+
+| Parameters | Purpose |
+|------------|---------|
+| `--profile` | Resolve task executor skill for a profile (e.g., implementation, module_testing) |
+
+### Noun: ext-defaults
+
+| Verb | Parameters | Purpose |
+|------|------------|---------|
+| `get` | `--key` | Get extension default value |
+| `set` | `--key --value` | Set extension default value (always overwrites) |
+| `set-default` | `--key --value` | Set value only if key does not exist (write-once) |
+| `list` | (none) | List all extension defaults |
+| `remove` | `--key` | Remove extension default |
 
 ### Noun: system
 
@@ -238,6 +266,7 @@ Returns null (not error) if extension doesn't exist for the domain.
 | `get-command` | `--name` | Get single CI command by name (ready to execute) |
 | `set-provider` | `--provider --repo-url` | Set CI provider |
 | `set-tools` | `--tools` | Set authenticated tools (comma-separated) |
+| `persist` | `--provider --repo-url [--commands] [--tools] [--git-present]` | Persist full CI config (provider, commands, tools) |
 
 ### init
 
@@ -289,7 +318,11 @@ The defaults template contains only `system` domain. Technical domains (java, ja
         "defaults": [],
         "optionals": ["pm-dev-java:java-cdi", "pm-dev-java:java-maintenance"]
       },
-      "testing": {
+      "module_testing": {
+        "defaults": ["pm-dev-java:junit-core"],
+        "optionals": []
+      },
+      "integration_testing": {
         "defaults": ["pm-dev-java:junit-core"],
         "optionals": ["pm-dev-java:junit-integration"]
       },
@@ -309,7 +342,7 @@ The defaults template contains only `system` domain. Technical domains (java, ja
   },
   "plan": {
     "defaults": {
-      "compatibility": "deprecations",
+      "compatibility": "breaking",
       "commit_strategy": "per_deliverable",
       "create_pr": false,
       "verification_required": true,
@@ -343,7 +376,8 @@ Technical domains use nested structure with `workflow_skill_extensions` and prof
 |---------|-------|---------|
 | `core` | all | Skills loaded for all profiles |
 | `implementation` | execute | Production code tasks |
-| `testing` | execute | Test code tasks |
+| `module_testing` | execute | Unit/module test tasks |
+| `integration_testing` | execute | Integration test tasks |
 | `quality` | verify | Documentation, verification |
 
 **Available Domains**:

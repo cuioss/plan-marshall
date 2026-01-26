@@ -27,16 +27,27 @@ from toon_parser import parse_toon, serialize_toon  # type: ignore[import-not-fo
 
 # Schema validation - enum fields
 SCHEMA = {
+    'compatibility': ['breaking', 'deprecation', 'smart_and_ask'],
     'commit_strategy': ['per_deliverable', 'per_plan', 'none'],
     'branch_strategy': ['feature', 'direct'],
 }
 
+# Behavioral descriptions for enum values (returned to LLM as execution constraints)
+DESCRIPTIONS: dict[str, dict[str, str]] = {
+    'compatibility': {
+        'breaking': 'Clean-slate approach, no deprecation nor transitionary comments',
+        'deprecation': 'Add deprecation markers to old code, provide migration path',
+        'smart_and_ask': 'Assess impact and ask user when backward compatibility is uncertain',
+    },
+}
+
 # Structural validation (not enum)
-REQUIRED_FIELDS = ['domains', 'commit_strategy']
+REQUIRED_FIELDS = ['domains', 'compatibility', 'commit_strategy']
 OPTIONAL_FIELDS = ['create_pr', 'verification_required', 'verification_command', 'branch_strategy']
 
 # Fallback defaults (used when marshal.json doesn't exist)
 FALLBACK_DEFAULTS = {
+    'compatibility': 'breaking',
     'commit_strategy': 'per_deliverable',
     'create_pr': True,
     'verification_required': True,
@@ -203,7 +214,11 @@ def cmd_get(args):
         )
         sys.exit(1)
 
-    output_toon({'status': 'success', 'plan_id': args.plan_id, 'field': args.field, 'value': value})
+    result: dict[str, Any] = {'status': 'success', 'plan_id': args.plan_id, 'field': args.field, 'value': value}
+    # Add behavioral description if available for this field+value
+    if args.field in DESCRIPTIONS and isinstance(value, str) and value in DESCRIPTIONS[args.field]:
+        result['description'] = DESCRIPTIONS[args.field][value]
+    output_toon(result)
 
 
 def cmd_set(args):
@@ -353,8 +368,24 @@ def cmd_create(args):
         )
         sys.exit(1)
 
+    compatibility = args.compatibility or defaults.get('compatibility', 'breaking')
+    is_valid, valid_values = validate_field('compatibility', compatibility)
+    if not is_valid:
+        output_toon(
+            {
+                'status': 'error',
+                'plan_id': args.plan_id,
+                'field': 'compatibility',
+                'error': 'invalid_value',
+                'message': f"Invalid value '{compatibility}' for compatibility",
+                'valid_values': valid_values,
+            }
+        )
+        sys.exit(1)
+
     config = {
         'domains': domains,
+        'compatibility': compatibility,
         'commit_strategy': commit_strategy,
     }
 
@@ -455,6 +486,11 @@ def main():
     create_parser.add_argument('--plan-id', required=True, help='Plan identifier')
     create_parser.add_argument(
         '--domains', required=True, help='Comma-separated list of domains (e.g., java or java,javascript)'
+    )
+    create_parser.add_argument(
+        '--compatibility',
+        choices=['breaking', 'deprecation', 'smart_and_ask'],
+        help='Backward compatibility approach (default: breaking)',
     )
     create_parser.add_argument(
         '--commit-strategy',

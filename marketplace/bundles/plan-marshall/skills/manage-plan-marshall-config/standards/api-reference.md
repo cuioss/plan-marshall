@@ -286,7 +286,7 @@ extension: null
 
 Resolve all skills for a domain and profile. Returns core + profile skills.
 
-**Profiles:** implementation, testing, quality
+**Profiles:** implementation, module_testing, integration_testing, quality
 
 ```bash
 plan-marshall-config resolve-domain-skills \
@@ -326,6 +326,59 @@ status: success
 5-execute: pm-workflow:phase-5-execute
 6-verify: pm-workflow:phase-6-verify
 7-finalize: pm-workflow:phase-7-finalize
+```
+
+### get-skills-by-profile
+
+Get skills organized by profile for a domain. Loads profiles from extension.py via bundle reference.
+
+```bash
+plan-marshall-config get-skills-by-profile --domain java
+```
+
+**Output:**
+```toon
+status: success
+domain: java
+skills_by_profile:
+  implementation: ["pm-dev-java:java-core", "pm-dev-java:java-null-safety", "pm-dev-java:java-cdi"]
+  module_testing: ["pm-dev-java:java-core", "pm-dev-java:junit-core"]
+  integration_testing: ["pm-dev-java:java-core", "pm-dev-java:junit-core", "pm-dev-java:junit-integration"]
+  documentation: ["pm-dev-java:java-core", "pm-dev-java:javadoc"]
+```
+
+### configure-task-executors
+
+Auto-discover profiles from configured domains and register task executors.
+Convention: profile X maps to skill `pm-workflow:task-X`.
+
+```bash
+plan-marshall-config configure-task-executors
+```
+
+**Output:**
+```toon
+status: success
+task_executors_configured: 3
+executors:
+  implementation: pm-workflow:task-implementation
+  integration_testing: pm-workflow:task-integration_testing
+  module_testing: pm-workflow:task-module_testing
+```
+
+### resolve-task-executor
+
+Resolve task executor skill for a given profile.
+
+```bash
+plan-marshall-config resolve-task-executor --profile implementation
+```
+
+**Output:**
+```toon
+status: success
+profile: implementation
+task_executor: pm-workflow:task-implementation
 ```
 
 ---
@@ -380,7 +433,7 @@ plan-marshall-config plan defaults list
 ```toon
 status: success
 defaults:
-  compatibility: deprecations
+  compatibility: breaking
   commit_strategy: per_deliverable
   create_pr: false
   verification_required: true
@@ -403,6 +456,101 @@ Set a default value.
 plan-marshall-config plan defaults set \
   --field create_pr \
   --value true
+```
+
+---
+
+## Noun: ext-defaults
+
+Manage extension defaults (generic key-value storage for extension-set configuration).
+
+### get
+
+Get extension default value by key.
+
+```bash
+plan-marshall-config ext-defaults get --key my_setting
+```
+
+**Output:**
+```toon
+status: success
+key: my_setting
+value: my_value
+```
+
+### set
+
+Set extension default value (always overwrites).
+
+```bash
+plan-marshall-config ext-defaults set --key my_setting --value my_value
+```
+
+### set-default
+
+Set value only if key does not exist (write-once).
+
+```bash
+plan-marshall-config ext-defaults set-default --key my_setting --value my_value
+```
+
+**Output (key exists):**
+```toon
+status: skipped
+key: my_setting
+reason: key_exists
+existing_value: old_value
+```
+
+### list
+
+List all extension defaults.
+
+```bash
+plan-marshall-config ext-defaults list
+```
+
+**Output:**
+```toon
+status: success
+extension_defaults:
+  key1: value1
+  key2: value2
+count: 2
+```
+
+### remove
+
+Remove extension default by key.
+
+```bash
+plan-marshall-config ext-defaults remove --key my_setting
+```
+
+---
+
+## Noun: ci (additional verbs)
+
+### persist
+
+Persist full CI config (provider, commands, tools) in a single operation.
+
+```bash
+plan-marshall-config ci persist \
+  --provider github \
+  --repo-url "https://github.com/org/repo" \
+  --commands '{"issue-view": "gh issue view", "pr-create": "gh pr create"}' \
+  --tools "gh" \
+  --git-present true
+```
+
+**Output:**
+```toon
+status: success
+provider: github
+repo_url: https://github.com/org/repo
+commands_count: 2
 ```
 
 ---

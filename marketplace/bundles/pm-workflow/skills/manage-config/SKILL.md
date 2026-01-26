@@ -62,6 +62,7 @@ python3 .plan/execute-script.py pm-workflow:manage-config:manage-config create \
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `--domains` | string (comma-separated) | Yes | Domain list (e.g., `java` or `java,javascript`) |
+| `--compatibility` | enum | No | `breaking` (default), `deprecation`, `smart_and_ask` |
 | `--commit-strategy` | enum | No | `per_deliverable` (default), `per_plan`, `none` |
 | `--create-pr` | bool | No | Create PR on finalize (default from marshal.json) |
 | `--verification-required` | bool | No | Require verification (default from marshal.json) |
@@ -79,6 +80,7 @@ created: true
 config:
   domains[1]:
   - java
+  compatibility: breaking
   commit_strategy: per_deliverable
   create_pr: true
   verification_required: true
@@ -188,6 +190,7 @@ branch_strategy: feature
 | Field | Valid Values |
 |-------|--------------|
 | domains | lowercase identifiers (e.g., java, javascript, plan-marshall-plugin-dev, generic) |
+| compatibility | breaking, deprecation, smart_and_ask |
 | commit_strategy | per_deliverable, per_plan, none |
 | create_pr | true, false |
 | verification_required | true, false |

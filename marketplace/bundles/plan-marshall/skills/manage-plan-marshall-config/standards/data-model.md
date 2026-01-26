@@ -37,7 +37,11 @@ JSON structure and field definitions for project configuration.
         "defaults": [],
         "optionals": ["pm-dev-java:java-cdi", "pm-dev-java:java-maintenance"]
       },
-      "testing": {
+      "module_testing": {
+        "defaults": ["pm-dev-java:junit-core"],
+        "optionals": []
+      },
+      "integration_testing": {
         "defaults": ["pm-dev-java:junit-core"],
         "optionals": ["pm-dev-java:junit-integration"]
       },
@@ -57,7 +61,7 @@ JSON structure and field definitions for project configuration.
   },
   "plan": {
     "defaults": {
-      "compatibility": "deprecations",
+      "compatibility": "breaking",
       "commit_strategy": "per_deliverable",
       "create_pr": false,
       "verification_required": true,
@@ -121,7 +125,8 @@ Technical domains (java, javascript, etc.) use profile-based organization:
         "optionals": ["bundle:skill", ...]
       },
       "implementation": { "defaults": [], "optionals": [] },
-      "testing": { "defaults": [], "optionals": [] },
+      "module_testing": { "defaults": [], "optionals": [] },
+      "integration_testing": { "defaults": [], "optionals": [] },
       "quality": { "defaults": [], "optionals": [] }
     }
   }
@@ -144,7 +149,8 @@ Profiles determine which skills to load based on task context:
 | Profile | Phase | Description |
 |---------|-------|-------------|
 | `implementation` | execute | Production code development |
-| `testing` | execute | Test code development |
+| `module_testing` | execute | Unit/module test development |
+| `integration_testing` | execute | Integration test development |
 | `quality` | verify | Documentation and verification |
 
 ### Extension Types
@@ -233,7 +239,7 @@ Plan-related configuration including execution defaults and finalize behavior.
 {
   "plan": {
     "defaults": {
-      "compatibility": "deprecations",
+      "compatibility": "breaking",
       "commit_strategy": "per_deliverable",
       "create_pr": false,
       "verification_required": true,
@@ -250,7 +256,7 @@ Plan-related configuration including execution defaults and finalize behavior.
 
 | Field | Type | Default | Values |
 |-------|------|---------|--------|
-| `compatibility` | string | "breaking" | deprecations, breaking |
+| `compatibility` | string | "breaking" | breaking, deprecation, smart_and_ask |
 | `commit_strategy` | string | "per_deliverable" | per_deliverable, per_plan, none |
 | `create_pr` | bool | false | true, false |
 | `verification_required` | bool | true | true, false |

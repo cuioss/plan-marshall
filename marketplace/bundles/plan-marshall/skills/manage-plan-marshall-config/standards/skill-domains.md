@@ -9,9 +9,9 @@ Skill domains configure which implementation skills are loaded when working on c
 - **System Domain**: Contains workflow skills for the 7-phase execution model
 - **Technical Domains**: Language-specific with profiles and workflow skill extensions (java, javascript)
 
-## 6-Phase Workflow Model
+## 7-Phase Workflow Model
 
-The system domain contains workflow skills for the 6 execution phases:
+The system domain contains workflow skills for the 7 execution phases:
 
 | Phase | Purpose | Workflow Skill |
 |-------|---------|----------------|
@@ -65,7 +65,11 @@ The system domain contains workflow skills for the 6 execution phases:
         "defaults": [],
         "optionals": ["pm-dev-java:java-cdi", "pm-dev-java:java-maintenance"]
       },
-      "testing": {
+      "module_testing": {
+        "defaults": ["pm-dev-java:junit-core"],
+        "optionals": []
+      },
+      "integration_testing": {
         "defaults": ["pm-dev-java:junit-core"],
         "optionals": ["pm-dev-java:junit-integration"]
       },
@@ -94,7 +98,8 @@ Domain-specific extensions that augment workflow skills. Only in technical domai
 | Profile | Phase Used | Purpose |
 |---------|------------|---------|
 | `implementation` | execute (impl tasks) | Production code patterns |
-| `testing` | execute (test tasks) | Test code patterns |
+| `module_testing` | execute (unit/module test tasks) | Unit and module test patterns |
+| `integration_testing` | execute (integration test tasks) | Integration test patterns |
 | `quality` | verify | Verification, documentation standards |
 
 ### core
@@ -148,7 +153,13 @@ Java development with CDI, JUnit, and standard patterns.
 | defaults | (none) |
 | optionals | `pm-dev-java:java-cdi`, `pm-dev-java:java-maintenance` |
 
-**testing**:
+**module_testing**:
+| Field | Skills |
+|-------|--------|
+| defaults | `pm-dev-java:junit-core` |
+| optionals | (none) |
+
+**integration_testing**:
 | Field | Skills |
 |-------|--------|
 | defaults | `pm-dev-java:junit-core` |
@@ -182,10 +193,16 @@ JavaScript/Frontend development with Jest and Cypress testing.
 | defaults | (none) |
 | optionals | `pm-dev-frontend:cui-javascript-linting`, `pm-dev-frontend:cui-javascript-maintenance` |
 
-**testing**:
+**module_testing**:
 | Field | Skills |
 |-------|--------|
 | defaults | `pm-dev-frontend:cui-javascript-unit-testing` |
+| optionals | (none) |
+
+**integration_testing**:
+| Field | Skills |
+|-------|--------|
+| defaults | (none) |
 | optionals | `pm-dev-frontend:cui-cypress` |
 
 ## Skill Resolution
@@ -278,6 +295,7 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-m
 ```toon
 status: success
 1-init: pm-workflow:phase-1-init
+2-refine: pm-workflow:phase-2-refine
 3-outline: pm-workflow:phase-3-outline
 4-plan: pm-workflow:phase-4-plan
 5-execute: pm-workflow:phase-5-execute
@@ -292,7 +310,8 @@ status: success
 | `architecture` | `{domain}.core.defaults` + `{domain}.architecture.defaults` | `{domain}.core.optionals` + `{domain}.architecture.optionals` |
 | `planning` | `{domain}.core.defaults` + `{domain}.planning.defaults` | `{domain}.core.optionals` + `{domain}.planning.optionals` |
 | `implementation` | `{domain}.core.defaults` + `{domain}.implementation.defaults` | `{domain}.core.optionals` + `{domain}.implementation.optionals` |
-| `testing` | `{domain}.core.defaults` + `{domain}.testing.defaults` | `{domain}.core.optionals` + `{domain}.testing.optionals` |
+| `module_testing` | `{domain}.core.defaults` + `{domain}.module_testing.defaults` | `{domain}.core.optionals` + `{domain}.module_testing.optionals` |
+| `integration_testing` | `{domain}.core.defaults` + `{domain}.integration_testing.defaults` | `{domain}.core.optionals` + `{domain}.integration_testing.optionals` |
 | `quality` | `{domain}.core.defaults` + `{domain}.quality.defaults` | `{domain}.core.optionals` + `{domain}.quality.optionals` |
 
 ## Usage Patterns
@@ -342,8 +361,12 @@ Searches all profiles (core, implementation, testing, quality) for nested domain
     "defaults": [],
     "optionals": []
   },
-  "testing": {
+  "module_testing": {
     "defaults": ["pm-dev-python:pytest-core"],
+    "optionals": []
+  },
+  "integration_testing": {
+    "defaults": [],
     "optionals": []
   },
   "quality": {
@@ -374,6 +397,7 @@ No agent changes needed - agents work with any domain.
 - Use `architecture` for high-level design in outline phase
 - Use `planning` for task decomposition patterns
 - Use `implementation` for production code tasks
-- Use `testing` for test code tasks
+- Use `module_testing` for unit and module test tasks
+- Use `integration_testing` for integration test tasks
 - Use `quality` for verification and documentation
 - Core skills apply to all profiles

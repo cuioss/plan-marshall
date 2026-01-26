@@ -61,6 +61,8 @@ AskUserQuestion:
       description: "Require verification phase (true/false)"
     - label: "commit_strategy"
       description: "Commit strategy (per_deliverable/per_plan/none)"
+    - label: "compatibility"
+      description: "Backward compatibility approach (breaking/deprecation/smart_and_ask)"
   multiSelect: false
 ```
 
@@ -123,6 +125,23 @@ AskUserQuestion:
 ```
 
 Maps to values: `per_deliverable`, `per_plan`, `none`
+
+**compatibility**:
+```
+AskUserQuestion:
+  question: "Backward compatibility approach during plan execution?"
+  header: "Compat"
+  options:
+    - label: "Breaking (Recommended)"
+      description: "Clean-slate approach, no deprecation nor transitionary comments"
+    - label: "Deprecation"
+      description: "Add deprecation markers to old code, provide migration path"
+    - label: "Smart and ask"
+      description: "Assess impact and ask user when backward compatibility is uncertain"
+  multiSelect: false
+```
+
+Maps to values: `breaking`, `deprecation`, `smart_and_ask`
 
 Apply:
 ```bash

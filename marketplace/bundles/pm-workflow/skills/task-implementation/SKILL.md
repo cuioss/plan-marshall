@@ -71,6 +71,22 @@ Extract key fields:
 - `verification`: How to verify success
 - `depends_on`: Dependencies (should be complete)
 
+### Step 1.5: Read Compatibility Strategy
+
+Read the compatibility approach from config.toon:
+
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-config:manage-config get \
+  --plan-id {plan_id} \
+  --field compatibility
+```
+
+The response includes a `description` field with the behavioral constraint. Apply throughout all subsequent steps:
+
+- **breaking**: Make changes directly. Remove old code, rename freely, no backward compatibility.
+- **deprecation**: Keep old APIs/methods with `@Deprecated` markers. Add new code alongside old. Provide migration notes in commit messages.
+- **smart_and_ask**: For each change that could break consumers, evaluate impact. If uncertain, ask user via AskUserQuestion before proceeding.
+
 ### Step 2: Understand Context
 
 Before implementing, understand the codebase context:
