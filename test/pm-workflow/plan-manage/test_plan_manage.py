@@ -158,7 +158,7 @@ def test_get_routing_context():
             '--title',
             'Routing Test',
             '--phases',
-            '1-init,2-refine,3-outline,4-plan,5-execute,6-finalize',
+            '1-init,2-refine,3-outline,4-plan,5-execute,6-verify,7-finalize',
         )
         result = run_script(SCRIPT_PATH, 'get-routing-context', '--plan-id', 'routing-plan')
         assert result.success, f'Script failed: {result.stderr}'
@@ -186,7 +186,7 @@ def test_get_routing_context_after_transition():
             '--title',
             'Transition Test',
             '--phases',
-            '1-init,2-refine,3-outline,4-plan,5-execute,6-finalize',
+            '1-init,2-refine,3-outline,4-plan,5-execute,6-verify,7-finalize',
         )
         run_script(SCRIPT_PATH, 'transition', '--plan-id', 'transition-routing', '--completed', '1-init')
         result = run_script(SCRIPT_PATH, 'get-routing-context', '--plan-id', 'transition-routing')

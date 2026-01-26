@@ -177,8 +177,8 @@ def main():
     p_rws.add_argument(
         '--phase',
         required=True,
-        choices=['init', 'outline', 'plan', 'execute', 'finalize'],
-        help='Phase name (init, outline, plan, execute, finalize)',
+        choices=['init', 'refine', 'outline', 'plan', 'execute', 'verify', 'finalize'],
+        help='Phase name (init, refine, outline, plan, execute, verify, finalize)',
     )
 
     # --- resolve-workflow-skill-extension ---

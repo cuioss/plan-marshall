@@ -115,7 +115,8 @@ Read the `workflow_phase` from test-definition.toon to determine which phases to
 | `3-outline` | solution_outline.md, deliverables.toon, config.toon, status.toon, references.toon, work.log, decision.log |
 | `4-plan` | TASK-*.toon files, tasks-list.toon |
 | `5-execute` | references.toon (with modified files), work.log |
-| `6-finalize` | (git artifacts - not collected by script) |
+| `6-verify` | (quality checks - not collected by script) |
+| `7-finalize` | (git artifacts - not collected by script) |
 
 **Common combinations:**
 - `3-outline` → collect outline artifacts only

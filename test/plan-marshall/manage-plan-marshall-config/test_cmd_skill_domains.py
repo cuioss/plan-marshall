@@ -399,20 +399,21 @@ def test_get_workflow_skills():
 
 
 def test_get_workflow_skills_output_format():
-    """Test get-workflow-skills returns all 6 workflow skill references."""
+    """Test get-workflow-skills returns all 7 workflow skill references."""
     with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
 
         result = run_script(SCRIPT_PATH, 'get-workflow-skills')
 
         assert result.success, f'Should succeed: {result.stderr}'
-        # Verify all 6 workflow skills are returned
+        # Verify all 7 workflow skills are returned
         assert 'pm-workflow:phase-5-execute' in result.stdout
-        assert 'pm-workflow:phase-6-finalize' in result.stdout
+        assert 'pm-workflow:phase-6-verify' in result.stdout
+        assert 'pm-workflow:phase-7-finalize' in result.stdout
 
 
 # =============================================================================
-# resolve-workflow-skill Tests (5-Phase Model - Always uses system domain)
+# resolve-workflow-skill Tests (7-Phase Model - Always uses system domain)
 # =============================================================================
 
 
@@ -462,6 +463,17 @@ def test_resolve_workflow_skill_execute():
         assert 'pm-workflow:phase-5-execute' in result.stdout
 
 
+def test_resolve_workflow_skill_verify():
+    """Test resolve-workflow-skill for verify phase returns system workflow skill."""
+    with PlanContext() as ctx:
+        create_nested_marshal_json(ctx.fixture_dir)
+
+        result = run_script(SCRIPT_PATH, 'resolve-workflow-skill', '--phase', 'verify')
+
+        assert result.success, f'Should succeed: {result.stderr}'
+        assert 'pm-workflow:phase-6-verify' in result.stdout
+
+
 def test_resolve_workflow_skill_finalize():
     """Test resolve-workflow-skill for finalize phase returns system workflow skill."""
     with PlanContext() as ctx:
@@ -470,7 +482,7 @@ def test_resolve_workflow_skill_finalize():
         result = run_script(SCRIPT_PATH, 'resolve-workflow-skill', '--phase', 'finalize')
 
         assert result.success, f'Should succeed: {result.stderr}'
-        assert 'pm-workflow:phase-6-finalize' in result.stdout
+        assert 'pm-workflow:phase-7-finalize' in result.stdout
 
 
 def test_resolve_workflow_skill_no_system_domain():

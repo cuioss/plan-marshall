@@ -240,7 +240,7 @@ domains: java,javascript
 
 Resolve system workflow skill for a phase. Always returns from the `system` domain.
 
-**Phases:** 1-init, 3-outline, 4-plan, 5-execute, 6-finalize
+**Phases:** 1-init, 2-refine, 3-outline, 4-plan, 5-execute, 6-verify, 7-finalize
 
 ```bash
 plan-marshall-config resolve-workflow-skill --phase 3-outline
@@ -259,7 +259,7 @@ Resolve domain-specific workflow skill extension. Returns null (not error) if ex
 
 **Extension Types:**
 - `outline` - Additional context for solution-outline phase
-- `triage` - Finding triage logic for plan-finalize phase
+- `triage` - Finding triage logic for verify phase
 
 ```bash
 plan-marshall-config resolve-workflow-skill-extension \
@@ -320,10 +320,12 @@ plan-marshall-config get-workflow-skills
 ```toon
 status: success
 1-init: pm-workflow:phase-1-init
+2-refine: pm-workflow:phase-2-refine
 3-outline: pm-workflow:phase-3-outline
 4-plan: pm-workflow:phase-4-plan
 5-execute: pm-workflow:phase-5-execute
-6-finalize: pm-workflow:phase-6-finalize
+6-verify: pm-workflow:phase-6-verify
+7-finalize: pm-workflow:phase-7-finalize
 ```
 
 ---

@@ -17,7 +17,7 @@ Planning operations MUST use the official manage-* APIs for all .plan directory 
 
 ## MANDATORY: Post-Phase Verification Protocol
 
-**CRITICAL**: Execute this protocol after EVERY phase transition (1-init→3-outline, 4-plan→5-execute, 5-execute→6-finalize). This is NOT optional.
+**CRITICAL**: Execute this protocol after EVERY phase transition (1-init→3-outline, 4-plan→5-execute, 5-execute→6-verify). This is NOT optional.
 
 ### Step 1: Chat History Error Check
 
@@ -763,7 +763,7 @@ When `/plan-execute` executes, verify after each task:
 | Task completed | type=outcome, summary=task completion | task status=done |
 | Build verified | type=outcome, summary=verification passed | - |
 | Error occurred | type=error, detail=error info | may set blocked state |
-| All tasks done | type=progress, summary=5-execute phase complete | current_phase=6-finalize |
+| All tasks done | type=progress, summary=5-execute phase complete | current_phase=6-verify |
 
 ## Common Violations
 
@@ -791,7 +791,7 @@ Work-log: No entry found for artifact creation
 
 ```
 Operation: Completed all 5-execute phase tasks
-Expected: current_phase=6-finalize
+Expected: current_phase=6-verify
 Actual: current_phase=5-execute (not updated)
 ```
 

@@ -559,7 +559,7 @@ def _find_workflow_skill(workflow_skills: dict[str, str], phase: str) -> str:
 def cmd_get_workflow_skills(args) -> int:
     """Handle get-workflow-skills command.
 
-    Returns all workflow skills from the system domain (5-phase model).
+    Returns all workflow skills from the system domain (7-phase model).
     """
     try:
         require_initialized()
@@ -582,9 +582,11 @@ def cmd_get_workflow_skills(args) -> int:
     return success_exit(
         {
             'init': _find_workflow_skill(workflow_skills, 'init'),
+            'refine': _find_workflow_skill(workflow_skills, 'refine'),
             'outline': _find_workflow_skill(workflow_skills, 'outline'),
             'plan': _find_workflow_skill(workflow_skills, 'plan'),
             'execute': _find_workflow_skill(workflow_skills, 'execute'),
+            'verify': _find_workflow_skill(workflow_skills, 'verify'),
             'finalize': _find_workflow_skill(workflow_skills, 'finalize'),
         }
     )
@@ -596,7 +598,7 @@ def cmd_resolve_workflow_skill(args) -> int:
     Always returns the system workflow skill from skill_domains.system.workflow_skills.{phase}.
     Domain-specific behavior is provided by extensions loaded via resolve-workflow-skill-extension.
 
-    Phases: init, outline, plan, execute, finalize
+    Phases: init, refine, outline, plan, execute, verify, finalize
     """
     try:
         require_initialized()

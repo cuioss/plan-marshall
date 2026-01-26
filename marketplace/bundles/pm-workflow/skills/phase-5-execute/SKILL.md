@@ -1,6 +1,6 @@
 ---
 name: phase-5-execute
-description: Execute phase skill for plan management. DUMB TASK RUNNER that executes tasks from TASK-*.toon files sequentially for execute and finalize phases.
+description: Execute phase skill for plan management. DUMB TASK RUNNER that executes tasks from TASK-*.toon files sequentially.
 user-invocable: false
 allowed-tools: Read, Write, Edit, Bash, Skill, Task, AskUserQuestion
 ---
@@ -11,7 +11,7 @@ allowed-tools: Read, Write, Edit, Bash, Skill, Task, AskUserQuestion
 
 **Execution Pattern**: Locate current task → Execute steps → Mark progress → Next task
 
-**Phases Handled**: execute, finalize
+**Phase Handled**: execute
 
 **CRITICAL**: Use manage-* scripts via Bash for plan file updates (Edit/Write tools trigger permission prompts on `.plan/` directories).
 
@@ -30,20 +30,6 @@ Contains: Task execution pattern, phase transition, auto-continue behavior
 Read standards/operations.md
 ```
 Contains: Delegation patterns for builds, quality checks, PR creation
-
-### Finalize Configuration (from config.toon)
-
-For finalize phase, read finalize configuration directly from config.toon:
-
-```bash
-python3 .plan/execute-script.py pm-workflow:manage-config:manage-config get-multi \
-  --plan-id {plan_id} \
-  --fields create_pr,verification_required,verification_command,branch_strategy
-```
-
-Returns only the required finalize fields in a single call: `create_pr`, `verification_required`, `verification_command`, `branch_strategy`.
-
-These fields are written during init based on domain configuration.
 
 ---
 
@@ -210,7 +196,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 - **/plan-execute** - Primary command invoking this skill
 
 ### Related Skills
-- **plan-init** - Creates plan structure (request.md, config, status)
-- **solution-outline** - Creates deliverables from request
-- **task-plan** - Creates tasks from deliverables
+- **phase-4-plan** - Creates tasks from deliverables (previous phase)
+- **phase-6-verify** - Quality verification (next phase)
+- **phase-7-finalize** - Shipping workflow (commit, PR)
 

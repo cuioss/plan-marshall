@@ -102,7 +102,8 @@ def create_nested_marshal_json(fixture_dir: Path) -> Path:
                     '3-outline': 'pm-workflow:phase-3-outline',
                     '4-plan': 'pm-workflow:phase-4-plan',
                     '5-execute': 'pm-workflow:phase-5-execute',
-                    '6-finalize': 'pm-workflow:phase-6-finalize',
+                    '6-verify': 'pm-workflow:phase-6-verify',
+                    '7-finalize': 'pm-workflow:phase-7-finalize',
                 },
                 'task_executors': {
                     'implementation': 'pm-workflow:task-implementation',

@@ -5,13 +5,14 @@ Artifact collection script for workflow verification.
 Collects workflow artifacts for comparison against golden references
 during verification.
 
-Phases (6-phase model):
-    1-init:    config.toon, status.toon, request.md
-    2-refine:  request.md with clarifications, work.log with [REFINE:*] entries
-    3-outline: solution_outline.md, deliverables, references.toon
-    4-plan:    TASK-*.toon files
-    5-execute: Modified files tracked in references.toon
-    6-finalize: Git commit, PR artifacts
+Phases (7-phase model):
+    1-init:     config.toon, status.toon, request.md
+    2-refine:   request.md with clarifications, work.log with [REFINE:*] entries
+    3-outline:  solution_outline.md, deliverables, references.toon
+    4-plan:     TASK-*.toon files
+    5-execute:  Modified files tracked in references.toon
+    6-verify:   Quality checks (not collected by this script)
+    7-finalize: Git commit, PR artifacts
 
 Usage:
     python3 collect-artifacts.py --plan-id my-plan --output artifacts/
@@ -283,7 +284,7 @@ class ArtifactCollector:
 
         Args:
             phases: List of phases to collect artifacts for.
-                    Valid phases: 1-init, 2-refine, 3-outline, 4-plan, 5-execute, 6-finalize
+                    Valid phases: 1-init, 2-refine, 3-outline, 4-plan, 5-execute, 6-verify, 7-finalize
                     Default: ['3-outline']
 
         Phase artifact mapping:
@@ -292,7 +293,8 @@ class ArtifactCollector:
             3-outline: solution_outline.md, deliverables.toon, references.toon
             4-plan:    TASK-*.toon files
             5-execute: references.toon (with modified files)
-            6-finalize: (git artifacts not collected by this script)
+            6-verify:   (quality check artifacts not collected by this script)
+            7-finalize: (git artifacts not collected by this script)
         """
         if phases is None:
             phases = ['3-outline']
@@ -335,7 +337,7 @@ class ArtifactCollector:
             self.collect_references()
             self.collect_work_log()
 
-        # 6-finalize: git artifacts not collected here (use git commands)
+        # 6-verify / 7-finalize: not collected here (use build/git commands)
 
         # Generate collection summary
         success_count = len([c for c in self.collected if c['status'] == 'success'])

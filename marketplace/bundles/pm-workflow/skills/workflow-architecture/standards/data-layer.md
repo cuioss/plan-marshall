@@ -373,10 +373,14 @@ The pm-workflow bundle uses manage-* skills as the data access layer for all pla
 │  │       ├── request.md         # Original request                         │
 │  │       ├── references.toon    # External refs (branch, issue)            │
 │  │       ├── solution_outline.md# Deliverables                              │
-│  │       ├── TASK-001.toon      # First task                               │
-│  │       ├── TASK-002.toon      # Second task                              │
-│  │       ├── work-log.log       # Execution log                            │
-│  │       └── script-execution.log # Script invocation log                  │
+│  │       ├── work/              # Working files (outline phase+)           │
+│  │       ├── tasks/             # Task files                               │
+│  │       │   ├── TASK-001-IMPL.toon                                        │
+│  │       │   └── TASK-002-IMPL.toon                                        │
+│  │       └── logs/              # Execution logs                           │
+│  │           ├── work.log                                                   │
+│  │           ├── decision.log                                               │
+│  │           └── script-execution.log                                       │
 │  │                                                                          │
 │  ├── archived-plans/            # Completed plans                          │
 │  │   └── {date}-{plan_id}/                                                  │

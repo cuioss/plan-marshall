@@ -16,10 +16,12 @@ The system domain contains workflow skills for the 6 execution phases:
 | Phase | Purpose | Workflow Skill |
 |-------|---------|----------------|
 | `1-init` | Initialize plan | `pm-workflow:phase-1-init` |
+| `2-refine` | Clarify request | `pm-workflow:phase-2-refine` |
 | `3-outline` | Create solution outline | `pm-workflow:phase-3-outline` |
 | `4-plan` | Decompose into tasks | `pm-workflow:phase-4-plan` |
 | `5-execute` | Run implementation | `pm-workflow:phase-5-execute` |
-| `6-finalize` | Commit, PR, quality | `pm-workflow:phase-6-finalize` |
+| `6-verify` | Quality verification | `pm-workflow:phase-6-verify` |
+| `7-finalize` | Commit, PR | `pm-workflow:phase-7-finalize` |
 
 ## Structure
 
@@ -33,10 +35,12 @@ The system domain contains workflow skills for the 6 execution phases:
       "optionals": ["plan-marshall:ref-development-standards"],
       "workflow_skills": {
         "1-init": "pm-workflow:phase-1-init",
+        "2-refine": "pm-workflow:phase-2-refine",
         "3-outline": "pm-workflow:phase-3-outline",
         "4-plan": "pm-workflow:phase-4-plan",
         "5-execute": "pm-workflow:phase-5-execute",
-        "6-finalize": "pm-workflow:phase-6-finalize"
+        "6-verify": "pm-workflow:phase-6-verify",
+        "7-finalize": "pm-workflow:phase-7-finalize"
       }
     }
   }
@@ -199,7 +203,7 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-m
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `--phase` | string | Yes | Phase name (1-init, 3-outline, 4-plan, 5-execute, 6-finalize) |
+| `--phase` | string | Yes | Phase name (1-init, 2-refine, 3-outline, 4-plan, 5-execute, 6-verify, 7-finalize) |
 
 **Output**:
 ```toon
@@ -210,7 +214,7 @@ workflow_skill: pm-workflow:phase-3-outline
 
 **Error Cases**:
 - System domain missing → `error: System domain not configured. Run /marshall-steward to initialize.`
-- Unknown phase → `error: Unknown phase: {phase}. Available: 1-init, 3-outline, 4-plan, 5-execute, 6-finalize`
+- Unknown phase → `error: Unknown phase: {phase}. Available: 1-init, 2-refine, 3-outline, 4-plan, 5-execute, 6-verify, 7-finalize`
 
 ### resolve-workflow-skill-extension Command
 
@@ -277,7 +281,8 @@ status: success
 3-outline: pm-workflow:phase-3-outline
 4-plan: pm-workflow:phase-4-plan
 5-execute: pm-workflow:phase-5-execute
-6-finalize: pm-workflow:phase-6-finalize
+6-verify: pm-workflow:phase-6-verify
+7-finalize: pm-workflow:phase-7-finalize
 ```
 
 ### Aggregation Logic

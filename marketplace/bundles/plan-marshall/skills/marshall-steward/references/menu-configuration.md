@@ -292,7 +292,8 @@ The pm-workflow bundle uses thin agents that load skills from system domain:
 | `solution-outline-agent` | Create deliverables | `resolve-workflow-skill --phase 3-outline` |
 | `task-plan-agent` | Create tasks from deliverables | `resolve-workflow-skill --phase 4-plan` |
 | `task-execute-agent` | Execute single task | `resolve-workflow-skill --phase 5-execute` + `task.skills` |
-| `plan-finalize-agent` | Commit, PR, triage | `resolve-workflow-skill --phase 6-finalize` |
+| `plan-verify-agent` | Quality verification | `resolve-workflow-skill --phase 6-verify` |
+| `plan-finalize-agent` | Commit, PR | `resolve-workflow-skill --phase 7-finalize` |
 
 Workflow skills are resolved from `system.workflow_skills`. Domain-specific extensions are loaded via `resolve-workflow-skill-extension --domain {domain} --type {outline|triage}`.
 

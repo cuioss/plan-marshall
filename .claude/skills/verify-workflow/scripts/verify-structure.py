@@ -7,13 +7,14 @@ Runs deterministic checks to verify:
 - Required sections present
 - Basic format validation
 
-Phases (6-phase model):
-    1-init:    config.toon, status.toon, request.md exist
-    2-refine:  request.md has clarifications, work.log has [REFINE:*] entries
-    3-outline: solution_outline.md, deliverables, references.toon
-    4-plan:    TASK-*.toon files exist
-    5-execute: Modified files tracked in references.toon
-    6-finalize: Git commit artifacts (not verified by this script)
+Phases (7-phase model):
+    1-init:     config.toon, status.toon, request.md exist
+    2-refine:   request.md has clarifications, work.log has [REFINE:*] entries
+    3-outline:  solution_outline.md, deliverables, references.toon
+    4-plan:     TASK-*.toon files exist
+    5-execute:  Modified files tracked in references.toon
+    6-verify:   Quality checks (not verified by this script)
+    7-finalize: Git commit artifacts (not verified by this script)
 
 Usage:
     python3 verify-structure.py --plan-id my-plan --test-case path/to/test-case
@@ -476,7 +477,7 @@ class StructuralChecker:
 
         Args:
             phases: List of phases to verify. Valid phases:
-                    1-init, 2-refine, 3-outline, 4-plan, 5-execute, 6-finalize
+                    1-init, 2-refine, 3-outline, 4-plan, 5-execute, 6-verify, 7-finalize
                     Default: ['3-outline']
 
         Phase verification mapping:
@@ -485,7 +486,8 @@ class StructuralChecker:
             3-outline: solution_outline.md valid, deliverables listed, references.toon
             4-plan:    TASK-*.toon files exist
             5-execute: references.toon with modified files, work.log
-            6-finalize: (git artifacts - not verified by this script)
+            6-verify:   (quality checks - not verified by this script)
+            7-finalize: (git artifacts - not verified by this script)
         """
         if phases is None:
             phases = ['3-outline']
@@ -549,8 +551,8 @@ class StructuralChecker:
             if expected_files:
                 self.check_affected_files(expected_files)
 
-        # Phase 6-finalize: git artifacts not verified by this script
-        # (use git commands to verify commit/PR)
+        # Phase 6-verify / 7-finalize: not verified by this script
+        # (use build/git commands to verify)
 
         # Calculate overall status (excluding 'info' checks from failure count)
         failed_checks = [c for c in self.checks if c['status'] == 'fail']

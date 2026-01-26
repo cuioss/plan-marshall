@@ -24,7 +24,7 @@ Defines the test case metadata and trigger configuration.
 ```toon
 id: {test-id}
 name: {Human-readable test name}
-workflow_phase: {1-init|2-refine|3-outline|4-plan|5-execute|6-finalize|comma-separated}
+workflow_phase: {1-init|2-refine|3-outline|4-plan|5-execute|6-verify|7-finalize|comma-separated}
 
 trigger:
   command: {Command that triggers the workflow}
@@ -63,7 +63,8 @@ The 6-phase model supports verification at each stage:
 | `3-outline` | solution_outline.md, deliverables, references.toon | Structure valid, deliverable count, affected files |
 | `4-plan` | TASK-*.toon files | Tasks exist, match deliverables |
 | `5-execute` | references.toon with modified files | Affected files tracked |
-| `6-finalize` | git commit artifacts | (Not verified by script - use git commands) |
+| `6-verify` | quality check results | (Not verified by script - use build commands) |
+| `7-finalize` | git commit artifacts | (Not verified by script - use git commands) |
 
 **Common combinations**:
 - `3-outline,4-plan` - Verify outline and planning phases together

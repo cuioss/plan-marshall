@@ -4,7 +4,7 @@ JSON schema definition for the `skill_domains` section of marshal.json.
 
 ## Overview
 
-The skill domains configuration uses a 6-phase workflow model with profile-based skill resolution. The `system` domain contains workflow skills, while technical domains (java, javascript, etc.) contain profile-based skills and optional workflow extensions.
+The skill domains configuration uses a 7-phase workflow model with profile-based skill resolution. The `system` domain contains workflow skills, while technical domains (java, javascript, etc.) contain profile-based skills and optional workflow extensions.
 
 ## Schema Structure
 
@@ -16,10 +16,12 @@ The skill domains configuration uses a 6-phase workflow model with profile-based
       "optionals": ["bundle:skill"],
       "workflow_skills": {
         "1-init": "pm-workflow:phase-1-init",
+        "2-refine": "pm-workflow:phase-2-refine",
         "3-outline": "pm-workflow:phase-3-outline",
         "4-plan": "pm-workflow:phase-4-plan",
         "5-execute": "pm-workflow:phase-5-execute",
-        "6-finalize": "pm-workflow:phase-6-finalize"
+        "6-verify": "pm-workflow:phase-6-verify",
+        "7-finalize": "pm-workflow:phase-7-finalize"
       },
       "task_executors": {
         "implementation": "pm-workflow:task-implementation",
@@ -53,19 +55,21 @@ The `system` domain is required and contains:
 |-------|------|----------|-------------|
 | `defaults` | array | No | Base skills loaded for all tasks |
 | `optionals` | array | No | Optional base skills available for selection |
-| `workflow_skills` | object | Yes | Maps 6 phases to workflow skill references |
+| `workflow_skills` | object | Yes | Maps 7 phases to workflow skill references |
 | `task_executors` | object | Yes | Maps profiles to task executor skills |
 
-### Workflow Skills (5-Phase Model)
+### Workflow Skills (7-Phase Model)
 
 ```json
 {
   "workflow_skills": {
     "1-init": "pm-workflow:phase-1-init",
+    "2-refine": "pm-workflow:phase-2-refine",
     "3-outline": "pm-workflow:phase-3-outline",
     "4-plan": "pm-workflow:phase-4-plan",
     "5-execute": "pm-workflow:phase-5-execute",
-    "6-finalize": "pm-workflow:phase-6-finalize"
+    "6-verify": "pm-workflow:phase-6-verify",
+    "7-finalize": "pm-workflow:phase-7-finalize"
   }
 }
 ```
@@ -73,10 +77,12 @@ The `system` domain is required and contains:
 | Phase | Purpose | Workflow Skill |
 |-------|---------|----------------|
 | `1-init` | Initialize plan, detect artifacts | `pm-workflow:phase-1-init` |
+| `2-refine` | Clarify request until confidence threshold | `pm-workflow:phase-2-refine` |
 | `3-outline` | Create solution outline with deliverables | `pm-workflow:phase-3-outline` |
 | `4-plan` | Transform deliverables into executable tasks | `pm-workflow:phase-4-plan` |
 | `5-execute` | Execute individual tasks | `pm-workflow:phase-5-execute` |
-| `6-finalize` | Verify, document, commit | `pm-workflow:phase-6-finalize` |
+| `6-verify` | Quality verification and build checks | `pm-workflow:phase-6-verify` |
+| `7-finalize` | Commit, push, PR creation | `pm-workflow:phase-7-finalize` |
 
 ### Task Executors
 
@@ -116,7 +122,7 @@ Technical domains (java, javascript, etc.) use profile-based organization:
 | `implementation` | object | No | Skills for execute phase (production code) |
 | `module_testing` | object | No | Skills for execute phase (unit/module tests) |
 | `integration_testing` | object | No | Skills for execute phase (integration tests) |
-| `quality` | object | No | Skills for finalize phase |
+| `quality` | object | No | Skills for verify phase |
 
 ### Workflow Skill Extensions
 
@@ -134,7 +140,7 @@ Extensions provide domain-specific behavior without replacing workflow skills:
 | Type | Phase | Purpose |
 |------|-------|---------|
 | `outline` | outline | Domain-specific patterns for deliverable identification |
-| `triage` | finalize | Domain-specific finding decision logic (fix/suppress/accept) |
+| `triage` | verify | Domain-specific finding decision logic (fix/suppress/accept) |
 
 ### Profile Structure
 
@@ -161,7 +167,7 @@ Each profile contains defaults and optionals:
 | `implementation` | execute | Production code development tasks |
 | `module_testing` | execute | Unit/module test development tasks |
 | `integration_testing` | execute | Integration test development tasks |
-| `quality` | finalize | Documentation, verification, compliance |
+| `quality` | verify | Documentation, verification, compliance |
 
 ## Skill Resolution
 
@@ -268,7 +274,7 @@ plan-marshall-config resolve-domain-skills --domain java --profile implementatio
 ## Validation Rules
 
 1. **System domain required**: `skill_domains.system` must exist
-2. **Workflow skills required**: `system.workflow_skills` must have all 6 phases
+2. **Workflow skills required**: `system.workflow_skills` must have all 7 phases
 3. **Task executors required**: `system.task_executors` must exist with at least `implementation`
 4. **Profile structure**: If domain has profiles, must have at least `core`
 5. **Extension types**: Only `outline` and `triage` are valid extension types

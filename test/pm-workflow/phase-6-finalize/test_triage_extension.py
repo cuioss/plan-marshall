@@ -46,7 +46,8 @@ def test_resolve_triage_extension_java():
                             '3-outline': 'pm-workflow:phase-3-outline',
                             '4-plan': 'pm-workflow:phase-4-plan',
                             '5-execute': 'pm-workflow:phase-5-execute',
-                            '6-finalize': 'pm-workflow:phase-6-finalize',
+                            '6-verify': 'pm-workflow:phase-6-verify',
+                            '7-finalize': 'pm-workflow:phase-7-finalize',
                         },
                     },
                     'java': {
@@ -84,7 +85,8 @@ def test_resolve_triage_extension_javascript():
                             '3-outline': 'pm-workflow:phase-3-outline',
                             '4-plan': 'pm-workflow:phase-4-plan',
                             '5-execute': 'pm-workflow:phase-5-execute',
-                            '6-finalize': 'pm-workflow:phase-6-finalize',
+                            '6-verify': 'pm-workflow:phase-6-verify',
+                            '7-finalize': 'pm-workflow:phase-7-finalize',
                         },
                     },
                     'javascript': {
@@ -122,7 +124,8 @@ def test_resolve_triage_extension_plugin_dev():
                             '3-outline': 'pm-workflow:phase-3-outline',
                             '4-plan': 'pm-workflow:phase-4-plan',
                             '5-execute': 'pm-workflow:phase-5-execute',
-                            '6-finalize': 'pm-workflow:phase-6-finalize',
+                            '6-verify': 'pm-workflow:phase-6-verify',
+                            '7-finalize': 'pm-workflow:phase-7-finalize',
                         },
                     },
                     'plan-marshall-plugin-dev': {
@@ -158,7 +161,8 @@ def test_resolve_triage_extension_null_for_missing():
                             '3-outline': 'pm-workflow:phase-3-outline',
                             '4-plan': 'pm-workflow:phase-4-plan',
                             '5-execute': 'pm-workflow:phase-5-execute',
-                            '6-finalize': 'pm-workflow:phase-6-finalize',
+                            '6-verify': 'pm-workflow:phase-6-verify',
+                            '7-finalize': 'pm-workflow:phase-7-finalize',
                         },
                     },
                     'documentation': {
@@ -198,7 +202,8 @@ def test_resolve_triage_extension_null_for_unknown_domain():
                             '3-outline': 'pm-workflow:phase-3-outline',
                             '4-plan': 'pm-workflow:phase-4-plan',
                             '5-execute': 'pm-workflow:phase-5-execute',
-                            '6-finalize': 'pm-workflow:phase-6-finalize',
+                            '6-verify': 'pm-workflow:phase-6-verify',
+                            '7-finalize': 'pm-workflow:phase-7-finalize',
                         },
                     }
                 }
