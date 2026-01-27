@@ -44,10 +44,10 @@ DEFAULT_PLAN_INIT = {
 
 DEFAULT_PLAN_REFINE = {
     'confidence_threshold': 95,
+    'compatibility': 'breaking',
 }
 
 DEFAULT_PLAN_EXECUTE = {
-    'compatibility': 'breaking',
     'commit_strategy': 'per_deliverable',
 }
 

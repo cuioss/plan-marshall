@@ -13,7 +13,7 @@ Manages project-level infrastructure configuration in `.plan/marshal.json`.
 
 - **Skill Domains**: Implementation skill defaults and optionals per domain
 - **System Settings**: Retention and cleanup configuration
-- **Plan Defaults**: Default values for new plans
+- **Plan Phase Configuration**: Phase-specific settings (branching, compatibility, commit strategy, pipelines)
 
 ## When to Activate This Skill
 
@@ -21,7 +21,7 @@ Activate this skill when:
 - Initializing project configuration (`/marshall-steward` wizard)
 - Querying implementation skills for a domain
 - Managing retention settings
-- Configuring plan defaults
+- Configuring plan phase settings
 
 ---
 
@@ -96,31 +96,31 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-m
 
 ---
 
-## Workflow: Plan Defaults
+## Workflow: Plan Phase Configuration
 
 **Pattern**: Read-Process-Write
 
-Manage default values for new plans.
+Manage phase-specific plan configuration. Each phase has its own sub-noun.
 
-### List Plan Defaults
+### Get Phase Configuration
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
-  plan defaults list
+  plan phase-2-refine get
 ```
 
-### Get Specific Default
+### Get Specific Phase Field
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
-  plan defaults get --field commit_strategy
+  plan phase-2-refine get --field compatibility
 ```
 
-### Set Default Value
+### Set Phase Field
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
-  plan defaults set --field create_pr --value true
+  plan phase-5-execute set --field commit_strategy --value per_plan
 ```
 
 ---
@@ -250,11 +250,23 @@ Returns null (not error) if extension doesn't exist for the domain.
 
 ### Noun: plan
 
+Phase-specific configuration using `plan {phase} {verb}` pattern.
+
 | Verb | Parameters | Purpose |
 |------|------------|---------|
-| `defaults list` | (none) | List all plan defaults |
-| `defaults get` | `--field` | Get default value |
-| `defaults set` | `--field --value` | Set default value |
+| `phase-1-init get` | `[--field]` | Get init phase configuration |
+| `phase-1-init set` | `--field --value` | Set init phase field (branch_strategy) |
+| `phase-2-refine get` | `[--field]` | Get refine phase configuration |
+| `phase-2-refine set` | `--field --value` | Set refine phase field (confidence_threshold, compatibility) |
+| `phase-5-execute get` | `[--field]` | Get execute phase configuration |
+| `phase-5-execute set` | `--field --value` | Set execute phase field (commit_strategy) |
+| `phase-6-verify get` | `[--field]` | Get verify phase configuration |
+| `phase-6-verify set-step` | `--step --enabled` | Toggle generic verify step |
+| `phase-6-verify set-domain-step` | `--domain --step --enabled` | Toggle domain verify step |
+| `phase-6-verify set-max-iterations` | `--value` | Set verify max iterations |
+| `phase-7-finalize get` | (none) | Get finalize phase configuration |
+| `phase-7-finalize set-step` | `--step --enabled` | Toggle finalize step |
+| `phase-7-finalize set-max-iterations` | `--value` | Set finalize max iterations |
 
 ### Noun: ci
 
@@ -285,7 +297,7 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-m
 
 ### Structure
 
-The defaults template contains only `system` domain. Technical domains (java, javascript, etc.) are added during project initialization based on detection or manual configuration.
+The defaults template contains only `system` domain. Technical domains (java, javascript, etc.) are added during project initialization based on detection or manual configuration. Technical domains store only `bundle` reference and `workflow_skill_extensions` -- profiles are loaded at runtime from `extension.py`.
 
 **Example** (Java project after init):
 
@@ -295,40 +307,16 @@ The defaults template contains only `system` domain. Technical domains (java, ja
     "system": {
       "defaults": ["plan-marshall:ref-development-standards"],
       "optionals": ["plan-marshall:ref-development-standards"],
-      "workflow_skills": {
-        "1-init": "pm-workflow:phase-1-init",
-        "2-refine": "pm-workflow:phase-2-refine",
-        "3-outline": "pm-workflow:phase-3-outline",
-        "4-plan": "pm-workflow:phase-4-plan",
-        "5-execute": "pm-workflow:phase-5-execute",
-        "6-verify": "pm-workflow:phase-6-verify",
-        "7-finalize": "pm-workflow:phase-7-finalize"
+      "task_executors": {
+        "implementation": "pm-workflow:task-implementation",
+        "module_testing": "pm-workflow:task-module_testing",
+        "integration_testing": "pm-workflow:task-integration_testing"
       }
     },
     "java": {
+      "bundle": "pm-dev-java",
       "workflow_skill_extensions": {
-        "outline": "pm-dev-java:java-outline-ext",
         "triage": "pm-dev-java:ext-triage-java"
-      },
-      "core": {
-        "defaults": ["pm-dev-java:java-core"],
-        "optionals": ["pm-dev-java:java-null-safety", "pm-dev-java:java-lombok"]
-      },
-      "implementation": {
-        "defaults": [],
-        "optionals": ["pm-dev-java:java-cdi", "pm-dev-java:java-maintenance"]
-      },
-      "module_testing": {
-        "defaults": ["pm-dev-java:junit-core"],
-        "optionals": []
-      },
-      "integration_testing": {
-        "defaults": ["pm-dev-java:junit-core"],
-        "optionals": ["pm-dev-java:junit-integration"]
-      },
-      "quality": {
-        "defaults": ["pm-dev-java:javadoc"],
-        "optionals": []
       }
     }
   },
@@ -341,12 +329,30 @@ The defaults template contains only `system` domain. Technical domains (java, ja
     }
   },
   "plan": {
-    "defaults": {
-      "compatibility": "breaking",
-      "commit_strategy": "per_deliverable",
-      "create_pr": false,
-      "verification_required": true,
+    "phase-1-init": {
       "branch_strategy": "direct"
+    },
+    "phase-2-refine": {
+      "confidence_threshold": 95,
+      "compatibility": "breaking"
+    },
+    "phase-5-execute": {
+      "commit_strategy": "per_deliverable"
+    },
+    "phase-6-verify": {
+      "max_iterations": 5,
+      "1_quality_check": true,
+      "2_build_verify": true,
+      "domain_steps": {}
+    },
+    "phase-7-finalize": {
+      "max_iterations": 3,
+      "1_commit_push": true,
+      "2_create_pr": true,
+      "3_automated_review": true,
+      "4_sonar_roundtrip": true,
+      "5_knowledge_capture": true,
+      "6_lessons_capture": true
     }
   }
 }
@@ -358,19 +364,17 @@ The defaults template contains only `system` domain. Technical domains (java, ja
 
 ### System Domain
 
-The `system` domain contains workflow skills (7-phase model) and base skills applied to all tasks.
+The `system` domain contains task executors and base skills applied to all tasks.
 
 | Field | Purpose |
 |-------|---------|
 | `defaults` | Base skills loaded for all tasks (`plan-marshall:ref-development-standards`) |
 | `optionals` | Optional base skills available for selection |
-| `workflow_skills` | Maps 7 phases to workflow skill references |
-
-**Workflow Phases**: `init`, `refine`, `outline`, `plan`, `execute`, `verify`, `finalize`
+| `task_executors` | Maps profiles to task executor skills (convention: profile X -> `pm-workflow:task-X`) |
 
 ### Technical Domains (Profile Structure)
 
-Technical domains use nested structure with `workflow_skill_extensions` and profiles.
+Technical domains store `bundle` reference and `workflow_skill_extensions` in marshal.json. Profiles are loaded at runtime from `extension.py`.
 
 | Profile | Phase | Purpose |
 |---------|-------|---------|
@@ -382,11 +386,12 @@ Technical domains use nested structure with `workflow_skill_extensions` and prof
 
 **Available Domains**:
 
-| Domain | Core Defaults | Extensions |
-|--------|---------------|------------|
-| `java` | `pm-dev-java:java-core` | outline, triage |
-| `javascript` | `pm-dev-frontend:cui-javascript` | outline, triage |
-| `plan-marshall-plugin-dev` | `pm-plugin-development:plugin-architecture` | triage |
+| Domain | Bundle | Extensions |
+|--------|--------|------------|
+| `java` | `pm-dev-java` | triage |
+| `javascript` | `pm-dev-frontend` | triage |
+| `plan-marshall-plugin-dev` | `pm-plugin-development` | outline, triage |
+| `documentation` | `pm-documents` | outline, triage |
 
 Use `resolve-domain-skills --domain {domain} --profile {profile}` to get aggregated skills.
 

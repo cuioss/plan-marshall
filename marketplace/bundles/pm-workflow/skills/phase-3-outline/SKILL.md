@@ -42,7 +42,7 @@ Step 1: Load Inputs → Step 2: Route by Track → {Simple: Steps 3-5 | Complex:
 
 ## Step 1: Load Inputs
 
-**Purpose**: Load track, request, and context from sinks.
+**Purpose**: Load track, request, compatibility, and context from sinks.
 
 ### 1.1 Read Track Selection
 
@@ -77,11 +77,27 @@ python3 .plan/execute-script.py pm-workflow:manage-references:manage-references 
   --plan-id {plan_id} --field domains
 ```
 
-### 1.5 Log Context
+### 1.5 Read Compatibility
+
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-references:manage-references get \
+  --plan-id {plan_id} --field compatibility
+```
+
+Also read the long description:
+
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-references:manage-references get \
+  --plan-id {plan_id} --field compatibility_description
+```
+
+Store as `compatibility` and `compatibility_description` for inclusion in the solution outline header metadata.
+
+### 1.6 Log Context
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(pm-workflow:phase-3-outline) Track: {track}, domains: {domains}"
+  decision {plan_id} INFO "(pm-workflow:phase-3-outline) Track: {track}, domains: {domains}, compatibility: {compatibility}"
 ```
 
 ---
@@ -262,7 +278,7 @@ The skill handles the complete Complex Track workflow internally:
 - Persist assessments → assessments.jsonl
 - Confirm uncertainties with user
 - Group into deliverables
-- Write solution_outline.md
+- Write solution_outline.md (must include `compatibility: {value} — {description}` in header metadata, read from references.toon)
 
 ### 7.2 Log Skill Load
 
@@ -419,6 +435,9 @@ python3 .plan/execute-script.py pm-workflow:manage-solution-outline:manage-solut
   --plan-id {plan_id} <<'EOF'
 # Solution: {title}
 
+plan_id: {plan_id}
+compatibility: {compatibility} — {compatibility_description}
+
 ## Summary
 
 {2-3 sentence summary of the solution}
@@ -485,7 +504,7 @@ qgate_passed: {true|false}
 **Invoked by**: `pm-workflow:solution-outline-agent` (thin agent)
 
 **Script Notations** (use EXACTLY as shown):
-- `pm-workflow:manage-references:manage-references` - Read track, module_mapping
+- `pm-workflow:manage-references:manage-references` - Read track, module_mapping, compatibility, compatibility_description
 - `pm-workflow:manage-plan-documents:manage-plan-documents` - Read request
 - `pm-workflow:manage-references:manage-references` - Read domains
 - `pm-workflow:manage-solution-outline:manage-solution-outline` - Write solution document

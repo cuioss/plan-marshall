@@ -61,7 +61,7 @@ plan_id: {plan_id}
 
 | Sink | Data | Purpose |
 |------|------|---------|
-| `references.toon` | track, module_mapping, domains | Track verification, mapping hints, domain verification |
+| `references.toon` | track, module_mapping, domains, compatibility, compatibility_description | Track verification, mapping hints, domain verification, compatibility mode |
 | `request.md` | body OR clarified_request | Request content for analysis |
 
 ### Skill Responsibilities
@@ -102,7 +102,8 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 ```
 
 #### 6. Write Solution Outline
-- Write deliverables to solution_outline.md:
+- Write deliverables to solution_outline.md
+- Header MUST include `compatibility: {value} -- {description}` (read from references.toon)
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-solution-outline:manage-solution-outline write \
   --plan-id {plan_id} --deliverables "{deliverables_json}"

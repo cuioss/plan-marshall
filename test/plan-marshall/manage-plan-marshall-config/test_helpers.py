@@ -55,9 +55,9 @@ def create_marshal_json(fixture_dir: Path, config: dict | None = None) -> Path:
                 },
                 'phase-2-refine': {
                     'confidence_threshold': 95,
+                    'compatibility': 'breaking',
                 },
                 'phase-5-execute': {
-                    'compatibility': 'breaking',
                     'commit_strategy': 'per_deliverable',
                 },
                 'phase-6-verify': {

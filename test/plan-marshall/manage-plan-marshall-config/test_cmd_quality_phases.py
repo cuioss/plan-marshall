@@ -281,7 +281,7 @@ def test_phase_5_execute_get():
 
         assert result.success, f'Should succeed: {result.stderr}'
         assert 'commit_strategy' in result.stdout
-        assert 'compatibility' in result.stdout
+        assert 'compatibility' not in result.stdout
 
 
 def test_phase_5_execute_set():
@@ -291,13 +291,41 @@ def test_phase_5_execute_set():
 
         result = run_script(
             SCRIPT_PATH, 'plan', 'phase-5-execute', 'set',
+            '--field', 'commit_strategy', '--value', 'per_plan'
+        )
+
+        assert result.success, f'Should succeed: {result.stderr}'
+
+        config = json.loads((ctx.fixture_dir / 'marshal.json').read_text())
+        assert config['plan']['phase-5-execute']['commit_strategy'] == 'per_plan'
+
+
+def test_phase_2_refine_get_includes_compatibility():
+    """Test plan phase-2-refine get returns compatibility."""
+    with PlanContext() as ctx:
+        create_marshal_json(ctx.fixture_dir)
+
+        result = run_script(SCRIPT_PATH, 'plan', 'phase-2-refine', 'get')
+
+        assert result.success, f'Should succeed: {result.stderr}'
+        assert 'compatibility' in result.stdout
+        assert 'confidence_threshold' in result.stdout
+
+
+def test_phase_2_refine_set_compatibility():
+    """Test plan phase-2-refine set updates compatibility field."""
+    with PlanContext() as ctx:
+        create_marshal_json(ctx.fixture_dir)
+
+        result = run_script(
+            SCRIPT_PATH, 'plan', 'phase-2-refine', 'set',
             '--field', 'compatibility', '--value', 'deprecation'
         )
 
         assert result.success, f'Should succeed: {result.stderr}'
 
         config = json.loads((ctx.fixture_dir / 'marshal.json').read_text())
-        assert config['plan']['phase-5-execute']['compatibility'] == 'deprecation'
+        assert config['plan']['phase-2-refine']['compatibility'] == 'deprecation'
 
 
 # =============================================================================

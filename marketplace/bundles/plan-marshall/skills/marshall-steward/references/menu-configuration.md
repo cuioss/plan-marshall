@@ -52,10 +52,10 @@ AskUserQuestion:
   options:
     - label: "Init (phase 1)"
       description: "Branch strategy"
-    - label: "Execute (phase 5)"
-      description: "Compatibility, commit strategy"
     - label: "Refine (phase 2)"
-      description: "Confidence threshold"
+      description: "Confidence threshold, compatibility"
+    - label: "Execute (phase 5)"
+      description: "Commit strategy"
   multiSelect: false
 ```
 
@@ -85,11 +85,32 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-m
   plan phase-1-init set --field branch_strategy --value {direct|feature}
 ```
 
-### Phase 5 - Execute Settings
+### Phase 2 - Refine Settings
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
-  plan phase-5-execute get
+  plan phase-2-refine get
+```
+
+**confidence_threshold**:
+```
+AskUserQuestion:
+  question: "Confidence threshold for request refinement?"
+  header: "Threshold"
+  options:
+    - label: "95 (Recommended)"
+      description: "95% confidence required before proceeding to outline"
+    - label: "90"
+      description: "Lower threshold, fewer refinement iterations"
+    - label: "100"
+      description: "Full confidence required"
+  multiSelect: false
+```
+
+Apply:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+  plan phase-2-refine set --field confidence_threshold --value {95|90|100}
 ```
 
 **compatibility**:
@@ -108,6 +129,19 @@ AskUserQuestion:
 ```
 
 Maps to values: `breaking`, `deprecation`, `smart_and_ask`
+
+Apply:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+  plan phase-2-refine set --field compatibility --value {breaking|deprecation|smart_and_ask}
+```
+
+### Phase 5 - Execute Settings
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+  plan phase-5-execute get
+```
 
 **commit_strategy**:
 ```
@@ -129,7 +163,7 @@ Maps to values: `per_deliverable`, `per_plan`, `none`
 Apply:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
-  plan phase-5-execute set --field {field} --value {value}
+  plan phase-5-execute set --field commit_strategy --value {per_deliverable|per_plan|none}
 ```
 
 ---

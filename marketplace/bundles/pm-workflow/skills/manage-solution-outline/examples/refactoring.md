@@ -2,6 +2,7 @@
 
 plan_id: refactor-auth-module
 created: 2025-12-10T10:00:00Z
+compatibility: deprecation — Add deprecation markers to old code, provide migration path
 
 ## Summary
 

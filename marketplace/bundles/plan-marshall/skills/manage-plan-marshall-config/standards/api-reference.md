@@ -415,7 +415,7 @@ Set refine phase field.
 
 ```bash
 plan-marshall-config plan phase-2-refine set \
-  --field confidence_threshold --value 90
+  --field compatibility --value deprecation
 ```
 
 ### phase-5-execute get
@@ -432,7 +432,7 @@ Set execute phase field.
 
 ```bash
 plan-marshall-config plan phase-5-execute set \
-  --field compatibility --value deprecation
+  --field commit_strategy --value per_plan
 ```
 
 ### phase-6-verify get

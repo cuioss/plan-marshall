@@ -17,8 +17,8 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash
 
 | Contract | Location | Purpose |
 |----------|----------|---------|
-| Task Execution Contract | `pm-workflow:manage-tasks/standards/task-execution-contract.md` | Skill responsibilities |
-| Task Contract | `pm-workflow:manage-tasks/standards/task-contract.md` | Task structure |
+| Task Contract | `pm-workflow:manage-tasks/standards/task-contract.md` | Task structure and fields |
+| Task Format | `pm-workflow:manage-tasks/standards/task-format.md` | TOON file format specification |
 
 ## Two-Tier Skill Loading
 
@@ -73,12 +73,14 @@ Extract key fields:
 
 ### Step 1.5: Read Compatibility Strategy
 
-Read the compatibility approach from marshal.json:
+Read the compatibility approach from references.toon (persisted during phase-2-refine):
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
-  plan phase-5-execute get
+python3 .plan/execute-script.py pm-workflow:manage-references:manage-references get \
+  --plan-id {plan_id} --field compatibility
 ```
+
+**No fallback** — if field not found, fail with error and abort task. This ensures phase-2-refine ran correctly before execution.
 
 Extract `compatibility` from the output. Apply throughout all subsequent steps:
 
@@ -305,6 +307,7 @@ If changes conflict with existing code:
 
 **Script Notations** (use EXACTLY as shown):
 - `pm-workflow:manage-tasks:manage-tasks` - Task operations (get, update, update-step)
+- `pm-workflow:manage-references:manage-references` - References read (get compatibility)
 - `plan-marshall:manage-lessons:manage-lesson` - Record lessons (add)
 
 **Domain Skills Applied** (loaded by agent from task.skills):

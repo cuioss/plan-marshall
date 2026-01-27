@@ -593,8 +593,8 @@ MARSHAL_SCHEMA_DEFAULT: dict[str, Any] = {
     MARSHAL_KEY_SYSTEM: {'retention': {}},
     MARSHAL_KEY_PLAN: {
         'phase-1-init': {'branch_strategy': 'direct'},
-        'phase-2-refine': {'confidence_threshold': 95},
-        'phase-5-execute': {'compatibility': 'breaking', 'commit_strategy': 'per_deliverable'},
+        'phase-2-refine': {'confidence_threshold': 95, 'compatibility': 'breaking'},
+        'phase-5-execute': {'commit_strategy': 'per_deliverable'},
         'phase-6-verify': {
             'max_iterations': 5,
             '1_quality_check': True,

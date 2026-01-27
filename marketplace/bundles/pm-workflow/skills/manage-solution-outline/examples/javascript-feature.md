@@ -2,6 +2,7 @@
 
 plan_id: form-validation-component
 created: 2025-12-10T10:00:00Z
+compatibility: breaking — Clean-slate approach, no deprecation nor transitionary comments
 
 ## Summary
 

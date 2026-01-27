@@ -27,7 +27,7 @@ All other data read from sinks (references.toon, request.md).
 ## Workflow Overview
 
 ```
-Step 1: Load Context      → Read request, module_mapping, domains
+Step 1: Load Context      → Read request, module_mapping, domains, compatibility
 Step 2: Discovery         → Spawn ext-outline-inventory-agent
 Step 3: Determine Type    → Extract change_type from request
 Step 4: Execute Workflow  → Route based on change_type (Create/Modify Flow)
@@ -62,11 +62,27 @@ python3 .plan/execute-script.py pm-workflow:manage-references:manage-references 
   --plan-id {plan_id} --field domains
 ```
 
+Read compatibility:
+
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-references:manage-references get \
+  --plan-id {plan_id} --field compatibility
+```
+
+Also read the long description:
+
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-references:manage-references get \
+  --plan-id {plan_id} --field compatibility_description
+```
+
+Store as `compatibility` and `compatibility_description` for inclusion in the solution outline header metadata.
+
 Log context:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(pm-plugin-development:ext-outline-plugin) Context loaded: domains={domains}"
+  decision {plan_id} INFO "(pm-plugin-development:ext-outline-plugin) Context loaded: domains={domains}, compatibility={compatibility}"
 ```
 
 ---
@@ -314,7 +330,7 @@ When tests are in component scope:
 
 ## Step 5: Write Solution Outline
 
-After deliverables are built, write solution_outline.md:
+After deliverables are built, write solution_outline.md. The header MUST include `compatibility: {compatibility} -- {compatibility_description}` (read from references.toon in Step 1).
 
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-solution-outline:manage-solution-outline write \

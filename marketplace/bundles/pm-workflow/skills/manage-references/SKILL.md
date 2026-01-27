@@ -60,6 +60,7 @@ JWT Guide,https://jwt.io/introduction
 | Field | Type | Description |
 |-------|------|-------------|
 | `branch` | string | Git branch name |
+| `base_branch` | string | Base branch for PR (e.g., main) |
 | `issue_url` | string | GitHub issue URL |
 | `build_system` | string | Build system (maven, gradle, npm, none) |
 | `modified_files` | list | Files modified during implementation |
@@ -67,6 +68,13 @@ JWT Guide,https://jwt.io/introduction
 | `test_files` | list | Test files created/modified |
 | `domains` | list | Plan domains (e.g., java, documentation) |
 | `external_docs` | table | External documentation references |
+| `track` | string | Outline track selection (simple, complex) |
+| `track_reasoning` | string | Reasoning for track selection |
+| `scope_estimate` | string | Scope size (single_file, single_module, few_files, multi_module, codebase_wide) |
+| `module_mapping` | string | JSON mapping of requirements to modules |
+| `compatibility` | string | Compatibility strategy (breaking, deprecation, smart_and_ask) |
+| `compatibility_description` | string | Human-readable description of compatibility strategy |
+| `outline_guidance` | string | Guidance items from review feedback for outline creation |
 
 ---
 

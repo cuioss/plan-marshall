@@ -74,6 +74,13 @@ def validate_solution_structure(content: str) -> tuple[list[str], list[str], dic
         if section in sections:
             info['sections_found'].append(section)
 
+    # Extract compatibility from header metadata
+    header = sections.get('_header', '')
+    for line in header.split('\n'):
+        if line.startswith('compatibility:'):
+            info['compatibility'] = line.split(':', 1)[1].strip()
+            break
+
     # Validate deliverables section
     if 'deliverables' in sections:
         deliverables = extract_deliverables(sections['deliverables'])
@@ -236,15 +243,20 @@ def cmd_validate(args) -> int:
         )
         return 1
 
+    validation = {
+        'sections_found': ','.join(info['sections_found']),
+        'deliverable_count': info['deliverable_count'],
+        'deliverables': info['deliverables'],
+    }
+
+    if 'compatibility' in info:
+        validation['compatibility'] = info['compatibility']
+
     result = {
         'status': 'success',
         'plan_id': args.plan_id,
         'file': SOLUTION_FILE,
-        'validation': {
-            'sections_found': ','.join(info['sections_found']),
-            'deliverable_count': info['deliverable_count'],
-            'deliverables': info['deliverables'],
-        },
+        'validation': validation,
     }
 
     if warnings:
@@ -476,15 +488,20 @@ def cmd_write(args) -> int:
     # Write atomically
     atomic_write_file(file_path, content)
 
+    validation = {
+        'deliverable_count': info['deliverable_count'],
+        'sections_found': ','.join(info['sections_found']),
+    }
+
+    if 'compatibility' in info:
+        validation['compatibility'] = info['compatibility']
+
     result = {
         'status': 'success',
         'plan_id': args.plan_id,
         'file': SOLUTION_FILE,
         'action': 'updated' if existed_before else 'created',
-        'validation': {
-            'deliverable_count': info['deliverable_count'],
-            'sections_found': ','.join(info['sections_found']),
-        },
+        'validation': validation,
     }
 
     if warnings:

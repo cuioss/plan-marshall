@@ -56,6 +56,36 @@ Store as `confidence_threshold` for use in Step 6.
 
 ---
 
+## Step 1b: Load Compatibility Strategy
+
+Read the compatibility approach from project configuration and persist to references.toon in Step 9.
+
+**EXECUTE**:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+  plan phase-2-refine get --field compatibility
+```
+
+**No fallback** — if not configured, fail with error: "compatibility not configured. Run /marshall-steward first".
+
+**Valid values with descriptions**:
+
+| Value | Description |
+|-------|-------------|
+| `breaking` | Clean-slate approach, no deprecation nor transitionary comments |
+| `deprecation` | Add deprecation markers to old code, provide migration path |
+| `smart_and_ask` | Assess impact and ask user when backward compatibility is uncertain |
+
+**Log**:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  work {plan_id} INFO "[REFINE:1b] (pm-workflow:phase-2-refine) Using compatibility strategy: {compatibility}"
+```
+
+Store as `compatibility` and `compatibility_description` (the long description from the table above) for persistence in Step 9.
+
+---
+
 ## Workflow
 
 ```
@@ -64,6 +94,8 @@ Store as `confidence_threshold` for use in Step 6.
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
 │  Step 1: Load Confidence Threshold                              │
+│      ↓                                                          │
+│  Step 1b: Load Compatibility Strategy                           │
 │      ↓                                                          │
 │  Step 2: Load Architecture Context ──────────────────────┐      │
 │      ↓                                   arch_context    │      │
@@ -96,6 +128,7 @@ Store as `confidence_threshold` for use in Step 6.
 | Step | Input | Output | Stored As |
 |------|-------|--------|-----------|
 | Step 1 | marshal.json | threshold value | `confidence_threshold` |
+| Step 1b | marshal.json | compatibility value + description | `compatibility`, `compatibility_description` |
 | Step 2 | architecture info | project + modules + technologies | `arch_context` |
 | Step 3 | request.md | title, description, clarifications | `request` |
 | Step 4 | `request` + `arch_context` | quality findings | `quality_findings` |
@@ -103,7 +136,7 @@ Store as `confidence_threshold` for use in Step 6.
 | Step 5.3 | `mapping_findings` | scope estimate | `scope_estimate` |
 | Step 5.4 | `scope_estimate` + `request` + `domains` | track selection | `track` + decision.log |
 | Step 6 | all findings | confidence score | decision |
-| Step 9 | all results | - | references.toon, decision.log
+| Step 9 | all results | - | references.toon, decision.log |
 
 ---
 
@@ -634,6 +667,19 @@ python3 .plan/execute-script.py pm-workflow:manage-references:manage-references 
   --value "{module_mapping_json}"
 ```
 
+**Persist compatibility strategy**:
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-references:manage-references set \
+  --plan-id {plan_id} \
+  --field compatibility \
+  --value "{compatibility}"
+
+python3 .plan/execute-script.py pm-workflow:manage-references:manage-references set \
+  --plan-id {plan_id} \
+  --field compatibility_description \
+  --value "{compatibility_description}"
+```
+
 ### 9.2 Log Decisions
 
 **Log to decision.log** (scope and track decisions):
@@ -670,6 +716,7 @@ domains: [{detected domains}]
 - Track selection: `references.toon` → `track`, `track_reasoning`
 - Scope estimate: `references.toon` → `scope_estimate`
 - Module mapping: `references.toon` → `module_mapping`
+- Compatibility: `references.toon` → `compatibility`, `compatibility_description`
 - Decisions: `decision.log` filtered by `(pm-workflow:phase-2-refine)`
 - Clarifications: `request.md` → `clarifications`, `clarified_request`
 
@@ -686,6 +733,23 @@ python3 .plan/execute-script.py pm-workflow:manage-references:manage-references 
   --value "{guidance_items_json}"
 ```
 
+## Step 10: Transition Phase
+
+The phase transitions from refine → outline after confidence reaches the threshold:
+
+```bash
+python3 .plan/execute-script.py pm-workflow:plan-marshall:manage-lifecycle transition \
+  --plan-id {plan_id} \
+  --completed 2-refine
+```
+
+**After successful transition**, log phase completion:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  work {plan_id} INFO "[STATUS] (pm-workflow:phase-2-refine) Refine phase complete - confidence: {confidence}%, track: {track}"
+```
+
 ---
 
 ## Error Handling
@@ -693,6 +757,7 @@ python3 .plan/execute-script.py pm-workflow:manage-references:manage-references 
 | Error | Action |
 |-------|--------|
 | Architecture not found | Return `{status: error, message: "Run /marshall-steward first"}` and abort |
+| Compatibility not configured | Return `{status: error, message: "compatibility not configured. Run /marshall-steward first"}` and abort |
 | Request not found | Return `{status: error, message: "Request document missing"}` |
 | Max iterations reached (5) | Return with current confidence, flag for manual review |
 
@@ -705,12 +770,13 @@ python3 .plan/execute-script.py pm-workflow:manage-references:manage-references 
 **Script Notations** (use EXACTLY as shown):
 - `plan-marshall:analyze-project-architecture:architecture` - Architecture queries
 - `pm-workflow:manage-plan-documents:manage-plan-documents` - Request operations
-- `pm-workflow:manage-references:manage-references` - References persistence (track, scope, module_mapping)
+- `pm-workflow:manage-references:manage-references` - References persistence (track, scope, module_mapping, compatibility)
 - `plan-marshall:manage-logging:manage-log` - Work and decision logging
-- `plan-marshall:manage-plan-marshall-config:plan-marshall-config` - Project config (threshold)
+- `plan-marshall:manage-plan-marshall-config:plan-marshall-config` - Project config (threshold, compatibility)
+- `pm-workflow:plan-marshall:manage-lifecycle` - Phase transition management
 
 **Persistence Locations**:
-- `references.toon`: track, track_reasoning, scope_estimate, module_mapping, outline_guidance
+- `references.toon`: track, track_reasoning, scope_estimate, module_mapping, outline_guidance, compatibility, compatibility_description
 - `decision.log`: scope/track decisions, domain detection
 - `work.log`: workflow progress (REFINE:N entries)
 - `request.md`: clarifications, clarified_request

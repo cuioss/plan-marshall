@@ -27,6 +27,7 @@ VALID_SOLUTION = """# Solution: JWT Validation Service
 
 plan_id: test-plan
 created: 2025-01-01T00:00:00Z
+compatibility: breaking — Clean-slate approach, no deprecation nor transitionary comments
 
 ## Summary
 
@@ -154,6 +155,36 @@ def test_validate_success():
         assert 'validation' in data
         assert data['validation']['deliverable_count'] == 3
         assert '1. Create JwtValidationService class' in data['validation']['deliverables']
+
+
+def test_validate_extracts_compatibility():
+    """Test that validate extracts compatibility from header metadata."""
+    with TestContext(plan_id='solution-compat') as ctx:
+        (ctx.plan_dir / 'solution_outline.md').write_text(VALID_SOLUTION)
+
+        result = run_script(SCRIPT_PATH, 'validate', '--plan-id', 'solution-compat')
+        assert result.success, f'Script failed: {result.stderr}'
+        data = parse_toon(result.stdout)
+        assert data['status'] == 'success'
+        assert 'compatibility' in data['validation']
+        compat = data['validation']['compatibility']
+        assert 'breaking' in compat
+
+
+def test_validate_without_compatibility():
+    """Test that validate succeeds when compatibility header is absent."""
+    solution_no_compat = VALID_SOLUTION.replace(
+        'compatibility: breaking \u2014 Clean-slate approach, no deprecation nor transitionary comments\n', ''
+    )
+    with TestContext(plan_id='solution-no-compat') as ctx:
+        (ctx.plan_dir / 'solution_outline.md').write_text(solution_no_compat)
+
+        result = run_script(SCRIPT_PATH, 'validate', '--plan-id', 'solution-no-compat')
+        assert result.success, f'Script failed: {result.stderr}'
+        data = parse_toon(result.stdout)
+        assert data['status'] == 'success'
+        # compatibility should not be present when header lacks it
+        assert 'compatibility' not in data.get('validation', {})
 
 
 def test_validate_missing_overview():
@@ -406,6 +437,19 @@ def test_write_new():
         assert (ctx.plan_dir / 'solution_outline.md').exists()
         content = (ctx.plan_dir / 'solution_outline.md').read_text()
         assert '# Solution: JWT Validation Service' in content
+
+
+def test_write_includes_compatibility():
+    """Test that write output includes compatibility when present in header."""
+    with TestContext(plan_id='solution-write-compat'):
+        result = run_script(
+            SCRIPT_PATH, 'write', '--plan-id', 'solution-write-compat', input_data=VALID_SOLUTION
+        )
+        assert result.success, f'Script failed: {result.stderr}\nOutput: {result.stdout}'
+        data = parse_toon(result.stdout)
+        assert data['status'] == 'success'
+        assert 'compatibility' in data['validation']
+        assert 'breaking' in data['validation']['compatibility']
 
 
 def test_write_exists_without_force():

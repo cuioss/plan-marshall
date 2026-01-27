@@ -887,11 +887,6 @@
         "description": "Solution-based development workflow from task implementation to PR quality verification"
       },
       "packages": {
-        "skill:manage-config": {
-          "path": "skills/manage-config",
-          "type": "skill",
-          "description": "Manage per-plan configuration with schema validation"
-        },
         "skill:manage-files": {
           "path": "skills/manage-files",
           "type": "skill",
@@ -920,7 +915,7 @@
         "skill:phase-1-init": {
           "path": "skills/phase-1-init",
           "type": "skill",
-          "description": "Init phase skill. Creates plan directory, request.md, config, and status. Complete initialization in a single agent call."
+          "description": "Init phase skill. Creates plan directory, request.md, references, and status. Complete initialization in a single agent call."
         },
         "skill:phase-2-refine": {
           "path": "skills/phase-2-refine",
@@ -1010,7 +1005,7 @@
         "agent:plan-init-agent": {
           "path": "agents/plan-init-agent.md",
           "type": "agent",
-          "description": "Initialize a plan with artifacts, detect domains, write config.toon"
+          "description": "Initialize a plan with artifacts, detect domains, store in references.toon"
         },
         "agent:q-gate-validation-agent": {
           "path": "agents/q-gate-validation-agent.md",
@@ -1040,7 +1035,7 @@
       },
       "dependencies": [],
       "stats": {
-        "skill_count": 24,
+        "skill_count": 23,
         "agent_count": 6,
         "command_count": 0
       },

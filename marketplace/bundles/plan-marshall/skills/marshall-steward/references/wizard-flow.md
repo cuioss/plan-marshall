@@ -291,7 +291,7 @@ Maps to values: `breaking`, `deprecation`, `smart_and_ask`
 Apply selection:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
-  plan phase-5-execute set --field compatibility --value {breaking|deprecation|smart_and_ask}
+  plan phase-2-refine set --field compatibility --value {breaking|deprecation|smart_and_ask}
 ```
 
 ```

@@ -31,6 +31,7 @@ Solution outlines have a fixed structure with required and optional sections:
 
 plan_id: {plan_id}
 created: {timestamp}
+compatibility: {value} — {long description}
 
 ## Summary          ← REQUIRED: 2-3 sentences describing the approach
 
@@ -262,9 +263,9 @@ plan_id: my-feature
 file: solution_outline.md
 action: created
 validation:
-  valid: true
   deliverable_count: 3
   sections_found: summary,overview,deliverables
+  compatibility: breaking — Clean-slate approach, no deprecation nor transitionary comments
 ```
 
 ### validate
@@ -281,6 +282,7 @@ validation:
     - 1. Create JwtValidationService class
     - 2. Add configuration support
     - 3. Create unit tests
+  compatibility: breaking — Clean-slate approach, no deprecation nor transitionary comments
 ```
 
 ### list-deliverables

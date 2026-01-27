@@ -2,7 +2,7 @@
   "ci": {
     "provider": "github",
     "repo_url": "https://github.com/cuioss/plan-marshall.git",
-    "detected_at": "2026-01-27T07:55:58Z",
+    "detected_at": "2026-01-27T13:57:51Z",
     "commands": {
       "pr-create": "python3 .plan/execute-script.py tools-integration-ci:github pr create",
       "pr-reviews": "python3 .plan/execute-script.py tools-integration-ci:github pr reviews",
@@ -13,34 +13,29 @@
       "issue-view": "python3 .plan/execute-script.py tools-integration-ci:github issue view"
     }
   },
-  "extension_defaults": {},
   "plan": {
     "phase-1-init": {
       "branch_strategy": "direct"
     },
     "phase-2-refine": {
-      "confidence_threshold": 95
+      "confidence_threshold": 95,
+      "compatibility": "breaking"
     },
     "phase-5-execute": {
-      "compatibility": "breaking",
       "commit_strategy": "per_deliverable"
     },
     "phase-6-verify": {
       "max_iterations": 5,
       "1_quality_check": true,
       "2_build_verify": true,
-      "domain_steps": {
-        "documentation": {
-          "1_doc_sync": "pm-documents:doc-verify"
-        }
-      }
+      "domain_steps": {}
     },
     "phase-7-finalize": {
       "max_iterations": 3,
-      "1_commit_push": true,
-      "2_create_pr": true,
-      "3_automated_review": true,
-      "4_sonar_roundtrip": true,
+      "1_commit_push": false,
+      "2_create_pr": false,
+      "3_automated_review": false,
+      "4_sonar_roundtrip": false,
       "5_knowledge_capture": true,
       "6_lessons_capture": true
     }

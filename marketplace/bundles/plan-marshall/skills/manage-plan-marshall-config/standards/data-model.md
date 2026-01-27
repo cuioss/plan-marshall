@@ -21,10 +21,10 @@ JSON structure and field definitions for project configuration.
       "branch_strategy": "direct"
     },
     "phase-2-refine": {
-      "confidence_threshold": 95
+      "confidence_threshold": 95,
+      "compatibility": "breaking"
     },
     "phase-5-execute": {
-      "compatibility": "breaking",
       "commit_strategy": "per_deliverable"
     },
     "phase-6-verify": {
@@ -64,7 +64,6 @@ JSON structure and field definitions for project configuration.
     "java": {
       "bundle": "pm-dev-java",
       "workflow_skill_extensions": {
-        "outline": "pm-dev-java:ext-outline-java",
         "triage": "pm-dev-java:ext-triage-java"
       }
     }
@@ -206,15 +205,17 @@ Phase-specific configuration for the 7-phase workflow model. Each phase with con
 {
   "plan": {
     "phase-2-refine": {
-      "confidence_threshold": 95
+      "confidence_threshold": 95,
+      "compatibility": "breaking"
     }
   }
 }
 ```
 
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
+| Field | Type | Default | Values |
+|-------|------|---------|--------|
 | `confidence_threshold` | int | 95 | Confidence threshold for refinement completion |
+| `compatibility` | string | "breaking" | breaking, deprecation, smart_and_ask |
 
 ### phase-5-execute
 
@@ -222,7 +223,6 @@ Phase-specific configuration for the 7-phase workflow model. Each phase with con
 {
   "plan": {
     "phase-5-execute": {
-      "compatibility": "breaking",
       "commit_strategy": "per_deliverable"
     }
   }
@@ -231,7 +231,6 @@ Phase-specific configuration for the 7-phase workflow model. Each phase with con
 
 | Field | Type | Default | Values |
 |-------|------|---------|--------|
-| `compatibility` | string | "breaking" | breaking, deprecation, smart_and_ask |
 | `commit_strategy` | string | "per_deliverable" | per_deliverable, per_plan, none |
 
 ### phase-6-verify

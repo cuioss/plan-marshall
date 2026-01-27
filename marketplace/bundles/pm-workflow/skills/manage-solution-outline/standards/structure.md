@@ -17,11 +17,16 @@ This document defines the required structure for `solution_outline.md` documents
 
 plan_id: {plan_id}
 created: {timestamp}
+compatibility: {value} — {long description}
 ```
 
 - Title should summarize the solution (not just repeat request title)
 - `plan_id` must match directory name
 - Timestamp in ISO 8601 format
+- `compatibility` is set by phase-2-refine from `marshal.json` configuration. Valid values:
+  - `breaking` — Clean-slate approach, no deprecation nor transitionary comments
+  - `deprecation` — Add deprecation markers to old code, provide migration path
+  - `smart_and_ask` — Assess impact and ask user when backward compatibility is uncertain
 
 ### Summary (Required)
 
@@ -124,17 +129,19 @@ See [deliverables.md](deliverables.md) for format details.
 
 ## Validation
 
-The `manage-plan-document solution validate` command checks:
+The `manage-solution-outline validate` command checks:
 
 1. Document exists at expected location
 2. Required sections present: Summary, Overview, Deliverables
 3. Deliverables section has numbered `### N. Title` items
 4. At least one deliverable defined
+5. Deliverable contract compliance (Metadata, Profiles, Affected files, Verification)
+6. Compatibility extraction from header metadata (if present)
 
 **Validation Command**:
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-plan-documents:manage-plan-documents \
-  solution validate \
+python3 .plan/execute-script.py pm-workflow:manage-solution-outline:manage-solution-outline \
+  validate \
   --plan-id {plan_id}
 ```
 
@@ -142,29 +149,26 @@ python3 .plan/execute-script.py pm-workflow:manage-plan-documents:manage-plan-do
 ```toon
 status: success
 plan_id: my-feature
-document: solution
 file: solution_outline.md
-
 validation:
-  sections_found: summary,overview,deliverables,approach,dependencies,risks
+  sections_found: summary,overview,deliverables,approach,dependencies,risks_and_mitigations
   deliverable_count: 4
-  deliverables[4]:
-  - 1. Create JwtValidationService class
-  - 2. Add configuration properties
-  - 3. Implement unit tests
-  - 4. Add JavaDoc documentation
+  deliverables:
+    - 1. Create JwtValidationService class
+    - 2. Add configuration properties
+    - 3. Implement unit tests
+    - 4. Add JavaDoc documentation
+  compatibility: breaking — Clean-slate approach, no deprecation nor transitionary comments
 ```
 
 **Failure Output**:
 ```toon
 status: error
 plan_id: my-feature
-document: solution
 error: validation_failed
-
-issues[2]:
-- Missing required section: Overview
-- No numbered deliverables found in Deliverables section
+issues:
+  - Missing required section: Overview
+  - No numbered deliverables found (expected ### N. Title)
 ```
 
 ## Section Order
