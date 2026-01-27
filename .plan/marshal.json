@@ -14,52 +14,35 @@
     }
   },
   "extension_defaults": {},
-  "finalize": {
-    "max_iterations": 3,
-    "steps": [
-      {
-        "name": "commit_push",
-        "skill": "pm-workflow:workflow-integration-git",
-        "type": "action"
-      },
-      {
-        "name": "create_pr",
-        "skill": "pm-workflow:workflow-integration-git",
-        "type": "action"
-      },
-      {
-        "name": "automated_review",
-        "skill": "pm-workflow:workflow-integration-ci",
-        "type": "api"
-      },
-      {
-        "name": "sonar_roundtrip",
-        "skill": "pm-workflow:workflow-integration-sonar",
-        "type": "api"
-      },
-      {
-        "name": "knowledge_capture",
-        "skill": "plan-marshall:manage-memories",
-        "type": "advisory"
-      },
-      {
-        "name": "lessons_capture",
-        "skill": "plan-marshall:manage-lessons",
-        "type": "advisory"
-      }
-    ]
-  },
   "plan": {
-    "defaults": {
-      "compatibility": "breaking",
-      "commit_strategy": "per_deliverable",
-      "create_pr": false,
-      "verification_required": true,
-      "branch_strategy": "direct",
-      "refine_confidence_threshold": 95
+    "phase-1-init": {
+      "branch_strategy": "direct"
     },
-    "finalize": {
-      "commit": true
+    "phase-2-refine": {
+      "confidence_threshold": 95
+    },
+    "phase-5-execute": {
+      "compatibility": "breaking",
+      "commit_strategy": "per_deliverable"
+    },
+    "phase-6-verify": {
+      "max_iterations": 5,
+      "1_quality_check": true,
+      "2_build_verify": true,
+      "domain_steps": {
+        "documentation": {
+          "1_doc_sync": "pm-documents:doc-verify"
+        }
+      }
+    },
+    "phase-7-finalize": {
+      "max_iterations": 3,
+      "1_commit_push": true,
+      "2_create_pr": true,
+      "3_automated_review": true,
+      "4_sonar_roundtrip": true,
+      "5_knowledge_capture": true,
+      "6_lessons_capture": true
     }
   },
   "skill_domains": {
@@ -70,15 +53,6 @@
       "optionals": [
         "plan-marshall:ref-development-standards"
       ],
-      "workflow_skills": {
-        "1-init": "pm-workflow:phase-1-init",
-        "2-refine": "pm-workflow:phase-2-refine",
-        "3-outline": "pm-workflow:phase-3-outline",
-        "4-plan": "pm-workflow:phase-4-plan",
-        "5-execute": "pm-workflow:phase-5-execute",
-        "6-verify": "pm-workflow:phase-6-verify",
-        "7-finalize": "pm-workflow:phase-7-finalize"
-      },
       "task_executors": {
         "documentation": "pm-workflow:task-documentation",
         "implementation": "pm-workflow:task-implementation",
@@ -113,40 +87,5 @@
       "memory_days": 5,
       "temp_on_maintenance": true
     }
-  },
-  "verification": {
-    "max_iterations": 5,
-    "steps": [
-      {
-        "name": "quality_check",
-        "skill": "${domain}:quality-gate",
-        "type": "build"
-      },
-      {
-        "name": "build_verify",
-        "skill": "${domain}:build-verify",
-        "type": "build"
-      },
-      {
-        "name": "technical_impl",
-        "skill": "${domain}:impl-verify",
-        "type": "agent"
-      },
-      {
-        "name": "technical_test",
-        "skill": "${domain}:test-verify",
-        "type": "agent"
-      },
-      {
-        "name": "doc_sync",
-        "skill": "pm-documents:doc-verify",
-        "type": "advisory"
-      },
-      {
-        "name": "formal_spec",
-        "skill": "pm-requirements:spec-verify",
-        "type": "advisory"
-      }
-    ]
   }
 }

@@ -10,44 +10,62 @@ JSON structure and field definitions for project configuration.
 
 ```json
 {
+  "ci": {
+    "repo_url": "https://github.com/org/repo",
+    "provider": "github",
+    "detected_at": "2025-01-15T10:30:00Z",
+    "sonar_project": null
+  },
+  "plan": {
+    "phase-1-init": {
+      "branch_strategy": "direct"
+    },
+    "phase-2-refine": {
+      "confidence_threshold": 95
+    },
+    "phase-5-execute": {
+      "compatibility": "breaking",
+      "commit_strategy": "per_deliverable"
+    },
+    "phase-6-verify": {
+      "max_iterations": 5,
+      "1_quality_check": true,
+      "2_build_verify": true,
+      "domain_steps": {
+        "java": {
+          "1_technical_impl": "pm-dev-java:java-verify-agent",
+          "2_technical_test": "pm-dev-java:java-coverage-agent"
+        },
+        "documentation": {
+          "1_doc_sync": "pm-documents:doc-verify"
+        }
+      }
+    },
+    "phase-7-finalize": {
+      "max_iterations": 3,
+      "1_commit_push": true,
+      "2_create_pr": true,
+      "3_automated_review": true,
+      "4_sonar_roundtrip": true,
+      "5_knowledge_capture": true,
+      "6_lessons_capture": true
+    }
+  },
   "skill_domains": {
     "system": {
       "defaults": ["plan-marshall:ref-development-standards"],
       "optionals": ["plan-marshall:ref-development-standards"],
-      "workflow_skills": {
-        "1-init": "pm-workflow:phase-1-init",
-        "2-refine": "pm-workflow:phase-2-refine",
-        "3-outline": "pm-workflow:phase-3-outline",
-        "4-plan": "pm-workflow:phase-4-plan",
-        "5-execute": "pm-workflow:phase-5-execute",
-        "6-verify": "pm-workflow:phase-6-verify",
-        "7-finalize": "pm-workflow:phase-7-finalize"
+      "task_executors": {
+        "implementation": "pm-workflow:task-implementation",
+        "module_testing": "pm-workflow:task-module_testing",
+        "integration_testing": "pm-workflow:task-integration_testing"
       }
     },
     "java": {
+      "bundle": "pm-dev-java",
       "workflow_skill_extensions": {
-        "outline": "pm-dev-java:java-outline-ext",
+        "outline": "pm-dev-java:ext-outline-java",
         "triage": "pm-dev-java:ext-triage-java"
-      },
-      "core": {
-        "defaults": ["pm-dev-java:java-core"],
-        "optionals": ["pm-dev-java:java-null-safety", "pm-dev-java:java-lombok"]
-      },
-      "implementation": {
-        "defaults": [],
-        "optionals": ["pm-dev-java:java-cdi", "pm-dev-java:java-maintenance"]
-      },
-      "module_testing": {
-        "defaults": ["pm-dev-java:junit-core"],
-        "optionals": []
-      },
-      "integration_testing": {
-        "defaults": ["pm-dev-java:junit-core"],
-        "optionals": ["pm-dev-java:junit-integration"]
-      },
-      "quality": {
-        "defaults": ["pm-dev-java:javadoc"],
-        "optionals": []
       }
     }
   },
@@ -58,35 +76,17 @@ JSON structure and field definitions for project configuration.
       "memory_days": 5,
       "temp_on_maintenance": true
     }
-  },
-  "plan": {
-    "defaults": {
-      "compatibility": "breaking",
-      "commit_strategy": "per_deliverable",
-      "create_pr": false,
-      "verification_required": true,
-      "branch_strategy": "direct"
-    },
-    "finalize": {
-      "commit": true
-    }
-  },
-  "ci": {
-    "enabled": true,
-    "repo_url": "https://github.com/org/repo",
-    "provider": "github",
-    "sonar_project": null
   }
 }
 ```
 
 ## Section: skill_domains
 
-Skill configuration per domain using the 7-phase model.
+Skill configuration per domain.
 
 ### System Domain Structure
 
-The `system` domain contains workflow skills and base skills applied globally.
+The `system` domain contains task executors and base skills applied globally.
 
 ```json
 {
@@ -94,40 +94,29 @@ The `system` domain contains workflow skills and base skills applied globally.
     "system": {
       "defaults": ["bundle:skill", ...],
       "optionals": ["bundle:skill", ...],
-      "workflow_skills": {
-        "1-init": "pm-workflow:phase-1-init",
-        "2-refine": "pm-workflow:phase-2-refine",
-        "3-outline": "pm-workflow:phase-3-outline",
-        "4-plan": "pm-workflow:phase-4-plan",
-        "5-execute": "pm-workflow:phase-5-execute",
-        "6-verify": "pm-workflow:phase-6-verify",
-        "7-finalize": "pm-workflow:phase-7-finalize"
+      "task_executors": {
+        "implementation": "pm-workflow:task-implementation",
+        "module_testing": "pm-workflow:task-module_testing",
+        "integration_testing": "pm-workflow:task-integration_testing"
       }
     }
   }
 }
 ```
 
-### Technical Domain Structure (Profile-Based)
+### Technical Domain Structure (Bundle-Based)
 
-Technical domains (java, javascript, etc.) use profile-based organization:
+Technical domains (java, javascript, etc.) reference a bundle and declare workflow skill extensions. Profiles (core, implementation, module_testing, etc.) are loaded at runtime from `extension.py` in the bundle.
 
 ```json
 {
   "skill_domains": {
     "{domain}": {
+      "bundle": "pm-dev-java",
       "workflow_skill_extensions": {
         "outline": "bundle:extension-skill",
         "triage": "bundle:triage-skill"
-      },
-      "core": {
-        "defaults": ["bundle:skill", ...],
-        "optionals": ["bundle:skill", ...]
-      },
-      "implementation": { "defaults": [], "optionals": [] },
-      "module_testing": { "defaults": [], "optionals": [] },
-      "integration_testing": { "defaults": [], "optionals": [] },
-      "quality": { "defaults": [], "optionals": [] }
+      }
     }
   }
 }
@@ -137,14 +126,15 @@ Technical domains (java, javascript, etc.) use profile-based organization:
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `workflow_skills` | object | System domain only - maps phases to workflow skills |
+| `task_executors` | object | System domain only - maps profiles to task executor skills |
+| `bundle` | string | Technical domains - bundle providing this domain |
 | `workflow_skill_extensions` | object | Domain-specific extensions (outline, triage) |
 | `defaults` | array | Skills always loaded |
 | `optionals` | array | Skills available for selection |
 
 ### Profiles
 
-Profiles determine which skills to load based on task context:
+Profiles determine which skills to load based on task context. They are loaded from `extension.py` at runtime, not stored in marshal.json.
 
 | Profile | Phase | Description |
 |---------|-------|-------------|
@@ -155,51 +145,12 @@ Profiles determine which skills to load based on task context:
 
 ### Extension Types
 
-Extensions provide domain-specific behavior without replacing workflow skills:
+Extensions provide domain-specific behavior:
 
 | Type | Phase | Description |
 |------|-------|-------------|
 | `outline` | outline | Domain patterns and deliverable identification |
 | `triage` | verify | Finding decision logic (fix/suppress/accept) |
-
-### Capabilities (Domain Resolution)
-
-Each domain can define capabilities for `${domain}` placeholder resolution:
-
-```json
-{
-  "skill_domains": {
-    "java": {
-      "capabilities": {
-        "quality-gate": "pm-dev-java:java-quality-agent",
-        "build-verify": "pm-dev-java:java-verify-agent",
-        "impl-verify": "pm-dev-java:java-verify-agent",
-        "test-verify": "pm-dev-java:java-coverage-agent",
-        "triage": "pm-dev-java:ext-triage-java"
-      }
-    },
-    "javascript": {
-      "capabilities": {
-        "quality-gate": null,
-        "build-verify": null,
-        "triage": "pm-dev-frontend:ext-triage-js"
-      }
-    },
-    "plan-marshall-plugin-dev": {
-      "capabilities": {
-        "triage": "pm-plugin-development:ext-triage-plugin"
-      }
-    },
-    "documentation": {
-      "capabilities": {
-        "triage": "pm-documents:ext-triage-docs"
-      }
-    }
-  }
-}
-```
-
-When a step specifies `skill: "${domain}:quality-gate"` and `config.toon.domains: ["java"]`, the resolved skill is `pm-dev-java:java-quality-agent`.
 
 ## Section: system
 
@@ -231,44 +182,133 @@ System-level infrastructure settings.
 
 ## Section: plan
 
-Plan-related configuration including execution defaults and finalize behavior.
+Phase-specific configuration for the 7-phase workflow model. Each phase with configurable settings has its own sub-section.
 
-### Structure
+### phase-1-init
 
 ```json
 {
   "plan": {
-    "defaults": {
-      "compatibility": "breaking",
-      "commit_strategy": "per_deliverable",
-      "create_pr": false,
-      "verification_required": true,
+    "phase-1-init": {
       "branch_strategy": "direct"
-    },
-    "finalize": {
-      "commit": true
     }
   }
 }
 ```
 
-### Defaults Fields
+| Field | Type | Default | Values |
+|-------|------|---------|--------|
+| `branch_strategy` | string | "direct" | direct, feature |
+
+### phase-2-refine
+
+```json
+{
+  "plan": {
+    "phase-2-refine": {
+      "confidence_threshold": 95
+    }
+  }
+}
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `confidence_threshold` | int | 95 | Confidence threshold for refinement completion |
+
+### phase-5-execute
+
+```json
+{
+  "plan": {
+    "phase-5-execute": {
+      "compatibility": "breaking",
+      "commit_strategy": "per_deliverable"
+    }
+  }
+}
+```
 
 | Field | Type | Default | Values |
 |-------|------|---------|--------|
 | `compatibility` | string | "breaking" | breaking, deprecation, smart_and_ask |
 | `commit_strategy` | string | "per_deliverable" | per_deliverable, per_plan, none |
-| `create_pr` | bool | false | true, false |
-| `verification_required` | bool | true | true, false |
-| `branch_strategy` | string | "direct" | direct, feature |
 
-### Finalize Fields
+### phase-6-verify
+
+Verification pipeline with generic boolean steps and domain-contributed agent steps.
+
+```json
+{
+  "plan": {
+    "phase-6-verify": {
+      "max_iterations": 5,
+      "1_quality_check": true,
+      "2_build_verify": true,
+      "domain_steps": {
+        "java": {
+          "1_technical_impl": "pm-dev-java:java-verify-agent",
+          "2_technical_test": "pm-dev-java:java-coverage-agent"
+        },
+        "documentation": {
+          "1_doc_sync": "pm-documents:doc-verify"
+        }
+      }
+    }
+  }
+}
+```
+
+#### Generic Steps
+
+Steps `1_quality_check` and `2_build_verify` are static booleans. They run canonical commands from `analyze-project-architecture`.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `commit` | bool | true | Commit changes after finalize phase |
+| `max_iterations` | int | 5 | Maximum verify-execute-verify loops |
+| `1_quality_check` | bool | true | Run build quality gate |
+| `2_build_verify` | bool | true | Run build verification |
 
-Note: `create_pr` is in `defaults` as it applies to multiple phases. The finalize workflow skill reads both `plan.defaults.create_pr` and `plan.finalize.commit`.
+#### Domain Steps
+
+`domain_steps` contains per-domain verification steps with fully-qualified agent references. Each domain bundle declares its verification steps via `provides_verify_steps()` in `extension.py`.
+
+- String value → invoke the agent reference
+- `false` → skip the step
+
+Domain steps are auto-populated by `skill-domains configure` and can be toggled via:
+- `plan phase-6-verify set-domain-step --domain X --step Y --enabled false`
+- `plan phase-6-verify set-domain-step-agent --domain X --step Y --agent bundle:agent`
+
+### phase-7-finalize
+
+Finalize pipeline with numbered boolean steps.
+
+```json
+{
+  "plan": {
+    "phase-7-finalize": {
+      "max_iterations": 3,
+      "1_commit_push": true,
+      "2_create_pr": true,
+      "3_automated_review": true,
+      "4_sonar_roundtrip": true,
+      "5_knowledge_capture": true,
+      "6_lessons_capture": true
+    }
+  }
+}
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `max_iterations` | int | 3 | Maximum finalize-verify-finalize loops |
+| `1_commit_push` | bool | true | Commit and push changes |
+| `2_create_pr` | bool | true | Create pull request |
+| `3_automated_review` | bool | true | CI automated review |
+| `4_sonar_roundtrip` | bool | true | Sonar analysis roundtrip |
+| `5_knowledge_capture` | bool | true | Capture learnings to memory |
+| `6_lessons_capture` | bool | true | Record lessons learned |
 
 ## Section: ci
 
@@ -279,7 +319,6 @@ CI provider configuration (project-level, shared via git).
 ```json
 {
   "ci": {
-    "enabled": true,
     "repo_url": "https://github.com/org/repo",
     "provider": "github",
     "detected_at": "2025-01-15T10:30:00Z",
@@ -292,11 +331,10 @@ CI provider configuration (project-level, shared via git).
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
-| `enabled` | bool | No | true | Whether to wait for CI checks during finalize |
 | `repo_url` | string | No | - | Git remote origin URL |
 | `provider` | string | Yes | - | CI provider: `github`, `gitlab`, `unknown` |
 | `detected_at` | string | No | - | ISO timestamp of last detection |
-| `sonar_project` | string | No | null | SonarQube/Cloud project key (if Sonar analysis is configured) |
+| `sonar_project` | string | No | null | SonarQube/Cloud project key |
 
 ### Provider Values
 
@@ -308,92 +346,7 @@ CI provider configuration (project-level, shared via git).
 
 ### Note: Authenticated Tools
 
-Tool availability (`authenticated_tools`) is stored in `run-configuration.json` (local, not shared via git) since it varies per developer machine. See run-config skill for the `ci` section schema.
-
-## Section: verification
-
-**Optional**: These sections override the hardcoded defaults in the phase skills. When absent, phase-6-verify and phase-7-finalize use their built-in pipeline.
-
-Step pipeline configuration for the 6-verify phase.
-
-### Structure
-
-```json
-{
-  "verification": {
-    "max_iterations": 5,
-    "steps": [
-      { "name": "quality_check", "skill": "${domain}:quality-gate", "type": "build" },
-      { "name": "build_verify", "skill": "${domain}:build-verify", "type": "build" },
-      { "name": "technical_impl", "skill": "${domain}:impl-verify", "type": "agent" },
-      { "name": "technical_test", "skill": "${domain}:test-verify", "type": "agent" },
-      { "name": "doc_sync", "skill": "pm-documents:doc-verify", "type": "advisory" },
-      { "name": "formal_spec", "skill": "pm-requirements:spec-verify", "type": "advisory" }
-    ]
-  }
-}
-```
-
-### Step Types
-
-| Type | Purpose | Can Block | Can Loop Back |
-|------|---------|-----------|---------------|
-| `build` | Build/compile commands | Yes | Yes |
-| `agent` | Verification agents | Yes | Yes |
-| `advisory` | Info capture | No | No |
-
-### Domain Placeholder
-
-The `${domain}` placeholder is resolved at runtime using capabilities from `skill_domains.{domain}.capabilities`.
-
-### Fields
-
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `max_iterations` | int | 5 | Maximum verify→execute→verify loops |
-| `steps` | array | - | Ordered step definitions |
-| `steps[].name` | string | - | Step identifier |
-| `steps[].skill` | string | - | Skill to invoke (supports `${domain}` placeholder) |
-| `steps[].type` | string | - | Step type: `build`, `agent`, `advisory` |
-
-## Section: finalize
-
-**Optional**: These sections override the hardcoded defaults in the phase skills. When absent, phase-7-finalize uses its built-in pipeline.
-
-Step pipeline configuration for the 7-finalize phase.
-
-### Structure
-
-```json
-{
-  "finalize": {
-    "max_iterations": 3,
-    "steps": [
-      { "name": "commit_push", "skill": "pm-workflow:workflow-integration-git", "type": "action" },
-      { "name": "create_pr", "skill": "pm-workflow:workflow-integration-git", "type": "action" },
-      { "name": "automated_review", "skill": "pm-workflow:workflow-integration-ci", "type": "api" },
-      { "name": "sonar_roundtrip", "skill": "pm-workflow:workflow-integration-sonar", "type": "api" },
-      { "name": "knowledge_capture", "skill": "plan-marshall:manage-memories", "type": "advisory" },
-      { "name": "lessons_capture", "skill": "plan-marshall:manage-lessons", "type": "advisory" }
-    ]
-  }
-}
-```
-
-### Step Types
-
-| Type | Purpose | Can Block | Can Loop Back |
-|------|---------|-----------|---------------|
-| `action` | Binary success/fail | Yes | No |
-| `api` | External APIs (CI, Sonar) | Yes | Yes |
-| `advisory` | Info capture | No | No |
-
-### Fields
-
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `max_iterations` | int | 3 | Maximum finalize→verify→finalize loops |
-| `steps` | array | - | Ordered step definitions |
+Tool availability (`authenticated_tools`) is stored in `run-configuration.json` (local, not shared via git) since it varies per developer machine.
 
 ## Default Values
 

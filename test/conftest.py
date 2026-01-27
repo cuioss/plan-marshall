@@ -591,7 +591,26 @@ MARSHAL_KEY_PLAN = 'plan'
 MARSHAL_SCHEMA_DEFAULT: dict[str, Any] = {
     MARSHAL_KEY_SKILL_DOMAINS: {'system': {}},
     MARSHAL_KEY_SYSTEM: {'retention': {}},
-    MARSHAL_KEY_PLAN: {'defaults': {}},
+    MARSHAL_KEY_PLAN: {
+        'phase-1-init': {'branch_strategy': 'direct'},
+        'phase-2-refine': {'confidence_threshold': 95},
+        'phase-5-execute': {'compatibility': 'breaking', 'commit_strategy': 'per_deliverable'},
+        'phase-6-verify': {
+            'max_iterations': 5,
+            '1_quality_check': True,
+            '2_build_verify': True,
+            'domain_steps': {},
+        },
+        'phase-7-finalize': {
+            'max_iterations': 3,
+            '1_commit_push': True,
+            '2_create_pr': True,
+            '3_automated_review': True,
+            '4_sonar_roundtrip': True,
+            '5_knowledge_capture': True,
+            '6_lessons_capture': True,
+        },
+    },
 }
 
 
@@ -611,7 +630,7 @@ def create_marshal_json(
 
     Example:
         marshal_path = create_marshal_json(temp_dir, skill_domains={
-            "system": {"workflow_skills": {...}}
+            "system": {"defaults": [...], "task_executors": {...}}
         })
     """
     # Determine the correct location for marshal.json

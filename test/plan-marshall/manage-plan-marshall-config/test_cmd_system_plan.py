@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Tests for system and plan commands in plan-marshall-config.
+"""Tests for system commands in plan-marshall-config.
 
-Tests system retention and plan defaults commands.
+Tests system retention commands. Plan phase commands are tested in
+test_cmd_quality_phases.py.
 """
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
@@ -53,117 +54,6 @@ def test_system_retention_set_boolean():
 
         # Verify changed
         verify = run_script(SCRIPT_PATH, 'system', 'retention', 'get')
-        assert 'false' in verify.stdout.lower()
-
-
-# =============================================================================
-# plan Command Tests
-# =============================================================================
-
-
-def test_plan_defaults_list():
-    """Test plan defaults list."""
-    with PlanContext() as ctx:
-        create_marshal_json(ctx.fixture_dir)
-
-        result = run_script(SCRIPT_PATH, 'plan', 'defaults', 'list')
-
-        assert result.success, f'Should succeed: {result.stderr}'
-        assert 'commit_strategy' in result.stdout
-        assert 'per_deliverable' in result.stdout
-
-
-def test_plan_defaults_get():
-    """Test plan defaults get."""
-    with PlanContext() as ctx:
-        create_marshal_json(ctx.fixture_dir)
-
-        result = run_script(SCRIPT_PATH, 'plan', 'defaults', 'get', '--field', 'commit_strategy')
-
-        assert result.success, f'Should succeed: {result.stderr}'
-        assert 'per_deliverable' in result.stdout
-
-
-def test_plan_defaults_get_all():
-    """Test plan defaults get without field returns all defaults."""
-    with PlanContext() as ctx:
-        create_marshal_json(ctx.fixture_dir)
-
-        result = run_script(SCRIPT_PATH, 'plan', 'defaults', 'get')
-
-        assert result.success, f'Should succeed: {result.stderr}'
-        # Should return multiple fields
-        assert 'commit_strategy' in result.stdout
-        assert 'verification_required' in result.stdout
-
-
-def test_plan_defaults_set():
-    """Test plan defaults set."""
-    with PlanContext() as ctx:
-        create_marshal_json(ctx.fixture_dir)
-
-        result = run_script(SCRIPT_PATH, 'plan', 'defaults', 'set', '--field', 'create_pr', '--value', 'true')
-
-        assert result.success, f'Should succeed: {result.stderr}'
-
-        # Verify changed
-        verify = run_script(SCRIPT_PATH, 'plan', 'defaults', 'get', '--field', 'create_pr')
-        assert 'true' in verify.stdout.lower()
-
-
-def test_plan_defaults_set_string():
-    """Test plan defaults set with string value."""
-    with PlanContext() as ctx:
-        create_marshal_json(ctx.fixture_dir)
-
-        result = run_script(
-            SCRIPT_PATH, 'plan', 'defaults', 'set', '--field', 'branch_strategy', '--value', 'feature-branch'
-        )
-
-        assert result.success, f'Should succeed: {result.stderr}'
-
-        # Verify changed
-        verify = run_script(SCRIPT_PATH, 'plan', 'defaults', 'get', '--field', 'branch_strategy')
-        assert 'feature-branch' in verify.stdout
-
-
-def test_plan_defaults_get_unknown_field():
-    """Test plan defaults get with unknown field returns error."""
-    with PlanContext() as ctx:
-        create_marshal_json(ctx.fixture_dir)
-
-        result = run_script(SCRIPT_PATH, 'plan', 'defaults', 'get', '--field', 'nonexistent')
-
-        assert 'error' in result.stdout.lower(), 'Should report error'
-
-
-# =============================================================================
-# plan finalize Command Tests
-# =============================================================================
-
-
-def test_plan_finalize_get():
-    """Test plan finalize get."""
-    with PlanContext() as ctx:
-        create_marshal_json(ctx.fixture_dir)
-
-        result = run_script(SCRIPT_PATH, 'plan', 'finalize', 'get')
-
-        assert result.success, f'Should succeed: {result.stderr}'
-        assert 'commit' in result.stdout
-
-
-def test_plan_finalize_set():
-    """Test plan finalize set."""
-    with PlanContext() as ctx:
-        create_marshal_json(ctx.fixture_dir)
-
-        result = run_script(SCRIPT_PATH, 'plan', 'finalize', 'set', '--field', 'commit', '--value', 'false')
-
-        assert result.success, f'Should succeed: {result.stderr}'
-
-        # Verify changed
-        verify = run_script(SCRIPT_PATH, 'plan', 'finalize', 'get')
         assert 'false' in verify.stdout.lower()
 
 

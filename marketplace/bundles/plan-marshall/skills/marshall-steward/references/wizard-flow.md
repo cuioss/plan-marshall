@@ -234,43 +234,25 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-m
 
 ---
 
-## Step 5b: Plan Defaults
+## Step 5b: Plan Phase Settings
 
-Configure plan defaults for PR creation, branching, compatibility, commit strategy, and verification.
+Configure plan phase settings for branching, compatibility, and commit strategy.
 
 ```
 AskUserQuestion:
-  question: "Configure plan defaults for this project?"
+  question: "Configure plan phase settings for this project?"
   header: "Plan Config"
   options:
     - label: "Use defaults (Recommended)"
-      description: "create_pr=false, branch=direct, compatibility=breaking, commits=per_deliverable, verify=true"
+      description: "branch=direct, compatibility=breaking, commits=per_deliverable"
     - label: "Configure"
-      description: "Set PR creation, branching, compatibility, commit strategy, and verification"
+      description: "Set branching, compatibility, and commit strategy"
   multiSelect: false
 ```
 
-If user selects "Use defaults" → Skip to Step 6.
+If user selects "Use defaults" → Skip to Step 5c.
 
 If user selects "Configure":
-
-```
-AskUserQuestion:
-  question: "Create PR automatically after plan finalization?"
-  header: "PR Creation"
-  options:
-    - label: "No (Recommended)"
-      description: "Commit only, create PR manually when ready"
-    - label: "Yes"
-      description: "Automatically create PR during finalize"
-  multiSelect: false
-```
-
-Apply selection:
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
-  plan defaults set --field create_pr --value {true|false}
-```
 
 ```
 AskUserQuestion:
@@ -287,7 +269,7 @@ AskUserQuestion:
 Apply selection:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
-  plan defaults set --field branch_strategy --value {direct|feature}
+  plan phase-1-init set --field branch_strategy --value {direct|feature}
 ```
 
 ```
@@ -309,7 +291,7 @@ Maps to values: `breaking`, `deprecation`, `smart_and_ask`
 Apply selection:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
-  plan defaults set --field compatibility --value {breaking|deprecation|smart_and_ask}
+  plan phase-5-execute set --field compatibility --value {breaking|deprecation|smart_and_ask}
 ```
 
 ```
@@ -331,32 +313,14 @@ Maps to values: `per_deliverable`, `per_plan`, `none`
 Apply selection:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
-  plan defaults set --field commit_strategy --value {per_deliverable|per_plan|none}
-```
-
-```
-AskUserQuestion:
-  question: "Require verification phase (phase 6)?"
-  header: "Verification"
-  options:
-    - label: "Yes (Recommended)"
-      description: "Run quality checks before finalize"
-    - label: "No"
-      description: "Skip verification phase"
-  multiSelect: false
-```
-
-Apply selection:
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
-  plan defaults set --field verification_required --value {true|false}
+  plan phase-5-execute set --field commit_strategy --value {per_deliverable|per_plan|none}
 ```
 
 ---
 
 ## Step 5c: Quality Pipeline Configuration
 
-Configure which verification and finalize steps are active, and max iterations.
+Configure verification (phase 6) and finalize (phase 7) pipeline settings.
 
 ```
 AskUserQuestion:
@@ -364,7 +328,7 @@ AskUserQuestion:
   header: "Pipelines"
   options:
     - label: "Use defaults (Recommended)"
-      description: "All 6 verification + 6 finalize steps with standard iterations"
+      description: "All generic verify steps + 6 finalize steps with standard iterations"
     - label: "Configure"
       description: "Select individual steps and customize max iterations"
   multiSelect: false
@@ -374,70 +338,58 @@ If user selects "Use defaults" → Skip to Step 6.
 
 If user selects "Configure":
 
-### Step 5c-1: Select Verification Steps
+### Step 5c-1: Configure Verification Steps
+
+Generic boolean steps:
 
 ```
 AskUserQuestion:
   questions:
-    - question: "Which verification build/agent steps to include?"
+    - question: "Which generic verification steps to include?"
       header: "Verify Steps"
       multiSelect: true
       options:
-        - label: "quality_check (Recommended)"
-          description: "Build quality gate (${domain}:quality-gate)"
-        - label: "build_verify (Recommended)"
-          description: "Build verification (${domain}:build-verify)"
-        - label: "technical_impl (Recommended)"
-          description: "Implementation review agent (${domain}:impl-verify)"
-        - label: "technical_test (Recommended)"
-          description: "Test review agent (${domain}:test-verify)"
-    - question: "Which verification advisory steps to include?"
-      header: "Verify Advisory"
-      multiSelect: true
-      options:
-        - label: "doc_sync (Recommended)"
-          description: "Documentation sync check (pm-documents:doc-verify)"
-        - label: "formal_spec"
-          description: "Formal specification check (pm-requirements:spec-verify)"
+        - label: "1_quality_check (Recommended)"
+          description: "Build quality gate using canonical commands"
+        - label: "2_build_verify (Recommended)"
+          description: "Build verification using canonical commands"
 ```
 
-Apply: collect selected step names (strip " (Recommended)" suffix from labels):
+Apply: for each deselected step:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
-  verification set-steps --steps "{comma-separated selected step names}"
+  plan phase-6-verify set-step --step {step_name} --enabled false
 ```
+
+**Domain verification steps** are auto-populated from extensions during Step 6 (skill domain configuration). Each domain bundle declares its verification steps via `provides_verify_steps()` in `extension.py`.
 
 ### Step 5c-2: Select Finalize Steps
 
 ```
 AskUserQuestion:
   questions:
-    - question: "Which finalize action/api steps to include?"
+    - question: "Which finalize steps to include?"
       header: "Finalize Steps"
       multiSelect: true
       options:
-        - label: "commit_push (Recommended)"
-          description: "Commit and push changes (pm-workflow:workflow-integration-git)"
-        - label: "create_pr"
-          description: "Create pull request (pm-workflow:workflow-integration-git)"
-        - label: "automated_review"
-          description: "CI automated review (pm-workflow:workflow-integration-ci)"
-        - label: "sonar_roundtrip"
-          description: "Sonar analysis roundtrip (pm-workflow:workflow-integration-sonar)"
-    - question: "Which finalize advisory steps to include?"
-      header: "Finalize Advisory"
-      multiSelect: true
-      options:
-        - label: "knowledge_capture (Recommended)"
-          description: "Capture learnings to memory (plan-marshall:manage-memories)"
-        - label: "lessons_capture (Recommended)"
-          description: "Record lessons learned (plan-marshall:manage-lessons)"
+        - label: "1_commit_push (Recommended)"
+          description: "Commit and push changes"
+        - label: "2_create_pr"
+          description: "Create pull request"
+        - label: "3_automated_review"
+          description: "CI automated review"
+        - label: "4_sonar_roundtrip"
+          description: "Sonar analysis roundtrip"
+        - label: "5_knowledge_capture (Recommended)"
+          description: "Capture learnings to memory"
+        - label: "6_lessons_capture (Recommended)"
+          description: "Record lessons learned"
 ```
 
-Apply: collect selected step names:
+Apply: for each deselected step:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
-  finalize set-steps --steps "{comma-separated selected step names}"
+  plan phase-7-finalize set-step --step {step_name} --enabled false
 ```
 
 ### Step 5c-3: Max Iterations
@@ -470,12 +422,12 @@ AskUserQuestion:
 Apply selections:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
-  verification set-max-iterations --value {5|3|10}
+  plan phase-6-verify set-max-iterations --value {5|3|10}
 ```
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
-  finalize set-max-iterations --value {3|1|5}
+  plan phase-7-finalize set-max-iterations --value {3|1|5}
 ```
 
 ---
@@ -550,11 +502,9 @@ domains: java,java-cui,javascript
 ```
 
 This populates `skill_domains` in marshal.json with:
-- `system` domain (always) with workflow_skills for 6 phases and task_executors
-- Each selected domain with nested structure from bundle manifest:
-  - `workflow_skill_extensions` (outline, triage)
-  - `core` (defaults + optionals)
-  - Profile blocks (implementation, module_testing, integration_testing, quality)
+- `system` domain (always) with task_executors
+- Each selected domain with bundle reference and workflow_skill_extensions (outline, triage)
+- Domain verification steps collected from `provides_verify_steps()` are returned in output for presentation to user
 
 **Step 6e: Configure Task Executors**
 
@@ -586,9 +536,9 @@ This auto-discovers profiles from configured domains and registers default task 
 
 ## Step 7: Verify Skill Domain Configuration
 
-Skill domains configure which implementation skills are loaded during plan execution. The 6-phase model uses:
-- **System domain**: Contains workflow_skills (init, outline, plan, execute, finalize) and task_executors
-- **Technical domains**: Profile-based skills and workflow_skill_extensions
+Skill domains configure which implementation skills are loaded during plan execution:
+- **System domain**: Contains task_executors (profile to skill mapping)
+- **Technical domains**: Bundle reference and workflow_skill_extensions
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config skill-domains list
@@ -598,15 +548,8 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-m
 ```json
 {
   "system": {
-    "workflow_skills": {
-      "1-init": "pm-workflow:phase-1-init",
-      "2-refine": "pm-workflow:phase-2-refine",
-      "3-outline": "pm-workflow:phase-3-outline",
-      "4-plan": "pm-workflow:phase-4-plan",
-      "5-execute": "pm-workflow:phase-5-execute",
-      "6-verify": "pm-workflow:phase-6-verify",
-      "7-finalize": "pm-workflow:phase-7-finalize"
-    },
+    "defaults": ["plan-marshall:ref-development-standards"],
+    "optionals": [...],
     "task_executors": {
       "implementation": "pm-workflow:task-implementation",
       "module_testing": "pm-workflow:task-module_testing",
@@ -614,21 +557,16 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-m
     }
   },
   "java": {
+    "bundle": "pm-dev-java",
     "workflow_skill_extensions": {
-      "outline": "pm-dev-java:java-outline-ext",
+      "outline": "pm-dev-java:ext-outline-java",
       "triage": "pm-dev-java:ext-triage-java"
-    },
-    "core": {...},
-    "architecture": {...},
-    "implementation": {...},
-    "module_testing": {...},
-    "integration_testing": {...},
-    "quality": {...}
+    }
   }
 }
 ```
 
-**Note**: Workflow skills are resolved from system domain. Task executors map profiles to execution skills. Domain-specific behavior is provided via workflow_skill_extensions (outline, triage).
+**Note**: Task executors map profiles to execution skills. Domain-specific behavior is provided via workflow_skill_extensions (outline, triage). Profiles (core, implementation, module_testing, etc.) are loaded at runtime from `extension.py`.
 
 ---
 

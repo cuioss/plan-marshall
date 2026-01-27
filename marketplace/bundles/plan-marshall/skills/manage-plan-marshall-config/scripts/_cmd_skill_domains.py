@@ -1,7 +1,7 @@
 """
 Skill domains command handlers for plan-marshall-config.
 
-Handles: skill-domains, resolve-domain-skills, get-workflow-skills
+Handles: skill-domains, resolve-domain-skills
 
 Domain discovery uses extension.py files in each bundle's plan-marshall-plugin skill.
 Extension API functions:
@@ -203,6 +203,39 @@ def load_profiles_from_bundle(bundle_name: str) -> dict:
     return {'profiles': {}}
 
 
+def _collect_verify_steps(domain_key: str) -> list:
+    """Collect verify steps from a domain's extension.py.
+
+    Args:
+        domain_key: Domain key (e.g., 'java', 'documentation')
+
+    Returns:
+        List of verify step dicts [{name, agent, description}] or empty list
+    """
+    extensions = discover_all_extensions()
+
+    for ext in extensions:
+        module = ext.get('module')
+        if not module or not hasattr(module, 'get_skill_domains'):
+            continue
+
+        try:
+            domain_info = module.get_skill_domains()
+            if not domain_info:
+                continue
+
+            domain_data = domain_info.get('domain', {})
+            if isinstance(domain_data, dict) and domain_data.get('key') == domain_key:
+                if hasattr(module, 'provides_verify_steps'):
+                    steps: list = module.provides_verify_steps()
+                    return steps
+                return []
+        except Exception:
+            continue
+
+    return []
+
+
 def cmd_skill_domains(args) -> int:
     """Handle skill-domains noun."""
     try:
@@ -233,9 +266,6 @@ def cmd_skill_domains(args) -> int:
             # Include bundle reference if present
             if 'bundle' in domain_config:
                 result['bundle'] = domain_config['bundle']
-            # Include workflow_skills if present
-            if 'workflow_skills' in domain_config:
-                result['workflow_skills'] = domain_config['workflow_skills']
             # Include task_executors if present
             if 'task_executors' in domain_config:
                 result['task_executors'] = domain_config['task_executors']
@@ -454,12 +484,13 @@ def cmd_skill_domains(args) -> int:
         # Clear existing domains and start fresh with only selected ones
         skill_domains = {}
 
-        # Always add system domain with workflow_skills
+        # Always add system domain
         skill_domains['system'] = copy.deepcopy(DEFAULT_SYSTEM_DOMAIN)
 
         # Apply domain config for each selected domain from bundle extension.py
         domains_configured = []
         domains_not_found = []
+        verify_steps_by_domain: dict = {}
 
         for domain_key in selected_domains:
             # Load from bundle extension.py (returns converted config directly)
@@ -467,6 +498,11 @@ def cmd_skill_domains(args) -> int:
             if domain_config:
                 skill_domains[domain_key] = domain_config
                 domains_configured.append(domain_key)
+
+                # Collect verify steps from extension
+                steps = _collect_verify_steps(domain_key)
+                if steps:
+                    verify_steps_by_domain[domain_key] = steps
             else:
                 domains_not_found.append(domain_key)
 
@@ -480,6 +516,8 @@ def cmd_skill_domains(args) -> int:
         }
         if domains_not_found:
             result['domains_not_found'] = ','.join(domains_not_found)
+        if verify_steps_by_domain:
+            result['verify_steps'] = verify_steps_by_domain
 
         return success_exit(result)
 
@@ -542,96 +580,6 @@ def cmd_resolve_domain_skills(args) -> int:
     return success_exit(
         {'domain': domain, 'profile': profile, 'defaults': defaults_with_desc, 'optionals': optionals_with_desc}
     )
-
-
-def _find_workflow_skill(workflow_skills: dict[str, str], phase: str) -> str:
-    """Find workflow skill by phase, handling numbered keys (e.g., '1-init' for 'init').
-
-    Looks for exact match first, then key ending with '-{phase}'.
-    """
-    # Exact match first
-    if phase in workflow_skills:
-        result: str = workflow_skills[phase]
-        return result
-
-    # Look for numbered key pattern (e.g., "1-init" for "init")
-    for key, value in workflow_skills.items():
-        if key.endswith(f'-{phase}'):
-            return value
-
-    return ''
-
-
-def cmd_get_workflow_skills(args) -> int:
-    """Handle get-workflow-skills command.
-
-    Returns all workflow skills from the system domain (7-phase model).
-    """
-    try:
-        require_initialized()
-    except MarshalNotInitializedError as e:
-        return error_exit(str(e))
-
-    config = load_config()
-    skill_domains = config.get('skill_domains', {})
-
-    # Get workflow_skills from system domain
-    if 'system' not in skill_domains:
-        return error_exit('System domain not configured. Run /marshall-steward to initialize.')
-
-    system_config = skill_domains['system']
-    workflow_skills = system_config.get('workflow_skills', {})
-
-    if not workflow_skills:
-        return error_exit('System domain has no workflow_skills configured')
-
-    return success_exit(
-        {
-            'init': _find_workflow_skill(workflow_skills, 'init'),
-            'refine': _find_workflow_skill(workflow_skills, 'refine'),
-            'outline': _find_workflow_skill(workflow_skills, 'outline'),
-            'plan': _find_workflow_skill(workflow_skills, 'plan'),
-            'execute': _find_workflow_skill(workflow_skills, 'execute'),
-            'verify': _find_workflow_skill(workflow_skills, 'verify'),
-            'finalize': _find_workflow_skill(workflow_skills, 'finalize'),
-        }
-    )
-
-
-def cmd_resolve_workflow_skill(args) -> int:
-    """Resolve system workflow skill for a phase.
-
-    Always returns the system workflow skill from skill_domains.system.workflow_skills.{phase}.
-    Domain-specific behavior is provided by extensions loaded via resolve-workflow-skill-extension.
-
-    Phases: init, refine, outline, plan, execute, verify, finalize
-    """
-    try:
-        require_initialized()
-    except MarshalNotInitializedError as e:
-        return error_exit(str(e))
-
-    config = load_config()
-    skill_domains = config.get('skill_domains', {})
-
-    phase = args.phase
-
-    # Always use system domain for workflow skills
-    if 'system' not in skill_domains:
-        return error_exit('System domain not configured. Run /marshall-steward to initialize.')
-
-    system_config = skill_domains['system']
-    workflow_skills = system_config.get('workflow_skills', {})
-
-    if not workflow_skills:
-        return error_exit('System domain has no workflow_skills configured')
-
-    skill = _find_workflow_skill(workflow_skills, phase)
-    if not skill:
-        available = [k.split('-')[-1] if '-' in k else k for k in workflow_skills.keys()]
-        return error_exit(f'Unknown phase: {phase}. Available: {", ".join(available)}')
-
-    return success_exit({'phase': phase, 'workflow_skill': skill})
 
 
 def cmd_resolve_workflow_skill_extension(args) -> int:

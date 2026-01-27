@@ -68,6 +68,21 @@ class Extension(ExtensionBase):
             'triage': 'pm-dev-java:ext-triage-java',
         }
 
+    def provides_verify_steps(self) -> list[dict]:
+        """Return Java-specific verification steps."""
+        return [
+            {
+                'name': 'technical_impl',
+                'agent': 'pm-dev-java:java-verify-agent',
+                'description': 'Verify implementation standards compliance',
+            },
+            {
+                'name': 'technical_test',
+                'agent': 'pm-dev-java:java-coverage-agent',
+                'description': 'Verify test coverage meets thresholds',
+            },
+        ]
+
     def discover_modules(self, project_root: str) -> list:
         """Discover all modules with complete metadata.
 

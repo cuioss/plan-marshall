@@ -43,6 +43,16 @@ class Extension(ExtensionBase):
             },
         }
 
+    def provides_verify_steps(self) -> list[dict]:
+        """Return documentation-specific verification steps."""
+        return [
+            {
+                'name': 'doc_sync',
+                'agent': 'pm-documents:doc-verify',
+                'description': 'Verify documentation is synchronized',
+            },
+        ]
+
     def discover_modules(self, project_root: str) -> list:
         """Discover documentation modules in the project.
 

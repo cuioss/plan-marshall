@@ -228,30 +228,13 @@ domains: java,javascript
 ```
 
 **Note:** This command:
-- Always configures the `system` domain with workflow_skills
-- Applies DOMAIN_TEMPLATES for each selected domain
-- Creates full profile structure for each domain
+- Always configures the `system` domain with task_executors
+- Applies domain templates for each selected domain
+- Collects verify steps from domain extensions via `provides_verify_steps()`
 
 ---
 
 ## Standalone Commands (Skill Resolution)
-
-### resolve-workflow-skill
-
-Resolve system workflow skill for a phase. Always returns from the `system` domain.
-
-**Phases:** 1-init, 2-refine, 3-outline, 4-plan, 5-execute, 6-verify, 7-finalize
-
-```bash
-plan-marshall-config resolve-workflow-skill --phase 3-outline
-```
-
-**Output:**
-```toon
-status: success
-phase: 3-outline
-workflow_skill: pm-workflow:phase-3-outline
-```
 
 ### resolve-workflow-skill-extension
 
@@ -306,26 +289,6 @@ optionals[2]:
     description: CDI/Quarkus patterns
   - pm-dev-java:java-maintenance
     description: Code maintenance standards
-```
-
-### get-workflow-skills
-
-Get all workflow skills from the system domain (7-phase model).
-
-```bash
-plan-marshall-config get-workflow-skills
-```
-
-**Output:**
-```toon
-status: success
-1-init: pm-workflow:phase-1-init
-2-refine: pm-workflow:phase-2-refine
-3-outline: pm-workflow:phase-3-outline
-4-plan: pm-workflow:phase-4-plan
-5-execute: pm-workflow:phase-5-execute
-6-verify: pm-workflow:phase-6-verify
-7-finalize: pm-workflow:phase-7-finalize
 ```
 
 ### get-skills-by-profile
@@ -419,43 +382,131 @@ plan-marshall-config system retention set \
 
 ## Noun: plan
 
-Manage plan-related configuration.
+Manage phase-specific plan configuration. Each phase has its own sub-noun.
 
-### defaults list
+### phase-1-init get
 
-List all plan defaults.
-
-```bash
-plan-marshall-config plan defaults list
-```
-
-**Output:**
-```toon
-status: success
-defaults:
-  compatibility: breaking
-  commit_strategy: per_deliverable
-  create_pr: false
-  verification_required: true
-  branch_strategy: direct
-```
-
-### defaults get
-
-Get a specific default value.
+Get init phase configuration.
 
 ```bash
-plan-marshall-config plan defaults get --field commit_strategy
+plan-marshall-config plan phase-1-init get
 ```
 
-### defaults set
+### phase-1-init set
 
-Set a default value.
+Set init phase field.
 
 ```bash
-plan-marshall-config plan defaults set \
-  --field create_pr \
-  --value true
+plan-marshall-config plan phase-1-init set \
+  --field branch_strategy --value feature
+```
+
+### phase-2-refine get
+
+Get refine phase configuration.
+
+```bash
+plan-marshall-config plan phase-2-refine get
+```
+
+### phase-2-refine set
+
+Set refine phase field.
+
+```bash
+plan-marshall-config plan phase-2-refine set \
+  --field confidence_threshold --value 90
+```
+
+### phase-5-execute get
+
+Get execute phase configuration.
+
+```bash
+plan-marshall-config plan phase-5-execute get
+```
+
+### phase-5-execute set
+
+Set execute phase field.
+
+```bash
+plan-marshall-config plan phase-5-execute set \
+  --field compatibility --value deprecation
+```
+
+### phase-6-verify get
+
+Get verify phase configuration including generic steps and domain steps.
+
+```bash
+plan-marshall-config plan phase-6-verify get
+```
+
+Optional `--field` to get a specific field:
+
+```bash
+plan-marshall-config plan phase-6-verify get --field max_iterations
+```
+
+### phase-6-verify set-max-iterations
+
+Set maximum verification iterations.
+
+```bash
+plan-marshall-config plan phase-6-verify set-max-iterations --value 10
+```
+
+### phase-6-verify set-step
+
+Enable or disable a generic boolean step.
+
+```bash
+plan-marshall-config plan phase-6-verify set-step \
+  --step 1_quality_check --enabled false
+```
+
+### phase-6-verify set-domain-step
+
+Enable or disable a domain verification step.
+
+```bash
+plan-marshall-config plan phase-6-verify set-domain-step \
+  --domain java --step 1_technical_impl --enabled false
+```
+
+### phase-6-verify set-domain-step-agent
+
+Set a domain verification step's agent reference.
+
+```bash
+plan-marshall-config plan phase-6-verify set-domain-step-agent \
+  --domain java --step 1_technical_impl --agent pm-dev-java:java-verify-agent
+```
+
+### phase-7-finalize get
+
+Get finalize phase configuration.
+
+```bash
+plan-marshall-config plan phase-7-finalize get
+```
+
+### phase-7-finalize set-max-iterations
+
+Set maximum finalize iterations.
+
+```bash
+plan-marshall-config plan phase-7-finalize set-max-iterations --value 5
+```
+
+### phase-7-finalize set-step
+
+Enable or disable a finalize step.
+
+```bash
+plan-marshall-config plan phase-7-finalize set-step \
+  --step 2_create_pr --enabled false
 ```
 
 ---

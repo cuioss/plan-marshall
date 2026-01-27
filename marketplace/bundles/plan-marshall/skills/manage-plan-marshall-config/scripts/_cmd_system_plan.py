@@ -2,8 +2,12 @@
 System and plan command handlers for plan-marshall-config.
 
 Handles: system, plan
+
+Plan sub-nouns delegate to phase handlers in _cmd_quality_phases:
+  phase-1-init, phase-2-refine, phase-5-execute, phase-6-verify, phase-7-finalize
 """
 
+from _cmd_quality_phases import PHASE_SECTIONS, cmd_phase
 from _config_core import (
     EXIT_ERROR,
     MarshalNotInitializedError,
@@ -53,66 +57,14 @@ def cmd_system(args) -> int:
 
 
 def cmd_plan(args) -> int:
-    """Handle plan noun."""
-    try:
-        require_initialized()
-    except MarshalNotInitializedError as e:
-        return error_exit(str(e))
+    """Handle plan noun.
 
-    config = load_config()
-    plan_config = config.get('plan', {})
+    Delegates to phase handlers for phase-based sub-nouns.
+    """
+    sub_noun = args.sub_noun
 
-    if args.sub_noun == 'defaults':
-        defaults = plan_config.get('defaults', {})
-
-        if args.verb == 'list':
-            return success_exit({'defaults': defaults})
-
-        elif args.verb == 'get':
-            field = getattr(args, 'field', None)
-            if not field:
-                # No field specified - return all defaults
-                return success_exit({'defaults': defaults})
-            if field not in defaults:
-                return error_exit(f'Unknown default field: {field}')
-            return success_exit({'field': field, 'value': defaults[field]})
-
-        elif args.verb == 'set':
-            field = args.field
-            value = args.value
-
-            # Type coercion
-            if value.lower() == 'true':
-                value = True
-            elif value.lower() == 'false':
-                value = False
-
-            defaults[field] = value
-            plan_config['defaults'] = defaults
-            config['plan'] = plan_config
-            save_config(config)
-            return success_exit({'field': field, 'value': value})
-
-    elif args.sub_noun == 'finalize':
-        finalize = plan_config.get('finalize', {})
-
-        if args.verb == 'get':
-            return success_exit({'finalize': finalize})
-
-        elif args.verb == 'set':
-            field = args.field
-            value = args.value
-
-            # Type coercion
-            if value.lower() == 'true':
-                value = True
-            elif value.lower() == 'false':
-                value = False
-
-            finalize[field] = value
-            plan_config['finalize'] = finalize
-            config['plan'] = plan_config
-            save_config(config)
-            return success_exit({'field': field, 'value': value})
+    # Phase-based sub-nouns delegate to cmd_phase
+    if sub_noun in PHASE_SECTIONS:
+        return cmd_phase(args, sub_noun)
 
     return EXIT_ERROR

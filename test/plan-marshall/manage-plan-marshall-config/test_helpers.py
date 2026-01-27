@@ -50,31 +50,36 @@ def create_marshal_json(fixture_dir: Path, config: dict | None = None) -> Path:
                 'retention': {'logs_days': 1, 'archived_plans_days': 5, 'memory_days': 5, 'temp_on_maintenance': True}
             },
             'plan': {
-                'defaults': {
-                    'compatibility': 'deprecation',
-                    'commit_strategy': 'per_deliverable',
-                    'create_pr': False,
-                    'verification_required': True,
+                'phase-1-init': {
                     'branch_strategy': 'direct',
                 },
-                'finalize': {'commit': True},
+                'phase-2-refine': {
+                    'confidence_threshold': 95,
+                },
+                'phase-5-execute': {
+                    'compatibility': 'breaking',
+                    'commit_strategy': 'per_deliverable',
+                },
+                'phase-6-verify': {
+                    'max_iterations': 5,
+                    '1_quality_check': True,
+                    '2_build_verify': True,
+                    'domain_steps': {},
+                },
+                'phase-7-finalize': {
+                    'max_iterations': 3,
+                    '1_commit_push': True,
+                    '2_create_pr': True,
+                    '3_automated_review': True,
+                    '4_sonar_roundtrip': True,
+                    '5_knowledge_capture': True,
+                    '6_lessons_capture': True,
+                },
             },
             'ci': {
                 'repo_url': 'https://github.com/test/repo',
                 'provider': 'github',
                 'detected_at': '2025-01-15T10:30:00Z',
-            },
-            'verification': {
-                'max_iterations': 5,
-                'steps': [
-                    {'name': 'quality_check', 'skill': '${domain}:quality-gate', 'type': 'build'},
-                ],
-            },
-            'finalize': {
-                'max_iterations': 3,
-                'steps': [
-                    {'name': 'commit_push', 'skill': 'pm-workflow:workflow-integration-git', 'type': 'action'},
-                ],
             },
         }
     marshal_path = fixture_dir / 'marshal.json'
@@ -97,8 +102,7 @@ def create_marshal_json(fixture_dir: Path, config: dict | None = None) -> Path:
 def create_nested_marshal_json(fixture_dir: Path) -> Path:
     """Create marshal.json with nested skill_domains structure.
 
-    Uses 5-phase model: init, outline, plan, execute, finalize.
-    System domain contains workflow_skills and task_executors.
+    System domain contains task_executors.
     Domain-specific domains contain bundle reference and workflow_skill_extensions.
 
     NOTE: Profiles (core, implementation, module_testing, quality) are NOT stored
@@ -109,15 +113,6 @@ def create_nested_marshal_json(fixture_dir: Path) -> Path:
             'system': {
                 'defaults': ['plan-marshall:general-development-rules'],
                 'optionals': ['plan-marshall:diagnostic-patterns'],
-                'workflow_skills': {
-                    '1-init': 'pm-workflow:phase-1-init',
-                    '2-refine': 'pm-workflow:phase-2-refine',
-                    '3-outline': 'pm-workflow:phase-3-outline',
-                    '4-plan': 'pm-workflow:phase-4-plan',
-                    '5-execute': 'pm-workflow:phase-5-execute',
-                    '6-verify': 'pm-workflow:phase-6-verify',
-                    '7-finalize': 'pm-workflow:phase-7-finalize',
-                },
                 'task_executors': {
                     'implementation': 'pm-workflow:task-implementation',
                     'module_testing': 'pm-workflow:task-module_testing',
@@ -143,33 +138,37 @@ def create_nested_marshal_json(fixture_dir: Path) -> Path:
                 },
             },
         },
-        'modules': {},
         'system': {
             'retention': {'logs_days': 1, 'archived_plans_days': 5, 'memory_days': 5, 'temp_on_maintenance': True}
         },
         'plan': {
-            'defaults': {
-                'compatibility': 'breaking',
-                'commit_strategy': 'per_deliverable',
-                'create_pr': False,
-                'verification_required': True,
+            'phase-1-init': {
                 'branch_strategy': 'direct',
             },
-            'finalize': {'commit': True},
+            'phase-2-refine': {
+                'confidence_threshold': 95,
+            },
+            'phase-5-execute': {
+                'compatibility': 'breaking',
+                'commit_strategy': 'per_deliverable',
+            },
+            'phase-6-verify': {
+                'max_iterations': 5,
+                '1_quality_check': True,
+                '2_build_verify': True,
+                'domain_steps': {},
+            },
+            'phase-7-finalize': {
+                'max_iterations': 3,
+                '1_commit_push': True,
+                '2_create_pr': True,
+                '3_automated_review': True,
+                '4_sonar_roundtrip': True,
+                '5_knowledge_capture': True,
+                '6_lessons_capture': True,
+            },
         },
         'ci': {'repo_url': None, 'provider': 'unknown', 'detected_at': None},
-        'verification': {
-            'max_iterations': 5,
-            'steps': [
-                {'name': 'quality_check', 'skill': '${domain}:quality-gate', 'type': 'build'},
-            ],
-        },
-        'finalize': {
-            'max_iterations': 3,
-            'steps': [
-                {'name': 'commit_push', 'skill': 'pm-workflow:workflow-integration-git', 'type': 'action'},
-            ],
-        },
     }
     marshal_path = fixture_dir / 'marshal.json'
     marshal_path.write_text(json.dumps(config, indent=2))

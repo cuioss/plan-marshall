@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Tests for skill-domains commands in plan-marshall-config.
 
-Tests skill-domains, resolve-domain-skills, get-workflow-skills commands
+Tests skill-domains, resolve-domain-skills commands
 including nested structure variants and edge cases.
 """
 
@@ -212,8 +212,8 @@ def test_skill_domains_validate_nested_profile_skill():
         assert 'in_defaults' in result.stdout.lower()
 
 
-def test_skill_domains_get_system_has_workflow_skills():
-    """Test skill-domains get returns system domain with workflow_skills."""
+def test_skill_domains_get_system_has_task_executors():
+    """Test skill-domains get returns system domain with task_executors."""
     with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
 
@@ -223,8 +223,8 @@ def test_skill_domains_get_system_has_workflow_skills():
         # System domain has defaults
         assert 'defaults' in result.stdout
         assert 'plan-marshall:general-development-rules' in result.stdout
-        # System domain now HAS workflow_skills (5-phase model)
-        assert 'workflow_skills' in result.stdout
+        # System domain has task_executors
+        assert 'task_executors' in result.stdout
 
 
 # =============================================================================
@@ -237,11 +237,15 @@ def test_skill_domains_detect_runs():
     with PlanContext() as ctx:
         # Create minimal marshal.json
         config = {
-            'skill_domains': {'system': {'defaults': ['plan-marshall:general-development-rules'], 'optionals': []}},
-            'modules': {},
-            'build_systems': [],
+            'skill_domains': {'system': {'defaults': ['plan-marshall:ref-development-standards'], 'optionals': []}},
             'system': {'retention': {}},
-            'plan': {'defaults': {}},
+            'plan': {
+                'phase-1-init': {'branch_strategy': 'direct'},
+                'phase-2-refine': {'confidence_threshold': 95},
+                'phase-5-execute': {'compatibility': 'breaking', 'commit_strategy': 'per_deliverable'},
+                'phase-6-verify': {'max_iterations': 5, '1_quality_check': True, '2_build_verify': True, 'domain_steps': {}},
+                'phase-7-finalize': {'max_iterations': 3, '1_commit_push': True, '2_create_pr': True, '3_automated_review': True, '4_sonar_roundtrip': True, '5_knowledge_capture': True, '6_lessons_capture': True},
+            },
         }
         marshal_path = ctx.fixture_dir / 'marshal.json'
         marshal_path.write_text(json.dumps(config, indent=2))
@@ -265,10 +269,14 @@ def test_skill_domains_detect_no_overwrite():
                     'workflow_skill_extensions': {'outline': 'custom:outline-skill'},
                 },
             },
-            'modules': {},
-            'build_systems': [],
             'system': {'retention': {}},
-            'plan': {'defaults': {}},
+            'plan': {
+                'phase-1-init': {'branch_strategy': 'direct'},
+                'phase-2-refine': {'confidence_threshold': 95},
+                'phase-5-execute': {'compatibility': 'breaking', 'commit_strategy': 'per_deliverable'},
+                'phase-6-verify': {'max_iterations': 5, '1_quality_check': True, '2_build_verify': True, 'domain_steps': {}},
+                'phase-7-finalize': {'max_iterations': 3, '1_commit_push': True, '2_create_pr': True, '3_automated_review': True, '4_sonar_roundtrip': True, '5_knowledge_capture': True, '6_lessons_capture': True},
+            },
         }
         marshal_path = ctx.fixture_dir / 'marshal.json'
         marshal_path.write_text(json.dumps(config, indent=2))
@@ -371,138 +379,6 @@ def test_resolve_domain_skills_java_quality():
         assert 'pm-dev-java:java-create' in result.stdout
         # Should include quality defaults (javadoc)
         assert 'pm-dev-java:javadoc' in result.stdout
-
-
-# =============================================================================
-# get-workflow-skills Tests (5-Phase Model)
-# =============================================================================
-
-
-def test_get_workflow_skills():
-    """Test get-workflow-skills returns all 5-phase workflow skill references."""
-    with PlanContext() as ctx:
-        create_nested_marshal_json(ctx.fixture_dir)
-
-        result = run_script(SCRIPT_PATH, 'get-workflow-skills')
-
-        assert result.success, f'Should succeed: {result.stderr}'
-        # Verify all 5 phases are returned
-        assert 'init' in result.stdout
-        assert 'outline' in result.stdout
-        assert 'plan' in result.stdout
-        assert 'execute' in result.stdout
-        assert 'finalize' in result.stdout
-        # Verify skill references
-        assert 'pm-workflow:phase-1-init' in result.stdout
-        assert 'pm-workflow:phase-3-outline' in result.stdout
-        assert 'pm-workflow:phase-4-plan' in result.stdout
-
-
-def test_get_workflow_skills_output_format():
-    """Test get-workflow-skills returns all 7 workflow skill references."""
-    with PlanContext() as ctx:
-        create_nested_marshal_json(ctx.fixture_dir)
-
-        result = run_script(SCRIPT_PATH, 'get-workflow-skills')
-
-        assert result.success, f'Should succeed: {result.stderr}'
-        # Verify all 7 workflow skills are returned
-        assert 'pm-workflow:phase-5-execute' in result.stdout
-        assert 'pm-workflow:phase-6-verify' in result.stdout
-        assert 'pm-workflow:phase-7-finalize' in result.stdout
-
-
-# =============================================================================
-# resolve-workflow-skill Tests (7-Phase Model - Always uses system domain)
-# =============================================================================
-
-
-def test_resolve_workflow_skill_init():
-    """Test resolve-workflow-skill for init phase returns system workflow skill."""
-    with PlanContext() as ctx:
-        create_nested_marshal_json(ctx.fixture_dir)
-
-        result = run_script(SCRIPT_PATH, 'resolve-workflow-skill', '--phase', 'init')
-
-        assert result.success, f'Should succeed: {result.stderr}'
-        assert 'pm-workflow:phase-1-init' in result.stdout
-        assert 'phase' in result.stdout
-        assert 'workflow_skill' in result.stdout
-
-
-def test_resolve_workflow_skill_outline():
-    """Test resolve-workflow-skill for outline phase returns system workflow skill."""
-    with PlanContext() as ctx:
-        create_nested_marshal_json(ctx.fixture_dir)
-
-        result = run_script(SCRIPT_PATH, 'resolve-workflow-skill', '--phase', 'outline')
-
-        assert result.success, f'Should succeed: {result.stderr}'
-        assert 'pm-workflow:phase-3-outline' in result.stdout
-
-
-def test_resolve_workflow_skill_plan():
-    """Test resolve-workflow-skill for plan phase returns system workflow skill."""
-    with PlanContext() as ctx:
-        create_nested_marshal_json(ctx.fixture_dir)
-
-        result = run_script(SCRIPT_PATH, 'resolve-workflow-skill', '--phase', 'plan')
-
-        assert result.success, f'Should succeed: {result.stderr}'
-        assert 'pm-workflow:phase-4-plan' in result.stdout
-
-
-def test_resolve_workflow_skill_execute():
-    """Test resolve-workflow-skill for execute phase returns system workflow skill."""
-    with PlanContext() as ctx:
-        create_nested_marshal_json(ctx.fixture_dir)
-
-        result = run_script(SCRIPT_PATH, 'resolve-workflow-skill', '--phase', 'execute')
-
-        assert result.success, f'Should succeed: {result.stderr}'
-        assert 'pm-workflow:phase-5-execute' in result.stdout
-
-
-def test_resolve_workflow_skill_verify():
-    """Test resolve-workflow-skill for verify phase returns system workflow skill."""
-    with PlanContext() as ctx:
-        create_nested_marshal_json(ctx.fixture_dir)
-
-        result = run_script(SCRIPT_PATH, 'resolve-workflow-skill', '--phase', 'verify')
-
-        assert result.success, f'Should succeed: {result.stderr}'
-        assert 'pm-workflow:phase-6-verify' in result.stdout
-
-
-def test_resolve_workflow_skill_finalize():
-    """Test resolve-workflow-skill for finalize phase returns system workflow skill."""
-    with PlanContext() as ctx:
-        create_nested_marshal_json(ctx.fixture_dir)
-
-        result = run_script(SCRIPT_PATH, 'resolve-workflow-skill', '--phase', 'finalize')
-
-        assert result.success, f'Should succeed: {result.stderr}'
-        assert 'pm-workflow:phase-7-finalize' in result.stdout
-
-
-def test_resolve_workflow_skill_no_system_domain():
-    """Test resolve-workflow-skill returns error when system domain is missing."""
-    with PlanContext() as ctx:
-        # Create marshal.json WITHOUT system domain
-        config = {
-            'skill_domains': {'java': {'core': {'defaults': [], 'optionals': []}}},
-            'modules': {},
-            'build_systems': [],
-            'system': {'retention': {}},
-            'plan': {'defaults': {}},
-        }
-        marshal_path = ctx.fixture_dir / 'marshal.json'
-        marshal_path.write_text(json.dumps(config, indent=2))
-
-        result = run_script(SCRIPT_PATH, 'resolve-workflow-skill', '--phase', 'outline')
-
-        assert 'error' in result.stdout.lower(), 'Should report error'
-        assert 'system' in result.stdout.lower()
 
 
 # =============================================================================
@@ -649,10 +525,14 @@ def test_get_available_uses_discovery():
         # Create marshal.json - build_systems no longer affect get-available
         config = {
             'skill_domains': {'system': {'defaults': []}},
-            'modules': {},
-            'build_systems': [{'system': 'maven', 'skill': 'plan-marshall:build-operations'}],
             'system': {'retention': {}},
-            'plan': {'defaults': {}},
+            'plan': {
+                'phase-1-init': {'branch_strategy': 'direct'},
+                'phase-2-refine': {'confidence_threshold': 95},
+                'phase-5-execute': {'compatibility': 'breaking', 'commit_strategy': 'per_deliverable'},
+                'phase-6-verify': {'max_iterations': 5, '1_quality_check': True, '2_build_verify': True, 'domain_steps': {}},
+                'phase-7-finalize': {'max_iterations': 3, '1_commit_push': True, '2_create_pr': True, '3_automated_review': True, '4_sonar_roundtrip': True, '5_knowledge_capture': True, '6_lessons_capture': True},
+            },
         }
         marshal_path = ctx.fixture_dir / 'marshal.json'
         marshal_path.write_text(json.dumps(config, indent=2))
@@ -669,10 +549,14 @@ def test_configure_domains():
     with PlanContext() as ctx:
         config = {
             'skill_domains': {},
-            'modules': {},
-            'build_systems': [],
             'system': {'retention': {}},
-            'plan': {'defaults': {}},
+            'plan': {
+                'phase-1-init': {'branch_strategy': 'direct'},
+                'phase-2-refine': {'confidence_threshold': 95},
+                'phase-5-execute': {'compatibility': 'breaking', 'commit_strategy': 'per_deliverable'},
+                'phase-6-verify': {'max_iterations': 5, '1_quality_check': True, '2_build_verify': True, 'domain_steps': {}},
+                'phase-7-finalize': {'max_iterations': 3, '1_commit_push': True, '2_create_pr': True, '3_automated_review': True, '4_sonar_roundtrip': True, '5_knowledge_capture': True, '6_lessons_capture': True},
+            },
         }
         marshal_path = ctx.fixture_dir / 'marshal.json'
         marshal_path.write_text(json.dumps(config, indent=2))
@@ -688,7 +572,7 @@ def test_configure_domains():
         assert 'system' in updated['skill_domains'], 'System domain should be added'
         assert 'java' in updated['skill_domains'], 'Java domain should be added'
         assert 'javascript' in updated['skill_domains'], 'JavaScript domain should be added'
-        assert 'workflow_skills' in updated['skill_domains']['system'], 'System should have workflow_skills'
+        assert 'task_executors' in updated['skill_domains']['system'], 'System should have task_executors'
 
 
 def test_configure_always_adds_system():
@@ -696,10 +580,14 @@ def test_configure_always_adds_system():
     with PlanContext() as ctx:
         config = {
             'skill_domains': {},
-            'modules': {},
-            'build_systems': [],
             'system': {'retention': {}},
-            'plan': {'defaults': {}},
+            'plan': {
+                'phase-1-init': {'branch_strategy': 'direct'},
+                'phase-2-refine': {'confidence_threshold': 95},
+                'phase-5-execute': {'compatibility': 'breaking', 'commit_strategy': 'per_deliverable'},
+                'phase-6-verify': {'max_iterations': 5, '1_quality_check': True, '2_build_verify': True, 'domain_steps': {}},
+                'phase-7-finalize': {'max_iterations': 3, '1_commit_push': True, '2_create_pr': True, '3_automated_review': True, '4_sonar_roundtrip': True, '5_knowledge_capture': True, '6_lessons_capture': True},
+            },
         }
         marshal_path = ctx.fixture_dir / 'marshal.json'
         marshal_path.write_text(json.dumps(config, indent=2))

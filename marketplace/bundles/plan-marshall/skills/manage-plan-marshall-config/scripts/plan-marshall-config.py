@@ -8,10 +8,9 @@ Usage:
     plan-marshall-config.py skill-domains list
     plan-marshall-config.py skill-domains get --domain java
     plan-marshall-config.py system retention get
-    plan-marshall-config.py plan defaults list
-    plan-marshall-config.py plan finalize get
-    plan-marshall-config.py verification get
-    plan-marshall-config.py finalize get
+    plan-marshall-config.py plan phase-1-init get
+    plan-marshall-config.py plan phase-6-verify set-step --step 1_quality_check --enabled false
+    plan-marshall-config.py plan phase-7-finalize get
     plan-marshall-config.py init
 """
 
@@ -21,14 +20,11 @@ import sys
 from _cmd_ci import cmd_ci
 from _cmd_ext_defaults import cmd_ext_defaults
 from _cmd_init import cmd_init
-from _cmd_quality_phases import cmd_quality_phases
 from _cmd_skill_domains import (
     cmd_configure_task_executors,
     cmd_get_skills_by_profile,
-    cmd_get_workflow_skills,
     cmd_resolve_domain_skills,
     cmd_resolve_task_executor,
-    cmd_resolve_workflow_skill,
     cmd_resolve_workflow_skill_extension,
     cmd_skill_domains,
 )
@@ -36,6 +32,52 @@ from _cmd_system_plan import cmd_plan, cmd_system
 
 # Direct imports - PYTHONPATH set by executor
 from _config_core import EXIT_ERROR
+
+
+def _add_phase_subparser(plan_sub, phase_name: str, help_text: str, *, has_pipeline: bool = False,
+                         has_scalar: bool = False, has_domain_steps: bool = False):
+    """Add a phase sub-parser under the plan noun.
+
+    Args:
+        plan_sub: Plan subparsers object
+        phase_name: Phase key (e.g., 'phase-1-init')
+        help_text: Help text for the phase
+        has_pipeline: If True, adds set-max-iterations and set-step verbs
+        has_scalar: If True, adds set verb with --field/--value
+        has_domain_steps: If True, adds set-domain-step and set-domain-step-agent verbs
+    """
+    p_phase = plan_sub.add_parser(phase_name, help=help_text)
+    phase_sub = p_phase.add_subparsers(dest='verb', help='Operation')
+
+    # get (with optional --field)
+    phase_get = phase_sub.add_parser('get', help=f'Get {phase_name} config')
+    phase_get.add_argument('--field', help='Field name (optional, shows all if omitted)')
+
+    if has_scalar:
+        phase_set = phase_sub.add_parser('set', help=f'Set {phase_name} field')
+        phase_set.add_argument('--field', required=True, help='Field name')
+        phase_set.add_argument('--value', required=True, help='Field value')
+
+    if has_pipeline:
+        phase_set_iter = phase_sub.add_parser('set-max-iterations', help='Set max iterations')
+        phase_set_iter.add_argument('--value', required=True, type=int, help='Max iterations value')
+
+        phase_set_step = phase_sub.add_parser('set-step', help='Set generic boolean step')
+        phase_set_step.add_argument('--step', required=True, help='Step key (e.g., 1_quality_check)')
+        phase_set_step.add_argument('--enabled', required=True, help='true or false')
+
+    if has_domain_steps:
+        phase_set_ds = phase_sub.add_parser('set-domain-step', help='Enable/disable domain verification step')
+        phase_set_ds.add_argument('--domain', required=True, help='Domain key (e.g., java)')
+        phase_set_ds.add_argument('--step', required=True, help='Step key (e.g., 1_technical_impl)')
+        phase_set_ds.add_argument('--enabled', required=True, help='true or false')
+
+        phase_set_dsa = phase_sub.add_parser('set-domain-step-agent', help='Set domain step agent reference')
+        phase_set_dsa.add_argument('--domain', required=True, help='Domain key (e.g., java)')
+        phase_set_dsa.add_argument('--step', required=True, help='Step key (e.g., 1_technical_impl)')
+        phase_set_dsa.add_argument('--agent', required=True, help='Fully-qualified agent reference')
+
+    return p_phase
 
 
 def main():
@@ -103,30 +145,16 @@ def main():
     ret_set.add_argument('--field', required=True, help='Field name')
     ret_set.add_argument('--value', required=True, help='Field value')
 
-    # --- plan ---
+    # --- plan (phase-based sub-nouns) ---
     p_plan = subparsers.add_parser('plan', help='Manage plan settings')
-    plan_sub = p_plan.add_subparsers(dest='sub_noun', help='Sub-noun')
+    plan_sub = p_plan.add_subparsers(dest='sub_noun', help='Phase sub-noun')
 
-    p_def = plan_sub.add_parser('defaults', help='Manage plan defaults')
-    def_sub = p_def.add_subparsers(dest='verb', help='Operation')
-
-    def_sub.add_parser('list', help='List all plan defaults')
-
-    def_get = def_sub.add_parser('get', help='Get default value (all if no field specified)')
-    def_get.add_argument('--field', help='Field name (optional, shows all if omitted)')
-
-    def_set = def_sub.add_parser('set', help='Set default value')
-    def_set.add_argument('--field', required=True, help='Field name')
-    def_set.add_argument('--value', required=True, help='Field value')
-
-    p_fin = plan_sub.add_parser('finalize', help='Manage plan finalize settings')
-    fin_sub = p_fin.add_subparsers(dest='verb', help='Operation')
-
-    fin_sub.add_parser('get', help='Get finalize settings')
-
-    fin_set = fin_sub.add_parser('set', help='Set finalize field')
-    fin_set.add_argument('--field', required=True, help='Field name')
-    fin_set.add_argument('--value', required=True, help='Field value')
+    _add_phase_subparser(plan_sub, 'phase-1-init', 'Init phase settings', has_scalar=True)
+    _add_phase_subparser(plan_sub, 'phase-2-refine', 'Refine phase settings', has_scalar=True)
+    _add_phase_subparser(plan_sub, 'phase-5-execute', 'Execute phase settings', has_scalar=True)
+    _add_phase_subparser(plan_sub, 'phase-6-verify', 'Verify phase settings',
+                         has_pipeline=True, has_domain_steps=True)
+    _add_phase_subparser(plan_sub, 'phase-7-finalize', 'Finalize phase settings', has_pipeline=True)
 
     # --- ci ---
     p_ci = subparsers.add_parser('ci', help='Manage CI provider configuration')
@@ -173,30 +201,6 @@ def main():
     ext_remove = ext_sub.add_parser('remove', help='Remove extension default')
     ext_remove.add_argument('--key', required=True, help='Key to remove')
 
-    # --- verification (top-level pipeline) ---
-    p_verif = subparsers.add_parser('verification', help='Manage verification pipeline config')
-    verif_sub = p_verif.add_subparsers(dest='verb', help='Operation')
-
-    verif_sub.add_parser('get', help='Get verification pipeline config')
-
-    verif_set_iter = verif_sub.add_parser('set-max-iterations', help='Set max iterations')
-    verif_set_iter.add_argument('--value', required=True, type=int, help='Max iterations value')
-
-    verif_set_steps = verif_sub.add_parser('set-steps', help='Set active pipeline steps')
-    verif_set_steps.add_argument('--steps', required=True, help='Comma-separated step names from defaults')
-
-    # --- finalize (top-level pipeline) ---
-    p_final = subparsers.add_parser('finalize', help='Manage finalize pipeline config')
-    final_sub = p_final.add_subparsers(dest='verb', help='Operation')
-
-    final_sub.add_parser('get', help='Get finalize pipeline config')
-
-    final_set_iter = final_sub.add_parser('set-max-iterations', help='Set max iterations')
-    final_set_iter.add_argument('--value', required=True, type=int, help='Max iterations value')
-
-    final_set_steps = final_sub.add_parser('set-steps', help='Set active pipeline steps')
-    final_set_steps.add_argument('--steps', required=True, help='Comma-separated step names from defaults')
-
     # --- init ---
     p_init = subparsers.add_parser('init', help='Initialize marshal.json')
     p_init.add_argument('--force', action='store_true', help='Overwrite existing')
@@ -205,18 +209,6 @@ def main():
     p_rds = subparsers.add_parser('resolve-domain-skills', help='Resolve skills for domain and profile')
     p_rds.add_argument('--domain', required=True, help='Domain name (java, javascript)')
     p_rds.add_argument('--profile', required=True, help='Profile name (implementation, testing)')
-
-    # --- get-workflow-skills ---
-    subparsers.add_parser('get-workflow-skills', help='Get domain-agnostic workflow skills')
-
-    # --- resolve-workflow-skill ---
-    p_rws = subparsers.add_parser('resolve-workflow-skill', help='Resolve system workflow skill for a phase')
-    p_rws.add_argument(
-        '--phase',
-        required=True,
-        choices=['init', 'refine', 'outline', 'plan', 'execute', 'verify', 'finalize'],
-        help='Phase name (init, refine, outline, plan, execute, verify, finalize)',
-    )
 
     # --- resolve-workflow-skill-extension ---
     p_rwse = subparsers.add_parser(
@@ -270,24 +262,10 @@ def main():
             p_ext.print_help()
             return EXIT_ERROR
         return cmd_ext_defaults(args)
-    elif args.noun == 'verification':
-        if not args.verb:
-            p_verif.print_help()
-            return EXIT_ERROR
-        return cmd_quality_phases(args, 'verification')
-    elif args.noun == 'finalize':
-        if not args.verb:
-            p_final.print_help()
-            return EXIT_ERROR
-        return cmd_quality_phases(args, 'finalize')
     elif args.noun == 'init':
         return cmd_init(args)
     elif args.noun == 'resolve-domain-skills':
         return cmd_resolve_domain_skills(args)
-    elif args.noun == 'get-workflow-skills':
-        return cmd_get_workflow_skills(args)
-    elif args.noun == 'resolve-workflow-skill':
-        return cmd_resolve_workflow_skill(args)
     elif args.noun == 'resolve-workflow-skill-extension':
         return cmd_resolve_workflow_skill_extension(args)
     elif args.noun == 'get-skills-by-profile':

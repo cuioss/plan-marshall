@@ -63,12 +63,12 @@ def test_system_retention_get():
         assert 'logs_days' in result.stdout
 
 
-def test_plan_defaults_list():
-    """Test plan defaults list."""
+def test_plan_phase_5_execute_get():
+    """Test plan phase-5-execute get."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
 
-        result = run_script(SCRIPT_PATH, 'plan', 'defaults', 'list')
+        result = run_script(SCRIPT_PATH, 'plan', 'phase-5-execute', 'get')
 
         assert result.success, f'Should succeed: {result.stderr}'
         assert 'commit_strategy' in result.stdout
@@ -83,19 +83,6 @@ def test_resolve_domain_skills():
 
         assert result.success, f'Should succeed: {result.stderr}'
         assert 'pm-dev-java:java-create' in result.stdout
-
-
-def test_get_workflow_skills():
-    """Test get-workflow-skills command (5-phase model)."""
-    with PlanContext() as ctx:
-        create_nested_marshal_json(ctx.fixture_dir)
-
-        result = run_script(SCRIPT_PATH, 'get-workflow-skills')
-
-        assert result.success, f'Should succeed: {result.stderr}'
-        # Verify 6-phase model output
-        assert 'outline' in result.stdout
-        assert 'pm-workflow:phase-3-outline' in result.stdout
 
 
 def test_error_without_marshal_json():

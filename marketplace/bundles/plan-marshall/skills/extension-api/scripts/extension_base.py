@@ -355,3 +355,20 @@ class ExtensionBase(ABC):
         if triage:
             result['triage'] = triage
         return result
+
+    def provides_verify_steps(self) -> list[dict]:
+        """Return domain-specific verification steps for phase-6-verify.
+
+        Each step declares a verification agent that can be enabled during
+        project configuration via /marshall-steward. Steps are persisted in
+        marshal.json under plan.phase-6-verify.domain_steps.{domain_key}.
+
+        Returns:
+            List of step dicts, each containing:
+            - name: Step identifier (e.g., 'technical_impl')
+            - agent: Fully-qualified agent reference (e.g., 'pm-dev-java:java-verify-agent')
+            - description: Human-readable description for wizard presentation
+
+        Default implementation returns empty list (no domain-specific verify steps).
+        """
+        return []

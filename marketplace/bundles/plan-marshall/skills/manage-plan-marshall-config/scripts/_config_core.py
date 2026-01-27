@@ -56,7 +56,7 @@ def save_config(config: dict) -> None:
     MARSHAL_PATH.parent.mkdir(parents=True, exist_ok=True)
 
     # Canonical key order for marshal.json
-    key_order = ['ci', 'extension_defaults', 'finalize', 'plan', 'skill_domains', 'system', 'verification']
+    key_order = ['ci', 'extension_defaults', 'plan', 'skill_domains', 'system']
 
     # Build ordered dict: known keys first in order, then any remaining keys
     ordered = {}
@@ -151,11 +151,11 @@ def is_nested_domain(domain_config: dict) -> bool:
 
     Nested domains have one of:
     - 'bundle' key (technical domains with profiles in extension.py)
-    - 'workflow_skills' key (system domain with 7-phase workflow)
+    - 'task_executors' key (system domain with profile-to-executor mapping)
     - 'workflow_skill_extensions' key (domain extensions for outline/triage)
     """
     return (
-        'bundle' in domain_config or 'workflow_skills' in domain_config or 'workflow_skill_extensions' in domain_config
+        'bundle' in domain_config or 'task_executors' in domain_config or 'workflow_skill_extensions' in domain_config
     )
 
 
