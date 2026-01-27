@@ -42,7 +42,7 @@ python3 .plan/execute-script.py pm-workflow:manage-references:manage-references 
 **Project-level pipeline** (from marshal.json):
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
-  plan phase-6-verify get
+  plan phase-6-verify get --trace-plan-id {plan_id}
 ```
 
 **Config Fields Used**:
@@ -79,7 +79,7 @@ python3 .plan/execute-script.py pm-workflow:manage-references:manage-references 
 Read project-level verify pipeline:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
-  plan phase-6-verify get
+  plan phase-6-verify get --trace-plan-id {plan_id}
 ```
 
 ### Step 2: Check Iteration Counter

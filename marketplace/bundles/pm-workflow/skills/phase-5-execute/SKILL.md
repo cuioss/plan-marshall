@@ -68,7 +68,7 @@ Cache the commit strategy for the entire execute loop:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
-  plan phase-5-execute get
+  plan phase-5-execute get --trace-plan-id {plan_id}
 ```
 
 Extract `commit_strategy` from output. Valid values: `per_deliverable`, `per_plan`, `none`.

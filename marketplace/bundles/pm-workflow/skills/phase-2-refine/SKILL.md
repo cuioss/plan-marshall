@@ -41,7 +41,7 @@ Read the confidence threshold from project configuration.
 **EXECUTE**:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
-  plan defaults get --field refine_confidence_threshold
+  plan phase-2-refine get --field confidence_threshold --trace-plan-id {plan_id}
 ```
 
 **Default**: If not configured or field not found, use `95` (95% confidence required).
@@ -63,7 +63,7 @@ Read the compatibility approach from project configuration and persist to refere
 **EXECUTE**:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
-  plan phase-2-refine get --field compatibility
+  plan phase-2-refine get --field compatibility --trace-plan-id {plan_id}
 ```
 
 **No fallback** — if not configured, fail with error: "compatibility not configured. Run /marshall-steward first".

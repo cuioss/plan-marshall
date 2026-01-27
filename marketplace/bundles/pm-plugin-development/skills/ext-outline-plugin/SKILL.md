@@ -334,7 +334,20 @@ After deliverables are built, write solution_outline.md. The header MUST include
 
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-solution-outline:manage-solution-outline write \
-  --plan-id {plan_id} --deliverables "{deliverables_json}"
+  --plan-id {plan_id} <<'EOF'
+# Solution: {title}
+
+plan_id: {plan_id}
+compatibility: {compatibility} — {compatibility_description}
+
+## Summary
+
+{2-3 sentence summary}
+
+## Deliverables
+
+{deliverables content}
+EOF
 ```
 
 Log completion:

@@ -39,18 +39,18 @@ Finalize configuration comes from marshal.json phase sections:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
-  plan phase-7-finalize get
+  plan phase-7-finalize get --trace-plan-id {plan_id}
 ```
 
 Cross-phase settings (also from marshal.json):
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
-  plan phase-5-execute get
+  plan phase-5-execute get --trace-plan-id {plan_id}
 ```
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
-  plan phase-1-init get
+  plan phase-1-init get --trace-plan-id {plan_id}
 ```
 
 **Config Fields Used**:
@@ -84,17 +84,17 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
-  plan phase-7-finalize get
+  plan phase-7-finalize get --trace-plan-id {plan_id}
 ```
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
-  plan phase-5-execute get
+  plan phase-5-execute get --trace-plan-id {plan_id}
 ```
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
-  plan phase-1-init get
+  plan phase-1-init get --trace-plan-id {plan_id}
 ```
 
 Also read references context for branch and issue information:

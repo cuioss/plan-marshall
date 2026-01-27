@@ -106,7 +106,20 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 - Header MUST include `compatibility: {value} -- {description}` (read from references.toon)
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-solution-outline:manage-solution-outline write \
-  --plan-id {plan_id} --deliverables "{deliverables_json}"
+  --plan-id {plan_id} <<'EOF'
+# Solution: {title}
+
+plan_id: {plan_id}
+compatibility: {compatibility} — {compatibility_description}
+
+## Summary
+
+{2-3 sentence summary}
+
+## Deliverables
+
+{deliverables content}
+EOF
 ```
 
 ### Skill Returns

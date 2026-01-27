@@ -76,7 +76,7 @@ Resolve task executor skill from marshal.json based on profile:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config resolve-task-executor \
-  --profile {task.profile}
+  --profile {task.profile} --trace-plan-id {plan_id}
 ```
 
 The task's `profile` field (e.g., `implementation`, `module_testing`) maps to a task executor skill.

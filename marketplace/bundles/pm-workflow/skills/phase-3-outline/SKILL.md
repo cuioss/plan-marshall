@@ -238,7 +238,7 @@ For each domain in references.toon:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
-  resolve-workflow-skill-extension --domain {domain} --type outline
+  resolve-workflow-skill-extension --domain {domain} --type outline --trace-plan-id {plan_id}
 ```
 
 **Output** (TOON):

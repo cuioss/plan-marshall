@@ -182,7 +182,7 @@ Query configured domains from marshal.json and select appropriate domain for the
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
-  skill-domains list
+  skill-domains list --trace-plan-id {plan_id}
 ```
 
 **Domain selection logic**:
