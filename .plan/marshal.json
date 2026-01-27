@@ -2,7 +2,7 @@
   "ci": {
     "provider": "github",
     "repo_url": "https://github.com/cuioss/plan-marshall.git",
-    "detected_at": "2026-01-26T15:56:39Z",
+    "detected_at": "2026-01-27T07:55:58Z",
     "commands": {
       "pr-create": "python3 .plan/execute-script.py tools-integration-ci:github pr create",
       "pr-reviews": "python3 .plan/execute-script.py tools-integration-ci:github pr reviews",
@@ -14,6 +14,41 @@
     }
   },
   "extension_defaults": {},
+  "finalize": {
+    "max_iterations": 3,
+    "steps": [
+      {
+        "name": "commit_push",
+        "skill": "pm-workflow:workflow-integration-git",
+        "type": "action"
+      },
+      {
+        "name": "create_pr",
+        "skill": "pm-workflow:workflow-integration-git",
+        "type": "action"
+      },
+      {
+        "name": "automated_review",
+        "skill": "pm-workflow:workflow-integration-ci",
+        "type": "api"
+      },
+      {
+        "name": "sonar_roundtrip",
+        "skill": "pm-workflow:workflow-integration-sonar",
+        "type": "api"
+      },
+      {
+        "name": "knowledge_capture",
+        "skill": "plan-marshall:manage-memories",
+        "type": "advisory"
+      },
+      {
+        "name": "lessons_capture",
+        "skill": "plan-marshall:manage-lessons",
+        "type": "advisory"
+      }
+    ]
+  },
   "plan": {
     "defaults": {
       "compatibility": "breaking",
@@ -22,6 +57,9 @@
       "verification_required": true,
       "branch_strategy": "direct",
       "refine_confidence_threshold": 95
+    },
+    "finalize": {
+      "commit": true
     }
   },
   "skill_domains": {
@@ -52,12 +90,18 @@
       "workflow_skill_extensions": {
         "outline": "pm-documents:ext-outline-docs",
         "triage": "pm-documents:ext-triage-docs"
+      },
+      "capabilities": {
+        "triage": "pm-documents:ext-triage-docs"
       }
     },
     "plan-marshall-plugin-dev": {
       "bundle": "pm-plugin-development",
       "workflow_skill_extensions": {
         "outline": "pm-plugin-development:ext-outline-plugin",
+        "triage": "pm-plugin-development:ext-triage-plugin"
+      },
+      "capabilities": {
         "triage": "pm-plugin-development:ext-triage-plugin"
       }
     }
@@ -69,5 +113,40 @@
       "memory_days": 5,
       "temp_on_maintenance": true
     }
+  },
+  "verification": {
+    "max_iterations": 5,
+    "steps": [
+      {
+        "name": "quality_check",
+        "skill": "${domain}:quality-gate",
+        "type": "build"
+      },
+      {
+        "name": "build_verify",
+        "skill": "${domain}:build-verify",
+        "type": "build"
+      },
+      {
+        "name": "technical_impl",
+        "skill": "${domain}:impl-verify",
+        "type": "agent"
+      },
+      {
+        "name": "technical_test",
+        "skill": "${domain}:test-verify",
+        "type": "agent"
+      },
+      {
+        "name": "doc_sync",
+        "skill": "pm-documents:doc-verify",
+        "type": "advisory"
+      },
+      {
+        "name": "formal_spec",
+        "skill": "pm-requirements:spec-verify",
+        "type": "advisory"
+      }
+    ]
   }
 }

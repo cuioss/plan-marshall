@@ -171,35 +171,113 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-m
   finalize get
 ```
 
-### Step 2: Select Pipeline to Edit
+### Step 2: Select What to Configure
 
 ```
 AskUserQuestion:
-  question: "Which pipeline to configure?"
+  question: "What to configure?"
   header: "Pipeline"
   options:
-    - label: "Verification"
-      description: "Phase 6: quality checks, build verify, doc sync (max_iterations)"
-    - label: "Finalize"
-      description: "Phase 7: commit, PR, CI, Sonar, knowledge capture (max_iterations)"
+    - label: "Verification steps"
+      description: "Select which verification steps are active"
+    - label: "Finalize steps"
+      description: "Select which finalize steps are active"
+    - label: "Max iterations"
+      description: "Set retry limits for verification and finalize"
   multiSelect: false
 ```
 
-### Step 3: Set Max Iterations
+### Step 3a: Configure Verification Steps
 
-**Verification**:
 ```
 AskUserQuestion:
-  question: "Max iterations for verification phase?"
-  header: "Verify Iterations"
-  options:
-    - label: "5 (Default)"
-      description: "Standard retry limit for quality checks"
-    - label: "3"
-      description: "Fewer retries, faster completion"
-    - label: "10"
-      description: "More retries for complex projects"
-  multiSelect: false
+  questions:
+    - question: "Which verification build/agent steps to include?"
+      header: "Verify Steps"
+      multiSelect: true
+      options:
+        - label: "quality_check"
+          description: "Build quality gate (${domain}:quality-gate)"
+        - label: "build_verify"
+          description: "Build verification (${domain}:build-verify)"
+        - label: "technical_impl"
+          description: "Implementation review agent (${domain}:impl-verify)"
+        - label: "technical_test"
+          description: "Test review agent (${domain}:test-verify)"
+    - question: "Which verification advisory steps to include?"
+      header: "Verify Advisory"
+      multiSelect: true
+      options:
+        - label: "doc_sync"
+          description: "Documentation sync check (pm-documents:doc-verify)"
+        - label: "formal_spec"
+          description: "Formal specification check (pm-requirements:spec-verify)"
+```
+
+Apply:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+  verification set-steps --steps "{comma-separated selected step names}"
+```
+
+### Step 3b: Configure Finalize Steps
+
+```
+AskUserQuestion:
+  questions:
+    - question: "Which finalize action/api steps to include?"
+      header: "Finalize Steps"
+      multiSelect: true
+      options:
+        - label: "commit_push"
+          description: "Commit and push changes (pm-workflow:workflow-integration-git)"
+        - label: "create_pr"
+          description: "Create pull request (pm-workflow:workflow-integration-git)"
+        - label: "automated_review"
+          description: "CI automated review (pm-workflow:workflow-integration-ci)"
+        - label: "sonar_roundtrip"
+          description: "Sonar analysis roundtrip (pm-workflow:workflow-integration-sonar)"
+    - question: "Which finalize advisory steps to include?"
+      header: "Finalize Advisory"
+      multiSelect: true
+      options:
+        - label: "knowledge_capture"
+          description: "Capture learnings to memory (plan-marshall:manage-memories)"
+        - label: "lessons_capture"
+          description: "Record lessons learned (plan-marshall:manage-lessons)"
+```
+
+Apply:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+  finalize set-steps --steps "{comma-separated selected step names}"
+```
+
+### Step 3c: Set Max Iterations
+
+```
+AskUserQuestion:
+  questions:
+    - question: "Max iterations for verification phase?"
+      header: "Verify Iters"
+      multiSelect: false
+      options:
+        - label: "5 (Default)"
+          description: "Standard retry limit for quality checks"
+        - label: "3"
+          description: "Fewer retries, faster completion"
+        - label: "10"
+          description: "More retries for complex projects"
+    - question: "Max iterations for finalize phase?"
+      header: "Finalize Iters"
+      multiSelect: false
+      options:
+        - label: "3 (Default)"
+          description: "Standard retry limit for commit/PR/CI"
+        - label: "1"
+          description: "Single attempt, fail fast"
+        - label: "5"
+          description: "More retries for CI roundtrips"
 ```
 
 Apply:
@@ -208,22 +286,6 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-m
   verification set-max-iterations --value {5|3|10}
 ```
 
-**Finalize**:
-```
-AskUserQuestion:
-  question: "Max iterations for finalize phase?"
-  header: "Finalize Iterations"
-  options:
-    - label: "3 (Default)"
-      description: "Standard retry limit for commit/PR/CI"
-    - label: "1"
-      description: "Single attempt, fail fast"
-    - label: "5"
-      description: "More retries for CI roundtrips"
-  multiSelect: false
-```
-
-Apply:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
   finalize set-max-iterations --value {3|1|5}

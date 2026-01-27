@@ -120,7 +120,6 @@ def get_default_config() -> dict:
     import copy
 
     return {
-        'extension_defaults': {},
         'skill_domains': {'system': copy.deepcopy(DEFAULT_SYSTEM_DOMAIN)},
         'system': {'retention': copy.deepcopy(DEFAULT_SYSTEM_RETENTION)},
         'plan': {

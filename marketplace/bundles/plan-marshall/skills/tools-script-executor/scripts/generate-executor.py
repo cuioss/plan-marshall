@@ -262,7 +262,14 @@ def discover_scripts(base_path: Path) -> dict[str, str]:
     # Build notation mappings
     mappings = {}
 
-    for bundle in inventory.get('bundles', []):
+    bundles_raw = inventory.get('bundles', [])
+    # Handle both dict (keyed by name) and list formats from inventory
+    if isinstance(bundles_raw, dict):
+        bundles = list(bundles_raw.values())
+    else:
+        bundles = bundles_raw
+
+    for bundle in bundles:
         for script in bundle.get('scripts', []):
             notation = script.get('notation', '')
             path_formats = script.get('path_formats', {})

@@ -13,6 +13,7 @@ from _config_core import (
     save_config,
     success_exit,
 )
+from _config_defaults import DEFAULT_FINALIZE_STEPS, DEFAULT_VERIFICATION_STEPS
 
 
 def cmd_quality_phases(args, section: str) -> int:
@@ -39,5 +40,18 @@ def cmd_quality_phases(args, section: str) -> int:
         config[section] = section_config
         save_config(config)
         return success_exit({'section': section, 'max_iterations': value})
+
+    elif args.verb == 'set-steps':
+        step_names = [s.strip() for s in args.steps.split(',')]
+        defaults = DEFAULT_VERIFICATION_STEPS if section == 'verification' else DEFAULT_FINALIZE_STEPS
+        valid_names = {s['name'] for s in defaults}
+        unknown = [n for n in step_names if n not in valid_names]
+        if unknown:
+            return error_exit(f'Unknown step names: {", ".join(unknown)}')
+        selected = [s for s in defaults if s['name'] in step_names]
+        section_config['steps'] = selected
+        config[section] = section_config
+        save_config(config)
+        return success_exit({'section': section, 'steps': [s['name'] for s in selected]})
 
     return EXIT_ERROR

@@ -182,6 +182,9 @@ def main():
     verif_set_iter = verif_sub.add_parser('set-max-iterations', help='Set max iterations')
     verif_set_iter.add_argument('--value', required=True, type=int, help='Max iterations value')
 
+    verif_set_steps = verif_sub.add_parser('set-steps', help='Set active pipeline steps')
+    verif_set_steps.add_argument('--steps', required=True, help='Comma-separated step names from defaults')
+
     # --- finalize (top-level pipeline) ---
     p_final = subparsers.add_parser('finalize', help='Manage finalize pipeline config')
     final_sub = p_final.add_subparsers(dest='verb', help='Operation')
@@ -190,6 +193,9 @@ def main():
 
     final_set_iter = final_sub.add_parser('set-max-iterations', help='Set max iterations')
     final_set_iter.add_argument('--value', required=True, type=int, help='Max iterations value')
+
+    final_set_steps = final_sub.add_parser('set-steps', help='Set active pipeline steps')
+    final_set_steps.add_argument('--steps', required=True, help='Comma-separated step names from defaults')
 
     # --- init ---
     p_init = subparsers.add_parser('init', help='Initialize marshal.json')

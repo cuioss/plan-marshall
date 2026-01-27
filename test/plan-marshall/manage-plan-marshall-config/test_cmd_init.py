@@ -99,10 +99,26 @@ def test_init_no_build_systems_key():
         assert 'build_systems' not in config, 'marshal.json should NOT contain build_systems key'
 
 
+def test_init_no_extension_defaults_key():
+    """Test init does NOT create extension_defaults key in marshal.json.
+
+    extension_defaults is auto-created on first access by get_extension_defaults(),
+    so it does not need to be in the init defaults.
+    """
+    with PlanContext() as ctx:
+        result = run_script(SCRIPT_PATH, 'init')
+
+        assert result.success, f'Init should succeed: {result.stderr}'
+
+        marshal_path = ctx.fixture_dir / 'marshal.json'
+        config = json.loads(marshal_path.read_text())
+        assert 'extension_defaults' not in config, 'marshal.json should NOT contain extension_defaults key'
+
+
 def test_init_key_ordering():
     """Test init creates marshal.json with correct key order.
 
-    Canonical order: extension_defaults, finalize, plan, skill_domains, system, verification
+    Canonical order: finalize, plan, skill_domains, system, verification
     """
     with PlanContext() as ctx:
         result = run_script(SCRIPT_PATH, 'init')
@@ -117,7 +133,7 @@ def test_init_key_ordering():
         actual_keys = list(config.keys())
 
         # Expected canonical order (alphabetical)
-        expected_order = ['extension_defaults', 'finalize', 'plan', 'skill_domains', 'system', 'verification']
+        expected_order = ['finalize', 'plan', 'skill_domains', 'system', 'verification']
 
         # Filter to only keys that exist
         actual_order = [k for k in actual_keys if k in expected_order]
