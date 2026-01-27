@@ -29,13 +29,13 @@ The pm-workflow bundle uses manage-* skills as the data access layer for all pla
 │  │       ▼           ▼               ▼            ▼             ▼       │  │
 │  │  ┌─────────┐ ┌─────────┐ ┌───────────────┐ ┌─────────┐ ┌─────────┐  │  │
 │  │  │ manage- │ │ manage- │ │   manage-     │ │ manage- │ │ manage- │  │  │
-│  │  │ config  │ │lifecycle│ │solution-      │ │  tasks  │ │  files  │  │  │
+│  │  │referenc.│ │lifecycle│ │solution-      │ │  tasks  │ │  files  │  │  │
 │  │  │         │ │         │ │outline        │ │         │ │         │  │  │
 │  │  └────┬────┘ └────┬────┘ └───────┬───────┘ └────┬────┘ └────┬────┘  │  │
 │  │       │           │               │             │            │       │  │
 │  │       ▼           ▼               ▼             ▼            ▼       │  │
 │  │  ┌─────────┐ ┌─────────┐ ┌───────────────┐ ┌─────────┐ ┌─────────┐  │  │
-│  │  │ config  │ │ status  │ │  solution_    │ │ TASK-*  │ │ plan    │  │  │
+│  │  │referenc.│ │ status  │ │  solution_    │ │ TASK-*  │ │ plan    │  │  │
 │  │  │ .toon   │ │ .toon   │ │  outline.md   │ │ .toon   │ │directory│  │  │
 │  │  └─────────┘ └─────────┘ └───────────────┘ └─────────┘ └─────────┘  │  │
 │  │                                                                      │  │
@@ -56,11 +56,6 @@ The pm-workflow bundle uses manage-* skills as the data access layer for all pla
 │  ┌───────────────────────┬───────────────────┬──────────────────────────┐  │
 │  │ SKILL                 │ FILE              │ PURPOSE                  │  │
 │  ├───────────────────────┼───────────────────┼──────────────────────────┤  │
-│  │                       │                   │                          │  │
-│  │ manage-config         │ config.toon       │ Plan configuration       │  │
-│  │                       │                   │ • domains array          │  │
-│  │                       │                   │ • commit_strategy        │  │
-│  │                       │                   │ • finalize settings      │  │
 │  │                       │                   │                          │  │
 │  ├───────────────────────┼───────────────────┼──────────────────────────┤  │
 │  │                       │                   │                          │  │
@@ -92,10 +87,10 @@ The pm-workflow bundle uses manage-* skills as the data access layer for all pla
 │  │                       │                   │                          │  │
 │  ├───────────────────────┼───────────────────┼──────────────────────────┤  │
 │  │                       │                   │                          │  │
-│  │ manage-references     │ references.toon   │ External references      │  │
+│  │ manage-references     │ references.toon   │ Plan references & config │  │
+│  │                       │                   │ • domains array          │  │
 │  │                       │                   │ • branch name            │  │
 │  │                       │                   │ • issue URL              │  │
-│  │                       │                   │ • build system           │  │
 │  │                       │                   │                          │  │
 │  ├───────────────────────┼───────────────────┼──────────────────────────┤  │
 │  │                       │                   │                          │  │
@@ -134,9 +129,9 @@ The pm-workflow bundle uses manage-* skills as the data access layer for all pla
 │                                                                             │
 │  ┌──────────────────────────────────────────────────────────────────────┐  │
 │  │                                                                      │  │
-│  │  # Read config                                                       │  │
+│  │  # Read references                                                    │  │
 │  │  python3 .plan/execute-script.py \                                   │  │
-│  │    pm-workflow:manage-config:manage-config \                         │  │
+│  │    pm-workflow:manage-references:manage-references \                 │  │
 │  │    read --plan-id my-feature                                         │  │
 │  │                                                                      │  │
 │  │  # Create task                                                       │  │
@@ -160,43 +155,6 @@ The pm-workflow bundle uses manage-* skills as the data access layer for all pla
 ```
 
 ---
-
-## manage-config Commands
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                                                                             │
-│                       MANAGE-CONFIG COMMANDS                                │
-│                                                                             │
-│  Script: pm-workflow:manage-config:manage-config                            │
-│                                                                             │
-│  ┌──────────────┬────────────────────────────┬──────────────────────────┐  │
-│  │ COMMAND      │ PARAMETERS                 │ PURPOSE                  │  │
-│  ├──────────────┼────────────────────────────┼──────────────────────────┤  │
-│  │ create       │ --plan-id --domains        │ Create config.toon       │  │
-│  │ read         │ --plan-id                  │ Read full config         │  │
-│  │ get          │ --plan-id --field          │ Read single field        │  │
-│  │ get-multi    │ --plan-id --fields         │ Read multiple fields     │  │
-│  │ set          │ --plan-id --field --value  │ Set single field         │  │
-│  └──────────────┴────────────────────────────┴──────────────────────────┘  │
-│                                                                             │
-│  config.toon STRUCTURE:                                                     │
-│  ══════════════════════                                                     │
-│                                                                             │
-│  ┌──────────────────────────────────────────────────────────────────────┐  │
-│  │                                                                      │  │
-│  │  domains: [java]                                                     │  │
-│  │                                                                      │  │
-│  │  commit_strategy: per_deliverable                                     │  │
-│  │  create_pr: true                                                     │  │
-│  │  verification_required: true                                         │  │
-│  │  verification_command: /pm-dev-builder:builder-build-and-fix         │  │
-│  │  branch_strategy: feature                                            │  │
-│  │                                                                      │  │
-│  └──────────────────────────────────────────────────────────────────────┘  │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
 
 ---
 
@@ -368,10 +326,9 @@ The pm-workflow bundle uses manage-* skills as the data access layer for all pla
 │  ├── execute-script.py          # Script executor                           │
 │  ├── plans/                     # Active plans                              │
 │  │   └── {plan_id}/                                                         │
-│  │       ├── config.toon        # Configuration (domains, settings)        │
 │  │       ├── status.toon        # Lifecycle (phases, progress)             │
 │  │       ├── request.md         # Original request                         │
-│  │       ├── references.toon    # External refs (branch, issue)            │
+│  │       ├── references.toon    # Plan refs & config (domains, branch, issue) │
 │  │       ├── solution_outline.md# Deliverables                              │
 │  │       ├── work/              # Working files (outline phase+)           │
 │  │       ├── tasks/             # Task files                               │
@@ -398,7 +355,7 @@ The pm-workflow bundle uses manage-* skills as the data access layer for all pla
 |----------|---------|
 | [artifacts.md](artifacts.md) | Plan file formats in detail |
 | [phases.md](phases.md) | Which phase uses which files |
-| `pm-workflow:manage-config/SKILL.md` | Full config commands |
+| `pm-workflow:manage-references/SKILL.md` | Full references commands |
 | `pm-workflow:plan-marshall/SKILL.md` | Full lifecycle commands |
 | `pm-workflow:manage-tasks/SKILL.md` | Full task commands |
 | `plan-marshall:manage-logging/SKILL.md` | Work log and script execution logging |

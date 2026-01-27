@@ -64,9 +64,9 @@ Task: pm-workflow:phase-init-agent
 
 ---
 
-**Step 1**: Read domains from config:
+**Step 1**: Read domains from references:
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-config:manage-config get \
+python3 .plan/execute-script.py pm-workflow:manage-references:manage-references get \
   --plan-id {plan_id} --field domains
 ```
 

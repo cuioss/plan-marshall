@@ -35,40 +35,37 @@ Activate when:
 
 ## Configuration Source
 
-All finalize configuration is read from config.toon (written during init phase):
+Finalize configuration comes from marshal.json phase sections:
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-config:manage-config get-multi \
-  --plan-id {plan_id} \
-  --fields commit_strategy,create_pr,branch_strategy
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+  plan phase-7-finalize get
+```
+
+Cross-phase settings (also from marshal.json):
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+  plan phase-5-execute get
+```
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+  plan phase-1-init get
 ```
 
 **Config Fields Used**:
 
-| Field | Values | Description |
-|-------|--------|-------------|
-| `commit_strategy` | per_deliverable/per_plan/none | When to commit changes |
-| `create_pr` | true/false | Whether to create a pull request |
-| `branch_strategy` | feature/direct | Branch strategy |
-
----
-
-## Pipeline Configuration
-
-Read step pipeline from marshal.json (if configured):
-
-```bash
-python3 .plan/execute-script.py plan-marshall:tools-json-ops:manage-json-file \
-  read-field .plan/marshal.json --field finalize
-```
-
-For step definitions and types:
-
-```
-Read: plan-marshall:manage-plan-marshall-config/standards/data-model.md → Section: finalize
-```
-
-When marshal.json has no `finalize` section, use the default pipeline documented below.
+| Source | Field | Description |
+|--------|-------|-------------|
+| phase-7-finalize | `1_commit_push` | Whether to commit and push |
+| phase-7-finalize | `2_create_pr` | Whether to create a pull request |
+| phase-7-finalize | `3_automated_review` | Whether to run CI review |
+| phase-7-finalize | `4_sonar_roundtrip` | Whether to run Sonar analysis |
+| phase-7-finalize | `5_knowledge_capture` | Whether to capture learnings |
+| phase-7-finalize | `6_lessons_capture` | Whether to record lessons |
+| phase-7-finalize | `max_iterations` | Maximum finalize-verify loops |
+| phase-5-execute | `commit_strategy` | per_deliverable/per_plan/none |
+| phase-1-init | `branch_strategy` | feature/direct |
 
 ---
 
@@ -86,9 +83,18 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 ### Step 1: Read Configuration
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-config:manage-config get-multi \
-  --plan-id {plan_id} \
-  --fields commit_strategy,create_pr,branch_strategy
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+  plan phase-7-finalize get
+```
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+  plan phase-5-execute get
+```
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+  plan phase-1-init get
 ```
 
 Also read references context for branch and issue information:
@@ -161,11 +167,8 @@ This monitors CI status and handles review comments.
 3. Continue until clean or max iterations (3)
 
 ```bash
-# Check iteration count
-python3 .plan/execute-script.py pm-workflow:manage-config:manage-config get \
-  --plan-id {plan_id} --field finalize_iteration
-
-# If issues and iteration < 3, loop back to execute
+# Check iteration count from lifecycle
+# If issues and iteration < max_iterations, loop back to execute
 python3 .plan/execute-script.py pm-workflow:plan-marshall:manage-lifecycle set-phase \
   --plan-id {plan_id} --phase 5-execute
 ```

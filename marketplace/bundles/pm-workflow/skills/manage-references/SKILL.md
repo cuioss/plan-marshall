@@ -65,6 +65,7 @@ JWT Guide,https://jwt.io/introduction
 | `modified_files` | list | Files modified during implementation |
 | `config_files` | list | Configuration files changed |
 | `test_files` | list | Test files created/modified |
+| `domains` | list | Plan domains (e.g., java, documentation) |
 | `external_docs` | table | External documentation references |
 
 ---
@@ -82,7 +83,8 @@ python3 .plan/execute-script.py pm-workflow:manage-references:manage-references 
   --plan-id {plan_id} \
   --branch {branch_name} \
   [--issue-url {url}] \
-  [--build-system {maven|gradle|npm}]
+  [--build-system {maven|gradle|npm}] \
+  [--domains {java,documentation}]
 ```
 
 **Parameters**:
@@ -90,6 +92,7 @@ python3 .plan/execute-script.py pm-workflow:manage-references:manage-references 
 - `--branch` (required): Git branch name
 - `--issue-url`: GitHub issue URL
 - `--build-system`: Build system (`maven`, `gradle`, `npm`)
+- `--domains`: Comma-separated domain list (e.g., `java,documentation`)
 
 **Output** (TOON):
 ```toon
@@ -322,7 +325,7 @@ test_files:
 
 | Command | Parameters | Description |
 |---------|------------|-------------|
-| `create` | `--plan-id --branch [--issue-url] [--build-system]` | Create references.toon |
+| `create` | `--plan-id --branch [--issue-url] [--build-system] [--domains]` | Create references.toon |
 | `read` | `--plan-id` | Read entire references |
 | `get` | `--plan-id --field` | Get specific field value |
 | `set` | `--plan-id --field --value` | Set specific field value |

@@ -67,12 +67,11 @@ Use `current_phase` for logging, `skill` for dynamic routing, and `completed_pha
 Cache the commit strategy for the entire execute loop:
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-config:manage-config get \
-  --plan-id {plan_id} \
-  --field commit_strategy
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+  plan phase-5-execute get
 ```
 
-Extract `value` from output. Valid values: `per_deliverable`, `per_plan`, `none`.
+Extract `commit_strategy` from output. Valid values: `per_deliverable`, `per_plan`, `none`.
 
 ### Step 0.5: Log Phase Start (Once per phase)
 

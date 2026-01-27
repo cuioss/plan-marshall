@@ -96,7 +96,7 @@ def test_clean_archived_plans():
         # Create archived plans - one old, one recent
         old_plan = archived_dir / 'old-plan'
         old_plan.mkdir()
-        (old_plan / 'config.toon').write_text('config')
+        (old_plan / 'references.toon').write_text('branch: main')
         (old_plan / 'plan.md').write_text('plan')
         # Make it old (6 days ago)
         old_time = time.time() - (6 * 86400)
@@ -104,7 +104,7 @@ def test_clean_archived_plans():
 
         recent_plan = archived_dir / 'recent-plan'
         recent_plan.mkdir()
-        (recent_plan / 'config.toon').write_text('config')
+        (recent_plan / 'references.toon').write_text('branch: main')
 
         result = run_script(SCRIPT_PATH, 'clean', '--target', 'archived-plans')
         assert result.success, f'Script failed: {result.stderr}'

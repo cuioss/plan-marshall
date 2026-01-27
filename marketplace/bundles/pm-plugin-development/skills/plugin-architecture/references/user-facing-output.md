@@ -392,7 +392,6 @@ domain: generic
 artifacts:
   plan_directory: <plan-storage>/feature-auth/
   plan_file: <plan-storage>/feature-auth/plan.md
-  config_file: <plan-storage>/feature-auth/config.toon
   references_file: <plan-storage>/feature-auth/references.toon
 
 plan_status:

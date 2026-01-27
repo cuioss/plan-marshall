@@ -18,7 +18,7 @@ User Request → [Thin Agents] → Workflow Skills (from system domain) → Doma
 
 | Phase | Purpose | Output |
 |-------|---------|--------|
-| `1-init` | Initialize plan | config.toon, status.toon, request.md |
+| `1-init` | Initialize plan | status.toon, request.md, references.toon |
 | `2-refine` | Clarify request | Refined request with confidence score |
 | `3-outline` | Create solution outline | solution_outline.md |
 | `4-plan` | Decompose into tasks | TASK-*.toon |
@@ -118,7 +118,6 @@ Domain-specific extensions loaded via `resolve-workflow-skill-extension`:
 | `manage-solution-outline` | `manage-solution-outline.py` | Solution outline queries |
 | `manage-tasks` | `manage-tasks.py` | Tasks + steps CRUD |
 | `manage-files` | `manage-files.py` | Generic file I/O |
-| `manage-config` | `manage-config.py` | config.toon domain |
 | `manage-references` | `manage-references.py` | references.toon domain |
 | `manage-lifecycle` | `manage-lifecycle.py` | status.toon + phases |
 
@@ -168,7 +167,7 @@ Technical domains have profile-based skills and workflow extensions:
 }
 ```
 
-Plan-level `config.toon` stores domains for the current plan:
+Plan-level `references.toon` stores domains for the current plan:
 
 ```toon
 domains: [java]
@@ -218,7 +217,6 @@ pm-workflow/
     ├── manage-solution-outline/ # Solution outline queries
     ├── manage-tasks/            # Tasks + steps CRUD
     ├── manage-files/            # Generic file I/O
-    ├── manage-config/           # config.toon domain
     ├── manage-references/       # references.toon domain
     ├── manage-lifecycle/        # status.toon + phases
     ├── git-workflow/
@@ -230,7 +228,7 @@ pm-workflow/
 │   └── {plan-name}/
 │       ├── request.md
 │       ├── solution_outline.md
-│       ├── config.toon
+│       ├── references.toon
 │       └── tasks/
 └── archived-plans/              # Completed plans
 ```

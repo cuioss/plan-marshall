@@ -141,7 +141,7 @@ Additional data is provided as indented key-value pairs:
 ```
 [2025-12-11T11:17:50Z] [ERROR] [ERROR] Skill load failed
   phase: 3-outline
-  detail: plugin-solution-outline skill not found in config.toon
+  detail: plugin-solution-outline skill not found in references.toon
 ```
 
 #### OUTCOME

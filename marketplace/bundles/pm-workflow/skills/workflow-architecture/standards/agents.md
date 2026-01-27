@@ -120,7 +120,7 @@ Understanding when to use `Skill:` vs `Task:` is critical for proper context man
 │  ├──────────────────────┼────────────────────────────────────────────────┤ │
 │  │                      │                                                │ │
 │  │ plan-init-agent      │ Initialize plan                                │ │
-│  │                      │ • Creates config.toon, status.toon, request.md │ │
+│  │                      │ • Creates status.toon, request.md, references.toon │ │
 │  │                      │ • Detects domain                               │ │
 │  │                      │                                                │ │
 │  ├──────────────────────┼────────────────────────────────────────────────┤ │

@@ -32,7 +32,7 @@ The extension API allows domains to **extend** system workflow skills without **
 │  │  5. Determine relevant domains                                        │   │
 │  │  6. ══► EXTENSION POINT: Deliverable Patterns ◄══                    │   │
 │  │  7. Create deliverables                                               │   │
-│  │  8. Write config.toon.domains                                         │   │
+│  │  8. Write references.toon.domains                                      │   │
 │  └──────────────────────────────────────────────────────────────────────┘   │
 │                              │                                               │
 │                              │ looks for                                     │

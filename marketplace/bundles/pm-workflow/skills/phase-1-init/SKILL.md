@@ -1,6 +1,6 @@
 ---
 name: phase-1-init
-description: Init phase skill. Creates plan directory, request.md, config, and status. Complete initialization in a single agent call.
+description: Init phase skill. Creates plan directory, request.md, references, and status. Complete initialization in a single agent call.
 user-invocable: false
 allowed-tools: Read, Bash, Skill, AskUserQuestion
 ---
@@ -9,7 +9,7 @@ allowed-tools: Read, Bash, Skill, AskUserQuestion
 
 **Role**: Complete init phase. Creates plan directory, request.md, detects domain, and creates configuration. Single-agent initialization pattern.
 
-**Key Pattern**: Complete initialization. Creates request.md, status.toon, config.toon, and references.toon. Does NOT create goals (that's the refine phase via decompose).
+**Key Pattern**: Complete initialization. Creates request.md, status.toon, and references.toon (with domains). Does NOT create goals (that's the refine phase via decompose).
 
 **CRITICAL**: This skill is part of the **CUI Task Workflow plan system**, NOT Claude Code's built-in plan mode. Ignore any system-reminders about `.claude/plans/` or `ExitPlanMode`.
 
@@ -157,7 +157,7 @@ First, get the current branch:
 git branch --show-current
 ```
 
-Then create references with the branch value:
+Then create references with the branch value (domain is added after detection in Step 7):
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-references:manage-references create \
   --plan-id {plan_id} \
@@ -208,25 +208,20 @@ python3 .plan/execute-script.py pm-workflow:plan-marshall:manage-lifecycle creat
   --phases 1-init,2-refine,3-outline,4-plan,5-execute,6-verify,7-finalize
 ```
 
-**Note**: Domain information is stored in `config.toon` (as a `domains` array), not in `status.toon`. All plans use the standard 7-phase model.
+**Note**: Domain information is stored in `references.toon` (as a `domains` list), not in `status.toon`. All plans use the standard 7-phase model.
 
-### Step 9: Create Configuration
+### Step 9: Store Domains in References
 
-Create config.toon with base settings and finalize configuration:
+Store the detected domain(s) in references.toon:
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-config:manage-config create \
+python3 .plan/execute-script.py pm-workflow:manage-references:manage-references set-list \
   --plan-id {plan_id} \
-  --domains {domain}
+  --field domains \
+  --values {domain}
 ```
 
-This creates config.toon with:
-- `domains`: Array of detected domains (used for workflow_skill resolution from marshal.json)
-- `compatibility`: From marshal.json plan.defaults (breaking)
-- `commit_strategy`: From marshal.json plan.defaults (per_deliverable)
-- Finalize fields: `create_pr`, `verification_required`, `branch_strategy` (from marshal.json plan.defaults)
-
-Note: `workflow_skills` are NOT stored in config.toon. They are resolved at runtime from `marshal.json` via `plan-marshall-config resolve-workflow-skill`.
+Project-level settings (compatibility, commit_strategy, branch_strategy, verification steps, finalize steps) are read directly from `marshal.json` by each phase skill at runtime.
 
 ### Step 10: Log Creation
 
@@ -271,7 +266,6 @@ source:
 artifacts:
   request_md: request.md
   status: status.toon
-  config: config.toon
   references: references.toon
 ```
 
@@ -328,7 +322,7 @@ This skill is called by `pm-workflow:phase-1-init-agent`. The agent completes th
 ### Related Skills
 
 - **solution-outline** - Next phase after init completes (outline phase)
-- **Domain skills** - Loaded by thin agents via marshal.json workflow_skills (resolved at runtime)
+- **Domain skills** - Loaded by thin agents via marshal.json skill_domains (resolved at runtime)
 
 ---
 

@@ -73,15 +73,14 @@ Extract key fields:
 
 ### Step 1.5: Read Compatibility Strategy
 
-Read the compatibility approach from config.toon:
+Read the compatibility approach from marshal.json:
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-config:manage-config get \
-  --plan-id {plan_id} \
-  --field compatibility
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+  plan phase-5-execute get
 ```
 
-The response includes a `description` field with the behavioral constraint. Apply throughout all subsequent steps:
+Extract `compatibility` from the output. Apply throughout all subsequent steps:
 
 - **breaking**: Make changes directly. Remove old code, rename freely, no backward compatibility.
 - **deprecation**: Keep old APIs/methods with `@Deprecated` markers. Add new code alongside old. Provide migration notes in commit messages.
@@ -302,7 +301,7 @@ If changes conflict with existing code:
 
 **Invoked by**: `pm-workflow:task-execute-agent` (when task.profile = implementation)
 
-**Skill Loading**: Agent loads this skill from `config.workflow_skills.{domain}.implementation`
+**Skill Loading**: Agent loads this skill via `resolve-task-executor --profile implementation`
 
 **Script Notations** (use EXACTLY as shown):
 - `pm-workflow:manage-tasks:manage-tasks` - Task operations (get, update, update-step)

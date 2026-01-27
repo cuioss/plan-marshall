@@ -6,7 +6,7 @@ Collects workflow artifacts for comparison against golden references
 during verification.
 
 Phases (7-phase model):
-    1-init:     config.toon, status.toon, request.md
+    1-init:     status.toon, request.md, references.toon
     2-refine:   request.md with clarifications, work.log with [REFINE:*] entries
     3-outline:  solution_outline.md, deliverables, references.toon
     4-plan:     TASK-*.toon files
@@ -107,26 +107,6 @@ class ArtifactCollector:
         except Exception as e:
             self.errors.append(f'Failed to collect deliverables: {e}')
             self.collected.append({'artifact': 'deliverables.toon', 'status': 'failed'})
-            return False
-
-    def collect_config(self) -> bool:
-        """Collect config.toon."""
-        try:
-            config_path = base_path('plans', self.plan_id, 'config.toon')
-
-            if config_path.exists():
-                content = config_path.read_text()
-                output_path = self.output_dir / 'config.toon'
-                output_path.write_text(content)
-                self.collected.append({'artifact': 'config.toon', 'status': 'success'})
-                return True
-            else:
-                self.errors.append('Config file not found')
-                self.collected.append({'artifact': 'config.toon', 'status': 'failed'})
-                return False
-        except Exception as e:
-            self.errors.append(f'Failed to collect config.toon: {e}')
-            self.collected.append({'artifact': 'config.toon', 'status': 'failed'})
             return False
 
     def collect_status(self) -> bool:
@@ -288,7 +268,7 @@ class ArtifactCollector:
                     Default: ['3-outline']
 
         Phase artifact mapping:
-            1-init:    config.toon, status.toon, request.md
+            1-init:    status.toon, request.md, references.toon
             2-refine:  request.md (with clarifications), work.log
             3-outline: solution_outline.md, deliverables.toon, references.toon
             4-plan:    TASK-*.toon files
@@ -303,11 +283,11 @@ class ArtifactCollector:
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
         # Collect artifacts based on phases requested
-        # 1-init artifacts: config, status, request
+        # 1-init artifacts: status, request, references
         if '1-init' in phases:
-            self.collect_config()
             self.collect_status()
             self.collect_request()
+            self.collect_references()
 
         # 2-refine artifacts: request (with clarifications), work log
         if '2-refine' in phases:
@@ -318,7 +298,6 @@ class ArtifactCollector:
         if '3-outline' in phases or 'both' in phases:
             self.collect_solution_outline()
             self.collect_deliverables()
-            self.collect_config()  # Also needed for outline verification
             self.collect_status()
             self.collect_references()
             self.collect_work_log()

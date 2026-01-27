@@ -9,7 +9,7 @@ allowed-tools: Read, Bash, Glob, Skill, Task
 
 **Role**: Verify phase skill. Runs quality checks, build verification, and technical validation before finalization. Creates fix tasks if issues are found and loops back to execute phase.
 
-**Key Pattern**: Verification pipeline with finding→task loop. All verification behavior determined by config.toon values and domain extensions.
+**Key Pattern**: Verification pipeline with finding→task loop. Verification behavior determined by marshal.json phase config and domain extensions.
 
 ## When to Activate This Skill
 
@@ -31,40 +31,29 @@ Activate when:
 
 ## Configuration Source
 
-All verify configuration is read from config.toon (written during init phase):
+Verify configuration comes from two sources:
 
+**Per-plan data** (from references.toon):
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-config:manage-config get-multi \
-  --plan-id {plan_id} \
-  --fields domains,verification_required,verification_command
+python3 .plan/execute-script.py pm-workflow:manage-references:manage-references get \
+  --plan-id {plan_id} --field domains
+```
+
+**Project-level pipeline** (from marshal.json):
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+  plan phase-6-verify get
 ```
 
 **Config Fields Used**:
 
-| Field | Values | Description |
-|-------|--------|-------------|
-| `domains` | array | Domains for this plan (java, javascript, plugin, etc.) |
-| `verification_required` | true/false | Whether verification must pass |
-| `verification_command` | command/null | Primary verification command |
-
----
-
-## Pipeline Configuration
-
-Read step pipeline from marshal.json (if configured):
-
-```bash
-python3 .plan/execute-script.py plan-marshall:tools-json-ops:manage-json-file \
-  read-field .plan/marshal.json --field verification
-```
-
-For step definitions, types, and `${domain}` placeholder resolution:
-
-```
-Read: plan-marshall:manage-plan-marshall-config/standards/data-model.md → Section: verification
-```
-
-When marshal.json has no `verification` section, use the default pipeline documented below.
+| Source | Field | Description |
+|--------|-------|-------------|
+| references.toon | `domains` | Domains for this plan (java, documentation, etc.) |
+| marshal.json | `max_iterations` | Maximum verify-execute-verify loops |
+| marshal.json | `1_quality_check` | Whether to run quality gate |
+| marshal.json | `2_build_verify` | Whether to run build verification |
+| marshal.json | `domain_steps` | Per-domain agent verification steps |
 
 ---
 
@@ -81,10 +70,16 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 ### Step 1: Read Configuration
 
+Read per-plan domains:
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-config:manage-config get-multi \
-  --plan-id {plan_id} \
-  --fields domains,verification_required,verification_command
+python3 .plan/execute-script.py pm-workflow:manage-references:manage-references get \
+  --plan-id {plan_id} --field domains
+```
+
+Read project-level verify pipeline:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+  plan phase-6-verify get
 ```
 
 ### Step 2: Check Iteration Counter

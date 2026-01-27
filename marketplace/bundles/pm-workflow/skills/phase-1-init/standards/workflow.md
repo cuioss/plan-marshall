@@ -19,7 +19,7 @@ User Request (description, lesson_id, or issue)
 │   6. Initialize references.toon (branch only)       │
 │   7. Detect domain from task analysis               │
 │   8. Create status.toon with phases                 │
-│   9. Create config.toon with domain                 │
+│   9. Store domains in references.toon                │
 │  10. Transition phase to "refine"                   │
 │   OUTPUT: plan_id, domain, next_phase               │
 └─────────────────────────────────────────────────────┘
@@ -34,9 +34,8 @@ User Request (description, lesson_id, or issue)
 |------|----------|
 | Creates plan directory | Create goals (that's refine phase) |
 | Writes request.md | Create tasks (that's refine phase) |
-| Initializes references.toon | Execute implementation |
+| Initializes references.toon (with domains) | Execute implementation |
 | Detects domain | Skip to execute phase |
-| Creates config.toon | |
 | Creates status.toon | |
 | Transitions to refine | |
 
@@ -112,7 +111,7 @@ AskUserQuestion:
 - [ ] request.md created with complete original input
 - [ ] references.toon created with branch
 - [ ] status.toon created with phases
-- [ ] config.toon created with domain
+- [ ] Domains stored in references.toon
 - [ ] Work-log entry written
 - [ ] Phase transitioned to refine
 - [ ] plan_id returned
@@ -170,7 +169,7 @@ The plan-init agent handles complete initialization:
 2. Initialize references.toon with branch
 3. Detect domain from task analysis
 4. Create status.toon with phases
-5. Create config.toon with domain
+5. Store domains in references.toon
 6. Transition to refine phase
 
 **Note**: Goals and tasks are NOT created during init. That's the refine phase.

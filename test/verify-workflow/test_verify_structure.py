@@ -245,9 +245,8 @@ Content for second deliverable.
 Content for third deliverable.
 """
         (plan_dir / 'solution_outline.md').write_text(solution_content)
-        (plan_dir / 'config.toon').write_text('plan_type: test')
         (plan_dir / 'status.toon').write_text('current_phase: execute')
-        (plan_dir / 'references.toon').write_text('branch: main\naffected_files[2]:\n  file1.md\n  file2.md')
+        (plan_dir / 'references.toon').write_text('branch: main\ndomains[1]:\n  java\naffected_files[2]:\n  file1.md\n  file2.md')
 
         with patch('verify_structure.base_path', make_base_path_mock(tmp_path)):
             checker = StructuralChecker('test-plan', temp_test_case)

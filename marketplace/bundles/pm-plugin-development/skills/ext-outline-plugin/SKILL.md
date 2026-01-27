@@ -20,7 +20,7 @@ Domain-specific outline workflow for marketplace plugin development. Handles dis
 plan_id: {plan_id}
 ```
 
-All other data read from sinks (references.toon, config.toon, request.md).
+All other data read from sinks (references.toon, request.md).
 
 ---
 
@@ -58,8 +58,8 @@ python3 .plan/execute-script.py pm-workflow:manage-references:manage-references 
 Read domains:
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-config:manage-config get \
-  --plan-id {plan_id} --key domains
+python3 .plan/execute-script.py pm-workflow:manage-references:manage-references get \
+  --plan-id {plan_id} --field domains
 ```
 
 Log context:

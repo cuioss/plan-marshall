@@ -73,7 +73,7 @@ python3 .plan/execute-script.py pm-workflow:manage-references:manage-references 
 ### 1.4 Read Domains
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-config:manage-config get \
+python3 .plan/execute-script.py pm-workflow:manage-references:manage-references get \
   --plan-id {plan_id} --field domains
 ```
 
@@ -139,7 +139,7 @@ For each entry in module_mapping:
 
 1. Determine change_type from request (create, modify, migrate, refactor)
 2. Determine execution_mode (automated)
-3. Map domain from config.toon
+3. Map domain from references.toon
 4. Use module from module_mapping
 
 ### 4.2 Deliverable Structure
@@ -218,7 +218,7 @@ For codebase-wide changes requiring discovery and analysis.
 
 ### 6.1 Resolve Skill
 
-For each domain in config.toon:
+For each domain in references.toon:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
@@ -487,7 +487,7 @@ qgate_passed: {true|false}
 **Script Notations** (use EXACTLY as shown):
 - `pm-workflow:manage-references:manage-references` - Read track, module_mapping
 - `pm-workflow:manage-plan-documents:manage-plan-documents` - Read request
-- `pm-workflow:manage-config:manage-config` - Read domains
+- `pm-workflow:manage-references:manage-references` - Read domains
 - `pm-workflow:manage-solution-outline:manage-solution-outline` - Write solution document
 - `plan-marshall:manage-plan-marshall-config:plan-marshall-config` - Resolve domain skill
 - `plan-marshall:manage-logging:manage-log` - Decision and work logging

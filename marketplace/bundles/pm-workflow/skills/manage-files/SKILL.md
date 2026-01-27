@@ -25,7 +25,7 @@ Activate this skill when:
 - Listing plan contents
 - Checking if files exist
 
-**Note**: For typed plan documents (`request.md`, `solution_outline.md`), use `pm-workflow:manage-plan-documents` instead. For domain-specific files (config.toon, references.toon, status.toon), use the dedicated manage-* skills.
+**Note**: For typed plan documents (`request.md`, `solution_outline.md`), use `pm-workflow:manage-plan-documents` instead. For domain-specific files (references.toon, status.toon), use the dedicated manage-* skills.
 
 ---
 
@@ -37,7 +37,6 @@ Files are stored in plan directories:
 .plan/plans/{plan_id}/
   request.md
   solution_outline.md
-  config.toon
   references.toon
   status.toon
   tasks/
@@ -119,7 +118,7 @@ Check if a file exists. Returns TOON output with `exists: true/false`.
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-files:manage-files exists \
   --plan-id {plan_id} \
-  --file config.toon
+  --file references.toon
 ```
 
 **Output** (TOON format):
@@ -128,9 +127,9 @@ When file exists:
 ```toon
 status: success
 plan_id: my-feature
-file: config.toon
+file: references.toon
 exists: true
-path: .plan/plans/my-feature/config.toon
+path: .plan/plans/my-feature/references.toon
 ```
 
 When file does not exist:
@@ -278,7 +277,7 @@ suggestions[2]:
 
 ### With Domain Skills
 
-Domain-specific skills (manage-config, manage-references, manage-lifecycle) may use this skill for basic file operations, or import shared libraries directly.
+Domain-specific skills (manage-references, manage-lifecycle) may use this skill for basic file operations, or import shared libraries directly.
 
 ### With Orchestration Skills
 
@@ -290,7 +289,6 @@ Plan orchestration skills (plan-init, solution-outline, task-plan, plan-execute)
 
 | Skill | Manages | Use manage-files for |
 |-------|---------|---------------------|
-| manage-config | config.toon | N/A (use manage-config) |
 | manage-references | references.toon | N/A (use manage-references) |
 | manage-lifecycle | status.toon | N/A (use manage-lifecycle) |
 | manage-plan-documents | request.md | N/A (use manage-plan-documents) |

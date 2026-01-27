@@ -52,10 +52,10 @@ allowed-tools: Read
 │  ┌───────────────────────────────────────────────────────────────────────┐  │
 │  │                          DATA LAYER                                   │  │
 │  │                                                                       │  │
-│  │   manage-config  manage-lifecycle  manage-tasks  manage-solution     │  │
+│  │   manage-references  manage-lifecycle  manage-tasks  manage-solution  │  │
 │  │        │               │               │              │               │  │
 │  │        ▼               ▼               ▼              ▼               │  │
-│  │   config.toon    status.toon    TASK-*.toon   solution_outline.md    │  │
+│  │   references.toon status.toon    TASK-*.toon   solution_outline.md   │  │
 │  │                                                                       │  │
 │  └───────────────────────────────────────────────────────────────────────┘  │
 │                                                                             │
@@ -72,7 +72,7 @@ allowed-tools: Read
 | [standards/agents.md](standards/agents.md) | Thin agent pattern | Agent structure, skill invocation |
 | [standards/data-layer.md](standards/data-layer.md) | manage-* skills | File operations, TOON format |
 | [standards/skill-loading.md](standards/skill-loading.md) | Two-tier loading | System vs domain skills |
-| [standards/artifacts.md](standards/artifacts.md) | Plan file formats | config.toon, status.toon, TASK-*.toon |
+| [standards/artifacts.md](standards/artifacts.md) | Plan file formats | references.toon, status.toon, TASK-*.toon |
 | [standards/task-executor-routing.md](standards/task-executor-routing.md) | Task executor routing | Profile→executor mapping, extensibility |
 | `pm-workflow:workflow-extension-api` | Extension mechanism | Domain extensions for outline/triage |
 
@@ -151,7 +151,7 @@ allowed-tools: Read
 │  ┌─────────────────────────────────────────────────────────────────────┐   │
 │  │  DATA LAYER (manage-* Skills)                                        │   │
 │  │  ════════════════════════════                                        │   │
-│  │  manage-config      manage-lifecycle    manage-tasks                 │   │
+│  │  manage-references   manage-lifecycle    manage-tasks                 │   │
 │  │  manage-solution-outline                manage-plan-documents        │   │
 │  │  manage-files       manage-references                                │   │
 │  └─────────────────────────────────────────────────────────────────────┘   │
@@ -160,8 +160,8 @@ allowed-tools: Read
 │  ┌─────────────────────────────────────────────────────────────────────┐   │
 │  │  PLAN FILES (.plan/plans/{plan_id}/)                                 │   │
 │  │  ═══════════════════════════════════                                 │   │
-│  │  config.toon  status.toon  request.md  solution_outline.md           │   │
-│  │  references.toon  TASK-001.toon  TASK-002.toon  ...                  │   │
+│  │  status.toon  request.md  references.toon  solution_outline.md        │   │
+│  │  TASK-001.toon  TASK-002.toon  ...                                   │   │
 │  └─────────────────────────────────────────────────────────────────────┘   │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘

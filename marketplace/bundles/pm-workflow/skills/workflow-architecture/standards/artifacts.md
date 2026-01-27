@@ -7,10 +7,9 @@ File formats and structures for plan data storage.
 ```
 .plan/plans/{plan_id}/
 │
-├── config.toon              Phase: init
 ├── status.toon              Phase: init
 ├── request.md               Phase: init
-├── references.toon          Phase: init (optional)
+├── references.toon          Phase: init
 │
 ├── solution_outline.md      Phase: outline
 │
@@ -39,12 +38,12 @@ File formats and structures for plan data storage.
 ├─────────────────────────────────────────────────────────────────────┤
 │                                                                      │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐               │
-│  │ config.toon  │  │ status.toon  │  │ request.md   │               │
+│  │ status.toon  │  │ request.md   │  │references.toon│              │
 │  ├──────────────┤  ├──────────────┤  ├──────────────┤               │
-│  │ domains      │  │ title        │  │ description  │               │
-│  │ commit_strat │  │ current_phase│  │ context      │               │
-│  │ create_pr    │  │ phases table │  │ constraints  │               │
-│  │ branch_strat │  │ timestamps   │  │              │               │
+│  │ title        │  │ description  │  │ domains      │               │
+│  │ current_phase│  │ context      │  │ branch       │               │
+│  │ phases table │  │ constraints  │  │ issue        │               │
+│  │ timestamps   │  │              │  │              │               │
 │  └──────────────┘  └──────────────┘  └──────────────┘               │
 │                                                                      │
 ├─────────────────────────────────────────────────────────────────────┤
@@ -92,49 +91,6 @@ File formats and structures for plan data storage.
 ```
 
 ---
-
-## config.toon
-
-Plan-specific configuration created during init phase.
-
-### Location
-
-```
-.plan/plans/{plan_id}/config.toon
-```
-
-### Format
-
-```toon
-# Plan Configuration
-
-domains[1]:
-- java
-
-commit_strategy: per_deliverable
-create_pr: true
-verification_required: true
-verification_command: /pm-dev-builder:builder-build-and-fix
-branch_strategy: feature
-```
-
-### Field Reference
-
-| Field | Type | Required | Values |
-|-------|------|----------|--------|
-| `domains` | array | Yes | Domain identifiers (java, javascript, etc.) |
-| `commit_strategy` | enum | Yes | `per_deliverable`, `per_plan`, `none` |
-| `create_pr` | bool | No | true/false (default: true) |
-| `verification_required` | bool | No | true/false (default: true) |
-| `verification_command` | string | No | Command to run |
-| `branch_strategy` | enum | No | `feature`, `direct` |
-
-### Manager
-
-```bash
-python3 .plan/execute-script.py pm-workflow:manage-config:manage-config \
-  {create|read|get|set|get-domains|get-multi} --plan-id {id}
-```
 
 ---
 
@@ -313,7 +269,7 @@ Solution design document with deliverables.
 
 | Field | Location | Description |
 |-------|----------|-------------|
-| `domain` | Metadata | Single domain from config.domains |
+| `domain` | Metadata | Single domain from references.toon domains |
 | `module` | Metadata | Target module name (from architecture) |
 | `change_type` | Metadata | create, modify, refactor, migrate, delete |
 | `execution_mode` | Metadata | automated, manual, mixed |
@@ -512,9 +468,9 @@ python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks \
 
 ---
 
-## references.toon (Optional)
+## references.toon
 
-External references like GitHub issues.
+Plan references and domain configuration.
 
 ### Location
 
@@ -526,6 +482,9 @@ External references like GitHub issues.
 
 ```toon
 # References
+
+domains[1]:
+- java
 
 issue:
   number: 123
@@ -675,7 +634,7 @@ Technical script execution tracing (automatic).
 ```
 [2025-12-11T12:14:26Z] [INFO] [SCRIPT] pm-workflow:manage-files:manage-files create (0.19s)
 [2025-12-11T12:15:01Z] [INFO] [SCRIPT] pm-workflow:manage-tasks:manage-tasks add (0.24s)
-[2025-12-11T12:17:50Z] [ERROR] [SCRIPT] pm-workflow:manage-config:manage-config set (0.16s)
+[2025-12-11T12:17:50Z] [ERROR] [SCRIPT] pm-workflow:manage-references:manage-references set (0.16s)
   exit_code: 2
   args: set --plan-id test --key invalid
   stderr: error: unknown key 'invalid'
@@ -706,9 +665,9 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 PHASE       ARTIFACTS CREATED/UPDATED
 ─────       ─────────────────────────
 
-init        ┌─────────────┐ ┌─────────────┐ ┌─────────────┐
-            │ config.toon │ │ status.toon │ │ request.md  │
-            └─────────────┘ └─────────────┘ └─────────────┘
+init        ┌─────────────┐ ┌─────────────┐ ┌─────────────────┐
+            │ status.toon │ │ request.md  │ │ references.toon │
+            └─────────────┘ └─────────────┘ └─────────────────┘
                   │               │               │
                   ▼               ▼               ▼
 outline     ┌─────────────────────────────────────────────┐
@@ -752,7 +711,7 @@ archive     .plan/archived-plans/{date}-{plan_id}/
 | [phases.md](phases.md) | 7-phase execution model |
 | [data-layer.md](data-layer.md) | manage-* skills that access these files |
 | [skill-loading.md](skill-loading.md) | How skills from tasks are loaded |
-| `pm-workflow:manage-config` | config.toon operations |
+| `pm-workflow:manage-references` | references.toon operations |
 | `pm-workflow:plan-marshall:manage-lifecycle` | status.toon operations |
 | `pm-workflow:manage-tasks` | TASK-*.toon operations |
 | `pm-workflow:manage-solution-outline` | solution_outline.md operations |

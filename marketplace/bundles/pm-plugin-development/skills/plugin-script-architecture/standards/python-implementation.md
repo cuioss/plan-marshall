@@ -79,7 +79,7 @@ if __name__ == "__main__":
 ```
 
 **Naming Convention**:
-- Script name is a noun: `manage-config.py`, `manage-files.py`, `analyze.py`
+- Script name is a noun: `manage-references.py`, `manage-files.py`, `analyze.py`
 - Subcommands are verbs: `get`, `set`, `list`, `add`, `remove`, `validate`
 
 **Anti-patterns** (DO NOT use):

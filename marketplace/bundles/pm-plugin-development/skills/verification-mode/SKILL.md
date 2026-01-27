@@ -244,7 +244,7 @@ This is the ONLY allowed way to interact with `.plan` files. All other access is
 **Prohibited `.plan` Access** (ALL violations):
 - Direct Read/Write/Edit of ANY `.plan/**` file (except via execute-script.py invocation)
 - Direct Read/Write/Edit of `.plan/plans/*/status.toon`
-- Direct Read/Write/Edit of `.plan/plans/*/config.toon`
+- Direct Read/Write/Edit of `.plan/plans/*/references.toon`
 - Direct Read/Write/Edit of `.plan/plans/*/work.log`
 - Direct Read/Write/Edit of `.plan/marshall-state.toon`
 - Direct Read/Write/Edit of `.plan/logs/*.log`
@@ -378,9 +378,9 @@ python3 .plan/execute-script.py pm-workflow:plan-marshall:manage-lifecycle read 
 
 **Exact Verification Commands** (copy-paste ready):
 
-**1-Init Phase** - Verify config.toon:
+**1-Init Phase** - Verify references.toon:
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-config:manage-config read --plan-id {plan_id}
+python3 .plan/execute-script.py pm-workflow:manage-references:manage-references read --plan-id {plan_id}
 ```
 
 **2-Outline Phase** - Validate solution outline:

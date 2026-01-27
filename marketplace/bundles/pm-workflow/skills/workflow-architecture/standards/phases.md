@@ -56,9 +56,8 @@ The pm-workflow bundle implements a 7-phase execution model for structured task 
 │  │  ═════                           ══════                             │   │
 │  │                                                                     │   │
 │  │  • description                   .plan/plans/{plan_id}/             │   │
-│  │  • lesson_id                       ├── config.toon                  │   │
-│  │  • issue URL                       ├── status.toon                  │   │
-│  │                                    ├── request.md                   │   │
+│  │  • lesson_id                       ├── status.toon                  │   │
+│  │  • issue URL                       ├── request.md                   │   │
 │  │                                    └── references.toon              │   │
 │  │                                                                     │   │
 │  └─────────────────────────────────────────────────────────────────────┘   │
@@ -76,7 +75,7 @@ The pm-workflow bundle implements a 7-phase execution model for structured task 
 │  6. Initialize references.toon                                              │
 │  7. Detect domain                                                           │
 │  8. Create status.toon (7-phase model)                                      │
-│  9. Create config.toon (with domains)                                       │
+│  9. Store domains in references.toon                                        │
 │  10. Transition to 2-refine phase                                           │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
@@ -98,7 +97,7 @@ The pm-workflow bundle implements a 7-phase execution model for structured task 
 │  │  ═════                           ══════                             │   │
 │  │                                                                     │   │
 │  │  • request.md                    • clarified_request (in request.md)│   │
-│  │  • config.toon                   • clarifications (Q&A pairs)       │   │
+│  │  • references.toon               • clarifications (Q&A pairs)       │   │
 │  │  • project-architecture (*)      • module_mapping                   │   │
 │  │                                  • scope_estimate                   │   │
 │  │                                  • confidence >= threshold          │   │
@@ -144,7 +143,7 @@ The pm-workflow bundle implements a 7-phase execution model for structured task 
 │  │  ═════                           ══════                             │   │
 │  │                                                                     │   │
 │  │  • clarified_request             solution_outline.md                │   │
-│  │  • config.toon                     └── Summary                      │   │
+│  │  • references.toon                  └── Summary                      │   │
 │  │  • project-architecture (*)        └── Overview (ASCII diagram)     │   │
 │  │                                    └── Deliverables                 │   │
 │  │                                        ├── 1. Title                 │   │
@@ -300,7 +299,7 @@ The pm-workflow bundle implements a 7-phase execution model for structured task 
 │  │  ═════                           ══════                             │   │
 │  │                                                                     │   │
 │  │  • Modified project files        • Verification passed              │   │
-│  │  • config.toon                   • OR: Fix tasks created            │   │
+│  │  • references.toon               • OR: Fix tasks created            │   │
 │  │    └── domains                     (loop back to 5-execute)         │   │
 │  │  • Completed tasks                                                  │   │
 │  │                                                                     │   │
@@ -356,7 +355,7 @@ The pm-workflow bundle implements a 7-phase execution model for structured task 
 │  │  INPUT                           OUTPUT                             │   │
 │  │  ═════                           ══════                             │   │
 │  │                                                                     │   │
-│  │  • config.toon                   • Git commit                       │   │
+│  │  • marshal.json                   • Git commit                       │   │
 │  │    ├── create_pr                 • Branch pushed                    │   │
 │  │    └── branch_strategy           • Pull request (if enabled)        │   │
 │  │  • references.toon               • Plan status: complete            │   │
@@ -492,7 +491,7 @@ TRANSITION TRIGGERS:
 │  │           → profiles: [implementation, testing]                      │  │
 │  └──────────────────────────────────────────────────────────────────────┘  │
 │                      │                                                      │
-│                      │ config.toon.domains                                  │
+│                      │ references.toon.domains                                  │
 │                      ▼                                                      │
 │  ┌──────────────────────────────────────────────────────────────────────┐  │
 │  │  PLAN                                                                │  │
@@ -512,12 +511,12 @@ TRANSITION TRIGGERS:
 │  │  • Applies domain patterns during implementation                     │  │
 │  └──────────────────────────────────────────────────────────────────────┘  │
 │                      │                                                      │
-│                      │ config.toon.domains                                  │
+│                      │ references.toon.domains                                  │
 │                      ▼                                                      │
 │  ┌──────────────────────────────────────────────────────────────────────┐  │
 │  │  VERIFY                                                              │  │
 │  │  ══════                                                              │  │
-│  │  • Reads domains from config.toon                                    │  │
+│  │  • Reads domains from references.toon                                 │  │
 │  │  • Loads triage extensions for each domain                           │  │
 │  │  • Applies domain-specific verification                              │  │
 │  └──────────────────────────────────────────────────────────────────────┘  │

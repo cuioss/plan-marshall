@@ -61,9 +61,8 @@ plan_id: {plan_id}
 
 | Sink | Data | Purpose |
 |------|------|---------|
-| `references.toon` | track, module_mapping | Track verification, mapping hints |
+| `references.toon` | track, module_mapping, domains | Track verification, mapping hints, domain verification |
 | `request.md` | body OR clarified_request | Request content for analysis |
-| `config.toon` | domains | Domain verification |
 
 ### Skill Responsibilities
 

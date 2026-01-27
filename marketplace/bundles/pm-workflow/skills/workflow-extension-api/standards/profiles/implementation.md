@@ -443,4 +443,4 @@ If verification fails:
 - [module_testing.md](module_testing.md) - Module testing profile contract
 - [profile-mechanism.md](profile-mechanism.md) - How profile overrides work
 - [task-contract.md](../../../manage-tasks/standards/task-contract.md) - Task structure with domain, profile, skills
-- [config-toon-format.md](../../../manage-config/standards/config-toon-format.md) - Workflow skill configuration
+- [references SKILL.md](../../../manage-references/SKILL.md) - References and domain configuration

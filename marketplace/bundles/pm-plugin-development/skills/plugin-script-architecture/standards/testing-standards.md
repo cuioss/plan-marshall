@@ -223,7 +223,7 @@ For scripts that use `PLAN_BASE_DIR` (plan management scripts), use `PlanTestCon
 
 ```python
 #!/usr/bin/env python3
-"""Tests for manage-config.py script."""
+"""Tests for manage-references.py script."""
 
 import sys
 from pathlib import Path
@@ -232,16 +232,16 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from conftest import run_script, TestRunner, get_script_path, PlanTestContext
 
-SCRIPT_PATH = get_script_path('pm-workflow', 'manage-config', 'manage-config.py')
+SCRIPT_PATH = get_script_path('pm-workflow', 'manage-references', 'manage-references.py')
 
 # Alias for backward compatibility (optional)
 TestContext = PlanTestContext
 
-def test_create_config():
-    """Test creating a config file."""
-    with PlanTestContext(plan_id='test-config') as ctx:
+def test_create_references():
+    """Test creating a references file."""
+    with PlanTestContext(plan_id='test-references') as ctx:
         result = run_script(SCRIPT_PATH, 'create',
-            '--plan-id', 'test-config',
+            '--plan-id', 'test-references',
             '--domain', 'java'
         )
         assert result.success, f"Script failed: {result.stderr}"

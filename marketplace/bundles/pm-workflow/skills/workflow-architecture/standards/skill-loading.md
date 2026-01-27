@@ -240,8 +240,8 @@ The pm-workflow bundle uses a two-tier skill loading pattern for domain-agnostic
 │  │               │                    │                                  │ │
 │  ├───────────────┼────────────────────┼──────────────────────────────────┤ │
 │  │               │                    │                                  │ │
-│  │ EXTENSION     │ config.toon.domains│ Domain-specific additions        │ │
-│  │               │ Finalize phase     │ Triage extensions                │ │
+│  │ EXTENSION     │ references.toon    │ Domain-specific additions        │ │
+│  │               │ .domains           │ Triage extensions                │ │
 │  │               │                    │                                  │ │
 │  └───────────────┴────────────────────┴──────────────────────────────────┘ │
 │                                                                             │

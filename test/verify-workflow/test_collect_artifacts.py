@@ -80,22 +80,6 @@ class TestArtifactCollector:
         assert collector.collected[0]['status'] == 'failed'
         assert len(collector.errors) == 1
 
-    def test_collect_config_success(self, output_dir, tmp_path):
-        """Test successful config collection."""
-        plan_dir = tmp_path / 'plans' / 'test-plan'
-        plan_dir.mkdir(parents=True)
-        config_path = plan_dir / 'config.toon'
-        config_path.write_text('plan_type: implementation\ndomains: java,docs')
-
-        with patch('collect_artifacts.base_path', make_base_path_mock(tmp_path)):
-            collector = ArtifactCollector('test-plan', output_dir)
-            result = collector.collect_config()
-
-        assert result is True
-        assert (output_dir / 'config.toon').exists()
-        content = (output_dir / 'config.toon').read_text()
-        assert 'plan_type' in content
-
     def test_collect_references_not_found(self, output_dir, tmp_path):
         """Test references collection when file doesn't exist (acceptable)."""
         plan_dir = tmp_path / 'plans' / 'test-plan'
@@ -136,7 +120,7 @@ class TestArtifactCollector:
         (plan_dir / 'solution_outline.md').write_text(
             '# Solution\n\n## Summary\n\nSummary.\n\n## Overview\n\nOverview.\n\n## Deliverables\n\n### 1. Test\n\nContent.'
         )
-        (plan_dir / 'config.toon').write_text('plan_type: test')
+
         (plan_dir / 'status.toon').write_text('current_phase: execute')
         (plan_dir / 'references.toon').write_text('branch: main')
         (plan_dir / 'work.log').write_text('[INFO] Started')
@@ -158,7 +142,7 @@ class TestArtifactCollector:
         plan_dir.mkdir(parents=True)
 
         (plan_dir / 'solution_outline.md').write_text('# Solution\n\n## Summary\n\n## Overview\n\n## Deliverables')
-        (plan_dir / 'config.toon').write_text('plan_type: test')
+
         (plan_dir / 'status.toon').write_text('current_phase: execute')
         (plan_dir / 'references.toon').write_text('branch: main')
         (plan_dir / 'work.log').write_text('[INFO] Started')
@@ -180,7 +164,7 @@ class TestArtifactCollector:
         plan_dir.mkdir(parents=True)
 
         (plan_dir / 'solution_outline.md').write_text('# Solution\n\n## Summary\n\n## Overview\n\n## Deliverables')
-        (plan_dir / 'config.toon').write_text('plan_type: test')
+
         (plan_dir / 'status.toon').write_text('current_phase: execute')
         (plan_dir / 'references.toon').write_text('branch: main')
         (plan_dir / 'work.log').write_text('[INFO] Started')
@@ -230,7 +214,7 @@ class TestEdgeCases:
         plan_dir.mkdir(parents=True)
 
         (plan_dir / 'solution_outline.md').write_text('# Solution\n\n## Summary\n\n## Overview\n\n## Deliverables')
-        (plan_dir / 'config.toon').write_text('plan_type: test')
+
         (plan_dir / 'status.toon').write_text('current_phase: execute')
         # No references.toon or work.log
 

@@ -8,7 +8,7 @@ Runs deterministic checks to verify:
 - Basic format validation
 
 Phases (7-phase model):
-    1-init:     config.toon, status.toon, request.md exist
+    1-init:     status.toon, request.md, references.toon exist
     2-refine:   request.md has clarifications, work.log has [REFINE:*] entries
     3-outline:  solution_outline.md, deliverables, references.toon
     4-plan:     TASK-*.toon files exist
@@ -132,18 +132,6 @@ class StructuralChecker:
         except Exception as e:
             self.add_check('solution_outline_valid', 'fail', f'Validation error: {e}')
             self.add_finding('error', str(e))
-            return False
-
-    def check_config_exists(self) -> bool:
-        """Check if config.toon exists."""
-        config_path = self._get_artifact_path('config.toon')
-
-        if config_path.exists():
-            self.add_check('config_exists', 'pass', 'Config file exists')
-            return True
-        else:
-            self.add_check('config_exists', 'fail', 'Config file not found')
-            self.add_finding('error', f'Config file not found for plan {self.plan_id}')
             return False
 
     def check_status_exists(self) -> bool:
@@ -433,33 +421,33 @@ class StructuralChecker:
             self.add_finding('error', str(e))
             return False
 
-    def check_config_has_domains(self) -> bool:
-        """Check if config.toon contains domains field (set during 2-refine phase)."""
-        config_path = self._get_artifact_path('config.toon')
+    def check_references_has_domains(self) -> bool:
+        """Check if references.toon contains domains field (set during 1-init phase)."""
+        refs_path = self._get_artifact_path('references.toon')
 
-        if not config_path.exists():
-            self.add_check('config_domains', 'fail', 'Config file not found')
+        if not refs_path.exists():
+            self.add_check('references_domains', 'fail', 'References file not found')
             return False
 
         try:
-            content = config_path.read_text()
-            config = parse_toon_simple(content)
+            content = refs_path.read_text()
+            refs = parse_toon_simple(content)
 
-            if 'domains' in config and config['domains']:
-                domains = config['domains']
+            if 'domains' in refs and refs['domains']:
+                domains = refs['domains']
                 if isinstance(domains, list):
                     domain_count = len(domains)
                 else:
                     domain_count = 1
-                self.add_check('config_domains', 'pass', f'Config has {domain_count} domain(s)')
+                self.add_check('references_domains', 'pass', f'References has {domain_count} domain(s)')
                 return True
             else:
-                self.add_check('config_domains', 'fail', 'Config missing domains field')
-                self.add_finding('warning', 'Config.toon missing domains - refine phase may not have completed')
+                self.add_check('references_domains', 'fail', 'References missing domains field')
+                self.add_finding('warning', 'References.toon missing domains - init phase may not have completed')
                 return False
 
         except Exception as e:
-            self.add_check('config_domains', 'fail', f'Error checking config domains: {e}')
+            self.add_check('references_domains', 'fail', f'Error checking references domains: {e}')
             self.add_finding('error', str(e))
             return False
 
@@ -481,8 +469,8 @@ class StructuralChecker:
                     Default: ['3-outline']
 
         Phase verification mapping:
-            1-init:    config.toon, status.toon, request.md exist
-            2-refine:  request.md has clarifications, work.log has [REFINE:*], domains in config
+            1-init:    status.toon, request.md, references.toon exist
+            2-refine:  request.md has clarifications, work.log has [REFINE:*], domains in references
             3-outline: solution_outline.md valid, deliverables listed, references.toon
             4-plan:    TASK-*.toon files exist
             5-execute: references.toon with modified files, work.log
@@ -497,22 +485,21 @@ class StructuralChecker:
 
         # Phase 1-init checks: basic plan artifacts exist
         if '1-init' in phases:
-            self.check_config_exists()
             self.check_status_exists()
             self.check_request_exists()
+            self.check_references_exists()
 
         # Phase 2-refine checks: request refined with clarifications
         if '2-refine' in phases:
             self.check_request_exists()
             self.check_request_has_clarifications()
             self.check_refine_logged()
-            self.check_config_has_domains()
+            self.check_references_has_domains()
 
         # Phase 3-outline checks: solution outline and deliverables
         if '3-outline' in phases or 'both' in phases:
             self.check_solution_outline_exists()
             self.check_solution_outline_valid()
-            self.check_config_exists()
             self.check_status_exists()
             self.check_references_exists()
 

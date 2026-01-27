@@ -88,6 +88,8 @@ def cmd_create(args):
         refs['issue_url'] = args.issue_url
     if args.build_system:
         refs['build_system'] = args.build_system
+    if args.domains:
+        refs['domains'] = [d.strip() for d in args.domains.split(',') if d.strip()]
 
     write_references(args.plan_id, refs)
 
@@ -434,6 +436,7 @@ def main():
     create_parser.add_argument('--branch', required=True, help='Git branch name')
     create_parser.add_argument('--issue-url', help='GitHub issue URL')
     create_parser.add_argument('--build-system', help='Build system (maven, gradle, npm)')
+    create_parser.add_argument('--domains', help='Comma-separated domain list (e.g., java,documentation)')
     create_parser.set_defaults(func=cmd_create)
 
     # read

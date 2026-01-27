@@ -390,3 +390,96 @@ def test_set_list_returns_previous_count():
         data = parse_toon(result.stdout)
         assert data['previous_count'] == 3
         assert data['count'] == 2
+
+
+# =============================================================================
+# Test: Create with --domains Parameter
+# =============================================================================
+
+
+def test_create_with_single_domain():
+    """Test creating references with single domain."""
+    with TestContext():
+        result = run_script(
+            SCRIPT_PATH,
+            'create',
+            '--plan-id',
+            'test-plan',
+            '--branch',
+            'feature/test',
+            '--domains',
+            'java',
+        )
+        assert result.success, f'Script failed: {result.stderr}'
+        data = parse_toon(result.stdout)
+        assert data['status'] == 'success'
+        assert 'domains' in data['fields']
+
+        # Verify domains stored correctly
+        get_result = run_script(SCRIPT_PATH, 'get', '--plan-id', 'test-plan', '--field', 'domains')
+        assert get_result.success, f'Get failed: {get_result.stderr}'
+        get_data = parse_toon(get_result.stdout)
+        assert get_data['value'] == ['java']
+
+
+def test_create_with_multiple_domains():
+    """Test creating references with multiple domains."""
+    with TestContext():
+        result = run_script(
+            SCRIPT_PATH,
+            'create',
+            '--plan-id',
+            'test-plan',
+            '--branch',
+            'feature/test',
+            '--domains',
+            'java,documentation',
+        )
+        assert result.success, f'Script failed: {result.stderr}'
+
+        # Verify domains stored correctly
+        get_result = run_script(SCRIPT_PATH, 'get', '--plan-id', 'test-plan', '--field', 'domains')
+        assert get_result.success, f'Get failed: {get_result.stderr}'
+        get_data = parse_toon(get_result.stdout)
+        assert 'java' in get_data['value']
+        assert 'documentation' in get_data['value']
+        assert len(get_data['value']) == 2
+
+
+def test_create_without_domains():
+    """Test creating references without domains (domains not set)."""
+    with TestContext():
+        result = run_script(
+            SCRIPT_PATH,
+            'create',
+            '--plan-id',
+            'test-plan',
+            '--branch',
+            'feature/test',
+        )
+        assert result.success, f'Script failed: {result.stderr}'
+
+        # Domains should not be in fields
+        get_result = run_script(SCRIPT_PATH, 'get', '--plan-id', 'test-plan', '--field', 'domains')
+        assert not get_result.success, 'Expected failure - domains not set'
+
+
+def test_create_with_domains_and_issue_url():
+    """Test creating references with both domains and issue URL."""
+    with TestContext():
+        result = run_script(
+            SCRIPT_PATH,
+            'create',
+            '--plan-id',
+            'test-plan',
+            '--branch',
+            'feature/test',
+            '--domains',
+            'java',
+            '--issue-url',
+            'https://github.com/org/repo/issues/42',
+        )
+        assert result.success, f'Script failed: {result.stderr}'
+        data = parse_toon(result.stdout)
+        assert 'domains' in data['fields']
+        assert 'issue_url' in data['fields']

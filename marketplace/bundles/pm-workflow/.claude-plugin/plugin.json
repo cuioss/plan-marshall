@@ -20,7 +20,6 @@
   ],
   "commands": [],
   "skills": [
-    "./skills/manage-config",
     "./skills/manage-files",
     "./skills/manage-plan-documents",
     "./skills/manage-references",

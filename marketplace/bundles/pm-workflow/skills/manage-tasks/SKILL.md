@@ -170,7 +170,7 @@ verification:
 
 **Field values**:
 - `deliverables`: Array of integers `[1, 2, 3]`
-- `domain`: Domain from config.toon (e.g., `java`, `javascript`, `plan-marshall-plugin-dev`)
+- `domain`: Domain from references.toon (e.g., `java`, `javascript`, `plan-marshall-plugin-dev`)
 - `profile`: Arbitrary profile key from marshal.json (e.g., `implementation`, `testing`, `architecture`)
 - `skills`: Array of `bundle:skill` format strings
 - `phase`: One of `init`, `outline`, `plan`, `execute`, `finalize`

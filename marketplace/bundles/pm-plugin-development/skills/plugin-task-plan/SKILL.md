@@ -311,10 +311,10 @@ delegation:
 Scripts are created within skills. The `steps` lists the script file AND its test:
 
 ```yaml
-title: Create script: manage-config
+title: Create script: manage-references
 steps:
-  - marketplace/bundles/pm-workflow/skills/manage-config/scripts/manage-config.py
-  - test/pm-workflow/manage-config/test_manage_config.py
+  - marketplace/bundles/pm-workflow/skills/manage-references/scripts/manage-references.py
+  - test/pm-workflow/manage-references/test_manage_references.py
 delegation:
   skill: pm-plugin-development:plugin-create
   workflow: create-skill

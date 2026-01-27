@@ -70,7 +70,7 @@ def test_list_with_files():
     with TestContext(plan_id='file-list') as ctx:
         # Create some files
         (ctx.plan_dir / 'task.md').write_text('Task')
-        (ctx.plan_dir / 'config.toon').write_text('plan_type: simple')
+        (ctx.plan_dir / 'references.toon').write_text('branch: main')
 
         result = run_script(SCRIPT_PATH, 'list', '--plan-id', 'file-list')
         assert result.success, f'Script failed: {result.stderr}'
@@ -218,7 +218,7 @@ def test_create_or_reference_existing_plan():
 def test_create_or_reference_existing_with_status():
     """Test create-or-reference returns phase info when status.toon exists."""
     with TestContext(plan_id='status-plan') as ctx:
-        # Create status.toon with phase info (domain is in config.toon, not status.toon)
+        # Create status.toon with phase info (domain is in references.toon, not status.toon)
         status_content = """title: Test Plan
 current_phase: outline
 """
@@ -230,7 +230,7 @@ current_phase: outline
         assert data['status'] == 'success'
         assert data['action'] == 'exists'
         assert data['current_phase'] == 'outline'
-        # Domain should NOT be in output (stored in config.toon, not status.toon)
+        # Domain should NOT be in output (stored in references.toon, not status.toon)
         assert 'domain' not in data
 
 
@@ -254,7 +254,7 @@ def test_delete_plan_success():
     with TestContext(plan_id='delete-test') as ctx:
         # Create some files in the plan
         (ctx.plan_dir / 'request.md').write_text('# Request')
-        (ctx.plan_dir / 'config.toon').write_text('plan_type: test')
+        (ctx.plan_dir / 'references.toon').write_text('branch: main')
         (ctx.plan_dir / 'tasks').mkdir()
         (ctx.plan_dir / 'tasks' / 'TASK-001.toon').write_text('title: Test')
 
@@ -264,7 +264,7 @@ def test_delete_plan_success():
         assert data['status'] == 'success'
         assert data['action'] == 'deleted'
         assert data['plan_id'] == 'delete-test'
-        assert data['files_removed'] == 3  # request.md, config.toon, TASK-001.toon
+        assert data['files_removed'] == 3  # request.md, references.toon, TASK-001.toon
         # Verify directory was deleted
         assert not ctx.plan_dir.exists()
 

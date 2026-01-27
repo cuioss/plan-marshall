@@ -1,6 +1,6 @@
 ---
 name: plan-init-agent
-description: Initialize a plan with artifacts, detect domains, write config.toon
+description: Initialize a plan with artifacts, detect domains, store in references.toon
 tools: Read, Glob, Bash, AskUserQuestion, Skill
 model: sonnet
 skills: pm-workflow:phase-1-init, plan-marshall:ref-development-standards
@@ -60,11 +60,9 @@ The skill handles:
 3. Creating plan directory
 4. Writing request.md
 5. Detecting domains
-6. Writing config.toon (domains + settings, NOT workflow_skills)
+6. Storing domains in references.toon
 7. Creating status.toon
 8. Transitioning to 2-refine phase
-
-Note: workflow_skills are resolved at runtime from marshal.json via `resolve-workflow-skill`, not stored in config.toon.
 
 ## Return Results
 
@@ -85,7 +83,6 @@ source:
 artifacts:
   request_md: request.md
   status: status.toon
-  config: config.toon
   references: references.toon
 ```
 
