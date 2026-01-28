@@ -76,13 +76,13 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-m
 | `deprecation` | Add deprecation markers to old code, provide migration path |
 | `smart_and_ask` | Assess impact and ask user when backward compatibility is uncertain |
 
-**Log**:
+**Log** (to decision.log - config read is a decision):
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[REFINE:1b] (pm-workflow:phase-2-refine) Using compatibility strategy: {compatibility}"
+  decision {plan_id} INFO "(pm-workflow:phase-2-refine) Config: compatibility={compatibility}"
 ```
 
-Store as `compatibility` and `compatibility_description` (the long description from the table above) for persistence in Step 9.
+Store as `compatibility` and `compatibility_description` (the long description from the table above) for use in Step 9 return output.
 
 ---
 
@@ -636,62 +636,36 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 When confidence reaches threshold, persist results to sinks and return minimal status.
 
-### 9.1 Persist to references.toon
+### 9.1 Persist Module Mapping to Work Directory
 
-**Persist track selection**:
+**Persist module mapping** (intermediate analysis state, not a reference):
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-references:manage-references set \
+python3 .plan/execute-script.py pm-workflow:manage-files:manage-files write \
   --plan-id {plan_id} \
-  --field track \
-  --value "{track}"
+  --file work/module_mapping.toon \
+  --content "# Module Mapping
 
-python3 .plan/execute-script.py pm-workflow:manage-references:manage-references set \
-  --plan-id {plan_id} \
-  --field track_reasoning \
-  --value "{track_reasoning}"
+{module_mapping_toon_content}
+"
 ```
 
-**Persist scope estimate**:
+**Note**: Track, scope, and compatibility are NOT persisted to references.toon:
+- **Track/scope**: Already logged to decision.log (Step 5.4, Step 9.2)
+- **Compatibility**: Read directly from marshal.json by consumers
+
+### 9.2 Log Decisions (with duplicate guard)
+
+**Note**: Track decision was already logged in Step 5.4. Only log scope and domains here if this is the first successful completion (iteration_count == 1 or first time reaching Step 9).
+
+**Log to decision.log** (scope decision - only on first completion):
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-references:manage-references set \
-  --plan-id {plan_id} \
-  --field scope_estimate \
-  --value "{scope_estimate}"
-```
+# Only log if not already logged (check iteration_count)
+IF iteration_count == 1:
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+    decision {plan_id} INFO "(pm-workflow:phase-2-refine) Scope: {scope_estimate} - Modules: {module_count}, Files: {file_estimate}"
 
-**Persist module mapping**:
-```bash
-python3 .plan/execute-script.py pm-workflow:manage-references:manage-references set \
-  --plan-id {plan_id} \
-  --field module_mapping \
-  --value "{module_mapping_json}"
-```
-
-**Persist compatibility strategy**:
-```bash
-python3 .plan/execute-script.py pm-workflow:manage-references:manage-references set \
-  --plan-id {plan_id} \
-  --field compatibility \
-  --value "{compatibility}"
-
-python3 .plan/execute-script.py pm-workflow:manage-references:manage-references set \
-  --plan-id {plan_id} \
-  --field compatibility_description \
-  --value "{compatibility_description}"
-```
-
-### 9.2 Log Decisions
-
-**Log to decision.log** (scope and track decisions):
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(pm-workflow:phase-2-refine) Scope: {scope_estimate} - Modules: {module_count}, Files: {file_estimate}"
-
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(pm-workflow:phase-2-refine) Track: {track} - {track_reasoning}"
-
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(pm-workflow:phase-2-refine) Domains: {domains}"
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+    decision {plan_id} INFO "(pm-workflow:phase-2-refine) Domains: {domains}"
 ```
 
 **Log to work.log** (completion status):
@@ -700,37 +674,42 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   work {plan_id} INFO "[REFINE:9] (pm-workflow:phase-2-refine) Complete. Confidence: {confidence}%. Track: {track}. Iterations: {iteration_count}"
 ```
 
-### 9.3 Return Minimal Output
+### 9.3 Return Output with Decisions
 
-Return minimal status - consumers load details from sinks:
+Return status with decision values - track, scope, and compatibility are included in output for consumers:
 
 ```toon
 status: success
 plan_id: {plan_id}
 confidence: {achieved_confidence}
 track: {simple|complex}
+track_reasoning: {track_reasoning}
+scope_estimate: {scope_estimate}
+compatibility: {compatibility}
+compatibility_description: {compatibility_description}
 domains: [{detected domains}]
 ```
 
 **Data Location Reference**:
-- Track selection: `references.toon` → `track`, `track_reasoning`
-- Scope estimate: `references.toon` → `scope_estimate`
-- Module mapping: `references.toon` → `module_mapping`
-- Compatibility: `references.toon` → `compatibility`, `compatibility_description`
-- Decisions: `decision.log` filtered by `(pm-workflow:phase-2-refine)`
+- Track/scope decisions: `decision.log` filtered by `(pm-workflow:phase-2-refine)`
+- Module mapping: `work/module_mapping.toon`
+- Compatibility: marshal.json (phase-2-refine config)
 - Clarifications: `request.md` → `clarifications`, `clarified_request`
 
 This output feeds into the next phase (phase-3-outline).
 
 ### 9.4 Outline Guidance (if applicable)
 
-If revision feedback contained SCOPE_CORRECTION or APPROACH_PREFERENCE items, persist to references:
+If revision feedback contained SCOPE_CORRECTION or APPROACH_PREFERENCE items, persist to work directory:
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-references:manage-references set \
+python3 .plan/execute-script.py pm-workflow:manage-files:manage-files write \
   --plan-id {plan_id} \
-  --field outline_guidance \
-  --value "{guidance_items_json}"
+  --file work/outline_guidance.toon \
+  --content "# Outline Guidance
+
+{guidance_items_toon_content}
+"
 ```
 
 ## Step 10: Transition Phase
@@ -776,10 +755,11 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 - `pm-workflow:plan-marshall:manage-lifecycle` - Phase transition management
 
 **Persistence Locations**:
-- `references.toon`: track, track_reasoning, scope_estimate, module_mapping, outline_guidance, compatibility, compatibility_description
-- `decision.log`: scope/track decisions, domain detection
-- `work.log`: workflow progress (REFINE:N entries)
+- `work/module_mapping.toon`: Module mapping analysis state
+- `work/outline_guidance.toon`: Feedback guidance for outline (if applicable)
+- `decision.log`: Track/scope decisions, config reads, domain detection
+- `work.log`: Workflow progress (REFINE:N entries)
 - `request.md`: clarifications, clarified_request
 
 **Consumed By**:
-- `pm-workflow:phase-3-outline` skill (loads track and module_mapping from references.toon)
+- `pm-workflow:phase-3-outline` skill (receives track/scope/compatibility in return output; reads module_mapping from work/)

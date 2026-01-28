@@ -98,15 +98,6 @@ python3 .plan/execute-script.py \
 
 Note: Combine flags as needed based on input parameters.
 
-Store reference to the raw inventory:
-
-```bash
-python3 .plan/execute-script.py pm-workflow:manage-references:manage-references set \
-  --plan-id {plan_id} \
-  --field inventory_raw \
-  --value "work/inventory_raw.toon"
-```
-
 ### Step 3: Convert and Group Inventory by Type
 
 Read the raw inventory file:
@@ -195,18 +186,7 @@ total_files: {total_count}
 
 Note: Include `tests` section only when `include_tests` is true and tests were discovered.
 
-### Step 5: Store Reference
-
-Link the persisted file in references.toon:
-
-```bash
-python3 .plan/execute-script.py pm-workflow:manage-references:manage-references set \
-  --plan-id {plan_id} \
-  --field inventory_filtered \
-  --value "work/inventory_filtered.toon"
-```
-
-### Step 6: Log Completion
+### Step 5: Log Completion
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \

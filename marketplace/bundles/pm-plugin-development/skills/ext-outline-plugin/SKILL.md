@@ -48,11 +48,12 @@ python3 .plan/execute-script.py pm-workflow:manage-plan-documents:manage-plan-do
   --section clarified_request
 ```
 
-Read module_mapping (for bundle filtering hints):
+Read module_mapping from work directory (for bundle filtering hints):
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-references:manage-references get \
-  --plan-id {plan_id} --field module_mapping
+python3 .plan/execute-script.py pm-workflow:manage-files:manage-files read \
+  --plan-id {plan_id} \
+  --file work/module_mapping.toon
 ```
 
 Read domains:
@@ -62,19 +63,17 @@ python3 .plan/execute-script.py pm-workflow:manage-references:manage-references 
   --plan-id {plan_id} --field domains
 ```
 
-Read compatibility:
+Read compatibility from marshal.json project configuration:
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-references:manage-references get \
-  --plan-id {plan_id} --field compatibility
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+  plan phase-2-refine get --field compatibility --trace-plan-id {plan_id}
 ```
 
-Also read the long description:
-
-```bash
-python3 .plan/execute-script.py pm-workflow:manage-references:manage-references get \
-  --plan-id {plan_id} --field compatibility_description
-```
+Derive the long description from the compatibility value:
+- `breaking` → "Clean-slate approach, no deprecation nor transitionary comments"
+- `deprecation` → "Add deprecation markers to old code, provide migration path"
+- `smart_and_ask` → "Assess impact and ask user when backward compatibility is uncertain"
 
 Store as `compatibility` and `compatibility_description` for inclusion in the solution outline header metadata.
 

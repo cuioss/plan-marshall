@@ -73,14 +73,14 @@ Extract key fields:
 
 ### Step 1.5: Read Compatibility Strategy
 
-Read the compatibility approach from references.toon (persisted during phase-2-refine):
+Read the compatibility approach from marshal.json project configuration:
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-references:manage-references get \
-  --plan-id {plan_id} --field compatibility
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+  plan phase-2-refine get --field compatibility --trace-plan-id {plan_id}
 ```
 
-**No fallback** — if field not found, fail with error and abort task. This ensures phase-2-refine ran correctly before execution.
+**No fallback** — if field not found, fail with error and abort task. This ensures project is configured correctly.
 
 Extract `compatibility` from the output. Apply throughout all subsequent steps:
 
@@ -307,7 +307,7 @@ If changes conflict with existing code:
 
 **Script Notations** (use EXACTLY as shown):
 - `pm-workflow:manage-tasks:manage-tasks` - Task operations (get, update, update-step)
-- `pm-workflow:manage-references:manage-references` - References read (get compatibility)
+- `plan-marshall:manage-plan-marshall-config:plan-marshall-config` - Read compatibility from project config
 - `plan-marshall:manage-lessons:manage-lesson` - Record lessons (add)
 
 **Domain Skills Applied** (loaded by agent from task.skills):

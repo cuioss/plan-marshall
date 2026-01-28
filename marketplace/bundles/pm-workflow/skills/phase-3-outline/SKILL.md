@@ -42,16 +42,20 @@ Step 1: Load Inputs → Step 2: Route by Track → {Simple: Steps 3-5 | Complex:
 
 ## Step 1: Load Inputs
 
-**Purpose**: Load track, request, compatibility, and context from sinks.
+**Purpose**: Load track, request, compatibility, and context from phase-2-refine output and sinks.
 
-### 1.1 Read Track Selection
+**Note**: This skill receives `track`, `track_reasoning`, `scope_estimate`, `compatibility`, and `compatibility_description` from the phase-2-refine return output. These values are passed as input parameters.
 
+### 1.1 Receive Track from Phase-2-Refine Output
+
+The `track` value (simple | complex) is received from the phase-2-refine return output, not read from references.toon.
+
+**If track not provided in input**, extract from decision.log:
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-references:manage-references get \
-  --plan-id {plan_id} --field track
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  read --plan-id {plan_id} --type decision | grep "(pm-workflow:phase-2-refine) Track:"
 ```
-
-Parse the output to get `track` value (simple | complex).
+Parse the output to extract track value from: `(pm-workflow:phase-2-refine) Track: {track} - {reasoning}`
 
 ### 1.2 Read Request
 
@@ -65,9 +69,12 @@ python3 .plan/execute-script.py pm-workflow:manage-plan-documents:manage-plan-do
 
 ### 1.3 Read Module Mapping
 
+Read from work directory (persisted by phase-2-refine):
+
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-references:manage-references get \
-  --plan-id {plan_id} --field module_mapping
+python3 .plan/execute-script.py pm-workflow:manage-files:manage-files read \
+  --plan-id {plan_id} \
+  --file work/module_mapping.toon
 ```
 
 ### 1.4 Read Domains
@@ -77,27 +84,26 @@ python3 .plan/execute-script.py pm-workflow:manage-references:manage-references 
   --plan-id {plan_id} --field domains
 ```
 
-### 1.5 Read Compatibility
+### 1.5 Receive Compatibility from Phase-2-Refine Output
 
+The `compatibility` and `compatibility_description` values are received from the phase-2-refine return output.
+
+**If compatibility not provided in input**, read from marshal.json:
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-references:manage-references get \
-  --plan-id {plan_id} --field compatibility
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+  plan phase-2-refine get --field compatibility --trace-plan-id {plan_id}
 ```
 
-Also read the long description:
+Store as `compatibility` and derive `compatibility_description` from the value:
+- `breaking` → "Clean-slate approach, no deprecation nor transitionary comments"
+- `deprecation` → "Add deprecation markers to old code, provide migration path"
+- `smart_and_ask` → "Assess impact and ask user when backward compatibility is uncertain"
 
-```bash
-python3 .plan/execute-script.py pm-workflow:manage-references:manage-references get \
-  --plan-id {plan_id} --field compatibility_description
-```
-
-Store as `compatibility` and `compatibility_description` for inclusion in the solution outline header metadata.
-
-### 1.6 Log Context
+### 1.6 Log Context (to work.log - status, not decision)
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(pm-workflow:phase-3-outline) Track: {track}, domains: {domains}, compatibility: {compatibility}"
+  work {plan_id} INFO "[STATUS] (pm-workflow:phase-3-outline) Starting outline: track={track}, domains={domains}, compatibility={compatibility}"
 ```
 
 ---
@@ -504,11 +510,11 @@ qgate_passed: {true|false}
 **Invoked by**: `pm-workflow:solution-outline-agent` (thin agent)
 
 **Script Notations** (use EXACTLY as shown):
-- `pm-workflow:manage-references:manage-references` - Read track, module_mapping, compatibility, compatibility_description
+- `pm-workflow:manage-files:manage-files` - Read module_mapping from work/module_mapping.toon
 - `pm-workflow:manage-plan-documents:manage-plan-documents` - Read request
 - `pm-workflow:manage-references:manage-references` - Read domains
 - `pm-workflow:manage-solution-outline:manage-solution-outline` - Write solution document
-- `plan-marshall:manage-plan-marshall-config:plan-marshall-config` - Resolve domain skill
+- `plan-marshall:manage-plan-marshall-config:plan-marshall-config` - Resolve domain skill, read compatibility (fallback)
 - `plan-marshall:manage-logging:manage-log` - Decision and work logging
 
 **Loads** (Complex Track):

@@ -59,16 +59,16 @@ For modifying, migrating, or refactoring existing components. Uses discovery and
 
 ### Step 1: Load Persisted Inventory
 
-The Assessment Protocol (SKILL.md) already ran the ext-outline-inventory-agent which persisted results. Read the filtered inventory:
+The Assessment Protocol (SKILL.md) already ran the ext-outline-inventory-agent which persisted results. Read the filtered inventory from the known location:
 
 ```bash
-# Check reference exists
-python3 .plan/execute-script.py pm-workflow:manage-references:manage-references get \
+# Check inventory file exists
+python3 .plan/execute-script.py pm-workflow:manage-files:manage-files exists \
   --plan-id {plan_id} \
-  --field inventory_filtered
+  --file work/inventory_filtered.toon
 ```
 
-If `inventory_filtered` is not set, ERROR: "Assessment incomplete - inventory_filtered not persisted"
+If file does not exist, ERROR: "Assessment incomplete - inventory_filtered not persisted"
 
 ```bash
 # Read the inventory file

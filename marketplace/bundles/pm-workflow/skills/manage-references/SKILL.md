@@ -68,13 +68,7 @@ JWT Guide,https://jwt.io/introduction
 | `test_files` | list | Test files created/modified |
 | `domains` | list | Plan domains (e.g., java, documentation) |
 | `external_docs` | table | External documentation references |
-| `track` | string | Outline track selection (simple, complex) |
-| `track_reasoning` | string | Reasoning for track selection |
-| `scope_estimate` | string | Scope size (single_file, single_module, few_files, multi_module, codebase_wide) |
-| `module_mapping` | string | JSON mapping of requirements to modules |
-| `compatibility` | string | Compatibility strategy (breaking, deprecation, smart_and_ask) |
-| `compatibility_description` | string | Human-readable description of compatibility strategy |
-| `outline_guidance` | string | Guidance items from review feedback for outline creation |
+| `affected_files` | list | Files affected during outline phase (for execution tracking) |
 
 ---
 
