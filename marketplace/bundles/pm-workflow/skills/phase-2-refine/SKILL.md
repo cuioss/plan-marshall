@@ -196,7 +196,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 **If feedback provided**, log it:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[REFINE:2] (pm-workflow:phase-2-refine) Processing with feedback: {feedback}"
+  work {plan_id} INFO '[REFINE:2] (pm-workflow:phase-2-refine) Processing with feedback: {feedback}'
 ```
 
 ---

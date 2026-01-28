@@ -177,7 +177,7 @@ For certain change_types, derive a content filter pattern to reduce LLM analysis
 IF content filter is derived:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(pm-plugin-development:ext-outline-plugin) Content filter: pattern='{pattern}', derived from '{request_keywords}'"
+  decision {plan_id} INFO '(pm-plugin-development:ext-outline-plugin) Content filter: pattern={pattern}, derived from {request_keywords}'
 ```
 
 IF no content filter applicable:
@@ -218,7 +218,7 @@ The agent:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[PROGRESS] (pm-plugin-development:ext-outline-plugin) Inventory: {total} files, content filter: {input} → {matched} ({excluded} excluded)"
+  work {plan_id} INFO '[PROGRESS] (pm-plugin-development:ext-outline-plugin) Inventory: {total} files, content filter: {input} → {matched} ({excluded} excluded)'
 ```
 
 ### Error Handling
