@@ -362,6 +362,33 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   decision {plan_id} INFO "(pm-workflow:phase-3-outline:qgate) Full: {passed} passed, {flagged} flagged"
 ```
 
+### 9.4 Handle Q-Gate Corrections (if flagged > 0)
+
+If Q-Gate flagged false positives or missing coverage:
+
+1. **Update solution_outline.md** with corrections using `--force`:
+
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-solution-outline:manage-solution-outline write \
+  --plan-id {plan_id} --force <<'EOF'
+{corrected solution document}
+EOF
+```
+
+2. **Update references** (e.g., remove false positives from modified_files):
+
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-references:manage-references set-list \
+  --plan-id {plan_id} --field modified_files --values "{corrected file list}"
+```
+
+3. **Log the correction**:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  work {plan_id} INFO "[ARTIFACT] (pm-workflow:phase-3-outline) Updated solution_outline.md - {correction reason}"
+```
+
 → **Continue to Step 10**
 
 ---
