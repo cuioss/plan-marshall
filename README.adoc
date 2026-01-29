@@ -15,7 +15,6 @@ image:https://github.com/cuioss/plan-marshall/actions/workflows/python-verify.ym
 
 [.discrete]
 == What is it?
-
 An orchestration layer for AI coding assistants (currently Claude Code) that enforces consistency, reliability, and more predictable outputs. 
 
 == Prerequisites
