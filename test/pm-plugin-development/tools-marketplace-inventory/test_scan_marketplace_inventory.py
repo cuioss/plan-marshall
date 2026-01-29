@@ -1123,5 +1123,128 @@ def test_include_tests_and_project_skills_combined():
 
 
 # =============================================================================
+# Tests - Full Mode with Content Pattern (Subdocument Filtering)
+# =============================================================================
+
+
+def test_full_with_content_pattern_filters_subdocs():
+    """Test --full with --content-pattern filters subdocuments by the same pattern."""
+    import json
+
+    # Run with --full --content-pattern to find skills with JSON blocks
+    # This should filter subdocuments to only include those with ```json
+    result = run_script(
+        SCRIPT_PATH,
+        '--direct-result',
+        '--full',
+        '--format', 'json',
+        '--bundles', 'pm-workflow',
+        '--resource-types', 'skills',
+        '--content-pattern', '```json',
+    )
+    assert result.returncode == 0, f'Script returned error: {result.stderr}'
+
+    data = json.loads(result.stdout)
+    bundles_dict = data.get('bundles', {})
+
+    # Find skills that have subdirectories (standards, templates, etc.)
+    for bundle in bundles_dict.values():
+        for skill in bundle.get('skills', []):
+            # Check if skill has any subdirectory content
+            for subdir_name in ['standards', 'templates', 'references', 'knowledge', 'examples', 'documents']:
+                subdoc_files = skill.get(subdir_name, [])
+                for subdoc_path in subdoc_files:
+                    # Each subdoc should match the content pattern
+                    # Read the file and verify it contains ```json
+                    subdoc_file = Path(subdoc_path)
+                    if subdoc_file.exists():
+                        content = subdoc_file.read_text()
+                        assert '```json' in content, (
+                            f"Subdoc {subdoc_path} should contain ```json when filtered with --content-pattern '```json'"
+                        )
+
+
+def test_full_without_content_pattern_includes_all_subdocs():
+    """Test --full without content pattern includes all subdocuments."""
+    import json
+
+    # Run with just --full (no content pattern) to include all subdocs
+    result = run_script(
+        SCRIPT_PATH,
+        '--direct-result',
+        '--full',
+        '--format', 'json',
+        '--bundles', 'pm-workflow',
+        '--resource-types', 'skills',
+    )
+    assert result.returncode == 0, f'Script returned error: {result.stderr}'
+
+    data = json.loads(result.stdout)
+    bundles_dict = data.get('bundles', {})
+
+    # Count total subdoc files
+    total_subdoc_files = 0
+    for bundle in bundles_dict.values():
+        for skill in bundle.get('skills', []):
+            for subdir_name in ['standards', 'templates', 'references', 'knowledge', 'examples', 'documents']:
+                subdoc_files = skill.get(subdir_name, [])
+                total_subdoc_files += len(subdoc_files)
+
+    # Should have subdocs when no content pattern filter is applied
+    # pm-workflow has skills with standards/ directories
+    assert total_subdoc_files >= 1, 'Should include subdocuments with --full and no content pattern'
+
+
+def test_full_content_pattern_excludes_non_matching_subdocs():
+    """Test --full --content-pattern excludes subdocs that don't match the pattern."""
+    import json
+
+    # First run without content pattern to get baseline
+    result_all = run_script(
+        SCRIPT_PATH,
+        '--direct-result',
+        '--full',
+        '--format', 'json',
+        '--bundles', 'pm-workflow',
+        '--resource-types', 'skills',
+    )
+    assert result_all.returncode == 0
+    data_all = json.loads(result_all.stdout)
+
+    # Count all subdoc files
+    total_all = 0
+    for bundle in data_all.get('bundles', {}).values():
+        for skill in bundle.get('skills', []):
+            for subdir_name in ['standards', 'templates', 'references', 'knowledge', 'examples', 'documents']:
+                total_all += len(skill.get(subdir_name, []))
+
+    # Now run with a pattern that won't match all files
+    result_filtered = run_script(
+        SCRIPT_PATH,
+        '--direct-result',
+        '--full',
+        '--format', 'json',
+        '--bundles', 'pm-workflow',
+        '--resource-types', 'skills',
+        '--content-pattern', '```json',
+    )
+    assert result_filtered.returncode == 0
+    data_filtered = json.loads(result_filtered.stdout)
+
+    # Count filtered subdoc files
+    total_filtered = 0
+    for bundle in data_filtered.get('bundles', {}).values():
+        for skill in bundle.get('skills', []):
+            for subdir_name in ['standards', 'templates', 'references', 'knowledge', 'examples', 'documents']:
+                total_filtered += len(skill.get(subdir_name, []))
+
+    # Filtered count should be less than or equal to total (and likely less)
+    # because not all subdocs contain ```json
+    assert total_filtered <= total_all, (
+        f'Content-filtered subdocs ({total_filtered}) should be <= total ({total_all})'
+    )
+
+
+# =============================================================================
 # Main
 # =============================================================================

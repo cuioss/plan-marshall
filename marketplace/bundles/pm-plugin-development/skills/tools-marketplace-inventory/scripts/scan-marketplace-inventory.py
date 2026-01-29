@@ -163,17 +163,41 @@ def extract_frontmatter_fields(file_path: Path) -> dict[str, Any]:
     return result
 
 
-def discover_skill_subdirs(skill_dir: Path) -> dict[str, list[str]]:
+def discover_skill_subdirs(
+    skill_dir: Path,
+    content_include: list[str] | None = None,
+    content_exclude: list[str] | None = None,
+) -> dict[str, list[str]]:
     """Discover subdirectories in a skill and list their files.
 
     Returns dict mapping subdir name to list of repo-relative file paths.
     Excludes 'scripts' directory (handled separately).
+
+    When content_include/content_exclude are provided, filters subdocument files
+    by content patterns (same logic as main resource filtering).
     """
     subdirs: dict[str, list[str]] = {}
 
     for subdir in sorted(skill_dir.iterdir()):
         if subdir.is_dir() and subdir.name != 'scripts':
-            files = sorted([safe_relative_path(f) for f in subdir.iterdir() if f.is_file()])
+            files = []
+            for f in sorted(subdir.iterdir()):
+                if not f.is_file():
+                    continue
+
+                # Filter by content if patterns provided
+                if content_include or content_exclude:
+                    try:
+                        content = f.read_text()
+                    except (OSError, UnicodeDecodeError):
+                        continue
+                    if content_include and not matches_any_content_pattern(content, content_include):
+                        continue
+                    if content_exclude and matches_any_content_pattern(content, content_exclude):
+                        continue
+
+                files.append(safe_relative_path(f))
+
             if files:
                 subdirs[subdir.name] = files
 
@@ -222,8 +246,18 @@ def discover_commands(bundle_dir: Path, include_descriptions: bool, full: bool =
     return commands
 
 
-def discover_skills(bundle_dir: Path, include_descriptions: bool, full: bool = False) -> list[dict]:
-    """Discover skill directories containing SKILL.md."""
+def discover_skills(
+    bundle_dir: Path,
+    include_descriptions: bool,
+    full: bool = False,
+    content_include: list[str] | None = None,
+    content_exclude: list[str] | None = None,
+) -> list[dict]:
+    """Discover skill directories containing SKILL.md.
+
+    When content_include/content_exclude are provided with full=True,
+    subdocument files are also filtered by the same content patterns.
+    """
     skills_dir = bundle_dir / 'skills'
     if not skills_dir.is_dir():
         return []
@@ -236,8 +270,8 @@ def discover_skills(bundle_dir: Path, include_descriptions: bool, full: bool = F
             skill['path'] = safe_relative_path(skill_dir)
             skill['description'] = extract_description(skill_md)
             skill.update(extract_frontmatter_fields(skill_md))
-            # Add subdirectory contents
-            subdirs = discover_skill_subdirs(skill_dir)
+            # Add subdirectory contents (filtered if content patterns active)
+            subdirs = discover_skill_subdirs(skill_dir, content_include, content_exclude)
             skill.update(subdirs)
         elif include_descriptions:
             skill['path'] = safe_relative_path(skill_dir)
@@ -502,7 +536,11 @@ def process_bundle(
     # Discover and filter resources
     agents = discover_agents(bundle_dir, include_descriptions, full) if include['agents'] else []
     commands = discover_commands(bundle_dir, include_descriptions, full) if include['commands'] else []
-    skills = discover_skills(bundle_dir, include_descriptions, full) if include['skills'] else []
+    skills = (
+        discover_skills(bundle_dir, include_descriptions, full, content_include, content_exclude)
+        if include['skills']
+        else []
+    )
     scripts = discover_scripts(bundle_dir, bundle_name) if include['scripts'] else []
     tests = discover_tests(bundle_name) if include_tests and include.get('tests', True) else []
 
