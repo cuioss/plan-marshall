@@ -360,6 +360,28 @@ Create deliverables from affected files, grouped by bundle (or ~5-8 files per de
 **Execution Skills** (deliverables delegate to these):
 - `pm-plugin-development:plugin-maintain` - For modifying existing components
 
+### Step 6.5: Validate Deliverable Verification
+
+**MANDATORY**: Before proceeding, validate each deliverable has proper verification.
+
+For each deliverable:
+1. Check that Verification section includes `/plugin-doctor` command
+2. If missing: **ERROR** - "Deliverable {N} missing required plugin-doctor verification"
+
+```
+FOR each deliverable:
+  IF verification.commands does NOT contain pattern "/plugin-doctor":
+    HALT with error:
+      status: error
+      error_type: missing_verification
+      message: "Deliverable {N} missing required plugin-doctor verification"
+      deliverable: {deliverable_title}
+
+  # Ensure path matches affected files
+  IF plugin-doctor path does NOT match any affected_file:
+    WARN: "plugin-doctor path should reference affected component paths"
+```
+
 **Note**: After this step completes, return to SKILL.md Step 5 which writes solution_outline.md.
 
 ---
@@ -386,13 +408,26 @@ Create deliverables from affected files, grouped by bundle (or ~5-8 files per de
 **Change per file:** {What will be created or modified}
 
 **Verification:**
-- Command: `/pm-plugin-development:plugin-doctor --component {path}`
-- Criteria: No quality issues detected
+- Command: `/pm-plugin-development:plugin-doctor --component {affected_path}` (REQUIRED for each affected component)
+- Command: {additional domain-specific verification} (optional)
+- Criteria: No plugin-doctor quality issues, {additional criteria}
 
 **Success Criteria:**
 - {Specific criterion 1}
 - {Specific criterion 2}
 ```
+
+### Verification Requirements
+
+**MANDATORY**: Every deliverable MUST include `/plugin-doctor` verification for each affected plugin component.
+
+| Component Type | Required Verification Command |
+|----------------|------------------------------|
+| Skills | `/pm-plugin-development:plugin-doctor --component marketplace/bundles/{bundle}/skills/{skill}/` |
+| Agents | `/pm-plugin-development:plugin-doctor --component marketplace/bundles/{bundle}/agents/{agent}.md` |
+| Commands | `/pm-plugin-development:plugin-doctor --component marketplace/bundles/{bundle}/commands/{command}.md` |
+
+Additional domain-specific checks (grep for patterns, format validation) may supplement but NEVER replace plugin-doctor.
 
 ### Field Reference
 

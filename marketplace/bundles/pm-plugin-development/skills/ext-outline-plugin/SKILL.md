@@ -331,6 +331,13 @@ When tests are in component scope:
 
 After deliverables are built, write solution_outline.md. The header MUST include `compatibility: {compatibility} -- {compatibility_description}` (read from references.toon in Step 1).
 
+**CRITICAL - Plugin-Doctor Verification**: Every deliverable's Verification section MUST include `/plugin-doctor` for each affected component path:
+- For skills: `/pm-plugin-development:plugin-doctor --component {skill_path}`
+- For agents: `/pm-plugin-development:plugin-doctor --component {agent_path}`
+- For commands: `/pm-plugin-development:plugin-doctor --component {command_path}`
+
+Additional domain-specific checks (like grep for format validation) may be included but do NOT replace plugin-doctor.
+
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-solution-outline:manage-solution-outline write \
   --plan-id {plan_id} <<'EOF'
