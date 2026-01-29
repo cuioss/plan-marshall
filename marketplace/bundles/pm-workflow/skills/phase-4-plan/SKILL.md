@@ -101,6 +101,9 @@ For each deliverable D:
   1. Query architecture: module --name {D.module}
   For each profile P in D.profiles:
     2. Extract skills: module.skills_by_profile.{P}
+       - Load all `defaults` directly into task.skills
+       - For each `optional`, evaluate its `description` against deliverable context
+       - Include optionals whose descriptions match the task requirements
     3. Create task with profile P and resolved skills
     4. If P = testing, add depends on implementation task
 ```
@@ -110,6 +113,44 @@ For each deliverable D:
 python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture \
   module --name {deliverable.module} \
   --trace-plan-id {plan_id}
+```
+
+**Skills Resolution** (new defaults/optionals structure):
+
+The architecture returns skills in structured format:
+```toon
+skills_by_profile:
+  implementation:
+    defaults[1]{skill,description}:
+      - pm-plugin-development:plugin-architecture,"Architecture principles..."
+    optionals[2]{skill,description}:
+      - pm-plugin-development:plugin-script-architecture,"Script development standards..."
+      - plan-marshall:ref-toon-format,"TOON format knowledge for output specifications - use when migrating to/from TOON"
+```
+
+**Resolution Logic**:
+1. Load ALL `defaults` directly into task.skills (always required)
+2. For EACH `optional`, match its `description` against deliverable context:
+   - Deliverable title
+   - Change type (feature, fix, refactor, etc.)
+   - Affected files and their types
+   - Deliverable description
+3. Include optional if description indicates relevance to the task
+4. Log reasoning for each optional skill decision
+
+**Example Reasoning** (for JSON→TOON migration task):
+```
+Optional: plan-marshall:ref-toon-format
+Description: "TOON format knowledge for output specifications - use when migrating to/from TOON"
+Deliverable: "Migrate JSON outputs to TOON format"
+Match: YES - description mentions "migrating to/from TOON", deliverable is TOON migration
+→ INCLUDE
+
+Optional: pm-plugin-development:plugin-script-architecture
+Description: "Script development standards covering implementation patterns, testing, and output contracts"
+Deliverable: "Migrate JSON outputs to TOON format"
+Match: YES - this is a script output change, needs output contract standards
+→ INCLUDE
 ```
 
 **1:N Task Creation Flow**:
@@ -133,7 +174,7 @@ solution_outline.md                        TASK-*.toon (created by task-plan)
 **Log skill resolution** (for each task created):
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[SKILL] (pm-workflow:phase-4-plan) Resolved skills for TASK-{N} from {module}.{profile}: [{task.skills}]"
+  work {plan_id} INFO "[SKILL] (pm-workflow:phase-4-plan) Resolved skills for TASK-{N} from {module}.{profile}: defaults=[{defaults}] optionals_selected=[{optionals}]"
 ```
 
 **Aggregation Rule**: When aggregating multiple deliverables, they must have same profiles list. Merge resolved skills arrays (union) per profile.

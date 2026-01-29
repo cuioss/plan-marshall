@@ -229,7 +229,7 @@ LLM-generated enrichments referencing modules by name.
 
 ### Skills by Profile
 
-The `skills_by_profile` field organizes skills by execution profile:
+The `skills_by_profile` field organizes skills by execution profile with defaults/optionals structure:
 
 | Profile | Purpose |
 |---------|---------|
@@ -237,6 +237,36 @@ The `skills_by_profile` field organizes skills by execution profile:
 | `module_testing` | Skills for writing unit tests |
 | `integration-testing` | Skills for integration tests (if applicable) |
 | `benchmark-testing` | Skills for performance tests (if applicable) |
+
+**Structure** (defaults/optionals with descriptions):
+```json
+{
+  "skills_by_profile": {
+    "implementation": {
+      "defaults": [
+        {
+          "skill": "pm-plugin-development:plugin-architecture",
+          "description": "Architecture principles for building marketplace components"
+        }
+      ],
+      "optionals": [
+        {
+          "skill": "pm-plugin-development:plugin-script-architecture",
+          "description": "Script development standards covering implementation patterns"
+        },
+        {
+          "skill": "plan-marshall:ref-toon-format",
+          "description": "TOON format knowledge for output specifications - use when migrating to/from TOON"
+        }
+      ]
+    }
+  }
+}
+```
+
+**Resolution behavior**:
+- `defaults`: Always loaded for the profile
+- `optionals`: LLM-selected based on description match against deliverable context
 
 Skills are derived from configured domain skill sets. Query available domains and their skills via:
 ```bash

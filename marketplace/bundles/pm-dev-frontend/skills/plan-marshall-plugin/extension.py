@@ -34,19 +34,49 @@ class Extension(ExtensionBase):
             },
             'profiles': {
                 'core': {
-                    'defaults': ['pm-dev-frontend:cui-javascript'],
-                    'optionals': ['pm-dev-frontend:js-fix-jsdoc', 'pm-dev-frontend:cui-javascript-project'],
+                    'defaults': [
+                        {
+                            'skill': 'pm-dev-frontend:cui-javascript',
+                            'description': 'Core JavaScript development standards covering ES modules, modern patterns, and code quality',
+                        }
+                    ],
+                    'optionals': [
+                        {
+                            'skill': 'pm-dev-frontend:js-fix-jsdoc',
+                            'description': 'Fix JSDoc errors and warnings from build/lint with content preservation',
+                        },
+                        {
+                            'skill': 'pm-dev-frontend:cui-javascript-project',
+                            'description': 'JavaScript project structure, package.json configuration, and Maven integration',
+                        },
+                    ],
                 },
                 'implementation': {
                     'defaults': [],
                     'optionals': [
-                        'pm-dev-frontend:js-enforce-eslint',
-                        'pm-dev-frontend:js-refactor-code',
+                        {
+                            'skill': 'pm-dev-frontend:js-enforce-eslint',
+                            'description': 'ESLint, Prettier, and Stylelint configuration and enforcement with systematic fixing',
+                        },
+                        {
+                            'skill': 'pm-dev-frontend:js-refactor-code',
+                            'description': 'Execute systematic JavaScript refactoring with standards compliance verification',
+                        },
                     ],
                 },
                 'module_testing': {
-                    'defaults': ['pm-dev-frontend:js-implement-tests'],
-                    'optionals': ['pm-dev-frontend:cui-cypress'],
+                    'defaults': [
+                        {
+                            'skill': 'pm-dev-frontend:js-implement-tests',
+                            'description': 'Self-contained JavaScript test implementation with verification and iteration',
+                        }
+                    ],
+                    'optionals': [
+                        {
+                            'skill': 'pm-dev-frontend:cui-cypress',
+                            'description': 'Cypress E2E testing standards including framework adaptations and best practices',
+                        }
+                    ],
                 },
                 'quality': {'defaults': [], 'optionals': []},
             },

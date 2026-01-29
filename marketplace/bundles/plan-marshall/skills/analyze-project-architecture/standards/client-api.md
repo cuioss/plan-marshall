@@ -164,11 +164,15 @@ internal_dependencies[0]:
 
 skills_by_profile:
   implementation:
-    - pm-dev-java:java-core
-    - pm-dev-java:java-null-safety
+    defaults[1]{skill,description}:
+      - pm-dev-java:java-core,"Core Java patterns including modern features and code quality"
+    optionals[2]{skill,description}:
+      - pm-dev-java:java-null-safety,"JSpecify null safety annotations with @NullMarked, @Nullable"
+      - pm-dev-java:java-lombok,"Lombok patterns including @Delegate, @Builder, @Value"
   unit-testing:
-    - pm-dev-java:java-core
-    - pm-dev-java:junit-core
+    defaults[1]{skill,description}:
+      - pm-dev-java:junit-core,"JUnit 5 testing patterns with AAA structure"
+    optionals[0]{skill,description}:
 
 commands[3]:
   - module-tests
@@ -214,11 +218,15 @@ internal_dependencies[0]:
 
 skills_by_profile:
   implementation:
-    - pm-dev-java:java-core
-    - pm-dev-java:java-null-safety
+    defaults[1]{skill,description}:
+      - pm-dev-java:java-core,"Core Java patterns including modern features"
+    optionals[2]{skill,description}:
+      - pm-dev-java:java-null-safety,"JSpecify null safety annotations"
+      - pm-dev-java:java-lombok,"Lombok patterns for reducing boilerplate"
   unit-testing:
-    - pm-dev-java:java-core
-    - pm-dev-java:junit-core
+    defaults[1]{skill,description}:
+      - pm-dev-java:junit-core,"JUnit 5 testing patterns"
+    optionals[0]{skill,description}:
 skills_by_profile_reasoning: Plain Java library, no CDI/Quarkus runtime
 
 commands[3]:

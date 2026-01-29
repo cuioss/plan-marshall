@@ -163,6 +163,18 @@ def validate_skill_domains_structure(domains: dict, bundle_name: str) -> list:
     return issues
 
 
+def _extract_skill_ref(entry) -> str:
+    """Extract skill reference from an entry (string or dict).
+
+    Handles both legacy string format and new dict format:
+    - String: "pm-dev-java:java-core"
+    - Dict: {"skill": "pm-dev-java:java-core", "description": "..."}
+    """
+    if isinstance(entry, dict):
+        return entry.get('skill', '')
+    return entry
+
+
 def validate_skill_references(domains: dict, bundle_name: str) -> list:
     """Validate that all skill references in profiles actually exist."""
     issues = []
@@ -174,14 +186,16 @@ def validate_skill_references(domains: dict, bundle_name: str) -> list:
             continue
 
         # Check defaults
-        for skill_ref in config.get('defaults', []):
+        for entry in config.get('defaults', []):
+            skill_ref = _extract_skill_ref(entry)
             if not skill_exists(skill_ref):
                 issues.append(
                     f"{bundle_name}: skill reference '{skill_ref}' in profiles.{category}.defaults does not exist"
                 )
 
         # Check optionals
-        for skill_ref in config.get('optionals', []):
+        for entry in config.get('optionals', []):
+            skill_ref = _extract_skill_ref(entry)
             if not skill_exists(skill_ref):
                 issues.append(
                     f"{bundle_name}: skill reference '{skill_ref}' in profiles.{category}.optionals does not exist"

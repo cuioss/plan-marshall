@@ -37,6 +37,77 @@ from extension_discovery import (  # type: ignore[import-not-found]
 )
 
 
+def _extract_skill_name(entry: str | dict) -> str:
+    """Extract skill name from a skill entry.
+
+    Handles both legacy string format and new dict format:
+    - String: "pm-dev-java:java-core" -> "pm-dev-java:java-core"
+    - Dict: {"skill": "pm-dev-java:java-core", "description": "..."} -> "pm-dev-java:java-core"
+
+    Args:
+        entry: Skill entry (string or dict)
+
+    Returns:
+        Skill name string
+    """
+    if isinstance(entry, dict):
+        skill = entry.get('skill', '')
+        return str(skill) if skill else ''
+    return entry
+
+
+def _extract_skill_description(entry: str | dict) -> str:
+    """Extract description from a skill entry.
+
+    Args:
+        entry: Skill entry (string or dict)
+
+    Returns:
+        Description string (empty if not available)
+    """
+    if isinstance(entry, dict):
+        desc = entry.get('description', '')
+        return str(desc) if desc else ''
+    return ''
+
+
+def _extract_skill_names(entries: list) -> list[str]:
+    """Extract skill names from a list of skill entries.
+
+    Args:
+        entries: List of skill entries (strings or dicts)
+
+    Returns:
+        List of skill name strings
+    """
+    return [_extract_skill_name(e) for e in entries]
+
+
+def _build_skill_dict_with_descriptions(entries: list) -> dict[str, str]:
+    """Build a dict mapping skill names to descriptions.
+
+    For entries with embedded descriptions, use those.
+    For string-only entries, fetch description from SKILL.md.
+
+    Args:
+        entries: List of skill entries (strings or dicts)
+
+    Returns:
+        Dict mapping skill names to descriptions
+    """
+    result = {}
+    for entry in entries:
+        skill_name = _extract_skill_name(entry)
+        if not skill_name:
+            continue
+        # Use embedded description if available, otherwise fetch from SKILL.md
+        desc = _extract_skill_description(entry)
+        if not desc:
+            desc = get_skill_description(skill_name)
+        result[skill_name] = desc
+    return result
+
+
 def discover_available_domains(project_root: Path | None = None) -> dict:
     """Discover domains from extension.py files.
 
@@ -573,9 +644,9 @@ def cmd_resolve_domain_skills(args) -> int:
     defaults = core_config.get('defaults', []) + profile_config.get('defaults', [])
     optionals = core_config.get('optionals', []) + profile_config.get('optionals', [])
 
-    # Build output with descriptions
-    defaults_with_desc = {skill: get_skill_description(skill) for skill in defaults}
-    optionals_with_desc = {skill: get_skill_description(skill) for skill in optionals}
+    # Build output with descriptions (handles both legacy and new formats)
+    defaults_with_desc = _build_skill_dict_with_descriptions(defaults)
+    optionals_with_desc = _build_skill_dict_with_descriptions(optionals)
 
     return success_exit(
         {'domain': domain, 'profile': profile, 'defaults': defaults_with_desc, 'optionals': optionals_with_desc}
@@ -648,23 +719,23 @@ def cmd_get_skills_by_profile(args) -> int:
     if not profiles:
         return error_exit(f"Bundle '{bundle}' has no profiles defined")
 
-    # Get core skills (always included)
+    # Get core skills (always included) - extract names from potentially structured entries
     core_config = profiles.get('core', {})
-    core_defaults = core_config.get('defaults', [])
-    core_optionals = core_config.get('optionals', [])
+    core_defaults = _extract_skill_names(core_config.get('defaults', []))
+    core_optionals = _extract_skill_names(core_config.get('optionals', []))
     core_all = core_defaults + core_optionals
 
     # Build skills_by_profile from available profiles in extension
-    skills_by_profile = {}
+    skills_by_profile: dict[str, list[str]] = {}
 
     for profile_name in ['implementation', 'module_testing', 'integration_testing', 'documentation']:
         profile_config = profiles.get(profile_name, {})
-        profile_defaults = profile_config.get('defaults', [])
-        profile_optionals = profile_config.get('optionals', [])
+        profile_defaults = _extract_skill_names(profile_config.get('defaults', []))
+        profile_optionals = _extract_skill_names(profile_config.get('optionals', []))
 
         # Combine: core + profile skills (remove duplicates, preserve order)
-        combined = []
-        seen = set()
+        combined: list[str] = []
+        seen: set[str] = set()
         for skill in core_all + profile_defaults + profile_optionals:
             if skill not in seen:
                 combined.append(skill)

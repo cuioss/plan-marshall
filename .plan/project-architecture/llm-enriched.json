@@ -32,14 +32,38 @@
       "key_dependencies": [],
       "key_dependencies_reasoning": "Root module aggregates all bundles and documentation as a marketplace",
       "skills_by_profile": {
-        "implementation": [
-          "pm-plugin-development:plugin-architecture",
-          "pm-plugin-development:plugin-script-architecture"
-        ],
-        "module_testing": [
-          "pm-plugin-development:plugin-architecture",
-          "pm-plugin-development:plugin-script-architecture"
-        ]
+        "implementation": {
+          "defaults": [
+            {
+              "skill": "pm-plugin-development:plugin-architecture",
+              "description": "Architecture principles, skill patterns, and design guidance for building goal-based Claude Code marketplace components"
+            }
+          ],
+          "optionals": [
+            {
+              "skill": "pm-plugin-development:plugin-script-architecture",
+              "description": "Script development standards covering implementation patterns, testing, and output contracts"
+            },
+            {
+              "skill": "plan-marshall:ref-toon-format",
+              "description": "TOON format knowledge for output specifications - use when migrating to/from TOON"
+            }
+          ]
+        },
+        "module_testing": {
+          "defaults": [
+            {
+              "skill": "pm-plugin-development:plugin-architecture",
+              "description": "Architecture principles, skill patterns, and design guidance for building goal-based Claude Code marketplace components"
+            }
+          ],
+          "optionals": [
+            {
+              "skill": "pm-plugin-development:plugin-script-architecture",
+              "description": "Script development standards covering implementation patterns, testing, and output contracts"
+            }
+          ]
+        }
       },
       "skills_by_profile_reasoning": "Root module uses plugin-dev domain for marketplace management",
       "tips": [],
@@ -60,11 +84,24 @@
       "key_dependencies": [],
       "key_dependencies_reasoning": "",
       "skills_by_profile": {
-        "documentation": [
-          "pm-documents:ref-documentation",
-          "pm-documents:manage-adr",
-          "pm-documents:manage-interface"
-        ]
+        "documentation": {
+          "defaults": [
+            {
+              "skill": "pm-documents:ref-documentation",
+              "description": "General documentation standards for README, AsciiDoc, and technical documentation with validation, formatting, link verification, and content review workflows"
+            }
+          ],
+          "optionals": [
+            {
+              "skill": "pm-documents:manage-adr",
+              "description": "Manage Architectural Decision Records (ADRs) with CRUD operations, automatic numbering, and AsciiDoc formatting"
+            },
+            {
+              "skill": "pm-documents:manage-interface",
+              "description": "Manage Interface specifications with CRUD operations, automatic numbering, and AsciiDoc formatting"
+            }
+          ]
+        }
       },
       "skills_by_profile_reasoning": "Documentation-only module uses documentation domain",
       "tips": [],
@@ -94,17 +131,47 @@
       "key_dependencies": [],
       "key_dependencies_reasoning": "",
       "skills_by_profile": {
-        "implementation": [
-          "pm-plugin-development:plugin-architecture",
-          "pm-plugin-development:plugin-script-architecture"
-        ],
-        "module_testing": [
-          "pm-plugin-development:plugin-architecture",
-          "pm-plugin-development:plugin-script-architecture"
-        ],
-        "documentation": [
-          "pm-documents:ref-documentation"
-        ]
+        "implementation": {
+          "defaults": [
+            {
+              "skill": "pm-plugin-development:plugin-architecture",
+              "description": "Architecture principles, skill patterns, and design guidance for building goal-based Claude Code marketplace components"
+            }
+          ],
+          "optionals": [
+            {
+              "skill": "pm-plugin-development:plugin-script-architecture",
+              "description": "Script development standards covering implementation patterns, testing, and output contracts"
+            },
+            {
+              "skill": "plan-marshall:ref-toon-format",
+              "description": "TOON format knowledge for output specifications - use when migrating to/from TOON"
+            }
+          ]
+        },
+        "module_testing": {
+          "defaults": [
+            {
+              "skill": "pm-plugin-development:plugin-architecture",
+              "description": "Architecture principles, skill patterns, and design guidance for building goal-based Claude Code marketplace components"
+            }
+          ],
+          "optionals": [
+            {
+              "skill": "pm-plugin-development:plugin-script-architecture",
+              "description": "Script development standards covering implementation patterns, testing, and output contracts"
+            }
+          ]
+        },
+        "documentation": {
+          "defaults": [
+            {
+              "skill": "pm-documents:ref-documentation",
+              "description": "General documentation standards for README, AsciiDoc, and technical documentation with validation, formatting, link verification, and content review workflows"
+            }
+          ],
+          "optionals": []
+        }
       },
       "skills_by_profile_reasoning": "Core infrastructure bundle uses plugin-dev domain for component development, documentation domain for README",
       "tips": [],
@@ -136,17 +203,47 @@
       "key_dependencies": [],
       "key_dependencies_reasoning": "Frontend bundle depends on plan-marshall for extension API and build infrastructure",
       "skills_by_profile": {
-        "implementation": [
-          "pm-plugin-development:plugin-architecture",
-          "pm-plugin-development:plugin-script-architecture"
-        ],
-        "module_testing": [
-          "pm-plugin-development:plugin-architecture",
-          "pm-plugin-development:plugin-script-architecture"
-        ],
-        "documentation": [
-          "pm-documents:ref-documentation"
-        ]
+        "implementation": {
+          "defaults": [
+            {
+              "skill": "pm-plugin-development:plugin-architecture",
+              "description": "Architecture principles, skill patterns, and design guidance for building goal-based Claude Code marketplace components"
+            }
+          ],
+          "optionals": [
+            {
+              "skill": "pm-plugin-development:plugin-script-architecture",
+              "description": "Script development standards covering implementation patterns, testing, and output contracts"
+            },
+            {
+              "skill": "plan-marshall:ref-toon-format",
+              "description": "TOON format knowledge for output specifications - use when migrating to/from TOON"
+            }
+          ]
+        },
+        "module_testing": {
+          "defaults": [
+            {
+              "skill": "pm-plugin-development:plugin-architecture",
+              "description": "Architecture principles, skill patterns, and design guidance for building goal-based Claude Code marketplace components"
+            }
+          ],
+          "optionals": [
+            {
+              "skill": "pm-plugin-development:plugin-script-architecture",
+              "description": "Script development standards covering implementation patterns, testing, and output contracts"
+            }
+          ]
+        },
+        "documentation": {
+          "defaults": [
+            {
+              "skill": "pm-documents:ref-documentation",
+              "description": "General documentation standards for README, AsciiDoc, and technical documentation with validation, formatting, link verification, and content review workflows"
+            }
+          ],
+          "optionals": []
+        }
       },
       "skills_by_profile_reasoning": "Frontend standards bundle uses plugin-dev domain for component development",
       "tips": [],
@@ -178,17 +275,47 @@
       "key_dependencies": [],
       "key_dependencies_reasoning": "Java bundle depends on plan-marshall for extension API and build infrastructure",
       "skills_by_profile": {
-        "implementation": [
-          "pm-plugin-development:plugin-architecture",
-          "pm-plugin-development:plugin-script-architecture"
-        ],
-        "module_testing": [
-          "pm-plugin-development:plugin-architecture",
-          "pm-plugin-development:plugin-script-architecture"
-        ],
-        "documentation": [
-          "pm-documents:ref-documentation"
-        ]
+        "implementation": {
+          "defaults": [
+            {
+              "skill": "pm-plugin-development:plugin-architecture",
+              "description": "Architecture principles, skill patterns, and design guidance for building goal-based Claude Code marketplace components"
+            }
+          ],
+          "optionals": [
+            {
+              "skill": "pm-plugin-development:plugin-script-architecture",
+              "description": "Script development standards covering implementation patterns, testing, and output contracts"
+            },
+            {
+              "skill": "plan-marshall:ref-toon-format",
+              "description": "TOON format knowledge for output specifications - use when migrating to/from TOON"
+            }
+          ]
+        },
+        "module_testing": {
+          "defaults": [
+            {
+              "skill": "pm-plugin-development:plugin-architecture",
+              "description": "Architecture principles, skill patterns, and design guidance for building goal-based Claude Code marketplace components"
+            }
+          ],
+          "optionals": [
+            {
+              "skill": "pm-plugin-development:plugin-script-architecture",
+              "description": "Script development standards covering implementation patterns, testing, and output contracts"
+            }
+          ]
+        },
+        "documentation": {
+          "defaults": [
+            {
+              "skill": "pm-documents:ref-documentation",
+              "description": "General documentation standards for README, AsciiDoc, and technical documentation with validation, formatting, link verification, and content review workflows"
+            }
+          ],
+          "optionals": []
+        }
       },
       "skills_by_profile_reasoning": "Java standards bundle uses plugin-dev domain for component development",
       "tips": [],
@@ -218,17 +345,47 @@
       "key_dependencies": [],
       "key_dependencies_reasoning": "CUI-specific bundle complements pm-dev-java and depends on plan-marshall for extension API",
       "skills_by_profile": {
-        "implementation": [
-          "pm-plugin-development:plugin-architecture",
-          "pm-plugin-development:plugin-script-architecture"
-        ],
-        "module_testing": [
-          "pm-plugin-development:plugin-architecture",
-          "pm-plugin-development:plugin-script-architecture"
-        ],
-        "documentation": [
-          "pm-documents:ref-documentation"
-        ]
+        "implementation": {
+          "defaults": [
+            {
+              "skill": "pm-plugin-development:plugin-architecture",
+              "description": "Architecture principles, skill patterns, and design guidance for building goal-based Claude Code marketplace components"
+            }
+          ],
+          "optionals": [
+            {
+              "skill": "pm-plugin-development:plugin-script-architecture",
+              "description": "Script development standards covering implementation patterns, testing, and output contracts"
+            },
+            {
+              "skill": "plan-marshall:ref-toon-format",
+              "description": "TOON format knowledge for output specifications - use when migrating to/from TOON"
+            }
+          ]
+        },
+        "module_testing": {
+          "defaults": [
+            {
+              "skill": "pm-plugin-development:plugin-architecture",
+              "description": "Architecture principles, skill patterns, and design guidance for building goal-based Claude Code marketplace components"
+            }
+          ],
+          "optionals": [
+            {
+              "skill": "pm-plugin-development:plugin-script-architecture",
+              "description": "Script development standards covering implementation patterns, testing, and output contracts"
+            }
+          ]
+        },
+        "documentation": {
+          "defaults": [
+            {
+              "skill": "pm-documents:ref-documentation",
+              "description": "General documentation standards for README, AsciiDoc, and technical documentation with validation, formatting, link verification, and content review workflows"
+            }
+          ],
+          "optionals": []
+        }
       },
       "skills_by_profile_reasoning": "CUI Java bundle uses plugin-dev domain for component development",
       "tips": [],
@@ -254,17 +411,47 @@
       "key_dependencies": [],
       "key_dependencies_reasoning": "Python bundle depends on plan-marshall for extension API",
       "skills_by_profile": {
-        "implementation": [
-          "pm-plugin-development:plugin-architecture",
-          "pm-plugin-development:plugin-script-architecture"
-        ],
-        "module_testing": [
-          "pm-plugin-development:plugin-architecture",
-          "pm-plugin-development:plugin-script-architecture"
-        ],
-        "documentation": [
-          "pm-documents:ref-documentation"
-        ]
+        "implementation": {
+          "defaults": [
+            {
+              "skill": "pm-plugin-development:plugin-architecture",
+              "description": "Architecture principles, skill patterns, and design guidance for building goal-based Claude Code marketplace components"
+            }
+          ],
+          "optionals": [
+            {
+              "skill": "pm-plugin-development:plugin-script-architecture",
+              "description": "Script development standards covering implementation patterns, testing, and output contracts"
+            },
+            {
+              "skill": "plan-marshall:ref-toon-format",
+              "description": "TOON format knowledge for output specifications - use when migrating to/from TOON"
+            }
+          ]
+        },
+        "module_testing": {
+          "defaults": [
+            {
+              "skill": "pm-plugin-development:plugin-architecture",
+              "description": "Architecture principles, skill patterns, and design guidance for building goal-based Claude Code marketplace components"
+            }
+          ],
+          "optionals": [
+            {
+              "skill": "pm-plugin-development:plugin-script-architecture",
+              "description": "Script development standards covering implementation patterns, testing, and output contracts"
+            }
+          ]
+        },
+        "documentation": {
+          "defaults": [
+            {
+              "skill": "pm-documents:ref-documentation",
+              "description": "General documentation standards for README, AsciiDoc, and technical documentation with validation, formatting, link verification, and content review workflows"
+            }
+          ],
+          "optionals": []
+        }
       },
       "skills_by_profile_reasoning": "Python bundle uses plugin-dev domain for component development",
       "tips": [],
@@ -293,19 +480,56 @@
       "key_dependencies": [],
       "key_dependencies_reasoning": "Documentation bundle uses plan-marshall for script execution and extension API",
       "skills_by_profile": {
-        "implementation": [
-          "pm-plugin-development:plugin-architecture",
-          "pm-plugin-development:plugin-script-architecture"
-        ],
-        "module_testing": [
-          "pm-plugin-development:plugin-architecture",
-          "pm-plugin-development:plugin-script-architecture"
-        ],
-        "documentation": [
-          "pm-documents:ref-documentation",
-          "pm-documents:manage-adr",
-          "pm-documents:manage-interface"
-        ]
+        "implementation": {
+          "defaults": [
+            {
+              "skill": "pm-plugin-development:plugin-architecture",
+              "description": "Architecture principles, skill patterns, and design guidance for building goal-based Claude Code marketplace components"
+            }
+          ],
+          "optionals": [
+            {
+              "skill": "pm-plugin-development:plugin-script-architecture",
+              "description": "Script development standards covering implementation patterns, testing, and output contracts"
+            },
+            {
+              "skill": "plan-marshall:ref-toon-format",
+              "description": "TOON format knowledge for output specifications - use when migrating to/from TOON"
+            }
+          ]
+        },
+        "module_testing": {
+          "defaults": [
+            {
+              "skill": "pm-plugin-development:plugin-architecture",
+              "description": "Architecture principles, skill patterns, and design guidance for building goal-based Claude Code marketplace components"
+            }
+          ],
+          "optionals": [
+            {
+              "skill": "pm-plugin-development:plugin-script-architecture",
+              "description": "Script development standards covering implementation patterns, testing, and output contracts"
+            }
+          ]
+        },
+        "documentation": {
+          "defaults": [
+            {
+              "skill": "pm-documents:ref-documentation",
+              "description": "General documentation standards for README, AsciiDoc, and technical documentation with validation, formatting, link verification, and content review workflows"
+            }
+          ],
+          "optionals": [
+            {
+              "skill": "pm-documents:manage-adr",
+              "description": "Manage Architectural Decision Records (ADRs) with CRUD operations, automatic numbering, and AsciiDoc formatting"
+            },
+            {
+              "skill": "pm-documents:manage-interface",
+              "description": "Manage Interface specifications with CRUD operations, automatic numbering, and AsciiDoc formatting"
+            }
+          ]
+        }
       },
       "skills_by_profile_reasoning": "Documentation bundle uses plugin-dev domain for component development, documentation domain for own docs",
       "tips": [],
@@ -337,17 +561,47 @@
       "key_dependencies": [],
       "key_dependencies_reasoning": "Plugin development bundle depends on plan-marshall for extension API and utilities",
       "skills_by_profile": {
-        "implementation": [
-          "pm-plugin-development:plugin-architecture",
-          "pm-plugin-development:plugin-script-architecture"
-        ],
-        "module_testing": [
-          "pm-plugin-development:plugin-architecture",
-          "pm-plugin-development:plugin-script-architecture"
-        ],
-        "documentation": [
-          "pm-documents:ref-documentation"
-        ]
+        "implementation": {
+          "defaults": [
+            {
+              "skill": "pm-plugin-development:plugin-architecture",
+              "description": "Architecture principles, skill patterns, and design guidance for building goal-based Claude Code marketplace components"
+            }
+          ],
+          "optionals": [
+            {
+              "skill": "pm-plugin-development:plugin-script-architecture",
+              "description": "Script development standards covering implementation patterns, testing, and output contracts"
+            },
+            {
+              "skill": "plan-marshall:ref-toon-format",
+              "description": "TOON format knowledge for output specifications - use when migrating to/from TOON"
+            }
+          ]
+        },
+        "module_testing": {
+          "defaults": [
+            {
+              "skill": "pm-plugin-development:plugin-architecture",
+              "description": "Architecture principles, skill patterns, and design guidance for building goal-based Claude Code marketplace components"
+            }
+          ],
+          "optionals": [
+            {
+              "skill": "pm-plugin-development:plugin-script-architecture",
+              "description": "Script development standards covering implementation patterns, testing, and output contracts"
+            }
+          ]
+        },
+        "documentation": {
+          "defaults": [
+            {
+              "skill": "pm-documents:ref-documentation",
+              "description": "General documentation standards for README, AsciiDoc, and technical documentation with validation, formatting, link verification, and content review workflows"
+            }
+          ],
+          "optionals": []
+        }
       },
       "skills_by_profile_reasoning": "Plugin development bundle uses its own plugin-dev domain for self-development",
       "tips": [],
@@ -377,17 +631,47 @@
       "key_dependencies": [],
       "key_dependencies_reasoning": "Requirements bundle uses plan-marshall for extension API and references pm-documents for AsciiDoc standards",
       "skills_by_profile": {
-        "implementation": [
-          "pm-plugin-development:plugin-architecture",
-          "pm-plugin-development:plugin-script-architecture"
-        ],
-        "module_testing": [
-          "pm-plugin-development:plugin-architecture",
-          "pm-plugin-development:plugin-script-architecture"
-        ],
-        "documentation": [
-          "pm-documents:ref-documentation"
-        ]
+        "implementation": {
+          "defaults": [
+            {
+              "skill": "pm-plugin-development:plugin-architecture",
+              "description": "Architecture principles, skill patterns, and design guidance for building goal-based Claude Code marketplace components"
+            }
+          ],
+          "optionals": [
+            {
+              "skill": "pm-plugin-development:plugin-script-architecture",
+              "description": "Script development standards covering implementation patterns, testing, and output contracts"
+            },
+            {
+              "skill": "plan-marshall:ref-toon-format",
+              "description": "TOON format knowledge for output specifications - use when migrating to/from TOON"
+            }
+          ]
+        },
+        "module_testing": {
+          "defaults": [
+            {
+              "skill": "pm-plugin-development:plugin-architecture",
+              "description": "Architecture principles, skill patterns, and design guidance for building goal-based Claude Code marketplace components"
+            }
+          ],
+          "optionals": [
+            {
+              "skill": "pm-plugin-development:plugin-script-architecture",
+              "description": "Script development standards covering implementation patterns, testing, and output contracts"
+            }
+          ]
+        },
+        "documentation": {
+          "defaults": [
+            {
+              "skill": "pm-documents:ref-documentation",
+              "description": "General documentation standards for README, AsciiDoc, and technical documentation with validation, formatting, link verification, and content review workflows"
+            }
+          ],
+          "optionals": []
+        }
       },
       "skills_by_profile_reasoning": "Requirements bundle uses plugin-dev domain for component development",
       "tips": [],
@@ -420,17 +704,47 @@
       "key_dependencies": [],
       "key_dependencies_reasoning": "Workflow engine depends on plan-marshall for script execution and configuration, and pm-plugin-development for plugin domain skills",
       "skills_by_profile": {
-        "implementation": [
-          "pm-plugin-development:plugin-architecture",
-          "pm-plugin-development:plugin-script-architecture"
-        ],
-        "module_testing": [
-          "pm-plugin-development:plugin-architecture",
-          "pm-plugin-development:plugin-script-architecture"
-        ],
-        "documentation": [
-          "pm-documents:ref-documentation"
-        ]
+        "implementation": {
+          "defaults": [
+            {
+              "skill": "pm-plugin-development:plugin-architecture",
+              "description": "Architecture principles, skill patterns, and design guidance for building goal-based Claude Code marketplace components"
+            }
+          ],
+          "optionals": [
+            {
+              "skill": "pm-plugin-development:plugin-script-architecture",
+              "description": "Script development standards covering implementation patterns, testing, and output contracts"
+            },
+            {
+              "skill": "plan-marshall:ref-toon-format",
+              "description": "TOON format knowledge for output specifications - use when migrating to/from TOON"
+            }
+          ]
+        },
+        "module_testing": {
+          "defaults": [
+            {
+              "skill": "pm-plugin-development:plugin-architecture",
+              "description": "Architecture principles, skill patterns, and design guidance for building goal-based Claude Code marketplace components"
+            }
+          ],
+          "optionals": [
+            {
+              "skill": "pm-plugin-development:plugin-script-architecture",
+              "description": "Script development standards covering implementation patterns, testing, and output contracts"
+            }
+          ]
+        },
+        "documentation": {
+          "defaults": [
+            {
+              "skill": "pm-documents:ref-documentation",
+              "description": "General documentation standards for README, AsciiDoc, and technical documentation with validation, formatting, link verification, and content review workflows"
+            }
+          ],
+          "optionals": []
+        }
       },
       "skills_by_profile_reasoning": "Workflow bundle uses plugin-dev domain for component development",
       "tips": [],

@@ -29,8 +29,22 @@ class Extension(ExtensionBase):
             },
             'profiles': {
                 'core': {
-                    'defaults': ['pm-plugin-development:plugin-architecture'],
-                    'optionals': ['pm-plugin-development:plugin-script-architecture'],
+                    'defaults': [
+                        {
+                            'skill': 'pm-plugin-development:plugin-architecture',
+                            'description': 'Architecture principles, skill patterns, and design guidance for building marketplace components',
+                        }
+                    ],
+                    'optionals': [
+                        {
+                            'skill': 'pm-plugin-development:plugin-script-architecture',
+                            'description': 'Script development standards covering implementation patterns, testing, and output contracts',
+                        },
+                        {
+                            'skill': 'plan-marshall:ref-toon-format',
+                            'description': 'TOON format knowledge for output specifications - use when migrating to/from TOON',
+                        },
+                    ],
                 },
                 'implementation': {'defaults': [], 'optionals': []},
                 'module_testing': {'defaults': [], 'optionals': []},

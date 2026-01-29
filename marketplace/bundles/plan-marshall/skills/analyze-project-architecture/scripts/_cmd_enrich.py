@@ -166,11 +166,89 @@ def enrich_package(
     return result
 
 
+def _extract_skill_names_from_profile(profile_data: dict | list) -> list[str]:
+    """Extract skill names from a profile, handling both flat and structured formats.
+
+    Args:
+        profile_data: Either a flat list of skills or a dict with defaults/optionals
+
+    Returns:
+        List of skill names
+    """
+    if isinstance(profile_data, list):
+        # Legacy flat format: ["skill1", "skill2"]
+        return profile_data
+
+    # New structured format: {defaults: [...], optionals: [...]}
+    skills = []
+    for section in ['defaults', 'optionals']:
+        entries = profile_data.get(section, [])
+        for entry in entries:
+            if isinstance(entry, dict):
+                skill = entry.get('skill', '')
+                if skill:
+                    skills.append(skill)
+            elif isinstance(entry, str):
+                skills.append(entry)
+    return skills
+
+
+def _validate_skills_by_profile_structure(skills_by_profile: dict) -> list[str]:
+    """Validate the skills_by_profile structure.
+
+    Supports two formats:
+    1. Flat lists (legacy): {"profile": ["skill1", "skill2"]}
+    2. Defaults/optionals with descriptions (new):
+       {"profile": {"defaults": [{"skill": "...", "description": "..."}], "optionals": [...]}}
+
+    Args:
+        skills_by_profile: Dict mapping profile names to skill lists or structured dicts
+
+    Returns:
+        List of warning messages (empty if valid)
+    """
+    warnings: list[str] = []
+
+    for profile_name, profile_data in skills_by_profile.items():
+        if isinstance(profile_data, list):
+            # Legacy flat format - validate skill notation
+            for skill in profile_data:
+                if ':' not in skill:
+                    warnings.append(f"Skill '{skill}' in profile '{profile_name}' missing bundle:skill notation")
+        elif isinstance(profile_data, dict):
+            # New structured format - validate defaults and optionals
+            for section in ['defaults', 'optionals']:
+                entries = profile_data.get(section, [])
+                if not isinstance(entries, list):
+                    warnings.append(f"Profile '{profile_name}.{section}' must be a list")
+                    continue
+                for i, entry in enumerate(entries):
+                    if isinstance(entry, dict):
+                        if 'skill' not in entry:
+                            warnings.append(f"Entry {i} in '{profile_name}.{section}' missing 'skill' field")
+                        elif ':' not in entry.get('skill', ''):
+                            warnings.append(
+                                f"Skill '{entry.get('skill')}' in '{profile_name}.{section}' missing bundle:skill notation"
+                            )
+                        if 'description' not in entry:
+                            warnings.append(f"Entry {i} in '{profile_name}.{section}' missing 'description' field")
+                    elif isinstance(entry, str):
+                        # Allow plain strings for backwards compatibility
+                        if ':' not in entry:
+                            warnings.append(f"Skill '{entry}' in '{profile_name}.{section}' missing bundle:skill notation")
+                    else:
+                        warnings.append(f"Entry {i} in '{profile_name}.{section}' must be a dict or string")
+        else:
+            warnings.append(f"Profile '{profile_name}' must be a list or dict, got {type(profile_data).__name__}")
+
+    return warnings
+
+
 def _validate_skills_for_technology(skills_by_profile: dict, technology: str) -> list[str]:
     """Validate that skills match the module's technology.
 
     Args:
-        skills_by_profile: Dict mapping profile names to skill lists
+        skills_by_profile: Dict mapping profile names to skill lists or structured dicts
         technology: Module technology (maven, npm, gradle)
 
     Returns:
@@ -189,8 +267,9 @@ def _validate_skills_for_technology(skills_by_profile: dict, technology: str) ->
     if not expected_patterns:
         return warnings  # Unknown technology, skip validation
 
-    # Check each skill
-    for _profile, skills in skills_by_profile.items():
+    # Check each skill (handles both flat and structured formats)
+    for _profile_name, profile_data in skills_by_profile.items():
+        skills = _extract_skill_names_from_profile(profile_data)
         for skill in skills:
             # Check if skill matches expected patterns
             matches = any(skill.startswith(pattern) for pattern in expected_patterns)
@@ -212,10 +291,14 @@ def enrich_skills_by_profile(
 ) -> dict:
     """Update skills organized by profile.
 
+    Supports two formats:
+    1. Flat lists (legacy): {"implementation": ["skill1", "skill2"]}
+    2. Defaults/optionals with descriptions (new):
+       {"implementation": {"defaults": [{"skill": "...", "description": "..."}], "optionals": [...]}}
+
     Args:
         module_name: Module name
-        skills_by_profile: Dict mapping profile names to skill lists
-            e.g., {"implementation": ["java-core"], "module_testing": ["junit-core"]}
+        skills_by_profile: Dict mapping profile names to skill lists or structured dicts
         project_dir: Project directory path
         reasoning: Selection rationale
 
@@ -227,6 +310,9 @@ def enrich_skills_by_profile(
     modules = get_module_names(derived)
     if module_name not in modules:
         raise ModuleNotFoundError(f'Module not found: {module_name}', modules)
+
+    # Validate structure
+    warnings = _validate_skills_by_profile_structure(skills_by_profile)
 
     # Get module data to check technology for virtual modules
     module_data = derived.get('modules', {}).get(module_name, {})
@@ -240,9 +326,8 @@ def enrich_skills_by_profile(
             technology = build_systems[0]
 
     # Validate skills match technology
-    warnings = []
     if technology:
-        warnings = _validate_skills_for_technology(skills_by_profile, technology)
+        warnings.extend(_validate_skills_for_technology(skills_by_profile, technology))
 
     enriched = load_llm_enriched(project_dir)
 
@@ -491,6 +576,43 @@ def cmd_enrich_package(args) -> int:
         return 1
 
 
+def _print_skills_by_profile(skills_by_profile: dict) -> None:
+    """Print skills_by_profile in TOON format, handling both flat and structured formats.
+
+    Args:
+        skills_by_profile: Dict mapping profile names to skill lists or structured dicts
+    """
+    print('skills_by_profile:')
+    for profile, profile_data in skills_by_profile.items():
+        print(f'  {profile}:')
+        if isinstance(profile_data, list):
+            # Legacy flat format
+            for skill in profile_data:
+                print(f'    - {skill}')
+        elif isinstance(profile_data, dict):
+            # New structured format with defaults/optionals
+            defaults = profile_data.get('defaults', [])
+            optionals = profile_data.get('optionals', [])
+            if defaults:
+                print(f'    defaults[{len(defaults)}]{{skill,description}}:')
+                for entry in defaults:
+                    if isinstance(entry, dict):
+                        skill = entry.get('skill', '')
+                        desc = entry.get('description', '')
+                        print(f'      - {skill},"{desc}"')
+                    else:
+                        print(f'      - {entry}')
+            if optionals:
+                print(f'    optionals[{len(optionals)}]{{skill,description}}:')
+                for entry in optionals:
+                    if isinstance(entry, dict):
+                        skill = entry.get('skill', '')
+                        desc = entry.get('description', '')
+                        print(f'      - {skill},"{desc}"')
+                    else:
+                        print(f'      - {entry}')
+
+
 def cmd_enrich_skills_by_profile(args) -> int:
     """CLI handler for enrich skills-by-profile command."""
     import json
@@ -502,12 +624,11 @@ def cmd_enrich_skills_by_profile(args) -> int:
         result = enrich_skills_by_profile(args.module, skills_by_profile, args.project_dir, reasoning)
         print(f'status\t{result["status"]}')
         print(f'module\t{result["module"]}')
-        # Output skills_by_profile as nested structure
-        print('skills_by_profile:')
-        for profile, skills in result['skills_by_profile'].items():
-            print(f'  {profile}:')
-            for skill in skills:
-                print(f'    - {skill}')
+        # Output skills_by_profile (handles both flat and structured formats)
+        _print_skills_by_profile(result['skills_by_profile'])
+        if result.get('warnings'):
+            print()
+            print_toon_list('warnings', result['warnings'])
         return 0
     except json.JSONDecodeError as e:
         print('status\terror', file=sys.stderr)

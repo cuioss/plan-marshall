@@ -381,6 +381,131 @@ def test_enrich_skills_by_profile_overwrites():
         assert enriched['modules']['module-a']['skills_by_profile']['implementation'] == ['skill-2']
 
 
+def test_enrich_skills_by_profile_defaults_optionals_structure():
+    """enrich_skills_by_profile accepts defaults/optionals structure with descriptions."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        setup_test_project(tmpdir)
+
+        skills_by_profile = {
+            'implementation': {
+                'defaults': [
+                    {
+                        'skill': 'pm-plugin-development:plugin-architecture',
+                        'description': 'Architecture principles for building marketplace components',
+                    }
+                ],
+                'optionals': [
+                    {
+                        'skill': 'pm-plugin-development:plugin-script-architecture',
+                        'description': 'Script development standards covering implementation patterns',
+                    },
+                    {
+                        'skill': 'plan-marshall:ref-toon-format',
+                        'description': 'TOON format knowledge for output specifications',
+                    },
+                ],
+            }
+        }
+        result = enrich_skills_by_profile('module-a', skills_by_profile, tmpdir)
+
+        assert result['status'] == 'success'
+        assert result['skills_by_profile'] == skills_by_profile
+
+        enriched = load_llm_enriched(tmpdir)
+        stored = enriched['modules']['module-a']['skills_by_profile']
+        assert stored['implementation']['defaults'][0]['skill'] == 'pm-plugin-development:plugin-architecture'
+        assert 'description' in stored['implementation']['defaults'][0]
+        assert len(stored['implementation']['optionals']) == 2
+
+
+def test_enrich_skills_by_profile_validates_skill_notation():
+    """enrich_skills_by_profile warns on missing bundle:skill notation."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        setup_test_project(tmpdir)
+
+        skills_by_profile = {
+            'implementation': {
+                'defaults': [
+                    {'skill': 'plugin-architecture', 'description': 'Missing bundle prefix'}  # Invalid
+                ],
+                'optionals': [],
+            }
+        }
+        result = enrich_skills_by_profile('module-a', skills_by_profile, tmpdir)
+
+        assert result['status'] == 'success'  # Still succeeds but with warnings
+        assert 'warnings' in result
+        assert any('missing bundle:skill notation' in w for w in result['warnings'])
+
+
+def test_enrich_skills_by_profile_validates_missing_description():
+    """enrich_skills_by_profile warns on missing description field."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        setup_test_project(tmpdir)
+
+        skills_by_profile = {
+            'implementation': {
+                'defaults': [
+                    {'skill': 'pm-plugin-development:plugin-architecture'}  # Missing description
+                ],
+                'optionals': [],
+            }
+        }
+        result = enrich_skills_by_profile('module-a', skills_by_profile, tmpdir)
+
+        assert result['status'] == 'success'  # Still succeeds but with warnings
+        assert 'warnings' in result
+        assert any("missing 'description' field" in w for w in result['warnings'])
+
+
+def test_enrich_skills_by_profile_empty_optionals():
+    """enrich_skills_by_profile handles empty optionals array."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        setup_test_project(tmpdir)
+
+        skills_by_profile = {
+            'implementation': {
+                'defaults': [
+                    {'skill': 'pm-plugin-development:plugin-architecture', 'description': 'Architecture principles'}
+                ],
+                'optionals': [],
+            }
+        }
+        result = enrich_skills_by_profile('module-a', skills_by_profile, tmpdir)
+
+        assert result['status'] == 'success'
+        assert 'warnings' not in result or len(result.get('warnings', [])) == 0
+
+        enriched = load_llm_enriched(tmpdir)
+        stored = enriched['modules']['module-a']['skills_by_profile']
+        assert stored['implementation']['optionals'] == []
+
+
+def test_enrich_skills_by_profile_mixed_format_backward_compat():
+    """enrich_skills_by_profile accepts mixed format with backward compatibility."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        setup_test_project(tmpdir)
+
+        # Some profiles with new structure, some with flat lists (legacy)
+        skills_by_profile = {
+            'implementation': {
+                'defaults': [
+                    {'skill': 'pm-plugin-development:plugin-architecture', 'description': 'Architecture principles'}
+                ],
+                'optionals': [],
+            },
+            'module_testing': ['pm-plugin-development:plugin-architecture'],  # Legacy flat format
+        }
+        result = enrich_skills_by_profile('module-a', skills_by_profile, tmpdir)
+
+        assert result['status'] == 'success'
+        enriched = load_llm_enriched(tmpdir)
+        stored = enriched['modules']['module-a']['skills_by_profile']
+        # Both formats should be preserved
+        assert isinstance(stored['implementation'], dict)
+        assert isinstance(stored['module_testing'], list)
+
+
 # =============================================================================
 # Tests for enrich_dependencies
 # =============================================================================
@@ -511,6 +636,11 @@ if __name__ == '__main__':
         test_enrich_skills_by_profile_with_reasoning,
         test_enrich_skills_by_profile_module_not_found,
         test_enrich_skills_by_profile_overwrites,
+        test_enrich_skills_by_profile_defaults_optionals_structure,
+        test_enrich_skills_by_profile_validates_skill_notation,
+        test_enrich_skills_by_profile_validates_missing_description,
+        test_enrich_skills_by_profile_empty_optionals,
+        test_enrich_skills_by_profile_mixed_format_backward_compat,
         test_enrich_dependencies_sets_key,
         test_enrich_dependencies_with_reasoning,
         test_enrich_dependencies_sets_internal,

@@ -29,16 +29,47 @@ class Extension(ExtensionBase):
                 'description': 'AsciiDoc documentation, ADRs, and interface specifications',
             },
             'profiles': {
-                'core': {'defaults': ['pm-documents:ref-documentation'], 'optionals': []},
+                'core': {
+                    'defaults': [
+                        {
+                            'skill': 'pm-documents:ref-documentation',
+                            'description': 'General documentation standards for README, AsciiDoc, and technical documentation',
+                        }
+                    ],
+                    'optionals': [],
+                },
                 'implementation': {
                     'defaults': [],
-                    'optionals': ['pm-documents:manage-adr', 'pm-documents:manage-interface'],
+                    'optionals': [
+                        {
+                            'skill': 'pm-documents:manage-adr',
+                            'description': 'Manage Architectural Decision Records with CRUD operations and AsciiDoc formatting',
+                        },
+                        {
+                            'skill': 'pm-documents:manage-interface',
+                            'description': 'Manage Interface specifications with CRUD operations and AsciiDoc formatting',
+                        },
+                    ],
                 },
                 'module_testing': {'defaults': [], 'optionals': []},
                 'quality': {'defaults': [], 'optionals': []},
                 'documentation': {
-                    'defaults': ['pm-documents:ref-documentation'],
-                    'optionals': ['pm-documents:manage-adr', 'pm-documents:manage-interface'],
+                    'defaults': [
+                        {
+                            'skill': 'pm-documents:ref-documentation',
+                            'description': 'General documentation standards for README, AsciiDoc, and technical documentation',
+                        }
+                    ],
+                    'optionals': [
+                        {
+                            'skill': 'pm-documents:manage-adr',
+                            'description': 'Manage Architectural Decision Records with CRUD operations and AsciiDoc formatting',
+                        },
+                        {
+                            'skill': 'pm-documents:manage-interface',
+                            'description': 'Manage Interface specifications with CRUD operations and AsciiDoc formatting',
+                        },
+                    ],
                 },
             },
         }

@@ -39,18 +39,59 @@ class Extension(ExtensionBase):
             },
             'profiles': {
                 'core': {
-                    'defaults': ['pm-dev-java:java-create'],
-                    'optionals': ['pm-dev-java:java-null-safety', 'pm-dev-java:java-lombok'],
+                    'defaults': [
+                        {
+                            'skill': 'pm-dev-java:java-create',
+                            'description': 'Core Java patterns including modern features and interactive component creation wizard',
+                        }
+                    ],
+                    'optionals': [
+                        {
+                            'skill': 'pm-dev-java:java-null-safety',
+                            'description': 'JSpecify null safety annotations with @NullMarked, @Nullable, and package-level configuration',
+                        },
+                        {
+                            'skill': 'pm-dev-java:java-lombok',
+                            'description': 'Lombok patterns including @Delegate, @Builder, @Value, @UtilityClass for reducing boilerplate',
+                        },
+                    ],
                 },
                 'implementation': {
                     'defaults': [],
-                    'optionals': ['pm-dev-java:java-cdi', 'pm-dev-java:java-maintenance'],
+                    'optionals': [
+                        {
+                            'skill': 'pm-dev-java:java-cdi',
+                            'description': 'CDI patterns including constructor injection, scopes, producers, and Quarkus configuration',
+                        },
+                        {
+                            'skill': 'pm-dev-java:java-maintenance',
+                            'description': 'Java code maintenance standards including prioritization, refactoring triggers, and compliance',
+                        },
+                    ],
                 },
                 'module_testing': {
-                    'defaults': ['pm-dev-java:junit-core'],
-                    'optionals': ['pm-dev-java:junit-integration'],
+                    'defaults': [
+                        {
+                            'skill': 'pm-dev-java:junit-core',
+                            'description': 'JUnit 5 testing patterns with AAA structure, coverage analysis, and assertion standards',
+                        }
+                    ],
+                    'optionals': [
+                        {
+                            'skill': 'pm-dev-java:junit-integration',
+                            'description': 'Maven integration testing with Failsafe plugin, IT naming conventions, and profiles',
+                        }
+                    ],
                 },
-                'quality': {'defaults': ['pm-dev-java:javadoc'], 'optionals': []},
+                'quality': {
+                    'defaults': [
+                        {
+                            'skill': 'pm-dev-java:javadoc',
+                            'description': 'JavaDoc documentation standards including class, method, and code example patterns',
+                        }
+                    ],
+                    'optionals': [],
+                },
             },
         }
 
