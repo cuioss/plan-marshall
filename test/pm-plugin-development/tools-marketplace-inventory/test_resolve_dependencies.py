@@ -538,6 +538,56 @@ class TestScopeOptions:
 # =============================================================================
 
 
+# =============================================================================
+# Tests - SKILL.md → Script Deps Discovery
+# =============================================================================
+
+
+class TestSkillToScriptDeps:
+    """Tests for SKILL.md -> script dependency discovery."""
+
+    def test_skill_discovers_script_deps(self):
+        """Test that deps command finds scripts referenced in SKILL.md."""
+        result = run_script(
+            SCRIPT_PATH,
+            'deps',
+            '--component', 'pm-workflow:planning-inventory',
+            '--dep-types', 'script',
+            '--direct-result',
+            '--format', 'json',
+        )
+        assert result.returncode == 0
+
+        data = json.loads(result.stdout)
+        assert data['status'] == 'success'
+        assert data['component_type'] == 'skill'
+
+        # Should find the scan-planning-inventory script
+        targets = [d['target'] for d in data.get('direct_dependencies', [])]
+        assert 'pm-workflow:planning-inventory:scan-planning-inventory' in targets
+
+    def test_skill_deps_filters_to_script_type(self):
+        """Test that --dep-types script only returns script dependencies."""
+        result = run_script(
+            SCRIPT_PATH,
+            'deps',
+            '--component', 'pm-workflow:manage-files',
+            '--dep-types', 'script',
+            '--direct-result',
+            '--format', 'json',
+        )
+        assert result.returncode == 0
+
+        data = json.loads(result.stdout)
+        for dep in data.get('direct_dependencies', []):
+            assert dep['type'] == 'script'
+
+
+# =============================================================================
+# Tests - Integration
+# =============================================================================
+
+
 class TestIntegration:
     """Integration tests for the full dependency resolution flow."""
 

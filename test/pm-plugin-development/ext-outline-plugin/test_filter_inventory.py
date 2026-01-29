@@ -247,3 +247,103 @@ def test_output_is_valid_toon():
         assert 'component_type' in data
         assert 'file_count' in data
         assert 'files' in data
+
+
+# =============================================================================
+# Tests - Producer Analysis
+# =============================================================================
+
+
+SAMPLE_INVENTORY_WITH_SKILLS = """\
+status: success
+scope:
+  affected_artifacts: [skills]
+  bundle_scope: all
+
+inventory:
+  skills[2]:
+    - marketplace/bundles/pm-workflow/skills/manage-files/SKILL.md
+    - marketplace/bundles/pm-workflow/skills/manage-tasks/SKILL.md
+  scripts[0]:
+
+total_files: 2
+"""
+
+
+SAMPLE_INVENTORY_NO_SKILLS = """\
+status: success
+scope:
+  affected_artifacts: [commands]
+  bundle_scope: all
+
+inventory:
+  skills[0]:
+  commands[1]:
+    - marketplace/bundles/pm-workflow/commands/some-command.md
+  scripts[0]:
+
+total_files: 1
+"""
+
+
+class TestProducerAnalysis:
+    """Tests for producer-analysis subcommand."""
+
+    def test_producer_analysis_returns_success_with_empty_skills(self):
+        """Test that producer analysis returns success even with no skills."""
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_dir = Path(tmp)
+            create_test_plan(tmp_dir, "test-plan", SAMPLE_INVENTORY_NO_SKILLS)
+
+            result = run_script(
+                SCRIPT_PATH,
+                'producer-analysis', '--plan-id', 'test-plan',
+                cwd=tmp_dir
+            )
+
+            assert result.returncode == 0, f'Script failed: {result.stderr}'
+            data = parse_toon(result.stdout)
+
+            assert data['status'] == 'success'
+            assert data['skills_analyzed'] == 0
+            assert data['producers_found'] == 0
+            assert data['producers_added'] == 0
+
+    def test_producer_analysis_error_when_inventory_not_found(self):
+        """Test error returned when inventory file doesn't exist."""
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_dir = Path(tmp)
+            # Create plan dir but NOT the inventory file
+            plan_dir = tmp_dir / ".plan" / "plans" / "missing-inventory" / "work"
+            plan_dir.mkdir(parents=True)
+
+            result = run_script(
+                SCRIPT_PATH,
+                'producer-analysis', '--plan-id', 'missing-inventory',
+                cwd=tmp_dir
+            )
+
+            assert result.returncode == 1
+            data = parse_toon(result.stdout)
+            assert data['status'] == 'error'
+            assert 'Inventory not found' in data['message']
+
+    def test_producer_analysis_output_format(self):
+        """Test that producer analysis output is valid TOON format."""
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_dir = Path(tmp)
+            create_test_plan(tmp_dir, "test-plan", SAMPLE_INVENTORY_NO_SKILLS)
+
+            result = run_script(
+                SCRIPT_PATH,
+                'producer-analysis', '--plan-id', 'test-plan',
+                cwd=tmp_dir
+            )
+
+            assert result.returncode == 0
+            # Should parse without error
+            data = parse_toon(result.stdout)
+            assert 'status' in data
+            assert 'skills_analyzed' in data
+            assert 'producers_found' in data
+            assert 'producers_added' in data

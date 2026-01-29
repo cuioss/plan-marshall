@@ -97,6 +97,87 @@ def log_decision(plan_id: str, message: str) -> None:
     )
 
 
+def producer_analysis(plan_id: str) -> None:
+    """Run producer analysis: resolve deps and expand inventory with producer scripts."""
+    plan_dir = Path(".plan/plans") / plan_id
+    inventory_path = plan_dir / "work" / "inventory_filtered.toon"
+    producer_analysis_path = plan_dir / "work" / "producer_analysis.toon"
+
+    if not inventory_path.exists():
+        print("status: error")
+        print(f"message: Inventory not found: {inventory_path}")
+        sys.exit(1)
+
+    # Read current inventory
+    content = inventory_path.read_text()
+    inventory = parse_toon(content)
+
+    # Get skill files and convert to notations
+    skill_files = inventory.get('inventory', {}).get('skills', [])
+    skill_notations = [n for f in skill_files if (n := file_path_to_notation(f))]
+
+    # Resolve forward dependencies for each skill
+    all_producers: set[str] = set()
+    for notation in skill_notations:
+        result = subprocess.run(
+            [
+                sys.executable, '.plan/execute-script.py',
+                'pm-plugin-development:tools-marketplace-inventory:resolve-dependencies',
+                'deps', '--component', notation, '--dep-types', 'script',
+                '--direct-result', '--format', 'json'
+            ],
+            capture_output=True,
+            text=True
+        )
+
+        if result.returncode == 0:
+            try:
+                data = json.loads(result.stdout)
+                if data.get('status') == 'success':
+                    for dep in data.get('direct_dependencies', []):
+                        all_producers.add(dep['target'])
+            except json.JSONDecodeError:
+                # Log warning but continue - non-fatal
+                log_decision(plan_id, f"Producer discovery: JSON parse error for {notation}")
+
+    # Get existing scripts to avoid duplicates
+    existing_scripts = set(inventory.get('inventory', {}).get('scripts', []))
+
+    # Expand inventory with new scripts
+    added: list[str] = []
+    for notation in all_producers:
+        file_path = notation_to_file_path(notation)
+        if file_path and file_path not in existing_scripts and Path(file_path).exists():
+            added.append(file_path)
+            if 'inventory' not in inventory:
+                inventory['inventory'] = {}
+            if 'scripts' not in inventory['inventory']:
+                inventory['inventory']['scripts'] = []
+            inventory['inventory']['scripts'].append(file_path)
+
+    # Write expanded inventory
+    inventory_path.write_text(serialize_toon(inventory))
+
+    # Write producer analysis results
+    analysis = {
+        'status': 'success',
+        'skills_analyzed': len(skill_notations),
+        'producers_found': len(all_producers),
+        'producers_added': len(added),
+        'added_files': added,
+    }
+    producer_analysis_path.write_text(serialize_toon(analysis))
+
+    # Log decision
+    log_decision(plan_id, f"Producer analysis: {len(skill_notations)} skills → {len(all_producers)} producers, {len(added)} added")
+
+    # Output result
+    print("status: success")
+    print(f"skills_analyzed: {len(skill_notations)}")
+    print(f"producers_found: {len(all_producers)}")
+    print(f"producers_added: {len(added)}")
+
+
 def impact_analysis(plan_id: str) -> None:
     """Run impact analysis: resolve rdeps and expand inventory."""
     plan_dir = Path(".plan/plans") / plan_id
@@ -252,12 +333,19 @@ def main() -> None:
     impact_cmd = subparsers.add_parser("impact-analysis", help="Resolve rdeps and expand inventory")
     impact_cmd.add_argument("--plan-id", required=True, help="Plan identifier")
 
+    # producer-analysis command
+    producer_cmd = subparsers.add_parser("producer-analysis",
+        help="Resolve deps and expand inventory with producer scripts")
+    producer_cmd.add_argument("--plan-id", required=True, help="Plan identifier")
+
     args = parser.parse_args()
 
     if args.command == "filter":
         filter_inventory(args.plan_id, args.bundle, args.component_type)
     elif args.command == "impact-analysis":
         impact_analysis(args.plan_id)
+    elif args.command == "producer-analysis":
+        producer_analysis(args.plan_id)
 
 
 if __name__ == "__main__":

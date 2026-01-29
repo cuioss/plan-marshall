@@ -97,10 +97,12 @@ Analyze the request to determine which component types are affected.
 | skills | standards/, templates/, scripts/, references/ | Request mentions skill, standard, workflow, template |
 | agents | (none) | Request mentions agent, task executor |
 | commands | (none) | Request mentions command, slash command, user-invokable |
-| scripts | (none) | Request mentions script, Python, automation |
+| scripts | (none) | Request mentions script, Python, automation, OR request mentions output/format/return value (infer producers) |
 | plugin.json | (none) | Components added/removed/renamed |
 | tests | conftest.py, test_*.py | Request mentions test, testing, coverage, pytest |
 | project-skills | .claude/skills/* | Request mentions verify-workflow, project skill, sync-plugin-cache |
+
+**IMPORTANT**: When request mentions "output", "format", "return value", "produces", or format-specific terms (JSON, TOON), ALWAYS include `scripts` in component scope to capture producer scripts.
 
 ### Decision Logic
 
@@ -187,6 +189,28 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 ---
 
+## Step 1.7: Determine Producer Discovery Need
+
+Producer discovery expands inventory to include scripts that produce output affected by the request.
+
+### When to Apply
+
+Producer discovery is needed when ANY of:
+- `change_type` is `migrate` or `modify`
+- Request contains: "output", "format", "return value", "produces", "generates"
+- Content filter targets output sections (`` ```json ``, `## Output`)
+
+### Log Decision
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  decision {plan_id} INFO "(pm-plugin-development:ext-outline-plugin) Producer discovery: {ENABLED|DISABLED}"
+```
+
+For detailed rules, see `standards/producer-analysis.md`.
+
+---
+
 ## Step 2: Discovery
 
 Spawn ext-outline-inventory-agent with component scope and content filter from Steps 1.5/1.6:
@@ -212,6 +236,25 @@ The agent:
 - Stores reference as `inventory_filtered` in references.toon
 
 **Contract**: After agent returns, `work/inventory_filtered.toon` exists.
+
+---
+
+## Step 2.5: Producer Discovery (Optional)
+
+**Condition**: Run if `needs_producer_discovery` is true (determined in Step 1.7).
+
+**Purpose**: Expand inventory with scripts that produce output referenced by skills.
+
+```bash
+python3 .plan/execute-script.py pm-plugin-development:ext-outline-plugin:filter-inventory \
+  producer-analysis --plan-id {plan_id}
+```
+
+**Contract**: After this step, `work/inventory_filtered.toon` includes producer scripts discovered via forward dependencies (deps --dep-types script).
+
+For detailed rules, see `standards/producer-analysis.md`.
+
+---
 
 ### Filter Result Logging
 

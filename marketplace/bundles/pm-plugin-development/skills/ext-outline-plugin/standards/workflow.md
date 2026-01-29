@@ -59,7 +59,7 @@ For modifying, migrating, or refactoring existing components. Uses discovery and
 
 ### Step 1: Load Persisted Inventory
 
-The Assessment Protocol (SKILL.md) already ran the ext-outline-inventory-agent which persisted results. Read the filtered inventory from the known location:
+The Assessment Protocol (SKILL.md) already ran the ext-outline-inventory-agent (Step 2) and optionally producer discovery (Step 2.5) which persisted results. Read the filtered inventory from the known location:
 
 ```bash
 # Check inventory file exists
@@ -83,6 +83,7 @@ Parse the TOON content to extract:
 - `inventory.skills` - Skill file paths
 - `inventory.commands` - Command file paths
 - `inventory.agents` - Agent file paths
+- `inventory.scripts` - Script file paths (from producer discovery)
 
 ### Step 2: Load Request Text
 
@@ -118,6 +119,7 @@ Parse `inventory_filtered.toon` to get file paths grouped by component type:
 skills_files = inventory.get('inventory', {}).get('skills', [])
 commands_files = inventory.get('inventory', {}).get('commands', [])
 agents_files = inventory.get('inventory', {}).get('agents', [])
+scripts_files = inventory.get('inventory', {}).get('scripts', [])  # From producer discovery
 tests_files = inventory.get('inventory', {}).get('tests', [])
 ```
 
@@ -449,5 +451,5 @@ Additional domain-specific checks (grep for patterns, format validation) may sup
 | "Add new skill" | 1. Create SKILL.md 2. Create standards 3. Update plugin.json |
 | "Add new command" | 1. Create command.md 2. Update plugin.json |
 | "Rename notation X to Y" | 1-N. Update each affected component |
-| "Change output format" | 1-N. Update each producer/consumer |
+| "Change output format" | 1-N. Update SKILL.md + producer scripts (via producer discovery) |
 | "Migrate to new API" | 1-N. Migrate each caller |
