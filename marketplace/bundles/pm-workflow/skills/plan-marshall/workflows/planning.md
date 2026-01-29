@@ -46,7 +46,7 @@ Create a new plan and automatically continue to 2-refine/3-outline/4-plan phases
 **1-Init Phase** uses a single agent:
 
 ```
-Task: pm-workflow:phase-init-agent
+Task: pm-workflow:plan-init-agent
   Input: description OR issue OR lesson_id
   Output: plan_id, domains array
 ```
