@@ -47,8 +47,8 @@ The execute phase iterates through tasks using a simple loop:
 # Get next pending task
 python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks next --plan-id {plan_id}
 
-# After task completion, mark done
-python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks check --plan-id {plan_id} --number {task_number} --status done
+# After each step completion, mark step done
+python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks step-done --plan-id {plan_id} --task {task_number} --step {step_number}
 ```
 
 For each task:
