@@ -84,7 +84,7 @@ When creating tasks that implement deliverables, use heredoc:
 python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks add \
   --plan-id {plan_id} <<'EOF'
 title: Implement JWT validation service
-deliverables: [1]
+deliverable: 1
 domain: java
 steps:
   - Create interface
@@ -93,7 +93,7 @@ steps:
 EOF
 ```
 
-**Note**: `deliverables` accepts the numeric part(s) as an array. The task stores the full reference internally.
+**Note**: `deliverable` accepts a single integer (1:1 constraint - one deliverable per task).
 
 ## Listing Deliverables
 

@@ -117,7 +117,7 @@ For aggregated deliverables or single deliverables, create tasks using heredoc.
 python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks add \
   --plan-id {plan_id} <<'EOF'
 title: {Action Verb} {Target}: {Scope}
-deliverables: [{n1}, {n2}, {n3}]
+deliverable: {n}
 domain: plan-marshall-plugin-dev
 phase: 5-execute
 description: |
@@ -162,7 +162,7 @@ EOF
 python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks add \
   --plan-id migrate-json-to-toon <<'EOF'
 title: Migrate pm-workflow Agents to TOON Format
-deliverables: [2]
+deliverable: 2
 domain: plan-marshall-plugin-dev
 phase: 5-execute
 description: |

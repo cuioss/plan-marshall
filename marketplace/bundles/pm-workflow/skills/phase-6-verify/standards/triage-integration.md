@@ -167,7 +167,7 @@ When decision is FIX:
 python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks add \
   --plan-id {plan_id} <<'EOF'
 title: Fix {finding.rule}: {finding.message}
-deliverables: []
+deliverable: 0
 domain: {domain}
 profile: implementation
 type: FIX

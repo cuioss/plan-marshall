@@ -33,7 +33,7 @@ profile: module_testing
 skills:
   - pm-dev-java:junit-core
   - pm-dev-java:cui-testing
-deliverables: [2]
+deliverable: 2
 ```
 
 ---

@@ -165,7 +165,7 @@ For each deliverable, create tasks using heredoc (one task per profile):
 python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks add \
   --plan-id {plan_id} <<'EOF'
 title: {task title from deliverable}
-deliverables: [{deliverable_number}]
+deliverable: {deliverable_number}
 domain: {domain from deliverable}
 profile: {profile from deliverable}
 phase: 5-execute

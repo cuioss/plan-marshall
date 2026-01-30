@@ -204,7 +204,7 @@ The pm-workflow bundle implements a 7-phase execution model for structured task 
 │  │        └── 3. Title                                                 │   │
 │  │                                  Each task contains:                │   │
 │  │                                    • title                          │   │
-│  │                                    • deliverables: [N, M]           │   │
+│  │                                    • deliverable: N                 │   │
 │  │                                    • domain                         │   │
 │  │                                    • profile                        │   │
 │  │                                    • skills: [...]                  │   │

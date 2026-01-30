@@ -99,7 +99,7 @@ The pm-workflow bundle uses a two-tier skill loading pattern for domain-agnostic
 │  │    3. Create task with profile + resolved skills                     │  │
 │  │                                                                      │  │
 │  │  TASK-001.toon (profile: implementation):                            │  │
-│  │    deliverables: [1]                                                 │  │
+│  │    deliverable: 1                                                    │  │
 │  │    module: oauth-sheriff-core                                        │  │
 │  │    domain: java                                                      │  │
 │  │    profile: implementation                                           │  │
@@ -108,7 +108,7 @@ The pm-workflow bundle uses a two-tier skill loading pattern for domain-agnostic
 │  │      - pm-dev-java:java-cdi                                          │  │
 │  │                                                                      │  │
 │  │  TASK-002.toon (profile: module_testing):                            │  │
-│  │    deliverables: [1]                                                 │  │
+│  │    deliverable: 1                                                    │  │
 │  │    module: oauth-sheriff-core                                        │  │
 │  │    domain: java                                                      │  │
 │  │    profile: module_testing                                           │  │

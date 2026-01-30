@@ -159,7 +159,7 @@ Solution outline skills MUST validate that each deliverable contains:
 
 | Format | Example | Usage |
 |--------|---------|-------|
-| Number only | `1`, `2` | `task.deliverables: [1, 2]` |
+| Number only | `1`, `2` | `task.deliverable: 1` |
 | Full reference | `1. Create CacheConfig` | `depends: 1. Create CacheConfig` |
 
 **Parsing rule**: Extract leading integer, ignore title portion.

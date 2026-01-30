@@ -238,7 +238,7 @@ The pm-workflow bundle uses manage-* skills as the data access layer for all pla
 │  ┌──────────────────────────────────────────────────────────────────────┐  │
 │  │                                                                      │  │
 │  │  title: Implement UserService                                        │  │
-│  │  deliverables: [1, 2]                                                │  │
+│  │  deliverable: 1                                                      │  │
 │  │  domain: java                                                        │  │
 │  │  profile: implementation                                             │  │
 │  │  phase: 5-execute                                                    │  │

@@ -85,7 +85,7 @@ profile: implementation
 skills:
   - pm-dev-java:java-core
   - pm-dev-java:java-cdi
-deliverables: [1]
+deliverable: 1
 ...
 ```
 

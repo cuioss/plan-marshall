@@ -801,7 +801,7 @@ Actual: current_phase=5-execute (not updated)
 Claude uses: Write .plan/plans/my-plan/tasks/TASK-003.toon
 Should use: python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks add --plan-id my-plan <<'EOF'
 title: Task title
-deliverables: [1]
+deliverable: 1
 domain: java
 steps:
   - Step A
