@@ -187,13 +187,25 @@ python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifac
 
 ### Step 5: Update Affected Files
 
-Persist the verified affected files to references.toon:
+Persist the verified affected files to references.toon.
+
+**CRITICAL**: The `--values` parameter requires a **single comma-separated string** with NO spaces between items:
 
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-references:manage-references set-list \
   --plan-id {plan_id} \
   --field affected_files \
-  --values "{verified_files_list}"
+  --values "file1.py,file2.py,file3.md"
+```
+
+**Example** (correct):
+```bash
+--values "src/foo.py,src/bar.py,test/test_foo.py"
+```
+
+**Example** (WRONG - will fail):
+```bash
+--values src/foo.py src/bar.py test/test_foo.py
 ```
 
 Only include files from deliverables that passed verification.
