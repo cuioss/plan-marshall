@@ -686,8 +686,6 @@ def test_backward_compat_old_file_without_new_fields():
             'title': 'Old task',
             'status': 'pending',
             'phase': '5-execute',
-            'created': '2025-01-01T00:00:00Z',
-            'updated': '2025-01-01T00:00:00Z',
             'deliverables': [1],
             'depends_on': [],
             'description': 'Old task without new fields',

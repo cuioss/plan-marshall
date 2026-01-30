@@ -2,8 +2,6 @@ number: {NUMBER}
 title: {TITLE}
 status: pending
 phase: {PHASE}
-created: {TIMESTAMP}
-updated: {TIMESTAMP}
 
 deliverables[{DELIVERABLE_COUNT}]:
 - {DELIVERABLE_1}

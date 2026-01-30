@@ -10,7 +10,6 @@ from _manage_tasks_shared import (
     find_task_file,
     format_task_file,
     get_tasks_dir,
-    now_iso,
     output_error,
     output_toon,
     parse_task_file,
@@ -56,7 +55,6 @@ def cmd_finalize_step(args) -> int:
     # Mark step with outcome
     step_found['status'] = args.outcome
     task['status'] = 'in_progress'
-    task['updated'] = now_iso()
 
     # Check if all steps are complete
     all_done = all(s['status'] in ('done', 'skipped') for s in steps)
@@ -138,7 +136,6 @@ def cmd_add_step(args) -> int:
         step['number'] = i + 1
 
     task['steps'] = steps
-    task['updated'] = now_iso()
 
     new_content = format_task_file(task)
     atomic_write_file(filepath, new_content)
@@ -191,7 +188,6 @@ def cmd_remove_step(args) -> int:
         step['number'] = i + 1
 
     task['steps'] = steps
-    task['updated'] = now_iso()
 
     if task.get('current_step', 1) > len(steps):
         task['current_step'] = len(steps)

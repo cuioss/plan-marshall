@@ -12,7 +12,6 @@ from _manage_tasks_shared import (
     format_task_file,
     get_next_number,
     get_tasks_dir,
-    now_iso,
     output_error,
     output_toon,
     parse_depends_on,
@@ -55,7 +54,6 @@ def cmd_add(args) -> int:
     for i, step_title in enumerate(parsed['steps'], 1):
         steps.append({'number': i, 'title': step_title, 'status': 'pending'})
 
-    now = now_iso()
     task = {
         'number': number,
         'title': parsed['title'],
@@ -66,8 +64,6 @@ def cmd_add(args) -> int:
         'type': parsed['type'],
         'skills': parsed['skills'],
         'origin': parsed['origin'],
-        'created': now,
-        'updated': now,
         'deliverables': parsed['deliverables'],
         'depends_on': parsed['depends_on'],
         'description': parsed['description'],
@@ -169,8 +165,6 @@ def cmd_update(args) -> int:
         except ValueError:
             output_error('Deliverables must be comma-separated integers')
             return 1
-
-    task['updated'] = now_iso()
 
     # Filename uses TASK-SEQ-TYPE format - doesn't change when title changes
     new_content = format_task_file(task)

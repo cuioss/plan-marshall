@@ -624,8 +624,6 @@ def output_toon(data: dict) -> None:
             'origin',
             'status',
             'current_step',
-            'created',
-            'updated',
             'step_count',
         ]:
             if key in task and task[key] is not None:

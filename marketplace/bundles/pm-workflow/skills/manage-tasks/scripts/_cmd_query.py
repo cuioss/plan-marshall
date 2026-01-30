@@ -123,8 +123,6 @@ def cmd_get(args) -> int:
                 'phase': task.get('phase', 'execute'),
                 'status': task['status'],
                 'current_step': task.get('current_step', 1),
-                'created': task.get('created', ''),
-                'updated': task.get('updated', ''),
                 'description': task.get('description', ''),
                 'steps': task.get('steps', []),
                 'verification': task.get('verification', {}),

@@ -60,8 +60,6 @@ Tasks are stored as JSON and output as TOON (LLM-optimized):
   "profile": "implementation",
   "type": "IMPL",
   "origin": "plan",
-  "created": "2025-12-02T10:30:00Z",
-  "updated": "2025-12-02T10:30:00Z",
   "skills": [
     "pm-plugin-development:plugin-maintain",
     "pm-plugin-development:plugin-architecture"

@@ -23,8 +23,6 @@ TASK-{NNN}-{TYPE}.json
   "profile": "implementation",
   "type": "IMPL",
   "origin": "plan",
-  "created": "2025-12-02T10:30:00Z",
-  "updated": "2025-12-02T10:30:00Z",
   "deliverables": [1, 4],
   "depends_on": ["TASK-1"],
   "skills": ["pm-dev-java:java-core", "pm-dev-java:java-cdi"],
@@ -51,8 +49,6 @@ TASK-{NNN}-{TYPE}.json
 | `title` | Yes | String | Short descriptive title |
 | `status` | Yes | Enum | Task status (see Status Values) |
 | `phase` | Yes | String | Plan phase: `1-init`, `2-refine`, `3-outline`, `4-plan`, `5-execute`, `6-verify`, `7-finalize` |
-| `created` | Yes | ISO timestamp | When task was created |
-| `updated` | Yes | ISO timestamp | When task was last modified |
 | `deliverables` | Yes | Integer[] | List of deliverable numbers from solution_outline.md |
 | `depends_on` | Yes | String[] | Task dependencies: empty array or TASK-N references |
 | `description` | Yes | String | Detailed task description |
@@ -200,8 +196,6 @@ The verification block defines how to verify task completion:
   "profile": "implementation",
   "type": "IMPL",
   "origin": "plan",
-  "created": "2025-12-02T10:30:00Z",
-  "updated": "2025-12-02T11:00:00Z",
   "deliverables": [1, 4],
   "depends_on": ["TASK-1"],
   "skills": ["pm-dev-java:java-core", "pm-dev-java:java-cdi"],
