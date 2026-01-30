@@ -709,5 +709,101 @@ def test_get_skills_by_profile_flat_domain_error():
 
 
 # =============================================================================
+# Tests for verbs that work without skill_domains
+# =============================================================================
+
+
+def test_get_available_works_without_skill_domains():
+    """Test get-available works without skill_domains being configured.
+
+    This is the main fix: get-available should succeed even if marshal.json
+    exists but doesn't have skill_domains, because it uses dynamic discovery.
+    """
+    with PlanContext() as ctx:
+        # Create marshal.json WITHOUT skill_domains key
+        config = {
+            'system': {'retention': {}},
+            'plan': {
+                'phase-1-init': {'branch_strategy': 'direct'},
+                'phase-2-refine': {'confidence_threshold': 95, 'compatibility': 'breaking'},
+                'phase-5-execute': {'commit_strategy': 'per_deliverable'},
+                'phase-6-verify': {'max_iterations': 5, '1_quality_check': True, '2_build_verify': True, 'domain_steps': {}},
+                'phase-7-finalize': {'max_iterations': 3, '1_commit_push': True, '2_create_pr': True, '3_automated_review': True, '4_sonar_roundtrip': True, '5_knowledge_capture': True, '6_lessons_capture': True},
+            },
+            # NOTE: No skill_domains key!
+        }
+        marshal_path = ctx.fixture_dir / 'marshal.json'
+        marshal_path.write_text(json.dumps(config, indent=2))
+
+        result = run_script(SCRIPT_PATH, 'skill-domains', 'get-available')
+
+        assert result.success, f'get-available should succeed without skill_domains: {result.stderr}'
+        assert 'discovered_domains' in result.stdout
+
+
+def test_configure_works_without_skill_domains():
+    """Test configure works without skill_domains being configured.
+
+    Configure creates skill_domains from scratch using bundle discovery,
+    so it shouldn't require skill_domains to already exist.
+    """
+    with PlanContext() as ctx:
+        # Create marshal.json WITHOUT skill_domains key
+        config = {
+            'system': {'retention': {}},
+            'plan': {
+                'phase-1-init': {'branch_strategy': 'direct'},
+                'phase-2-refine': {'confidence_threshold': 95, 'compatibility': 'breaking'},
+                'phase-5-execute': {'commit_strategy': 'per_deliverable'},
+                'phase-6-verify': {'max_iterations': 5, '1_quality_check': True, '2_build_verify': True, 'domain_steps': {}},
+                'phase-7-finalize': {'max_iterations': 3, '1_commit_push': True, '2_create_pr': True, '3_automated_review': True, '4_sonar_roundtrip': True, '5_knowledge_capture': True, '6_lessons_capture': True},
+            },
+            # NOTE: No skill_domains key!
+        }
+        marshal_path = ctx.fixture_dir / 'marshal.json'
+        marshal_path.write_text(json.dumps(config, indent=2))
+
+        result = run_script(SCRIPT_PATH, 'skill-domains', 'configure', '--domains', 'java')
+
+        assert result.success, f'configure should succeed without skill_domains: {result.stderr}'
+        assert 'system_domain' in result.stdout
+        assert 'configured' in result.stdout
+
+        # Verify skill_domains was created
+        updated = json.loads(marshal_path.read_text())
+        assert 'skill_domains' in updated, 'skill_domains should be created'
+        assert 'system' in updated['skill_domains'], 'System domain should be added'
+        assert 'java' in updated['skill_domains'], 'Java domain should be added'
+
+
+def test_list_requires_skill_domains():
+    """Test list verb requires skill_domains to be configured.
+
+    Unlike get-available and configure, the list verb reads existing
+    skill_domains from marshal.json, so it should fail if missing.
+    """
+    with PlanContext() as ctx:
+        # Create marshal.json WITHOUT skill_domains key
+        config = {
+            'system': {'retention': {}},
+            'plan': {
+                'phase-1-init': {'branch_strategy': 'direct'},
+                'phase-2-refine': {'confidence_threshold': 95, 'compatibility': 'breaking'},
+                'phase-5-execute': {'commit_strategy': 'per_deliverable'},
+                'phase-6-verify': {'max_iterations': 5, '1_quality_check': True, '2_build_verify': True, 'domain_steps': {}},
+                'phase-7-finalize': {'max_iterations': 3, '1_commit_push': True, '2_create_pr': True, '3_automated_review': True, '4_sonar_roundtrip': True, '5_knowledge_capture': True, '6_lessons_capture': True},
+            },
+            # NOTE: No skill_domains key!
+        }
+        marshal_path = ctx.fixture_dir / 'marshal.json'
+        marshal_path.write_text(json.dumps(config, indent=2))
+
+        result = run_script(SCRIPT_PATH, 'skill-domains', 'list')
+
+        assert not result.success, 'list should fail without skill_domains'
+        assert 'skill_domains not configured' in result.stdout
+
+
+# =============================================================================
 # Main
 # =============================================================================

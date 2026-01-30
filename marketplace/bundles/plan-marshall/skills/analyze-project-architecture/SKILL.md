@@ -399,7 +399,8 @@ Based on the module analysis from Steps 6a-6d, determine which domain applies.
 | Kotlin sources, kotlin-stdlib | `java` (or future `kotlin`) |
 | JavaScript/TypeScript sources | `javascript` |
 | plugin.json, marketplace structure | `plan-marshall-plugin-dev` |
-| Quarkus dependencies | `java` + CUI-specific if CUI deps present |
+| Quarkus dependencies | `java` |
+| CUI dependencies (`de.cuioss:*`) | `java` + `java-cui` (merged skills) |
 | `doc/` or `docs/` with `.adoc` files | `documentation` (as additional profile) |
 
 **Step 6e.3: Get Skills by Profile**
@@ -482,6 +483,40 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-m
 ```
 
 **Key principle**: Documentation is a separate task type (like testing), not a variant of implementation. A module can have both `implementation` AND `documentation` profiles.
+
+**Step 6e.4c: Add CUI Extension Domain (Java Only)**
+
+If module uses CUI libraries, add `java-cui` domain alongside `java`:
+
+**Detection signals** (from module dependencies):
+- `de.cuioss:cui-java-tools` or `de.cuioss:cui-*`
+- `de.cuioss.portal:*` or `de.cuioss.jsf:*`
+
+**If CUI dependencies found**:
+
+1. Get CUI-specific skills:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+  get-skills-by-profile --domain java-cui
+```
+
+2. Merge with base java skills in `skills_by_profile`:
+```json
+{
+  "implementation": {
+    "defaults": [
+      {"skill": "pm-dev-java:java-core", "description": "..."},
+      {"skill": "pm-dev-java-cui:cui-logging", "description": "..."}
+    ],
+    "optionals": [
+      {"skill": "pm-dev-java:java-cdi", "description": "..."},
+      {"skill": "pm-dev-java-cui:cui-http", "description": "..."}
+    ]
+  }
+}
+```
+
+**Key principle**: `java-cui` is an ADDITIVE domain that extends `java`. Both domains contribute skills to the same profiles. The java-cui domain does NOT provide its own triage - it relies on `pm-dev-java:ext-triage-java`.
 
 **Step 6e.5: Apply Skills by Profile**
 

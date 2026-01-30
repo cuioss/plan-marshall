@@ -191,7 +191,7 @@ def test_assessment_get():
             'file.md', 'CERTAIN_INCLUDE', '90'
         )
         add_data = parse_toon(add_result.stdout)
-        hash_id = add_data['hash_id']
+        hash_id = str(add_data['hash_id'])  # Ensure string for subprocess args
 
         result = run_script(SCRIPT_PATH, 'assessment', 'get', 'test-plan', hash_id)
         assert result.success, f'Script failed: {result.stderr}'

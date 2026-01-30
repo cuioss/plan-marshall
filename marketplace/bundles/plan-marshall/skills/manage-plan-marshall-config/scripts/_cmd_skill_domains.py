@@ -316,8 +316,10 @@ def cmd_skill_domains(args) -> int:
 
     config = load_config()
 
-    if 'skill_domains' not in config:
-        return error_exit('skill_domains not configured. Run command /marshall-steward first')
+    # Verbs that work without skill_domains existing
+    if args.verb not in ('get-available', 'configure'):
+        if 'skill_domains' not in config:
+            return error_exit('skill_domains not configured. Run command /marshall-steward first')
 
     skill_domains = config.get('skill_domains', {})
 
