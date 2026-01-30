@@ -18,9 +18,9 @@ File formats and structures for plan data storage.
 │   └── inventory_filtered.toon  Filtered/transformed inventory
 │
 ├── tasks/                   Phase: plan
-│   ├── TASK-001-IMPL.toon
-│   ├── TASK-002-IMPL.toon
-│   └── TASK-003-FIX.toon
+│   ├── TASK-001-IMPL.json
+│   ├── TASK-002-IMPL.json
+│   └── TASK-003-FIX.json
 │
 └── logs/                    Phase: all (logging)
     ├── work.log                 Semantic progress tracking
@@ -336,7 +336,7 @@ Individual task files in the tasks directory.
 ### Filename Format
 
 ```
-TASK-001-IMPL.toon
+TASK-001-IMPL.json
      │    │
      │    └── Type: IMPL, FIX, SONAR, PR, LINT, SEC, DOC
      │
@@ -388,7 +388,7 @@ current_step: 1
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                      TASK-001-IMPL.toon                      │
+│                      TASK-001-IMPL.json                      │
 ├─────────────────────────────────────────────────────────────┤
 │ HEADER                                                       │
 │ ┌─────────────────────────────────────────────────────────┐ │
@@ -463,7 +463,7 @@ STEP Status:
 
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks \
-  {add|update|remove|list|get|next|step-start|step-done|step-skip} --plan-id {id}
+  {add|update|remove|list|get|next|finalize-step|add-step|remove-step} --plan-id {id}
 ```
 
 ---
@@ -713,6 +713,6 @@ archive     .plan/archived-plans/{date}-{plan_id}/
 | [skill-loading.md](skill-loading.md) | How skills from tasks are loaded |
 | `pm-workflow:manage-references` | references.toon operations |
 | `pm-workflow:plan-marshall:manage-lifecycle` | status.toon operations |
-| `pm-workflow:manage-tasks` | TASK-*.toon operations |
+| `pm-workflow:manage-tasks` | TASK-*.json operations |
 | `pm-workflow:manage-solution-outline` | solution_outline.md operations |
 | `plan-marshall:manage-logging` | work.log, decision.log, and script-execution.log operations |

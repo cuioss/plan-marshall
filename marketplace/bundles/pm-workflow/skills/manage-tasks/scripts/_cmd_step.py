@@ -2,10 +2,11 @@
 """
 Step management command handlers for manage-tasks.py.
 
-Contains: step-start, step-done, step-skip, add-step, remove-step subcommands.
+Contains: finalize-step, add-step, remove-step subcommands.
 """
 
 from _manage_tasks_shared import (
+    calculate_progress,
     find_task_file,
     format_task_file,
     get_tasks_dir,
@@ -18,8 +19,19 @@ from file_ops import atomic_write_file  # type: ignore[import-not-found]
 from plan_logging import log_entry  # type: ignore[import-not-found]
 
 
-def cmd_step_start(args) -> int:
-    """Handle 'step-start' subcommand."""
+def cmd_finalize_step(args) -> int:
+    """Handle 'finalize-step' subcommand.
+
+    Consolidates step-done and step-skip into a single command with --outcome parameter.
+    Marks step with outcome (done/skipped), auto-advances current_step, and
+    auto-completes task if all steps are finished.
+
+    Returns structured output with:
+    - finalized: details of the completed step
+    - next_step: next pending step (or null)
+    - task_complete: whether all steps are done
+    - progress: "completed/total" string
+    """
     task_dir = get_tasks_dir(args.plan_id)
 
     filepath = find_task_file(task_dir, args.task)
@@ -41,157 +53,57 @@ def cmd_step_start(args) -> int:
         output_error(f'Step {args.step} not found in TASK-{args.task}')
         return 1
 
-    step_found['status'] = 'in_progress'
+    # Mark step with outcome
+    step_found['status'] = args.outcome
     task['status'] = 'in_progress'
-    task['current_step'] = args.step
     task['updated'] = now_iso()
 
-    new_content = format_task_file(task)
-    atomic_write_file(filepath, new_content)
-
-    output_toon(
-        {
-            'status': 'success',
-            'plan_id': args.plan_id,
-            'task_number': args.task,
-            'step': args.step,
-            'task_status': 'in_progress',
-            'step_status': 'in_progress',
-            'step_title': step_found['title'],
-        }
-    )
-    return 0
-
-
-def cmd_step_done(args) -> int:
-    """Handle 'step-done' subcommand."""
-    task_dir = get_tasks_dir(args.plan_id)
-
-    filepath = find_task_file(task_dir, args.task)
-    if not filepath:
-        output_error(f'Task TASK-{args.task} not found')
-        return 1
-
-    content = filepath.read_text(encoding='utf-8')
-    task = parse_task_file(content)
-
-    steps = task.get('steps', [])
-    step_found = None
-    for step in steps:
-        if step['number'] == args.step:
-            step_found = step
-            break
-
-    if not step_found:
-        output_error(f'Step {args.step} not found in TASK-{args.task}')
-        return 1
-
-    step_found['status'] = 'done'
-    task['updated'] = now_iso()
-
+    # Check if all steps are complete
     all_done = all(s['status'] in ('done', 'skipped') for s in steps)
 
-    next_step = None
-    next_step_title = None
+    # Find next pending step
+    next_step_info = None
     for step in steps:
         if step['status'] == 'pending':
-            next_step = step['number']
-            next_step_title = step['title']
+            next_step_info = {'number': step['number'], 'title': step['title']}
             break
 
+    # Update task state
     if all_done:
         task['status'] = 'done'
         task['current_step'] = len(steps)
-    elif next_step:
-        task['current_step'] = next_step
+    elif next_step_info:
+        task['current_step'] = next_step_info['number']
 
     new_content = format_task_file(task)
     atomic_write_file(filepath, new_content)
 
+    # Logging
     if all_done:
         log_entry('work', args.plan_id, 'INFO', f'[MANAGE-TASKS] Completed TASK-{args.task:03d}')
     else:
-        log_entry('work', args.plan_id, 'INFO', f'[MANAGE-TASKS] TASK-{args.task:03d} step {args.step} done')
+        log_entry('work', args.plan_id, 'INFO', f'[MANAGE-TASKS] TASK-{args.task:03d} step {args.step} {args.outcome}')
+
+    # Calculate progress
+    completed, total = calculate_progress(task)
 
     result = {
         'status': 'success',
         'plan_id': args.plan_id,
-        'task_number': args.task,
-        'step': args.step,
-        'step_status': 'done',
+        'finalized': {
+            'step_number': args.step,
+            'step_title': step_found['title'],
+            'outcome': args.outcome,
+        },
+        'next_step': next_step_info,
+        'task_complete': all_done,
         'task_status': task['status'],
-        'next_step': next_step,
-        'next_step_title': next_step_title,
+        'progress': f'{completed}/{total}',
     }
 
-    if all_done:
-        result['message'] = 'Task completed'
-
-    output_toon(result)
-    return 0
-
-
-def cmd_step_skip(args) -> int:
-    """Handle 'step-skip' subcommand."""
-    task_dir = get_tasks_dir(args.plan_id)
-
-    filepath = find_task_file(task_dir, args.task)
-    if not filepath:
-        output_error(f'Task TASK-{args.task} not found')
-        return 1
-
-    content = filepath.read_text(encoding='utf-8')
-    task = parse_task_file(content)
-
-    steps = task.get('steps', [])
-    step_found = None
-    for step in steps:
-        if step['number'] == args.step:
-            step_found = step
-            break
-
-    if not step_found:
-        output_error(f'Step {args.step} not found in TASK-{args.task}')
-        return 1
-
-    step_found['status'] = 'skipped'
-    task['updated'] = now_iso()
-
-    all_done = all(s['status'] in ('done', 'skipped') for s in steps)
-
-    next_step = None
-    next_step_title = None
-    for step in steps:
-        if step['status'] == 'pending':
-            next_step = step['number']
-            next_step_title = step['title']
-            break
-
-    if all_done:
-        task['status'] = 'done'
-        task['current_step'] = len(steps)
-    elif next_step:
-        task['current_step'] = next_step
-
-    new_content = format_task_file(task)
-    atomic_write_file(filepath, new_content)
-
-    result = {
-        'status': 'success',
-        'plan_id': args.plan_id,
-        'task_number': args.task,
-        'step': args.step,
-        'step_status': 'skipped',
-        'task_status': task['status'],
-        'next_step': next_step,
-        'next_step_title': next_step_title,
-    }
-
-    if args.reason:
-        result['reason'] = args.reason
-
-    if all_done:
-        result['message'] = 'Task completed'
+    # Include reason if provided (for skipped steps)
+    if getattr(args, 'reason', None):
+        result['finalized']['reason'] = args.reason
 
     output_toon(result)
     return 0

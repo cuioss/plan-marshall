@@ -649,11 +649,12 @@ def test_next_tasks_includes_in_progress():
     """next-tasks includes in_progress tasks."""
     temp_dir = setup_plan_dir()
     try:
-        add_task_with_fields(title='Task 1', depends_on='none')
+        # Add tasks with 2 steps so completing one step leaves task in_progress
+        add_task_with_fields(title='Task 1', depends_on='none', steps=['src/main/java/FileA.java', 'src/main/java/FileB.java'])
         add_task_with_fields(title='Task 2', depends_on='none')
 
-        # Start task 1
-        run_script(SCRIPT_PATH, 'step-start', '--plan-id', 'test-plan', '--task', '1', '--step', '1')
+        # Complete first step of task 1 (puts task in_progress with step 2 remaining)
+        run_script(SCRIPT_PATH, 'finalize-step', '--plan-id', 'test-plan', '--task', '1', '--step', '1', '--outcome', 'done')
 
         result = run_script(SCRIPT_PATH, 'next-tasks', '--plan-id', 'test-plan')
 
@@ -671,34 +672,29 @@ def test_next_tasks_includes_in_progress():
 
 
 def test_backward_compat_old_file_without_new_fields():
-    """Old task files without new fields are handled gracefully."""
+    """Old task files without new fields are handled gracefully (JSON format)."""
     temp_dir = setup_plan_dir()
     try:
+        import json
+
         # Create task file manually without new fields (simulating old format)
         task_dir = Path(os.environ['PLAN_BASE_DIR']) / 'plans' / 'test-plan' / 'tasks'
         task_dir.mkdir(parents=True, exist_ok=True)
 
-        old_format = """number: 1
-title: Old task
-status: pending
-phase: 5-execute
-created: 2025-01-01T00:00:00Z
-updated: 2025-01-01T00:00:00Z
-
-deliverables[1]:
-- 1
-
-depends_on: none
-
-description: |
-  Old task without new fields
-
-steps[1]{number,title,status}:
-1,Step 1,pending
-
-current_step: 1
-"""
-        (task_dir / 'TASK-001-old-task.toon').write_text(old_format, encoding='utf-8')
+        old_format = {
+            'number': 1,
+            'title': 'Old task',
+            'status': 'pending',
+            'phase': '5-execute',
+            'created': '2025-01-01T00:00:00Z',
+            'updated': '2025-01-01T00:00:00Z',
+            'deliverables': [1],
+            'depends_on': [],
+            'description': 'Old task without new fields',
+            'steps': [{'number': 1, 'title': 'Step 1', 'status': 'pending'}],
+            'current_step': 1,
+        }
+        (task_dir / 'TASK-001-IMPL.json').write_text(json.dumps(old_format, indent=2), encoding='utf-8')
 
         # Get should work and return defaults for missing fields
         result = run_script(SCRIPT_PATH, 'get', '--plan-id', 'test-plan', '--number', '1')
@@ -740,9 +736,11 @@ def test_next_returns_new_fields():
 
 
 def test_file_contains_all_new_fields():
-    """Created file contains all new fields."""
+    """Created file contains all new fields (JSON format)."""
     temp_dir = setup_plan_dir()
     try:
+        import json
+
         add_task_with_fields(
             title='Complete task',
             domain='java',
@@ -752,16 +750,15 @@ def test_file_contains_all_new_fields():
         )
 
         task_dir = Path(os.environ['PLAN_BASE_DIR']) / 'plans' / 'test-plan' / 'tasks'
-        files = list(task_dir.glob('TASK-001-*.toon'))
+        files = list(task_dir.glob('TASK-001-*.json'))
         content = files[0].read_text(encoding='utf-8')
+        task = json.loads(content)
 
-        assert 'domain: java' in content
-        assert 'profile: implementation' in content
-        assert 'origin: plan' in content
-        # Skills use TOON array format: skills[N]:
-        assert 'skills[' in content
-        assert '- pm-dev-java:java-core' in content
-        assert '- pm-dev-java:java-cdi' in content
+        assert task['domain'] == 'java'
+        assert task['profile'] == 'implementation'
+        assert task['origin'] == 'plan'
+        assert 'pm-dev-java:java-core' in task['skills']
+        assert 'pm-dev-java:java-cdi' in task['skills']
     finally:
         cleanup(temp_dir)
 
@@ -979,8 +976,8 @@ steps:
         result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
 
         assert result.returncode == 0, f'Failed: {result.stderr}'
-        # Should use TASK-001-IMPL.toon format
-        assert 'file: TASK-001-IMPL.toon' in result.stdout
+        # Should use TASK-001-IMPL.json format
+        assert 'file: TASK-001-IMPL.json' in result.stdout
     finally:
         cleanup(temp_dir)
 
@@ -1004,8 +1001,8 @@ steps:
         result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
 
         assert result.returncode == 0, f'Failed: {result.stderr}'
-        # Should use TASK-001-FIX.toon format
-        assert 'file: TASK-001-FIX.toon' in result.stdout
+        # Should use TASK-001-FIX.json format
+        assert 'file: TASK-001-FIX.json' in result.stdout
     finally:
         cleanup(temp_dir)
 

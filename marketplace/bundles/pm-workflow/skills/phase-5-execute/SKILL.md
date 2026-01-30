@@ -1,13 +1,13 @@
 ---
 name: phase-5-execute
-description: Execute phase skill for plan management. DUMB TASK RUNNER that executes tasks from TASK-*.toon files sequentially.
+description: Execute phase skill for plan management. DUMB TASK RUNNER that executes tasks from TASK-*.json files sequentially.
 user-invocable: false
 allowed-tools: Read, Write, Edit, Bash, Skill, Task, AskUserQuestion
 ---
 
 # Phase Execute Skill
 
-**Role**: DUMB TASK RUNNER that executes tasks from TASK-*.toon files sequentially.
+**Role**: DUMB TASK RUNNER that executes tasks from TASK-*.json files sequentially.
 
 **Execution Pattern**: Locate current task → Execute steps → Mark progress → Next task
 
@@ -99,15 +99,16 @@ Returns next task with status `pending` or `in_progress`, including embedded goa
 For each step in task's `steps[]` array:
 1. Parse the step text
 2. Execute the action (delegate if specified)
-3. Mark step complete via `manage-tasks:step-done`
+3. Mark step complete via `manage-tasks:finalize-step`
 
 ### Step 3: Mark Step Complete
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks step-done \
+python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks finalize-step \
   --plan-id {plan_id} \
   --task {task_number} \
-  --step {step_number}
+  --step {step_number} \
+  --outcome done
 ```
 
 ### Step 3.5: Log Task Completion

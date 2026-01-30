@@ -3,12 +3,13 @@
 Shared utilities for manage-tasks.py modular implementation.
 
 Contains:
-- TOON parsing/formatting utilities
+- JSON persistence utilities (storage format)
+- TOON output formatting (LLM-optimized output)
 - Task file operations
 - Validation functions
-- Output formatting
 """
 
+import json
 import re
 import sys
 from datetime import UTC, datetime
@@ -271,62 +272,6 @@ def format_depends_on(deps: list[str]) -> str:
 
 
 # =============================================================================
-# TOON block parsing
-# =============================================================================
-
-
-def parse_deliverables_block(lines: list[str], start_idx: int) -> tuple[list[int], int]:
-    """Parse deliverables block from TOON format."""
-    deliverables = []
-    i = start_idx + 1
-
-    while i < len(lines):
-        line = lines[i].strip()
-        if line.startswith('- '):
-            try:
-                deliverables.append(int(line[2:].strip()))
-            except ValueError:
-                pass
-            i += 1
-        elif line == '' or line.startswith('-'):
-            i += 1
-        else:
-            break
-
-    return deliverables, i
-
-
-def parse_verification_block(lines: list[str], start_idx: int) -> tuple[VerificationDict, int]:
-    """Parse verification block from TOON format."""
-    commands: list[str] = []
-    verification: VerificationDict = {'commands': commands, 'criteria': '', 'manual': False}
-    i = start_idx + 1
-
-    while i < len(lines):
-        line = lines[i]
-        if not line.startswith('  '):
-            break
-
-        stripped = line.strip()
-        if stripped.startswith('commands['):
-            i += 1
-            while i < len(lines) and lines[i].startswith('  - '):
-                cmd = lines[i].strip()[2:].strip()
-                if cmd:
-                    commands.append(cmd)
-                i += 1
-            continue
-        elif stripped.startswith('criteria:'):
-            verification['criteria'] = stripped[9:].strip()
-        elif stripped.startswith('manual:'):
-            val = stripped[7:].strip().lower()
-            verification['manual'] = val == 'true'
-        i += 1
-
-    return verification, i
-
-
-# =============================================================================
 # Task file operations
 # =============================================================================
 
@@ -336,172 +281,47 @@ def get_tasks_dir(plan_id: str) -> Path:
     return cast(Path, base_path('plans', plan_id, 'tasks'))
 
 
-def parse_skills_block(lines: list[str], start_idx: int) -> tuple[list[str], int]:
-    """Parse skills block from TOON format."""
-    skills = []
-    i = start_idx + 1
-
-    while i < len(lines):
-        line = lines[i].strip()
-        if line.startswith('- '):
-            skill = line[2:].strip()
-            if skill:
-                skills.append(skill)
-            i += 1
-        elif line == '':
-            i += 1
-        else:
-            break
-
-    return skills, i
-
-
 def parse_task_file(content: str) -> dict[str, Any]:
-    """Parse a task TOON file into a dictionary."""
-    steps: list[StepDict] = []
-    deliverables: list[int] = []
-    depends_on: list[str] = []
-    skills: list[str] = []
-    verification_commands: list[str] = []
+    """Parse a task JSON file into a dictionary.
 
-    result: dict[str, Any] = {
-        'steps': steps,
-        'deliverables': deliverables,
-        'depends_on': depends_on,
-        'domain': None,
-        'profile': None,
-        'type': 'IMPL',
-        'skills': skills,
-        'origin': 'plan',
-        'verification': {'commands': verification_commands, 'criteria': '', 'manual': False},
-    }
-    lines = content.split('\n')
-    i = 0
+    Uses stdlib json for robust parsing.
+    """
+    task: dict[str, Any] = json.loads(content)
 
-    while i < len(lines):
-        line = lines[i]
+    # Ensure required fields have defaults
+    if 'steps' not in task:
+        task['steps'] = []
+    if 'deliverables' not in task:
+        task['deliverables'] = []
+    if 'depends_on' not in task:
+        task['depends_on'] = []
+    if 'skills' not in task:
+        task['skills'] = []
+    if 'verification' not in task:
+        task['verification'] = {'commands': [], 'criteria': '', 'manual': False}
+    if 'domain' not in task:
+        task['domain'] = None
+    if 'profile' not in task:
+        task['profile'] = None
+    if 'type' not in task:
+        task['type'] = 'IMPL'
+    if 'origin' not in task:
+        task['origin'] = 'plan'
 
-        if line.startswith('description:'):
-            if line.strip() == 'description: |':
-                desc_lines = []
-                i += 1
-                while i < len(lines):
-                    if lines[i].startswith('  '):
-                        desc_lines.append(lines[i][2:])
-                    elif lines[i].strip() == '':
-                        desc_lines.append('')
-                    else:
-                        break
-                    i += 1
-                result['description'] = '\n'.join(desc_lines).strip()
-            else:
-                result['description'] = line[12:].strip()
-                i += 1
-        elif line.startswith('deliverables['):
-            result['deliverables'], i = parse_deliverables_block(lines, i)
-        elif line.startswith('skills[') or line.startswith('skills:'):
-            result['skills'], i = parse_skills_block(lines, i)
-        elif line.startswith('verification:'):
-            result['verification'], i = parse_verification_block(lines, i)
-        elif line.startswith('steps['):
-            i += 1
-            while (
-                i < len(lines)
-                and lines[i].strip()
-                and not lines[i].startswith('current_step:')
-                and not lines[i].startswith('verification:')
-            ):
-                parts = lines[i].split(',', 2)
-                if len(parts) == 3:
-                    result['steps'].append({'number': int(parts[0]), 'title': parts[1], 'status': parts[2]})
-                i += 1
-        elif line.startswith('depends_on:'):
-            value = line[11:].strip()
-            result['depends_on'] = parse_depends_on(value)
-            i += 1
-        elif ':' in line and not line.startswith(' '):
-            key, value = line.split(':', 1)
-            key = key.strip()
-            value = value.strip()
-            if key in ('number', 'current_step'):
-                result[key] = int(value) if value else 1
-            else:
-                result[key] = value
-            i += 1
-        else:
-            i += 1
-
-    return result
+    return task
 
 
 def format_task_file(task: dict) -> str:
-    """Format a task dictionary as TOON file content."""
-    lines = [
-        f'number: {task["number"]}',
-        f'title: {task["title"]}',
-        f'status: {task["status"]}',
-        f'phase: {task.get("phase", "execute")}',
-        f'domain: {task.get("domain", "")}',
-        f'profile: {task.get("profile", "implementation")}',
-        f'type: {task.get("type", "IMPL")}',
-        f'origin: {task.get("origin", "plan")}',
-        f'created: {task["created"]}',
-        f'updated: {task["updated"]}',
-    ]
+    """Format a task dictionary as JSON file content.
 
-    lines.append('')
-
-    # Skills array
-    skills = task.get('skills', [])
-    lines.append(f'skills[{len(skills)}]:')
-    for skill in skills:
-        lines.append(f'- {skill}')
-
-    lines.append('')
-
-    deliverables = task.get('deliverables', [])
-    lines.append(f'deliverables[{len(deliverables)}]:')
-    for d in deliverables:
-        lines.append(f'- {d}')
-
-    lines.append('')
-
-    depends_on = task.get('depends_on', [])
-    lines.append(f'depends_on: {format_depends_on(depends_on)}')
-
-    lines.append('')
-
-    lines.append('description: |')
-    for desc_line in task.get('description', '').split('\n'):
-        lines.append(f'  {desc_line}')
-
-    lines.append('')
-
-    steps = task.get('steps', [])
-    lines.append(f'steps[{len(steps)}]{{number,title,status}}:')
-    for step in steps:
-        lines.append(f'{step["number"]},{step["title"]},{step["status"]}')
-
-    lines.append('')
-
-    verification = task.get('verification', {})
-    lines.append('verification:')
-    commands = verification.get('commands', [])
-    lines.append(f'  commands[{len(commands)}]:')
-    for cmd in commands:
-        lines.append(f'  - {cmd}')
-    lines.append(f'  criteria: {verification.get("criteria", "")}')
-    lines.append(f'  manual: {"true" if verification.get("manual", False) else "false"}')
-
-    lines.append('')
-    lines.append(f'current_step: {task.get("current_step", 1)}')
-
-    return '\n'.join(lines)
+    Uses stdlib json for robust serialization.
+    """
+    return json.dumps(task, indent=2, ensure_ascii=False)
 
 
 def find_task_file(task_dir: Path, number: int) -> Path | None:
     """Find task file by number."""
-    pattern = f'TASK-{number:03d}-*.toon'
+    pattern = f'TASK-{number:03d}-*.json'
     matches = list(task_dir.glob(pattern))
     return matches[0] if matches else None
 
@@ -512,7 +332,7 @@ def get_next_number(task_dir: Path) -> int:
         return 1
 
     max_num = 0
-    for f in task_dir.glob('TASK-*.toon'):
+    for f in task_dir.glob('TASK-*.json'):
         try:
             num = int(f.name[5:8])
             max_num = max(max_num, num)
@@ -528,7 +348,7 @@ def get_all_tasks(task_dir: Path) -> list:
         return []
 
     tasks = []
-    for f in sorted(task_dir.glob('TASK-*.toon')):
+    for f in sorted(task_dir.glob('TASK-*.json')):
         content = f.read_text(encoding='utf-8')
         task = parse_task_file(content)
         tasks.append((f, task))
@@ -738,9 +558,14 @@ def output_toon(data: dict) -> None:
         'ready_count',
         'in_progress_count',
         'blocked_count',
+        'progress',
+        'task_complete',
     ]:
         if key in data:
-            lines.append(f'{key}: {data[key]}')
+            val = data[key]
+            if isinstance(val, bool):
+                val = 'true' if val else 'false'
+            lines.append(f'{key}: {val}')
 
     # Task/step status fields
     for key in ['task_status', 'step_status', 'step_title', 'next_step', 'next_step_title', 'message']:
@@ -750,6 +575,27 @@ def output_toon(data: dict) -> None:
                 lines.append(f'{key}: null')
             else:
                 lines.append(f'{key}: {val}')
+
+    # Finalized step block (for finalize-step command)
+    if 'finalized' in data:
+        lines.append('')
+        lines.append('finalized:')
+        fin = data['finalized']
+        for key in ['step_number', 'step_title', 'outcome', 'reason']:
+            if key in fin:
+                lines.append(f'  {key}: {fin[key]}')
+
+    # Next step block (structured format for finalize-step)
+    if 'next_step' in data and isinstance(data['next_step'], dict):
+        lines.append('')
+        nxt = data['next_step']
+        if nxt is None:
+            lines.append('next_step: null')
+        else:
+            lines.append('next_step:')
+            for key in ['number', 'title']:
+                if key in nxt:
+                    lines.append(f'  {key}: {nxt[key]}')
 
     # Counts block
     if 'counts' in data:

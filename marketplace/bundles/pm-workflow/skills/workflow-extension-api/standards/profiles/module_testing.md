@@ -89,7 +89,7 @@ The testing workflow skill:
 2. **Loads testing skills**: From task.skills array
 3. **Creates test files**: Following domain testing patterns
 4. **Verifies tests pass**: Runs test command
-5. **Tracks progress**: Via step-start/step-done
+5. **Tracks progress**: Via finalize-step
 6. **Tracks file changes**: For finalize phase verification
 7. **Returns structured output**: TOON status with summary
 

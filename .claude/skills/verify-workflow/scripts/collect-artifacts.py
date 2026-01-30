@@ -9,7 +9,7 @@ Phases (7-phase model):
     1-init:     status.toon, request.md, references.toon
     2-refine:   request.md with clarifications, work.log with [REFINE:*] entries
     3-outline:  solution_outline.md, deliverables, references.toon
-    4-plan:     TASK-*.toon files
+    4-plan:     TASK-*.json files
     5-execute:  Modified files tracked in references.toon
     6-verify:   Quality checks (not collected by this script)
     7-finalize: Git commit, PR artifacts
@@ -158,8 +158,8 @@ class ArtifactCollector:
                 self.collected.append({'artifact': 'tasks-list.toon', 'status': 'not_found'})
                 return False
 
-            # Find TASK-*.toon files
-            task_files = sorted(tasks_dir.glob('TASK-*.toon'))
+            # Find TASK-*.json files
+            task_files = sorted(tasks_dir.glob('TASK-*.json'))
 
             if not task_files:
                 self.collected.append({'artifact': 'tasks-list.toon', 'status': 'not_found'})
@@ -271,7 +271,7 @@ class ArtifactCollector:
             1-init:    status.toon, request.md, references.toon
             2-refine:  request.md (with clarifications), work.log
             3-outline: solution_outline.md, deliverables.toon, references.toon
-            4-plan:    TASK-*.toon files
+            4-plan:    TASK-*.json files
             5-execute: references.toon (with modified files)
             6-verify:   (quality check artifacts not collected by this script)
             7-finalize: (git artifacts not collected by this script)

@@ -3,7 +3,8 @@
 Manage implementation tasks with sequential sub-steps within a plan.
 
 Single CLI with subcommands for CRUD operations on task files.
-Uses TOON format for both storage and output.
+Storage: JSON format (TASK-{NNN}-{TYPE}.json)
+Output: TOON format for LLM-optimized consumption.
 Each task references deliverables from solution_outline.md.
 
 Subcommands:
@@ -16,9 +17,7 @@ Subcommands:
   tasks-by-domain  - List tasks filtered by domain
   tasks-by-profile - List tasks filtered by profile
   next-tasks       - Get all tasks ready for parallel execution
-  step-start       - Mark a step as in_progress
-  step-done        - Mark a step as done
-  step-skip        - Skip a step
+  finalize-step    - Complete a step with outcome (done/skipped)
   add-step         - Add a new step to a task
   remove-step      - Remove a step from a task
 
@@ -48,7 +47,7 @@ import sys
 
 from _cmd_crud import cmd_add, cmd_remove, cmd_update
 from _cmd_query import cmd_get, cmd_list, cmd_next, cmd_next_tasks, cmd_tasks_by_domain, cmd_tasks_by_profile
-from _cmd_step import cmd_add_step, cmd_remove_step, cmd_step_done, cmd_step_skip, cmd_step_start
+from _cmd_step import cmd_add_step, cmd_finalize_step, cmd_remove_step
 from _manage_tasks_shared import output_error
 
 
@@ -125,24 +124,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_next_tasks = subparsers.add_parser('next-tasks', help='Get all tasks ready for parallel execution')
     p_next_tasks.add_argument('--plan-id', required=True, help='Plan identifier')
 
-    # step-start
-    p_step_start = subparsers.add_parser('step-start', help='Mark a step as in_progress')
-    p_step_start.add_argument('--plan-id', required=True, help='Plan identifier')
-    p_step_start.add_argument('--task', required=True, type=int, help='Task number')
-    p_step_start.add_argument('--step', required=True, type=int, help='Step number')
-
-    # step-done
-    p_step_done = subparsers.add_parser('step-done', help='Mark a step as done')
-    p_step_done.add_argument('--plan-id', required=True, help='Plan identifier')
-    p_step_done.add_argument('--task', required=True, type=int, help='Task number')
-    p_step_done.add_argument('--step', required=True, type=int, help='Step number')
-
-    # step-skip
-    p_step_skip = subparsers.add_parser('step-skip', help='Skip a step')
-    p_step_skip.add_argument('--plan-id', required=True, help='Plan identifier')
-    p_step_skip.add_argument('--task', required=True, type=int, help='Task number')
-    p_step_skip.add_argument('--step', required=True, type=int, help='Step number')
-    p_step_skip.add_argument('--reason', help='Reason for skipping')
+    # finalize-step (consolidates step-done and step-skip)
+    p_finalize = subparsers.add_parser('finalize-step', help='Complete a step with outcome (done/skipped)')
+    p_finalize.add_argument('--plan-id', required=True, help='Plan identifier')
+    p_finalize.add_argument('--task', required=True, type=int, help='Task number')
+    p_finalize.add_argument('--step', required=True, type=int, help='Step number')
+    p_finalize.add_argument('--outcome', required=True, choices=['done', 'skipped'], help='Step outcome')
+    p_finalize.add_argument('--reason', help='Reason for skipping (optional, for skipped steps)')
 
     # add-step
     p_add_step = subparsers.add_parser('add-step', help='Add a new step to a task')
@@ -171,9 +159,7 @@ COMMANDS = {
     'tasks-by-domain': cmd_tasks_by_domain,
     'tasks-by-profile': cmd_tasks_by_profile,
     'next-tasks': cmd_next_tasks,
-    'step-start': cmd_step_start,
-    'step-done': cmd_step_done,
-    'step-skip': cmd_step_skip,
+    'finalize-step': cmd_finalize_step,
     'add-step': cmd_add_step,
     'remove-step': cmd_remove_step,
 }

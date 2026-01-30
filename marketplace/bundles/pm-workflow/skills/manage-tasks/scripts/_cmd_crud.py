@@ -48,7 +48,7 @@ def cmd_add(args) -> int:
 
     # Use type for filename (TASK-SEQ-TYPE format per target architecture)
     task_type = parsed['type']
-    filename = f'TASK-{number:03d}-{task_type}.toon'
+    filename = f'TASK-{number:03d}-{task_type}.json'
     filepath = task_dir / filename
 
     steps = []
@@ -79,7 +79,7 @@ def cmd_add(args) -> int:
     content = format_task_file(task)
     atomic_write_file(filepath, content)
 
-    total = len(list(task_dir.glob('TASK-*.toon')))
+    total = len(list(task_dir.glob('TASK-*.json')))
 
     log_entry(
         'work', args.plan_id, 'INFO', f'[MANAGE-TASKS] Added TASK-{number:03d} ({task_type}): {parsed["title"][:50]}'
@@ -210,7 +210,7 @@ def cmd_remove(args) -> int:
 
     filepath.unlink()
 
-    total = len(list(task_dir.glob('TASK-*.toon')))
+    total = len(list(task_dir.glob('TASK-*.json')))
 
     log_entry('work', args.plan_id, 'INFO', f'[MANAGE-TASKS] Removed TASK-{task["number"]:03d}: {task["title"][:50]}')
 

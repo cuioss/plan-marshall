@@ -125,7 +125,7 @@ def test_add_first_task():
 
         # Verify file exists
         task_dir = Path(os.environ['PLAN_BASE_DIR']) / 'plans' / 'test-plan' / 'tasks'
-        files = list(task_dir.glob('TASK-001-*.toon'))
+        files = list(task_dir.glob('TASK-001-*.json'))
         assert len(files) == 1, f'Expected 1 file, got {files}'
     finally:
         cleanup(temp_dir)
@@ -154,10 +154,10 @@ def test_add_creates_type_based_filename():
         add_basic_task(title='Implement JWT Service!', deliverables=[1])
 
         task_dir = Path(os.environ['PLAN_BASE_DIR']) / 'plans' / 'test-plan' / 'tasks'
-        files = list(task_dir.glob('TASK-001-*.toon'))
+        files = list(task_dir.glob('TASK-001-*.json'))
         assert len(files) == 1
         # Filename uses type suffix (default IMPL), not title slug
-        assert files[0].name == 'TASK-001-IMPL.toon'
+        assert files[0].name == 'TASK-001-IMPL.json'
     finally:
         cleanup(temp_dir)
 
@@ -367,7 +367,7 @@ def test_add_with_shell_metacharacters_in_verification():
 
         # Verify the verification commands were stored correctly
         task_dir = Path(os.environ['PLAN_BASE_DIR']) / 'plans' / 'test-plan' / 'tasks'
-        files = list(task_dir.glob('TASK-001-*.toon'))
+        files = list(task_dir.glob('TASK-001-*.json'))
         content = files[0].read_text(encoding='utf-8')
         assert "grep -l '```json'" in content
         assert '| wc -l' in content
@@ -486,15 +486,15 @@ def test_list_filter_by_status():
     try:
         add_basic_task(title='First', deliverables=[1], steps=['src/main/java/File.java'])
         add_basic_task(title='Second', deliverables=[2], steps=['src/main/java/File.java'])
-        # Mark first task as in_progress
-        run_script(SCRIPT_PATH, 'step-start', '--plan-id', 'test-plan', '--task', '1', '--step', '1')
+        # Mark first task as in_progress by finalizing step (starts from pending)
+        run_script(SCRIPT_PATH, 'finalize-step', '--plan-id', 'test-plan', '--task', '1', '--step', '1', '--outcome', 'done')
 
         result = run_script(SCRIPT_PATH, 'list', '--plan-id', 'test-plan', '--status', 'pending')
 
         assert result.returncode == 0
         assert 'tasks[1]' in result.stdout
         assert '2,Second' in result.stdout
-        assert '1,First' not in result.stdout
+        assert '1,First' not in result.stdout  # Task 1 is now done (single step)
     finally:
         cleanup(temp_dir)
 
@@ -613,14 +613,14 @@ def test_next_returns_in_progress_task():
     try:
         add_basic_task(title='First', deliverables=[1], steps=['src/main/java/FileA.java', 'src/main/java/FileB.java'])
         add_basic_task(title='Second', deliverables=[2], steps=['src/main/java/File.java'])
-        # Start first task
-        run_script(SCRIPT_PATH, 'step-start', '--plan-id', 'test-plan', '--task', '1', '--step', '1')
+        # Complete first step to put task in_progress (still has step 2)
+        run_script(SCRIPT_PATH, 'finalize-step', '--plan-id', 'test-plan', '--task', '1', '--step', '1', '--outcome', 'done')
 
         result = run_script(SCRIPT_PATH, 'next', '--plan-id', 'test-plan')
 
         assert result.returncode == 0
         assert 'task_number: 1' in result.stdout
-        assert 'step_number: 1' in result.stdout
+        assert 'step_number: 2' in result.stdout  # Now on step 2
     finally:
         cleanup(temp_dir)
 
@@ -630,7 +630,7 @@ def test_next_returns_null_when_all_done():
     temp_dir = setup_plan_dir()
     try:
         add_basic_task(title='Only Task', deliverables=[1], steps=['src/main/java/File.java'])
-        run_script(SCRIPT_PATH, 'step-done', '--plan-id', 'test-plan', '--task', '1', '--step', '1')
+        run_script(SCRIPT_PATH, 'finalize-step', '--plan-id', 'test-plan', '--task', '1', '--step', '1', '--outcome', 'done')
 
         result = run_script(SCRIPT_PATH, 'next', '--plan-id', 'test-plan')
 
@@ -787,32 +787,101 @@ def test_next_include_context():
 
 
 # =============================================================================
-# Tests: step-start
+# Tests: finalize-step
 # =============================================================================
 
 
-def test_step_start_marks_in_progress():
-    """Step-start marks step and task as in_progress."""
+def test_finalize_step_done_marks_completed():
+    """finalize-step --outcome done marks step as done."""
     temp_dir = setup_plan_dir()
     try:
         add_basic_task(title='Task', deliverables=[1], steps=['src/main/java/FileA.java', 'src/main/java/FileB.java'])
 
-        result = run_script(SCRIPT_PATH, 'step-start', '--plan-id', 'test-plan', '--task', '1', '--step', '1')
+        result = run_script(
+            SCRIPT_PATH, 'finalize-step', '--plan-id', 'test-plan', '--task', '1', '--step', '1', '--outcome', 'done'
+        )
 
         assert result.returncode == 0
-        assert 'task_status: in_progress' in result.stdout
-        assert 'step_status: in_progress' in result.stdout
+        assert 'outcome: done' in result.stdout
+        assert 'next_step:' in result.stdout
+        assert 'number: 2' in result.stdout
     finally:
         cleanup(temp_dir)
 
 
-def test_step_start_invalid_step():
-    """Step-start with invalid step number fails."""
+def test_finalize_step_done_completes_task():
+    """finalize-step --outcome done on last step marks task as done."""
     temp_dir = setup_plan_dir()
     try:
         add_basic_task(title='Task', deliverables=[1], steps=['src/main/java/File.java'])
 
-        result = run_script(SCRIPT_PATH, 'step-start', '--plan-id', 'test-plan', '--task', '1', '--step', '99')
+        result = run_script(
+            SCRIPT_PATH, 'finalize-step', '--plan-id', 'test-plan', '--task', '1', '--step', '1', '--outcome', 'done'
+        )
+
+        assert result.returncode == 0
+        assert 'task_complete: true' in result.stdout
+        assert 'task_status: done' in result.stdout
+        assert 'next_step: null' in result.stdout
+    finally:
+        cleanup(temp_dir)
+
+
+def test_finalize_step_skipped_marks_skipped():
+    """finalize-step --outcome skipped marks step as skipped."""
+    temp_dir = setup_plan_dir()
+    try:
+        add_basic_task(title='Task', deliverables=[1], steps=['src/main/java/FileA.java', 'src/main/java/FileB.java'])
+
+        result = run_script(
+            SCRIPT_PATH,
+            'finalize-step',
+            '--plan-id',
+            'test-plan',
+            '--task',
+            '1',
+            '--step',
+            '1',
+            '--outcome',
+            'skipped',
+            '--reason',
+            'Already done',
+        )
+
+        assert result.returncode == 0
+        assert 'outcome: skipped' in result.stdout
+        assert 'next_step:' in result.stdout
+        assert 'number: 2' in result.stdout
+    finally:
+        cleanup(temp_dir)
+
+
+def test_finalize_step_skipped_completes_task():
+    """Skipping last step via finalize-step marks task as done."""
+    temp_dir = setup_plan_dir()
+    try:
+        add_basic_task(title='Task', deliverables=[1], steps=['src/main/java/File.java'])
+
+        result = run_script(
+            SCRIPT_PATH, 'finalize-step', '--plan-id', 'test-plan', '--task', '1', '--step', '1', '--outcome', 'skipped'
+        )
+
+        assert result.returncode == 0
+        assert 'task_complete: true' in result.stdout
+        assert 'task_status: done' in result.stdout
+    finally:
+        cleanup(temp_dir)
+
+
+def test_finalize_step_invalid_step():
+    """finalize-step with invalid step number fails."""
+    temp_dir = setup_plan_dir()
+    try:
+        add_basic_task(title='Task', deliverables=[1], steps=['src/main/java/File.java'])
+
+        result = run_script(
+            SCRIPT_PATH, 'finalize-step', '--plan-id', 'test-plan', '--task', '1', '--step', '99', '--outcome', 'done'
+        )
 
         assert result.returncode == 1
         assert 'Step 99 not found' in result.stderr
@@ -820,74 +889,22 @@ def test_step_start_invalid_step():
         cleanup(temp_dir)
 
 
-# =============================================================================
-# Tests: step-done
-# =============================================================================
-
-
-def test_step_done_marks_completed():
-    """Step-done marks step as done."""
+def test_finalize_step_returns_progress():
+    """finalize-step returns progress indicator."""
     temp_dir = setup_plan_dir()
     try:
-        add_basic_task(title='Task', deliverables=[1], steps=['src/main/java/FileA.java', 'src/main/java/FileB.java'])
-
-        result = run_script(SCRIPT_PATH, 'step-done', '--plan-id', 'test-plan', '--task', '1', '--step', '1')
-
-        assert result.returncode == 0
-        assert 'step_status: done' in result.stdout
-        assert 'next_step: 2' in result.stdout
-    finally:
-        cleanup(temp_dir)
-
-
-def test_step_done_completes_task():
-    """Step-done on last step marks task as done."""
-    temp_dir = setup_plan_dir()
-    try:
-        add_basic_task(title='Task', deliverables=[1], steps=['src/main/java/File.java'])
-
-        result = run_script(SCRIPT_PATH, 'step-done', '--plan-id', 'test-plan', '--task', '1', '--step', '1')
-
-        assert result.returncode == 0
-        assert 'task_status: done' in result.stdout
-        assert 'next_step: null' in result.stdout
-        assert 'Task completed' in result.stdout
-    finally:
-        cleanup(temp_dir)
-
-
-# =============================================================================
-# Tests: step-skip
-# =============================================================================
-
-
-def test_step_skip_marks_skipped():
-    """Step-skip marks step as skipped."""
-    temp_dir = setup_plan_dir()
-    try:
-        add_basic_task(title='Task', deliverables=[1], steps=['src/main/java/FileA.java', 'src/main/java/FileB.java'])
+        add_basic_task(
+            title='Task',
+            deliverables=[1],
+            steps=['src/main/java/FileA.java', 'src/main/java/FileB.java', 'src/main/java/FileC.java'],
+        )
 
         result = run_script(
-            SCRIPT_PATH, 'step-skip', '--plan-id', 'test-plan', '--task', '1', '--step', '1', '--reason', 'Already done'
+            SCRIPT_PATH, 'finalize-step', '--plan-id', 'test-plan', '--task', '1', '--step', '1', '--outcome', 'done'
         )
 
         assert result.returncode == 0
-        assert 'step_status: skipped' in result.stdout
-        assert 'next_step: 2' in result.stdout
-    finally:
-        cleanup(temp_dir)
-
-
-def test_step_skip_completes_task():
-    """Skipping last step marks task as done."""
-    temp_dir = setup_plan_dir()
-    try:
-        add_basic_task(title='Task', deliverables=[1], steps=['src/main/java/File.java'])
-
-        result = run_script(SCRIPT_PATH, 'step-skip', '--plan-id', 'test-plan', '--task', '1', '--step', '1')
-
-        assert result.returncode == 0
-        assert 'task_status: done' in result.stdout
+        assert 'progress: 1/3' in result.stdout
     finally:
         cleanup(temp_dir)
 
@@ -1003,18 +1020,18 @@ def test_update_title_keeps_filename():
 
         # Verify initial filename uses TYPE suffix, not slug
         task_dir = Path(os.environ['PLAN_BASE_DIR']) / 'plans' / 'test-plan' / 'tasks'
-        initial_files = list(task_dir.glob('TASK-001-IMPL.toon'))
-        assert len(initial_files) == 1, 'Should have TASK-001-IMPL.toon'
+        initial_files = list(task_dir.glob('TASK-001-IMPL.json'))
+        assert len(initial_files) == 1, 'Should have TASK-001-IMPL.json'
 
         result = run_script(SCRIPT_PATH, 'update', '--plan-id', 'test-plan', '--number', '1', '--title', 'New Title')
 
         assert result.returncode == 0
         # Filename stays the same (TASK-SEQ-TYPE format)
-        assert 'TASK-001-IMPL.toon' in result.stdout
+        assert 'TASK-001-IMPL.json' in result.stdout
 
         # File still exists with same name
-        final_files = list(task_dir.glob('TASK-001-IMPL.toon'))
-        assert len(final_files) == 1, 'File should still be TASK-001-IMPL.toon'
+        final_files = list(task_dir.glob('TASK-001-IMPL.json'))
+        assert len(final_files) == 1, 'File should still be TASK-001-IMPL.json'
     finally:
         cleanup(temp_dir)
 
@@ -1082,7 +1099,7 @@ def test_remove_deletes_file():
 
         # Verify file gone
         task_dir = Path(os.environ['PLAN_BASE_DIR']) / 'plans' / 'test-plan' / 'tasks'
-        files = list(task_dir.glob('TASK-*.toon'))
+        files = list(task_dir.glob('TASK-*.json'))
         assert len(files) == 0
     finally:
         cleanup(temp_dir)
@@ -1121,8 +1138,8 @@ def test_progress_calculation():
             deliverables=[1],
             steps=['src/main/java/FileA.java', 'src/main/java/FileB.java', 'src/main/java/FileC.java'],
         )
-        run_script(SCRIPT_PATH, 'step-done', '--plan-id', 'test-plan', '--task', '1', '--step', '1')
-        run_script(SCRIPT_PATH, 'step-skip', '--plan-id', 'test-plan', '--task', '1', '--step', '2')
+        run_script(SCRIPT_PATH, 'finalize-step', '--plan-id', 'test-plan', '--task', '1', '--step', '1', '--outcome', 'done')
+        run_script(SCRIPT_PATH, 'finalize-step', '--plan-id', 'test-plan', '--task', '1', '--step', '2', '--outcome', 'skipped')
 
         result = run_script(SCRIPT_PATH, 'list', '--plan-id', 'test-plan')
 
@@ -1138,7 +1155,7 @@ def test_progress_calculation():
 
 
 def test_file_contains_new_fields():
-    """Created file contains all new fields."""
+    """Created file contains all new fields (JSON format)."""
     temp_dir = setup_plan_dir()
     try:
         toon = build_task_toon(
@@ -1155,23 +1172,25 @@ def test_file_contains_new_fields():
         run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
 
         task_dir = Path(os.environ['PLAN_BASE_DIR']) / 'plans' / 'test-plan' / 'tasks'
-        files = list(task_dir.glob('TASK-001-*.toon'))
+        files = list(task_dir.glob('TASK-001-*.json'))
         content = files[0].read_text(encoding='utf-8')
 
-        assert 'number: 1' in content
-        assert 'status: pending' in content
-        assert 'phase: 5-execute' in content
-        assert 'deliverables[2]:' in content
-        assert '- 1' in content
-        assert '- 2' in content
-        assert 'depends_on: none' in content
-        assert 'domain: java' in content
-        assert 'verification:' in content
-        assert 'criteria: Tests pass' in content
-        assert 'steps[2]{number,title,status}:' in content
-        assert '1,src/main/java/File1.java,pending' in content
-        assert '2,src/main/java/File2.java,pending' in content
-        assert 'current_step: 1' in content
+        # JSON format assertions
+        import json
+
+        task = json.loads(content)
+        assert task['number'] == 1
+        assert task['status'] == 'pending'
+        assert task['phase'] == '5-execute'
+        assert task['deliverables'] == [1, 2]
+        assert task['depends_on'] == []  # 'none' is stored as empty list
+        assert task['domain'] == 'java'
+        assert 'verification' in task
+        assert task['verification']['criteria'] == 'Tests pass'
+        assert len(task['steps']) == 2
+        assert task['steps'][0]['title'] == 'src/main/java/File1.java'
+        assert task['steps'][0]['status'] == 'pending'
+        assert task['current_step'] == 1
     finally:
         cleanup(temp_dir)
 
@@ -1189,8 +1208,8 @@ def test_type_filename_ignores_title_special_chars():
 
         task_dir = Path(os.environ['PLAN_BASE_DIR']) / 'plans' / 'test-plan' / 'tasks'
         # Filename uses TYPE (IMPL), not slugified title
-        files = list(task_dir.glob('TASK-001-IMPL.toon'))
-        assert len(files) == 1, f'Expected TASK-001-IMPL.toon, found: {list(task_dir.glob("TASK-*.toon"))}'
+        files = list(task_dir.glob('TASK-001-IMPL.json'))
+        assert len(files) == 1, f'Expected TASK-001-IMPL.json, found: {list(task_dir.glob("TASK-*.json"))}'
     finally:
         cleanup(temp_dir)
 
@@ -1204,8 +1223,8 @@ def test_type_filename_ignores_title_length():
 
         task_dir = Path(os.environ['PLAN_BASE_DIR']) / 'plans' / 'test-plan' / 'tasks'
         # Filename uses TYPE (IMPL), not truncated title
-        files = list(task_dir.glob('TASK-001-IMPL.toon'))
-        assert len(files) == 1, f'Expected TASK-001-IMPL.toon, found: {list(task_dir.glob("TASK-*.toon"))}'
+        files = list(task_dir.glob('TASK-001-IMPL.json'))
+        assert len(files) == 1, f'Expected TASK-001-IMPL.json, found: {list(task_dir.glob("TASK-*.json"))}'
     finally:
         cleanup(temp_dir)
 

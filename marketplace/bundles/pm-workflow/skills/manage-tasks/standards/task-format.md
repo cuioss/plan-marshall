@@ -1,56 +1,46 @@
 # Task File Format Specification
 
-Complete reference for the TOON format used by task files.
+Complete reference for the JSON format used by task files.
 
 ## File Naming Convention
 
 ```
-TASK-{NNN}-{slug}.toon
+TASK-{NNN}-{TYPE}.json
 ```
 
 - `{NNN}`: Zero-padded 3-digit number (001, 002, etc.)
-- `{slug}`: Kebab-case derived from title (max 40 characters)
+- `{TYPE}`: Task type suffix (IMPL, FIX, SONAR, PR, LINT, SEC, DOC)
 
 ## File Structure
 
-```toon
-number: {integer}
-title: {string}
-status: {task_status}
-phase: {phase_name}
-created: {iso_timestamp}
-updated: {iso_timestamp}
-
-deliverables[{count}]:
-- {deliverable_number_1}
-- {deliverable_number_2}
-
-depends_on: {none | TASK-N, TASK-M}
-
-description: |
-  {multiline_text}
-
-domain: {domain_name}
-profile: {profile_name}
-type: {task_type}
-origin: {origin_type}
-
-skills[{count}]:
-- {skill-1}
-- {skill-2}
-
-steps[{count}]{number,title,status}:
-{step_number},{step_title},{step_status}
-...
-
-verification:
-  commands[{count}]:
-  - {command_1}
-  - {command_2}
-  criteria: {success_criteria}
-  manual: {true|false}
-
-current_step: {integer}
+```json
+{
+  "number": 1,
+  "title": "Create Auth Endpoint",
+  "status": "pending",
+  "phase": "5-execute",
+  "domain": "java",
+  "profile": "implementation",
+  "type": "IMPL",
+  "origin": "plan",
+  "created": "2025-12-02T10:30:00Z",
+  "updated": "2025-12-02T10:30:00Z",
+  "deliverables": [1, 4],
+  "depends_on": ["TASK-1"],
+  "skills": ["pm-dev-java:java-core", "pm-dev-java:java-cdi"],
+  "description": "Create REST endpoint for user authentication...",
+  "steps": [
+    {"number": 1, "title": "src/main/java/AuthController.java", "status": "done"},
+    {"number": 2, "title": "src/main/java/AuthDTO.java", "status": "in_progress"},
+    {"number": 3, "title": "src/test/java/AuthControllerTest.java", "status": "pending"}
+  ],
+  "verification": {
+    "commands": ["./gradlew test --tests *AuthController*"],
+    "criteria": "All tests pass",
+    "manual": false
+  },
+  "current_step": 2
+}
 ```
 
 ## Field Definitions
@@ -64,8 +54,8 @@ current_step: {integer}
 | `created` | Yes | ISO timestamp | When task was created |
 | `updated` | Yes | ISO timestamp | When task was last modified |
 | `deliverables` | Yes | Integer[] | List of deliverable numbers from solution_outline.md |
-| `depends_on` | Yes | String | Task dependencies: `none` or TASK-N references |
-| `description` | Yes | Multiline | Detailed task description |
+| `depends_on` | Yes | String[] | Task dependencies: empty array or TASK-N references |
+| `description` | Yes | String | Detailed task description |
 | `domain` | Yes | String | Task domain (java, javascript, plugin, etc.) |
 | `profile` | Yes | String | Task profile for executor routing (implementation, module_testing) |
 | `type` | Yes | String | Task type (IMPL, FIX, SONAR, etc.) |
@@ -127,11 +117,11 @@ pending ──► in_progress ──► done
 
 | Phase | Description |
 |-------|-------------|
-| `init` | Setup tasks (create directories, configs) |
-| `outline` | Solution outline creation |
-| `plan` | Task planning and skill resolution |
-| `execute` | Implementation tasks (code changes) |
-| `finalize` | Cleanup tasks (docs, release) |
+| `1-init` | Setup tasks (create directories, configs) |
+| `3-outline` | Solution outline creation |
+| `4-plan` | Task planning and skill resolution |
+| `5-execute` | Implementation tasks (code changes) |
+| `7-finalize` | Cleanup tasks (docs, release) |
 
 ## Domain Values
 
@@ -146,13 +136,13 @@ Domains are arbitrary strings defined in `marshal.json`. Common examples:
 
 ## Dependency Format
 
-### File Format (stored in .toon files)
+### File Format (stored in .json files)
 
 | Value | Meaning |
 |-------|---------|
-| `depends_on: none` | No dependencies, can start immediately |
-| `depends_on: TASK-1` | Depends on TASK-1 completing |
-| `depends_on: TASK-1, TASK-2` | Depends on both TASK-1 and TASK-2 completing |
+| `"depends_on": []` | No dependencies, can start immediately |
+| `"depends_on": ["TASK-1"]` | Depends on TASK-1 completing |
+| `"depends_on": ["TASK-1", "TASK-2"]` | Depends on both TASK-1 and TASK-2 completing |
 
 ### Rules
 
@@ -165,13 +155,17 @@ Domains are arbitrary strings defined in `marshal.json`. Common examples:
 
 The verification block defines how to verify task completion:
 
-```toon
-verification:
-  commands[2]:
-  - ./gradlew test --tests *AuthController*
-  - curl -s http://localhost:8080/auth | jq .status
-  criteria: All tests pass and endpoint responds
-  manual: false
+```json
+{
+  "verification": {
+    "commands": [
+      "./gradlew test --tests *AuthController*",
+      "curl -s http://localhost:8080/auth | jq .status"
+    ],
+    "criteria": "All tests pass and endpoint responds",
+    "manual": false
+  }
+}
 ```
 
 | Field | Required | Description |
@@ -196,47 +190,37 @@ verification:
 
 ## Example
 
-```toon
-number: 2
-title: Add Auth Endpoint
-status: in_progress
-phase: 5-execute
-created: 2025-12-02T10:30:00Z
-updated: 2025-12-02T11:00:00Z
-
-deliverables[2]:
-- 1
-- 4
-
-depends_on: TASK-1
-
-description: |
-  Create REST endpoint for user authentication.
-  Endpoint should accept username/password and
-  return JWT token on successful auth.
-
-domain: java
-profile: implementation
-type: IMPL
-origin: plan
-
-skills[2]:
-- pm-dev-java:java-core
-- pm-dev-java:java-cdi
-
-steps[3]{number,title,status}:
-1,Create AuthController class,done
-2,Add request/response DTOs,in_progress
-3,Write integration tests,pending
-
-verification:
-  commands[2]:
-  - ./gradlew test --tests *AuthController*
-  - curl -s http://localhost:8080/auth | jq .status
-  criteria: All tests pass and endpoint responds
-  manual: false
-
-current_step: 2
+```json
+{
+  "number": 2,
+  "title": "Add Auth Endpoint",
+  "status": "in_progress",
+  "phase": "5-execute",
+  "domain": "java",
+  "profile": "implementation",
+  "type": "IMPL",
+  "origin": "plan",
+  "created": "2025-12-02T10:30:00Z",
+  "updated": "2025-12-02T11:00:00Z",
+  "deliverables": [1, 4],
+  "depends_on": ["TASK-1"],
+  "skills": ["pm-dev-java:java-core", "pm-dev-java:java-cdi"],
+  "description": "Create REST endpoint for user authentication.\nEndpoint should accept username/password and\nreturn JWT token on successful auth.",
+  "steps": [
+    {"number": 1, "title": "Create AuthController class", "status": "done"},
+    {"number": 2, "title": "Add request/response DTOs", "status": "in_progress"},
+    {"number": 3, "title": "Write integration tests", "status": "pending"}
+  ],
+  "verification": {
+    "commands": [
+      "./gradlew test --tests *AuthController*",
+      "curl -s http://localhost:8080/auth | jq .status"
+    ],
+    "criteria": "All tests pass and endpoint responds",
+    "manual": false
+  },
+  "current_step": 2
+}
 ```
 
 ## Validation Rules

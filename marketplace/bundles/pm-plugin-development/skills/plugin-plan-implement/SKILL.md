@@ -91,16 +91,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 For each step WHERE `status == pending`:
 
-#### 4a. Mark Step Started
-
-```bash
-python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks step-start \
-  --plan-id {plan_id} \
-  --task {task_number} \
-  --step {step_number}
-```
-
-#### 4b. Execute Step
+#### 4a. Execute Step
 
 The step `title` is a file path. Apply changes based on:
 1. Task `description` - overall change guidance
@@ -118,20 +109,21 @@ Load step execution patterns if needed:
 Read standards/step-execution.md
 ```
 
-#### 4c. Log Step Progress
+#### 4b. Log Step Progress
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   work {plan_id} INFO "[STEP] (pm-plugin-development:plugin-plan-implement) Completed step {step_number}: {file_path}"
 ```
 
-#### 4d. Mark Step Done
+#### 4c. Finalize Step
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks step-done \
+python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks finalize-step \
   --plan-id {plan_id} \
   --task {task_number} \
-  --step {step_number}
+  --step {step_number} \
+  --outcome done
 ```
 
 ### Step 5: Run Verification
@@ -222,8 +214,8 @@ If verification fails:
 - **Marketplace files**: Use Read/Write/Edit as needed
 
 ### Progress Tracking
-- Mark step-start BEFORE execution
-- Mark step-done AFTER success
+- Execute step
+- Mark finalize-step AFTER success (outcome: done or skipped)
 - Log progress at each step
 
 ---

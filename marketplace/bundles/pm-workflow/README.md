@@ -21,7 +21,7 @@ User Request → [Thin Agents] → Workflow Skills (from system domain) → Doma
 | `1-init` | Initialize plan | status.toon, request.md, references.toon |
 | `2-refine` | Clarify request | Refined request with confidence score |
 | `3-outline` | Create solution outline | solution_outline.md |
-| `4-plan` | Decompose into tasks | TASK-*.toon |
+| `4-plan` | Decompose into tasks | TASK-*.json |
 | `5-execute` | Run implementation | Modified project files |
 | `6-verify` | Quality verification | Build, lint, tests passed |
 | `7-finalize` | Commit, PR, shipping | Git commit, PR |

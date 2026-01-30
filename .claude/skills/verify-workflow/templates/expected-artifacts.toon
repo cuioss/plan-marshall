@@ -6,7 +6,7 @@
 #   1-init:    config.toon, status.toon, request.md
 #   2-refine:  request.md with clarifications, work.log
 #   3-outline: solution_outline.md, config.toon, status.toon, references.toon
-#   4-plan:    TASK-*.toon files
+#   4-plan:    TASK-*.json files
 #   5-execute: references.toon with modified files
 #   6-verify:   quality check results
 #   7-finalize: git artifacts

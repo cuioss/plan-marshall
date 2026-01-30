@@ -102,13 +102,14 @@ The `task.skills` array was populated during task-plan phase. Execute phase load
 │ Task Skill Loading (No Resolution Needed)                   │
 ├─────────────────────────────────────────────────────────────┤
 │                                                             │
-│  TASK-001.toon                                              │
+│  TASK-001.json                                              │
 │  ┌──────────────────────────────────────────────┐           │
-│  │ domain: java                                 │           │
-│  │ profile: implementation                      │           │
-│  │ skills:                                      │           │
-│  │   - pm-dev-java:java-core      ← Pre-resolved│           │
-│  │   - pm-dev-java:java-cdi       ← Pre-resolved│           │
+│  │ "domain": "java"                             │           │
+│  │ "profile": "implementation"                  │           │
+│  │ "skills": [                                  │           │
+│  │   "pm-dev-java:java-core",     ← Pre-resolved│           │
+│  │   "pm-dev-java:java-cdi"       ← Pre-resolved│           │
+│  │ ]                                            │           │
 │  └──────────────────────────────────────────────┘           │
 │                         │                                   │
 │                         ▼                                   │
@@ -175,7 +176,7 @@ The workflow skill autonomously:
 1. **Reads task**: Via manage-tasks get
 2. **Loads domain skills**: From task.skills array (Tier 2)
 3. **Iterates through steps**: Processing each file
-4. **Tracks progress**: Via step-start/step-done
+4. **Tracks progress**: Via finalize-step
 5. **Tracks file changes**: For finalize phase verification
 6. **Returns structured output**: TOON status with summary
 
@@ -189,7 +190,7 @@ Execute Phase Workflow:
 │ 4. Load workflow skill                                           │
 │ 5. Load each skill from task.skills array (Tier 2)               │
 │ 6. Execute workflow skill's implementation process               │
-│ 7. Track progress via manage-tasks step-start/step-done          │
+│ 7. Track progress via manage-tasks finalize-step                 │
 │ 8. Track file changes via manage-references add-file             │
 │ 9. Return structured TOON output                                 │
 └──────────────────────────────────────────────────────────────────┘
@@ -238,13 +239,13 @@ Skill: pm-dev-java:java-cdi
 ### Step Progress Tracking
 
 ```bash
-# Start step
-python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks step-start \
-  --plan-id {plan_id} --task {task_number} --step {step_number}
+# Complete step (marks done and auto-advances)
+python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks finalize-step \
+  --plan-id {plan_id} --task {task_number} --step {step_number} --outcome done
 
-# Complete step
-python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks step-done \
-  --plan-id {plan_id} --task {task_number} --step {step_number}
+# Skip step with reason
+python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks finalize-step \
+  --plan-id {plan_id} --task {task_number} --step {step_number} --outcome skipped --reason "Already exists"
 ```
 
 ### File Change Tracking

@@ -13,7 +13,7 @@ Manage implementation tasks with sequential sub-steps within a plan. Each task r
 
 ## What This Skill Provides
 
-- Individual TOON file storage for each task
+- Individual JSON file storage for each task (TOON output for LLM efficiency)
 - Sequential, immutable numbering (TASK-1, TASK-2, etc.)
 - Deliverable references (M:N relationship to solution_outline.md)
 - Delegation context (skill + workflow for execution)
@@ -37,59 +37,50 @@ Tasks are stored in the plan directory:
 
 ```
 {plan_dir}/tasks/
-  TASK-001-IMPL.toon
-  TASK-002-IMPL.toon
-  TASK-003-FIX.toon
+  TASK-001-IMPL.json
+  TASK-002-IMPL.json
+  TASK-003-FIX.json
 ```
 
-**Filename format**: `TASK-{NNN}-{TYPE}.toon` where TYPE is: IMPL, FIX, SONAR, PR, LINT, SEC, DOC
+**Filename format**: `TASK-{NNN}-{TYPE}.json` where TYPE is: IMPL, FIX, SONAR, PR, LINT, SEC, DOC
 
 ---
 
 ## File Format (Summary)
 
-```toon
-number: 1
-title: Update misc agents to TOON output
-status: pending
-phase: 5-execute
-domain: plan-marshall-plugin-dev
-profile: implementation
-origin: plan
-created: 2025-12-02T10:30:00Z
-updated: 2025-12-02T10:30:00Z
+Tasks are stored as JSON and output as TOON (LLM-optimized):
 
-skills:
-  - pm-plugin-development:plugin-maintain
-  - pm-plugin-development:plugin-architecture
-
-deliverables[3]:
-- 1
-- 2
-- 4
-
-depends_on: TASK-1, TASK-2
-
-description: |
-  Migrate miscellaneous agents from JSON to TOON output format.
-
-domain: plan-marshall-plugin-dev
-profile: implementation
-type: IMPL
-origin: plan
-
-steps[3]{number,title,status}:
-1,pm-plugin-development/agents/tool-coverage-agent.md,pending
-2,pm-dev-builder/agents/gradle-builder.md,pending
-3,pm-dev-frontend/commands/js-generate-coverage.md,pending
-
-verification:
-  commands[1]:
-  - grep -L '```json' {files} | wc -l
-  criteria: No JSON blocks remain
-  manual: false
-
-current_step: 1
+```json
+{
+  "number": 1,
+  "title": "Update misc agents to TOON output",
+  "status": "pending",
+  "phase": "5-execute",
+  "domain": "plan-marshall-plugin-dev",
+  "profile": "implementation",
+  "type": "IMPL",
+  "origin": "plan",
+  "created": "2025-12-02T10:30:00Z",
+  "updated": "2025-12-02T10:30:00Z",
+  "skills": [
+    "pm-plugin-development:plugin-maintain",
+    "pm-plugin-development:plugin-architecture"
+  ],
+  "deliverables": [1, 2, 4],
+  "depends_on": ["TASK-1", "TASK-2"],
+  "description": "Migrate miscellaneous agents from JSON to TOON output format.",
+  "steps": [
+    {"number": 1, "title": "pm-plugin-development/agents/tool-coverage-agent.md", "status": "pending"},
+    {"number": 2, "title": "pm-dev-builder/agents/gradle-builder.md", "status": "pending"},
+    {"number": 3, "title": "pm-dev-frontend/commands/js-generate-coverage.md", "status": "pending"}
+  ],
+  "verification": {
+    "commands": ["grep -L '```json' {files} | wc -l"],
+    "criteria": "No JSON blocks remain",
+    "manual": false
+  },
+  "current_step": 1
+}
 ```
 
 **New Fields**:
@@ -119,9 +110,7 @@ Script: `pm-workflow:manage-tasks:manage-tasks`
 | `tasks-by-domain` | `--plan-id --domain` | List tasks filtered by domain |
 | `tasks-by-profile` | `--plan-id --profile` | List tasks filtered by profile |
 | `next-tasks` | `--plan-id` | Get all tasks ready for parallel execution |
-| `step-start` | `--plan-id --task --step` | Mark step as in_progress |
-| `step-done` | `--plan-id --task --step` | Mark step as done |
-| `step-skip` | `--plan-id --task --step [--reason]` | Skip a step |
+| `finalize-step` | `--plan-id --task --step --outcome [--reason]` | Complete step with outcome (done/skipped) |
 | `add-step` | `--plan-id --task --title [--after]` | Add step to task |
 | `remove-step` | `--plan-id --task --step` | Remove step from task |
 
@@ -284,13 +273,23 @@ python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks list \
   --ready
 ```
 
-### Mark step done
+### Finalize step (mark done or skipped)
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks step-done \
+# Mark step as done
+python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks finalize-step \
   --plan-id my-feature \
   --task 2 \
-  --step 3
+  --step 3 \
+  --outcome done
+
+# Skip step with reason
+python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks finalize-step \
+  --plan-id my-feature \
+  --task 2 \
+  --step 3 \
+  --outcome skipped \
+  --reason "File already exists"
 ```
 
 ---
@@ -329,7 +328,7 @@ LOOP:
 Implement agents execute steps:
 ```
 1. manage-tasks get --plan-id {plan_id} --number {N}
-2. FOR EACH step: step-start → execute → step-done
+2. FOR EACH step: execute → finalize-step --outcome done
 3. RUN verification
 ```
 

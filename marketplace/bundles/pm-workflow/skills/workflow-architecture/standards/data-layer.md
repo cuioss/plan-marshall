@@ -79,11 +79,11 @@ The pm-workflow bundle uses manage-* skills as the data access layer for all pla
 │  │                       │                   │                          │  │
 │  ├───────────────────────┼───────────────────┼──────────────────────────┤  │
 │  │                       │                   │                          │  │
-│  │ manage-tasks          │ TASK-*.toon       │ Task files               │  │
+│  │ manage-tasks          │ TASK-*.json       │ Task files               │  │
 │  │                       │                   │ • add (create task)      │  │
 │  │                       │                   │ • get (read task)        │  │
 │  │                       │                   │ • next (get pending)     │  │
-│  │                       │                   │ • step-done (mark step)  │  │
+│  │                       │                   │ • finalize-step (mark)   │  │
 │  │                       │                   │                          │  │
 │  ├───────────────────────┼───────────────────┼──────────────────────────┤  │
 │  │                       │                   │                          │  │
@@ -221,7 +221,7 @@ The pm-workflow bundle uses manage-* skills as the data access layer for all pla
 │  ┌──────────────┬────────────────────────────┬──────────────────────────┐  │
 │  │ COMMAND      │ PARAMETERS                 │ PURPOSE                  │  │
 │  ├──────────────┼────────────────────────────┼──────────────────────────┤  │
-│  │ add          │ --plan-id <<'EOF'...EOF    │ Create TASK-*.toon       │  │
+│  │ add          │ --plan-id <<'EOF'...EOF    │ Create TASK-*.json       │  │
 │  │ get          │ --plan-id --task-number    │ Read task                │  │
 │  │ next         │ --plan-id [--include-      │ Get next pending task    │  │
 │  │              │ context]                   │                          │  │
@@ -232,7 +232,7 @@ The pm-workflow bundle uses manage-* skills as the data access layer for all pla
 │  │              │ --status [--notes]         │                          │  │
 │  └──────────────┴────────────────────────────┴──────────────────────────┘  │
 │                                                                             │
-│  TASK-*.toon STRUCTURE:                                                     │
+│  TASK-*.json STRUCTURE:                                                     │
 │  ═══════════════════════                                                    │
 │                                                                             │
 │  ┌──────────────────────────────────────────────────────────────────────┐  │
@@ -332,8 +332,8 @@ The pm-workflow bundle uses manage-* skills as the data access layer for all pla
 │  │       ├── solution_outline.md# Deliverables                              │
 │  │       ├── work/              # Working files (outline phase+)           │
 │  │       ├── tasks/             # Task files                               │
-│  │       │   ├── TASK-001-IMPL.toon                                        │
-│  │       │   └── TASK-002-IMPL.toon                                        │
+│  │       │   ├── TASK-001-IMPL.json                                        │
+│  │       │   └── TASK-002-IMPL.json                                        │
 │  │       └── logs/              # Execution logs                           │
 │  │           ├── work.log                                                   │
 │  │           ├── decision.log                                               │

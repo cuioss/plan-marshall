@@ -14,66 +14,75 @@ Each task:
 - Results in exactly one commit
 - Tracks origin (plan or fix) for finalize loop handling
 
-## Task File Format (TOON)
+## Task File Format (JSON)
+
+Tasks are stored as JSON files: `TASK-{NNN}-{TYPE}.json`
 
 ### Regular Task (from plan phase)
 
-```toon
-id: TASK-001-IMPL
-title: "Create CacheConfig class"
-domain: java
-profile: implementation
-skills:
-  - pm-dev-java:java-core
-  - pm-dev-java:java-cdi
-deliverables: [1]
-depends_on: none
-origin: plan
-
-description: |
-  Create CacheConfig class with Redis configuration...
-
-steps[N]{number,title,status}:
-1,src/main/java/com/example/CacheConfig.java,pending
-2,src/main/java/com/example/CacheManager.java,pending
-
-verification:
-  commands:
-    - mvn test -Dtest=CacheConfigTest
-  criteria: All tests pass
+```json
+{
+  "number": 1,
+  "title": "Create CacheConfig class",
+  "status": "pending",
+  "phase": "5-execute",
+  "domain": "java",
+  "profile": "implementation",
+  "type": "IMPL",
+  "origin": "plan",
+  "created": "2025-12-02T10:30:00Z",
+  "updated": "2025-12-02T10:30:00Z",
+  "skills": ["pm-dev-java:java-core", "pm-dev-java:java-cdi"],
+  "deliverables": [1],
+  "depends_on": [],
+  "description": "Create CacheConfig class with Redis configuration...",
+  "steps": [
+    {"number": 1, "title": "src/main/java/com/example/CacheConfig.java", "status": "pending"},
+    {"number": 2, "title": "src/main/java/com/example/CacheManager.java", "status": "pending"}
+  ],
+  "verification": {
+    "commands": ["mvn test -Dtest=CacheConfigTest"],
+    "criteria": "All tests pass",
+    "manual": false
+  },
+  "current_step": 1
+}
 ```
 
 ### Fix Task (from finalize phase)
 
-```toon
-id: TASK-003-FIX
-title: "Fix: Test failure in CacheTest"
-domain: java
-profile: module_testing
-skills:
-  - pm-dev-java:junit-core
-  - pm-dev-java:java-core
-deliverables: [1]
-depends_on: TASK-002-IMPL
-origin: fix
-priority: high
-
-description: |
-  Fix test failure detected during verification.
-
-finding:
-  type: test_failure
-  file: src/test/java/com/example/CacheTest.java
-  line: 58
-  message: "AssertionError: expected 5 but was 3"
-
-steps[1]{number,title,status}:
-1,src/test/java/com/example/CacheTest.java,pending
-
-verification:
-  commands:
-    - mvn test -Dtest=CacheTest
-  criteria: Test passes
+```json
+{
+  "number": 3,
+  "title": "Fix: Test failure in CacheTest",
+  "status": "pending",
+  "phase": "5-execute",
+  "domain": "java",
+  "profile": "module_testing",
+  "type": "FIX",
+  "origin": "fix",
+  "created": "2025-12-02T11:00:00Z",
+  "updated": "2025-12-02T11:00:00Z",
+  "skills": ["pm-dev-java:junit-core", "pm-dev-java:java-core"],
+  "deliverables": [1],
+  "depends_on": ["TASK-2"],
+  "description": "Fix test failure detected during verification.",
+  "finding": {
+    "type": "test_failure",
+    "file": "src/test/java/com/example/CacheTest.java",
+    "line": 58,
+    "message": "AssertionError: expected 5 but was 3"
+  },
+  "steps": [
+    {"number": 1, "title": "src/test/java/com/example/CacheTest.java", "status": "pending"}
+  ],
+  "verification": {
+    "commands": ["mvn test -Dtest=CacheTest"],
+    "criteria": "Test passes",
+    "manual": false
+  },
+  "current_step": 1
+}
 ```
 
 ## Key Fields
@@ -114,7 +123,7 @@ Tasks use sequential numbering with zero-padded format and type suffix:
 | `SEC` | finalize:security | Security finding fix |
 | `DOC` | finalize:doc | Documentation fix |
 
-**Filename format**: `TASK-{SEQ}-{TYPE}.toon` (e.g., `TASK-001-IMPL.toon`, `TASK-003-FIX.toon`)
+**Filename format**: `TASK-{SEQ}-{TYPE}.json` (e.g., `TASK-001-IMPL.json`, `TASK-003-FIX.json`)
 
 ## Origin Field
 
@@ -188,13 +197,13 @@ solution-outline phase               task-plan phase                     execute
                                      └─────────────┬───────────────┘
                                                    │
                                      ┌─────────────▼───────────────┐
-                                     │ TASK-001-IMPL.toon          │
+                                     │ TASK-001-IMPL.json          │
                                      │ profile: implementation     │
                                      │ skills:                     │
                                      │   - pm-dev-java:java-core   │
                                      │   - pm-dev-java:java-cdi    │
                                      ├─────────────────────────────┤
-                                     │ TASK-002-TEST.toon          │
+                                     │ TASK-002-TEST.json          │
                                      │ profile: module_testing     │
                                      │ skills:                     │
                                      │   - pm-dev-java:java-core   │
@@ -394,15 +403,18 @@ steps:
   - marketplace/bundles/pm-workflow/agents/task-plan-agent.md
 ```
 
-### Stored Format (.toon files)
+### Stored Format (.json files)
 
-The script converts input to TOON tabular format in task files:
+The script converts input to JSON array format in task files:
 
-```toon
-steps[3]{number,title,status}:
-1,marketplace/bundles/pm-workflow/agents/plan-init-agent.md,pending
-2,marketplace/bundles/pm-workflow/agents/solution-outline-agent.md,pending
-3,marketplace/bundles/pm-workflow/agents/task-plan-agent.md,pending
+```json
+{
+  "steps": [
+    {"number": 1, "title": "marketplace/bundles/pm-workflow/agents/plan-init-agent.md", "status": "pending"},
+    {"number": 2, "title": "marketplace/bundles/pm-workflow/agents/solution-outline-agent.md", "status": "pending"},
+    {"number": 3, "title": "marketplace/bundles/pm-workflow/agents/task-plan-agent.md", "status": "pending"}
+  ]
+}
 ```
 
 ### Valid Steps Requirements
