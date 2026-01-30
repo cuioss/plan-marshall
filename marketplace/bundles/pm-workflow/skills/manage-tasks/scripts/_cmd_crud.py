@@ -64,7 +64,7 @@ def cmd_add(args) -> int:
         'type': parsed['type'],
         'skills': parsed['skills'],
         'origin': parsed['origin'],
-        'deliverables': parsed['deliverables'],
+        'deliverable': parsed['deliverable'],
         'depends_on': parsed['depends_on'],
         'description': parsed['description'],
         'verification': parsed['verification'],
@@ -94,7 +94,7 @@ def cmd_add(args) -> int:
                 'profile': parsed['profile'],
                 'type': parsed['type'],
                 'skills': parsed['skills'],
-                'deliverables': parsed['deliverables'],
+                'deliverable': parsed['deliverable'],
                 'depends_on': parsed['depends_on'],
                 'phase': parsed['phase'],
                 'origin': parsed['origin'],
@@ -154,16 +154,11 @@ def cmd_update(args) -> int:
         except ValueError as e:
             output_error(str(e))
             return 1
-    if getattr(args, 'deliverables', None):
+    if getattr(args, 'deliverable', None):
         try:
-            # Deliverables can be comma-separated or a list
-            if isinstance(args.deliverables, str):
-                deliverables_list = [int(d.strip()) for d in args.deliverables.split(',') if d.strip()]
-            else:
-                deliverables_list = [int(d) for d in args.deliverables]
-            task['deliverables'] = deliverables_list
+            task['deliverable'] = int(args.deliverable)
         except ValueError:
-            output_error('Deliverables must be comma-separated integers')
+            output_error('Deliverable must be a positive integer')
             return 1
 
     # Filename uses TASK-SEQ-TYPE format - doesn't change when title changes

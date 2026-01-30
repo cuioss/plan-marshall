@@ -44,11 +44,9 @@ class TaskDict(TypedDict, total=False):
     profile: str | None
     type: str
     origin: str
-    created: str
-    updated: str
     description: str
     steps: list[StepDict]
-    deliverables: list[int]
+    deliverable: int
     depends_on: list[str]
     skills: list[str]
     verification: VerificationDict
@@ -112,28 +110,22 @@ def slugify(title: str, max_length: int = 40) -> str:
 # =============================================================================
 
 
-def validate_deliverables(deliverables_input) -> list[int]:
-    """Validate deliverables list. Exactly one deliverable per task."""
-    if deliverables_input is None or len(deliverables_input) == 0:
-        raise ValueError('Exactly one deliverable is required')
+def validate_deliverable(deliverable_input) -> int:
+    """Validate deliverable number. Exactly one deliverable per task (1:1 constraint)."""
+    if deliverable_input is None:
+        raise ValueError('Deliverable is required')
 
-    if len(deliverables_input) > 1:
-        raise ValueError(
-            f'Only one deliverable allowed per task, got {len(deliverables_input)}: {deliverables_input}'
-        )
-
-    item = deliverables_input[0]
-    if isinstance(item, int):
-        if item < 1:
-            raise ValueError(f'Invalid deliverable number: {item}. Must be positive integer.')
-        return [item]
+    if isinstance(deliverable_input, int):
+        if deliverable_input < 1:
+            raise ValueError(f'Invalid deliverable number: {deliverable_input}. Must be positive integer.')
+        return deliverable_input
     else:
-        item_str = str(item).strip()
+        item_str = str(deliverable_input).strip()
         if item_str.isdigit():
             num = int(item_str)
             if num < 1:
                 raise ValueError(f'Invalid deliverable number: {num}. Must be positive integer.')
-            return [num]
+            return num
         else:
             raise ValueError(f'Invalid deliverable format: {item_str}. Expected positive integer.')
 
@@ -288,8 +280,12 @@ def parse_task_file(content: str) -> dict[str, Any]:
     # Ensure required fields have defaults
     if 'steps' not in task:
         task['steps'] = []
-    if 'deliverables' not in task:
-        task['deliverables'] = []
+    # Migration: convert old deliverables array to single deliverable
+    if 'deliverables' in task and 'deliverable' not in task:
+        old_deliverables = task.pop('deliverables')
+        task['deliverable'] = old_deliverables[0] if old_deliverables else 0
+    if 'deliverable' not in task:
+        task['deliverable'] = 0
     if 'depends_on' not in task:
         task['depends_on'] = []
     if 'skills' not in task:
@@ -368,7 +364,6 @@ def calculate_progress(task: dict) -> tuple[int, int]:
 def parse_stdin_task(stdin_content: str) -> dict[str, Any]:
     """Parse task definition from stdin TOON format."""
     # Create typed local variables for mutable fields
-    deliverables: list[int] = []
     skills: list[str] = []
     steps: list[str] = []
     depends_on: list[str] = []
@@ -378,7 +373,7 @@ def parse_stdin_task(stdin_content: str) -> dict[str, Any]:
 
     result: dict[str, Any] = {
         'title': '',
-        'deliverables': deliverables,
+        'deliverable': 0,  # Single integer (1:1 constraint)
         'domain': '',
         'profile': 'implementation',
         'type': 'IMPL',
@@ -405,12 +400,9 @@ def parse_stdin_task(stdin_content: str) -> dict[str, Any]:
             result['title'] = line[6:].strip()
             i += 1
 
-        elif line.startswith('deliverables:'):
-            value = line[13:].strip()
-            if value.startswith('[') and value.endswith(']'):
-                inner = value[1:-1]
-                if inner.strip():
-                    result['deliverables'] = [int(x.strip()) for x in inner.split(',')]
+        elif line.startswith('deliverable:'):
+            value = line[12:].strip()
+            result['deliverable'] = int(value)
             i += 1
 
         elif line.startswith('domain:'):
@@ -497,8 +489,8 @@ def parse_stdin_task(stdin_content: str) -> dict[str, Any]:
     # Validate required fields
     if not result['title']:
         raise ValueError('Missing required field: title')
-    if not result['deliverables']:
-        raise ValueError('Missing required field: deliverables')
+    if result['deliverable'] == 0:  # 0 means not parsed (init value)
+        raise ValueError('Missing required field: deliverable')
     if not result['domain']:
         raise ValueError('Missing required field: domain')
     if not result['steps']:
@@ -508,7 +500,7 @@ def parse_stdin_task(stdin_content: str) -> dict[str, Any]:
     validate_phase(result['phase'])
     validate_profile(result['profile'])
     validate_type(result['type'])
-    validate_deliverables(result['deliverables'])
+    result['deliverable'] = validate_deliverable(result['deliverable'])
     result['skills'] = validate_skills(result['skills'])
     if result['origin']:
         validate_origin(result['origin'])
@@ -631,8 +623,8 @@ def output_toon(data: dict) -> None:
                 lines.append(f'  skills: {format_list_value(skills)}')
             else:
                 lines.append('  skills: []')
-        if 'deliverables' in task:
-            lines.append(f'  deliverables: {format_list_value(task["deliverables"])}')
+        if 'deliverable' in task:
+            lines.append(f'  deliverable: {task["deliverable"]}')
         if 'depends_on' in task:
             deps = task['depends_on']
             if deps:
@@ -687,8 +679,8 @@ def output_toon(data: dict) -> None:
             lines.append(f'{rt["number"]},{rt["title"]},{domain},{profile},{rt["progress"]}')
             if rt.get('skills'):
                 lines.append(f'  skills: {format_list_value(rt["skills"])}')
-            if rt.get('deliverables'):
-                lines.append(f'  deliverables: {format_list_value(rt["deliverables"])}')
+            if rt.get('deliverable'):
+                lines.append(f'  deliverable: {rt["deliverable"]}')
 
     # In-progress tasks block (for next-tasks command)
     if 'in_progress_tasks' in data:
@@ -719,9 +711,8 @@ def output_toon(data: dict) -> None:
                 'phase',
                 'step_number',
                 'step_title',
-                'deliverables_found',
-                'deliverable_count',
-                'deliverables_source',
+                'deliverable',
+                'deliverable_source',
             ]:
                 if key in nxt:
                     val = nxt[key]
@@ -736,8 +727,6 @@ def output_toon(data: dict) -> None:
                         lines.append(f'    - {skill}')
                 else:
                     lines.append('  skills: []')
-            if 'deliverables' in nxt:
-                lines.append(f'  deliverables: {format_list_value(nxt["deliverables"])}')
 
     # Context block
     if 'context' in data:
@@ -751,13 +740,13 @@ def output_toon(data: dict) -> None:
     if 'tasks_table' in data:
         tasks = data['tasks_table']
         lines.append('')
-        lines.append(f'tasks[{len(tasks)}]{{number,title,domain,profile,phase,deliverables,status,progress}}:')
+        lines.append(f'tasks[{len(tasks)}]{{number,title,domain,profile,phase,deliverable,status,progress}}:')
         for t in tasks:
-            delivs = format_list_value(t.get('deliverables', []))
+            deliv = t.get('deliverable', 0)
             domain = t.get('domain') or ''
             profile = t.get('profile') or ''
             lines.append(
-                f'{t["number"]},{t["title"]},{domain},{profile},{t.get("phase", "execute")},{delivs},{t["status"]},{t["progress"]}'
+                f'{t["number"]},{t["title"]},{domain},{profile},{t.get("phase", "execute")},{deliv},{t["status"]},{t["progress"]}'
             )
 
     print('\n'.join(lines))
@@ -768,11 +757,9 @@ def output_error(message: str) -> None:
     print(f'status: error\nmessage: {message}', file=sys.stderr)
 
 
-def get_deliverable_context(deliverables: list[int]) -> dict:
+def get_deliverable_context(deliverable: int) -> dict:
     """Get deliverable details for including in task context."""
     return {
-        'deliverables_found': True,
-        'deliverable_count': len(deliverables),
-        'deliverables': deliverables,
-        'deliverables_source': f'See solution_outline.md sections: {", ".join(f"### {d}." for d in deliverables)}',
+        'deliverable': deliverable,
+        'deliverable_source': f'See solution_outline.md section: ### {deliverable}.',
     }

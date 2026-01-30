@@ -64,7 +64,7 @@ Tasks are stored as JSON and output as TOON (LLM-optimized):
     "pm-plugin-development:plugin-maintain",
     "pm-plugin-development:plugin-architecture"
   ],
-  "deliverables": [1],
+  "deliverable": 1,
   "depends_on": [],
   "description": "Migrate miscellaneous agents from JSON to TOON output format.",
   "steps": [
@@ -100,7 +100,7 @@ Script: `pm-workflow:manage-tasks:manage-tasks`
 | Command | Parameters | Description |
 |---------|------------|-------------|
 | `add` | `--plan-id` + stdin | Add a new task (reads definition from stdin) |
-| `update` | `--plan-id --number [--title] [--description] [--depends-on] [--status] [--domain] [--profile] [--skills] [--deliverables]` | Update task metadata |
+| `update` | `--plan-id --number [--title] [--description] [--depends-on] [--status] [--domain] [--profile] [--skills] [--deliverable]` | Update task metadata |
 | `remove` | `--plan-id --number` | Remove a task |
 | `list` | `--plan-id [--status] [--phase] [--deliverable] [--ready]` | List all tasks |
 | `get` | `--plan-id --number` | Get single task details |
@@ -122,7 +122,7 @@ The `add` command reads the task definition from stdin in TOON format. Only `--p
 
 ```toon
 title: My Task Title
-deliverables: [1]
+deliverable: 1
 domain: plan-marshall-plugin-dev
 profile: implementation
 type: IMPL
@@ -151,12 +151,12 @@ verification:
   manual: false
 ```
 
-**Required fields**: `title`, `deliverables`, `domain`, `profile`, `skills`, `steps`
+**Required fields**: `title`, `deliverable`, `domain`, `profile`, `skills`, `steps`
 
 **Optional fields**: `phase` (default: execute), `description`, `depends_on`, `verification`, `origin` (default: plan)
 
 **Field values**:
-- `deliverables`: Array with single integer `[N]` (one deliverable per task)
+- `deliverable`: Single positive integer (one deliverable per task, 1:1 constraint)
 - `domain`: Domain from references.toon (e.g., `java`, `javascript`, `plan-marshall-plugin-dev`)
 - `profile`: Arbitrary profile key from marshal.json (e.g., `implementation`, `testing`, `architecture`)
 - `skills`: Array of `bundle:skill` format strings
@@ -183,7 +183,7 @@ verification:
 python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks add \
   --plan-id my-feature <<'EOF'
 title: Update misc agents to TOON
-deliverables: [1]
+deliverable: 1
 domain: java
 description: |
   Migrate miscellaneous agents from JSON to TOON output format.
@@ -206,7 +206,7 @@ EOF
 python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks add \
   --plan-id my-feature <<'EOF'
 title: Write integration tests
-deliverables: [3]
+deliverable: 3
 domain: java-testing
 description: Add integration tests for new endpoint
 
@@ -230,7 +230,7 @@ EOF
 python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks add \
   --plan-id migrate-json-to-toon <<'EOF'
 title: Migrate agent outputs to TOON
-deliverables: [1]
+deliverable: 1
 domain: plan-marshall-plugin-dev
 description: |
   Update agents to use TOON format instead of JSON.
@@ -301,7 +301,7 @@ Task-plan agents create tasks during plan refinement using heredoc:
 python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks add \
   --plan-id {plan_id} <<'EOF'
 title: {task_title}
-deliverables: [{deliverable_number}]
+deliverable: {deliverable_number}
 domain: {domain}
 steps:
   - {step1}
@@ -334,14 +334,14 @@ Implement agents execute steps:
 
 ## Deliverable-to-Task Relationship
 
-Tasks reference deliverables from `solution_outline.md` using the `deliverables` field in stdin.
+Tasks reference deliverables from `solution_outline.md` using the `deliverable` field in stdin.
 
 **Constraint**: Each task maps to exactly **one** deliverable. No aggregation.
 
 | Pattern | Description | Example |
 |---------|-------------|---------|
-| 1:1 | One task per deliverable | `deliverables: [1]` - Task implements deliverable 1 |
-| 1:N | One deliverable, multiple profiles | TASK-1-IMPL and TASK-2-TEST both have `deliverables: [1]` |
+| 1:1 | One task per deliverable | `deliverable: 1` - Task implements deliverable 1 |
+| 1:N | One deliverable, multiple profiles | TASK-1-IMPL and TASK-2-TEST both have `deliverable: 1` |
 
 **1:N pattern**: When a deliverable has multiple profiles (implementation + testing), it creates multiple tasks - one per profile. Both tasks reference the same deliverable.
 

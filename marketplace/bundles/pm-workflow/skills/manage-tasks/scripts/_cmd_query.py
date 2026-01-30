@@ -31,7 +31,7 @@ def cmd_list(args) -> int:
 
     # Filter by deliverable if specified
     if args.deliverable:
-        all_tasks = [(p, t) for p, t in all_tasks if args.deliverable in t.get('deliverables', [])]
+        all_tasks = [(p, t) for p, t in all_tasks if args.deliverable == t.get('deliverable', 0)]
 
     # Filter by ready (dependencies satisfied) if specified
     if args.ready:
@@ -58,7 +58,7 @@ def cmd_list(args) -> int:
     table = []
     for _path, task in filtered_tasks:
         completed, total = calculate_progress(task)
-        deliverables = task.get('deliverables', [])
+        deliverable = task.get('deliverable', 0)
         table.append(
             {
                 'number': task['number'],
@@ -66,7 +66,7 @@ def cmd_list(args) -> int:
                 'domain': task.get('domain'),
                 'profile': task.get('profile'),
                 'phase': task.get('phase', 'execute'),
-                'deliverables': deliverables,
+                'deliverable': deliverable,
                 'status': task['status'],
                 'progress': f'{completed}/{total}',
             }
@@ -118,7 +118,7 @@ def cmd_get(args) -> int:
                 'profile': task.get('profile'),
                 'skills': task.get('skills', []),
                 'origin': task.get('origin', 'plan'),
-                'deliverables': task.get('deliverables', []),
+                'deliverable': task.get('deliverable', 0),
                 'depends_on': task.get('depends_on', []),
                 'phase': task.get('phase', 'execute'),
                 'status': task['status'],
@@ -253,7 +253,7 @@ def cmd_next(args) -> int:
             'skills': next_task.get('skills', []),
             'origin': next_task.get('origin', 'plan'),
             'phase': next_task.get('phase', 'execute'),
-            'deliverables': next_task.get('deliverables', []),
+            'deliverable': next_task.get('deliverable', 0),
             'step_number': next_step['number'],
             'step_title': next_step['title'],
         },
@@ -267,9 +267,9 @@ def cmd_next(args) -> int:
 
     # Include deliverable context if requested
     if getattr(args, 'include_context', False):
-        deliverables = next_task.get('deliverables', [])
-        if deliverables:
-            deliverable_context = get_deliverable_context(deliverables)
+        deliverable = next_task.get('deliverable', 0)
+        if deliverable:
+            deliverable_context = get_deliverable_context(deliverable)
             result['next'].update(deliverable_context)
 
     output_toon(result)
@@ -411,7 +411,7 @@ def cmd_next_tasks(args) -> int:
                     'domain': task.get('domain'),
                     'profile': task.get('profile'),
                     'skills': task.get('skills', []),
-                    'deliverables': task.get('deliverables', []),
+                    'deliverable': task.get('deliverable', 0),
                     'progress': f'{completed}/{total}',
                 }
             )

@@ -23,7 +23,7 @@ TASK-{NNN}-{TYPE}.json
   "profile": "implementation",
   "type": "IMPL",
   "origin": "plan",
-  "deliverables": [1],
+  "deliverable": 1,
   "depends_on": ["TASK-1"],
   "skills": ["pm-dev-java:java-core", "pm-dev-java:java-cdi"],
   "description": "Create REST endpoint for user authentication...",
@@ -49,7 +49,7 @@ TASK-{NNN}-{TYPE}.json
 | `title` | Yes | String | Short descriptive title |
 | `status` | Yes | Enum | Task status (see Status Values) |
 | `phase` | Yes | String | Plan phase: `1-init`, `2-refine`, `3-outline`, `4-plan`, `5-execute`, `6-verify`, `7-finalize` |
-| `deliverables` | Yes | Integer[] | List of deliverable numbers from solution_outline.md |
+| `deliverable` | Yes | Integer | Deliverable number from solution_outline.md (1:1 constraint) |
 | `depends_on` | Yes | String[] | Task dependencies: empty array or TASK-N references |
 | `description` | Yes | String | Detailed task description |
 | `domain` | Yes | String | Task domain (java, javascript, plugin, etc.) |
@@ -196,7 +196,7 @@ The verification block defines how to verify task completion:
   "profile": "implementation",
   "type": "IMPL",
   "origin": "plan",
-  "deliverables": [1],
+  "deliverable": 1,
   "depends_on": ["TASK-1"],
   "skills": ["pm-dev-java:java-core", "pm-dev-java:java-cdi"],
   "description": "Create REST endpoint for user authentication.\nEndpoint should accept username/password and\nreturn JWT token on successful auth.",
@@ -221,7 +221,7 @@ The verification block defines how to verify task completion:
 
 1. At least one step is required
 2. `current_step` must be within valid step range (1 to step_count)
-3. `deliverables` must be non-empty list of positive integers
+3. `deliverable` must be a positive integer
 4. `skills` entries must follow `{bundle}:{skill}` format
 5. `domain` must be a valid domain value
 6. `profile` must be a valid profile value (implementation, module_testing)

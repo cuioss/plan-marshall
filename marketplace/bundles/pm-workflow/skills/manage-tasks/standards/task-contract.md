@@ -6,7 +6,7 @@ Standard structure for tasks created by task-plan skills. Tasks represent commit
 
 Each task:
 
-- References one or more deliverables (M:N relationship)
+- References exactly one deliverable (1:1 constraint)
 - Contains domain and profile for workflow routing
 - Includes explicit skills array (pre-resolved during task creation)
 - Includes verification criteria
@@ -31,7 +31,7 @@ Tasks are stored as JSON files: `TASK-{NNN}-{TYPE}.json`
   "type": "IMPL",
   "origin": "plan",
   "skills": ["pm-dev-java:java-core", "pm-dev-java:java-cdi"],
-  "deliverables": [1],
+  "deliverable": 1,
   "depends_on": [],
   "description": "Create CacheConfig class with Redis configuration...",
   "steps": [
@@ -60,7 +60,7 @@ Tasks are stored as JSON files: `TASK-{NNN}-{TYPE}.json`
   "type": "FIX",
   "origin": "fix",
   "skills": ["pm-dev-java:junit-core", "pm-dev-java:java-core"],
-  "deliverables": [1],
+  "deliverable": 1,
   "depends_on": ["TASK-2"],
   "description": "Fix test failure detected during verification.",
   "finding": {
@@ -90,7 +90,7 @@ Tasks are stored as JSON files: `TASK-{NNN}-{TYPE}.json`
 | `domain` | string | Yes | Single domain from deliverable (java, javascript, plan-marshall-plugin-dev) |
 | `profile` | string | Yes | Workflow profile (implementation, testing, quality) |
 | `skills` | list | Yes | Domain skills pre-resolved during task creation |
-| `deliverables` | list | Yes | Referenced deliverable numbers |
+| `deliverable` | int | Yes | Referenced deliverable number (1:1 constraint) |
 | `depends_on` | string | Yes | Task dependencies for ordering |
 | `origin` | string | Yes | Task origin: `plan` or `fix` |
 | `description` | string | Yes | Detailed task description |
@@ -224,32 +224,19 @@ Task-plan resolves skills from architecture for each profile in the deliverable'
 
 ## Deliverable-to-Task Relationship
 
-Tasks and deliverables have a **many-to-many relationship**:
+Tasks have a **1:1 constraint** with deliverables - each task references exactly one deliverable:
 
 | Pattern | Description | Example |
 |---------|-------------|---------|
-| 1:1 | One deliverable -> one task | Single-profile deliverable |
-| N:1 | Multiple deliverables -> one task | Similar small changes (aggregation) |
-| 1:N | One deliverable -> multiple tasks | Multiple profiles (implementation + testing) |
+| 1:1 | One task per deliverable | Single-profile deliverable |
+| 1:N | One deliverable, multiple profiles | TASK-1-IMPL and TASK-2-TEST both have `deliverable: 1` |
 
-### When to Use Each Pattern
+### 1:N Pattern
 
-**1:1 (Keep separate)**:
-- Large deliverables that form a coherent unit
-- Single-file changes
-- Deliverables with unique verification requirements
+When a deliverable has multiple profiles (implementation + testing), it creates multiple tasks - one per profile. Both tasks reference the same deliverable number:
 
-**N:1 (Aggregate)**:
-- Same change_type
-- Same domain and profile
-- Same execution_mode (must be `automated`)
-- No dependency between them
-- Combined file count < 10
-
-**1:N (Multiple profiles)**:
-- Deliverable has multiple profiles (implementation + testing)
-- Each profile becomes a separate task
-- Testing task depends on implementation task
+- TASK-1-IMPL: `deliverable: 1`, `profile: implementation`
+- TASK-2-TEST: `deliverable: 1`, `profile: module_testing`, `depends_on: ["TASK-1"]`
 
 ## Optimization Workflow
 
@@ -312,7 +299,7 @@ Uses stdin-based API with heredoc to avoid shell metacharacter issues:
 python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks add \
   --plan-id {plan_id} <<'EOF'
 title: {task title}
-deliverables: [{deliverable_number}]
+deliverable: {deliverable_number}
 domain: {domain}
 profile: {profile}
 skills:
@@ -348,11 +335,11 @@ summary:
   tasks_created: {M}
   parallelizable_groups: {count of independent task groups}
 
-tasks_created[M]{id,title,deliverable,depends_on}:
-TASK-001-IMPL,Implement UserService,1,none
-TASK-002-TEST,Test UserService,1,TASK-001-IMPL
-TASK-003-IMPL,Implement UserRepository,2,none
-TASK-004-TEST,Test UserRepository,2,TASK-003-IMPL
+tasks_created[M]{number,title,deliverable,depends_on}:
+1,Implement UserService,1,none
+2,Test UserService,1,TASK-1
+3,Implement UserRepository,2,none
+4,Test UserRepository,2,TASK-3
 
 execution_order:
   parallel_group_1: [TASK-001-IMPL, TASK-003-IMPL]

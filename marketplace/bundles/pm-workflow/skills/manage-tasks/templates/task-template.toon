@@ -3,9 +3,7 @@ title: {TITLE}
 status: pending
 phase: {PHASE}
 
-deliverables[{DELIVERABLE_COUNT}]:
-- {DELIVERABLE_1}
-- {DELIVERABLE_2}
+deliverable: {DELIVERABLE}
 
 depends_on: {DEPENDS_ON}
 

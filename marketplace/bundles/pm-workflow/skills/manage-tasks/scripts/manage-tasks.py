@@ -26,7 +26,7 @@ Output: TOON format for all operations.
 Add command usage (stdin-based API):
   python3 manage-task.py add --plan-id my-plan <<'EOF'
   title: My Task Title
-  deliverables: [1]
+  deliverable: 1
   domain: plan-marshall-plugin-dev
   phase: 5-execute
   description: |
@@ -75,7 +75,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_update.add_argument('--domain', help='Task domain (e.g., java, javascript)')
     p_update.add_argument('--profile', help='Task profile (arbitrary key from marshal.json)')
     p_update.add_argument('--skills', help='Skills list (comma-separated bundle:skill format)')
-    p_update.add_argument('--deliverables', help='Deliverable numbers (comma-separated integers)')
+    p_update.add_argument('--deliverable', type=int, help='Deliverable number (single integer)')
 
     # remove
     p_remove = subparsers.add_parser('remove', help='Remove a task')

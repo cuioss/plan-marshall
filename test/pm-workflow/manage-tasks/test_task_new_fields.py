@@ -42,7 +42,7 @@ def cleanup(temp_dir):
 
 def build_task_toon_with_new_fields(
     title='Test task',
-    deliverables=None,
+    deliverable=1,
     domain='java',
     profile='implementation',
     skills=None,
@@ -53,18 +53,14 @@ def build_task_toon_with_new_fields(
     depends_on='none',
 ):
     """Build TOON content for task with new fields."""
-    if deliverables is None:
-        deliverables = [1]
     if steps is None:
         steps = ['src/main/java/TestFile.java']
     if skills is None:
         skills = ['pm-dev-java:java-core']
 
-    deliverables_str = '[' + ', '.join(str(d) for d in deliverables) + ']'
-
     lines = [
         f'title: {title}',
-        f'deliverables: {deliverables_str}',
+        f'deliverable: {deliverable}',
         f'domain: {domain}',
         f'profile: {profile}',
         f'phase: {phase}',
@@ -102,7 +98,7 @@ def test_add_with_profile():
     try:
         result = add_task_with_fields(
             title='Test task',
-            deliverables=[1],
+            deliverable=1,
             domain='java',
             profile='implementation',
             skills=['pm-dev-java:java-core'],
@@ -120,7 +116,7 @@ def test_add_with_testing_profile():
     temp_dir = setup_plan_dir()
     try:
         result = add_task_with_fields(
-            title='Test task', deliverables=[1], domain='java', profile='testing', skills=['pm-dev-java:junit-core']
+            title='Test task', deliverable=1, domain='java', profile='testing', skills=['pm-dev-java:junit-core']
         )
 
         assert result.returncode == 0, f'Failed: {result.stderr}'
@@ -135,7 +131,7 @@ def test_add_with_quality_profile():
     try:
         result = add_task_with_fields(
             title='Quality check task',
-            deliverables=[1],
+            deliverable=1,
             domain='java',
             profile='quality',
             skills=['pm-dev-java:java-maintenance'],
@@ -153,7 +149,7 @@ def test_add_with_skills():
     try:
         result = add_task_with_fields(
             title='Multi-skill task',
-            deliverables=[1],
+            deliverable=1,
             domain='java',
             profile='implementation',
             skills=['pm-dev-java:java-core', 'pm-dev-java:java-cdi', 'pm-dev-java:java-lombok'],
@@ -171,7 +167,7 @@ def test_add_with_origin():
     temp_dir = setup_plan_dir()
     try:
         result = add_task_with_fields(
-            title='Plan origin task', deliverables=[1], domain='java', profile='implementation', origin='plan'
+            title='Plan origin task', deliverable=1, domain='java', profile='implementation', origin='plan'
         )
 
         assert result.returncode == 0, f'Failed: {result.stderr}'
@@ -186,7 +182,7 @@ def test_add_with_arbitrary_profile():
     try:
         # Test with 'architecture' profile (not in old VALID_PROFILES)
         toon = """title: Architecture task
-deliverables: [1]
+deliverable: 1
 domain: java
 profile: architecture
 phase: 5-execute
@@ -208,7 +204,7 @@ def test_add_with_planning_profile():
     temp_dir = setup_plan_dir()
     try:
         toon = """title: Planning task
-deliverables: [1]
+deliverable: 1
 domain: java
 profile: planning
 phase: 5-execute
@@ -230,7 +226,7 @@ def test_add_with_custom_profile():
     temp_dir = setup_plan_dir()
     try:
         toon = """title: Custom task
-deliverables: [1]
+deliverable: 1
 domain: java
 profile: my-custom-profile
 phase: 5-execute
@@ -252,7 +248,7 @@ def test_add_fails_with_invalid_skill_format():
     temp_dir = setup_plan_dir()
     try:
         toon = """title: Invalid skill
-deliverables: [1]
+deliverable: 1
 domain: java
 profile: implementation
 phase: 5-execute
@@ -431,18 +427,18 @@ def test_update_skills():
         cleanup(temp_dir)
 
 
-def test_update_deliverables():
-    """Update deliverables field."""
+def test_update_deliverable():
+    """Update deliverable field (single integer)."""
     temp_dir = setup_plan_dir()
     try:
-        add_task_with_fields(title='Task', deliverables=[1])
-        result = run_script(SCRIPT_PATH, 'update', '--plan-id', 'test-plan', '--number', '1', '--deliverables', '1,2,3')
+        add_task_with_fields(title='Task', deliverable=1)
+        result = run_script(SCRIPT_PATH, 'update', '--plan-id', 'test-plan', '--number', '1', '--deliverable', '2')
 
         assert result.returncode == 0
 
         # Verify with get
         get_result = run_script(SCRIPT_PATH, 'get', '--plan-id', 'test-plan', '--number', '1')
-        assert 'deliverables: [1, 2, 3]' in get_result.stdout
+        assert 'deliverable: 2' in get_result.stdout
     finally:
         cleanup(temp_dir)
 
@@ -771,7 +767,7 @@ def test_add_with_outline_phase():
     temp_dir = setup_plan_dir()
     try:
         toon = """title: Outline task
-deliverables: [1]
+deliverable: 1
 domain: java
 profile: architecture
 phase: 3-outline
@@ -793,7 +789,7 @@ def test_add_with_plan_phase():
     temp_dir = setup_plan_dir()
     try:
         toon = """title: Plan task
-deliverables: [1]
+deliverable: 1
 domain: java
 profile: planning
 phase: 4-plan
@@ -820,7 +816,7 @@ def test_add_with_arbitrary_domain():
     temp_dir = setup_plan_dir()
     try:
         toon = """title: Requirements task
-deliverables: [1]
+deliverable: 1
 domain: requirements
 profile: implementation
 phase: 5-execute
@@ -842,7 +838,7 @@ def test_add_with_custom_domain():
     temp_dir = setup_plan_dir()
     try:
         toon = """title: Custom domain task
-deliverables: [1]
+deliverable: 1
 domain: my-custom-domain
 profile: implementation
 phase: 5-execute
@@ -885,7 +881,7 @@ def test_add_with_impl_type():
     temp_dir = setup_plan_dir()
     try:
         toon = """title: Implementation task
-deliverables: [1]
+deliverable: 1
 domain: java
 profile: implementation
 phase: 5-execute
@@ -908,7 +904,7 @@ def test_add_with_fix_type():
     temp_dir = setup_plan_dir()
     try:
         toon = """title: Fix task
-deliverables: [1]
+deliverable: 1
 domain: java
 profile: implementation
 phase: 5-execute
@@ -932,7 +928,7 @@ def test_add_with_sonar_type():
     temp_dir = setup_plan_dir()
     try:
         toon = """title: Sonar fix task
-deliverables: [1]
+deliverable: 1
 domain: java
 profile: quality
 phase: 5-execute
@@ -961,7 +957,7 @@ def test_task_file_uses_type_suffix():
     temp_dir = setup_plan_dir()
     try:
         toon = """title: Implementation task with long title
-deliverables: [1]
+deliverable: 1
 domain: java
 profile: implementation
 phase: 5-execute
@@ -985,7 +981,7 @@ def test_fix_task_file_uses_fix_suffix():
     temp_dir = setup_plan_dir()
     try:
         toon = """title: Fix broken test
-deliverables: [1]
+deliverable: 1
 domain: java
 profile: testing
 phase: 5-execute
