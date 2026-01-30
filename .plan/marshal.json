@@ -2,7 +2,7 @@
   "ci": {
     "provider": "github",
     "repo_url": "https://github.com/cuioss/plan-marshall.git",
-    "detected_at": "2026-01-27T13:57:51Z",
+    "detected_at": "2026-01-30T09:40:38Z",
     "commands": {
       "pr-create": "python3 .plan/execute-script.py tools-integration-ci:github pr create",
       "pr-reviews": "python3 .plan/execute-script.py tools-integration-ci:github pr reviews",
@@ -12,6 +12,10 @@
       "issue-create": "python3 .plan/execute-script.py tools-integration-ci:github issue create",
       "issue-view": "python3 .plan/execute-script.py tools-integration-ci:github issue view"
     }
+  },
+  "extension_defaults": {
+    "build.maven.profiles.map.canonical": "pre-commit:quality-gate,coverage:coverage,javadoc:javadoc",
+    "build.maven.profiles.skip": "build-plantuml,rewrite-maven-clean, release, release-snapshot, license-cleanup, sonar, only-eclipse,release-pom"
   },
   "plan": {
     "phase-1-init": {
@@ -32,10 +36,10 @@
     },
     "phase-7-finalize": {
       "max_iterations": 3,
-      "1_commit_push": false,
-      "2_create_pr": false,
-      "3_automated_review": false,
-      "4_sonar_roundtrip": false,
+      "1_commit_push": true,
+      "2_create_pr": true,
+      "3_automated_review": true,
+      "4_sonar_roundtrip": true,
       "5_knowledge_capture": true,
       "6_lessons_capture": true
     }
@@ -82,9 +86,5 @@
       "memory_days": 5,
       "temp_on_maintenance": true
     }
-  },
-  "extension_defaults": {
-    "build.maven.profiles.map.canonical": "pre-commit:quality-gate,coverage:coverage,javadoc:javadoc",
-    "build.maven.profiles.skip": "build-plantuml,rewrite-maven-clean, release, release-snapshot, license-cleanup, sonar, only-eclipse,release-pom"
   }
 }
