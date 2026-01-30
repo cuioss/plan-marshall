@@ -82,5 +82,9 @@
       "memory_days": 5,
       "temp_on_maintenance": true
     }
+  },
+  "extension_defaults": {
+    "build.maven.profiles.map.canonical": "pre-commit:quality-gate,coverage:coverage,javadoc:javadoc",
+    "build.maven.profiles.skip": "build-plantuml,rewrite-maven-clean, release, release-snapshot, license-cleanup, sonar, only-eclipse,release-pom"
   }
 }
