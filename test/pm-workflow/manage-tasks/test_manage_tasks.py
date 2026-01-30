@@ -162,8 +162,8 @@ def test_add_creates_type_based_filename():
         cleanup(temp_dir)
 
 
-def test_add_multiple_deliverables():
-    """Add task with multiple deliverables."""
+def test_add_multiple_deliverables_rejected():
+    """Adding task with multiple deliverables is rejected (1:1 constraint)."""
     temp_dir = setup_plan_dir()
     try:
         toon = build_task_toon(
@@ -175,9 +175,8 @@ def test_add_multiple_deliverables():
         )
         result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
 
-        assert result.returncode == 0, f'Failed: {result.stderr}'
-        assert 'status: success' in result.stdout
-        assert 'deliverables: [1, 2, 3]' in result.stdout
+        assert result.returncode == 1, f'Should have failed but got: {result.stdout}'
+        assert 'Only one deliverable allowed per task' in result.stderr
     finally:
         cleanup(temp_dir)
 
@@ -353,7 +352,7 @@ def test_add_with_shell_metacharacters_in_verification():
     try:
         toon = build_task_toon(
             title='Task with complex verification',
-            deliverables=[1, 2, 3],
+            deliverables=[1],
             domain='plan-marshall-plugin-dev',
             description='Migrate outputs from JSON to TOON',
             steps=['Update agent1.md', 'Update agent2.md'],
@@ -386,7 +385,7 @@ def test_get_existing_task():
     try:
         toon = build_task_toon(
             title='Test task',
-            deliverables=[1, 2],
+            deliverables=[1],
             domain='java',
             description='Test description',
             steps=['src/main/java/One.java', 'src/main/java/Two.java', 'src/main/java/Three.java'],
@@ -399,7 +398,7 @@ def test_get_existing_task():
         assert 'status: success' in result.stdout
         assert 'number: 1' in result.stdout
         assert 'Test task' in result.stdout
-        assert 'deliverables: [1, 2]' in result.stdout
+        assert 'deliverables: [1]' in result.stdout
         assert 'Test description' in result.stdout
         assert 'One.java' in result.stdout  # Updated to file path
         assert 'Two.java' in result.stdout  # Updated to file path
@@ -769,7 +768,7 @@ def test_next_include_context():
     try:
         toon = build_task_toon(
             title='Feature task',
-            deliverables=[1, 2],
+            deliverables=[1],
             domain='java',
             description='Task description',
             steps=['src/main/java/One.java', 'src/main/java/Two.java'],
@@ -781,7 +780,7 @@ def test_next_include_context():
         assert result.returncode == 0, f'Failed: {result.stderr}'
         assert 'task_number: 1' in result.stdout
         assert 'deliverables_found: true' in result.stdout
-        assert 'deliverable_count: 2' in result.stdout
+        assert 'deliverable_count: 1' in result.stdout
     finally:
         cleanup(temp_dir)
 
@@ -1160,7 +1159,7 @@ def test_file_contains_new_fields():
     try:
         toon = build_task_toon(
             title='Test task',
-            deliverables=[1, 2],
+            deliverables=[1],
             domain='java',
             phase='5-execute',
             description='Test description',
@@ -1182,7 +1181,7 @@ def test_file_contains_new_fields():
         assert task['number'] == 1
         assert task['status'] == 'pending'
         assert task['phase'] == '5-execute'
-        assert task['deliverables'] == [1, 2]
+        assert task['deliverables'] == [1]
         assert task['depends_on'] == []  # 'none' is stored as empty list
         assert task['domain'] == 'java'
         assert 'verification' in task

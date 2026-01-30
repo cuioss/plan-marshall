@@ -113,32 +113,29 @@ def slugify(title: str, max_length: int = 40) -> str:
 
 
 def validate_deliverables(deliverables_input) -> list[int]:
-    """Validate deliverables list."""
+    """Validate deliverables list. Exactly one deliverable per task."""
     if deliverables_input is None or len(deliverables_input) == 0:
-        raise ValueError('At least one deliverable is required')
+        raise ValueError('Exactly one deliverable is required')
 
-    result = []
-    for item in deliverables_input:
-        if isinstance(item, int):
-            if item < 1:
-                raise ValueError(f'Invalid deliverable number: {item}. Must be positive integer.')
-            result.append(item)
+    if len(deliverables_input) > 1:
+        raise ValueError(
+            f'Only one deliverable allowed per task, got {len(deliverables_input)}: {deliverables_input}'
+        )
+
+    item = deliverables_input[0]
+    if isinstance(item, int):
+        if item < 1:
+            raise ValueError(f'Invalid deliverable number: {item}. Must be positive integer.')
+        return [item]
+    else:
+        item_str = str(item).strip()
+        if item_str.isdigit():
+            num = int(item_str)
+            if num < 1:
+                raise ValueError(f'Invalid deliverable number: {num}. Must be positive integer.')
+            return [num]
         else:
-            item_str = str(item).strip()
-            if not item_str:
-                continue
-            if item_str.isdigit():
-                num = int(item_str)
-                if num < 1:
-                    raise ValueError(f'Invalid deliverable number: {num}. Must be positive integer.')
-                result.append(num)
-            else:
-                raise ValueError(f'Invalid deliverable format: {item_str}. Expected positive integer.')
-
-    if len(result) == 0:
-        raise ValueError('At least one deliverable is required')
-
-    return result
+            raise ValueError(f'Invalid deliverable format: {item_str}. Expected positive integer.')
 
 
 def validate_domain(domain: str) -> str:
