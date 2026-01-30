@@ -33,7 +33,7 @@ Activate when:
 
 Verify configuration comes from two sources:
 
-**Per-plan data** (from references.toon):
+**Per-plan data** (from references.json):
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-references:manage-references get \
   --plan-id {plan_id} --field domains
@@ -49,7 +49,7 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-m
 
 | Source | Field | Description |
 |--------|-------|-------------|
-| references.toon | `domains` | Domains for this plan (java, documentation, etc.) |
+| references.json | `domains` | Domains for this plan (java, documentation, etc.) |
 | marshal.json | `max_iterations` | Maximum verify-execute-verify loops |
 | marshal.json | `1_quality_check` | Whether to run quality gate |
 | marshal.json | `2_build_verify` | Whether to run build verification |

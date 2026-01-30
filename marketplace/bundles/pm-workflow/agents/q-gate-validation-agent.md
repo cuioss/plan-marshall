@@ -187,7 +187,7 @@ python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifac
 
 ### Step 5: Update Affected Files
 
-Persist the verified affected files to references.toon.
+Persist the verified affected files to references.json.
 
 **CRITICAL**: The `--values` parameter requires a **single comma-separated string** with NO spaces between items:
 
@@ -245,7 +245,7 @@ findings_recorded: {count}
 |------|---------|-----|
 | `logs/decision.log` | Per-deliverable verification results | `manage-log decision` |
 | `artifacts/findings.jsonl` | Q-Gate triage findings | `artifact_store finding add` |
-| `references.toon` | affected_files (verified files only) | `manage-references set` |
+| `references.json` | affected_files (verified files only) | `manage-references set` |
 
 ---
 

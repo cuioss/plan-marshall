@@ -149,7 +149,7 @@ The git-workflow skill handles:
 If `create_pr == true`, the git-workflow skill creates the PR with:
 - Title from request.md
 - Body using `templates/pr-template.md`
-- Issue link from references.toon (`Closes #{issue}` if present)
+- Issue link from references.json (`Closes #{issue}` if present)
 
 ### Step 4: Automated Review (if PR created)
 

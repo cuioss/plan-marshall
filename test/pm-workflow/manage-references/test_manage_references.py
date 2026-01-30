@@ -24,7 +24,7 @@ TestContext = PlanContext
 
 
 def test_create_references():
-    """Test creating references.toon."""
+    """Test creating references.json."""
     with TestContext():
         result = run_script(SCRIPT_PATH, 'create', '--plan-id', 'test-plan', '--branch', 'feature/test')
         assert result.success, f'Script failed: {result.stderr}'
@@ -55,7 +55,7 @@ def test_create_with_issue_url():
 
 
 def test_read_references():
-    """Test reading references.toon."""
+    """Test reading references.json."""
     with TestContext():
         run_script(SCRIPT_PATH, 'create', '--plan-id', 'test-plan', '--branch', 'feature/test')
         result = run_script(SCRIPT_PATH, 'read', '--plan-id', 'test-plan')

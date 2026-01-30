@@ -20,7 +20,7 @@ Planning-related components are distributed across bundles:
 
 This skill provides a single command to discover all planning components.
 
-**Note**: pm-dev-java and pm-dev-frontend no longer contain planning-specific components. The thin agent architecture in pm-workflow loads domain skills dynamically via references.toon.
+**Note**: pm-dev-java and pm-dev-frontend no longer contain planning-specific components. The thin agent architecture in pm-workflow loads domain skills dynamically via references.json.
 
 ## When to Use This Skill
 
@@ -143,7 +143,7 @@ python3 .plan/execute-script.py pm-workflow:planning-inventory:scan-planning-inv
 |--------|--------|
 | pm-plugin-development | plugin-task-plan, plugin-solution-outline, plugin-plan-implement |
 
-**Note**: pm-dev-java and pm-dev-frontend no longer have planning-specific components. Domain skills are loaded by thin agents via references.toon.
+**Note**: pm-dev-java and pm-dev-frontend no longer have planning-specific components. Domain skills are loaded by thin agents via references.json.
 
 ## Dependencies
 

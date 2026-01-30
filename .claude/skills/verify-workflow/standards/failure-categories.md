@@ -26,7 +26,7 @@ For each failure category, trace backwards through the component chain to identi
 | `solution_outline.md` | `manage-solution-outline` skill/script |
 | `config.toon` | `phase-1-init` or `manage-config` |
 | `TASK-*.toon` | `phase-4-plan` or `manage-tasks` |
-| `references.toon` | `manage-references` skill/script |
+| `references.json` | `manage-references` skill/script |
 
 ### Schema Violation
 

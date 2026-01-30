@@ -20,7 +20,7 @@ allowed-tools: Read, Glob, Grep, Bash, Task, AskUserQuestion
 | **Simple** | Localized changes (single_file, single_module, few_files) | Direct deliverable creation from module_mapping |
 | **Complex** | Codebase-wide changes (multi_module, codebase_wide) | Load domain skill for discovery/analysis |
 
-**Track determined by**: phase-2-refine (stored in references.toon)
+**Track determined by**: phase-2-refine (stored in references.json)
 
 ---
 
@@ -48,7 +48,7 @@ Step 1: Load Inputs → Step 2: Route by Track → {Simple: Steps 3-5 | Complex:
 
 ### 1.1 Receive Track from Phase-2-Refine Output
 
-The `track` value (simple | complex) is received from the phase-2-refine return output, not read from references.toon.
+The `track` value (simple | complex) is received from the phase-2-refine return output, not read from references.json.
 
 **If track not provided in input**, extract from decision.log:
 ```bash
@@ -161,7 +161,7 @@ For each entry in module_mapping:
 
 1. Determine change_type from request (create, modify, migrate, refactor)
 2. Determine execution_mode (automated)
-3. Map domain from references.toon
+3. Map domain from references.json
 4. Use module from module_mapping
 
 ### 4.2 Deliverable Structure
@@ -240,7 +240,7 @@ For codebase-wide changes requiring discovery and analysis.
 
 ### 6.1 Resolve Skill
 
-For each domain in references.toon:
+For each domain in references.json:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
@@ -284,7 +284,7 @@ The skill handles the complete Complex Track workflow internally:
 - Persist assessments → assessments.jsonl
 - Confirm uncertainties with user
 - Group into deliverables
-- Write solution_outline.md (must include `compatibility: {value} — {description}` in header metadata, read from references.toon)
+- Write solution_outline.md (must include `compatibility: {value} — {description}` in header metadata, read from references.json)
 
 ### 7.2 Log Skill Load
 

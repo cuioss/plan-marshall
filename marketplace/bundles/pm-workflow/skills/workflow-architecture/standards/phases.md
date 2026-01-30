@@ -58,7 +58,7 @@ The pm-workflow bundle implements a 7-phase execution model for structured task 
 │  │  • description                   .plan/plans/{plan_id}/             │   │
 │  │  • lesson_id                       ├── status.toon                  │   │
 │  │  • issue URL                       ├── request.md                   │   │
-│  │                                    └── references.toon              │   │
+│  │                                    └── references.json              │   │
 │  │                                                                     │   │
 │  └─────────────────────────────────────────────────────────────────────┘   │
 │                                                                             │
@@ -72,10 +72,10 @@ The pm-workflow bundle implements a 7-phase execution model for structured task 
 │  3. Create plan directory                                                   │
 │  4. Get task content (from description/lesson/issue)                        │
 │  5. Write request.md                                                        │
-│  6. Initialize references.toon                                              │
+│  6. Initialize references.json                                              │
 │  7. Detect domain                                                           │
 │  8. Create status.toon (7-phase model)                                      │
-│  9. Store domains in references.toon                                        │
+│  9. Store domains in references.json                                        │
 │  10. Transition to 2-refine phase                                           │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
@@ -97,7 +97,7 @@ The pm-workflow bundle implements a 7-phase execution model for structured task 
 │  │  ═════                           ══════                             │   │
 │  │                                                                     │   │
 │  │  • request.md                    • clarified_request (in request.md)│   │
-│  │  • references.toon               • clarifications (Q&A pairs)       │   │
+│  │  • references.json               • clarifications (Q&A pairs)       │   │
 │  │  • project-architecture (*)      • module_mapping                   │   │
 │  │                                  • scope_estimate                   │   │
 │  │                                  • confidence >= threshold          │   │
@@ -143,7 +143,7 @@ The pm-workflow bundle implements a 7-phase execution model for structured task 
 │  │  ═════                           ══════                             │   │
 │  │                                                                     │   │
 │  │  • clarified_request             solution_outline.md                │   │
-│  │  • references.toon                  └── Summary                      │   │
+│  │  • references.json                  └── Summary                      │   │
 │  │  • project-architecture (*)        └── Overview (ASCII diagram)     │   │
 │  │                                    └── Deliverables                 │   │
 │  │                                        ├── 1. Title                 │   │
@@ -299,7 +299,7 @@ The pm-workflow bundle implements a 7-phase execution model for structured task 
 │  │  ═════                           ══════                             │   │
 │  │                                                                     │   │
 │  │  • Modified project files        • Verification passed              │   │
-│  │  • references.toon               • OR: Fix tasks created            │   │
+│  │  • references.json               • OR: Fix tasks created            │   │
 │  │    └── domains                     (loop back to 5-execute)         │   │
 │  │  • Completed tasks                                                  │   │
 │  │                                                                     │   │
@@ -358,7 +358,7 @@ The pm-workflow bundle implements a 7-phase execution model for structured task 
 │  │  • marshal.json                   • Git commit                       │   │
 │  │    ├── create_pr                 • Branch pushed                    │   │
 │  │    └── branch_strategy           • Pull request (if enabled)        │   │
-│  │  • references.toon               • Plan status: complete            │   │
+│  │  • references.json               • Plan status: complete            │   │
 │  │    ├── branch                                                       │   │
 │  │    └── issue_url                                                    │   │
 │  │  • Verified project files                                           │   │
@@ -491,7 +491,7 @@ TRANSITION TRIGGERS:
 │  │           → profiles: [implementation, module_testing]               │  │
 │  └──────────────────────────────────────────────────────────────────────┘  │
 │                      │                                                      │
-│                      │ references.toon.domains                                  │
+│                      │ references.json.domains                                  │
 │                      ▼                                                      │
 │  ┌──────────────────────────────────────────────────────────────────────┐  │
 │  │  PLAN                                                                │  │
@@ -511,12 +511,12 @@ TRANSITION TRIGGERS:
 │  │  • Applies domain patterns during implementation                     │  │
 │  └──────────────────────────────────────────────────────────────────────┘  │
 │                      │                                                      │
-│                      │ references.toon.domains                                  │
+│                      │ references.json.domains                                  │
 │                      ▼                                                      │
 │  ┌──────────────────────────────────────────────────────────────────────┐  │
 │  │  VERIFY                                                              │  │
 │  │  ══════                                                              │  │
-│  │  • Reads domains from references.toon                                 │  │
+│  │  • Reads domains from references.json                                 │  │
 │  │  • Loads triage extensions for each domain                           │  │
 │  │  • Applies domain-specific verification                              │  │
 │  └──────────────────────────────────────────────────────────────────────┘  │
@@ -556,7 +556,7 @@ Q-Gate is a GENERIC AGENT TOOL that extensions call during Phase 3 (Outline) to 
 │  │                                                                     │   │
 │  │  • plan_id                       • CONFIRMED assessments            │   │
 │  │  • domains                       • FILTERED assessments             │   │
-│  │  • CERTAIN_INCLUDE assessments   • affected_files in references.toon│   │
+│  │  • CERTAIN_INCLUDE assessments   • affected_files in references.json│   │
 │  │                                  • Statistics (confirmed/filtered)  │   │
 │  │                                                                     │   │
 │  └─────────────────────────────────────────────────────────────────────┘   │
@@ -571,7 +571,7 @@ Q-Gate is a GENERIC AGENT TOOL that extensions call during Phase 3 (Outline) to 
 │     • Request Intent Match - Modification fulfills request                  │
 │     • Duplicate Detection - Not already covered                             │
 │  4. Write CONFIRMED/FILTERED assessments to assessments.jsonl               │
-│  5. Persist affected_files to references.toon                               │
+│  5. Persist affected_files to references.json                               │
 │  6. Log lifecycle and return statistics                                     │
 │                                                                             │
 │  WHY GENERIC:                                                               │

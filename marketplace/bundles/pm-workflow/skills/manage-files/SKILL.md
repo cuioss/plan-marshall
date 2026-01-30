@@ -25,7 +25,7 @@ Activate this skill when:
 - Listing plan contents
 - Checking if files exist
 
-**Note**: For typed plan documents (`request.md`, `solution_outline.md`), use `pm-workflow:manage-plan-documents` instead. For domain-specific files (references.toon, status.toon), use the dedicated manage-* skills.
+**Note**: For typed plan documents (`request.md`, `solution_outline.md`), use `pm-workflow:manage-plan-documents` instead. For domain-specific files (references.json, status.toon), use the dedicated manage-* skills.
 
 ---
 
@@ -37,7 +37,7 @@ Files are stored in plan directories:
 .plan/plans/{plan_id}/
   request.md
   solution_outline.md
-  references.toon
+  references.json
   status.toon
   tasks/
 ```
@@ -118,7 +118,7 @@ Check if a file exists. Returns TOON output with `exists: true/false`.
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-files:manage-files exists \
   --plan-id {plan_id} \
-  --file references.toon
+  --file references.json
 ```
 
 **Output** (TOON format):
@@ -127,9 +127,9 @@ When file exists:
 ```toon
 status: success
 plan_id: my-feature
-file: references.toon
+file: references.json
 exists: true
-path: .plan/plans/my-feature/references.toon
+path: .plan/plans/my-feature/references.json
 ```
 
 When file does not exist:
@@ -289,7 +289,7 @@ Plan orchestration skills (plan-init, solution-outline, task-plan, plan-execute)
 
 | Skill | Manages | Use manage-files for |
 |-------|---------|---------------------|
-| manage-references | references.toon | N/A (use manage-references) |
+| manage-references | references.json | N/A (use manage-references) |
 | manage-lifecycle | status.toon | N/A (use manage-lifecycle) |
 | manage-plan-documents | request.md | N/A (use manage-plan-documents) |
 | manage-solution-outline | solution_outline.md | N/A (use manage-solution-outline) |

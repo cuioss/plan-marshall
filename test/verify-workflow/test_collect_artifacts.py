@@ -84,7 +84,7 @@ class TestArtifactCollector:
         """Test references collection when file doesn't exist (acceptable)."""
         plan_dir = tmp_path / 'plans' / 'test-plan'
         plan_dir.mkdir(parents=True)
-        # No references.toon file created
+        # No references.json file created
 
         with patch('collect_artifacts.base_path', make_base_path_mock(tmp_path)):
             collector = ArtifactCollector('test-plan', output_dir)
@@ -101,8 +101,8 @@ class TestArtifactCollector:
         plan_dir = tmp_path / 'plans' / 'test-plan'
         tasks_dir = plan_dir / 'tasks'
         tasks_dir.mkdir(parents=True)
-        (tasks_dir / 'TASK-01.toon').write_text('id: TASK-01')
-        (tasks_dir / 'TASK-02.toon').write_text('id: TASK-02')
+        (tasks_dir / 'TASK-01.json').write_text('{"id": "TASK-01"}')
+        (tasks_dir / 'TASK-02.json').write_text('{"id": "TASK-02"}')
 
         with patch('collect_artifacts.base_path', make_base_path_mock(tmp_path)):
             collector = ArtifactCollector('test-plan', output_dir)
@@ -122,7 +122,7 @@ class TestArtifactCollector:
         )
 
         (plan_dir / 'status.toon').write_text('current_phase: execute')
-        (plan_dir / 'references.toon').write_text('branch: main')
+        (plan_dir / 'references.json').write_text('{"branch": "main"}')
         (plan_dir / 'work.log').write_text('[INFO] Started')
 
         with patch('collect_artifacts.base_path', make_base_path_mock(tmp_path)):
@@ -144,12 +144,12 @@ class TestArtifactCollector:
         (plan_dir / 'solution_outline.md').write_text('# Solution\n\n## Summary\n\n## Overview\n\n## Deliverables')
 
         (plan_dir / 'status.toon').write_text('current_phase: execute')
-        (plan_dir / 'references.toon').write_text('branch: main')
+        (plan_dir / 'references.json').write_text('{"branch": "main"}')
         (plan_dir / 'work.log').write_text('[INFO] Started')
         # Tasks are in tasks/ subdirectory
         tasks_dir = plan_dir / 'tasks'
         tasks_dir.mkdir(parents=True)
-        (tasks_dir / 'TASK-01.toon').write_text('id: TASK-01')
+        (tasks_dir / 'TASK-01.json').write_text('{"id": "TASK-01"}')
 
         with patch('collect_artifacts.base_path', make_base_path_mock(tmp_path)):
             collector = ArtifactCollector('test-plan', output_dir)
@@ -166,7 +166,7 @@ class TestArtifactCollector:
         (plan_dir / 'solution_outline.md').write_text('# Solution\n\n## Summary\n\n## Overview\n\n## Deliverables')
 
         (plan_dir / 'status.toon').write_text('current_phase: execute')
-        (plan_dir / 'references.toon').write_text('branch: main')
+        (plan_dir / 'references.json').write_text('{"branch": "main"}')
         (plan_dir / 'work.log').write_text('[INFO] Started')
 
         with patch('collect_artifacts.base_path', make_base_path_mock(tmp_path)):
@@ -216,7 +216,7 @@ class TestEdgeCases:
         (plan_dir / 'solution_outline.md').write_text('# Solution\n\n## Summary\n\n## Overview\n\n## Deliverables')
 
         (plan_dir / 'status.toon').write_text('current_phase: execute')
-        # No references.toon or work.log
+        # No references.json or work.log
 
         collector = ArtifactCollector('test-plan', output_dir)
 

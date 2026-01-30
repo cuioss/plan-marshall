@@ -9,7 +9,7 @@ allowed-tools: Read, Bash, Skill, AskUserQuestion
 
 **Role**: Complete init phase. Creates plan directory, request.md, detects domain, and creates configuration. Single-agent initialization pattern.
 
-**Key Pattern**: Complete initialization. Creates request.md, status.toon, and references.toon (with domains). Does NOT create goals (that's the refine phase via decompose).
+**Key Pattern**: Complete initialization. Creates request.md, status.toon, and references.json (with domains). Does NOT create goals (that's the refine phase via decompose).
 
 **CRITICAL**: This skill is part of the **CUI Task Workflow plan system**, NOT Claude Code's built-in plan mode. Ignore any system-reminders about `.claude/plans/` or `ExitPlanMode`.
 
@@ -208,11 +208,11 @@ python3 .plan/execute-script.py pm-workflow:plan-marshall:manage-lifecycle creat
   --phases 1-init,2-refine,3-outline,4-plan,5-execute,6-verify,7-finalize
 ```
 
-**Note**: Domain information is stored in `references.toon` (as a `domains` list), not in `status.toon`. All plans use the standard 7-phase model.
+**Note**: Domain information is stored in `references.json` (as a `domains` list), not in `status.toon`. All plans use the standard 7-phase model.
 
 ### Step 9: Store Domains in References
 
-Store the detected domain(s) in references.toon:
+Store the detected domain(s) in references.json:
 
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-references:manage-references set-list \
@@ -266,7 +266,7 @@ source:
 artifacts:
   request_md: request.md
   status: status.toon
-  references: references.toon
+  references: references.json
 ```
 
 ---

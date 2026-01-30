@@ -15,9 +15,9 @@ Verifies plan-marshall workflow outputs using hybrid script + LLM-as-judge asses
 |-------|-------------------|--------|
 | `1-init` | config.toon, status.toon, request.md | Files exist, proper structure |
 | `2-refine` | request.md, work.log | Clarifications present, [REFINE:*] log entries, domains in config |
-| `3-outline` | solution_outline.md, deliverables, references.toon | Structure valid, deliverable count, affected files |
+| `3-outline` | solution_outline.md, deliverables, references.json | Structure valid, deliverable count, affected files |
 | `4-plan` | TASK-*.toon files | Tasks exist, match deliverables |
-| `5-execute` | references.toon with modified files | Affected files tracked |
+| `5-execute` | references.json with modified files | Affected files tracked |
 | `6-verify` | quality check results | (Not verified by script - use build commands) |
 | `7-finalize` | git commit artifacts | (Not verified by script - use git commands) |
 

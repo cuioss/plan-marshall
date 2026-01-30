@@ -6,7 +6,7 @@ Hybrid script + LLM-as-judge verification for plan-marshall workflow outputs.
 
 == Overview
 
-Verifies that workflow outputs (solution_outline.md, references.toon, tasks) are correct and complete. Classical assertions cannot work because LLM outputs vary in wording while semantic correctness matters.
+Verifies that workflow outputs (solution_outline.md, references.json, tasks) are correct and complete. Classical assertions cannot work because LLM outputs vary in wording while semantic correctness matters.
 
 [cols="1,3"]
 |===

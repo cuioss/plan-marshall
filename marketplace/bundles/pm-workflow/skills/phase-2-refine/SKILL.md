@@ -58,7 +58,7 @@ Store as `confidence_threshold` for use in Step 6.
 
 ## Step 1b: Load Compatibility Strategy
 
-Read the compatibility approach from project configuration and persist to references.toon in Step 9.
+Read the compatibility approach from project configuration and persist to references.json in Step 9.
 
 **EXECUTE**:
 ```bash
@@ -136,7 +136,7 @@ Store as `compatibility` and `compatibility_description` (the long description f
 | Step 5.3 | `mapping_findings` | scope estimate | `scope_estimate` |
 | Step 5.4 | `scope_estimate` + `request` + `domains` | track selection | `track` + decision.log |
 | Step 6 | all findings | confidence score | decision |
-| Step 9 | all results | - | references.toon, decision.log |
+| Step 9 | all results | - | references.json, decision.log |
 
 ---
 
@@ -649,7 +649,7 @@ python3 .plan/execute-script.py pm-workflow:manage-files:manage-files write \
 "
 ```
 
-**Note**: Track, scope, and compatibility are NOT persisted to references.toon:
+**Note**: Track, scope, and compatibility are NOT persisted to references.json:
 - **Track/scope**: Already logged to decision.log (Step 5.4, Step 9.2)
 - **Compatibility**: Read directly from marshal.json by consumers
 

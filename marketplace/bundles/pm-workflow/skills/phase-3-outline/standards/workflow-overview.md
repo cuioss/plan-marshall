@@ -8,7 +8,7 @@ Visual summary of the phase-3-outline two-track workflow for human reference.
 ├──────────────────────────────────────────────────────────────────┤
 │                                                                   │
 │  Step 1: Load Inputs                                              │
-│          → Read track from references.toon (set by phase-2)      │
+│          → Read track from references.json (set by phase-2)      │
 │          → Read request (clarified_request or body)              │
 │          → Read module_mapping, domains, compatibility           │
 │                                                                   │

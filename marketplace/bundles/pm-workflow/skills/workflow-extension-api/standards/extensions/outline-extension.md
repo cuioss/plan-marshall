@@ -61,7 +61,7 @@ plan_id: {plan_id}
 
 | Sink | Data | Purpose |
 |------|------|---------|
-| `references.toon` | track, module_mapping, domains, compatibility, compatibility_description | Track verification, mapping hints, domain verification, compatibility mode |
+| `references.json` | track, module_mapping, domains, compatibility, compatibility_description | Track verification, mapping hints, domain verification, compatibility mode |
 | `request.md` | body OR clarified_request | Request content for analysis |
 
 ### Skill Responsibilities
@@ -103,7 +103,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 #### 6. Write Solution Outline
 - Write deliverables to solution_outline.md
-- Header MUST include `compatibility: {value} -- {description}` (read from references.toon)
+- Header MUST include `compatibility: {value} -- {description}` (read from references.json)
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-solution-outline:manage-solution-outline write \
   --plan-id {plan_id} <<'EOF'
@@ -194,7 +194,7 @@ def provides_outline(self) -> str | None:
 
 For domains without outline extensions (e.g., Java, frontend), phase-3-outline uses the **generic module-based workflow**:
 
-1. Read module_mapping from references.toon
+1. Read module_mapping from references.json
 2. For each module, create deliverable with appropriate profile
 3. No discovery needed - modules already identified in phase-2-refine
 4. Write solution_outline.md directly

@@ -20,7 +20,7 @@ Domain-specific outline workflow for marketplace plugin development. Handles dis
 plan_id: {plan_id}
 ```
 
-All other data read from sinks (references.toon, request.md).
+All other data read from sinks (references.json, request.md).
 
 ---
 
@@ -233,7 +233,7 @@ The agent:
 - Uses `--content-pattern` if provided (enables pre-filtering)
 - Uses `--bundles` filter if module_mapping specifies specific bundles
 - Persists inventory to `work/inventory_filtered.toon`
-- Stores reference as `inventory_filtered` in references.toon
+- Stores reference as `inventory_filtered` in references.json
 
 **Contract**: After agent returns, `work/inventory_filtered.toon` exists.
 
@@ -372,7 +372,7 @@ When tests are in component scope:
 
 ## Step 5: Write Solution Outline
 
-After deliverables are built, write solution_outline.md. The header MUST include `compatibility: {compatibility} -- {compatibility_description}` (read from references.toon in Step 1).
+After deliverables are built, write solution_outline.md. The header MUST include `compatibility: {compatibility} -- {compatibility_description}` (read from references.json in Step 1).
 
 **CRITICAL - Plugin-Doctor Verification**: Every deliverable's Verification section MUST include `/plugin-doctor` for each affected component path:
 - For skills: `/pm-plugin-development:plugin-doctor --component {skill_path}`

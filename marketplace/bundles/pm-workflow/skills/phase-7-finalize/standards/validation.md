@@ -4,7 +4,7 @@
 
 - [ ] Accept `plan_id` parameter (never paths)
 - [ ] Read finalize config from marshal.json: `plan.phase-7-finalize` (step booleans), `plan.phase-1-init` (branch_strategy)
-- [ ] Read context from references.toon: `branch`, `base_branch`, `issue_url`, `build_system`
+- [ ] Read context from references.json: `branch`, `base_branch`, `issue_url`, `build_system`
 
 ## Commit Workflow (ALWAYS)
 
@@ -17,7 +17,7 @@
 
 ## PR Creation (if create_pr == true)
 
-- [ ] Read issue reference from references.toon
+- [ ] Read issue reference from references.json
 - [ ] Create PR using template from templates/pr-template.md
 - [ ] PR body includes: Summary, Changes, Test Plan, Related Issues
 - [ ] Link PR to issue if present (Closes #N format)

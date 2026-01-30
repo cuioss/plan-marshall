@@ -18,7 +18,7 @@ User Request → [Thin Agents] → Workflow Skills (from system domain) → Doma
 
 | Phase | Purpose | Output |
 |-------|---------|--------|
-| `1-init` | Initialize plan | status.toon, request.md, references.toon |
+| `1-init` | Initialize plan | status.toon, request.md, references.json |
 | `2-refine` | Clarify request | Refined request with confidence score |
 | `3-outline` | Create solution outline | solution_outline.md |
 | `4-plan` | Decompose into tasks | TASK-*.json |
@@ -118,7 +118,7 @@ Domain-specific extensions loaded via `resolve-workflow-skill-extension`:
 | `manage-solution-outline` | `manage-solution-outline.py` | Solution outline queries |
 | `manage-tasks` | `manage-tasks.py` | Tasks + steps CRUD |
 | `manage-files` | `manage-files.py` | Generic file I/O |
-| `manage-references` | `manage-references.py` | references.toon domain |
+| `manage-references` | `manage-references.py` | references.json domain |
 | `manage-lifecycle` | `manage-lifecycle.py` | status.toon + phases |
 
 **Logging**: Work log entries and script execution logging are provided by `plan-marshall:manage-logging` skill.
@@ -167,7 +167,7 @@ Technical domains have profile-based skills and workflow extensions:
 }
 ```
 
-Plan-level `references.toon` stores domains for the current plan:
+Plan-level `references.json` stores domains for the current plan:
 
 ```toon
 domains: [java]
@@ -217,7 +217,7 @@ pm-workflow/
     ├── manage-solution-outline/ # Solution outline queries
     ├── manage-tasks/            # Tasks + steps CRUD
     ├── manage-files/            # Generic file I/O
-    ├── manage-references/       # references.toon domain
+    ├── manage-references/       # references.json domain
     ├── manage-lifecycle/        # status.toon + phases
     ├── git-workflow/
     ├── pr-workflow/
@@ -228,7 +228,7 @@ pm-workflow/
 │   └── {plan-name}/
 │       ├── request.md
 │       ├── solution_outline.md
-│       ├── references.toon
+│       ├── references.json
 │       └── tasks/
 └── archived-plans/              # Completed plans
 ```

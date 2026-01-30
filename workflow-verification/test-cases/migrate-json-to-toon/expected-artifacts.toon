@@ -6,7 +6,7 @@ artifacts[4]{file,standard_ref}:
 solution_outline.md,pm-workflow:manage-solution-outline:deliverable-contract
 config.toon,pm-workflow:manage-config:config-schema
 status.toon,pm-workflow:manage-lifecycle:status-schema
-references.toon,pm-workflow:manage-references:references-schema
+references.json,pm-workflow:manage-references:references-schema
 
 # Expected deliverables: 4 (grouped by skill)
 # Each deliverable covers one skill: SKILL.md + script + test

@@ -16,10 +16,10 @@ User Request (description, lesson_id, or issue)
 │   3. Create or reference plan directory             │
 │   4. Get task content from source                   │
 │   5. Write request.md (preserves original input)    │
-│   6. Initialize references.toon (branch only)       │
+│   6. Initialize references.json (branch only)       │
 │   7. Detect domain from task analysis               │
 │   8. Create status.toon with phases                 │
-│   9. Store domains in references.toon                │
+│   9. Store domains in references.json                │
 │  10. Transition phase to "refine"                   │
 │   OUTPUT: plan_id, domain, next_phase               │
 └─────────────────────────────────────────────────────┘
@@ -34,7 +34,7 @@ User Request (description, lesson_id, or issue)
 |------|----------|
 | Creates plan directory | Create goals (that's refine phase) |
 | Writes request.md | Create tasks (that's refine phase) |
-| Initializes references.toon (with domains) | Execute implementation |
+| Initializes references.json (with domains) | Execute implementation |
 | Detects domain | Skip to execute phase |
 | Creates status.toon | |
 | Transitions to refine | |
@@ -109,9 +109,9 @@ AskUserQuestion:
 ### Output Validation
 - [ ] Plan directory created (via manage-files create-or-reference)
 - [ ] request.md created with complete original input
-- [ ] references.toon created with branch
+- [ ] references.json created with branch
 - [ ] status.toon created with phases
-- [ ] Domains stored in references.toon
+- [ ] Domains stored in references.json
 - [ ] Work-log entry written
 - [ ] Phase transitioned to refine
 - [ ] plan_id returned
@@ -166,10 +166,10 @@ recovery: Use resume option or provide different plan_id
 
 The plan-init agent handles complete initialization:
 1. Create plan directory and request.md
-2. Initialize references.toon with branch
+2. Initialize references.json with branch
 3. Detect domain from task analysis
 4. Create status.toon with phases
-5. Store domains in references.toon
+5. Store domains in references.json
 6. Transition to refine phase
 
 **Note**: Goals and tasks are NOT created during init. That's the refine phase.

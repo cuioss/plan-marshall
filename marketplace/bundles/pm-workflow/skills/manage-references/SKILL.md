@@ -1,17 +1,17 @@
 ---
 name: manage-references
-description: Manage references.toon files with field-level access and list management
+description: Manage references.json files with field-level access and list management
 user-invocable: false
 allowed-tools: Read, Glob, Bash
 ---
 
 # Manage References Skill
 
-Manage references.toon files with field-level access and list management. Tracks files, branches, and external references for a plan.
+Manage references.json files with field-level access and list management. Tracks files, branches, and external references for a plan.
 
 ## What This Skill Provides
 
-- Read/write references.toon
+- Read/write references.json (JSON storage, TOON output)
 - Field-level get/set operations
 - List management (add/remove items)
 - File tracking for modified files
@@ -30,29 +30,31 @@ Activate this skill when:
 References are stored in the plan directory:
 
 ```
-.plan/plans/{plan_id}/references.toon
+.plan/plans/{plan_id}/references.json
 ```
 
 ---
 
 ## File Format
 
-TOON format with scalar and list fields:
+JSON format for storage:
 
-```toon
-# Plan References
-
-branch: feature/my-feature
-issue_url: https://github.com/org/repo/issues/123
-build_system: maven
-
-modified_files[3]:
-- src/main/java/Foo.java
-- src/main/java/Bar.java
-- src/test/java/FooTest.java
-
-external_docs[1]{title,url}:
-JWT Guide,https://jwt.io/introduction
+```json
+{
+  "branch": "feature/my-feature",
+  "base_branch": "main",
+  "issue_url": "https://github.com/org/repo/issues/123",
+  "build_system": "maven",
+  "modified_files": [
+    "src/main/java/Foo.java",
+    "src/main/java/Bar.java",
+    "src/test/java/FooTest.java"
+  ],
+  "domains": ["java"],
+  "affected_files": [
+    "src/main/java/Foo.java"
+  ]
+}
 ```
 
 ### Schema Fields
@@ -64,11 +66,9 @@ JWT Guide,https://jwt.io/introduction
 | `issue_url` | string | GitHub issue URL |
 | `build_system` | string | Build system (maven, gradle, npm, none) |
 | `modified_files` | list | Files modified during implementation |
-| `config_files` | list | Configuration files changed |
-| `test_files` | list | Test files created/modified |
 | `domains` | list | Plan domains (e.g., java, documentation) |
-| `external_docs` | table | External documentation references |
 | `affected_files` | list | Files affected during outline phase (for execution tracking) |
+| `external_docs` | table | External documentation references |
 
 ---
 
@@ -78,7 +78,7 @@ Script: `pm-workflow:manage-references:manage-references`
 
 ### create
 
-Create references.toon with basic fields.
+Create references.json with basic fields.
 
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-references:manage-references create \
@@ -100,21 +100,19 @@ python3 .plan/execute-script.py pm-workflow:manage-references:manage-references 
 ```toon
 status: success
 plan_id: my-feature
-file: references.toon
+file: references.json
 created: true
-fields:
+fields[3]:
   - branch
   - base_branch
   - modified_files
-  - config_files
-  - test_files
 ```
 
 **Note**: Basic fields are created during plan-init. Additional reference fields are added as needed during execution.
 
 ### read
 
-Read entire references.toon content.
+Read entire references.json content.
 
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-references:manage-references read \
@@ -293,8 +291,6 @@ plan_id: my-feature
 branch: feature/my-feature
 base_branch: main
 modified_files_count: 3
-config_files_count: 1
-test_files_count: 2
 issue_url: https://github.com/org/repo/issues/123
 build_system: maven
 ```
@@ -306,17 +302,10 @@ plan_id: my-feature
 branch: feature/my-feature
 base_branch: main
 modified_files_count: 3
-config_files_count: 1
-test_files_count: 2
-modified_files:
+modified_files[3]:
   - src/main/java/Foo.java
   - src/main/java/Bar.java
   - src/main/java/Baz.java
-config_files:
-  - pom.xml
-test_files:
-  - src/test/java/FooTest.java
-  - src/test/java/BarTest.java
 ```
 
 ---
@@ -327,7 +316,7 @@ test_files:
 
 | Command | Parameters | Description |
 |---------|------------|-------------|
-| `create` | `--plan-id --branch [--issue-url] [--build-system] [--domains]` | Create references.toon |
+| `create` | `--plan-id --branch [--issue-url] [--build-system] [--domains]` | Create references.json |
 | `read` | `--plan-id` | Read entire references |
 | `get` | `--plan-id --field` | Get specific field value |
 | `set` | `--plan-id --field --value` | Set specific field value |
@@ -345,7 +334,7 @@ test_files:
 status: error
 plan_id: my-feature
 error: file_not_found
-message: references.toon not found
+message: references.json not found
 ```
 
 ---

@@ -8,11 +8,11 @@ Runs deterministic checks to verify:
 - Basic format validation
 
 Phases (7-phase model):
-    1-init:     status.toon, request.md, references.toon exist
+    1-init:     status.toon, request.md, references.json exist
     2-refine:   request.md has clarifications, work.log has [REFINE:*] entries
-    3-outline:  solution_outline.md, deliverables, references.toon
+    3-outline:  solution_outline.md, deliverables, references.json
     4-plan:     TASK-*.toon files exist
-    5-execute:  Modified files tracked in references.toon
+    5-execute:  Modified files tracked in references.json
     6-verify:   Quality checks (not verified by this script)
     7-finalize: Git commit artifacts (not verified by this script)
 
@@ -25,6 +25,7 @@ Output: TOON format with check results and findings.
 """
 
 import argparse
+import json
 import sys
 from pathlib import Path
 from typing import Any
@@ -147,8 +148,8 @@ class StructuralChecker:
             return False
 
     def check_references_exists(self) -> bool:
-        """Check if references.toon exists."""
-        refs_path = self._get_artifact_path('references.toon')
+        """Check if references.json exists."""
+        refs_path = self._get_artifact_path('references.json')
 
         if refs_path.exists():
             self.add_check('references_exists', 'pass', 'References file exists')
@@ -229,28 +230,25 @@ class StructuralChecker:
     def check_affected_files(self, expected_files: list[str]) -> bool:
         """Check affected files accuracy - the key correctness metric.
 
-        Compares expected affected files against actual affected files in references.toon.
+        Compares expected affected files against actual affected files in references.json.
         """
-        refs_path = self._get_artifact_path('references.toon')
+        refs_path = self._get_artifact_path('references.json')
 
         if not refs_path.exists():
             self.add_check('affected_files', 'fail', 'References file not found')
-            self.add_finding('error', 'Cannot verify affected files - references.toon missing')
+            self.add_finding('error', 'Cannot verify affected files - references.json missing')
             return False
 
         try:
             content = refs_path.read_text()
-            refs = parse_toon_simple(content)
+            refs = json.loads(content)
 
             actual_files = refs.get('affected_files', [])
             if isinstance(actual_files, str):
                 actual_files = [actual_files]
 
-            # Clean TOON list formatting - strip leading '- ' if present
+            # Clean path formatting
             def clean_path(p: str) -> str:
-                p = p.strip()
-                if p.startswith('- '):
-                    p = p[2:]
                 return p.strip()
 
             expected_set = {clean_path(f) for f in expected_files}
@@ -422,8 +420,8 @@ class StructuralChecker:
             return False
 
     def check_references_has_domains(self) -> bool:
-        """Check if references.toon contains domains field (set during 1-init phase)."""
-        refs_path = self._get_artifact_path('references.toon')
+        """Check if references.json contains domains field (set during 1-init phase)."""
+        refs_path = self._get_artifact_path('references.json')
 
         if not refs_path.exists():
             self.add_check('references_domains', 'fail', 'References file not found')
@@ -431,7 +429,7 @@ class StructuralChecker:
 
         try:
             content = refs_path.read_text()
-            refs = parse_toon_simple(content)
+            refs = json.loads(content)
 
             if 'domains' in refs and refs['domains']:
                 domains = refs['domains']
@@ -443,7 +441,7 @@ class StructuralChecker:
                 return True
             else:
                 self.add_check('references_domains', 'fail', 'References missing domains field')
-                self.add_finding('warning', 'References.toon missing domains - init phase may not have completed')
+                self.add_finding('warning', 'References.json missing domains - init phase may not have completed')
                 return False
 
         except Exception as e:
@@ -469,11 +467,11 @@ class StructuralChecker:
                     Default: ['3-outline']
 
         Phase verification mapping:
-            1-init:    status.toon, request.md, references.toon exist
+            1-init:    status.toon, request.md, references.json exist
             2-refine:  request.md has clarifications, work.log has [REFINE:*], domains in references
-            3-outline: solution_outline.md valid, deliverables listed, references.toon
+            3-outline: solution_outline.md valid, deliverables listed, references.json
             4-plan:    TASK-*.toon files exist
-            5-execute: references.toon with modified files, work.log
+            5-execute: references.json with modified files, work.log
             6-verify:   (quality checks - not verified by this script)
             7-finalize: (git artifacts - not verified by this script)
         """

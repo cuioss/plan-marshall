@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """
-Manage references.toon files with field-level access and list management.
+Manage references.json files with field-level access and list management.
 
 Tracks files, branches, and external references for a plan.
+Storage: JSON format (.plan/plans/{plan_id}/references.json)
+Output: TOON format for API responses
 
 Usage:
     python3 manage-references.py create --plan-id my-plan --branch feature/x
@@ -15,13 +17,26 @@ Usage:
 """
 
 import argparse
+import json
 import re
 import sys
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, TypedDict, cast
 
 from file_ops import atomic_write_file, base_path  # type: ignore[import-not-found]
-from toon_parser import parse_toon, serialize_toon  # type: ignore[import-not-found]
+
+
+class ReferencesData(TypedDict, total=False):
+    """Type definition for references data structure."""
+
+    branch: str
+    base_branch: str
+    issue_url: str
+    build_system: str
+    modified_files: list[str]
+    domains: list[str]
+    affected_files: list[str]
+    external_docs: dict[str, Any]
 
 
 def validate_plan_id(plan_id: str) -> bool:
@@ -30,33 +45,55 @@ def validate_plan_id(plan_id: str) -> bool:
 
 
 def get_references_path(plan_id: str) -> Path:
-    """Get the references.toon file path."""
-    return cast(Path, base_path('plans', plan_id, 'references.toon'))
+    """Get the references.json file path."""
+    return cast(Path, base_path('plans', plan_id, 'references.json'))
 
 
 def read_references(plan_id: str) -> dict[Any, Any]:
-    """Read references.toon for a plan."""
+    """Read references.json for a plan."""
     path = get_references_path(plan_id)
     if not path.exists():
         return {}
-    return cast(dict[Any, Any], parse_toon(path.read_text(encoding='utf-8')))
+    return cast(dict[Any, Any], json.loads(path.read_text(encoding='utf-8')))
 
 
-def write_references(plan_id: str, refs: dict):
-    """Write references.toon for a plan."""
+def write_references(plan_id: str, refs: dict) -> None:
+    """Write references.json for a plan."""
     path = get_references_path(plan_id)
     path.parent.mkdir(parents=True, exist_ok=True)
-    content = '# Plan References\n\n' + serialize_toon(refs)
+    content = json.dumps(refs, indent=2)
     atomic_write_file(path, content)
 
 
-def output_toon(data: dict):
-    """Output TOON format to stdout."""
-    print(serialize_toon(data))
+def output_toon(data: dict) -> None:
+    """Print TOON formatted output to stdout."""
+    lines = []
+    for key, value in data.items():
+        if isinstance(value, bool):
+            lines.append(f'{key}: {"true" if value else "false"}')
+        elif isinstance(value, list):
+            if value:
+                lines.append(f'{key}[{len(value)}]:')
+                for item in value:
+                    lines.append(f'  - {item}')
+            else:
+                lines.append(f'{key}: []')
+        elif isinstance(value, dict):
+            lines.append(f'{key}:')
+            for k, v in value.items():
+                if isinstance(v, list):
+                    lines.append(f'  {k}: {len(v)} items')
+                else:
+                    lines.append(f'  {k}: {v}')
+        elif value is None:
+            lines.append(f'{key}: null')
+        else:
+            lines.append(f'{key}: {value}')
+    print('\n'.join(lines))
 
 
 def cmd_create(args):
-    """Create references.toon with basic fields."""
+    """Create references.json with basic fields."""
     if not validate_plan_id(args.plan_id):
         output_toon(
             {
@@ -75,13 +112,13 @@ def cmd_create(args):
                 'status': 'error',
                 'plan_id': args.plan_id,
                 'error': 'already_exists',
-                'message': 'references.toon already exists',
+                'message': 'references.json already exists',
             }
         )
         sys.exit(1)
 
     # Build base references
-    refs = {'branch': args.branch, 'base_branch': 'main', 'modified_files': [], 'config_files': [], 'test_files': []}
+    refs = {'branch': args.branch, 'base_branch': 'main', 'modified_files': []}
 
     # Add optional fields
     if args.issue_url:
@@ -97,7 +134,7 @@ def cmd_create(args):
         {
             'status': 'success',
             'plan_id': args.plan_id,
-            'file': 'references.toon',
+            'file': 'references.json',
             'created': True,
             'fields': list(refs.keys()),
         }
@@ -105,7 +142,7 @@ def cmd_create(args):
 
 
 def cmd_read(args):
-    """Read entire references.toon."""
+    """Read entire references.json."""
     if not validate_plan_id(args.plan_id):
         output_toon(
             {
@@ -124,7 +161,7 @@ def cmd_read(args):
                 'status': 'error',
                 'plan_id': args.plan_id,
                 'error': 'file_not_found',
-                'message': 'references.toon not found',
+                'message': 'references.json not found',
             }
         )
         sys.exit(1)
@@ -160,7 +197,7 @@ def cmd_get(args):
                 'status': 'error',
                 'plan_id': args.plan_id,
                 'error': 'file_not_found',
-                'message': 'references.toon not found',
+                'message': 'references.json not found',
             }
         )
         sys.exit(1)
@@ -347,7 +384,7 @@ def cmd_set_list(args):
                 'status': 'error',
                 'plan_id': args.plan_id,
                 'error': 'file_not_found',
-                'message': 'references.toon not found',
+                'message': 'references.json not found',
             }
         )
         sys.exit(1)
@@ -395,7 +432,7 @@ def cmd_get_context(args):
                 'status': 'error',
                 'plan_id': args.plan_id,
                 'error': 'file_not_found',
-                'message': 'references.toon not found',
+                'message': 'references.json not found',
             }
         )
         sys.exit(1)
@@ -407,8 +444,6 @@ def cmd_get_context(args):
         'branch': refs.get('branch', ''),
         'base_branch': refs.get('base_branch', 'main'),
         'modified_files_count': len(refs.get('modified_files', [])),
-        'config_files_count': len(refs.get('config_files', [])),
-        'test_files_count': len(refs.get('test_files', [])),
     }
 
     # Include optional fields if present
@@ -420,18 +455,16 @@ def cmd_get_context(args):
     # Include file lists if requested
     if args.include_files:
         context['modified_files'] = refs.get('modified_files', [])
-        context['config_files'] = refs.get('config_files', [])
-        context['test_files'] = refs.get('test_files', [])
 
     output_toon(context)
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Manage references.toon files')
+    parser = argparse.ArgumentParser(description='Manage references.json files')
     subparsers = parser.add_subparsers(dest='command', required=True)
 
     # create
-    create_parser = subparsers.add_parser('create', help='Create references.toon')
+    create_parser = subparsers.add_parser('create', help='Create references.json')
     create_parser.add_argument('--plan-id', required=True, help='Plan identifier')
     create_parser.add_argument('--branch', required=True, help='Git branch name')
     create_parser.add_argument('--issue-url', help='GitHub issue URL')

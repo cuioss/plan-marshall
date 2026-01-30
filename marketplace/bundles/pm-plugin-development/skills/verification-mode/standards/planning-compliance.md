@@ -74,7 +74,7 @@ Skill: pm-workflow:workflow-extension-api
 
 **Exact Verification Commands** (copy-paste ready):
 
-**1-Init Phase** - Verify references.toon:
+**1-Init Phase** - Verify references.json:
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-references:manage-references read --plan-id {plan_id}
 ```
@@ -204,7 +204,7 @@ Examples:
 | Tool | Prohibited Pattern | Correct Alternative |
 |------|-------------------|---------------------|
 | Read | `.plan/plans/{id}/status.toon` | `python3 .plan/execute-script.py pm-workflow:plan-marshall:manage-lifecycle read --plan-id {id}` |
-| Read | `.plan/plans/{id}/references.toon` | `python3 .plan/execute-script.py pm-workflow:manage-references:manage-references read --plan-id {id}` |
+| Read | `.plan/plans/{id}/references.json` | `python3 .plan/execute-script.py pm-workflow:manage-references:manage-references read --plan-id {id}` |
 | Read | `.plan/plans/{id}/work.log` | `python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log read --plan-id {id} --type work` |
 | Read | `.plan/plans/{id}/solution_outline.md` | `python3 .plan/execute-script.py pm-workflow:manage-solution-outline:manage-solution-outline read --plan-id {id}` |
 | Read | `.plan/plans/{id}/tasks/TASK-*.toon` | `python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks get --plan-id {id} --number 1` |

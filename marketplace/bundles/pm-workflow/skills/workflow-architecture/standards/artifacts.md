@@ -9,7 +9,7 @@ File formats and structures for plan data storage.
 │
 ├── status.toon              Phase: init
 ├── request.md               Phase: init
-├── references.toon          Phase: init
+├── references.json          Phase: init
 │
 ├── solution_outline.md      Phase: outline
 │
@@ -38,7 +38,7 @@ File formats and structures for plan data storage.
 ├─────────────────────────────────────────────────────────────────────┤
 │                                                                      │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐               │
-│  │ status.toon  │  │ request.md   │  │references.toon│              │
+│  │ status.toon  │  │ request.md   │  │references.json│              │
 │  ├──────────────┤  ├──────────────┤  ├──────────────┤               │
 │  │ title        │  │ description  │  │ domains      │               │
 │  │ current_phase│  │ context      │  │ branch       │               │
@@ -269,7 +269,7 @@ Solution design document with deliverables.
 
 | Field | Location | Description |
 |-------|----------|-------------|
-| `domain` | Metadata | Single domain from references.toon domains |
+| `domain` | Metadata | Single domain from references.json domains |
 | `module` | Metadata | Target module name (from architecture) |
 | `change_type` | Metadata | create, modify, refactor, migrate, delete |
 | `execution_mode` | Metadata | automated, manual, mixed |
@@ -299,7 +299,7 @@ Working files directory for intermediate data during outline and later phases.
 
 The `work/` directory stores intermediate files that are:
 - Generated during outline phase (inventory scans, analysis results)
-- Referenced by other artifacts via `references.toon`
+- Referenced by other artifacts via `references.json`
 - Plan-specific working data (not archived artifacts)
 
 ### Common Files
@@ -468,14 +468,14 @@ python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks \
 
 ---
 
-## references.toon
+## references.json
 
 Plan references and domain configuration.
 
 ### Location
 
 ```
-.plan/plans/{plan_id}/references.toon
+.plan/plans/{plan_id}/references.json
 ```
 
 ### Format
@@ -666,7 +666,7 @@ PHASE       ARTIFACTS CREATED/UPDATED
 ─────       ─────────────────────────
 
 init        ┌─────────────┐ ┌─────────────┐ ┌─────────────────┐
-            │ status.toon │ │ request.md  │ │ references.toon │
+            │ status.toon │ │ request.md  │ │ references.json │
             └─────────────┘ └─────────────┘ └─────────────────┘
                   │               │               │
                   ▼               ▼               ▼
@@ -711,7 +711,7 @@ archive     .plan/archived-plans/{date}-{plan_id}/
 | [phases.md](phases.md) | 7-phase execution model |
 | [data-layer.md](data-layer.md) | manage-* skills that access these files |
 | [skill-loading.md](skill-loading.md) | How skills from tasks are loaded |
-| `pm-workflow:manage-references` | references.toon operations |
+| `pm-workflow:manage-references` | references.json operations |
 | `pm-workflow:plan-marshall:manage-lifecycle` | status.toon operations |
 | `pm-workflow:manage-tasks` | TASK-*.json operations |
 | `pm-workflow:manage-solution-outline` | solution_outline.md operations |

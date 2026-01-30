@@ -252,7 +252,7 @@ python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks finalize-s
 
 **CRITICAL**: Execute phase MUST track file changes for finalize phase verification.
 
-The finalize phase uses `scope: changed_only` to verify only files modified during execute. This requires execute to track all file changes in `references.toon`:
+The finalize phase uses `scope: changed_only` to verify only files modified during execute. This requires execute to track all file changes in `references.json`:
 
 ```bash
 # After modifying a file, execute MUST call:
@@ -261,7 +261,7 @@ python3 .plan/execute-script.py pm-workflow:manage-references:manage-references 
 ```
 
 **Consequences of missing tracking**:
-- If `references.toon` is empty with `scope=changed_only`, finalize WARNS and falls back to `all`
+- If `references.json` is empty with `scope=changed_only`, finalize WARNS and falls back to `all`
 - Full project scan is slower and may flag unrelated issues
 - File tracking enables targeted verification
 
@@ -419,7 +419,7 @@ If verification fails:
 | Status required | Output must include status field |
 | Summary required | Output must include execution_summary |
 | Progress tracked | All step transitions logged |
-| Files tracked | All file modifications tracked in references.toon |
+| Files tracked | All file modifications tracked in references.json |
 
 ---
 

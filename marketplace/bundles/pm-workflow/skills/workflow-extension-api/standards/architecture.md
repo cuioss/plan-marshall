@@ -10,7 +10,7 @@ Contract specification for the 7-phase workflow execution model.
 
 | Phase | Agent Call | Purpose | Output |
 |-------|------------|---------|--------|
-| **1-init** | `plan-phase-agent phase=1-init` | Initialize plan | status.toon, request.md, references.toon |
+| **1-init** | `plan-phase-agent phase=1-init` | Initialize plan | status.toon, request.md, references.json |
 | **2-refine** | `plan-phase-agent phase=2-refine` | Clarify request | Refined request with confidence score |
 | **3-outline** | `plan-phase-agent phase=3-outline` | Create solution outline | solution_outline.md |
 | **4-plan** | `plan-phase-agent phase=4-plan` | Decompose into tasks | TASK-*.toon |
@@ -76,7 +76,7 @@ For visual diagrams of domain propagation through phases, see:
 | **outline** | All from marshal.json | Claude decides which are relevant (LLM reasoning) |
 | **plan** | From deliverable | Script reads `deliverable.domain` |
 | **execute** | From task | Script reads `task.domain`, `task.profile` |
-| **finalize** | From references.toon | Script reads `references.toon.domains` |
+| **finalize** | From references.json | Script reads `references.json.domains` |
 
 ### Skill Resolution
 
@@ -100,7 +100,7 @@ Extensions add domain-specific knowledge without replacing workflow skills.
 ### Extension Loading
 
 ```
-Workflow skill reads references.toon.domains
+Workflow skill reads references.json.domains
        │
        └─ For each domain:
             └─ resolve-workflow-skill-extension --domain {domain} --type {type}

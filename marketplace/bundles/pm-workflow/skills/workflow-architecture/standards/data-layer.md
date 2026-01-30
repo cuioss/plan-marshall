@@ -87,7 +87,7 @@ The pm-workflow bundle uses manage-* skills as the data access layer for all pla
 │  │                       │                   │                          │  │
 │  ├───────────────────────┼───────────────────┼──────────────────────────┤  │
 │  │                       │                   │                          │  │
-│  │ manage-references     │ references.toon   │ Plan references & config │  │
+│  │ manage-references     │ references.json   │ Plan references & config │  │
 │  │                       │                   │ • domains array          │  │
 │  │                       │                   │ • branch name            │  │
 │  │                       │                   │ • issue URL              │  │
@@ -327,7 +327,7 @@ The pm-workflow bundle uses manage-* skills as the data access layer for all pla
 │  │   └── {plan_id}/                                                         │
 │  │       ├── status.toon        # Lifecycle (phases, progress)             │
 │  │       ├── request.md         # Original request                         │
-│  │       ├── references.toon    # Plan refs & config (domains, branch, issue) │
+│  │       ├── references.json    # Plan refs & config (domains, branch, issue) │
 │  │       ├── solution_outline.md# Deliverables                              │
 │  │       ├── work/              # Working files (outline phase+)           │
 │  │       ├── tasks/             # Task files                               │

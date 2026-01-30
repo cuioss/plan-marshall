@@ -1,6 +1,6 @@
 ---
 name: plan-init-agent
-description: Initialize a plan with artifacts, detect domains, store in references.toon
+description: Initialize a plan with artifacts, detect domains, store in references.json
 tools: Read, Glob, Bash, AskUserQuestion, Skill
 model: sonnet
 skills: pm-workflow:phase-1-init, plan-marshall:ref-development-standards
@@ -60,7 +60,7 @@ The skill handles:
 3. Creating plan directory
 4. Writing request.md
 5. Detecting domains
-6. Storing domains in references.toon
+6. Storing domains in references.json
 7. Creating status.toon
 8. Transitioning to 2-refine phase
 
@@ -83,7 +83,7 @@ source:
 artifacts:
   request_md: request.md
   status: status.toon
-  references: references.toon
+  references: references.json
 ```
 
 **Error**:

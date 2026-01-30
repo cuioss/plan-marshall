@@ -6,11 +6,11 @@ Collects workflow artifacts for comparison against golden references
 during verification.
 
 Phases (7-phase model):
-    1-init:     status.toon, request.md, references.toon
+    1-init:     status.toon, request.md, references.json
     2-refine:   request.md with clarifications, work.log with [REFINE:*] entries
-    3-outline:  solution_outline.md, deliverables, references.toon
+    3-outline:  solution_outline.md, deliverables, references.json
     4-plan:     TASK-*.json files
-    5-execute:  Modified files tracked in references.toon
+    5-execute:  Modified files tracked in references.json
     6-verify:   Quality checks (not collected by this script)
     7-finalize: Git commit, PR artifacts
 
@@ -130,23 +130,23 @@ class ArtifactCollector:
             return False
 
     def collect_references(self) -> bool:
-        """Collect references.toon."""
+        """Collect references.json."""
         try:
-            refs_path = base_path('plans', self.plan_id, 'references.toon')
+            refs_path = base_path('plans', self.plan_id, 'references.json')
 
             if refs_path.exists():
                 content = refs_path.read_text()
-                output_path = self.output_dir / 'references.toon'
+                output_path = self.output_dir / 'references.json'
                 output_path.write_text(content)
-                self.collected.append({'artifact': 'references.toon', 'status': 'success'})
+                self.collected.append({'artifact': 'references.json', 'status': 'success'})
                 return True
             else:
                 # References may not exist for all plans, treat as not_found
-                self.collected.append({'artifact': 'references.toon', 'status': 'not_found'})
+                self.collected.append({'artifact': 'references.json', 'status': 'not_found'})
                 return False
         except Exception as e:
-            self.errors.append(f'Failed to collect references.toon: {e}')
-            self.collected.append({'artifact': 'references.toon', 'status': 'failed'})
+            self.errors.append(f'Failed to collect references.json: {e}')
+            self.collected.append({'artifact': 'references.json', 'status': 'failed'})
             return False
 
     def collect_tasks(self, phase: str = 'execute') -> bool:
@@ -268,11 +268,11 @@ class ArtifactCollector:
                     Default: ['3-outline']
 
         Phase artifact mapping:
-            1-init:    status.toon, request.md, references.toon
+            1-init:    status.toon, request.md, references.json
             2-refine:  request.md (with clarifications), work.log
-            3-outline: solution_outline.md, deliverables.toon, references.toon
+            3-outline: solution_outline.md, deliverables.toon, references.json
             4-plan:    TASK-*.json files
-            5-execute: references.toon (with modified files)
+            5-execute: references.json (with modified files)
             6-verify:   (quality check artifacts not collected by this script)
             7-finalize: (git artifacts not collected by this script)
         """

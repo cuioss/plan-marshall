@@ -69,7 +69,7 @@ When all tasks in phase complete:
 
 1. **Automatic file collection** (execute phase):
    - `manage-lifecycle transition` collects modified files
-   - Updates `references.toon` with changed files
+   - Updates `references.json` with changed files
    ```bash
    python3 .plan/execute-script.py pm-workflow:plan-marshall:manage-lifecycle transition --plan-id {plan_id} --completed {phase}
    ```

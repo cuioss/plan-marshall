@@ -157,7 +157,7 @@ verification:
 
 **Field values**:
 - `deliverable`: Single positive integer (one deliverable per task, 1:1 constraint)
-- `domain`: Domain from references.toon (e.g., `java`, `javascript`, `plan-marshall-plugin-dev`)
+- `domain`: Domain from references.json (e.g., `java`, `javascript`, `plan-marshall-plugin-dev`)
 - `profile`: Profile key from marshal.json (e.g., `implementation`, `module_testing`)
 - `skills`: Array of `bundle:skill` format strings
 - `phase`: One of `init`, `outline`, `plan`, `execute`, `finalize`

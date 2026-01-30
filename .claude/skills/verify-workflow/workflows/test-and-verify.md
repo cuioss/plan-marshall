@@ -112,9 +112,9 @@ Read the `workflow_phase` from test-definition.toon to determine which phases to
 |-------|---------------------|
 | `1-init` | config.toon, status.toon, request.md |
 | `2-refine` | request.md (with clarifications), work.log |
-| `3-outline` | solution_outline.md, deliverables.toon, config.toon, status.toon, references.toon, work.log, decision.log |
+| `3-outline` | solution_outline.md, deliverables.toon, config.toon, status.toon, references.json, work.log, decision.log |
 | `4-plan` | TASK-*.toon files, tasks-list.toon |
-| `5-execute` | references.toon (with modified files), work.log |
+| `5-execute` | references.json (with modified files), work.log |
 | `6-verify` | (quality checks - not collected by script) |
 | `7-finalize` | (git artifacts - not collected by script) |
 
