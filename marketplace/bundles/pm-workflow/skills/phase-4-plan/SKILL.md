@@ -9,7 +9,7 @@ allowed-tools: Read, Bash
 
 **Role**: Domain-agnostic workflow skill for transforming solution outline deliverables into optimized, executable tasks. Loaded by `pm-workflow:task-plan-agent`.
 
-**Key Pattern**: Reads deliverables with metadata and profiles list from `solution_outline.md`, creates one task per profile (1:N mapping), resolves skills from architecture based on `module` + `profile`, applies aggregation/split analysis, creates tasks with explicit skill lists.
+**Key Pattern**: Reads deliverables with metadata and profiles list from `solution_outline.md`, creates one task per deliverable per profile (1:N mapping), resolves skills from architecture based on `module` + `profile`, creates tasks with explicit skill lists. **No aggregation** - each deliverable maps to exactly one task per profile.
 
 ## Contract Compliance
 
@@ -35,13 +35,11 @@ allowed-tools: Read, Bash
 ```toon
 status: success | error
 plan_id: {echo}
-optimization_summary:
+summary:
   deliverables_processed: N
   tasks_created: M
-  aggregations: N
-  splits: N
   parallelizable_groups: N
-tasks_created[M]: {number, title, deliverables, depends_on}
+tasks_created[M]: {number, title, deliverable, depends_on}
 execution_order: {parallel groups}
 message: {error message if status=error}
 ```
@@ -74,25 +72,7 @@ Parse `depends` field for each deliverable:
 - Identify dependency chains
 - Detect cycles (INVALID - reject with error)
 
-### Step 3: Analyze for Aggregation
-
-For each pair of deliverables, check if they can be aggregated:
-- Same `change_type`?
-- Same `domain`?
-- Same `profiles` list?
-- Same `execution_mode` (must be `automated`)?
-- Combined file count < 10?
-- **NO dependency between them?** (CRITICAL - cannot aggregate if one depends on the other)
-
-### Step 4: Analyze for Splits
-
-For each deliverable, check for split requirements:
-- `execution_mode: mixed` → MUST split
-- File count > 15 → CONSIDER splitting
-
-**Note**: Multiple profiles in `**Profiles:**` block naturally create multiple tasks (1:N) - no additional splitting needed for profile differences.
-
-### Step 5: Create Tasks from Profiles (1:N Mapping)
+### Step 3: Create Tasks from Profiles (1:N Mapping)
 
 For each deliverable, create one task per profile in its `profiles` list:
 
@@ -177,17 +157,15 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   work {plan_id} INFO "[SKILL] (pm-workflow:phase-4-plan) Resolved skills for TASK-{N} from {module}.{profile}: defaults=[{defaults}] optionals_selected=[{optionals}]"
 ```
 
-**Aggregation Rule**: When aggregating multiple deliverables, they must have same profiles list. Merge resolved skills arrays (union) per profile.
+### Step 4: Create Tasks
 
-### Step 6: Create Optimized Tasks
-
-For aggregated deliverables or single deliverables, create tasks using heredoc:
+For each deliverable, create tasks using heredoc (one task per profile):
 
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks add \
   --plan-id {plan_id} <<'EOF'
-title: {aggregated title}
-deliverables: [{n1}, {n2}, {n3}]
+title: {task title from deliverable}
+deliverables: [{deliverable_number}]
 domain: {domain from deliverable}
 profile: {profile from deliverable}
 phase: 5-execute
@@ -224,7 +202,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 - `skills`: Domain skills only (system skills loaded by agent)
 - `steps`: File paths from `Affected files` (NOT descriptive text)
 
-### Step 7: Determine Execution Order
+### Step 5: Determine Execution Order
 
 Compute parallel execution groups:
 
@@ -240,7 +218,7 @@ execution_order:
 - Tasks depending on same prior tasks can run in parallel
 - Sequential dependencies remain sequential
 
-### Step 8: Record Issues as Lessons
+### Step 6: Record Issues as Lessons
 
 On ambiguous deliverable or planning issues:
 
@@ -254,59 +232,30 @@ python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lesson add \
 
 **Valid categories**: `bug`, `improvement`, `anti-pattern`
 
-### Step 9: Return Results
+### Step 7: Return Results
 
 **Output**:
 ```toon
 status: success
 plan_id: {plan_id}
 
-optimization_summary:
+summary:
   deliverables_processed: {N}
   tasks_created: {M}
-  aggregations: {count of deliverable groups}
-  splits: {count of split deliverables}
   parallelizable_groups: {count of independent task groups}
 
-tasks_created[M]{number,title,deliverables,depends_on}:
-1,Implement UserService,[1],none
-2,Implement UserRepository,[2],none
-3,Add integration tests,[3],"TASK-1" "TASK-2"
+tasks_created[M]{number,title,deliverable,depends_on}:
+1,Implement UserService,1,none
+2,Test UserService,1,TASK-1
+3,Implement UserRepository,2,none
+4,Test UserRepository,2,TASK-3
 
 execution_order:
-  parallel_group_1: [TASK-1, TASK-2]
-  parallel_group_2: [TASK-3]
+  parallel_group_1: [TASK-1, TASK-3]
+  parallel_group_2: [TASK-2, TASK-4]
 
 lessons_recorded: {count}
 ```
-
-## Optimization Decision Table
-
-| Factor | Aggregate | Split | Keep |
-|--------|-----------|-------|------|
-| Same change_type | Yes | | |
-| Same domain | Yes | | |
-| Same profiles list | Yes | | |
-| Combined files < 10 | Yes | | |
-| Same execution_mode | Yes | | |
-| Both depends: none | Yes | | |
-| One depends on other | **Never** | | |
-| execution_mode: mixed | | Yes | |
-| File count > 15 | | Consider | |
-| Large but coherent | | | Yes |
-| Single file | | | Yes |
-
-**Note**: Multiple profiles in one deliverable naturally create multiple tasks (1:N). This is not a "split" - it's the standard task creation pattern.
-
-## Dependency Rules for Aggregation
-
-| D1.depends | D2.depends | Can Aggregate? | Reason |
-|------------|------------|----------------|--------|
-| none | none | Yes | Both independent |
-| none | D1 | **No** | D2 depends on D1 |
-| D3 | D3 | Yes | Same dependency, can run together |
-| D3 | D4 | Yes | Different deps, no conflict |
-| D2 | D1 | **No** | Creates cycle if aggregated |
 
 ## Skill Resolution Guidelines
 
@@ -314,9 +263,8 @@ Skills are resolved from architecture based on `module` + `profile`:
 
 | Scenario | Behavior |
 |----------|----------|
-| Single deliverable, single profile | Query `architecture.module --name {module}`, extract `skills_by_profile.{profile}` |
-| Single deliverable, multiple profiles | Create one task per profile, each with its own resolved skills |
-| Multiple deliverables (aggregation) | Union of resolved skills from all source modules (per profile) |
+| Single profile | Query `architecture.module --name {module}`, extract `skills_by_profile.{profile}` |
+| Multiple profiles | Create one task per profile, each with its own resolved skills |
 | Module not in architecture | Error - module must exist in project architecture |
 | Profile not in module | Error - profile must exist in `module.skills_by_profile` |
 

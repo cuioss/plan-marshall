@@ -26,7 +26,7 @@ Output: TOON format for all operations.
 Add command usage (stdin-based API):
   python3 manage-task.py add --plan-id my-plan <<'EOF'
   title: My Task Title
-  deliverables: [1, 2, 3]
+  deliverables: [1]
   domain: plan-marshall-plugin-dev
   phase: 5-execute
   description: |

@@ -292,7 +292,7 @@ For each deliverable, check:
 - Different concerns -> SHOULD split
 - File count > 15 -> CONSIDER splitting
 
-### Step 5: Create Optimized Tasks
+### Step 5: Create Tasks (1:N Mapping)
 
 For each deliverable, for each profile in deliverable.profiles:
 1. Resolve skills from architecture: `module.skills_by_profile.{profile}`
@@ -302,25 +302,7 @@ For each deliverable, for each profile in deliverable.profiles:
 5. Compute task dependencies (testing depends on implementation)
 6. Identify parallelizable tasks
 
-### Step 6: Log Optimization Decisions
-
-Record why deliverables were grouped/split for audit trail.
-
-## Optimization Decision Table
-
-| Factor | Aggregate | Split | Keep |
-|--------|-----------|-------|------|
-| Same change_type | Y | | |
-| Same domain and profile | Y | | |
-| Combined files < 10 | Y | | |
-| Same execution_mode | Y | | |
-| Both depends: none | Y | | |
-| One depends on other | N (NEVER) | | |
-| execution_mode: mixed | | Y | |
-| Different concerns | | Y | |
-| File count > 15 | | Consider | |
-| Large but coherent | | | Y |
-| Single file | | | Y |
+**Constraint**: Each task maps to exactly one deliverable. No aggregation.
 
 ## Task Creation API
 
@@ -329,8 +311,8 @@ Uses stdin-based API with heredoc to avoid shell metacharacter issues:
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks add \
   --plan-id {plan_id} <<'EOF'
-title: {aggregated title}
-deliverables: [{n1}, {n2}, {n3}]
+title: {task title}
+deliverables: [{deliverable_number}]
 domain: {domain}
 profile: {profile}
 skills:
@@ -338,14 +320,14 @@ skills:
   - pm-dev-java:java-cdi
 phase: 5-execute
 description: |
-  {combined description}
+  {description from deliverable}
 
 steps:
   - {file_1}
   - {file_2}
   - {file_3}
 
-depends_on: TASK-001-IMPL, TASK-002-IMPL
+depends_on: TASK-001-IMPL
 
 verification:
   commands:
@@ -361,19 +343,16 @@ EOF
 status: success
 plan_id: {plan_id}
 
-optimization_summary:
+summary:
   deliverables_processed: {N}
   tasks_created: {M}
-  aggregations: {count of deliverable groups}
-  splits: {count of split deliverables}
   parallelizable_groups: {count of independent task groups}
 
-tasks_created[M]{id,title,deliverables,depends_on}:
-TASK-001-IMPL,Update misc agents to TOON,[1 2 4],none
-TASK-002-IMPL,Update pm-dev-java agents to TOON,[3],TASK-001-IMPL
-TASK-003-IMPL,Update TOON documentation,[5],none
-TASK-004-IMPL,Create verification script,[6],TASK-001-IMPL TASK-002-IMPL
-TASK-005-IMPL,Measure token savings,[6],TASK-004-IMPL
+tasks_created[M]{id,title,deliverable,depends_on}:
+TASK-001-IMPL,Implement UserService,1,none
+TASK-002-TEST,Test UserService,1,TASK-001-IMPL
+TASK-003-IMPL,Implement UserRepository,2,none
+TASK-004-TEST,Test UserRepository,2,TASK-003-IMPL
 
 execution_order:
   parallel_group_1: [TASK-001-IMPL, TASK-003-IMPL]

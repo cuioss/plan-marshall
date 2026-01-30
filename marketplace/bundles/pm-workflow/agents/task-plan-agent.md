@@ -57,11 +57,10 @@ plan_id: {plan_id}
 The skill handles:
 1. Reading deliverables from solution_outline.md
 2. Building dependency graph
-3. Analyzing for aggregation/splits
-4. Inheriting skills from deliverables (selected during outline from module.skills_by_profile)
-5. Creating tasks with explicit skill lists
-6. Determining execution order
-7. Returning structured result
+3. Creating one task per deliverable per profile (1:N mapping)
+4. Resolving skills from architecture based on module + profile
+5. Determining execution order
+6. Returning structured result
 
 ## Return Results
 
@@ -73,16 +72,14 @@ Return the skill's output in TOON format:
 status: success
 plan_id: {plan_id}
 
-optimization_summary:
+summary:
   deliverables_processed: {N}
   tasks_created: {M}
-  aggregations: {count}
-  splits: {count}
   parallelizable_groups: {count}
 
-tasks_created[M]{number,title,deliverables,depends_on}:
-1,Implement UserService,[1],none
-2,Add unit tests,[2],TASK-1
+tasks_created[M]{number,title,deliverable,depends_on}:
+1,Implement UserService,1,none
+2,Test UserService,1,TASK-1
 
 execution_order:
   parallel_group_1: [TASK-1]

@@ -64,8 +64,8 @@ Tasks are stored as JSON and output as TOON (LLM-optimized):
     "pm-plugin-development:plugin-maintain",
     "pm-plugin-development:plugin-architecture"
   ],
-  "deliverables": [1, 2, 4],
-  "depends_on": ["TASK-1", "TASK-2"],
+  "deliverables": [1],
+  "depends_on": [],
   "description": "Migrate miscellaneous agents from JSON to TOON output format.",
   "steps": [
     {"number": 1, "title": "pm-plugin-development/agents/tool-coverage-agent.md", "status": "pending"},
@@ -122,7 +122,7 @@ The `add` command reads the task definition from stdin in TOON format. Only `--p
 
 ```toon
 title: My Task Title
-deliverables: [1, 2, 3]
+deliverables: [1]
 domain: plan-marshall-plugin-dev
 profile: implementation
 type: IMPL
@@ -156,7 +156,7 @@ verification:
 **Optional fields**: `phase` (default: execute), `description`, `depends_on`, `verification`, `origin` (default: plan)
 
 **Field values**:
-- `deliverables`: Array of integers `[1, 2, 3]`
+- `deliverables`: Array with single integer `[N]` (one deliverable per task)
 - `domain`: Domain from references.toon (e.g., `java`, `javascript`, `plan-marshall-plugin-dev`)
 - `profile`: Arbitrary profile key from marshal.json (e.g., `implementation`, `testing`, `architecture`)
 - `skills`: Array of `bundle:skill` format strings
@@ -183,7 +183,7 @@ verification:
 python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks add \
   --plan-id my-feature <<'EOF'
 title: Update misc agents to TOON
-deliverables: [1, 2, 4]
+deliverables: [1]
 domain: java
 description: |
   Migrate miscellaneous agents from JSON to TOON output format.
@@ -230,7 +230,7 @@ EOF
 python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks add \
   --plan-id migrate-json-to-toon <<'EOF'
 title: Migrate agent outputs to TOON
-deliverables: [1, 2, 3]
+deliverables: [1]
 domain: plan-marshall-plugin-dev
 description: |
   Update agents to use TOON format instead of JSON.
@@ -301,7 +301,7 @@ Task-plan agents create tasks during plan refinement using heredoc:
 python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks add \
   --plan-id {plan_id} <<'EOF'
 title: {task_title}
-deliverables: [{n1}, {n2}]
+deliverables: [{deliverable_number}]
 domain: {domain}
 steps:
   - {step1}
@@ -336,15 +336,14 @@ Implement agents execute steps:
 
 Tasks reference deliverables from `solution_outline.md` using the `deliverables` field in stdin.
 
+**Constraint**: Each task maps to exactly **one** deliverable. No aggregation.
+
 | Pattern | Description | Example |
 |---------|-------------|---------|
 | 1:1 | One task per deliverable | `deliverables: [1]` - Task implements deliverable 1 |
-| N:1 | Multiple deliverables in one task | `deliverables: [1, 2, 3]` - Task implements deliverables 1, 2, 3 |
-| 1:N | One deliverable split across tasks | TASK-1 and TASK-2 both have `deliverables: [1]` |
+| 1:N | One deliverable, multiple profiles | TASK-1-IMPL and TASK-2-TEST both have `deliverables: [1]` |
 
-**When to use N:1**: Group related deliverables that share implementation context.
-
-**When to use 1:N**: Split large deliverables into phased implementation (e.g., init task, implement task, verify task).
+**1:N pattern**: When a deliverable has multiple profiles (implementation + testing), it creates multiple tasks - one per profile. Both tasks reference the same deliverable.
 
 ---
 
