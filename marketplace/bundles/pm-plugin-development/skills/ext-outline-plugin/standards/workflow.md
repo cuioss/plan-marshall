@@ -440,7 +440,7 @@ Additional domain-specific checks (grep for patterns, format validation) may sup
 | `domain` | plan-marshall-plugin-dev |
 | `module` | Bundle name (e.g., pm-dev-java, pm-workflow) |
 | `depends` | none, or deliverable number(s) |
-| `**Profiles:**` | Block with: implementation, testing |
+| `**Profiles:**` | Block with: implementation, module_testing |
 
 ---
 

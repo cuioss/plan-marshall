@@ -58,7 +58,7 @@ File formats and structures for plan data storage.
 │  │  ## Deliverables                                             │    │
 │  │    ### 1. Title                                              │    │
 │  │      Metadata: domain, module, change_type, depends          │    │
-│  │      Profiles: implementation, testing                       │    │
+│  │      Profiles: implementation, module_testing                │    │
 │  │      Affected files, Verification, Success criteria          │    │
 │  │    ### 2. Title                                              │    │
 │  │      ...                                                     │    │
@@ -246,7 +246,7 @@ Solution design document with deliverables.
 │  │                                                         ││
 │  │   **Profiles:**                                         ││
 │  │   - implementation                                      ││
-│  │   - testing                                             ││
+│  │   - module_testing                                      ││
 │  │                                                         ││
 │  │   **Affected files:**                                   ││
 │  │   - `src/main/java/...`                                 ││
@@ -274,7 +274,7 @@ Solution design document with deliverables.
 | `change_type` | Metadata | create, modify, refactor, migrate, delete |
 | `execution_mode` | Metadata | automated, manual, mixed |
 | `depends` | Metadata | Dependencies: none, N. Title, N, M |
-| `**Profiles:**` | Block | List of profiles: implementation (always), testing (if applicable) |
+| `**Profiles:**` | Block | List of profiles: implementation (always), module_testing (if applicable) |
 
 ### Manager
 

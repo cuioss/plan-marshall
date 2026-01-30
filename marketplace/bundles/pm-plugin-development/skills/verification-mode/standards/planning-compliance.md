@@ -625,7 +625,7 @@ python3 .plan/execute-script.py pm-workflow:manage-solution-outline:manage-solut
 | `change_type` | Yes | create/modify/refactor/migrate/delete |
 | `execution_mode` | Yes | automated/manual/mixed |
 | `domain` | Yes | Valid domain (java/javascript/plan-marshall-plugin-dev etc.) |
-| `profile` | Yes | `implementation` or `testing` |
+| `profile` | Yes | `implementation` or `module_testing` |
 | `depends` | Yes | `none` or `N` or `N. Title` or `N, M` |
 | `Affected files` | Yes | Explicit file paths (not glob patterns) |
 | `Verification` | Yes | Command and criteria |

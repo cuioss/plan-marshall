@@ -488,7 +488,7 @@ TRANSITION TRIGGERS:
 │  │  • Writes domains + profiles list to deliverables                    │  │
 │  │                                                                      │  │
 │  │  Example: "Add JWT validation" → module: oauth-sheriff-core          │  │
-│  │           → profiles: [implementation, testing]                      │  │
+│  │           → profiles: [implementation, module_testing]               │  │
 │  └──────────────────────────────────────────────────────────────────────┘  │
 │                      │                                                      │
 │                      │ references.toon.domains                                  │

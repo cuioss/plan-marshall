@@ -200,7 +200,7 @@ Execute Phase Workflow:
 
 ## Knowledge Level
 
-**Profile used**: From `task.profile` (implementation, testing, or quality)
+**Profile used**: From `task.profile` (implementation, module_testing, or integration_testing)
 
 Execute phase uses **full implementation knowledge**:
 - All core patterns

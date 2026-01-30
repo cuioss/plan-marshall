@@ -86,7 +86,7 @@ Tasks are stored as JSON and output as TOON (LLM-optimized):
 | Field | Type | Description |
 |-------|------|-------------|
 | `domain` | string | Task domain (arbitrary string, e.g., java, javascript, my-domain) |
-| `profile` | string | Task profile (arbitrary string, e.g., `implementation`, `testing`) |
+| `profile` | string | Task profile (e.g., `implementation`, `module_testing`) |
 | `type` | string | Task type for filename: `IMPL`, `FIX`, `SONAR`, `PR`, `LINT`, `SEC`, `DOC` |
 | `skills` | list | Pre-resolved skills for task execution |
 | `origin` | string | Task origin: `plan` (from task-plan phase) or `fix` (from verify) |
@@ -158,7 +158,7 @@ verification:
 **Field values**:
 - `deliverable`: Single positive integer (one deliverable per task, 1:1 constraint)
 - `domain`: Domain from references.toon (e.g., `java`, `javascript`, `plan-marshall-plugin-dev`)
-- `profile`: Arbitrary profile key from marshal.json (e.g., `implementation`, `testing`, `architecture`)
+- `profile`: Profile key from marshal.json (e.g., `implementation`, `module_testing`)
 - `skills`: Array of `bundle:skill` format strings
 - `phase`: One of `init`, `outline`, `plan`, `execute`, `finalize`
 - `depends_on`: `none` or task references like `TASK-1, TASK-2`
@@ -343,7 +343,7 @@ Tasks reference deliverables from `solution_outline.md` using the `deliverable` 
 | 1:1 | One task per deliverable | `deliverable: 1` - Task implements deliverable 1 |
 | 1:N | One deliverable, multiple profiles | TASK-1-IMPL and TASK-2-TEST both have `deliverable: 1` |
 
-**1:N pattern**: When a deliverable has multiple profiles (implementation + testing), it creates multiple tasks - one per profile. Both tasks reference the same deliverable.
+**1:N pattern**: When a deliverable has multiple profiles (implementation + module_testing), it creates multiple tasks - one per profile. Both tasks reference the same deliverable.
 
 ---
 

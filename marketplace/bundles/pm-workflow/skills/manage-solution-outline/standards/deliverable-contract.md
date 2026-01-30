@@ -9,7 +9,7 @@ Each deliverable MUST contain sufficient information for:
 1. **Grouping analysis**: Can this be aggregated with other deliverables?
 2. **Split detection**: Should this be split into multiple tasks?
 3. **Domain routing**: Which domain skills should be loaded?
-4. **Profile routing**: Which workflow profiles apply (implementation, testing)?
+4. **Profile routing**: Which workflow profiles apply (implementation, module_testing)?
 5. **Verification consolidation**: Can verification commands be merged?
 6. **Dependency ordering**: What order must deliverables execute in?
 7. **Parallelization**: Which deliverables can run concurrently?
@@ -29,7 +29,7 @@ For the exact fill-in-the-blank structure, see:
 | `domain` | Yes | Single domain from config.domains | Domain skill loading |
 | `module` | Yes | Module name from architecture | Skill resolution |
 | `depends` | Yes | Dependencies on other deliverables | Ordering, parallelization |
-| `**Profiles:**` | Yes | List of profiles (implementation, testing) | Task creation (1:N) |
+| `**Profiles:**` | Yes | List of profiles (implementation, module_testing) | Task creation (1:N) |
 | `Affected files` | Yes | Explicit file list | Step generation |
 | `Change per file` | Yes | What changes | Task description |
 | `Pattern` | Conditional | Code/format pattern | Implementation guide |
@@ -67,7 +67,8 @@ Each deliverable has a `**Profiles:**` block listing which profiles apply. Task-
 | Profile | Description | Architecture Source |
 |---------|-------------|---------------------|
 | `implementation` | Production code task | `module.skills_by_profile.implementation` |
-| `testing` | Unit/integration test task | `module.skills_by_profile.testing` |
+| `module_testing` | Unit/module test task | `module.skills_by_profile.module_testing` |
+| `integration_testing` | Integration test task | `module.skills_by_profile.integration_testing` |
 
 **Note**: Integration tests are separate deliverables (different module), not embedded profiles.
 
@@ -151,7 +152,7 @@ Solution outline skills MUST validate that each deliverable contains:
 - [ ] `domain` metadata (single value from config.domains)
 - [ ] `module` metadata (module name from architecture)
 - [ ] `depends` field (`none` or valid deliverable references)
-- [ ] `**Profiles:**` block with valid profiles (`implementation`, `testing`)
+- [ ] `**Profiles:**` block with valid profiles (`implementation`, `module_testing`, `integration_testing`)
 - [ ] Explicit file list (not "all files matching X")
 - [ ] Verification command and criteria
 
@@ -171,7 +172,7 @@ Solution outline skills MUST validate that each deliverable contains:
 - Missing `module` field (prevents skill resolution from architecture)
 - Missing `**Profiles:**` block (prevents task creation)
 - Empty `**Profiles:**` block (must have at least one profile)
-- Invalid profile (not `implementation` or `testing`)
+- Invalid profile (not `implementation`, `module_testing`, or `integration_testing`)
 - Invalid domain (domain not in marshal.json `skill_domains`)
 - System domain (using `system` as deliverable domain - internal only)
 - "Update all agents" without file enumeration

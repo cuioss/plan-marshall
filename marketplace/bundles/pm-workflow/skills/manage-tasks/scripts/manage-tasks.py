@@ -117,7 +117,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_by_profile = subparsers.add_parser('tasks-by-profile', help='List tasks filtered by profile')
     p_by_profile.add_argument('--plan-id', required=True, help='Plan identifier')
     p_by_profile.add_argument(
-        '--profile', required=True, help='Profile to filter by (e.g., implementation, testing, architecture)'
+        '--profile', required=True, help='Profile to filter by (e.g., implementation, module_testing)'
     )
 
     # next-tasks

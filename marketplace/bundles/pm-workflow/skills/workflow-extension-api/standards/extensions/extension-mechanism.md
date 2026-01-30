@@ -214,7 +214,7 @@ Each deliverable should:
 
 ### Profile Assignment
 - Implementation work: profile = `implementation`
-- Test work: profile = `testing`
+- Test work: profile = `module_testing`
 - {Domain-specific guidance}
 ```
 
@@ -274,7 +274,7 @@ Each deliverable should:
 
 ### Profile Assignment
 - New classes, modifications: profile = `implementation`
-- New test classes: profile = `testing`
+- New test classes: profile = `module_testing`
 - Build/config changes: profile = `implementation`
 ```
 

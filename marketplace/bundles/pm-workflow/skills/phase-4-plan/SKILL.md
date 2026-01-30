@@ -61,7 +61,7 @@ For each deliverable, extract:
 - `metadata.domain` (single value)
 - `metadata.module` (module name from architecture)
 - `metadata.depends`
-- `profiles` (list: `implementation`, `testing`)
+- `profiles` (list: `implementation`, `module_testing`)
 - `affected_files`
 - `verification`
 
@@ -85,7 +85,7 @@ For each deliverable D:
        - For each `optional`, evaluate its `description` against deliverable context
        - Include optionals whose descriptions match the task requirements
     3. Create task with profile P and resolved skills
-    4. If P = testing, add depends on implementation task
+    4. If P = module_testing, add depends on implementation task
 ```
 
 **Query architecture**:
@@ -198,7 +198,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 **Key Fields**:
 - `domain`: Single domain from deliverable
-- `profile`: `implementation` or `testing` (determines workflow skill at execution)
+- `profile`: `implementation` or `module_testing` (determines workflow skill at execution)
 - `skills`: Domain skills only (system skills loaded by agent)
 - `steps`: File paths from `Affected files` (NOT descriptive text)
 

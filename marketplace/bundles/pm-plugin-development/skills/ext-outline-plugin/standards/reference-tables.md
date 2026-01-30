@@ -55,7 +55,7 @@ When creating deliverables, the `**Profiles:**` block determines which execution
 
 - **domain**: Always `plan-marshall-plugin-dev` for marketplace components
 - **module**: Bundle name (e.g., `pm-dev-java`, `pm-workflow`)
-- **Profiles block**: Contains `implementation` and optionally `testing` (determines task profile at execution)
+- **Profiles block**: Contains `implementation` and optionally `module_testing` (determines task profile at execution)
 
 ---
 

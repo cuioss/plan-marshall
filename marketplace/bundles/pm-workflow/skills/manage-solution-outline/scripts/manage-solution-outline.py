@@ -142,7 +142,7 @@ def validate_deliverable_contract(deliverable: dict) -> tuple[list[str], list[st
 
     # Check 2: Profiles block (separate from metadata)
     profiles = deliverable.get('profiles', [])
-    valid_profiles = ['implementation', 'testing']
+    valid_profiles = ['implementation', 'module_testing', 'integration_testing']
     if not profiles:
         errors.append(f'D{num}: Missing **Profiles:** block')
     else:

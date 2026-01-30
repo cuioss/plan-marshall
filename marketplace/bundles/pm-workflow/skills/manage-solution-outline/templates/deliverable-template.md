@@ -16,7 +16,7 @@ Mandatory template for each deliverable in solution_outline.md. **ALL fields are
 
 **Profiles:**
 - implementation
-- {testing - only if module has test infrastructure}
+- {module_testing - only if module has test infrastructure}
 
 **Affected files:**
 - `{explicit/path/to/file1.ext}`
@@ -42,7 +42,7 @@ Mandatory template for each deliverable in solution_outline.md. **ALL fields are
 | `domain` | Yes | Single value from `config.domains` |
 | `module` | Yes | Module name from architecture |
 | `depends` | Yes | Use `none` if no dependencies |
-| `**Profiles:**` | Yes | At least `implementation`; add `testing` if module has test infra |
+| `**Profiles:**` | Yes | At least `implementation`; add `module_testing` if module has test infra |
 | `**Affected files:**` | Yes | Explicit paths only - NO wildcards, NO "all files in..." |
 | `**Change per file:**` | Yes | What specifically changes |
 | `**Verification:**` | Yes | Command and Criteria - both required |

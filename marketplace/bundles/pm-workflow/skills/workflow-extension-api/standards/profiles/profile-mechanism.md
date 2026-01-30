@@ -96,7 +96,7 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-m
 
 **Parameters**:
 - `--domain`: Domain key from task (e.g., `java`, `javascript`)
-- `--phase`: Profile from task (e.g., `implementation`, `testing`)
+- `--phase`: Profile from task (e.g., `implementation`, `module_testing`)
 
 **Output**:
 ```toon

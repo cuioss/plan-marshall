@@ -88,7 +88,7 @@ Tasks are stored as JSON files: `TASK-{NNN}-{TYPE}.json`
 | `id` | string | Yes | Unique task identifier (TASK-{SEQ}) |
 | `title` | string | Yes | Task title for display |
 | `domain` | string | Yes | Single domain from deliverable (java, javascript, plan-marshall-plugin-dev) |
-| `profile` | string | Yes | Workflow profile (implementation, testing, quality) |
+| `profile` | string | Yes | Workflow profile (implementation, module_testing, integration_testing) |
 | `skills` | list | Yes | Domain skills pre-resolved during task creation |
 | `deliverable` | int | Yes | Referenced deliverable number (1:1 constraint) |
 | `depends_on` | string | Yes | Task dependencies for ordering |
@@ -233,7 +233,7 @@ Tasks have a **1:1 constraint** with deliverables - each task references exactly
 
 ### 1:N Pattern
 
-When a deliverable has multiple profiles (implementation + testing), it creates multiple tasks - one per profile. Both tasks reference the same deliverable number:
+When a deliverable has multiple profiles (implementation + module_testing), it creates multiple tasks - one per profile. Both tasks reference the same deliverable number:
 
 - TASK-1-IMPL: `deliverable: 1`, `profile: implementation`
 - TASK-2-TEST: `deliverable: 1`, `profile: module_testing`, `depends_on: ["TASK-1"]`

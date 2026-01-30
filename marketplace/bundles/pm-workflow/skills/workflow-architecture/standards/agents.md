@@ -133,7 +133,7 @@ Understanding when to use `Skill:` vs `Task:` is critical for proper context man
 │  │                      │                                                │ │
 │  │ task-execute-agent   │ Execute single task                            │ │
 │  │                      │ • Loads domain skills from task.skills         │ │
-│  │                      │ • Routes by profile (implementation/testing)   │ │
+│  │                      │ • Routes by profile (implementation/module_testing) │ │
 │  │                      │                                                │ │
 │  └──────────────────────┴────────────────────────────────────────────────┘ │
 │                                                                             │
