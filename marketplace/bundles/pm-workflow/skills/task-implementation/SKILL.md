@@ -59,7 +59,7 @@ Read the task file to understand what needs to be done:
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks get \
   --plan-id {plan_id} \
-  --task-number {task_number}
+  --number {task_number}
 ```
 
 Extract key fields:
@@ -119,14 +119,7 @@ For each step (file path), determine:
 - Order of modifications
 - Integration considerations
 
-**Mark step as in-progress**:
-```bash
-python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks update-step \
-  --plan-id {plan_id} \
-  --task-number {task_number} \
-  --step-number {N} \
-  --status in_progress
-```
+**Note**: Steps are executed sequentially. No explicit "in_progress" marker needed - proceed directly to implementation.
 
 ### Step 4: Implement Changes
 
@@ -156,11 +149,11 @@ Edit {file_path}
 
 After each step:
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks update-step \
+python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks finalize-step \
   --plan-id {plan_id} \
-  --task-number {task_number} \
-  --step-number {N} \
-  --status completed
+  --task {task_number} \
+  --step {N} \
+  --outcome done
 ```
 
 ### Step 6: Run Verification
@@ -185,8 +178,8 @@ After all steps complete, run task verification:
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks update \
   --plan-id {plan_id} \
-  --task-number {task_number} \
-  --status completed
+  --number {task_number} \
+  --status done
 ```
 
 **If verification fails**:
@@ -200,10 +193,10 @@ If still failing after 3 iterations:
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks update \
   --plan-id {plan_id} \
-  --task-number {task_number} \
-  --status blocked \
-  --notes "Verification failing after 3 attempts: {error summary}"
+  --number {task_number} \
+  --status blocked
 ```
+Note: Record details in work.log using manage-log.
 
 ### Step 8: Record Lessons
 
@@ -306,7 +299,7 @@ If changes conflict with existing code:
 **Skill Loading**: Agent loads this skill via `resolve-task-executor --profile implementation`
 
 **Script Notations** (use EXACTLY as shown):
-- `pm-workflow:manage-tasks:manage-tasks` - Task operations (get, update, update-step)
+- `pm-workflow:manage-tasks:manage-tasks` - Task operations (get, update, finalize-step)
 - `plan-marshall:manage-plan-marshall-config:plan-marshall-config` - Read compatibility from project config
 - `plan-marshall:manage-lessons:manage-lesson` - Record lessons (add)
 

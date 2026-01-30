@@ -63,7 +63,7 @@ Read the task file to understand what tests need to be written:
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks get \
   --plan-id {plan_id} \
-  --task-number {task_number}
+  --number {task_number}
 ```
 
 Extract key fields:
@@ -110,14 +110,7 @@ For each step (test file path), determine:
 - Assertions needed
 - Setup/teardown requirements
 
-**Mark step as in-progress**:
-```bash
-python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks update-step \
-  --plan-id {plan_id} \
-  --task-number {task_number} \
-  --step-number {N} \
-  --status in_progress
-```
+**Note**: Steps are executed sequentially. No explicit "in_progress" marker needed - proceed directly to implementation.
 
 ### Step 4: Implement Tests
 
@@ -174,11 +167,11 @@ Edit {test_file_path}
 
 After each step:
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks update-step \
+python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks finalize-step \
   --plan-id {plan_id} \
-  --task-number {task_number} \
-  --step-number {N} \
-  --status completed
+  --task {task_number} \
+  --step {N} \
+  --outcome done
 ```
 
 ### Step 7: Run Verification
@@ -201,8 +194,8 @@ After all test files are written, run verification:
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks update \
   --plan-id {plan_id} \
-  --task-number {task_number} \
-  --status completed
+  --number {task_number} \
+  --status done
 ```
 
 **If tests fail**:
@@ -217,10 +210,10 @@ If still failing after 3 iterations:
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks update \
   --plan-id {plan_id} \
-  --task-number {task_number} \
-  --status blocked \
-  --notes "Tests failing after 3 attempts: {failure summary}"
+  --number {task_number} \
+  --status blocked
 ```
+Note: Record details in work.log using manage-log.
 
 ### Step 9: Record Lessons
 
@@ -352,7 +345,7 @@ If test requires unavailable dependencies:
 **Skill Loading**: Agent resolves this skill via `resolve-task-executor --profile module_testing`
 
 **Script Notations** (use EXACTLY as shown):
-- `pm-workflow:manage-tasks:manage-tasks` - Task operations (get, update, update-step)
+- `pm-workflow:manage-tasks:manage-tasks` - Task operations (get, update, finalize-step)
 - `plan-marshall:manage-lessons:manage-lesson` - Record lessons (add)
 
 **Domain Testing Skills Applied** (loaded by agent from task.skills):

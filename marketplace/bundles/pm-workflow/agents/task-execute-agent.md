@@ -50,7 +50,7 @@ Get task details to determine domain, profile, and skills:
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks get \
   --plan-id {plan_id} \
-  --task-number {task_number}
+  --number {task_number}
 ```
 
 Extract: `domain`, `profile`, `skills`

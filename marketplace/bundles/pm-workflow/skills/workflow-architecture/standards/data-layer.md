@@ -218,19 +218,18 @@ The pm-workflow bundle uses manage-* skills as the data access layer for all pla
 │                                                                             │
 │  Script: pm-workflow:manage-tasks:manage-tasks                              │
 │                                                                             │
-│  ┌──────────────┬────────────────────────────┬──────────────────────────┐  │
-│  │ COMMAND      │ PARAMETERS                 │ PURPOSE                  │  │
-│  ├──────────────┼────────────────────────────┼──────────────────────────┤  │
-│  │ add          │ --plan-id <<'EOF'...EOF    │ Create TASK-*.json       │  │
-│  │ get          │ --plan-id --task-number    │ Read task                │  │
-│  │ next         │ --plan-id [--include-      │ Get next pending task    │  │
-│  │              │ context]                   │                          │  │
-│  │ step-done    │ --plan-id --task --step    │ Mark step complete       │  │
-│  │ update-step  │ --plan-id --task-number    │ Update step status       │  │
-│  │              │ --step-number --status     │                          │  │
-│  │ update       │ --plan-id --task-number    │ Update task status       │  │
-│  │              │ --status [--notes]         │                          │  │
-│  └──────────────┴────────────────────────────┴──────────────────────────┘  │
+│  ┌───────────────┬───────────────────────────┬──────────────────────────┐  │
+│  │ COMMAND       │ PARAMETERS                │ PURPOSE                  │  │
+│  ├───────────────┼───────────────────────────┼──────────────────────────┤  │
+│  │ add           │ --plan-id <<'EOF'...EOF   │ Create TASK-*.json       │  │
+│  │ get           │ --plan-id --number        │ Read task                │  │
+│  │ next          │ --plan-id [--include-     │ Get next pending task    │  │
+│  │               │ context]                  │                          │  │
+│  │ finalize-step │ --plan-id --task --step   │ Mark step done/skipped   │  │
+│  │               │ --outcome [--reason]      │                          │  │
+│  │ update        │ --plan-id --number        │ Update task status       │  │
+│  │               │ --status                  │                          │  │
+│  └───────────────┴───────────────────────────┴──────────────────────────┘  │
 │                                                                             │
 │  TASK-*.json STRUCTURE:                                                     │
 │  ═══════════════════════                                                    │

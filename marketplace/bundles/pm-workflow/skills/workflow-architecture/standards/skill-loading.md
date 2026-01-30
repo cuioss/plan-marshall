@@ -162,7 +162,7 @@ The pm-workflow bundle uses a two-tier skill loading pattern for domain-agnostic
 │  │   ┌────────────────────────────────────────────────────────────┐    │  │
 │  │   │  Step 1: Read Task                                         │    │  │
 │  │   │                                                            │    │  │
-│  │   │  manage-tasks get --plan-id X --task-number 1              │    │  │
+│  │   │  manage-tasks get --plan-id X --number 1                   │    │  │
 │  │   │  → module: oauth-sheriff-core                              │    │  │
 │  │   │  → domain: java                                            │    │  │
 │  │   │  → profile: implementation                                 │    │  │
