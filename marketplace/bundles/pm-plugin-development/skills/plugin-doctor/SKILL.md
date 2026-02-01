@@ -40,7 +40,7 @@ Provides unified doctor workflows following the pattern: **Diagnose → Auto-Fix
 
 ---
 
-**7 Doctor Workflows**:
+**8 Doctor Workflows**:
 1. **doctor-agents**: Analyze and fix agent issues
 2. **doctor-commands**: Analyze and fix command issues
 3. **doctor-skills**: Analyze and fix skill issues
@@ -48,6 +48,7 @@ Provides unified doctor workflows following the pattern: **Diagnose → Auto-Fix
 5. **doctor-scripts**: Analyze and fix script issues
 6. **doctor-skill-content**: Analyze and reorganize skill content files
 7. **doctor-marketplace**: Full marketplace batch analysis with report
+8. **doctor-pm-workflow**: Validate pm-workflow components and contract compliance
 
 Each workflow performs the complete cycle: discover → analyze → categorize → fix → verify.
 
@@ -62,6 +63,7 @@ Each workflow performs the complete cycle: discover → analyze → categorize �
 | doctor-skills | `skills-guide.md` | `fix-catalog.md` |
 | doctor-metadata | `metadata-guide.md` | `fix-catalog.md` |
 | doctor-scripts | `scripts-guide.md` | `fix-catalog.md` |
+| doctor-pm-workflow | `pm-workflow-guide.md` | `fix-catalog.md` |
 
 **Context Efficiency**: ~800 lines per workflow vs ~4,000 lines if loading everything.
 
@@ -951,6 +953,94 @@ Display final summary:
 
 ---
 
+## Workflow 8: doctor-pm-workflow
+
+Validate pm-workflow components and skills implementing pm-workflow contracts.
+
+### Trigger
+
+Execute this workflow when:
+- Component path matches `marketplace/bundles/pm-workflow/**`
+- Frontmatter contains `implements:` pointing to pm-workflow contract
+
+### Parameters
+- `component` (optional): Specific component path to validate
+- `--no-fix` (optional): Diagnosis only, no fixes
+
+### Step 1: Load Prerequisites and Standards
+
+```
+Skill: plan-marshall:ref-development-standards
+Skill: pm-plugin-development:plugin-architecture
+Read references/pm-workflow-guide.md
+Read references/fix-catalog.md
+```
+
+### Step 2: Discover Components
+
+**If specific component provided**:
+- Validate single component
+
+**If pm-workflow bundle**:
+```
+Glob: pattern="**/*.md", path="marketplace/bundles/pm-workflow"
+```
+
+**If contract implementers**:
+```
+Grep: pattern="^implements:" path="marketplace/bundles"
+```
+
+### Step 3: Apply pm-workflow Validation Rules
+
+For each component, check against `pm-workflow-guide.md`:
+
+**Rule 1 - Explicit Script Commands**:
+- Scan all bash blocks for `execute-script.py` calls
+- Verify all parameters are explicit (no "see API" references)
+- Flag PM-001 if ellipsis or placeholder notation found
+
+**Rule 2 - No Generic API Documentation**:
+- Scan document for phrases like "see * API", "refer to * documentation"
+- Flag PM-002 if found near script call context
+
+**Rule 3 - Correct plan-id vs trace-plan-id**:
+- Extract script name from each `execute-script.py` call
+- Check parameter against matrix in pm-workflow-guide.md
+- Flag PM-003 if wrong parameter used
+- Flag PM-004 if required plan parameter missing
+
+**Rule 4 - Contract Implementation** (if `implements:` present):
+- Extract contract path from frontmatter
+- Verify contract file exists (PM-005 if not)
+- Load contract and check compliance (PM-006 if non-compliant)
+
+### Step 4: Categorize and Fix
+
+**Safe fixes** (auto-apply unless --no-fix):
+- PM-003: Swap `--plan-id` ↔ `--trace-plan-id`
+- PM-004: Add missing plan parameter
+
+**Risky fixes** (require confirmation):
+- PM-001: Add explicit parameters (requires script documentation lookup)
+- PM-002: Replace generic reference with explicit call
+- PM-005: Correct contract path or remove `implements:`
+- PM-006: Add missing contract requirements
+
+### Step 5: Verify and Report
+
+```bash
+git status --short
+```
+
+Display summary with pm-workflow-specific metrics:
+- Components validated
+- Script calls checked
+- Parameter issues found/fixed
+- Contract compliance status
+
+---
+
 ## External Resources
 
 ### Scripts (scripts/)
@@ -1038,7 +1128,7 @@ After Phase 1 creates the report directory and JSON, the LLM:
 
 ### References (references/)
 
-**Diagnosis References** (7) - **READ** before analyzing:
+**Diagnosis References** (8) - **READ** before analyzing:
 - `agents-guide.md` - Agent quality standards
 - `commands-guide.md` - Command quality standards
 - `skills-guide.md` - Skill structure standards
@@ -1046,6 +1136,7 @@ After Phase 1 creates the report directory and JSON, the LLM:
 - `content-classification-guide.md` - Content type classification criteria (for doctor-skill-content)
 - `content-quality-guide.md` - Content quality analysis dimensions (for doctor-skill-content)
 - `plan-marshall-plugin-validation.md` - Domain manifest validation (for plan-marshall-plugin skills)
+- `pm-workflow-guide.md` - pm-workflow component validation (for doctor-pm-workflow)
 
 **External Standards** (from plugin-architecture) - **READ** for script analysis:
 - `script-standards.md` - Script documentation, testing, and quality standards

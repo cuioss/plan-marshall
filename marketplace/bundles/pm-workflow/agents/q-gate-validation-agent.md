@@ -55,7 +55,8 @@ plan_id: {plan_id}
 
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-solution-outline:manage-solution-outline read \
-  --plan-id {plan_id}
+  --plan-id {plan_id} \
+  --trace-plan-id {plan_id}
 ```
 
 Parse the deliverables from the solution outline. Extract:
@@ -67,7 +68,8 @@ Parse the deliverables from the solution outline. Extract:
 
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
-  assessment query {plan_id} --certainty CERTAIN_INCLUDE
+  assessment query {plan_id} --certainty CERTAIN_INCLUDE \
+  --trace-plan-id {plan_id}
 ```
 
 Parse to get the list of files that were assessed as CERTAIN_INCLUDE.
@@ -80,14 +82,16 @@ Read request (automatically uses clarified_request if available, otherwise body)
 python3 .plan/execute-script.py pm-workflow:manage-plan-documents:manage-plan-documents \
   request read \
   --plan-id {plan_id} \
-  --section clarified_request
+  --section clarified_request \
+  --trace-plan-id {plan_id}
 ```
 
 #### 1.4 Log Start
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(pm-workflow:q-gate-validation-agent) Starting verification: {deliverable_count} deliverables, {assessment_count} assessments"
+  decision {plan_id} INFO "(pm-workflow:q-gate-validation-agent) Starting verification: {deliverable_count} deliverables, {assessment_count} assessments" \
+  --trace-plan-id {plan_id}
 ```
 
 ---
@@ -147,7 +151,8 @@ For each deliverable:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(pm-workflow:q-gate-validation-agent:qgate) Deliverable {N}: {pass|fail} - {reason}"
+  decision {plan_id} INFO "(pm-workflow:q-gate-validation-agent:qgate) Deliverable {N}: {pass|fail} - {reason}" \
+  --trace-plan-id {plan_id}
 ```
 
 ---
@@ -166,7 +171,8 @@ FOR each file IN assessed_files:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(pm-workflow:q-gate-validation-agent:qgate) Missing coverage: {file} assessed but not in deliverables"
+  decision {plan_id} INFO "(pm-workflow:q-gate-validation-agent:qgate) Missing coverage: {file} assessed but not in deliverables" \
+  --trace-plan-id {plan_id}
 ```
 
 ---
@@ -180,7 +186,8 @@ python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifac
   finding add {plan_id} triage "Q-Gate: {issue_title}" \
   --detail "{detailed_reason}" \
   --file-path "{affected_file}" \
-  --component "{deliverable_reference}"
+  --component "{deliverable_reference}" \
+  --trace-plan-id {plan_id}
 ```
 
 ---
@@ -195,7 +202,8 @@ Persist the verified affected files to references.json.
 python3 .plan/execute-script.py pm-workflow:manage-references:manage-references set-list \
   --plan-id {plan_id} \
   --field affected_files \
-  --values "file1.py,file2.py,file3.md"
+  --values "file1.py,file2.py,file3.md" \
+  --trace-plan-id {plan_id}
 ```
 
 **Example** (correct):
@@ -216,7 +224,8 @@ Only include files from deliverables that passed verification.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(pm-workflow:q-gate-validation-agent) Summary: {passed} passed, {flagged} flagged, {missing} missing coverage"
+  decision {plan_id} INFO "(pm-workflow:q-gate-validation-agent) Summary: {passed} passed, {flagged} flagged, {missing} missing coverage" \
+  --trace-plan-id {plan_id}
 ```
 
 ---

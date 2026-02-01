@@ -305,6 +305,93 @@ Risky fixes require user confirmation because they involve judgment calls or may
 - User should review new wording
 - May affect how improvements are communicated
 
+### 10. implicit-script-call (PM-001)
+
+**Description**: Script call with missing or placeholder parameters.
+
+**Detection**: Bash blocks containing `execute-script.py` with:
+- Ellipsis (`...`) at end of command
+- Comments like "See API" or "see documentation"
+- Placeholder notation without explicit parameters
+
+**Fix Strategy**:
+- Look up script's `--help` output or skill documentation
+- Replace ellipsis/reference with explicit parameters
+- Use `{variable_name}` for dynamic values
+
+**Why Risky**:
+- Requires knowledge of correct script parameters
+- May need to consult script documentation
+- User should verify parameter completeness
+
+### 11. generic-api-reference (PM-002)
+
+**Description**: References API documentation instead of explicit script call.
+
+**Detection**: Text patterns near bash blocks:
+- "see * API"
+- "refer to * documentation"
+- "parameters documented in"
+- "see * for available options"
+
+**Fix Strategy**:
+- Identify what operation is being referenced
+- Find the correct script command
+- Write complete bash block with all parameters
+- Remove generic reference text
+
+**Why Risky**:
+- Requires understanding the intended operation
+- Must determine correct script and parameters
+- User should verify the replacement is accurate
+
+### 12. wrong-plan-parameter (PM-003)
+
+**Description**: Uses `--plan-id` where `--trace-plan-id` required or vice versa.
+
+**Detection**: Script calls with incorrect plan parameter based on script type:
+- `manage-plan-marshall-config` should use `--trace-plan-id`
+- `manage-log` should use `--trace-plan-id`
+- `manage-files`, `manage-tasks`, `manage-references` should use `--plan-id`
+
+**Fix Strategy**:
+- Swap `--plan-id` to `--trace-plan-id` or vice versa
+- Consult parameter matrix in pm-workflow-guide.md
+
+**Why Safe** (when pattern is clear):
+- Mechanical swap based on known script requirements
+- Parameter name change doesn't alter intent
+
+### 13. missing-plan-parameter (PM-004)
+
+**Description**: Plan-related script call without required plan identifier.
+
+**Detection**: Script calls to plan-related scripts missing both `--plan-id` and `--trace-plan-id`
+
+**Fix Strategy**:
+- Determine which parameter is needed from matrix
+- Add appropriate `--plan-id {plan_id}` or `--trace-plan-id {plan_id}`
+
+**Why Safe** (when context is clear):
+- Adding required parameter makes call complete
+- Variable name can be inferred from context
+
+### 14. invalid-contract-path (PM-005)
+
+**Description**: `implements:` frontmatter points to non-existent file.
+
+**Detection**: Resolve path from `implements:` field and check file existence
+
+**Fix Strategy**:
+- Verify the intended contract exists
+- Fix path typos or outdated references
+- If contract doesn't exist, either create it or remove `implements:`
+
+**Why Risky**:
+- May indicate structural changes in codebase
+- User should decide whether to fix path or remove declaration
+- Removing `implements:` changes component semantics
+
 ## Non-Fixable Issue Types
 
 These issues are detected but cannot be automatically fixed:
@@ -336,14 +423,19 @@ def categorize(issue_type):
         "missing-description-field", "missing-tools-field",
         "missing-user-invocable-field",
         "array-syntax-tools", "trailing-whitespace",
-        "improper-indentation", "missing-blank-line-before-list"
+        "improper-indentation", "missing-blank-line-before-list",
+        "wrong-plan-parameter",      # PM-003: mechanical swap
+        "missing-plan-parameter"     # PM-004: add required param
     }
     RISKY = {
         "unused-tool-declared", "tool-not-declared",
         "rule-6-violation", "rule-7-violation", "rule-8-violation",
         "rule-9-violation",
         "pattern-22-violation", "backup-file-pattern",
-        "ci-rule-self-update"
+        "ci-rule-self-update",
+        "implicit-script-call",      # PM-001: needs param lookup
+        "generic-api-reference",     # PM-002: needs script identification
+        "invalid-contract-path"      # PM-005: path resolution needed
     }
 
     if issue_type in SAFE:
@@ -365,6 +457,7 @@ When multiple fixes needed for same file:
 5. **trailing-whitespace** (cleanup)
 6. **Rule violations** (architectural - Rules 6, 7, 8, 9)
 7. **Pattern violations** (behavioral - Pattern 22)
+8. **pm-workflow violations** (PM-001 through PM-005 - script call compliance)
 
 ## See Also
 

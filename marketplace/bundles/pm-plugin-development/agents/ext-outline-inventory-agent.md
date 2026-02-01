@@ -43,7 +43,8 @@ Create the work directory and capture the path:
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-files:manage-files mkdir \
   --plan-id {plan_id} \
-  --dir work
+  --dir work \
+  --trace-plan-id {plan_id}
 ```
 
 **Output** (TOON):
@@ -105,7 +106,8 @@ Read the raw inventory file:
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-files:manage-files read \
   --plan-id {plan_id} \
-  --file work/inventory_raw.toon
+  --file work/inventory_raw.toon \
+  --trace-plan-id {plan_id}
 ```
 
 The inventory output uses bundle-block format where bundles are top-level keys:
@@ -162,6 +164,7 @@ Build the filtered inventory TOON content and persist it:
 python3 .plan/execute-script.py pm-workflow:manage-files:manage-files write \
   --plan-id {plan_id} \
   --file work/inventory_filtered.toon \
+  --trace-plan-id {plan_id} \
   --content "# Filtered Inventory
 
 scope:
@@ -190,7 +193,8 @@ Note: Include `tests` section only when `include_tests` is true and tests were d
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[ARTIFACT] (ext-outline-inventory-agent) Persisted inventory: work/inventory_filtered.toon ({total_files} files)"
+  work {plan_id} INFO "[ARTIFACT] (ext-outline-inventory-agent) Persisted inventory: work/inventory_filtered.toon ({total_files} files)" \
+  --trace-plan-id {plan_id}
 ```
 
 ## Output

@@ -1,7 +1,7 @@
 ---
 name: solution-outline-agent
 description: Create solution outline with deliverables using two-track workflow
-tools: Read, Glob, Grep, Bash, Task, AskUserQuestion, Skill
+tools: Read, Glob, Grep, Bash, AskUserQuestion, Skill
 model: sonnet
 skills: pm-workflow:phase-3-outline, plan-marshall:ref-development-standards
 ---
