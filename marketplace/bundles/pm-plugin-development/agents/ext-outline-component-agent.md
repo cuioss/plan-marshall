@@ -38,7 +38,8 @@ Log each assessment using this EXACT command:
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
   assessment add {plan_id} {file_path} {CERTAINTY} {CONFIDENCE} \
-  --agent ext-outline-component-agent/{component_type} --detail "{reasoning}" --evidence "{evidence}"
+  --agent ext-outline-component-agent/{component_type} --detail "{reasoning}" --evidence "{evidence}" \
+  --trace-plan-id {plan_id}
 ```
 
 **Parameters to fill:**
