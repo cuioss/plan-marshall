@@ -600,6 +600,7 @@ qgate_passed: {true|false}
 
 ## Related Documents
 
+- [architecture-diagram.md](references/architecture-diagram.md) - Visual architecture overview (for human readers)
 - [change-types.md](../../workflow-architecture/standards/change-types.md) - Change type vocabulary and agent routing
 - [deliverable-contract.md](../../manage-solution-outline/standards/deliverable-contract.md) - Deliverable structure
 - [workflow-architecture](../../workflow-architecture) - Workflow architecture overview
