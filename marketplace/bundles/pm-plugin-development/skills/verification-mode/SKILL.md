@@ -161,11 +161,35 @@ All analyses MUST use this structured format:
 
 ## Workflow
 
-### Step 1: Acknowledge Verification Mode
+### Step 1: Environment Preparation (Clean Slate)
 
-When this skill is loaded, immediately acknowledge:
+**CRITICAL**: Before verification mode activates, prepare a clean environment.
+
+Execute cleanup:
+
+```bash
+# Clear all log files
+rm -rf .plan/logs/*
+
+# Clear all existing plans
+rm -rf .plan/plans/*
+```
+
+**Verification**: Confirm both directories are empty.
+
+**Output**:
+```
+Environment prepared - logs and plans cleared for clean slate verification.
+```
+
+**Note**: If cleanup fails, STOP and report the issue.
+
+### Step 2: Acknowledge Verification Mode
+
+After Step 1 completes, acknowledge:
 
 ```
+Environment prepared - logs and plans cleared.
 Verification Mode Active - All operations will stop on failures, resolution issues, or workarounds for analysis.
 ```
 
@@ -175,14 +199,14 @@ If `scope: planning` was specified, add:
 Planning Scope Active - Additional checks: .plan access patterns, work-log population, status consistency.
 ```
 
-### Step 2: Execute with Vigilance
+### Step 3: Execute with Vigilance
 
 For each operation:
 1. Check if it's a script execution, resolution, or potential workaround
 2. Monitor for failure conditions
 3. Apply appropriate verification protocol if triggered
 
-### Step 3: Analyze Failures
+### Step 4: Analyze Failures
 
 When verification protocol triggers:
 1. Load appropriate analysis standard
@@ -190,21 +214,46 @@ When verification protocol triggers:
 3. Format output per template
 4. Present to user and wait
 
-### Step 4: Resume After User Decision
+### Step 5: Resume After User Decision
 
 Only after user provides direction:
 1. Execute user's chosen option
 2. Continue verification mode for subsequent operations
 3. Track all verification stops in session
 
+### Step 6: Post-Workflow Log Error Verification
+
+**When**: After tested workflow completes.
+
+**Purpose**: Catch errors in the **global** log that failed before reaching plan-scoped logging (typically missing `--plan-id` or `--trace-plan-id`).
+
+**A. Scan Global Log**:
+
+```bash
+grep '\[ERROR\]' .plan/logs/script-execution-$(date +%Y-%m-%d).log 2>/dev/null || echo "No errors"
+```
+
+**B. If Errors Found**:
+
+1. Load `standards/log-error-analysis.md` for common causes
+2. Use `standards/failure-analysis.md` for full analysis
+3. Trace origin to the calling component
+4. Fix the missing/incorrect plan parameter
+
+**C. Resolution Options**:
+1. Apply fix to calling component
+2. Record as lesson
+3. Skip (with reason)
+
 ## Standards Organization
 
 ```
 standards/
-├── failure-analysis.md      (Script and tool failure analysis)
+├── failure-analysis.md      (Script and tool failure analysis - real-time)
 ├── resolution-analysis.md   (Path and reference resolution issues)
 ├── workaround-detection.md  (Detecting and analyzing workarounds)
-└── planning-compliance.md   (Planning command/skill access patterns)
+├── planning-compliance.md   (Planning command/skill access patterns)
+└── log-error-analysis.md    (Post-workflow log error analysis)
 ```
 
 ## Verification Triggers
