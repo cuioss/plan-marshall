@@ -61,7 +61,7 @@ Implement the main validation logic.
 
 **Profiles:**
 - implementation
-- testing
+- module_testing
 
 **Affected files:**
 - `src/main/java/de/cuioss/jwt/JwtValidationService.java`
@@ -109,7 +109,7 @@ Create comprehensive test coverage.
 - depends: 1
 
 **Profiles:**
-- testing
+- module_testing
 
 **Affected files:**
 - `src/test/java/de/cuioss/jwt/JwtValidationServiceTest.java`

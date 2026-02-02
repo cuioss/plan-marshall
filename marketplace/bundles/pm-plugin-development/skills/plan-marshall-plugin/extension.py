@@ -56,9 +56,19 @@ class Extension(ExtensionBase):
         """Return triage skill reference."""
         return 'pm-plugin-development:ext-triage-plugin'
 
-    def provides_outline(self) -> str | None:
-        """Return outline skill reference."""
-        return 'pm-plugin-development:ext-outline-plugin'
+    def provides_change_type_agents(self) -> dict[str, str] | None:
+        """Return change_type to agent mappings for plugin development.
+
+        Provides domain-specific outline agents for feature, enhancement,
+        bug_fix, and tech_debt change types. Other types (analysis, verification)
+        fall back to generic pm-workflow agents.
+        """
+        return {
+            'feature': 'pm-plugin-development:change-feature-outline-agent',
+            'enhancement': 'pm-plugin-development:change-enhancement-outline-agent',
+            'bug_fix': 'pm-plugin-development:change-bug_fix-outline-agent',
+            'tech_debt': 'pm-plugin-development:change-tech_debt-outline-agent',
+        }
 
     def discover_modules(self, project_root: str) -> list:
         """Discover plugin bundles as modules.

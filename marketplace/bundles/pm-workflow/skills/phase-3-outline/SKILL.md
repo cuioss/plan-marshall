@@ -35,7 +35,7 @@ allowed-tools: Read, Glob, Grep, Bash, Task, AskUserQuestion
 ## Workflow Overview
 
 ```
-Step 1: Load Inputs → Step 2: Route by Track → {Simple: Steps 3-5 | Complex: Steps 6-9} → Step 10: Return
+Step 1: Load Inputs → Step 1.5: Detect Change Type → Step 2: Route by Track → {Simple: Steps 3-5 | Complex: Steps 6-9} → Step 10: Return
 ```
 
 ---
@@ -104,6 +104,46 @@ Store as `compatibility` and derive `compatibility_description` from the value:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   work {plan_id} INFO "[STATUS] (pm-workflow:phase-3-outline) Starting outline: track={track}, domains={domains}, compatibility={compatibility}"
+```
+
+---
+
+## Step 1.5: Detect Change Type
+
+**Purpose**: Determine the change type for agent routing.
+
+### 1.5.1 Spawn Detection Agent
+
+```
+Task: pm-workflow:detect-change-type-agent
+  Input:
+    plan_id: {plan_id}
+```
+
+**Agent Output** (TOON):
+```toon
+status: success
+plan_id: {plan_id}
+change_type: enhancement
+confidence: 90
+reasoning: "Request describes improving existing functionality"
+```
+
+### 1.5.2 Read Detected Change Type
+
+The agent persists change_type to status.toon metadata. Read it:
+
+```bash
+python3 .plan/execute-script.py pm-workflow:plan-marshall:manage-lifecycle get-metadata \
+  --plan-id {plan_id} \
+  --field change_type
+```
+
+### 1.5.3 Log Detection
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  decision {plan_id} INFO "(pm-workflow:phase-3-outline) Change type: {change_type} (confidence: {confidence})"
 ```
 
 ---
@@ -234,87 +274,88 @@ For codebase-wide changes requiring discovery and analysis.
 
 ---
 
-## Step 6: Resolve Domain Skill
+## Step 6: Resolve Change-Type Agent
 
-**Purpose**: Find the outline skill for each domain.
+**Purpose**: Find the appropriate agent for the detected change type and domain.
 
-### 6.1 Resolve Skill
+### 6.1 Resolve Agent
 
-For each domain in references.json:
+For the primary domain in references.json:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
-  resolve-workflow-skill-extension --domain {domain} --type outline --trace-plan-id {plan_id}
+  resolve-change-type-agent --domain {domain} --change-type {change_type} --trace-plan-id {plan_id}
 ```
 
 **Output** (TOON):
 ```toon
 status: success
 domain: {domain}
-type: outline
-extension: pm-plugin-development:ext-outline-plugin  # or null if no extension
+change_type: {change_type}
+agent: pm-plugin-development:change-feature-outline-agent  # or generic fallback
 ```
+
+**Fallback**: If no domain-specific agent configured, use generic: `pm-workflow:change-{change_type}-agent`
 
 ### 6.2 Log Resolution
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(pm-workflow:phase-3-outline) Resolved skill: {skill_notation}"
+  decision {plan_id} INFO "(pm-workflow:phase-3-outline) Resolved agent: {agent_notation}"
 ```
-
-**If no skill found**: Use generic module-based workflow (see "Generic Workflow" section below).
 
 ---
 
-## Step 7: Load Domain Skill
+## Step 7: Spawn Change-Type Agent
 
-**Purpose**: Load the resolved outline skill to handle discovery, analysis, and deliverable creation.
+**Purpose**: Spawn the resolved agent to handle discovery, analysis, and deliverable creation.
 
-### 7.1 Load Skill
+### 7.1 Spawn Agent
 
 ```
-Skill: {resolved_skill_notation}
+Task: {resolved_agent_notation}
   Input:
     plan_id: {plan_id}
 ```
 
-The skill handles the complete Complex Track workflow internally:
-- Discovery (using domain-specific scripts)
-- Analysis (spawning sub-agents if needed via Task tool)
+The agent handles the complete Complex Track workflow internally:
+- Discovery (spawning inventory agent if needed)
+- Analysis (spawning component agents if needed)
 - Persist assessments → assessments.jsonl
 - Confirm uncertainties with user
 - Group into deliverables
-- Write solution_outline.md (must include `compatibility: {value} — {description}` in header metadata, read from references.json)
+- Write solution_outline.md (must include `compatibility: {value} — {description}` in header metadata)
 
-### 7.2 Log Skill Load
+### 7.2 Log Agent Spawn
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(pm-workflow:phase-3-outline) Loaded {skill} for {domain}"
+  decision {plan_id} INFO "(pm-workflow:phase-3-outline) Spawned {agent} for {domain}"
 ```
 
 ---
 
-## Step 8: Skill Completion
+## Step 8: Agent Completion
 
-**Purpose**: Skill returns minimal status; data is in sinks.
+**Purpose**: Agent returns minimal status; data is in sinks.
 
-### 8.1 Skill Return Value
+### 8.1 Agent Return Value
 
 ```toon
 status: success
 plan_id: {plan_id}
 deliverable_count: {N}
+change_type: {change_type}
 ```
 
-### 8.2 Log Skill Completion
+### 8.2 Log Agent Completion
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(pm-workflow:phase-3-outline) Skill complete: {deliverable_count} deliverables"
+  decision {plan_id} INFO "(pm-workflow:phase-3-outline) Agent complete: {deliverable_count} deliverables"
 ```
 
-**If skill returns error**: HALT and return error.
+**If agent returns error**: HALT and return error.
 
 ---
 
@@ -393,9 +434,10 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 ---
 
-# Generic Workflow (No Domain Skill)
+# Generic Workflow (No Domain-Specific Agent)
 
-For domains without outline skills (e.g., Java, frontend), use module-based workflow.
+For domains without domain-specific change-type agents, the generic agents in pm-workflow are used.
+These generic agents (e.g., `pm-workflow:change-feature-agent`) provide baseline behavior.
 
 ---
 
@@ -523,12 +565,13 @@ qgate_passed: {true|false}
 |----------|--------|
 | Track not set | Return `{status: error, message: "phase-2-refine incomplete - track not set"}` |
 | Target not found (Simple) | Return error with invalid target |
-| Skill not found (Complex) | Fall back to Generic Workflow |
-| Skill fails (Complex) | Return error, do not fall back |
+| Change type not detected | Default to `enhancement` |
+| Agent not found | Fall back to generic: `pm-workflow:change-{change_type}-agent` |
+| Agent fails (Complex) | Return error, do not fall back |
 | Q-Gate fails | Return with `qgate_passed: false` and findings |
 | Request not found | Return `{status: error, message: "Request not found"}` |
 
-**CRITICAL**: If Complex Track skill fails, do NOT fall back to grep/search. Fail clearly.
+**CRITICAL**: If Complex Track agent fails, do NOT fall back to grep/search. Fail clearly.
 
 ---
 
@@ -541,13 +584,13 @@ qgate_passed: {true|false}
 - `pm-workflow:manage-plan-documents:manage-plan-documents` - Read request
 - `pm-workflow:manage-references:manage-references` - Read domains
 - `pm-workflow:manage-solution-outline:manage-solution-outline` - Write solution document
-- `plan-marshall:manage-plan-marshall-config:plan-marshall-config` - Resolve domain skill, read compatibility (fallback)
+- `pm-workflow:plan-marshall:manage-lifecycle` - Read/write change_type metadata
+- `plan-marshall:manage-plan-marshall-config:plan-marshall-config` - Resolve change-type agent, read compatibility (fallback)
 - `plan-marshall:manage-logging:manage-log` - Decision and work logging
 
-**Loads** (Complex Track):
-- Domain outline skill (e.g., `pm-plugin-development:ext-outline-plugin`)
-
 **Spawns** (Complex Track):
+- `pm-workflow:detect-change-type-agent` (Step 1.5 - change type detection)
+- Change-type agent (e.g., `pm-plugin-development:change-feature-outline-agent` or `pm-workflow:change-feature-agent`)
 - `pm-workflow:q-gate-validation-agent` (Q-Gate verification)
 
 **Consumed By**:
@@ -557,6 +600,6 @@ qgate_passed: {true|false}
 
 ## Related Documents
 
-- [outline-extension.md](../../workflow-extension-api/standards/extensions/outline-extension.md) - Skill-based extension contract
+- [change-types.md](../../workflow-architecture/standards/change-types.md) - Change type vocabulary and agent routing
 - [deliverable-contract.md](../../manage-solution-outline/standards/deliverable-contract.md) - Deliverable structure
 - [workflow-architecture](../../workflow-architecture) - Workflow architecture overview

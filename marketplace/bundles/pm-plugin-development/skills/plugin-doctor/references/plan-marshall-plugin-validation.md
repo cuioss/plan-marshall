@@ -34,7 +34,7 @@ python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:validate ext
 | `discover_modules()` | Project module discovery | Safe |
 | `config_defaults()` | Project configuration defaults | Safe |
 | `provides_triage()` | Triage skill reference | Risky |
-| `provides_outline()` | Outline skill reference | Risky |
+| `provides_change_type_agents()` | Change-type to agent mappings | Risky |
 
 ### Profile Structure
 

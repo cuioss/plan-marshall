@@ -20,7 +20,7 @@ Declares the requirements domain configuration including:
 All configuration is in `extension.py` which implements the Extension API:
 - `get_skill_domains()` - Domain metadata with profiles
 - `provides_triage()` - Triage skill reference or None
-- `provides_outline()` - Outline skill reference or None
+- `provides_change_type_agents()` - Change-type to agent mappings or None
 
 ## Integration
 

@@ -16,9 +16,9 @@ class Extension(ExtensionBase):
         """Return triage skill reference."""
         return 'pm-documents:ext-triage-docs'
 
-    def provides_outline(self) -> str | None:
-        """Return outline skill reference for documentation domain."""
-        return 'pm-documents:ext-outline-docs'
+    # Note: Documentation domain uses generic change-type agents from pm-workflow.
+    # Domain-specific agents can be added later if needed by implementing
+    # provides_change_type_agents() with documentation-specific outline agents.
 
     def get_skill_domains(self) -> dict:
         """Domain metadata for skill loading."""

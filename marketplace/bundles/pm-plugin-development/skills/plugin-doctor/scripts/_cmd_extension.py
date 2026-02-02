@@ -39,7 +39,11 @@ OPTIONAL_METHODS = {
         'description': 'Discover modules with metadata and commands',
     },
     'provides_triage': {'args': [], 'return_type': 'str | None', 'description': 'Return triage skill reference'},
-    'provides_outline': {'args': [], 'return_type': 'str | None', 'description': 'Return outline skill reference'},
+    'provides_change_type_agents': {
+        'args': [],
+        'return_type': 'dict[str, str] | None',
+        'description': 'Return change_type to agent mappings',
+    },
 }
 
 # get_skill_domains is a required function (part of REQUIRED_FUNCTIONS)
@@ -127,8 +131,19 @@ def validate_skill_references(domains: dict, marketplace_root: Path) -> list:
     return issues
 
 
-def validate_triage_outline_references(module, marketplace_root: Path) -> list:
-    """Validate provides_triage() and provides_outline() return valid refs."""
+def agent_exists(agent_ref: str, marketplace_root: Path) -> bool:
+    """Check if an agent reference (bundle:agent) exists."""
+    if ':' not in agent_ref:
+        return False
+
+    bundle, agent = agent_ref.split(':', 1)
+    agent_path = marketplace_root / 'bundles' / bundle / 'agents' / f'{agent}.md'
+
+    return agent_path.is_file()
+
+
+def validate_triage_and_change_type_agents(module, marketplace_root: Path) -> list:
+    """Validate provides_triage() and provides_change_type_agents() return valid refs."""
     issues = []
 
     if hasattr(module, 'provides_triage'):
@@ -149,23 +164,49 @@ def validate_triage_outline_references(module, marketplace_root: Path) -> list:
         except Exception as e:
             issues.append({'type': 'triage_error', 'message': f'provides_triage() raised: {e}'})
 
-    if hasattr(module, 'provides_outline'):
+    if hasattr(module, 'provides_change_type_agents'):
         try:
-            outline = module.provides_outline()
-            if outline is not None:
-                if not isinstance(outline, str):
-                    issues.append({'type': 'invalid_outline', 'message': 'provides_outline() must return str or None'})
-                elif not skill_exists(outline, marketplace_root):
-                    issues.append(
-                        {
-                            'type': 'missing_skill',
-                            'skill': outline,
-                            'location': 'provides_outline()',
-                            'message': f"Outline skill '{outline}' does not exist",
-                        }
-                    )
+            agents = module.provides_change_type_agents()
+            if agents is not None:
+                if not isinstance(agents, dict):
+                    issues.append({
+                        'type': 'invalid_change_type_agents',
+                        'message': 'provides_change_type_agents() must return dict[str, str] or None'
+                    })
+                else:
+                    # Validate each agent reference
+                    valid_change_types = {'analysis', 'feature', 'enhancement', 'bug_fix', 'tech_debt', 'verification'}
+                    for change_type, agent_ref in agents.items():
+                        # Validate change_type is known
+                        if change_type not in valid_change_types:
+                            issues.append({
+                                'type': 'unknown_change_type',
+                                'change_type': change_type,
+                                'location': 'provides_change_type_agents()',
+                                'severity': 'warning',
+                                'message': f"Unknown change_type '{change_type}' in provides_change_type_agents()",
+                            })
+
+                        # Validate agent reference is a string
+                        if not isinstance(agent_ref, str):
+                            issues.append({
+                                'type': 'invalid_agent_ref',
+                                'change_type': change_type,
+                                'message': f"Agent reference for '{change_type}' must be a string",
+                            })
+                            continue
+
+                        # Validate agent exists
+                        if not agent_exists(agent_ref, marketplace_root):
+                            issues.append({
+                                'type': 'missing_agent',
+                                'agent': agent_ref,
+                                'change_type': change_type,
+                                'location': 'provides_change_type_agents()',
+                                'message': f"Agent '{agent_ref}' for change_type '{change_type}' does not exist",
+                            })
         except Exception as e:
-            issues.append({'type': 'outline_error', 'message': f'provides_outline() raised: {e}'})
+            issues.append({'type': 'change_type_agents_error', 'message': f'provides_change_type_agents() raised: {e}'})
 
     return issues
 
@@ -506,9 +547,9 @@ def validate_extension(extension_path: Path, deep: bool = True) -> dict[str, Any
                         }
                     )
 
-            # Validate provides_triage() and provides_outline() references
+            # Validate provides_triage() and provides_change_type_agents() references
             if marketplace_root:
-                triage_outline_issues = validate_triage_outline_references(module, marketplace_root)
+                triage_outline_issues = validate_triage_and_change_type_agents(module, marketplace_root)
                 if triage_outline_issues:
                     result['valid'] = False
                 issues.extend(triage_outline_issues)

@@ -127,13 +127,37 @@ The `depends` field enables task-plan to determine execution order and paralleli
 
 ## Change Types
 
-| Type | Description | Grouping Hint |
-|------|-------------|---------------|
-| `create` | New file/component | Group by component type |
-| `modify` | Update existing | Group by change similarity |
-| `refactor` | Restructure without behavior change | Keep separate (risky) |
-| `migrate` | Format/API migration | Group by target format |
-| `delete` | Remove file/component | Group by bundle |
+The `change_type` field uses the fixed vocabulary defined in `pm-workflow:workflow-architecture/standards/change-types.md`.
+
+### Primary Change Types (Project-Oriented)
+
+| Key | Priority | Description | Agent Handling |
+|-----|----------|-------------|----------------|
+| `analysis` | 1 | Investigate, research, understand | Produces findings report |
+| `feature` | 2 | New functionality or component | Creates new code |
+| `enhancement` | 3 | Improve existing functionality | Modifies existing code |
+| `bug_fix` | 4 | Fix a defect or issue | Minimal targeted fix |
+| `tech_debt` | 5 | Refactoring, cleanup, removal | Restructures without behavior change |
+| `verification` | 6 | Validate, check, confirm | Produces pass/fail report |
+
+### Legacy Change Types (Deliverable-Level)
+
+For backwards compatibility, deliverables may still use:
+
+| Type | Maps To | Grouping Hint |
+|------|---------|---------------|
+| `create` | `feature` | Group by component type |
+| `modify` | `enhancement` | Group by change similarity |
+| `refactor` | `tech_debt` | Keep separate (risky) |
+| `migrate` | `tech_debt` | Group by target format |
+| `delete` | `tech_debt` | Group by bundle |
+
+### Agent Resolution
+
+Change types determine which agent handles the outline workflow:
+1. Detect change_type from request (detect-change-type-agent)
+2. Resolve agent from domain config or use generic fallback
+3. Agent creates deliverables appropriate for the change type
 
 ## Execution Modes
 

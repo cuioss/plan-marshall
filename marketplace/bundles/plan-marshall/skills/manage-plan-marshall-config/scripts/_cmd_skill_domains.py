@@ -7,7 +7,7 @@ Domain discovery uses extension.py files in each bundle's plan-marshall-plugin s
 Extension API functions:
 - get_skill_domains() -> domain metadata with profiles
 - provides_triage() -> triage skill reference or None
-- provides_outline() -> outline skill reference or None
+- provides_change_type_agents() -> dict mapping change_type to agent reference or None
 """
 
 import copy
@@ -142,13 +142,14 @@ def discover_available_domains(project_root: Path | None = None) -> dict:
                 if domain_info and isinstance(domain_info.get('domain'), dict):
                     domain_data = domain_info['domain']
                     has_triage = False
-                    has_outline = False
 
                     # Check for extension functions
                     if hasattr(module, 'provides_triage'):
                         has_triage = module.provides_triage() is not None
-                    if hasattr(module, 'provides_outline'):
-                        has_outline = module.provides_outline() is not None
+                    has_change_type_agents = False
+                    if hasattr(module, 'provides_change_type_agents'):
+                        change_type_agents = module.provides_change_type_agents()
+                        has_change_type_agents = change_type_agents is not None and len(change_type_agents) > 0
 
                     domain_entry = {
                         'key': domain_data.get('key', ''),
@@ -156,7 +157,7 @@ def discover_available_domains(project_root: Path | None = None) -> dict:
                         'description': domain_data.get('description', ''),
                         'bundle': ext['bundle'],
                         'has_triage': has_triage,
-                        'has_outline': has_outline,
+                        'has_change_type_agents': has_change_type_agents,
                     }
 
                     # Add applicability flag if project_root was provided
@@ -222,12 +223,13 @@ def convert_extension_to_domain_config(module, domain_info: dict, bundle_name: s
     config: dict[str, Any] = {'bundle': bundle_name}
 
     # Extract extensions from dedicated functions
-    if hasattr(module, 'provides_triage') or hasattr(module, 'provides_outline'):
-        extensions: dict[str, str] = {}
-        if hasattr(module, 'provides_outline'):
-            outline = module.provides_outline()
-            if outline:
-                extensions['outline'] = outline
+    if hasattr(module, 'provides_triage') or hasattr(module, 'provides_change_type_agents'):
+        extensions: dict[str, Any] = {}
+        if hasattr(module, 'provides_change_type_agents'):
+            change_type_agents = module.provides_change_type_agents()
+            if change_type_agents:
+                # Store change_type_agents at config level, not in workflow_skill_extensions
+                config['change_type_agents'] = change_type_agents
         if hasattr(module, 'provides_triage'):
             triage = module.provides_triage()
             if triage:
@@ -849,3 +851,60 @@ def cmd_resolve_task_executor(args) -> int:
     task_executor = task_executors[profile]
 
     return success_exit({'profile': profile, 'task_executor': task_executor})
+
+
+def cmd_resolve_change_type_agent(args) -> int:
+    """Resolve change-type agent for a domain and change type.
+
+    Resolution order:
+    1. Check skill_domains.{domain}.change_type_agents.{change_type}
+    2. If not configured, fall back to generic: pm-workflow:change-{change_type}-agent
+
+    Args:
+        args.domain: Domain key (e.g., 'plan-marshall-plugin-dev', 'java')
+        args.change_type: Change type (analysis, feature, enhancement, bug_fix, tech_debt, verification)
+
+    Returns:
+        TOON output with resolved agent reference
+    """
+    try:
+        require_initialized()
+    except MarshalNotInitializedError as e:
+        return error_exit(str(e))
+
+    domain = args.domain
+    change_type = args.change_type
+
+    # Validate change_type
+    valid_change_types = ['analysis', 'feature', 'enhancement', 'bug_fix', 'tech_debt', 'verification']
+    if change_type not in valid_change_types:
+        return error_exit(
+            f"Invalid change_type '{change_type}'. Valid types: {', '.join(valid_change_types)}"
+        )
+
+    config = load_config()
+    skill_domains = config.get('skill_domains', {})
+
+    # Default to generic agent
+    generic_agent = f'pm-workflow:change-{change_type}-agent'
+
+    # Check for domain-specific agent
+    if domain in skill_domains:
+        domain_config = skill_domains[domain]
+        change_type_agents = domain_config.get('change_type_agents', {})
+        if change_type in change_type_agents:
+            domain_agent = change_type_agents[change_type]
+            return success_exit({
+                'domain': domain,
+                'change_type': change_type,
+                'agent': domain_agent,
+                'source': 'domain_specific'
+            })
+
+    # Fall back to generic agent
+    return success_exit({
+        'domain': domain,
+        'change_type': change_type,
+        'agent': generic_agent,
+        'source': 'generic'
+    })

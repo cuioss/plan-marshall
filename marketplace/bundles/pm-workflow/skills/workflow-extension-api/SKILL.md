@@ -48,7 +48,7 @@ allowed-tools: Read
 │  │   → Loaded by phase-6-verify and phase-7-finalize            │ │
 │  │                                                              │ │
 │  │ Contract: standards/extensions/                              │ │
-│  │ Discovery: provides_triage(), provides_outline() in ext.py   │ │
+│  │ Discovery: provides_triage(), provides_change_type_agents()  │ │
 │  └─────────────────────────────────────────────────────────────┘ │
 │                            │                                     │
 │                            │ loads                               │
@@ -142,7 +142,7 @@ Extensions are **additive** - domains provide additional knowledge that system s
 
 | Extension Type | Purpose | Loaded By | Contract |
 |----------------|---------|-----------|----------|
-| outline-ext | Codebase patterns, deliverable templates | phase-3-outline | [extensions/outline-extension.md](standards/extensions/outline-extension.md) |
+| change_type_agents | Domain-specific outline agents per change type | phase-3-outline | [extensions/extension-mechanism.md](standards/extensions/extension-mechanism.md) |
 | triage-ext | Suppression syntax, severity rules | phase-6-verify, phase-7-finalize | [extensions/triage-extension.md](standards/extensions/triage-extension.md) |
 
 ### Extension Discovery
@@ -154,8 +154,11 @@ class Extension(ExtensionBase):
     def provides_triage(self) -> str | None:
         return "pm-dev-java:ext-triage-java"
 
-    def provides_outline(self) -> str | None:
-        return None  # No outline extension
+    def provides_change_type_agents(self) -> dict[str, str] | None:
+        return {
+            "feature": "pm-plugin-development:change-feature-outline-agent",
+            "enhancement": "pm-plugin-development:change-enhancement-outline-agent",
+        }  # Returns None if domain uses generic agents
 ```
 
 ### Extension Resolution
@@ -184,8 +187,7 @@ Domain skills are NOT extensions of the workflow - they are knowledge loaded by 
 | Document | Purpose |
 |----------|---------|
 | [architecture.md](standards/architecture.md) | High-level workflow overview |
-| [extensions/extension-mechanism.md](standards/extensions/extension-mechanism.md) | How extensions work |
-| [extensions/outline-extension.md](standards/extensions/outline-extension.md) | Outline extension contract |
+| [extensions/extension-mechanism.md](standards/extensions/extension-mechanism.md) | How extensions work (including change_type_agents) |
 | [extensions/triage-extension.md](standards/extensions/triage-extension.md) | Triage extension contract |
 | [profiles/implementation.md](standards/profiles/implementation.md) | Implementation profile contract |
 | [profiles/module_testing.md](standards/profiles/module_testing.md) | Module testing profile contract |

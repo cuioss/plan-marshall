@@ -243,23 +243,23 @@ def get_skill_domains_from_extensions(extensions: list[dict[str, Any]]) -> list[
     return domains
 
 
-def get_workflow_extensions_from_extensions(extensions: list[dict[str, Any]]) -> dict[str, dict[str, str]]:
-    """Get workflow extensions (triage, outline) from extensions.
+def get_workflow_extensions_from_extensions(extensions: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """Get workflow extensions (triage, change_type_agents) from extensions.
 
     Args:
         extensions: List of extension info dicts
 
     Returns:
-        Dict mapping bundle to {triage: skill_ref, outline: skill_ref}
+        Dict mapping bundle to {triage: skill_ref, change_type_agents: {type: agent_ref}}
     """
-    workflow_extensions: dict[str, dict[str, str]] = {}
+    workflow_extensions: dict[str, dict[str, Any]] = {}
 
     for ext in extensions:
         module = ext.get('module')
         if not module:
             continue
 
-        ext_info: dict[str, str] = {}
+        ext_info: dict[str, Any] = {}
 
         if hasattr(module, 'provides_triage'):
             try:
@@ -269,11 +269,11 @@ def get_workflow_extensions_from_extensions(extensions: list[dict[str, Any]]) ->
             except Exception:
                 pass
 
-        if hasattr(module, 'provides_outline'):
+        if hasattr(module, 'provides_change_type_agents'):
             try:
-                outline = module.provides_outline()
-                if outline:
-                    ext_info['outline'] = outline
+                change_type_agents = module.provides_change_type_agents()
+                if change_type_agents:
+                    ext_info['change_type_agents'] = change_type_agents
             except Exception:
                 pass
 

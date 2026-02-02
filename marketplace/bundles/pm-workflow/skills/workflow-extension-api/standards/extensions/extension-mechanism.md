@@ -63,8 +63,13 @@ The extension API allows domains to **extend** system workflow skills without **
 
 | Extension Key | Phase | Purpose |
 |---------------|-------|---------|
-| `outline` | 3-outline | Domain detection, codebase analysis, deliverable patterns |
+| `change_type_agents` | 3-outline | Domain-specific agents per change type (feature, enhancement, etc.) |
 | `triage` | 6-verify, 7-finalize | Decision-making knowledge for findings (suppression syntax, severity rules) |
+
+**Change-Type Agents** (replaces `outline` skill extension):
+- Domains can provide agents for specific change types
+- Agents handle full outline workflow: discovery, analysis, deliverable creation
+- Falls back to generic `pm-workflow:change-{type}-agent` if not configured
 
 **Phases without extensions:**
 
@@ -78,10 +83,30 @@ The extension API allows domains to **extend** system workflow skills without **
 
 ## Extension Resolution
 
+### Change-Type Agent Resolution
+
 ```bash
-# Resolve extension for a specific domain and type
+# Resolve change-type agent for a domain and change type
 python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
-  resolve-workflow-skill-extension --domain java --type outline
+  resolve-change-type-agent --domain plan-marshall-plugin-dev --change-type feature
+```
+
+Returns agent (domain-specific or generic fallback):
+
+```toon
+status: success
+domain: plan-marshall-plugin-dev
+change_type: feature
+agent: pm-plugin-development:change-feature-outline-agent
+source: domain_specific
+```
+
+### Triage Skill Resolution
+
+```bash
+# Resolve triage skill for a domain
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+  resolve-workflow-skill-extension --domain java --type triage
 ```
 
 Returns extension (or null if none):
@@ -89,8 +114,8 @@ Returns extension (or null if none):
 ```toon
 status: success
 domain: java
-type: outline
-extension: pm-dev-java:java-outline-ext
+type: triage
+extension: pm-dev-java:ext-triage-java
 ```
 
 ---
@@ -98,17 +123,23 @@ extension: pm-dev-java:java-outline-ext
 ## marshal.json Configuration
 
 ```json
-"java": {
+"plan-marshall-plugin-dev": {
+  "bundle": "pm-plugin-development",
+  "change_type_agents": {
+    "feature": "pm-plugin-development:change-feature-outline-agent",
+    "enhancement": "pm-plugin-development:change-enhancement-outline-agent",
+    "bug_fix": "pm-plugin-development:change-bug_fix-outline-agent",
+    "tech_debt": "pm-plugin-development:change-tech_debt-outline-agent"
+  },
   "workflow_skill_extensions": {
-    "outline": "pm-dev-java:java-outline-ext",
-    "triage": "pm-dev-java:ext-triage-java"
+    "triage": "pm-plugin-development:ext-triage-plugin"
   }
 }
 ```
 
 | Key | Purpose | Used By |
 |-----|---------|---------|
-| `outline` | Domain detection, codebase analysis, deliverable patterns | Outline phase |
+| `change_type_agents` | Maps change types to domain-specific outline agents | phase-3-outline |
 | `triage` | Domain-specific findings handling | Verify, Finalize phases |
 
 ---
@@ -131,7 +162,7 @@ Instructions for this extension point...
 
 ---
 
-## Outline Extension
+## Change-Type Agent Extension
 
 ### Phase Overview
 
@@ -139,143 +170,63 @@ Instructions for this extension point...
 
 **Purpose**: Transform user request into solution outline with deliverables.
 
-**Extension Purpose**: Provide domain-specific codebase analysis and deliverable patterns.
+**Agent Purpose**: Provide domain-specific outline workflow for each change type.
 
-### Extension Points
+### Change Types
 
-| Extension Point | Section Name | Required | Description |
-|-----------------|--------------|----------|-------------|
-| Domain Detection | `## Domain Detection` | No | How to detect if this domain is relevant |
-| Codebase Analysis | `## Codebase Analysis` | No | Domain-specific codebase analysis instructions |
-| Deliverable Patterns | `## Deliverable Patterns` | No | Domain-specific deliverable structure patterns |
+| Change Type | Priority | Description |
+|-------------|----------|-------------|
+| `analysis` | 1 | Investigate, research, understand |
+| `feature` | 2 | New functionality or component |
+| `enhancement` | 3 | Improve existing functionality |
+| `bug_fix` | 4 | Fix a defect or issue |
+| `tech_debt` | 5 | Refactoring, cleanup, removal |
+| `verification` | 6 | Validate, check, confirm |
 
-### `## Domain Detection`
+See `pm-workflow:workflow-architecture/standards/change-types.md` for full vocabulary.
 
-**Purpose**: Determine if this domain is relevant to the current request.
+### Agent Resolution
 
-**Expected Content**:
+1. **Detect change type** via `pm-workflow:detect-change-type-agent`
+2. **Check domain config** for `change_type_agents.{type}`
+3. **Fall back to generic** if not configured: `pm-workflow:change-{type}-agent`
+
+### Implementing Domain-Specific Agents
+
+Create agents in your bundle following the naming convention:
+- `change-{type}-outline-agent.md` (e.g., `change-feature-outline-agent.md`)
+
+Each agent handles the full workflow:
+- Discovery (spawn inventory agent if needed)
+- Analysis (spawn component analysis agent if needed)
+- Deliverable creation
+- Solution outline writing
+
+### Example: Plugin Development Agents
+
 ```markdown
-## Domain Detection
+# pm-plugin-development agents
 
-This domain is relevant when:
-1. {Condition 1 - e.g., pom.xml exists}
-2. {Condition 2 - e.g., src/main/java directory exists}
-3. {Condition 3 - e.g., request mentions Java/Maven/Spring}
-
-Detection commands:
-- Check for: {file pattern}
-- Grep for: {code pattern}
+change-feature-outline-agent.md     # Create new components
+change-enhancement-outline-agent.md # Improve existing components
+change-bug_fix-outline-agent.md     # Fix component bugs
+change-tech_debt-outline-agent.md   # Refactor/cleanup components
 ```
 
-**Default Behavior**: Domain is assumed relevant if configured in marshal.json.
+Each agent spawns shared sub-agents:
+- `ext-outline-inventory-agent` - Marketplace inventory discovery
+- `ext-outline-component-agent` - Component analysis
 
-### `## Codebase Analysis`
+### Extension API
 
-**Purpose**: Provide domain-specific instructions for analyzing the codebase.
+Domains declare agents in `extension.py`:
 
-**Expected Content**:
-```markdown
-## Codebase Analysis
-
-When analyzing {domain} codebases:
-
-### Project Structure
-1. {What to look for - e.g., Maven modules, package structure}
-2. {Patterns to identify - e.g., layered architecture, microservices}
-
-### Key Files
-- {Important file 1}: {What it tells us}
-- {Important file 2}: {What it tells us}
-
-### Architecture Patterns
-- Identify: {pattern 1}
-- Look for: {pattern 2}
-```
-
-**Default Behavior**: Generic file/directory analysis.
-
-### `## Deliverable Patterns`
-
-**Purpose**: Define how to structure deliverables for this domain.
-
-**Expected Content**:
-```markdown
-## Deliverable Patterns
-
-When creating deliverables for {domain}:
-
-### Grouping Strategy
-- {How to group work - e.g., by module, by feature}
-
-### Deliverable Structure
-Each deliverable should:
-- {Guideline 1 - e.g., represent a cohesive unit}
-- {Guideline 2 - e.g., be independently testable}
-
-### Profile Assignment
-- Implementation work: profile = `implementation`
-- Test work: profile = `module_testing`
-- {Domain-specific guidance}
-```
-
-**Default Behavior**: One deliverable per component/file with generic structure.
-
-### Outline Extension Example: Java
-
-```markdown
-# Java Outline Extension
-
-> Extension for 3-outline phase in Java domain.
-
-## Domain Detection
-
-This domain is relevant when:
-1. `pom.xml` or `build.gradle` exists at project root
-2. `src/main/java` directory exists
-3. Request mentions Java, Maven, Gradle, Spring, Quarkus, or Jakarta EE
-
-Detection commands:
-- Glob: `**/pom.xml`, `**/build.gradle`
-- Glob: `**/src/main/java/**/*.java`
-
-## Codebase Analysis
-
-When analyzing Java codebases:
-
-### Project Structure
-1. Check for multi-module Maven project (parent pom.xml with modules)
-2. Identify package structure under src/main/java
-3. Look for module-info.java (Java modules)
-
-### Key Files
-- `pom.xml`: Dependencies, plugins, module structure
-- `application.properties/yaml`: Runtime configuration
-- `module-info.java`: Module boundaries and exports
-
-### Architecture Patterns
-- Layered: controller/service/repository packages
-- Hexagonal: adapter/port/domain packages
-- CDI: Look for @Inject, @ApplicationScoped annotations
-
-## Deliverable Patterns
-
-When creating deliverables for Java:
-
-### Grouping Strategy
-- Group by Maven module for multi-module projects
-- Group by feature/component for single-module projects
-- Separate API packages from implementation packages
-
-### Deliverable Structure
-Each deliverable should:
-- Represent a cohesive unit of functionality
-- Include both production code and test code locations
-- Be bounded by package/module boundaries
-
-### Profile Assignment
-- New classes, modifications: profile = `implementation`
-- New test classes: profile = `module_testing`
-- Build/config changes: profile = `implementation`
+```python
+def provides_change_type_agents(self) -> dict[str, str] | None:
+    return {
+        'feature': 'my-bundle:change-feature-outline-agent',
+        'enhancement': 'my-bundle:change-enhancement-outline-agent',
+    }
 ```
 
 ---
@@ -454,5 +405,5 @@ At extension point "Deliverable Patterns":
 - [phase-6-verify SKILL.md](../../../phase-6-verify/SKILL.md) - Verify phase skill (self-documenting)
 - [phase-7-finalize SKILL.md](../../../phase-7-finalize/SKILL.md) - Finalize phase skill (self-documenting)
 - [triage-extension.md](triage-extension.md) - Triage extension contract
-- [outline-extension.md](outline-extension.md) - Outline extension contract
+- [change-types.md](../../../workflow-architecture/standards/change-types.md) - Change type vocabulary
 - [deliverable-contract.md](../../../manage-solution-outline/standards/deliverable-contract.md) - Deliverable structure

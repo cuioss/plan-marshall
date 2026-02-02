@@ -493,6 +493,92 @@ def cmd_get_routing_context(args):
     )
 
 
+def cmd_set_metadata(args):
+    """Set a metadata field in status.toon."""
+    if not validate_plan_id(args.plan_id):
+        output_toon(
+            {
+                'status': 'error',
+                'plan_id': args.plan_id,
+                'error': 'invalid_plan_id',
+                'message': f'Invalid plan_id format: {args.plan_id}',
+            }
+        )
+        sys.exit(1)
+
+    status = read_status(args.plan_id)
+    if not status:
+        output_toon(
+            {'status': 'error', 'plan_id': args.plan_id, 'error': 'file_not_found', 'message': 'status.toon not found'}
+        )
+        sys.exit(1)
+
+    # Initialize metadata dict if not present
+    if 'metadata' not in status:
+        status['metadata'] = {}
+
+    previous_value = status['metadata'].get(args.field)
+    status['metadata'][args.field] = args.value
+
+    write_status(args.plan_id, status)
+    log_entry('work', args.plan_id, 'INFO', f'[MANAGE-LIFECYCLE] Metadata: {args.field}={args.value}')
+
+    result: dict[str, Any] = {
+        'status': 'success',
+        'plan_id': args.plan_id,
+        'field': args.field,
+        'value': args.value,
+    }
+    if previous_value is not None:
+        result['previous_value'] = previous_value
+    output_toon(result)
+
+
+def cmd_get_metadata(args):
+    """Get a metadata field from status.toon."""
+    if not validate_plan_id(args.plan_id):
+        output_toon(
+            {
+                'status': 'error',
+                'plan_id': args.plan_id,
+                'error': 'invalid_plan_id',
+                'message': f'Invalid plan_id format: {args.plan_id}',
+            }
+        )
+        sys.exit(1)
+
+    status = read_status(args.plan_id)
+    if not status:
+        output_toon(
+            {'status': 'error', 'plan_id': args.plan_id, 'error': 'file_not_found', 'message': 'status.toon not found'}
+        )
+        sys.exit(1)
+
+    metadata = status.get('metadata', {})
+    value = metadata.get(args.field)
+
+    if value is None:
+        output_toon(
+            {
+                'status': 'error',
+                'plan_id': args.plan_id,
+                'error': 'field_not_found',
+                'message': f"Metadata field '{args.field}' not found",
+                'available_fields': list(metadata.keys()),
+            }
+        )
+        sys.exit(1)
+
+    output_toon(
+        {
+            'status': 'success',
+            'plan_id': args.plan_id,
+            'field': args.field,
+            'value': value,
+        }
+    )
+
+
 def main():
     parser = argparse.ArgumentParser(description='Manage plan lifecycle with status.toon and phase operations')
     subparsers = parser.add_subparsers(dest='command', required=True)
@@ -562,6 +648,19 @@ def main():
     )
     routing_context_parser.add_argument('--plan-id', required=True, help='Plan identifier')
     routing_context_parser.set_defaults(func=cmd_get_routing_context)
+
+    # set-metadata
+    set_metadata_parser = subparsers.add_parser('set-metadata', help='Set a metadata field')
+    set_metadata_parser.add_argument('--plan-id', required=True, help='Plan identifier')
+    set_metadata_parser.add_argument('--field', required=True, help='Metadata field name')
+    set_metadata_parser.add_argument('--value', required=True, help='Metadata field value')
+    set_metadata_parser.set_defaults(func=cmd_set_metadata)
+
+    # get-metadata
+    get_metadata_parser = subparsers.add_parser('get-metadata', help='Get a metadata field')
+    get_metadata_parser.add_argument('--plan-id', required=True, help='Plan identifier')
+    get_metadata_parser.add_argument('--field', required=True, help='Metadata field name')
+    get_metadata_parser.set_defaults(func=cmd_get_metadata)
 
     args = parser.parse_args()
     args.func(args)

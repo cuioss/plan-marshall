@@ -145,17 +145,25 @@ def provides_triage(self) -> str | None:
     """
 ```
 
-#### provides_outline
+#### provides_change_type_agents
 
 ```python
-def provides_outline(self) -> str | None:
-    """Return outline skill reference if available.
+def provides_change_type_agents(self) -> dict[str, str] | None:
+    """Return change_type to agent mappings if available.
 
     Returns:
-        Skill reference as 'bundle:skill'
-        or None if no outline capability.
+        Dict mapping change_type keys to agent references:
+        {
+            "feature": "bundle:change-feature-outline-agent",
+            "enhancement": "bundle:change-enhancement-outline-agent",
+            "bug_fix": "bundle:change-bug_fix-outline-agent",
+            "tech_debt": "bundle:change-tech_debt-outline-agent"
+        }
+        or None if domain uses generic pm-workflow agents.
 
-    Default: None
+    Valid change_types: analysis, feature, enhancement, bug_fix, tech_debt, verification
+
+    Default: None (uses generic pm-workflow:change-{type}-agent)
     """
 ```
 
@@ -286,7 +294,8 @@ Validation checks:
 - get_skill_domains() returns valid structure with domain.key, domain.name, profiles
 - Skill references (bundle:skill) point to existing skills
 - Build bundles: discover_modules() returns contract-compliant structure with commands
-- provides_triage() and provides_outline() references exist if non-null
+- provides_triage() references exist if non-null
+- provides_change_type_agents() agent references exist if non-null
 
 ---
 
@@ -307,14 +316,14 @@ Some domain bundles are **additive** - they extend a base domain bundle rather t
 
 ## Existing Extensions
 
-| Bundle | Domain Key | Triage | Outline | Capabilities | Notes |
-|--------|------------|--------|---------|-------------|-------|
+| Bundle | Domain Key | Triage | Change-Type Agents | Capabilities | Notes |
+|--------|------------|--------|-------------------|-------------|-------|
 | pm-dev-java | java | ext-triage-java | - | quality-gate, build-verify, impl-verify, test-verify, triage | Base Java bundle |
 | pm-dev-java-cui | java-cui | - | - | (none) | Additive to pm-dev-java |
 | pm-dev-frontend | javascript | ext-triage-js | - | triage (default) | |
-| pm-documents | documentation | ext-triage-docs | ext-outline-docs | triage (default) | |
+| pm-documents | documentation | ext-triage-docs | - | triage (default) | Uses generic agents |
 | pm-requirements | requirements | ext-triage-reqs | - | triage (default) | |
-| pm-plugin-development | plan-marshall-plugin-dev | ext-triage-plugin | ext-outline-plugin | triage (default) | |
+| pm-plugin-development | plan-marshall-plugin-dev | ext-triage-plugin | 4 agents (feature, enhancement, bug_fix, tech_debt) | triage (default) | |
 
 ---
 

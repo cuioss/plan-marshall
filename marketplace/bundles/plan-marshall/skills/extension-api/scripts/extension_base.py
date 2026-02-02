@@ -319,16 +319,32 @@ class ExtensionBase(ABC):
         """
         return None
 
-    def provides_outline(self) -> str | None:
-        """Return outline skill reference if available.
+    def provides_change_type_agents(self) -> dict[str, str] | None:
+        """Return change_type to agent mappings if available.
 
         Returns:
-            Skill reference as 'bundle:skill'
-            or None if no outline capability.
+            Dict mapping change_type keys to agent notations, or None.
+            Example: {
+                "feature": "my-bundle:change-feature-outline-agent",
+                "enhancement": "my-bundle:change-enhancement-outline-agent"
+            }
+
+        Valid change_type keys:
+            - analysis: Investigation and research
+            - feature: New functionality
+            - enhancement: Improve existing
+            - bug_fix: Fix defects
+            - tech_debt: Refactoring and cleanup
+            - verification: Validation and confirmation
 
         Purpose:
-            Outline skills guide solution design during the
-            plan-init phase for domain-specific deliverables.
+            Change-type agents handle the solution outline workflow
+            for their specific change type. Domains can override generic
+            agents with domain-specific ones.
+
+        Fallback:
+            If a domain doesn't provide an agent for a change_type,
+            the generic pm-workflow:change-{type}-agent is used.
         """
         return None
 

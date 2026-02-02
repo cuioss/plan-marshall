@@ -23,6 +23,7 @@ from _cmd_init import cmd_init
 from _cmd_skill_domains import (
     cmd_configure_task_executors,
     cmd_get_skills_by_profile,
+    cmd_resolve_change_type_agent,
     cmd_resolve_domain_skills,
     cmd_resolve_task_executor,
     cmd_resolve_workflow_skill_extension,
@@ -230,6 +231,17 @@ def main():
     p_rte = subparsers.add_parser('resolve-task-executor', help='Resolve task executor skill for a profile')
     p_rte.add_argument('--profile', required=True, help='Profile name (e.g., implementation, module_testing)')
 
+    # --- resolve-change-type-agent ---
+    p_rcta = subparsers.add_parser(
+        'resolve-change-type-agent', help='Resolve change-type agent for domain and change type'
+    )
+    p_rcta.add_argument('--domain', required=True, help='Domain key (e.g., plan-marshall-plugin-dev, java)')
+    p_rcta.add_argument(
+        '--change-type', required=True,
+        choices=['analysis', 'feature', 'enhancement', 'bug_fix', 'tech_debt', 'verification'],
+        help='Change type'
+    )
+
     args = parser.parse_args()
 
     if args.noun is None:
@@ -274,6 +286,8 @@ def main():
         return cmd_configure_task_executors(args)
     elif args.noun == 'resolve-task-executor':
         return cmd_resolve_task_executor(args)
+    elif args.noun == 'resolve-change-type-agent':
+        return cmd_resolve_change_type_agent(args)
     else:
         parser.print_help()
         return EXIT_ERROR
