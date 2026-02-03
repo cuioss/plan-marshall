@@ -153,6 +153,19 @@ description: [Description needed]
 
 **Why Safe**: Adding whitespace doesn't change content.
 
+### 10. rule-11-violation
+
+**Description**: Agent declares explicit tools but omits `Skill`, making it invisible to Task dispatcher.
+
+**Detection**: Agent frontmatter has `tools:` or `allowed-tools:` field without `Skill` in the list. No violation if tools field is absent (inherits all).
+
+**Fix Strategy**:
+- Find the `tools:` or `allowed-tools:` line in frontmatter
+- Append `, Skill` to the end of the tools list
+- Preserve existing tools
+
+**Why Safe**: Purely additive — appending `Skill` never removes capabilities or changes behavior, only makes the agent discoverable by the Task dispatcher.
+
 ## Risky Fix Types
 
 Risky fixes require user confirmation because they involve judgment calls or may change behavior.
@@ -424,6 +437,7 @@ def categorize(issue_type):
         "missing-user-invocable-field",
         "array-syntax-tools", "trailing-whitespace",
         "improper-indentation", "missing-blank-line-before-list",
+        "rule-11-violation",         # Rule 11: additive Skill append
         "wrong-plan-parameter",      # PM-003: mechanical swap
         "missing-plan-parameter"     # PM-004: add required param
     }
@@ -455,7 +469,7 @@ When multiple fixes needed for same file:
 3. **missing-*-field** (complete frontmatter - name, description, user-invocable, tools/allowed-tools)
 4. **array-syntax-tools** (syntax normalization)
 5. **trailing-whitespace** (cleanup)
-6. **Rule violations** (architectural - Rules 6, 7, 8, 9)
+6. **Rule violations** (architectural - Rules 6, 7, 8, 9, 11)
 7. **Pattern violations** (behavioral - Pattern 22)
 8. **pm-workflow violations** (PM-001 through PM-005 - script call compliance)
 

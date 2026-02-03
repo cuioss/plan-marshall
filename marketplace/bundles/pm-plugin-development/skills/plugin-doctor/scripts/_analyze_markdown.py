@@ -249,6 +249,29 @@ def check_command_self_containment(content: str) -> dict:
     }
 
 
+def check_rule_11_violation(frontmatter: str, has_tools: bool) -> bool:
+    """Check Rule 11: Agent tools missing Skill — invisible to Task dispatcher.
+
+    When an agent declares explicit tools but omits Skill, it becomes invisible
+    to the Task tool dispatcher. If no tools are declared (inherits all), Skill
+    is included implicitly, so no violation.
+    """
+    if not has_tools:
+        return False
+
+    # Extract tools from inline format: tools: Read, Write, Edit
+    tools_match = re.search(r'^(?:tools|allowed-tools):\s*(.+)$', frontmatter, re.MULTILINE)
+    if not tools_match:
+        return False
+
+    tools_str = tools_match.group(1).strip()
+    # Handle both comma-separated and YAML array formats
+    tools_str = tools_str.strip('[]')
+    tools = [t.strip().strip('"').strip("'") for t in tools_str.split(',')]
+
+    return 'Skill' not in tools
+
+
 def check_rule_violations(content: str, frontmatter: str, component_type: str, has_tools: bool, file_path: str) -> dict:
     """Check for rule violations."""
     rule_6_violation = False
@@ -280,12 +303,18 @@ def check_rule_violations(content: str, frontmatter: str, component_type: str, h
     if component_type == 'agent':
         rule_10_result = check_command_self_containment(content)
 
+    # Rule 11: Agent Skill tool visibility (agents only)
+    rule_11_violation = False
+    if component_type == 'agent':
+        rule_11_violation = check_rule_11_violation(frontmatter, has_tools)
+
     return {
         'rule_6_violation': rule_6_violation,
         'rule_7_violation': rule_7_violation,
         'rule_8_violation': rule_8_violation,
         'rule_9_violations': rule_9_violations,
         'rule_10_violations': rule_10_result,
+        'rule_11_violation': rule_11_violation,
     }
 
 

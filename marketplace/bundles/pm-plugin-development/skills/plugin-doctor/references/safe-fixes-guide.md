@@ -100,6 +100,26 @@ description: [Description needed]
 3. Insert field with default value
 4. Preserve existing content
 
+### rule-11-violation
+
+**Strategy**: Append Skill to existing tools declaration
+
+**Detection**: Agent has `tools:` or `allowed-tools:` field without `Skill`
+
+**Implementation**:
+1. Read file content
+2. Find the `tools:` or `allowed-tools:` line in frontmatter
+3. Append `, Skill` to end of the line
+4. Write back
+
+**Examples**:
+- `tools: Read, Write` → `tools: Read, Write, Skill`
+- `tools: Read, Write, Edit, Grep` → `tools: Read, Write, Edit, Grep, Skill`
+
+**Edge Cases**:
+- If `Skill` already present → no change (fix returns success=False)
+- If no `tools:` field → no violation (inherits all tools)
+
 ### trailing-whitespace
 
 **Strategy**: Strip trailing characters from each line
@@ -148,8 +168,9 @@ for fix in fixes:
 4. missing-description-field
 5. missing-tools-field
 6. array-syntax-tools
-7. trailing-whitespace
-8. improper-indentation
+7. rule-11-violation
+8. trailing-whitespace
+9. improper-indentation
 
 ## Error Recovery
 

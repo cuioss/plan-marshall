@@ -106,6 +106,37 @@ def verify_pattern_22_fix(file_path: Path) -> dict:
     return {'verified': True, 'issue_resolved': True, 'details': 'Self-update patterns removed'}
 
 
+def verify_rule_11_fix(file_path: Path) -> dict:
+    """Verify Skill tool was added to agent's tools declaration."""
+    try:
+        content = file_path.read_text(encoding='utf-8', errors='replace')
+    except OSError as e:
+        return {'verified': False, 'error': f'Failed to read file: {e}'}
+
+    frontmatter_present, frontmatter = extract_frontmatter(content)
+
+    if not frontmatter_present:
+        return {'verified': True, 'issue_resolved': True, 'details': 'No frontmatter to check'}
+
+    # If no tools field, inherits all (including Skill) — resolved
+    if not re.search(r'^(?:tools|allowed-tools):', frontmatter, re.MULTILINE):
+        return {'verified': True, 'issue_resolved': True, 'details': 'No tools field — inherits all including Skill'}
+
+    # Extract tools and check for Skill
+    tools_match = re.search(r'^(?:tools|allowed-tools):\s*(.+)$', frontmatter, re.MULTILINE)
+    if tools_match:
+        tools_str = tools_match.group(1).strip().strip('[]')
+        tools = [t.strip().strip('"').strip("'") for t in tools_str.split(',')]
+        if 'Skill' in tools:
+            return {'verified': True, 'issue_resolved': True, 'details': 'Skill tool present in declaration'}
+
+    return {
+        'verified': True,
+        'issue_resolved': False,
+        'details': 'Skill tool still missing from tools declaration (Rule 11 violation)',
+    }
+
+
 def verify_generic(file_path: Path, fix_type: str) -> dict:
     """Generic verification for unknown fix types."""
     return {'verified': True, 'issue_resolved': None, 'details': 'Manual verification recommended'}
@@ -135,6 +166,8 @@ def cmd_verify(args) -> int:
         result = verify_trailing_whitespace_fix(file_path)
     elif fix_type == 'pattern-22-violation':
         result = verify_pattern_22_fix(file_path)
+    elif fix_type == 'rule-11-violation':
+        result = verify_rule_11_fix(file_path)
     else:
         result = verify_generic(file_path, fix_type)
 

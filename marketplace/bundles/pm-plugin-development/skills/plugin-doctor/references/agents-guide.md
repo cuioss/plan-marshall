@@ -27,6 +27,7 @@ tools:
   - Edit
   - Grep
   - Bash
+  - Skill
 model: sonnet
 ---
 ```
@@ -34,7 +35,7 @@ model: sonnet
 **Required Fields**:
 - `name`: Agent identifier (kebab-case, matches filename)
 - `description`: One-sentence purpose statement
-- `tools`: Array of tool names (NOT comma-separated string)
+- `tools`: Array of tool names (must include `Skill` — see Rule 11)
 
 **Optional Fields**:
 - `model`: Preferred model (sonnet, opus, haiku) - defaults to sonnet
@@ -290,6 +291,35 @@ python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifac
 - Include full bash block with complete `bundle:skill:script` notation
 - Add parameter table showing where each value comes from
 - Add CRITICAL warning about not inventing notations
+
+## Rule 11: Skill Tool Visibility Requirement
+
+**CRITICAL RULE**: Agents with explicit `tools:` declarations MUST include `Skill` to be visible to the Task tool dispatcher.
+
+**Rationale**: Claude Code only exposes plugin agents to the Task tool when `Skill` is listed in their `tools:` frontmatter. When an agent restricts its tools and omits `Skill`, it becomes invisible to Task dispatching — meaning no command or workflow can invoke it. If no `tools:` field is declared at all, the agent inherits all tools (including Skill) and is visible.
+
+**Detection**:
+- Check if agent has explicit `tools:` or `allowed-tools:` field
+- If tools are declared, verify `Skill` is in the list
+- No violation if tools field is absent (inherits all)
+
+**Violation Example**:
+```yaml
+---
+name: my-agent
+tools: Read, Write, Edit, Grep  # ❌ Missing Skill — agent invisible
+---
+```
+
+**Fix** (safe — purely additive):
+```yaml
+---
+name: my-agent
+tools: Read, Write, Edit, Grep, Skill  # ✅ Agent visible to Task dispatcher
+---
+```
+
+**Classification**: Safe fix — appending `Skill` never breaks anything, only makes the agent discoverable.
 
 ## Bloat Detection
 
@@ -631,6 +661,7 @@ Apply anti-bloat strategies:
 - ✅ No Rule 7 violations (no Maven unless maven-builder)
 - ✅ No Pattern 22 violations (caller-reporting pattern)
 - ✅ No Rule 10 violations (self-contained command definitions)
+- ✅ No Rule 11 violations (Skill in tools for Task visibility)
 - ✅ All script commands have explicit bash blocks
 - ✅ All notations match `bundle:skill:script` format
 - ✅ Has "## Logging Command" or "## Script Commands" section if performs script operations

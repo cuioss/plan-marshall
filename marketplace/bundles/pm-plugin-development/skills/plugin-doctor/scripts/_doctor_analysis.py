@@ -110,6 +110,16 @@ def extract_issues_from_markdown_analysis(analysis: dict, file_path: str, compon
                 'description': 'Hardcoded script path - use executor notation instead (Rule 8)',
             }
         )
+    if rules.get('rule_11_violation'):
+        issues.append(
+            {
+                'type': 'rule-11-violation',
+                'file': file_path,
+                'severity': 'warning',
+                'fixable': True,
+                'description': 'Agent tools missing Skill — invisible to Task dispatcher (Rule 11)',
+            }
+        )
 
     # Check CI rule
     ci = analysis.get('continuous_improvement_rule', {})

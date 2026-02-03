@@ -165,6 +165,36 @@ def apply_rule_6_fix(file_path: Path, fix: dict, templates: dict) -> dict:
     return {'success': True, 'changes': ['Removed Task tool from tools declaration (Rule 6)'], 'rule': 'Rule 6'}
 
 
+def apply_rule_11_fix(file_path: Path, fix: dict, templates: dict) -> dict:
+    """Add Skill tool to agent's tools declaration (Rule 11)."""
+    with open(file_path, encoding='utf-8') as f:
+        content = f.read()
+
+    # Find the tools or allowed-tools line
+    match = re.search(r'^((?:tools|allowed-tools):\s*)(.+)$', content, re.MULTILINE)
+    if not match:
+        return {'success': False, 'error': 'No tools declaration found'}
+
+    tools_str = match.group(2).strip()
+    # Parse existing tools
+    clean = tools_str.strip('[]')
+    tools = [t.strip().strip('"').strip("'") for t in clean.split(',')]
+
+    if 'Skill' in tools:
+        return {'success': False, 'error': 'Skill tool already present in declaration'}
+
+    # Append Skill to the tools line
+    original_line = match.group(0)
+    new_line = original_line.rstrip() + ', Skill'
+
+    new_content = content.replace(original_line, new_line, 1)
+
+    with open(file_path, 'w', encoding='utf-8') as f:
+        f.write(new_content)
+
+    return {'success': True, 'changes': ['Added Skill tool to tools declaration (Rule 11)'], 'rule': 'Rule 11'}
+
+
 def apply_unused_tool_fix(file_path: Path, fix: dict, templates: dict) -> dict:
     """Remove unused tools from declaration."""
     unused_tools = fix.get('details', {}).get('unused_tools', [])
@@ -232,6 +262,7 @@ FIX_HANDLERS = {
     'missing-tools-field': apply_missing_field_fix,
     'trailing-whitespace': apply_trailing_whitespace_fix,
     'rule-6-violation': apply_rule_6_fix,
+    'rule-11-violation': apply_rule_11_fix,
     'unused-tool-declared': apply_unused_tool_fix,
     'pattern-22-violation': apply_pattern_22_fix,
 }

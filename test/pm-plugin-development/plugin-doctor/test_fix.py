@@ -141,5 +141,83 @@ def test_verify_with_valid_file():
 
 
 # =============================================================================
+# Rule 11 Apply Tests
+# =============================================================================
+
+
+def test_apply_rule_11_fix():
+    """Test applying Rule 11 fix appends Skill to tools."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        agent_file = Path(tmp_dir) / 'test-agent.md'
+        agent_file.write_text('---\nname: test-agent\ndescription: Test\ntools: Read, Write\n---\n\n# Test Agent\n')
+
+        fix_json = json.dumps({'type': 'rule-11-violation', 'file': 'test-agent.md'})
+        result = run_script(SCRIPT_PATH, 'apply', '--fix', '-', '--bundle-dir', tmp_dir, input_data=fix_json)
+        data = result.json()
+        assert data['success'] is True, f'Fix should succeed: {data}'
+
+        # Verify Skill was appended
+        content = agent_file.read_text()
+        assert 'Skill' in content, 'File should contain Skill after fix'
+        assert 'tools: Read, Write, Skill' in content, f'Tools should have Skill appended: {content}'
+
+
+def test_apply_rule_11_fix_already_present():
+    """Test applying Rule 11 fix when Skill already present returns failure."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        agent_file = Path(tmp_dir) / 'test-agent.md'
+        agent_file.write_text('---\nname: test-agent\ndescription: Test\ntools: Read, Skill\n---\n\n# Test Agent\n')
+
+        fix_json = json.dumps({'type': 'rule-11-violation', 'file': 'test-agent.md'})
+        result = run_script(SCRIPT_PATH, 'apply', '--fix', '-', '--bundle-dir', tmp_dir, input_data=fix_json)
+        data = result.json()
+        assert data['success'] is False, 'Fix should fail when Skill already present'
+
+
+# =============================================================================
+# Rule 11 Verify Tests
+# =============================================================================
+
+
+def test_verify_rule_11_fixed():
+    """Test verify reports resolved after Skill is added."""
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False) as f:
+        f.write('---\nname: test\ndescription: Test\ntools: Read, Write, Skill\n---\n\n# Test\n')
+        f.flush()
+
+        result = run_script(SCRIPT_PATH, 'verify', '--fix-type', 'rule-11-violation', '--file', f.name)
+        data = result.json()
+        assert data['issue_resolved'] is True, f'Issue should be resolved: {data}'
+
+        Path(f.name).unlink()
+
+
+def test_verify_rule_11_still_missing():
+    """Test verify reports not resolved when Skill still missing."""
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False) as f:
+        f.write('---\nname: test\ndescription: Test\ntools: Read, Write\n---\n\n# Test\n')
+        f.flush()
+
+        result = run_script(SCRIPT_PATH, 'verify', '--fix-type', 'rule-11-violation', '--file', f.name)
+        data = result.json()
+        assert data['issue_resolved'] is False, f'Issue should NOT be resolved: {data}'
+
+        Path(f.name).unlink()
+
+
+def test_verify_rule_11_no_tools_field():
+    """Test verify reports resolved when no tools field (inherits all)."""
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False) as f:
+        f.write('---\nname: test\ndescription: Test\n---\n\n# Test\n')
+        f.flush()
+
+        result = run_script(SCRIPT_PATH, 'verify', '--fix-type', 'rule-11-violation', '--file', f.name)
+        data = result.json()
+        assert data['issue_resolved'] is True, f'Issue should be resolved (no tools = inherits all): {data}'
+
+        Path(f.name).unlink()
+
+
+# =============================================================================
 # Main
 # =============================================================================

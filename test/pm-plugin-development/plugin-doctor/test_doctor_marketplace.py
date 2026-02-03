@@ -577,5 +577,93 @@ def test_fixture_report():
 
 
 # =============================================================================
+# Rule 11 Detection Tests
+# =============================================================================
+
+
+def test_fixture_analyze_detects_rule_11():
+    """Test analyze detects Rule 11 violation (agent tools missing Skill)."""
+    fixture = TestWithTempMarketplace()
+    temp_dir = fixture.setup_temp_marketplace()
+
+    # Add an agent with tools but no Skill
+    agents_dir = fixture.marketplace_root / 'test-bundle' / 'agents'
+    (agents_dir / 'no-skill-agent.md').write_text(
+        '---\nname: no-skill-agent\ndescription: Agent without Skill\ntools: Read, Write, Edit\n---\n\n# No Skill Agent\n'
+    )
+
+    try:
+        result = run_script(SCRIPT_PATH, 'analyze', cwd=str(temp_dir))
+        assert result.returncode == 0, f'Analyze failed: {result.stderr}'
+
+        data = result.json()
+        # Find rule-11-violation in all issues
+        all_issues = []
+        for item in data['analysis']:
+            all_issues.extend(item.get('issues', []))
+
+        rule_11_issues = [i for i in all_issues if i['type'] == 'rule-11-violation']
+        assert len(rule_11_issues) >= 1, f'Should detect rule-11-violation, got issues: {[i["type"] for i in all_issues]}'
+        assert rule_11_issues[0]['fixable'] is True, 'Rule 11 should be fixable'
+        assert rule_11_issues[0]['severity'] == 'warning', 'Rule 11 should be warning severity'
+    finally:
+        fixture.cleanup()
+
+
+def test_fixture_analyze_no_rule_11_with_skill():
+    """Test analyze does NOT flag Rule 11 when Skill is present in tools."""
+    fixture = TestWithTempMarketplace()
+    temp_dir = fixture.setup_temp_marketplace()
+
+    # Add an agent with Skill in tools
+    agents_dir = fixture.marketplace_root / 'test-bundle' / 'agents'
+    (agents_dir / 'has-skill-agent.md').write_text(
+        '---\nname: has-skill-agent\ndescription: Agent with Skill\ntools: Read, Write, Skill\n---\n\n# Has Skill Agent\n'
+    )
+
+    try:
+        result = run_script(SCRIPT_PATH, 'analyze', cwd=str(temp_dir))
+        assert result.returncode == 0, f'Analyze failed: {result.stderr}'
+
+        data = result.json()
+        all_issues = []
+        for item in data['analysis']:
+            if 'has-skill-agent' in item.get('component', {}).get('path', ''):
+                all_issues.extend(item.get('issues', []))
+
+        rule_11_issues = [i for i in all_issues if i['type'] == 'rule-11-violation']
+        assert len(rule_11_issues) == 0, 'Should NOT detect rule-11-violation when Skill is present'
+    finally:
+        fixture.cleanup()
+
+
+def test_fixture_analyze_no_rule_11_without_tools():
+    """Test analyze does NOT flag Rule 11 when no tools field (inherits all)."""
+    fixture = TestWithTempMarketplace()
+    temp_dir = fixture.setup_temp_marketplace()
+
+    # Add an agent without tools field
+    agents_dir = fixture.marketplace_root / 'test-bundle' / 'agents'
+    (agents_dir / 'no-tools-agent.md').write_text(
+        '---\nname: no-tools-agent\ndescription: Agent without tools\n---\n\n# No Tools Agent\n'
+    )
+
+    try:
+        result = run_script(SCRIPT_PATH, 'analyze', cwd=str(temp_dir))
+        assert result.returncode == 0, f'Analyze failed: {result.stderr}'
+
+        data = result.json()
+        all_issues = []
+        for item in data['analysis']:
+            if 'no-tools-agent' in item.get('component', {}).get('path', ''):
+                all_issues.extend(item.get('issues', []))
+
+        rule_11_issues = [i for i in all_issues if i['type'] == 'rule-11-violation']
+        assert len(rule_11_issues) == 0, 'Should NOT detect rule-11-violation when no tools field'
+    finally:
+        fixture.cleanup()
+
+
+# =============================================================================
 # Main
 # =============================================================================

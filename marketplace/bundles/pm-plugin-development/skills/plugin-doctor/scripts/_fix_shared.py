@@ -21,6 +21,7 @@ FIXABLE_ISSUE_TYPES = {
     'trailing-whitespace',
     'improper-indentation',
     'missing-blank-line-before-list',
+    'rule-11-violation',
     # Risky fixes (require confirmation)
     'unused-tool-declared',
     'tool-not-declared',
@@ -42,6 +43,7 @@ SAFE_FIX_TYPES = {
     'trailing-whitespace',
     'improper-indentation',
     'missing-blank-line-before-list',
+    'rule-11-violation',
 }
 
 # Risky fix types - require user confirmation
