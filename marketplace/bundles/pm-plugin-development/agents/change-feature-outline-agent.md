@@ -1,7 +1,7 @@
 ---
 name: change-feature-outline-agent
 description: Plugin-specific feature outline workflow for new component creation
-tools: Read, Glob, Grep, Bash, AskUserQuestion, Task
+tools: Read, Glob, Grep, Bash, AskUserQuestion, Task, Skill
 model: sonnet
 skills: plan-marshall:ref-development-standards, pm-plugin-development:plugin-architecture
 ---

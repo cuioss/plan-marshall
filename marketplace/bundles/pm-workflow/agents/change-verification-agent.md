@@ -1,7 +1,7 @@
 ---
 name: change-verification-agent
 description: Generic verification workflow for validation and confirmation requests
-tools: Read, Glob, Grep, Bash, AskUserQuestion
+tools: Read, Glob, Grep, Bash, AskUserQuestion, Skill
 model: sonnet
 skills: plan-marshall:ref-development-standards
 ---

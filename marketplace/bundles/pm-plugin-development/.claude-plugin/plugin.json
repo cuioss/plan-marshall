@@ -30,6 +30,10 @@
     "./skills/verification-mode"
   ],
   "agents": [
+    "./agents/change-bug_fix-outline-agent.md",
+    "./agents/change-enhancement-outline-agent.md",
+    "./agents/change-feature-outline-agent.md",
+    "./agents/change-tech_debt-outline-agent.md",
     "./agents/ext-outline-component-agent.md",
     "./agents/ext-outline-inventory-agent.md",
     "./agents/tool-coverage-agent.md"

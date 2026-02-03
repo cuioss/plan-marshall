@@ -1,7 +1,7 @@
 ---
 name: change-enhancement-agent
 description: Generic enhancement workflow for improving existing functionality
-tools: Read, Glob, Grep, Bash, AskUserQuestion
+tools: Read, Glob, Grep, Bash, AskUserQuestion, Skill
 model: sonnet
 skills: plan-marshall:ref-development-standards
 ---

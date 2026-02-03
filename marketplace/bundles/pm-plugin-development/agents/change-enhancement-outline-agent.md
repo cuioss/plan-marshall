@@ -1,7 +1,7 @@
 ---
 name: change-enhancement-outline-agent
 description: Plugin-specific enhancement outline workflow for improving existing components
-tools: Read, Glob, Grep, Bash, AskUserQuestion, Task
+tools: Read, Glob, Grep, Bash, AskUserQuestion, Task, Skill
 model: sonnet
 skills: plan-marshall:ref-development-standards, pm-plugin-development:plugin-architecture
 ---

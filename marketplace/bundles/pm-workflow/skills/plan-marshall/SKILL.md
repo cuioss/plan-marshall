@@ -136,7 +136,7 @@ If you discover issues or improvements during execution, record them:
 
 | Agent | Purpose |
 |-------|---------|
-| `pm-workflow:phase-init-agent` | Init phase: creates plan, detects domains |
+| `pm-workflow:plan-init-agent` | Init phase: creates plan, detects domains |
 | `pm-workflow:task-plan-agent` | Plan phase: creates tasks from deliverables |
 | `pm-dev-java:java-implement-agent` | Java task implementation |
 | `pm-dev-frontend:js-implement-agent` | JavaScript task implementation |

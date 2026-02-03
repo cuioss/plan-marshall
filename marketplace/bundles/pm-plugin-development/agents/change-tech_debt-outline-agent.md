@@ -1,7 +1,7 @@
 ---
 name: change-tech_debt-outline-agent
 description: Plugin-specific tech debt outline workflow for refactoring and cleanup
-tools: Read, Glob, Grep, Bash, AskUserQuestion, Task
+tools: Read, Glob, Grep, Bash, AskUserQuestion, Task, Skill
 model: sonnet
 skills: plan-marshall:ref-development-standards, pm-plugin-development:plugin-architecture
 ---

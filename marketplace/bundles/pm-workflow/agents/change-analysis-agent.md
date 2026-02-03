@@ -1,7 +1,7 @@
 ---
 name: change-analysis-agent
 description: Generic analysis workflow for investigation and research requests
-tools: Read, Glob, Grep, Bash, AskUserQuestion
+tools: Read, Glob, Grep, Bash, AskUserQuestion, Skill
 model: sonnet
 skills: plan-marshall:ref-development-standards
 ---

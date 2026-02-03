@@ -1,7 +1,7 @@
 ---
 name: detect-change-type-agent
 description: Detect change type from request using LLM analysis
-tools: Bash
+tools: Bash, Skill
 model: haiku
 ---
 

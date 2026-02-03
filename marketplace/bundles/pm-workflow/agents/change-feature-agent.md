@@ -1,7 +1,7 @@
 ---
 name: change-feature-agent
 description: Generic feature workflow for new functionality requests
-tools: Read, Glob, Grep, Bash, AskUserQuestion
+tools: Read, Glob, Grep, Bash, AskUserQuestion, Skill
 model: sonnet
 skills: plan-marshall:ref-development-standards
 ---

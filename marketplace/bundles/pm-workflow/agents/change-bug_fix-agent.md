@@ -1,7 +1,7 @@
 ---
 name: change-bug_fix-agent
 description: Generic bug fix workflow for defect resolution requests
-tools: Read, Glob, Grep, Bash, AskUserQuestion
+tools: Read, Glob, Grep, Bash, AskUserQuestion, Skill
 model: sonnet
 skills: plan-marshall:ref-development-standards
 ---
