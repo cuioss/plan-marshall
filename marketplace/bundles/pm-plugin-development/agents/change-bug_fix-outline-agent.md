@@ -201,9 +201,7 @@ plan_id: {plan_id}
 
 ## Overview
 
-```
-{ASCII diagram showing bug location and fix approach}
-```
+{Concise description of the bug location and fix approach. Include an ASCII diagram using triple-backtick fenced block if helpful.}
 
 ## Deliverables
 

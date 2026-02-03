@@ -134,6 +134,10 @@ plan_id: {plan_id}
 
 {2-3 sentence summary of what is being verified}
 
+## Overview
+
+{Concise description of the verification targets and scope}
+
 ## Verification Approach
 
 {methodology for verification}

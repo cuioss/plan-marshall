@@ -161,6 +161,10 @@ plan_id: {plan_id}
 
 {2-3 sentence summary of the enhancement}
 
+## Overview
+
+{Concise description of the enhancement scope and affected components}
+
 ## Deliverables
 
 {deliverables from Steps 4-5}

@@ -161,6 +161,10 @@ plan_id: {plan_id}
 
 {2-3 sentence summary of the feature}
 
+## Overview
+
+{Concise description of the new feature, its scope, and integration points}
+
 ## Deliverables
 
 {deliverables from Steps 4-5}

@@ -106,7 +106,9 @@ Task: pm-plugin-development:ext-outline-inventory-agent
 
 Wait for inventory completion.
 
-### Step 4: Analysis - Spawn Component Agents
+### Step 4: Analysis - Spawn Component Agents (MANDATORY)
+
+**CRITICAL**: You MUST spawn `ext-outline-component-agent` via the Task tool. Do NOT analyze files yourself. Do NOT skip this step. The component agent writes assessments to `assessments.jsonl` which are required by Q-Gate verification.
 
 For each component type with files in inventory, spawn analysis agent:
 
@@ -120,6 +122,24 @@ Task: pm-plugin-development:ext-outline-component-agent
 ```
 
 Collect assessments from all agents.
+
+### Step 4b: Verify Assessments Written (GATE)
+
+**STOP** — Before proceeding, verify that assessments were actually persisted:
+
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
+  assessment query {plan_id}
+```
+
+**Gate check**: `total_count` MUST be > 0. If `total_count == 0`, the component agents failed to write assessments. Do NOT proceed — report failure.
+
+Log gate result:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  decision {plan_id} INFO "(pm-plugin-development:change-enhancement-outline-agent) Assessment gate: {total_count} assessments written"
+```
 
 ### Step 5: Resolve Uncertainties
 
@@ -226,9 +246,7 @@ compatibility: {compatibility} — {compatibility_description}
 
 ## Overview
 
-```
-{ASCII diagram showing enhancement scope and affected components}
-```
+{Concise description of the enhancement scope. Include an ASCII diagram using triple-backtick fenced block if helpful.}
 
 ## Deliverables
 

@@ -171,6 +171,10 @@ compatibility: {compatibility} — {description}
 
 {2-3 sentence summary of the refactoring}
 
+## Overview
+
+{Concise description of the refactoring scope and approach}
+
 ## Refactoring Strategy
 
 {explanation of the approach based on compatibility}

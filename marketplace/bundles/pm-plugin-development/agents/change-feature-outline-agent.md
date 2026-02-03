@@ -209,9 +209,7 @@ compatibility: {compatibility} — {compatibility_description}
 
 ## Overview
 
-```
-{ASCII diagram showing new component and its integration points}
-```
+{Concise description of the new component and its integration points. Include an ASCII diagram using triple-backtick fenced block if helpful.}
 
 ## Deliverables
 

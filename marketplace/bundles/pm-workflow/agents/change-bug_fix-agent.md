@@ -162,6 +162,10 @@ plan_id: {plan_id}
 
 {2-3 sentence summary of the bug and fix}
 
+## Overview
+
+{Concise description of the bug location, affected components, and fix approach}
+
 ## Root Cause
 
 {explanation of what caused the bug}

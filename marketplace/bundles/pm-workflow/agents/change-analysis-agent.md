@@ -132,6 +132,10 @@ plan_id: {plan_id}
 
 {2-3 sentence summary of the investigation}
 
+## Overview
+
+{Concise description of the investigation scope and methodology}
+
 ## Deliverables
 
 {deliverable from Step 4}
