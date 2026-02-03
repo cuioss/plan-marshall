@@ -565,7 +565,7 @@ qgate_passed: {true|false}
 |----------|--------|
 | Track not set | Return `{status: error, message: "phase-2-refine incomplete - track not set"}` |
 | Target not found (Simple) | Return error with invalid target |
-| Change type not detected | Default to `enhancement` |
+| Change type not detected | Return `{status: error, message: "detect-change-type-agent failed to determine change type"}` |
 | Agent not found | Fall back to generic: `pm-workflow:change-{change_type}-agent` |
 | Agent fails (Complex) | Return error, do not fall back |
 | Q-Gate fails | Return with `qgate_passed: false` and findings |

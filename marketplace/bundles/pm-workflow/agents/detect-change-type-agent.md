@@ -30,6 +30,13 @@ The 6 fixed change types (in priority order):
 
 ## Workflow
 
+### Step 0.5: Log Start
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  work {plan_id} INFO "[STATUS] (pm-workflow:detect-change-type-agent) Starting"
+```
+
 ### Step 1: Read Request
 
 ```bash

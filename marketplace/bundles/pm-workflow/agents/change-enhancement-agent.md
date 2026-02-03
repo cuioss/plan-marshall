@@ -32,6 +32,13 @@ Skill: plan-marshall:ref-development-standards
 
 ## Workflow
 
+### Step 0.5: Log Start
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  work {plan_id} INFO "[STATUS] (pm-workflow:change-enhancement-agent) Starting"
+```
+
 ### Step 1: Load Context
 
 Read request:

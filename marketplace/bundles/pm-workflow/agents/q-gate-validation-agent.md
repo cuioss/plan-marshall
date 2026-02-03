@@ -49,6 +49,13 @@ plan_id: {plan_id}
 
 ## Workflow
 
+### Step 0.5: Log Start
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  work {plan_id} INFO "[STATUS] (pm-workflow:q-gate-validation-agent) Starting"
+```
+
 ### Step 1: Load Context from Sinks
 
 #### 1.1 Read Solution Outline

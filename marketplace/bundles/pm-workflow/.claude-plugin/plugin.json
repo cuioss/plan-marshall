@@ -11,6 +11,13 @@
   "repository": "https://github.com/cuioss/plan-marshall.git",
   "keywords": ["workflow", "task", "pr", "implementation", "quality", "orchestration"],
   "agents": [
+    "./agents/change-analysis-agent.md",
+    "./agents/change-bug_fix-agent.md",
+    "./agents/change-enhancement-agent.md",
+    "./agents/change-feature-agent.md",
+    "./agents/change-tech_debt-agent.md",
+    "./agents/change-verification-agent.md",
+    "./agents/detect-change-type-agent.md",
     "./agents/plan-init-agent.md",
     "./agents/q-gate-validation-agent.md",
     "./agents/request-refine-agent.md",

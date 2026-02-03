@@ -43,6 +43,13 @@ Stay in your lane:
 
 ## Workflow
 
+### Step 0.5: Log Start
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  work {plan_id} INFO "[STATUS] (pm-workflow:task-execute-agent) Starting task {task_number}"
+```
+
 ### Step 1: Read Task
 
 Get task details to determine domain, profile, and skills:
