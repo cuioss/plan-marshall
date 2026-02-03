@@ -284,11 +284,12 @@ def get_workflow_extensions_from_extensions(extensions: list[dict[str, Any]]) ->
 
 
 def apply_config_defaults(project_root: Path) -> dict[str, Any]:
-    """Apply config_defaults() callback for all discovered extensions.
+    """Apply config_defaults() callback for applicable extensions only.
 
     Called during initialization to let extensions set project-specific
-    defaults in run-configuration.json. Each extension's config_defaults()
-    method is called with write-once semantics.
+    defaults in run-configuration.json. Only extensions whose discover_modules()
+    finds modules in the project are called, preventing non-applicable extensions
+    from writing config (e.g., Maven settings in non-Java projects).
 
     Args:
         project_root: Path to the project root
@@ -300,7 +301,7 @@ def apply_config_defaults(project_root: Path) -> dict[str, Any]:
             "errors": list[str]
         }
     """
-    extensions = discover_all_extensions()
+    extensions = discover_extensions(project_root)
     results: dict[str, Any] = {'extensions_called': 0, 'extensions_skipped': 0, 'errors': []}
 
     for ext in extensions:
