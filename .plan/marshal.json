@@ -2,7 +2,7 @@
   "ci": {
     "provider": "github",
     "repo_url": "https://github.com/cuioss/plan-marshall.git",
-    "detected_at": "2026-01-30T09:40:38Z",
+    "detected_at": "2026-02-03T08:00:27Z",
     "commands": {
       "pr-create": "python3 .plan/execute-script.py tools-integration-ci:github pr create",
       "pr-reviews": "python3 .plan/execute-script.py tools-integration-ci:github pr reviews",
@@ -12,10 +12,6 @@
       "issue-create": "python3 .plan/execute-script.py tools-integration-ci:github issue create",
       "issue-view": "python3 .plan/execute-script.py tools-integration-ci:github issue view"
     }
-  },
-  "extension_defaults": {
-    "build.maven.profiles.map.canonical": "pre-commit:quality-gate,coverage:coverage,javadoc:javadoc",
-    "build.maven.profiles.skip": "build-plantuml,rewrite-maven-clean, release, release-snapshot, license-cleanup, sonar, only-eclipse,release-pom"
   },
   "plan": {
     "phase-1-init": {
@@ -61,7 +57,6 @@
     "documentation": {
       "bundle": "pm-documents",
       "workflow_skill_extensions": {
-        "outline": "pm-documents:ext-outline-docs",
         "triage": "pm-documents:ext-triage-docs"
       },
       "capabilities": {
@@ -70,8 +65,13 @@
     },
     "plan-marshall-plugin-dev": {
       "bundle": "pm-plugin-development",
+      "change_type_agents": {
+        "feature": "pm-plugin-development:change-feature-outline-agent",
+        "enhancement": "pm-plugin-development:change-enhancement-outline-agent",
+        "bug_fix": "pm-plugin-development:change-bug_fix-outline-agent",
+        "tech_debt": "pm-plugin-development:change-tech_debt-outline-agent"
+      },
       "workflow_skill_extensions": {
-        "outline": "pm-plugin-development:ext-outline-plugin",
         "triage": "pm-plugin-development:ext-triage-plugin"
       },
       "capabilities": {

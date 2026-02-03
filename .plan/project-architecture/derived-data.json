@@ -609,11 +609,6 @@
           "type": "skill",
           "description": "Maintain documentation (sync, cleanup, update)"
         },
-        "skill:ext-outline-docs": {
-          "path": "skills/ext-outline-docs",
-          "type": "skill",
-          "description": "Outline extension implementing protocol for documentation domain"
-        },
         "skill:ext-triage-docs": {
           "path": "skills/ext-triage-docs",
           "type": "skill",
@@ -647,7 +642,7 @@
       },
       "dependencies": [],
       "stats": {
-        "skill_count": 9,
+        "skill_count": 8,
         "agent_count": 0,
         "command_count": 1
       },
@@ -684,11 +679,6 @@
         "description": "Complete toolchain for creating, diagnosing, fixing, and maintaining Claude Code marketplace components"
       },
       "packages": {
-        "skill:ext-outline-plugin": {
-          "path": "skills/ext-outline-plugin",
-          "type": "skill",
-          "description": "Outline extension skill for plugin development domain - discovery, analysis, deliverable creation"
-        },
         "skill:ext-triage-plugin": {
           "path": "skills/ext-triage-plugin",
           "type": "skill",
@@ -777,7 +767,7 @@
       },
       "dependencies": [],
       "stats": {
-        "skill_count": 14,
+        "skill_count": 13,
         "agent_count": 3,
         "command_count": 1
       },
@@ -900,7 +890,7 @@
         "skill:manage-references": {
           "path": "skills/manage-references",
           "type": "skill",
-          "description": "Manage references.toon files with field-level access and list management"
+          "description": "Manage references.json files with field-level access and list management"
         },
         "skill:manage-solution-outline": {
           "path": "skills/manage-solution-outline",
@@ -935,7 +925,7 @@
         "skill:phase-5-execute": {
           "path": "skills/phase-5-execute",
           "type": "skill",
-          "description": "Execute phase skill for plan management. DUMB TASK RUNNER that executes tasks from TASK-*.toon files sequentially."
+          "description": "Execute phase skill for plan management. DUMB TASK RUNNER that executes tasks from TASK-*.json files sequentially."
         },
         "skill:phase-6-verify": {
           "path": "skills/phase-6-verify",
@@ -985,7 +975,7 @@
         "skill:workflow-extension-api": {
           "path": "skills/workflow-extension-api",
           "type": "skill",
-          "description": "Defines extension points for domain-specific workflow customization. Covers profile overrides (implementation, testing) and extensions (outline, triage)."
+          "description": "Defines extension points for domain-specific workflow customization. Covers profile overrides (implementation, module_testing) and extensions (outline, triage)."
         },
         "skill:workflow-integration-ci": {
           "path": "skills/workflow-integration-ci",
@@ -1005,7 +995,7 @@
         "agent:plan-init-agent": {
           "path": "agents/plan-init-agent.md",
           "type": "agent",
-          "description": "Initialize a plan with artifacts, detect domains, store in references.toon"
+          "description": "Initialize a plan with artifacts, detect domains, store in references.json"
         },
         "agent:q-gate-validation-agent": {
           "path": "agents/q-gate-validation-agent.md",
