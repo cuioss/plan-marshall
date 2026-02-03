@@ -53,7 +53,7 @@ Implement JWT validation service for authentication.
 Implement the main validation logic.
 
 **Metadata:**
-- change_type: create
+- change_type: feature
 - execution_mode: automated
 - domain: java
 - module: jwt-service
@@ -78,7 +78,7 @@ Implement the main validation logic.
 Add JWT configuration to application.properties.
 
 **Metadata:**
-- change_type: create
+- change_type: feature
 - execution_mode: automated
 - domain: java
 - module: jwt-service
@@ -102,7 +102,7 @@ Add JWT configuration to application.properties.
 Create comprehensive test coverage.
 
 **Metadata:**
-- change_type: create
+- change_type: feature
 - execution_mode: automated
 - domain: java
 - module: jwt-service

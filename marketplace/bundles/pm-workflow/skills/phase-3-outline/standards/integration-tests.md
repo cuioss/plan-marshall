@@ -62,7 +62,7 @@ Follows the deliverable contract.
 ### {N}. Integration tests for {component}
 
 **Metadata:**
-- change_type: create
+- change_type: feature
 - execution_mode: automated
 - domain: {domain}
 - module: {IT module from architecture}

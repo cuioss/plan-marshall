@@ -207,9 +207,11 @@ compatibility: {compatibility} — {compatibility_description}
 
 {2-3 sentence summary of the new component}
 
-## Component Design
+## Overview
 
-{Brief architecture description of the new component}
+```
+{ASCII diagram showing new component and its integration points}
+```
 
 ## Deliverables
 

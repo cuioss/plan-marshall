@@ -139,7 +139,7 @@ Test files (test_*.py, conftest.py) have these patterns:
 
 ## Migration Analysis Framework
 
-For migration requests (change_type: migrate), use evidence-based classification to distinguish files that need migration from files already in target format.
+For migration requests (change_type: tech_debt with migration pattern), use evidence-based classification to distinguish files that need migration from files already in target format.
 
 **Reference**: Based on Google's LLM migration system (FSE 2025) and OpenRewrite best practices.
 

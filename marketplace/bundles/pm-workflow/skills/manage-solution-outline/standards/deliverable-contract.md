@@ -129,28 +129,14 @@ The `depends` field enables task-plan to determine execution order and paralleli
 
 The `change_type` field uses the fixed vocabulary defined in `pm-workflow:workflow-architecture/standards/change-types.md`.
 
-### Primary Change Types (Project-Oriented)
-
-| Key | Priority | Description | Agent Handling |
-|-----|----------|-------------|----------------|
-| `analysis` | 1 | Investigate, research, understand | Produces findings report |
-| `feature` | 2 | New functionality or component | Creates new code |
-| `enhancement` | 3 | Improve existing functionality | Modifies existing code |
-| `bug_fix` | 4 | Fix a defect or issue | Minimal targeted fix |
-| `tech_debt` | 5 | Refactoring, cleanup, removal | Restructures without behavior change |
-| `verification` | 6 | Validate, check, confirm | Produces pass/fail report |
-
-### Legacy Change Types (Deliverable-Level)
-
-For backwards compatibility, deliverables may still use:
-
-| Type | Maps To | Grouping Hint |
-|------|---------|---------------|
-| `create` | `feature` | Group by component type |
-| `modify` | `enhancement` | Group by change similarity |
-| `refactor` | `tech_debt` | Keep separate (risky) |
-| `migrate` | `tech_debt` | Group by target format |
-| `delete` | `tech_debt` | Group by bundle |
+| Key | Priority | Description | Grouping Hint |
+|-----|----------|-------------|---------------|
+| `analysis` | 1 | Investigate, research, understand | Group by investigation target |
+| `feature` | 2 | New functionality or component | Group by component type |
+| `enhancement` | 3 | Improve existing functionality | Group by change similarity |
+| `bug_fix` | 4 | Fix a defect or issue | Keep separate (minimal fix) |
+| `tech_debt` | 5 | Refactoring, cleanup, migration, removal | Group by target format or bundle |
+| `verification` | 6 | Validate, check, confirm | Group by verification scope |
 
 ### Agent Resolution
 

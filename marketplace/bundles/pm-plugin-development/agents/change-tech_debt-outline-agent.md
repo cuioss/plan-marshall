@@ -258,13 +258,11 @@ compatibility: {compatibility} — {compatibility_description}
 
 {2-3 sentence summary of the refactoring}
 
-## Refactoring Strategy
+## Overview
 
-{explanation of the approach based on compatibility}
-
-## Discovery Summary
-
-{summary of files analyzed, included, excluded}
+```
+{ASCII diagram showing refactoring scope and approach}
+```
 
 ## Deliverables
 

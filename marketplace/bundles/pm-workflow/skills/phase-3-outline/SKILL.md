@@ -212,7 +212,7 @@ Use template from `pm-workflow:manage-solution-outline/templates/deliverable-tem
 ### {N}. {Action Verb} {Component Type}: {Name}
 
 **Metadata:**
-- change_type: {create|modify|migrate|refactor}
+- change_type: {feature|enhancement|tech_debt|bug_fix}
 - execution_mode: automated
 - domain: {domain}
 - module: {module}

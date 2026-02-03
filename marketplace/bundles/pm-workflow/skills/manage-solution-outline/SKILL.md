@@ -335,7 +335,7 @@ deliverable:
   title: Implement unit tests
   reference: 3. Implement unit tests
   metadata:
-    change_type: create
+    change_type: feature
     execution_mode: automated
     domain: java
     module: jwt-service

@@ -241,7 +241,7 @@ Solution design document with deliverables.
 │  │   **Metadata:**                                         ││
 │  │   - domain: java                                        ││
 │  │   - module: auth-service                                ││
-│  │   - change_type: create                                 ││
+│  │   - change_type: feature                                ││
 │  │   - depends: none                                       ││
 │  │                                                         ││
 │  │   **Profiles:**                                         ││

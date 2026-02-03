@@ -126,8 +126,10 @@ def validate_deliverable_contract(deliverable: dict) -> tuple[list[str], list[st
             if field not in metadata:
                 errors.append(f'D{num}: Missing metadata field: {field}')
 
-        # Check 1b: Valid change_type
-        valid_change_types = ['create', 'modify', 'refactor', 'migrate', 'delete']
+        # Check 1b: Valid change_type (canonical vocabulary from change-types.md)
+        valid_change_types = [
+            'analysis', 'feature', 'enhancement', 'bug_fix', 'tech_debt', 'verification',
+        ]
         if metadata.get('change_type') and metadata['change_type'] not in valid_change_types:
             errors.append(
                 f"D{num}: Invalid change_type '{metadata['change_type']}' (must be one of: {', '.join(valid_change_types)})"

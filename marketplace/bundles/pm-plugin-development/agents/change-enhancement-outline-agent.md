@@ -224,9 +224,11 @@ compatibility: {compatibility} — {compatibility_description}
 
 {2-3 sentence summary of the enhancement}
 
-## Impact Analysis
+## Overview
 
-{summary of affected components from discovery/analysis}
+```
+{ASCII diagram showing enhancement scope and affected components}
+```
 
 ## Deliverables
 

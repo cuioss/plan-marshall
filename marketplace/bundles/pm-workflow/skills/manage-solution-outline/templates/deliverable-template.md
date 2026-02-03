@@ -8,7 +8,7 @@ Mandatory template for each deliverable in solution_outline.md. **ALL fields are
 ### {N}. {Deliverable Title}
 
 **Metadata:**
-- change_type: {create|modify|refactor|migrate|delete}
+- change_type: {analysis|feature|enhancement|bug_fix|tech_debt|verification}
 - execution_mode: {automated|manual|mixed}
 - domain: {single domain from config.domains}
 - module: {module name from architecture}

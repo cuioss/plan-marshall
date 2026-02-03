@@ -199,9 +199,11 @@ plan_id: {plan_id}
 
 {2-3 sentence summary of the bug and fix}
 
-## Root Cause
+## Overview
 
-{explanation of what caused the bug}
+```
+{ASCII diagram showing bug location and fix approach}
+```
 
 ## Deliverables
 
