@@ -157,6 +157,41 @@ def _timestamp() -> str:
 
 # --- Assessments ---
 
+def clear_assessments(
+    plan_id: str,
+    agent: str | None = None,
+) -> dict[str, Any]:
+    """Clear assessment records, optionally filtered by agent.
+
+    Args:
+        plan_id: Plan identifier
+        agent: If provided, only clear assessments from this agent.
+               If None, clear ALL assessments.
+
+    Returns:
+        Dict with status, cleared count
+    """
+    path = get_artifact_path(plan_id, 'assessments')
+    if not path.exists():
+        return {'status': 'success', 'cleared': 0}
+
+    records = _read_jsonl(path)
+    original_count = len(records)
+
+    if agent:
+        remaining = [r for r in records if r.get('agent') != agent]
+        cleared = original_count - len(remaining)
+        _ensure_dir(path)
+        with open(path, 'w', encoding='utf-8') as f:
+            for record in remaining:
+                f.write(json.dumps(record, ensure_ascii=False) + '\n')
+    else:
+        cleared = original_count
+        path.unlink()
+
+    return {'status': 'success', 'cleared': cleared}
+
+
 def add_assessment(
     plan_id: str,
     file_path: str,

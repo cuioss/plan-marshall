@@ -59,7 +59,7 @@ Parse the output to extract track value from: `(pm-workflow:phase-2-refine) Trac
 
 ### 1.2 Read Request
 
-Read request (automatically uses clarified_request if available, otherwise body):
+Read request (clarified_request falls back to original_input automatically):
 
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-plan-documents:manage-plan-documents request read \
@@ -319,8 +319,8 @@ Task: {resolved_agent_notation}
 ```
 
 The agent handles the complete Complex Track workflow internally:
-- Discovery (spawning inventory agent if needed)
-- Analysis (spawning component agents if needed)
+- Discovery (running inventory scan)
+- Analysis (assessing each component from inventory)
 - Persist assessments → assessments.jsonl
 - Confirm uncertainties with user
 - Group into deliverables

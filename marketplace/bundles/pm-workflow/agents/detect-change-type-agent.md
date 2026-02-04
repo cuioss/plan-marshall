@@ -45,7 +45,7 @@ python3 .plan/execute-script.py pm-workflow:manage-plan-documents:manage-plan-do
   --section clarified_request
 ```
 
-If clarified_request is empty, fall back to body section.
+If clarified_request is empty, fall back to original_input section.
 
 ### Step 2: Analyze Request Intent
 

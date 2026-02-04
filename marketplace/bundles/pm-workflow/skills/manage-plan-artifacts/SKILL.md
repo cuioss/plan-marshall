@@ -75,6 +75,10 @@ python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifac
 # Get single assessment
 python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
   assessment get {plan_id} {hash_id}
+
+# Clear assessments (all or by agent)
+python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
+  assessment clear {plan_id} [--agent AGENT]
 ```
 
 ### Finding Commands

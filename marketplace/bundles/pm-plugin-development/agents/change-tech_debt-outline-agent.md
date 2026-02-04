@@ -1,7 +1,7 @@
 ---
 name: change-tech_debt-outline-agent
 description: Plugin-specific tech debt outline workflow for refactoring and cleanup
-tools: Read, Glob, Grep, Bash, AskUserQuestion, Task, Skill
+tools: Read, Glob, Grep, Bash, AskUserQuestion, Skill
 model: sonnet
 skills: plan-marshall:ref-development-standards, pm-plugin-development:plugin-architecture
 ---
@@ -31,11 +31,6 @@ Skill: plan-marshall:ref-development-standards
 Skill: pm-plugin-development:plugin-architecture
 ```
 
-**CRITICAL - Script Execution Rules:**
-- Execute bash commands EXACTLY as written
-- Use `manage-files` for `.plan/` file operations
-- NEVER use Read/Write/Edit for `.plan/` files
-
 ## Workflow
 
 ### Step 1: Load Context
@@ -58,10 +53,7 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-m
   plan phase-2-refine get --field compatibility --trace-plan-id {plan_id}
 ```
 
-Derive compatibility_description:
-- `breaking` → "Clean-slate approach, no deprecation nor transitionary comments"
-- `deprecation` → "Add deprecation markers to old code, provide migration path"
-- `smart_and_ask` → "Assess impact and ask user when backward compatibility is uncertain"
+Derive `compatibility_description` from the compatibility value.
 
 Log context:
 
@@ -96,42 +88,96 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   decision {plan_id} INFO "(pm-plugin-development:change-tech_debt-outline-agent) Scope: {types}, pattern: {pattern}"
 ```
 
-### Step 3: Discovery - Spawn Inventory Agent
+### Step 2b: Clear Stale Assessments
 
-```
-Task: pm-plugin-development:ext-outline-inventory-agent
-  Input:
-    plan_id: {plan_id}
-    component_types: [{component_types from Step 2}]
-    content_pattern: "{pattern from Step 2 or empty}"
-    bundle_scope: {from module_mapping or "all"}
-    include_tests: true
-    include_project_skills: false
+**CRITICAL**: Clear any assessments from previous runs before starting analysis. This prevents stale data from prior agent invocations contaminating Q-Gate verification.
+
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
+  assessment clear {plan_id} --agent change-tech_debt-outline-agent \
+  --trace-plan-id {plan_id}
 ```
 
-Wait for inventory completion.
+### Step 3: Discovery - Run Inventory Scan
 
-### Step 4: Analysis - Spawn Component Agents (MANDATORY)
+Create work directory and run inventory scan directly:
 
-**CRITICAL**: You MUST spawn `ext-outline-component-agent` via the Task tool. Do NOT analyze files yourself. Do NOT skip this step. The component agent writes assessments to `assessments.jsonl` which are required by Q-Gate verification.
-
-For each component type with files in inventory, spawn analysis agent:
-
-```
-Task: pm-plugin-development:ext-outline-component-agent
-  Input:
-    plan_id: {plan_id}
-    component_type: {type}
-    request_text: {request}
-    files: [{file_paths from inventory}]
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-files:manage-files mkdir \
+  --plan-id {plan_id} \
+  --dir work \
+  --trace-plan-id {plan_id}
 ```
 
-The component agent uses the Migration Analysis Framework for refactoring requests:
-- Extract source_format and target_format
-- Classify files as CERTAIN_INCLUDE, CERTAIN_EXCLUDE, or UNCERTAIN
-- Files already in target format are CERTAIN_EXCLUDE
+Run inventory scan to discover ALL components in scope:
 
-Collect assessments from all agents.
+**NOTE**: `--full` provides file paths needed for analysis in Step 4.
+
+```bash
+python3 .plan/execute-script.py \
+  pm-plugin-development:tools-marketplace-inventory:scan-marketplace-inventory \
+  --trace-plan-id {plan_id} \
+  --resource-types {component_types: agents,commands,skills,scripts,tests} \
+  --bundles {bundle from module_mapping} \
+  --include-tests \
+  --full \
+  --output {work_dir_path}/inventory_raw.toon
+```
+
+Omit `--bundles` only if scanning all bundles.
+
+Read and process the inventory to extract file paths:
+
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-files:manage-files read \
+  --plan-id {plan_id} \
+  --file work/inventory_raw.toon \
+  --trace-plan-id {plan_id}
+```
+
+Extract component file paths from inventory output:
+- **Skills**: `{bundle_path}/skills/{skill_name}/SKILL.md`
+- **Commands**: `{bundle_path}/commands/{command_name}.md`
+- **Agents**: `{bundle_path}/agents/{agent_name}.md`
+- **Tests**: Use `path` field from inventory directly
+
+### Step 4: Analyze Components
+
+For each component file from inventory, apply migration analysis:
+
+0. **Content pattern gate**: Search file for `{content_pattern}` from Step 2.
+   No match → **CERTAIN_EXCLUDE** ("Content pattern not found"). Log assessment and skip to next file.
+   Match → proceed to scope relevance check.
+1. **Read the file** using Read tool
+2. **Check scope relevance FIRST** (gate before format classification):
+   - `scope_relevance`: Does the content match the request's **affected scope**?
+   - Apply request exclusions: If the request explicitly excludes certain content categories (e.g., "not persisted data", "not storage formats"), check whether matched content falls into an excluded category
+   - Examples of out-of-scope content that should be CERTAIN_EXCLUDE:
+     - JSON/TOON blocks documenting **persisted file schemas** (e.g., showing the structure of a .json file stored on disk)
+     - Format examples in **API reference sections** that describe script input/output contracts
+     - Code blocks showing **external tool output** not controlled by the component
+   - If `scope_relevance = false` → **CERTAIN_EXCLUDE** (skip format classification)
+3. **Extract format evidence** (only if scope_relevance = true):
+   - `source_format_evidence`: Indicators of format being migrated FROM
+   - `target_format_evidence`: Indicators of format being migrated TO
+4. **Classify** using decision matrix:
+   - No relevant content → CERTAIN_EXCLUDE
+   - Has target format only → CERTAIN_EXCLUDE (already migrated)
+   - Has source format only → CERTAIN_INCLUDE (needs migration)
+   - Has both formats → UNCERTAIN (partially migrated)
+4. **Log assessment** for each file:
+
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
+  assessment add {plan_id} {file_path} {CERTAINTY} {CONFIDENCE} \
+  --agent change-tech_debt-outline-agent --detail "{reasoning}" --evidence "{evidence}" --trace-plan-id {plan_id}
+```
+
+Where:
+- `CERTAINTY`: CERTAIN_INCLUDE, CERTAIN_EXCLUDE, or UNCERTAIN
+- `CONFIDENCE`: 0-100
+- `reasoning`: Include format evidence summary
+- `evidence`: Specific lines showing format indicators
 
 ### Step 4b: Verify Assessments Written (GATE)
 
@@ -139,10 +185,14 @@ Collect assessments from all agents.
 
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
-  assessment query {plan_id}
+  assessment query {plan_id} \
+  --trace-plan-id {plan_id}
 ```
 
-**Gate check**: `total_count` MUST be > 0. If `total_count == 0`, the component agents failed to write assessments. Do NOT proceed — report failure.
+**Gate checks**:
+1. `total_count` MUST be > 0 — if zero, report failure
+2. Compare `total_count` against inventory statistics `total_resources` from Step 3 output
+3. If `total_count < total_resources`: STOP — "Assessment incomplete: {total_count}/{total_resources} components assessed. {total_resources - total_count} components from inventory were not analyzed."
 
 Log gate result:
 
@@ -157,7 +207,8 @@ If analysis produced UNCERTAIN assessments (e.g., mixed formats):
 
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
-  assessment query {plan_id} --certainty UNCERTAIN
+  assessment query {plan_id} --certainty UNCERTAIN \
+  --trace-plan-id {plan_id}
 ```
 
 Group by pattern and ask user:
@@ -264,6 +315,52 @@ If tests are affected by the refactoring:
 - All tests pass
 ```
 
+### Step 8b: Add Bundle Verification Deliverable (if multi-file refactoring)
+
+If refactoring spans multiple files, add a final verification deliverable:
+
+```markdown
+### {N+2}. Bundle Quality Verification
+
+**Metadata:**
+- change_type: tech_debt
+- execution_mode: automated
+- domain: plan-marshall-plugin-dev
+- module: {bundle}
+- depends: {all prior deliverable numbers, comma-separated}
+
+**Profiles:**
+- module_testing
+
+**Affected files:**
+- {list ALL files from prior deliverables that were refactored}
+
+**Verification:**
+- Command: `./pw verify {bundle}`
+- Criteria: All tests pass, mypy passes, ruff passes
+
+**Success Criteria:**
+- Full bundle verification passes
+- No regressions
+```
+
+### Step 8c: Validate Deliverables Before Write
+
+**MANDATORY** — Before writing solution_outline.md, verify EVERY deliverable has ALL required sections.
+
+**Required sections checklist** (from deliverable-contract.md):
+
+| Section | Check |
+|---------|-------|
+| `**Metadata:**` with change_type, execution_mode, domain, module, depends | Present and valid |
+| `**Profiles:**` | At least one profile listed |
+| `**Affected files:**` | Explicit paths, no wildcards, no glob patterns |
+| `**Change per file:**` | Entry for each affected file |
+| `**Verification:**` | Both Command and Criteria present |
+| `**Success Criteria:**` | At least one criterion |
+
+**For each deliverable**: Verify all 6 sections exist. If ANY section is missing, add it before proceeding to the write step.
+
 ### Step 9: Write Solution Outline
 
 ```bash
@@ -284,7 +381,7 @@ compatibility: {compatibility} — {compatibility_description}
 
 ## Deliverables
 
-{deliverables from Steps 7-8}
+{deliverables from Steps 7-8b}
 EOF
 ```
 
@@ -311,12 +408,14 @@ domain: plan-marshall-plugin-dev
 - Use Read tool for `.plan/` files
 - Change behavior (refactor = structure only)
 - Violate compatibility setting
-- Skip analysis step (must use agents)
+- Skip analysis step (must assess each component)
 
 ### MUST DO
 - Access `.plan/` files ONLY via execute-script.py
-- Spawn inventory and component agents
+- Run inventory scan via script and analyze components directly
+- Log assessments to assessments.jsonl for Q-Gate verification
 - Respect compatibility setting
 - Use content filter for targeted discovery
 - Include plugin-doctor verification
 - Return structured TOON output
+- Every deliverable MUST include ALL required fields from deliverable-contract.md: change_type, execution_mode, domain, module, depends, **Profiles:**, **Affected files:** (explicit paths), **Verification:**, **Change per file:**

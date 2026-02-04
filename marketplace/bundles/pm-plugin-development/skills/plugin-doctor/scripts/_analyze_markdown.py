@@ -272,6 +272,75 @@ def check_rule_11_violation(frontmatter: str, has_tools: bool) -> bool:
     return 'Skill' not in tools
 
 
+def check_rule_12_violations(content: str) -> list:
+    """Check Rule 12: Prose-parameter consistency near script call templates.
+
+    Detects prose instructions adjacent to execute-script.py bash blocks that
+    reference parameter values inconsistent with the actual script API.
+
+    Currently detects:
+    - 'body' referenced as a section name near manage-plan-documents calls
+      (body is not a valid section for description-sourced requests;
+      the correct fallback is original_input)
+    """
+    violations = []
+
+    # Split into sections using ## or ### headers for context windows
+    section_pattern = re.compile(r'^#{2,3}\s+.*$', re.MULTILINE)
+    section_matches = list(section_pattern.finditer(content))
+
+    # Build section boundaries
+    boundaries = [m.start() for m in section_matches]
+    if not boundaries or boundaries[0] != 0:
+        boundaries.insert(0, 0)
+    boundaries.append(len(content))
+
+    for i in range(len(boundaries) - 1):
+        section_start = boundaries[i]
+        section_end = boundaries[i + 1]
+        section_content = content[section_start:section_end]
+
+        # Check if section has a manage-plan-documents bash block with --section
+        # Use DOTALL because manage-plan-documents and --section may be on different lines
+        if not re.search(r'manage-plan-documents.*--section', section_content, re.DOTALL):
+            continue
+
+        # Extract prose (content outside bash blocks)
+        prose = re.sub(r'```(?:bash)?.*?```', '', section_content, flags=re.DOTALL)
+
+        # Pattern: prose references "body" as a section name
+        # "body" is NOT a valid section for description-sourced requests.
+        # Valid sections: _header, original_input, clarified_request, context, clarifications
+        body_patterns = [
+            (r'fall\s*back\s+to\s+(?:the\s+)?body\b', 'fall back to body'),
+            (r'otherwise\s+body\b', 'otherwise body'),
+            (r'\bbody\s+section\b', 'body section'),
+            (r'section\s+body\b', 'section body'),
+            (r'to\s+body\s+(?:if|when)\b', 'to body if/when'),
+        ]
+
+        for pattern, description in body_patterns:
+            match = re.search(pattern, prose, re.IGNORECASE)
+            if match:
+                # Calculate approximate line number
+                lines_before_section = content[:section_start].count('\n')
+                lines_in_prose = prose[:match.start()].count('\n')
+                line_number = lines_before_section + lines_in_prose + 1
+
+                violations.append({
+                    'line': line_number,
+                    'issue': "Prose references 'body' as section near manage-plan-documents call",
+                    'detail': (
+                        f"Found '{description}'. 'body' is not a valid fallback section "
+                        f"for description-sourced requests. Use 'original_input' instead."
+                    ),
+                    'pattern': 'invalid_section_reference',
+                })
+                break  # One violation per section
+
+    return violations
+
+
 def check_rule_violations(content: str, frontmatter: str, component_type: str, has_tools: bool, file_path: str) -> dict:
     """Check for rule violations."""
     rule_6_violation = False
@@ -308,6 +377,9 @@ def check_rule_violations(content: str, frontmatter: str, component_type: str, h
     if component_type == 'agent':
         rule_11_violation = check_rule_11_violation(frontmatter, has_tools)
 
+    # Rule 12: Prose-parameter consistency (all component types)
+    rule_12_violations = check_rule_12_violations(content)
+
     return {
         'rule_6_violation': rule_6_violation,
         'rule_7_violation': rule_7_violation,
@@ -315,6 +387,7 @@ def check_rule_violations(content: str, frontmatter: str, component_type: str, h
         'rule_9_violations': rule_9_violations,
         'rule_10_violations': rule_10_result,
         'rule_11_violation': rule_11_violation,
+        'rule_12_violations': rule_12_violations,
     }
 
 

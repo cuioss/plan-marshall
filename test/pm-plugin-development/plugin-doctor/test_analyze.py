@@ -11,7 +11,7 @@ Tests plugin component analysis capabilities.
 from pathlib import Path
 
 # Import shared infrastructure
-from conftest import get_script_path, run_script
+from conftest import create_temp_file, get_script_path, run_script
 
 # Script under test
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
@@ -227,6 +227,134 @@ def test_crossfile_custom_threshold():
     result = run_script(SCRIPT_PATH, 'cross-file', '--skill-path', str(skill_path), '--similarity-threshold', '0.3')
     data = result.json()
     assert data is not None, 'Should accept custom similarity threshold'
+
+
+# =============================================================================
+# Markdown Subcommand Tests - Rule 12 (Prose-Parameter Consistency)
+# =============================================================================
+
+
+def test_markdown_rule_12_detects_body_fallback():
+    """Test Rule 12: detect 'body' section reference near manage-plan-documents call."""
+    content = """---
+name: test-agent
+description: Test agent
+tools: Read, Bash
+---
+
+# Test Agent
+
+## Step 1: Read Request
+
+If clarified_request is empty, fall back to body section.
+
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-plan-documents:manage-plan-documents request read \\
+  --plan-id {plan_id} \\
+  --section clarified_request
+```
+"""
+    temp_file = create_temp_file(content)
+    try:
+        result = run_script(SCRIPT_PATH, 'markdown', '--file', str(temp_file), '--type', 'agent')
+        assert result.returncode == 0, f'Script returned error: {result.stderr}'
+        data = result.json()
+        rule_12 = data.get('rules', {}).get('rule_12_violations', [])
+        assert len(rule_12) >= 1, f'Should detect body section reference, found {len(rule_12)}'
+        assert rule_12[0]['pattern'] == 'invalid_section_reference'
+    finally:
+        temp_file.unlink()
+
+
+def test_markdown_rule_12_detects_otherwise_body():
+    """Test Rule 12: detect 'otherwise body' prose pattern."""
+    content = """---
+name: test-skill
+description: Test skill
+---
+
+# Test Skill
+
+### 1.2 Read Request
+
+Read request (clarified_request otherwise body):
+
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-plan-documents:manage-plan-documents request read \\
+  --plan-id {plan_id} \\
+  --section clarified_request
+```
+"""
+    temp_file = create_temp_file(content)
+    try:
+        result = run_script(SCRIPT_PATH, 'markdown', '--file', str(temp_file), '--type', 'skill')
+        assert result.returncode == 0, f'Script returned error: {result.stderr}'
+        data = result.json()
+        rule_12 = data.get('rules', {}).get('rule_12_violations', [])
+        assert len(rule_12) >= 1, f'Should detect "otherwise body" pattern, found {len(rule_12)}'
+    finally:
+        temp_file.unlink()
+
+
+def test_markdown_rule_12_no_false_positive_original_input():
+    """Test Rule 12: no false positive when prose correctly says original_input."""
+    content = """---
+name: test-agent
+description: Test agent
+tools: Read, Bash
+---
+
+# Test Agent
+
+## Step 1: Read Request
+
+Read request (clarified_request falls back to original_input automatically):
+
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-plan-documents:manage-plan-documents request read \\
+  --plan-id {plan_id} \\
+  --section clarified_request
+```
+"""
+    temp_file = create_temp_file(content)
+    try:
+        result = run_script(SCRIPT_PATH, 'markdown', '--file', str(temp_file), '--type', 'agent')
+        assert result.returncode == 0, f'Script returned error: {result.stderr}'
+        data = result.json()
+        rule_12 = data.get('rules', {}).get('rule_12_violations', [])
+        assert len(rule_12) == 0, f'Should NOT flag correct original_input reference, found {len(rule_12)}'
+    finally:
+        temp_file.unlink()
+
+
+def test_markdown_rule_12_no_false_positive_no_plan_docs():
+    """Test Rule 12: no false positive when section has no manage-plan-documents call."""
+    content = """---
+name: test-agent
+description: Test agent
+tools: Read, Bash
+---
+
+# Test Agent
+
+## Step 1: Process Body
+
+Process the body of the request.
+
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-references:manage-references get \\
+  --plan-id {plan_id} --field domains
+```
+"""
+    temp_file = create_temp_file(content)
+    try:
+        result = run_script(SCRIPT_PATH, 'markdown', '--file', str(temp_file), '--type', 'agent')
+        assert result.returncode == 0, f'Script returned error: {result.stderr}'
+        data = result.json()
+        rule_12 = data.get('rules', {}).get('rule_12_violations', [])
+        assert len(rule_12) == 0, f'Should NOT flag body reference without plan-documents call, found {len(rule_12)}'
+    finally:
+        temp_file.unlink()
 
 
 # =============================================================================

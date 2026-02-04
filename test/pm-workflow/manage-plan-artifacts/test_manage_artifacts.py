@@ -179,6 +179,71 @@ def test_assessment_query_file_paths_list():
 
 
 # =============================================================================
+# Test: Assessment Clear Command
+# =============================================================================
+
+
+def test_assessment_clear_all():
+    """Test clearing all assessments."""
+    with TestContext():
+        run_script(SCRIPT_PATH, 'assessment', 'add', 'test-plan', 'file1.md', 'CERTAIN_INCLUDE', '90')
+        run_script(SCRIPT_PATH, 'assessment', 'add', 'test-plan', 'file2.md', 'CERTAIN_EXCLUDE', '85')
+
+        result = run_script(SCRIPT_PATH, 'assessment', 'clear', 'test-plan')
+        assert result.success, f'Script failed: {result.stderr}'
+        data = parse_toon(result.stdout)
+        assert data['status'] == 'success'
+        assert data['cleared'] == 2
+
+        # Verify empty
+        query_result = run_script(SCRIPT_PATH, 'assessment', 'query', 'test-plan')
+        query_data = parse_toon(query_result.stdout)
+        assert query_data['total_count'] == 0
+
+
+def test_assessment_clear_by_agent():
+    """Test clearing assessments filtered by agent name."""
+    with TestContext():
+        run_script(
+            SCRIPT_PATH, 'assessment', 'add', 'test-plan', 'file1.md',
+            'CERTAIN_INCLUDE', '90', '--agent', 'agent-a'
+        )
+        run_script(
+            SCRIPT_PATH, 'assessment', 'add', 'test-plan', 'file2.md',
+            'CERTAIN_EXCLUDE', '85', '--agent', 'agent-b'
+        )
+        run_script(
+            SCRIPT_PATH, 'assessment', 'add', 'test-plan', 'file3.md',
+            'CERTAIN_INCLUDE', '80', '--agent', 'agent-a'
+        )
+
+        result = run_script(
+            SCRIPT_PATH, 'assessment', 'clear', 'test-plan',
+            '--agent', 'agent-a'
+        )
+        assert result.success, f'Script failed: {result.stderr}'
+        data = parse_toon(result.stdout)
+        assert data['status'] == 'success'
+        assert data['cleared'] == 2
+
+        # Verify only agent-b remains
+        query_result = run_script(SCRIPT_PATH, 'assessment', 'query', 'test-plan')
+        query_data = parse_toon(query_result.stdout)
+        assert query_data['total_count'] == 1
+        assert 'file2.md' in query_data.get('file_paths', [])
+
+
+def test_assessment_clear_empty():
+    """Test clearing when no assessments exist."""
+    with TestContext():
+        result = run_script(SCRIPT_PATH, 'assessment', 'clear', 'test-plan')
+        assert result.success
+        data = parse_toon(result.stdout)
+        assert data['status'] == 'success'
+        assert data['cleared'] == 0
+
+
+# =============================================================================
 # Test: Assessment Get Command
 # =============================================================================
 

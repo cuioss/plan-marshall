@@ -169,10 +169,10 @@ Execute cleanup:
 
 ```bash
 # Clear all log files
-rm -rf .plan/logs/*
+find .plan/logs -type f -delete
 
-# Clear all existing plans
-rm -rf .plan/plans/*
+# Clear all existing plans (remove subdirectories)
+find .plan/plans -mindepth 1 -maxdepth 1 -exec rm -r {} +
 ```
 
 **Verification**: Confirm both directories are empty.

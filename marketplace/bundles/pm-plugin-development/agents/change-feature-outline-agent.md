@@ -1,7 +1,7 @@
 ---
 name: change-feature-outline-agent
 description: Plugin-specific feature outline workflow for new component creation
-tools: Read, Glob, Grep, Bash, AskUserQuestion, Task, Skill
+tools: Read, Glob, Grep, Bash, AskUserQuestion, Skill
 model: sonnet
 skills: plan-marshall:ref-development-standards, pm-plugin-development:plugin-architecture
 ---
@@ -29,11 +29,6 @@ This agent handles `change_type: feature` for the `plan-marshall-plugin-dev` dom
 Skill: plan-marshall:ref-development-standards
 Skill: pm-plugin-development:plugin-architecture
 ```
-
-**CRITICAL - Script Execution Rules:**
-- Execute bash commands EXACTLY as written
-- Use `manage-files` for `.plan/` file operations
-- NEVER use Read/Write/Edit for `.plan/` files
 
 ## Workflow
 
@@ -105,20 +100,36 @@ AskUserQuestion:
 
 ### Step 4: Check for Similar Components
 
-Use inventory to find similar existing components (for patterns):
+Run inventory scan to find similar existing components (for patterns):
 
-```
-Task: pm-plugin-development:ext-outline-inventory-agent
-  Input:
-    plan_id: {plan_id}
-    component_types: [{component_type}]
-    content_pattern: ""
-    bundle_scope: {target_bundle}
-    include_tests: true
-    include_project_skills: false
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-files:manage-files mkdir \
+  --plan-id {plan_id} \
+  --dir work \
+  --trace-plan-id {plan_id}
 ```
 
-The inventory helps identify:
+```bash
+python3 .plan/execute-script.py \
+  pm-plugin-development:tools-marketplace-inventory:scan-marketplace-inventory \
+  --trace-plan-id {plan_id} \
+  --resource-types {component_type: agents|commands|skills|scripts|tests} \
+  --bundles {target_bundle} \
+  --include-tests \
+  --full \
+  --output {work_dir_path}/inventory_raw.toon
+```
+
+Read inventory results:
+
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-files:manage-files read \
+  --plan-id {plan_id} \
+  --file work/inventory_raw.toon \
+  --trace-plan-id {plan_id}
+```
+
+Read a few existing components of the same type to identify:
 - Naming conventions in the bundle
 - Structure patterns to follow
 - Test patterns to match
@@ -193,6 +204,52 @@ For each new component:
 - Coverage meets standards
 ```
 
+### Step 6b: Add Bundle Verification Deliverable (if multi-component feature)
+
+If feature creates multiple components, add a final verification deliverable:
+
+```markdown
+### {N+2}. Bundle Quality Verification
+
+**Metadata:**
+- change_type: feature
+- execution_mode: automated
+- domain: plan-marshall-plugin-dev
+- module: {target_bundle}
+- depends: {all prior deliverable numbers, comma-separated}
+
+**Profiles:**
+- module_testing
+
+**Affected files:**
+- {list ALL files from prior deliverables that were created}
+
+**Verification:**
+- Command: `./pw verify {target_bundle}`
+- Criteria: All tests pass, mypy passes, ruff passes
+
+**Success Criteria:**
+- Full bundle verification passes
+- No regressions
+```
+
+### Step 6c: Validate Deliverables Before Write
+
+**MANDATORY** — Before writing solution_outline.md, verify EVERY deliverable has ALL required sections.
+
+**Required sections checklist** (from deliverable-contract.md):
+
+| Section | Check |
+|---------|-------|
+| `**Metadata:**` with change_type, execution_mode, domain, module, depends | Present and valid |
+| `**Profiles:**` | At least one profile listed |
+| `**Affected files:**` | Explicit paths, no wildcards, no glob patterns |
+| `**Change per file:**` | Entry for each affected file |
+| `**Verification:**` | Both Command and Criteria present |
+| `**Success Criteria:**` | At least one criterion |
+
+**For each deliverable**: Verify all 6 sections exist. If ANY section is missing, add it before proceeding to the write step.
+
 ### Step 7: Write Solution Outline
 
 ```bash
@@ -213,7 +270,7 @@ compatibility: {compatibility} — {compatibility_description}
 
 ## Deliverables
 
-{deliverables from Steps 5-6}
+{deliverables from Steps 5-6b}
 EOF
 ```
 
@@ -243,7 +300,9 @@ domain: plan-marshall-plugin-dev
 
 ### MUST DO
 - Access `.plan/` files ONLY via execute-script.py
+- Run inventory scan via script for pattern discovery
 - Follow plugin-architecture standards
 - Include test deliverables
 - Include plugin-doctor verification
 - Return structured TOON output
+- Every deliverable MUST include ALL required fields from deliverable-contract.md: change_type, execution_mode, domain, module, depends, **Profiles:**, **Affected files:** (explicit paths), **Verification:**, **Change per file:**

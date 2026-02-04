@@ -1217,6 +1217,34 @@ Components that execute scripts MUST have the EXACT notation (`bundle:skill:scri
 
 **CRITICAL**: Do NOT invent notations. Use only documented notations from the skill being called.
 
+### Rule 12: Prose-Parameter Consistency
+
+Prose instructions adjacent to `execute-script.py` bash blocks MUST NOT reference parameter values that are inconsistent with the actual script API.
+
+**Detection**: Scan prose near script call templates for fallback/alternative instructions that reference invalid or incorrect parameter values.
+
+**Currently detected patterns**:
+- `body` referenced as a section name near `manage-plan-documents` calls (`body` is not a valid section for description-sourced requests; the correct fallback is `original_input`)
+
+**Examples of violations**:
+- "If clarified_request is empty, fall back to body section" (should be `original_input`)
+- "Read request (clarified_request falls back to body automatically):" (should be `original_input`)
+
+**Correct pattern**:
+```markdown
+Read request (clarified_request falls back to original_input automatically):
+
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-plan-documents:manage-plan-documents request read \
+  --plan-id {plan_id} \
+  --section clarified_request
+```
+```
+
+**Applies to**: All component types (agents, skills, commands).
+
+**Fix**: Manual — update prose to reference the correct parameter values matching the script API.
+
 ---
 
 ## Non-Prompting Requirements

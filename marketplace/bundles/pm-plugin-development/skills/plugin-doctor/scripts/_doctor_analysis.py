@@ -120,6 +120,17 @@ def extract_issues_from_markdown_analysis(analysis: dict, file_path: str, compon
                 'description': 'Agent tools missing Skill — invisible to Task dispatcher (Rule 11)',
             }
         )
+    for violation in rules.get('rule_12_violations', []):
+        issues.append(
+            {
+                'type': 'rule-12-violation',
+                'file': file_path,
+                'severity': 'warning',
+                'fixable': False,
+                'description': f"Prose-parameter inconsistency (Rule 12): {violation.get('issue', '')}",
+                'details': violation,
+            }
+        )
 
     # Check CI rule
     ci = analysis.get('continuous_improvement_rule', {})

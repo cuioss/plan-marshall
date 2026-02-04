@@ -6,6 +6,7 @@ Usage:
     python3 manage-artifacts.py assessment add <plan_id> <file_path> <certainty> <confidence> [options]
     python3 manage-artifacts.py assessment query <plan_id> [options]
     python3 manage-artifacts.py assessment get <plan_id> <hash_id>
+    python3 manage-artifacts.py assessment clear <plan_id> [--agent AGENT]
 
     python3 manage-artifacts.py finding add <plan_id> <type> <title> --detail <detail> [options]
     python3 manage-artifacts.py finding query <plan_id> [options]
@@ -30,6 +31,7 @@ from artifact_store import (
     SEVERITIES,
     add_assessment,
     add_finding,
+    clear_assessments,
     format_output,
     get_assessment,
     get_finding,
@@ -63,6 +65,16 @@ def cmd_assessment_query(args: argparse.Namespace) -> int:
         min_confidence=args.min_confidence,
         max_confidence=args.max_confidence,
         file_pattern=args.file_pattern,
+    )
+    print(format_output(result))
+    return 0 if result.get('status') == 'success' else 1
+
+
+def cmd_assessment_clear(args: argparse.Namespace) -> int:
+    """Handle: assessment clear"""
+    result = clear_assessments(
+        plan_id=args.plan_id,
+        agent=args.agent,
     )
     print(format_output(result))
     return 0 if result.get('status') == 'success' else 1
@@ -177,6 +189,12 @@ def main() -> int:
     query_parser.add_argument('--max-confidence', type=int, help='Maximum confidence')
     query_parser.add_argument('--file-pattern', help='Glob pattern for file_path')
     query_parser.set_defaults(func=cmd_assessment_query)
+
+    # assessment clear
+    clear_parser = assessment_sub.add_parser('clear', help='Clear assessments')
+    clear_parser.add_argument('plan_id', help='Plan identifier')
+    clear_parser.add_argument('--agent', help='Only clear assessments from this agent')
+    clear_parser.set_defaults(func=cmd_assessment_clear)
 
     # assessment get
     get_parser = assessment_sub.add_parser('get', help='Get single assessment')

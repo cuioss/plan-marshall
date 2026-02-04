@@ -1,7 +1,7 @@
 ---
 name: change-bug_fix-outline-agent
 description: Plugin-specific bug fix outline workflow for defect resolution in components
-tools: Read, Glob, Grep, Bash, AskUserQuestion, Task, Skill
+tools: Read, Glob, Grep, Bash, AskUserQuestion, Skill
 model: sonnet
 skills: plan-marshall:ref-development-standards, pm-plugin-development:plugin-architecture
 ---
@@ -30,11 +30,6 @@ Skill: plan-marshall:ref-development-standards
 Skill: pm-plugin-development:plugin-architecture
 ```
 
-**CRITICAL - Script Execution Rules:**
-- Execute bash commands EXACTLY as written
-- Use `manage-files` for `.plan/` file operations
-- NEVER use Read/Write/Edit for `.plan/` files
-
 ## Workflow
 
 ### Step 1: Load Context
@@ -58,11 +53,20 @@ python3 .plan/execute-script.py pm-workflow:manage-files:manage-files read \
   --file work/module_mapping.toon
 ```
 
+Read compatibility:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+  plan phase-2-refine get --field compatibility --trace-plan-id {plan_id}
+```
+
+Derive `compatibility_description` from the compatibility value.
+
 Log context:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(pm-plugin-development:change-bug_fix-outline-agent) Context loaded: domains={domains}"
+  decision {plan_id} INFO "(pm-plugin-development:change-bug_fix-outline-agent) Context loaded: domains={domains}, compatibility={compatibility}"
 ```
 
 ### Step 2: Identify Bug Location
@@ -186,6 +190,23 @@ Create a focused deliverable with minimal changes:
 - Test specifically covers the bug scenario
 ```
 
+### Step 6b: Validate Deliverables Before Write
+
+**MANDATORY** — Before writing solution_outline.md, verify EVERY deliverable has ALL required sections.
+
+**Required sections checklist** (from deliverable-contract.md):
+
+| Section | Check |
+|---------|-------|
+| `**Metadata:**` with change_type, execution_mode, domain, module, depends | Present and valid |
+| `**Profiles:**` | At least one profile listed |
+| `**Affected files:**` | Explicit paths, no wildcards, no glob patterns |
+| `**Change per file:**` | Entry for each affected file |
+| `**Verification:**` | Both Command and Criteria present |
+| `**Success Criteria:**` | At least one criterion |
+
+**For each deliverable**: Verify all 6 sections exist. If ANY section is missing, add it before proceeding to the write step.
+
 ### Step 7: Write Solution Outline
 
 ```bash
@@ -194,6 +215,7 @@ python3 .plan/execute-script.py pm-workflow:manage-solution-outline:manage-solut
 # Solution: Fix {Bug Title}
 
 plan_id: {plan_id}
+compatibility: {compatibility} — {compatibility_description}
 
 ## Summary
 
@@ -241,3 +263,4 @@ domain: plan-marshall-plugin-dev
 - Include regression test
 - Include plugin-doctor verification
 - Return structured TOON output
+- Every deliverable MUST include ALL required fields from deliverable-contract.md: change_type, execution_mode, domain, module, depends, **Profiles:**, **Affected files:** (explicit paths), **Verification:**, **Change per file:**

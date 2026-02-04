@@ -1,7 +1,7 @@
 ---
 name: change-enhancement-outline-agent
 description: Plugin-specific enhancement outline workflow for improving existing components
-tools: Read, Glob, Grep, Bash, AskUserQuestion, Task, Skill
+tools: Read, Glob, Grep, Bash, AskUserQuestion, Skill
 model: sonnet
 skills: plan-marshall:ref-development-standards, pm-plugin-development:plugin-architecture
 ---
@@ -29,11 +29,6 @@ This agent handles `change_type: enhancement` for the `plan-marshall-plugin-dev`
 Skill: plan-marshall:ref-development-standards
 Skill: pm-plugin-development:plugin-architecture
 ```
-
-**CRITICAL - Script Execution Rules:**
-- Execute bash commands EXACTLY as written
-- Use `manage-files` for `.plan/` file operations
-- NEVER use Read/Write/Edit for `.plan/` files
 
 ## Workflow
 
@@ -91,37 +86,81 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   decision {plan_id} INFO "(pm-plugin-development:change-enhancement-outline-agent) Component scope: [{types}]"
 ```
 
-### Step 3: Discovery - Spawn Inventory Agent
+### Step 2b: Clear Stale Assessments
 
-```
-Task: pm-plugin-development:ext-outline-inventory-agent
-  Input:
-    plan_id: {plan_id}
-    component_types: [{component_types from Step 2}]
-    content_pattern: ""
-    bundle_scope: {from module_mapping or "all"}
-    include_tests: true
-    include_project_skills: false
+**CRITICAL**: Clear any assessments from previous runs before starting analysis. This prevents stale data from prior agent invocations contaminating Q-Gate verification.
+
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
+  assessment clear {plan_id} --agent change-enhancement-outline-agent \
+  --trace-plan-id {plan_id}
 ```
 
-Wait for inventory completion.
+### Step 3: Discovery - Run Inventory Scan
 
-### Step 4: Analysis - Spawn Component Agents (MANDATORY)
+Create work directory and run inventory scan directly:
 
-**CRITICAL**: You MUST spawn `ext-outline-component-agent` via the Task tool. Do NOT analyze files yourself. Do NOT skip this step. The component agent writes assessments to `assessments.jsonl` which are required by Q-Gate verification.
-
-For each component type with files in inventory, spawn analysis agent:
-
-```
-Task: pm-plugin-development:ext-outline-component-agent
-  Input:
-    plan_id: {plan_id}
-    component_type: {type}
-    request_text: {request}
-    files: [{file_paths from inventory}]
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-files:manage-files mkdir \
+  --plan-id {plan_id} \
+  --dir work \
+  --trace-plan-id {plan_id}
 ```
 
-Collect assessments from all agents.
+Run inventory scan for the component types identified in Step 2:
+
+```bash
+python3 .plan/execute-script.py \
+  pm-plugin-development:tools-marketplace-inventory:scan-marketplace-inventory \
+  --trace-plan-id {plan_id} \
+  --resource-types {component_types: agents,commands,skills,scripts,tests} \
+  --bundles {from module_mapping or omit for all} \
+  --include-tests \
+  --full \
+  --output {work_dir_path}/inventory_raw.toon
+```
+
+Read and process the inventory to extract file paths:
+
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-files:manage-files read \
+  --plan-id {plan_id} \
+  --file work/inventory_raw.toon \
+  --trace-plan-id {plan_id}
+```
+
+Extract component file paths from inventory output:
+- **Skills**: `{bundle_path}/skills/{skill_name}/SKILL.md`
+- **Commands**: `{bundle_path}/commands/{command_name}.md`
+- **Agents**: `{bundle_path}/agents/{agent_name}.md`
+- **Tests**: Use `path` field from inventory directly
+
+### Step 4: Analyze Components
+
+For each component file from inventory:
+
+1. **Read the file** using Read tool
+2. **Check request scope boundaries FIRST** (gate before relevance assessment):
+   - Does the request define explicit exclusions (e.g., "not X", "only Y")?
+   - If matched content falls into an excluded category → CERTAIN_EXCLUDE (skip relevance assessment)
+   - Examples: content documenting persisted file schemas, external API contracts, or storage formats when the request targets runtime behavior
+3. **Assess relevance** to the enhancement request (only if not excluded by scope):
+   - Does this component contain functionality being enhanced?
+   - Would it need changes to support the enhancement?
+   - Is it a test file that covers affected functionality?
+3. **Log assessment** for each file:
+
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
+  assessment add {plan_id} {file_path} {CERTAINTY} {CONFIDENCE} \
+  --agent change-enhancement-outline-agent --detail "{reasoning}" --evidence "{evidence}" --trace-plan-id {plan_id}
+```
+
+Where:
+- `CERTAINTY`: CERTAIN_INCLUDE, CERTAIN_EXCLUDE, or UNCERTAIN
+- `CONFIDENCE`: 0-100
+- `reasoning`: Why this file does or doesn't need changes
+- `evidence`: Specific sections or lines that informed the decision
 
 ### Step 4b: Verify Assessments Written (GATE)
 
@@ -129,10 +168,14 @@ Collect assessments from all agents.
 
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
-  assessment query {plan_id}
+  assessment query {plan_id} \
+  --trace-plan-id {plan_id}
 ```
 
-**Gate check**: `total_count` MUST be > 0. If `total_count == 0`, the component agents failed to write assessments. Do NOT proceed — report failure.
+**Gate checks**:
+1. `total_count` MUST be > 0 — if zero, report failure
+2. Compare `total_count` against inventory statistics `total_resources` from Step 3 output
+3. If `total_count < total_resources`: STOP — "Assessment incomplete: {total_count}/{total_resources} components assessed. {total_resources - total_count} components from inventory were not analyzed."
 
 Log gate result:
 
@@ -147,7 +190,8 @@ If analysis produced UNCERTAIN assessments:
 
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
-  assessment query {plan_id} --certainty UNCERTAIN
+  assessment query {plan_id} --certainty UNCERTAIN \
+  --trace-plan-id {plan_id}
 ```
 
 Group similar uncertainties and ask user:
@@ -230,6 +274,52 @@ If tests are in scope and affected:
 - Existing tests still pass
 ```
 
+### Step 7b: Add Bundle Verification Deliverable (if multi-file enhancement)
+
+If enhancement spans multiple files, add a final verification deliverable:
+
+```markdown
+### {N+2}. Bundle Quality Verification
+
+**Metadata:**
+- change_type: enhancement
+- execution_mode: automated
+- domain: plan-marshall-plugin-dev
+- module: {bundle}
+- depends: {all prior deliverable numbers, comma-separated}
+
+**Profiles:**
+- module_testing
+
+**Affected files:**
+- {list ALL files from prior deliverables that were enhanced}
+
+**Verification:**
+- Command: `./pw verify {bundle}`
+- Criteria: All tests pass, mypy passes, ruff passes
+
+**Success Criteria:**
+- Full bundle verification passes
+- No regressions
+```
+
+### Step 7c: Validate Deliverables Before Write
+
+**MANDATORY** — Before writing solution_outline.md, verify EVERY deliverable has ALL required sections.
+
+**Required sections checklist** (from deliverable-contract.md):
+
+| Section | Check |
+|---------|-------|
+| `**Metadata:**` with change_type, execution_mode, domain, module, depends | Present and valid |
+| `**Profiles:**` | At least one profile listed |
+| `**Affected files:**` | Explicit paths, no wildcards, no glob patterns |
+| `**Change per file:**` | Entry for each affected file |
+| `**Verification:**` | Both Command and Criteria present |
+| `**Success Criteria:**` | At least one criterion |
+
+**For each deliverable**: Verify all 6 sections exist. If ANY section is missing, add it before proceeding to the write step.
+
 ### Step 8: Write Solution Outline
 
 ```bash
@@ -250,7 +340,7 @@ compatibility: {compatibility} — {compatibility_description}
 
 ## Deliverables
 
-{deliverables from Steps 6-7}
+{deliverables from Steps 6-7b}
 EOF
 ```
 
@@ -276,11 +366,13 @@ domain: plan-marshall-plugin-dev
 ### MUST NOT
 - Use Read tool for `.plan/` files
 - Create new files (enhancement = modify existing)
-- Skip analysis step (must use agents)
+- Skip analysis step (must assess each component)
 
 ### MUST DO
 - Access `.plan/` files ONLY via execute-script.py
-- Spawn inventory and component agents for analysis
+- Run inventory scan via script and analyze components directly
+- Log assessments to assessments.jsonl for Q-Gate verification
 - Resolve uncertainties with user
 - Include plugin-doctor verification
 - Return structured TOON output
+- Every deliverable MUST include ALL required fields from deliverable-contract.md: change_type, execution_mode, domain, module, depends, **Profiles:**, **Affected files:** (explicit paths), **Verification:**, **Change per file:**

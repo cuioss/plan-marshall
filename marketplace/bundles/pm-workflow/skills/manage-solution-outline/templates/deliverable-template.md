@@ -37,7 +37,7 @@ Mandatory template for each deliverable in solution_outline.md. **ALL fields are
 
 | Field | Required | Notes |
 |-------|----------|-------|
-| `change_type` | Yes | One of: create, modify, refactor, migrate, delete |
+| `change_type` | Yes | One of: analysis, feature, enhancement, bug_fix, tech_debt, verification |
 | `execution_mode` | Yes | One of: automated, manual, mixed |
 | `domain` | Yes | Single value from `config.domains` |
 | `module` | Yes | Module name from architecture |

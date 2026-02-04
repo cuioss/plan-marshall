@@ -81,9 +81,11 @@ python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifac
 
 Parse to get the list of files that were assessed as CERTAIN_INCLUDE.
 
+**CRITICAL: Deduplicate by file_path** — If multiple assessments exist for the same `file_path` (from agent retries or re-runs), use only the assessment with the **latest timestamp**. Discard earlier assessments for the same file. This prevents stale assessments from prior runs causing false missing-coverage flags.
+
 #### 1.3 Read Request
 
-Read request (automatically uses clarified_request if available, otherwise body):
+Read request (clarified_request falls back to original_input automatically):
 
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-plan-documents:manage-plan-documents \
