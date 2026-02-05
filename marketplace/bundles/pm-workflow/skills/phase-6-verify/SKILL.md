@@ -64,7 +64,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 ### Query Unresolved Findings
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
+python3 .plan/execute-script.py pm-workflow:manage-findings:manage-findings \
   qgate query {plan_id} --phase 6-verify --resolution pending
 ```
 
@@ -74,7 +74,7 @@ For each pending finding:
 1. Check if it was addressed by the fix tasks that just ran
 2. Resolve:
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
+python3 .plan/execute-script.py pm-workflow:manage-findings:manage-findings \
   qgate resolve {plan_id} {hash_id} fixed --phase 6-verify \
   --detail "{fix task reference or description}"
 ```
@@ -222,7 +222,7 @@ finding-002,build_verify,compile,src/main/java/Other.java,15,blocker,Cannot find
 For each finding, also persist to Q-Gate:
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
+python3 .plan/execute-script.py pm-workflow:manage-findings:manage-findings \
   qgate add {plan_id} --phase 6-verify --source qgate \
   --type {lint-issue|build-error|test-failure} --title "{finding.rule}: {finding.message}" \
   --detail "{finding details}" \

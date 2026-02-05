@@ -1,29 +1,28 @@
 ---
-name: manage-plan-artifacts
-description: Plan-scoped artifact storage for assessments and findings with JSONL persistence
+name: manage-findings
+description: Unified finding and Q-Gate storage with JSONL persistence for plan-scoped and phase-scoped findings
 user-invocable: false
 allowed-tools: Bash
 ---
 
-# Manage Plan Artifacts
+# Manage Findings
 
-Plan-level artifact storage providing structured JSONL persistence for assessments and findings.
+Unified storage for plan-level findings and phase-scoped Q-Gate findings. Both share the same type taxonomy, resolution model, and severity values.
 
 ## Scope Distinction
 
 | Scope | Storage | Lifecycle |
 |-------|---------|-----------|
-| **Project-level** | `.plan/lessons-learned/` | Persists across plans |
-| **Plan-level** | `.plan/plans/{plan_id}/artifacts/` | Temporary, promoted or discarded |
+| **Plan findings** | `.plan/plans/{plan_id}/artifacts/findings.jsonl` | Long-lived, promotable |
+| **Q-Gate findings** | `.plan/plans/{plan_id}/qgate/{phase}.jsonl` | Per-phase, not promotable |
 
-Plan artifacts are working data during plan execution. Notable findings are promoted to project-level at `7-finalize`.
+Plan findings are working data during plan execution. Notable findings are promoted to project-level at `7-finalize`. Q-Gate findings track per-phase verification issues.
 
 ## Storage Structure
 
 ```
 .plan/plans/{plan_id}/
 ├── artifacts/
-│   ├── assessments.jsonl  # Component assessments (certainty, confidence)
 │   └── findings.jsonl     # Unified: lessons + bugs (optionally promotable)
 └── qgate/                 # Per-phase Q-Gate findings
     ├── 2-refine.jsonl
@@ -33,19 +32,7 @@ Plan artifacts are working data during plan execution. Notable findings are prom
     └── 7-finalize.jsonl
 ```
 
-## Artifact Types
-
-### Assessments
-
-Component evaluations from analysis agents with certainty gates and confidence scores.
-
-**Certainty values**: `CERTAIN_INCLUDE`, `CERTAIN_EXCLUDE`, `UNCERTAIN`
-
-### Findings
-
-Unified storage for lessons and bugs. All types optionally promotable.
-
-**Finding types**:
+## Finding Types
 
 | Type | Origin | Default Promotion Target |
 |------|--------|--------------------------|
@@ -62,57 +49,37 @@ Unified storage for lessons and bugs. All types optionally promotable.
 | `sonar-issue` | Sonar findings | (any, if pattern emerges) |
 | `pr-comment` | PR review comments | (any, if pattern emerges) |
 
-**Resolution values**: `pending`, `fixed`, `suppressed`, `accepted`
+**Resolution values**: `pending`, `fixed`, `suppressed`, `accepted`, `taken_into_account`
+
+**Severity values**: `error`, `warning`, `info`
 
 ## CLI Commands
 
-### Assessment Commands
-
-```bash
-# Add assessment
-python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
-  assessment add {plan_id} {file_path} {certainty} {confidence} \
-  [--agent AGENT] [--detail DETAIL] [--evidence EVIDENCE]
-
-# Query assessments
-python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
-  assessment query {plan_id} [--certainty C] [--min-confidence N] \
-  [--max-confidence N] [--file-pattern PATTERN]
-
-# Get single assessment
-python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
-  assessment get {plan_id} {hash_id}
-
-# Clear assessments (all or by agent)
-python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
-  assessment clear {plan_id} [--agent AGENT]
-```
-
-### Finding Commands
+### Plan-Scoped Finding Commands
 
 ```bash
 # Add finding
-python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
-  finding add {plan_id} {type} {title} --detail DETAIL \
+python3 .plan/execute-script.py pm-workflow:manage-findings:manage-findings \
+  add {plan_id} {type} {title} --detail DETAIL \
   [--file-path PATH] [--line N] [--component C] \
   [--module M] [--rule R] [--severity S]
 
 # Query findings
-python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
-  finding query {plan_id} [--type T] [--resolution R] \
+python3 .plan/execute-script.py pm-workflow:manage-findings:manage-findings \
+  query {plan_id} [--type T] [--resolution R] \
   [--promoted BOOL] [--file-pattern PATTERN]
 
 # Get single finding
-python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
-  finding get {plan_id} {hash_id}
+python3 .plan/execute-script.py pm-workflow:manage-findings:manage-findings \
+  get {plan_id} {hash_id}
 
 # Resolve finding
-python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
-  finding resolve {plan_id} {hash_id} {resolution} [--detail DETAIL]
+python3 .plan/execute-script.py pm-workflow:manage-findings:manage-findings \
+  resolve {plan_id} {hash_id} {resolution} [--detail DETAIL]
 
 # Promote finding
-python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
-  finding promote {plan_id} {hash_id} {promoted_to}
+python3 .plan/execute-script.py pm-workflow:manage-findings:manage-findings \
+  promote {plan_id} {hash_id} {promoted_to}
 ```
 
 ### Q-Gate Commands
@@ -121,33 +88,29 @@ Per-phase Q-Gate findings for the unified findings-iteration model across phases
 
 ```bash
 # Add Q-Gate finding
-python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
+python3 .plan/execute-script.py pm-workflow:manage-findings:manage-findings \
   qgate add {plan_id} --phase {phase} --source {qgate|user_review} \
   --type {type} --title {title} --detail {detail} \
   [--file-path PATH] [--component C] [--severity S] [--iteration N]
 
 # Query Q-Gate findings
-python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
+python3 .plan/execute-script.py pm-workflow:manage-findings:manage-findings \
   qgate query {plan_id} --phase {phase} \
   [--resolution R] [--source S] [--iteration N]
 
 # Resolve Q-Gate finding
-python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
+python3 .plan/execute-script.py pm-workflow:manage-findings:manage-findings \
   qgate resolve {plan_id} {hash_id} {resolution} --phase {phase} \
   [--detail DETAIL]
 
 # Clear Q-Gate findings for phase
-python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
+python3 .plan/execute-script.py pm-workflow:manage-findings:manage-findings \
   qgate clear {plan_id} --phase {phase}
 ```
 
 **Phases**: `2-refine`, `3-outline`, `4-plan`, `6-verify`, `7-finalize`
 
 **Sources**: `qgate` (automated verification), `user_review` (user feedback)
-
-**Resolution states**: `pending`, `fixed`, `suppressed`, `accepted`, `taken_into_account`
-
-**Storage**: `.plan/plans/{plan_id}/qgate/{phase}.jsonl`
 
 ## Output Format
 
@@ -178,32 +141,32 @@ b4e3d2,sonar-issue,TODO comment,fixed
 
 | Client | Artifact | Operation |
 |--------|----------|-----------|
-| Analysis agents | assessment | add |
 | Sonar integration | finding (sonar-issue) | add, resolve |
 | CI integration | finding (pr-comment) | add, resolve |
 | phase-7-finalize | finding | add, promote |
+| Q-Gate agent | qgate finding | add, resolve |
+| Phase agents | qgate finding | add |
 
 ### Consumers
 
 | Client | Artifact | Operation |
 |--------|----------|-----------|
-| Q-Gate agent | assessment | query |
 | phase-7-finalize | finding | query, resolve, promote |
-| Workflow orchestration | assessment | query |
+| Phase agents (2-7) | qgate finding | query, resolve |
 
 ## Promotion Workflow
 
 At `7-finalize`:
 
-1. Query unpromoted findings: `finding query {plan_id} --promoted false`
+1. Query unpromoted findings: `query {plan_id} --promoted false`
 2. For each finding to promote:
    - **To manage-lessons** (bug, improvement, anti-pattern, triage):
      ```bash
      manage-lessons add --component {component} --category {type} ...
-     finding promote {plan_id} {hash_id} {promoted_id}
+     promote {plan_id} {hash_id} {promoted_id}
      ```
    - **To architecture** (tip, insight, best-practice):
      ```bash
      architecture enrich {type} --module {module} --{type} "{content}" --reasoning "From plan {plan_id}"
-     finding promote {plan_id} {hash_id} architecture
+     promote {plan_id} {hash_id} architecture
      ```

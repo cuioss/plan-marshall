@@ -35,7 +35,7 @@ Before creating deliverables (phase-3-outline), ensure the request is:
 ### Query Unresolved Findings
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
+python3 .plan/execute-script.py pm-workflow:manage-findings:manage-findings \
   qgate query {plan_id} --phase 2-refine --resolution pending
 ```
 
@@ -48,7 +48,7 @@ For each pending finding:
 2. Address it (revise analysis, re-evaluate scope, etc.)
 3. Resolve:
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
+python3 .plan/execute-script.py pm-workflow:manage-findings:manage-findings \
   qgate resolve {plan_id} {hash_id} taken_into_account --phase 2-refine \
   --detail "{what was done to address this finding}"
 ```
@@ -653,7 +653,7 @@ After persisting results, run lightweight verification:
 For each issue found:
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
+python3 .plan/execute-script.py pm-workflow:manage-findings:manage-findings \
   qgate add {plan_id} --phase 2-refine --source qgate \
   --type triage --title "{check}: {issue_title}" \
   --detail "{detailed_reason}"
@@ -718,7 +718,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 - `plan-marshall:analyze-project-architecture:architecture` - Architecture queries
 - `pm-workflow:manage-plan-documents:manage-plan-documents` - Request operations
 - `pm-workflow:manage-references:manage-references` - References persistence (track, scope, module_mapping, compatibility)
-- `pm-workflow:manage-plan-artifacts:manage-artifacts` - Q-Gate findings (qgate add/query/resolve)
+- `pm-workflow:manage-findings:manage-findings` - Q-Gate findings (qgate add/query/resolve)
 - `plan-marshall:manage-logging:manage-log` - Work and decision logging
 - `plan-marshall:manage-plan-marshall-config:plan-marshall-config` - Project config (threshold, compatibility)
 - `pm-workflow:plan-marshall:manage-lifecycle` - Phase transition management

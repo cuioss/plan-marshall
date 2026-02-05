@@ -59,7 +59,7 @@ message: {error message if status=error}
 ### Query Unresolved Findings
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
+python3 .plan/execute-script.py pm-workflow:manage-findings:manage-findings \
   qgate query {plan_id} --phase 4-plan --resolution pending
 ```
 
@@ -72,7 +72,7 @@ For each pending finding:
 2. Address it (adjust skill resolution, fix dependencies, correct steps, etc.)
 3. Resolve:
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
+python3 .plan/execute-script.py pm-workflow:manage-findings:manage-findings \
   qgate resolve {plan_id} {hash_id} taken_into_account --phase 4-plan \
   --detail "{what was done to address this finding}"
 ```
@@ -258,7 +258,7 @@ After tasks are created, verify:
 For each issue found:
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
+python3 .plan/execute-script.py pm-workflow:manage-findings:manage-findings \
   qgate add {plan_id} --phase 4-plan --source qgate \
   --type triage --title "{check}: {issue_title}" \
   --detail "{detailed_reason}"
@@ -359,7 +359,7 @@ If deliverable metadata incomplete:
 - `pm-workflow:manage-solution-outline:manage-solution-outline` - Read deliverables (list-deliverables, read)
 - `plan-marshall:analyze-project-architecture:architecture` - Resolve skills (module --name {module})
 - `pm-workflow:manage-tasks:manage-tasks` - Create tasks (add --plan-id X <<'EOF' ... EOF)
-- `pm-workflow:manage-plan-artifacts:manage-artifacts` - Q-Gate findings (qgate add/query/resolve)
+- `pm-workflow:manage-findings:manage-findings` - Q-Gate findings (qgate add/query/resolve)
 - `plan-marshall:manage-lessons:manage-lesson` - Record lessons on issues (add)
 
 **Consumed By**:

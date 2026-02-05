@@ -367,7 +367,8 @@ Components that execute scripts MUST have the EXACT notation (`bundle:skill:scri
 | D: Parameters | `--plan-id` when should be positional (via --help) |
 
 **Notation Format**:
-- `pm-workflow:manage-plan-artifacts:manage-artifacts`
+- `pm-workflow:manage-assessments:manage-assessments`
+- `pm-workflow:manage-findings:manage-findings`
 - `artifact_store` (missing bundle:skill)
 - `manage-files:artifact-store` (missing bundle)
 

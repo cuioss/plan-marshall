@@ -60,7 +60,7 @@ When user requests changes, write each feedback point as a Q-Gate finding and re
 
 **Write findings**:
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
+python3 .plan/execute-script.py pm-workflow:manage-findings:manage-findings \
   qgate add {plan_id} --phase 3-outline --source user_review \
   --type triage --title "User: {feedback summary}" \
   --detail "{full feedback text}"

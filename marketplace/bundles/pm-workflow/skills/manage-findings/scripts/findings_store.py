@@ -1,10 +1,16 @@
 #!/usr/bin/env python3
 """
-Plan-level artifact storage for assessments and findings.
+Finding and Q-Gate storage for plan-level artifacts.
 
-Provides JSONL-based storage for plan-scoped artifacts:
-- assessments.jsonl: Component assessments from analysis agents
-- findings.jsonl: Unified lessons + bugs (12 types, optionally promotable)
+Provides JSONL-based storage for:
+- Plan-scoped findings (long-lived, promotable)
+- Phase-scoped Q-Gate findings (per-phase, not promotable)
+
+Both share the same type taxonomy, resolution model, and severity values.
+
+Storage:
+- Plan findings: .plan/plans/{plan_id}/artifacts/findings.jsonl
+- Q-Gate findings: .plan/plans/{plan_id}/qgate/{phase}.jsonl
 
 Stdlib-only - no external dependencies (except toon_parser for output).
 """
@@ -49,10 +55,7 @@ else:
         return '\n'.join(lines)
 
 
-# Constants
-ARTIFACT_TYPES = ['assessments', 'findings']
-
-CERTAINTY_VALUES = ['CERTAIN_INCLUDE', 'CERTAIN_EXCLUDE', 'UNCERTAIN']
+# --- Shared Constants ---
 
 FINDING_TYPES = [
     # Lesson-like (knowledge)
@@ -88,11 +91,11 @@ LESSON_TYPES = {'bug', 'improvement', 'anti-pattern', 'triage'}
 ARCHITECTURE_TYPES = {'tip', 'insight', 'best-practice'}
 
 
-def get_plan_root() -> Path:
-    """Get the .plan directory root.
+# --- JSONL Infrastructure ---
 
-    Respects PLAN_BASE_DIR environment variable for testing.
-    """
+
+def get_plan_root() -> Path:
+    """Get the .plan directory root."""
     import os
 
     base_dir = os.environ.get('PLAN_BASE_DIR')
@@ -101,21 +104,25 @@ def get_plan_root() -> Path:
     return Path.cwd() / '.plan'
 
 
-def get_artifacts_dir(plan_id: str) -> Path:
-    """Returns .plan/plans/{plan_id}/artifacts/"""
-    return get_plan_root() / 'plans' / plan_id / 'artifacts'
+def get_findings_path(plan_id: str) -> Path:
+    """Returns .plan/plans/{plan_id}/artifacts/findings.jsonl"""
+    return get_plan_root() / 'plans' / plan_id / 'artifacts' / 'findings.jsonl'
 
 
-def get_artifact_path(plan_id: str, artifact_type: str) -> Path:
-    """Returns .plan/plans/{plan_id}/artifacts/{type}.jsonl"""
-    if artifact_type not in ARTIFACT_TYPES:
-        raise ValueError(f'Invalid artifact type: {artifact_type}. Must be one of {ARTIFACT_TYPES}')
-    return get_artifacts_dir(plan_id) / f'{artifact_type}.jsonl'
+def get_qgate_dir(plan_id: str) -> Path:
+    """Returns .plan/plans/{plan_id}/qgate/"""
+    return get_plan_root() / 'plans' / plan_id / 'qgate'
+
+
+def get_qgate_path(plan_id: str, phase: str) -> Path:
+    """Returns .plan/plans/{plan_id}/qgate/{phase}.jsonl"""
+    if phase not in QGATE_PHASES:
+        raise ValueError(f'Invalid Q-Gate phase: {phase}. Must be one of {QGATE_PHASES}')
+    return get_qgate_dir(plan_id) / f'{phase}.jsonl'
 
 
 def generate_hash_id() -> str:
     """Generate a 6-char hex hash for artifact identification."""
-    # Use timestamp + random bytes for uniqueness
     import secrets
 
     data = f'{datetime.now(UTC).isoformat()}{secrets.token_hex(8)}'
@@ -174,152 +181,13 @@ def _timestamp() -> str:
     return datetime.now(UTC).isoformat()
 
 
-# --- Assessments ---
-
-
-def clear_assessments(
-    plan_id: str,
-    agent: str | None = None,
-) -> dict[str, Any]:
-    """Clear assessment records, optionally filtered by agent.
-
-    Args:
-        plan_id: Plan identifier
-        agent: If provided, only clear assessments from this agent.
-               If None, clear ALL assessments.
-
-    Returns:
-        Dict with status, cleared count
-    """
-    path = get_artifact_path(plan_id, 'assessments')
-    if not path.exists():
-        return {'status': 'success', 'cleared': 0}
-
-    records = _read_jsonl(path)
-    original_count = len(records)
-
-    if agent:
-        remaining = [r for r in records if r.get('agent') != agent]
-        cleared = original_count - len(remaining)
-        _ensure_dir(path)
-        with open(path, 'w', encoding='utf-8') as f:
-            for record in remaining:
-                f.write(json.dumps(record, ensure_ascii=False) + '\n')
-    else:
-        cleared = original_count
-        path.unlink()
-
-    return {'status': 'success', 'cleared': cleared}
-
-
-def add_assessment(
-    plan_id: str,
-    file_path: str,
-    certainty: str,
-    confidence: int,
-    agent: str | None = None,
-    detail: str | None = None,
-    evidence: str | None = None,
-) -> dict[str, Any]:
-    """Add an assessment record.
-
-    Args:
-        plan_id: Plan identifier
-        file_path: Path to the assessed component
-        certainty: CERTAIN_INCLUDE, CERTAIN_EXCLUDE, or UNCERTAIN
-        confidence: 0-100 percentage
-        agent: Name of the analysis agent
-        detail: Reasoning for the assessment
-        evidence: Specific evidence supporting the assessment
-
-    Returns:
-        Dict with status, hash_id, file_path
-    """
-    if certainty not in CERTAINTY_VALUES:
-        return {'status': 'error', 'message': f'Invalid certainty: {certainty}. Must be one of {CERTAINTY_VALUES}'}
-
-    if not 0 <= confidence <= 100:
-        return {'status': 'error', 'message': f'Invalid confidence: {confidence}. Must be 0-100'}
-
-    hash_id = generate_hash_id()
-    record = {
-        'hash_id': hash_id,
-        'timestamp': _timestamp(),
-        'file_path': file_path,
-        'certainty': certainty,
-        'confidence': confidence,
-    }
-    if agent:
-        record['agent'] = agent
-    if detail:
-        record['detail'] = detail
-    if evidence:
-        record['evidence'] = evidence
-
-    _append_jsonl(get_artifact_path(plan_id, 'assessments'), record)
-
-    return {'status': 'success', 'hash_id': hash_id, 'file_path': file_path}
-
-
-def query_assessments(
-    plan_id: str,
-    certainty: str | None = None,
-    min_confidence: int | None = None,
-    max_confidence: int | None = None,
-    file_pattern: str | None = None,
-) -> dict[str, Any]:
-    """Query assessments with filters.
-
-    Args:
-        plan_id: Plan identifier
-        certainty: Filter by certainty value
-        min_confidence: Minimum confidence (inclusive)
-        max_confidence: Maximum confidence (inclusive)
-        file_pattern: Glob pattern for file_path
-
-    Returns:
-        Dict with status, total_count, filtered_count, assessments list
-    """
-    path = get_artifact_path(plan_id, 'assessments')
-    records = _read_jsonl(path)
-    total_count = len(records)
-
-    # Apply filters
-    filtered = []
-    for r in records:
-        if certainty and r.get('certainty') != certainty:
-            continue
-        if min_confidence is not None and r.get('confidence', 0) < min_confidence:
-            continue
-        if max_confidence is not None and r.get('confidence', 100) > max_confidence:
-            continue
-        if file_pattern and not fnmatch(r.get('file_path', ''), file_pattern):
-            continue
-        filtered.append(r)
-
-    # Build result
-    result = {
-        'status': 'success',
-        'plan_id': plan_id,
-        'total_count': total_count,
-        'filtered_count': len(filtered),
-        'assessments': filtered,
-        'file_paths': list({r.get('file_path') for r in filtered}),
-    }
-
+def format_output(data: dict[str, Any]) -> str:
+    """Format output as TOON."""
+    result: str = serialize_toon(data)
     return result
 
 
-def get_assessment(plan_id: str, hash_id: str) -> dict[str, Any] | None:
-    """Get a single assessment by hash_id."""
-    path = get_artifact_path(plan_id, 'assessments')
-    for record in _read_jsonl(path):
-        if record.get('hash_id') == hash_id:
-            return {'status': 'success', **record}
-    return {'status': 'error', 'message': f'Assessment not found: {hash_id}'}
-
-
-# --- Findings ---
+# --- Plan Findings ---
 
 
 def add_finding(
@@ -334,23 +202,7 @@ def add_finding(
     rule: str | None = None,
     severity: str | None = None,
 ) -> dict[str, Any]:
-    """Add a finding record.
-
-    Args:
-        plan_id: Plan identifier
-        finding_type: One of FINDING_TYPES
-        title: Short title
-        detail: Detailed description
-        file_path: File path (for code-related findings)
-        line: Line number (for code-related findings)
-        component: Component reference (for knowledge findings)
-        module: Module name (for architecture promotion)
-        rule: Rule ID (for lint/sonar findings)
-        severity: error, warning, or info
-
-    Returns:
-        Dict with status, hash_id, type
-    """
+    """Add a finding record."""
     if finding_type not in FINDING_TYPES:
         return {'status': 'error', 'message': f'Invalid finding type: {finding_type}. Must be one of {FINDING_TYPES}'}
 
@@ -370,7 +222,6 @@ def add_finding(
         'promoted_to': None,
     }
 
-    # Optional fields
     if file_path:
         record['file_path'] = file_path
     if line is not None:
@@ -384,7 +235,7 @@ def add_finding(
     if severity:
         record['severity'] = severity
 
-    _append_jsonl(get_artifact_path(plan_id, 'findings'), record)
+    _append_jsonl(get_findings_path(plan_id), record)
 
     return {'status': 'success', 'hash_id': hash_id, 'type': finding_type}
 
@@ -396,19 +247,8 @@ def query_findings(
     promoted: bool | None = None,
     file_pattern: str | None = None,
 ) -> dict[str, Any]:
-    """Query findings with filters.
-
-    Args:
-        plan_id: Plan identifier
-        finding_type: Filter by type (can be comma-separated for multiple)
-        resolution: Filter by resolution status
-        promoted: Filter by promoted status
-        file_pattern: Glob pattern for file_path
-
-    Returns:
-        Dict with status, total_count, filtered_count, findings list
-    """
-    path = get_artifact_path(plan_id, 'findings')
+    """Query findings with filters."""
+    path = get_findings_path(plan_id)
     records = _read_jsonl(path)
     total_count = len(records)
 
@@ -417,7 +257,6 @@ def query_findings(
     if finding_type:
         type_filter = {t.strip() for t in finding_type.split(',')}
 
-    # Apply filters
     filtered = []
     for r in records:
         if type_filter and r.get('type') not in type_filter:
@@ -444,7 +283,7 @@ def query_findings(
 
 def get_finding(plan_id: str, hash_id: str) -> dict[str, Any] | None:
     """Get a single finding by hash_id."""
-    path = get_artifact_path(plan_id, 'findings')
+    path = get_findings_path(plan_id)
     for record in _read_jsonl(path):
         if record.get('hash_id') == hash_id:
             return {'status': 'success', **record}
@@ -457,21 +296,11 @@ def resolve_finding(
     resolution: str,
     detail: str | None = None,
 ) -> dict[str, Any]:
-    """Resolve a finding (for bug-like types).
-
-    Args:
-        plan_id: Plan identifier
-        hash_id: Finding hash ID
-        resolution: fixed, suppressed, or accepted
-        detail: Resolution detail/reasoning
-
-    Returns:
-        Dict with status
-    """
+    """Resolve a finding."""
     if resolution not in RESOLUTIONS:
         return {'status': 'error', 'message': f'Invalid resolution: {resolution}. Must be one of {RESOLUTIONS}'}
 
-    path = get_artifact_path(plan_id, 'findings')
+    path = get_findings_path(plan_id)
     updates: dict[str, Any] = {'resolution': resolution}
     if detail:
         updates['resolution_detail'] = detail
@@ -486,17 +315,8 @@ def promote_finding(
     hash_id: str,
     promoted_to: str,
 ) -> dict[str, Any]:
-    """Mark a finding as promoted.
-
-    Args:
-        plan_id: Plan identifier
-        hash_id: Finding hash ID
-        promoted_to: Target ID or "architecture"
-
-    Returns:
-        Dict with status
-    """
-    path = get_artifact_path(plan_id, 'findings')
+    """Mark a finding as promoted."""
+    path = get_findings_path(plan_id)
     updates = {'promoted': True, 'promoted_to': promoted_to}
 
     if _update_jsonl(path, hash_id, updates):
@@ -504,28 +324,7 @@ def promote_finding(
     return {'status': 'error', 'message': f'Finding not found: {hash_id}'}
 
 
-# --- Output formatting ---
-
-
-def format_output(data: dict[str, Any]) -> str:
-    """Format output as TOON."""
-    result: str = serialize_toon(data)
-    return result
-
-
 # --- Q-Gate Findings ---
-
-
-def get_qgate_dir(plan_id: str) -> Path:
-    """Returns .plan/plans/{plan_id}/qgate/"""
-    return get_plan_root() / 'plans' / plan_id / 'qgate'
-
-
-def get_qgate_path(plan_id: str, phase: str) -> Path:
-    """Returns .plan/plans/{plan_id}/qgate/{phase}.jsonl"""
-    if phase not in QGATE_PHASES:
-        raise ValueError(f'Invalid Q-Gate phase: {phase}. Must be one of {QGATE_PHASES}')
-    return get_qgate_dir(plan_id) / f'{phase}.jsonl'
 
 
 def add_qgate_finding(
@@ -540,23 +339,7 @@ def add_qgate_finding(
     severity: str | None = None,
     iteration: int | None = None,
 ) -> dict[str, Any]:
-    """Add a Q-Gate finding for a specific phase.
-
-    Args:
-        plan_id: Plan identifier
-        phase: Phase name (e.g., '3-outline')
-        source: Finding source ('qgate' or 'user_review')
-        finding_type: One of FINDING_TYPES
-        title: Short title
-        detail: Detailed description
-        file_path: File path (optional)
-        component: Component reference (optional)
-        severity: error, warning, or info (optional)
-        iteration: Phase iteration number (optional)
-
-    Returns:
-        Dict with status, hash_id, phase
-    """
+    """Add a Q-Gate finding for a specific phase."""
     if phase not in QGATE_PHASES:
         return {'status': 'error', 'message': f'Invalid Q-Gate phase: {phase}. Must be one of {QGATE_PHASES}'}
 
@@ -604,18 +387,7 @@ def query_qgate_findings(
     source: str | None = None,
     iteration: int | None = None,
 ) -> dict[str, Any]:
-    """Query Q-Gate findings for a specific phase.
-
-    Args:
-        plan_id: Plan identifier
-        phase: Phase name (e.g., '3-outline')
-        resolution: Filter by resolution status
-        source: Filter by source ('qgate' or 'user_review')
-        iteration: Filter by iteration number
-
-    Returns:
-        Dict with status, total_count, filtered_count, findings list
-    """
+    """Query Q-Gate findings for a specific phase."""
     if phase not in QGATE_PHASES:
         return {'status': 'error', 'message': f'Invalid Q-Gate phase: {phase}. Must be one of {QGATE_PHASES}'}
 
@@ -650,18 +422,7 @@ def resolve_qgate_finding(
     resolution: str,
     detail: str | None = None,
 ) -> dict[str, Any]:
-    """Resolve a Q-Gate finding.
-
-    Args:
-        plan_id: Plan identifier
-        phase: Phase name (e.g., '3-outline')
-        hash_id: Finding hash ID
-        resolution: Resolution status
-        detail: Resolution detail/reasoning
-
-    Returns:
-        Dict with status, hash_id, resolution
-    """
+    """Resolve a Q-Gate finding."""
     if phase not in QGATE_PHASES:
         return {'status': 'error', 'message': f'Invalid Q-Gate phase: {phase}. Must be one of {QGATE_PHASES}'}
 
@@ -685,15 +446,7 @@ def clear_qgate_findings(
     plan_id: str,
     phase: str,
 ) -> dict[str, Any]:
-    """Clear all Q-Gate findings for a specific phase.
-
-    Args:
-        plan_id: Plan identifier
-        phase: Phase name (e.g., '3-outline')
-
-    Returns:
-        Dict with status, cleared count
-    """
+    """Clear all Q-Gate findings for a specific phase."""
     if phase not in QGATE_PHASES:
         return {'status': 'error', 'message': f'Invalid Q-Gate phase: {phase}. Must be one of {QGATE_PHASES}'}
 
@@ -706,13 +459,3 @@ def clear_qgate_findings(
     path.unlink()
 
     return {'status': 'success', 'phase': phase, 'cleared': cleared}
-
-
-if __name__ == '__main__':
-    # Quick self-test
-    print('artifact_store.py - Plan-Level Artifact Storage')
-    print('=' * 50)
-    print(f'Artifact types: {ARTIFACT_TYPES}')
-    print(f'Finding types: {FINDING_TYPES}')
-    print(f'Certainty values: {CERTAINTY_VALUES}')
-    print(f'Resolutions: {RESOLUTIONS}')

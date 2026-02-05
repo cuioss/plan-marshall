@@ -214,6 +214,27 @@ Skills do not use `model` or `color` fields (those apply only to agents/commands
 - Skill is an extension point (e.g., `ext-triage-java`)
 - Skill is a plugin manifest (e.g., `plan-marshall-plugin`)
 
+### plugin.json Registration Convention
+
+**Not all skills need plugin.json registration.** Registration controls whether Claude Code loads the skill's SKILL.md as LLM context. Skills accessed only via the script executor (`python3 .plan/execute-script.py bundle:skill:script`) don't need their SKILL.md loaded — the executor resolves scripts by filesystem path.
+
+**Three categories of skills:**
+
+| Category | plugin.json | Example |
+|----------|-------------|---------|
+| **User-invocable** (`user-invocable: true`) | Required | `plugin-doctor`, `phase-3-outline` |
+| **Context-loaded** (`user-invocable: false`, loaded via `Skill:` directive) | Required | `manage-tasks`, `manage-lessons` |
+| **Script-only** (`user-invocable: false`, accessed only via script notation) | Not needed | `manage-files`, `manage-logging` |
+
+**How to determine the category:**
+1. If `user-invocable: true` → register in plugin.json
+2. If any component uses `Skill: bundle:skill-name` to load it as LLM context → register in plugin.json
+3. If all references are 3-part script notations (`bundle:skill:script` with `execute-script.py`) → do NOT register
+
+**Script-only skills are still installed.** Bundle installation copies the entire directory tree via rsync. Script-only skills are physically present and discoverable by the executor generator — they just aren't loaded into LLM context (which saves tokens).
+
+**Naming convention:** Script-only skills typically follow the `manage-*` or `tools-*` prefix pattern, signaling they are programmatic APIs rather than knowledge to be loaded.
+
 ### Complete Skill Examples
 
 **User-Invocable Skill** (appears in slash menu):
@@ -226,13 +247,23 @@ allowed-tools: Read, Edit, Write, Bash, Grep, Glob, Skill
 ---
 ```
 
-**Internal Skill** (not directly invocable):
+**Context-Loaded Internal Skill** (loaded by other skills/agents via `Skill:` directive):
 ```yaml
 ---
-name: java-core
-description: Core Java development standards for CUI projects
+name: manage-tasks
+description: Task CRUD operations for planning workflow
 user-invocable: false
-allowed-tools: Read
+allowed-tools: Read, Bash
+---
+```
+
+**Script-Only Skill** (accessed only via executor, no plugin.json entry):
+```yaml
+---
+name: manage-files
+description: File operations for plan work directories
+user-invocable: false
+allowed-tools: Bash
 ---
 ```
 

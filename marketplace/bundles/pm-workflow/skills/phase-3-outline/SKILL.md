@@ -47,7 +47,7 @@ Step 2: Load Inputs → Step 3: Detect Change Type → Step 4: Route by Track �
 ### Query Unresolved Findings
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
+python3 .plan/execute-script.py pm-workflow:manage-findings:manage-findings \
   qgate query {plan_id} --phase 3-outline --resolution pending
 ```
 
@@ -60,7 +60,7 @@ For each pending finding:
 2. Address it (revise deliverables, adjust scope, remove false positives, etc.)
 3. Resolve:
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
+python3 .plan/execute-script.py pm-workflow:manage-findings:manage-findings \
   qgate resolve {plan_id} {hash_id} taken_into_account --phase 3-outline \
   --detail "{what was done to address this finding}"
 ```
@@ -583,7 +583,7 @@ qgate_pending_count: {0 if no findings}
 - `pm-workflow:manage-plan-documents:manage-plan-documents` - Read request
 - `pm-workflow:manage-references:manage-references` - Read domains
 - `pm-workflow:manage-solution-outline:manage-solution-outline` - Write solution document
-- `pm-workflow:manage-plan-artifacts:manage-artifacts` - Q-Gate findings (qgate add/query/resolve)
+- `pm-workflow:manage-findings:manage-findings` - Q-Gate findings (qgate add/query/resolve)
 - `pm-workflow:manage-status:manage_status` - Read/write change_type metadata
 - `plan-marshall:manage-plan-marshall-config:plan-marshall-config` - Resolve change-type agent, read compatibility (fallback)
 - `plan-marshall:manage-logging:manage-log` - Decision and work logging

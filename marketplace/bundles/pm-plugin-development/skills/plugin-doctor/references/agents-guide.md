@@ -239,7 +239,7 @@ If you discover improvements, invoke `/plugin-update-agent` directly to update y
 
 **Notation Format Requirement**:
 ```
-✅ pm-workflow:manage-plan-artifacts:manage-artifacts
+✅ pm-workflow:manage-assessments:manage-assessments
 ✅ plan-marshall:manage-logging:manage-log
 ❌ artifact_store (missing bundle:skill)
 ❌ manage-files:artifact-store (missing bundle)
@@ -266,8 +266,8 @@ python3 .plan/execute-script.py artifact_store assessment add...
 Use this EXACT command:
 
 \`\`\`bash
-python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
-  assessment add {plan_id} {file_path} {certainty} {confidence} \
+python3 .plan/execute-script.py pm-workflow:manage-assessments:manage-assessments \
+  add {plan_id} {file_path} {certainty} {confidence} \
   --agent {agent_name} --detail "{reasoning}" --evidence "{evidence}" --trace-plan-id {plan_id}
 \`\`\`
 

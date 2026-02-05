@@ -74,8 +74,8 @@ Parse the deliverables from the solution outline. Extract:
 #### 1.2 Read Assessments
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
-  assessment query {plan_id} --certainty CERTAIN_INCLUDE \
+python3 .plan/execute-script.py pm-workflow:manage-assessments:manage-assessments \
+  query {plan_id} --certainty CERTAIN_INCLUDE \
   --trace-plan-id {plan_id}
 ```
 
@@ -191,7 +191,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 For each issue found (false positive, missing coverage, alignment issue):
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
+python3 .plan/execute-script.py pm-workflow:manage-findings:manage-findings \
   qgate add {plan_id} --phase 3-outline --source qgate \
   --type triage --title "Q-Gate: {issue_title}" \
   --detail "{detailed_reason}" \

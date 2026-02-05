@@ -105,6 +105,20 @@ The pm-workflow bundle uses manage-* skills as the data access layer for all pla
 │  │                       │                   │ • create-or-reference    │  │
 │  │                       │                   │ • delete-plan            │  │
 │  │                       │                   │                          │  │
+│  ├───────────────────────┼───────────────────┼──────────────────────────┤  │
+│  │                       │                   │                          │  │
+│  │ manage-assessments    │ assessments.jsonl │ Component evaluations    │  │
+│  │                       │                   │ • add (certainty/conf.)  │  │
+│  │                       │                   │ • query (with filters)   │  │
+│  │                       │                   │ • clear (all or agent)   │  │
+│  │                       │                   │                          │  │
+│  ├───────────────────────┼───────────────────┼──────────────────────────┤  │
+│  │                       │                   │                          │  │
+│  │ manage-findings       │ findings.jsonl    │ Findings + Q-Gate        │  │
+│  │                       │ qgate/{phase}     │ • add/query/resolve      │  │
+│  │                       │   .jsonl          │ • promote (findings)     │  │
+│  │                       │                   │ • qgate add/query/clear  │  │
+│  │                       │                   │                          │  │
 │  └───────────────────────┴───────────────────┴──────────────────────────┘  │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
@@ -379,6 +393,11 @@ The pm-workflow bundle uses manage-* skills as the data access layer for all pla
 │  │       ├── request.md         # Original request                         │
 │  │       ├── references.json    # Plan refs & config (domains, branch, issue) │
 │  │       ├── solution_outline.md# Deliverables                              │
+│  │       ├── artifacts/          # Plan-level artifacts                    │
+│  │       │   ├── assessments.jsonl  # Component assessments              │
+│  │       │   └── findings.jsonl     # Unified findings                   │
+│  │       ├── qgate/              # Per-phase Q-Gate findings              │
+│  │       │   └── {phase}.jsonl                                            │
 │  │       ├── work/              # Working files (outline phase+)           │
 │  │       ├── tasks/             # Task files                               │
 │  │       │   ├── TASK-001-IMPL.json                                        │

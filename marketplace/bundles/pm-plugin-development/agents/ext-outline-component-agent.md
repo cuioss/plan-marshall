@@ -36,7 +36,7 @@ This provides core principles for tool usage and file operations.
 Log each assessment using this EXACT command:
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts assessment add {plan_id} {file_path} {CERTAINTY} {CONFIDENCE} --agent ext-outline-component-agent/{component_type} --detail "{reasoning}" --evidence "{evidence}" --trace-plan-id {plan_id}
+python3 .plan/execute-script.py pm-workflow:manage-assessments:manage-assessments add {plan_id} {file_path} {CERTAINTY} {CONFIDENCE} --agent ext-outline-component-agent/{component_type} --detail "{reasoning}" --evidence "{evidence}" --trace-plan-id {plan_id}
 ```
 
 **Parameters to fill:**
@@ -50,7 +50,7 @@ python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifac
 | `{reasoning}` | Why this decision |
 | `{evidence}` | Specific lines/sections |
 
-**CRITICAL**: Use ONLY the notation `pm-workflow:manage-plan-artifacts:manage-artifacts`. Do NOT invent other notations.
+**CRITICAL**: Use ONLY the notation `pm-workflow:manage-assessments:manage-assessments`. Do NOT invent other notations.
 
 ## Input Format
 

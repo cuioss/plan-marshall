@@ -91,8 +91,8 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 **CRITICAL**: Clear any assessments from previous runs before starting analysis. This prevents stale data from prior agent invocations contaminating Q-Gate verification.
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
-  assessment clear {plan_id} --agent change-enhancement-outline-agent \
+python3 .plan/execute-script.py pm-workflow:manage-assessments:manage-assessments \
+  clear {plan_id} --agent change-enhancement-outline-agent \
   --trace-plan-id {plan_id}
 ```
 
@@ -151,8 +151,8 @@ For each component file from inventory:
 3. **Log assessment** for each file:
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
-  assessment add {plan_id} {file_path} {CERTAINTY} {CONFIDENCE} \
+python3 .plan/execute-script.py pm-workflow:manage-assessments:manage-assessments \
+  add {plan_id} {file_path} {CERTAINTY} {CONFIDENCE} \
   --agent change-enhancement-outline-agent --detail "{reasoning}" --evidence "{evidence}" --trace-plan-id {plan_id}
 ```
 
@@ -167,8 +167,8 @@ Where:
 **STOP** — Before proceeding, verify that assessments were actually persisted:
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
-  assessment query {plan_id} \
+python3 .plan/execute-script.py pm-workflow:manage-assessments:manage-assessments \
+  query {plan_id} \
   --trace-plan-id {plan_id}
 ```
 
@@ -189,8 +189,8 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 If analysis produced UNCERTAIN assessments:
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
-  assessment query {plan_id} --certainty UNCERTAIN \
+python3 .plan/execute-script.py pm-workflow:manage-assessments:manage-assessments \
+  query {plan_id} --certainty UNCERTAIN \
   --trace-plan-id {plan_id}
 ```
 

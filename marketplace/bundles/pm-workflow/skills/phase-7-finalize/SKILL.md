@@ -80,7 +80,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 ### Query Unresolved Findings
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
+python3 .plan/execute-script.py pm-workflow:manage-findings:manage-findings \
   qgate query {plan_id} --phase 7-finalize --resolution pending
 ```
 
@@ -90,7 +90,7 @@ For each pending finding:
 1. Check if it was addressed by the fix tasks that just ran
 2. Resolve:
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
+python3 .plan/execute-script.py pm-workflow:manage-findings:manage-findings \
   qgate resolve {plan_id} {hash_id} fixed --phase 7-finalize \
   --detail "{fix task reference or description}"
 ```
@@ -184,7 +184,7 @@ This monitors CI status and handles review comments.
 **On findings** (CI failures, review comments):
 1. Persist each finding to Q-Gate:
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
+python3 .plan/execute-script.py pm-workflow:manage-findings:manage-findings \
   qgate add {plan_id} --phase 7-finalize --source qgate \
   --type {pr-comment|build-error} --title "{finding title}" \
   --detail "{finding details}"

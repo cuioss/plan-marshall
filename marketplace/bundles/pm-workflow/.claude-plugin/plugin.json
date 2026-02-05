@@ -27,11 +27,6 @@
   ],
   "commands": [],
   "skills": [
-    "./skills/manage-files",
-    "./skills/manage-plan-documents",
-    "./skills/manage-references",
-    "./skills/manage-solution-outline",
-    "./skills/manage-status",
     "./skills/manage-tasks",
     "./skills/phase-1-init",
     "./skills/phase-2-refine",

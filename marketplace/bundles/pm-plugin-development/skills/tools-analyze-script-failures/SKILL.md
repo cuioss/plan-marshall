@@ -286,8 +286,8 @@ Recorded lessons:
 To query assessments for context during failure analysis:
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
-  assessment query {plan_id} --certainty {CERTAIN_INCLUDE|CERTAIN_EXCLUDE|UNCERTAIN} \
+python3 .plan/execute-script.py pm-workflow:manage-assessments:manage-assessments \
+  query {plan_id} --certainty {CERTAIN_INCLUDE|CERTAIN_EXCLUDE|UNCERTAIN} \
   --trace-plan-id {plan_id}
 ```
 
