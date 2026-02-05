@@ -13,7 +13,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from conftest import PlanContext, get_script_path, run_script  # noqa: E402
 
 # Get script paths
-LIFECYCLE_SCRIPT = get_script_path('pm-workflow', 'plan-marshall', 'manage-lifecycle.py')
+LIFECYCLE_SCRIPT = get_script_path('pm-workflow', 'manage-lifecycle', 'manage-lifecycle.py')
 STATUS_SCRIPT = get_script_path('pm-workflow', 'manage-status', 'manage_status.py')
 
 # Import toon_parser - conftest sets up PYTHONPATH

@@ -679,7 +679,7 @@ If `qgate_pending_count > 0`, the orchestrator (planning.md) decides whether to 
 The phase transitions from refine → outline after confidence reaches the threshold:
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:plan-marshall:manage-lifecycle transition \
+python3 .plan/execute-script.py pm-workflow:manage-lifecycle:manage-lifecycle transition \
   --plan-id {plan_id} \
   --completed 2-refine
 ```
@@ -721,7 +721,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 - `pm-workflow:manage-findings:manage-findings` - Q-Gate findings (qgate add/query/resolve)
 - `plan-marshall:manage-logging:manage-log` - Work and decision logging
 - `plan-marshall:manage-plan-marshall-config:plan-marshall-config` - Project config (threshold, compatibility)
-- `pm-workflow:plan-marshall:manage-lifecycle` - Phase transition management
+- `pm-workflow:manage-lifecycle:manage-lifecycle` - Phase transition management
 
 **Persistence Locations**:
 - `work/module_mapping.toon`: Module mapping analysis state

@@ -231,7 +231,7 @@ Records lessons learned from the implementation. Advisory only—does not block.
 Transition to complete:
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:plan-marshall:manage-lifecycle transition \
+python3 .plan/execute-script.py pm-workflow:manage-lifecycle:manage-lifecycle transition \
   --plan-id {plan_id} \
   --completed 7-finalize
 ```
@@ -393,7 +393,7 @@ Contains: How lessons are captured at plan completion, knowledge extraction patt
 This skill is invoked when plan is in `7-finalize` phase:
 
 ```
-pm-workflow:plan-marshall:manage-lifecycle route --phase 7-finalize → pm-workflow:phase-7-finalize
+pm-workflow:manage-lifecycle:manage-lifecycle route --phase 7-finalize → pm-workflow:phase-7-finalize
 ```
 
 ### Loop-Back to Execute

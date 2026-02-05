@@ -72,7 +72,7 @@ If no match found, report error and exit.
 ### Step 2: Validate Plan Exists
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:plan-marshall:manage-lifecycle \
+python3 .plan/execute-script.py pm-workflow:manage-lifecycle:manage-lifecycle \
   read --plan-id {plan_id}
 ```
 

@@ -172,7 +172,7 @@ The pm-workflow bundle uses manage-* skills as the data access layer for all pla
 │  │                                                                      │  │
 │  │  # Transition phase                                                  │  │
 │  │  python3 .plan/execute-script.py \                                   │  │
-│  │    pm-workflow:plan-marshall:manage-lifecycle \                      │  │
+│  │    pm-workflow:manage-lifecycle:manage-lifecycle \                      │  │
 │  │    transition --plan-id my-feature --completed 1-init                │  │
 │  │                                                                      │  │
 │  └──────────────────────────────────────────────────────────────────────┘  │
@@ -220,7 +220,7 @@ The pm-workflow bundle uses manage-* skills as the data access layer for all pla
 │                                                                             │
 │                     MANAGE-LIFECYCLE COMMANDS                               │
 │                                                                             │
-│  Script: pm-workflow:plan-marshall:manage-lifecycle                         │
+│  Script: pm-workflow:manage-lifecycle:manage-lifecycle                         │
 │                                                                             │
 │  ┌────────────────────┬─────────────────────────┬────────────────────────┐ │
 │  │ COMMAND            │ PARAMETERS              │ PURPOSE                │ │

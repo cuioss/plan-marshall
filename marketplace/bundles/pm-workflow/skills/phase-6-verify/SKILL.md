@@ -284,7 +284,7 @@ If no fix tasks (all passed or suppressed):
 
 ```bash
 # Transition to finalize phase
-python3 .plan/execute-script.py pm-workflow:plan-marshall:manage-lifecycle transition \
+python3 .plan/execute-script.py pm-workflow:manage-lifecycle:manage-lifecycle transition \
   --plan-id {plan_id} --completed 6-verify
 ```
 
@@ -403,7 +403,7 @@ Contains: How to load domain-specific triage extensions, findings routing, decis
 This skill is invoked when plan is in `6-verify` phase:
 
 ```
-pm-workflow:plan-marshall:manage-lifecycle route --phase 6-verify → pm-workflow:phase-6-verify
+pm-workflow:manage-lifecycle:manage-lifecycle route --phase 6-verify → pm-workflow:phase-6-verify
 ```
 
 ### Command Integration

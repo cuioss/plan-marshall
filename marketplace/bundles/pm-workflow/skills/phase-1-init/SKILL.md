@@ -237,7 +237,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 The phase transitions from init → refine after configuration completes:
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:plan-marshall:manage-lifecycle transition \
+python3 .plan/execute-script.py pm-workflow:manage-lifecycle:manage-lifecycle transition \
   --plan-id {plan_id} \
   --completed 1-init
 ```

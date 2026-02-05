@@ -22,7 +22,7 @@ Workflows for plan creation and setup phases: init, refine, outline, and plan.
 Display all plans with numbered selection.
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:plan-marshall:manage-lifecycle list
+python3 .plan/execute-script.py pm-workflow:manage-lifecycle:manage-lifecycle list
 ```
 
 Shows:
@@ -89,7 +89,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 **Step 2b**: Transition phase after outline completes:
 ```bash
-python3 .plan/execute-script.py pm-workflow:plan-marshall:manage-lifecycle transition \
+python3 .plan/execute-script.py pm-workflow:manage-lifecycle:manage-lifecycle transition \
   --plan-id {plan_id} --completed 3-outline
 ```
 
@@ -168,7 +168,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 **Step 4b**: Transition phase after tasks created:
 ```bash
-python3 .plan/execute-script.py pm-workflow:plan-marshall:manage-lifecycle transition \
+python3 .plan/execute-script.py pm-workflow:manage-lifecycle:manage-lifecycle transition \
   --plan-id {plan_id} --completed 4-plan
 ```
 
@@ -207,7 +207,7 @@ When a lesson is selected:
 
 ## Script API Reference
 
-Script: `pm-workflow:plan-marshall:manage-lifecycle`
+Script: `pm-workflow:manage-lifecycle:manage-lifecycle`
 
 | Command | Parameters | Description |
 |---------|------------|-------------|

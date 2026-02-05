@@ -58,7 +58,7 @@ Route based on action parameter. Load the appropriate workflow document and foll
 When `plan` is specified but no `action`, auto-detect from plan phase:
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:plan-marshall:manage-lifecycle get-routing-context \
+python3 .plan/execute-script.py pm-workflow:manage-lifecycle:manage-lifecycle get-routing-context \
   --plan-id {plan_id}
 ```
 

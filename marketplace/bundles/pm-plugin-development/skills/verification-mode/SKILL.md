@@ -348,7 +348,7 @@ Executing plan-init for my-plan...
 ## SCRIPT FAILURE Analysis Required
 
 ### Issue Detected
-Script pm-workflow:plan-marshall:manage-lifecycle returned non-zero exit code (1)
+Script pm-workflow:manage-lifecycle:manage-lifecycle returned non-zero exit code (1)
 
 ### Context
 - **Operation**: Create plan status
@@ -413,7 +413,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log read --p
 
 **Step 4 Command**:
 ```bash
-python3 .plan/execute-script.py pm-workflow:plan-marshall:manage-lifecycle read --plan-id {plan_id}
+python3 .plan/execute-script.py pm-workflow:manage-status:manage_status read --plan-id {plan_id}
 ```
 
 **Step 3 Contract Verification Details**:
@@ -482,12 +482,12 @@ Direct .plan file access bypassing manage-* API
 ### Context
 - **Operation**: Read
 - **Target**: .plan/plans/jwt-auth/status.toon
-- **Expected**: Use `python3 .plan/execute-script.py pm-workflow:plan-marshall:manage-lifecycle read --plan-id jwt-auth`
+- **Expected**: Use `python3 .plan/execute-script.py pm-workflow:manage-status:manage_status read --plan-id jwt-auth`
 - **Actual**: Direct file read attempted
 
 ### Root Cause Analysis
 Command is reading status.toon directly instead of using
-`python3 .plan/execute-script.py pm-workflow:plan-marshall:manage-lifecycle read`.
+`python3 .plan/execute-script.py pm-workflow:manage-status:manage_status read`.
 This bypasses audit trail and validation.
 
 ### Impact Assessment
@@ -499,11 +499,11 @@ This bypasses audit trail and validation.
 | Maintainability | Poor - mixed access patterns |
 
 ### Options
-1. **Use pm-workflow:plan-marshall:manage-lifecycle**: Consistent abstraction layer
+1. **Use pm-workflow:manage-lifecycle:manage-lifecycle**: Consistent abstraction layer
 2. **Proceed with warning**: Log deviation but continue
 
 ### Recommendation
-Use `python3 .plan/execute-script.py pm-workflow:plan-marshall:manage-lifecycle read` for all status access
+Use `python3 .plan/execute-script.py pm-workflow:manage-status:manage_status read` for all status access
 
 ---
 **Verification Mode Active** - Awaiting user decision before proceeding.
@@ -512,7 +512,7 @@ Use `python3 .plan/execute-script.py pm-workflow:plan-marshall:manage-lifecycle 
 ### Example Post-Operation Audit
 
 ```
-User: (approved using pm-workflow:plan-marshall:manage-lifecycle)
+User: (approved using pm-workflow:manage-lifecycle:manage-lifecycle)
 
 Claude: Task TASK-001 completed successfully.
 

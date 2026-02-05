@@ -40,7 +40,7 @@ Contains: Delegation patterns for builds, quality checks, PR creation
 Get current phase, skill routing, and progress in a single call:
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:plan-marshall:manage-lifecycle get-routing-context \
+python3 .plan/execute-script.py pm-workflow:manage-lifecycle:manage-lifecycle get-routing-context \
   --plan-id {plan_id}
 ```
 
@@ -192,7 +192,7 @@ Execute continuously without user prompts except:
 When transitioning from execute phase to verify:
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:plan-marshall:manage-lifecycle transition \
+python3 .plan/execute-script.py pm-workflow:manage-lifecycle:manage-lifecycle transition \
   --plan-id {plan_id} \
   --completed 5-execute
 ```
