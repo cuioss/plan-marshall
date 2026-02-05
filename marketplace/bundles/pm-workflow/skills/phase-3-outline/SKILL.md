@@ -131,11 +131,12 @@ reasoning: "Request describes improving existing functionality"
 
 ### 1.5.2 Read Detected Change Type
 
-The agent persists change_type to status.toon metadata. Read it:
+The agent persists change_type to status.json metadata. Read it:
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:plan-marshall:manage-lifecycle get-metadata \
+python3 .plan/execute-script.py pm-workflow:manage-status:manage_status metadata \
   --plan-id {plan_id} \
+  --get \
   --field change_type
 ```
 
@@ -584,7 +585,7 @@ qgate_passed: {true|false}
 - `pm-workflow:manage-plan-documents:manage-plan-documents` - Read request
 - `pm-workflow:manage-references:manage-references` - Read domains
 - `pm-workflow:manage-solution-outline:manage-solution-outline` - Write solution document
-- `pm-workflow:plan-marshall:manage-lifecycle` - Read/write change_type metadata
+- `pm-workflow:manage-status:manage_status` - Read/write change_type metadata
 - `plan-marshall:manage-plan-marshall-config:plan-marshall-config` - Resolve change-type agent, read compatibility (fallback)
 - `plan-marshall:manage-logging:manage-log` - Decision and work logging
 

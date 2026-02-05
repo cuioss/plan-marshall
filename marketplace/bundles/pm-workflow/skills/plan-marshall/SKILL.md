@@ -128,6 +128,7 @@ If you discover issues or improvements during execution, record them:
 
 | Skill | Purpose |
 |-------|---------|
+| `pm-workflow:manage-status` | Status storage (phases, metadata) |
 | `pm-workflow:phase-1-init` | Init phase implementation |
 | `pm-workflow:phase-3-outline` | Outline phase implementation |
 | `pm-workflow:phase-6-verify` | Verify phase implementation |

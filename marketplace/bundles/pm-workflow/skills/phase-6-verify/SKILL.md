@@ -87,7 +87,7 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-m
 Read current verify iteration:
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:plan-marshall:manage-lifecycle read \
+python3 .plan/execute-script.py pm-workflow:manage-status:manage_status read \
   --plan-id {plan_id}
 ```
 
@@ -248,7 +248,7 @@ If fix tasks were created:
 
 ```bash
 # Increment verify iteration and transition back to execute
-python3 .plan/execute-script.py pm-workflow:plan-marshall:manage-lifecycle set-phase \
+python3 .plan/execute-script.py pm-workflow:manage-status:manage_status set-phase \
   --plan-id {plan_id} --phase 5-execute
 ```
 

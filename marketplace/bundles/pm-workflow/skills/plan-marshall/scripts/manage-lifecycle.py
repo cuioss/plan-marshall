@@ -1,18 +1,20 @@
 #!/usr/bin/env python3
 """
-Manage plan lifecycle with status.toon and phase operations.
+Manage plan lifecycle with phase routing and transitions.
 
-Replaces plan.md and absorbs phase-management functionality.
+Handles plan discovery, phase transitions, archiving, and routing.
+Status operations are delegated to manage-status.
 
 Usage:
-    python3 manage-lifecycle.py read --plan-id my-plan
-    python3 manage-lifecycle.py create --plan-id my-plan --title "Title" --phases 1-init,2-refine,3-outline,4-plan,5-execute,6-verify,7-finalize
-    python3 manage-lifecycle.py set-phase --plan-id my-plan --phase 5-execute
     python3 manage-lifecycle.py list
     python3 manage-lifecycle.py transition --plan-id my-plan --completed 1-init
+    python3 manage-lifecycle.py archive --plan-id my-plan
+    python3 manage-lifecycle.py route --phase 1-init
+    python3 manage-lifecycle.py get-routing-context --plan-id my-plan
 """
 
 import argparse
+import json
 import re
 import shutil
 import sys
@@ -20,9 +22,12 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
 
-from file_ops import atomic_write_file, base_path  # type: ignore[import-not-found]
-from plan_logging import log_entry  # type: ignore[import-not-found]
-from toon_parser import parse_toon, serialize_toon  # type: ignore[import-not-found]
+from file_ops import base_path  # type: ignore[import-not-found]
+
+# Import from manage-status for shared functionality
+from manage_status import read_status as read_status_json
+from manage_status import write_status as write_status_json
+from toon_parser import serialize_toon  # type: ignore[import-not-found]
 
 # Phase routing maps phase names to skills (for route command)
 PHASE_ROUTING = {
@@ -41,11 +46,6 @@ def validate_plan_id(plan_id: str) -> bool:
     return bool(re.match(r'^[a-z][a-z0-9-]*$', plan_id))
 
 
-def get_status_path(plan_id: str) -> Path:
-    """Get the status.toon file path."""
-    return cast(Path, base_path('plans', plan_id, 'status.toon'))
-
-
 def get_plans_dir() -> Path:
     """Get the plans directory."""
     return cast(Path, base_path('plans'))
@@ -56,248 +56,28 @@ def get_archive_dir() -> Path:
     return cast(Path, base_path('archived-plans'))
 
 
-def now_iso() -> str:
-    """Get current time in ISO format."""
-    return datetime.now(UTC).strftime('%Y-%m-%dT%H:%M:%SZ')
-
-
-def read_status(plan_id: str) -> dict[Any, Any]:
-    """Read status.toon for a plan."""
-    path = get_status_path(plan_id)
-    if not path.exists():
-        return {}
-    return cast(dict[Any, Any], parse_toon(path.read_text(encoding='utf-8')))
-
-
-def write_status(plan_id: str, status: dict):
-    """Write status.toon for a plan."""
-    path = get_status_path(plan_id)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    status['updated'] = now_iso()
-    atomic_write_file(path, serialize_toon(status))
-
-
-def output_toon(data: dict):
+def output_toon(data: dict) -> None:
     """Output TOON format to stdout."""
     print(serialize_toon(data))
 
 
-def cmd_read(args):
-    """Read plan status."""
-    if not validate_plan_id(args.plan_id):
-        output_toon(
-            {
-                'status': 'error',
-                'plan_id': args.plan_id,
-                'error': 'invalid_plan_id',
-                'message': f'Invalid plan_id format: {args.plan_id}',
-            }
-        )
-        sys.exit(1)
-
-    status = read_status(args.plan_id)
-    if not status:
-        output_toon(
-            {'status': 'error', 'plan_id': args.plan_id, 'error': 'file_not_found', 'message': 'status.toon not found'}
-        )
-        sys.exit(1)
-
-    output_toon({'status': 'success', 'plan_id': args.plan_id, 'plan': status})
+def _try_read_status_json(plan_dir: Path) -> dict[Any, Any] | None:
+    """Try to read status.json from a plan directory."""
+    status_file = plan_dir / 'status.json'
+    if status_file.exists():
+        try:
+            return cast(dict[Any, Any], json.loads(status_file.read_text(encoding='utf-8')))
+        except (ValueError, OSError):
+            return None
+    return None
 
 
-def cmd_create(args):
-    """Create status.toon for a new plan."""
-    if not validate_plan_id(args.plan_id):
-        output_toon(
-            {
-                'status': 'error',
-                'plan_id': args.plan_id,
-                'error': 'invalid_plan_id',
-                'message': f'Invalid plan_id format: {args.plan_id}',
-            }
-        )
-        sys.exit(1)
-
-    path = get_status_path(args.plan_id)
-    if path.exists() and not args.force:
-        output_toon(
-            {
-                'status': 'error',
-                'plan_id': args.plan_id,
-                'error': 'file_exists',
-                'message': 'status.toon already exists. Use --force to overwrite.',
-            }
-        )
-        sys.exit(1)
-
-    # Parse phases from comma-separated argument
-    phases = [p.strip() for p in args.phases.split(',') if p.strip()]
-    if not phases:
-        output_toon(
-            {
-                'status': 'error',
-                'plan_id': args.plan_id,
-                'error': 'invalid_phases',
-                'message': 'At least one phase is required',
-            }
-        )
-        sys.exit(1)
-
-    now = now_iso()
-
-    status = {
-        'title': args.title,
-        'current_phase': phases[0],
-        'phases': [{'name': p, 'status': 'pending'} for p in phases],
-        'created': now,
-        'updated': now,
-    }
-    # Mark first phase as in_progress
-    status['phases'][0]['status'] = 'in_progress'
-
-    write_status(args.plan_id, status)
-
-    output_toon(
-        {
-            'status': 'success',
-            'plan_id': args.plan_id,
-            'file': 'status.toon',
-            'created': True,
-            'plan': {'title': args.title, 'current_phase': phases[0]},
-        }
-    )
+# =============================================================================
+# Command: List
+# =============================================================================
 
 
-def cmd_set_phase(args):
-    """Set current phase."""
-    if not validate_plan_id(args.plan_id):
-        output_toon(
-            {
-                'status': 'error',
-                'plan_id': args.plan_id,
-                'error': 'invalid_plan_id',
-                'message': f'Invalid plan_id format: {args.plan_id}',
-            }
-        )
-        sys.exit(1)
-
-    status = read_status(args.plan_id)
-    if not status:
-        output_toon(
-            {'status': 'error', 'plan_id': args.plan_id, 'error': 'file_not_found', 'message': 'status.toon not found'}
-        )
-        sys.exit(1)
-
-    phase_names = [p['name'] for p in status.get('phases', [])]
-    if args.phase not in phase_names:
-        output_toon(
-            {
-                'status': 'error',
-                'plan_id': args.plan_id,
-                'error': 'invalid_phase',
-                'message': f'Invalid phase: {args.phase}',
-                'valid_phases': phase_names,
-            }
-        )
-        sys.exit(1)
-
-    previous = status.get('current_phase')
-    status['current_phase'] = args.phase
-
-    # Update phase statuses
-    for phase in status['phases']:
-        if phase['name'] == args.phase:
-            phase['status'] = 'in_progress'
-
-    write_status(args.plan_id, status)
-    log_entry('work', args.plan_id, 'INFO', f'[MANAGE-LIFECYCLE] Phase: {previous} -> {args.phase}')
-
-    output_toon({'status': 'success', 'plan_id': args.plan_id, 'current_phase': args.phase, 'previous_phase': previous})
-
-
-def cmd_update_phase(args):
-    """Update a specific phase status."""
-    if not validate_plan_id(args.plan_id):
-        output_toon(
-            {
-                'status': 'error',
-                'plan_id': args.plan_id,
-                'error': 'invalid_plan_id',
-                'message': f'Invalid plan_id format: {args.plan_id}',
-            }
-        )
-        sys.exit(1)
-
-    status = read_status(args.plan_id)
-    if not status:
-        output_toon(
-            {'status': 'error', 'plan_id': args.plan_id, 'error': 'file_not_found', 'message': 'status.toon not found'}
-        )
-        sys.exit(1)
-
-    found = False
-    for phase in status.get('phases', []):
-        if phase['name'] == args.phase:
-            phase['status'] = args.status
-            found = True
-            break
-
-    if not found:
-        output_toon(
-            {
-                'status': 'error',
-                'plan_id': args.plan_id,
-                'error': 'phase_not_found',
-                'message': f"Phase '{args.phase}' not found",
-            }
-        )
-        sys.exit(1)
-
-    write_status(args.plan_id, status)
-
-    output_toon({'status': 'success', 'plan_id': args.plan_id, 'phase': args.phase, 'phase_status': args.status})
-
-
-def cmd_progress(args):
-    """Calculate plan progress."""
-    if not validate_plan_id(args.plan_id):
-        output_toon(
-            {
-                'status': 'error',
-                'plan_id': args.plan_id,
-                'error': 'invalid_plan_id',
-                'message': f'Invalid plan_id format: {args.plan_id}',
-            }
-        )
-        sys.exit(1)
-
-    status = read_status(args.plan_id)
-    if not status:
-        output_toon(
-            {'status': 'error', 'plan_id': args.plan_id, 'error': 'file_not_found', 'message': 'status.toon not found'}
-        )
-        sys.exit(1)
-
-    phases = status.get('phases', [])
-    total = len(phases)
-    completed = sum(1 for p in phases if p.get('status') == 'done')
-    percent = int((completed / total) * 100) if total > 0 else 0
-
-    output_toon(
-        {
-            'status': 'success',
-            'plan_id': args.plan_id,
-            'progress': {
-                'total_phases': total,
-                'completed_phases': completed,
-                'current_phase': status.get('current_phase'),
-                'percent': percent,
-            },
-        }
-    )
-
-
-def cmd_list(args):
+def cmd_list(args) -> None:
     """Discover all plans."""
     plans_dir = get_plans_dir()
     if not plans_dir.exists():
@@ -309,12 +89,12 @@ def cmd_list(args):
         if not plan_dir.is_dir():
             continue
 
-        status_file = plan_dir / 'status.toon'
-        if not status_file.exists():
+        # Try status.json first (new format)
+        status = _try_read_status_json(plan_dir)
+        if not status:
             continue
 
         try:
-            status = parse_toon(status_file.read_text(encoding='utf-8'))
             current_phase = status.get('current_phase', 'unknown')
 
             # Apply filter if provided
@@ -324,14 +104,19 @@ def cmd_list(args):
                     continue
 
             plans.append({'id': plan_dir.name, 'current_phase': current_phase, 'status': 'in_progress'})
-        except (ValueError, KeyError, OSError):
-            # Skip plans with corrupted or unreadable status files
+        except (KeyError, TypeError):
+            # Skip plans with corrupted status
             continue
 
     output_toon({'status': 'success', 'total': len(plans), 'plans': plans})
 
 
-def cmd_transition(args):
+# =============================================================================
+# Command: Transition
+# =============================================================================
+
+
+def cmd_transition(args) -> None:
     """Transition to next phase."""
     if not validate_plan_id(args.plan_id):
         output_toon(
@@ -344,10 +129,10 @@ def cmd_transition(args):
         )
         sys.exit(1)
 
-    status = read_status(args.plan_id)
+    status = read_status_json(args.plan_id)
     if not status:
         output_toon(
-            {'status': 'error', 'plan_id': args.plan_id, 'error': 'file_not_found', 'message': 'status.toon not found'}
+            {'status': 'error', 'plan_id': args.plan_id, 'error': 'file_not_found', 'message': 'status.json not found'}
         )
         sys.exit(1)
 
@@ -378,9 +163,9 @@ def cmd_transition(args):
     else:
         next_phase = None
 
-    write_status(args.plan_id, status)
+    write_status_json(args.plan_id, status)
 
-    result = {'status': 'success', 'plan_id': args.plan_id, 'completed_phase': args.completed}
+    result: dict[str, Any] = {'status': 'success', 'plan_id': args.plan_id, 'completed_phase': args.completed}
     if next_phase:
         result['next_phase'] = next_phase
     else:
@@ -389,7 +174,12 @@ def cmd_transition(args):
     output_toon(result)
 
 
-def cmd_archive(args):
+# =============================================================================
+# Command: Archive
+# =============================================================================
+
+
+def cmd_archive(args) -> None:
     """Archive a completed plan."""
     if not validate_plan_id(args.plan_id):
         output_toon(
@@ -409,7 +199,7 @@ def cmd_archive(args):
         )
         sys.exit(1)
 
-    date_prefix = datetime.utcnow().strftime('%Y-%m-%d')
+    date_prefix = datetime.now(UTC).strftime('%Y-%m-%d')
     archive_name = f'{date_prefix}-{args.plan_id}'
     archive_dir = get_archive_dir()
     archive_path = archive_dir / archive_name
@@ -426,7 +216,12 @@ def cmd_archive(args):
     output_toon({'status': 'success', 'plan_id': args.plan_id, 'archived_to': str(archive_path)})
 
 
-def cmd_route(args):
+# =============================================================================
+# Command: Route
+# =============================================================================
+
+
+def cmd_route(args) -> None:
     """Get skill for a phase."""
     if args.phase not in PHASE_ROUTING:
         output_toon(
@@ -445,7 +240,12 @@ def cmd_route(args):
     output_toon({'status': 'success', 'phase': args.phase, 'skill': skill, 'description': description})
 
 
-def cmd_get_routing_context(args):
+# =============================================================================
+# Command: Get Routing Context
+# =============================================================================
+
+
+def cmd_get_routing_context(args) -> None:
     """Get combined routing context: phase, skill, and progress in one call."""
     if not validate_plan_id(args.plan_id):
         output_toon(
@@ -458,10 +258,10 @@ def cmd_get_routing_context(args):
         )
         sys.exit(1)
 
-    status = read_status(args.plan_id)
+    status = read_status_json(args.plan_id)
     if not status:
         output_toon(
-            {'status': 'error', 'plan_id': args.plan_id, 'error': 'file_not_found', 'message': 'status.toon not found'}
+            {'status': 'error', 'plan_id': args.plan_id, 'error': 'file_not_found', 'message': 'status.json not found'}
         )
         sys.exit(1)
 
@@ -493,132 +293,14 @@ def cmd_get_routing_context(args):
     )
 
 
-def cmd_set_metadata(args):
-    """Set a metadata field in status.toon."""
-    if not validate_plan_id(args.plan_id):
-        output_toon(
-            {
-                'status': 'error',
-                'plan_id': args.plan_id,
-                'error': 'invalid_plan_id',
-                'message': f'Invalid plan_id format: {args.plan_id}',
-            }
-        )
-        sys.exit(1)
-
-    status = read_status(args.plan_id)
-    if not status:
-        output_toon(
-            {'status': 'error', 'plan_id': args.plan_id, 'error': 'file_not_found', 'message': 'status.toon not found'}
-        )
-        sys.exit(1)
-
-    # Initialize metadata dict if not present
-    if 'metadata' not in status:
-        status['metadata'] = {}
-
-    previous_value = status['metadata'].get(args.field)
-    status['metadata'][args.field] = args.value
-
-    write_status(args.plan_id, status)
-    log_entry('work', args.plan_id, 'INFO', f'[MANAGE-LIFECYCLE] Metadata: {args.field}={args.value}')
-
-    result: dict[str, Any] = {
-        'status': 'success',
-        'plan_id': args.plan_id,
-        'field': args.field,
-        'value': args.value,
-    }
-    if previous_value is not None:
-        result['previous_value'] = previous_value
-    output_toon(result)
+# =============================================================================
+# Main
+# =============================================================================
 
 
-def cmd_get_metadata(args):
-    """Get a metadata field from status.toon."""
-    if not validate_plan_id(args.plan_id):
-        output_toon(
-            {
-                'status': 'error',
-                'plan_id': args.plan_id,
-                'error': 'invalid_plan_id',
-                'message': f'Invalid plan_id format: {args.plan_id}',
-            }
-        )
-        sys.exit(1)
-
-    status = read_status(args.plan_id)
-    if not status:
-        output_toon(
-            {'status': 'error', 'plan_id': args.plan_id, 'error': 'file_not_found', 'message': 'status.toon not found'}
-        )
-        sys.exit(1)
-
-    metadata = status.get('metadata', {})
-    value = metadata.get(args.field)
-
-    if value is None:
-        output_toon(
-            {
-                'status': 'error',
-                'plan_id': args.plan_id,
-                'error': 'field_not_found',
-                'message': f"Metadata field '{args.field}' not found",
-                'available_fields': list(metadata.keys()),
-            }
-        )
-        sys.exit(1)
-
-    output_toon(
-        {
-            'status': 'success',
-            'plan_id': args.plan_id,
-            'field': args.field,
-            'value': value,
-        }
-    )
-
-
-def main():
-    parser = argparse.ArgumentParser(description='Manage plan lifecycle with status.toon and phase operations')
+def main() -> None:
+    parser = argparse.ArgumentParser(description='Manage plan lifecycle with phase routing and transitions')
     subparsers = parser.add_subparsers(dest='command', required=True)
-
-    # read
-    read_parser = subparsers.add_parser('read', help='Read plan status')
-    read_parser.add_argument('--plan-id', required=True, help='Plan identifier')
-    read_parser.set_defaults(func=cmd_read)
-
-    # create
-    create_parser = subparsers.add_parser('create', help='Create status.toon')
-    create_parser.add_argument('--plan-id', required=True, help='Plan identifier')
-    create_parser.add_argument('--title', required=True, help='Plan title')
-    create_parser.add_argument(
-        '--phases',
-        required=True,
-        help='Comma-separated phase names (e.g., 1-init,2-refine,3-outline,4-plan,5-execute,6-verify,7-finalize)',
-    )
-    create_parser.add_argument('--force', action='store_true', help='Overwrite existing status')
-    create_parser.set_defaults(func=cmd_create)
-
-    # set-phase
-    set_phase_parser = subparsers.add_parser('set-phase', help='Set current phase')
-    set_phase_parser.add_argument('--plan-id', required=True, help='Plan identifier')
-    set_phase_parser.add_argument('--phase', required=True, help='Phase name')
-    set_phase_parser.set_defaults(func=cmd_set_phase)
-
-    # update-phase
-    update_phase_parser = subparsers.add_parser('update-phase', help='Update phase status')
-    update_phase_parser.add_argument('--plan-id', required=True, help='Plan identifier')
-    update_phase_parser.add_argument('--phase', required=True, help='Phase name')
-    update_phase_parser.add_argument(
-        '--status', required=True, choices=['pending', 'in_progress', 'done'], help='Phase status'
-    )
-    update_phase_parser.set_defaults(func=cmd_update_phase)
-
-    # progress
-    progress_parser = subparsers.add_parser('progress', help='Calculate progress')
-    progress_parser.add_argument('--plan-id', required=True, help='Plan identifier')
-    progress_parser.set_defaults(func=cmd_progress)
 
     # list
     list_parser = subparsers.add_parser('list', help='Discover all plans')
@@ -648,19 +330,6 @@ def main():
     )
     routing_context_parser.add_argument('--plan-id', required=True, help='Plan identifier')
     routing_context_parser.set_defaults(func=cmd_get_routing_context)
-
-    # set-metadata
-    set_metadata_parser = subparsers.add_parser('set-metadata', help='Set a metadata field')
-    set_metadata_parser.add_argument('--plan-id', required=True, help='Plan identifier')
-    set_metadata_parser.add_argument('--field', required=True, help='Metadata field name')
-    set_metadata_parser.add_argument('--value', required=True, help='Metadata field value')
-    set_metadata_parser.set_defaults(func=cmd_set_metadata)
-
-    # get-metadata
-    get_metadata_parser = subparsers.add_parser('get-metadata', help='Get a metadata field')
-    get_metadata_parser.add_argument('--plan-id', required=True, help='Plan identifier')
-    get_metadata_parser.add_argument('--field', required=True, help='Metadata field name')
-    get_metadata_parser.set_defaults(func=cmd_get_metadata)
 
     args = parser.parse_args()
     args.func(args)

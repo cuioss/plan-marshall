@@ -25,7 +25,7 @@ from typing import cast
 
 from file_ops import atomic_write_file, base_path  # type: ignore[import-not-found]
 from plan_logging import log_entry  # type: ignore[import-not-found]
-from toon_parser import parse_toon, serialize_toon  # type: ignore[import-not-found]
+from toon_parser import serialize_toon  # type: ignore[import-not-found]
 
 
 def validate_plan_id(plan_id: str) -> bool:
@@ -255,11 +255,13 @@ def cmd_create_or_reference(args):
         # Plan already exists - gather info about it
         result = {'status': 'success', 'plan_id': args.plan_id, 'action': 'exists', 'path': str(plan_dir)}
 
-        # Check if status.toon exists to get phase info
-        status_path = plan_dir / 'status.toon'
+        # Check if status.json exists to get phase info
+        status_path = plan_dir / 'status.json'
         if status_path.exists():
             try:
-                status = parse_toon(status_path.read_text(encoding='utf-8'))
+                import json
+
+                status = json.loads(status_path.read_text(encoding='utf-8'))
                 result['current_phase'] = status.get('current_phase', 'unknown')
             except (ValueError, KeyError, OSError):
                 # Parse error or read error - just note file exists

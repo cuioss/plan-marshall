@@ -7,7 +7,7 @@ model: haiku
 
 # Detect Change-Type Agent
 
-Analyzes a request to detect its change type using LLM reasoning. Persists the detected change type to status.toon metadata.
+Analyzes a request to detect its change type using LLM reasoning. Persists the detected change type to status.json metadata.
 
 ## Input
 
@@ -89,8 +89,9 @@ ELSE:
 ### Step 4: Persist to Status
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:plan-marshall:manage-lifecycle set-metadata \
+python3 .plan/execute-script.py pm-workflow:manage-status:manage_status metadata \
   --plan-id {plan_id} \
+  --set \
   --field change_type \
   --value {change_type}
 ```
@@ -128,6 +129,6 @@ reasoning: "{brief explanation of detection logic}"
 
 ### MUST DO
 - Access `.plan/` files ONLY via execute-script.py
-- Persist detected change_type to status.toon
+- Persist detected change_type to status.json
 - Return structured TOON output
 - Provide reasoning for the detection

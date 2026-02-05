@@ -27,17 +27,17 @@ The pm-workflow bundle uses manage-* skills as the data access layer for all pla
 │  │  └──────────────────────────────────────────────────────────────┘   │  │
 │  │       │           │               │            │             │       │  │
 │  │       ▼           ▼               ▼            ▼             ▼       │  │
-│  │  ┌─────────┐ ┌─────────┐ ┌───────────────┐ ┌─────────┐ ┌─────────┐  │  │
-│  │  │ manage- │ │ manage- │ │   manage-     │ │ manage- │ │ manage- │  │  │
-│  │  │referenc.│ │lifecycle│ │solution-      │ │  tasks  │ │  files  │  │  │
-│  │  │         │ │         │ │outline        │ │         │ │         │  │  │
-│  │  └────┬────┘ └────┬────┘ └───────┬───────┘ └────┬────┘ └────┬────┘  │  │
-│  │       │           │               │             │            │       │  │
-│  │       ▼           ▼               ▼             ▼            ▼       │  │
-│  │  ┌─────────┐ ┌─────────┐ ┌───────────────┐ ┌─────────┐ ┌─────────┐  │  │
-│  │  │referenc.│ │ status  │ │  solution_    │ │ TASK-*  │ │ plan    │  │  │
-│  │  │ .toon   │ │ .toon   │ │  outline.md   │ │ .toon   │ │directory│  │  │
-│  │  └─────────┘ └─────────┘ └───────────────┘ └─────────┘ └─────────┘  │  │
+│  │  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌───────────────┐ ┌─────────┐ ┌─────────┐  │
+│  │  │ manage- │ │ manage- │ │ manage- │ │   manage-     │ │ manage- │ │ manage- │  │
+│  │  │referenc.│ │ status  │ │lifecycle│ │solution-      │ │  tasks  │ │  files  │  │
+│  │  │         │ │         │ │         │ │outline        │ │         │ │         │  │
+│  │  └────┬────┘ └────┬────┘ └────┬────┘ └───────┬───────┘ └────┬────┘ └────┬────┘  │
+│  │       │           │           │               │             │            │       │
+│  │       ▼           ▼           ▼               ▼             ▼            ▼       │
+│  │  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌───────────────┐ ┌─────────┐ ┌─────────┐  │
+│  │  │referenc.│ │ status  │ │ phase   │ │  solution_    │ │ TASK-*  │ │ plan    │  │
+│  │  │ .json   │ │ .json   │ │ routing │ │  outline.md   │ │ .json   │ │directory│  │
+│  │  └─────────┘ └─────────┘ └─────────┘ └───────────────┘ └─────────┘ └─────────┘  │
 │  │                                                                      │  │
 │  └──────────────────────────────────────────────────────────────────────┘  │
 │                                                                             │
@@ -59,10 +59,17 @@ The pm-workflow bundle uses manage-* skills as the data access layer for all pla
 │  │                       │                   │                          │  │
 │  ├───────────────────────┼───────────────────┼──────────────────────────┤  │
 │  │                       │                   │                          │  │
-│  │ manage-lifecycle      │ status.toon       │ Plan lifecycle           │  │
+│  │ manage-status         │ status.json       │ Plan status              │  │
 │  │                       │                   │ • current phase          │  │
 │  │                       │                   │ • phase statuses         │  │
+│  │                       │                   │ • metadata               │  │
+│  │                       │                   │                          │  │
+│  ├───────────────────────┼───────────────────┼──────────────────────────┤  │
+│  │                       │                   │                          │  │
+│  │ manage-lifecycle      │ (phase routing)   │ Plan lifecycle           │  │
 │  │                       │                   │ • phase transitions      │  │
+│  │                       │                   │ • phase routing          │  │
+│  │                       │                   │ • plan discovery         │  │
 │  │                       │                   │                          │  │
 │  ├───────────────────────┼───────────────────┼──────────────────────────┤  │
 │  │                       │                   │                          │  │
@@ -144,9 +151,14 @@ The pm-workflow bundle uses manage-* skills as the data access layer for all pla
 │  │  ...                                                                 │  │
 │  │  EOF                                                                 │  │
 │  │                                                                      │  │
+│  │  # Create status                                                     │  │
+│  │  python3 .plan/execute-script.py \                                   │  │
+│  │    pm-workflow:manage-status:manage_status \                         │  │
+│  │    create --plan-id my-feature --title "Title" --phases 1-init,...   │  │
+│  │                                                                      │  │
 │  │  # Transition phase                                                  │  │
 │  │  python3 .plan/execute-script.py \                                   │  │
-│  │    pm-workflow:plan-marshall:manage-lifecycle \                   │  │
+│  │    pm-workflow:plan-marshall:manage-lifecycle \                      │  │
 │  │    transition --plan-id my-feature --completed 1-init                │  │
 │  │                                                                      │  │
 │  └──────────────────────────────────────────────────────────────────────┘  │
@@ -158,6 +170,35 @@ The pm-workflow bundle uses manage-* skills as the data access layer for all pla
 
 ---
 
+## manage-status Commands
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                                                                             │
+│                      MANAGE-STATUS COMMANDS                                 │
+│                                                                             │
+│  Script: pm-workflow:manage-status:manage_status                            │
+│                                                                             │
+│  ┌────────────────────┬─────────────────────────┬────────────────────────┐ │
+│  │ COMMAND            │ PARAMETERS              │ PURPOSE                │ │
+│  ├────────────────────┼─────────────────────────┼────────────────────────┤ │
+│  │ create             │ --plan-id --title       │ Create status.json     │ │
+│  │                    │ --phases [--force]      │                        │ │
+│  │ read               │ --plan-id               │ Read full status       │ │
+│  │ set-phase          │ --plan-id --phase       │ Set current phase      │ │
+│  │ update-phase       │ --plan-id --phase       │ Update phase status    │ │
+│  │                    │ --status                │                        │ │
+│  │ progress           │ --plan-id               │ Get progress %         │ │
+│  │ metadata           │ --plan-id --get/--set   │ Get/set metadata       │ │
+│  │                    │ --field [--value]       │                        │ │
+│  │ get-context        │ --plan-id               │ Combined status context│ │
+│  └────────────────────┴─────────────────────────┴────────────────────────┘ │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
 ## manage-lifecycle Commands
 
 ```
@@ -165,42 +206,51 @@ The pm-workflow bundle uses manage-* skills as the data access layer for all pla
 │                                                                             │
 │                     MANAGE-LIFECYCLE COMMANDS                               │
 │                                                                             │
-│  Script: pm-workflow:plan-marshall:manage-lifecycle                      │
+│  Script: pm-workflow:plan-marshall:manage-lifecycle                         │
 │                                                                             │
 │  ┌────────────────────┬─────────────────────────┬────────────────────────┐ │
 │  │ COMMAND            │ PARAMETERS              │ PURPOSE                │ │
 │  ├────────────────────┼─────────────────────────┼────────────────────────┤ │
-│  │ create             │ --plan-id --title       │ Create status.toon     │ │
-│  │                    │ --phases                │                        │ │
-│  │ read               │ --plan-id               │ Read full status       │ │
-│  │ progress           │ --plan-id               │ Get progress %         │ │
+│  │ list               │ [--filter]              │ List all plans         │ │
 │  │ transition         │ --plan-id --completed   │ Move to next phase     │ │
-│  │ set-phase          │ --plan-id --phase       │ Set current phase      │ │
+│  │ archive            │ --plan-id [--dry-run]   │ Archive completed      │ │
 │  │ route              │ --phase                 │ Get skill for phase    │ │
 │  │ get-routing-context│ --plan-id               │ Phase + skill + prog   │ │
-│  │ list               │ [--filter]              │ List all plans         │ │
-│  │ archive            │ --plan-id               │ Archive completed      │ │
 │  └────────────────────┴─────────────────────────┴────────────────────────┘ │
 │                                                                             │
-│  status.toon STRUCTURE:                                                     │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## status.json Structure
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                                                                             │
+│  status.json STRUCTURE:                                                     │
 │  ═══════════════════════                                                    │
 │                                                                             │
 │  ┌──────────────────────────────────────────────────────────────────────┐  │
 │  │                                                                      │  │
-│  │  title: Implement JWT Authentication                                 │  │
-│  │  current_phase: 5-execute                                            │  │
-│  │                                                                      │  │
-│  │  phases[7]{name,status}:                                             │  │
-│  │  1-init,done                                                         │  │
-│  │  2-refine,done                                                       │  │
-│  │  3-outline,done                                                      │  │
-│  │  4-plan,done                                                         │  │
-│  │  5-execute,in_progress                                               │  │
-│  │  6-verify,pending                                                    │  │
-│  │  7-finalize,pending                                                  │  │
-│  │                                                                      │  │
-│  │  created: 2025-12-02T10:00:00Z                                       │  │
-│  │  updated: 2025-12-02T14:30:00Z                                       │  │
+│  │  {                                                                   │  │
+│  │    "title": "Implement JWT Authentication",                          │  │
+│  │    "current_phase": "5-execute",                                     │  │
+│  │    "phases": [                                                       │  │
+│  │      {"name": "1-init", "status": "done"},                           │  │
+│  │      {"name": "2-refine", "status": "done"},                         │  │
+│  │      {"name": "3-outline", "status": "done"},                        │  │
+│  │      {"name": "4-plan", "status": "done"},                           │  │
+│  │      {"name": "5-execute", "status": "in_progress"},                 │  │
+│  │      {"name": "6-verify", "status": "pending"},                      │  │
+│  │      {"name": "7-finalize", "status": "pending"}                     │  │
+│  │    ],                                                                │  │
+│  │    "metadata": {                                                     │  │
+│  │      "change_type": "feature"                                        │  │
+│  │    },                                                                │  │
+│  │    "created": "2025-12-02T10:00:00Z",                                │  │
+│  │    "updated": "2025-12-02T14:30:00Z"                                 │  │
+│  │  }                                                                   │  │
 │  │                                                                      │  │
 │  └──────────────────────────────────────────────────────────────────────┘  │
 │                                                                             │
@@ -325,7 +375,7 @@ The pm-workflow bundle uses manage-* skills as the data access layer for all pla
 │  ├── execute-script.py          # Script executor                           │
 │  ├── plans/                     # Active plans                              │
 │  │   └── {plan_id}/                                                         │
-│  │       ├── status.toon        # Lifecycle (phases, progress)             │
+│  │       ├── status.json        # Lifecycle (phases, progress, metadata)   │
 │  │       ├── request.md         # Original request                         │
 │  │       ├── references.json    # Plan refs & config (domains, branch, issue) │
 │  │       ├── solution_outline.md# Deliverables                              │
@@ -355,6 +405,7 @@ The pm-workflow bundle uses manage-* skills as the data access layer for all pla
 | [artifacts.md](artifacts.md) | Plan file formats in detail |
 | [phases.md](phases.md) | Which phase uses which files |
 | `pm-workflow:manage-references/SKILL.md` | Full references commands |
+| `pm-workflow:manage-status/SKILL.md` | Full status commands |
 | `pm-workflow:plan-marshall/SKILL.md` | Full lifecycle commands |
 | `pm-workflow:manage-tasks/SKILL.md` | Full task commands |
 | `plan-marshall:manage-logging/SKILL.md` | Work log and script execution logging |

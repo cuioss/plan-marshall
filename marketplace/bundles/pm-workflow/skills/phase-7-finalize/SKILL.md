@@ -167,9 +167,9 @@ This monitors CI status and handles review comments.
 3. Continue until clean or max iterations (3)
 
 ```bash
-# Check iteration count from lifecycle
+# Check iteration count from status
 # If issues and iteration < max_iterations, loop back to execute
-python3 .plan/execute-script.py pm-workflow:plan-marshall:manage-lifecycle set-phase \
+python3 .plan/execute-script.py pm-workflow:manage-status:manage_status set-phase \
   --plan-id {plan_id} --phase 5-execute
 ```
 

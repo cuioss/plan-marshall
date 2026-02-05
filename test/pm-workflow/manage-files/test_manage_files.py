@@ -216,13 +216,13 @@ def test_create_or_reference_existing_plan():
 
 
 def test_create_or_reference_existing_with_status():
-    """Test create-or-reference returns phase info when status.toon exists."""
+    """Test create-or-reference returns phase info when status.json exists."""
+    import json
+
     with TestContext(plan_id='status-plan') as ctx:
-        # Create status.toon with phase info (domain is in references.json, not status.toon)
-        status_content = """title: Test Plan
-current_phase: outline
-"""
-        (ctx.plan_dir / 'status.toon').write_text(status_content)
+        # Create status.json with phase info (domain is in references.json, not status.json)
+        status_content = json.dumps({'title': 'Test Plan', 'current_phase': 'outline'})
+        (ctx.plan_dir / 'status.json').write_text(status_content)
 
         result = run_script(SCRIPT_PATH, 'create-or-reference', '--plan-id', 'status-plan')
         assert result.success, f'Script failed: {result.stderr}'
