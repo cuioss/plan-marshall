@@ -45,26 +45,28 @@ This halt is **NOT OPTIONAL**. Task creation MUST NOT proceed without user confi
 
 ```
 while not approved:
-    feedback = AskUserQuestion("Review and approve or request changes")
-    if feedback == "Proceed":
+    response = AskUserQuestion("Review and approve or request changes")
+    if response == "Proceed":
         approved = true
     else:
-        invoke 3-outline phase agent with feedback parameter
+        write each feedback point as Q-Gate finding (source: user_review)
+        re-invoke 3-outline phase (reads findings at Step 1)
         display updated outline
 ```
 
-## Re-Invocation with Feedback
+## Re-Invocation via Q-Gate Findings
 
-When user requests changes, re-invoke the solution outline agent with the `feedback` parameter:
+When user requests changes, write each feedback point as a Q-Gate finding and re-invoke the outline phase:
 
-**Input to Solution Outline Agent**:
+**Write findings**:
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
+  qgate add {plan_id} --phase 3-outline --source user_review \
+  --type triage --title "User: {feedback summary}" \
+  --detail "{full feedback text}"
+```
 
-| Parameter | Value |
-|-----------|-------|
-| `plan_id` | Same plan identifier |
-| `feedback` | User's change request (captured from AskUserQuestion) |
-
-The agent incorporates feedback into the existing solution_outline.md and re-validates.
+**Re-invoke**: The phase-3-outline skill reads unresolved findings at its Step 1 (Check for Unresolved Q-Gate Findings) and addresses them before re-running.
 
 ## Example Interaction
 
@@ -72,7 +74,8 @@ The agent incorporates feedback into the existing solution_outline.md and re-val
 Command: "Solution outline created with 5 deliverables. Review .plan/plans/auth-feature/solution_outline.md"
 User: "Deliverable 3 should use CDI instead of Spring - please update"
 
-Command: Re-invokes solution outline agent with feedback="Deliverable 3 should use CDI instead of Spring"
+Command: Writes Q-Gate finding: "User: Use CDI instead of Spring for Deliverable 3"
+Command: Re-invokes phase-3-outline (reads finding at Step 1)
 Agent: Updates solution_outline.md, returns {status: success, deliverable_count: 5}
 
 Command: "Solution outline updated. Please review changes."

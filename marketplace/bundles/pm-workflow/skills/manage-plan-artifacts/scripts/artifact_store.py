@@ -71,9 +71,15 @@ FINDING_TYPES = [
     'pr-comment',
 ]
 
-RESOLUTIONS = ['pending', 'fixed', 'suppressed', 'accepted']
+RESOLUTIONS = ['pending', 'fixed', 'suppressed', 'accepted', 'taken_into_account']
 
 SEVERITIES = ['error', 'warning', 'info']
+
+# Q-Gate phases (per-phase findings files)
+QGATE_PHASES = ['2-refine', '3-outline', '4-plan', '6-verify', '7-finalize']
+
+# Valid Q-Gate finding sources
+QGATE_SOURCES = ['qgate', 'user_review']
 
 # Types that default to manage-lessons promotion
 LESSON_TYPES = {'bug', 'improvement', 'anti-pattern', 'triage'}
@@ -505,6 +511,201 @@ def format_output(data: dict[str, Any]) -> str:
     """Format output as TOON."""
     result: str = serialize_toon(data)
     return result
+
+
+# --- Q-Gate Findings ---
+
+
+def get_qgate_dir(plan_id: str) -> Path:
+    """Returns .plan/plans/{plan_id}/qgate/"""
+    return get_plan_root() / 'plans' / plan_id / 'qgate'
+
+
+def get_qgate_path(plan_id: str, phase: str) -> Path:
+    """Returns .plan/plans/{plan_id}/qgate/{phase}.jsonl"""
+    if phase not in QGATE_PHASES:
+        raise ValueError(f'Invalid Q-Gate phase: {phase}. Must be one of {QGATE_PHASES}')
+    return get_qgate_dir(plan_id) / f'{phase}.jsonl'
+
+
+def add_qgate_finding(
+    plan_id: str,
+    phase: str,
+    source: str,
+    finding_type: str,
+    title: str,
+    detail: str,
+    file_path: str | None = None,
+    component: str | None = None,
+    severity: str | None = None,
+    iteration: int | None = None,
+) -> dict[str, Any]:
+    """Add a Q-Gate finding for a specific phase.
+
+    Args:
+        plan_id: Plan identifier
+        phase: Phase name (e.g., '3-outline')
+        source: Finding source ('qgate' or 'user_review')
+        finding_type: One of FINDING_TYPES
+        title: Short title
+        detail: Detailed description
+        file_path: File path (optional)
+        component: Component reference (optional)
+        severity: error, warning, or info (optional)
+        iteration: Phase iteration number (optional)
+
+    Returns:
+        Dict with status, hash_id, phase
+    """
+    if phase not in QGATE_PHASES:
+        return {'status': 'error', 'message': f'Invalid Q-Gate phase: {phase}. Must be one of {QGATE_PHASES}'}
+
+    if source not in QGATE_SOURCES:
+        return {'status': 'error', 'message': f'Invalid Q-Gate source: {source}. Must be one of {QGATE_SOURCES}'}
+
+    if finding_type not in FINDING_TYPES:
+        return {'status': 'error', 'message': f'Invalid finding type: {finding_type}. Must be one of {FINDING_TYPES}'}
+
+    if severity and severity not in SEVERITIES:
+        return {'status': 'error', 'message': f'Invalid severity: {severity}. Must be one of {SEVERITIES}'}
+
+    hash_id = generate_hash_id()
+    record: dict[str, Any] = {
+        'hash_id': hash_id,
+        'timestamp': _timestamp(),
+        'phase': phase,
+        'source': source,
+        'type': finding_type,
+        'title': title,
+        'detail': detail,
+        'resolution': 'pending',
+        'resolution_detail': None,
+        'resolution_timestamp': None,
+    }
+
+    if iteration is not None:
+        record['iteration'] = iteration
+    if file_path:
+        record['file_path'] = file_path
+    if component:
+        record['component'] = component
+    if severity:
+        record['severity'] = severity
+
+    _append_jsonl(get_qgate_path(plan_id, phase), record)
+
+    return {'status': 'success', 'hash_id': hash_id, 'phase': phase}
+
+
+def query_qgate_findings(
+    plan_id: str,
+    phase: str,
+    resolution: str | None = None,
+    source: str | None = None,
+    iteration: int | None = None,
+) -> dict[str, Any]:
+    """Query Q-Gate findings for a specific phase.
+
+    Args:
+        plan_id: Plan identifier
+        phase: Phase name (e.g., '3-outline')
+        resolution: Filter by resolution status
+        source: Filter by source ('qgate' or 'user_review')
+        iteration: Filter by iteration number
+
+    Returns:
+        Dict with status, total_count, filtered_count, findings list
+    """
+    if phase not in QGATE_PHASES:
+        return {'status': 'error', 'message': f'Invalid Q-Gate phase: {phase}. Must be one of {QGATE_PHASES}'}
+
+    path = get_qgate_path(plan_id, phase)
+    records = _read_jsonl(path)
+    total_count = len(records)
+
+    filtered = []
+    for r in records:
+        if resolution and r.get('resolution') != resolution:
+            continue
+        if source and r.get('source') != source:
+            continue
+        if iteration is not None and r.get('iteration') != iteration:
+            continue
+        filtered.append(r)
+
+    return {
+        'status': 'success',
+        'plan_id': plan_id,
+        'phase': phase,
+        'total_count': total_count,
+        'filtered_count': len(filtered),
+        'findings': filtered,
+    }
+
+
+def resolve_qgate_finding(
+    plan_id: str,
+    phase: str,
+    hash_id: str,
+    resolution: str,
+    detail: str | None = None,
+) -> dict[str, Any]:
+    """Resolve a Q-Gate finding.
+
+    Args:
+        plan_id: Plan identifier
+        phase: Phase name (e.g., '3-outline')
+        hash_id: Finding hash ID
+        resolution: Resolution status
+        detail: Resolution detail/reasoning
+
+    Returns:
+        Dict with status, hash_id, resolution
+    """
+    if phase not in QGATE_PHASES:
+        return {'status': 'error', 'message': f'Invalid Q-Gate phase: {phase}. Must be one of {QGATE_PHASES}'}
+
+    if resolution not in RESOLUTIONS:
+        return {'status': 'error', 'message': f'Invalid resolution: {resolution}. Must be one of {RESOLUTIONS}'}
+
+    path = get_qgate_path(plan_id, phase)
+    updates: dict[str, Any] = {
+        'resolution': resolution,
+        'resolution_timestamp': _timestamp(),
+    }
+    if detail:
+        updates['resolution_detail'] = detail
+
+    if _update_jsonl(path, hash_id, updates):
+        return {'status': 'success', 'hash_id': hash_id, 'phase': phase, 'resolution': resolution}
+    return {'status': 'error', 'message': f'Q-Gate finding not found: {hash_id}'}
+
+
+def clear_qgate_findings(
+    plan_id: str,
+    phase: str,
+) -> dict[str, Any]:
+    """Clear all Q-Gate findings for a specific phase.
+
+    Args:
+        plan_id: Plan identifier
+        phase: Phase name (e.g., '3-outline')
+
+    Returns:
+        Dict with status, cleared count
+    """
+    if phase not in QGATE_PHASES:
+        return {'status': 'error', 'message': f'Invalid Q-Gate phase: {phase}. Must be one of {QGATE_PHASES}'}
+
+    path = get_qgate_path(plan_id, phase)
+    if not path.exists():
+        return {'status': 'success', 'phase': phase, 'cleared': 0}
+
+    records = _read_jsonl(path)
+    cleared = len(records)
+    path.unlink()
+
+    return {'status': 'success', 'phase': phase, 'cleared': cleared}
 
 
 if __name__ == '__main__':

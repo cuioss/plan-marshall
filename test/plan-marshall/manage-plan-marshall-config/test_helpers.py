@@ -56,6 +56,16 @@ def create_marshal_json(fixture_dir: Path, config: dict | None = None) -> Path:
                 'phase-2-refine': {
                     'confidence_threshold': 95,
                     'compatibility': 'breaking',
+                    'qgate_enabled': True,
+                    'qgate_max_iterations': 3,
+                },
+                'phase-3-outline': {
+                    'qgate_enabled': True,
+                    'qgate_max_iterations': 3,
+                },
+                'phase-4-plan': {
+                    'qgate_enabled': True,
+                    'qgate_max_iterations': 3,
                 },
                 'phase-5-execute': {
                     'commit_strategy': 'per_deliverable',

@@ -40,7 +40,6 @@ Stay in your lane:
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `plan_id` | string | Yes | Plan identifier |
-| `feedback` | string | No | User feedback from outline review (for revision iterations) |
 
 ## Workflow
 
@@ -56,7 +55,6 @@ After skills are loaded (Step 0), invoke the skill's refine operation:
 ```
 operation: refine
 plan_id: {plan_id}
-feedback: {feedback if provided}
 ```
 
 The skill handles:
@@ -86,7 +84,6 @@ module_mapping:
   - requirement: "{req1}"
     modules: [{module1}]
 scope_estimate: {Small|Medium|Large}
-outline_guidance: [{feedback items for outline creation}]
 ```
 
 **Error**:

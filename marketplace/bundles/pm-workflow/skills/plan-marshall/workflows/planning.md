@@ -133,7 +133,19 @@ AskUserQuestion:
 - **If "Proceed to create tasks"**: Continue to Step 4
 - **If "Request changes"** or user provides custom feedback:
   - Capture the user's feedback
-  - Re-invoke phase-3-outline skill with feedback parameter
+  - Write each feedback point as a Q-Gate finding:
+    ```bash
+    python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
+      qgate add {plan_id} --phase 3-outline --source user_review \
+      --type triage --title "User: {feedback summary}" \
+      --detail "{full feedback text}"
+    ```
+  - Log feedback capture:
+    ```bash
+    python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+      decision {plan_id} INFO "(pm-workflow:plan-marshall) User review: {count} change requests recorded to qgate/3-outline.jsonl"
+    ```
+  - Re-invoke phase-3-outline skill (phase reads Q-Gate findings at Step 1)
   - **Loop back to Step 3a**
 
 ---

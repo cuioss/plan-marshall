@@ -25,16 +25,46 @@ Before creating deliverables (phase-3-outline), ensure the request is:
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `plan_id` | string | Yes | Plan identifier |
-| `feedback` | string | No | User feedback from review (for revision iterations) |
-
-**Feedback handling**: When `feedback` is provided, it represents user feedback from a previous outline review. This feedback:
-- Takes priority in the analysis (addresses user's explicit concerns first)
-- Is logged at workflow start
-- Is incorporated into the clarified request
 
 ---
 
-## Step 1: Load Confidence Threshold
+## Step 1: Check for Unresolved Q-Gate Findings
+
+**Purpose**: On re-entry (after Q-Gate or user review flagged issues), address unresolved findings before re-running analysis.
+
+### Query Unresolved Findings
+
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
+  qgate query {plan_id} --phase 2-refine --resolution pending
+```
+
+### Address Each Finding
+
+If unresolved findings exist (filtered_count > 0):
+
+For each pending finding:
+1. Analyze the finding in context of current request and architecture
+2. Address it (revise analysis, re-evaluate scope, etc.)
+3. Resolve:
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
+  qgate resolve {plan_id} {hash_id} taken_into_account --phase 2-refine \
+  --detail "{what was done to address this finding}"
+```
+4. Log resolution:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  decision {plan_id} INFO "(pm-workflow:phase-2-refine:qgate) Finding {hash_id} [{source}]: taken_into_account — {resolution_detail}"
+```
+
+Then continue with normal Steps 2..12 (phase re-runs with corrections applied).
+
+If no unresolved findings: Continue with normal Steps 2..12 (first entry).
+
+---
+
+## Step 2: Load Confidence Threshold
 
 Read the confidence threshold from project configuration.
 
@@ -49,16 +79,16 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-m
 **Log**:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[REFINE:1] (pm-workflow:phase-2-refine) Using confidence threshold: {confidence_threshold}%"
+  work {plan_id} INFO "[REFINE:2] (pm-workflow:phase-2-refine) Using confidence threshold: {confidence_threshold}%"
 ```
 
-Store as `confidence_threshold` for use in Step 6.
+Store as `confidence_threshold` for use in Step 8.
 
 ---
 
-## Step 1b: Load Compatibility Strategy
+## Step 3: Load Compatibility Strategy
 
-Read the compatibility approach from project configuration and persist to references.json in Step 9.
+Read the compatibility approach from project configuration and persist to references.json in Step 11.
 
 **EXECUTE**:
 ```bash
@@ -82,65 +112,11 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   decision {plan_id} INFO "(pm-workflow:phase-2-refine) Config: compatibility={compatibility}"
 ```
 
-Store as `compatibility` and `compatibility_description` (the long description from the table above) for use in Step 9 return output.
+Store as `compatibility` and `compatibility_description` (the long description from the table above) for use in Step 11 return output.
 
 ---
 
-## Workflow
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    REQUEST REFINE LOOP                          │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│  Step 1: Load Confidence Threshold                              │
-│      ↓                                                          │
-│  Step 1b: Load Compatibility Strategy                           │
-│      ↓                                                          │
-│  Step 2: Load Architecture Context ──────────────────────┐      │
-│      ↓                                   arch_context    │      │
-│  Step 3: Load Request                         │          │      │
-│      ↓                                        ↓          ↓      │
-│  Step 4: Analyze Request Quality ←── technologies, modules      │
-│      ↓                                        │          │      │
-│  Step 5: Analyze in Architecture Context ←────┘──────────┘      │
-│      │   5.1 Module Mapping                                     │
-│      │   5.2 Feasibility Check                                  │
-│      │   5.3 Scope Size Estimation                              │
-│      │   5.4 Track Selection ─────────→ decision.log            │
-│      ↓                    (module details on demand)            │
-│  Step 6: Evaluate Confidence                                    │
-│      │                                                          │
-│      ├── confidence >= threshold → Step 9: Persist & Return     │
-│      │                              (track, scope → references) │
-│      │                                                          │
-│      └── confidence < threshold → Step 7: Clarify with User     │
-│              ↓                                                  │
-│          Step 8: Update Request                                 │
-│              ↓                                                  │
-│          (loop back to Step 4)                                  │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-### Data Flow
-
-| Step | Input | Output | Stored As |
-|------|-------|--------|-----------|
-| Step 1 | marshal.json | threshold value | `confidence_threshold` |
-| Step 1b | marshal.json | compatibility value + description | `compatibility`, `compatibility_description` |
-| Step 2 | architecture info | project + modules + technologies | `arch_context` |
-| Step 3 | request.md | title, description, clarifications | `request` |
-| Step 4 | `request` + `arch_context` | quality findings | `quality_findings` |
-| Step 5.1-5.2 | `request` + `arch_context` + detailed queries | mapping findings | `mapping_findings` |
-| Step 5.3 | `mapping_findings` | scope estimate | `scope_estimate` |
-| Step 5.4 | `scope_estimate` + `request` + `domains` | track selection | `track` + decision.log |
-| Step 6 | all findings | confidence score | decision |
-| Step 9 | all results | - | references.json, decision.log |
-
----
-
-## Step 2: Load Architecture Context
+## Step 4: Load Architecture Context
 
 Query project architecture BEFORE any analysis. Architecture data is pre-computed and compact (~500 tokens).
 
@@ -158,7 +134,7 @@ status: error
 message: Run /marshall-steward first
 ```
 
-### 2.1 Extract Architecture Summary
+### Extract Architecture Summary
 
 From the `architecture info` output, extract and store:
 
@@ -166,11 +142,11 @@ From the `architecture info` output, extract and store:
 |-------|--------|--------|
 | `project_name` | `project.name` | Context for questions |
 | `project_description` | `project.description` | Scope validation |
-| `technologies` | `technologies[]` | Step 4.1 Correctness validation |
-| `module_names` | `modules[].name` | Step 5.1 Module Mapping |
-| `module_purposes` | `modules[].purpose` | Step 5.2 Feasibility Check |
+| `technologies` | `technologies[]` | Step 6 Correctness validation |
+| `module_names` | `modules[].name` | Step 7 Module Mapping |
+| `module_purposes` | `modules[].purpose` | Step 7 Feasibility Check |
 
-**Store as** `arch_context` for use in Steps 4-5.
+**Store as** `arch_context` for use in Steps 6-7.
 
 **Example extraction**:
 ```
@@ -185,23 +161,17 @@ arch_context:
       purpose: extension
 ```
 
-### 2.2 Log Completion
+### Log Completion
 
 **Log**:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[REFINE:2] (pm-workflow:phase-2-refine) Loaded architecture: {project_name} ({module_count} modules)"
-```
-
-**If feedback provided**, log it:
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO '[REFINE:2] (pm-workflow:phase-2-refine) Processing with feedback: {feedback}'
+  work {plan_id} INFO "[REFINE:4] (pm-workflow:phase-2-refine) Loaded architecture: {project_name} ({module_count} modules)"
 ```
 
 ---
 
-## Step 3: Load Request
+## Step 5: Load Request
 
 Load the request document.
 
@@ -222,37 +192,18 @@ Output format: `pm-workflow:manage-plan-documents/documents/request.toon`
 **Log**:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[REFINE:3] (pm-workflow:phase-2-refine) Loaded request: {title}"
+  work {plan_id} INFO "[REFINE:5] (pm-workflow:phase-2-refine) Loaded request: {title}"
 ```
 
 ---
 
-## Step 4: Analyze Request Quality
+## Step 6: Analyze Request Quality
 
 Evaluate the request against five quality dimensions.
 
-### 4.0 Feedback Analysis (if feedback provided)
+### Correctness
 
-**When `feedback` parameter is present**, categorize it to determine handling:
-
-| Feedback Type | Example | Action |
-|---------------|---------|--------|
-| **Requirement gap** | "You missed that it also needs X" | Treat as Completeness issue → clarify with user |
-| **Scope correction** | "Module Y shouldn't be affected" | Pass to outline creation |
-| **Approach preference** | "Use pattern Z instead" | Pass to outline creation |
-
-**Finding format**:
-```
-FEEDBACK_TYPE: {REQUIREMENT_GAP|SCOPE_CORRECTION|APPROACH_PREFERENCE}
-  - Issue raised: {feedback summary}
-  - Action: {clarify_request | pass_to_outline}
-```
-
-**Note**: Only REQUIREMENT_GAP feedback affects request analysis (surfaces as Completeness issue). Other feedback types are passed through to outline creation without blocking request confidence.
-
-### 4.1 Correctness
-
-**Check**: Are requirements technically valid? **Use `arch_context` from Step 2**.
+**Check**: Are requirements technically valid? **Use `arch_context` from Step 4**.
 
 | Aspect | Check | Architecture Data Used |
 |--------|-------|------------------------|
@@ -274,7 +225,7 @@ CORRECTNESS: {PASS|ISSUE}
   - Architecture reference: {what was checked against}
 ```
 
-### 4.2 Completeness
+### Completeness
 
 **Check**: Is all necessary information present?
 
@@ -291,7 +242,7 @@ COMPLETENESS: {PASS|MISSING}
   - {what is missing and why it matters}
 ```
 
-### 4.3 Consistency
+### Consistency
 
 **Check**: Are requirements internally consistent?
 
@@ -307,7 +258,7 @@ CONSISTENCY: {PASS|CONFLICT}
   - {conflicting requirements with explanation}
 ```
 
-### 4.4 Non-Duplication
+### Non-Duplication
 
 **Check**: Are there redundant requirements?
 
@@ -322,7 +273,7 @@ DUPLICATION: {PASS|REDUNDANT}
   - {duplicated requirements and recommendation}
 ```
 
-### 4.5 Ambiguity
+### Ambiguity
 
 **Check**: Is there only one valid interpretation?
 
@@ -341,15 +292,15 @@ AMBIGUITY: {PASS|UNCLEAR}
 
 ---
 
-## Step 5: Analyze Request in Architecture Context
+## Step 7: Analyze Request in Architecture Context
 
-With `arch_context` from Step 2, analyze how the request maps to the codebase.
+With `arch_context` from Step 4, analyze how the request maps to the codebase.
 
-### 5.1 Module Mapping
+### Module Mapping
 
 **Question**: Which modules are affected by this request?
 
-**Initial mapping** (use `arch_context.modules` from Step 2):
+**Initial mapping** (use `arch_context.modules` from Step 4):
 
 For each requirement, identify candidate modules:
 - Does the request mention specific modules? → Check against `arch_context.modules[].name`
@@ -396,7 +347,7 @@ MODULE_MAPPING: {CLEAR|NEEDS_CLARIFICATION}
   - Detailed query: {yes/no - whether module details were retrieved}
 ```
 
-### 5.2 Feasibility Check
+### Feasibility Check
 
 **Question**: Can this request be implemented given the architecture?
 
@@ -421,7 +372,7 @@ FEASIBILITY: {FEASIBLE|CONCERN}
   - Architecture check: {what was validated}
 ```
 
-### 5.3 Scope Size Estimation
+### Scope Size Estimation
 
 **Question**: What is the approximate scope?
 
@@ -441,7 +392,7 @@ SCOPE_ESTIMATE: {single_file|single_module|few_files|multi_module|codebase_wide}
   - Rationale: {brief explanation}
 ```
 
-### 5.4 Track Selection
+### Track Selection
 
 **Question**: Does this request need complex discovery or can targets be determined directly?
 
@@ -487,24 +438,13 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 ---
 
-## Step 6: Evaluate Confidence
+## Step 8: Evaluate Confidence
 
-Aggregate findings from Steps 4-5 into confidence score.
+Aggregate findings from Steps 6-7 into confidence score.
+
+If confidence >= threshold → go to Step 11. Otherwise continue.
 
 ### Confidence Calculation
-
-**If feedback was provided** (revision iteration):
-
-| Dimension | Weight | Score |
-|-----------|--------|-------|
-| Feedback addressed | 30% | 100 if CLEAR and addressed, 0 if unresolved |
-| Correctness | 15% | 100 if PASS, 0 if ISSUE |
-| Completeness | 15% | 100 if PASS, 50 if minor missing, 0 if major missing |
-| Consistency | 15% | 100 if PASS, 0 if CONFLICT |
-| Ambiguity | 15% | 100 if PASS, 0 if UNCLEAR |
-| Module Mapping | 10% | Use confidence from Step 5.1 |
-
-**If no feedback** (initial analysis):
 
 | Dimension | Weight | Score |
 |-----------|--------|-------|
@@ -513,7 +453,7 @@ Aggregate findings from Steps 4-5 into confidence score.
 | Consistency | 20% | 100 if PASS, 0 if CONFLICT |
 | Non-Duplication | 10% | 100 if PASS, 80 if REDUNDANT |
 | Ambiguity | 20% | 100 if PASS, 0 if UNCLEAR |
-| Module Mapping | 10% | Use confidence from Step 5.1 |
+| Module Mapping | 10% | Use confidence from Step 7 |
 
 **Confidence = weighted sum**
 
@@ -521,25 +461,25 @@ Aggregate findings from Steps 4-5 into confidence score.
 
 ```
 IF confidence >= confidence_threshold:
-  Log: "[REFINE:6] Request refinement complete. Confidence: {confidence}%"
-  CONTINUE to Step 9 (Return Results)
+  Log: "[REFINE:8] Request refinement complete. Confidence: {confidence}%"
+  CONTINUE to Step 11 (Persist and Return Results)
 
 ELSE:
-  Log: "[REFINE:6] Request needs clarification. Confidence: {confidence}%"
-  CONTINUE to Step 7
+  Log: "[REFINE:8] Request needs clarification. Confidence: {confidence}%"
+  CONTINUE to Step 9
 ```
 
 **Log**:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[REFINE:6] (pm-workflow:phase-2-refine) Confidence: {confidence}%. Threshold: {confidence_threshold}%. Issues: {issue_summary}"
+  work {plan_id} INFO "[REFINE:8] (pm-workflow:phase-2-refine) Confidence: {confidence}%. Threshold: {confidence_threshold}%. Issues: {issue_summary}"
 ```
 
 ---
 
-## Step 7: Clarify with User
+## Step 9: Clarify with User
 
-For each issue found in Steps 4-5, formulate a clarification question.
+For each issue found in Steps 6-7, formulate a clarification question.
 
 ### Question Formulation
 
@@ -573,11 +513,11 @@ AskUserQuestion:
 
 ---
 
-## Step 8: Update Request
+## Step 10: Update Request
 
 After receiving user answers, update request.md with clarifications.
 
-### 8.1 Record Clarifications
+### Record Clarifications
 
 **EXECUTE**:
 ```bash
@@ -593,7 +533,7 @@ Q: {question asked}
 A: {user's answer}
 ```
 
-### 8.2 Synthesize Clarified Request
+### Synthesize Clarified Request
 
 If significant clarifications were made, synthesize an updated request:
 
@@ -620,23 +560,23 @@ python3 .plan/execute-script.py pm-workflow:manage-plan-documents:manage-plan-do
 - {Constraint from clarification}
 ```
 
-### 8.3 Log and Loop
+### Log and Loop
 
 **Log**:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[REFINE:8] (pm-workflow:phase-2-refine) Updated request with {N} clarifications. Returning to analysis."
+  work {plan_id} INFO "[REFINE:10] (pm-workflow:phase-2-refine) Updated request with {N} clarifications. Returning to analysis."
 ```
 
-**Loop**: Return to Step 4 with updated request.
+Go back to Step 6.
 
 ---
 
-## Step 9: Persist and Return Results
+## Step 11: Persist and Return Results
 
 When confidence reaches threshold, persist results to sinks and return minimal status.
 
-### 9.1 Persist Module Mapping to Work Directory
+### Persist Module Mapping to Work Directory
 
 **Persist module mapping** (intermediate analysis state, not a reference):
 ```bash
@@ -650,12 +590,12 @@ python3 .plan/execute-script.py pm-workflow:manage-files:manage-files write \
 ```
 
 **Note**: Track, scope, and compatibility are NOT persisted to references.json:
-- **Track/scope**: Already logged to decision.log (Step 5.4, Step 9.2)
+- **Track/scope**: Already logged to decision.log (Step 7, Step 11)
 - **Compatibility**: Read directly from marshal.json by consumers
 
-### 9.2 Log Decisions (with duplicate guard)
+### Log Decisions (with duplicate guard)
 
-**Note**: Track decision was already logged in Step 5.4. Only log scope and domains here if this is the first successful completion (iteration_count == 1 or first time reaching Step 9).
+**Note**: Track decision was already logged in Step 7. Only log scope and domains here if this is the first successful completion (iteration_count == 1 or first time reaching Step 11).
 
 **Log to decision.log** (scope decision - only on first completion):
 ```bash
@@ -671,10 +611,10 @@ IF iteration_count == 1:
 **Log to work.log** (completion status):
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[REFINE:9] (pm-workflow:phase-2-refine) Complete. Confidence: {confidence}%. Track: {track}. Iterations: {iteration_count}"
+  work {plan_id} INFO "[REFINE:11] (pm-workflow:phase-2-refine) Complete. Confidence: {confidence}%. Track: {track}. Iterations: {iteration_count}"
 ```
 
-### 9.3 Return Output with Decisions
+### Return Output with Decisions
 
 Return status with decision values - track, scope, and compatibility are included in output for consumers:
 
@@ -688,6 +628,7 @@ scope_estimate: {scope_estimate}
 compatibility: {compatibility}
 compatibility_description: {compatibility_description}
 domains: [{detected domains}]
+qgate_pending_count: {0 if no findings}
 ```
 
 **Data Location Reference**:
@@ -698,21 +639,42 @@ domains: [{detected domains}]
 
 This output feeds into the next phase (phase-3-outline).
 
-### 9.4 Outline Guidance (if applicable)
+### Q-Gate Verification Checks
 
-If revision feedback contained SCOPE_CORRECTION or APPROACH_PREFERENCE items, persist to work directory:
+**Purpose**: Verify refine output meets quality standards before transitioning.
+
+After persisting results, run lightweight verification:
+
+1. **Module Mapping Completeness**: Every requirement maps to >= 1 module? Every module exists in architecture?
+2. **Track Selection Consistency**: Track matches scope? (`codebase_wide` scope but `simple` track → flag)
+3. **Scope Realism**: `single_file` but multiple modules → flag; `codebase_wide` but only 1 module → flag
+4. **Confidence Justification**: All dimensions scored 100% → suspicious → flag
+
+For each issue found:
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-files:manage-files write \
-  --plan-id {plan_id} \
-  --file work/outline_guidance.toon \
-  --content "# Outline Guidance
-
-{guidance_items_toon_content}
-"
+python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
+  qgate add {plan_id} --phase 2-refine --source qgate \
+  --type triage --title "{check}: {issue_title}" \
+  --detail "{detailed_reason}"
 ```
 
-## Step 10: Transition Phase
+**Log Q-Gate Result**:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  decision {plan_id} INFO "(pm-workflow:phase-2-refine:qgate) Verification: {passed_count} passed, {flagged_count} flagged"
+```
+
+Add to return output:
+```toon
+qgate_pending_count: {count}
+```
+
+If `qgate_pending_count > 0`, the orchestrator (planning.md) decides whether to re-enter the phase or present findings to the user.
+
+---
+
+## Step 12: Transition Phase
 
 The phase transitions from refine → outline after confidence reaches the threshold:
 
@@ -742,6 +704,12 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 ---
 
+## Related Documents
+
+- [workflow-overview.md](references/workflow-overview.md) - Visual workflow diagrams and data flow
+
+---
+
 ## Integration
 
 **Invoked by**: `pm-workflow:request-refine-agent` (thin agent wrapper)
@@ -750,13 +718,13 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 - `plan-marshall:analyze-project-architecture:architecture` - Architecture queries
 - `pm-workflow:manage-plan-documents:manage-plan-documents` - Request operations
 - `pm-workflow:manage-references:manage-references` - References persistence (track, scope, module_mapping, compatibility)
+- `pm-workflow:manage-plan-artifacts:manage-artifacts` - Q-Gate findings (qgate add/query/resolve)
 - `plan-marshall:manage-logging:manage-log` - Work and decision logging
 - `plan-marshall:manage-plan-marshall-config:plan-marshall-config` - Project config (threshold, compatibility)
 - `pm-workflow:plan-marshall:manage-lifecycle` - Phase transition management
 
 **Persistence Locations**:
 - `work/module_mapping.toon`: Module mapping analysis state
-- `work/outline_guidance.toon`: Feedback guidance for outline (if applicable)
 - `decision.log`: Track/scope decisions, config reads, domain detection
 - `work.log`: Workflow progress (REFINE:N entries)
 - `request.md`: clarifications, clarified_request

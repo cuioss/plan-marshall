@@ -21,9 +21,16 @@ Plan artifacts are working data during plan execution. Notable findings are prom
 ## Storage Structure
 
 ```
-.plan/plans/{plan_id}/artifacts/
-├── assessments.jsonl  # Component assessments (certainty, confidence)
-└── findings.jsonl     # Unified: lessons + bugs (optionally promotable)
+.plan/plans/{plan_id}/
+├── artifacts/
+│   ├── assessments.jsonl  # Component assessments (certainty, confidence)
+│   └── findings.jsonl     # Unified: lessons + bugs (optionally promotable)
+└── qgate/                 # Per-phase Q-Gate findings
+    ├── 2-refine.jsonl
+    ├── 3-outline.jsonl
+    ├── 4-plan.jsonl
+    ├── 6-verify.jsonl
+    └── 7-finalize.jsonl
 ```
 
 ## Artifact Types
@@ -107,6 +114,40 @@ python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifac
 python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
   finding promote {plan_id} {hash_id} {promoted_to}
 ```
+
+### Q-Gate Commands
+
+Per-phase Q-Gate findings for the unified findings-iteration model across phases 2-7.
+
+```bash
+# Add Q-Gate finding
+python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
+  qgate add {plan_id} --phase {phase} --source {qgate|user_review} \
+  --type {type} --title {title} --detail {detail} \
+  [--file-path PATH] [--component C] [--severity S] [--iteration N]
+
+# Query Q-Gate findings
+python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
+  qgate query {plan_id} --phase {phase} \
+  [--resolution R] [--source S] [--iteration N]
+
+# Resolve Q-Gate finding
+python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
+  qgate resolve {plan_id} {hash_id} {resolution} --phase {phase} \
+  [--detail DETAIL]
+
+# Clear Q-Gate findings for phase
+python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
+  qgate clear {plan_id} --phase {phase}
+```
+
+**Phases**: `2-refine`, `3-outline`, `4-plan`, `6-verify`, `7-finalize`
+
+**Sources**: `qgate` (automated verification), `user_review` (user feedback)
+
+**Resolution states**: `pending`, `fixed`, `suppressed`, `accepted`, `taken_into_account`
+
+**Storage**: `.plan/plans/{plan_id}/qgate/{phase}.jsonl`
 
 ## Output Format
 

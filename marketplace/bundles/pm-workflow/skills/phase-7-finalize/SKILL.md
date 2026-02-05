@@ -22,12 +22,7 @@ Activate when:
 
 ## Phase Position in 7-Phase Model
 
-```
-1-init → 2-refine → 3-outline → 4-plan → 5-execute → 6-verify → 7-finalize
-                                              ↑                       │
-                                              └───────────────────────┘
-                                              (loop on PR issues)
-```
+See [references/workflow-overview.md](references/workflow-overview.md) for the visual phase flow diagram.
 
 **Iteration limit**: 3 cycles max for PR issue resolution.
 
@@ -73,14 +68,39 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-m
 
 **Input**: `plan_id`
 
-### Step 0: Log Phase Start
+### Step 1: Check Q-Gate Findings and Log Start
+
+### Log Phase Start
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   work {plan_id} INFO "[STATUS] (pm-workflow:phase-7-finalize) Starting finalize phase"
 ```
 
-### Step 1: Read Configuration
+### Query Unresolved Findings
+
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
+  qgate query {plan_id} --phase 7-finalize --resolution pending
+```
+
+If unresolved findings exist from a previous iteration (filtered_count > 0):
+
+For each pending finding:
+1. Check if it was addressed by the fix tasks that just ran
+2. Resolve:
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
+  qgate resolve {plan_id} {hash_id} fixed --phase 7-finalize \
+  --detail "{fix task reference or description}"
+```
+3. Log:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  decision {plan_id} INFO "(pm-workflow:phase-7-finalize:qgate) Finding {hash_id} [qgate]: fixed — {resolution_detail}"
+```
+
+### Step 2: Read Configuration
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
@@ -113,7 +133,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   decision {plan_id} INFO "(pm-workflow:phase-7-finalize) Finalize strategy: commit={commit_strategy}, PR={create_pr}, branch={branch_strategy}"
 ```
 
-### Step 2: Conditional Commit Workflow
+### Step 3: Conditional Commit Workflow
 
 **If `commit_strategy == none`**: Skip commit entirely.
 
@@ -122,7 +142,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   decision {plan_id} INFO "(pm-workflow:phase-7-finalize) Commit skipped: commit_strategy=none"
 ```
 
-Proceed directly to Step 3.
+Proceed directly to Step 4.
 
 **If `commit_strategy == per_deliverable`**: Only commit if there are uncommitted changes remaining (some changes may already be committed per-deliverable during execute phase).
 
@@ -144,14 +164,14 @@ The git-workflow skill handles:
 - `push`: true (always push in finalize)
 - `create-pr`: from `create_pr` config field
 
-### Step 3: Create PR (if enabled)
+### Step 4: Create PR (if enabled)
 
 If `create_pr == true`, the git-workflow skill creates the PR with:
 - Title from request.md
 - Body using `templates/pr-template.md`
 - Issue link from references.json (`Closes #{issue}` if present)
 
-### Step 4: Automated Review (if PR created)
+### Step 5: Automated Review (if PR created)
 
 If PR was created:
 
@@ -162,9 +182,16 @@ Skill: pm-workflow:workflow-integration-ci
 This monitors CI status and handles review comments.
 
 **On findings** (CI failures, review comments):
-1. Create fix tasks via manage-tasks
-2. Loop back to phase-5-execute (iteration + 1)
-3. Continue until clean or max iterations (3)
+1. Persist each finding to Q-Gate:
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
+  qgate add {plan_id} --phase 7-finalize --source qgate \
+  --type {pr-comment|build-error} --title "{finding title}" \
+  --detail "{finding details}"
+```
+2. Create fix tasks via manage-tasks
+3. Loop back to phase-5-execute (iteration + 1)
+4. Continue until clean or max iterations (3)
 
 ```bash
 # Check iteration count from status
@@ -173,7 +200,7 @@ python3 .plan/execute-script.py pm-workflow:manage-status:manage_status set-phas
   --plan-id {plan_id} --phase 5-execute
 ```
 
-### Step 5: Sonar Roundtrip (if configured)
+### Step 6: Sonar Roundtrip (if configured)
 
 If Sonar integration is enabled:
 
@@ -181,9 +208,9 @@ If Sonar integration is enabled:
 Skill: pm-workflow:workflow-integration-sonar
 ```
 
-Handles Sonar quality gate and issue resolution. On findings, follows same loop-back pattern as Step 4.
+Handles Sonar quality gate and issue resolution. On findings, follows same loop-back pattern as Step 5.
 
-### Step 6: Knowledge Capture (Advisory)
+### Step 7: Knowledge Capture (Advisory)
 
 ```
 Skill: plan-marshall:manage-memories
@@ -191,7 +218,7 @@ Skill: plan-marshall:manage-memories
 
 Records any significant patterns discovered during implementation. Advisory only—does not block.
 
-### Step 7: Lessons Capture (Advisory)
+### Step 8: Lessons Capture (Advisory)
 
 ```
 Skill: plan-marshall:manage-lessons
@@ -199,7 +226,7 @@ Skill: plan-marshall:manage-lessons
 
 Records lessons learned from the implementation. Advisory only—does not block.
 
-### Step 8: Mark Plan Complete
+### Step 9: Mark Plan Complete
 
 Transition to complete:
 
@@ -209,7 +236,7 @@ python3 .plan/execute-script.py pm-workflow:plan-marshall:manage-lifecycle trans
   --completed 7-finalize
 ```
 
-### Step 9: Log Completion
+### Step 10: Log Completion
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
@@ -323,30 +350,15 @@ The skill checks current state before each step:
 
 ## Shipping Pipeline
 
-```
-┌─────────────────────────────────────────────────────────┐
-│                  FINALIZE PIPELINE                       │
-│                                                          │
-│  ┌─────────┐   ┌──────┐   ┌──────┐                      │
-│  │ commit  │ → │ push │ → │  PR  │                      │
-│  └─────────┘   └──────┘   └──┬───┘                      │
-│                              │                           │
-│                              ↓                           │
-│  ┌───────────────────────────────────────────────┐      │
-│  │            AUTOMATED REVIEW                    │      │
-│  │  CI checks │ review comments │ Sonar gate     │      │
-│  └───────────────────┬───────────────────────────┘      │
-│                      │                                   │
-│          ┌──────────┴──────────┐                        │
-│          ↓                     ↓                        │
-│      [issues]            [no issues]                    │
-│          │                     │                        │
-│          ↓                     ↓                        │
-│   create fix tasks       COMPLETE                       │
-│   loop → 5-execute                                       │
-│   (max 3 iterations)                                    │
-└─────────────────────────────────────────────────────────┘
-```
+See [references/workflow-overview.md](references/workflow-overview.md) for the visual shipping pipeline diagram.
+
+---
+
+## Related Documents
+
+| Document | Purpose |
+|----------|---------|
+| [references/workflow-overview.md](references/workflow-overview.md) | Visual diagrams: 7-Phase Model and Shipping Pipeline flowchart |
 
 ---
 

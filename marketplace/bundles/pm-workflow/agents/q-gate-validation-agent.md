@@ -192,7 +192,8 @@ For each issue found (false positive, missing coverage, alignment issue):
 
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
-  finding add {plan_id} triage "Q-Gate: {issue_title}" \
+  qgate add {plan_id} --phase 3-outline --source qgate \
+  --type triage --title "Q-Gate: {issue_title}" \
   --detail "{detailed_reason}" \
   --file-path "{affected_file}" \
   --component "{deliverable_reference}" \
@@ -251,9 +252,10 @@ passed: {count}
 flagged: {count}
 missing_coverage: {count}
 findings_recorded: {count}
+qgate_pending_count: {count}
 ```
 
-**OUTPUT RULE**: Do NOT output verbose text. All verification details are logged to decision.log and findings to findings.jsonl. Only output the final TOON summary block.
+**OUTPUT RULE**: Do NOT output verbose text. All verification details are logged to decision.log and findings to qgate/3-outline.jsonl. Only output the final TOON summary block.
 
 ---
 
@@ -262,7 +264,7 @@ findings_recorded: {count}
 | Sink | Content | API |
 |------|---------|-----|
 | `logs/decision.log` | Per-deliverable verification results | `manage-log decision` |
-| `artifacts/findings.jsonl` | Q-Gate triage findings | `artifact_store finding add` |
+| `qgate/3-outline.jsonl` | Q-Gate triage findings | `manage-artifacts qgate add` |
 | `references.json` | affected_files (verified files only) | `manage-references set` |
 
 ---

@@ -35,18 +35,54 @@ allowed-tools: Read, Glob, Grep, Bash, Task, AskUserQuestion
 ## Workflow Overview
 
 ```
-Step 1: Load Inputs → Step 1.5: Detect Change Type → Step 2: Route by Track → {Simple: Steps 3-5 | Complex: Steps 6-9} → Step 10: Return
+Step 2: Load Inputs → Step 3: Detect Change Type → Step 4: Route by Track → {Simple: Steps 5-7 | Complex: Steps 8-11} → Step 13: Return
 ```
 
 ---
 
-## Step 1: Load Inputs
+## Step 1: Check for Unresolved Q-Gate Findings
+
+**Purpose**: On re-entry (after Q-Gate or user review flagged issues), address unresolved findings before re-running the outline.
+
+### Query Unresolved Findings
+
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
+  qgate query {plan_id} --phase 3-outline --resolution pending
+```
+
+### Address Each Finding
+
+If unresolved findings exist (filtered_count > 0):
+
+For each pending finding:
+1. Analyze the finding in context of the request and existing outline
+2. Address it (revise deliverables, adjust scope, remove false positives, etc.)
+3. Resolve:
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
+  qgate resolve {plan_id} {hash_id} taken_into_account --phase 3-outline \
+  --detail "{what was done to address this finding}"
+```
+4. Log resolution:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  decision {plan_id} INFO "(pm-workflow:phase-3-outline:qgate) Finding {hash_id} [{source}]: taken_into_account — {resolution_detail}"
+```
+
+Then continue with normal Steps 2..13 (phase re-runs with corrections applied).
+
+If no unresolved findings: Continue with normal Steps 2..13 (first entry).
+
+---
+
+## Step 2: Load Inputs
 
 **Purpose**: Load track, request, compatibility, and context from phase-2-refine output and sinks.
 
 **Note**: This skill receives `track`, `track_reasoning`, `scope_estimate`, `compatibility`, and `compatibility_description` from the phase-2-refine return output. These values are passed as input parameters.
 
-### 1.1 Receive Track from Phase-2-Refine Output
+### Receive Track from Phase-2-Refine Output
 
 The `track` value (simple | complex) is received from the phase-2-refine return output, not read from references.json.
 
@@ -57,7 +93,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 ```
 Parse the output to extract track value from: `(pm-workflow:phase-2-refine) Track: {track} - {reasoning}`
 
-### 1.2 Read Request
+### Read Request
 
 Read request (clarified_request falls back to original_input automatically):
 
@@ -67,7 +103,7 @@ python3 .plan/execute-script.py pm-workflow:manage-plan-documents:manage-plan-do
   --section clarified_request
 ```
 
-### 1.3 Read Module Mapping
+### Read Module Mapping
 
 Read from work directory (persisted by phase-2-refine):
 
@@ -77,14 +113,14 @@ python3 .plan/execute-script.py pm-workflow:manage-files:manage-files read \
   --file work/module_mapping.toon
 ```
 
-### 1.4 Read Domains
+### Read Domains
 
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-references:manage-references get \
   --plan-id {plan_id} --field domains
 ```
 
-### 1.5 Receive Compatibility from Phase-2-Refine Output
+### Receive Compatibility from Phase-2-Refine Output
 
 The `compatibility` and `compatibility_description` values are received from the phase-2-refine return output.
 
@@ -99,7 +135,7 @@ Store as `compatibility` and derive `compatibility_description` from the value:
 - `deprecation` → "Add deprecation markers to old code, provide migration path"
 - `smart_and_ask` → "Assess impact and ask user when backward compatibility is uncertain"
 
-### 1.6 Log Context (to work.log - status, not decision)
+### Log Context (to work.log - status, not decision)
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
@@ -108,11 +144,11 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 ---
 
-## Step 1.5: Detect Change Type
+## Step 3: Detect Change Type
 
 **Purpose**: Determine the change type for agent routing.
 
-### 1.5.1 Spawn Detection Agent
+### Spawn Detection Agent
 
 ```
 Task: pm-workflow:detect-change-type-agent
@@ -129,7 +165,7 @@ confidence: 90
 reasoning: "Request describes improving existing functionality"
 ```
 
-### 1.5.2 Read Detected Change Type
+### Read Detected Change Type
 
 The agent persists change_type to status.json metadata. Read it:
 
@@ -140,7 +176,7 @@ python3 .plan/execute-script.py pm-workflow:manage-status:manage_status metadata
   --field change_type
 ```
 
-### 1.5.3 Log Detection
+### Log Detection
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
@@ -149,30 +185,22 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 ---
 
-## Step 2: Route by Track
+## Step 4: Route by Track
 
-Based on `track` from Step 1.1:
+Based on `track` from Step 2:
 
-```
-IF track == "simple":
-  → Execute Simple Track (Steps 3-5)
-ELSE:  # track == "complex"
-  → Execute Complex Track (Steps 6-9)
-```
+If track == simple → go to Step 5. If track == complex → go to Step 8.
 
 ---
 
-# Simple Track (Steps 3-5)
+<!-- ─── Simple Track (Steps 5-7) ─── -->
+<!-- For localized changes where targets are already known from module_mapping. -->
 
-For localized changes where targets are already known from module_mapping.
-
----
-
-## Step 3: Validate Targets
+## Step 5: Validate Targets (Simple Track)
 
 **Purpose**: Verify target files/modules exist and match domain.
 
-### 3.1 Validate Target Files Exist
+### Validate Target Files Exist
 
 For each target in module_mapping:
 
@@ -183,7 +211,7 @@ ls -la {target_path}
 
 If target doesn't exist, ERROR: "Target not found: {target}"
 
-### 3.2 Log Validation
+### Log Validation
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
@@ -192,11 +220,11 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 ---
 
-## Step 4: Create Deliverables
+## Step 6: Create Deliverables (Simple Track)
 
 **Purpose**: Direct mapping from module_mapping to deliverables.
 
-### 4.1 Build Deliverables from Module Mapping
+### Build Deliverables from Module Mapping
 
 For each entry in module_mapping:
 
@@ -205,7 +233,7 @@ For each entry in module_mapping:
 3. Map domain from references.json
 4. Use module from module_mapping
 
-### 4.2 Deliverable Structure
+### Deliverable Structure
 
 Use template from `pm-workflow:manage-solution-outline/templates/deliverable-template.md`:
 
@@ -238,7 +266,7 @@ Use template from `pm-workflow:manage-solution-outline/templates/deliverable-tem
 - {Specific criterion 2}
 ```
 
-### 4.3 Log Deliverable Creation
+### Log Deliverable Creation
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
@@ -247,39 +275,36 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 ---
 
-## Step 5: Simple Q-Gate
+## Step 7: Simple Q-Gate
 
 **Purpose**: Lightweight verification for simple track.
 
-### 5.1 Verify Deliverables
+### Verify Deliverables
 
 For each deliverable:
 
-1. **Target exists?** - Already validated in Step 3
+1. **Target exists?** - Already validated in Step 5
 2. **Deliverable aligns with request intent?** - Compare deliverable scope with request
 
-### 5.2 Log Q-Gate Result
+### Log Q-Gate Result
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   decision {plan_id} INFO "(pm-workflow:phase-3-outline:qgate) Simple: Deliverable {N}: pass"
 ```
 
-→ **Continue to Step 10** (Write Solution and Return)
+→ Go to Step 13.
 
 ---
 
-# Complex Track (Steps 6-9)
+<!-- ─── Complex Track (Steps 8-11) ─── -->
+<!-- For codebase-wide changes requiring discovery and analysis. -->
 
-For codebase-wide changes requiring discovery and analysis.
-
----
-
-## Step 6: Resolve Change-Type Agent
+## Step 8: Resolve Change-Type Agent (Complex Track)
 
 **Purpose**: Find the appropriate agent for the detected change type and domain.
 
-### 6.1 Resolve Agent
+### Resolve Agent
 
 For the primary domain in references.json:
 
@@ -298,7 +323,7 @@ agent: pm-plugin-development:change-feature-outline-agent  # or generic fallback
 
 **Fallback**: If no domain-specific agent configured, use generic: `pm-workflow:change-{change_type}-agent`
 
-### 6.2 Log Resolution
+### Log Resolution
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
@@ -307,11 +332,11 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 ---
 
-## Step 7: Spawn Change-Type Agent
+## Step 9: Spawn Change-Type Agent (Complex Track)
 
 **Purpose**: Spawn the resolved agent to handle discovery, analysis, and deliverable creation.
 
-### 7.1 Spawn Agent
+### Spawn Agent
 
 ```
 Task: {resolved_agent_notation}
@@ -327,7 +352,7 @@ The agent handles the complete Complex Track workflow internally:
 - Group into deliverables
 - Write solution_outline.md (must include `compatibility: {value} — {description}` in header metadata)
 
-### 7.2 Log Agent Spawn
+### Log Agent Spawn
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
@@ -336,11 +361,11 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 ---
 
-## Step 8: Agent Completion
+## Step 10: Agent Completion (Complex Track)
 
 **Purpose**: Agent returns minimal status; data is in sinks.
 
-### 8.1 Agent Return Value
+### Agent Return Value
 
 ```toon
 status: success
@@ -349,7 +374,7 @@ deliverable_count: {N}
 change_type: {change_type}
 ```
 
-### 8.2 Log Agent Completion
+### Log Agent Completion
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
@@ -360,11 +385,11 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 ---
 
-## Step 9: Q-Gate Verification
+## Step 11: Q-Gate Verification (Complex Track)
 
 **Purpose**: Verify skill output meets quality standards.
 
-### 9.1 Spawn Q-Gate Agent
+### Spawn Q-Gate Agent
 
 ```
 Task: pm-workflow:q-gate-validation-agent
@@ -387,7 +412,7 @@ Task: pm-workflow:q-gate-validation-agent
 - `artifacts/findings.jsonl` - Any triage findings
 - `logs/decision.log` - Q-Gate verification results
 
-### 9.2 Q-Gate Return Value
+### Q-Gate Return Value
 
 ```toon
 status: success
@@ -397,52 +422,30 @@ passed: {count}
 flagged: {count}
 ```
 
-### 9.3 Log Q-Gate Result
+### Log Q-Gate Result
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   decision {plan_id} INFO "(pm-workflow:phase-3-outline:qgate) Full: {passed} passed, {flagged} flagged"
 ```
 
-### 9.4 Handle Q-Gate Corrections (if flagged > 0)
+### Handle Q-Gate Findings
 
-If Q-Gate flagged false positives or missing coverage:
+The Q-Gate agent writes findings to `qgate/3-outline.jsonl`. The phase does NOT self-correct — instead, the orchestrator (planning.md) decides how to handle findings:
 
-1. **Update solution_outline.md** with corrections using `--force`:
+- If `qgate_pending_count == 0`: Continue to Step 13
+- If `qgate_pending_count > 0`: Return with `qgate_pending_count` in output. The orchestrator presents findings to the user at the review gate (Step 3 of planning.md), who can choose "Auto-fix" (re-enter phase) or "Accept as-is"
 
-```bash
-python3 .plan/execute-script.py pm-workflow:manage-solution-outline:manage-solution-outline write \
-  --plan-id {plan_id} --force <<'EOF'
-{corrected solution document}
-EOF
-```
-
-2. **Update references** (e.g., remove false positives from modified_files):
-
-```bash
-python3 .plan/execute-script.py pm-workflow:manage-references:manage-references set-list \
-  --plan-id {plan_id} --field modified_files --values "{corrected file list}"
-```
-
-3. **Log the correction**:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[ARTIFACT] (pm-workflow:phase-3-outline) Updated solution_outline.md - {correction reason}"
-```
-
-→ **Continue to Step 10**
+→ Go to Step 13.
 
 ---
 
-# Generic Workflow (No Domain-Specific Agent)
+## Step 12: Generic Workflow (No Domain Agent)
 
 For domains without domain-specific change-type agents, the generic agents in pm-workflow are used.
 These generic agents (e.g., `pm-workflow:change-feature-agent`) provide baseline behavior.
 
----
-
-## Generic Step A: Read Module Mapping
+### Read Module Mapping
 
 Module mapping from phase-2-refine specifies target modules.
 
@@ -451,9 +454,7 @@ python3 .plan/execute-script.py pm-workflow:manage-references:manage-references 
   --plan-id {plan_id} --field module_mapping
 ```
 
----
-
-## Generic Step B: Create Deliverables per Module
+### Create Deliverables per Module
 
 For each module in module_mapping:
 
@@ -472,11 +473,9 @@ Use result to determine if `testing` profile applies.
 
 ### Deliverable Structure
 
-Use same template as Simple Track (Step 4.2).
+Use same template as Simple Track (Step 6).
 
----
-
-## Generic Step C: Write Solution Outline
+### Write Solution Outline
 
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-solution-outline:manage-solution-outline write \
@@ -485,24 +484,22 @@ python3 .plan/execute-script.py pm-workflow:manage-solution-outline:manage-solut
 EOF
 ```
 
----
-
-## Generic Step D: Log Completion
+### Log Completion
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   decision {plan_id} INFO "(pm-workflow:phase-3-outline) Generic workflow: {N} deliverables"
 ```
 
-→ **Continue to Step 10**
+→ Go to Step 13.
 
 ---
 
-# Step 10: Write Solution and Return
+## Step 13: Write Solution and Return
 
 ---
 
-## Step 10.1: Write Solution Document (Simple Track only)
+### Write Solution Document (Simple Track only)
 
 For Simple Track, write solution_outline.md:
 
@@ -524,15 +521,15 @@ compatibility: {compatibility} — {compatibility_description}
 
 ## Deliverables
 
-{deliverables from Step 4}
+{deliverables from Step 6}
 EOF
 ```
 
-**Note**: Complex Track - skill already wrote solution_outline.md in Step 7.
+**Note**: Complex Track - skill already wrote solution_outline.md in Step 9.
 
 ---
 
-## Step 10.2: Log Completion
+### Log Completion
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
@@ -546,7 +543,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 ---
 
-## Step 10.3: Return Results
+### Return Results
 
 Return minimal status - all data is in sinks:
 
@@ -556,6 +553,7 @@ plan_id: {plan_id}
 track: {simple|complex}
 deliverable_count: {N}
 qgate_passed: {true|false}
+qgate_pending_count: {0 if no findings}
 ```
 
 ---
@@ -585,12 +583,13 @@ qgate_passed: {true|false}
 - `pm-workflow:manage-plan-documents:manage-plan-documents` - Read request
 - `pm-workflow:manage-references:manage-references` - Read domains
 - `pm-workflow:manage-solution-outline:manage-solution-outline` - Write solution document
+- `pm-workflow:manage-plan-artifacts:manage-artifacts` - Q-Gate findings (qgate add/query/resolve)
 - `pm-workflow:manage-status:manage_status` - Read/write change_type metadata
 - `plan-marshall:manage-plan-marshall-config:plan-marshall-config` - Resolve change-type agent, read compatibility (fallback)
 - `plan-marshall:manage-logging:manage-log` - Decision and work logging
 
 **Spawns** (Complex Track):
-- `pm-workflow:detect-change-type-agent` (Step 1.5 - change type detection)
+- `pm-workflow:detect-change-type-agent` (Step 3 - change type detection)
 - Change-type agent (e.g., `pm-plugin-development:change-feature-outline-agent` or `pm-workflow:change-feature-agent`)
 - `pm-workflow:q-gate-validation-agent` (Q-Gate verification)
 

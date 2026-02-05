@@ -44,9 +44,49 @@ execution_order: {parallel groups}
 message: {error message if status=error}
 ```
 
+## Related Documents
+
+| Document | Purpose |
+|----------|---------|
+| [Task Creation Flow](references/task-creation-flow.md) | Visual overview of the 1:N task creation flow and output structure |
+
 ## Workflow
 
-### Step 1: Load All Deliverables
+### Step 1: Check for Unresolved Q-Gate Findings
+
+**Purpose**: On re-entry (after Q-Gate flagged issues), address unresolved findings before re-creating tasks.
+
+### Query Unresolved Findings
+
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
+  qgate query {plan_id} --phase 4-plan --resolution pending
+```
+
+### Address Each Finding
+
+If unresolved findings exist (filtered_count > 0):
+
+For each pending finding:
+1. Analyze the finding in context of deliverables and tasks
+2. Address it (adjust skill resolution, fix dependencies, correct steps, etc.)
+3. Resolve:
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
+  qgate resolve {plan_id} {hash_id} taken_into_account --phase 4-plan \
+  --detail "{what was done to address this finding}"
+```
+4. Log resolution:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  decision {plan_id} INFO "(pm-workflow:phase-4-plan:qgate) Finding {hash_id} [{source}]: taken_into_account — {resolution_detail}"
+```
+
+Then continue with normal Steps 2..9 (phase re-runs with corrections applied).
+
+If no unresolved findings: Continue with normal Steps 2..9 (first entry).
+
+### Step 2: Load All Deliverables
 
 Read the solution document to get all deliverables with metadata:
 
@@ -65,14 +105,14 @@ For each deliverable, extract:
 - `affected_files`
 - `verification`
 
-### Step 2: Build Dependency Graph
+### Step 3: Build Dependency Graph
 
 Parse `depends` field for each deliverable:
 - Identify independent deliverables (`depends: none`)
 - Identify dependency chains
 - Detect cycles (INVALID - reject with error)
 
-### Step 3: Create Tasks from Profiles (1:N Mapping)
+### Step 4: Create Tasks from Profiles (1:N Mapping)
 
 For each deliverable, create one task per profile in its `profiles` list:
 
@@ -133,31 +173,13 @@ Match: YES - this is a script output change, needs output contract standards
 → INCLUDE
 ```
 
-**1:N Task Creation Flow**:
-
-```
-solution_outline.md                        TASK-*.toon (created by task-plan)
-┌────────────────────────────┐             ┌────────────────────────────┐
-│ **Metadata:**              │             │ TASK-001-IMPL              │
-│ - domain: java             │             │ profile: implementation    │
-│ - module: auth-service     │  ───────►   │ skills: [java-core,        │
-│                            │  (1:N)      │          java-cdi]         │
-│ **Profiles:**              │             ├────────────────────────────┤
-│ - implementation           │  ───────►   │ TASK-002-TEST              │
-│ - module_testing           │             │ profile: module_testing    │
-│                            │             │ skills: [java-core,        │
-└────────────────────────────┘             │          junit-core]       │
-                                           │ depends: TASK-001-IMPL     │
-                                           └────────────────────────────┘
-```
-
 **Log skill resolution** (for each task created):
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   work {plan_id} INFO "[SKILL] (pm-workflow:phase-4-plan) Resolved skills for TASK-{N} from {module}.{profile}: defaults=[{defaults}] optionals_selected=[{optionals}]"
 ```
 
-### Step 4: Create Tasks
+### Step 5: Create Tasks
 
 For each deliverable, create tasks using heredoc (one task per profile):
 
@@ -202,7 +224,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 - `skills`: Domain skills only (system skills loaded by agent)
 - `steps`: File paths from `Affected files` (NOT descriptive text)
 
-### Step 5: Determine Execution Order
+### Step 6: Determine Execution Order
 
 Compute parallel execution groups:
 
@@ -218,7 +240,38 @@ execution_order:
 - Tasks depending on same prior tasks can run in parallel
 - Sequential dependencies remain sequential
 
-### Step 6: Record Issues as Lessons
+### Step 7: Q-Gate Verification Checks
+
+**Purpose**: Verify created tasks meet quality standards.
+
+### Run Q-Gate Checks
+
+After tasks are created, verify:
+
+1. **Deliverable Coverage**: Every deliverable has >= 1 task? No orphan tasks without a deliverable?
+2. **Skill Resolution Valid**: Every task has skills resolved? No "skill not found" entries?
+3. **Dependency Graph Acyclic**: No circular dependencies between tasks?
+4. **Steps Valid**: Every step is a concrete file path (not glob/ellipsis)? Files exist on disk?
+
+### Record Findings
+
+For each issue found:
+
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
+  qgate add {plan_id} --phase 4-plan --source qgate \
+  --type triage --title "{check}: {issue_title}" \
+  --detail "{detailed_reason}"
+```
+
+### Log Q-Gate Result
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  decision {plan_id} INFO "(pm-workflow:phase-4-plan:qgate) Verification: {passed_count} passed, {flagged_count} flagged"
+```
+
+### Step 8: Record Issues as Lessons
 
 On ambiguous deliverable or planning issues:
 
@@ -232,7 +285,9 @@ python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lesson add \
 
 **Valid categories**: `bug`, `improvement`, `anti-pattern`
 
-### Step 7: Return Results
+### Step 9: Return Results
+
+See [Task Creation Flow](references/task-creation-flow.md) for the full output structure.
 
 **Output**:
 ```toon
@@ -255,6 +310,7 @@ execution_order:
   parallel_group_2: [TASK-2, TASK-4]
 
 lessons_recorded: {count}
+qgate_pending_count: {0 if no findings}
 ```
 
 ## Skill Resolution Guidelines
@@ -303,6 +359,7 @@ If deliverable metadata incomplete:
 - `pm-workflow:manage-solution-outline:manage-solution-outline` - Read deliverables (list-deliverables, read)
 - `plan-marshall:analyze-project-architecture:architecture` - Resolve skills (module --name {module})
 - `pm-workflow:manage-tasks:manage-tasks` - Create tasks (add --plan-id X <<'EOF' ... EOF)
+- `pm-workflow:manage-plan-artifacts:manage-artifacts` - Q-Gate findings (qgate add/query/resolve)
 - `plan-marshall:manage-lessons:manage-lesson` - Record lessons on issues (add)
 
 **Consumed By**:

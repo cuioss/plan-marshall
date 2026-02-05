@@ -159,6 +159,8 @@ def main():
 
     _add_phase_subparser(plan_sub, 'phase-1-init', 'Init phase settings', has_scalar=True)
     _add_phase_subparser(plan_sub, 'phase-2-refine', 'Refine phase settings', has_scalar=True)
+    _add_phase_subparser(plan_sub, 'phase-3-outline', 'Outline phase settings', has_scalar=True)
+    _add_phase_subparser(plan_sub, 'phase-4-plan', 'Plan phase settings', has_scalar=True)
     _add_phase_subparser(plan_sub, 'phase-5-execute', 'Execute phase settings', has_scalar=True)
     _add_phase_subparser(plan_sub, 'phase-6-verify', 'Verify phase settings', has_pipeline=True, has_domain_steps=True)
     _add_phase_subparser(plan_sub, 'phase-7-finalize', 'Finalize phase settings', has_pipeline=True)

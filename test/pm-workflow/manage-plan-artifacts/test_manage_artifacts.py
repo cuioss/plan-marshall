@@ -490,3 +490,383 @@ def test_finding_query_promoted():
         assert result.success
         data = parse_toon(result.stdout)
         assert data['filtered_count'] == 1
+
+
+# =============================================================================
+# Test: Q-Gate Add Command
+# =============================================================================
+
+
+def test_qgate_add_basic():
+    """Test adding a basic Q-Gate finding."""
+    with TestContext():
+        result = run_script(
+            SCRIPT_PATH,
+            'qgate',
+            'add',
+            'test-plan',
+            '--phase',
+            '3-outline',
+            '--source',
+            'qgate',
+            '--type',
+            'triage',
+            '--title',
+            'False positive: helper.py',
+            '--detail',
+            'File is consumer-only, not a producer',
+        )
+        assert result.success, f'Script failed: {result.stderr}'
+        data = parse_toon(result.stdout)
+        assert data['status'] == 'success'
+        assert 'hash_id' in data
+        assert data['phase'] == '3-outline'
+
+
+def test_qgate_add_with_options():
+    """Test adding Q-Gate finding with all options."""
+    with TestContext():
+        result = run_script(
+            SCRIPT_PATH,
+            'qgate',
+            'add',
+            'test-plan',
+            '--phase',
+            '3-outline',
+            '--source',
+            'user_review',
+            '--type',
+            'triage',
+            '--title',
+            'User: Add module X',
+            '--detail',
+            'User requested adding module X to scope',
+            '--file-path',
+            'src/module-x/main.py',
+            '--component',
+            'deliverable-3',
+            '--severity',
+            'warning',
+            '--iteration',
+            '2',
+        )
+        assert result.success, f'Script failed: {result.stderr}'
+        data = parse_toon(result.stdout)
+        assert data['status'] == 'success'
+
+
+def test_qgate_add_invalid_phase():
+    """Test that invalid phase is rejected."""
+    with TestContext():
+        result = run_script(
+            SCRIPT_PATH,
+            'qgate',
+            'add',
+            'test-plan',
+            '--phase',
+            'invalid-phase',
+            '--source',
+            'qgate',
+            '--type',
+            'triage',
+            '--title',
+            'Test',
+            '--detail',
+            'Test detail',
+        )
+        assert not result.success
+
+
+def test_qgate_add_invalid_source():
+    """Test that invalid source is rejected."""
+    with TestContext():
+        result = run_script(
+            SCRIPT_PATH,
+            'qgate',
+            'add',
+            'test-plan',
+            '--phase',
+            '3-outline',
+            '--source',
+            'invalid',
+            '--type',
+            'triage',
+            '--title',
+            'Test',
+            '--detail',
+            'Test detail',
+        )
+        assert not result.success
+
+
+# =============================================================================
+# Test: Q-Gate Query Command
+# =============================================================================
+
+
+def test_qgate_query_empty():
+    """Test querying with no Q-Gate findings."""
+    with TestContext():
+        result = run_script(SCRIPT_PATH, 'qgate', 'query', 'test-plan', '--phase', '3-outline')
+        assert result.success, f'Script failed: {result.stderr}'
+        data = parse_toon(result.stdout)
+        assert data['status'] == 'success'
+        assert data['total_count'] == 0
+        assert data['phase'] == '3-outline'
+
+
+def test_qgate_query_by_resolution():
+    """Test filtering Q-Gate findings by resolution."""
+    with TestContext():
+        # Add two findings
+        run_script(
+            SCRIPT_PATH,
+            'qgate', 'add', 'test-plan',
+            '--phase', '3-outline', '--source', 'qgate',
+            '--type', 'triage', '--title', 'Finding 1', '--detail', 'd1',
+        )
+        add_result = run_script(
+            SCRIPT_PATH,
+            'qgate', 'add', 'test-plan',
+            '--phase', '3-outline', '--source', 'qgate',
+            '--type', 'triage', '--title', 'Finding 2', '--detail', 'd2',
+        )
+        hash_id = str(parse_toon(add_result.stdout)['hash_id'])
+
+        # Resolve one
+        run_script(
+            SCRIPT_PATH, 'qgate', 'resolve', 'test-plan', hash_id,
+            'taken_into_account', '--phase', '3-outline',
+            '--detail', 'Addressed by revising deliverable 3',
+        )
+
+        # Query pending
+        result = run_script(
+            SCRIPT_PATH, 'qgate', 'query', 'test-plan',
+            '--phase', '3-outline', '--resolution', 'pending',
+        )
+        assert result.success
+        data = parse_toon(result.stdout)
+        assert data['filtered_count'] == 1
+
+        # Query taken_into_account
+        result = run_script(
+            SCRIPT_PATH, 'qgate', 'query', 'test-plan',
+            '--phase', '3-outline', '--resolution', 'taken_into_account',
+        )
+        assert result.success
+        data = parse_toon(result.stdout)
+        assert data['filtered_count'] == 1
+
+
+def test_qgate_query_by_source():
+    """Test filtering Q-Gate findings by source."""
+    with TestContext():
+        run_script(
+            SCRIPT_PATH,
+            'qgate', 'add', 'test-plan',
+            '--phase', '3-outline', '--source', 'qgate',
+            '--type', 'triage', '--title', 'Auto finding', '--detail', 'd',
+        )
+        run_script(
+            SCRIPT_PATH,
+            'qgate', 'add', 'test-plan',
+            '--phase', '3-outline', '--source', 'user_review',
+            '--type', 'triage', '--title', 'User finding', '--detail', 'd',
+        )
+
+        result = run_script(
+            SCRIPT_PATH, 'qgate', 'query', 'test-plan',
+            '--phase', '3-outline', '--source', 'user_review',
+        )
+        assert result.success
+        data = parse_toon(result.stdout)
+        assert data['total_count'] == 2
+        assert data['filtered_count'] == 1
+
+
+def test_qgate_per_phase_isolation():
+    """Test that Q-Gate findings are isolated per phase."""
+    with TestContext():
+        # Add to phase 3
+        run_script(
+            SCRIPT_PATH,
+            'qgate', 'add', 'test-plan',
+            '--phase', '3-outline', '--source', 'qgate',
+            '--type', 'triage', '--title', 'Phase 3 finding', '--detail', 'd',
+        )
+        # Add to phase 4
+        run_script(
+            SCRIPT_PATH,
+            'qgate', 'add', 'test-plan',
+            '--phase', '4-plan', '--source', 'qgate',
+            '--type', 'triage', '--title', 'Phase 4 finding', '--detail', 'd',
+        )
+
+        # Query phase 3 only
+        result = run_script(SCRIPT_PATH, 'qgate', 'query', 'test-plan', '--phase', '3-outline')
+        assert result.success
+        data = parse_toon(result.stdout)
+        assert data['total_count'] == 1
+        assert data['phase'] == '3-outline'
+
+        # Query phase 4 only
+        result = run_script(SCRIPT_PATH, 'qgate', 'query', 'test-plan', '--phase', '4-plan')
+        assert result.success
+        data = parse_toon(result.stdout)
+        assert data['total_count'] == 1
+        assert data['phase'] == '4-plan'
+
+
+# =============================================================================
+# Test: Q-Gate Resolve Command
+# =============================================================================
+
+
+def test_qgate_resolve_taken_into_account():
+    """Test resolving a Q-Gate finding with taken_into_account."""
+    with TestContext():
+        add_result = run_script(
+            SCRIPT_PATH,
+            'qgate', 'add', 'test-plan',
+            '--phase', '3-outline', '--source', 'qgate',
+            '--type', 'triage', '--title', 'Missing coverage', '--detail', 'File X not covered',
+        )
+        hash_id = str(parse_toon(add_result.stdout)['hash_id'])
+
+        result = run_script(
+            SCRIPT_PATH, 'qgate', 'resolve', 'test-plan', hash_id,
+            'taken_into_account', '--phase', '3-outline',
+            '--detail', 'Added file X to deliverable 2',
+        )
+        assert result.success, f'Script failed: {result.stderr}'
+        data = parse_toon(result.stdout)
+        assert data['status'] == 'success'
+        assert data['resolution'] == 'taken_into_account'
+
+
+def test_qgate_resolve_all_statuses():
+    """Test all resolution statuses for Q-Gate findings."""
+    resolutions = ['pending', 'fixed', 'suppressed', 'accepted', 'taken_into_account']
+    with TestContext():
+        for res in resolutions:
+            add_result = run_script(
+                SCRIPT_PATH,
+                'qgate', 'add', 'test-plan',
+                '--phase', '6-verify', '--source', 'qgate',
+                '--type', 'triage', '--title', f'Finding for {res}', '--detail', 'd',
+            )
+            hash_id = str(parse_toon(add_result.stdout)['hash_id'])
+
+            result = run_script(
+                SCRIPT_PATH, 'qgate', 'resolve', 'test-plan', hash_id,
+                res, '--phase', '6-verify',
+            )
+            assert result.success, f'Failed for resolution {res}: {result.stderr}'
+
+
+# =============================================================================
+# Test: Q-Gate Clear Command
+# =============================================================================
+
+
+def test_qgate_clear():
+    """Test clearing Q-Gate findings for a phase."""
+    with TestContext():
+        run_script(
+            SCRIPT_PATH,
+            'qgate', 'add', 'test-plan',
+            '--phase', '3-outline', '--source', 'qgate',
+            '--type', 'triage', '--title', 'Finding 1', '--detail', 'd',
+        )
+        run_script(
+            SCRIPT_PATH,
+            'qgate', 'add', 'test-plan',
+            '--phase', '3-outline', '--source', 'qgate',
+            '--type', 'triage', '--title', 'Finding 2', '--detail', 'd',
+        )
+
+        result = run_script(SCRIPT_PATH, 'qgate', 'clear', 'test-plan', '--phase', '3-outline')
+        assert result.success
+        data = parse_toon(result.stdout)
+        assert data['status'] == 'success'
+        assert data['cleared'] == 2
+
+        # Verify empty
+        query_result = run_script(SCRIPT_PATH, 'qgate', 'query', 'test-plan', '--phase', '3-outline')
+        query_data = parse_toon(query_result.stdout)
+        assert query_data['total_count'] == 0
+
+
+def test_qgate_clear_empty():
+    """Test clearing when no Q-Gate findings exist."""
+    with TestContext():
+        result = run_script(SCRIPT_PATH, 'qgate', 'clear', 'test-plan', '--phase', '3-outline')
+        assert result.success
+        data = parse_toon(result.stdout)
+        assert data['status'] == 'success'
+        assert data['cleared'] == 0
+
+
+def test_qgate_user_review_source():
+    """Test that user_review findings work end-to-end."""
+    with TestContext():
+        # Add user review finding
+        add_result = run_script(
+            SCRIPT_PATH,
+            'qgate', 'add', 'test-plan',
+            '--phase', '3-outline', '--source', 'user_review',
+            '--type', 'triage', '--title', 'User: scope too narrow',
+            '--detail', 'Please include module Y in the deliverables',
+        )
+        assert add_result.success
+        hash_id = str(parse_toon(add_result.stdout)['hash_id'])
+
+        # Query user_review findings
+        query_result = run_script(
+            SCRIPT_PATH, 'qgate', 'query', 'test-plan',
+            '--phase', '3-outline', '--source', 'user_review',
+        )
+        assert query_result.success
+        data = parse_toon(query_result.stdout)
+        assert data['filtered_count'] == 1
+
+        # Resolve as taken_into_account
+        resolve_result = run_script(
+            SCRIPT_PATH, 'qgate', 'resolve', 'test-plan', hash_id,
+            'taken_into_account', '--phase', '3-outline',
+            '--detail', 'Added module Y to deliverable scope',
+        )
+        assert resolve_result.success
+
+        # Verify resolved
+        verify_result = run_script(
+            SCRIPT_PATH, 'qgate', 'query', 'test-plan',
+            '--phase', '3-outline', '--resolution', 'pending',
+        )
+        assert verify_result.success
+        verify_data = parse_toon(verify_result.stdout)
+        assert verify_data['filtered_count'] == 0
+
+
+# =============================================================================
+# Test: Finding Resolve with taken_into_account (extended)
+# =============================================================================
+
+
+def test_finding_resolve_taken_into_account():
+    """Test that taken_into_account resolution works for regular findings too."""
+    with TestContext():
+        add_result = run_script(
+            SCRIPT_PATH, 'finding', 'add', 'test-plan', 'triage',
+            'Reviewed finding', '--detail', 'd',
+        )
+        hash_id = str(parse_toon(add_result.stdout)['hash_id'])
+
+        result = run_script(
+            SCRIPT_PATH, 'finding', 'resolve', 'test-plan', hash_id,
+            'taken_into_account', '--detail', 'Addressed in revision',
+        )
+        assert result.success
+        data = parse_toon(result.stdout)
+        assert data['resolution'] == 'taken_into_account'

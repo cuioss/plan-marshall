@@ -20,15 +20,6 @@ Activate when:
 
 ---
 
-## 7-Phase Model
-
-```
-1-init → 2-refine → 3-outline → 4-plan → 5-execute → 6-verify → 7-finalize
-                                                       ↑ YOU ARE HERE
-```
-
----
-
 ## Configuration Source
 
 Verify configuration comes from two sources:
@@ -61,14 +52,39 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-m
 
 **Input**: `plan_id`
 
-### Step 0: Log Phase Start
+### Step 1: Check Q-Gate Findings and Log Start
+
+### Log Phase Start
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   work {plan_id} INFO "[STATUS] (pm-workflow:phase-6-verify) Starting verify phase"
 ```
 
-### Step 1: Read Configuration
+### Query Unresolved Findings
+
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
+  qgate query {plan_id} --phase 6-verify --resolution pending
+```
+
+If unresolved findings exist from a previous iteration (filtered_count > 0):
+
+For each pending finding:
+1. Check if it was addressed by the fix tasks that just ran
+2. Resolve:
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
+  qgate resolve {plan_id} {hash_id} fixed --phase 6-verify \
+  --detail "{fix task reference or description}"
+```
+3. Log:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  decision {plan_id} INFO "(pm-workflow:phase-6-verify:qgate) Finding {hash_id} [qgate]: fixed — {resolution_detail}"
+```
+
+### Step 2: Read Configuration
 
 Read per-plan domains:
 ```bash
@@ -82,7 +98,7 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-m
   plan phase-6-verify get --trace-plan-id {plan_id}
 ```
 
-### Step 2: Check Iteration Counter
+### Step 3: Check Iteration Counter
 
 Read current verify iteration:
 
@@ -91,9 +107,9 @@ python3 .plan/execute-script.py pm-workflow:manage-status:manage_status read \
   --plan-id {plan_id}
 ```
 
-Check `verify_iteration` field. If >= 5, fail with max iterations exceeded.
+Check `verify_iteration` field. If iteration >= max → go to Step 10.
 
-### Step 3: Load Domain Triage Extensions
+### Step 4: Load Domain Triage Extensions
 
 For each domain in config:
 
@@ -104,7 +120,7 @@ Skill: pm-workflow:workflow-extension-api
 
 This loads domain-specific triage skills for handling findings.
 
-### Step 4: Run Verification Pipeline
+### Step 5: Run Verification Pipeline
 
 The default verification pipeline:
 
@@ -115,7 +131,7 @@ The default verification pipeline:
 5. **Doc Sync** - Documentation consistency (advisory)
 6. **Formal Spec** - Specification drift check (advisory)
 
-#### 4a: Quality Check
+### Quality Check
 
 Run quality gate commands based on domain:
 
@@ -134,7 +150,7 @@ npm run lint && npm run format:check
 Skill: pm-plugin-development:plugin-doctor
 ```
 
-#### 4b: Build Verify
+### Build Verify
 
 Run build verification:
 
@@ -148,7 +164,7 @@ Based on build_system:
 - `gradle` → `./gradlew check`
 - `npm` → `npm test`
 
-#### 4c: Technical Verification (Domain-Specific)
+### Technical Verification (Domain-Specific)
 
 Invoke domain-specific verification agent if available:
 
@@ -163,7 +179,7 @@ Task: pm-dev-java:java-verify-agent
 Task: pm-dev-frontend:js-verify-agent (if exists)
 ```
 
-#### 4d: Test Verification
+### Test Verification
 
 Check test coverage meets threshold (if configured):
 
@@ -171,7 +187,7 @@ Check test coverage meets threshold (if configured):
 ./pw coverage {module}
 ```
 
-#### 4e: Doc Sync (Advisory)
+### Doc Sync (Advisory)
 
 Check for documentation drift:
 
@@ -182,7 +198,7 @@ Skill: pm-documents:ext-triage-docs
 
 Advisory only - logs findings but doesn't block.
 
-#### 4f: Formal Spec Check (Advisory)
+### Formal Spec Check (Advisory)
 
 Check specification consistency:
 
@@ -193,9 +209,9 @@ Skill: pm-requirements:ext-triage-reqs
 
 Advisory only - logs findings but doesn't block.
 
-### Step 5: Collect Findings
+### Step 6: Collect and Persist Findings
 
-Aggregate findings from all verification steps:
+Aggregate findings from all verification steps and persist to Q-Gate file:
 
 ```toon
 findings[N]{id,source,rule,file,line,severity,message,auto_fixable}:
@@ -203,7 +219,17 @@ finding-001,quality_check,S1192,src/main/java/Example.java,42,major,String liter
 finding-002,build_verify,compile,src/main/java/Other.java,15,blocker,Cannot find symbol,true
 ```
 
-### Step 6: Triage Findings
+For each finding, also persist to Q-Gate:
+
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-plan-artifacts:manage-artifacts \
+  qgate add {plan_id} --phase 6-verify --source qgate \
+  --type {lint-issue|build-error|test-failure} --title "{finding.rule}: {finding.message}" \
+  --detail "{finding details}" \
+  --file-path "{finding.file}" --severity {finding.severity}
+```
+
+### Step 7: Triage Findings
 
 For each finding, apply domain triage:
 
@@ -218,7 +244,7 @@ Decisions:
 - **SUPPRESS** → Add suppression annotation/comment
 - **ACCEPT** → Log as accepted, continue
 
-### Step 7: Create Fix Tasks (If Needed)
+### Step 8: Create Fix Tasks (If Needed)
 
 For each finding with decision=FIX:
 
@@ -242,7 +268,7 @@ verification:
 EOF
 ```
 
-### Step 8: Loop or Continue
+### Step 9: Loop or Continue
 
 If fix tasks were created:
 
@@ -252,7 +278,7 @@ python3 .plan/execute-script.py pm-workflow:manage-status:manage_status set-phas
   --plan-id {plan_id} --phase 5-execute
 ```
 
-Exit - plan-execute will run the fix tasks.
+If fix tasks > 0 → transition to 5-execute. If no fix tasks → go to Step 10.
 
 If no fix tasks (all passed or suppressed):
 
@@ -264,7 +290,7 @@ python3 .plan/execute-script.py pm-workflow:plan-marshall:manage-lifecycle trans
 
 Exit successfully.
 
-### Step 9: Log Completion
+### Step 10: Log Completion
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
@@ -361,6 +387,12 @@ Contains: Step definitions, domain-specific checks, pass/fail criteria
 Read standards/triage-integration.md
 ```
 Contains: How to load domain-specific triage extensions, findings routing, decision flow
+
+---
+
+## Related Documents
+
+- [Workflow Overview](references/workflow-overview.md) - 7-Phase Model diagram and verification pipeline stages
 
 ---
 

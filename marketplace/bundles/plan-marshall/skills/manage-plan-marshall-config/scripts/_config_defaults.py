@@ -45,6 +45,18 @@ DEFAULT_PLAN_INIT = {
 DEFAULT_PLAN_REFINE = {
     'confidence_threshold': 95,
     'compatibility': 'breaking',
+    'qgate_enabled': True,
+    'qgate_max_iterations': 3,
+}
+
+DEFAULT_PLAN_OUTLINE = {
+    'qgate_enabled': True,
+    'qgate_max_iterations': 3,
+}
+
+DEFAULT_PLAN_PLAN = {
+    'qgate_enabled': True,
+    'qgate_max_iterations': 3,
 }
 
 DEFAULT_PLAN_EXECUTE = {
@@ -94,6 +106,8 @@ def get_default_config() -> dict:
         'plan': {
             'phase-1-init': copy.deepcopy(DEFAULT_PLAN_INIT),
             'phase-2-refine': copy.deepcopy(DEFAULT_PLAN_REFINE),
+            'phase-3-outline': copy.deepcopy(DEFAULT_PLAN_OUTLINE),
+            'phase-4-plan': copy.deepcopy(DEFAULT_PLAN_PLAN),
             'phase-5-execute': copy.deepcopy(DEFAULT_PLAN_EXECUTE),
             'phase-6-verify': copy.deepcopy(DEFAULT_PLAN_VERIFY),
             'phase-7-finalize': copy.deepcopy(DEFAULT_PLAN_FINALIZE),

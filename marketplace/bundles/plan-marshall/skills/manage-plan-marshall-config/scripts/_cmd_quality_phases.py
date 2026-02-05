@@ -21,6 +21,8 @@ from _config_core import (
 PHASE_SECTIONS = {
     'phase-1-init',
     'phase-2-refine',
+    'phase-3-outline',
+    'phase-4-plan',
     'phase-5-execute',
     'phase-6-verify',
     'phase-7-finalize',
@@ -30,7 +32,7 @@ PHASE_SECTIONS = {
 PIPELINE_PHASES = {'phase-6-verify', 'phase-7-finalize'}
 
 # Phases with simple scalar fields only
-SCALAR_PHASES = {'phase-1-init', 'phase-2-refine', 'phase-5-execute'}
+SCALAR_PHASES = {'phase-1-init', 'phase-2-refine', 'phase-3-outline', 'phase-4-plan', 'phase-5-execute'}
 
 
 def _coerce_value(value: str) -> str | bool | int:
