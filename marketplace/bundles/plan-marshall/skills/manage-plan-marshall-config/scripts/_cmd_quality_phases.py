@@ -121,7 +121,7 @@ def cmd_phase(args, phase_section: str) -> int:
             if domain_step_config[step] is False:
                 return error_exit(
                     f"Cannot re-enable step '{step}' without agent reference. "
-                    f"Use set-domain-step-agent to set the agent."
+                    f'Use set-domain-step-agent to set the agent.'
                 )
 
         domain_steps[domain] = domain_step_config

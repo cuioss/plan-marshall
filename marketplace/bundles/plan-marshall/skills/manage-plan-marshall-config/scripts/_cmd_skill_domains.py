@@ -878,9 +878,7 @@ def cmd_resolve_change_type_agent(args) -> int:
     # Validate change_type
     valid_change_types = ['analysis', 'feature', 'enhancement', 'bug_fix', 'tech_debt', 'verification']
     if change_type not in valid_change_types:
-        return error_exit(
-            f"Invalid change_type '{change_type}'. Valid types: {', '.join(valid_change_types)}"
-        )
+        return error_exit(f"Invalid change_type '{change_type}'. Valid types: {', '.join(valid_change_types)}")
 
     config = load_config()
     skill_domains = config.get('skill_domains', {})
@@ -894,17 +892,9 @@ def cmd_resolve_change_type_agent(args) -> int:
         change_type_agents = domain_config.get('change_type_agents', {})
         if change_type in change_type_agents:
             domain_agent = change_type_agents[change_type]
-            return success_exit({
-                'domain': domain,
-                'change_type': change_type,
-                'agent': domain_agent,
-                'source': 'domain_specific'
-            })
+            return success_exit(
+                {'domain': domain, 'change_type': change_type, 'agent': domain_agent, 'source': 'domain_specific'}
+            )
 
     # Fall back to generic agent
-    return success_exit({
-        'domain': domain,
-        'change_type': change_type,
-        'agent': generic_agent,
-        'source': 'generic'
-    })
+    return success_exit({'domain': domain, 'change_type': change_type, 'agent': generic_agent, 'source': 'generic'})

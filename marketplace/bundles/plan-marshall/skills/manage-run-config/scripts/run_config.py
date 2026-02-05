@@ -190,7 +190,13 @@ def cmd_validate(args) -> int:
         # Determine overall validity
         valid = all(c.get('passed', True) for c in checks)
 
-        result = {'success': True, 'valid': valid, 'file': str(file_path), 'format': 'manage-run-config', 'checks': checks}
+        result = {
+            'success': True,
+            'valid': valid,
+            'file': str(file_path),
+            'format': 'manage-run-config',
+            'checks': checks,
+        }
         print(json.dumps(result, indent=2, ensure_ascii=False))
         return 0
 

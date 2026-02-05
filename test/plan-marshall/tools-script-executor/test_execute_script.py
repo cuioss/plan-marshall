@@ -9,7 +9,9 @@ from pathlib import Path
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
 
 # Path to templates and scripts
-SKILL_DIR = Path(__file__).parent.parent.parent.parent / 'marketplace/bundles/plan-marshall/skills/tools-script-executor'
+SKILL_DIR = (
+    Path(__file__).parent.parent.parent.parent / 'marketplace/bundles/plan-marshall/skills/tools-script-executor'
+)
 TEMPLATE_DIR = SKILL_DIR / 'templates'
 SCRIPTS_DIR = SKILL_DIR / 'scripts'
 LOGGING_DIR = Path(__file__).parent.parent.parent.parent / 'marketplace/bundles/plan-marshall/skills/logging/scripts'

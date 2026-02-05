@@ -128,7 +128,12 @@ def validate_deliverable_contract(deliverable: dict) -> tuple[list[str], list[st
 
         # Check 1b: Valid change_type (canonical vocabulary from change-types.md)
         valid_change_types = [
-            'analysis', 'feature', 'enhancement', 'bug_fix', 'tech_debt', 'verification',
+            'analysis',
+            'feature',
+            'enhancement',
+            'bug_fix',
+            'tech_debt',
+            'verification',
         ]
         if metadata.get('change_type') and metadata['change_type'] not in valid_change_types:
             errors.append(
@@ -150,9 +155,7 @@ def validate_deliverable_contract(deliverable: dict) -> tuple[list[str], list[st
     else:
         for profile in profiles:
             if profile not in valid_profiles:
-                errors.append(
-                    f"D{num}: Invalid profile '{profile}' (must be one of: {', '.join(valid_profiles)})"
-                )
+                errors.append(f"D{num}: Invalid profile '{profile}' (must be one of: {', '.join(valid_profiles)})")
 
     # Check 3: Affected files section
     affected_files = deliverable.get('affected_files', [])

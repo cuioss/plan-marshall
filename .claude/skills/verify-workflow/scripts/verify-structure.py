@@ -159,9 +159,7 @@ class StructuralChecker:
             self.add_finding('warning', f'References file not found for plan {self.plan_id}')
             return False
 
-    def check_deliverables_count(
-        self, expected_count: int | None = None, count_check_mode: str = 'strict'
-    ) -> bool:
+    def check_deliverables_count(self, expected_count: int | None = None, count_check_mode: str = 'strict') -> bool:
         """Check deliverables can be listed and optionally verify count.
 
         Args:
@@ -356,9 +354,7 @@ class StructuralChecker:
 
             # Check for clarifications section or clarified_request
             has_clarifications = (
-                'clarifications' in sections
-                or 'clarified_request' in sections
-                or 'clarified request' in sections
+                'clarifications' in sections or 'clarified_request' in sections or 'clarified request' in sections
             )
 
             if has_clarifications:
@@ -563,7 +559,9 @@ def main() -> int:
     parser = argparse.ArgumentParser(description='Run structural verification checks')
     parser.add_argument('--plan-id', required=True, help='Plan identifier')
     parser.add_argument('--test-case', required=True, help='Path to test case directory')
-    parser.add_argument('--artifacts-dir', help='Directory containing collected artifacts (reads from here instead of plan dir)')
+    parser.add_argument(
+        '--artifacts-dir', help='Directory containing collected artifacts (reads from here instead of plan dir)'
+    )
     parser.add_argument('--output', help='Output file path (default: stdout)')
     parser.add_argument('--phases', default='3-outline', help='Phases to verify (comma-separated)')
 

@@ -120,12 +120,14 @@ class TestEnsureWildcards(ScriptTestCase):
         # Use new dict format: bundles are keys, not list items
         marketplace_file = self.temp_dir / 'marketplace.json'
         marketplace_file.write_text(
-            json.dumps({
-                'bundles': {
-                    'builder': {'path': 'marketplace/bundles/builder', 'skills': ['some-skill']},
-                    'planning': {'path': 'marketplace/bundles/planning', 'commands': ['some-cmd']},
+            json.dumps(
+                {
+                    'bundles': {
+                        'builder': {'path': 'marketplace/bundles/builder', 'skills': ['some-skill']},
+                        'planning': {'path': 'marketplace/bundles/planning', 'commands': ['some-cmd']},
+                    }
                 }
-            })
+            )
         )
 
         result = run_script(
@@ -158,11 +160,13 @@ class TestEnsureWildcards(ScriptTestCase):
         # Use new dict format: bundles are keys
         marketplace_file = self.temp_dir / 'marketplace.json'
         marketplace_file.write_text(
-            json.dumps({
-                'bundles': {
-                    'builder': {'path': 'marketplace/bundles/builder', 'skills': ['skill1'], 'commands': ['cmd1']},
+            json.dumps(
+                {
+                    'bundles': {
+                        'builder': {'path': 'marketplace/bundles/builder', 'skills': ['skill1'], 'commands': ['cmd1']},
+                    }
                 }
-            })
+            )
         )
 
         result = run_script(
@@ -192,20 +196,22 @@ class TestEnsureWildcards(ScriptTestCase):
         # Use new dict format with skills/commands arrays
         marketplace_file = self.temp_dir / 'marketplace.json'
         marketplace_file.write_text(
-            json.dumps({
-                'bundles': {
-                    'pm-workflow': {
-                        'path': 'marketplace/bundles/pm-workflow',
-                        'skills': ['manage-lifecycle', 'plan-manage'],
-                        'commands': ['plan-manage'],
-                    },
-                    'pm-dev-java': {
-                        'path': 'marketplace/bundles/pm-dev-java',
-                        'skills': ['cui-java-core'],
-                        'commands': ['java-create'],
-                    },
+            json.dumps(
+                {
+                    'bundles': {
+                        'pm-workflow': {
+                            'path': 'marketplace/bundles/pm-workflow',
+                            'skills': ['manage-lifecycle', 'plan-manage'],
+                            'commands': ['plan-manage'],
+                        },
+                        'pm-dev-java': {
+                            'path': 'marketplace/bundles/pm-dev-java',
+                            'skills': ['cui-java-core'],
+                            'commands': ['java-create'],
+                        },
+                    }
                 }
-            })
+            )
         )
 
         result = run_script(
@@ -241,16 +247,18 @@ class TestEnsureWildcards(ScriptTestCase):
         # Bundles without skills/commands arrays
         marketplace_file = self.temp_dir / 'marketplace.json'
         marketplace_file.write_text(
-            json.dumps({
-                'bundles': {
-                    'pm-workflow': {
-                        'path': 'marketplace/bundles/pm-workflow',
-                    },
-                    'pm-dev-java': {
-                        'path': 'marketplace/bundles/pm-dev-java',
-                    },
+            json.dumps(
+                {
+                    'bundles': {
+                        'pm-workflow': {
+                            'path': 'marketplace/bundles/pm-workflow',
+                        },
+                        'pm-dev-java': {
+                            'path': 'marketplace/bundles/pm-dev-java',
+                        },
+                    }
                 }
-            })
+            )
         )
 
         result = run_script(

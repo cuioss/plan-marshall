@@ -646,11 +646,15 @@ def test_next_tasks_includes_in_progress():
     temp_dir = setup_plan_dir()
     try:
         # Add tasks with 2 steps so completing one step leaves task in_progress
-        add_task_with_fields(title='Task 1', depends_on='none', steps=['src/main/java/FileA.java', 'src/main/java/FileB.java'])
+        add_task_with_fields(
+            title='Task 1', depends_on='none', steps=['src/main/java/FileA.java', 'src/main/java/FileB.java']
+        )
         add_task_with_fields(title='Task 2', depends_on='none')
 
         # Complete first step of task 1 (puts task in_progress with step 2 remaining)
-        run_script(SCRIPT_PATH, 'finalize-step', '--plan-id', 'test-plan', '--task', '1', '--step', '1', '--outcome', 'done')
+        run_script(
+            SCRIPT_PATH, 'finalize-step', '--plan-id', 'test-plan', '--task', '1', '--step', '1', '--outcome', 'done'
+        )
 
         result = run_script(SCRIPT_PATH, 'next-tasks', '--plan-id', 'test-plan')
 

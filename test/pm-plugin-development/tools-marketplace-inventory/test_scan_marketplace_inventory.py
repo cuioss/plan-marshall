@@ -19,7 +19,15 @@ PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 SCRIPT_PATH = get_script_path('pm-plugin-development', 'tools-marketplace-inventory', 'scan-marketplace-inventory.py')
 
 # Keys that are metadata, not bundle names
-METADATA_KEYS = {'status', 'scope', 'base_path', 'statistics', 'content_filter_stats', 'content_pattern', 'content_exclude'}
+METADATA_KEYS = {
+    'status',
+    'scope',
+    'base_path',
+    'statistics',
+    'content_filter_stats',
+    'content_pattern',
+    'content_exclude',
+}
 
 
 def get_bundles(data: dict) -> list[dict[str, Any]]:
@@ -525,7 +533,14 @@ def test_bundles_filter_nonexistent():
 def test_combined_bundle_and_name_pattern():
     """Test combining --bundles and --name-pattern filters."""
     result = run_script(
-        SCRIPT_PATH, '--direct-result', '--bundles', 'pm-workflow', '--resource-types', 'agents', '--name-pattern', 'plan-*'
+        SCRIPT_PATH,
+        '--direct-result',
+        '--bundles',
+        'pm-workflow',
+        '--resource-types',
+        'agents',
+        '--name-pattern',
+        'plan-*',
     )
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
@@ -680,7 +695,9 @@ def test_output_param_summary_shows_custom_path(tmp_path):
 
     # Verify summary contains custom path
     summary = parse_toon(result.stdout)
-    assert summary.get('output_file') == str(output_file), f'Summary should show custom path, got {summary.get("output_file")}'
+    assert summary.get('output_file') == str(output_file), (
+        f'Summary should show custom path, got {summary.get("output_file")}'
+    )
 
 
 def test_output_param_ignores_plan_base_dir(tmp_path, monkeypatch):
@@ -707,10 +724,14 @@ def test_output_param_with_filters(tmp_path):
 
     result = run_script(
         SCRIPT_PATH,
-        '--output', str(output_file),
-        '--bundles', 'pm-workflow',
-        '--resource-types', 'skills',
-        '--name-pattern', 'plan-*',
+        '--output',
+        str(output_file),
+        '--bundles',
+        'pm-workflow',
+        '--resource-types',
+        'skills',
+        '--name-pattern',
+        'plan-*',
     )
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
@@ -771,8 +792,10 @@ def test_content_pattern_include_single_regex():
     result = run_script(
         SCRIPT_PATH,
         '--direct-result',
-        '--resource-types', 'skills',
-        '--content-pattern', '```toon',
+        '--resource-types',
+        'skills',
+        '--content-pattern',
+        '```toon',
         '--include-descriptions',
     )
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
@@ -794,8 +817,10 @@ def test_content_pattern_include_multiple_or_logic():
     result = run_script(
         SCRIPT_PATH,
         '--direct-result',
-        '--resource-types', 'agents',
-        '--content-pattern', '```toon|```json',
+        '--resource-types',
+        'agents',
+        '--content-pattern',
+        '```toon|```json',
         '--include-descriptions',
     )
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
@@ -814,7 +839,8 @@ def test_content_exclude_single_pattern():
     result_without = run_script(
         SCRIPT_PATH,
         '--direct-result',
-        '--resource-types', 'skills',
+        '--resource-types',
+        'skills',
         '--include-descriptions',
     )
     assert result_without.returncode == 0
@@ -825,8 +851,10 @@ def test_content_exclude_single_pattern():
     result_with = run_script(
         SCRIPT_PATH,
         '--direct-result',
-        '--resource-types', 'skills',
-        '--content-exclude', '## Workflow',
+        '--resource-types',
+        'skills',
+        '--content-exclude',
+        '## Workflow',
         '--include-descriptions',
     )
     assert result_with.returncode == 0, f'Script returned error: {result_with.stderr}'
@@ -834,9 +862,7 @@ def test_content_exclude_single_pattern():
     count_with = data_with.get('statistics', {}).get('total_skills', 0)
 
     # Should have fewer skills after exclusion
-    assert count_with < count_without, (
-        f'Exclude pattern should reduce count: {count_with} should be < {count_without}'
-    )
+    assert count_with < count_without, f'Exclude pattern should reduce count: {count_with} should be < {count_without}'
 
 
 def test_content_include_and_exclude_combined():
@@ -845,9 +871,12 @@ def test_content_include_and_exclude_combined():
     result = run_script(
         SCRIPT_PATH,
         '--direct-result',
-        '--resource-types', 'skills',
-        '--content-pattern', '```toon',
-        '--content-exclude', '## Error Handling',
+        '--resource-types',
+        'skills',
+        '--content-pattern',
+        '```toon',
+        '--content-exclude',
+        '## Error Handling',
         '--include-descriptions',
     )
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
@@ -866,8 +895,10 @@ def test_content_pattern_output_includes_pattern():
     result = run_script(
         SCRIPT_PATH,
         '--direct-result',
-        '--resource-types', 'agents',
-        '--content-pattern', '```json',
+        '--resource-types',
+        'agents',
+        '--content-pattern',
+        '```json',
         '--include-descriptions',
     )
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
@@ -881,9 +912,12 @@ def test_content_pattern_with_bundles_filter():
     result = run_script(
         SCRIPT_PATH,
         '--direct-result',
-        '--bundles', 'pm-workflow',
-        '--resource-types', 'skills',
-        '--content-pattern', '```toon',
+        '--bundles',
+        'pm-workflow',
+        '--resource-types',
+        'skills',
+        '--content-pattern',
+        '```toon',
         '--include-descriptions',
     )
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
@@ -902,8 +936,10 @@ def test_content_pattern_no_matches_returns_empty():
     result = run_script(
         SCRIPT_PATH,
         '--direct-result',
-        '--resource-types', 'agents',
-        '--content-pattern', 'NONEXISTENT_UNIQUE_STRING_XYZ123',
+        '--resource-types',
+        'agents',
+        '--content-pattern',
+        'NONEXISTENT_UNIQUE_STRING_XYZ123',
         '--include-descriptions',
     )
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
@@ -976,7 +1012,7 @@ def test_include_tests_maps_to_bundles():
         # Verify paths are from the correct test directory
         for test in tests:
             if isinstance(test, dict) and 'path' in test:
-                assert 'test/pm-workflow' in test['path'], f"Test path should be in test/pm-workflow: {test['path']}"
+                assert 'test/pm-workflow' in test['path'], f'Test path should be in test/pm-workflow: {test["path"]}'
 
 
 def test_include_tests_updates_statistics():
@@ -1063,7 +1099,8 @@ def test_include_project_skills_with_bundle_filter():
         SCRIPT_PATH,
         '--direct-result',
         '--include-project-skills',
-        '--bundles', 'pm-workflow',
+        '--bundles',
+        'pm-workflow',
     )
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
@@ -1083,7 +1120,8 @@ def test_include_project_skills_explicitly_in_bundle_filter():
         SCRIPT_PATH,
         '--direct-result',
         '--include-project-skills',
-        '--bundles', 'project-skills',
+        '--bundles',
+        'project-skills',
     )
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
@@ -1093,7 +1131,7 @@ def test_include_project_skills_explicitly_in_bundle_filter():
     # project-skills should be included (if it exists)
     # Other bundles should be filtered out
     for bundle in bundles:
-        assert bundle['name'] == 'project-skills', f"Only project-skills should be present, found {bundle['name']}"
+        assert bundle['name'] == 'project-skills', f'Only project-skills should be present, found {bundle["name"]}'
 
 
 # =============================================================================
@@ -1108,7 +1146,8 @@ def test_include_tests_and_project_skills_combined():
         '--direct-result',
         '--include-tests',
         '--include-project-skills',
-        '--bundles', 'pm-plugin-development',
+        '--bundles',
+        'pm-plugin-development',
     )
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
@@ -1137,10 +1176,14 @@ def test_full_with_content_pattern_filters_subdocs():
         SCRIPT_PATH,
         '--direct-result',
         '--full',
-        '--format', 'json',
-        '--bundles', 'pm-workflow',
-        '--resource-types', 'skills',
-        '--content-pattern', '```json',
+        '--format',
+        'json',
+        '--bundles',
+        'pm-workflow',
+        '--resource-types',
+        'skills',
+        '--content-pattern',
+        '```json',
     )
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
@@ -1173,9 +1216,12 @@ def test_full_without_content_pattern_includes_all_subdocs():
         SCRIPT_PATH,
         '--direct-result',
         '--full',
-        '--format', 'json',
-        '--bundles', 'pm-workflow',
-        '--resource-types', 'skills',
+        '--format',
+        'json',
+        '--bundles',
+        'pm-workflow',
+        '--resource-types',
+        'skills',
     )
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
@@ -1204,9 +1250,12 @@ def test_full_content_pattern_excludes_non_matching_subdocs():
         SCRIPT_PATH,
         '--direct-result',
         '--full',
-        '--format', 'json',
-        '--bundles', 'pm-workflow',
-        '--resource-types', 'skills',
+        '--format',
+        'json',
+        '--bundles',
+        'pm-workflow',
+        '--resource-types',
+        'skills',
     )
     assert result_all.returncode == 0
     data_all = json.loads(result_all.stdout)
@@ -1223,10 +1272,14 @@ def test_full_content_pattern_excludes_non_matching_subdocs():
         SCRIPT_PATH,
         '--direct-result',
         '--full',
-        '--format', 'json',
-        '--bundles', 'pm-workflow',
-        '--resource-types', 'skills',
-        '--content-pattern', '```json',
+        '--format',
+        'json',
+        '--bundles',
+        'pm-workflow',
+        '--resource-types',
+        'skills',
+        '--content-pattern',
+        '```json',
     )
     assert result_filtered.returncode == 0
     data_filtered = json.loads(result_filtered.stdout)
@@ -1240,9 +1293,7 @@ def test_full_content_pattern_excludes_non_matching_subdocs():
 
     # Filtered count should be less than or equal to total (and likely less)
     # because not all subdocs contain ```json
-    assert total_filtered <= total_all, (
-        f'Content-filtered subdocs ({total_filtered}) should be <= total ({total_all})'
-    )
+    assert total_filtered <= total_all, f'Content-filtered subdocs ({total_filtered}) should be <= total ({total_all})'
 
 
 # =============================================================================

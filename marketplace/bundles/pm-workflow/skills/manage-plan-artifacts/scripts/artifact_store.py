@@ -18,7 +18,9 @@ from pathlib import Path
 from typing import Any
 
 # Add toon_parser to path
-_toon_parser_path = Path(__file__).parent.parent.parent.parent.parent / 'plan-marshall' / 'skills' / 'ref-toon-format' / 'scripts'
+_toon_parser_path = (
+    Path(__file__).parent.parent.parent.parent.parent / 'plan-marshall' / 'skills' / 'ref-toon-format' / 'scripts'
+)
 if _toon_parser_path.exists():
     sys.path.insert(0, str(_toon_parser_path))
     from toon_parser import serialize_toon
@@ -54,10 +56,19 @@ CERTAINTY_VALUES = ['CERTAIN_INCLUDE', 'CERTAIN_EXCLUDE', 'UNCERTAIN']
 
 FINDING_TYPES = [
     # Lesson-like (knowledge)
-    'bug', 'improvement', 'anti-pattern', 'triage',
-    'tip', 'insight', 'best-practice',
+    'bug',
+    'improvement',
+    'anti-pattern',
+    'triage',
+    'tip',
+    'insight',
+    'best-practice',
     # Bug-like (issues)
-    'build-error', 'test-failure', 'lint-issue', 'sonar-issue', 'pr-comment'
+    'build-error',
+    'test-failure',
+    'lint-issue',
+    'sonar-issue',
+    'pr-comment',
 ]
 
 RESOLUTIONS = ['pending', 'fixed', 'suppressed', 'accepted']
@@ -77,6 +88,7 @@ def get_plan_root() -> Path:
     Respects PLAN_BASE_DIR environment variable for testing.
     """
     import os
+
     base_dir = os.environ.get('PLAN_BASE_DIR')
     if base_dir:
         return Path(base_dir)
@@ -91,7 +103,7 @@ def get_artifacts_dir(plan_id: str) -> Path:
 def get_artifact_path(plan_id: str, artifact_type: str) -> Path:
     """Returns .plan/plans/{plan_id}/artifacts/{type}.jsonl"""
     if artifact_type not in ARTIFACT_TYPES:
-        raise ValueError(f"Invalid artifact type: {artifact_type}. Must be one of {ARTIFACT_TYPES}")
+        raise ValueError(f'Invalid artifact type: {artifact_type}. Must be one of {ARTIFACT_TYPES}')
     return get_artifacts_dir(plan_id) / f'{artifact_type}.jsonl'
 
 
@@ -99,7 +111,8 @@ def generate_hash_id() -> str:
     """Generate a 6-char hex hash for artifact identification."""
     # Use timestamp + random bytes for uniqueness
     import secrets
-    data = f"{datetime.now(UTC).isoformat()}{secrets.token_hex(8)}"
+
+    data = f'{datetime.now(UTC).isoformat()}{secrets.token_hex(8)}'
     return hashlib.sha256(data.encode()).hexdigest()[:6]
 
 
@@ -156,6 +169,7 @@ def _timestamp() -> str:
 
 
 # --- Assessments ---
+
 
 def clear_assessments(
     plan_id: str,
@@ -216,10 +230,10 @@ def add_assessment(
         Dict with status, hash_id, file_path
     """
     if certainty not in CERTAINTY_VALUES:
-        return {'status': 'error', 'message': f"Invalid certainty: {certainty}. Must be one of {CERTAINTY_VALUES}"}
+        return {'status': 'error', 'message': f'Invalid certainty: {certainty}. Must be one of {CERTAINTY_VALUES}'}
 
     if not 0 <= confidence <= 100:
-        return {'status': 'error', 'message': f"Invalid confidence: {confidence}. Must be 0-100"}
+        return {'status': 'error', 'message': f'Invalid confidence: {confidence}. Must be 0-100'}
 
     hash_id = generate_hash_id()
     record = {
@@ -296,10 +310,11 @@ def get_assessment(plan_id: str, hash_id: str) -> dict[str, Any] | None:
     for record in _read_jsonl(path):
         if record.get('hash_id') == hash_id:
             return {'status': 'success', **record}
-    return {'status': 'error', 'message': f"Assessment not found: {hash_id}"}
+    return {'status': 'error', 'message': f'Assessment not found: {hash_id}'}
 
 
 # --- Findings ---
+
 
 def add_finding(
     plan_id: str,
@@ -331,10 +346,10 @@ def add_finding(
         Dict with status, hash_id, type
     """
     if finding_type not in FINDING_TYPES:
-        return {'status': 'error', 'message': f"Invalid finding type: {finding_type}. Must be one of {FINDING_TYPES}"}
+        return {'status': 'error', 'message': f'Invalid finding type: {finding_type}. Must be one of {FINDING_TYPES}'}
 
     if severity and severity not in SEVERITIES:
-        return {'status': 'error', 'message': f"Invalid severity: {severity}. Must be one of {SEVERITIES}"}
+        return {'status': 'error', 'message': f'Invalid severity: {severity}. Must be one of {SEVERITIES}'}
 
     hash_id = generate_hash_id()
     record: dict[str, Any] = {
@@ -427,7 +442,7 @@ def get_finding(plan_id: str, hash_id: str) -> dict[str, Any] | None:
     for record in _read_jsonl(path):
         if record.get('hash_id') == hash_id:
             return {'status': 'success', **record}
-    return {'status': 'error', 'message': f"Finding not found: {hash_id}"}
+    return {'status': 'error', 'message': f'Finding not found: {hash_id}'}
 
 
 def resolve_finding(
@@ -448,7 +463,7 @@ def resolve_finding(
         Dict with status
     """
     if resolution not in RESOLUTIONS:
-        return {'status': 'error', 'message': f"Invalid resolution: {resolution}. Must be one of {RESOLUTIONS}"}
+        return {'status': 'error', 'message': f'Invalid resolution: {resolution}. Must be one of {RESOLUTIONS}'}
 
     path = get_artifact_path(plan_id, 'findings')
     updates: dict[str, Any] = {'resolution': resolution}
@@ -457,7 +472,7 @@ def resolve_finding(
 
     if _update_jsonl(path, hash_id, updates):
         return {'status': 'success', 'hash_id': hash_id, 'resolution': resolution}
-    return {'status': 'error', 'message': f"Finding not found: {hash_id}"}
+    return {'status': 'error', 'message': f'Finding not found: {hash_id}'}
 
 
 def promote_finding(
@@ -480,10 +495,11 @@ def promote_finding(
 
     if _update_jsonl(path, hash_id, updates):
         return {'status': 'success', 'hash_id': hash_id, 'promoted_to': promoted_to}
-    return {'status': 'error', 'message': f"Finding not found: {hash_id}"}
+    return {'status': 'error', 'message': f'Finding not found: {hash_id}'}
 
 
 # --- Output formatting ---
+
 
 def format_output(data: dict[str, Any]) -> str:
     """Format output as TOON."""

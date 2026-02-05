@@ -109,11 +109,13 @@ class DependencyIndex:
                 if target_key not in visited:
                     visited.add(target_key)
                     new_via = current if depth > 0 else ''
-                    result.append({
-                        'target': target_key,
-                        'depth': depth + 1,
-                        'via': new_via,
-                    })
+                    result.append(
+                        {
+                            'target': target_key,
+                            'depth': depth + 1,
+                            'via': new_via,
+                        }
+                    )
                     queue.append((target_key, depth + 1, current))
 
         return result
@@ -183,11 +185,13 @@ def discover_components(base_path: Path) -> list[ComponentInfo]:
                 )
                 content = agent_file.read_text()
                 frontmatter, _ = extract_frontmatter(content)
-                components.append(ComponentInfo(
-                    component_id=component_id,
-                    file_path=agent_file,
-                    frontmatter=frontmatter,
-                ))
+                components.append(
+                    ComponentInfo(
+                        component_id=component_id,
+                        file_path=agent_file,
+                        frontmatter=frontmatter,
+                    )
+                )
 
         # Discover commands
         commands_dir = bundle_dir / 'commands'
@@ -200,11 +204,13 @@ def discover_components(base_path: Path) -> list[ComponentInfo]:
                 )
                 content = command_file.read_text()
                 frontmatter, _ = extract_frontmatter(content)
-                components.append(ComponentInfo(
-                    component_id=component_id,
-                    file_path=command_file,
-                    frontmatter=frontmatter,
-                ))
+                components.append(
+                    ComponentInfo(
+                        component_id=component_id,
+                        file_path=command_file,
+                        frontmatter=frontmatter,
+                    )
+                )
 
         # Discover skills and scripts
         skills_dir = bundle_dir / 'skills'
@@ -221,11 +227,13 @@ def discover_components(base_path: Path) -> list[ComponentInfo]:
                     component_type='skill',
                     name=skill_name,
                 )
-                components.append(ComponentInfo(
-                    component_id=component_id,
-                    file_path=skill_md,
-                    frontmatter=frontmatter,
-                ))
+                components.append(
+                    ComponentInfo(
+                        component_id=component_id,
+                        file_path=skill_md,
+                        frontmatter=frontmatter,
+                    )
+                )
 
                 # Add scripts (excluding private modules)
                 scripts_dir = skill_dir / 'scripts'
@@ -240,11 +248,13 @@ def discover_components(base_path: Path) -> list[ComponentInfo]:
                             name=script_file.stem,
                             parent_skill=skill_name,
                         )
-                        components.append(ComponentInfo(
-                            component_id=script_id,
-                            file_path=script_file,
-                            frontmatter={},
-                        ))
+                        components.append(
+                            ComponentInfo(
+                                component_id=script_id,
+                                file_path=script_file,
+                                frontmatter={},
+                            )
+                        )
 
                     for script_file in scripts_dir.glob('*.sh'):
                         if script_file.name.startswith('_'):
@@ -255,11 +265,13 @@ def discover_components(base_path: Path) -> list[ComponentInfo]:
                             name=script_file.stem,
                             parent_skill=skill_name,
                         )
-                        components.append(ComponentInfo(
-                            component_id=script_id,
-                            file_path=script_file,
-                            frontmatter={},
-                        ))
+                        components.append(
+                            ComponentInfo(
+                                component_id=script_id,
+                                file_path=script_file,
+                                frontmatter={},
+                            )
+                        )
 
     return components
 
@@ -342,9 +354,7 @@ def get_base_path(scope: str) -> Path:
         cache = Path.home() / CLAUDE_DIR / PLUGIN_CACHE_SUBPATH
         if cache.is_dir():
             return cache
-        raise FileNotFoundError(
-            f'Neither {MARKETPLACE_BUNDLES_PATH} nor plugin cache found.'
-        )
+        raise FileNotFoundError(f'Neither {MARKETPLACE_BUNDLES_PATH} nor plugin cache found.')
 
     if scope == 'marketplace':
         if (Path.cwd() / MARKETPLACE_BUNDLES_PATH).is_dir():

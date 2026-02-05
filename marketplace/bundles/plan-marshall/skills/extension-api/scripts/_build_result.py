@@ -105,9 +105,11 @@ class DirectCommandResult(TypedDict, total=False):
 # Constants
 # =============================================================================
 
+
 def _get_log_base_dir() -> str:
     """Get base directory for build log files, relative to project root."""
     return f'{_get_plan_dir()}/temp/build-output'
+
 
 TIMESTAMP_FORMAT = '%Y-%m-%d-%H%M%S'
 """Timestamp format for log file names."""

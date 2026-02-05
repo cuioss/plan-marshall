@@ -492,7 +492,9 @@ def test_list_filter_by_status():
         add_basic_task(title='First', deliverable=1, steps=['src/main/java/File.java'])
         add_basic_task(title='Second', deliverable=2, steps=['src/main/java/File.java'])
         # Mark first task as in_progress by finalizing step (starts from pending)
-        run_script(SCRIPT_PATH, 'finalize-step', '--plan-id', 'test-plan', '--task', '1', '--step', '1', '--outcome', 'done')
+        run_script(
+            SCRIPT_PATH, 'finalize-step', '--plan-id', 'test-plan', '--task', '1', '--step', '1', '--outcome', 'done'
+        )
 
         result = run_script(SCRIPT_PATH, 'list', '--plan-id', 'test-plan', '--status', 'pending')
 
@@ -619,7 +621,9 @@ def test_next_returns_in_progress_task():
         add_basic_task(title='First', deliverable=1, steps=['src/main/java/FileA.java', 'src/main/java/FileB.java'])
         add_basic_task(title='Second', deliverable=2, steps=['src/main/java/File.java'])
         # Complete first step to put task in_progress (still has step 2)
-        run_script(SCRIPT_PATH, 'finalize-step', '--plan-id', 'test-plan', '--task', '1', '--step', '1', '--outcome', 'done')
+        run_script(
+            SCRIPT_PATH, 'finalize-step', '--plan-id', 'test-plan', '--task', '1', '--step', '1', '--outcome', 'done'
+        )
 
         result = run_script(SCRIPT_PATH, 'next', '--plan-id', 'test-plan')
 
@@ -635,7 +639,9 @@ def test_next_returns_null_when_all_done():
     temp_dir = setup_plan_dir()
     try:
         add_basic_task(title='Only Task', deliverable=1, steps=['src/main/java/File.java'])
-        run_script(SCRIPT_PATH, 'finalize-step', '--plan-id', 'test-plan', '--task', '1', '--step', '1', '--outcome', 'done')
+        run_script(
+            SCRIPT_PATH, 'finalize-step', '--plan-id', 'test-plan', '--task', '1', '--step', '1', '--outcome', 'done'
+        )
 
         result = run_script(SCRIPT_PATH, 'next', '--plan-id', 'test-plan')
 
@@ -1143,8 +1149,12 @@ def test_progress_calculation():
             deliverable=1,
             steps=['src/main/java/FileA.java', 'src/main/java/FileB.java', 'src/main/java/FileC.java'],
         )
-        run_script(SCRIPT_PATH, 'finalize-step', '--plan-id', 'test-plan', '--task', '1', '--step', '1', '--outcome', 'done')
-        run_script(SCRIPT_PATH, 'finalize-step', '--plan-id', 'test-plan', '--task', '1', '--step', '2', '--outcome', 'skipped')
+        run_script(
+            SCRIPT_PATH, 'finalize-step', '--plan-id', 'test-plan', '--task', '1', '--step', '1', '--outcome', 'done'
+        )
+        run_script(
+            SCRIPT_PATH, 'finalize-step', '--plan-id', 'test-plan', '--task', '1', '--step', '2', '--outcome', 'skipped'
+        )
 
         result = run_script(SCRIPT_PATH, 'list', '--plan-id', 'test-plan')
 

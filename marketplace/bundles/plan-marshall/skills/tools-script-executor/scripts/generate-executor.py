@@ -154,7 +154,9 @@ def _resolve_plan_marshall_path(base_path: Path, subpath: str) -> Path:
 
 def get_inventory_script(base_path: Path) -> Path:
     """Get path to inventory script based on context."""
-    return _resolve_bundle_path(base_path, 'pm-plugin-development', 'skills/tools-marketplace-inventory/scripts/scan-marketplace-inventory.py')
+    return _resolve_bundle_path(
+        base_path, 'pm-plugin-development', 'skills/tools-marketplace-inventory/scripts/scan-marketplace-inventory.py'
+    )
 
 
 def get_templates_dir(base_path: Path) -> Path:
@@ -247,7 +249,17 @@ def discover_scripts(base_path: Path) -> dict[str, str]:
 
     # Run inventory scan
     result = subprocess.run(
-        ['python3', str(inventory_script), '--scope', scope, '--resource-types', 'scripts', '--direct-result', '--format', 'json'],
+        [
+            'python3',
+            str(inventory_script),
+            '--scope',
+            scope,
+            '--resource-types',
+            'scripts',
+            '--direct-result',
+            '--format',
+            'json',
+        ],
         capture_output=True,
         text=True,
         env=env,

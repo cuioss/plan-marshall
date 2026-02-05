@@ -188,7 +188,9 @@ class TestStructuralChecker:
         plan_dir = tmp_path / 'plans' / 'test-plan'
         plan_dir.mkdir(parents=True)
         solution_path = plan_dir / 'solution_outline.md'
-        solution_path.write_text('# Solution\n\n## Summary\n\nSummary text.\n\n## Overview\n\nOverview text.\n\n## Deliverables\n\n### 1. Test\n\nContent.')
+        solution_path.write_text(
+            '# Solution\n\n## Summary\n\nSummary text.\n\n## Overview\n\nOverview text.\n\n## Deliverables\n\n### 1. Test\n\nContent.'
+        )
 
         with patch('verify_structure.base_path', make_base_path_mock(tmp_path)):
             checker = StructuralChecker('test-plan', temp_test_case)
@@ -246,7 +248,9 @@ Content for third deliverable.
 """
         (plan_dir / 'solution_outline.md').write_text(solution_content)
         (plan_dir / 'status.toon').write_text('current_phase: execute')
-        (plan_dir / 'references.json').write_text('{"branch": "main", "domains": ["java"], "affected_files": ["file1.md", "file2.md"]}')
+        (plan_dir / 'references.json').write_text(
+            '{"branch": "main", "domains": ["java"], "affected_files": ["file1.md", "file2.md"]}'
+        )
 
         with patch('verify_structure.base_path', make_base_path_mock(tmp_path)):
             checker = StructuralChecker('test-plan', temp_test_case)

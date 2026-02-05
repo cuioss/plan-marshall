@@ -33,7 +33,9 @@ LOGGING_DIR = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'logging' / 'scrip
 # A simple script that we know exists for testing
 TEST_SCRIPT_BUNDLE = 'pm-workflow'
 TEST_SCRIPT_SKILL = 'manage-references'
-TEST_SCRIPT_PATH = MARKETPLACE_ROOT / TEST_SCRIPT_BUNDLE / 'skills' / TEST_SCRIPT_SKILL / 'scripts' / 'manage-references.py'
+TEST_SCRIPT_PATH = (
+    MARKETPLACE_ROOT / TEST_SCRIPT_BUNDLE / 'skills' / TEST_SCRIPT_SKILL / 'scripts' / 'manage-references.py'
+)
 
 
 # ============================================================================

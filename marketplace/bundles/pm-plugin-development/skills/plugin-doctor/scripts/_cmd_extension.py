@@ -169,42 +169,50 @@ def validate_triage_and_change_type_agents(module, marketplace_root: Path) -> li
             agents = module.provides_change_type_agents()
             if agents is not None:
                 if not isinstance(agents, dict):
-                    issues.append({
-                        'type': 'invalid_change_type_agents',
-                        'message': 'provides_change_type_agents() must return dict[str, str] or None'
-                    })
+                    issues.append(
+                        {
+                            'type': 'invalid_change_type_agents',
+                            'message': 'provides_change_type_agents() must return dict[str, str] or None',
+                        }
+                    )
                 else:
                     # Validate each agent reference
                     valid_change_types = {'analysis', 'feature', 'enhancement', 'bug_fix', 'tech_debt', 'verification'}
                     for change_type, agent_ref in agents.items():
                         # Validate change_type is known
                         if change_type not in valid_change_types:
-                            issues.append({
-                                'type': 'unknown_change_type',
-                                'change_type': change_type,
-                                'location': 'provides_change_type_agents()',
-                                'severity': 'warning',
-                                'message': f"Unknown change_type '{change_type}' in provides_change_type_agents()",
-                            })
+                            issues.append(
+                                {
+                                    'type': 'unknown_change_type',
+                                    'change_type': change_type,
+                                    'location': 'provides_change_type_agents()',
+                                    'severity': 'warning',
+                                    'message': f"Unknown change_type '{change_type}' in provides_change_type_agents()",
+                                }
+                            )
 
                         # Validate agent reference is a string
                         if not isinstance(agent_ref, str):
-                            issues.append({
-                                'type': 'invalid_agent_ref',
-                                'change_type': change_type,
-                                'message': f"Agent reference for '{change_type}' must be a string",
-                            })
+                            issues.append(
+                                {
+                                    'type': 'invalid_agent_ref',
+                                    'change_type': change_type,
+                                    'message': f"Agent reference for '{change_type}' must be a string",
+                                }
+                            )
                             continue
 
                         # Validate agent exists
                         if not agent_exists(agent_ref, marketplace_root):
-                            issues.append({
-                                'type': 'missing_agent',
-                                'agent': agent_ref,
-                                'change_type': change_type,
-                                'location': 'provides_change_type_agents()',
-                                'message': f"Agent '{agent_ref}' for change_type '{change_type}' does not exist",
-                            })
+                            issues.append(
+                                {
+                                    'type': 'missing_agent',
+                                    'agent': agent_ref,
+                                    'change_type': change_type,
+                                    'location': 'provides_change_type_agents()',
+                                    'message': f"Agent '{agent_ref}' for change_type '{change_type}' does not exist",
+                                }
+                            )
         except Exception as e:
             issues.append({'type': 'change_type_agents_error', 'message': f'provides_change_type_agents() raised: {e}'})
 

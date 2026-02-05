@@ -206,19 +206,18 @@ def cmd_rdeps(
     by_source: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for dep in filtered:
         source_key = dep.source.to_notation()
-        by_source[source_key].append({
-            'type': dep.dep_type.value,
-            'context': dep.context,
-        })
+        by_source[source_key].append(
+            {
+                'type': dep.dep_type.value,
+                'context': dep.context,
+            }
+        )
 
     return {
         'status': 'success',
         'component': component,
         'dependent_count': len(by_source),
-        'dependents': [
-            {'component': src, 'references': refs}
-            for src, refs in sorted(by_source.items())
-        ],
+        'dependents': [{'component': src, 'references': refs} for src, refs in sorted(by_source.items())],
     }
 
 
@@ -284,12 +283,14 @@ def cmd_validate(
             if dep.resolved:
                 resolved_count += 1
             else:
-                unresolved.append({
-                    'source': dep.source.to_notation(),
-                    'target': dep.target.to_notation(),
-                    'type': dep.dep_type.value,
-                    'context': dep.context,
-                })
+                unresolved.append(
+                    {
+                        'source': dep.source.to_notation(),
+                        'target': dep.target.to_notation(),
+                        'type': dep.dep_type.value,
+                        'context': dep.context,
+                    }
+                )
 
     # Detect circular dependencies
     circular = index.detect_circular_deps()
@@ -312,17 +313,13 @@ def cmd_validate(
         result['unresolved'] = unresolved
 
     if circular:
-        result['circular_dependencies'] = [
-            {'chain': cycle} for cycle in circular
-        ]
+        result['circular_dependencies'] = [{'chain': cycle} for cycle in circular]
 
     return result
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(
-        description='Resolve dependencies between marketplace components'
-    )
+    parser = argparse.ArgumentParser(description='Resolve dependencies between marketplace components')
     parser.add_argument(
         'subcommand',
         choices=['deps', 'rdeps', 'tree', 'validate'],

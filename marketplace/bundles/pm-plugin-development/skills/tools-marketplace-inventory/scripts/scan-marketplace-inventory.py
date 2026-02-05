@@ -65,6 +65,7 @@ def get_temp_dir(subdir: str) -> Path:
     """Get temp directory under .plan/temp/{subdir}."""
     return get_plan_dir() / 'temp' / subdir
 
+
 # Script-relative path discovery (works regardless of cwd)
 # Script is at: marketplace/bundles/pm-plugin-development/skills/tools-marketplace-inventory/scripts/
 # So bundles directory is 5 levels up from script
@@ -339,19 +340,23 @@ def discover_tests(bundle_name: str) -> list[dict]:
     # Test files (test_*.py)
     for test_file in test_dir.rglob('test_*.py'):
         if test_file.is_file():
-            tests.append({
-                'name': test_file.stem,
-                'path': safe_relative_path(test_file),
-                'type': 'test',
-            })
+            tests.append(
+                {
+                    'name': test_file.stem,
+                    'path': safe_relative_path(test_file),
+                    'type': 'test',
+                }
+            )
     # conftest.py files
     for conftest in test_dir.rglob('conftest.py'):
         if conftest.is_file():
-            tests.append({
-                'name': 'conftest',
-                'path': safe_relative_path(conftest),
-                'type': 'conftest',
-            })
+            tests.append(
+                {
+                    'name': 'conftest',
+                    'path': safe_relative_path(conftest),
+                    'type': 'conftest',
+                }
+            )
     return sorted(tests, key=lambda x: (x['name'], x['path']))
 
 
@@ -387,12 +392,14 @@ def discover_project_skills() -> dict | None:
             if scripts_dir.is_dir():
                 for script in sorted(scripts_dir.glob('*.py')):
                     if script.is_file() and not script.name.startswith('_'):
-                        bundle['scripts'].append({
-                            'name': script.stem,
-                            'skill': skill_dir.name,
-                            'path': safe_relative_path(script),
-                            'notation': f'project-skills:{skill_dir.name}:{script.stem}',
-                        })
+                        bundle['scripts'].append(
+                            {
+                                'name': script.stem,
+                                'skill': skill_dir.name,
+                                'path': safe_relative_path(script),
+                                'notation': f'project-skills:{skill_dir.name}:{script.stem}',
+                            }
+                        )
 
     return bundle if bundle['skills'] else None
 
@@ -656,27 +663,27 @@ def serialize_inventory_toon(data: dict, full: bool = False) -> str:
     """
     lines: list[str] = []
     lines.append('status: success')
-    lines.append(f"scope: {data['scope']}")
-    lines.append(f"base_path: {data['base_path']}")
+    lines.append(f'scope: {data["scope"]}')
+    lines.append(f'base_path: {data["base_path"]}')
 
     # Add content filter info if present
     if data.get('content_pattern'):
-        lines.append(f"content_pattern: \"{data['content_pattern']}\"")
+        lines.append(f'content_pattern: "{data["content_pattern"]}"')
     if data.get('content_exclude'):
-        lines.append(f"content_exclude: \"{data['content_exclude']}\"")
+        lines.append(f'content_exclude: "{data["content_exclude"]}"')
     if data.get('content_filter_stats'):
         stats = data['content_filter_stats']
         lines.append('content_filter_stats:')
-        lines.append(f"  input_count: {stats['input_count']}")
-        lines.append(f"  matched_count: {stats['matched_count']}")
-        lines.append(f"  excluded_count: {stats['excluded_count']}")
+        lines.append(f'  input_count: {stats["input_count"]}')
+        lines.append(f'  matched_count: {stats["matched_count"]}')
+        lines.append(f'  excluded_count: {stats["excluded_count"]}')
 
     lines.append('')
 
     for bundle in data['bundles']:
         bundle_name = bundle['name']
         lines.append(f'{bundle_name}:')
-        lines.append(f"  path: {bundle['path']}")
+        lines.append(f'  path: {bundle["path"]}')
 
         for resource_type in ['agents', 'commands', 'skills', 'scripts', 'tests']:
             items = bundle.get(resource_type, [])
@@ -685,26 +692,33 @@ def serialize_inventory_toon(data: dict, full: bool = False) -> str:
                 for item in items:
                     if full:
                         # Detailed format with frontmatter
-                        lines.append(f"    - name: {item['name']}")
+                        lines.append(f'    - name: {item["name"]}')
                         if item.get('path'):
-                            lines.append(f"      path: {item['path']}")
+                            lines.append(f'      path: {item["path"]}')
                         if item.get('description'):
-                            lines.append(f"      description: {item['description']}")
+                            lines.append(f'      description: {item["description"]}')
                         if item.get('user_invocable') is not None:
-                            lines.append(f"      user_invocable: {str(item['user_invocable']).lower()}")
+                            lines.append(f'      user_invocable: {str(item["user_invocable"]).lower()}')
                         if item.get('allowed_tools'):
-                            lines.append(f"      allowed_tools: [{', '.join(item['allowed_tools'])}]")
+                            lines.append(f'      allowed_tools: [{", ".join(item["allowed_tools"])}]')
                         if item.get('model'):
-                            lines.append(f"      model: {item['model']}")
+                            lines.append(f'      model: {item["model"]}')
                         # Scripts have additional fields
                         if item.get('skill'):
-                            lines.append(f"      skill: {item['skill']}")
+                            lines.append(f'      skill: {item["skill"]}')
                         if item.get('notation'):
-                            lines.append(f"      notation: {item['notation']}")
+                            lines.append(f'      notation: {item["notation"]}')
                         if item.get('type'):
-                            lines.append(f"      type: {item['type']}")
+                            lines.append(f'      type: {item["type"]}')
                         # Skill subdirectories
-                        for subdir_name in ['standards', 'templates', 'references', 'knowledge', 'examples', 'documents']:
+                        for subdir_name in [
+                            'standards',
+                            'templates',
+                            'references',
+                            'knowledge',
+                            'examples',
+                            'documents',
+                        ]:
                             if item.get(subdir_name):
                                 subdir_files = item[subdir_name]
                                 lines.append(f'      {subdir_name}[{len(subdir_files)}]:')
@@ -712,7 +726,7 @@ def serialize_inventory_toon(data: dict, full: bool = False) -> str:
                                     lines.append(f'        - {file_name}')
                     else:
                         # Simple format - just names
-                        lines.append(f"    - {item['name']}")
+                        lines.append(f'    - {item["name"]}')
         lines.append('')
 
     # Statistics
@@ -750,8 +764,8 @@ def write_file_output(output: dict, output_dir: Path, custom_output: str = '', f
         'status: success',
         'output_mode: file',
         f'output_file: {output_file}',
-        f"scope: {output['scope']}",
-        f"base_path: {output['base_path']}",
+        f'scope: {output["scope"]}',
+        f'base_path: {output["base_path"]}',
         '',
         'statistics:',
     ]
@@ -831,12 +845,8 @@ def main():
     name_patterns = [p.strip() for p in args.name_pattern.split('|') if p.strip()] if args.name_pattern else []
 
     # Parse content patterns (pipe-separated for multiple regex patterns)
-    content_include = (
-        [p.strip() for p in args.content_pattern.split('|') if p.strip()] if args.content_pattern else []
-    )
-    content_exclude = (
-        [p.strip() for p in args.content_exclude.split('|') if p.strip()] if args.content_exclude else []
-    )
+    content_include = [p.strip() for p in args.content_pattern.split('|') if p.strip()] if args.content_pattern else []
+    content_exclude = [p.strip() for p in args.content_exclude.split('|') if p.strip()] if args.content_exclude else []
 
     # Content filtering requires paths - enforce --include-descriptions or --full
     if (content_include or content_exclude) and not (args.include_descriptions or args.full):
@@ -895,12 +905,8 @@ def main():
             # Apply bundle filter if specified
             if not bundle_filter or 'project-skills' in bundle_filter:
                 # Apply name pattern filter
-                project_skills['skills'] = filter_resources_by_pattern(
-                    project_skills['skills'], name_patterns
-                )
-                project_skills['scripts'] = filter_resources_by_pattern(
-                    project_skills['scripts'], name_patterns
-                )
+                project_skills['skills'] = filter_resources_by_pattern(project_skills['skills'], name_patterns)
+                project_skills['scripts'] = filter_resources_by_pattern(project_skills['scripts'], name_patterns)
                 bundles_data.append(project_skills)
 
     # Calculate totals
@@ -944,9 +950,7 @@ def main():
                 'status': 'success',
                 'scope': output['scope'],
                 'base_path': output['base_path'],
-                'bundles': {
-                    b['name']: {k: v for k, v in b.items() if k != 'name'} for b in bundles_data
-                },
+                'bundles': {b['name']: {k: v for k, v in b.items() if k != 'name'} for b in bundles_data},
                 'statistics': output['statistics'],
             }
             print(json.dumps(json_output, indent=2))

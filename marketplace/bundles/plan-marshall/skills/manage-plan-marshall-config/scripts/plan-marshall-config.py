@@ -35,8 +35,15 @@ from _cmd_system_plan import cmd_plan, cmd_system
 from _config_core import EXIT_ERROR
 
 
-def _add_phase_subparser(plan_sub, phase_name: str, help_text: str, *, has_pipeline: bool = False,
-                         has_scalar: bool = False, has_domain_steps: bool = False):
+def _add_phase_subparser(
+    plan_sub,
+    phase_name: str,
+    help_text: str,
+    *,
+    has_pipeline: bool = False,
+    has_scalar: bool = False,
+    has_domain_steps: bool = False,
+):
     """Add a phase sub-parser under the plan noun.
 
     Args:
@@ -153,8 +160,7 @@ def main():
     _add_phase_subparser(plan_sub, 'phase-1-init', 'Init phase settings', has_scalar=True)
     _add_phase_subparser(plan_sub, 'phase-2-refine', 'Refine phase settings', has_scalar=True)
     _add_phase_subparser(plan_sub, 'phase-5-execute', 'Execute phase settings', has_scalar=True)
-    _add_phase_subparser(plan_sub, 'phase-6-verify', 'Verify phase settings',
-                         has_pipeline=True, has_domain_steps=True)
+    _add_phase_subparser(plan_sub, 'phase-6-verify', 'Verify phase settings', has_pipeline=True, has_domain_steps=True)
     _add_phase_subparser(plan_sub, 'phase-7-finalize', 'Finalize phase settings', has_pipeline=True)
 
     # --- ci ---
@@ -237,9 +243,10 @@ def main():
     )
     p_rcta.add_argument('--domain', required=True, help='Domain key (e.g., plan-marshall-plugin-dev, java)')
     p_rcta.add_argument(
-        '--change-type', required=True,
+        '--change-type',
+        required=True,
         choices=['analysis', 'feature', 'enhancement', 'bug_fix', 'tech_debt', 'verification'],
-        help='Change type'
+        help='Change type',
     )
 
     args = parser.parse_args()

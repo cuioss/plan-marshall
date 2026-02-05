@@ -442,9 +442,7 @@ def test_write_new():
 def test_write_includes_compatibility():
     """Test that write output includes compatibility when present in header."""
     with TestContext(plan_id='solution-write-compat'):
-        result = run_script(
-            SCRIPT_PATH, 'write', '--plan-id', 'solution-write-compat', input_data=VALID_SOLUTION
-        )
+        result = run_script(SCRIPT_PATH, 'write', '--plan-id', 'solution-write-compat', input_data=VALID_SOLUTION)
         assert result.success, f'Script failed: {result.stderr}\nOutput: {result.stdout}'
         data = parse_toon(result.stdout)
         assert data['status'] == 'success'

@@ -16,7 +16,14 @@ from conftest import BuildContext
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 EXTENSION_FILE = (
-    PROJECT_ROOT / 'marketplace' / 'bundles' / 'pm-dev-python' / 'skills' / 'plan-marshall-plugin' / 'scripts' / 'extension.py'
+    PROJECT_ROOT
+    / 'marketplace'
+    / 'bundles'
+    / 'pm-dev-python'
+    / 'skills'
+    / 'plan-marshall-plugin'
+    / 'scripts'
+    / 'extension.py'
 )
 
 
@@ -87,11 +94,11 @@ def test_discover_modules_returns_empty_when_no_pyprojectx():
     with BuildContext() as ctx:
         # Create pyproject.toml without pyprojectx section
         pyproject = ctx.temp_dir / 'pyproject.toml'
-        pyproject.write_text('''
+        pyproject.write_text("""
 [project]
 name = "my-project"
 version = "1.0.0"
-''')
+""")
 
         ext = Extension()
         modules = ext.discover_modules(str(ctx.temp_dir))
@@ -108,14 +115,14 @@ def test_discover_modules_returns_empty_when_no_wrapper():
     with BuildContext() as ctx:
         # Create pyproject.toml with pyprojectx section but no ./pw wrapper
         pyproject = ctx.temp_dir / 'pyproject.toml'
-        pyproject.write_text('''
+        pyproject.write_text("""
 [project]
 name = "my-project"
 version = "1.0.0"
 
 [tool.pyprojectx.aliases]
 verify = "echo verify"
-''')
+""")
 
         ext = Extension()
         modules = ext.discover_modules(str(ctx.temp_dir))
@@ -132,7 +139,7 @@ def test_discover_modules_returns_module_with_complete_setup():
     with BuildContext() as ctx:
         # Create pyproject.toml with pyprojectx section
         pyproject = ctx.temp_dir / 'pyproject.toml'
-        pyproject.write_text('''
+        pyproject.write_text("""
 [project]
 name = "my-project"
 version = "1.0.0"
@@ -142,7 +149,7 @@ compile = "uv run python build.py compile"
 module-tests = "uv run python build.py module-tests"
 quality-gate = "uv run python build.py quality-gate"
 verify = "uv run python build.py verify"
-''')
+""")
 
         # Create ./pw wrapper (just needs to exist)
         pw = ctx.temp_dir / 'pw'
@@ -171,7 +178,9 @@ verify = "uv run python build.py verify"
         assert 'verify' in commands
 
         # Check command format
-        assert 'python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run' in commands['verify']
+        assert (
+            'python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run' in commands['verify']
+        )
 
 
 def test_discover_modules_maps_only_existing_aliases():
@@ -179,7 +188,7 @@ def test_discover_modules_maps_only_existing_aliases():
     with BuildContext() as ctx:
         # Create pyproject.toml with only some aliases
         pyproject = ctx.temp_dir / 'pyproject.toml'
-        pyproject.write_text('''
+        pyproject.write_text("""
 [project]
 name = "minimal-project"
 version = "1.0.0"
@@ -187,7 +196,7 @@ version = "1.0.0"
 [tool.pyprojectx.aliases]
 verify = "echo verify"
 clean = "rm -rf build"
-''')
+""")
 
         # Create ./pw wrapper
         pw = ctx.temp_dir / 'pw'
@@ -220,10 +229,10 @@ def test_discover_modules_finds_source_directories():
     with BuildContext() as ctx:
         # Create pyproject.toml and wrapper
         pyproject = ctx.temp_dir / 'pyproject.toml'
-        pyproject.write_text('''
+        pyproject.write_text("""
 [tool.pyprojectx.aliases]
 verify = "echo verify"
-''')
+""")
         pw = ctx.temp_dir / 'pw'
         pw.write_text('#!/bin/bash')
         pw.chmod(0o755)
@@ -251,10 +260,10 @@ def test_discover_modules_finds_test_directories():
     with BuildContext() as ctx:
         # Create pyproject.toml and wrapper
         pyproject = ctx.temp_dir / 'pyproject.toml'
-        pyproject.write_text('''
+        pyproject.write_text("""
 [tool.pyprojectx.aliases]
 verify = "echo verify"
-''')
+""")
         pw = ctx.temp_dir / 'pw'
         pw.write_text('#!/bin/bash')
         pw.chmod(0o755)
@@ -277,10 +286,10 @@ def test_discover_modules_counts_python_files():
     with BuildContext() as ctx:
         # Create pyproject.toml and wrapper
         pyproject = ctx.temp_dir / 'pyproject.toml'
-        pyproject.write_text('''
+        pyproject.write_text("""
 [tool.pyprojectx.aliases]
 verify = "echo verify"
-''')
+""")
         pw = ctx.temp_dir / 'pw'
         pw.write_text('#!/bin/bash')
         pw.chmod(0o755)
@@ -310,10 +319,10 @@ def test_discover_modules_finds_readme():
     with BuildContext() as ctx:
         # Create pyproject.toml and wrapper
         pyproject = ctx.temp_dir / 'pyproject.toml'
-        pyproject.write_text('''
+        pyproject.write_text("""
 [tool.pyprojectx.aliases]
 verify = "echo verify"
-''')
+""")
         pw = ctx.temp_dir / 'pw'
         pw.write_text('#!/bin/bash')
         pw.chmod(0o755)
@@ -344,10 +353,10 @@ def test_discover_modules_skips_plan_marshall_marketplace():
     with BuildContext() as ctx:
         # Create pyproject.toml and wrapper (valid Python project)
         pyproject = ctx.temp_dir / 'pyproject.toml'
-        pyproject.write_text('''
+        pyproject.write_text("""
 [tool.pyprojectx.aliases]
 verify = "echo verify"
-''')
+""")
         pw = ctx.temp_dir / 'pw'
         pw.write_text('#!/bin/bash')
         pw.chmod(0o755)
@@ -373,10 +382,10 @@ def test_discover_modules_handles_other_marketplaces():
     with BuildContext() as ctx:
         # Create pyproject.toml and wrapper (valid Python project)
         pyproject = ctx.temp_dir / 'pyproject.toml'
-        pyproject.write_text('''
+        pyproject.write_text("""
 [tool.pyprojectx.aliases]
 verify = "echo verify"
-''')
+""")
         pw = ctx.temp_dir / 'pw'
         pw.write_text('#!/bin/bash')
         pw.chmod(0o755)

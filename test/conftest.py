@@ -614,9 +614,7 @@ MARSHAL_SCHEMA_DEFAULT: dict[str, Any] = {
 }
 
 
-def create_marshal_json(
-    base_dir: Path, skill_domains: dict | None = None, extra: dict | None = None
-) -> Path:
+def create_marshal_json(base_dir: Path, skill_domains: dict | None = None, extra: dict | None = None) -> Path:
     """
     Create marshal.json with proper schema.
 
@@ -727,9 +725,7 @@ class BuildContext:
 
     __test__ = False  # Not a test class - prevent pytest collection warning
 
-    def __init__(
-        self, modules: list | None = None, module_details: dict | None = None
-    ):
+    def __init__(self, modules: list | None = None, module_details: dict | None = None):
         """
         Initialize the build test context.
 

@@ -340,7 +340,7 @@ def test_report_returns_valid_json():
     assert 'findings_file' in data, 'Should have findings_file field'
     assert 'summary' in data, 'Should have summary field'
     assert data['report_dir'].endswith('.plan/temp/plugin-doctor-report'), (
-        f"Report dir should end with .plan/temp/plugin-doctor-report, got {data['report_dir']}"
+        f'Report dir should end with .plan/temp/plugin-doctor-report, got {data["report_dir"]}'
     )
 
 
@@ -603,7 +603,9 @@ def test_fixture_analyze_detects_rule_11():
             all_issues.extend(item.get('issues', []))
 
         rule_11_issues = [i for i in all_issues if i['type'] == 'rule-11-violation']
-        assert len(rule_11_issues) >= 1, f'Should detect rule-11-violation, got issues: {[i["type"] for i in all_issues]}'
+        assert len(rule_11_issues) >= 1, (
+            f'Should detect rule-11-violation, got issues: {[i["type"] for i in all_issues]}'
+        )
         assert rule_11_issues[0]['fixable'] is True, 'Rule 11 should be fixable'
         assert rule_11_issues[0]['severity'] == 'warning', 'Rule 11 should be warning severity'
     finally:

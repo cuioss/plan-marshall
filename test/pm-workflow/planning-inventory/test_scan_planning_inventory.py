@@ -52,7 +52,7 @@ def test_default_produces_valid_json():
 
 def test_full_format_has_required_fields():
     """Test full format has required top-level fields."""
-    result = run_script(SCRIPT_PATH,'--format', 'full')
+    result = run_script(SCRIPT_PATH, '--format', 'full')
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
     data = parse_json(result.stdout)
@@ -221,7 +221,7 @@ def test_derived_includes_plugin_tools():
 
 def test_summary_format_has_required_fields():
     """Test summary format has required fields."""
-    result = run_script(SCRIPT_PATH,'--format', 'summary')
+    result = run_script(SCRIPT_PATH, '--format', 'summary')
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
     data = parse_json(result.stdout)
@@ -233,7 +233,7 @@ def test_summary_format_has_required_fields():
 
 def test_summary_core_components_structure():
     """Test summary core_components has correct structure."""
-    result = run_script(SCRIPT_PATH,'--format', 'summary')
+    result = run_script(SCRIPT_PATH, '--format', 'summary')
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
     data = parse_json(result.stdout)
@@ -248,7 +248,7 @@ def test_summary_core_components_structure():
 
 def test_summary_derived_bundles_structure():
     """Test summary derived_bundles has correct structure."""
-    result = run_script(SCRIPT_PATH,'--format', 'summary')
+    result = run_script(SCRIPT_PATH, '--format', 'summary')
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
     data = parse_json(result.stdout)
@@ -310,7 +310,7 @@ def test_total_components_is_sum():
 
 def test_include_descriptions_adds_descriptions():
     """Test --include-descriptions adds description fields."""
-    result = run_script(SCRIPT_PATH,'--include-descriptions')
+    result = run_script(SCRIPT_PATH, '--include-descriptions')
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
     data = parse_json(result.stdout)

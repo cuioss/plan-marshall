@@ -127,7 +127,7 @@ def extract_issues_from_markdown_analysis(analysis: dict, file_path: str, compon
                 'file': file_path,
                 'severity': 'warning',
                 'fixable': False,
-                'description': f"Prose-parameter inconsistency (Rule 12): {violation.get('issue', '')}",
+                'description': f'Prose-parameter inconsistency (Rule 12): {violation.get("issue", "")}',
                 'details': violation,
             }
         )

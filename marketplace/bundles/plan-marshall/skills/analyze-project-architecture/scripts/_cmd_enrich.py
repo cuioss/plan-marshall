@@ -235,7 +235,9 @@ def _validate_skills_by_profile_structure(skills_by_profile: dict) -> list[str]:
                     elif isinstance(entry, str):
                         # Allow plain strings for backwards compatibility
                         if ':' not in entry:
-                            warnings.append(f"Skill '{entry}' in '{profile_name}.{section}' missing bundle:skill notation")
+                            warnings.append(
+                                f"Skill '{entry}' in '{profile_name}.{section}' missing bundle:skill notation"
+                            )
                     else:
                         warnings.append(f"Entry {i} in '{profile_name}.{section}' must be a dict or string")
         else:

@@ -222,9 +222,7 @@ def cmd_pr_comments(args: argparse.Namespace) -> int:
         return output_error('pr_comments', 'Could not determine repository owner/name')
 
     # Run GraphQL query
-    returncode, data, err = run_graphql(
-        REVIEW_THREADS_QUERY, {'owner': owner, 'repo': repo, 'pr': args.pr_number}
-    )
+    returncode, data, err = run_graphql(REVIEW_THREADS_QUERY, {'owner': owner, 'repo': repo, 'pr': args.pr_number})
     if returncode != 0 or data is None:
         return output_error('pr_comments', f'GraphQL query failed: {err}')
 
@@ -276,7 +274,7 @@ def cmd_pr_comments(args: argparse.Namespace) -> int:
     for c in comments:
         # Escape tabs and newlines in body for TOON format
         body = c['body'].replace('\t', ' ').replace('\n', ' ')[:100]
-        print(f"{c['id']}\t{c['author']}\t{body}\t{c['path']}\t{c['line']}\t{c['resolved']}\t{c['created_at']}")
+        print(f'{c["id"]}\t{c["author"]}\t{body}\t{c["path"]}\t{c["line"]}\t{c["resolved"]}\t{c["created_at"]}')
     return 0
 
 

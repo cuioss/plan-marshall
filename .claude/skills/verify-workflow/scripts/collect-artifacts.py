@@ -168,10 +168,12 @@ class ArtifactCollector:
             # Create tasks list
             tasks = []
             for task_file in task_files:
-                tasks.append({
-                    'file': task_file.name,
-                    'path': str(task_file),
-                })
+                tasks.append(
+                    {
+                        'file': task_file.name,
+                        'path': str(task_file),
+                    }
+                )
 
             result = {
                 'status': 'success',

@@ -89,7 +89,9 @@ def build_parser() -> argparse.ArgumentParser:
         '--status', choices=['pending', 'in_progress', 'done', 'blocked', 'all'], default='all', help='Filter by status'
     )
     p_list.add_argument(
-        '--phase', choices=['1-init', '2-refine', '3-outline', '4-plan', '5-execute', '6-verify', '7-finalize'], help='Filter by phase'
+        '--phase',
+        choices=['1-init', '2-refine', '3-outline', '4-plan', '5-execute', '6-verify', '7-finalize'],
+        help='Filter by phase',
     )
     p_list.add_argument('--deliverable', type=int, help='Filter by deliverable number')
     p_list.add_argument('--ready', action='store_true', help='Only show tasks with no unmet dependencies')
@@ -103,7 +105,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_next = subparsers.add_parser('next', help='Get next pending task/step')
     p_next.add_argument('--plan-id', required=True, help='Plan identifier')
     p_next.add_argument(
-        '--phase', choices=['1-init', '2-refine', '3-outline', '4-plan', '5-execute', '6-verify', '7-finalize'], help='Filter by phase'
+        '--phase',
+        choices=['1-init', '2-refine', '3-outline', '4-plan', '5-execute', '6-verify', '7-finalize'],
+        help='Filter by phase',
     )
     p_next.add_argument('--include-context', action='store_true', help='Include deliverable details in output')
     p_next.add_argument('--ignore-deps', action='store_true', help='Ignore dependency constraints')

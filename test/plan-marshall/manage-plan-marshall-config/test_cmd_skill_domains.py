@@ -243,8 +243,21 @@ def test_skill_domains_detect_runs():
                 'phase-1-init': {'branch_strategy': 'direct'},
                 'phase-2-refine': {'confidence_threshold': 95, 'compatibility': 'breaking'},
                 'phase-5-execute': {'commit_strategy': 'per_deliverable'},
-                'phase-6-verify': {'max_iterations': 5, '1_quality_check': True, '2_build_verify': True, 'domain_steps': {}},
-                'phase-7-finalize': {'max_iterations': 3, '1_commit_push': True, '2_create_pr': True, '3_automated_review': True, '4_sonar_roundtrip': True, '5_knowledge_capture': True, '6_lessons_capture': True},
+                'phase-6-verify': {
+                    'max_iterations': 5,
+                    '1_quality_check': True,
+                    '2_build_verify': True,
+                    'domain_steps': {},
+                },
+                'phase-7-finalize': {
+                    'max_iterations': 3,
+                    '1_commit_push': True,
+                    '2_create_pr': True,
+                    '3_automated_review': True,
+                    '4_sonar_roundtrip': True,
+                    '5_knowledge_capture': True,
+                    '6_lessons_capture': True,
+                },
             },
         }
         marshal_path = ctx.fixture_dir / 'marshal.json'
@@ -274,8 +287,21 @@ def test_skill_domains_detect_no_overwrite():
                 'phase-1-init': {'branch_strategy': 'direct'},
                 'phase-2-refine': {'confidence_threshold': 95, 'compatibility': 'breaking'},
                 'phase-5-execute': {'commit_strategy': 'per_deliverable'},
-                'phase-6-verify': {'max_iterations': 5, '1_quality_check': True, '2_build_verify': True, 'domain_steps': {}},
-                'phase-7-finalize': {'max_iterations': 3, '1_commit_push': True, '2_create_pr': True, '3_automated_review': True, '4_sonar_roundtrip': True, '5_knowledge_capture': True, '6_lessons_capture': True},
+                'phase-6-verify': {
+                    'max_iterations': 5,
+                    '1_quality_check': True,
+                    '2_build_verify': True,
+                    'domain_steps': {},
+                },
+                'phase-7-finalize': {
+                    'max_iterations': 3,
+                    '1_commit_push': True,
+                    '2_create_pr': True,
+                    '3_automated_review': True,
+                    '4_sonar_roundtrip': True,
+                    '5_knowledge_capture': True,
+                    '6_lessons_capture': True,
+                },
             },
         }
         marshal_path = ctx.fixture_dir / 'marshal.json'
@@ -530,8 +556,21 @@ def test_get_available_uses_discovery():
                 'phase-1-init': {'branch_strategy': 'direct'},
                 'phase-2-refine': {'confidence_threshold': 95, 'compatibility': 'breaking'},
                 'phase-5-execute': {'commit_strategy': 'per_deliverable'},
-                'phase-6-verify': {'max_iterations': 5, '1_quality_check': True, '2_build_verify': True, 'domain_steps': {}},
-                'phase-7-finalize': {'max_iterations': 3, '1_commit_push': True, '2_create_pr': True, '3_automated_review': True, '4_sonar_roundtrip': True, '5_knowledge_capture': True, '6_lessons_capture': True},
+                'phase-6-verify': {
+                    'max_iterations': 5,
+                    '1_quality_check': True,
+                    '2_build_verify': True,
+                    'domain_steps': {},
+                },
+                'phase-7-finalize': {
+                    'max_iterations': 3,
+                    '1_commit_push': True,
+                    '2_create_pr': True,
+                    '3_automated_review': True,
+                    '4_sonar_roundtrip': True,
+                    '5_knowledge_capture': True,
+                    '6_lessons_capture': True,
+                },
             },
         }
         marshal_path = ctx.fixture_dir / 'marshal.json'
@@ -554,8 +593,21 @@ def test_configure_domains():
                 'phase-1-init': {'branch_strategy': 'direct'},
                 'phase-2-refine': {'confidence_threshold': 95, 'compatibility': 'breaking'},
                 'phase-5-execute': {'commit_strategy': 'per_deliverable'},
-                'phase-6-verify': {'max_iterations': 5, '1_quality_check': True, '2_build_verify': True, 'domain_steps': {}},
-                'phase-7-finalize': {'max_iterations': 3, '1_commit_push': True, '2_create_pr': True, '3_automated_review': True, '4_sonar_roundtrip': True, '5_knowledge_capture': True, '6_lessons_capture': True},
+                'phase-6-verify': {
+                    'max_iterations': 5,
+                    '1_quality_check': True,
+                    '2_build_verify': True,
+                    'domain_steps': {},
+                },
+                'phase-7-finalize': {
+                    'max_iterations': 3,
+                    '1_commit_push': True,
+                    '2_create_pr': True,
+                    '3_automated_review': True,
+                    '4_sonar_roundtrip': True,
+                    '5_knowledge_capture': True,
+                    '6_lessons_capture': True,
+                },
             },
         }
         marshal_path = ctx.fixture_dir / 'marshal.json'
@@ -585,8 +637,21 @@ def test_configure_always_adds_system():
                 'phase-1-init': {'branch_strategy': 'direct'},
                 'phase-2-refine': {'confidence_threshold': 95, 'compatibility': 'breaking'},
                 'phase-5-execute': {'commit_strategy': 'per_deliverable'},
-                'phase-6-verify': {'max_iterations': 5, '1_quality_check': True, '2_build_verify': True, 'domain_steps': {}},
-                'phase-7-finalize': {'max_iterations': 3, '1_commit_push': True, '2_create_pr': True, '3_automated_review': True, '4_sonar_roundtrip': True, '5_knowledge_capture': True, '6_lessons_capture': True},
+                'phase-6-verify': {
+                    'max_iterations': 5,
+                    '1_quality_check': True,
+                    '2_build_verify': True,
+                    'domain_steps': {},
+                },
+                'phase-7-finalize': {
+                    'max_iterations': 3,
+                    '1_commit_push': True,
+                    '2_create_pr': True,
+                    '3_automated_review': True,
+                    '4_sonar_roundtrip': True,
+                    '5_knowledge_capture': True,
+                    '6_lessons_capture': True,
+                },
             },
         }
         marshal_path = ctx.fixture_dir / 'marshal.json'
@@ -727,8 +792,21 @@ def test_get_available_works_without_skill_domains():
                 'phase-1-init': {'branch_strategy': 'direct'},
                 'phase-2-refine': {'confidence_threshold': 95, 'compatibility': 'breaking'},
                 'phase-5-execute': {'commit_strategy': 'per_deliverable'},
-                'phase-6-verify': {'max_iterations': 5, '1_quality_check': True, '2_build_verify': True, 'domain_steps': {}},
-                'phase-7-finalize': {'max_iterations': 3, '1_commit_push': True, '2_create_pr': True, '3_automated_review': True, '4_sonar_roundtrip': True, '5_knowledge_capture': True, '6_lessons_capture': True},
+                'phase-6-verify': {
+                    'max_iterations': 5,
+                    '1_quality_check': True,
+                    '2_build_verify': True,
+                    'domain_steps': {},
+                },
+                'phase-7-finalize': {
+                    'max_iterations': 3,
+                    '1_commit_push': True,
+                    '2_create_pr': True,
+                    '3_automated_review': True,
+                    '4_sonar_roundtrip': True,
+                    '5_knowledge_capture': True,
+                    '6_lessons_capture': True,
+                },
             },
             # NOTE: No skill_domains key!
         }
@@ -755,8 +833,21 @@ def test_configure_works_without_skill_domains():
                 'phase-1-init': {'branch_strategy': 'direct'},
                 'phase-2-refine': {'confidence_threshold': 95, 'compatibility': 'breaking'},
                 'phase-5-execute': {'commit_strategy': 'per_deliverable'},
-                'phase-6-verify': {'max_iterations': 5, '1_quality_check': True, '2_build_verify': True, 'domain_steps': {}},
-                'phase-7-finalize': {'max_iterations': 3, '1_commit_push': True, '2_create_pr': True, '3_automated_review': True, '4_sonar_roundtrip': True, '5_knowledge_capture': True, '6_lessons_capture': True},
+                'phase-6-verify': {
+                    'max_iterations': 5,
+                    '1_quality_check': True,
+                    '2_build_verify': True,
+                    'domain_steps': {},
+                },
+                'phase-7-finalize': {
+                    'max_iterations': 3,
+                    '1_commit_push': True,
+                    '2_create_pr': True,
+                    '3_automated_review': True,
+                    '4_sonar_roundtrip': True,
+                    '5_knowledge_capture': True,
+                    '6_lessons_capture': True,
+                },
             },
             # NOTE: No skill_domains key!
         }
@@ -790,8 +881,21 @@ def test_list_requires_skill_domains():
                 'phase-1-init': {'branch_strategy': 'direct'},
                 'phase-2-refine': {'confidence_threshold': 95, 'compatibility': 'breaking'},
                 'phase-5-execute': {'commit_strategy': 'per_deliverable'},
-                'phase-6-verify': {'max_iterations': 5, '1_quality_check': True, '2_build_verify': True, 'domain_steps': {}},
-                'phase-7-finalize': {'max_iterations': 3, '1_commit_push': True, '2_create_pr': True, '3_automated_review': True, '4_sonar_roundtrip': True, '5_knowledge_capture': True, '6_lessons_capture': True},
+                'phase-6-verify': {
+                    'max_iterations': 5,
+                    '1_quality_check': True,
+                    '2_build_verify': True,
+                    'domain_steps': {},
+                },
+                'phase-7-finalize': {
+                    'max_iterations': 3,
+                    '1_commit_push': True,
+                    '2_create_pr': True,
+                    '3_automated_review': True,
+                    '4_sonar_roundtrip': True,
+                    '5_knowledge_capture': True,
+                    '6_lessons_capture': True,
+                },
             },
             # NOTE: No skill_domains key!
         }

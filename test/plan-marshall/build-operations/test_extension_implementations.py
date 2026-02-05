@@ -238,7 +238,9 @@ def validate_triage_and_change_type_agents(module, bundle_name: str) -> list:
                         issues.append(f"{bundle_name}: agent reference for '{change_type}' must be a string")
                         continue
                     if not agent_exists(agent_ref):
-                        issues.append(f"{bundle_name}: agent '{agent_ref}' for change_type '{change_type}' does not exist")
+                        issues.append(
+                            f"{bundle_name}: agent '{agent_ref}' for change_type '{change_type}' does not exist"
+                        )
 
     return issues
 

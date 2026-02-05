@@ -15,7 +15,9 @@ import json
 from conftest import MARKETPLACE_ROOT, ScriptTestCase, run_script
 
 # Script path to marketplace-sync.py
-SCRIPT_PATH = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'tools-permission-sync' / 'scripts' / 'marketplace-sync.py'
+SCRIPT_PATH = (
+    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'tools-permission-sync' / 'scripts' / 'marketplace-sync.py'
+)
 
 
 # =============================================================================

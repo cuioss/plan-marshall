@@ -481,7 +481,9 @@ def cmd_clarify(doc_type: str, args) -> int:
     if clarifications:
         if has_clarifications:
             # Update existing section via cmd_update
-            args_update = type('Args', (), {'plan_id': args.plan_id, 'section': 'clarifications', 'content': clarifications})()
+            args_update = type(
+                'Args', (), {'plan_id': args.plan_id, 'section': 'clarifications', 'content': clarifications}
+            )()
             return cmd_update(doc_type, args_update)
         else:
             new_sections.append('\n## Clarifications\n')
@@ -492,7 +494,9 @@ def cmd_clarify(doc_type: str, args) -> int:
     if clarified_request:
         if has_clarified_request:
             # Update existing section via cmd_update
-            args_update = type('Args', (), {'plan_id': args.plan_id, 'section': 'clarified_request', 'content': clarified_request})()
+            args_update = type(
+                'Args', (), {'plan_id': args.plan_id, 'section': 'clarified_request', 'content': clarified_request}
+            )()
             return cmd_update(doc_type, args_update)
         else:
             new_sections.append('\n## Clarified Request\n')
@@ -677,7 +681,9 @@ def main():
         clarify_parser = type_subparsers.add_parser('clarify', help='Add clarifications to document')
         clarify_parser.add_argument('--plan-id', required=True, help='Plan identifier')
         clarify_parser.add_argument('--clarifications', help='Q&A clarifications content')
-        clarify_parser.add_argument('--clarified-request', dest='clarified_request', help='Synthesized clarified request')
+        clarify_parser.add_argument(
+            '--clarified-request', dest='clarified_request', help='Synthesized clarified request'
+        )
         clarify_parser.set_defaults(func=lambda args, dt=doc_type: cmd_clarify(dt, args))
 
     args = parser.parse_args()

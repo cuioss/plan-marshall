@@ -28,9 +28,12 @@ def test_assessment_add_basic():
     with TestContext():
         result = run_script(
             SCRIPT_PATH,
-            'assessment', 'add', 'test-plan',
+            'assessment',
+            'add',
+            'test-plan',
             'marketplace/bundles/pm-dev-java/skills/java-cdi/SKILL.md',
-            'CERTAIN_INCLUDE', '95'
+            'CERTAIN_INCLUDE',
+            '95',
         )
         assert result.success, f'Script failed: {result.stderr}'
         data = parse_toon(result.stdout)
@@ -44,12 +47,18 @@ def test_assessment_add_with_options():
     with TestContext():
         result = run_script(
             SCRIPT_PATH,
-            'assessment', 'add', 'test-plan',
+            'assessment',
+            'add',
+            'test-plan',
             'path/to/file.md',
-            'CERTAIN_EXCLUDE', '85',
-            '--agent', 'skill-analysis-agent',
-            '--detail', 'No relevant content found',
-            '--evidence', 'Checked ## Output section'
+            'CERTAIN_EXCLUDE',
+            '85',
+            '--agent',
+            'skill-analysis-agent',
+            '--detail',
+            'No relevant content found',
+            '--evidence',
+            'Checked ## Output section',
         )
         assert result.success, f'Script failed: {result.stderr}'
         data = parse_toon(result.stdout)
@@ -61,10 +70,14 @@ def test_assessment_add_uncertain():
     with TestContext():
         result = run_script(
             SCRIPT_PATH,
-            'assessment', 'add', 'test-plan',
+            'assessment',
+            'add',
+            'test-plan',
             'path/to/ambiguous.md',
-            'UNCERTAIN', '65',
-            '--detail', 'JSON found in workflow context - unclear if output spec'
+            'UNCERTAIN',
+            '65',
+            '--detail',
+            'JSON found in workflow context - unclear if output spec',
         )
         assert result.success, f'Script failed: {result.stderr}'
         data = parse_toon(result.stdout)
@@ -74,12 +87,7 @@ def test_assessment_add_uncertain():
 def test_assessment_add_invalid_certainty():
     """Test that invalid certainty is rejected."""
     with TestContext():
-        result = run_script(
-            SCRIPT_PATH,
-            'assessment', 'add', 'test-plan',
-            'path/to/file.md',
-            'INVALID', '50'
-        )
+        result = run_script(SCRIPT_PATH, 'assessment', 'add', 'test-plan', 'path/to/file.md', 'INVALID', '50')
         # argparse should reject invalid choice
         assert not result.success
 
@@ -87,12 +95,7 @@ def test_assessment_add_invalid_certainty():
 def test_assessment_add_invalid_confidence():
     """Test that out-of-range confidence is rejected."""
     with TestContext():
-        result = run_script(
-            SCRIPT_PATH,
-            'assessment', 'add', 'test-plan',
-            'path/to/file.md',
-            'CERTAIN_INCLUDE', '150'
-        )
+        result = run_script(SCRIPT_PATH, 'assessment', 'add', 'test-plan', 'path/to/file.md', 'CERTAIN_INCLUDE', '150')
         assert not result.success
         data = parse_toon(result.stdout)
         assert data['status'] == 'error'
@@ -135,10 +138,7 @@ def test_assessment_query_by_certainty():
         run_script(SCRIPT_PATH, 'assessment', 'add', 'test-plan', 'file2.md', 'CERTAIN_EXCLUDE', '85')
         run_script(SCRIPT_PATH, 'assessment', 'add', 'test-plan', 'file3.md', 'UNCERTAIN', '60')
 
-        result = run_script(
-            SCRIPT_PATH, 'assessment', 'query', 'test-plan',
-            '--certainty', 'CERTAIN_INCLUDE'
-        )
+        result = run_script(SCRIPT_PATH, 'assessment', 'query', 'test-plan', '--certainty', 'CERTAIN_INCLUDE')
         assert result.success, f'Script failed: {result.stderr}'
         data = parse_toon(result.stdout)
         assert data['total_count'] == 3
@@ -153,10 +153,7 @@ def test_assessment_query_by_confidence():
         run_script(SCRIPT_PATH, 'assessment', 'add', 'test-plan', 'file2.md', 'CERTAIN_INCLUDE', '85')
         run_script(SCRIPT_PATH, 'assessment', 'add', 'test-plan', 'file3.md', 'CERTAIN_INCLUDE', '75')
 
-        result = run_script(
-            SCRIPT_PATH, 'assessment', 'query', 'test-plan',
-            '--min-confidence', '80'
-        )
+        result = run_script(SCRIPT_PATH, 'assessment', 'query', 'test-plan', '--min-confidence', '80')
         assert result.success, f'Script failed: {result.stderr}'
         data = parse_toon(result.stdout)
         assert data['filtered_count'] == 2
@@ -168,10 +165,7 @@ def test_assessment_query_file_paths_list():
         run_script(SCRIPT_PATH, 'assessment', 'add', 'test-plan', 'path/a.md', 'CERTAIN_INCLUDE', '90')
         run_script(SCRIPT_PATH, 'assessment', 'add', 'test-plan', 'path/b.md', 'CERTAIN_INCLUDE', '90')
 
-        result = run_script(
-            SCRIPT_PATH, 'assessment', 'query', 'test-plan',
-            '--certainty', 'CERTAIN_INCLUDE'
-        )
+        result = run_script(SCRIPT_PATH, 'assessment', 'query', 'test-plan', '--certainty', 'CERTAIN_INCLUDE')
         assert result.success
         data = parse_toon(result.stdout)
         assert 'file_paths' in data
@@ -205,22 +199,16 @@ def test_assessment_clear_by_agent():
     """Test clearing assessments filtered by agent name."""
     with TestContext():
         run_script(
-            SCRIPT_PATH, 'assessment', 'add', 'test-plan', 'file1.md',
-            'CERTAIN_INCLUDE', '90', '--agent', 'agent-a'
+            SCRIPT_PATH, 'assessment', 'add', 'test-plan', 'file1.md', 'CERTAIN_INCLUDE', '90', '--agent', 'agent-a'
         )
         run_script(
-            SCRIPT_PATH, 'assessment', 'add', 'test-plan', 'file2.md',
-            'CERTAIN_EXCLUDE', '85', '--agent', 'agent-b'
+            SCRIPT_PATH, 'assessment', 'add', 'test-plan', 'file2.md', 'CERTAIN_EXCLUDE', '85', '--agent', 'agent-b'
         )
         run_script(
-            SCRIPT_PATH, 'assessment', 'add', 'test-plan', 'file3.md',
-            'CERTAIN_INCLUDE', '80', '--agent', 'agent-a'
+            SCRIPT_PATH, 'assessment', 'add', 'test-plan', 'file3.md', 'CERTAIN_INCLUDE', '80', '--agent', 'agent-a'
         )
 
-        result = run_script(
-            SCRIPT_PATH, 'assessment', 'clear', 'test-plan',
-            '--agent', 'agent-a'
-        )
+        result = run_script(SCRIPT_PATH, 'assessment', 'clear', 'test-plan', '--agent', 'agent-a')
         assert result.success, f'Script failed: {result.stderr}'
         data = parse_toon(result.stdout)
         assert data['status'] == 'success'
@@ -251,10 +239,7 @@ def test_assessment_clear_empty():
 def test_assessment_get():
     """Test getting a specific assessment."""
     with TestContext():
-        add_result = run_script(
-            SCRIPT_PATH, 'assessment', 'add', 'test-plan',
-            'file.md', 'CERTAIN_INCLUDE', '90'
-        )
+        add_result = run_script(SCRIPT_PATH, 'assessment', 'add', 'test-plan', 'file.md', 'CERTAIN_INCLUDE', '90')
         add_data = parse_toon(add_result.stdout)
         hash_id = str(add_data['hash_id'])  # Ensure string for subprocess args
 
@@ -283,9 +268,13 @@ def test_finding_add_basic():
     with TestContext():
         result = run_script(
             SCRIPT_PATH,
-            'finding', 'add', 'test-plan',
-            'bug', 'Test failure in CacheTest',
-            '--detail', 'AssertionError: expected 5 but got 3'
+            'finding',
+            'add',
+            'test-plan',
+            'bug',
+            'Test failure in CacheTest',
+            '--detail',
+            'AssertionError: expected 5 but got 3',
         )
         assert result.success, f'Script failed: {result.stderr}'
         data = parse_toon(result.stdout)
@@ -299,13 +288,21 @@ def test_finding_add_with_file_info():
     with TestContext():
         result = run_script(
             SCRIPT_PATH,
-            'finding', 'add', 'test-plan',
-            'sonar-issue', 'S1192: String literals duplicated',
-            '--detail', 'String "application/json" appears 5 times',
-            '--file-path', 'src/main/java/Api.java',
-            '--line', '42',
-            '--rule', 'java:S1192',
-            '--severity', 'warning'
+            'finding',
+            'add',
+            'test-plan',
+            'sonar-issue',
+            'S1192: String literals duplicated',
+            '--detail',
+            'String "application/json" appears 5 times',
+            '--file-path',
+            'src/main/java/Api.java',
+            '--line',
+            '42',
+            '--rule',
+            'java:S1192',
+            '--severity',
+            'warning',
         )
         assert result.success, f'Script failed: {result.stderr}'
         data = parse_toon(result.stdout)
@@ -315,17 +312,23 @@ def test_finding_add_with_file_info():
 def test_finding_add_all_types():
     """Test that all finding types are accepted."""
     finding_types = [
-        'bug', 'improvement', 'anti-pattern', 'triage',
-        'tip', 'insight', 'best-practice',
-        'build-error', 'test-failure', 'lint-issue', 'sonar-issue', 'pr-comment'
+        'bug',
+        'improvement',
+        'anti-pattern',
+        'triage',
+        'tip',
+        'insight',
+        'best-practice',
+        'build-error',
+        'test-failure',
+        'lint-issue',
+        'sonar-issue',
+        'pr-comment',
     ]
     with TestContext():
         for ftype in finding_types:
             result = run_script(
-                SCRIPT_PATH,
-                'finding', 'add', 'test-plan',
-                ftype, f'Test {ftype}',
-                '--detail', f'Testing {ftype} type'
+                SCRIPT_PATH, 'finding', 'add', 'test-plan', ftype, f'Test {ftype}', '--detail', f'Testing {ftype} type'
             )
             assert result.success, f'Failed for type {ftype}: {result.stderr}'
 
@@ -361,23 +364,14 @@ def test_finding_query_by_resolution():
     """Test filtering findings by resolution."""
     with TestContext():
         # Add a finding
-        add_result = run_script(
-            SCRIPT_PATH, 'finding', 'add', 'test-plan',
-            'bug', 'Bug to fix', '--detail', 'd'
-        )
+        add_result = run_script(SCRIPT_PATH, 'finding', 'add', 'test-plan', 'bug', 'Bug to fix', '--detail', 'd')
         hash_id = str(parse_toon(add_result.stdout)['hash_id'])
 
         # Resolve it
-        run_script(
-            SCRIPT_PATH, 'finding', 'resolve', 'test-plan',
-            hash_id, 'fixed', '--detail', 'Fixed in commit abc'
-        )
+        run_script(SCRIPT_PATH, 'finding', 'resolve', 'test-plan', hash_id, 'fixed', '--detail', 'Fixed in commit abc')
 
         # Query by resolution
-        result = run_script(
-            SCRIPT_PATH, 'finding', 'query', 'test-plan',
-            '--resolution', 'fixed'
-        )
+        result = run_script(SCRIPT_PATH, 'finding', 'query', 'test-plan', '--resolution', 'fixed')
         assert result.success
         data = parse_toon(result.stdout)
         assert data['filtered_count'] == 1
@@ -392,16 +386,19 @@ def test_finding_resolve():
     """Test resolving a finding."""
     with TestContext():
         add_result = run_script(
-            SCRIPT_PATH, 'finding', 'add', 'test-plan',
-            'build-error', 'Compilation error',
-            '--detail', 'Missing import'
+            SCRIPT_PATH, 'finding', 'add', 'test-plan', 'build-error', 'Compilation error', '--detail', 'Missing import'
         )
         hash_id = str(parse_toon(add_result.stdout)['hash_id'])
 
         result = run_script(
-            SCRIPT_PATH, 'finding', 'resolve', 'test-plan',
-            hash_id, 'fixed',
-            '--detail', 'Added missing import statement'
+            SCRIPT_PATH,
+            'finding',
+            'resolve',
+            'test-plan',
+            hash_id,
+            'fixed',
+            '--detail',
+            'Added missing import statement',
         )
         assert result.success
         data = parse_toon(result.stdout)
@@ -415,15 +412,11 @@ def test_finding_resolve_all_statuses():
     with TestContext():
         for res in resolutions:
             add_result = run_script(
-                SCRIPT_PATH, 'finding', 'add', 'test-plan',
-                'bug', f'Bug for {res}', '--detail', 'd'
+                SCRIPT_PATH, 'finding', 'add', 'test-plan', 'bug', f'Bug for {res}', '--detail', 'd'
             )
             hash_id = str(parse_toon(add_result.stdout)['hash_id'])
 
-            result = run_script(
-                SCRIPT_PATH, 'finding', 'resolve', 'test-plan',
-                hash_id, res
-            )
+            result = run_script(SCRIPT_PATH, 'finding', 'resolve', 'test-plan', hash_id, res)
             assert result.success, f'Failed for resolution {res}'
 
 
@@ -436,16 +429,18 @@ def test_finding_promote():
     """Test promoting a finding."""
     with TestContext():
         add_result = run_script(
-            SCRIPT_PATH, 'finding', 'add', 'test-plan',
-            'tip', 'Use constructor injection',
-            '--detail', 'Prefer constructor injection over field injection for testability'
+            SCRIPT_PATH,
+            'finding',
+            'add',
+            'test-plan',
+            'tip',
+            'Use constructor injection',
+            '--detail',
+            'Prefer constructor injection over field injection for testability',
         )
         hash_id = str(parse_toon(add_result.stdout)['hash_id'])
 
-        result = run_script(
-            SCRIPT_PATH, 'finding', 'promote', 'test-plan',
-            hash_id, 'architecture'
-        )
+        result = run_script(SCRIPT_PATH, 'finding', 'promote', 'test-plan', hash_id, 'architecture')
         assert result.success
         data = parse_toon(result.stdout)
         assert data['status'] == 'success'
@@ -456,16 +451,18 @@ def test_finding_promote_to_lessons():
     """Test promoting to lessons learned."""
     with TestContext():
         add_result = run_script(
-            SCRIPT_PATH, 'finding', 'add', 'test-plan',
-            'bug', 'Null pointer from missing null check',
-            '--detail', 'Always check for null before calling methods on optional fields'
+            SCRIPT_PATH,
+            'finding',
+            'add',
+            'test-plan',
+            'bug',
+            'Null pointer from missing null check',
+            '--detail',
+            'Always check for null before calling methods on optional fields',
         )
         hash_id = str(parse_toon(add_result.stdout)['hash_id'])
 
-        result = run_script(
-            SCRIPT_PATH, 'finding', 'promote', 'test-plan',
-            hash_id, 'lessons-2025-01-22-001'
-        )
+        result = run_script(SCRIPT_PATH, 'finding', 'promote', 'test-plan', hash_id, 'lessons-2025-01-22-001')
         assert result.success
         data = parse_toon(result.stdout)
         assert 'lessons-' in data['promoted_to']
@@ -475,10 +472,7 @@ def test_finding_query_promoted():
     """Test filtering by promoted status."""
     with TestContext():
         # Add and promote one
-        add_result = run_script(
-            SCRIPT_PATH, 'finding', 'add', 'test-plan',
-            'tip', 'Promoted tip', '--detail', 'd'
-        )
+        add_result = run_script(SCRIPT_PATH, 'finding', 'add', 'test-plan', 'tip', 'Promoted tip', '--detail', 'd')
         hash_id = str(parse_toon(add_result.stdout)['hash_id'])
         run_script(SCRIPT_PATH, 'finding', 'promote', 'test-plan', hash_id, 'architecture')
 
@@ -486,19 +480,13 @@ def test_finding_query_promoted():
         run_script(SCRIPT_PATH, 'finding', 'add', 'test-plan', 'tip', 'Not promoted', '--detail', 'd')
 
         # Query promoted
-        result = run_script(
-            SCRIPT_PATH, 'finding', 'query', 'test-plan',
-            '--promoted', 'true'
-        )
+        result = run_script(SCRIPT_PATH, 'finding', 'query', 'test-plan', '--promoted', 'true')
         assert result.success
         data = parse_toon(result.stdout)
         assert data['filtered_count'] == 1
 
         # Query not promoted
-        result = run_script(
-            SCRIPT_PATH, 'finding', 'query', 'test-plan',
-            '--promoted', 'false'
-        )
+        result = run_script(SCRIPT_PATH, 'finding', 'query', 'test-plan', '--promoted', 'false')
         assert result.success
         data = parse_toon(result.stdout)
         assert data['filtered_count'] == 1

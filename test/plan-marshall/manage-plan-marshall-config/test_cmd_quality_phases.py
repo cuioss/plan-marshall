@@ -49,8 +49,7 @@ def test_verify_set_step_disable():
         create_marshal_json(ctx.fixture_dir)
 
         result = run_script(
-            SCRIPT_PATH, 'plan', 'phase-6-verify', 'set-step',
-            '--step', '1_quality_check', '--enabled', 'false'
+            SCRIPT_PATH, 'plan', 'phase-6-verify', 'set-step', '--step', '1_quality_check', '--enabled', 'false'
         )
 
         assert result.success, f'Should succeed: {result.stderr}'
@@ -66,8 +65,7 @@ def test_verify_set_step_unknown():
         create_marshal_json(ctx.fixture_dir)
 
         result = run_script(
-            SCRIPT_PATH, 'plan', 'phase-6-verify', 'set-step',
-            '--step', 'nonexistent', '--enabled', 'true'
+            SCRIPT_PATH, 'plan', 'phase-6-verify', 'set-step', '--step', 'nonexistent', '--enabled', 'true'
         )
 
         assert 'error' in result.stdout.lower(), 'Should report error for unknown step'
@@ -91,8 +89,16 @@ def test_verify_set_domain_step_agent():
         create_marshal_json(ctx.fixture_dir)
 
         result = run_script(
-            SCRIPT_PATH, 'plan', 'phase-6-verify', 'set-domain-step-agent',
-            '--domain', 'java', '--step', '1_technical_impl', '--agent', 'pm-dev-java:java-verify-agent'
+            SCRIPT_PATH,
+            'plan',
+            'phase-6-verify',
+            'set-domain-step-agent',
+            '--domain',
+            'java',
+            '--step',
+            '1_technical_impl',
+            '--agent',
+            'pm-dev-java:java-verify-agent',
         )
 
         assert result.success, f'Should succeed: {result.stderr}'
@@ -128,8 +134,16 @@ def test_verify_set_domain_step_disable():
         create_marshal_json(ctx.fixture_dir, config)
 
         result = run_script(
-            SCRIPT_PATH, 'plan', 'phase-6-verify', 'set-domain-step',
-            '--domain', 'java', '--step', '1_technical_impl', '--enabled', 'false'
+            SCRIPT_PATH,
+            'plan',
+            'phase-6-verify',
+            'set-domain-step',
+            '--domain',
+            'java',
+            '--step',
+            '1_technical_impl',
+            '--enabled',
+            'false',
         )
 
         assert result.success, f'Should succeed: {result.stderr}'
@@ -145,8 +159,16 @@ def test_verify_set_domain_step_unknown_domain():
         create_marshal_json(ctx.fixture_dir)
 
         result = run_script(
-            SCRIPT_PATH, 'plan', 'phase-6-verify', 'set-domain-step',
-            '--domain', 'nonexistent', '--step', '1_foo', '--enabled', 'false'
+            SCRIPT_PATH,
+            'plan',
+            'phase-6-verify',
+            'set-domain-step',
+            '--domain',
+            'nonexistent',
+            '--step',
+            '1_foo',
+            '--enabled',
+            'false',
         )
 
         assert 'error' in result.stdout.lower(), 'Should report error for unknown domain'
@@ -175,8 +197,7 @@ def test_finalize_set_step_disable():
         create_marshal_json(ctx.fixture_dir)
 
         result = run_script(
-            SCRIPT_PATH, 'plan', 'phase-7-finalize', 'set-step',
-            '--step', '2_create_pr', '--enabled', 'false'
+            SCRIPT_PATH, 'plan', 'phase-7-finalize', 'set-step', '--step', '2_create_pr', '--enabled', 'false'
         )
 
         assert result.success, f'Should succeed: {result.stderr}'
@@ -191,10 +212,7 @@ def test_finalize_set_step_unknown():
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
 
-        result = run_script(
-            SCRIPT_PATH, 'plan', 'phase-7-finalize', 'set-step',
-            '--step', 'bogus', '--enabled', 'true'
-        )
+        result = run_script(SCRIPT_PATH, 'plan', 'phase-7-finalize', 'set-step', '--step', 'bogus', '--enabled', 'true')
 
         assert 'error' in result.stdout.lower(), 'Should report error for unknown step'
         assert 'bogus' in result.stdout
@@ -235,8 +253,7 @@ def test_phase_1_init_set():
         create_marshal_json(ctx.fixture_dir)
 
         result = run_script(
-            SCRIPT_PATH, 'plan', 'phase-1-init', 'set',
-            '--field', 'branch_strategy', '--value', 'feature-branch'
+            SCRIPT_PATH, 'plan', 'phase-1-init', 'set', '--field', 'branch_strategy', '--value', 'feature-branch'
         )
 
         assert result.success, f'Should succeed: {result.stderr}'
@@ -262,8 +279,7 @@ def test_phase_2_refine_set():
         create_marshal_json(ctx.fixture_dir)
 
         result = run_script(
-            SCRIPT_PATH, 'plan', 'phase-2-refine', 'set',
-            '--field', 'confidence_threshold', '--value', '90'
+            SCRIPT_PATH, 'plan', 'phase-2-refine', 'set', '--field', 'confidence_threshold', '--value', '90'
         )
 
         assert result.success, f'Should succeed: {result.stderr}'
@@ -290,8 +306,7 @@ def test_phase_5_execute_set():
         create_marshal_json(ctx.fixture_dir)
 
         result = run_script(
-            SCRIPT_PATH, 'plan', 'phase-5-execute', 'set',
-            '--field', 'commit_strategy', '--value', 'per_plan'
+            SCRIPT_PATH, 'plan', 'phase-5-execute', 'set', '--field', 'commit_strategy', '--value', 'per_plan'
         )
 
         assert result.success, f'Should succeed: {result.stderr}'
@@ -318,8 +333,7 @@ def test_phase_2_refine_set_compatibility():
         create_marshal_json(ctx.fixture_dir)
 
         result = run_script(
-            SCRIPT_PATH, 'plan', 'phase-2-refine', 'set',
-            '--field', 'compatibility', '--value', 'deprecation'
+            SCRIPT_PATH, 'plan', 'phase-2-refine', 'set', '--field', 'compatibility', '--value', 'deprecation'
         )
 
         assert result.success, f'Should succeed: {result.stderr}'

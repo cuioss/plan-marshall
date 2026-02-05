@@ -204,10 +204,12 @@ def check_command_self_containment(content: str) -> dict:
                 notation = match.group(1)
                 # Verify it matches bundle:skill:script format
                 if not re.match(valid_notation, notation):
-                    violations.append({
-                        'mode': 'notation',
-                        'detail': f"Invalid notation format: '{notation}' (expected bundle:skill:script)",
-                    })
+                    violations.append(
+                        {
+                            'mode': 'notation',
+                            'detail': f"Invalid notation format: '{notation}' (expected bundle:skill:script)",
+                        }
+                    )
             else:
                 violations.append({'mode': 'notation', 'detail': 'execute-script.py without notation argument'})
 
@@ -232,10 +234,12 @@ def check_command_self_containment(content: str) -> dict:
     for action_pattern, action_name in script_actions:
         if re.search(action_pattern, content, re.IGNORECASE):
             if not has_command_section:
-                violations.append({
-                    'mode': 'missing_section',
-                    'detail': f"Action '{action_name}' without ## Logging Command section",
-                })
+                violations.append(
+                    {
+                        'mode': 'missing_section',
+                        'detail': f"Action '{action_name}' without ## Logging Command section",
+                    }
+                )
                 break  # Only report once per file
 
     return {
@@ -324,18 +328,20 @@ def check_rule_12_violations(content: str) -> list:
             if match:
                 # Calculate approximate line number
                 lines_before_section = content[:section_start].count('\n')
-                lines_in_prose = prose[:match.start()].count('\n')
+                lines_in_prose = prose[: match.start()].count('\n')
                 line_number = lines_before_section + lines_in_prose + 1
 
-                violations.append({
-                    'line': line_number,
-                    'issue': "Prose references 'body' as section near manage-plan-documents call",
-                    'detail': (
-                        f"Found '{description}'. 'body' is not a valid fallback section "
-                        f"for description-sourced requests. Use 'original_input' instead."
-                    ),
-                    'pattern': 'invalid_section_reference',
-                })
+                violations.append(
+                    {
+                        'line': line_number,
+                        'issue': "Prose references 'body' as section near manage-plan-documents call",
+                        'detail': (
+                            f"Found '{description}'. 'body' is not a valid fallback section "
+                            f"for description-sourced requests. Use 'original_input' instead."
+                        ),
+                        'pattern': 'invalid_section_reference',
+                    }
+                )
                 break  # One violation per section
 
     return violations

@@ -112,7 +112,7 @@ def run_command(cmd: str, extra_args: list[str] | None = None) -> tuple[str, str
     """Run a shell command and return stdout, stderr, return code."""
     full_cmd = cmd
     if extra_args:
-        full_cmd = f"{cmd} {' '.join(extra_args)}"
+        full_cmd = f'{cmd} {" ".join(extra_args)}'
 
     try:
         result = subprocess.run(full_cmd, shell=True, capture_output=True, text=True, timeout=60)

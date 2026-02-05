@@ -131,7 +131,9 @@ implements: pm-workflow:workflow-extension-api/standards/extensions/outline-exte
 # Content
 """
         frontmatter, _ = extract_frontmatter(content)
-        assert frontmatter['implements'] == 'pm-workflow:workflow-extension-api/standards/extensions/outline-extension.md'
+        assert (
+            frontmatter['implements'] == 'pm-workflow:workflow-extension-api/standards/extensions/outline-extension.md'
+        )
 
     def test_no_frontmatter(self):
         """Test handling content without frontmatter."""
@@ -317,7 +319,8 @@ class TestDepsSubcommand:
         result = run_script(
             SCRIPT_PATH,
             'deps',
-            '--component', 'pm-workflow:manage-files',
+            '--component',
+            'pm-workflow:manage-files',
             '--direct-result',
         )
         assert result.returncode == 0
@@ -332,7 +335,8 @@ class TestDepsSubcommand:
         result = run_script(
             SCRIPT_PATH,
             'deps',
-            '--component', 'nonexistent:skill:name',
+            '--component',
+            'nonexistent:skill:name',
             '--direct-result',
         )
         # Should return error status
@@ -354,9 +358,11 @@ class TestRdepsSubcommand:
         result = run_script(
             SCRIPT_PATH,
             'rdeps',
-            '--component', 'plan-marshall:ref-toon-format:toon_parser',
+            '--component',
+            'plan-marshall:ref-toon-format:toon_parser',
             '--direct-result',
-            '--format', 'json',
+            '--format',
+            'json',
         )
         # May or may not find dependents depending on codebase state
         assert result.returncode in (0, 1)
@@ -401,9 +407,11 @@ class TestTreeSubcommand:
         result = run_script(
             SCRIPT_PATH,
             'tree',
-            '--component', 'pm-workflow:manage-files',
+            '--component',
+            'pm-workflow:manage-files',
             '--direct-result',
-            '--depth', '2',
+            '--depth',
+            '2',
         )
         assert result.returncode == 0
 
@@ -426,8 +434,10 @@ class TestDepTypeFiltering:
         result = run_script(
             SCRIPT_PATH,
             'deps',
-            '--component', 'pm-workflow:manage-files',
-            '--dep-types', 'import',
+            '--component',
+            'pm-workflow:manage-files',
+            '--dep-types',
+            'import',
             '--direct-result',
         )
         assert result.returncode == 0
@@ -443,8 +453,10 @@ class TestDepTypeFiltering:
         result = run_script(
             SCRIPT_PATH,
             'deps',
-            '--component', 'pm-workflow:manage-files',
-            '--dep-types', 'import,skill',
+            '--component',
+            'pm-workflow:manage-files',
+            '--dep-types',
+            'import,skill',
             '--direct-result',
         )
         assert result.returncode == 0
@@ -460,8 +472,10 @@ class TestDepTypeFiltering:
         result = run_script(
             SCRIPT_PATH,
             'deps',
-            '--component', 'pm-workflow:manage-files',
-            '--dep-types', 'invalid',
+            '--component',
+            'pm-workflow:manage-files',
+            '--dep-types',
+            'invalid',
             '--direct-result',
         )
         assert result.returncode != 0
@@ -482,7 +496,8 @@ class TestOutputFormats:
             SCRIPT_PATH,
             'validate',
             '--direct-result',
-            '--format', 'toon',
+            '--format',
+            'toon',
         )
         # Should parse as valid TOON
         data = parse_toon(result.stdout)
@@ -494,7 +509,8 @@ class TestOutputFormats:
             SCRIPT_PATH,
             'validate',
             '--direct-result',
-            '--format', 'json',
+            '--format',
+            'json',
         )
         # Should parse as valid JSON
         data = json.loads(result.stdout)
@@ -551,10 +567,13 @@ class TestSkillToScriptDeps:
         result = run_script(
             SCRIPT_PATH,
             'deps',
-            '--component', 'pm-workflow:planning-inventory',
-            '--dep-types', 'script',
+            '--component',
+            'pm-workflow:planning-inventory',
+            '--dep-types',
+            'script',
             '--direct-result',
-            '--format', 'json',
+            '--format',
+            'json',
         )
         assert result.returncode == 0
 
@@ -571,10 +590,13 @@ class TestSkillToScriptDeps:
         result = run_script(
             SCRIPT_PATH,
             'deps',
-            '--component', 'pm-workflow:manage-files',
-            '--dep-types', 'script',
+            '--component',
+            'pm-workflow:manage-files',
+            '--dep-types',
+            'script',
             '--direct-result',
-            '--format', 'json',
+            '--format',
+            'json',
         )
         assert result.returncode == 0
 
@@ -597,9 +619,11 @@ class TestIntegration:
         result = run_script(
             SCRIPT_PATH,
             'deps',
-            '--component', 'pm-workflow:manage-files',
+            '--component',
+            'pm-workflow:manage-files',
             '--direct-result',
-            '--format', 'json',
+            '--format',
+            'json',
         )
         assert result.returncode == 0
 

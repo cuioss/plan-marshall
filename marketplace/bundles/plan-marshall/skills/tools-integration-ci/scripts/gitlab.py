@@ -254,7 +254,7 @@ def cmd_pr_comments(args: argparse.Namespace) -> int:
     for c in comments:
         # Escape tabs and newlines in body for TOON format
         body = c['body'].replace('\t', ' ').replace('\n', ' ')[:100]
-        print(f"{c['id']}\t{c['author']}\t{body}\t{c['path']}\t{c['line']}\t{c['resolved']}\t{c['created_at']}")
+        print(f'{c["id"]}\t{c["author"]}\t{body}\t{c["path"]}\t{c["line"]}\t{c["resolved"]}\t{c["created_at"]}')
     return 0
 
 
