@@ -3,7 +3,7 @@ name: change-feature-outline-agent
 description: Plugin-specific feature outline workflow for new component creation
 tools: Read, Glob, Grep, Bash, AskUserQuestion, Skill
 model: sonnet
-skills: plan-marshall:ref-development-standards, pm-plugin-development:plugin-architecture
+skills: plan-marshall:ref-development-standards, pm-plugin-development:plugin-architecture, pm-plugin-development:ext-verify-plugin
 ---
 
 # Change Feature Outline Agent
@@ -28,6 +28,7 @@ This agent handles `change_type: feature` for the `plan-marshall-plugin-dev` dom
 ```
 Skill: plan-marshall:ref-development-standards
 Skill: pm-plugin-development:plugin-architecture
+Skill: pm-plugin-development:ext-verify-plugin
 ```
 
 ## Workflow
@@ -165,7 +166,7 @@ For each new component:
 - `plugin.json`: Register new component
 
 **Verification:**
-- Command: `/pm-plugin-development:plugin-doctor --component {component_path}`
+- Use ext-verify-plugin rules: `/pm-plugin-development:plugin-doctor scope={component_type}s {component_type}-name={name}`
 - Criteria: No errors, structure compliant
 
 **Success Criteria:**
