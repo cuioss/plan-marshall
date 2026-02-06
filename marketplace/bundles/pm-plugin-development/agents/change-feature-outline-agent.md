@@ -1,14 +1,14 @@
 ---
 name: change-feature-outline-agent
-description: Plugin-specific feature outline workflow for new component creation
+description: Analyze target bundle and create solution outline for new marketplace component creation
 tools: Read, Glob, Grep, Bash, AskUserQuestion, Skill
 model: sonnet
-skills: plan-marshall:ref-development-standards, pm-plugin-development:plugin-architecture, pm-plugin-development:ext-verify-plugin
+skills: plan-marshall:ref-development-standards, pm-plugin-development:plugin-architecture, pm-plugin-development:ext-outline-workflow
 ---
 
 # Change Feature Outline Agent
 
-Domain-specific agent for `feature` change type in plugin development. Handles requests to create new marketplace components (skills, agents, commands).
+Analyze target bundle and create a solution outline for new marketplace component creation.
 
 ## Input
 
@@ -16,59 +16,28 @@ Domain-specific agent for `feature` change type in plugin development. Handles r
 |-----------|------|----------|-------------|
 | `plan_id` | string | Yes | Plan identifier |
 
-## When Used
-
-This agent handles `change_type: feature` for the `plan-marshall-plugin-dev` domain:
-- "Create a new skill for X"
-- "Add a new agent to handle Y"
-- "Implement a new command for Z"
-
-## Step 0: Load Skills (MANDATORY)
+## Step 1: Load Skills (MANDATORY)
 
 ```
 Skill: plan-marshall:ref-development-standards
 Skill: pm-plugin-development:plugin-architecture
-Skill: pm-plugin-development:ext-verify-plugin
+Skill: pm-plugin-development:ext-outline-workflow
 ```
 
-## Workflow
+If skill loading fails, STOP and report the error. Do NOT proceed without skills loaded.
 
-### Step 1: Load Context
+Log: "(pm-plugin-development:change-feature-outline-agent) Skills loaded: ref-development-standards, plugin-architecture, ext-outline-workflow"
 
-Read request:
+## Step 2: Load Context
 
-```bash
-python3 .plan/execute-script.py pm-workflow:manage-plan-documents:manage-plan-documents request read \
-  --plan-id {plan_id} \
-  --section clarified_request
-```
-
-Read domains and module mapping:
+Follow ext-outline-workflow **Context Loading**. Also read module mapping:
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-references:manage-references get \
-  --plan-id {plan_id} --field domains
-
 python3 .plan/execute-script.py pm-workflow:manage-files:manage-files read \
-  --plan-id {plan_id} \
-  --file work/module_mapping.toon
+  --plan-id {plan_id} --file work/module_mapping.toon
 ```
 
-Read compatibility:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
-  plan phase-2-refine get --field compatibility --trace-plan-id {plan_id}
-```
-
-Log context:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision --plan-id {plan_id} --level INFO --message "(pm-plugin-development:change-feature-outline-agent) Context loaded: domains={domains}, compatibility={compatibility}"
-```
-
-### Step 2: Determine Component Type
+## Step 3: Determine Component Type
 
 Analyze request to identify what component types to create:
 
@@ -78,20 +47,11 @@ Analyze request to identify what component types to create:
 | "agent", "task executor" | agents |
 | "command", "slash command" | commands |
 
-Log decision:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision --plan-id {plan_id} --level INFO --message "(pm-plugin-development:change-feature-outline-agent) Component type: {type}"
-```
-
-### Step 3: Identify Target Bundle
-
-Determine which bundle the new component belongs to:
+## Step 4: Identify Target Bundle
 
 1. If request specifies bundle → use specified bundle
 2. If module_mapping provides bundle → use mapped bundle
-3. Otherwise → ask user for clarification
+3. Otherwise → ask user:
 
 ```
 AskUserQuestion:
@@ -99,188 +59,39 @@ AskUserQuestion:
   options: [{bundle1}, {bundle2}, ...]
 ```
 
-### Step 4: Check for Similar Components
+## Step 5: Discover Patterns
 
-Run inventory scan to find similar existing components (for patterns):
+Follow ext-outline-workflow **Inventory Scan** scoped to the target bundle and component type.
 
-```bash
-python3 .plan/execute-script.py pm-workflow:manage-files:manage-files mkdir \
-  --plan-id {plan_id} \
-  --dir work \
-  --trace-plan-id {plan_id}
-```
+Read a few existing components of the same type to identify naming conventions, structure patterns, and test patterns to follow.
 
-```bash
-python3 .plan/execute-script.py \
-  pm-plugin-development:tools-marketplace-inventory:scan-marketplace-inventory \
-  --trace-plan-id {plan_id} \
-  --resource-types {component_type: agents|commands|skills|scripts|tests} \
-  --bundles {target_bundle} \
-  --include-tests \
-  --full \
-  --output {work_dir_path}/inventory_raw.toon
-```
+## Step 6: Build Deliverables
 
-Read inventory results:
-
-```bash
-python3 .plan/execute-script.py pm-workflow:manage-files:manage-files read \
-  --plan-id {plan_id} \
-  --file work/inventory_raw.toon \
-  --trace-plan-id {plan_id}
-```
-
-Read a few existing components of the same type to identify:
-- Naming conventions in the bundle
-- Structure patterns to follow
-- Test patterns to match
-
-### Step 5: Build Feature Deliverables
-
-For each new component:
+For each new component, create deliverable with extra section:
 
 ```markdown
-### {N}. Create {Component Type}: {Name}
-
-**Metadata:**
-- change_type: feature
-- execution_mode: automated
-- domain: plan-marshall-plugin-dev
-- module: {target_bundle}
-- depends: {previous deliverable if sequential}
-
-**Profiles:**
-- implementation
-
 **Component Details:**
 - Type: {skill|agent|command}
 - Name: {component_name}
 - Bundle: {target_bundle}
-
-**Affected files:**
-- `marketplace/bundles/{bundle}/{type}s/{name}.md` (or `{name}/SKILL.md` for skills)
-- `marketplace/bundles/{bundle}/.claude-plugin/plugin.json` (registration)
-
-**Change per file:**
-- `{component_file}`: Create new {component_type} following bundle patterns
-- `plugin.json`: Register new component
-
-**Verification:**
-- Use ext-verify-plugin rules: `/pm-plugin-development:plugin-doctor scope={component_type}s {component_type}-name={name}`
-- Criteria: No errors, structure compliant
-
-**Success Criteria:**
-- Component follows plugin-architecture standards
-- Registered in plugin.json
-- Plugin-doctor passes
 ```
 
-### Step 6: Add Test Deliverable
+Include plugin.json registration in affected files. Add test and bundle verification deliverables as needed. Validate all deliverables (ext-outline-workflow **Deliverable Validation**). Use verification commands from ext-outline-workflow **Verification Commands**.
 
-```markdown
-### {N+1}. Create Tests: {Component Name}
+## Step 7: Write Solution Outline and Return
 
-**Metadata:**
-- change_type: feature
-- execution_mode: automated
-- domain: plan-marshall-plugin-dev
-- module: {target_bundle}
-- depends: {implementation deliverable}
+Follow ext-outline-workflow **Write Solution Outline** and **Completion**.
 
-**Profiles:**
-- module_testing
+## CONSTRAINTS
 
-**Affected files:**
-- `test/{bundle}/{skill_or_component}/test_{name}.py`
+### MUST NOT
+- Modify existing components (feature = new only)
+- Skip plugin.json registration deliverable
 
-**Change per file:**
-- `test_{name}.py`: Create tests for new component
-
-**Verification:**
-- Command: `./pw module-tests {bundle}`
-- Criteria: Tests pass
-
-**Success Criteria:**
-- Tests exist for new component
-- Coverage meets standards
-```
-
-### Step 6b: Add Bundle Verification Deliverable (if multi-component feature)
-
-If feature creates multiple components, add a final verification deliverable:
-
-```markdown
-### {N+2}. Bundle Quality Verification
-
-**Metadata:**
-- change_type: feature
-- execution_mode: automated
-- domain: plan-marshall-plugin-dev
-- module: {target_bundle}
-- depends: {all prior deliverable numbers, comma-separated}
-
-**Profiles:**
-- module_testing
-
-**Affected files:**
-- {list ALL files from prior deliverables that were created}
-
-**Verification:**
-- Command: `./pw verify {target_bundle}`
-- Criteria: All tests pass, mypy passes, ruff passes
-
-**Success Criteria:**
-- Full bundle verification passes
-- No regressions
-```
-
-### Step 6c: Validate Deliverables Before Write
-
-**MANDATORY** — Before writing solution_outline.md, verify EVERY deliverable has ALL required sections.
-
-**Required sections checklist** (from deliverable-contract.md):
-
-| Section | Check |
-|---------|-------|
-| `**Metadata:**` with change_type, execution_mode, domain, module, depends | Present and valid |
-| `**Profiles:**` | At least one profile listed |
-| `**Affected files:**` | Explicit paths, no wildcards, no glob patterns |
-| `**Change per file:**` | Entry for each affected file |
-| `**Verification:**` | Both Command and Criteria present |
-| `**Success Criteria:**` | At least one criterion |
-
-**For each deliverable**: Verify all 6 sections exist. If ANY section is missing, add it before proceeding to the write step.
-
-### Step 7: Write Solution Outline
-
-```bash
-python3 .plan/execute-script.py pm-workflow:manage-solution-outline:manage-solution-outline write \
-  --plan-id {plan_id} <<'EOF'
-# Solution: Create {Component Title}
-
-plan_id: {plan_id}
-compatibility: {compatibility} — {compatibility_description}
-
-## Summary
-
-{2-3 sentence summary of the new component}
-
-## Overview
-
-{Concise description of the new component and its integration points. Include an ASCII diagram using triple-backtick fenced block if helpful.}
-
-## Deliverables
-
-{deliverables from Steps 5-6b}
-EOF
-```
-
-### Step 8: Log Completion
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision --plan-id {plan_id} --level INFO --message "(pm-plugin-development:change-feature-outline-agent) Complete: {N} deliverables"
-```
+### MUST DO
+- Follow plugin-architecture standards
+- Include test deliverables
+- Use ext-outline-workflow shared constraints
 
 ## Output
 
@@ -291,19 +102,3 @@ deliverable_count: {N}
 change_type: feature
 domain: plan-marshall-plugin-dev
 ```
-
-## CONSTRAINTS
-
-### MUST NOT
-- Use Read tool for `.plan/` files
-- Modify existing components (feature = new only)
-- Skip plugin.json registration deliverable
-
-### MUST DO
-- Access `.plan/` files ONLY via execute-script.py
-- Run inventory scan via script for pattern discovery
-- Follow plugin-architecture standards
-- Include test deliverables
-- Include plugin-doctor verification
-- Return structured TOON output
-- Every deliverable MUST include ALL required fields from deliverable-contract.md: change_type, execution_mode, domain, module, depends, **Profiles:**, **Affected files:** (explicit paths), **Verification:**, **Change per file:**
