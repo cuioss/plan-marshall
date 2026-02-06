@@ -431,10 +431,10 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 ### Handle Q-Gate Findings
 
-The Q-Gate agent writes findings to `qgate/3-outline.jsonl`. The phase does NOT self-correct — instead, the orchestrator (planning.md) decides how to handle findings:
+The Q-Gate agent writes findings to `qgate/3-outline.jsonl`. The phase returns `qgate_pending_count` to the orchestrator:
 
 - If `qgate_pending_count == 0`: Continue to Step 13
-- If `qgate_pending_count > 0`: Return with `qgate_pending_count` in output. The orchestrator presents findings to the user at the review gate (Step 3 of planning.md), who can choose "Auto-fix" (re-enter phase) or "Accept as-is"
+- If `qgate_pending_count > 0`: Return with `qgate_pending_count` in output. The orchestrator auto-loops (re-enters this phase) until Q-Gate passes clean. No user prompt — Q-Gate findings are objective quality failures that must be self-corrected
 
 → Go to Step 13.
 

@@ -398,36 +398,48 @@ SCOPE_ESTIMATE: {single_file|single_module|few_files|multi_module|codebase_wide}
 
 **Track Selection Logic**:
 
-```
-Simple Track when ALL of:
-  - scope_estimate is single_file, single_module, or few_files
-  - module_mapping explicitly specifies target file(s)
-  - Request is localized (add, create, implement specific thing)
+**CRITICAL**: Complex Track triggers are hard gates — if ANY trigger fires, the track MUST be complex. Do NOT override with subjective reasoning. Evaluate each trigger mechanically.
 
-Complex Track when ANY of:
-  - scope_estimate is multi_module or codebase_wide
-  - Request contains scope words: "all", "everywhere", "across", "migrate"
-  - module_mapping is broad or missing
-  - Domain requires discovery (plugins, documentation, requirements)
+```
+Step A — Check Complex Track triggers (hard gates, OR logic):
+  [T1] scope_estimate is multi_module or codebase_wide
+  [T2] Request contains scope words (see list below)
+  [T3] module_mapping uses patterns/globs instead of explicit file paths
+  [T4] Domain requires discovery (see list below)
+
+  → If ANY of T1-T4 is true → track = complex (STOP, do not evaluate Simple)
+
+Step B — Only if ALL of T1-T4 are false, check Simple Track:
+  [S1] scope_estimate is single_file, single_module, or few_files
+  [S2] module_mapping explicitly specifies target file(s) by full path
+  [S3] Request is localized (add, create, implement specific thing)
+
+  → If ALL of S1-S3 are true → track = simple
+  → Otherwise → track = complex
 ```
 
-**Scope Words Detection**:
+**Scope Words [T2]**:
 Scan request text for: `all`, `every`, `everywhere`, `across`, `migrate`, `update all`, `refactor`, `replace all`
 
-**Domain Discovery Requirements**:
-Some domains have no standard structure and always need discovery:
+**Domain Discovery Requirements [T4]**:
+These domains have no standard structure and always need discovery:
 - `plan-marshall-plugin-dev` (marketplace plugins)
 - `documentation` (AsciiDoc, ADR locations vary)
 - `requirements` (specs can be anywhere)
 
+**Module mapping explicitness [T3]**:
+- Explicit: `affected_files: [path/to/file1.md, path/to/file2.md]` → does NOT trigger T3
+- Broad: `file_pattern: {agents,commands}/*.md` or `agents: ~13 files` → TRIGGERS T3
+
 **Finding format**:
 ```
 TRACK_SELECTION: {simple|complex}
-  - Scope: {scope_estimate}
-  - Scope words found: {yes/no - which words}
-  - Module mapping explicit: {yes/no}
-  - Domain requires discovery: {yes/no}
-  - Reasoning: {why this track}
+  - [T1] Scope multi_module/codebase_wide: {yes/no}
+  - [T2] Scope words found: {yes/no - which words}
+  - [T3] Module mapping broad/patterns: {yes/no}
+  - [T4] Domain requires discovery: {yes/no}
+  - Triggers fired: {T1,T2,T3,T4 or none}
+  - Track: {complex if any trigger | simple if none}
 ```
 
 **Log track decision** (to decision.log):

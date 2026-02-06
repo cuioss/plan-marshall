@@ -87,7 +87,28 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   work --plan-id {plan_id} --level INFO --message "[ARTIFACT] (pm-workflow:plan-marshall) Created solution_outline.md - pending user review"
 ```
 
-**Step 2b**: Transition phase after outline completes:
+**Step 2b**: Q-Gate auto-loop (max 3 iterations)
+
+Check if the phase returned Q-Gate findings. If so, auto-loop without user intervention.
+
+```
+qgate_iteration = 0
+MAX_QGATE_ITERATIONS = 3
+
+WHILE qgate_pending_count > 0 AND qgate_iteration < MAX_QGATE_ITERATIONS:
+  qgate_iteration += 1
+  1. Log: "(pm-workflow:plan-marshall:qgate) Auto-fix iteration {qgate_iteration}/{MAX_QGATE_ITERATIONS}: {count} findings — re-entering phase-3-outline"
+  2. Re-invoke phase-3-outline skill (phase reads findings at Step 1 and addresses them)
+  3. Check qgate_pending_count from phase return
+
+IF qgate_pending_count > 0 AND qgate_iteration >= MAX_QGATE_ITERATIONS:
+  → STOP: Escalate to user — "Q-Gate auto-loop exhausted after {MAX_QGATE_ITERATIONS} iterations. {count} findings remain unresolved."
+  → Present remaining findings and ask user how to proceed
+```
+
+This loop runs automatically — do NOT prompt the user for Q-Gate findings unless the max iteration limit is reached. Q-Gate findings are objective quality failures that the phase must self-correct. Only proceed to Step 2c when `qgate_pending_count == 0`.
+
+**Step 2c**: Transition phase after outline completes AND Q-Gate is clean:
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-lifecycle:manage-lifecycle transition \
   --plan-id {plan_id} --completed 3-outline
@@ -98,6 +119,8 @@ python3 .plan/execute-script.py pm-workflow:manage-lifecycle:manage-lifecycle tr
 ## Step 3: MANDATORY USER REVIEW
 
 **STOP HERE. Do NOT proceed to Step 4 without user approval.**
+
+The outline presented here has already passed Q-Gate verification. The user reviews the quality-verified outline.
 
 ### 3a. Read and display the solution outline for review:
 

@@ -1,9 +1,8 @@
 ---
 name: q-gate-validation-agent
 description: Verify deliverables against request intent and assessments, catching false positives and missing coverage
-tools: Read, Bash, Skill
+tools: Read, Bash
 model: sonnet
-skills: plan-marshall:ref-development-standards
 ---
 
 # Q-Gate Validation Agent
@@ -27,12 +26,6 @@ Q-Gate verification ensures:
 **Output**: Verification results with pass/fail counts
 
 ## Prerequisites
-
-Load development standards before any work:
-
-```
-Skill: plan-marshall:ref-development-standards
-```
 
 **CRITICAL - Script Execution Rules:**
 - Execute bash commands EXACTLY as written in this document
