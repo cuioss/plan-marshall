@@ -74,14 +74,14 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-m
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[STATUS] (pm-workflow:phase-7-finalize) Starting finalize phase"
+  work --plan-id {plan_id} --level INFO --message "[STATUS] (pm-workflow:phase-7-finalize) Starting finalize phase"
 ```
 
 ### Query Unresolved Findings
 
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-findings:manage-findings \
-  qgate query {plan_id} --phase 7-finalize --resolution pending
+  qgate query --plan-id {plan_id} --phase 7-finalize --resolution pending
 ```
 
 If unresolved findings exist from a previous iteration (filtered_count > 0):
@@ -91,13 +91,13 @@ For each pending finding:
 2. Resolve:
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-findings:manage-findings \
-  qgate resolve {plan_id} {hash_id} fixed --phase 7-finalize \
+  qgate resolve --plan-id {plan_id} --hash-id {hash_id} --resolution fixed --phase 7-finalize \
   --detail "{fix task reference or description}"
 ```
 3. Log:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(pm-workflow:phase-7-finalize:qgate) Finding {hash_id} [qgate]: fixed — {resolution_detail}"
+  decision --plan-id {plan_id} --level INFO --message "(pm-workflow:phase-7-finalize:qgate) Finding {hash_id} [qgate]: fixed — {resolution_detail}"
 ```
 
 ### Step 2: Read Configuration
@@ -130,7 +130,7 @@ Returns: `branch`, `base_branch`, `issue_url`, `build_system`, and file counts i
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(pm-workflow:phase-7-finalize) Finalize strategy: commit={commit_strategy}, PR={create_pr}, branch={branch_strategy}"
+  decision --plan-id {plan_id} --level INFO --message "(pm-workflow:phase-7-finalize) Finalize strategy: commit={commit_strategy}, PR={create_pr}, branch={branch_strategy}"
 ```
 
 ### Step 3: Conditional Commit Workflow
@@ -139,7 +139,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(pm-workflow:phase-7-finalize) Commit skipped: commit_strategy=none"
+  decision --plan-id {plan_id} --level INFO --message "(pm-workflow:phase-7-finalize) Commit skipped: commit_strategy=none"
 ```
 
 Proceed directly to Step 4.
@@ -185,7 +185,7 @@ This monitors CI status and handles review comments.
 1. Persist each finding to Q-Gate:
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-findings:manage-findings \
-  qgate add {plan_id} --phase 7-finalize --source qgate \
+  qgate add --plan-id {plan_id} --phase 7-finalize --source qgate \
   --type {pr-comment|build-error} --title "{finding title}" \
   --detail "{finding details}"
 ```
@@ -240,7 +240,7 @@ python3 .plan/execute-script.py pm-workflow:manage-lifecycle:manage-lifecycle tr
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[STATUS] (pm-workflow:phase-7-finalize) Plan completed: commit={commit_hash}, PR={pr_url|skipped}"
+  work --plan-id {plan_id} --level INFO --message "[STATUS] (pm-workflow:phase-7-finalize) Plan completed: commit={commit_hash}, PR={pr_url|skipped}"
 ```
 
 ---
@@ -294,7 +294,7 @@ On any error, **first log the error** to work-log:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} ERROR "[ERROR] (pm-workflow:phase-7-finalize) {step} failed - {error_type}: {error_context}"
+  work --plan-id {plan_id} --level ERROR --message "[ERROR] (pm-workflow:phase-7-finalize) {step} failed - {error_type}: {error_context}"
 ```
 
 ### Git Commit Failure

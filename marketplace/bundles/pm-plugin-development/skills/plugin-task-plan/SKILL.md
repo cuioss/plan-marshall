@@ -94,15 +94,15 @@ After analyzing each deliverable or deliverable pair, log the decision:
 ```bash
 # If aggregating deliverables
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[OPTIMIZATION] (pm-plugin-development:plugin-task-plan) Aggregating D{N}+D{M}: same skill ({skill}), no inter-dependency"
+  work --plan-id {plan_id} --level INFO --message "[OPTIMIZATION] (pm-plugin-development:plugin-task-plan) Aggregating D{N}+D{M}: same skill ({skill}), no inter-dependency"
 
 # If keeping deliverable separate
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[OPTIMIZATION] (pm-plugin-development:plugin-task-plan) Keeping D{N} separate: {reason}"
+  work --plan-id {plan_id} --level INFO --message "[OPTIMIZATION] (pm-plugin-development:plugin-task-plan) Keeping D{N} separate: {reason}"
 
 # If splitting deliverable
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[OPTIMIZATION] (pm-plugin-development:plugin-task-plan) Splitting D{N}: execution_mode=mixed"
+  work --plan-id {plan_id} --level INFO --message "[OPTIMIZATION] (pm-plugin-development:plugin-task-plan) Splitting D{N}: execution_mode=mixed"
 ```
 
 This logging is REQUIRED for audit trail and debugging.

@@ -376,13 +376,13 @@ def cmd_run(args: argparse.Namespace) -> int:
     formatter = format_json if output_format == 'json' else format_toon
 
     # Build command key for timeout learning
-    # commandArgs is complete and self-contained (includes --workspace or --prefix if needed)
-    command_args = args.commandArgs
+    # command-args is complete and self-contained (includes --workspace or --prefix if needed)
+    command_args = args.command_args
     args_key = command_args.split()[0].replace(' ', '_').replace('-', '_') if command_args else 'default'
     command_key = f'npm:{args_key}'
 
     # Execute via execute_direct foundation layer
-    # commandArgs is complete and self-contained (includes workspace routing)
+    # command-args is complete and self-contained (includes workspace routing)
     result = execute_direct(
         args=command_args,
         command_key=command_key,
@@ -496,7 +496,7 @@ def main() -> int:
     # run subcommand (primary API)
     run_parser = subparsers.add_parser('run', help='Execute build and auto-parse on failure (primary API)')
     run_parser.add_argument(
-        '--commandArgs',
+        '--command-args', dest='command_args',
         required=True,
         help="Complete npm command arguments (e.g., 'run test' or 'run test --workspace=pkg')",
     )

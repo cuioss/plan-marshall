@@ -59,7 +59,7 @@ Log context:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(pm-plugin-development:change-tech_debt-outline-agent) Context loaded: compatibility={compatibility}"
+  decision --plan-id {plan_id} --level INFO --message "(pm-plugin-development:change-tech_debt-outline-agent) Context loaded: compatibility={compatibility}"
 ```
 
 ### Step 2: Determine Component Scope and Content Filter
@@ -85,7 +85,7 @@ Log scope:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(pm-plugin-development:change-tech_debt-outline-agent) Scope: {types}, pattern: {pattern}"
+  decision --plan-id {plan_id} --level INFO --message "(pm-plugin-development:change-tech_debt-outline-agent) Scope: {types}, pattern: {pattern}"
 ```
 
 ### Step 2b: Clear Stale Assessments
@@ -94,8 +94,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-assessments:manage-assessments \
-  clear {plan_id} --agent change-tech_debt-outline-agent \
-  --trace-plan-id {plan_id}
+  clear --plan-id {plan_id} --agent change-tech_debt-outline-agent
 ```
 
 ### Step 3: Discovery - Run Inventory Scan
@@ -169,8 +168,8 @@ For each component file from inventory, apply migration analysis:
 
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-assessments:manage-assessments \
-  add {plan_id} {file_path} {CERTAINTY} {CONFIDENCE} \
-  --agent change-tech_debt-outline-agent --detail "{reasoning}" --evidence "{evidence}" --trace-plan-id {plan_id}
+  add --plan-id {plan_id} --file-path {file_path} --certainty {CERTAINTY} --confidence {CONFIDENCE} \
+  --agent change-tech_debt-outline-agent --detail "{reasoning}" --evidence "{evidence}"
 ```
 
 Where:
@@ -185,8 +184,7 @@ Where:
 
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-assessments:manage-assessments \
-  query {plan_id} \
-  --trace-plan-id {plan_id}
+  query --plan-id {plan_id}
 ```
 
 **Gate checks**:
@@ -198,7 +196,7 @@ Log gate result:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(pm-plugin-development:change-tech_debt-outline-agent) Assessment gate: {total_count} assessments written"
+  decision --plan-id {plan_id} --level INFO --message "(pm-plugin-development:change-tech_debt-outline-agent) Assessment gate: {total_count} assessments written"
 ```
 
 ### Step 5: Resolve Uncertainties
@@ -207,8 +205,7 @@ If analysis produced UNCERTAIN assessments (e.g., mixed formats):
 
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-assessments:manage-assessments \
-  query {plan_id} --certainty UNCERTAIN \
-  --trace-plan-id {plan_id}
+  query --plan-id {plan_id} --certainty UNCERTAIN
 ```
 
 Group by pattern and ask user:
@@ -223,7 +220,7 @@ Log resolutions:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(pm-plugin-development:change-tech_debt-outline-agent) Resolved {N} uncertainties: {decision}"
+  decision --plan-id {plan_id} --level INFO --message "(pm-plugin-development:change-tech_debt-outline-agent) Resolved {N} uncertainties: {decision}"
 ```
 
 ### Step 6: Plan Refactoring Strategy
@@ -389,7 +386,7 @@ EOF
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(pm-plugin-development:change-tech_debt-outline-agent) Complete: {N} deliverables"
+  decision --plan-id {plan_id} --level INFO --message "(pm-plugin-development:change-tech_debt-outline-agent) Complete: {N} deliverables"
 ```
 
 ## Output

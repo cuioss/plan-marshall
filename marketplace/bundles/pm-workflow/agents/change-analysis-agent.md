@@ -36,7 +36,7 @@ Skill: plan-marshall:ref-development-standards
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[STATUS] (pm-workflow:change-analysis-agent) Starting"
+  work --plan-id {plan_id} --level INFO --message "[STATUS] (pm-workflow:change-analysis-agent) Starting"
 ```
 
 ### Step 1: Load Context
@@ -68,7 +68,7 @@ Log scope:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(pm-workflow:change-analysis-agent) Investigation scope: {target}, sources: {sources}"
+  decision --plan-id {plan_id} --level INFO --message "(pm-workflow:change-analysis-agent) Investigation scope: {target}, sources: {sources}"
 ```
 
 ### Step 3: Conduct Investigation
@@ -146,7 +146,7 @@ EOF
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(pm-workflow:change-analysis-agent) Complete: 1 deliverable (analysis)"
+  decision --plan-id {plan_id} --level INFO --message "(pm-workflow:change-analysis-agent) Complete: 1 deliverable (analysis)"
 ```
 
 ## Output

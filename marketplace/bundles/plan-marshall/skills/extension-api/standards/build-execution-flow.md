@@ -22,7 +22,7 @@ This document shows the end-to-end flow from command resolution through structur
 │  │ Output: Complete command string with all routing embedded           │    │
 │  │                                                                     │    │
 │  │ "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:  │    │
-│  │  maven run --commandArgs \"verify -Ppre-commit -pl my-module\""     │    │
+│  │  maven run --command-args \"verify -Ppre-commit -pl my-module\""     │    │
 │  └─────────────────────────────────────────────────────────────────────┘    │
 │                              │                                               │
 │                              ▼                                               │

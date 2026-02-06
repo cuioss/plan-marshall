@@ -49,7 +49,7 @@ def test_read_entire_file():
     with tempfile.TemporaryDirectory() as td:
         temp_dir = Path(td)
         config_file = create_test_config(temp_dir)
-        result = run_script(SCRIPT_PATH, 'read', str(config_file))
+        result = run_script(SCRIPT_PATH, 'read', '--file-path', str(config_file))
         data = result.json()
 
         assert data.get('success') is True, 'Should succeed'
@@ -62,7 +62,7 @@ def test_read_field():
         temp_dir = Path(td)
         config_file = create_test_config(temp_dir)
         result = run_script(
-            SCRIPT_PATH, 'read-field', str(config_file), '--field', 'commands.test-cmd.last_execution.status'
+            SCRIPT_PATH, 'read-field', '--file-path', str(config_file), '--field', 'commands.test-cmd.last_execution.status'
         )
         data = result.json()
 
@@ -75,7 +75,7 @@ def test_read_nested_field():
     with tempfile.TemporaryDirectory() as td:
         temp_dir = Path(td)
         config_file = create_test_config(temp_dir)
-        result = run_script(SCRIPT_PATH, 'read-field', str(config_file), '--field', 'commands.test-cmd.lessons_learned')
+        result = run_script(SCRIPT_PATH, 'read-field', '--file-path', str(config_file), '--field', 'commands.test-cmd.lessons_learned')
         data = result.json()
 
         assert data.get('success') is True, 'Should succeed'
@@ -88,7 +88,7 @@ def test_read_array_index():
     with tempfile.TemporaryDirectory() as td:
         temp_dir = Path(td)
         config_file = create_test_config(temp_dir)
-        result = run_script(SCRIPT_PATH, 'read-field', str(config_file), '--field', 'array_field[1]')
+        result = run_script(SCRIPT_PATH, 'read-field', '--file-path', str(config_file), '--field', 'array_field[1]')
         data = result.json()
 
         assert data.get('success') is True, 'Should succeed'
@@ -100,7 +100,7 @@ def test_read_nonexistent_field():
     with tempfile.TemporaryDirectory() as td:
         temp_dir = Path(td)
         config_file = create_test_config(temp_dir)
-        result = run_script(SCRIPT_PATH, 'read-field', str(config_file), '--field', 'nonexistent.field')
+        result = run_script(SCRIPT_PATH, 'read-field', '--file-path', str(config_file), '--field', 'nonexistent.field')
         # Script may output to stderr for errors
         data = result.json_or_error()
 
@@ -117,6 +117,7 @@ def test_update_field():
         run_script(
             SCRIPT_PATH,
             'update-field',
+            '--file-path',
             str(config_file),
             '--field',
             'commands.test-cmd.last_execution.status',
@@ -126,7 +127,7 @@ def test_update_field():
 
         # Verify update
         result = run_script(
-            SCRIPT_PATH, 'read-field', str(config_file), '--field', 'commands.test-cmd.last_execution.status'
+            SCRIPT_PATH, 'read-field', '--file-path', str(config_file), '--field', 'commands.test-cmd.last_execution.status'
         )
         data = result.json()
 
@@ -141,11 +142,11 @@ def test_update_creates_path():
 
         # Update creates new path
         run_script(
-            SCRIPT_PATH, 'update-field', str(config_file), '--field', 'new_section.nested.value', '--value', '42'
+            SCRIPT_PATH, 'update-field', '--file-path', str(config_file), '--field', 'new_section.nested.value', '--value', '42'
         )
 
         # Verify update
-        result = run_script(SCRIPT_PATH, 'read-field', str(config_file), '--field', 'new_section.nested.value')
+        result = run_script(SCRIPT_PATH, 'read-field', '--file-path', str(config_file), '--field', 'new_section.nested.value')
         data = result.json()
 
         assert data.get('value') == 42, 'Value should be 42'
@@ -161,6 +162,7 @@ def test_add_entry_to_array():
         run_script(
             SCRIPT_PATH,
             'add-entry',
+            '--file-path',
             str(config_file),
             '--field',
             'commands.test-cmd.lessons_learned',
@@ -169,7 +171,7 @@ def test_add_entry_to_array():
         )
 
         # Verify
-        result = run_script(SCRIPT_PATH, 'read-field', str(config_file), '--field', 'commands.test-cmd.lessons_learned')
+        result = run_script(SCRIPT_PATH, 'read-field', '--file-path', str(config_file), '--field', 'commands.test-cmd.lessons_learned')
         data = result.json()
 
         value = data.get('value', [])
@@ -187,6 +189,7 @@ def test_remove_entry_from_array():
         run_script(
             SCRIPT_PATH,
             'remove-entry',
+            '--file-path',
             str(config_file),
             '--field',
             'commands.test-cmd.lessons_learned',
@@ -195,7 +198,7 @@ def test_remove_entry_from_array():
         )
 
         # Verify
-        result = run_script(SCRIPT_PATH, 'read-field', str(config_file), '--field', 'commands.test-cmd.lessons_learned')
+        result = run_script(SCRIPT_PATH, 'read-field', '--file-path', str(config_file), '--field', 'commands.test-cmd.lessons_learned')
         data = result.json()
 
         value = data.get('value', [])
@@ -210,10 +213,10 @@ def test_remove_field():
         config_file = create_test_config(temp_dir)
 
         # Remove field
-        run_script(SCRIPT_PATH, 'remove-entry', str(config_file), '--field', 'commands.test-cmd.lessons_learned')
+        run_script(SCRIPT_PATH, 'remove-entry', '--file-path', str(config_file), '--field', 'commands.test-cmd.lessons_learned')
 
         # Verify field is gone
-        result = run_script(SCRIPT_PATH, 'read-field', str(config_file), '--field', 'commands.test-cmd.lessons_learned')
+        result = run_script(SCRIPT_PATH, 'read-field', '--file-path', str(config_file), '--field', 'commands.test-cmd.lessons_learned')
         # Script may output to stderr for errors
         data = result.json_or_error()
 
@@ -226,13 +229,13 @@ def test_write_entire_file():
         temp_dir = Path(td)
         new_file = temp_dir / 'new-file.json'
 
-        result = run_script(SCRIPT_PATH, 'write', str(new_file), '--value', '{"test": true, "value": 123}')
+        result = run_script(SCRIPT_PATH, 'write', '--file-path', str(new_file), '--value', '{"test": true, "value": 123}')
         data = result.json()
 
         assert data.get('success') is True, 'Should succeed'
 
         # Verify content
-        verify = run_script(SCRIPT_PATH, 'read-field', str(new_file), '--field', 'value')
+        verify = run_script(SCRIPT_PATH, 'read-field', '--file-path', str(new_file), '--field', 'value')
         verify_data = verify.json()
         assert verify_data.get('value') == 123, 'Value should be 123'
 
@@ -241,7 +244,7 @@ def test_file_not_found():
     """Test file not found returns error."""
     with tempfile.TemporaryDirectory() as td:
         temp_dir = Path(td)
-        result = run_script(SCRIPT_PATH, 'read', str(temp_dir / 'nonexistent.json'))
+        result = run_script(SCRIPT_PATH, 'read', '--file-path', str(temp_dir / 'nonexistent.json'))
         # Script may output to stderr for errors
         data = result.json_or_error()
 
@@ -256,7 +259,7 @@ def test_invalid_json_value():
         config_file = create_test_config(temp_dir)
 
         result = run_script(
-            SCRIPT_PATH, 'update-field', str(config_file), '--field', 'test', '--value', 'not valid json'
+            SCRIPT_PATH, 'update-field', '--file-path', str(config_file), '--field', 'test', '--value', 'not valid json'
         )
         # Script may output to stderr for errors
         data = result.json_or_error()

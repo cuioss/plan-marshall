@@ -60,7 +60,7 @@ Parse the TOON output. The `action` field indicates:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[STATUS] (pm-workflow:phase-1-init) Starting init phase"
+  work --plan-id {plan_id} --level INFO --message "[STATUS] (pm-workflow:phase-1-init) Starting init phase"
 ```
 
 If `action: exists`, use AskUserQuestion:
@@ -85,7 +85,7 @@ python3 .plan/execute-script.py pm-workflow:manage-files:manage-files create-or-
 3. Log the replacement (directory now exists for logging):
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[ACTION] (pm-workflow:phase-1-init) Replaced existing plan - deleted previous version"
+  work --plan-id {plan_id} --level INFO --message "[ACTION] (pm-workflow:phase-1-init) Replaced existing plan - deleted previous version"
 ```
 
 4. Continue with Step 4 (Get Task Content)
@@ -145,7 +145,7 @@ python3 .plan/execute-script.py pm-workflow:manage-plan-documents:manage-plan-do
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[ARTIFACT] (pm-workflow:phase-1-init) Created request.md from {source_type}"
+  work --plan-id {plan_id} --level INFO --message "[ARTIFACT] (pm-workflow:phase-1-init) Created request.md from {source_type}"
 ```
 
 ### Step 6: Initialize References
@@ -194,7 +194,7 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-m
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(pm-workflow:phase-1-init) Detected domain: {domain} - {reasoning}"
+  decision --plan-id {plan_id} --level INFO --message "(pm-workflow:phase-1-init) Detected domain: {domain} - {reasoning}"
 ```
 
 ### Step 8: Create Status
@@ -229,7 +229,7 @@ Log the plan creation as an artifact:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[ARTIFACT] (pm-workflow:phase-1-init) Created plan: {derived_title} (source: {source_type}, domain: {domain})"
+  work --plan-id {plan_id} --level INFO --message "[ARTIFACT] (pm-workflow:phase-1-init) Created plan: {derived_title} (source: {source_type}, domain: {domain})"
 ```
 
 ### Step 11: Transition Phase
@@ -246,7 +246,7 @@ python3 .plan/execute-script.py pm-workflow:manage-lifecycle:manage-lifecycle tr
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[STATUS] (pm-workflow:phase-1-init) Init phase complete - plan created with {domain} domain"
+  work --plan-id {plan_id} --level INFO --message "[STATUS] (pm-workflow:phase-1-init) Init phase complete - plan created with {domain} domain"
 ```
 
 ### Step 12: Return Result
@@ -277,7 +277,7 @@ On any error, **first log the error** to work-log (if plan directory exists):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} ERROR "[ERROR] (pm-workflow:phase-1-init) {error_type}: {full error context and message}"
+  work --plan-id {plan_id} --level ERROR --message "[ERROR] (pm-workflow:phase-1-init) {error_type}: {full error context and message}"
 ```
 
 ### Invalid Lesson ID

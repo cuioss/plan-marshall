@@ -352,13 +352,13 @@ def build_commands(bundle_name: str) -> dict:
     """
     base = PYTHON_BUILD_BASE
     return {
-        'compile': f'{base} --commandArgs "compile {bundle_name}"',
-        'test-compile': f'{base} --commandArgs "test-compile {bundle_name}"',
-        'module-tests': f'{base} --commandArgs "module-tests {bundle_name}"',
-        'quality-gate': f'{base} --commandArgs "quality-gate {bundle_name}"',
-        'verify': f'{base} --commandArgs "verify {bundle_name}"',
-        'coverage': f'{base} --commandArgs "coverage {bundle_name}"',
-        'clean': f'{base} --commandArgs "clean {bundle_name}"',
+        'compile': f'{base} --command-args "compile {bundle_name}"',
+        'test-compile': f'{base} --command-args "test-compile {bundle_name}"',
+        'module-tests': f'{base} --command-args "module-tests {bundle_name}"',
+        'quality-gate': f'{base} --command-args "quality-gate {bundle_name}"',
+        'verify': f'{base} --command-args "verify {bundle_name}"',
+        'coverage': f'{base} --command-args "coverage {bundle_name}"',
+        'clean': f'{base} --command-args "clean {bundle_name}"',
     }
 
 
@@ -475,13 +475,13 @@ def build_default_module(project_root: Path, bundle_count: int) -> dict:
             'bundle_count': bundle_count,
         },
         'commands': {
-            'compile': f'{PYTHON_BUILD_BASE} --commandArgs "compile"',
-            'test-compile': f'{PYTHON_BUILD_BASE} --commandArgs "test-compile"',
-            'module-tests': f'{PYTHON_BUILD_BASE} --commandArgs "module-tests"',
-            'quality-gate': f'{PYTHON_BUILD_BASE} --commandArgs "quality-gate"',
-            'verify': f'{PYTHON_BUILD_BASE} --commandArgs "verify"',
-            'coverage': f'{PYTHON_BUILD_BASE} --commandArgs "coverage"',
-            'clean': f'{PYTHON_BUILD_BASE} --commandArgs "clean"',
+            'compile': f'{PYTHON_BUILD_BASE} --command-args "compile"',
+            'test-compile': f'{PYTHON_BUILD_BASE} --command-args "test-compile"',
+            'module-tests': f'{PYTHON_BUILD_BASE} --command-args "module-tests"',
+            'quality-gate': f'{PYTHON_BUILD_BASE} --command-args "quality-gate"',
+            'verify': f'{PYTHON_BUILD_BASE} --command-args "verify"',
+            'coverage': f'{PYTHON_BUILD_BASE} --command-args "coverage"',
+            'clean': f'{PYTHON_BUILD_BASE} --command-args "clean"',
         },
     }
 

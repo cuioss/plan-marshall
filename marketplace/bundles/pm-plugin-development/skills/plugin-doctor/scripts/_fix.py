@@ -49,7 +49,7 @@ Examples:
 """,
     )
 
-    subparsers = parser.add_subparsers(dest='command', help='Operation to perform')
+    subparsers = parser.add_subparsers(dest='command', required=True, help='Operation to perform')
 
     # extract subcommand
     p_extract = subparsers.add_parser('extract', help='Extract fixable issues')

@@ -341,61 +341,61 @@ def main():
         epilog="""
 Examples:
   # Read entire file
-  %(prog)s read .plan/run-configuration.json
+  %(prog)s read --file-path .plan/run-configuration.json
 
   # Read specific field
-  %(prog)s read-field .plan/run-configuration.json --field "commands.setup-project-permissions"
+  %(prog)s read-field --file-path .plan/run-configuration.json --field "commands.setup-project-permissions"
 
   # Update field
-  %(prog)s update-field .plan/run-configuration.json --field "commands.my-cmd.status" --value '"SUCCESS"'
+  %(prog)s update-field --file-path .plan/run-configuration.json --field "commands.my-cmd.status" --value '"SUCCESS"'
 
   # Add to array
-  %(prog)s add-entry .plan/run-configuration.json --field "commands.my-cmd.lessons" --value '"New lesson"'
+  %(prog)s add-entry --file-path .plan/run-configuration.json --field "commands.my-cmd.lessons" --value '"New lesson"'
 
   # Remove field
-  %(prog)s remove-entry .plan/run-configuration.json --field "commands.old-cmd"
+  %(prog)s remove-entry --file-path .plan/run-configuration.json --field "commands.old-cmd"
 
   # Also works with .claude/ (for settings)
-  %(prog)s read .claude/settings.json
+  %(prog)s read --file-path .claude/settings.json
 """,
     )
 
-    subparsers = parser.add_subparsers(dest='command', help='Operation to perform')
+    subparsers = parser.add_subparsers(dest='command', required=True, help='Operation to perform')
 
     # read command
     p_read = subparsers.add_parser('read', help='Read entire JSON file')
-    p_read.add_argument('file_path', help='Path to JSON file')
+    p_read.add_argument('--file-path', required=True, dest='file_path', help='Path to JSON file')
     p_read.set_defaults(func=cmd_read)
 
     # read-field command
     p_read_field = subparsers.add_parser('read-field', help='Read specific field')
-    p_read_field.add_argument('file_path', help='Path to JSON file')
+    p_read_field.add_argument('--file-path', required=True, dest='file_path', help='Path to JSON file')
     p_read_field.add_argument('--field', required=True, help='JSON path to field')
     p_read_field.set_defaults(func=cmd_read_field)
 
     # write command
     p_write = subparsers.add_parser('write', help='Write entire JSON content')
-    p_write.add_argument('file_path', help='Path to JSON file')
+    p_write.add_argument('--file-path', required=True, dest='file_path', help='Path to JSON file')
     p_write.add_argument('--value', required=True, help='JSON content to write')
     p_write.set_defaults(func=cmd_write)
 
     # update-field command
     p_update = subparsers.add_parser('update-field', help='Update specific field')
-    p_update.add_argument('file_path', help='Path to JSON file')
+    p_update.add_argument('--file-path', required=True, dest='file_path', help='Path to JSON file')
     p_update.add_argument('--field', required=True, help='JSON path to field')
     p_update.add_argument('--value', required=True, help='JSON value to set')
     p_update.set_defaults(func=cmd_update_field)
 
     # add-entry command
     p_add = subparsers.add_parser('add-entry', help='Add entry to array or object')
-    p_add.add_argument('file_path', help='Path to JSON file')
+    p_add.add_argument('--file-path', required=True, dest='file_path', help='Path to JSON file')
     p_add.add_argument('--field', required=True, help='JSON path to array/object')
     p_add.add_argument('--value', required=True, help='JSON value to add')
     p_add.set_defaults(func=cmd_add_entry)
 
     # remove-entry command
     p_remove = subparsers.add_parser('remove-entry', help='Remove entry from array or object')
-    p_remove.add_argument('file_path', help='Path to JSON file')
+    p_remove.add_argument('--file-path', required=True, dest='file_path', help='Path to JSON file')
     p_remove.add_argument('--field', required=True, help='JSON path to field')
     p_remove.add_argument('--value', help='Value to remove (for arrays) or key (for objects)')
     p_remove.set_defaults(func=cmd_remove_entry)

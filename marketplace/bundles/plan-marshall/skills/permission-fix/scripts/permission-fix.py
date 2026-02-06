@@ -603,7 +603,7 @@ def cmd_ensure_wildcards(args) -> int:
 
 def main():
     parser = argparse.ArgumentParser(description='Permission fix - write operations for Claude Code settings')
-    subparsers = parser.add_subparsers(dest='command', help='Operation to perform')
+    subparsers = parser.add_subparsers(dest='command', required=True, help='Operation to perform')
 
     # apply-fixes subcommand
     p_fix = subparsers.add_parser('apply-fixes', help='Apply safe fixes to permission settings')

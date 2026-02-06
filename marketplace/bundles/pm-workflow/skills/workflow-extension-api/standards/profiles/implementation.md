@@ -269,7 +269,7 @@ python3 .plan/execute-script.py pm-workflow:manage-references:manage-references 
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[STEP] Completed step {N}: {file_path}"
+  work --plan-id {plan_id} --level INFO --message "[STEP] Completed step {N}: {file_path}"
 ```
 
 ---

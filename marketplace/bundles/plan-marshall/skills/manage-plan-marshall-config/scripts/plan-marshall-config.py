@@ -55,7 +55,7 @@ def _add_phase_subparser(
         has_domain_steps: If True, adds set-domain-step and set-domain-step-agent verbs
     """
     p_phase = plan_sub.add_parser(phase_name, help=help_text)
-    phase_sub = p_phase.add_subparsers(dest='verb', help='Operation')
+    phase_sub = p_phase.add_subparsers(dest='verb', required=True, help='Operation')
 
     # get (with optional --field)
     phase_get = phase_sub.add_parser('get', help=f'Get {phase_name} config')
@@ -93,11 +93,11 @@ def main():
         description='Plan-Marshall configuration management', formatter_class=argparse.RawDescriptionHelpFormatter
     )
 
-    subparsers = parser.add_subparsers(dest='noun', help='Noun (resource type)')
+    subparsers = parser.add_subparsers(dest='noun', required=True, help='Noun (resource type)')
 
     # --- skill-domains ---
     p_sd = subparsers.add_parser('skill-domains', help='Manage implementation skill domains')
-    sd_sub = p_sd.add_subparsers(dest='verb', help='Operation')
+    sd_sub = p_sd.add_subparsers(dest='verb', required=True, help='Operation')
 
     sd_sub.add_parser('list', help='List all domains')
 
@@ -142,10 +142,10 @@ def main():
 
     # --- system ---
     p_sys = subparsers.add_parser('system', help='Manage system settings')
-    sys_sub = p_sys.add_subparsers(dest='sub_noun', help='Sub-noun')
+    sys_sub = p_sys.add_subparsers(dest='sub_noun', required=True, help='Sub-noun')
 
     p_ret = sys_sub.add_parser('retention', help='Manage retention settings')
-    ret_sub = p_ret.add_subparsers(dest='verb', help='Operation')
+    ret_sub = p_ret.add_subparsers(dest='verb', required=True, help='Operation')
 
     ret_sub.add_parser('get', help='Get retention settings')
 
@@ -155,7 +155,7 @@ def main():
 
     # --- plan (phase-based sub-nouns) ---
     p_plan = subparsers.add_parser('plan', help='Manage plan settings')
-    plan_sub = p_plan.add_subparsers(dest='sub_noun', help='Phase sub-noun')
+    plan_sub = p_plan.add_subparsers(dest='sub_noun', required=True, help='Phase sub-noun')
 
     _add_phase_subparser(plan_sub, 'phase-1-init', 'Init phase settings', has_scalar=True)
     _add_phase_subparser(plan_sub, 'phase-2-refine', 'Refine phase settings', has_scalar=True)
@@ -167,7 +167,7 @@ def main():
 
     # --- ci ---
     p_ci = subparsers.add_parser('ci', help='Manage CI provider configuration')
-    ci_sub = p_ci.add_subparsers(dest='verb', help='Operation')
+    ci_sub = p_ci.add_subparsers(dest='verb', required=True, help='Operation')
 
     ci_sub.add_parser('get', help='Get full CI config')
     ci_sub.add_parser('get-provider', help='Get CI provider')
@@ -192,7 +192,7 @@ def main():
 
     # --- ext-defaults ---
     p_ext = subparsers.add_parser('ext-defaults', help='Manage extension defaults (shared config)')
-    ext_sub = p_ext.add_subparsers(dest='verb', help='Operation')
+    ext_sub = p_ext.add_subparsers(dest='verb', required=True, help='Operation')
 
     ext_get = ext_sub.add_parser('get', help='Get extension default value')
     ext_get.add_argument('--key', required=True, help='Key to retrieve')

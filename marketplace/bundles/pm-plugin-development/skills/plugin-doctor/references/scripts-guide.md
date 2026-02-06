@@ -270,6 +270,36 @@ execute-build.py	wrong_naming	high	no
 ...
 ```
 
+### 9. Argument Convention Validation
+
+**Standard**: Scripts MUST follow argument conventions from `plugin-script-architecture:standards/python-implementation.md`.
+
+**Check Criteria**:
+1. All `add_argument()` calls use `--` prefix (no positional args)
+2. All `--flag` names use kebab-case (no camelCase)
+3. All `add_subparsers()` calls include `required=True`
+
+**Detection**:
+```python
+# COMPLIANT
+parser.add_argument('--plan-id', required=True, dest='plan_id')
+parser.add_argument('--file-path', required=True, dest='file_path')
+subparsers = parser.add_subparsers(dest='command', required=True)
+
+# VIOLATION: positional argument
+parser.add_argument('plan_id')
+
+# VIOLATION: camelCase flag
+parser.add_argument('--commandArgs')
+
+# VIOLATION: missing required=True on subparsers
+subparsers = parser.add_subparsers(dest='command')
+```
+
+**Exclusions**: Subcommand dest args (e.g., `dest='command'`) are not positional arguments.
+
+**Categorization**: Safe fix (mechanical transformation)
+
 ## Related Standards
 
 - `pm-plugin-development:plugin-script-architecture` - Full script development standards

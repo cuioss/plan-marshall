@@ -3,29 +3,32 @@
 CLI script for unified logging operations.
 
 Usage:
-    Write (positional):
-        python3 manage-log.py {type} {plan_id} {level} "{message}"
+    Write:
+        python3 manage-log.py work --plan-id <plan_id> --level INFO --message "msg"
+        python3 manage-log.py decision --plan-id <plan_id> --level INFO --message "msg"
+        python3 manage-log.py script --plan-id <plan_id> --level INFO --message "msg"
 
     Read:
-        python3 manage-log.py read --plan-id {plan_id} --type {work|script|decision} [--limit N] [--phase PHASE]
+        python3 manage-log.py read --plan-id <plan_id> --type work [--limit N] [--phase PHASE]
+        python3 manage-log.py read --plan-id <plan_id> --type decision [--limit N] [--phase PHASE]
+        python3 manage-log.py read --plan-id <plan_id> --type script [--limit N]
 
 Arguments (write):
-    type      - Log type: 'script', 'work', or 'decision'
-    plan_id   - Plan identifier
-    level     - Log level: INFO, WARN, ERROR
-    message   - Log message
+    --plan-id  - Plan identifier (required)
+    --level    - Log level: INFO, WARN, ERROR (required)
+    --message  - Log message (required)
 
 Arguments (read):
-    --plan-id - Plan identifier (required)
-    --type    - Log type: 'script', 'work', or 'decision' (required)
-    --limit   - Max entries to return (optional, default: all)
-    --phase   - Filter by phase (optional, work/decision logs only)
+    --plan-id  - Plan identifier (required)
+    --type     - Log type: 'script', 'work', or 'decision' (required)
+    --limit    - Max entries to return (optional, default: all)
+    --phase    - Filter by phase (optional, work/decision logs only)
 
 Examples:
     # Write operations
-    python3 manage-log.py script my-plan INFO "pm-workflow:manage-task:manage-task add (0.15s)"
-    python3 manage-log.py work my-plan INFO "[ARTIFACT] Created deliverable: auth module"
-    python3 manage-log.py decision my-plan INFO "(skill-name) Detected domain: java"
+    python3 manage-log.py script --plan-id my-plan --level INFO --message "pm-workflow:manage-task:manage-task add (0.15s)"
+    python3 manage-log.py work --plan-id my-plan --level INFO --message "[ARTIFACT] Created deliverable: auth module"
+    python3 manage-log.py decision --plan-id my-plan --level INFO --message "(skill-name) Detected domain: java"
 
     # Read operations
     python3 manage-log.py read --plan-id my-plan --type work
@@ -34,6 +37,7 @@ Examples:
     python3 manage-log.py read --plan-id my-plan --type decision --phase 1-init
 """
 
+import argparse
 import sys
 
 # Direct imports from same directory (local imports)
@@ -100,102 +104,48 @@ def format_toon_output(result: dict) -> str:
     return '\n'.join(lines)
 
 
-def parse_read_args(args: list) -> dict:
-    """Parse named arguments for read command."""
-    result: dict[str, str | int | None] = {'plan_id': None, 'log_type': None, 'limit': None, 'phase': None}
-
-    i = 0
-    while i < len(args):
-        arg = args[i]
-
-        if arg == '--plan-id' and i + 1 < len(args):
-            result['plan_id'] = args[i + 1]
-            i += 2
-        elif arg.startswith('--plan-id='):
-            result['plan_id'] = arg.split('=', 1)[1]
-            i += 1
-        elif arg == '--type' and i + 1 < len(args):
-            result['log_type'] = args[i + 1]
-            i += 2
-        elif arg.startswith('--type='):
-            result['log_type'] = arg.split('=', 1)[1]
-            i += 1
-        elif arg == '--limit' and i + 1 < len(args):
-            result['limit'] = int(args[i + 1])
-            i += 2
-        elif arg.startswith('--limit='):
-            result['limit'] = int(arg.split('=', 1)[1])
-            i += 1
-        elif arg == '--phase' and i + 1 < len(args):
-            result['phase'] = args[i + 1]
-            i += 2
-        elif arg.startswith('--phase='):
-            result['phase'] = arg.split('=', 1)[1]
-            i += 1
-        else:
-            i += 1
-
-    return result
-
-
-def handle_read(args: list) -> None:
+def handle_read(args: argparse.Namespace) -> None:
     """Handle read subcommand."""
-    parsed = parse_read_args(args)
-
-    # Validate required args
-    if not parsed['plan_id']:
-        print('status: error', file=sys.stderr)
-        print('error: missing_argument', file=sys.stderr)
-        print('message: --plan-id is required', file=sys.stderr)
-        sys.exit(1)
-
-    if not parsed['log_type']:
-        print('status: error', file=sys.stderr)
-        print('error: missing_argument', file=sys.stderr)
-        print('message: --type is required (work or script)', file=sys.stderr)
-        sys.exit(1)
-
-    if parsed['log_type'] not in VALID_TYPES:
-        print('status: error', file=sys.stderr)
-        print('error: invalid_type', file=sys.stderr)
-        print(f'message: type must be one of {VALID_TYPES}', file=sys.stderr)
-        sys.exit(1)
+    plan_id = args.plan_id
+    log_type = args.type
+    limit = args.limit
+    phase = args.phase
 
     # Work and decision logs support full parsing
-    if parsed['log_type'] == 'work':
-        if parsed['limit']:
-            result = list_recent_work(parsed['plan_id'], limit=parsed['limit'])
+    if log_type == 'work':
+        if limit:
+            result = list_recent_work(plan_id, limit=limit)
         else:
-            result = read_work_log(parsed['plan_id'], phase=parsed['phase'])
+            result = read_work_log(plan_id, phase=phase)
         result['log_type'] = 'work'
-    elif parsed['log_type'] == 'decision':
-        result = read_decision_log(parsed['plan_id'], phase=parsed['phase'])
-        if parsed['limit'] and result.get('entries'):
-            result['entries'] = result['entries'][-parsed['limit'] :]
+    elif log_type == 'decision':
+        result = read_decision_log(plan_id, phase=phase)
+        if limit and result.get('entries'):
+            result['entries'] = result['entries'][-limit:]
             result['showing'] = len(result['entries'])
         result['log_type'] = 'decision'
     else:
-        # Script logs - read raw file content for now
-        log_file = get_log_path(parsed['plan_id'], 'script')
+        # Script logs - read raw file content
+        log_file = get_log_path(plan_id, 'script')
         if log_file.exists():
             content = log_file.read_text(encoding='utf-8')
-            lines = content.strip().split('\n') if content.strip() else []
+            file_lines = content.strip().split('\n') if content.strip() else []
 
             # Apply limit if specified
-            if parsed['limit'] and lines:
-                lines = lines[-parsed['limit'] :]
+            if limit and file_lines:
+                file_lines = file_lines[-limit:]
 
             result = {
                 'status': 'success',
-                'plan_id': parsed['plan_id'],
+                'plan_id': plan_id,
                 'log_type': 'script',
-                'total_entries': len(lines),
-                'raw_content': '\n'.join(lines),
+                'total_entries': len(file_lines),
+                'raw_content': '\n'.join(file_lines),
             }
         else:
             result = {
                 'status': 'success',
-                'plan_id': parsed['plan_id'],
+                'plan_id': plan_id,
                 'log_type': 'script',
                 'total_entries': 0,
                 'raw_content': '',
@@ -209,23 +159,12 @@ def handle_read(args: list) -> None:
         print(format_toon_output(result))
 
 
-def handle_write(args: list) -> None:
-    """Handle write operation (positional args)."""
-    if len(args) != 4:
-        print(f'Usage: {sys.argv[0]} {{type}} {{plan_id}} {{level}} "{{message}}"', file=sys.stderr)
-        sys.exit(1)
-
-    log_type, plan_id, level, message = args
-
-    # Validate type
-    if log_type not in VALID_TYPES:
-        print(f'Error: type must be one of {VALID_TYPES}', file=sys.stderr)
-        sys.exit(1)
-
-    # Validate level
-    if level not in VALID_LEVELS:
-        print(f'Error: level must be one of {VALID_LEVELS}', file=sys.stderr)
-        sys.exit(1)
+def handle_write(args: argparse.Namespace) -> None:
+    """Handle write subcommand."""
+    log_type = args.log_type
+    plan_id = args.plan_id
+    level = args.level
+    message = args.message
 
     # Log entry
     try:
@@ -235,18 +174,41 @@ def handle_write(args: list) -> None:
         sys.exit(1)
 
 
-def main():
-    if len(sys.argv) < 2:
-        print(f'Usage: {sys.argv[0]} read --plan-id {{id}} --type {{work|script|decision}}', file=sys.stderr)
-        print(f'       {sys.argv[0]} {{type}} {{plan_id}} {{level}} "{{message}}"', file=sys.stderr)
-        sys.exit(1)
+def _add_write_args(parser: argparse.ArgumentParser) -> None:
+    """Add common write arguments to a subparser."""
+    parser.add_argument('--plan-id', required=True, dest='plan_id', help='Plan identifier')
+    parser.add_argument('--level', required=True, choices=VALID_LEVELS, help='Log level')
+    parser.add_argument('--message', required=True, help='Log message')
 
-    # Check if first arg is a subcommand
-    if sys.argv[1] == 'read':
-        handle_read(sys.argv[2:])
+
+def main():
+    parser = argparse.ArgumentParser(
+        description='Unified logging operations',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    subparsers = parser.add_subparsers(dest='command', required=True)
+
+    # Write subcommands: work, decision, script
+    for log_type in VALID_TYPES:
+        if log_type == 'read':
+            continue
+        write_parser = subparsers.add_parser(log_type, help=f'Write a {log_type} log entry')
+        _add_write_args(write_parser)
+        write_parser.set_defaults(log_type=log_type)
+
+    # Read subcommand
+    read_parser = subparsers.add_parser('read', help='Read log entries')
+    read_parser.add_argument('--plan-id', required=True, dest='plan_id', help='Plan identifier')
+    read_parser.add_argument('--type', required=True, choices=VALID_TYPES, help='Log type')
+    read_parser.add_argument('--limit', type=int, help='Max entries to return')
+    read_parser.add_argument('--phase', help='Filter by phase (work/decision logs only)')
+
+    args = parser.parse_args()
+
+    if args.command == 'read':
+        handle_read(args)
     else:
-        # Legacy positional write
-        handle_write(sys.argv[1:])
+        handle_write(args)
 
 
 if __name__ == '__main__':

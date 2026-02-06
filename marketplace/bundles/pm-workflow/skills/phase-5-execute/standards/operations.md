@@ -130,7 +130,7 @@ npm run docs:check
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "{what was done}: {outcome}"
+  work --plan-id {plan_id} --level INFO --message "{what was done}: {outcome}"
 ```
 
 ### Lesson Learned

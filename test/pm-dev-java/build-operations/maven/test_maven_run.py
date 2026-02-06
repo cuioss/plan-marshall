@@ -49,7 +49,7 @@ def mock_maven_project(mock_script: str = 'mvnw-success.sh'):
 def test_run_success_output_format():
     """Test run command success output format (TOON format - tab-separated)."""
     with mock_maven_project('mvnw-success.sh') as temp_dir:
-        result = run_script(SCRIPT_PATH, 'run', '--commandArgs', 'clean test', cwd=temp_dir)
+        result = run_script(SCRIPT_PATH, 'run', '--command-args', 'clean test', cwd=temp_dir)
 
         assert result.returncode == 0, f'Successful run should exit with 0: {result.stderr}'
 
@@ -70,7 +70,7 @@ def test_run_success_output_format():
 def test_run_includes_duration():
     """Test run command includes duration in output."""
     with mock_maven_project('mvnw-success.sh') as temp_dir:
-        result = run_script(SCRIPT_PATH, 'run', '--commandArgs', 'clean test', cwd=temp_dir)
+        result = run_script(SCRIPT_PATH, 'run', '--command-args', 'clean test', cwd=temp_dir)
 
         assert 'duration_seconds' in result.stdout, 'Should include duration_seconds'
 
@@ -83,7 +83,7 @@ def test_run_includes_duration():
 def test_run_failure_includes_errors():
     """Test run command failure includes parsed errors."""
     with mock_maven_project('mvnw-failure.sh') as temp_dir:
-        result = run_script(SCRIPT_PATH, 'run', '--commandArgs', 'clean test', cwd=temp_dir)
+        result = run_script(SCRIPT_PATH, 'run', '--command-args', 'clean test', cwd=temp_dir)
 
         assert result.returncode == 1, 'Failed run should exit with 1'
         assert 'status\terror' in result.stdout, 'Should have error status'
@@ -94,7 +94,7 @@ def test_run_failure_includes_errors():
 def test_run_failure_with_compilation_errors():
     """Test run command failure with compilation errors includes file/line info."""
     with mock_maven_project('mvnw-failure.sh') as temp_dir:
-        result = run_script(SCRIPT_PATH, 'run', '--commandArgs', 'clean test', cwd=temp_dir)
+        result = run_script(SCRIPT_PATH, 'run', '--command-args', 'clean test', cwd=temp_dir)
 
         # Even if mock doesn't produce parse-able errors, the format should be correct
         assert 'status\terror' in result.stdout, 'Should have error status'
@@ -108,7 +108,7 @@ def test_run_failure_with_compilation_errors():
 def test_run_mode_actionable():
     """Test run with --mode actionable (default)."""
     with mock_maven_project('mvnw-success.sh') as temp_dir:
-        result = run_script(SCRIPT_PATH, 'run', '--commandArgs', 'clean test', '--mode', 'actionable', cwd=temp_dir)
+        result = run_script(SCRIPT_PATH, 'run', '--command-args', 'clean test', '--mode', 'actionable', cwd=temp_dir)
 
         assert result.returncode == 0, f'Should succeed: {result.stderr}'
         assert 'status\tsuccess' in result.stdout
@@ -117,7 +117,7 @@ def test_run_mode_actionable():
 def test_run_mode_errors():
     """Test run with --mode errors (no warnings)."""
     with mock_maven_project('mvnw-success.sh') as temp_dir:
-        result = run_script(SCRIPT_PATH, 'run', '--commandArgs', 'clean test', '--mode', 'errors', cwd=temp_dir)
+        result = run_script(SCRIPT_PATH, 'run', '--command-args', 'clean test', '--mode', 'errors', cwd=temp_dir)
 
         assert result.returncode == 0, f'Should succeed: {result.stderr}'
 
@@ -125,20 +125,20 @@ def test_run_mode_errors():
 def test_run_mode_structured():
     """Test run with --mode structured (all issues with markers)."""
     with mock_maven_project('mvnw-success.sh') as temp_dir:
-        result = run_script(SCRIPT_PATH, 'run', '--commandArgs', 'clean test', '--mode', 'structured', cwd=temp_dir)
+        result = run_script(SCRIPT_PATH, 'run', '--command-args', 'clean test', '--mode', 'structured', cwd=temp_dir)
 
         assert result.returncode == 0, f'Should succeed: {result.stderr}'
 
 
 # =============================================================================
-# Module Routing Tests (embedded in commandArgs)
+# Module Routing Tests (embedded in command-args)
 # =============================================================================
 
 
 def test_run_with_module_routing():
-    """Test run with module routing embedded in commandArgs."""
+    """Test run with module routing embedded in command-args."""
     with mock_maven_project('mvnw-success.sh') as temp_dir:
-        result = run_script(SCRIPT_PATH, 'run', '--commandArgs', 'clean test -pl core', cwd=temp_dir)
+        result = run_script(SCRIPT_PATH, 'run', '--command-args', 'clean test -pl core', cwd=temp_dir)
 
         assert result.returncode == 0, f'Should succeed: {result.stderr}'
         # Check command includes module
@@ -153,7 +153,7 @@ def test_run_with_module_routing():
 def test_run_help():
     """Test run subcommand help."""
     result = run_script(SCRIPT_PATH, 'run', '--help')
-    assert '--commandArgs' in result.stdout, 'Should show --commandArgs option'
+    assert '--command-args' in result.stdout, 'Should show --command-args option'
     assert '--mode' in result.stdout, 'Should show --mode option'
 
 

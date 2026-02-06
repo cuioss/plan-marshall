@@ -66,7 +66,7 @@ Log context:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(pm-plugin-development:change-bug_fix-outline-agent) Context loaded: domains={domains}, compatibility={compatibility}"
+  decision --plan-id {plan_id} --level INFO --message "(pm-plugin-development:change-bug_fix-outline-agent) Context loaded: domains={domains}, compatibility={compatibility}"
 ```
 
 ### Step 2: Identify Bug Location
@@ -85,7 +85,7 @@ Log findings:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(pm-plugin-development:change-bug_fix-outline-agent) Bug location: {component}, symptom: {symptom}"
+  decision --plan-id {plan_id} --level INFO --message "(pm-plugin-development:change-bug_fix-outline-agent) Bug location: {component}, symptom: {symptom}"
 ```
 
 ### Step 3: Targeted Search (No Full Inventory)
@@ -121,7 +121,7 @@ Log root cause:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(pm-plugin-development:change-bug_fix-outline-agent) Root cause: {cause}"
+  decision --plan-id {plan_id} --level INFO --message "(pm-plugin-development:change-bug_fix-outline-agent) Root cause: {cause}"
 ```
 
 ### Step 5: Build Bug Fix Deliverable
@@ -235,7 +235,7 @@ EOF
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(pm-plugin-development:change-bug_fix-outline-agent) Complete: 2 deliverables"
+  decision --plan-id {plan_id} --level INFO --message "(pm-plugin-development:change-bug_fix-outline-agent) Complete: 2 deliverables"
 ```
 
 ## Output

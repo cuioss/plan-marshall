@@ -60,7 +60,7 @@ Examples:
 """,
     )
 
-    subparsers = parser.add_subparsers(dest='command', help='Operation to perform')
+    subparsers = parser.add_subparsers(dest='command', required=True, help='Operation to perform')
 
     # markdown subcommand
     p_md = subparsers.add_parser('markdown', help='Analyze markdown file structure')

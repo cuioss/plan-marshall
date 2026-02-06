@@ -110,16 +110,16 @@
         "test_files": 145
       },
       "commands": {
-        "clean": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"clean\"",
-        "quality-gate": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -Ppre-commit\"",
-        "verify": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify\"",
-        "install": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"install\"",
-        "clean-install": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"clean install\"",
-        "package": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"package\"",
-        "compile": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"compile\"",
-        "test-compile": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"test-compile\"",
-        "module-tests": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"test\"",
-        "coverage": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -Pcoverage\""
+        "clean": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"clean\"",
+        "quality-gate": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"verify -Ppre-commit\"",
+        "verify": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"verify\"",
+        "install": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"install\"",
+        "clean-install": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"clean install\"",
+        "package": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"package\"",
+        "compile": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"compile\"",
+        "test-compile": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"test-compile\"",
+        "module-tests": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"test\"",
+        "coverage": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"verify -Pcoverage\""
       }
     }
   },

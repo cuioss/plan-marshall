@@ -84,7 +84,7 @@ Skill: {delegation.context_skills[1]}
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[TASK] (pm-plugin-development:plugin-plan-implement) Starting task {task_number}: {title}"
+  work --plan-id {plan_id} --level INFO --message "[TASK] (pm-plugin-development:plugin-plan-implement) Starting task {task_number}: {title}"
 ```
 
 ### Step 4: Execute Steps
@@ -113,7 +113,7 @@ Read standards/step-execution.md
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[STEP] (pm-plugin-development:plugin-plan-implement) Completed step {step_number}: {file_path}"
+  work --plan-id {plan_id} --level INFO --message "[STEP] (pm-plugin-development:plugin-plan-implement) Completed step {step_number}: {file_path}"
 ```
 
 #### 4c. Finalize Step
@@ -140,7 +140,7 @@ Log result:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[VERIFY] (pm-plugin-development:plugin-plan-implement) Verification {passed|failed}: {criteria}"
+  work --plan-id {plan_id} --level INFO --message "[VERIFY] (pm-plugin-development:plugin-plan-implement) Verification {passed|failed}: {criteria}"
 ```
 
 ### Step 6: Return Result

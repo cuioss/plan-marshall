@@ -36,7 +36,7 @@ Skill: plan-marshall:ref-development-standards
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[STATUS] (pm-workflow:change-verification-agent) Starting"
+  work --plan-id {plan_id} --level INFO --message "[STATUS] (pm-workflow:change-verification-agent) Starting"
 ```
 
 ### Step 1: Load Context
@@ -68,7 +68,7 @@ Log criteria:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(pm-workflow:change-verification-agent) Verifying: {target}, criteria: {criteria}"
+  decision --plan-id {plan_id} --level INFO --message "(pm-workflow:change-verification-agent) Verifying: {target}, criteria: {criteria}"
 ```
 
 ### Step 3: Build Verification Checklist
@@ -152,7 +152,7 @@ EOF
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(pm-workflow:change-verification-agent) Complete: 1 deliverable (verification)"
+  decision --plan-id {plan_id} --level INFO --message "(pm-workflow:change-verification-agent) Complete: 1 deliverable (verification)"
 ```
 
 ## Output

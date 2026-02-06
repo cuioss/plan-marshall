@@ -87,6 +87,52 @@ if __name__ == "__main__":
 - `add-file.py` - verb-noun pattern
 - Scripts without subcommand support
 
+## Argument Convention
+
+Three rules for argparse arguments:
+
+### 1. Named Flags Only
+
+All arguments MUST use `--kebab-case` flags, never positional arguments.
+
+```python
+# CORRECT - named flags
+add_parser.add_argument('--plan-id', required=True, dest='plan_id', help='Plan identifier')
+add_parser.add_argument('--severity', choices=['warning', 'error'], help='Severity level')
+
+# WRONG - positional arguments
+add_parser.add_argument('plan_id', help='Plan identifier')
+add_parser.add_argument('severity', choices=['warning', 'error'])
+```
+
+Use `dest='snake_case'` when flag contains hyphens. Rationale: self-documenting call sites, executor `extract_plan_id()` detection, order-independence.
+
+### 2. kebab-case Naming
+
+Flag names MUST use `--kebab-case` (not `--camelCase` or `--snake_case`).
+
+```python
+# CORRECT
+add_argument('--command-args', dest='command_args')
+add_argument('--file-path', dest='file_path')
+
+# WRONG
+add_argument('--commandArgs')
+add_argument('--file_path')
+```
+
+### 3. Subparser `required=True`
+
+All `add_subparsers()` calls MUST include `required=True` for clear error messages.
+
+```python
+# CORRECT
+subparsers = parser.add_subparsers(dest='command', required=True)
+
+# WRONG - user gets confusing None error when subcommand omitted
+subparsers = parser.add_subparsers(dest='command')
+```
+
 ## Help Output Requirements
 
 **CRITICAL**: All scripts MUST support `--help` flag via argparse.

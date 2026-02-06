@@ -556,7 +556,7 @@ Semantic work progress tracking across all phases.
 ```bash
 # Write entry
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} {level} "{message}"
+  work --plan-id {plan_id} --level {level} --message "{message}"
 
 # Read entries
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
@@ -601,7 +601,7 @@ Decision entries do NOT include a `[DECISION]` prefix since the file itself indi
 ```bash
 # Write decision entry
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} {level} "{message}"
+  decision --plan-id {plan_id} --level {level} --message "{message}"
 
 # Read decision entries
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \

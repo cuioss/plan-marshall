@@ -3,7 +3,7 @@
 Gradle build operations - run, parse, find projects, search markers, check warnings.
 
 Usage:
-    gradle.py run --commandArgs <args> [--format toon|json] [--mode actionable|structured|errors] [options]
+    gradle.py run --command-args <args> [--format toon|json] [--mode actionable|structured|errors] [options]
     gradle.py parse --log <path> [--mode <mode>]
     gradle.py find-project --project-name <name> | --project-path <path>
     gradle.py search-markers --source-dir <dir>
@@ -40,7 +40,7 @@ def main():
     # run subcommand (primary API)
     run_parser = subparsers.add_parser('run', help='Execute build and auto-parse on failure (primary API)')
     run_parser.add_argument(
-        '--commandArgs', required=True, help="Complete Gradle command arguments (e.g., ':module:build' or 'build')"
+        '--command-args', dest='command_args', required=True, help="Complete Gradle command arguments (e.g., ':module:build' or 'build')"
     )
     run_parser.add_argument('--format', choices=['toon', 'json'], default='toon', help='Output format (default: toon)')
     run_parser.add_argument(

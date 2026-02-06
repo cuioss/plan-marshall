@@ -241,5 +241,5 @@ All triage decisions are logged:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(triage) {finding.id}: {decision} - {reason}"
+  decision --plan-id {plan_id} --level INFO --message "(triage) {finding.id}: {decision} - {reason}"
 ```

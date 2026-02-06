@@ -43,7 +43,7 @@ def main():
 
     # stats subcommand
     stats_parser = subparsers.add_parser('stats', help='Generate documentation statistics')
-    stats_parser.add_argument('directory', nargs='?', default='.', help='Directory to analyze')
+    stats_parser.add_argument('--directory', default='.', help='Directory to analyze')
     stats_parser.add_argument(
         '-f', '--format', dest='format', default='console', choices=['console', 'json'], help='Output format'
     )
@@ -52,7 +52,7 @@ def main():
 
     # validate subcommand
     validate_parser = subparsers.add_parser('validate', help='Validate AsciiDoc files for compliance')
-    validate_parser.add_argument('path', nargs='?', default='standards', help='File or directory to check')
+    validate_parser.add_argument('--path', default='standards', help='File or directory to check')
     validate_parser.add_argument(
         '-f', '--format', dest='format', default='console', choices=['console', 'json'], help='Output format'
     )
@@ -61,7 +61,7 @@ def main():
 
     # format subcommand
     format_parser = subparsers.add_parser('format', help='Auto-fix AsciiDoc formatting issues')
-    format_parser.add_argument('path', nargs='?', default='.', help='File or directory to format')
+    format_parser.add_argument('--path', default='.', help='File or directory to format')
     format_parser.add_argument(
         '-t',
         '--type',

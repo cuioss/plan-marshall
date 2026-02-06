@@ -363,7 +363,7 @@ def main() -> int:
 
     # classify - Classify a single profile
     classify_parser = subparsers.add_parser('classify', help='Classify a profile by pattern matching')
-    classify_parser.add_argument('profile_id', help='Profile ID to classify')
+    classify_parser.add_argument('--profile-id', required=True, dest='profile_id', help='Profile ID to classify')
 
     # suggest - Suggest classifications for unmatched
     subparsers.add_parser('suggest', help='Suggest classifications for unmatched profiles')

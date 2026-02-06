@@ -69,7 +69,7 @@ if [fix_types != "all"]; then OPTIONS="$OPTIONS -t {fix_type}"; fi
 ```
 
 ```bash
-python3 .plan/execute-script.py pm-documents:ref-documentation:docs format $OPTIONS {target}
+python3 .plan/execute-script.py pm-documents:ref-documentation:docs format $OPTIONS --path {target}
 ```
 
 **Step 4: Parse Output**
@@ -94,7 +94,7 @@ Changes applied: {list}
 Run validation:
 
 ```bash
-python3 .plan/execute-script.py pm-documents:ref-documentation:docs validate {target}
+python3 .plan/execute-script.py pm-documents:ref-documentation:docs validate --path {target}
 ```
 
 ---
@@ -132,7 +132,7 @@ If target is a directory:
 **Step 3: Run Format Validation**
 
 ```bash
-python3 .plan/execute-script.py pm-documents:ref-documentation:docs validate {target}
+python3 .plan/execute-script.py pm-documents:ref-documentation:docs validate --path {target}
 ```
 
 **Step 4: Parse Output**
@@ -975,13 +975,13 @@ Script: `pm-documents:ref-documentation` → `docs.py`
 **Usage Examples:**
 ```bash
 # Generate statistics
-python3 .plan/execute-script.py pm-documents:ref-documentation:docs stats -f json /path/to/docs
+python3 .plan/execute-script.py pm-documents:ref-documentation:docs stats -f json --directory /path/to/docs
 
 # Validate formatting
-python3 .plan/execute-script.py pm-documents:ref-documentation:docs validate /path/to/file.adoc
+python3 .plan/execute-script.py pm-documents:ref-documentation:docs validate --path /path/to/file.adoc
 
 # Format files
-python3 .plan/execute-script.py pm-documents:ref-documentation:docs format -t all /path/to/docs
+python3 .plan/execute-script.py pm-documents:ref-documentation:docs format -t all --path /path/to/docs
 
 # Verify links
 python3 .plan/execute-script.py pm-documents:ref-documentation:docs verify-links --directory /path/to/docs

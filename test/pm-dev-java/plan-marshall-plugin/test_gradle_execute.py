@@ -46,7 +46,7 @@ def test_cli_run_help():
     """Test gradle.py run --help works."""
     result = run_cli('python3', str(GRADLE_CLI), 'run', '--help')
     assert result.returncode == 0
-    assert '--commandArgs' in result.stdout
+    assert '--command-args' in result.stdout
     assert '--timeout' in result.stdout
 
 

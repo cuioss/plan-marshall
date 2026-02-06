@@ -436,7 +436,7 @@ class Extension(ExtensionBase):
         - quality-gate: npm run lint (if "lint" script exists)
         - verify: npm run build && npm test (if both scripts exist)
 
-        Routing is embedded in --commandArgs:
+        Routing is embedded in --command-args:
         - Root modules: no routing needed
         - Submodules with root package.json: use --workspace=path (recommended)
         - Submodules without root package.json: use --prefix path (fallback)
@@ -449,7 +449,7 @@ class Extension(ExtensionBase):
         commands = {}
         base = 'python3 .plan/execute-script.py pm-dev-frontend:plan-marshall-plugin:npm run'
 
-        # Determine routing mechanism embedded in commandArgs
+        # Determine routing mechanism embedded in command-args
         if module_path == '.':
             routing = ''
         elif has_root_package_json:
@@ -460,7 +460,7 @@ class Extension(ExtensionBase):
             routing = f'--prefix {module_path} '
 
         def _cmd(npm_cmd: str) -> str:
-            """Build full commandArgs with routing embedded."""
+            """Build full command-args with routing embedded."""
             if routing.startswith('--prefix'):
                 # Prefix goes before npm command
                 return f'{routing}{npm_cmd}'
@@ -469,23 +469,23 @@ class Extension(ExtensionBase):
                 return f'{npm_cmd}{routing}'
 
         if 'clean' in scripts:
-            commands['clean'] = f'{base} --commandArgs "{_cmd("run clean")}"'
+            commands['clean'] = f'{base} --command-args "{_cmd("run clean")}"'
 
         if 'build' in scripts:
-            commands['compile'] = f'{base} --commandArgs "{_cmd("run build")}"'
+            commands['compile'] = f'{base} --command-args "{_cmd("run build")}"'
 
         if 'test' in scripts:
-            commands['module-tests'] = f'{base} --commandArgs "{_cmd("test")}"'
+            commands['module-tests'] = f'{base} --command-args "{_cmd("test")}"'
 
         if 'lint' in scripts:
-            commands['quality-gate'] = f'{base} --commandArgs "{_cmd("run lint")}"'
+            commands['quality-gate'] = f'{base} --command-args "{_cmd("run lint")}"'
 
         # verify: build + test combined
         if 'build' in scripts and 'test' in scripts:
-            commands['verify'] = f'{base} --commandArgs "{_cmd("run build && npm test")}"'
+            commands['verify'] = f'{base} --command-args "{_cmd("run build && npm test")}"'
         elif 'test' in scripts:
             # If no build script, verify is just test
-            commands['verify'] = f'{base} --commandArgs "{_cmd("test")}"'
+            commands['verify'] = f'{base} --command-args "{_cmd("test")}"'
 
         return commands
 

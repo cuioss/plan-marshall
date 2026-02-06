@@ -79,7 +79,7 @@ At the start of execute or finalize phase:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[STATUS] (pm-workflow:phase-5-execute) Starting {phase} phase"
+  work --plan-id {plan_id} --level INFO --message "[STATUS] (pm-workflow:phase-5-execute) Starting {phase} phase"
 ```
 
 For each task in current phase:
@@ -117,7 +117,7 @@ After each task completes:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[OUTCOME] (pm-workflow:phase-5-execute) Completed {task_id}: {task_title} ({steps_completed} steps)"
+  work --plan-id {plan_id} --level INFO --message "[OUTCOME] (pm-workflow:phase-5-execute) Completed {task_id}: {task_title} ({steps_completed} steps)"
 ```
 
 ### Step 3.6: Conditional Per-Deliverable Commit
@@ -140,7 +140,7 @@ If `commit_strategy == per_deliverable` (cached from Step 0.1):
 3. **Log commit outcome**:
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-     work {plan_id} INFO "[OUTCOME] (pm-workflow:phase-5-execute) Per-deliverable commit: {task_id} ({commit_hash})"
+     work --plan-id {plan_id} --level INFO --message "[OUTCOME] (pm-workflow:phase-5-execute) Per-deliverable commit: {task_id} ({commit_hash})"
    ```
 
 If `commit_strategy` is `per_plan` or `none` → Skip this step entirely.
@@ -155,7 +155,7 @@ If `commit_strategy` is `per_plan` or `none` → Skip this step entirely.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[STATUS] (pm-workflow:phase-5-execute) Completed {phase} phase: {tasks_completed} tasks"
+  work --plan-id {plan_id} --level INFO --message "[STATUS] (pm-workflow:phase-5-execute) Completed {phase} phase: {tasks_completed} tasks"
 ```
 
 ---
@@ -207,7 +207,7 @@ On any error, **first log the error** to work-log:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} ERROR "[ERROR] (pm-workflow:phase-5-execute) {task_id} failed - {error_type}: {error_context}"
+  work --plan-id {plan_id} --level ERROR --message "[ERROR] (pm-workflow:phase-5-execute) {task_id} failed - {error_type}: {error_context}"
 ```
 
 ### Script Failure (Lessons-Learned Capture)

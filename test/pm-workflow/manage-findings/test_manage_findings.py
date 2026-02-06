@@ -29,9 +29,9 @@ def test_finding_add_basic():
         result = run_script(
             SCRIPT_PATH,
             'add',
-            'test-plan',
-            'bug',
-            'Test failure in CacheTest',
+            '--plan-id', 'test-plan',
+            '--type', 'bug',
+            '--title', 'Test failure in CacheTest',
             '--detail',
             'AssertionError: expected 5 but got 3',
         )
@@ -48,9 +48,9 @@ def test_finding_add_with_file_info():
         result = run_script(
             SCRIPT_PATH,
             'add',
-            'test-plan',
-            'sonar-issue',
-            'S1192: String literals duplicated',
+            '--plan-id', 'test-plan',
+            '--type', 'sonar-issue',
+            '--title', 'S1192: String literals duplicated',
             '--detail',
             'String "application/json" appears 5 times',
             '--file-path',
@@ -86,7 +86,7 @@ def test_finding_add_all_types():
     with TestContext():
         for ftype in finding_types:
             result = run_script(
-                SCRIPT_PATH, 'add', 'test-plan', ftype, f'Test {ftype}', '--detail', f'Testing {ftype} type'
+                SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--type', ftype, '--title', f'Test {ftype}', '--detail', f'Testing {ftype} type'
             )
             assert result.success, f'Failed for type {ftype}: {result.stderr}'
 
@@ -99,7 +99,7 @@ def test_finding_add_all_types():
 def test_finding_query_empty():
     """Test querying with no findings."""
     with TestContext():
-        result = run_script(SCRIPT_PATH, 'query', 'test-plan')
+        result = run_script(SCRIPT_PATH, 'query', '--plan-id', 'test-plan')
         assert result.success
         data = parse_toon(result.stdout)
         assert data['total_count'] == 0
@@ -108,11 +108,11 @@ def test_finding_query_empty():
 def test_finding_query_by_type():
     """Test filtering findings by type."""
     with TestContext():
-        run_script(SCRIPT_PATH, 'add', 'test-plan', 'bug', 'Bug 1', '--detail', 'd')
-        run_script(SCRIPT_PATH, 'add', 'test-plan', 'tip', 'Tip 1', '--detail', 'd')
-        run_script(SCRIPT_PATH, 'add', 'test-plan', 'bug', 'Bug 2', '--detail', 'd')
+        run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--type', 'bug', '--title', 'Bug 1', '--detail', 'd')
+        run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--type', 'tip', '--title', 'Tip 1', '--detail', 'd')
+        run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--type', 'bug', '--title', 'Bug 2', '--detail', 'd')
 
-        result = run_script(SCRIPT_PATH, 'query', 'test-plan', '--type', 'bug')
+        result = run_script(SCRIPT_PATH, 'query', '--plan-id', 'test-plan', '--type', 'bug')
         assert result.success
         data = parse_toon(result.stdout)
         assert data['filtered_count'] == 2
@@ -122,14 +122,14 @@ def test_finding_query_by_resolution():
     """Test filtering findings by resolution."""
     with TestContext():
         # Add a finding
-        add_result = run_script(SCRIPT_PATH, 'add', 'test-plan', 'bug', 'Bug to fix', '--detail', 'd')
+        add_result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--type', 'bug', '--title', 'Bug to fix', '--detail', 'd')
         hash_id = str(parse_toon(add_result.stdout)['hash_id'])
 
         # Resolve it
-        run_script(SCRIPT_PATH, 'resolve', 'test-plan', hash_id, 'fixed', '--detail', 'Fixed in commit abc')
+        run_script(SCRIPT_PATH, 'resolve', '--plan-id', 'test-plan', '--hash-id', hash_id, '--resolution', 'fixed', '--detail', 'Fixed in commit abc')
 
         # Query by resolution
-        result = run_script(SCRIPT_PATH, 'query', 'test-plan', '--resolution', 'fixed')
+        result = run_script(SCRIPT_PATH, 'query', '--plan-id', 'test-plan', '--resolution', 'fixed')
         assert result.success
         data = parse_toon(result.stdout)
         assert data['filtered_count'] == 1
@@ -144,16 +144,16 @@ def test_finding_resolve():
     """Test resolving a finding."""
     with TestContext():
         add_result = run_script(
-            SCRIPT_PATH, 'add', 'test-plan', 'build-error', 'Compilation error', '--detail', 'Missing import'
+            SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--type', 'build-error', '--title', 'Compilation error', '--detail', 'Missing import'
         )
         hash_id = str(parse_toon(add_result.stdout)['hash_id'])
 
         result = run_script(
             SCRIPT_PATH,
             'resolve',
-            'test-plan',
-            hash_id,
-            'fixed',
+            '--plan-id', 'test-plan',
+            '--hash-id', hash_id,
+            '--resolution', 'fixed',
             '--detail',
             'Added missing import statement',
         )
@@ -169,11 +169,11 @@ def test_finding_resolve_all_statuses():
     with TestContext():
         for res in resolutions:
             add_result = run_script(
-                SCRIPT_PATH, 'add', 'test-plan', 'bug', f'Bug for {res}', '--detail', 'd'
+                SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--type', 'bug', '--title', f'Bug for {res}', '--detail', 'd'
             )
             hash_id = str(parse_toon(add_result.stdout)['hash_id'])
 
-            result = run_script(SCRIPT_PATH, 'resolve', 'test-plan', hash_id, res)
+            result = run_script(SCRIPT_PATH, 'resolve', '--plan-id', 'test-plan', '--hash-id', hash_id, '--resolution', res)
             assert result.success, f'Failed for resolution {res}'
 
 
@@ -188,15 +188,15 @@ def test_finding_promote():
         add_result = run_script(
             SCRIPT_PATH,
             'add',
-            'test-plan',
-            'tip',
-            'Use constructor injection',
+            '--plan-id', 'test-plan',
+            '--type', 'tip',
+            '--title', 'Use constructor injection',
             '--detail',
             'Prefer constructor injection over field injection for testability',
         )
         hash_id = str(parse_toon(add_result.stdout)['hash_id'])
 
-        result = run_script(SCRIPT_PATH, 'promote', 'test-plan', hash_id, 'architecture')
+        result = run_script(SCRIPT_PATH, 'promote', '--plan-id', 'test-plan', '--hash-id', hash_id, '--promoted-to', 'architecture')
         assert result.success
         data = parse_toon(result.stdout)
         assert data['status'] == 'success'
@@ -209,15 +209,15 @@ def test_finding_promote_to_lessons():
         add_result = run_script(
             SCRIPT_PATH,
             'add',
-            'test-plan',
-            'bug',
-            'Null pointer from missing null check',
+            '--plan-id', 'test-plan',
+            '--type', 'bug',
+            '--title', 'Null pointer from missing null check',
             '--detail',
             'Always check for null before calling methods on optional fields',
         )
         hash_id = str(parse_toon(add_result.stdout)['hash_id'])
 
-        result = run_script(SCRIPT_PATH, 'promote', 'test-plan', hash_id, 'lessons-2025-01-22-001')
+        result = run_script(SCRIPT_PATH, 'promote', '--plan-id', 'test-plan', '--hash-id', hash_id, '--promoted-to', 'lessons-2025-01-22-001')
         assert result.success
         data = parse_toon(result.stdout)
         assert 'lessons-' in data['promoted_to']
@@ -227,21 +227,21 @@ def test_finding_query_promoted():
     """Test filtering by promoted status."""
     with TestContext():
         # Add and promote one
-        add_result = run_script(SCRIPT_PATH, 'add', 'test-plan', 'tip', 'Promoted tip', '--detail', 'd')
+        add_result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--type', 'tip', '--title', 'Promoted tip', '--detail', 'd')
         hash_id = str(parse_toon(add_result.stdout)['hash_id'])
-        run_script(SCRIPT_PATH, 'promote', 'test-plan', hash_id, 'architecture')
+        run_script(SCRIPT_PATH, 'promote', '--plan-id', 'test-plan', '--hash-id', hash_id, '--promoted-to', 'architecture')
 
         # Add one not promoted
-        run_script(SCRIPT_PATH, 'add', 'test-plan', 'tip', 'Not promoted', '--detail', 'd')
+        run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--type', 'tip', '--title', 'Not promoted', '--detail', 'd')
 
         # Query promoted
-        result = run_script(SCRIPT_PATH, 'query', 'test-plan', '--promoted', 'true')
+        result = run_script(SCRIPT_PATH, 'query', '--plan-id', 'test-plan', '--promoted', 'true')
         assert result.success
         data = parse_toon(result.stdout)
         assert data['filtered_count'] == 1
 
         # Query not promoted
-        result = run_script(SCRIPT_PATH, 'query', 'test-plan', '--promoted', 'false')
+        result = run_script(SCRIPT_PATH, 'query', '--plan-id', 'test-plan', '--promoted', 'false')
         assert result.success
         data = parse_toon(result.stdout)
         assert data['filtered_count'] == 1
@@ -259,7 +259,7 @@ def test_qgate_add_basic():
             SCRIPT_PATH,
             'qgate',
             'add',
-            'test-plan',
+            '--plan-id', 'test-plan',
             '--phase',
             '3-outline',
             '--source',
@@ -285,7 +285,7 @@ def test_qgate_add_with_options():
             SCRIPT_PATH,
             'qgate',
             'add',
-            'test-plan',
+            '--plan-id', 'test-plan',
             '--phase',
             '3-outline',
             '--source',
@@ -317,7 +317,7 @@ def test_qgate_add_invalid_phase():
             SCRIPT_PATH,
             'qgate',
             'add',
-            'test-plan',
+            '--plan-id', 'test-plan',
             '--phase',
             'invalid-phase',
             '--source',
@@ -339,7 +339,7 @@ def test_qgate_add_invalid_source():
             SCRIPT_PATH,
             'qgate',
             'add',
-            'test-plan',
+            '--plan-id', 'test-plan',
             '--phase',
             '3-outline',
             '--source',
@@ -362,7 +362,7 @@ def test_qgate_add_invalid_source():
 def test_qgate_query_empty():
     """Test querying with no Q-Gate findings."""
     with TestContext():
-        result = run_script(SCRIPT_PATH, 'qgate', 'query', 'test-plan', '--phase', '3-outline')
+        result = run_script(SCRIPT_PATH, 'qgate', 'query', '--plan-id', 'test-plan', '--phase', '3-outline')
         assert result.success, f'Script failed: {result.stderr}'
         data = parse_toon(result.stdout)
         assert data['status'] == 'success'
@@ -376,13 +376,13 @@ def test_qgate_query_by_resolution():
         # Add two findings
         run_script(
             SCRIPT_PATH,
-            'qgate', 'add', 'test-plan',
+            'qgate', 'add', '--plan-id', 'test-plan',
             '--phase', '3-outline', '--source', 'qgate',
             '--type', 'triage', '--title', 'Finding 1', '--detail', 'd1',
         )
         add_result = run_script(
             SCRIPT_PATH,
-            'qgate', 'add', 'test-plan',
+            'qgate', 'add', '--plan-id', 'test-plan',
             '--phase', '3-outline', '--source', 'qgate',
             '--type', 'triage', '--title', 'Finding 2', '--detail', 'd2',
         )
@@ -390,14 +390,14 @@ def test_qgate_query_by_resolution():
 
         # Resolve one
         run_script(
-            SCRIPT_PATH, 'qgate', 'resolve', 'test-plan', hash_id,
-            'taken_into_account', '--phase', '3-outline',
+            SCRIPT_PATH, 'qgate', 'resolve', '--plan-id', 'test-plan', '--hash-id', hash_id,
+            '--resolution', 'taken_into_account', '--phase', '3-outline',
             '--detail', 'Addressed by revising deliverable 3',
         )
 
         # Query pending
         result = run_script(
-            SCRIPT_PATH, 'qgate', 'query', 'test-plan',
+            SCRIPT_PATH, 'qgate', 'query', '--plan-id', 'test-plan',
             '--phase', '3-outline', '--resolution', 'pending',
         )
         assert result.success
@@ -406,7 +406,7 @@ def test_qgate_query_by_resolution():
 
         # Query taken_into_account
         result = run_script(
-            SCRIPT_PATH, 'qgate', 'query', 'test-plan',
+            SCRIPT_PATH, 'qgate', 'query', '--plan-id', 'test-plan',
             '--phase', '3-outline', '--resolution', 'taken_into_account',
         )
         assert result.success
@@ -419,19 +419,19 @@ def test_qgate_query_by_source():
     with TestContext():
         run_script(
             SCRIPT_PATH,
-            'qgate', 'add', 'test-plan',
+            'qgate', 'add', '--plan-id', 'test-plan',
             '--phase', '3-outline', '--source', 'qgate',
             '--type', 'triage', '--title', 'Auto finding', '--detail', 'd',
         )
         run_script(
             SCRIPT_PATH,
-            'qgate', 'add', 'test-plan',
+            'qgate', 'add', '--plan-id', 'test-plan',
             '--phase', '3-outline', '--source', 'user_review',
             '--type', 'triage', '--title', 'User finding', '--detail', 'd',
         )
 
         result = run_script(
-            SCRIPT_PATH, 'qgate', 'query', 'test-plan',
+            SCRIPT_PATH, 'qgate', 'query', '--plan-id', 'test-plan',
             '--phase', '3-outline', '--source', 'user_review',
         )
         assert result.success
@@ -446,27 +446,27 @@ def test_qgate_per_phase_isolation():
         # Add to phase 3
         run_script(
             SCRIPT_PATH,
-            'qgate', 'add', 'test-plan',
+            'qgate', 'add', '--plan-id', 'test-plan',
             '--phase', '3-outline', '--source', 'qgate',
             '--type', 'triage', '--title', 'Phase 3 finding', '--detail', 'd',
         )
         # Add to phase 4
         run_script(
             SCRIPT_PATH,
-            'qgate', 'add', 'test-plan',
+            'qgate', 'add', '--plan-id', 'test-plan',
             '--phase', '4-plan', '--source', 'qgate',
             '--type', 'triage', '--title', 'Phase 4 finding', '--detail', 'd',
         )
 
         # Query phase 3 only
-        result = run_script(SCRIPT_PATH, 'qgate', 'query', 'test-plan', '--phase', '3-outline')
+        result = run_script(SCRIPT_PATH, 'qgate', 'query', '--plan-id', 'test-plan', '--phase', '3-outline')
         assert result.success
         data = parse_toon(result.stdout)
         assert data['total_count'] == 1
         assert data['phase'] == '3-outline'
 
         # Query phase 4 only
-        result = run_script(SCRIPT_PATH, 'qgate', 'query', 'test-plan', '--phase', '4-plan')
+        result = run_script(SCRIPT_PATH, 'qgate', 'query', '--plan-id', 'test-plan', '--phase', '4-plan')
         assert result.success
         data = parse_toon(result.stdout)
         assert data['total_count'] == 1
@@ -483,15 +483,15 @@ def test_qgate_resolve_taken_into_account():
     with TestContext():
         add_result = run_script(
             SCRIPT_PATH,
-            'qgate', 'add', 'test-plan',
+            'qgate', 'add', '--plan-id', 'test-plan',
             '--phase', '3-outline', '--source', 'qgate',
             '--type', 'triage', '--title', 'Missing coverage', '--detail', 'File X not covered',
         )
         hash_id = str(parse_toon(add_result.stdout)['hash_id'])
 
         result = run_script(
-            SCRIPT_PATH, 'qgate', 'resolve', 'test-plan', hash_id,
-            'taken_into_account', '--phase', '3-outline',
+            SCRIPT_PATH, 'qgate', 'resolve', '--plan-id', 'test-plan', '--hash-id', hash_id,
+            '--resolution', 'taken_into_account', '--phase', '3-outline',
             '--detail', 'Added file X to deliverable 2',
         )
         assert result.success, f'Script failed: {result.stderr}'
@@ -507,15 +507,15 @@ def test_qgate_resolve_all_statuses():
         for res in resolutions:
             add_result = run_script(
                 SCRIPT_PATH,
-                'qgate', 'add', 'test-plan',
+                'qgate', 'add', '--plan-id', 'test-plan',
                 '--phase', '6-verify', '--source', 'qgate',
                 '--type', 'triage', '--title', f'Finding for {res}', '--detail', 'd',
             )
             hash_id = str(parse_toon(add_result.stdout)['hash_id'])
 
             result = run_script(
-                SCRIPT_PATH, 'qgate', 'resolve', 'test-plan', hash_id,
-                res, '--phase', '6-verify',
+                SCRIPT_PATH, 'qgate', 'resolve', '--plan-id', 'test-plan', '--hash-id', hash_id,
+            '--resolution', res, '--phase', '6-verify',
             )
             assert result.success, f'Failed for resolution {res}: {result.stderr}'
 
@@ -530,25 +530,25 @@ def test_qgate_clear():
     with TestContext():
         run_script(
             SCRIPT_PATH,
-            'qgate', 'add', 'test-plan',
+            'qgate', 'add', '--plan-id', 'test-plan',
             '--phase', '3-outline', '--source', 'qgate',
             '--type', 'triage', '--title', 'Finding 1', '--detail', 'd',
         )
         run_script(
             SCRIPT_PATH,
-            'qgate', 'add', 'test-plan',
+            'qgate', 'add', '--plan-id', 'test-plan',
             '--phase', '3-outline', '--source', 'qgate',
             '--type', 'triage', '--title', 'Finding 2', '--detail', 'd',
         )
 
-        result = run_script(SCRIPT_PATH, 'qgate', 'clear', 'test-plan', '--phase', '3-outline')
+        result = run_script(SCRIPT_PATH, 'qgate', 'clear', '--plan-id', 'test-plan', '--phase', '3-outline')
         assert result.success
         data = parse_toon(result.stdout)
         assert data['status'] == 'success'
         assert data['cleared'] == 2
 
         # Verify empty
-        query_result = run_script(SCRIPT_PATH, 'qgate', 'query', 'test-plan', '--phase', '3-outline')
+        query_result = run_script(SCRIPT_PATH, 'qgate', 'query', '--plan-id', 'test-plan', '--phase', '3-outline')
         query_data = parse_toon(query_result.stdout)
         assert query_data['total_count'] == 0
 
@@ -556,7 +556,7 @@ def test_qgate_clear():
 def test_qgate_clear_empty():
     """Test clearing when no Q-Gate findings exist."""
     with TestContext():
-        result = run_script(SCRIPT_PATH, 'qgate', 'clear', 'test-plan', '--phase', '3-outline')
+        result = run_script(SCRIPT_PATH, 'qgate', 'clear', '--plan-id', 'test-plan', '--phase', '3-outline')
         assert result.success
         data = parse_toon(result.stdout)
         assert data['status'] == 'success'
@@ -569,7 +569,7 @@ def test_qgate_user_review_source():
         # Add user review finding
         add_result = run_script(
             SCRIPT_PATH,
-            'qgate', 'add', 'test-plan',
+            'qgate', 'add', '--plan-id', 'test-plan',
             '--phase', '3-outline', '--source', 'user_review',
             '--type', 'triage', '--title', 'User: scope too narrow',
             '--detail', 'Please include module Y in the deliverables',
@@ -579,7 +579,7 @@ def test_qgate_user_review_source():
 
         # Query user_review findings
         query_result = run_script(
-            SCRIPT_PATH, 'qgate', 'query', 'test-plan',
+            SCRIPT_PATH, 'qgate', 'query', '--plan-id', 'test-plan',
             '--phase', '3-outline', '--source', 'user_review',
         )
         assert query_result.success
@@ -588,15 +588,15 @@ def test_qgate_user_review_source():
 
         # Resolve as taken_into_account
         resolve_result = run_script(
-            SCRIPT_PATH, 'qgate', 'resolve', 'test-plan', hash_id,
-            'taken_into_account', '--phase', '3-outline',
+            SCRIPT_PATH, 'qgate', 'resolve', '--plan-id', 'test-plan', '--hash-id', hash_id,
+            '--resolution', 'taken_into_account', '--phase', '3-outline',
             '--detail', 'Added module Y to deliverable scope',
         )
         assert resolve_result.success
 
         # Verify resolved
         verify_result = run_script(
-            SCRIPT_PATH, 'qgate', 'query', 'test-plan',
+            SCRIPT_PATH, 'qgate', 'query', '--plan-id', 'test-plan',
             '--phase', '3-outline', '--resolution', 'pending',
         )
         assert verify_result.success
@@ -613,14 +613,12 @@ def test_finding_resolve_taken_into_account():
     """Test that taken_into_account resolution works for regular findings too."""
     with TestContext():
         add_result = run_script(
-            SCRIPT_PATH, 'add', 'test-plan', 'triage',
-            'Reviewed finding', '--detail', 'd',
+            SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--type', 'triage', '--title', 'Reviewed finding', '--detail', 'd',
         )
         hash_id = str(parse_toon(add_result.stdout)['hash_id'])
 
         result = run_script(
-            SCRIPT_PATH, 'resolve', 'test-plan', hash_id,
-            'taken_into_account', '--detail', 'Addressed in revision',
+            SCRIPT_PATH, 'resolve', '--plan-id', 'test-plan', '--hash-id', hash_id, '--resolution', 'taken_into_account', '--detail', 'Addressed in revision',
         )
         assert result.success
         data = parse_toon(result.stdout)

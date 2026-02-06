@@ -510,7 +510,7 @@ Examples:
 """,
     )
 
-    subparsers = parser.add_subparsers(dest='command', help='Operation to perform')
+    subparsers = parser.add_subparsers(dest='command', required=True, help='Operation to perform')
 
     # init command
     p_init = subparsers.add_parser('init', help='Initialize run-configuration.json')
@@ -524,7 +524,7 @@ Examples:
 
     # timeout command with subcommands
     p_timeout = subparsers.add_parser('timeout', help='Manage command timeouts')
-    timeout_subparsers = p_timeout.add_subparsers(dest='timeout_command', help='Timeout operation')
+    timeout_subparsers = p_timeout.add_subparsers(dest='timeout_command', required=True, help='Timeout operation')
 
     # timeout get
     p_timeout_get = timeout_subparsers.add_parser('get', help='Get timeout for a command')
@@ -542,7 +542,7 @@ Examples:
 
     # warning command with subcommands
     p_warning = subparsers.add_parser('warning', help='Manage acceptable warnings')
-    warning_subparsers = p_warning.add_subparsers(dest='warning_command', help='Warning operation')
+    warning_subparsers = p_warning.add_subparsers(dest='warning_command', required=True, help='Warning operation')
 
     # warning add
     p_warning_add = warning_subparsers.add_parser('add', help='Add pattern to acceptable warnings')

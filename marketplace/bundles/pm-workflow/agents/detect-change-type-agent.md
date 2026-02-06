@@ -34,7 +34,7 @@ The 6 fixed change types (in priority order):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[STATUS] (pm-workflow:detect-change-type-agent) Starting"
+  work --plan-id {plan_id} --level INFO --message "[STATUS] (pm-workflow:detect-change-type-agent) Starting"
 ```
 
 ### Step 1: Read Request
@@ -100,7 +100,7 @@ python3 .plan/execute-script.py pm-workflow:manage-status:manage_status metadata
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(pm-workflow:detect-change-type-agent) Detected: {change_type} (confidence: {confidence})"
+  decision --plan-id {plan_id} --level INFO --message "(pm-workflow:detect-change-type-agent) Detected: {change_type} (confidence: {confidence})"
 ```
 
 ## Output

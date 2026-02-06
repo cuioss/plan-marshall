@@ -193,7 +193,7 @@ Note: Include `tests` section only when `include_tests` is true and tests were d
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[ARTIFACT] (ext-outline-inventory-agent) Persisted inventory: work/inventory_filtered.toon ({total_files} files)" \
+  work --plan-id {plan_id} --level INFO --message "[ARTIFACT] (ext-outline-inventory-agent) Persisted inventory: work/inventory_filtered.toon ({total_files} files)" \
   --trace-plan-id {plan_id}
 ```
 

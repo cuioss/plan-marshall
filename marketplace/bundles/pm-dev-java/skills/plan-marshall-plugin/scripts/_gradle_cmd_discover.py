@@ -482,7 +482,7 @@ def _build_commands(
     """
     base = 'python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:gradle run'
 
-    # For Gradle, embed module as :module:task prefix in commandArgs
+    # For Gradle, embed module as :module:task prefix in command-args
     is_root_module = not relative_path or relative_path == '.'
     task_prefix = '' if is_root_module else f':{module_name}:'
 
@@ -504,25 +504,25 @@ def _build_commands(
 
     commands = {
         # Always: clean (separate)
-        'clean': f'{base} --commandArgs "{_tasks("clean")}"',
+        'clean': f'{base} --command-args "{_tasks("clean")}"',
         # quality-gate: uses check (static analysis, linting) - NOT build
-        'quality-gate': f'{base} --commandArgs "{_tasks(quality_target)}"',
+        'quality-gate': f'{base} --command-args "{_tasks(quality_target)}"',
         # verify: full build including tests
-        'verify': f'{base} --commandArgs "{_tasks("build")}"',
+        'verify': f'{base} --command-args "{_tasks("build")}"',
         # install/deploy commands
-        'install': f'{base} --commandArgs "{_tasks("publishToMavenLocal")}"',
-        'clean-install': f'{base} --commandArgs "{_tasks("clean publishToMavenLocal")}"',
-        'package': f'{base} --commandArgs "{_tasks("jar")}"',
+        'install': f'{base} --command-args "{_tasks("publishToMavenLocal")}"',
+        'clean-install': f'{base} --command-args "{_tasks("clean publishToMavenLocal")}"',
+        'package': f'{base} --command-args "{_tasks("jar")}"',
     }
 
     # Source-conditional: compile
     if has_sources:
-        commands['compile'] = f'{base} --commandArgs "{_tasks("classes")}"'
+        commands['compile'] = f'{base} --command-args "{_tasks("classes")}"'
 
     # Test-conditional: test-compile, module-tests
     if has_tests:
-        commands['test-compile'] = f'{base} --commandArgs "{_tasks("testClasses")}"'
-        commands['module-tests'] = f'{base} --commandArgs "{_tasks("test")}"'
+        commands['test-compile'] = f'{base} --command-args "{_tasks("testClasses")}"'
+        commands['module-tests'] = f'{base} --command-args "{_tasks("test")}"'
 
     return commands
 

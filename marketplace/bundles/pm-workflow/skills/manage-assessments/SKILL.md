@@ -48,21 +48,21 @@ Assessments are working data during plan execution, consumed by Q-Gate validatio
 ```bash
 # Add assessment
 python3 .plan/execute-script.py pm-workflow:manage-assessments:manage-assessments \
-  add {plan_id} {file_path} {certainty} {confidence} \
+  add --plan-id {plan_id} --file-path {file_path} --certainty {certainty} --confidence {confidence} \
   [--agent AGENT] [--detail DETAIL] [--evidence EVIDENCE]
 
 # Query assessments
 python3 .plan/execute-script.py pm-workflow:manage-assessments:manage-assessments \
-  query {plan_id} [--certainty C] [--min-confidence N] \
+  query --plan-id {plan_id} [--certainty C] [--min-confidence N] \
   [--max-confidence N] [--file-pattern PATTERN]
 
 # Get single assessment
 python3 .plan/execute-script.py pm-workflow:manage-assessments:manage-assessments \
-  get {plan_id} {hash_id}
+  get --plan-id {plan_id} --hash-id {hash_id}
 
 # Clear assessments (all or by agent)
 python3 .plan/execute-script.py pm-workflow:manage-assessments:manage-assessments \
-  clear {plan_id} [--agent AGENT]
+  clear --plan-id {plan_id} [--agent AGENT]
 ```
 
 ## Output Format

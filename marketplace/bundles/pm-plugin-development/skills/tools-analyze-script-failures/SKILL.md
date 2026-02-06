@@ -287,17 +287,14 @@ To query assessments for context during failure analysis:
 
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-assessments:manage-assessments \
-  query {plan_id} --certainty {CERTAIN_INCLUDE|CERTAIN_EXCLUDE|UNCERTAIN} \
-  --trace-plan-id {plan_id}
+  query --plan-id {plan_id} --certainty {CERTAIN_INCLUDE|CERTAIN_EXCLUDE|UNCERTAIN}
 ```
 
 **Parameters:**
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `{plan_id}` | positional | Plan identifier (NOT `--plan-id`) |
+| `--plan-id` | required flag | Plan identifier |
 | `--certainty` | optional flag | Filter by certainty level |
-
-**Note**: `plan_id` is positional (not `--plan-id`), certainty is an optional filter flag.
 
 ---
 

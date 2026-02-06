@@ -47,7 +47,7 @@ Stay in your lane:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[STATUS] (pm-workflow:request-refine-agent) Starting"
+  work --plan-id {plan_id} --level INFO --message "[STATUS] (pm-workflow:request-refine-agent) Starting"
 ```
 
 After skills are loaded (Step 0), invoke the skill's refine operation:

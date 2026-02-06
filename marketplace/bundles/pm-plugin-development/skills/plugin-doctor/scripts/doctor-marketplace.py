@@ -330,7 +330,7 @@ Examples:
 """,
     )
 
-    subparsers = parser.add_subparsers(dest='command', help='Operation to perform')
+    subparsers = parser.add_subparsers(dest='command', required=True, help='Operation to perform')
 
     # scan subcommand
     p_scan = subparsers.add_parser('scan', help='Scan marketplace components')

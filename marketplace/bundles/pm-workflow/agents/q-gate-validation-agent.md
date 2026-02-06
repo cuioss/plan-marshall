@@ -53,7 +53,7 @@ plan_id: {plan_id}
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[STATUS] (pm-workflow:q-gate-validation-agent) Starting"
+  work --plan-id {plan_id} --level INFO --message "[STATUS] (pm-workflow:q-gate-validation-agent) Starting"
 ```
 
 ### Step 1: Load Context from Sinks
@@ -75,8 +75,7 @@ Parse the deliverables from the solution outline. Extract:
 
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-assessments:manage-assessments \
-  query {plan_id} --certainty CERTAIN_INCLUDE \
-  --trace-plan-id {plan_id}
+  query --plan-id {plan_id} --certainty CERTAIN_INCLUDE
 ```
 
 Parse to get the list of files that were assessed as CERTAIN_INCLUDE.
@@ -99,7 +98,7 @@ python3 .plan/execute-script.py pm-workflow:manage-plan-documents:manage-plan-do
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(pm-workflow:q-gate-validation-agent) Starting verification: {deliverable_count} deliverables, {assessment_count} assessments" \
+  decision --plan-id {plan_id} --level INFO --message "(pm-workflow:q-gate-validation-agent) Starting verification: {deliverable_count} deliverables, {assessment_count} assessments" \
   --trace-plan-id {plan_id}
 ```
 
@@ -160,7 +159,7 @@ For each deliverable:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(pm-workflow:q-gate-validation-agent:qgate) Deliverable {N}: {pass|fail} - {reason}" \
+  decision --plan-id {plan_id} --level INFO --message "(pm-workflow:q-gate-validation-agent:qgate) Deliverable {N}: {pass|fail} - {reason}" \
   --trace-plan-id {plan_id}
 ```
 
@@ -180,7 +179,7 @@ FOR each file IN assessed_files:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(pm-workflow:q-gate-validation-agent:qgate) Missing coverage: {file} assessed but not in deliverables" \
+  decision --plan-id {plan_id} --level INFO --message "(pm-workflow:q-gate-validation-agent:qgate) Missing coverage: {file} assessed but not in deliverables" \
   --trace-plan-id {plan_id}
 ```
 
@@ -192,13 +191,12 @@ For each issue found (false positive, missing coverage, alignment issue), record
 
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-findings:manage-findings \
-  qgate add {plan_id} \
+  qgate add --plan-id {plan_id} \
   --phase 3-outline \
   --source qgate \
   --type triage \
   --title "Q-Gate: {issue_title}" \
-  --detail "{detailed_reason}" \
-  --trace-plan-id {plan_id}
+  --detail "{detailed_reason}"
 ```
 
 Optional parameters (add when applicable):
@@ -239,7 +237,7 @@ Only include files from deliverables that passed verification.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(pm-workflow:q-gate-validation-agent) Summary: {passed} passed, {flagged} flagged, {missing} missing coverage" \
+  decision --plan-id {plan_id} --level INFO --message "(pm-workflow:q-gate-validation-agent) Summary: {passed} passed, {flagged} flagged, {missing} missing coverage" \
   --trace-plan-id {plan_id}
 ```
 

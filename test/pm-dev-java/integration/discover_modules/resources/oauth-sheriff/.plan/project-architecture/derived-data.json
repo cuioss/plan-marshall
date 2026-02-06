@@ -43,11 +43,11 @@
         "test_files": 0
       },
       "commands": {
-        "clean": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"clean\"",
-        "quality-gate": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -Ppre-commit\"",
-        "verify": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify\"",
-        "install": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"install\"",
-        "coverage": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -Pcoverage\""
+        "clean": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"clean\"",
+        "quality-gate": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"verify -Ppre-commit\"",
+        "verify": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"verify\"",
+        "install": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"install\"",
+        "coverage": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"verify -Pcoverage\""
       }
     },
     "benchmarking": {
@@ -94,11 +94,11 @@
         "test_files": 0
       },
       "commands": {
-        "clean": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"clean -pl benchmarking\"",
-        "quality-gate": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -Ppre-commit -pl benchmarking\"",
-        "verify": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -pl benchmarking\"",
-        "install": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"install -pl benchmarking\"",
-        "coverage": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -Pcoverage -pl benchmarking\""
+        "clean": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"clean -pl benchmarking\"",
+        "quality-gate": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"verify -Ppre-commit -pl benchmarking\"",
+        "verify": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"verify -pl benchmarking\"",
+        "install": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"install -pl benchmarking\"",
+        "coverage": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"verify -Pcoverage -pl benchmarking\""
       }
     },
     "benchmark-core": {
@@ -201,16 +201,16 @@
         "test_files": 1
       },
       "commands": {
-        "clean": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"clean -pl benchmark-core\"",
-        "quality-gate": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -Ppre-commit -pl benchmark-core\"",
-        "verify": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -pl benchmark-core\"",
-        "install": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"install -pl benchmark-core\"",
-        "clean-install": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"clean install -pl benchmark-core\"",
-        "package": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"package -pl benchmark-core\"",
-        "compile": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"compile -pl benchmark-core\"",
-        "test-compile": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"test-compile -pl benchmark-core\"",
-        "module-tests": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"test -pl benchmark-core\"",
-        "coverage": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -Pcoverage -pl benchmark-core\""
+        "clean": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"clean -pl benchmark-core\"",
+        "quality-gate": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"verify -Ppre-commit -pl benchmark-core\"",
+        "verify": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"verify -pl benchmark-core\"",
+        "install": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"install -pl benchmark-core\"",
+        "clean-install": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"clean install -pl benchmark-core\"",
+        "package": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"package -pl benchmark-core\"",
+        "compile": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"compile -pl benchmark-core\"",
+        "test-compile": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"test-compile -pl benchmark-core\"",
+        "module-tests": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"test -pl benchmark-core\"",
+        "coverage": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"verify -Pcoverage -pl benchmark-core\""
       }
     },
     "benchmark-integration-wrk": {
@@ -292,17 +292,17 @@
         "test_files": 1
       },
       "commands": {
-        "clean": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"clean -pl benchmark-integration-wrk\"",
-        "quality-gate": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -Ppre-commit -pl benchmark-integration-wrk\"",
-        "verify": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -pl benchmark-integration-wrk\"",
-        "install": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"install -pl benchmark-integration-wrk\"",
-        "clean-install": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"clean install -pl benchmark-integration-wrk\"",
-        "package": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"package -pl benchmark-integration-wrk\"",
-        "compile": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"compile -pl benchmark-integration-wrk\"",
-        "test-compile": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"test-compile -pl benchmark-integration-wrk\"",
-        "module-tests": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"test -pl benchmark-integration-wrk\"",
-        "coverage": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -Pcoverage -pl benchmark-integration-wrk\"",
-        "benchmark": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -Pstress -pl benchmark-integration-wrk\""
+        "clean": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"clean -pl benchmark-integration-wrk\"",
+        "quality-gate": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"verify -Ppre-commit -pl benchmark-integration-wrk\"",
+        "verify": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"verify -pl benchmark-integration-wrk\"",
+        "install": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"install -pl benchmark-integration-wrk\"",
+        "clean-install": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"clean install -pl benchmark-integration-wrk\"",
+        "package": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"package -pl benchmark-integration-wrk\"",
+        "compile": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"compile -pl benchmark-integration-wrk\"",
+        "test-compile": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"test-compile -pl benchmark-integration-wrk\"",
+        "module-tests": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"test -pl benchmark-integration-wrk\"",
+        "coverage": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"verify -Pcoverage -pl benchmark-integration-wrk\"",
+        "benchmark": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"verify -Pstress -pl benchmark-integration-wrk\""
       }
     },
     "benchmarking-common": {
@@ -416,16 +416,16 @@
         "test_files": 30
       },
       "commands": {
-        "clean": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"clean -pl benchmarking-common\"",
-        "quality-gate": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -Ppre-commit -pl benchmarking-common\"",
-        "verify": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -pl benchmarking-common\"",
-        "install": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"install -pl benchmarking-common\"",
-        "clean-install": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"clean install -pl benchmarking-common\"",
-        "package": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"package -pl benchmarking-common\"",
-        "compile": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"compile -pl benchmarking-common\"",
-        "test-compile": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"test-compile -pl benchmarking-common\"",
-        "module-tests": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"test -pl benchmarking-common\"",
-        "coverage": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -Pcoverage -pl benchmarking-common\""
+        "clean": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"clean -pl benchmarking-common\"",
+        "quality-gate": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"verify -Ppre-commit -pl benchmarking-common\"",
+        "verify": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"verify -pl benchmarking-common\"",
+        "install": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"install -pl benchmarking-common\"",
+        "clean-install": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"clean install -pl benchmarking-common\"",
+        "package": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"package -pl benchmarking-common\"",
+        "compile": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"compile -pl benchmarking-common\"",
+        "test-compile": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"test-compile -pl benchmarking-common\"",
+        "module-tests": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"test -pl benchmarking-common\"",
+        "coverage": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"verify -Pcoverage -pl benchmarking-common\""
       }
     },
     "oauth-sheriff-bom": {
@@ -468,11 +468,11 @@
         "test_files": 0
       },
       "commands": {
-        "clean": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"clean -pl oauth-sheriff-bom\"",
-        "quality-gate": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -Ppre-commit -pl oauth-sheriff-bom\"",
-        "verify": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -pl oauth-sheriff-bom\"",
-        "install": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"install -pl oauth-sheriff-bom\"",
-        "coverage": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -Pcoverage -pl oauth-sheriff-bom\""
+        "clean": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"clean -pl oauth-sheriff-bom\"",
+        "quality-gate": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"verify -Ppre-commit -pl oauth-sheriff-bom\"",
+        "verify": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"verify -pl oauth-sheriff-bom\"",
+        "install": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"install -pl oauth-sheriff-bom\"",
+        "coverage": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"verify -Pcoverage -pl oauth-sheriff-bom\""
       }
     },
     "oauth-sheriff-core": {
@@ -618,16 +618,16 @@
         "test_files": 126
       },
       "commands": {
-        "clean": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"clean -pl oauth-sheriff-core\"",
-        "quality-gate": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -Ppre-commit -pl oauth-sheriff-core\"",
-        "verify": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -pl oauth-sheriff-core\"",
-        "install": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"install -pl oauth-sheriff-core\"",
-        "clean-install": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"clean install -pl oauth-sheriff-core\"",
-        "package": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"package -pl oauth-sheriff-core\"",
-        "compile": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"compile -pl oauth-sheriff-core\"",
-        "test-compile": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"test-compile -pl oauth-sheriff-core\"",
-        "module-tests": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"test -pl oauth-sheriff-core\"",
-        "coverage": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -Pcoverage -pl oauth-sheriff-core\""
+        "clean": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"clean -pl oauth-sheriff-core\"",
+        "quality-gate": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"verify -Ppre-commit -pl oauth-sheriff-core\"",
+        "verify": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"verify -pl oauth-sheriff-core\"",
+        "install": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"install -pl oauth-sheriff-core\"",
+        "clean-install": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"clean install -pl oauth-sheriff-core\"",
+        "package": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"package -pl oauth-sheriff-core\"",
+        "compile": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"compile -pl oauth-sheriff-core\"",
+        "test-compile": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"test-compile -pl oauth-sheriff-core\"",
+        "module-tests": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"test -pl oauth-sheriff-core\"",
+        "coverage": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"verify -Pcoverage -pl oauth-sheriff-core\""
       }
     },
     "oauth-sheriff-quarkus-parent": {
@@ -679,11 +679,11 @@
         "test_files": 0
       },
       "commands": {
-        "clean": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"clean -pl oauth-sheriff-quarkus-parent\"",
-        "quality-gate": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -Ppre-commit -pl oauth-sheriff-quarkus-parent\"",
-        "verify": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -pl oauth-sheriff-quarkus-parent\"",
-        "install": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"install -pl oauth-sheriff-quarkus-parent\"",
-        "coverage": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -Pcoverage -pl oauth-sheriff-quarkus-parent\""
+        "clean": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"clean -pl oauth-sheriff-quarkus-parent\"",
+        "quality-gate": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"verify -Ppre-commit -pl oauth-sheriff-quarkus-parent\"",
+        "verify": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"verify -pl oauth-sheriff-quarkus-parent\"",
+        "install": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"install -pl oauth-sheriff-quarkus-parent\"",
+        "coverage": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"verify -Pcoverage -pl oauth-sheriff-quarkus-parent\""
       }
     },
     "oauth-sheriff-quarkus": {
@@ -795,16 +795,16 @@
         "test_files": 35
       },
       "commands": {
-        "clean": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"clean -pl oauth-sheriff-quarkus\"",
-        "quality-gate": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -Ppre-commit -pl oauth-sheriff-quarkus\"",
-        "verify": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -pl oauth-sheriff-quarkus\"",
-        "install": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"install -pl oauth-sheriff-quarkus\"",
-        "clean-install": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"clean install -pl oauth-sheriff-quarkus\"",
-        "package": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"package -pl oauth-sheriff-quarkus\"",
-        "compile": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"compile -pl oauth-sheriff-quarkus\"",
-        "test-compile": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"test-compile -pl oauth-sheriff-quarkus\"",
-        "module-tests": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"test -pl oauth-sheriff-quarkus\"",
-        "coverage": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -Pcoverage -pl oauth-sheriff-quarkus\""
+        "clean": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"clean -pl oauth-sheriff-quarkus\"",
+        "quality-gate": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"verify -Ppre-commit -pl oauth-sheriff-quarkus\"",
+        "verify": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"verify -pl oauth-sheriff-quarkus\"",
+        "install": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"install -pl oauth-sheriff-quarkus\"",
+        "clean-install": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"clean install -pl oauth-sheriff-quarkus\"",
+        "package": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"package -pl oauth-sheriff-quarkus\"",
+        "compile": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"compile -pl oauth-sheriff-quarkus\"",
+        "test-compile": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"test-compile -pl oauth-sheriff-quarkus\"",
+        "module-tests": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"test -pl oauth-sheriff-quarkus\"",
+        "coverage": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"verify -Pcoverage -pl oauth-sheriff-quarkus\""
       }
     },
     "oauth-sheriff-quarkus-devui": {
@@ -932,30 +932,30 @@
       },
       "commands": {
         "module-tests": {
-          "npm": "python3 .plan/execute-script.py pm-dev-frontend:plan-marshall-plugin:npm run --commandArgs \"--prefix oauth-sheriff-quarkus-parent/oauth-sheriff-quarkus-deployment test\"",
-          "maven": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"test -pl oauth-sheriff-quarkus-deployment\""
+          "npm": "python3 .plan/execute-script.py pm-dev-frontend:plan-marshall-plugin:npm run --command-args \"--prefix oauth-sheriff-quarkus-parent/oauth-sheriff-quarkus-deployment test\"",
+          "maven": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"test -pl oauth-sheriff-quarkus-deployment\""
         },
         "quality-gate": {
-          "npm": "python3 .plan/execute-script.py pm-dev-frontend:plan-marshall-plugin:npm run --commandArgs \"--prefix oauth-sheriff-quarkus-parent/oauth-sheriff-quarkus-deployment run lint\"",
-          "maven": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -Ppre-commit -pl oauth-sheriff-quarkus-deployment\""
+          "npm": "python3 .plan/execute-script.py pm-dev-frontend:plan-marshall-plugin:npm run --command-args \"--prefix oauth-sheriff-quarkus-parent/oauth-sheriff-quarkus-deployment run lint\"",
+          "maven": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"verify -Ppre-commit -pl oauth-sheriff-quarkus-deployment\""
         },
-        "test-compile": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"test-compile -pl oauth-sheriff-quarkus-deployment\"",
+        "test-compile": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"test-compile -pl oauth-sheriff-quarkus-deployment\"",
         "verify": {
-          "npm": "python3 .plan/execute-script.py pm-dev-frontend:plan-marshall-plugin:npm run --commandArgs \"--prefix oauth-sheriff-quarkus-parent/oauth-sheriff-quarkus-deployment run build && npm test\"",
-          "maven": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -pl oauth-sheriff-quarkus-deployment\""
+          "npm": "python3 .plan/execute-script.py pm-dev-frontend:plan-marshall-plugin:npm run --command-args \"--prefix oauth-sheriff-quarkus-parent/oauth-sheriff-quarkus-deployment run build && npm test\"",
+          "maven": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"verify -pl oauth-sheriff-quarkus-deployment\""
         },
-        "coverage": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -Pcoverage -pl oauth-sheriff-quarkus-deployment\"",
+        "coverage": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"verify -Pcoverage -pl oauth-sheriff-quarkus-deployment\"",
         "compile": {
-          "npm": "python3 .plan/execute-script.py pm-dev-frontend:plan-marshall-plugin:npm run --commandArgs \"--prefix oauth-sheriff-quarkus-parent/oauth-sheriff-quarkus-deployment run build\"",
-          "maven": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"compile -pl oauth-sheriff-quarkus-deployment\""
+          "npm": "python3 .plan/execute-script.py pm-dev-frontend:plan-marshall-plugin:npm run --command-args \"--prefix oauth-sheriff-quarkus-parent/oauth-sheriff-quarkus-deployment run build\"",
+          "maven": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"compile -pl oauth-sheriff-quarkus-deployment\""
         },
         "clean": {
-          "npm": "python3 .plan/execute-script.py pm-dev-frontend:plan-marshall-plugin:npm run --commandArgs \"--prefix oauth-sheriff-quarkus-parent/oauth-sheriff-quarkus-deployment run clean\"",
-          "maven": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"clean -pl oauth-sheriff-quarkus-deployment\""
+          "npm": "python3 .plan/execute-script.py pm-dev-frontend:plan-marshall-plugin:npm run --command-args \"--prefix oauth-sheriff-quarkus-parent/oauth-sheriff-quarkus-deployment run clean\"",
+          "maven": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"clean -pl oauth-sheriff-quarkus-deployment\""
         },
-        "clean-install": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"clean install -pl oauth-sheriff-quarkus-deployment\"",
-        "package": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"package -pl oauth-sheriff-quarkus-deployment\"",
-        "install": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"install -pl oauth-sheriff-quarkus-deployment\""
+        "clean-install": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"clean install -pl oauth-sheriff-quarkus-deployment\"",
+        "package": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"package -pl oauth-sheriff-quarkus-deployment\"",
+        "install": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"install -pl oauth-sheriff-quarkus-deployment\""
       }
     },
     "oauth-sheriff-quarkus-integration-tests": {
@@ -1039,17 +1039,17 @@
         "test_files": 9
       },
       "commands": {
-        "clean": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"clean -pl oauth-sheriff-quarkus-integration-tests\"",
-        "quality-gate": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -Ppre-commit -pl oauth-sheriff-quarkus-integration-tests\"",
-        "verify": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -pl oauth-sheriff-quarkus-integration-tests\"",
-        "install": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"install -pl oauth-sheriff-quarkus-integration-tests\"",
-        "clean-install": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"clean install -pl oauth-sheriff-quarkus-integration-tests\"",
-        "package": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"package -pl oauth-sheriff-quarkus-integration-tests\"",
-        "compile": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"compile -pl oauth-sheriff-quarkus-integration-tests\"",
-        "test-compile": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"test-compile -pl oauth-sheriff-quarkus-integration-tests\"",
-        "module-tests": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"test -pl oauth-sheriff-quarkus-integration-tests\"",
-        "coverage": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -Pcoverage -pl oauth-sheriff-quarkus-integration-tests\"",
-        "integration-tests": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -Pintegration-tests -pl oauth-sheriff-quarkus-integration-tests\""
+        "clean": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"clean -pl oauth-sheriff-quarkus-integration-tests\"",
+        "quality-gate": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"verify -Ppre-commit -pl oauth-sheriff-quarkus-integration-tests\"",
+        "verify": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"verify -pl oauth-sheriff-quarkus-integration-tests\"",
+        "install": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"install -pl oauth-sheriff-quarkus-integration-tests\"",
+        "clean-install": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"clean install -pl oauth-sheriff-quarkus-integration-tests\"",
+        "package": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"package -pl oauth-sheriff-quarkus-integration-tests\"",
+        "compile": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"compile -pl oauth-sheriff-quarkus-integration-tests\"",
+        "test-compile": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"test-compile -pl oauth-sheriff-quarkus-integration-tests\"",
+        "module-tests": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"test -pl oauth-sheriff-quarkus-integration-tests\"",
+        "coverage": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"verify -Pcoverage -pl oauth-sheriff-quarkus-integration-tests\"",
+        "integration-tests": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"verify -Pintegration-tests -pl oauth-sheriff-quarkus-integration-tests\""
       }
     }
   },

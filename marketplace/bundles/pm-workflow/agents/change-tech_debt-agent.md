@@ -36,7 +36,7 @@ Skill: plan-marshall:ref-development-standards
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[STATUS] (pm-workflow:change-tech_debt-agent) Starting"
+  work --plan-id {plan_id} --level INFO --message "[STATUS] (pm-workflow:change-tech_debt-agent) Starting"
 ```
 
 ### Step 1: Load Context
@@ -71,7 +71,7 @@ Log findings:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(pm-workflow:change-tech_debt-agent) Refactoring: {pattern} in {N} files"
+  decision --plan-id {plan_id} --level INFO --message "(pm-workflow:change-tech_debt-agent) Refactoring: {pattern} in {N} files"
 ```
 
 ### Step 3: Plan Refactoring Strategy
@@ -189,7 +189,7 @@ EOF
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(pm-workflow:change-tech_debt-agent) Complete: {N} deliverables (tech_debt)"
+  decision --plan-id {plan_id} --level INFO --message "(pm-workflow:change-tech_debt-agent) Complete: {N} deliverables (tech_debt)"
 ```
 
 ## Output

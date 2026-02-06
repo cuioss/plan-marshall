@@ -126,7 +126,7 @@ Output (after splitting):
         "sibling_modules": ["ui-core-npm"]
       },
       "commands": {
-        "verify": "python3 ... maven run --commandArgs \"verify -pl ui-core\"",
+        "verify": "python3 ... maven run --command-args \"verify -pl ui-core\"",
         "module-tests": "..."
       }
     },
@@ -139,7 +139,7 @@ Output (after splitting):
         "sibling_modules": ["ui-core-maven"]
       },
       "commands": {
-        "verify": "python3 ... npm run --commandArgs \"run build --workspace=packages/ui-core\"",
+        "verify": "python3 ... npm run --command-args \"run build --workspace=packages/ui-core\"",
         "module-tests": "..."
       }
     }
@@ -167,7 +167,7 @@ Commands are resolved through the orchestrator's client interface.
 │                              │                                               │
 │                              ▼                                               │
 │  Output: "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin: │
-│           maven run --commandArgs \"verify -Ppre-commit -pl my-module\""    │
+│           maven run --command-args \"verify -Ppre-commit -pl my-module\""    │
 │                                                                              │
 │  Key principle: Commands are STORED complete, not composed at resolution.   │
 │  The caller executes the returned string directly.                          │

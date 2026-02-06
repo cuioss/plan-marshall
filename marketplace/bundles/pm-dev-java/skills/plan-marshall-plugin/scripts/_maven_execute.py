@@ -252,7 +252,7 @@ def cmd_run(args):
     formatter = format_json if output_format == 'json' else format_toon
 
     # Build command key for timeout learning (use first goal as key)
-    command_args = args.commandArgs
+    command_args = args.command_args
     first_goal = command_args.split()[0] if command_args else 'default'
     command_key = f'maven:{first_goal.replace("-", "_")}'
 
@@ -263,7 +263,7 @@ def cmd_run(args):
         timeout_seconds = DEFAULT_TIMEOUT_SECONDS
 
     # Execute via direct_command foundation layer
-    # commandArgs is complete and self-contained (includes -pl, -P, etc.)
+    # command-args is complete and self-contained (includes -pl, -P, etc.)
     result = execute_direct(
         args=command_args, command_key=command_key, default_timeout=timeout_seconds, project_dir=project_dir
     )

@@ -45,7 +45,7 @@ Examples:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
-    subparsers = parser.add_subparsers(dest='command', help='Operation to perform')
+    subparsers = parser.add_subparsers(dest='command', required=True, help='Operation to perform')
 
     # Update subcommand
     p_update = subparsers.add_parser('update', help='Apply updates to a component')

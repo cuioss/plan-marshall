@@ -267,8 +267,8 @@ Use this EXACT command:
 
 \`\`\`bash
 python3 .plan/execute-script.py pm-workflow:manage-assessments:manage-assessments \
-  add {plan_id} {file_path} {certainty} {confidence} \
-  --agent {agent_name} --detail "{reasoning}" --evidence "{evidence}" --trace-plan-id {plan_id}
+  add --plan-id {plan_id} --file-path {file_path} --certainty {certainty} --confidence {confidence} \
+  --agent {agent_name} --detail "{reasoning}" --evidence "{evidence}"
 \`\`\`
 
 **Parameters to fill:**

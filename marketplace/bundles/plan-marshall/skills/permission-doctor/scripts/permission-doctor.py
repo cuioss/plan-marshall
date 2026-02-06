@@ -459,7 +459,7 @@ def cmd_detect_suspicious(args) -> int:
 
 def main():
     parser = argparse.ArgumentParser(description='Permission doctor - read-only analysis for Claude Code settings')
-    subparsers = parser.add_subparsers(dest='command', help='Operation to perform')
+    subparsers = parser.add_subparsers(dest='command', required=True, help='Operation to perform')
 
     # detect-redundant subcommand
     p_red = subparsers.add_parser(

@@ -36,7 +36,7 @@ Skill: plan-marshall:ref-development-standards
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[STATUS] (pm-workflow:change-enhancement-agent) Starting"
+  work --plan-id {plan_id} --level INFO --message "[STATUS] (pm-workflow:change-enhancement-agent) Starting"
 ```
 
 ### Step 1: Load Context
@@ -72,7 +72,7 @@ Log findings:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(pm-workflow:change-enhancement-agent) Affected: {N} files in {modules}"
+  decision --plan-id {plan_id} --level INFO --message "(pm-workflow:change-enhancement-agent) Affected: {N} files in {modules}"
 ```
 
 ### Step 3: Assess Impact
@@ -175,7 +175,7 @@ EOF
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(pm-workflow:change-enhancement-agent) Complete: {N} deliverables (enhancement)"
+  decision --plan-id {plan_id} --level INFO --message "(pm-workflow:change-enhancement-agent) Complete: {N} deliverables (enhancement)"
 ```
 
 ## Output

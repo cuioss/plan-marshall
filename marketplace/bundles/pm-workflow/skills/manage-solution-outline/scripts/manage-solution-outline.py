@@ -592,7 +592,7 @@ def cmd_get_module_context(args) -> int:
 
 def main():
     parser = argparse.ArgumentParser(description='Manage solution outline documents')
-    subparsers = parser.add_subparsers(dest='command', help='Command')
+    subparsers = parser.add_subparsers(dest='command', required=True, help='Command')
 
     # validate
     validate_parser = subparsers.add_parser('validate', help='Validate solution structure')

@@ -47,7 +47,7 @@ Stay in your lane:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[STATUS] (pm-workflow:task-execute-agent) Starting task {task_number}"
+  work --plan-id {plan_id} --level INFO --message "[STATUS] (pm-workflow:task-execute-agent) Starting task {task_number}"
 ```
 
 ### Step 1: Read Task
@@ -74,7 +74,7 @@ Skill: {skill_name}
 **Log domain skills loaded**:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[SKILL] (pm-workflow:task-execute-agent) Loading domain skills from task.skills: [{task.skills}]"
+  work --plan-id {plan_id} --level INFO --message "[SKILL] (pm-workflow:task-execute-agent) Loading domain skills from task.skills: [{task.skills}]"
 ```
 
 ### Step 3: Resolve Task Executor
@@ -91,7 +91,7 @@ The task's `profile` field (e.g., `implementation`, `module_testing`) maps to a 
 **Log the resolved skill**:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[SKILL] (pm-workflow:task-execute-agent) Using task_executor: {task_executor} for profile: {task.profile}"
+  work --plan-id {plan_id} --level INFO --message "[SKILL] (pm-workflow:task-execute-agent) Using task_executor: {task_executor} for profile: {task.profile}"
 ```
 
 ### Step 4: Load and Execute Task Executor

@@ -166,6 +166,44 @@ description: [Description needed]
 
 **Why Safe**: Purely additive — appending `Skill` never removes capabilities or changes behavior, only makes the agent discoverable by the Task dispatcher.
 
+### SCR-009. positional-argument
+
+**Description**: Script uses positional arguments instead of named `--kebab-case` flags.
+
+**Detection**: `add_argument()` calls without `--` prefix (excluding subparser dest args like `dest='command'`)
+
+**Fix Strategy**:
+- Convert `parser.add_argument('name')` to `parser.add_argument('--name', required=True, dest='name')`
+- If name contains underscores, use kebab-case flag: `--plan-id` with `dest='plan_id'`
+- Update all callers (tests, SKILL.md docs, agent .md files) to use flag syntax
+
+**Why Safe**: Mechanical transformation — same data, different CLI syntax.
+
+### SCR-010. camelcase-flag
+
+**Description**: Script uses camelCase flag name instead of kebab-case.
+
+**Detection**: `add_argument('--camelCase')` pattern (uppercase letter after lowercase)
+
+**Fix Strategy**:
+- Rename flag: `--commandArgs` → `--command-args`
+- Add `dest='command_args'` to preserve attribute access
+- Update all callers and string literals referencing the old flag name
+
+**Why Safe**: Mechanical rename — same behavior, consistent naming.
+
+### SCR-011. missing-subparser-required
+
+**Description**: `add_subparsers()` call missing `required=True`, causing confusing `None` error when subcommand is omitted.
+
+**Detection**: `add_subparsers(dest='...')` without `required=True`
+
+**Fix Strategy**:
+- Add `required=True` to the `add_subparsers()` call
+- No test or doc changes needed (tests always provide subcommands)
+
+**Why Safe**: Only changes error message when subcommand is missing — no behavioral change for valid invocations.
+
 ## Risky Fix Types
 
 Risky fixes require user confirmation because they involve judgment calls or may change behavior.
@@ -439,7 +477,10 @@ def categorize(issue_type):
         "improper-indentation", "missing-blank-line-before-list",
         "rule-11-violation",         # Rule 11: additive Skill append
         "wrong-plan-parameter",      # PM-003: mechanical swap
-        "missing-plan-parameter"     # PM-004: add required param
+        "missing-plan-parameter",    # PM-004: add required param
+        "positional-argument",       # SCR-009: convert to named flag
+        "camelcase-flag",            # SCR-010: rename to kebab-case
+        "missing-subparser-required" # SCR-011: add required=True
     }
     RISKY = {
         "unused-tool-declared", "tool-not-declared",
@@ -472,6 +513,7 @@ When multiple fixes needed for same file:
 6. **Rule violations** (architectural - Rules 6, 7, 8, 9, 11)
 7. **Pattern violations** (behavioral - Pattern 22)
 8. **pm-workflow violations** (PM-001 through PM-005 - script call compliance)
+9. **Script argument violations** (SCR-009 through SCR-011 - argparse conventions)
 
 ## See Also
 

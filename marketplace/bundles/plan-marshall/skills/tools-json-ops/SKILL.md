@@ -56,30 +56,30 @@ Parse JSON output:
 
 | Operation | Description | Required Params |
 |-----------|-------------|-----------------|
-| `read` | Read entire file | file_path |
-| `read-field` | Read specific field | file_path, field |
-| `write` | Write entire content | file_path, value |
-| `update-field` | Update specific field | file_path, field, value |
-| `add-entry` | Add to array/object | file_path, field, value |
-| `remove-entry` | Remove from array/object | file_path, field, value |
+| `read` | Read entire file | --file-path |
+| `read-field` | Read specific field | --file-path, --field |
+| `write` | Write entire content | --file-path, --value |
+| `update-field` | Update specific field | --file-path, --field, --value |
+| `add-entry` | Add to array/object | --file-path, --field, --value |
+| `remove-entry` | Remove from array/object | --file-path, --field, --value |
 
 ### Example Usage
 
 ```bash
 # Read entire file
-python3 .plan/execute-script.py plan-marshall:tools-json-ops:manage-json-file read config.json
+python3 .plan/execute-script.py plan-marshall:tools-json-ops:manage-json-file read --file-path config.json
 
 # Read specific field
-python3 .plan/execute-script.py plan-marshall:tools-json-ops:manage-json-file read-field config.json --field "database.host"
+python3 .plan/execute-script.py plan-marshall:tools-json-ops:manage-json-file read-field --file-path config.json --field "database.host"
 
 # Update field
-python3 .plan/execute-script.py plan-marshall:tools-json-ops:manage-json-file update-field config.json --field "database.port" --value '5432'
+python3 .plan/execute-script.py plan-marshall:tools-json-ops:manage-json-file update-field --file-path config.json --field "database.port" --value '5432'
 
 # Add to array
-python3 .plan/execute-script.py plan-marshall:tools-json-ops:manage-json-file add-entry config.json --field "servers" --value '"new-server"'
+python3 .plan/execute-script.py plan-marshall:tools-json-ops:manage-json-file add-entry --file-path config.json --field "servers" --value '"new-server"'
 
 # Remove from array
-python3 .plan/execute-script.py plan-marshall:tools-json-ops:manage-json-file remove-entry config.json --field "servers" --value '"old-server"'
+python3 .plan/execute-script.py plan-marshall:tools-json-ops:manage-json-file remove-entry --file-path config.json --field "servers" --value '"old-server"'
 ```
 
 ---

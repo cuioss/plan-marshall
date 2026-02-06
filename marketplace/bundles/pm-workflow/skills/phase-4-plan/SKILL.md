@@ -60,7 +60,7 @@ message: {error message if status=error}
 
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-findings:manage-findings \
-  qgate query {plan_id} --phase 4-plan --resolution pending
+  qgate query --plan-id {plan_id} --phase 4-plan --resolution pending
 ```
 
 ### Address Each Finding
@@ -73,13 +73,13 @@ For each pending finding:
 3. Resolve:
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-findings:manage-findings \
-  qgate resolve {plan_id} {hash_id} taken_into_account --phase 4-plan \
+  qgate resolve --plan-id {plan_id} --hash-id {hash_id} --resolution taken_into_account --phase 4-plan \
   --detail "{what was done to address this finding}"
 ```
 4. Log resolution:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(pm-workflow:phase-4-plan:qgate) Finding {hash_id} [{source}]: taken_into_account — {resolution_detail}"
+  decision --plan-id {plan_id} --level INFO --message "(pm-workflow:phase-4-plan:qgate) Finding {hash_id} [{source}]: taken_into_account — {resolution_detail}"
 ```
 
 Then continue with normal Steps 2..9 (phase re-runs with corrections applied).
@@ -176,7 +176,7 @@ Match: YES - this is a script output change, needs output contract standards
 **Log skill resolution** (for each task created):
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[SKILL] (pm-workflow:phase-4-plan) Resolved skills for TASK-{N} from {module}.{profile}: defaults=[{defaults}] optionals_selected=[{optionals}]"
+  work --plan-id {plan_id} --level INFO --message "[SKILL] (pm-workflow:phase-4-plan) Resolved skills for TASK-{N} from {module}.{profile}: defaults=[{defaults}] optionals_selected=[{optionals}]"
 ```
 
 ### Step 5: Create Tasks
@@ -215,7 +215,7 @@ EOF
 **MANDATORY - Log each task creation**:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[ARTIFACT] (pm-workflow:phase-4-plan) Created TASK-{N}: {title}"
+  work --plan-id {plan_id} --level INFO --message "[ARTIFACT] (pm-workflow:phase-4-plan) Created TASK-{N}: {title}"
 ```
 
 **Key Fields**:
@@ -259,7 +259,7 @@ For each issue found:
 
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-findings:manage-findings \
-  qgate add {plan_id} --phase 4-plan --source qgate \
+  qgate add --plan-id {plan_id} --phase 4-plan --source qgate \
   --type triage --title "{check}: {issue_title}" \
   --detail "{detailed_reason}"
 ```
@@ -268,7 +268,7 @@ python3 .plan/execute-script.py pm-workflow:manage-findings:manage-findings \
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(pm-workflow:phase-4-plan:qgate) Verification: {passed_count} passed, {flagged_count} flagged"
+  decision --plan-id {plan_id} --level INFO --message "(pm-workflow:phase-4-plan:qgate) Verification: {passed_count} passed, {flagged_count} flagged"
 ```
 
 ### Step 8: Record Issues as Lessons

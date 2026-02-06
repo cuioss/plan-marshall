@@ -114,14 +114,14 @@ Unified command that executes build and returns parsed output on failure.
 
 ```bash
 python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run \
-    --commandArgs "<canonical-command>" \
+    --command-args "<canonical-command>" \
     [--format <toon|json>] \
     [--mode <mode>] \
     [--timeout <seconds>]
 ```
 
 **Parameters**:
-- `--commandArgs` - Canonical command to execute (required)
+- `--command-args` - Canonical command to execute (required)
 - `--format` - Output format: toon (default) or json
 - `--mode` - Output mode: actionable (default), structured, errors
 - `--timeout` - Timeout in seconds (default from run-config)

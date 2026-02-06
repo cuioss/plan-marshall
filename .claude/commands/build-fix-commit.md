@@ -35,7 +35,7 @@ Set up tracking variables:
 Execute the Python build script with 10-minute timeout:
 
 ```bash
-python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --commandArgs "verify" --format toon --timeout 600
+python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args "verify" --format toon --timeout 600
 ```
 
 **Parse TOON output:**
@@ -144,7 +144,7 @@ Commit: {commit_hash}
 
 1. **Build Command**: Always use:
    ```bash
-   python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --commandArgs "verify" --format toon --timeout 600
+   python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args "verify" --format toon --timeout 600
    ```
 
 2. **10-Minute Timeout**: The build command MUST use `--timeout 600`

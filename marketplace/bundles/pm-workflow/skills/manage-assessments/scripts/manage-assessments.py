@@ -7,6 +7,12 @@ from analysis agents.
 
 Storage: .plan/plans/{plan_id}/artifacts/assessments.jsonl
 
+Usage:
+    manage-assessments.py add --plan-id PLAN_ID --file-path PATH --certainty CERTAINTY --confidence CONFIDENCE [OPTIONS]
+    manage-assessments.py query --plan-id PLAN_ID [OPTIONS]
+    manage-assessments.py clear --plan-id PLAN_ID [OPTIONS]
+    manage-assessments.py get --plan-id PLAN_ID --hash-id HASH_ID
+
 Stdlib-only - no external dependencies (except toon_parser for output).
 """
 
@@ -287,10 +293,10 @@ def main() -> int:
 
     # add
     add_parser = subparsers.add_parser('add', help='Add an assessment')
-    add_parser.add_argument('plan_id', help='Plan identifier')
-    add_parser.add_argument('file_path', help='Path to assessed component')
-    add_parser.add_argument('certainty', choices=CERTAINTY_VALUES, help='Certainty value')
-    add_parser.add_argument('confidence', type=int, help='Confidence 0-100')
+    add_parser.add_argument('--plan-id', required=True, dest='plan_id', help='Plan identifier')
+    add_parser.add_argument('--file-path', required=True, dest='file_path', help='Path to assessed component')
+    add_parser.add_argument('--certainty', required=True, choices=CERTAINTY_VALUES, help='Certainty value')
+    add_parser.add_argument('--confidence', required=True, type=int, help='Confidence 0-100')
     add_parser.add_argument('--agent', help='Analysis agent name')
     add_parser.add_argument('--detail', help='Reasoning for assessment')
     add_parser.add_argument('--evidence', help='Supporting evidence')
@@ -298,7 +304,7 @@ def main() -> int:
 
     # query
     query_parser = subparsers.add_parser('query', help='Query assessments')
-    query_parser.add_argument('plan_id', help='Plan identifier')
+    query_parser.add_argument('--plan-id', required=True, dest='plan_id', help='Plan identifier')
     query_parser.add_argument('--certainty', choices=CERTAINTY_VALUES, help='Filter by certainty')
     query_parser.add_argument('--min-confidence', type=int, help='Minimum confidence')
     query_parser.add_argument('--max-confidence', type=int, help='Maximum confidence')
@@ -307,14 +313,14 @@ def main() -> int:
 
     # clear
     clear_parser = subparsers.add_parser('clear', help='Clear assessments')
-    clear_parser.add_argument('plan_id', help='Plan identifier')
+    clear_parser.add_argument('--plan-id', required=True, dest='plan_id', help='Plan identifier')
     clear_parser.add_argument('--agent', help='Only clear assessments from this agent')
     clear_parser.set_defaults(func=cmd_clear)
 
     # get
     get_parser = subparsers.add_parser('get', help='Get single assessment')
-    get_parser.add_argument('plan_id', help='Plan identifier')
-    get_parser.add_argument('hash_id', help='Assessment hash ID')
+    get_parser.add_argument('--plan-id', required=True, dest='plan_id', help='Plan identifier')
+    get_parser.add_argument('--hash-id', required=True, dest='hash_id', help='Assessment hash ID')
     get_parser.set_defaults(func=cmd_get)
 
     args = parser.parse_args()

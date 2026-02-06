@@ -42,21 +42,21 @@ All plan-scoped logs are stored in the `logs/` subdirectory of the plan.
 
 Script: `plan-marshall:manage-logging:manage-log`
 
-### Write API (Positional)
+### Write API
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  {type} {plan_id} {level} "{message}"
+  {type} --plan-id {plan_id} --level {level} --message "{message}"
 ```
 
-**Arguments** (all positional, all required):
+**Arguments**:
 
 | Argument | Values | Description |
 |----------|--------|-------------|
 | `type` | `script`, `work`, `decision` | Log type (determines output file) |
-| `plan_id` | kebab-case | Plan identifier |
-| `level` | `INFO`, `WARN`, `ERROR` | Log level |
-| `message` | string | Log message |
+| `--plan-id` | kebab-case | Plan identifier |
+| `--level` | `INFO`, `WARN`, `ERROR` | Log level |
+| `--message` | string | Log message |
 
 **Output**: None (exit code only)
 
@@ -102,24 +102,24 @@ entries:
 ```bash
 # Write: Script execution logging
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  script my-plan INFO "pm-workflow:manage-task:manage-task add (0.15s)"
+  script --plan-id my-plan --level INFO --message "pm-workflow:manage-task:manage-task add (0.15s)"
 
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  script my-plan ERROR "pm-workflow:manage-task:manage-task add failed (exit 1)"
+  script --plan-id my-plan --level ERROR --message "pm-workflow:manage-task:manage-task add failed (exit 1)"
 
 # Write: Work logging (include [CATEGORY] (caller) prefix)
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work my-plan INFO "[ARTIFACT] (pm-workflow:phase-1-init) Created deliverable: auth module"
+  work --plan-id my-plan --level INFO --message "[ARTIFACT] (pm-workflow:phase-1-init) Created deliverable: auth module"
 
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work my-plan WARN "[STATUS] (pm-workflow:phase-5-execute) Skipped validation step"
+  work --plan-id my-plan --level WARN --message "[STATUS] (pm-workflow:phase-5-execute) Skipped validation step"
 
 # Write: Decision logging (NO [DECISION] prefix - file is the category)
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision my-plan INFO "(pm-workflow:phase-1-init) Detected domain: java - pom.xml found"
+  decision --plan-id my-plan --level INFO --message "(pm-workflow:phase-1-init) Detected domain: java - pom.xml found"
 
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision my-plan INFO "(pm-plugin-development:ext-outline-plugin) Scope: bundles=all"
+  decision --plan-id my-plan --level INFO --message "(pm-plugin-development:ext-outline-plugin) Scope: bundles=all"
 
 # Read: All work log entries
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
@@ -253,7 +253,7 @@ Planning skills call the simplified API:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work my-plan INFO "[ARTIFACT] (pm-workflow:phase-4-plan) Created task: implement auth module"
+  work --plan-id my-plan --level INFO --message "[ARTIFACT] (pm-workflow:phase-4-plan) Created task: implement auth module"
 ```
 
 ---
@@ -269,5 +269,5 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 | Command | Parameters | Description |
 |---------|------------|-------------|
-| (positional) | `{type} {plan_id} {level} "{message}"` | Write log entry |
+| (subcommand) | `{type} --plan-id {plan_id} --level {level} --message "{message}"` | Write log entry |
 | `read` | `--plan-id --type [--limit] [--phase]` | Read log entries (TOON output) |

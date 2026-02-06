@@ -36,7 +36,7 @@ Before creating deliverables (phase-3-outline), ensure the request is:
 
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-findings:manage-findings \
-  qgate query {plan_id} --phase 2-refine --resolution pending
+  qgate query --plan-id {plan_id} --phase 2-refine --resolution pending
 ```
 
 ### Address Each Finding
@@ -49,13 +49,13 @@ For each pending finding:
 3. Resolve:
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-findings:manage-findings \
-  qgate resolve {plan_id} {hash_id} taken_into_account --phase 2-refine \
+  qgate resolve --plan-id {plan_id} --hash-id {hash_id} --resolution taken_into_account --phase 2-refine \
   --detail "{what was done to address this finding}"
 ```
 4. Log resolution:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(pm-workflow:phase-2-refine:qgate) Finding {hash_id} [{source}]: taken_into_account — {resolution_detail}"
+  decision --plan-id {plan_id} --level INFO --message "(pm-workflow:phase-2-refine:qgate) Finding {hash_id} [{source}]: taken_into_account — {resolution_detail}"
 ```
 
 Then continue with normal Steps 2..12 (phase re-runs with corrections applied).
@@ -79,7 +79,7 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-m
 **Log**:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[REFINE:2] (pm-workflow:phase-2-refine) Using confidence threshold: {confidence_threshold}%"
+  work --plan-id {plan_id} --level INFO --message "[REFINE:2] (pm-workflow:phase-2-refine) Using confidence threshold: {confidence_threshold}%"
 ```
 
 Store as `confidence_threshold` for use in Step 8.
@@ -109,7 +109,7 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-m
 **Log** (to decision.log - config read is a decision):
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(pm-workflow:phase-2-refine) Config: compatibility={compatibility}"
+  decision --plan-id {plan_id} --level INFO --message "(pm-workflow:phase-2-refine) Config: compatibility={compatibility}"
 ```
 
 Store as `compatibility` and `compatibility_description` (the long description from the table above) for use in Step 11 return output.
@@ -166,7 +166,7 @@ arch_context:
 **Log**:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[REFINE:4] (pm-workflow:phase-2-refine) Loaded architecture: {project_name} ({module_count} modules)"
+  work --plan-id {plan_id} --level INFO --message "[REFINE:4] (pm-workflow:phase-2-refine) Loaded architecture: {project_name} ({module_count} modules)"
 ```
 
 ---
@@ -192,7 +192,7 @@ Output format: `pm-workflow:manage-plan-documents/documents/request.toon`
 **Log**:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[REFINE:5] (pm-workflow:phase-2-refine) Loaded request: {title}"
+  work --plan-id {plan_id} --level INFO --message "[REFINE:5] (pm-workflow:phase-2-refine) Loaded request: {title}"
 ```
 
 ---
@@ -433,7 +433,7 @@ TRACK_SELECTION: {simple|complex}
 **Log track decision** (to decision.log):
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(pm-workflow:phase-2-refine) Track: {track} - {reasoning}"
+  decision --plan-id {plan_id} --level INFO --message "(pm-workflow:phase-2-refine) Track: {track} - {reasoning}"
 ```
 
 ---
@@ -472,7 +472,7 @@ ELSE:
 **Log**:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[REFINE:8] (pm-workflow:phase-2-refine) Confidence: {confidence}%. Threshold: {confidence_threshold}%. Issues: {issue_summary}"
+  work --plan-id {plan_id} --level INFO --message "[REFINE:8] (pm-workflow:phase-2-refine) Confidence: {confidence}%. Threshold: {confidence_threshold}%. Issues: {issue_summary}"
 ```
 
 ---
@@ -565,7 +565,7 @@ python3 .plan/execute-script.py pm-workflow:manage-plan-documents:manage-plan-do
 **Log**:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[REFINE:10] (pm-workflow:phase-2-refine) Updated request with {N} clarifications. Returning to analysis."
+  work --plan-id {plan_id} --level INFO --message "[REFINE:10] (pm-workflow:phase-2-refine) Updated request with {N} clarifications. Returning to analysis."
 ```
 
 Go back to Step 6.
@@ -602,16 +602,16 @@ python3 .plan/execute-script.py pm-workflow:manage-files:manage-files write \
 # Only log if not already logged (check iteration_count)
 IF iteration_count == 1:
   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-    decision {plan_id} INFO "(pm-workflow:phase-2-refine) Scope: {scope_estimate} - Modules: {module_count}, Files: {file_estimate}"
+    decision --plan-id {plan_id} --level INFO --message "(pm-workflow:phase-2-refine) Scope: {scope_estimate} - Modules: {module_count}, Files: {file_estimate}"
 
   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-    decision {plan_id} INFO "(pm-workflow:phase-2-refine) Domains: {domains}"
+    decision --plan-id {plan_id} --level INFO --message "(pm-workflow:phase-2-refine) Domains: {domains}"
 ```
 
 **Log to work.log** (completion status):
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[REFINE:11] (pm-workflow:phase-2-refine) Complete. Confidence: {confidence}%. Track: {track}. Iterations: {iteration_count}"
+  work --plan-id {plan_id} --level INFO --message "[REFINE:11] (pm-workflow:phase-2-refine) Complete. Confidence: {confidence}%. Track: {track}. Iterations: {iteration_count}"
 ```
 
 ### Return Output with Decisions
@@ -654,7 +654,7 @@ For each issue found:
 
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-findings:manage-findings \
-  qgate add {plan_id} --phase 2-refine --source qgate \
+  qgate add --plan-id {plan_id} --phase 2-refine --source qgate \
   --type triage --title "{check}: {issue_title}" \
   --detail "{detailed_reason}"
 ```
@@ -662,7 +662,7 @@ python3 .plan/execute-script.py pm-workflow:manage-findings:manage-findings \
 **Log Q-Gate Result**:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(pm-workflow:phase-2-refine:qgate) Verification: {passed_count} passed, {flagged_count} flagged"
+  decision --plan-id {plan_id} --level INFO --message "(pm-workflow:phase-2-refine:qgate) Verification: {passed_count} passed, {flagged_count} flagged"
 ```
 
 Add to return output:
@@ -688,7 +688,7 @@ python3 .plan/execute-script.py pm-workflow:manage-lifecycle:manage-lifecycle tr
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[STATUS] (pm-workflow:phase-2-refine) Refine phase complete - confidence: {confidence}%, track: {track}"
+  work --plan-id {plan_id} --level INFO --message "[STATUS] (pm-workflow:phase-2-refine) Refine phase complete - confidence: {confidence}%, track: {track}"
 ```
 
 ---

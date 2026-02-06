@@ -24,7 +24,7 @@ If skill loading fails, STOP and report the error. Do NOT proceed without skills
 **Log skill selection**:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[SKILL] (pm-workflow:task-plan-agent) Using workflow_skill: pm-workflow:phase-4-plan from phase: 4-plan"
+  work --plan-id {plan_id} --level INFO --message "[SKILL] (pm-workflow:task-plan-agent) Using workflow_skill: pm-workflow:phase-4-plan from phase: 4-plan"
 ```
 
 ## Role Boundaries
@@ -52,7 +52,7 @@ Stay in your lane:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[STATUS] (pm-workflow:task-plan-agent) Starting"
+  work --plan-id {plan_id} --level INFO --message "[STATUS] (pm-workflow:task-plan-agent) Starting"
 ```
 
 After skills are loaded (Step 0), invoke the skill's workflow:

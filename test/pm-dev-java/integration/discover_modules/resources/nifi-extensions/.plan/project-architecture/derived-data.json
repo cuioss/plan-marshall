@@ -127,12 +127,12 @@
         "test_files": 0
       },
       "commands": {
-        "clean": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"clean\"",
-        "quality-gate": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -Ppre-commit\"",
-        "verify": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify\"",
-        "install": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"install\"",
-        "coverage": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -Pcoverage\"",
-        "integration-tests": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -Pintegration-tests\""
+        "clean": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"clean\"",
+        "quality-gate": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"verify -Ppre-commit\"",
+        "verify": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"verify\"",
+        "install": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"install\"",
+        "coverage": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"verify -Pcoverage\"",
+        "integration-tests": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"verify -Pintegration-tests\""
       }
     },
     "e-2-e-playwright": {
@@ -277,18 +277,18 @@
       },
       "commands": {
         "quality-gate": {
-          "npm": "python3 .plan/execute-script.py pm-dev-frontend:plan-marshall-plugin:npm run --commandArgs \"--prefix e-2-e-playwright run lint\"",
-          "maven": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -Ppre-commit -pl e-2-e-playwright\""
+          "npm": "python3 .plan/execute-script.py pm-dev-frontend:plan-marshall-plugin:npm run --command-args \"--prefix e-2-e-playwright run lint\"",
+          "maven": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"verify -Ppre-commit -pl e-2-e-playwright\""
         },
-        "clean": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"clean -pl e-2-e-playwright\"",
-        "coverage": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -Pcoverage -pl e-2-e-playwright\"",
+        "clean": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"clean -pl e-2-e-playwright\"",
+        "coverage": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"verify -Pcoverage -pl e-2-e-playwright\"",
         "verify": {
-          "npm": "python3 .plan/execute-script.py pm-dev-frontend:plan-marshall-plugin:npm run --commandArgs \"--prefix e-2-e-playwright test\"",
-          "maven": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -pl e-2-e-playwright\""
+          "npm": "python3 .plan/execute-script.py pm-dev-frontend:plan-marshall-plugin:npm run --command-args \"--prefix e-2-e-playwright test\"",
+          "maven": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"verify -pl e-2-e-playwright\""
         },
-        "install": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"install -pl e-2-e-playwright\"",
-        "module-tests": "python3 .plan/execute-script.py pm-dev-frontend:plan-marshall-plugin:npm run --commandArgs \"--prefix e-2-e-playwright test\"",
-        "integration-tests": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -Pintegration-tests -pl e-2-e-playwright\""
+        "install": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"install -pl e-2-e-playwright\"",
+        "module-tests": "python3 .plan/execute-script.py pm-dev-frontend:plan-marshall-plugin:npm run --command-args \"--prefix e-2-e-playwright test\"",
+        "integration-tests": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"verify -Pintegration-tests -pl e-2-e-playwright\""
       }
     },
     "integration-testing": {
@@ -417,14 +417,14 @@
         "test_files": 0
       },
       "commands": {
-        "clean": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"clean -pl integration-testing\"",
-        "quality-gate": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -Ppre-commit -pl integration-testing\"",
-        "verify": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -pl integration-testing\"",
-        "install": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"install -pl integration-testing\"",
-        "clean-install": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"clean install -pl integration-testing\"",
-        "package": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"package -pl integration-testing\"",
-        "coverage": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -Pcoverage -pl integration-testing\"",
-        "integration-tests": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -Pintegration-tests -pl integration-testing\""
+        "clean": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"clean -pl integration-testing\"",
+        "quality-gate": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"verify -Ppre-commit -pl integration-testing\"",
+        "verify": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"verify -pl integration-testing\"",
+        "install": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"install -pl integration-testing\"",
+        "clean-install": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"clean install -pl integration-testing\"",
+        "package": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"package -pl integration-testing\"",
+        "coverage": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"verify -Pcoverage -pl integration-testing\"",
+        "integration-tests": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"verify -Pintegration-tests -pl integration-testing\""
       }
     },
     "nifi-cuioss-nar": {
@@ -554,14 +554,14 @@
         "test_files": 0
       },
       "commands": {
-        "clean": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"clean -pl nifi-cuioss-nar\"",
-        "quality-gate": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -Ppre-commit -pl nifi-cuioss-nar\"",
-        "verify": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -pl nifi-cuioss-nar\"",
-        "install": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"install -pl nifi-cuioss-nar\"",
-        "clean-install": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"clean install -pl nifi-cuioss-nar\"",
-        "package": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"package -pl nifi-cuioss-nar\"",
-        "coverage": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -Pcoverage -pl nifi-cuioss-nar\"",
-        "integration-tests": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -Pintegration-tests -pl nifi-cuioss-nar\""
+        "clean": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"clean -pl nifi-cuioss-nar\"",
+        "quality-gate": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"verify -Ppre-commit -pl nifi-cuioss-nar\"",
+        "verify": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"verify -pl nifi-cuioss-nar\"",
+        "install": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"install -pl nifi-cuioss-nar\"",
+        "clean-install": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"clean install -pl nifi-cuioss-nar\"",
+        "package": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"package -pl nifi-cuioss-nar\"",
+        "coverage": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"verify -Pcoverage -pl nifi-cuioss-nar\"",
+        "integration-tests": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"verify -Pintegration-tests -pl nifi-cuioss-nar\""
       }
     },
     "nifi-cuioss-processors": {
@@ -712,17 +712,17 @@
         "test_files": 13
       },
       "commands": {
-        "clean": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"clean -pl nifi-cuioss-processors\"",
-        "quality-gate": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -Ppre-commit -pl nifi-cuioss-processors\"",
-        "verify": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -pl nifi-cuioss-processors\"",
-        "install": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"install -pl nifi-cuioss-processors\"",
-        "clean-install": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"clean install -pl nifi-cuioss-processors\"",
-        "package": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"package -pl nifi-cuioss-processors\"",
-        "compile": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"compile -pl nifi-cuioss-processors\"",
-        "test-compile": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"test-compile -pl nifi-cuioss-processors\"",
-        "module-tests": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"test -pl nifi-cuioss-processors\"",
-        "coverage": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -Pcoverage -pl nifi-cuioss-processors\"",
-        "integration-tests": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -Pintegration-tests -pl nifi-cuioss-processors\""
+        "clean": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"clean -pl nifi-cuioss-processors\"",
+        "quality-gate": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"verify -Ppre-commit -pl nifi-cuioss-processors\"",
+        "verify": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"verify -pl nifi-cuioss-processors\"",
+        "install": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"install -pl nifi-cuioss-processors\"",
+        "clean-install": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"clean install -pl nifi-cuioss-processors\"",
+        "package": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"package -pl nifi-cuioss-processors\"",
+        "compile": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"compile -pl nifi-cuioss-processors\"",
+        "test-compile": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"test-compile -pl nifi-cuioss-processors\"",
+        "module-tests": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"test -pl nifi-cuioss-processors\"",
+        "coverage": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"verify -Pcoverage -pl nifi-cuioss-processors\"",
+        "integration-tests": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"verify -Pintegration-tests -pl nifi-cuioss-processors\""
       }
     },
     "nifi-cuioss-ui": {
@@ -918,28 +918,28 @@
       },
       "commands": {
         "quality-gate": {
-          "npm": "python3 .plan/execute-script.py pm-dev-frontend:plan-marshall-plugin:npm run --commandArgs \"--prefix nifi-cuioss-ui run lint\"",
-          "maven": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -Ppre-commit -pl nifi-cuioss-ui\""
+          "npm": "python3 .plan/execute-script.py pm-dev-frontend:plan-marshall-plugin:npm run --command-args \"--prefix nifi-cuioss-ui run lint\"",
+          "maven": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"verify -Ppre-commit -pl nifi-cuioss-ui\""
         },
         "compile": {
-          "npm": "python3 .plan/execute-script.py pm-dev-frontend:plan-marshall-plugin:npm run --commandArgs \"--prefix nifi-cuioss-ui run build\"",
-          "maven": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"compile -pl nifi-cuioss-ui\""
+          "npm": "python3 .plan/execute-script.py pm-dev-frontend:plan-marshall-plugin:npm run --command-args \"--prefix nifi-cuioss-ui run build\"",
+          "maven": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"compile -pl nifi-cuioss-ui\""
         },
-        "clean": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"clean -pl nifi-cuioss-ui\"",
-        "test-compile": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"test-compile -pl nifi-cuioss-ui\"",
-        "coverage": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -Pcoverage -pl nifi-cuioss-ui\"",
-        "package": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"package -pl nifi-cuioss-ui\"",
+        "clean": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"clean -pl nifi-cuioss-ui\"",
+        "test-compile": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"test-compile -pl nifi-cuioss-ui\"",
+        "coverage": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"verify -Pcoverage -pl nifi-cuioss-ui\"",
+        "package": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"package -pl nifi-cuioss-ui\"",
         "verify": {
-          "npm": "python3 .plan/execute-script.py pm-dev-frontend:plan-marshall-plugin:npm run --commandArgs \"--prefix nifi-cuioss-ui run build && npm test\"",
-          "maven": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -pl nifi-cuioss-ui\""
+          "npm": "python3 .plan/execute-script.py pm-dev-frontend:plan-marshall-plugin:npm run --command-args \"--prefix nifi-cuioss-ui run build && npm test\"",
+          "maven": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"verify -pl nifi-cuioss-ui\""
         },
-        "install": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"install -pl nifi-cuioss-ui\"",
+        "install": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"install -pl nifi-cuioss-ui\"",
         "module-tests": {
-          "npm": "python3 .plan/execute-script.py pm-dev-frontend:plan-marshall-plugin:npm run --commandArgs \"--prefix nifi-cuioss-ui test\"",
-          "maven": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"test -pl nifi-cuioss-ui\""
+          "npm": "python3 .plan/execute-script.py pm-dev-frontend:plan-marshall-plugin:npm run --command-args \"--prefix nifi-cuioss-ui test\"",
+          "maven": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"test -pl nifi-cuioss-ui\""
         },
-        "clean-install": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"clean install -pl nifi-cuioss-ui\"",
-        "integration-tests": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -Pintegration-tests -pl nifi-cuioss-ui\""
+        "clean-install": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"clean install -pl nifi-cuioss-ui\"",
+        "integration-tests": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"verify -Pintegration-tests -pl nifi-cuioss-ui\""
       }
     }
   },

@@ -84,7 +84,7 @@ The skill runs in main conversation context and CAN spawn Task agents for parall
 Log solution outline creation:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[ARTIFACT] (pm-workflow:plan-marshall) Created solution_outline.md - pending user review"
+  work --plan-id {plan_id} --level INFO --message "[ARTIFACT] (pm-workflow:plan-marshall) Created solution_outline.md - pending user review"
 ```
 
 **Step 2b**: Transition phase after outline completes:
@@ -136,14 +136,14 @@ AskUserQuestion:
   - Write each feedback point as a Q-Gate finding:
     ```bash
     python3 .plan/execute-script.py pm-workflow:manage-findings:manage-findings \
-      qgate add {plan_id} --phase 3-outline --source user_review \
+      qgate add --plan-id {plan_id} --phase 3-outline --source user_review \
       --type triage --title "User: {feedback summary}" \
       --detail "{full feedback text}"
     ```
   - Log feedback capture:
     ```bash
     python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-      decision {plan_id} INFO "(pm-workflow:plan-marshall) User review: {count} change requests recorded to qgate/3-outline.jsonl"
+      decision --plan-id {plan_id} --level INFO --message "(pm-workflow:plan-marshall) User review: {count} change requests recorded to qgate/3-outline.jsonl"
     ```
   - Re-invoke phase-3-outline skill (phase reads Q-Gate findings at Step 1)
   - **Loop back to Step 3a**
@@ -163,7 +163,7 @@ Task: pm-workflow:task-plan-agent
 Log task plan agent invocation:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[STATUS] (pm-workflow:plan-marshall) Invoked task-plan-agent"
+  work --plan-id {plan_id} --level INFO --message "[STATUS] (pm-workflow:plan-marshall) Invoked task-plan-agent"
 ```
 
 **Step 4b**: Transition phase after tasks created:

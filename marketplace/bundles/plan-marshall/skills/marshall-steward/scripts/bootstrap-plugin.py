@@ -8,7 +8,7 @@ and caches it in .plan/marshall-state.toon for subsequent use.
 
 Usage:
     python3 bootstrap-plugin.py get-root [--refresh]
-    python3 bootstrap-plugin.py resolve <bundle> <path>
+    python3 bootstrap-plugin.py resolve --bundle <bundle> --path <path>
 
 Subcommands:
     get-root    Return the plugin root path (detects if needed)
@@ -214,8 +214,8 @@ def main() -> int:
 
     # resolve subcommand
     resolve_parser = subparsers.add_parser('resolve', help='Resolve a path relative to a bundle')
-    resolve_parser.add_argument('bundle', help="Bundle name (e.g., 'pm-workflow')")
-    resolve_parser.add_argument('path', help='Path relative to bundle root')
+    resolve_parser.add_argument('--bundle', required=True, help="Bundle name (e.g., 'pm-workflow')")
+    resolve_parser.add_argument('--path', required=True, help='Path relative to bundle root')
 
     args = parser.parse_args()
 

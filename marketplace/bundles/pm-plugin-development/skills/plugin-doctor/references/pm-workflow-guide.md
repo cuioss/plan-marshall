@@ -76,8 +76,8 @@ FOR each script call:
 | `manage-tasks` | `--plan-id` |
 | `manage-references` | `--plan-id` |
 | `manage-solution-outline` | `--plan-id` |
-| `manage-assessments` | positional plan_id + `--trace-plan-id` |
-| `manage-findings` | positional plan_id + `--trace-plan-id` |
+| `manage-assessments` | `--plan-id` |
+| `manage-findings` | `--plan-id` |
 | `manage-lifecycle` | `--plan-id` |
 
 ## Rule 4: Contract Implementation Validation

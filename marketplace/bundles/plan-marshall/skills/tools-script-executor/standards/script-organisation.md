@@ -178,7 +178,7 @@ def test_cli_run_help():
         capture_output=True, text=True
     )
     assert result.returncode == 0
-    assert '--commandArgs' in result.stdout
+    assert '--command-args' in result.stdout
 ```
 
 ### Internal Module Tests

@@ -64,7 +64,7 @@ Log context:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(pm-plugin-development:change-feature-outline-agent) Context loaded: domains={domains}, compatibility={compatibility}"
+  decision --plan-id {plan_id} --level INFO --message "(pm-plugin-development:change-feature-outline-agent) Context loaded: domains={domains}, compatibility={compatibility}"
 ```
 
 ### Step 2: Determine Component Type
@@ -81,7 +81,7 @@ Log decision:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(pm-plugin-development:change-feature-outline-agent) Component type: {type}"
+  decision --plan-id {plan_id} --level INFO --message "(pm-plugin-development:change-feature-outline-agent) Component type: {type}"
 ```
 
 ### Step 3: Identify Target Bundle
@@ -278,7 +278,7 @@ EOF
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(pm-plugin-development:change-feature-outline-agent) Complete: {N} deliverables"
+  decision --plan-id {plan_id} --level INFO --message "(pm-plugin-development:change-feature-outline-agent) Complete: {N} deliverables"
 ```
 
 ## Output

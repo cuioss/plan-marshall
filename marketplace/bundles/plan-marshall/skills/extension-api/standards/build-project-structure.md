@@ -69,9 +69,9 @@ Each extension returns modules it discovered with `build_systems` field:
     "test_files": 38
   },
   "commands": {
-    "module-tests": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"test -pl oauth-sheriff-core\"",
-    "quality-gate": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -Ppre-commit -pl oauth-sheriff-core\"",
-    "verify": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -pl oauth-sheriff-core\""
+    "module-tests": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"test -pl oauth-sheriff-core\"",
+    "quality-gate": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"verify -Ppre-commit -pl oauth-sheriff-core\"",
+    "verify": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"verify -pl oauth-sheriff-core\""
   }
 }
 ```

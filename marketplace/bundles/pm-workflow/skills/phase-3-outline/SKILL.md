@@ -48,7 +48,7 @@ Step 2: Load Inputs → Step 3: Detect Change Type → Step 4: Route by Track �
 
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-findings:manage-findings \
-  qgate query {plan_id} --phase 3-outline --resolution pending
+  qgate query --plan-id {plan_id} --phase 3-outline --resolution pending
 ```
 
 ### Address Each Finding
@@ -61,13 +61,13 @@ For each pending finding:
 3. Resolve:
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-findings:manage-findings \
-  qgate resolve {plan_id} {hash_id} taken_into_account --phase 3-outline \
+  qgate resolve --plan-id {plan_id} --hash-id {hash_id} --resolution taken_into_account --phase 3-outline \
   --detail "{what was done to address this finding}"
 ```
 4. Log resolution:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(pm-workflow:phase-3-outline:qgate) Finding {hash_id} [{source}]: taken_into_account — {resolution_detail}"
+  decision --plan-id {plan_id} --level INFO --message "(pm-workflow:phase-3-outline:qgate) Finding {hash_id} [{source}]: taken_into_account — {resolution_detail}"
 ```
 
 Then continue with normal Steps 2..13 (phase re-runs with corrections applied).
@@ -139,7 +139,7 @@ Store as `compatibility` and derive `compatibility_description` from the value:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[STATUS] (pm-workflow:phase-3-outline) Starting outline: track={track}, domains={domains}, compatibility={compatibility}"
+  work --plan-id {plan_id} --level INFO --message "[STATUS] (pm-workflow:phase-3-outline) Starting outline: track={track}, domains={domains}, compatibility={compatibility}"
 ```
 
 ---
@@ -180,7 +180,7 @@ python3 .plan/execute-script.py pm-workflow:manage-status:manage_status metadata
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(pm-workflow:phase-3-outline) Change type: {change_type} (confidence: {confidence})"
+  decision --plan-id {plan_id} --level INFO --message "(pm-workflow:phase-3-outline) Change type: {change_type} (confidence: {confidence})"
 ```
 
 ---
@@ -215,7 +215,7 @@ If target doesn't exist, ERROR: "Target not found: {target}"
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(pm-workflow:phase-3-outline) Validated {N} targets in {domain}"
+  decision --plan-id {plan_id} --level INFO --message "(pm-workflow:phase-3-outline) Validated {N} targets in {domain}"
 ```
 
 ---
@@ -270,7 +270,7 @@ Use template from `pm-workflow:manage-solution-outline/templates/deliverable-tem
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(pm-workflow:phase-3-outline) Created deliverable for {target}"
+  decision --plan-id {plan_id} --level INFO --message "(pm-workflow:phase-3-outline) Created deliverable for {target}"
 ```
 
 ---
@@ -290,7 +290,7 @@ For each deliverable:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(pm-workflow:phase-3-outline:qgate) Simple: Deliverable {N}: pass"
+  decision --plan-id {plan_id} --level INFO --message "(pm-workflow:phase-3-outline:qgate) Simple: Deliverable {N}: pass"
 ```
 
 → Go to Step 13.
@@ -327,7 +327,7 @@ agent: pm-plugin-development:change-feature-outline-agent  # or generic fallback
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(pm-workflow:phase-3-outline) Resolved agent: {agent_notation}"
+  decision --plan-id {plan_id} --level INFO --message "(pm-workflow:phase-3-outline) Resolved agent: {agent_notation}"
 ```
 
 ---
@@ -356,7 +356,7 @@ The agent handles the complete Complex Track workflow internally:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(pm-workflow:phase-3-outline) Spawned {agent} for {domain}"
+  decision --plan-id {plan_id} --level INFO --message "(pm-workflow:phase-3-outline) Spawned {agent} for {domain}"
 ```
 
 ---
@@ -378,7 +378,7 @@ change_type: {change_type}
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(pm-workflow:phase-3-outline) Agent complete: {deliverable_count} deliverables"
+  decision --plan-id {plan_id} --level INFO --message "(pm-workflow:phase-3-outline) Agent complete: {deliverable_count} deliverables"
 ```
 
 **If agent returns error**: HALT and return error.
@@ -426,7 +426,7 @@ flagged: {count}
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(pm-workflow:phase-3-outline:qgate) Full: {passed} passed, {flagged} flagged"
+  decision --plan-id {plan_id} --level INFO --message "(pm-workflow:phase-3-outline:qgate) Full: {passed} passed, {flagged} flagged"
 ```
 
 ### Handle Q-Gate Findings
@@ -488,7 +488,7 @@ EOF
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(pm-workflow:phase-3-outline) Generic workflow: {N} deliverables"
+  decision --plan-id {plan_id} --level INFO --message "(pm-workflow:phase-3-outline) Generic workflow: {N} deliverables"
 ```
 
 → Go to Step 13.
@@ -533,12 +533,12 @@ EOF
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[ARTIFACT] (pm-workflow:phase-3-outline) Created solution_outline.md"
+  work --plan-id {plan_id} --level INFO --message "[ARTIFACT] (pm-workflow:phase-3-outline) Created solution_outline.md"
 ```
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(pm-workflow:phase-3-outline) Complete: {N} deliverables, Q-Gate: {pass/fail}"
+  decision --plan-id {plan_id} --level INFO --message "(pm-workflow:phase-3-outline) Complete: {N} deliverables, Q-Gate: {pass/fail}"
 ```
 
 ---

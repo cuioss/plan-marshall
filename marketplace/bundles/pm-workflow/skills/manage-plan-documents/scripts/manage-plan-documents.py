@@ -616,7 +616,7 @@ def cmd_list_types(args) -> int:
 
 def main():
     parser = argparse.ArgumentParser(description='Manage typed documents within plan directories')
-    subparsers = parser.add_subparsers(dest='doc_type', help='Document type or command')
+    subparsers = parser.add_subparsers(dest='doc_type', required=True, help='Document type or command')
 
     # Special command: list-types
     list_parser = subparsers.add_parser('list-types', help='List available document types')
@@ -631,7 +631,7 @@ def main():
             continue
 
         type_parser = subparsers.add_parser(doc_type, help=f'Manage {doc_type} documents')
-        type_subparsers = type_parser.add_subparsers(dest='verb', help='Operation')
+        type_subparsers = type_parser.add_subparsers(dest='verb', required=True, help='Operation')
 
         # Create
         create_parser = type_subparsers.add_parser('create', help='Create document')

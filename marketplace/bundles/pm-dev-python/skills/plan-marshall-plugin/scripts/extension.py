@@ -189,7 +189,7 @@ class Extension(ExtensionBase):
         commands = {}
         for canonical, alias_name in CANONICAL_MAPPING.items():
             if alias_name in aliases:
-                commands[canonical] = f'{base} --commandArgs "{canonical}"'
+                commands[canonical] = f'{base} --command-args "{canonical}"'
 
         return commands
 

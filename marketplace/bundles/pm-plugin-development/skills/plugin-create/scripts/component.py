@@ -49,7 +49,7 @@ Examples:
 """,
     )
 
-    subparsers = parser.add_subparsers(dest='command', help='Operation to perform')
+    subparsers = parser.add_subparsers(dest='command', required=True, help='Operation to perform')
 
     # generate command
     p_generate = subparsers.add_parser('generate', help='Generate YAML frontmatter')

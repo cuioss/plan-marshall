@@ -65,14 +65,14 @@ def test_stats_help():
 
 def test_stats_console_format():
     """Test stats default console output format."""
-    result = run_script(SCRIPT_PATH, 'stats', str(FIXTURES_DIR))
+    result = run_script(SCRIPT_PATH, 'stats', '--directory', str(FIXTURES_DIR))
     combined = result.stdout + result.stderr
     assert 'Documentation Statistics' in combined, f"Console format didn't produce expected output: {combined}"
 
 
 def test_stats_json_format():
     """Test stats JSON output format is valid."""
-    result = run_script(SCRIPT_PATH, 'stats', '-f', 'json', str(FIXTURES_DIR))
+    result = run_script(SCRIPT_PATH, 'stats', '-f', 'json', '--directory', str(FIXTURES_DIR))
     data = json.loads(result.stdout)
     assert 'metadata' in data, 'JSON missing metadata'
     assert 'summary' in data, 'JSON missing summary'
@@ -80,7 +80,7 @@ def test_stats_json_format():
 
 def test_stats_details_flag():
     """Test stats details flag includes file info."""
-    result = run_script(SCRIPT_PATH, 'stats', '-d', '-f', 'json', str(FIXTURES_DIR))
+    result = run_script(SCRIPT_PATH, 'stats', '-d', '-f', 'json', '--directory', str(FIXTURES_DIR))
     data = json.loads(result.stdout)
     assert 'files' in data, 'JSON with details flag should include files key'
     assert len(data['files']) > 0, 'Files dict should not be empty'
@@ -89,13 +89,13 @@ def test_stats_details_flag():
 def test_stats_empty_directory():
     """Test stats handles empty directory."""
     with tempfile.TemporaryDirectory() as temp_dir:
-        result = run_script(SCRIPT_PATH, 'stats', temp_dir)
+        result = run_script(SCRIPT_PATH, 'stats', '--directory', temp_dir)
         assert result.returncode == 0, f'Empty directory failed: {result.stderr}'
 
 
 def test_stats_nonexistent_dir():
     """Test stats handles nonexistent directory."""
-    result = run_script(SCRIPT_PATH, 'stats', '/nonexistent/path')
+    result = run_script(SCRIPT_PATH, 'stats', '--directory', '/nonexistent/path')
     assert result.returncode != 0, 'Nonexistent path should fail'
 
 
@@ -113,14 +113,14 @@ def test_validate_help():
 
 def test_validate_console_format():
     """Test validate default console output."""
-    result = run_script(SCRIPT_PATH, 'validate', str(FIXTURES_DIR))
+    result = run_script(SCRIPT_PATH, 'validate', '--path', str(FIXTURES_DIR))
     combined = result.stdout + result.stderr
     assert 'Checking' in combined or len(combined) > 0, 'No console output produced'
 
 
 def test_validate_json_format():
     """Test validate JSON output format."""
-    result = run_script(SCRIPT_PATH, 'validate', '-f', 'json', str(FIXTURES_DIR))
+    result = run_script(SCRIPT_PATH, 'validate', '-f', 'json', '--path', str(FIXTURES_DIR))
     combined = result.stdout + result.stderr
     assert 'directory' in combined.lower() or '{' in combined, "JSON format didn't produce expected output"
 
@@ -143,7 +143,7 @@ Some text directly before list:
         f.write(content)
         temp_file = f.name
     try:
-        result = run_script(SCRIPT_PATH, 'validate', temp_file)
+        result = run_script(SCRIPT_PATH, 'validate', '--path', temp_file)
         assert result.returncode != 0 or 'blank' in (result.stdout + result.stderr).lower(), (
             'Missing blank line should be detected'
         )
@@ -153,7 +153,7 @@ Some text directly before list:
 
 def test_validate_ignore_pattern():
     """Test validate ignore pattern flag."""
-    result = run_script(SCRIPT_PATH, 'validate', '-i', 'missing-*.adoc', str(FIXTURES_DIR))
+    result = run_script(SCRIPT_PATH, 'validate', '-i', 'missing-*.adoc', '--path', str(FIXTURES_DIR))
     assert result.returncode in [0, 1], f'Ignore pattern flag crashed: {result.stderr}'
 
 
@@ -165,7 +165,7 @@ def test_validate_invalid_format_rejected():
 
 def test_validate_nonexistent_path():
     """Test validate handles nonexistent path."""
-    result = run_script(SCRIPT_PATH, 'validate', '/nonexistent/path')
+    result = run_script(SCRIPT_PATH, 'validate', '--path', '/nonexistent/path')
     assert result.returncode != 0, 'Nonexistent path should fail'
 
 
@@ -183,31 +183,31 @@ def test_format_help():
 
 def test_format_no_backup_flag():
     """Test format --no-backup flag prevents backup creation."""
-    result = run_script(SCRIPT_PATH, 'format', '-b', '-t', 'lists', str(FIXTURES_DIR))
+    result = run_script(SCRIPT_PATH, 'format', '-b', '-t', 'lists', '--path', str(FIXTURES_DIR))
     assert result.returncode in [0, 1], f'No backup flag crashed: {result.stderr}'
 
 
 def test_format_lists_type():
     """Test format -t lists fix type."""
-    result = run_script(SCRIPT_PATH, 'format', '-b', '-t', 'lists', str(FIXTURES_DIR))
+    result = run_script(SCRIPT_PATH, 'format', '-b', '-t', 'lists', '--path', str(FIXTURES_DIR))
     assert result.returncode in [0, 1], f'lists fix type failed: {result.stderr}'
 
 
 def test_format_xref_type():
     """Test format -t xref fix type."""
-    result = run_script(SCRIPT_PATH, 'format', '-b', '-t', 'xref', str(FIXTURES_DIR))
+    result = run_script(SCRIPT_PATH, 'format', '-b', '-t', 'xref', '--path', str(FIXTURES_DIR))
     assert result.returncode in [0, 1], f'xref fix type failed: {result.stderr}'
 
 
 def test_format_whitespace_type():
     """Test format -t whitespace fix type."""
-    result = run_script(SCRIPT_PATH, 'format', '-b', '-t', 'whitespace', str(FIXTURES_DIR))
+    result = run_script(SCRIPT_PATH, 'format', '-b', '-t', 'whitespace', '--path', str(FIXTURES_DIR))
     assert result.returncode in [0, 1], f'whitespace fix type failed: {result.stderr}'
 
 
 def test_format_all_types():
     """Test format -t all fix type."""
-    result = run_script(SCRIPT_PATH, 'format', '-b', '-t', 'all', str(FIXTURES_DIR))
+    result = run_script(SCRIPT_PATH, 'format', '-b', '-t', 'all', '--path', str(FIXTURES_DIR))
     assert result.returncode in [0, 1], f'all fix type failed: {result.stderr}'
 
 
@@ -219,7 +219,7 @@ def test_format_invalid_type_rejected():
 
 def test_format_nonexistent_path():
     """Test format handles nonexistent path."""
-    result = run_script(SCRIPT_PATH, 'format', '/nonexistent/path')
+    result = run_script(SCRIPT_PATH, 'format', '--path', '/nonexistent/path')
     assert result.returncode != 0, 'Nonexistent path should fail'
 
 

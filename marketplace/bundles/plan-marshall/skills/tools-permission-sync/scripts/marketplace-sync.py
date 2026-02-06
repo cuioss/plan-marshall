@@ -420,7 +420,7 @@ def main():
     parser = argparse.ArgumentParser(
         description='Marketplace sync - permission synchronization for Claude Code marketplace'
     )
-    subparsers = parser.add_subparsers(dest='command', help='Operation to perform')
+    subparsers = parser.add_subparsers(dest='command', required=True, help='Operation to perform')
 
     # generate-wildcards subcommand
     p_gen = subparsers.add_parser('generate-wildcards', help='Generate permission wildcards from marketplace inventory')

@@ -129,21 +129,21 @@ discover_modules():
 
 ### Extension Implementation
 
-Extensions return resolved `commands` in `discover_modules()`. Each command is **complete and self-contained** with all routing embedded in `--commandArgs`:
+Extensions return resolved `commands` in `discover_modules()`. Each command is **complete and self-contained** with all routing embedded in `--command-args`:
 
 ```python
 def discover_modules(self, project_root: str) -> list:
     # Extensions generate complete commands per module
-    # All routing (module, profile, workspace) is embedded in --commandArgs
+    # All routing (module, profile, workspace) is embedded in --command-args
     # Note: Commands do NOT include clean goal (run clean separately)
     return [{
         "metadata": {"packaging": "jar", "profiles": [...]},
         "commands": {
-            "clean": "python3 ... --commandArgs \"clean -pl my-module\"",
-            "module-tests": "python3 ... --commandArgs \"test -pl my-module\"",
-            "verify": "python3 ... --commandArgs \"verify -pl my-module\"",
-            "clean-install": "python3 ... --commandArgs \"clean install -pl my-module\"",
-            "quality-gate": "python3 ... --commandArgs \"verify -Ppre-commit -pl my-module\""
+            "clean": "python3 ... --command-args \"clean -pl my-module\"",
+            "module-tests": "python3 ... --command-args \"test -pl my-module\"",
+            "verify": "python3 ... --command-args \"verify -pl my-module\"",
+            "clean-install": "python3 ... --command-args \"clean install -pl my-module\"",
+            "quality-gate": "python3 ... --command-args \"verify -Ppre-commit -pl my-module\""
         },
         ...
     }]
@@ -155,9 +155,9 @@ Profile classification and command generation are handled **internally** by each
 
 ### Command String Format
 
-Commands embed **all routing** in the `--commandArgs` parameter:
+Commands embed **all routing** in the `--command-args` parameter:
 
-| Build System | Routing Mechanism | Example `--commandArgs` |
+| Build System | Routing Mechanism | Example `--command-args` |
 |--------------|-------------------|-------------------------|
 | Maven | `-pl module` flag | `"verify -Ppre-commit -pl oauth-sheriff-core"` |
 | Gradle | `:module:task` prefix | `":api-genshin-impact:build"` |

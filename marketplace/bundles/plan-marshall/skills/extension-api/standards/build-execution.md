@@ -17,16 +17,16 @@ Domain bundles that provide build capabilities expose a **unified execution API*
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `--commandArgs` | string | Yes | Complete build arguments with all routing embedded |
+| `--command-args` | string | Yes | Complete build arguments with all routing embedded |
 | `--format` | string | No | Output format: `toon` (default) or `json` |
 | `--mode` | string | No | Content mode: `actionable` (default), `structured`, or `errors` |
 | `--timeout` | int | No | Timeout in seconds (default: 300) |
 
-**Key principle**: The `--commandArgs` string is **complete and self-contained**. All build-specific options (modules, profiles, workspaces) are embedded in this string. No external composition needed at execution time.
+**Key principle**: The `--command-args` string is **complete and self-contained**. All build-specific options (modules, profiles, workspaces) are embedded in this string. No external composition needed at execution time.
 
 **Build-system routing examples**:
 
-| Build System | Example `--commandArgs` | Routing Mechanism |
+| Build System | Example `--command-args` | Routing Mechanism |
 |--------------|-------------------------|-------------------|
 | Maven | `"verify -Ppre-commit -pl oauth-sheriff-core"` | `-pl module` flag |
 | Gradle | `":api-genshin-impact:build"` | `:module:task` prefix |
@@ -151,7 +151,7 @@ Extensions expose a single `run` subcommand with format and mode selection:
 
 ```bash
 python3 .plan/execute-script.py {bundle}:plan-marshall-plugin:{script} run \
-  --commandArgs "verify -pl core-api" \
+  --command-args "verify -pl core-api" \
   --format toon \             # or --format json
   --mode actionable           # or --mode structured, --mode errors
 ```
@@ -190,9 +190,9 @@ The orchestrator resolves commands per module in `.plan/raw-project-data.json`. 
   "modules": {
     "oauth-sheriff-core": {
       "commands": {
-        "module-tests": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"test -pl oauth-sheriff-core\"",
-        "verify": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -pl oauth-sheriff-core\"",
-        "quality-gate": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --commandArgs \"verify -Ppre-commit -pl oauth-sheriff-core\""
+        "module-tests": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"test -pl oauth-sheriff-core\"",
+        "verify": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"verify -pl oauth-sheriff-core\"",
+        "quality-gate": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"verify -Ppre-commit -pl oauth-sheriff-core\""
       }
     }
   }
@@ -211,15 +211,15 @@ def _build_commands(module_name: str, profiles: list) -> dict:
     pl_arg = f" -pl {module_name}" if module_name != "." else ""
 
     commands = {
-        "clean": f'{base} --commandArgs "clean{pl_arg}"',
-        "verify": f'{base} --commandArgs "verify{pl_arg}"',
-        "module-tests": f'{base} --commandArgs "test{pl_arg}"',
+        "clean": f'{base} --command-args "clean{pl_arg}"',
+        "verify": f'{base} --command-args "verify{pl_arg}"',
+        "module-tests": f'{base} --command-args "test{pl_arg}"',
     }
 
     # Add profile-based commands
     for profile in profiles:
         if profile["canonical"] == "quality-gate":
-            commands["quality-gate"] = f'{base} --commandArgs "verify -P{profile["id"]}{pl_arg}"'
+            commands["quality-gate"] = f'{base} --command-args "verify -P{profile["id"]}{pl_arg}"'
 
     return commands
 ```
@@ -231,27 +231,27 @@ def _build_commands(module_name: str, profiles: list) -> dict:
 ```bash
 # Default TOON output for interactive use (actionable mode)
 python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run \
-  --commandArgs "verify -Ppre-commit -pl core-api"
+  --command-args "verify -Ppre-commit -pl core-api"
 
 # JSON output for script integration
 python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run \
-  --commandArgs "verify" --format json
+  --command-args "verify" --format json
 
 # Structured mode for full diagnostics (shows all warnings with acceptance status)
 python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run \
-  --commandArgs "verify" --mode structured
+  --command-args "verify" --mode structured
 
 # Errors-only mode for CI pipelines
 python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run \
-  --commandArgs "verify" --mode errors --format json
+  --command-args "verify" --mode errors --format json
 
 # Gradle example with module routing
 python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:gradle run \
-  --commandArgs ":api-genshin-impact:build"
+  --command-args ":api-genshin-impact:build"
 
 # npm example with workspace routing
 python3 .plan/execute-script.py pm-dev-frontend:plan-marshall-plugin:npm run \
-  --commandArgs "test --workspace=packages/app"
+  --command-args "test --workspace=packages/app"
 ```
 
 ## Direct Execution API

@@ -36,7 +36,7 @@ Skill: plan-marshall:ref-development-standards
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[STATUS] (pm-workflow:change-feature-agent) Starting"
+  work --plan-id {plan_id} --level INFO --message "[STATUS] (pm-workflow:change-feature-agent) Starting"
 ```
 
 ### Step 1: Load Context
@@ -72,7 +72,7 @@ Log scope:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(pm-workflow:change-feature-agent) Feature scope: {components}, integration: {points}"
+  decision --plan-id {plan_id} --level INFO --message "(pm-workflow:change-feature-agent) Feature scope: {components}, integration: {points}"
 ```
 
 ### Step 3: Analyze Integration Points
@@ -175,7 +175,7 @@ EOF
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(pm-workflow:change-feature-agent) Complete: {N} deliverables (feature)"
+  decision --plan-id {plan_id} --level INFO --message "(pm-workflow:change-feature-agent) Complete: {N} deliverables (feature)"
 ```
 
 ## Output

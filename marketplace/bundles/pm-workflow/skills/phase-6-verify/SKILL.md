@@ -58,14 +58,14 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-m
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[STATUS] (pm-workflow:phase-6-verify) Starting verify phase"
+  work --plan-id {plan_id} --level INFO --message "[STATUS] (pm-workflow:phase-6-verify) Starting verify phase"
 ```
 
 ### Query Unresolved Findings
 
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-findings:manage-findings \
-  qgate query {plan_id} --phase 6-verify --resolution pending
+  qgate query --plan-id {plan_id} --phase 6-verify --resolution pending
 ```
 
 If unresolved findings exist from a previous iteration (filtered_count > 0):
@@ -75,13 +75,13 @@ For each pending finding:
 2. Resolve:
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-findings:manage-findings \
-  qgate resolve {plan_id} {hash_id} fixed --phase 6-verify \
+  qgate resolve --plan-id {plan_id} --hash-id {hash_id} --resolution fixed --phase 6-verify \
   --detail "{fix task reference or description}"
 ```
 3. Log:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(pm-workflow:phase-6-verify:qgate) Finding {hash_id} [qgate]: fixed — {resolution_detail}"
+  decision --plan-id {plan_id} --level INFO --message "(pm-workflow:phase-6-verify:qgate) Finding {hash_id} [qgate]: fixed — {resolution_detail}"
 ```
 
 ### Step 2: Read Configuration
@@ -223,7 +223,7 @@ For each finding, also persist to Q-Gate:
 
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-findings:manage-findings \
-  qgate add {plan_id} --phase 6-verify --source qgate \
+  qgate add --plan-id {plan_id} --phase 6-verify --source qgate \
   --type {lint-issue|build-error|test-failure} --title "{finding.rule}: {finding.message}" \
   --detail "{finding details}" \
   --file-path "{finding.file}" --severity {finding.severity}
@@ -294,7 +294,7 @@ Exit successfully.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[STATUS] (pm-workflow:phase-6-verify) Verify complete: {passed}/{total} checks, {fix_tasks} fix tasks"
+  work --plan-id {plan_id} --level INFO --message "[STATUS] (pm-workflow:phase-6-verify) Verify complete: {passed}/{total} checks, {fix_tasks} fix tasks"
 ```
 
 ---
@@ -359,7 +359,7 @@ On any error, **first log the error** to work-log:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} ERROR "[ERROR] (pm-workflow:phase-6-verify) {step} failed - {error_type}: {error_context}"
+  work --plan-id {plan_id} --level ERROR --message "[ERROR] (pm-workflow:phase-6-verify) {step} failed - {error_type}: {error_context}"
 ```
 
 ---

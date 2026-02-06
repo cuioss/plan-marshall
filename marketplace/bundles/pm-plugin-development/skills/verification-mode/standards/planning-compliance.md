@@ -222,7 +222,7 @@ Examples:
 |------|-------------|--------------|
 | `request.md` | `pm-workflow:manage-plan-documents:manage-plan-documents request read --plan-id {id}` | `pm-workflow:manage-plan-documents:manage-plan-documents request create --plan-id {id} --title ... --source ... --body ...` |
 | `solution_outline.md` | `pm-workflow:manage-solution-outline:manage-solution-outline read --plan-id {id}` | `pm-workflow:manage-solution-outline:manage-solution-outline write --plan-id {id} <<'EOF'` then validate |
-| `work.log` | `plan-marshall:manage-logging:manage-log read --plan-id {id} --type work` | `plan-marshall:manage-logging:manage-log work {id} {level} "{message}"` |
+| `work.log` | `plan-marshall:manage-logging:manage-log read --plan-id {id} --type work` | `plan-marshall:manage-logging:manage-log work --plan-id {id} --level {level} --message "{message}"` |
 | `lessons-learned/*.md` | `plan-marshall:manage-lessons:manage-lesson get --id {lesson_id}` | `plan-marshall:manage-lessons:manage-lesson add` |
 | Any plan file | `pm-workflow:manage-files:manage-files read --plan-id {id} --file {path}` | `pm-workflow:manage-files:manage-files write --plan-id {id} --file {path}` |
 

@@ -60,26 +60,26 @@ Plan findings are working data during plan execution. Notable findings are promo
 ```bash
 # Add finding
 python3 .plan/execute-script.py pm-workflow:manage-findings:manage-findings \
-  add {plan_id} {type} {title} --detail DETAIL \
+  add --plan-id {plan_id} --type {type} --title {title} --detail DETAIL \
   [--file-path PATH] [--line N] [--component C] \
   [--module M] [--rule R] [--severity S]
 
 # Query findings
 python3 .plan/execute-script.py pm-workflow:manage-findings:manage-findings \
-  query {plan_id} [--type T] [--resolution R] \
+  query --plan-id {plan_id} [--type T] [--resolution R] \
   [--promoted BOOL] [--file-pattern PATTERN]
 
 # Get single finding
 python3 .plan/execute-script.py pm-workflow:manage-findings:manage-findings \
-  get {plan_id} {hash_id}
+  get --plan-id {plan_id} --hash-id {hash_id}
 
 # Resolve finding
 python3 .plan/execute-script.py pm-workflow:manage-findings:manage-findings \
-  resolve {plan_id} {hash_id} {resolution} [--detail DETAIL]
+  resolve --plan-id {plan_id} --hash-id {hash_id} --resolution {resolution} [--detail DETAIL]
 
 # Promote finding
 python3 .plan/execute-script.py pm-workflow:manage-findings:manage-findings \
-  promote {plan_id} {hash_id} {promoted_to}
+  promote --plan-id {plan_id} --hash-id {hash_id} --promoted-to {promoted_to}
 ```
 
 ### Q-Gate Commands
@@ -89,23 +89,23 @@ Per-phase Q-Gate findings for the unified findings-iteration model across phases
 ```bash
 # Add Q-Gate finding
 python3 .plan/execute-script.py pm-workflow:manage-findings:manage-findings \
-  qgate add {plan_id} --phase {phase} --source {qgate|user_review} \
+  qgate add --plan-id {plan_id} --phase {phase} --source {qgate|user_review} \
   --type {type} --title {title} --detail {detail} \
   [--file-path PATH] [--component C] [--severity S] [--iteration N]
 
 # Query Q-Gate findings
 python3 .plan/execute-script.py pm-workflow:manage-findings:manage-findings \
-  qgate query {plan_id} --phase {phase} \
+  qgate query --plan-id {plan_id} --phase {phase} \
   [--resolution R] [--source S] [--iteration N]
 
 # Resolve Q-Gate finding
 python3 .plan/execute-script.py pm-workflow:manage-findings:manage-findings \
-  qgate resolve {plan_id} {hash_id} {resolution} --phase {phase} \
+  qgate resolve --plan-id {plan_id} --hash-id {hash_id} --resolution {resolution} --phase {phase} \
   [--detail DETAIL]
 
 # Clear Q-Gate findings for phase
 python3 .plan/execute-script.py pm-workflow:manage-findings:manage-findings \
-  qgate clear {plan_id} --phase {phase}
+  qgate clear --plan-id {plan_id} --phase {phase}
 ```
 
 **Phases**: `2-refine`, `3-outline`, `4-plan`, `6-verify`, `7-finalize`
@@ -158,15 +158,15 @@ b4e3d2,sonar-issue,TODO comment,fixed
 
 At `7-finalize`:
 
-1. Query unpromoted findings: `query {plan_id} --promoted false`
+1. Query unpromoted findings: `query --plan-id {plan_id} --promoted false`
 2. For each finding to promote:
    - **To manage-lessons** (bug, improvement, anti-pattern, triage):
      ```bash
      manage-lessons add --component {component} --category {type} ...
-     promote {plan_id} {hash_id} {promoted_id}
+     promote --plan-id {plan_id} --hash-id {hash_id} --promoted-to {promoted_id}
      ```
    - **To architecture** (tip, insight, best-practice):
      ```bash
      architecture enrich {type} --module {module} --{type} "{content}" --reasoning "From plan {plan_id}"
-     promote {plan_id} {hash_id} architecture
+     promote --plan-id {plan_id} --hash-id {hash_id} --promoted-to architecture
      ```

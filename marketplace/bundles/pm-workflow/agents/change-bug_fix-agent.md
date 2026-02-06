@@ -36,7 +36,7 @@ Skill: plan-marshall:ref-development-standards
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work {plan_id} INFO "[STATUS] (pm-workflow:change-bug_fix-agent) Starting"
+  work --plan-id {plan_id} --level INFO --message "[STATUS] (pm-workflow:change-bug_fix-agent) Starting"
 ```
 
 ### Step 1: Load Context
@@ -72,7 +72,7 @@ Log findings:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(pm-workflow:change-bug_fix-agent) Bug location: {file}:{line}, root cause: {cause}"
+  decision --plan-id {plan_id} --level INFO --message "(pm-workflow:change-bug_fix-agent) Bug location: {file}:{line}, root cause: {cause}"
 ```
 
 ### Step 3: Root Cause Analysis
@@ -180,7 +180,7 @@ EOF
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision {plan_id} INFO "(pm-workflow:change-bug_fix-agent) Complete: 2 deliverables (bug_fix)"
+  decision --plan-id {plan_id} --level INFO --message "(pm-workflow:change-bug_fix-agent) Complete: 2 deliverables (bug_fix)"
 ```
 
 ## Output

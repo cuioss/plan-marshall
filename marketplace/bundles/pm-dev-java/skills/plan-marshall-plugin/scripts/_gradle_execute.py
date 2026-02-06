@@ -271,7 +271,7 @@ def cmd_run(args):
     formatter = format_json if fmt == 'json' else format_toon
 
     # Build command key for timeout learning (use first task as key)
-    command_args = args.commandArgs
+    command_args = args.command_args
     first_task = command_args.split()[0] if command_args else 'default'
     # Clean up task name for command key (remove leading colons)
     task_name = first_task.lstrip(':').replace(':', '_')
@@ -284,7 +284,7 @@ def cmd_run(args):
         timeout_seconds = DEFAULT_TIMEOUT_SECONDS
 
     # Execute via direct_command foundation layer
-    # commandArgs is complete and self-contained (includes :module:task prefix)
+    # command-args is complete and self-contained (includes :module:task prefix)
     result = execute_direct(
         args=command_args, command_key=command_key, default_timeout=timeout_seconds, project_dir=project_dir
     )

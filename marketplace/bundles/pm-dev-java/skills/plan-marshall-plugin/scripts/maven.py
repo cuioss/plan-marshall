@@ -3,7 +3,7 @@
 Maven build operations - run, parse, search markers, check warnings.
 
 Usage:
-    maven.py run --commandArgs <args> [options]
+    maven.py run --command-args <args> [options]
     maven.py parse --log <path> [--mode <mode>]
     maven.py search-markers --source-dir <dir>
     maven.py check-warnings --warnings <json> [--patterns <json>]
@@ -37,7 +37,7 @@ def main():
     # run subcommand (primary API)
     run_parser = subparsers.add_parser('run', help='Execute build and auto-parse on failure (primary API)')
     run_parser.add_argument(
-        '--commandArgs',
+        '--command-args', dest='command_args',
         required=True,
         help="Complete Maven command arguments (e.g., 'verify -Ppre-commit -pl my-module')",
     )
