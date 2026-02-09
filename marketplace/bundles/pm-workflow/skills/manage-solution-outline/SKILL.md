@@ -240,6 +240,7 @@ python3 .plan/execute-script.py pm-workflow:manage-solution-outline:manage-solut
 | Command | Parameters | Description |
 |---------|------------|-------------|
 | `write` | `--plan-id [--force]` | Write solution from stdin (validates automatically) |
+| `update` | `--plan-id` | Update existing solution from stdin (validates automatically) |
 | `validate` | `--plan-id` | Validate structure |
 | `read` | `--plan-id [--raw] [--deliverable-number N]` | Read solution or specific deliverable |
 | `list-deliverables` | `--plan-id` | Extract deliverables list |
@@ -267,6 +268,21 @@ validation:
   sections_found: summary,overview,deliverables
   compatibility: breaking — Clean-slate approach, no deprecation nor transitionary comments
 ```
+
+### update
+
+**Output** (TOON) — same as `write` but `action` is always `updated`:
+```toon
+status: success
+plan_id: my-feature
+file: solution_outline.md
+action: updated
+validation:
+  deliverable_count: 3
+  sections_found: summary,overview,deliverables
+```
+
+Returns error `document_not_found` if solution outline does not exist (use `write` to create first).
 
 ### validate
 

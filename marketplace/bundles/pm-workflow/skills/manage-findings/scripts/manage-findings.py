@@ -126,7 +126,7 @@ def cmd_qgate_add(args: argparse.Namespace) -> int:
         iteration=args.iteration,
     )
     print(format_output(result))
-    return 0 if result.get('status') == 'success' else 1
+    return 0 if result.get('status') in ('success', 'deduplicated', 'reopened') else 1
 
 
 def cmd_qgate_query(args: argparse.Namespace) -> int:

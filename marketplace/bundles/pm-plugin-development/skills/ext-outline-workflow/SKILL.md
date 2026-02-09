@@ -182,6 +182,16 @@ Common mistakes: Do NOT use `--component {path}`, file paths as scope parameters
 
 ## Write Solution Outline
 
+Use `write` on first entry (solution_outline.md does not exist yet).
+Use `update` on re-entry (Q-Gate loop — solution_outline.md already exists).
+
+Check first:
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-solution-outline:manage-solution-outline exists \
+  --plan-id {plan_id}
+```
+
+If `exists: false`:
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-solution-outline:manage-solution-outline write \
   --plan-id {plan_id} <<'EOF'
@@ -201,6 +211,14 @@ compatibility: {compatibility} — {compatibility_description}
 ## Deliverables
 
 {deliverables}
+EOF
+```
+
+If `exists: true`:
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-solution-outline:manage-solution-outline update \
+  --plan-id {plan_id} <<'EOF'
+{updated solution document}
 EOF
 ```
 

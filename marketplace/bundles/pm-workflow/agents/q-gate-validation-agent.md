@@ -171,6 +171,10 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 For each issue found (false positive, missing coverage, alignment issue), record it using `manage-findings` with the **`qgate add`** subcommand (NOT `add` alone):
 
+**Note**: The `qgate add` command deduplicates by title within each phase:
+- Same title + pending → `status: deduplicated` (no duplicate created)
+- Same title + resolved → `status: reopened` (finding reactivated)
+
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-findings:manage-findings \
   qgate add --plan-id {plan_id} \

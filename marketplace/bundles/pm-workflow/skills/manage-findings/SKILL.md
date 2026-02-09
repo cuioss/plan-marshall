@@ -112,6 +112,11 @@ python3 .plan/execute-script.py pm-workflow:manage-findings:manage-findings \
 
 **Sources**: `qgate` (automated verification), `user_review` (user feedback)
 
+**Deduplication**: `qgate add` deduplicates by title within each phase:
+- If a finding with the same title already exists and is `pending` → returns `status: deduplicated` (no new record)
+- If a finding with the same title exists but is resolved → returns `status: reopened` (reactivated to `pending`)
+- Otherwise → creates new finding with `status: success`
+
 ## Output Format
 
 All commands return TOON format.

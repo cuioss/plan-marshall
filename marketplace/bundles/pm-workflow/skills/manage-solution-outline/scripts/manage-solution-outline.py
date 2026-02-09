@@ -415,27 +415,21 @@ def cmd_exists(args) -> int:
     return 0 if exists else 1
 
 
-def cmd_write(args) -> int:
-    """Write solution outline from stdin with automatic contract validation.
-
-    Reads content from stdin to support ASCII diagrams with box-drawing characters.
-    ALWAYS validates against the deliverable contract before writing.
-    Returns error if validation fails (file is NOT written).
-    """
-    if not validate_plan_id(args.plan_id):
+def _read_and_validate_stdin(plan_id: str) -> tuple[str, list[str], list[str], dict[str, Any]] | int:
+    """Read content from stdin and validate. Returns (content, errors, warnings, info) or exit code on failure."""
+    if not validate_plan_id(plan_id):
         print(
             serialize_toon(
                 {
                     'status': 'error',
                     'error': 'invalid_plan_id',
-                    'plan_id': args.plan_id,
+                    'plan_id': plan_id,
                     'message': 'Plan ID must be kebab-case (lowercase, hyphens only)',
                 }
             )
         )
         return 1
 
-    # Read content from stdin
     content = sys.stdin.read()
 
     if not content.strip():
@@ -444,14 +438,13 @@ def cmd_write(args) -> int:
                 {
                     'status': 'error',
                     'error': 'empty_content',
-                    'plan_id': args.plan_id,
+                    'plan_id': plan_id,
                     'message': 'Content cannot be empty',
                 }
             )
         )
         return 1
 
-    # ALWAYS validate before writing
     errors, warnings, info = validate_solution_structure(content)
 
     if errors:
@@ -460,7 +453,7 @@ def cmd_write(args) -> int:
                 {
                     'status': 'error',
                     'error': 'validation_failed',
-                    'plan_id': args.plan_id,
+                    'plan_id': plan_id,
                     'issues': errors,
                     'warnings': warnings,
                     'deliverable_count': info['deliverable_count'],
@@ -468,6 +461,51 @@ def cmd_write(args) -> int:
             )
         )
         return 1
+
+    return content, errors, warnings, info
+
+
+def _write_and_report(
+    plan_id: str, file_path: Path, content: str, warnings: list[str], info: dict[str, Any], action: str
+) -> int:
+    """Write file atomically and print success output."""
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write_file(file_path, content)
+
+    validation = {
+        'deliverable_count': info['deliverable_count'],
+        'sections_found': ','.join(info['sections_found']),
+    }
+
+    if 'compatibility' in info:
+        validation['compatibility'] = info['compatibility']
+
+    result = {
+        'status': 'success',
+        'plan_id': plan_id,
+        'file': SOLUTION_FILE,
+        'action': action,
+        'validation': validation,
+    }
+
+    if warnings:
+        result['warnings'] = warnings
+
+    print(serialize_toon(result))
+    return 0
+
+
+def cmd_write(args) -> int:
+    """Write solution outline from stdin with automatic contract validation.
+
+    Reads content from stdin to support ASCII diagrams with box-drawing characters.
+    ALWAYS validates against the deliverable contract before writing.
+    Returns error if validation fails (file is NOT written).
+    """
+    validated = _read_and_validate_stdin(args.plan_id)
+    if isinstance(validated, int):
+        return validated
+    content, _errors, warnings, info = validated
 
     file_path = get_solution_path(args.plan_id)
     existed_before = file_path.exists()
@@ -487,33 +525,38 @@ def cmd_write(args) -> int:
         )
         return 1
 
-    # Ensure plan directory exists
-    file_path.parent.mkdir(parents=True, exist_ok=True)
+    action = 'updated' if existed_before else 'created'
+    return _write_and_report(args.plan_id, file_path, content, warnings, info, action)
 
-    # Write atomically
-    atomic_write_file(file_path, content)
 
-    validation = {
-        'deliverable_count': info['deliverable_count'],
-        'sections_found': ','.join(info['sections_found']),
-    }
+def cmd_update(args) -> int:
+    """Update an existing solution outline from stdin with automatic contract validation.
 
-    if 'compatibility' in info:
-        validation['compatibility'] = info['compatibility']
+    Like write, but requires the file to already exist. Designed for Q-Gate
+    re-entry loops where the outline needs iterative updates.
+    """
+    validated = _read_and_validate_stdin(args.plan_id)
+    if isinstance(validated, int):
+        return validated
+    content, _errors, warnings, info = validated
 
-    result = {
-        'status': 'success',
-        'plan_id': args.plan_id,
-        'file': SOLUTION_FILE,
-        'action': 'updated' if existed_before else 'created',
-        'validation': validation,
-    }
+    file_path = get_solution_path(args.plan_id)
 
-    if warnings:
-        result['warnings'] = warnings
+    if not file_path.exists():
+        print(
+            serialize_toon(
+                {
+                    'status': 'error',
+                    'error': 'document_not_found',
+                    'plan_id': args.plan_id,
+                    'file': SOLUTION_FILE,
+                    'message': 'Cannot update: solution outline does not exist. Use write to create it.',
+                }
+            )
+        )
+        return 1
 
-    print(serialize_toon(result))
-    return 0
+    return _write_and_report(args.plan_id, file_path, content, warnings, info, 'updated')
 
 
 def cmd_get_module_context(args) -> int:
@@ -621,6 +664,13 @@ def main():
     write_parser.add_argument('--plan-id', required=True, help='Plan identifier')
     write_parser.add_argument('--force', action='store_true', help='Overwrite existing file')
     write_parser.set_defaults(func=cmd_write)
+
+    # update
+    update_parser = subparsers.add_parser(
+        'update', help='Update existing solution outline from stdin (validates automatically)'
+    )
+    update_parser.add_argument('--plan-id', required=True, help='Plan identifier')
+    update_parser.set_defaults(func=cmd_update)
 
     # get-module-context
     context_parser = subparsers.add_parser('get-module-context', help='Get project structure context for placement')

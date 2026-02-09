@@ -479,6 +479,42 @@ def test_write_with_force():
 
 
 # =============================================================================
+# Test: Update Command
+# =============================================================================
+
+
+def test_update_existing():
+    """Test updating an existing solution outline."""
+    with TestContext(plan_id='solution-update') as ctx:
+        # Create initial file
+        (ctx.plan_dir / 'solution_outline.md').write_text(VALID_SOLUTION)
+
+        # Update with new content
+        updated_solution = VALID_SOLUTION.replace(
+            'Implement JWT validation service for authentication.',
+            'Implement enhanced JWT validation with key rotation support.',
+        )
+        result = run_script(SCRIPT_PATH, 'update', '--plan-id', 'solution-update', input_data=updated_solution)
+        assert result.success, f'Script failed: {result.stderr}\nOutput: {result.stdout}'
+        data = parse_toon(result.stdout)
+        assert data['status'] == 'success'
+        assert data['action'] == 'updated'
+        assert data['validation']['deliverable_count'] == 3
+        # Verify content was updated
+        content = (ctx.plan_dir / 'solution_outline.md').read_text()
+        assert 'enhanced JWT validation' in content
+
+
+def test_update_nonexistent():
+    """Test that update fails when solution outline does not exist."""
+    with TestContext(plan_id='solution-no-update'):
+        result = run_script(SCRIPT_PATH, 'update', '--plan-id', 'solution-no-update', input_data=VALID_SOLUTION)
+        assert not result.success, 'Expected failure when updating non-existent outline'
+        data = parse_toon(result.stdout)
+        assert data['error'] == 'document_not_found'
+
+
+# =============================================================================
 # Test: Invalid Plan IDs
 # =============================================================================
 

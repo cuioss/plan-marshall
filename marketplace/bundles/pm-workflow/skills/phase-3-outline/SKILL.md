@@ -57,14 +57,23 @@ If unresolved findings exist (filtered_count > 0):
 
 For each pending finding:
 1. Analyze the finding in context of the request and existing outline
-2. Address it (revise deliverables, adjust scope, remove false positives, etc.)
-3. Resolve:
+2. **If the finding indicates a missing assessment** (title contains "Missing assessment" or "not assessed"):
+   a. Extract the file path from the finding's detail or file_path field
+   b. Create the assessment entry:
+   ```bash
+   python3 .plan/execute-script.py pm-workflow:manage-assessments:manage-assessments \
+     add --plan-id {plan_id} --file-path "{file_path}" --certainty CERTAIN_INCLUDE \
+     --confidence 90 --agent phase-3-outline --detail "Added via Q-Gate finding resolution"
+   ```
+   c. Update solution_outline.md if needed (use `update` command — see Step 13)
+3. For other finding types: address by revising deliverables, adjusting scope, or removing false positives
+5. Resolve:
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-findings:manage-findings \
   qgate resolve --plan-id {plan_id} --hash-id {hash_id} --resolution taken_into_account --phase 3-outline \
   --detail "{what was done to address this finding}"
 ```
-4. Log resolution:
+6. Log resolution:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   decision --plan-id {plan_id} --level INFO --message "(pm-workflow:phase-3-outline:qgate) Finding {hash_id} [{source}]: taken_into_account — {resolution_detail}"
@@ -477,8 +486,27 @@ Use same template as Simple Track (Step 6).
 
 ### Write Solution Outline
 
+Use `write` on first entry (solution_outline.md does not exist yet).
+Use `update` on re-entry (Q-Gate loop — solution_outline.md already exists).
+
+Check with `manage-solution-outline exists --plan-id {plan_id}` to determine which command to use:
+
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-solution-outline:manage-solution-outline exists \
+  --plan-id {plan_id}
+```
+
+If `exists: false`:
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-solution-outline:manage-solution-outline write \
+  --plan-id {plan_id} <<'EOF'
+{solution document with deliverables}
+EOF
+```
+
+If `exists: true`:
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-solution-outline:manage-solution-outline update \
   --plan-id {plan_id} <<'EOF'
 {solution document with deliverables}
 EOF
@@ -501,8 +529,14 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 ### Write Solution Document (Simple Track only)
 
-For Simple Track, write solution_outline.md:
+For Simple Track, write solution_outline.md. Use `write` on first entry, `update` on re-entry (Q-Gate loop):
 
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-solution-outline:manage-solution-outline exists \
+  --plan-id {plan_id}
+```
+
+If `exists: false` (first entry):
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-solution-outline:manage-solution-outline write \
   --plan-id {plan_id} <<'EOF'
@@ -522,6 +556,14 @@ compatibility: {compatibility} — {compatibility_description}
 ## Deliverables
 
 {deliverables from Step 6}
+EOF
+```
+
+If `exists: true` (Q-Gate re-entry):
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-solution-outline:manage-solution-outline update \
+  --plan-id {plan_id} <<'EOF'
+{updated solution document}
 EOF
 ```
 

@@ -176,6 +176,14 @@ def _update_jsonl(path: Path, hash_id: str, updates: dict[str, Any]) -> bool:
     return found
 
 
+def _find_by_title(path: Path, title: str) -> dict[str, Any] | None:
+    """Find a record by title in a JSONL file. Returns first match or None."""
+    for record in _read_jsonl(path):
+        if record.get('title') == title:
+            return record
+    return None
+
+
 def _timestamp() -> str:
     """Get current ISO timestamp."""
     return datetime.now(UTC).isoformat()
@@ -352,6 +360,24 @@ def add_qgate_finding(
     if severity and severity not in SEVERITIES:
         return {'status': 'error', 'message': f'Invalid severity: {severity}. Must be one of {SEVERITIES}'}
 
+    # Semantic dedup by title within phase
+    qgate_path = get_qgate_path(plan_id, phase)
+    existing = _find_by_title(qgate_path, title)
+    if existing:
+        if existing['resolution'] == 'pending':
+            return {'status': 'deduplicated', 'hash_id': existing['hash_id'], 'phase': phase}
+        else:
+            # Resolved but re-detected — reopen
+            reopen_updates: dict[str, Any] = {
+                'resolution': 'pending',
+                'resolution_detail': None,
+                'resolution_timestamp': None,
+            }
+            if iteration is not None:
+                reopen_updates['iteration'] = iteration
+            _update_jsonl(qgate_path, existing['hash_id'], reopen_updates)
+            return {'status': 'reopened', 'hash_id': existing['hash_id'], 'phase': phase}
+
     hash_id = generate_hash_id()
     record: dict[str, Any] = {
         'hash_id': hash_id,
@@ -375,7 +401,7 @@ def add_qgate_finding(
     if severity:
         record['severity'] = severity
 
-    _append_jsonl(get_qgate_path(plan_id, phase), record)
+    _append_jsonl(qgate_path, record)
 
     return {'status': 'success', 'hash_id': hash_id, 'phase': phase}
 
