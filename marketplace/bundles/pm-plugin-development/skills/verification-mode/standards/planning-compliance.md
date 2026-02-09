@@ -67,7 +67,7 @@ Skill: pm-workflow:workflow-extension-api
 
 | Completed Phase | Contract to Verify |
 |-----------------|-------------------|
-| 1-init | domain-frontmatter-contract.md |
+| 1-init | references.json required fields (domains) |
 | 3-outline | deliverable-contract.md |
 | 4-plan | task-contract.md |
 | 5-execute | task verification criteria |

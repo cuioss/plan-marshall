@@ -420,7 +420,7 @@ python3 .plan/execute-script.py pm-workflow:manage-status:manage_status read --p
 
 | Completed Phase | Contract |
 |-----------------|----------|
-| 1-init | domain-frontmatter-contract.md |
+| 1-init | references.json required fields (domains) |
 | 3-outline | deliverable-contract.md |
 | 4-plan | task-contract.md |
 | 5-execute | task verification criteria |

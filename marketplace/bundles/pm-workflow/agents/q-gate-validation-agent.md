@@ -215,6 +215,19 @@ Only include files from deliverables that passed verification.
 
 ---
 
+### Step 5b: Count Pending Findings
+
+Query the pending findings count for the return output:
+
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-findings:manage-findings \
+  qgate query --plan-id {plan_id} --phase 3-outline --resolution pending
+```
+
+Extract `filtered_count` from the output — this becomes `qgate_pending_count` in the return value.
+
+---
+
 ### Step 6: Log Summary
 
 ```bash
