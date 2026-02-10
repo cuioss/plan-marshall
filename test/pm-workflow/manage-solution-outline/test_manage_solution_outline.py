@@ -408,11 +408,10 @@ def test_exists_present():
 
 
 def test_exists_absent():
-    """Test exists returns false when document doesn't exist."""
+    """Test exists returns success with exists=false when document doesn't exist."""
     with TestContext(plan_id='no-solution'):
         result = run_script(SCRIPT_PATH, 'exists', '--plan-id', 'no-solution')
-        # Script returns exit code 1 when document doesn't exist
-        assert not result.success
+        assert result.success
         data = parse_toon(result.stdout)
         assert data['status'] == 'success'
         assert data['exists'] is False

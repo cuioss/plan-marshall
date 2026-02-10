@@ -412,7 +412,7 @@ def cmd_exists(args) -> int:
 
     print(serialize_toon({'status': 'success', 'plan_id': args.plan_id, 'file': SOLUTION_FILE, 'exists': exists}))
 
-    return 0 if exists else 1
+    return 0
 
 
 def _read_and_validate_stdin(plan_id: str) -> tuple[str, list[str], list[str], dict[str, Any]] | int:

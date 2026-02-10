@@ -43,6 +43,12 @@ NOT:
 
 > "How do I fix the data so I can continue?"
 
+### CRITICAL: Never Propose Data Fixes
+
+Verification mode means fixing **components** (agents, skills, commands, scripts) — not the data they produce. Any proposal to fix files inside `.plan/plans/` is almost certainly wrong. The data is a symptom; the component that produced it is the cause.
+
+If your proposed fix targets `.plan/plans/**` → STOP and reconsider. Find which component generated the bad data and fix that instead.
+
 ## What This Skill Provides
 
 - **Failure Detection** - Stop on script failures, tool errors, or unexpected outputs

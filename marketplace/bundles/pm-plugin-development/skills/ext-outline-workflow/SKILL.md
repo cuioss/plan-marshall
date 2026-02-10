@@ -45,12 +45,14 @@ python3 .plan/execute-script.py pm-workflow:manage-files:manage-files mkdir \
 python3 .plan/execute-script.py \
   pm-plugin-development:tools-marketplace-inventory:scan-marketplace-inventory \
   --trace-plan-id {plan_id} \
-  --resource-types {component_types} \
+  --resource-types {comma_separated_types} \
   --bundles {bundle_scope} \
   --include-tests \
   --full \
   --output {work_dir_path}/inventory_raw.toon
 ```
+
+**Important**: `--resource-types` takes a **comma-separated** string (e.g., `skills,agents,commands`). Do NOT use spaces between types.
 
 Omit `--bundles` only if scanning all bundles.
 
@@ -131,7 +133,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 | Section | Check |
 |---------|-------|
-| `**Metadata:**` with change_type, execution_mode, domain, module, depends | Present and valid |
+| `**Metadata:**` with change_type, execution_mode, domain, module, depends | Present and valid. `execution_mode` must be one of: `automated`, `manual`, `mixed` |
 | `**Profiles:**` | At least one profile listed |
 | `**Affected files:**` | Explicit paths, no wildcards, no glob patterns |
 | `**Change per file:**` | Entry for each affected file |
@@ -185,6 +187,8 @@ Common mistakes: Do NOT use `--component {path}`, file paths as scope parameters
 Use `write` on first entry (solution_outline.md does not exist yet).
 Use `update` on re-entry (Q-Gate loop — solution_outline.md already exists).
 
+**CRITICAL — Deliverable Heading Format**: Each deliverable MUST use exactly `### N. Title` (e.g., `### 1. Migrate component X`). The validation regex is `^### \d+\. .+$`. Any other heading format (e.g., `## Deliverable 1:`, `**1. Title**`, `### Deliverable 1`) will fail validation.
+
 Check first:
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-solution-outline:manage-solution-outline exists \
@@ -210,7 +214,13 @@ compatibility: {compatibility} — {compatibility_description}
 
 ## Deliverables
 
-{deliverables}
+### 1. {First deliverable title}
+
+{deliverable content with all 6 required sections}
+
+### 2. {Second deliverable title}
+
+{deliverable content with all 6 required sections}
 EOF
 ```
 
