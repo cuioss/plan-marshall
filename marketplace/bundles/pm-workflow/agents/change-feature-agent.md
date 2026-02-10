@@ -55,9 +55,12 @@ Read domains and module mapping:
 python3 .plan/execute-script.py pm-workflow:manage-references:manage-references get \
   --plan-id {plan_id} --field domains
 
+# Module mapping is optional (created by phase-2-refine)
+python3 .plan/execute-script.py pm-workflow:manage-files:manage-files exists \
+  --plan-id {plan_id} --file work/module_mapping.toon
+# If exists: true, read it:
 python3 .plan/execute-script.py pm-workflow:manage-files:manage-files read \
-  --plan-id {plan_id} \
-  --file work/module_mapping.toon
+  --plan-id {plan_id} --file work/module_mapping.toon
 ```
 
 ### Step 2: Define Feature Scope

@@ -149,7 +149,7 @@ def validate_deliverable_contract(deliverable: dict) -> tuple[list[str], list[st
 
     # Check 2: Profiles block (separate from metadata)
     profiles = deliverable.get('profiles', [])
-    valid_profiles = ['implementation', 'module_testing', 'integration_testing']
+    valid_profiles = ['implementation', 'module_testing', 'integration_testing', 'verification']
     if not profiles:
         errors.append(f'D{num}: Missing **Profiles:** block')
     else:
@@ -159,7 +159,8 @@ def validate_deliverable_contract(deliverable: dict) -> tuple[list[str], list[st
 
     # Check 3: Affected files section
     affected_files = deliverable.get('affected_files', [])
-    if not affected_files:
+    is_verification_only = 'verification' in profiles
+    if not affected_files and not is_verification_only:
         errors.append(f'D{num}: Missing **Affected files:** section')
     else:
         # Check 3a: No wildcards or vague references

@@ -25,6 +25,7 @@ DEFAULT_TASK_EXECUTORS = {
     'implementation': 'pm-workflow:task-implementation',
     'module_testing': 'pm-workflow:task-module_testing',
     'integration_testing': 'pm-workflow:task-integration_testing',
+    'verification': 'pm-workflow:task-verification',
 }
 
 # Default system domain configuration

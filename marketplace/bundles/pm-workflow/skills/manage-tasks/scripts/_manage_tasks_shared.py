@@ -505,13 +505,14 @@ def parse_stdin_task(stdin_content: str) -> dict[str, Any]:
     if result['origin']:
         validate_origin(result['origin'])
 
-    step_errors, step_warnings = validate_steps_are_file_paths(result['steps'])
-    if step_errors:
-        raise ValueError(
-            'Task contract violation - steps must be file paths:\n'
-            + '\n'.join(step_errors)
-            + '\n\nContract reference: pm-workflow:manage-tasks/standards/task-contract.md'
-        )
+    if result['profile'] != 'verification':
+        step_errors, step_warnings = validate_steps_are_file_paths(result['steps'])
+        if step_errors:
+            raise ValueError(
+                'Task contract violation - steps must be file paths:\n'
+                + '\n'.join(step_errors)
+                + '\n\nContract reference: pm-workflow:manage-tasks/standards/task-contract.md'
+            )
 
     return result
 

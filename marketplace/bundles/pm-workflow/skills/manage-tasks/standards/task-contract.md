@@ -81,6 +81,36 @@ Tasks are stored as JSON files: `TASK-{NNN}-{TYPE}.json`
 }
 ```
 
+### Verification Task (no files to modify)
+
+For `verification` profile tasks, steps contain verification commands instead of file paths. File-path validation is skipped for this profile.
+
+```json
+{
+  "number": 6,
+  "title": "Verify pm-workflow bundle",
+  "status": "pending",
+  "phase": "5-execute",
+  "domain": "plan-marshall-plugin-dev",
+  "profile": "verification",
+  "type": "IMPL",
+  "origin": "plan",
+  "skills": [],
+  "deliverable": 6,
+  "depends_on": ["TASK-5"],
+  "description": "Run full verification suite for the pm-workflow bundle.",
+  "steps": [
+    {"number": 1, "title": "./pw verify pm-workflow", "status": "pending"}
+  ],
+  "verification": {
+    "commands": ["./pw verify pm-workflow"],
+    "criteria": "All tests, types, and linting pass",
+    "manual": false
+  },
+  "current_step": 1
+}
+```
+
 ## Key Fields
 
 | Field | Type | Required | Purpose |
@@ -175,6 +205,7 @@ The `profile` field determines the workflow type:
 | `implementation` | Create/modify production code |
 | `testing` | Create/modify test code |
 | `quality` | Documentation, verification |
+| `verification` | Verification-only (no files to modify, runs commands only) |
 
 ## Skills Inheritance
 
@@ -352,7 +383,7 @@ lessons_recorded: {count}
 
 ## Steps Field Contract
 
-**CRITICAL**: The `steps` field MUST contain file paths from the deliverable's `Affected files` section.
+**CRITICAL**: The `steps` field MUST contain file paths from the deliverable's `Affected files` section. Exception: `verification` profile tasks use verification commands as steps instead of file paths (file-path validation is skipped).
 
 ### Input Format (API calls)
 

@@ -23,6 +23,7 @@ allowed-tools: Read, Bash
 - The `steps` field MUST contain file paths from the deliverable's `Affected files` section
 - Steps must NOT be descriptive text (e.g., "Update AuthController.java" is INVALID)
 - Validation rejects tasks with non-file-path steps
+- Exception: `verification` profile tasks use verification commands as steps (file-path validation is skipped)
 
 ## Input
 
@@ -101,7 +102,7 @@ For each deliverable, extract:
 - `metadata.domain` (single value)
 - `metadata.module` (module name from architecture)
 - `metadata.depends`
-- `profiles` (list: `implementation`, `module_testing`)
+- `profiles` (list: `implementation`, `module_testing`, `verification`)
 - `affected_files`
 - `verification`
 
@@ -120,12 +121,17 @@ For each deliverable, create one task per profile in its `profiles` list:
 For each deliverable D:
   1. Query architecture: module --name {D.module}
   For each profile P in D.profiles:
-    2. Extract skills: module.skills_by_profile.{P}
-       - Load all `defaults` directly into task.skills
-       - For each `optional`, evaluate its `description` against deliverable context
-       - Include optionals whose descriptions match the task requirements
-    3. Create task with profile P and resolved skills
-    4. If P = module_testing, add depends on implementation task
+    IF P = verification:
+      2v. Skip skill resolution (no architecture query needed)
+      3v. Create task with profile=verification, empty skills, verification commands as steps
+      4v. Add depends on all other tasks from this deliverable
+    ELSE:
+      2. Extract skills: module.skills_by_profile.{P}
+         - Load all `defaults` directly into task.skills
+         - For each `optional`, evaluate its `description` against deliverable context
+         - Include optionals whose descriptions match the task requirements
+      3. Create task with profile P and resolved skills
+      4. If P = module_testing, add depends on implementation task
 ```
 
 **Query architecture**:
@@ -220,9 +226,9 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 **Key Fields**:
 - `domain`: Single domain from deliverable
-- `profile`: `implementation` or `module_testing` (determines workflow skill at execution)
-- `skills`: Domain skills only (system skills loaded by agent)
-- `steps`: File paths from `Affected files` (NOT descriptive text)
+- `profile`: `implementation`, `module_testing`, or `verification` (determines workflow skill at execution)
+- `skills`: Domain skills only (system skills loaded by agent). Empty for `verification` profile.
+- `steps`: File paths from `Affected files` (NOT descriptive text). For `verification` profile: verification commands as steps instead of file paths.
 
 ### Step 6: Determine Execution Order
 
@@ -321,8 +327,9 @@ Skills are resolved from architecture based on `module` + `profile`:
 |----------|----------|
 | Single profile | Query `architecture.module --name {module}`, extract `skills_by_profile.{profile}` |
 | Multiple profiles | Create one task per profile, each with its own resolved skills |
+| `verification` profile | Skip architecture query — no skills needed, use verification commands as steps |
 | Module not in architecture | Error - module must exist in project architecture |
-| Profile not in module | Error - profile must exist in `module.skills_by_profile` |
+| Profile not in module | Error - profile must exist in `module.skills_by_profile` (except `verification`) |
 
 ## Error Handling
 

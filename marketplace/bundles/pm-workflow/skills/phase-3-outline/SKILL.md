@@ -112,15 +112,24 @@ python3 .plan/execute-script.py pm-workflow:manage-plan-documents:manage-plan-do
   --section clarified_request
 ```
 
-### Read Module Mapping
+### Read Module Mapping (optional)
 
-Read from work directory (persisted by phase-2-refine):
+Check existence first (file is created by phase-2-refine and may not exist):
 
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-files:manage-files exists \
+  --plan-id {plan_id} \
+  --file work/module_mapping.toon
+```
+
+If `exists: true`, read it:
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-files:manage-files read \
   --plan-id {plan_id} \
   --file work/module_mapping.toon
 ```
+
+If `exists: false`, continue without module mapping — downstream steps will use discovery or request context instead.
 
 ### Read Domains
 

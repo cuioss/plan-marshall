@@ -41,6 +41,7 @@
     "./skills/task-implement",
     "./skills/task-implementation",
     "./skills/task-module_testing",
+    "./skills/task-verification",
     "./skills/workflow-architecture",
     "./skills/workflow-extension-api",
     "./skills/workflow-integration-ci",

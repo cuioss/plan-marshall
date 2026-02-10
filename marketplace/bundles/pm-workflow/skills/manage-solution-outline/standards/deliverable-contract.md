@@ -69,8 +69,9 @@ Each deliverable has a `**Profiles:**` block listing which profiles apply. Task-
 | `implementation` | Production code task | `module.skills_by_profile.implementation` |
 | `module_testing` | Unit/module test task | `module.skills_by_profile.module_testing` |
 | `integration_testing` | Integration test task | `module.skills_by_profile.integration_testing` |
+| `verification` | Verification-only task (no files to modify) | N/A — runs verification commands only |
 
-**Note**: Integration tests are separate deliverables (different module), not embedded profiles.
+**Note**: Integration tests are separate deliverables (different module), not embedded profiles. Verification profile deliverables may have an empty `Affected files` section.
 
 ### 1:N Task Creation
 
@@ -162,8 +163,8 @@ Solution outline skills MUST validate that each deliverable contains:
 - [ ] `domain` metadata (single value from config.domains)
 - [ ] `module` metadata (module name from architecture)
 - [ ] `depends` field (`none` or valid deliverable references)
-- [ ] `**Profiles:**` block with valid profiles (`implementation`, `module_testing`, `integration_testing`)
-- [ ] Explicit file list (not "all files matching X")
+- [ ] `**Profiles:**` block with valid profiles (`implementation`, `module_testing`, `integration_testing`, `verification`)
+- [ ] Explicit file list (not "all files matching X") — except `verification` profile where affected files can be empty
 - [ ] Verification command and criteria
 
 ## Deliverable ID Format
@@ -182,7 +183,7 @@ Solution outline skills MUST validate that each deliverable contains:
 - Missing `module` field (prevents skill resolution from architecture)
 - Missing `**Profiles:**` block (prevents task creation)
 - Empty `**Profiles:**` block (must have at least one profile)
-- Invalid profile (not `implementation`, `module_testing`, or `integration_testing`)
+- Invalid profile (not `implementation`, `module_testing`, `integration_testing`, or `verification`)
 - Invalid domain (domain not in marshal.json `skill_domains`)
 - System domain (using `system` as deliverable domain - internal only)
 - "Update all agents" without file enumeration
