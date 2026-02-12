@@ -10,7 +10,7 @@ Both share the same type taxonomy, resolution model, and severity values.
 
 Storage:
 - Plan findings: .plan/plans/{plan_id}/artifacts/findings.jsonl
-- Q-Gate findings: .plan/plans/{plan_id}/qgate/{phase}.jsonl
+- Q-Gate findings: .plan/plans/{plan_id}/artifacts/qgate-{phase}.jsonl
 
 Stdlib-only - no external dependencies (except toon_parser for output).
 """
@@ -109,16 +109,11 @@ def get_findings_path(plan_id: str) -> Path:
     return get_plan_root() / 'plans' / plan_id / 'artifacts' / 'findings.jsonl'
 
 
-def get_qgate_dir(plan_id: str) -> Path:
-    """Returns .plan/plans/{plan_id}/qgate/"""
-    return get_plan_root() / 'plans' / plan_id / 'qgate'
-
-
 def get_qgate_path(plan_id: str, phase: str) -> Path:
-    """Returns .plan/plans/{plan_id}/qgate/{phase}.jsonl"""
+    """Returns .plan/plans/{plan_id}/artifacts/qgate-{phase}.jsonl"""
     if phase not in QGATE_PHASES:
         raise ValueError(f'Invalid Q-Gate phase: {phase}. Must be one of {QGATE_PHASES}')
-    return get_qgate_dir(plan_id) / f'{phase}.jsonl'
+    return get_plan_root() / 'plans' / plan_id / 'artifacts' / f'qgate-{phase}.jsonl'
 
 
 def generate_hash_id() -> str:

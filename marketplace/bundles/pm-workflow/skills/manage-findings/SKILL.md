@@ -14,7 +14,7 @@ Unified storage for plan-level findings and phase-scoped Q-Gate findings. Both s
 | Scope | Storage | Lifecycle |
 |-------|---------|-----------|
 | **Plan findings** | `.plan/plans/{plan_id}/artifacts/findings.jsonl` | Long-lived, promotable |
-| **Q-Gate findings** | `.plan/plans/{plan_id}/qgate/{phase}.jsonl` | Per-phase, not promotable |
+| **Q-Gate findings** | `.plan/plans/{plan_id}/artifacts/qgate-{phase}.jsonl` | Per-phase, not promotable |
 
 Plan findings are working data during plan execution. Notable findings are promoted to project-level at `7-finalize`. Q-Gate findings track per-phase verification issues.
 
@@ -22,14 +22,14 @@ Plan findings are working data during plan execution. Notable findings are promo
 
 ```
 .plan/plans/{plan_id}/
-├── artifacts/
-│   └── findings.jsonl     # Unified: lessons + bugs (optionally promotable)
-└── qgate/                 # Per-phase Q-Gate findings
-    ├── 2-refine.jsonl
-    ├── 3-outline.jsonl
-    ├── 4-plan.jsonl
-    ├── 6-verify.jsonl
-    └── 7-finalize.jsonl
+└── artifacts/
+    ├── assessments.jsonl      # Component assessments
+    ├── findings.jsonl         # Unified: lessons + bugs (optionally promotable)
+    ├── qgate-2-refine.jsonl   # Per-phase Q-Gate findings
+    ├── qgate-3-outline.jsonl
+    ├── qgate-4-plan.jsonl
+    ├── qgate-6-verify.jsonl
+    └── qgate-7-finalize.jsonl
 ```
 
 ## Finding Types

@@ -115,7 +115,7 @@ The pm-workflow bundle uses manage-* skills as the data access layer for all pla
 │  ├───────────────────────┼───────────────────┼──────────────────────────┤  │
 │  │                       │                   │                          │  │
 │  │ manage-findings       │ findings.jsonl    │ Findings + Q-Gate        │  │
-│  │                       │ qgate/{phase}     │ • add/query/resolve      │  │
+│  │                       │ qgate-{phase}     │ • add/query/resolve      │  │
 │  │                       │   .jsonl          │ • promote (findings)     │  │
 │  │                       │                   │ • qgate add/query/clear  │  │
 │  │                       │                   │                          │  │
@@ -394,10 +394,9 @@ The pm-workflow bundle uses manage-* skills as the data access layer for all pla
 │  │       ├── references.json    # Plan refs & config (domains, branch, issue) │
 │  │       ├── solution_outline.md# Deliverables                              │
 │  │       ├── artifacts/          # Plan-level artifacts                    │
-│  │       │   ├── assessments.jsonl  # Component assessments              │
-│  │       │   └── findings.jsonl     # Unified findings                   │
-│  │       ├── qgate/              # Per-phase Q-Gate findings              │
-│  │       │   └── {phase}.jsonl                                            │
+│  │       │   ├── assessments.jsonl      # Component assessments          │
+│  │       │   ├── findings.jsonl         # Unified findings               │
+│  │       │   └── qgate-{phase}.jsonl    # Per-phase Q-Gate findings      │
 │  │       ├── work/              # Working files (outline phase+)           │
 │  │       ├── tasks/             # Task files                               │
 │  │       │   ├── TASK-001-IMPL.json                                        │

@@ -166,7 +166,7 @@ AskUserQuestion:
   - Log feedback capture:
     ```bash
     python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-      decision --plan-id {plan_id} --level INFO --message "(pm-workflow:plan-marshall) User review: {count} change requests recorded to qgate/3-outline.jsonl"
+      decision --plan-id {plan_id} --level INFO --message "(pm-workflow:plan-marshall) User review: {count} change requests recorded to artifacts/qgate-3-outline.jsonl"
     ```
   - Re-invoke phase-3-outline skill (phase reads Q-Gate findings at Step 1)
   - **Loop back to Step 3a**

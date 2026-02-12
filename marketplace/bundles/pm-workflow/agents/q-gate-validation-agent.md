@@ -257,7 +257,7 @@ findings_recorded: {count}
 qgate_pending_count: {count}
 ```
 
-**OUTPUT RULE**: Do NOT output verbose text. All verification details are logged to decision.log and findings to qgate/3-outline.jsonl. Only output the final TOON summary block.
+**OUTPUT RULE**: Do NOT output verbose text. All verification details are logged to decision.log and findings to artifacts/qgate-3-outline.jsonl. Only output the final TOON summary block.
 
 ---
 
