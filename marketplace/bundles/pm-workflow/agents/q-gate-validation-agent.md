@@ -135,7 +135,45 @@ Does the deliverable respect domain architecture?
 - Module is valid for the domain
 - Change type is appropriate for the files
 
-#### 2.5 Log Verification Result
+#### 2.5 File Existence Validation
+
+Verify every path in `Affected files` exists on disk (except for `verification` profile deliverables where affected files may be empty).
+
+```bash
+ls {file_path}
+```
+
+**Pass criteria**:
+- Every listed file exists on disk
+- OR deliverable has `change_type: feature` and file is explicitly marked as "to be created"
+
+**Fail criteria**:
+- File path does not exist and deliverable is not creating it
+- Path structure doesn't match project conventions (e.g., flat `test/bundle/test_foo.py` when actual layout uses subdirectories `test/bundle/skill-name/test_foo.py`)
+
+**FLAG**: `"File not found: {path} in deliverable {N}"` — include the actual file listing from the parent directory to help identify the correct path.
+
+#### 2.6 Profile Overlap Detection
+
+Check for redundant test coverage across deliverables. A separate test deliverable is redundant when other deliverables already have `module_testing` profile covering the same test files.
+
+```
+FOR each deliverable D with profile=module_testing AND change_type != verification:
+  FOR each file F in D.affected_files:
+    FOR each OTHER deliverable D2 where D2.profiles contains module_testing:
+      IF F would be the test file for any source file in D2.affected_files:
+        FLAG: "Profile overlap: {F} in deliverable {D.number} already covered by deliverable {D2.number}'s module_testing profile"
+```
+
+**Heuristic for matching test files to source files**: A test file `test/{bundle}/{skill-name}/test_foo.py` corresponds to source file `marketplace/bundles/{bundle}/skills/{skill-name}/scripts/foo.py`. If a deliverable has `module_testing` profile and its source files have corresponding test files that appear in another deliverable, flag the overlap.
+
+**Pass criteria**:
+- No deliverable's test files overlap with another deliverable's module_testing scope
+
+**Fail criteria**:
+- A dedicated test deliverable covers files already implied by module_testing profiles on other deliverables
+
+#### 2.7 Log Verification Result
 
 For each deliverable:
 
@@ -269,6 +307,8 @@ qgate_pending_count: {count}
 | Assessment Coverage | All files have CERTAIN_INCLUDE | Files without assessment |
 | False Positives | Files should be modified | Files document, don't produce |
 | Architecture | Module/domain valid | Invalid module or domain |
+| File Existence | All affected file paths exist on disk | Path not found or wrong convention |
+| Profile Overlap | No redundant test coverage across deliverables | Test deliverable duplicates module_testing scope |
 | Missing Coverage | All assessed files in deliverables | Assessed files missing |
 
 ---

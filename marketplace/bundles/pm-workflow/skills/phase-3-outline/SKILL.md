@@ -59,14 +59,27 @@ For each pending finding:
 1. Analyze the finding in context of the request and existing outline
 2. **If the finding indicates a missing assessment** (title contains "Missing assessment" or "not assessed"):
    a. Extract the file path from the finding's detail or file_path field
-   b. Create the assessment entry:
+   b. **Verify the file exists on disk before creating the assessment**:
+   ```bash
+   ls {file_path}
+   ```
+   If the file does NOT exist: Do NOT create an assessment for the wrong path. Instead, find the correct path (check the actual directory structure) and update the deliverable's `Affected files` in solution_outline.md to use the correct path. Then create the assessment with the corrected path.
+   c. Create the assessment entry (only after path is verified):
    ```bash
    python3 .plan/execute-script.py pm-workflow:manage-assessments:manage-assessments \
      add --plan-id {plan_id} --file-path "{file_path}" --certainty CERTAIN_INCLUDE \
      --confidence 90 --agent phase-3-outline --detail "Added via Q-Gate finding resolution"
    ```
-   c. Update solution_outline.md if needed (use `update` command — see Step 13)
-3. For other finding types: address by revising deliverables, adjusting scope, or removing false positives
+   d. Update solution_outline.md if needed (use `update` command — see Step 13)
+3. **If the finding indicates a file existence issue** (title contains "File not found"):
+   a. Find the correct path by listing the parent directory
+   b. Update the deliverable's `Affected files` in solution_outline.md with the correct path
+   c. Create or update the assessment with the corrected path
+4. **If the finding indicates profile overlap** (title contains "Profile overlap"):
+   a. Remove the redundant deliverable from solution_outline.md, OR
+   b. Remove the `module_testing` profile from the overlapping deliverable
+   c. Use `update` command to persist the corrected outline
+5. For other finding types: address by revising deliverables, adjusting scope, or removing false positives
 5. Resolve:
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-findings:manage-findings \

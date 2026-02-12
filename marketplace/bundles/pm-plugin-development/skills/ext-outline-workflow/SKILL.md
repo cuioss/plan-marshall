@@ -139,7 +139,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 |---------|-------|
 | `**Metadata:**` with change_type, execution_mode, domain, module, depends | Present and valid. `execution_mode` must be one of: `automated`, `manual`, `mixed` (NOTE: `verification` is a valid change_type but NOT a valid execution_mode) |
 | `**Profiles:**` | At least one profile listed |
-| `**Affected files:**` | Explicit paths, no wildcards, no glob patterns |
+| `**Affected files:**` | Explicit paths, no wildcards, no glob patterns. **Every path MUST exist on disk** (verify with `ls`). Use paths from inventory scan — do NOT guess or construct paths from component names. |
 | `**Change per file:**` | Entry for each affected file |
 | `**Verification:**` | Both Command and Criteria present |
 | `**Success Criteria:**` | At least one criterion |
@@ -184,6 +184,32 @@ Common mistakes: Do NOT use `--component {path}`, file paths as scope parameters
 **Verification:**
 - Command: `/pm-plugin-development:plugin-doctor scope={component_type}s {component_type}-name={name}`
 - Criteria: No errors, structure compliant
+```
+
+## Test Deliverable vs module_testing Profile
+
+**CRITICAL**: Do NOT create a separate "update tests" or "consolidate tests" deliverable when individual deliverables already have `module_testing` in their Profiles block.
+
+The 1:N profile mapping (deliverable-contract.md) means each deliverable with `module_testing` profile automatically generates a separate test task. Creating an additional test deliverable for the same test files causes **redundant tasks** that modify identical files.
+
+| Scenario | Correct Approach |
+|----------|-----------------|
+| D1-D4 each have `Profiles: implementation, module_testing` | Do NOT add D5 "Update all tests" — D1-D4 already generate test tasks |
+| Tests span multiple deliverables and need cross-cutting integration | Create a separate integration test deliverable (different test files) |
+| A final verification-only deliverable (no file changes) | Use `change_type: verification` with `Profiles: verification` — this is NOT redundant |
+
+**Anti-pattern**:
+```
+D1: Migrate component A (Profiles: implementation, module_testing)
+D2: Migrate component B (Profiles: implementation, module_testing)
+D3: Update tests for A and B  ← REDUNDANT — D1 and D2 already cover testing
+```
+
+**Correct pattern**:
+```
+D1: Migrate component A (Profiles: implementation, module_testing)
+D2: Migrate component B (Profiles: implementation, module_testing)
+D3: Verify bundle integrity (Profiles: verification)  ← OK — verification only, no file overlap
 ```
 
 ## Write Solution Outline
