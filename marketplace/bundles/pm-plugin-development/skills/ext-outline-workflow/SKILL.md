@@ -41,6 +41,8 @@ Create work directory and run full inventory scan:
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-files:manage-files mkdir \
   --plan-id {plan_id} --dir work --trace-plan-id {plan_id}
+# Output includes: path: /absolute/path/to/.plan/plans/{plan_id}/work
+# Use the returned `path` value as {work_dir_path} below
 
 python3 .plan/execute-script.py \
   pm-plugin-development:tools-marketplace-inventory:scan-marketplace-inventory \
@@ -51,6 +53,8 @@ python3 .plan/execute-script.py \
   --full \
   --output {work_dir_path}/inventory_raw.toon
 ```
+
+**Important**: `{work_dir_path}` is the `path` value returned by the `mkdir` command above. Do NOT hardcode the path.
 
 **Important**: `--resource-types` takes a **comma-separated** string (e.g., `skills,agents,commands`). Do NOT use spaces between types.
 
