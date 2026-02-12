@@ -137,7 +137,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 | Section | Check |
 |---------|-------|
-| `**Metadata:**` with change_type, execution_mode, domain, module, depends | Present and valid. `execution_mode` must be one of: `automated`, `manual`, `mixed` |
+| `**Metadata:**` with change_type, execution_mode, domain, module, depends | Present and valid. `execution_mode` must be one of: `automated`, `manual`, `mixed` (NOTE: `verification` is a valid change_type but NOT a valid execution_mode) |
 | `**Profiles:**` | At least one profile listed |
 | `**Affected files:**` | Explicit paths, no wildcards, no glob patterns |
 | `**Change per file:**` | Entry for each affected file |
@@ -220,11 +220,34 @@ compatibility: {compatibility} — {compatibility_description}
 
 ### 1. {First deliverable title}
 
-{deliverable content with all 6 required sections}
+**Metadata:**
+- change_type: {analysis|feature|enhancement|bug_fix|tech_debt|verification}
+- execution_mode: {automated|manual|mixed}
+- domain: {single domain from config.domains}
+- module: {module name from architecture}
+- depends: {none|N|N,M}
+
+**Profiles:**
+- implementation
+- {module_testing - only if module has test infrastructure}
+
+**Affected files:**
+- `{explicit/path/to/file1.ext}`
+- `{explicit/path/to/file2.ext}`
+
+**Change per file:** {What changes in these files}
+
+**Verification:**
+- Command: `{verification command}`
+- Criteria: {success criteria}
+
+**Success Criteria:**
+- {criterion 1}
+- {criterion 2}
 
 ### 2. {Second deliverable title}
 
-{deliverable content with all 6 required sections}
+{Same structure — ALL 6 sections above are MANDATORY for every deliverable}
 EOF
 ```
 
