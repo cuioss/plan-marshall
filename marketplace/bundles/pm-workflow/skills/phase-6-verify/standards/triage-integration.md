@@ -94,7 +94,6 @@ Create a fix task and loop back to execute.
 ```toon
 decision: FIX
 reason: Standards violation must be corrected
-task_type: FIX
 priority_boost: 0
 ```
 
@@ -170,7 +169,6 @@ title: Fix {finding.rule}: {finding.message}
 deliverable: 0
 domain: {domain}
 profile: implementation
-type: FIX
 origin: fix
 skills:
   - {domain_default_skill}

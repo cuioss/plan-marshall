@@ -45,9 +45,7 @@ def cmd_add(args) -> int:
 
     number = get_next_number(task_dir)
 
-    # Use type for filename (TASK-SEQ-TYPE format per target architecture)
-    task_type = parsed['type']
-    filename = f'TASK-{number:03d}-{task_type}.json'
+    filename = f'TASK-{number:03d}.json'
     filepath = task_dir / filename
 
     steps = []
@@ -61,7 +59,6 @@ def cmd_add(args) -> int:
         'phase': parsed['phase'],
         'domain': parsed['domain'],
         'profile': parsed['profile'],
-        'type': parsed['type'],
         'skills': parsed['skills'],
         'origin': parsed['origin'],
         'deliverable': parsed['deliverable'],
@@ -78,7 +75,7 @@ def cmd_add(args) -> int:
     total = len(list(task_dir.glob('TASK-*.json')))
 
     log_entry(
-        'work', args.plan_id, 'INFO', f'[MANAGE-TASKS] Added TASK-{number:03d} ({task_type}): {parsed["title"][:50]}'
+        'work', args.plan_id, 'INFO', f'[MANAGE-TASKS] Added TASK-{number:03d} ({parsed["origin"]}): {parsed["title"][:50]}'
     )
 
     output_toon(
@@ -92,7 +89,6 @@ def cmd_add(args) -> int:
                 'title': parsed['title'],
                 'domain': parsed['domain'],
                 'profile': parsed['profile'],
-                'type': parsed['type'],
                 'skills': parsed['skills'],
                 'deliverable': parsed['deliverable'],
                 'depends_on': parsed['depends_on'],
@@ -161,7 +157,7 @@ def cmd_update(args) -> int:
             output_error('Deliverable must be a positive integer')
             return 1
 
-    # Filename uses TASK-SEQ-TYPE format - doesn't change when title changes
+    # Filename uses TASK-NNN format - doesn't change when title changes
     new_content = format_task_file(task)
     atomic_write_file(filepath, new_content)
 
@@ -175,7 +171,6 @@ def cmd_update(args) -> int:
                 'title': task['title'],
                 'domain': task.get('domain'),
                 'profile': task.get('profile'),
-                'type': task.get('type'),
                 'skills': task.get('skills', []),
                 'status': task['status'],
             },

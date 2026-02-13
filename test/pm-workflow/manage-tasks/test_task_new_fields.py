@@ -692,7 +692,7 @@ def test_backward_compat_old_file_without_new_fields():
             'steps': [{'number': 1, 'title': 'Step 1', 'status': 'pending'}],
             'current_step': 1,
         }
-        (task_dir / 'TASK-001-IMPL.json').write_text(json.dumps(old_format, indent=2), encoding='utf-8')
+        (task_dir / 'TASK-001.json').write_text(json.dumps(old_format, indent=2), encoding='utf-8')
 
         # Get should work and return defaults for missing fields
         result = run_script(SCRIPT_PATH, 'get', '--plan-id', 'test-plan', '--number', '1')
@@ -748,7 +748,7 @@ def test_file_contains_all_new_fields():
         )
 
         task_dir = Path(os.environ['PLAN_BASE_DIR']) / 'plans' / 'test-plan' / 'tasks'
-        files = list(task_dir.glob('TASK-001-*.json'))
+        files = list(task_dir.glob('TASK-001.json'))
         content = files[0].read_text(encoding='utf-8')
         task = json.loads(content)
 
@@ -880,8 +880,8 @@ def test_update_with_arbitrary_domain():
 # =============================================================================
 
 
-def test_add_with_impl_type():
-    """Add accepts type field with IMPL value."""
+def test_add_with_plan_origin():
+    """Add task with plan origin (default)."""
     temp_dir = setup_plan_dir()
     try:
         toon = """title: Implementation task
@@ -889,7 +889,6 @@ deliverable: 1
 domain: java
 profile: implementation
 phase: 5-execute
-type: IMPL
 description: Desc
 skills:
   - pm-dev-java:java-core
@@ -898,13 +897,13 @@ steps:
         result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
 
         assert result.returncode == 0, f'Failed: {result.stderr}'
-        assert 'type: IMPL' in result.stdout
+        assert 'origin: plan' in result.stdout
     finally:
         cleanup(temp_dir)
 
 
-def test_add_with_fix_type():
-    """Add accepts type field with FIX value."""
+def test_add_with_fix_origin():
+    """Add task with fix origin."""
     temp_dir = setup_plan_dir()
     try:
         toon = """title: Fix task
@@ -912,7 +911,6 @@ deliverable: 1
 domain: java
 profile: implementation
 phase: 5-execute
-type: FIX
 origin: fix
 description: Desc
 skills:
@@ -922,13 +920,13 @@ steps:
         result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
 
         assert result.returncode == 0, f'Failed: {result.stderr}'
-        assert 'type: FIX' in result.stdout
+        assert 'origin: fix' in result.stdout
     finally:
         cleanup(temp_dir)
 
 
-def test_add_with_sonar_type():
-    """Add accepts type field with SONAR value."""
+def test_add_with_sonar_origin():
+    """Add task with sonar origin."""
     temp_dir = setup_plan_dir()
     try:
         toon = """title: Sonar fix task
@@ -936,8 +934,7 @@ deliverable: 1
 domain: java
 profile: quality
 phase: 5-execute
-type: SONAR
-origin: fix
+origin: sonar
 description: Desc
 skills:
   - pm-dev-java:java-core
@@ -946,18 +943,18 @@ steps:
         result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
 
         assert result.returncode == 0, f'Failed: {result.stderr}'
-        assert 'type: SONAR' in result.stdout
+        assert 'origin: sonar' in result.stdout
     finally:
         cleanup(temp_dir)
 
 
 # =============================================================================
-# Tests: task ID format TASK-SEQ-TYPE
+# Tests: task ID format TASK-NNN (type in JSON only, not in filename)
 # =============================================================================
 
 
-def test_task_file_uses_type_suffix():
-    """Task file uses TASK-SEQ-TYPE format instead of slug."""
+def test_task_file_uses_numbered_format():
+    """Task file uses TASK-NNN.json format."""
     temp_dir = setup_plan_dir()
     try:
         toon = """title: Implementation task with long title
@@ -965,7 +962,6 @@ deliverable: 1
 domain: java
 profile: implementation
 phase: 5-execute
-type: IMPL
 description: Desc
 skills:
   - pm-dev-java:java-core
@@ -974,14 +970,14 @@ steps:
         result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
 
         assert result.returncode == 0, f'Failed: {result.stderr}'
-        # Should use TASK-001-IMPL.json format
-        assert 'file: TASK-001-IMPL.json' in result.stdout
+        assert 'file: TASK-001.json' in result.stdout
+        assert 'origin: plan' in result.stdout
     finally:
         cleanup(temp_dir)
 
 
-def test_fix_task_file_uses_fix_suffix():
-    """Fix task file uses TASK-SEQ-FIX format."""
+def test_fix_task_file_uses_numbered_format():
+    """Fix task file uses same TASK-NNN.json format."""
     temp_dir = setup_plan_dir()
     try:
         toon = """title: Fix broken test
@@ -989,7 +985,6 @@ deliverable: 1
 domain: java
 profile: testing
 phase: 5-execute
-type: FIX
 origin: fix
 description: Desc
 skills:
@@ -999,8 +994,8 @@ steps:
         result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
 
         assert result.returncode == 0, f'Failed: {result.stderr}'
-        # Should use TASK-001-FIX.json format
-        assert 'file: TASK-001-FIX.json' in result.stdout
+        assert 'file: TASK-001.json' in result.stdout
+        assert 'origin: fix' in result.stdout
     finally:
         cleanup(temp_dir)
 

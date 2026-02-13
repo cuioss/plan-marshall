@@ -16,7 +16,7 @@ Each task:
 
 ## Task File Format (JSON)
 
-Tasks are stored as JSON files: `TASK-{NNN}-{TYPE}.json`
+Tasks are stored as JSON files: `TASK-{NNN}.json`
 
 ### Regular Task (from plan phase)
 
@@ -28,7 +28,6 @@ Tasks are stored as JSON files: `TASK-{NNN}-{TYPE}.json`
   "phase": "5-execute",
   "domain": "java",
   "profile": "implementation",
-  "type": "IMPL",
   "origin": "plan",
   "skills": ["pm-dev-java:java-core", "pm-dev-java:java-cdi"],
   "deliverable": 1,
@@ -57,7 +56,6 @@ Tasks are stored as JSON files: `TASK-{NNN}-{TYPE}.json`
   "phase": "5-execute",
   "domain": "java",
   "profile": "module_testing",
-  "type": "FIX",
   "origin": "fix",
   "skills": ["pm-dev-java:junit-core", "pm-dev-java:java-core"],
   "deliverable": 1,
@@ -122,7 +120,7 @@ For `verification` profile tasks, steps contain verification commands instead of
 | `skills` | list | Yes | Domain skills pre-resolved during task creation |
 | `deliverable` | int | Yes | Referenced deliverable number (1:1 constraint) |
 | `depends_on` | string | Yes | Task dependencies for ordering |
-| `origin` | string | Yes | Task origin: `plan` or `fix` |
+| `origin` | string | Yes | Task origin (see Origin Field) |
 | `description` | string | Yes | Detailed task description |
 | `steps` | table | Yes | File paths to process |
 | `verification` | object | Yes | Commands and criteria |
@@ -131,34 +129,27 @@ For `verification` profile tasks, steps contain verification commands instead of
 
 ## Task ID Format
 
-Tasks use sequential numbering with zero-padded format and type suffix:
+Tasks use sequential numbering with zero-padded format:
 
 | Format | Example | Description |
 |--------|---------|-------------|
-| `TASK-{SEQ}-{TYPE}` | `TASK-001-IMPL` | 3-digit sequence + type suffix |
+| `TASK-{NNN}` | `TASK-001` | 3-digit zero-padded sequence |
 
-### Task Types
-
-| Type | Source | Description |
-|------|--------|-------------|
-| `IMPL` | plan phase | Implementation task from deliverable |
-| `FIX` | finalize | Generic fix from finding |
-| `SONAR` | finalize:sonar | Sonar issue fix |
-| `PR` | finalize:pr | PR review comment fix |
-| `LINT` | finalize:local | Lint/format fix |
-| `SEC` | finalize:security | Security finding fix |
-| `DOC` | finalize:doc | Documentation fix |
-
-**Filename format**: `TASK-{SEQ}-{TYPE}.json` (e.g., `TASK-001-IMPL.json`, `TASK-003-FIX.json`)
+**Filename format**: `TASK-{NNN}.json` (e.g., `TASK-001.json`, `TASK-003.json`)
 
 ## Origin Field
 
-Indicates where task was created:
+Indicates what created the task:
 
-| Value | Meaning |
-|-------|---------|
-| `plan` | Created during task-plan phase from deliverable |
-| `fix` | Created during finalize phase from finding |
+| Value | Source | Description |
+|-------|--------|-------------|
+| `plan` | plan phase | Task from deliverable (any change_type) |
+| `fix` | verify/finalize | Generic fix from finding |
+| `sonar` | Sonar analysis | Sonar issue fix |
+| `pr` | PR review | PR review comment fix |
+| `lint` | linting | Lint/format fix |
+| `security` | security scan | Security finding fix |
+| `documentation` | doc review | Documentation fix |
 
 ## Priority Field (Fix Tasks)
 
@@ -224,18 +215,18 @@ solution-outline phase               task-plan phase                     execute
                                      └─────────────┬───────────────┘
                                                    │
                                      ┌─────────────▼───────────────┐
-                                     │ TASK-001-IMPL.json          │
+                                     │ TASK-001.json               │
                                      │ profile: implementation     │
                                      │ skills:                     │
                                      │   - pm-dev-java:java-core   │
                                      │   - pm-dev-java:java-cdi    │
                                      ├─────────────────────────────┤
-                                     │ TASK-002-TEST.json          │
+                                     │ TASK-002.json               │
                                      │ profile: module_testing     │
                                      │ skills:                     │
                                      │   - pm-dev-java:java-core   │
                                      │   - pm-dev-java:junit-core  │
-                                     │ depends: TASK-001-IMPL      │
+                                     │ depends: TASK-1             │
                                      └─────────────────────────────┘
 ```
 

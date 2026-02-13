@@ -5,11 +5,11 @@ Complete reference for the JSON format used by task files.
 ## File Naming Convention
 
 ```
-TASK-{NNN}-{TYPE}.json
+TASK-{NNN}.json
 ```
 
 - `{NNN}`: Zero-padded 3-digit number (001, 002, etc.)
-- `{TYPE}`: Task type suffix (IMPL, FIX, SONAR, PR, LINT, SEC, DOC)
+- Task type is stored in the JSON `type` field, not in the filename
 
 ## File Structure
 
@@ -21,7 +21,7 @@ TASK-{NNN}-{TYPE}.json
   "phase": "5-execute",
   "domain": "java",
   "profile": "implementation",
-  "type": "IMPL",
+
   "origin": "plan",
   "deliverable": 1,
   "depends_on": ["TASK-1"],
@@ -54,8 +54,7 @@ TASK-{NNN}-{TYPE}.json
 | `description` | Yes | String | Detailed task description |
 | `domain` | Yes | String | Task domain (java, javascript, plugin, etc.) |
 | `profile` | Yes | String | Task profile for executor routing (implementation, module_testing) |
-| `type` | Yes | String | Task type (IMPL, FIX, SONAR, etc.) |
-| `origin` | Yes | String | Task origin: `plan` (from task-plan) or `fix` (from verify) |
+| `origin` | Yes | String | Task origin: `plan`, `fix`, `sonar`, `pr`, `lint`, `security`, `documentation` |
 | `skills` | Yes | String[] | Skills to load for execution (`{bundle}:{skill}`) |
 | `steps` | Yes | Array | Ordered list of steps (at least one) |
 | `verification.commands` | Yes | String[] | Commands to verify completion |
@@ -194,7 +193,7 @@ The verification block defines how to verify task completion:
   "phase": "5-execute",
   "domain": "java",
   "profile": "implementation",
-  "type": "IMPL",
+
   "origin": "plan",
   "deliverable": 1,
   "depends_on": ["TASK-1"],

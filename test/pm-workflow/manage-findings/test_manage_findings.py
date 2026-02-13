@@ -503,21 +503,22 @@ def test_qgate_resolve_taken_into_account():
 def test_qgate_resolve_all_statuses():
     """Test all resolution statuses for Q-Gate findings."""
     resolutions = ['pending', 'fixed', 'suppressed', 'accepted', 'taken_into_account']
-    with TestContext(plan_id='qgate-resolve-all'):
+    with TestContext(plan_id='qgate-resolve-all-st'):
         for res in resolutions:
             add_result = run_script(
                 SCRIPT_PATH,
-                'qgate', 'add', '--plan-id', 'qgate-resolve-all',
+                'qgate', 'add', '--plan-id', 'qgate-resolve-all-st',
                 '--phase', '6-verify', '--source', 'qgate',
                 '--type', 'triage', '--title', f'Finding for {res}', '--detail', 'd',
             )
+            assert add_result.success, f'Add failed for {res}: {add_result.stdout}'
             hash_id = str(parse_toon(add_result.stdout)['hash_id'])
 
             result = run_script(
-                SCRIPT_PATH, 'qgate', 'resolve', '--plan-id', 'qgate-resolve-all', '--hash-id', hash_id,
+                SCRIPT_PATH, 'qgate', 'resolve', '--plan-id', 'qgate-resolve-all-st', '--hash-id', hash_id,
                 '--resolution', res, '--phase', '6-verify',
             )
-            assert result.success, f'Failed for resolution {res}: {result.stderr}'
+            assert result.success, f'Failed for resolution {res}: stdout={result.stdout}'
 
 
 # =============================================================================

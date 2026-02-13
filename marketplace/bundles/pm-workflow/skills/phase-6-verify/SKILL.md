@@ -255,7 +255,6 @@ title: Fix {finding.rule}: {finding.message}
 deliverable: 0
 domain: {domain}
 profile: implementation
-type: FIX
 origin: fix
 skills:
   - {domain_skill}

@@ -399,8 +399,8 @@ The pm-workflow bundle uses manage-* skills as the data access layer for all pla
 │  │       │   └── qgate-{phase}.jsonl    # Per-phase Q-Gate findings      │
 │  │       ├── work/              # Working files (outline phase+)           │
 │  │       ├── tasks/             # Task files                               │
-│  │       │   ├── TASK-001-IMPL.json                                        │
-│  │       │   └── TASK-002-IMPL.json                                        │
+│  │       │   ├── TASK-001.json                                             │
+│  │       │   └── TASK-002.json                                             │
 │  │       └── logs/              # Execution logs                           │
 │  │           ├── work.log                                                   │
 │  │           ├── decision.log                                               │

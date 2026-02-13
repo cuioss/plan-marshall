@@ -18,9 +18,9 @@ File formats and structures for plan data storage.
 │   └── inventory_filtered.toon  Filtered/transformed inventory
 │
 ├── tasks/                   Phase: plan
-│   ├── TASK-001-IMPL.json
-│   ├── TASK-002-IMPL.json
-│   └── TASK-003-FIX.json
+│   ├── TASK-001.json
+│   ├── TASK-002.json
+│   └── TASK-003.json
 │
 └── logs/                    Phase: all (logging)
     ├── work.log                 Semantic progress tracking
@@ -330,17 +330,17 @@ Individual task files in the tasks directory.
 ### Location
 
 ```
-.plan/plans/{plan_id}/tasks/TASK-{NNN}-{TYPE}.toon
+.plan/plans/{plan_id}/tasks/TASK-{NNN}.json
 ```
 
 ### Filename Format
 
 ```
-TASK-001-IMPL.json
-     │    │
-     │    └── Type: IMPL, FIX, SONAR, PR, LINT, SEC, DOC
+TASK-001.json
      │
      └── Sequential number (001, 002, ...)
+
+Task type (IMPL, FIX, SONAR, PR, LINT, SEC, DOC) is stored in the JSON `type` field.
 ```
 
 ### Format
@@ -388,7 +388,7 @@ current_step: 1
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                      TASK-001-IMPL.json                      │
+│                      TASK-001.json                            │
 ├─────────────────────────────────────────────────────────────┤
 │ HEADER                                                       │
 │ ┌─────────────────────────────────────────────────────────┐ │

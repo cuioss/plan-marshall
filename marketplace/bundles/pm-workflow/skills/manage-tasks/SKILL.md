@@ -37,12 +37,12 @@ Tasks are stored in the plan directory:
 
 ```
 {plan_dir}/tasks/
-  TASK-001-IMPL.json
-  TASK-002-IMPL.json
-  TASK-003-FIX.json
+  TASK-001.json
+  TASK-002.json
+  TASK-003.json
 ```
 
-**Filename format**: `TASK-{NNN}-{TYPE}.json` where TYPE is: IMPL, FIX, SONAR, PR, LINT, SEC, DOC
+**Filename format**: `TASK-{NNN}.json` (task type is stored in the JSON `type` field)
 
 ---
 
@@ -125,7 +125,6 @@ title: My Task Title
 deliverable: 1
 domain: plan-marshall-plugin-dev
 profile: implementation
-type: IMPL
 phase: 5-execute
 origin: plan
 description: |

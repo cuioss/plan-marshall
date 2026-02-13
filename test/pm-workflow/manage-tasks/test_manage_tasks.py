@@ -130,7 +130,7 @@ def test_add_first_task():
 
         # Verify file exists
         task_dir = Path(os.environ['PLAN_BASE_DIR']) / 'plans' / 'test-plan' / 'tasks'
-        files = list(task_dir.glob('TASK-001-*.json'))
+        files = list(task_dir.glob('TASK-001.json'))
         assert len(files) == 1, f'Expected 1 file, got {files}'
     finally:
         cleanup(temp_dir)
@@ -152,17 +152,16 @@ def test_add_sequential_numbering():
         cleanup(temp_dir)
 
 
-def test_add_creates_type_based_filename():
-    """Filename uses TASK-SEQ-TYPE format (not slug)."""
+def test_add_creates_numbered_filename():
+    """Filename uses TASK-NNN format (not slug or type suffix)."""
     temp_dir = setup_plan_dir()
     try:
         add_basic_task(title='Implement JWT Service!', deliverable=1)
 
         task_dir = Path(os.environ['PLAN_BASE_DIR']) / 'plans' / 'test-plan' / 'tasks'
-        files = list(task_dir.glob('TASK-001-*.json'))
+        files = list(task_dir.glob('TASK-001.json'))
         assert len(files) == 1
-        # Filename uses type suffix (default IMPL), not title slug
-        assert files[0].name == 'TASK-001-IMPL.json'
+        assert files[0].name == 'TASK-001.json'
     finally:
         cleanup(temp_dir)
 
@@ -372,7 +371,7 @@ def test_add_with_shell_metacharacters_in_verification():
 
         # Verify the verification commands were stored correctly
         task_dir = Path(os.environ['PLAN_BASE_DIR']) / 'plans' / 'test-plan' / 'tasks'
-        files = list(task_dir.glob('TASK-001-*.json'))
+        files = list(task_dir.glob('TASK-001.json'))
         content = files[0].read_text(encoding='utf-8')
         assert "grep -l '```json'" in content
         assert '| wc -l' in content
@@ -1024,25 +1023,25 @@ def test_remove_step_last_fails():
 
 
 def test_update_title_keeps_filename():
-    """Updating title does NOT rename file (TASK-SEQ-TYPE format is stable)."""
+    """Updating title does NOT rename file (TASK-NNN format is stable)."""
     temp_dir = setup_plan_dir()
     try:
         add_basic_task(title='Old Title', deliverable=1, steps=['src/main/java/File.java'])
 
-        # Verify initial filename uses TYPE suffix, not slug
+        # Verify initial filename uses numbered format, not slug
         task_dir = Path(os.environ['PLAN_BASE_DIR']) / 'plans' / 'test-plan' / 'tasks'
-        initial_files = list(task_dir.glob('TASK-001-IMPL.json'))
-        assert len(initial_files) == 1, 'Should have TASK-001-IMPL.json'
+        initial_files = list(task_dir.glob('TASK-001.json'))
+        assert len(initial_files) == 1, 'Should have TASK-001.json'
 
         result = run_script(SCRIPT_PATH, 'update', '--plan-id', 'test-plan', '--number', '1', '--title', 'New Title')
 
         assert result.returncode == 0
-        # Filename stays the same (TASK-SEQ-TYPE format)
-        assert 'TASK-001-IMPL.json' in result.stdout
+        # Filename stays the same (TASK-NNN format)
+        assert 'TASK-001.json' in result.stdout
 
         # File still exists with same name
-        final_files = list(task_dir.glob('TASK-001-IMPL.json'))
-        assert len(final_files) == 1, 'File should still be TASK-001-IMPL.json'
+        final_files = list(task_dir.glob('TASK-001.json'))
+        assert len(final_files) == 1, 'File should still be TASK-001.json'
     finally:
         cleanup(temp_dir)
 
@@ -1187,7 +1186,7 @@ def test_file_contains_new_fields():
         run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
 
         task_dir = Path(os.environ['PLAN_BASE_DIR']) / 'plans' / 'test-plan' / 'tasks'
-        files = list(task_dir.glob('TASK-001-*.json'))
+        files = list(task_dir.glob('TASK-001.json'))
         content = files[0].read_text(encoding='utf-8')
 
         # JSON format assertions
@@ -1224,7 +1223,7 @@ def test_deliverable_is_single_number_not_array():
         run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
 
         task_dir = Path(os.environ['PLAN_BASE_DIR']) / 'plans' / 'test-plan' / 'tasks'
-        files = list(task_dir.glob('TASK-001-*.json'))
+        files = list(task_dir.glob('TASK-001.json'))
         content = files[0].read_text(encoding='utf-8')
 
         import json
@@ -1240,35 +1239,33 @@ def test_deliverable_is_single_number_not_array():
 
 
 # =============================================================================
-# Tests: type-based filename format
+# Tests: numbered filename format
 # =============================================================================
 
 
-def test_type_filename_ignores_title_special_chars():
-    """Filename uses TYPE suffix regardless of special characters in title."""
+def test_numbered_filename_ignores_title_special_chars():
+    """Filename uses TASK-NNN format regardless of special characters in title."""
     temp_dir = setup_plan_dir()
     try:
         add_basic_task(title='Test@#$%Special!!!Characters', deliverable=1)
 
         task_dir = Path(os.environ['PLAN_BASE_DIR']) / 'plans' / 'test-plan' / 'tasks'
-        # Filename uses TYPE (IMPL), not slugified title
-        files = list(task_dir.glob('TASK-001-IMPL.json'))
-        assert len(files) == 1, f'Expected TASK-001-IMPL.json, found: {list(task_dir.glob("TASK-*.json"))}'
+        files = list(task_dir.glob('TASK-001.json'))
+        assert len(files) == 1, f'Expected TASK-001.json, found: {list(task_dir.glob("TASK-*.json"))}'
     finally:
         cleanup(temp_dir)
 
 
-def test_type_filename_ignores_title_length():
-    """Filename uses TYPE suffix regardless of title length."""
+def test_numbered_filename_ignores_title_length():
+    """Filename uses TASK-NNN format regardless of title length."""
     temp_dir = setup_plan_dir()
     try:
         long_title = 'A' * 100
         add_basic_task(title=long_title, deliverable=1)
 
         task_dir = Path(os.environ['PLAN_BASE_DIR']) / 'plans' / 'test-plan' / 'tasks'
-        # Filename uses TYPE (IMPL), not truncated title
-        files = list(task_dir.glob('TASK-001-IMPL.json'))
-        assert len(files) == 1, f'Expected TASK-001-IMPL.json, found: {list(task_dir.glob("TASK-*.json"))}'
+        files = list(task_dir.glob('TASK-001.json'))
+        assert len(files) == 1, f'Expected TASK-001.json, found: {list(task_dir.glob("TASK-*.json"))}'
     finally:
         cleanup(temp_dir)
 

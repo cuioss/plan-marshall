@@ -3,7 +3,7 @@
 Manage implementation tasks with sequential sub-steps within a plan.
 
 Single CLI with subcommands for CRUD operations on task files.
-Storage: JSON format (TASK-{NNN}-{TYPE}.json)
+Storage: JSON format (TASK-{NNN}.json)
 Output: TOON format for LLM-optimized consumption.
 Each task references deliverables from solution_outline.md.
 

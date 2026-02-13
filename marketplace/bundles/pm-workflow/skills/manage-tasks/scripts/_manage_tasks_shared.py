@@ -43,7 +43,6 @@ class TaskDict(TypedDict, total=False):
     phase: str
     domain: str | None
     profile: str | None
-    type: str
     origin: str
     description: str
     steps: list[StepDict]
@@ -61,9 +60,7 @@ class TaskDict(TypedDict, total=False):
 # Domains are arbitrary strings - defined in marshal.json, not hardcoded
 VALID_PHASES = ['1-init', '2-refine', '3-outline', '4-plan', '5-execute', '6-verify', '7-finalize']
 # Profiles are arbitrary strings - defined in marshal.json per-domain, not hardcoded
-VALID_ORIGINS = ['plan', 'fix']
-# Task types per target architecture
-VALID_TYPES = ['IMPL', 'FIX', 'SONAR', 'PR', 'LINT', 'SEC', 'DOC']
+VALID_ORIGINS = ['plan', 'fix', 'sonar', 'pr', 'lint', 'security', 'documentation']
 VALID_FILE_EXTENSIONS = [
     '.md',
     '.py',
@@ -140,13 +137,6 @@ def validate_domain(domain: str) -> str:
     if not domain or not domain.strip():
         raise ValueError('Domain cannot be empty')
     return domain.strip()
-
-
-def validate_type(task_type: str) -> str:
-    """Validate task type value."""
-    if task_type not in VALID_TYPES:
-        raise ValueError(f'Invalid type: {task_type}. Must be one of: {", ".join(VALID_TYPES)}')
-    return task_type
 
 
 def validate_phase(phase: str) -> str:
@@ -320,8 +310,13 @@ def parse_task_file(content: str) -> dict[str, Any]:
         task['domain'] = None
     if 'profile' not in task:
         task['profile'] = None
-    if 'type' not in task:
-        task['type'] = 'IMPL'
+    # Migration: merge legacy type into origin
+    if 'type' in task:
+        legacy_type = task.pop('type')
+        if 'origin' not in task or task['origin'] == 'fix':
+            type_to_origin = {'FIX': 'fix', 'SONAR': 'sonar', 'PR': 'pr', 'LINT': 'lint', 'SEC': 'security', 'DOC': 'documentation'}
+            if legacy_type in type_to_origin:
+                task['origin'] = type_to_origin[legacy_type]
     if 'origin' not in task:
         task['origin'] = 'plan'
 
@@ -338,6 +333,11 @@ def format_task_file(task: dict) -> str:
 
 def find_task_file(task_dir: Path, number: int) -> Path | None:
     """Find task file by number."""
+    # Current format: TASK-NNN.json
+    direct = task_dir / f'TASK-{number:03d}.json'
+    if direct.exists():
+        return direct
+    # Legacy format: TASK-NNN-TYPE.json
     pattern = f'TASK-{number:03d}-*.json'
     matches = list(task_dir.glob(pattern))
     return matches[0] if matches else None
@@ -400,7 +400,6 @@ def parse_stdin_task(stdin_content: str) -> dict[str, Any]:
         'deliverable': 0,  # Single integer (1:1 constraint)
         'domain': '',
         'profile': 'implementation',
-        'type': 'IMPL',
         'skills': skills,
         'origin': 'plan',
         'phase': 'execute',
@@ -446,7 +445,7 @@ def parse_stdin_task(stdin_content: str) -> dict[str, Any]:
             i += 1
 
         elif line.startswith('type:'):
-            result['type'] = line[5:].strip()
+            # Legacy field - silently ignored (type merged into origin)
             i += 1
 
         elif line.startswith('skills:'):
@@ -523,7 +522,6 @@ def parse_stdin_task(stdin_content: str) -> dict[str, Any]:
     validate_domain(result['domain'])
     validate_phase(result['phase'])
     validate_profile(result['profile'])
-    validate_type(result['type'])
     result['deliverable'] = validate_deliverable(result['deliverable'])
     result['skills'] = validate_skills(result['skills'])
     if result['origin']:
@@ -633,7 +631,6 @@ def output_toon(data: dict) -> None:
             'title',
             'domain',
             'profile',
-            'type',
             'phase',
             'origin',
             'status',
