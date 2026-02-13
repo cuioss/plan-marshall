@@ -684,7 +684,7 @@ python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks get --plan
 **Steps Field Contract** (CRITICAL):
 - Steps MUST be file paths from deliverable's `Affected files`
 - Steps MUST NOT be action descriptions
-- TOON format: `steps[N]{number,title,status}:` with file paths in title column
+- TOON format: `steps[N]{number,target,status}:` with file paths in target column
 
 **Common Violations**:
 | Violation | Description | Fix |

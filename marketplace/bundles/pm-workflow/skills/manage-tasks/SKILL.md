@@ -109,7 +109,7 @@ Script: `pm-workflow:manage-tasks:manage-tasks`
 | `tasks-by-profile` | `--plan-id --profile` | List tasks filtered by profile |
 | `next-tasks` | `--plan-id` | Get all tasks ready for parallel execution |
 | `finalize-step` | `--plan-id --task --step --outcome [--reason]` | Complete step with outcome (done/skipped) |
-| `add-step` | `--plan-id --task --title [--after]` | Add step to task |
+| `add-step` | `--plan-id --task --target [--after]` | Add step to task |
 | `remove-step` | `--plan-id --task --step` | Remove step from task |
 
 ### Add Command (stdin-based API)

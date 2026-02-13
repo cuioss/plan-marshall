@@ -931,7 +931,7 @@ def test_add_step_appends():
     try:
         add_basic_task(title='Task', deliverable=1, steps=['src/main/java/FileA.java', 'src/main/java/FileB.java'])
 
-        result = run_script(SCRIPT_PATH, 'add-step', '--plan-id', 'test-plan', '--task', '1', '--title', 'New Step')
+        result = run_script(SCRIPT_PATH, 'add-step', '--plan-id', 'test-plan', '--task', '1', '--target', 'New Step')
 
         assert result.returncode == 0
         assert 'step: 3' in result.stdout
@@ -957,7 +957,7 @@ def test_add_step_after():
             'test-plan',
             '--task',
             '1',
-            '--title',
+            '--target',
             'src/main/java/FileB.java',
             '--after',
             '1',
@@ -1203,7 +1203,7 @@ def test_file_contains_new_fields():
         assert 'verification' in task
         assert task['verification']['criteria'] == 'Tests pass'
         assert len(task['steps']) == 2
-        assert task['steps'][0]['title'] == 'src/main/java/File1.java'
+        assert task['steps'][0]['target'] == 'src/main/java/File1.java'
         assert task['steps'][0]['status'] == 'pending'
         assert task['current_step'] == 1
     finally:

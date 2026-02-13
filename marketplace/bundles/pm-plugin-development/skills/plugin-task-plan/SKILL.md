@@ -30,7 +30,7 @@ steps:
   - marketplace/bundles/pm-workflow/agents/solution-outline-agent.md
 
 # WRONG - descriptive text (violates contract)
-steps[2]{number,title,status}:
+steps[2]{number,target,status}:
 1,Convert plan-init-agent outputs,pending
 2,Convert solution-outline-agent outputs,pending
 ```

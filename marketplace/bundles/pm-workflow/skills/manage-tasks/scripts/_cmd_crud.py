@@ -51,8 +51,8 @@ def cmd_add(args) -> int:
     filepath = task_dir / filename
 
     steps = []
-    for i, step_title in enumerate(parsed['steps'], 1):
-        steps.append({'number': i, 'title': step_title, 'status': 'pending'})
+    for i, step_target in enumerate(parsed['steps'], 1):
+        steps.append({'number': i, 'target': step_target, 'status': 'pending'})
 
     task = {
         'number': number,

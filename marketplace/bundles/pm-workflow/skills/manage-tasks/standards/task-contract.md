@@ -35,8 +35,8 @@ Tasks are stored as JSON files: `TASK-{NNN}-{TYPE}.json`
   "depends_on": [],
   "description": "Create CacheConfig class with Redis configuration...",
   "steps": [
-    {"number": 1, "title": "src/main/java/com/example/CacheConfig.java", "status": "pending"},
-    {"number": 2, "title": "src/main/java/com/example/CacheManager.java", "status": "pending"}
+    {"number": 1, "target": "src/main/java/com/example/CacheConfig.java", "status": "pending"},
+    {"number": 2, "target": "src/main/java/com/example/CacheManager.java", "status": "pending"}
   ],
   "verification": {
     "commands": ["mvn test -Dtest=CacheConfigTest"],
@@ -70,7 +70,7 @@ Tasks are stored as JSON files: `TASK-{NNN}-{TYPE}.json`
     "message": "AssertionError: expected 5 but was 3"
   },
   "steps": [
-    {"number": 1, "title": "src/test/java/com/example/CacheTest.java", "status": "pending"}
+    {"number": 1, "target": "src/test/java/com/example/CacheTest.java", "status": "pending"}
   ],
   "verification": {
     "commands": ["mvn test -Dtest=CacheTest"],
@@ -100,7 +100,7 @@ For `verification` profile tasks, steps contain verification commands instead of
   "depends_on": ["TASK-5"],
   "description": "Run full verification suite for the pm-workflow bundle.",
   "steps": [
-    {"number": 1, "title": "./pw verify pm-workflow", "status": "pending"}
+    {"number": 1, "target": "./pw verify pm-workflow", "status": "pending"}
   ],
   "verification": {
     "commands": ["./pw verify pm-workflow"],
@@ -403,9 +403,9 @@ The script converts input to JSON array format in task files:
 ```json
 {
   "steps": [
-    {"number": 1, "title": "marketplace/bundles/pm-workflow/agents/plan-init-agent.md", "status": "pending"},
-    {"number": 2, "title": "marketplace/bundles/pm-workflow/agents/solution-outline-agent.md", "status": "pending"},
-    {"number": 3, "title": "marketplace/bundles/pm-workflow/agents/task-plan-agent.md", "status": "pending"}
+    {"number": 1, "target": "marketplace/bundles/pm-workflow/agents/plan-init-agent.md", "status": "pending"},
+    {"number": 2, "target": "marketplace/bundles/pm-workflow/agents/solution-outline-agent.md", "status": "pending"},
+    {"number": 3, "target": "marketplace/bundles/pm-workflow/agents/task-plan-agent.md", "status": "pending"}
   ]
 }
 ```

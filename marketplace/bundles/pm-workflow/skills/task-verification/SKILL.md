@@ -66,7 +66,7 @@ For each step (verification command):
 
 1. Run the command:
 ```bash
-{step.title}
+{step.target}
 ```
 
 2. Check exit code and output

@@ -11,6 +11,7 @@ Contains:
 
 import json
 import re
+import subprocess
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
@@ -31,7 +32,7 @@ class VerificationDict(TypedDict, total=False):
 
 class StepDict(TypedDict):
     number: int
-    title: str
+    target: str
     status: str
 
 
@@ -233,6 +234,25 @@ def validate_steps_are_file_paths(steps: list[str]) -> tuple[list[str], list[str
     return errors, warnings
 
 
+def normalize_step_path(path: str) -> str:
+    """Normalize absolute file paths to repo-relative paths."""
+    if not path.startswith('/'):
+        return path
+    try:
+        result = subprocess.run(
+            ['git', 'rev-parse', '--show-toplevel'],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        repo_root = result.stdout.strip()
+        if path.startswith(repo_root + '/'):
+            return path[len(repo_root) + 1 :]
+    except subprocess.CalledProcessError:
+        pass
+    return path
+
+
 # =============================================================================
 # Dependency parsing
 # =============================================================================
@@ -284,6 +304,10 @@ def parse_task_file(content: str) -> dict[str, Any]:
     if 'deliverables' in task and 'deliverable' not in task:
         old_deliverables = task.pop('deliverables')
         task['deliverable'] = old_deliverables[0] if old_deliverables else 0
+    # Migration: rename step 'title' to 'target'
+    for step in task.get('steps', []):
+        if 'title' in step and 'target' not in step:
+            step['target'] = step.pop('title')
     if 'deliverable' not in task:
         task['deliverable'] = 0
     if 'depends_on' not in task:
@@ -454,9 +478,9 @@ def parse_stdin_task(stdin_content: str) -> dict[str, Any]:
         elif line.startswith('steps:'):
             i += 1
             while i < len(lines) and lines[i].startswith('  - '):
-                step_title = lines[i][4:].strip()
-                if step_title:
-                    steps.append(step_title)
+                step_target = normalize_step_path(lines[i][4:].strip())
+                if step_target:
+                    steps.append(step_target)
                 i += 1
 
         elif line.startswith('depends_on:'):
@@ -558,7 +582,7 @@ def output_toon(data: dict) -> None:
             lines.append(f'{key}: {val}')
 
     # Task/step status fields
-    for key in ['task_status', 'step_status', 'step_title', 'next_step', 'next_step_title', 'message']:
+    for key in ['task_status', 'step_status', 'step_target', 'next_step', 'next_step_target', 'message']:
         if key in data:
             val = data[key]
             if val is None:
@@ -571,7 +595,7 @@ def output_toon(data: dict) -> None:
         lines.append('')
         lines.append('finalized:')
         fin = data['finalized']
-        for key in ['step_number', 'step_title', 'outcome', 'reason']:
+        for key in ['step_number', 'step_target', 'outcome', 'reason']:
             if key in fin:
                 lines.append(f'  {key}: {fin[key]}')
 
@@ -583,7 +607,7 @@ def output_toon(data: dict) -> None:
             lines.append('next_step: null')
         else:
             lines.append('next_step:')
-            for key in ['number', 'title']:
+            for key in ['number', 'target']:
                 if key in nxt:
                     lines.append(f'  {key}: {nxt[key]}')
 
@@ -636,9 +660,9 @@ def output_toon(data: dict) -> None:
             lines.append(f'  description: {task["description"]}')
         if 'steps' in task:
             steps = task['steps']
-            lines.append(f'  steps[{len(steps)}]{{number,title,status}}:')
+            lines.append(f'  steps[{len(steps)}]{{number,target,status}}:')
             for s in steps:
-                lines.append(f'  {s["number"]},{s["title"]},{s["status"]}')
+                lines.append(f'  {s["number"]},{s["target"]},{s["status"]}')
         if 'verification' in task:
             verif = task['verification']
             lines.append('  verification:')
@@ -711,7 +735,7 @@ def output_toon(data: dict) -> None:
                 'origin',
                 'phase',
                 'step_number',
-                'step_title',
+                'step_target',
                 'deliverable',
                 'deliverable_source',
             ]:

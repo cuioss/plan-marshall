@@ -95,7 +95,7 @@ Before implementing, understand the codebase context:
 **Read affected files** (from steps):
 ```bash
 # For each step (file path)
-Read {step.title}  # If file exists
+Read {step.target}  # If file exists
 ```
 
 **Read related files**:

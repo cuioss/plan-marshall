@@ -74,7 +74,7 @@ new: "## New Section Title\n\nNew content"
 ### 1. Read Current Content
 
 ```
-Read: {step.title}
+Read: {step.target}
 ```
 
 Parse the file to understand:
@@ -95,7 +95,7 @@ Use Edit tool for surgical changes:
 
 ```
 Edit:
-  file_path: {step.title}
+  file_path: {step.target}
   old_string: {exact text to replace}
   new_string: {replacement text}
 ```

@@ -19,10 +19,10 @@ skills[{SKILL_COUNT}]:
 - {SKILL_1}
 - {SKILL_2}
 
-steps[{STEP_COUNT}]{number,title,status}:
-1,{STEP_1_TITLE},pending
-2,{STEP_2_TITLE},pending
-3,{STEP_3_TITLE},pending
+steps[{STEP_COUNT}]{number,target,status}:
+1,{STEP_1_TARGET},pending
+2,{STEP_2_TARGET},pending
+3,{STEP_3_TARGET},pending
 
 verification:
   commands[{CMD_COUNT}]:

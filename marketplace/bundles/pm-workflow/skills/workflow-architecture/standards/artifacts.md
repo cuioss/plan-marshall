@@ -370,7 +370,7 @@ depends_on: TASK-1, TASK-2
 description: |
   Migrate miscellaneous agents from JSON to TOON output format.
 
-steps[3]{number,title,status}:
+steps[3]{number,target,status}:
 1,pm-plugin-development/agents/tool-coverage-agent.md,pending
 2,pm-dev-builder/agents/gradle-builder.md,pending
 3,pm-dev-frontend/commands/js-generate-coverage.md,pending

@@ -255,7 +255,7 @@ def cmd_next(args) -> int:
             'phase': next_task.get('phase', 'execute'),
             'deliverable': next_task.get('deliverable', 0),
             'step_number': next_step['number'],
-            'step_title': next_step['title'],
+            'step_target': next_step['target'],
         },
         'context': {
             'completed_steps': completed_steps,

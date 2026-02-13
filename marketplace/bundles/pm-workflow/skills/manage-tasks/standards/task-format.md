@@ -28,9 +28,9 @@ TASK-{NNN}-{TYPE}.json
   "skills": ["pm-dev-java:java-core", "pm-dev-java:java-cdi"],
   "description": "Create REST endpoint for user authentication...",
   "steps": [
-    {"number": 1, "title": "src/main/java/AuthController.java", "status": "done"},
-    {"number": 2, "title": "src/main/java/AuthDTO.java", "status": "in_progress"},
-    {"number": 3, "title": "src/test/java/AuthControllerTest.java", "status": "pending"}
+    {"number": 1, "target": "src/main/java/AuthController.java", "status": "done"},
+    {"number": 2, "target": "src/main/java/AuthDTO.java", "status": "in_progress"},
+    {"number": 3, "target": "src/test/java/AuthControllerTest.java", "status": "pending"}
   ],
   "verification": {
     "commands": ["./gradlew test --tests *AuthController*"],
@@ -201,9 +201,9 @@ The verification block defines how to verify task completion:
   "skills": ["pm-dev-java:java-core", "pm-dev-java:java-cdi"],
   "description": "Create REST endpoint for user authentication.\nEndpoint should accept username/password and\nreturn JWT token on successful auth.",
   "steps": [
-    {"number": 1, "title": "Create AuthController class", "status": "done"},
-    {"number": 2, "title": "Add request/response DTOs", "status": "in_progress"},
-    {"number": 3, "title": "Write integration tests", "status": "pending"}
+    {"number": 1, "target": "src/main/java/AuthController.java", "status": "done"},
+    {"number": 2, "target": "src/main/java/AuthDTO.java", "status": "in_progress"},
+    {"number": 3, "target": "src/test/java/AuthControllerTest.java", "status": "pending"}
   ],
   "verification": {
     "commands": [

@@ -10,6 +10,7 @@ from _manage_tasks_shared import (
     find_task_file,
     format_task_file,
     get_tasks_dir,
+    normalize_step_path,
     output_error,
     output_toon,
     parse_task_file,
@@ -63,7 +64,7 @@ def cmd_finalize_step(args) -> int:
     next_step_info = None
     for step in steps:
         if step['status'] == 'pending':
-            next_step_info = {'number': step['number'], 'title': step['title']}
+            next_step_info = {'number': step['number'], 'target': step['target']}
             break
 
     # Update task state
@@ -90,7 +91,7 @@ def cmd_finalize_step(args) -> int:
         'plan_id': args.plan_id,
         'finalized': {
             'step_number': args.step,
-            'step_title': step_found['title'],
+            'step_target': step_found['target'],
             'outcome': args.outcome,
         },
         'next_step': next_step_info,
@@ -129,7 +130,7 @@ def cmd_add_step(args) -> int:
     else:
         insert_pos = len(steps)
 
-    new_step = {'number': insert_pos + 1, 'title': args.title, 'status': 'pending'}
+    new_step = {'number': insert_pos + 1, 'target': normalize_step_path(args.target), 'status': 'pending'}
 
     steps.insert(insert_pos, new_step)
     for i, step in enumerate(steps):
@@ -146,7 +147,7 @@ def cmd_add_step(args) -> int:
             'plan_id': args.plan_id,
             'task_number': args.task,
             'step': new_step['number'],
-            'step_title': new_step['title'],
+            'step_target': new_step['target'],
             'message': f'Step added at position {new_step["number"]}',
         }
     )
@@ -203,7 +204,7 @@ def cmd_remove_step(args) -> int:
             'plan_id': args.plan_id,
             'task_number': args.task,
             'step': args.step,
-            'step_title': removed_step['title'],
+            'step_target': removed_step['target'],
             'message': f'Step {args.step} removed',
         }
     )

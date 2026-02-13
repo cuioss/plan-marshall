@@ -140,7 +140,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_add_step = subparsers.add_parser('add-step', help='Add a new step to a task')
     p_add_step.add_argument('--plan-id', required=True, help='Plan identifier')
     p_add_step.add_argument('--task', required=True, type=int, help='Task number')
-    p_add_step.add_argument('--title', required=True, help='Step title')
+    p_add_step.add_argument('--target', required=True, help='Step target (file path or verification command)')
     p_add_step.add_argument('--after', type=int, help='Insert after this step number')
 
     # remove-step
