@@ -25,7 +25,6 @@ Tasks are stored as JSON files: `TASK-{NNN}.json`
   "number": 1,
   "title": "Create CacheConfig class",
   "status": "pending",
-  "phase": "5-execute",
   "domain": "java",
   "profile": "implementation",
   "origin": "plan",
@@ -53,7 +52,6 @@ Tasks are stored as JSON files: `TASK-{NNN}.json`
   "number": 3,
   "title": "Fix: Test failure in CacheTest",
   "status": "pending",
-  "phase": "5-execute",
   "domain": "java",
   "profile": "module_testing",
   "origin": "fix",
@@ -88,10 +86,8 @@ For `verification` profile tasks, steps contain verification commands instead of
   "number": 6,
   "title": "Verify pm-workflow bundle",
   "status": "pending",
-  "phase": "5-execute",
   "domain": "plan-marshall-plugin-dev",
   "profile": "verification",
-  "type": "IMPL",
   "origin": "plan",
   "skills": [],
   "deliverable": 6,
@@ -251,14 +247,14 @@ Tasks have a **1:1 constraint** with deliverables - each task references exactly
 | Pattern | Description | Example |
 |---------|-------------|---------|
 | 1:1 | One task per deliverable | Single-profile deliverable |
-| 1:N | One deliverable, multiple profiles | TASK-1-IMPL and TASK-2-TEST both have `deliverable: 1` |
+| 1:N | One deliverable, multiple profiles | TASK-1 and TASK-2 both have `deliverable: 1` |
 
 ### 1:N Pattern
 
 When a deliverable has multiple profiles (implementation + module_testing), it creates multiple tasks - one per profile. Both tasks reference the same deliverable number:
 
-- TASK-1-IMPL: `deliverable: 1`, `profile: implementation`
-- TASK-2-TEST: `deliverable: 1`, `profile: module_testing`, `depends_on: ["TASK-1"]`
+- TASK-1: `deliverable: 1`, `profile: implementation`
+- TASK-2: `deliverable: 1`, `profile: module_testing`, `depends_on: ["TASK-1"]`
 
 ## Optimization Workflow
 
@@ -327,7 +323,6 @@ profile: {profile}
 skills:
   - pm-dev-java:java-core
   - pm-dev-java:java-cdi
-phase: 5-execute
 description: |
   {description from deliverable}
 
@@ -336,7 +331,7 @@ steps:
   - {file_2}
   - {file_3}
 
-depends_on: TASK-001-IMPL
+depends_on: TASK-001
 
 verification:
   commands:
@@ -364,10 +359,10 @@ tasks_created[M]{number,title,deliverable,depends_on}:
 4,Test UserRepository,2,TASK-3
 
 execution_order:
-  parallel_group_1: [TASK-001-IMPL, TASK-003-IMPL]
-  parallel_group_2: [TASK-002-IMPL]
-  parallel_group_3: [TASK-004-IMPL]
-  parallel_group_4: [TASK-005-IMPL]
+  parallel_group_1: [TASK-001, TASK-003]
+  parallel_group_2: [TASK-002]
+  parallel_group_3: [TASK-004]
+  parallel_group_4: [TASK-005]
 
 lessons_recorded: {count}
 ```

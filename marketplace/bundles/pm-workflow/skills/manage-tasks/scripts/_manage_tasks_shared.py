@@ -40,7 +40,6 @@ class TaskDict(TypedDict, total=False):
     number: int
     title: str
     status: str
-    phase: str
     domain: str | None
     profile: str | None
     origin: str
@@ -58,7 +57,6 @@ class TaskDict(TypedDict, total=False):
 # =============================================================================
 
 # Domains are arbitrary strings - defined in marshal.json, not hardcoded
-VALID_PHASES = ['1-init', '2-refine', '3-outline', '4-plan', '5-execute', '6-verify', '7-finalize']
 # Profiles are arbitrary strings - defined in marshal.json per-domain, not hardcoded
 VALID_ORIGINS = ['plan', 'fix', 'sonar', 'pr', 'lint', 'security', 'documentation']
 VALID_FILE_EXTENSIONS = [
@@ -137,13 +135,6 @@ def validate_domain(domain: str) -> str:
     if not domain or not domain.strip():
         raise ValueError('Domain cannot be empty')
     return domain.strip()
-
-
-def validate_phase(phase: str) -> str:
-    """Validate phase value."""
-    if phase not in VALID_PHASES:
-        raise ValueError(f'Invalid phase: {phase}. Must be one of: {", ".join(VALID_PHASES)}')
-    return phase
 
 
 def validate_profile(profile: str) -> str:
@@ -310,13 +301,6 @@ def parse_task_file(content: str) -> dict[str, Any]:
         task['domain'] = None
     if 'profile' not in task:
         task['profile'] = None
-    # Migration: merge legacy type into origin
-    if 'type' in task:
-        legacy_type = task.pop('type')
-        if 'origin' not in task or task['origin'] == 'fix':
-            type_to_origin = {'FIX': 'fix', 'SONAR': 'sonar', 'PR': 'pr', 'LINT': 'lint', 'SEC': 'security', 'DOC': 'documentation'}
-            if legacy_type in type_to_origin:
-                task['origin'] = type_to_origin[legacy_type]
     if 'origin' not in task:
         task['origin'] = 'plan'
 
@@ -402,7 +386,6 @@ def parse_stdin_task(stdin_content: str) -> dict[str, Any]:
         'profile': 'implementation',
         'skills': skills,
         'origin': 'plan',
-        'phase': 'execute',
         'description': '',
         'steps': steps,
         'depends_on': depends_on,
@@ -432,20 +415,12 @@ def parse_stdin_task(stdin_content: str) -> dict[str, Any]:
             result['domain'] = line[7:].strip()
             i += 1
 
-        elif line.startswith('phase:'):
-            result['phase'] = line[6:].strip()
-            i += 1
-
         elif line.startswith('profile:'):
             result['profile'] = line[8:].strip()
             i += 1
 
         elif line.startswith('origin:'):
             result['origin'] = line[7:].strip()
-            i += 1
-
-        elif line.startswith('type:'):
-            # Legacy field - silently ignored (type merged into origin)
             i += 1
 
         elif line.startswith('skills:'):
@@ -520,7 +495,6 @@ def parse_stdin_task(stdin_content: str) -> dict[str, Any]:
         raise ValueError('Missing required field: steps (at least one step required)')
 
     validate_domain(result['domain'])
-    validate_phase(result['phase'])
     validate_profile(result['profile'])
     result['deliverable'] = validate_deliverable(result['deliverable'])
     result['skills'] = validate_skills(result['skills'])
@@ -564,7 +538,6 @@ def output_toon(data: dict) -> None:
         'total_tasks',
         'task_number',
         'step',
-        'phase_filter',
         'domain_filter',
         'profile_filter',
         'ready_count',
@@ -631,7 +604,6 @@ def output_toon(data: dict) -> None:
             'title',
             'domain',
             'profile',
-            'phase',
             'origin',
             'status',
             'current_step',
@@ -730,7 +702,6 @@ def output_toon(data: dict) -> None:
                 'domain',
                 'profile',
                 'origin',
-                'phase',
                 'step_number',
                 'step_target',
                 'deliverable',
@@ -762,13 +733,13 @@ def output_toon(data: dict) -> None:
     if 'tasks_table' in data:
         tasks = data['tasks_table']
         lines.append('')
-        lines.append(f'tasks[{len(tasks)}]{{number,title,domain,profile,phase,deliverable,status,progress}}:')
+        lines.append(f'tasks[{len(tasks)}]{{number,title,domain,profile,deliverable,status,progress}}:')
         for t in tasks:
             deliv = t.get('deliverable', 0)
             domain = t.get('domain') or ''
             profile = t.get('profile') or ''
             lines.append(
-                f'{t["number"]},{t["title"]},{domain},{profile},{t.get("phase", "execute")},{deliv},{t["status"]},{t["progress"]}'
+                f'{t["number"]},{t["title"]},{domain},{profile},{deliv},{t["status"]},{t["progress"]}'
             )
 
     print('\n'.join(lines))

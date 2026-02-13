@@ -55,10 +55,8 @@ Tasks are stored as JSON and output as TOON (LLM-optimized):
   "number": 1,
   "title": "Update misc agents to TOON output",
   "status": "pending",
-  "phase": "5-execute",
   "domain": "plan-marshall-plugin-dev",
   "profile": "implementation",
-  "type": "IMPL",
   "origin": "plan",
   "skills": [
     "pm-plugin-development:plugin-maintain",
@@ -87,7 +85,6 @@ Tasks are stored as JSON and output as TOON (LLM-optimized):
 |-------|------|-------------|
 | `domain` | string | Task domain (arbitrary string, e.g., java, javascript, my-domain) |
 | `profile` | string | Task profile (e.g., `implementation`, `module_testing`) |
-| `type` | string | Task type for filename: `IMPL`, `FIX`, `SONAR`, `PR`, `LINT`, `SEC`, `DOC` |
 | `skills` | list | Pre-resolved skills for task execution |
 | `origin` | string | Task origin: `plan` (from task-plan phase) or `fix` (from verify) |
 
@@ -102,9 +99,9 @@ Script: `pm-workflow:manage-tasks:manage-tasks`
 | `add` | `--plan-id` + stdin | Add a new task (reads definition from stdin) |
 | `update` | `--plan-id --number [--title] [--description] [--depends-on] [--status] [--domain] [--profile] [--skills] [--deliverable]` | Update task metadata |
 | `remove` | `--plan-id --number` | Remove a task |
-| `list` | `--plan-id [--status] [--phase] [--deliverable] [--ready]` | List all tasks |
+| `list` | `--plan-id [--status] [--deliverable] [--ready]` | List all tasks |
 | `get` | `--plan-id --number` | Get single task details |
-| `next` | `--plan-id [--phase] [--include-context] [--ignore-deps]` | Get next pending task/step |
+| `next` | `--plan-id [--include-context] [--ignore-deps]` | Get next pending task/step |
 | `tasks-by-domain` | `--plan-id --domain` | List tasks filtered by domain |
 | `tasks-by-profile` | `--plan-id --profile` | List tasks filtered by profile |
 | `next-tasks` | `--plan-id` | Get all tasks ready for parallel execution |
@@ -125,7 +122,6 @@ title: My Task Title
 deliverable: 1
 domain: plan-marshall-plugin-dev
 profile: implementation
-phase: 5-execute
 origin: plan
 description: |
   Multi-line task description here.
@@ -152,14 +148,13 @@ verification:
 
 **Required fields**: `title`, `deliverable`, `domain`, `profile`, `skills`, `steps`
 
-**Optional fields**: `phase` (default: execute), `description`, `depends_on`, `verification`, `origin` (default: plan)
+**Optional fields**: `description`, `depends_on`, `verification`, `origin` (default: plan)
 
 **Field values**:
 - `deliverable`: Single positive integer (one deliverable per task, 1:1 constraint)
 - `domain`: Domain from references.json (e.g., `java`, `javascript`, `plan-marshall-plugin-dev`)
 - `profile`: Profile key from marshal.json (e.g., `implementation`, `module_testing`)
 - `skills`: Array of `bundle:skill` format strings
-- `phase`: One of `init`, `outline`, `plan`, `execute`, `finalize`
 - `depends_on`: `none` or task references like `TASK-1, TASK-2`
 - `origin`: `plan` (from task-plan phase) or `fix` (from verify phase)
 
@@ -167,7 +162,6 @@ verification:
 
 | Parameter | Description |
 |-----------|-------------|
-| `--phase` | Filter by plan phase (init/outline/plan/execute/finalize) |
 | `--deliverable` | Filter by deliverable number |
 | `--ready` | Only tasks with satisfied dependencies |
 | `--ignore-deps` | (next only) Ignore dependency constraints |
@@ -254,14 +248,6 @@ python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks next \
   --plan-id my-feature
 ```
 
-### Get next task in specific phase
-
-```bash
-python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks next \
-  --plan-id my-feature \
-  --phase 5-execute
-```
-
 ### List ready tasks only
 
 ```bash
@@ -340,7 +326,7 @@ Tasks reference deliverables from `solution_outline.md` using the `deliverable` 
 | Pattern | Description | Example |
 |---------|-------------|---------|
 | 1:1 | One task per deliverable | `deliverable: 1` - Task implements deliverable 1 |
-| 1:N | One deliverable, multiple profiles | TASK-1-IMPL and TASK-2-TEST both have `deliverable: 1` |
+| 1:N | One deliverable, multiple profiles | TASK-1 and TASK-2 both have `deliverable: 1` |
 
 **1:N pattern**: When a deliverable has multiple profiles (implementation + module_testing), it creates multiple tasks - one per profile. Both tasks reference the same deliverable.
 
@@ -371,32 +357,6 @@ blocked_tasks[2]{number,title,waiting_for}:
 1,Write tests,TASK-3
 2,Deploy,TASK-3, TASK-4
 ```
-
----
-
-## Phase Filtering
-
-Tasks belong to plan phases: `1-init`, `2-refine`, `3-outline`, `4-plan`, `5-execute`, `6-verify`, `7-finalize`
-
-**Filter by phase**:
-```bash
-# List execute phase tasks only
---phase 5-execute
-
-# Get next task in verify phase
-next --phase 6-verify
-
-# Get next task in finalize phase
-next --phase 7-finalize
-```
-
-**Phase purpose**:
-- `init`: Setup tasks (create directories, configs)
-- `outline`: Solution outline creation
-- `plan`: Task planning and skill resolution
-- `execute`: Implementation tasks (code changes)
-- `verify`: Quality verification tasks (build, lint, tests)
-- `finalize`: Shipping tasks (commit, PR, knowledge capture)
 
 ---
 

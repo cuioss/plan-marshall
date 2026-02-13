@@ -25,10 +25,6 @@ def cmd_list(args) -> int:
     # Build set of done task numbers for dependency checking
     done_tasks = {f'TASK-{t["number"]}' for _, t in all_tasks if t.get('status') == 'done'}
 
-    # Filter by phase if specified
-    if args.phase:
-        all_tasks = [(p, t) for p, t in all_tasks if t.get('phase', 'execute') == args.phase]
-
     # Filter by deliverable if specified
     if args.deliverable:
         all_tasks = [(p, t) for p, t in all_tasks if args.deliverable == t.get('deliverable', 0)]
@@ -48,12 +44,6 @@ def cmd_list(args) -> int:
     done_count = sum(1 for _, t in all_tasks if t.get('status') == 'done')
     blocked = sum(1 for _, t in all_tasks if t.get('status') == 'blocked')
 
-    # Compute counts by phase
-    by_phase: dict[str, int] = {}
-    for _, t in all_tasks:
-        phase = t.get('phase', 'execute')
-        by_phase[phase] = by_phase.get(phase, 0) + 1
-
     # Build table data
     table = []
     for _path, task in filtered_tasks:
@@ -65,7 +55,6 @@ def cmd_list(args) -> int:
                 'title': task['title'],
                 'domain': task.get('domain'),
                 'profile': task.get('profile'),
-                'phase': task.get('phase', 'execute'),
                 'deliverable': deliverable,
                 'status': task['status'],
                 'progress': f'{completed}/{total}',
@@ -75,7 +64,6 @@ def cmd_list(args) -> int:
     result = {
         'status': 'success',
         'plan_id': args.plan_id,
-        'phase_filter': args.phase if args.phase else 'all',
         'counts': {
             'total': len(all_tasks),
             'pending': pending,
@@ -85,10 +73,6 @@ def cmd_list(args) -> int:
         },
         'tasks_table': table,
     }
-
-    # Add by_phase counts if showing all phases
-    if not args.phase and by_phase:
-        result['counts']['by_phase'] = by_phase
 
     output_toon(result)
     return 0
@@ -120,7 +104,6 @@ def cmd_get(args) -> int:
                 'origin': task.get('origin', 'plan'),
                 'deliverable': task.get('deliverable', 0),
                 'depends_on': task.get('depends_on', []),
-                'phase': task.get('phase', 'execute'),
                 'status': task['status'],
                 'current_step': task.get('current_step', 1),
                 'description': task.get('description', ''),
@@ -140,10 +123,7 @@ def cmd_next(args) -> int:
     # Build set of done task numbers for dependency checking
     done_tasks = {f'TASK-{t["number"]}' for _, t in all_tasks if t.get('status') == 'done'}
 
-    # Filter by phase if specified
     filtered_tasks = all_tasks
-    if args.phase:
-        filtered_tasks = [(p, t) for p, t in all_tasks if t.get('phase', 'execute') == args.phase]
 
     total_tasks = len(filtered_tasks)
     completed_tasks = sum(1 for _, t in filtered_tasks if t.get('status') == 'done')
@@ -252,7 +232,6 @@ def cmd_next(args) -> int:
             'profile': next_task.get('profile'),
             'skills': next_task.get('skills', []),
             'origin': next_task.get('origin', 'plan'),
-            'phase': next_task.get('phase', 'execute'),
             'deliverable': next_task.get('deliverable', 0),
             'step_number': next_step['number'],
             'step_target': next_step['target'],

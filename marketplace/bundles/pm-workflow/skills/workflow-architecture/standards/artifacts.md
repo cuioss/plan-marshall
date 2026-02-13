@@ -78,7 +78,7 @@ File formats and structures for plan data storage.
 │                                                                      │
 │  tasks/                                                              │
 │  ┌──────────────────┐ ┌──────────────────┐ ┌──────────────────┐     │
-│  │ TASK-001-IMPL    │ │ TASK-002-IMPL    │ │ TASK-003-FIX     │     │
+│  │ TASK-001    │ │ TASK-002    │ │ TASK-003     │     │
 │  ├──────────────────┤ ├──────────────────┤ ├──────────────────┤     │
 │  │ title, status    │ │ title, status    │ │ title, status    │     │
 │  │ domain, profile  │ │ domain, profile  │ │ domain, profile  │     │
@@ -340,7 +340,6 @@ TASK-001.json
      │
      └── Sequential number (001, 002, ...)
 
-Task type (IMPL, FIX, SONAR, PR, LINT, SEC, DOC) is stored in the JSON `type` field.
 ```
 
 ### Format
@@ -349,7 +348,6 @@ Task type (IMPL, FIX, SONAR, PR, LINT, SEC, DOC) is stored in the JSON `type` fi
 number: 1
 title: Update misc agents to TOON output
 status: pending
-phase: 5-execute
 domain: plan-marshall-plugin-dev
 profile: implementation
 origin: plan
@@ -395,7 +393,6 @@ current_step: 1
 │ │ number: 1                                                │ │
 │ │ title: Update misc agents...                             │ │
 │ │ status: pending → in_progress → done                     │ │
-│ │ phase: 5-execute                                         │ │
 │ │ domain: plan-marshall-plugin-dev                         │ │
 │ │ profile: implementation                                  │ │
 │ │ origin: plan | fix                                       │ │

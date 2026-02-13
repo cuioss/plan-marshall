@@ -18,7 +18,6 @@ TASK-{NNN}.json
   "number": 1,
   "title": "Create Auth Endpoint",
   "status": "pending",
-  "phase": "5-execute",
   "domain": "java",
   "profile": "implementation",
 
@@ -48,7 +47,6 @@ TASK-{NNN}.json
 | `number` | Yes | Integer | Unique task identifier (immutable after creation) |
 | `title` | Yes | String | Short descriptive title |
 | `status` | Yes | Enum | Task status (see Status Values) |
-| `phase` | Yes | String | Plan phase: `1-init`, `2-refine`, `3-outline`, `4-plan`, `5-execute`, `6-verify`, `7-finalize` |
 | `deliverable` | Yes | Integer | Deliverable number from solution_outline.md (1:1 constraint) |
 | `depends_on` | Yes | String[] | Task dependencies: empty array or TASK-N references |
 | `description` | Yes | String | Detailed task description |
@@ -107,16 +105,6 @@ pending ──► in_progress ──► done
    │
    └──────► skipped
 ```
-
-## Phase Values
-
-| Phase | Description |
-|-------|-------------|
-| `1-init` | Setup tasks (create directories, configs) |
-| `3-outline` | Solution outline creation |
-| `4-plan` | Task planning and skill resolution |
-| `5-execute` | Implementation tasks (code changes) |
-| `7-finalize` | Cleanup tasks (docs, release) |
 
 ## Domain Values
 
@@ -190,7 +178,6 @@ The verification block defines how to verify task completion:
   "number": 2,
   "title": "Add Auth Endpoint",
   "status": "in_progress",
-  "phase": "5-execute",
   "domain": "java",
   "profile": "implementation",
 

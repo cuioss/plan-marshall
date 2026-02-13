@@ -196,7 +196,6 @@ title: {task title from deliverable}
 deliverable: {deliverable_number}
 domain: {domain from deliverable}
 profile: {profile from deliverable}
-phase: 5-execute
 description: |
   {combined description}
 

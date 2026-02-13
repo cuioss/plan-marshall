@@ -49,7 +49,6 @@ def build_task_toon_with_new_fields(
     origin='plan',
     description='Task description',
     steps=None,
-    phase='5-execute',
     depends_on='none',
 ):
     """Build TOON content for task with new fields."""
@@ -63,7 +62,6 @@ def build_task_toon_with_new_fields(
         f'deliverable: {deliverable}',
         f'domain: {domain}',
         f'profile: {profile}',
-        f'phase: {phase}',
         f'origin: {origin}',
         f'description: {description}',
         'skills:',
@@ -185,7 +183,6 @@ def test_add_with_arbitrary_profile():
 deliverable: 1
 domain: java
 profile: architecture
-phase: 5-execute
 description: Desc
 skills:
   - pm-dev-java:java-core
@@ -207,7 +204,6 @@ def test_add_with_planning_profile():
 deliverable: 1
 domain: java
 profile: planning
-phase: 5-execute
 description: Desc
 skills:
   - pm-dev-java:java-core
@@ -229,7 +225,6 @@ def test_add_with_custom_profile():
 deliverable: 1
 domain: java
 profile: my-custom-profile
-phase: 5-execute
 description: Desc
 skills:
   - pm-dev-java:java-core
@@ -251,7 +246,6 @@ def test_add_fails_with_invalid_skill_format():
 deliverable: 1
 domain: java
 profile: implementation
-phase: 5-execute
 description: Desc
 skills:
   - invalid-skill-no-colon
@@ -762,52 +756,8 @@ def test_file_contains_all_new_fields():
 
 
 # =============================================================================
-# Tests: 6-phase model (refine + outline + plan)
+# Tests: origin values
 # =============================================================================
-
-
-def test_add_with_outline_phase():
-    """Add accepts '3-outline' phase (6-phase model)."""
-    temp_dir = setup_plan_dir()
-    try:
-        toon = """title: Outline task
-deliverable: 1
-domain: java
-profile: architecture
-phase: 3-outline
-description: Desc
-skills:
-  - pm-dev-java:java-core
-steps:
-  - src/main/java/File.java"""
-        result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
-
-        assert result.returncode == 0, f'Failed: {result.stderr}'
-        assert 'phase: 3-outline' in result.stdout
-    finally:
-        cleanup(temp_dir)
-
-
-def test_add_with_plan_phase():
-    """Add accepts '4-plan' phase (6-phase model)."""
-    temp_dir = setup_plan_dir()
-    try:
-        toon = """title: Plan task
-deliverable: 1
-domain: java
-profile: planning
-phase: 4-plan
-description: Desc
-skills:
-  - pm-dev-java:java-core
-steps:
-  - src/main/java/File.java"""
-        result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
-
-        assert result.returncode == 0, f'Failed: {result.stderr}'
-        assert 'phase: 4-plan' in result.stdout
-    finally:
-        cleanup(temp_dir)
 
 
 # =============================================================================
@@ -823,7 +773,6 @@ def test_add_with_arbitrary_domain():
 deliverable: 1
 domain: requirements
 profile: implementation
-phase: 5-execute
 description: Desc
 skills:
   - pm-requirements:req-core
@@ -845,7 +794,6 @@ def test_add_with_custom_domain():
 deliverable: 1
 domain: my-custom-domain
 profile: implementation
-phase: 5-execute
 description: Desc
 skills:
   - pm-dev-java:java-core
@@ -888,7 +836,6 @@ def test_add_with_plan_origin():
 deliverable: 1
 domain: java
 profile: implementation
-phase: 5-execute
 description: Desc
 skills:
   - pm-dev-java:java-core
@@ -910,7 +857,6 @@ def test_add_with_fix_origin():
 deliverable: 1
 domain: java
 profile: implementation
-phase: 5-execute
 origin: fix
 description: Desc
 skills:
@@ -933,7 +879,6 @@ def test_add_with_sonar_origin():
 deliverable: 1
 domain: java
 profile: quality
-phase: 5-execute
 origin: sonar
 description: Desc
 skills:
@@ -961,7 +906,6 @@ def test_task_file_uses_numbered_format():
 deliverable: 1
 domain: java
 profile: implementation
-phase: 5-execute
 description: Desc
 skills:
   - pm-dev-java:java-core
@@ -984,7 +928,6 @@ def test_fix_task_file_uses_numbered_format():
 deliverable: 1
 domain: java
 profile: testing
-phase: 5-execute
 origin: fix
 description: Desc
 skills:

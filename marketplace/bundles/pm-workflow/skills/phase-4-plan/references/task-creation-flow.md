@@ -7,16 +7,16 @@ Visual overview of the task creation workflow for human readers.
 ```
 solution_outline.md                        TASK-*.toon (created by task-plan)
 ┌────────────────────────────┐             ┌────────────────────────────┐
-│ **Metadata:**              │             │ TASK-001-IMPL              │
+│ **Metadata:**              │             │ TASK-001              │
 │ - domain: java             │             │ profile: implementation    │
 │ - module: auth-service     │  ───────►   │ skills: [java-core,        │
 │                            │  (1:N)      │          java-cdi]         │
 │ **Profiles:**              │             ├────────────────────────────┤
-│ - implementation           │  ───────►   │ TASK-002-TEST              │
+│ - implementation           │  ───────►   │ TASK-002              │
 │ - module_testing           │             │ profile: module_testing    │
 │                            │             │ skills: [java-core,        │
 └────────────────────────────┘             │          junit-core]       │
-                                           │ depends: TASK-001-IMPL     │
+                                           │ depends: TASK-001     │
                                            └────────────────────────────┘
 ```
 

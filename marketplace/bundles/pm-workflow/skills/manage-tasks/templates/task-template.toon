@@ -1,7 +1,6 @@
 number: {NUMBER}
 title: {TITLE}
 status: pending
-phase: {PHASE}
 
 deliverable: {DELIVERABLE}
 
@@ -12,7 +11,6 @@ description: |
 
 domain: {DOMAIN}
 profile: {PROFILE}
-type: {TYPE}
 origin: {ORIGIN}
 
 skills[{SKILL_COUNT}]:

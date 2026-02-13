@@ -46,7 +46,6 @@ def build_task_toon(
     domain='java',
     description='Task description',
     steps=None,
-    phase='5-execute',
     depends_on='none',
     verification_commands=None,
     verification_criteria='',
@@ -75,7 +74,6 @@ def build_task_toon(
         f'title: {title}',
         f'deliverable: {deliverable}',
         f'domain: {domain}',
-        f'phase: {phase}',
         f'description: {description}',
         'steps:',
     ]
@@ -286,26 +284,6 @@ description: Desc"""
         cleanup(temp_dir)
 
 
-def test_add_with_phase():
-    """Add task with specific phase."""
-    temp_dir = setup_plan_dir()
-    try:
-        toon = build_task_toon(
-            title='Init task',
-            deliverable=1,
-            domain='java',
-            phase='1-init',
-            description='Init phase task',
-            steps=['src/main/java/Component.java'],
-        )
-        result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
-
-        assert result.returncode == 0
-        assert 'phase: 1-init' in result.stdout
-    finally:
-        cleanup(temp_dir)
-
-
 def test_add_with_dependencies():
     """Add task with depends-on."""
     temp_dir = setup_plan_dir()
@@ -466,7 +444,7 @@ def test_list_empty():
 
 
 def test_list_with_tasks():
-    """List shows all tasks in table format with domain, profile, phase and deliverables."""
+    """List shows all tasks in table format with domain, profile and deliverables."""
     temp_dir = setup_plan_dir()
     try:
         add_basic_task(title='First', deliverable=1, steps=['src/main/java/File.java'])
@@ -477,9 +455,9 @@ def test_list_with_tasks():
         assert result.returncode == 0
         assert 'total: 2' in result.stdout
         assert 'tasks[2]' in result.stdout
-        # Format: {number,title,domain,profile,phase,deliverable,status,progress}
-        assert '1,First,java,implementation,5-execute,1,pending,0/1' in result.stdout
-        assert '2,Second,java,implementation,5-execute,2,pending,0/2' in result.stdout
+        # Format: {number,title,domain,profile,deliverable,status,progress}
+        assert '1,First,java,implementation,1,pending,0/1' in result.stdout
+        assert '2,Second,java,implementation,2,pending,0/2' in result.stdout
     finally:
         cleanup(temp_dir)
 
@@ -520,38 +498,6 @@ def test_list_filter_by_deliverable():
         assert 'First' in result.stdout
         assert 'Second' in result.stdout
         assert 'Third' not in result.stdout
-    finally:
-        cleanup(temp_dir)
-
-
-def test_list_filter_by_phase():
-    """List can filter by phase."""
-    temp_dir = setup_plan_dir()
-    try:
-        toon_init = build_task_toon(
-            title='Init Task',
-            deliverable=1,
-            domain='java',
-            phase='1-init',
-            description='D1',
-            steps=['src/main/java/File.java'],
-        )
-        toon_exec = build_task_toon(
-            title='Execute Task',
-            deliverable=2,
-            domain='java',
-            phase='5-execute',
-            description='D2',
-            steps=['src/main/java/File.java'],
-        )
-        run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon_init)
-        run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon_exec)
-
-        result = run_script(SCRIPT_PATH, 'list', '--plan-id', 'test-plan', '--phase', '1-init')
-
-        assert result.returncode == 0
-        assert 'Init Task' in result.stdout
-        assert 'Execute Task' not in result.stdout
     finally:
         cleanup(temp_dir)
 
@@ -737,38 +683,6 @@ def test_next_ignore_deps():
         # Should return task despite unmet dependency
         assert 'task_number: 1' in result.stdout
         assert 'task_title: Blocked' in result.stdout
-    finally:
-        cleanup(temp_dir)
-
-
-def test_next_filter_by_phase():
-    """Next can filter by phase."""
-    temp_dir = setup_plan_dir()
-    try:
-        toon_init = build_task_toon(
-            title='Init Task',
-            deliverable=1,
-            domain='java',
-            phase='1-init',
-            description='D1',
-            steps=['src/main/java/File.java'],
-        )
-        toon_exec = build_task_toon(
-            title='Execute Task',
-            deliverable=2,
-            domain='java',
-            phase='5-execute',
-            description='D2',
-            steps=['src/main/java/File.java'],
-        )
-        run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon_init)
-        run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon_exec)
-
-        result = run_script(SCRIPT_PATH, 'next', '--plan-id', 'test-plan', '--phase', '5-execute')
-
-        assert result.returncode == 0
-        assert 'Execute Task' in result.stdout
-        assert 'Init Task' not in result.stdout
     finally:
         cleanup(temp_dir)
 
@@ -1176,7 +1090,6 @@ def test_file_contains_new_fields():
             title='Test task',
             deliverable=1,
             domain='java',
-            phase='5-execute',
             description='Test description',
             steps=['src/main/java/File1.java', 'src/main/java/File2.java'],
             depends_on='none',
@@ -1195,7 +1108,6 @@ def test_file_contains_new_fields():
         task = json.loads(content)
         assert task['number'] == 1
         assert task['status'] == 'pending'
-        assert task['phase'] == '5-execute'
         assert task['deliverable'] == 1  # Single integer (1:1 constraint)
         assert task['depends_on'] == []  # 'none' is stored as empty list
         assert task['domain'] == 'java'
