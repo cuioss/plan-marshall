@@ -51,10 +51,28 @@ Task: pm-workflow:plan-init-agent
   Output: plan_id, domains array
 ```
 
-**Automatic Continuation to 2-Refine**:
+**Automatic Continuation**:
 1. Check `stop-after-init` parameter
-2. If false (default): Automatically invoke 2-refine, 3-outline, and 4-plan phases with the new plan_id
-3. If true: Stop and display plan summary
+2. If true: Stop and display plan summary
+3. If false (default): Continue through 2-refine, 3-outline, and 4-plan phases with the new plan_id
+
+**2-Refine Phase**: Load refine phase skill directly (maintains main context for user interaction)
+
+```
+Skill: pm-workflow:phase-2-refine
+  Arguments: --plan-id {plan_id}
+```
+
+The skill runs in main conversation context so `AskUserQuestion` works directly with the user. Do NOT run this as a Task agent — the 12-step workflow requires too many tool calls for a subagent turn budget, and Step 9 (user clarification) needs direct user access.
+
+After the skill returns, log and transition:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  work --plan-id {plan_id} --level INFO --message "[ARTIFACT] (pm-workflow:plan-marshall) Refine complete - proceeding to outline"
+```
+
+Then continue to **Action: outline** with the same plan_id.
 
 ---
 
