@@ -86,6 +86,26 @@ Use Glob/Grep to find where new code integrates:
 - Identify configuration files that need updates
 - Locate test directories for new tests
 
+### Step 3.5: Resolve Verification Commands
+
+Query architecture for the module's compile and module-tests commands:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture \
+  resolve --command compile --name {module} \
+  --trace-plan-id {plan_id}
+```
+
+Store the returned `executable` as `{compile_command}`. If the command is not available, leave Verification Command empty (phase-4-plan will resolve it).
+
+```bash
+python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture \
+  resolve --command module-tests --name {module} \
+  --trace-plan-id {plan_id}
+```
+
+Store the returned `executable` as `{module_tests_command}`. Only needed if Step 5 applies.
+
 ### Step 4: Build Feature Deliverables
 
 For each component to create:
@@ -112,16 +132,17 @@ For each component to create:
 - `{file2}`: Create {supporting file} for {purpose}
 
 **Verification:**
-- Command: {build/test command}
+- Command: `{compile_command}`
 - Criteria: {success criteria}
 
 **Success Criteria:**
 - New component exists and compiles
 - Integrates with existing code
-- Tests pass
 ```
 
-### Step 5: Add Test Deliverable (if applicable)
+### Step 5: Add Test Deliverable (only if new test files needed)
+
+**Decision gate**: Skip this step if the feature does not require new test files. Existing test execution is handled by `module_testing` profile on the implementation deliverable (if that deliverable includes test files in its affected files).
 
 ```markdown
 ### {N+1}. Create Tests: {Feature Name}
@@ -143,7 +164,7 @@ For each component to create:
 - `{test_file}`: Create tests for {new functionality}
 
 **Verification:**
-- Command: {test command}
+- Command: `{module_tests_command}`
 - Criteria: Tests pass, coverage meets threshold
 
 **Success Criteria:**

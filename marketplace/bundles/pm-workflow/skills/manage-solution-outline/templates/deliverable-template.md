@@ -16,7 +16,7 @@ Mandatory template for each deliverable in solution_outline.md. **ALL fields are
 
 **Profiles:**
 - implementation
-- {module_testing - only if module has test infrastructure}
+- {module_testing - only if this deliverable creates/modifies test files}
 
 **Affected files:**
 - `{explicit/path/to/file1.ext}`
@@ -25,13 +25,29 @@ Mandatory template for each deliverable in solution_outline.md. **ALL fields are
 **Change per file:** {Specific description of what changes in these files}
 
 **Verification:**
-- Command: `{verification command}`
+- Command: `{resolved compile command from architecture}`
 - Criteria: {success criteria}
 
 **Success Criteria:**
 - {criterion 1}
 - {criterion 2}
 ```
+
+### Resolving Verification Commands
+
+Query the architecture for the module's canonical commands **before** writing deliverables:
+
+```bash
+# For implementation profile verification:
+python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture \
+  resolve --command compile --name {module} --trace-plan-id {plan_id}
+
+# For module_testing profile verification:
+python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture \
+  resolve --command module-tests --name {module} --trace-plan-id {plan_id}
+```
+
+Use the returned `executable` value as the Verification Command. If unavailable, omit — phase-4-plan will resolve it.
 
 ## Field Requirements
 
@@ -42,7 +58,7 @@ Mandatory template for each deliverable in solution_outline.md. **ALL fields are
 | `domain` | Yes | Single value from `config.domains` |
 | `module` | Yes | Module name from architecture |
 | `depends` | Yes | Use `none` if no dependencies |
-| `**Profiles:**` | Yes | At least `implementation`; add `module_testing` if module has test infra |
+| `**Profiles:**` | Yes | At least `implementation`; add `module_testing` only if deliverable creates/modifies test files |
 | `**Affected files:**` | Yes | Explicit paths only - NO wildcards, NO "all files in..." |
 | `**Change per file:**` | Yes | What specifically changes |
 | `**Verification:**` | Yes | Command and Criteria - both required |

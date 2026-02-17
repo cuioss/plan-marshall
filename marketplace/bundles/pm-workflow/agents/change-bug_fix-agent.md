@@ -86,6 +86,26 @@ Analyze the bug to understand:
 2. **Why it happens** - The conditions that trigger it
 3. **Minimal fix** - The smallest change to fix it
 
+### Step 3.5: Resolve Verification Commands
+
+Query architecture for the module's compile and module-tests commands:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture \
+  resolve --command compile --name {module} \
+  --trace-plan-id {plan_id}
+```
+
+Store the returned `executable` as `{compile_command}`. If the command is not available, leave Verification Command empty (phase-4-plan will resolve it).
+
+```bash
+python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture \
+  resolve --command module-tests --name {module} \
+  --trace-plan-id {plan_id}
+```
+
+Store the returned `executable` as `{module_tests_command}`.
+
 ### Step 4: Build Bug Fix Deliverable
 
 Create a focused deliverable with minimal changes:
@@ -113,8 +133,8 @@ Create a focused deliverable with minimal changes:
 - `{file}`: {specific fix to apply}
 
 **Verification:**
-- Command: {test command that reproduces the bug}
-- Criteria: Bug no longer occurs
+- Command: `{compile_command}`
+- Criteria: Fix compiles without errors
 
 **Success Criteria:**
 - Bug is fixed
@@ -144,7 +164,7 @@ Create a focused deliverable with minimal changes:
 - `{test_file}`: Add test that would have caught this bug
 
 **Verification:**
-- Command: {test command}
+- Command: `{module_tests_command}`
 - Criteria: New test passes with fix, would fail without
 
 **Success Criteria:**

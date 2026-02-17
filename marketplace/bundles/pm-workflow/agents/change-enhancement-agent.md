@@ -86,6 +86,26 @@ For each affected file:
 2. **Interface changes** - Do signatures/APIs change?
 3. **Test impact** - Do tests need updates?
 
+### Step 3.5: Resolve Verification Commands
+
+Query architecture for the module's compile and module-tests commands:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture \
+  resolve --command compile --name {module} \
+  --trace-plan-id {plan_id}
+```
+
+Store the returned `executable` as `{compile_command}`. If the command is not available, leave Verification Command empty (phase-4-plan will resolve it).
+
+```bash
+python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture \
+  resolve --command module-tests --name {module} \
+  --trace-plan-id {plan_id}
+```
+
+Store the returned `executable` as `{module_tests_command}`. Only needed if Step 5 applies.
+
 ### Step 4: Build Enhancement Deliverables
 
 For each enhancement:
@@ -112,16 +132,17 @@ For each enhancement:
 - `{file2}`: {specific changes to make}
 
 **Verification:**
-- Command: {build/test command}
+- Command: `{compile_command}`
 - Criteria: {success criteria}
 
 **Success Criteria:**
 - Enhancement is implemented
 - Existing functionality preserved
-- Tests pass
 ```
 
-### Step 5: Add Test Update Deliverable (if needed)
+### Step 5: Add Test Update Deliverable (only if test files need changes)
+
+**Decision gate**: Skip this step if the enhancement does not require new or modified test files. Existing test execution is handled by `module_testing` profile on the implementation deliverable (if that deliverable includes test files in its affected files).
 
 ```markdown
 ### {N+1}. Update Tests: {Enhanced Feature}
@@ -143,7 +164,7 @@ For each enhancement:
 - `{test_file}`: Update tests for {enhanced functionality}
 
 **Verification:**
-- Command: {test command}
+- Command: `{module_tests_command}`
 - Criteria: Tests pass, coverage maintained
 
 **Success Criteria:**

@@ -518,6 +518,78 @@ def test_update_nonexistent():
 # =============================================================================
 
 
+# =============================================================================
+# Test: module_testing Profile Warning
+# =============================================================================
+
+
+def test_validate_warns_module_testing_without_test_files():
+    """Test that module_testing profile with production-only paths generates a warning."""
+    solution_with_bad_profile = VALID_SOLUTION.replace(
+        """### 2. Add configuration properties
+
+Add JWT configuration to application.properties.
+
+**Metadata:**
+- change_type: feature
+- execution_mode: automated
+- domain: java
+- module: jwt-service
+- depends: 1
+
+**Profiles:**
+- implementation
+
+**Affected files:**
+- `src/main/resources/application.properties`""",
+        """### 2. Add configuration properties
+
+Add JWT configuration to application.properties.
+
+**Metadata:**
+- change_type: feature
+- execution_mode: automated
+- domain: java
+- module: jwt-service
+- depends: 1
+
+**Profiles:**
+- implementation
+- module_testing
+
+**Affected files:**
+- `src/main/resources/application.properties`""",
+    )
+    with TestContext(plan_id='solution-warn-profile') as ctx:
+        (ctx.plan_dir / 'solution_outline.md').write_text(solution_with_bad_profile)
+
+        result = run_script(SCRIPT_PATH, 'validate', '--plan-id', 'solution-warn-profile')
+        assert result.success, f'Script failed: {result.stderr}'
+        data = parse_toon(result.stdout)
+        assert data['status'] == 'success'
+        # Should have a warning about module_testing without test files
+        assert 'warnings' in data
+        assert any('module_testing profile but no test files' in w for w in data['warnings'])
+
+
+def test_validate_no_warning_module_testing_with_test_files():
+    """Test that module_testing profile with test file paths does not generate a warning."""
+    with TestContext(plan_id='solution-no-warn-profile') as ctx:
+        (ctx.plan_dir / 'solution_outline.md').write_text(VALID_SOLUTION)
+
+        result = run_script(SCRIPT_PATH, 'validate', '--plan-id', 'solution-no-warn-profile')
+        assert result.success, f'Script failed: {result.stderr}'
+        data = parse_toon(result.stdout)
+        assert data['status'] == 'success'
+        # Deliverable 1 has module_testing profile AND test files in affected files
+        # (via deliverable 3 which has test files), but deliverable 1 only has
+        # src/main/java/... — check there is NO module_testing warning for D3
+        # D3 has module_testing + test file path, so no warning expected for it
+        warnings = data.get('warnings', [])
+        d3_warnings = [w for w in warnings if 'D3' in w and 'module_testing' in w]
+        assert len(d3_warnings) == 0, f'Unexpected module_testing warning for D3: {d3_warnings}'
+
+
 def test_invalid_plan_id_uppercase():
     """Test that uppercase plan IDs are rejected."""
     with TestContext():

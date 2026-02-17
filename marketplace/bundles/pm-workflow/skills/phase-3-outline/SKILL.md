@@ -280,7 +280,7 @@ Use template from `pm-workflow:manage-solution-outline/templates/deliverable-tem
 
 **Profiles:**
 - implementation
-- testing (if module has test infrastructure)
+- module_testing (only if this deliverable creates/modifies test files)
 
 **Affected files:**
 - `{explicit/path/to/file1}`
@@ -289,13 +289,21 @@ Use template from `pm-workflow:manage-solution-outline/templates/deliverable-tem
 **Change per file:** {What will be created or modified}
 
 **Verification:**
-- Command: {verification command}
+- Command: `{resolved compile command from architecture}`
 - Criteria: {success criteria}
 
 **Success Criteria:**
 - {Specific criterion 1}
 - {Specific criterion 2}
 ```
+
+**Resolve verification command** for each deliverable before writing:
+```bash
+python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture \
+  resolve --command compile --name {module} \
+  --trace-plan-id {plan_id}
+```
+Use the returned `executable` value as the Verification Command. If architecture has no `compile` command for this module, omit the Command field (phase-4-plan will resolve it).
 
 ### Log Deliverable Creation
 
@@ -500,7 +508,7 @@ python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:archi
   --trace-plan-id {plan_id}
 ```
 
-Use result to determine if `testing` profile applies.
+The architecture query result helps assess module capability, but `module_testing` is assigned only when the deliverable itself creates or modifies test files — not merely because the module has test infrastructure.
 
 ### Deliverable Structure
 

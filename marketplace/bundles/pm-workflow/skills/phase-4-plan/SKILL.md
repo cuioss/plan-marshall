@@ -229,6 +229,11 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 - `skills`: Domain skills only (system skills loaded by agent). Empty for `verification` profile.
 - `steps`: File paths from `Affected files` (NOT descriptive text). For `verification` profile: verification commands as steps instead of file paths.
 
+**Verification per profile**: When a deliverable has multiple profiles, each task gets profile-appropriate verification:
+- `implementation` task → use the deliverable's Verification Command (should be a compile command). If missing or generic, resolve via `architecture resolve --command compile --name {module}`
+- `module_testing` task → resolve via `architecture resolve --command module-tests --name {module}` — use the returned `executable` as the verification command
+- If deliverable's Verification is generic (e.g., "all tests pass"), override with the resolved `compile` command for implementation tasks
+
 ### Step 6: Determine Execution Order
 
 Compute parallel execution groups:

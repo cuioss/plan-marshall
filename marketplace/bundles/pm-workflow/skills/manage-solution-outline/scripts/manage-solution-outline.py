@@ -157,6 +157,19 @@ def validate_deliverable_contract(deliverable: dict) -> tuple[list[str], list[st
             if profile not in valid_profiles:
                 errors.append(f"D{num}: Invalid profile '{profile}' (must be one of: {', '.join(valid_profiles)})")
 
+    # Check 2b: Warn when module_testing profile but no test files in affected files
+    affected_files = deliverable.get('affected_files', [])
+    if 'module_testing' in profiles and affected_files:
+        test_indicators = ('test/', 'Test.', '_test.', 'test_', '.test.', 'spec/', '/tests/')
+        has_test_files = any(
+            any(indicator in f for indicator in test_indicators) for f in affected_files
+        )
+        if not has_test_files:
+            warnings.append(
+                f'D{num}: module_testing profile but no test files detected in affected files '
+                f'(expected paths containing: test/, Test., _test., test_, .test., spec/)'
+            )
+
     # Check 3: Affected files section
     affected_files = deliverable.get('affected_files', [])
     is_verification_only = 'verification' in profiles

@@ -183,10 +183,17 @@ After all test files are written, run verification:
 {verification.commands[0]}
 ```
 
-**Verification patterns by domain**:
-- Java: `mvn test -Dtest={TestClass}` or `./gradlew test --tests {TestClass}`
-- JavaScript: `npm test -- --testPathPattern={pattern}` or `npm run test:unit`
-- General: Domain-specific test commands from task
+**Verification** (module_testing tasks run the full test suite for the module, not targeted test classes):
+
+Use the verification commands from the task. If verification commands are missing or generic, resolve the module-tests command from architecture:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture \
+  resolve --command module-tests --name {module} \
+  --trace-plan-id {plan_id}
+```
+
+Execute the returned `executable` value as the verification command.
 
 ### Step 8: Handle Test Results
 
@@ -202,7 +209,7 @@ python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks update \
 1. Analyze test failures
 2. Determine if test logic is wrong or implementation has bug
 3. If test logic issue → fix test
-4. If implementation bug discovered → note in task, don't fix implementation
+4. If implementation bug discovered → fix the production code AND the test. Adapting production code to make tests pass is expected within module_testing tasks.
 5. Re-run tests
 6. Iterate until pass (max 3 iterations)
 

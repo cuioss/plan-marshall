@@ -73,6 +73,32 @@ Each deliverable has a `**Profiles:**` block listing which profiles apply. Task-
 
 **Note**: Integration tests are separate deliverables (different module), not embedded profiles. Verification profile deliverables may have an empty `Affected files` section.
 
+### Profile Assignment Rules
+
+Assign profiles based on what the **deliverable itself** creates or modifies — not based on what the module supports:
+
+| Deliverable Content | Profiles |
+|---------------------|----------|
+| Production code only | `implementation` |
+| Production code + test files | `implementation`, `module_testing` |
+| Test files only | `module_testing` |
+| Markdown components (skills/agents/commands) | `implementation` (plugin-doctor verification) |
+| Scripts only (no test files) | `implementation` (compile verification) |
+| Scripts + test files | `implementation`, `module_testing` |
+
+**Key rule**: `module_testing` is assigned only when the deliverable creates or modifies test files. The existence of test infrastructure in the module is irrelevant — it only matters whether *this deliverable* touches test files.
+
+### Per-Profile Verification Semantics
+
+Each profile has a distinct verification purpose. Implementation verifies compilability. Module_testing verifies test execution. Running existing tests is NOT the job of the implementation task.
+
+| Profile | Verification Purpose | How to resolve command |
+|---------|---------------------|----------------------|
+| `implementation` | Compile/build only | `architecture resolve --command compile --name {module}` |
+| `module_testing` | Run tests | `architecture resolve --command module-tests --name {module}` |
+
+The architecture API returns the domain-appropriate executable (Maven, npm, pw, plugin-doctor, etc.) — do NOT hardcode build tool commands.
+
 ### 1:N Task Creation
 
 Task-plan creates one task per profile in the deliverable:

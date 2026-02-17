@@ -212,6 +212,20 @@ D2: Migrate component B (Profiles: implementation, module_testing)
 D3: Verify bundle integrity (Profiles: verification)  ← OK — verification only, no file overlap
 ```
 
+## Markdown vs Script Verification
+
+Plugin development deliverables have different verification depending on content type:
+
+| Deliverable Content | Profiles | Implementation Verification | Module_testing Verification |
+|---------------------|----------|---------------------------|----------------------------|
+| Markdown components (skills/agents/commands) | `implementation` only | plugin-doctor | N/A |
+| Scripts without test files | `implementation` only | `architecture resolve --command compile --name {module}` | N/A |
+| Scripts with test files | `implementation`, `module_testing` | `architecture resolve --command compile --name {module}` | `architecture resolve --command module-tests --name {module}` |
+
+Resolve commands from architecture — do NOT hardcode build tool invocations.
+
+**Key rule**: Markdown-only deliverables never get `module_testing` — there are no tests to run. Only deliverables that create or modify Python/Bash test files should include the `module_testing` profile.
+
 ## Write Solution Outline
 
 Use `write` on first entry (solution_outline.md does not exist yet).
@@ -255,7 +269,7 @@ compatibility: {compatibility} — {compatibility_description}
 
 **Profiles:**
 - implementation
-- {module_testing - only if module has test infrastructure}
+- {module_testing - only if this deliverable creates/modifies test files (e.g., pytest scripts)}
 
 **Affected files:**
 - `{explicit/path/to/file1.ext}`
@@ -264,7 +278,7 @@ compatibility: {compatibility} — {compatibility_description}
 **Change per file:** {What changes in these files}
 
 **Verification:**
-- Command: `{verification command}`
+- Command: `{resolved command from architecture}`
 - Criteria: {success criteria}
 
 **Success Criteria:**

@@ -167,10 +167,17 @@ After all steps complete, run task verification:
 ...
 ```
 
-**Verification patterns by domain**:
-- Java: `mvn test -pl {module}` or `./gradlew test`
-- JavaScript: `npm test` or `npm run build`
-- General: Domain-specific commands from task
+**Verification** (implementation tasks verify compilability only — full test execution belongs to module_testing profile):
+
+Use the verification commands from the task. If verification commands are missing or generic, resolve the compile command from architecture:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture \
+  resolve --command compile --name {module} \
+  --trace-plan-id {plan_id}
+```
+
+Execute the returned `executable` value as the verification command.
 
 ### Step 7: Handle Verification Results
 
