@@ -40,7 +40,7 @@ Create work directory and run full inventory scan:
 
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-files:manage-files mkdir \
-  --plan-id {plan_id} --dir work --trace-plan-id {plan_id}
+  --plan-id {plan_id} --dir work
 # Output includes: path: /absolute/path/to/.plan/plans/{plan_id}/work
 # Use the returned `path` value as {work_dir_path} below
 

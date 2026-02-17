@@ -43,8 +43,7 @@ Create the work directory and capture the path:
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-files:manage-files mkdir \
   --plan-id {plan_id} \
-  --dir work \
-  --trace-plan-id {plan_id}
+  --dir work
 ```
 
 **Output** (TOON):
