@@ -230,8 +230,18 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 - `steps`: File paths from `Affected files` (NOT descriptive text). For `verification` profile: verification commands as steps instead of file paths.
 
 **Verification per profile**: Each task gets profile-appropriate verification:
-- `implementation` task → use the deliverable's Verification Command (should be a compile command). If missing or generic, resolve via `architecture resolve --command compile --name {module}`
-- `module_testing` task → if the deliverable is module_testing-only (single profile), use its Verification Command directly. If the deliverable has multiple profiles, resolve via `architecture resolve --command module-tests --name {module}`
+- `implementation` task → use the deliverable's Verification Command (should be a compile command). If missing or generic, resolve via:
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture \
+    resolve --command compile --name {module} \
+    --trace-plan-id {plan_id}
+  ```
+- `module_testing` task → if the deliverable is module_testing-only (single profile), use its Verification Command directly. If the deliverable has multiple profiles, resolve via:
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture \
+    resolve --command module-tests --name {module} \
+    --trace-plan-id {plan_id}
+  ```
 
 ### Step 6: Determine Execution Order
 
@@ -367,7 +377,7 @@ If deliverable metadata incomplete:
 
 **Script Notations** (use EXACTLY as shown):
 - `pm-workflow:manage-solution-outline:manage-solution-outline` - Read deliverables (list-deliverables, read)
-- `plan-marshall:analyze-project-architecture:architecture` - Resolve skills (module --name {module})
+- `plan-marshall:analyze-project-architecture:architecture` - Query module skills (module --name {module}) and resolve commands (resolve --command {cmd} --name {module}). Uses `--trace-plan-id`, NOT `--plan-id`.
 - `pm-workflow:manage-tasks:manage-tasks` - Create tasks (add --plan-id X <<'EOF' ... EOF)
 - `pm-workflow:manage-findings:manage-findings` - Q-Gate findings (qgate add/query/resolve)
 - `plan-marshall:manage-lessons:manage-lesson` - Record lessons on issues (add)
