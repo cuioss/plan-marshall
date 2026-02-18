@@ -219,10 +219,10 @@ Plugin development deliverables have different verification depending on content
 | Deliverable Content | Profiles | Implementation Verification | Module_testing Verification |
 |---------------------|----------|---------------------------|----------------------------|
 | Markdown components (skills/agents/commands) | `implementation` only | plugin-doctor | N/A |
-| Scripts without test files | `implementation` only | `plan-marshall:analyze-project-architecture:architecture resolve --command compile --name {module}` | N/A |
-| Scripts with test files | `implementation`, `module_testing` | `plan-marshall:analyze-project-architecture:architecture resolve --command compile --name {module}` | `plan-marshall:analyze-project-architecture:architecture resolve --command module-tests --name {module}` |
+| Scripts without test files | `implementation` only | `plan-marshall:analyze-project-architecture:architecture resolve --command compile --name {module} --trace-plan-id {plan_id}` | N/A |
+| Scripts with test files | `implementation`, `module_testing` | `plan-marshall:analyze-project-architecture:architecture resolve --command compile --name {module} --trace-plan-id {plan_id}` | `plan-marshall:analyze-project-architecture:architecture resolve --command module-tests --name {module} --trace-plan-id {plan_id}` |
 
-Resolve commands from architecture (`plan-marshall:analyze-project-architecture:architecture`) — do NOT hardcode build tool invocations.
+Resolve commands from architecture (`plan-marshall:analyze-project-architecture:architecture`) — do NOT hardcode build tool invocations. Always pass `--trace-plan-id {plan_id}` for execution logging.
 
 **Key rule**: Markdown-only deliverables never get `module_testing` — there are no tests to run. Only deliverables that create or modify Python/Bash test files should include the `module_testing` profile.
 

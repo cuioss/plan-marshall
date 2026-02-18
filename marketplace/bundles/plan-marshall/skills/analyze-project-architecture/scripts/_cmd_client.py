@@ -711,7 +711,7 @@ def cmd_commands(args) -> int:
 def cmd_resolve(args) -> int:
     """CLI handler for resolve command."""
     try:
-        result = resolve_command(args.command, args.name, args.project_dir)
+        result = resolve_command(args.resolve_command, args.name, args.project_dir)
 
         print(f'module: {result["module"]}')
         print(f'command: {result["command"]}')
@@ -731,7 +731,7 @@ def cmd_resolve(args) -> int:
         resolved_module: str = args.name or get_root_module(derived) or ''
         module = get_module(derived, resolved_module)
         commands = list(module.get('commands', {}).keys())
-        error_command_not_found(resolved_module, args.command, commands)
+        error_command_not_found(resolved_module, args.resolve_command, commands)
         return 1
     except Exception as e:
         print('status\terror', file=sys.stderr)

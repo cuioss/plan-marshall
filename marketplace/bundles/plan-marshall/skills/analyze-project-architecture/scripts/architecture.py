@@ -69,7 +69,7 @@ def main():
 
     # resolve - Resolve command to executable
     resolve_parser = subparsers.add_parser('resolve', help='Resolve command to executable form')
-    resolve_parser.add_argument('--command', required=True, help='Command name to resolve')
+    resolve_parser.add_argument('--command', required=True, dest='resolve_command', help='Command name to resolve')
     resolve_parser.add_argument('--name', help='Module name (default: root module)')
 
     # profiles - Extract unique profiles from modules

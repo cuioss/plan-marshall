@@ -198,6 +198,9 @@ def main():
     # Extract --trace-plan-id (logging only, stripped before passing to script)
     trace_plan_id, script_args = extract_trace_plan_id(remaining_args)
 
+    # Strip empty string args (defensive: agents may pass empty args from shell variable expansion)
+    script_args = [a for a in script_args if a]
+
     # Subcommand is first arg after stripping trace-plan-id
     subcommand = script_args[0] if script_args else ''
 
