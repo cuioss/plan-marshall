@@ -319,15 +319,18 @@ class ExtensionBase(ABC):
         """
         return None
 
-    def provides_change_type_agents(self) -> dict[str, str] | None:
-        """Return change_type to agent mappings if available.
+    def provides_change_type_skills(self) -> dict[str, str] | None:
+        """Return change_type to skill mappings if available.
 
         Returns:
-            Dict mapping change_type keys to agent notations, or None.
+            Dict mapping change_type keys to skill references, or None.
             Example: {
-                "feature": "my-bundle:change-feature-outline-agent",
-                "enhancement": "my-bundle:change-enhancement-outline-agent"
+                "feature": "my-bundle:ext-outline-workflow",
+                "enhancement": "my-bundle:ext-outline-workflow"
             }
+
+            The skill reference points to the skill whose standards/
+            directory contains change-{type}.md sub-skill instructions.
 
         Valid change_type keys:
             - analysis: Investigation and research
@@ -338,13 +341,15 @@ class ExtensionBase(ABC):
             - verification: Validation and confirmation
 
         Purpose:
-            Change-type agents handle the solution outline workflow
-            for their specific change type. Domains can override generic
-            agents with domain-specific ones.
+            Change-type skills provide domain-specific outline instructions
+            loaded by the outline-change-type skill (via solution-outline-agent). The skill's
+            standards/change-{type}.md file contains the domain-specific
+            discovery, analysis, and deliverable creation logic.
 
         Fallback:
-            If a domain doesn't provide an agent for a change_type,
-            the generic pm-workflow:change-{type}-agent is used.
+            If a domain doesn't provide a skill for a change_type,
+            generic instructions from pm-workflow:outline-change-type
+            standards/change-{type}.md are used.
         """
         return None
 

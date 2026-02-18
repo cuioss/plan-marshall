@@ -1,13 +1,13 @@
 ---
 name: ext-outline-workflow
-description: Shared workflow steps and verification knowledge for plugin development outline agents
+description: Shared workflow steps and verification knowledge for plugin development outline, loaded by outline-change-type skill
 user-invocable: false
 allowed-tools: Read
 ---
 
 # Plugin Development Outline Workflow
 
-Shared workflow steps for the 4 `change-{type}-outline-agent` agents. Each agent loads this skill and only documents its unique discovery/analysis logic.
+Shared workflow steps for plugin development outline, loaded by the `outline-change-type` skill when the domain is `plan-marshall-plugin-dev`. Change-type-specific instructions are in `standards/change-{type}.md`.
 
 ## Context Loading
 

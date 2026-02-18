@@ -215,8 +215,8 @@ def agent_exists(agent_ref: str) -> bool:
     return agent_path.is_file()
 
 
-def validate_triage_and_change_type_agents(module, bundle_name: str) -> list:
-    """Validate that provides_triage() and provides_change_type_agents() return valid refs."""
+def validate_triage_and_change_type_skills(module, bundle_name: str) -> list:
+    """Validate that provides_triage() and provides_change_type_skills() return valid refs."""
     issues = []
 
     if hasattr(module, 'provides_triage'):
@@ -227,19 +227,19 @@ def validate_triage_and_change_type_agents(module, bundle_name: str) -> list:
             elif not skill_exists(triage):
                 issues.append(f"{bundle_name}: triage skill '{triage}' does not exist")
 
-    if hasattr(module, 'provides_change_type_agents'):
-        agents = module.provides_change_type_agents()
-        if agents is not None:
-            if not isinstance(agents, dict):
-                issues.append(f'{bundle_name}: provides_change_type_agents() must return dict[str, str] or None')
+    if hasattr(module, 'provides_change_type_skills'):
+        skills = module.provides_change_type_skills()
+        if skills is not None:
+            if not isinstance(skills, dict):
+                issues.append(f'{bundle_name}: provides_change_type_skills() must return dict[str, str] or None')
             else:
-                for change_type, agent_ref in agents.items():
-                    if not isinstance(agent_ref, str):
-                        issues.append(f"{bundle_name}: agent reference for '{change_type}' must be a string")
+                for change_type, skill_ref in skills.items():
+                    if not isinstance(skill_ref, str):
+                        issues.append(f"{bundle_name}: skill reference for '{change_type}' must be a string")
                         continue
-                    if not agent_exists(agent_ref):
+                    if not skill_exists(skill_ref):
                         issues.append(
-                            f"{bundle_name}: agent '{agent_ref}' for change_type '{change_type}' does not exist"
+                            f"{bundle_name}: skill '{skill_ref}' for change_type '{change_type}' does not exist"
                         )
 
     return issues
@@ -274,7 +274,7 @@ def test_java_extension_skill_references_exist():
 def test_java_extension_triage_reference():
     """Test pm-dev-java provides_triage returns valid reference."""
     ext = load_extension('pm-dev-java')
-    issues = validate_triage_and_change_type_agents(ext, 'pm-dev-java')
+    issues = validate_triage_and_change_type_skills(ext, 'pm-dev-java')
     assert not issues, f'Reference issues: {issues}'
 
 
@@ -307,7 +307,7 @@ def test_frontend_extension_skill_references_exist():
 def test_frontend_extension_triage_reference():
     """Test pm-dev-frontend provides_triage returns valid reference."""
     ext = load_extension('pm-dev-frontend')
-    issues = validate_triage_and_change_type_agents(ext, 'pm-dev-frontend')
+    issues = validate_triage_and_change_type_skills(ext, 'pm-dev-frontend')
     assert not issues, f'Reference issues: {issues}'
 
 
@@ -340,7 +340,7 @@ def test_plugin_dev_extension_skill_references_exist():
 def test_plugin_dev_extension_triage_reference():
     """Test pm-plugin-development provides_triage returns valid reference."""
     ext = load_extension('pm-plugin-development')
-    issues = validate_triage_and_change_type_agents(ext, 'pm-plugin-development')
+    issues = validate_triage_and_change_type_skills(ext, 'pm-plugin-development')
     assert not issues, f'Reference issues: {issues}'
 
 
@@ -430,41 +430,41 @@ def test_java_cui_extension_skill_references_exist():
 def test_requirements_extension_triage_reference():
     """Test pm-requirements provides_triage returns valid reference."""
     ext = load_extension('pm-requirements')
-    issues = validate_triage_and_change_type_agents(ext, 'pm-requirements')
+    issues = validate_triage_and_change_type_skills(ext, 'pm-requirements')
     assert not issues, f'Reference issues: {issues}'
 
 
 def test_documents_extension_triage_reference():
     """Test pm-documents provides_triage returns valid reference."""
     ext = load_extension('pm-documents')
-    issues = validate_triage_and_change_type_agents(ext, 'pm-documents')
+    issues = validate_triage_and_change_type_skills(ext, 'pm-documents')
     assert not issues, f'Reference issues: {issues}'
 
 
-def test_plugin_dev_extension_change_type_agents_reference():
-    """Test pm-plugin-development provides_change_type_agents returns valid references."""
+def test_plugin_dev_extension_change_type_skills_reference():
+    """Test pm-plugin-development provides_change_type_skills returns valid references."""
     ext = load_extension('pm-plugin-development')
 
-    agents = ext.provides_change_type_agents()
-    assert agents is not None, 'Should provide change_type_agents'
-    assert isinstance(agents, dict), 'Should return a dict'
+    skills = ext.provides_change_type_skills()
+    assert skills is not None, 'Should provide change_type_skills'
+    assert isinstance(skills, dict), 'Should return a dict'
 
     # Verify expected change types are mapped
     expected_types = {'feature', 'enhancement', 'bug_fix', 'tech_debt'}
-    assert set(agents.keys()) == expected_types, f'Should have expected change types, got {set(agents.keys())}'
+    assert set(skills.keys()) == expected_types, f'Should have expected change types, got {set(skills.keys())}'
 
-    # Verify all agent references exist
-    for change_type, agent_ref in agents.items():
-        assert agent_exists(agent_ref), f"Agent '{agent_ref}' for change_type '{change_type}' should exist"
+    # Verify all skill references exist
+    for change_type, skill_ref in skills.items():
+        assert skill_exists(skill_ref), f"Skill '{skill_ref}' for change_type '{change_type}' should exist"
 
 
-def test_documents_extension_no_change_type_agents():
-    """Test pm-documents does not provide change_type_agents (uses generic)."""
+def test_documents_extension_no_change_type_skills():
+    """Test pm-documents does not provide change_type_skills (uses generic)."""
     ext = load_extension('pm-documents')
 
-    # pm-documents uses generic agents, so should return None
-    agents = ext.provides_change_type_agents()
-    assert agents is None, 'pm-documents should not provide domain-specific change_type_agents'
+    # pm-documents uses generic outline-change-type standards, so should return None
+    skills = ext.provides_change_type_skills()
+    assert skills is None, 'pm-documents should not provide domain-specific change_type_skills'
 
 
 # =============================================================================

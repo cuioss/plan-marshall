@@ -3,7 +3,7 @@ name: solution-outline-agent
 description: Create solution outline with deliverables using two-track workflow
 tools: Read, Glob, Grep, Bash, AskUserQuestion, Skill
 model: sonnet
-skills: pm-workflow:phase-3-outline, plan-marshall:ref-development-standards
+skills: pm-workflow:phase-3-outline, pm-workflow:outline-change-type, plan-marshall:ref-development-standards
 ---
 
 # Solution Outline Agent
@@ -17,6 +17,7 @@ Load these skills using the Skill tool BEFORE any other action:
 ```
 Skill: plan-marshall:ref-development-standards
 Skill: pm-workflow:phase-3-outline
+Skill: pm-workflow:outline-change-type
 ```
 
 If skill loading fails, STOP and report the error. Do NOT proceed without skills loaded.
@@ -102,5 +103,5 @@ context:
 ### MUST DO - Skill Delegation
 - Load skills (Step 0) before any action
 - Delegate to phase-3-outline for outline logic
-- For Complex Track, the skill spawns domain-specific skills
+- For Complex Track, the skill follows outline-change-type skill inline
 - Return structured TOON output

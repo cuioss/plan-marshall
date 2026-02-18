@@ -65,11 +65,11 @@
     },
     "plan-marshall-plugin-dev": {
       "bundle": "pm-plugin-development",
-      "change_type_agents": {
-        "feature": "pm-plugin-development:change-feature-outline-agent",
-        "enhancement": "pm-plugin-development:change-enhancement-outline-agent",
-        "bug_fix": "pm-plugin-development:change-bug_fix-outline-agent",
-        "tech_debt": "pm-plugin-development:change-tech_debt-outline-agent"
+      "change_type_skills": {
+        "feature": "pm-plugin-development:ext-outline-workflow",
+        "enhancement": "pm-plugin-development:ext-outline-workflow",
+        "bug_fix": "pm-plugin-development:ext-outline-workflow",
+        "tech_debt": "pm-plugin-development:ext-outline-workflow"
       },
       "workflow_skill_extensions": {
         "triage": "pm-plugin-development:ext-triage-plugin"

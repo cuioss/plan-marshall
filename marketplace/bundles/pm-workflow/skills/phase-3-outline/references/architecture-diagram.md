@@ -2,7 +2,7 @@
 
 Visual overview of the change-type routing architecture for human readers.
 
-## Agent Routing Flow
+## Skill-Based Routing Flow
 
 ```
                           ┌─────────────────────────────────┐
@@ -11,29 +11,31 @@ Visual overview of the change-type routing architecture for human readers.
                           └────────────┬────────────────────┘
                                        │
                     1. Detect change_type (spawn detect agent)
-                    2. Resolve agent from marshal.json
-                    3. Spawn resolved agent
+                    2. Follow outline-change-type skill inline
+                    3. Skill resolves domain or generic sub-skill
                                        │
                                        ▼
               ┌────────────────────────┴────────────────────────┐
               │                                                 │
    ┌──────────▼──────────┐                         ┌───────────▼───────────┐
-   │   Generic Agents     │                         │  Domain-Specific      │
-   │   (pm-workflow)      │                         │  Agents (configured   │
+   │   Generic Sub-Skills │                         │  Domain-Specific      │
+   │   (pm-workflow)      │                         │  Skills (configured   │
    │                      │                         │  in marshal.json)     │
-   │  change-analysis     │                         │                       │
-   │  change-feature      │ ◄── fallback when ──── │  change-feature-      │
-   │  change-enhancement  │     not configured     │    outline            │
-   │  change-bug_fix      │                         │  change-enhancement-  │
-   │  change-tech_debt    │                         │    outline            │
-   │  change-verification │                         │  change-bug_fix-      │
-   └──────────────────────┘                         │    outline            │
-                                                    │  change-tech_debt-    │
-              Each agent handles FULL workflow:     │    outline            │
-              - Discovery (if needed)               └───────────────────────┘
+   │  outline-change-type │                         │                       │
+   │  /standards/         │ ◄── fallback when ──── │  ext-outline-workflow  │
+   │    change-analysis   │     not configured     │  (shared workflow for  │
+   │    change-feature    │                         │   all change types)   │
+   │    change-enhancement│                         │                       │
+   │    change-bug_fix    │                         │                       │
+   │    change-tech_debt  │                         │                       │
+   │    change-verification│                        │                       │
+   └──────────────────────┘                         └───────────────────────┘
+
+              Each sub-skill provides instructions for:
+              - Discovery (if needed)
               - Analysis
-              - Deliverable generation                  NO SKILL LAYER
-              - Solution outline writing                (agents only)
+              - Deliverable generation
+              - Solution outline writing
 ```
 
 ## Two-Track Workflow
@@ -51,7 +53,7 @@ Visual overview of the change-type routing architecture for human readers.
     │                   │       │                     │
     │ • Localized scope │       │ • Codebase-wide     │
     │ • Targets known   │       │ • Discovery needed  │
-    │ • Direct mapping  │       │ • Agent handles all │
+    │ • Direct mapping  │       │ • Skill runs inline │
     └─────────┬─────────┘       └──────────┬──────────┘
               │                             │
               │                    ┌────────▼────────┐
@@ -60,13 +62,9 @@ Visual overview of the change-type routing architecture for human readers.
               │                    └────────┬────────┘
               │                             │
               │                    ┌────────▼────────┐
-              │                    │ resolve agent   │
-              │                    │ (marshal.json)  │
-              │                    └────────┬────────┘
-              │                             │
-              │                    ┌────────▼────────┐
-              │                    │ change-type     │
-              │                    │ agent           │
+              │                    │ outline-change- │
+              │                    │ type skill      │
+              │                    │ (inline)        │
               │                    └────────┬────────┘
               │                             │
               └──────────────┬──────────────┘
@@ -84,31 +82,31 @@ Visual overview of the change-type routing architecture for human readers.
 
 ## Change Type Vocabulary
 
-| Change Type | Priority | Generic Agent | Purpose |
-|-------------|----------|---------------|---------|
-| `analysis` | 1 | `pm-workflow:change-analysis-agent` | Investigation, research |
-| `feature` | 2 | `pm-workflow:change-feature-agent` | New functionality |
-| `enhancement` | 3 | `pm-workflow:change-enhancement-agent` | Improve existing |
-| `bug_fix` | 4 | `pm-workflow:change-bug_fix-agent` | Fix defects |
-| `tech_debt` | 5 | `pm-workflow:change-tech_debt-agent` | Refactoring, cleanup |
-| `verification` | 6 | `pm-workflow:change-verification-agent` | Validation |
+| Change Type | Priority | Sub-Skill Instructions | Purpose |
+|-------------|----------|----------------------|---------|
+| `analysis` | 1 | `outline-change-type/standards/change-analysis.md` | Investigation, research |
+| `feature` | 2 | `outline-change-type/standards/change-feature.md` | New functionality |
+| `enhancement` | 3 | `outline-change-type/standards/change-enhancement.md` | Improve existing |
+| `bug_fix` | 4 | `outline-change-type/standards/change-bug_fix.md` | Fix defects |
+| `tech_debt` | 5 | `outline-change-type/standards/change-tech_debt.md` | Refactoring, cleanup |
+| `verification` | 6 | `outline-change-type/standards/change-verification.md` | Validation |
 
 ## Domain Override Pattern
 
-Domains can override generic agents via `change_type_agents` in marshal.json:
+Domains can provide domain-specific sub-skill instructions via `change_type_skills` in marshal.json:
 
 ```json
 "skill_domains": {
   "plan-marshall-plugin-dev": {
     "bundle": "pm-plugin-development",
-    "change_type_agents": {
-      "feature": "pm-plugin-development:change-feature-outline-agent",
-      "enhancement": "pm-plugin-development:change-enhancement-outline-agent",
-      "bug_fix": "pm-plugin-development:change-bug_fix-outline-agent",
-      "tech_debt": "pm-plugin-development:change-tech_debt-outline-agent"
+    "change_type_skills": {
+      "feature": "pm-plugin-development:ext-outline-workflow",
+      "enhancement": "pm-plugin-development:ext-outline-workflow",
+      "bug_fix": "pm-plugin-development:ext-outline-workflow",
+      "tech_debt": "pm-plugin-development:ext-outline-workflow"
     }
   }
 }
 ```
 
-When no domain-specific agent is configured, the generic `pm-workflow:change-{type}-agent` is used as fallback.
+When no domain-specific skill is configured, the generic sub-skill instructions from `pm-workflow:outline-change-type/standards/change-{type}.md` are used as fallback.

@@ -20,11 +20,12 @@ Change types are orthogonal to other dimensions:
 | **Profile** | WHAT aspect of work | implementation, module_testing, quality |
 | **Change-type** | WHY you're doing it | analysis, feature, bug_fix |
 
-### Agent-Based Handling
+### Skill-Based Handling
 
 Each change type has:
-- A **generic agent** in pm-workflow (baseline behavior for all domains)
-- Optional **domain-specific agents** that override generic behavior
+- **Generic sub-skill instructions** in `pm-workflow:outline-change-type/standards/` (baseline behavior)
+- Optional **domain-specific sub-skill instructions** that override generic behavior
+- A single **unified skill** (`pm-workflow:outline-change-type`) that routes to the appropriate instructions
 
 ---
 
@@ -182,22 +183,24 @@ Quality (linting, formatting, JavaDoc) is a **profile**, not a change-type.
 
 ---
 
-## Agent Resolution
+## Skill-Based Routing
 
 ### Resolution Process
 
 1. **Detect change_type** via LLM analysis (detect-change-type-agent)
-2. **Check domain configuration** for override agent
-3. **Fall back to generic** if no override configured
+2. **Follow** `pm-workflow:outline-change-type` skill inline (no separate agent spawn)
+3. Skill resolves domain-specific or generic sub-skill instructions
 
 ### Configuration in marshal.json
 
 ```json
 "skill_domains": {
   "plan-marshall-plugin-dev": {
-    "change_type_agents": {
-      "feature": "pm-plugin-development:change-feature-outline-agent",
-      "enhancement": "pm-plugin-development:change-enhancement-outline-agent"
+    "change_type_skills": {
+      "feature": "pm-plugin-development:ext-outline-workflow",
+      "enhancement": "pm-plugin-development:ext-outline-workflow",
+      "bug_fix": "pm-plugin-development:ext-outline-workflow",
+      "tech_debt": "pm-plugin-development:ext-outline-workflow"
     }
   }
 }
@@ -205,18 +208,17 @@ Quality (linting, formatting, JavaDoc) is a **profile**, not a change-type.
 
 ### Fallback Pattern
 
-If no domain-specific agent is configured:
-- Use generic agent: `pm-workflow:change-{change_type}-agent`
-- Example: `pm-workflow:change-feature-agent`
+If no domain-specific skill is configured:
+- Use generic instructions from `pm-workflow:outline-change-type/standards/change-{type}.md`
 
----
+### Architecture
 
-## Agent Naming Convention
-
-| Type | Pattern | Example |
-|------|---------|---------|
-| Generic | `pm-workflow:change-{change_type}-agent` | `pm-workflow:change-feature-agent` |
-| Domain-specific | `{bundle}:change-{change_type}-outline-agent` | `pm-plugin-development:change-feature-outline-agent` |
+| Component | Purpose |
+|-----------|---------|
+| `pm-workflow:outline-change-type` | Skill loaded by solution-outline-agent, executed inline |
+| `pm-workflow:outline-change-type` | Parent skill with common workflow + conditional routing |
+| `outline-change-type/standards/change-{type}.md` | Generic sub-skill instructions per change type |
+| `{domain-skill}/standards/change-{type}.md` | Domain-specific sub-skill instructions (override) |
 
 ---
 

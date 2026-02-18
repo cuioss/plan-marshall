@@ -145,25 +145,28 @@ def provides_triage(self) -> str | None:
     """
 ```
 
-#### provides_change_type_agents
+#### provides_change_type_skills
 
 ```python
-def provides_change_type_agents(self) -> dict[str, str] | None:
-    """Return change_type to agent mappings if available.
+def provides_change_type_skills(self) -> dict[str, str] | None:
+    """Return change_type to skill mappings if available.
 
     Returns:
-        Dict mapping change_type keys to agent references:
+        Dict mapping change_type keys to skill references:
         {
-            "feature": "bundle:change-feature-outline-agent",
-            "enhancement": "bundle:change-enhancement-outline-agent",
-            "bug_fix": "bundle:change-bug_fix-outline-agent",
-            "tech_debt": "bundle:change-tech_debt-outline-agent"
+            "feature": "bundle:ext-outline-workflow",
+            "enhancement": "bundle:ext-outline-workflow",
+            "bug_fix": "bundle:ext-outline-workflow",
+            "tech_debt": "bundle:ext-outline-workflow"
         }
-        or None if domain uses generic pm-workflow agents.
+        or None if domain uses generic outline-change-type standards.
+
+    The skill's standards/change-{type}.md file contains the domain-specific
+    discovery, analysis, and deliverable creation logic.
 
     Valid change_types: analysis, feature, enhancement, bug_fix, tech_debt, verification
 
-    Default: None (uses generic pm-workflow:change-{type}-agent)
+    Default: None (uses generic pm-workflow:outline-change-type standards)
     """
 ```
 
@@ -295,7 +298,7 @@ Validation checks:
 - Skill references (bundle:skill) point to existing skills
 - Build bundles: discover_modules() returns contract-compliant structure with commands
 - provides_triage() references exist if non-null
-- provides_change_type_agents() agent references exist if non-null
+- provides_change_type_skills() skill references exist if non-null
 
 ---
 
@@ -316,14 +319,14 @@ Some domain bundles are **additive** - they extend a base domain bundle rather t
 
 ## Existing Extensions
 
-| Bundle | Domain Key | Triage | Change-Type Agents | Capabilities | Notes |
+| Bundle | Domain Key | Triage | Change-Type Skills | Capabilities | Notes |
 |--------|------------|--------|-------------------|-------------|-------|
 | pm-dev-java | java | ext-triage-java | - | quality-gate, build-verify, impl-verify, test-verify, triage | Base Java bundle |
 | pm-dev-java-cui | java-cui | - | - | (none) | Additive to pm-dev-java |
 | pm-dev-frontend | javascript | ext-triage-js | - | triage (default) | |
-| pm-documents | documentation | ext-triage-docs | - | triage (default) | Uses generic agents |
+| pm-documents | documentation | ext-triage-docs | - | triage (default) | Uses generic skills |
 | pm-requirements | requirements | ext-triage-reqs | - | triage (default) | |
-| pm-plugin-development | plan-marshall-plugin-dev | ext-triage-plugin | 4 agents (feature, enhancement, bug_fix, tech_debt) | triage (default) | |
+| pm-plugin-development | plan-marshall-plugin-dev | ext-triage-plugin | 4 change_type_skills (all -> ext-outline-workflow) | triage (default) | |
 
 ---
 

@@ -63,13 +63,13 @@ The extension API allows domains to **extend** system workflow skills without **
 
 | Extension Key | Phase | Purpose |
 |---------------|-------|---------|
-| `change_type_agents` | 3-outline | Domain-specific agents per change type (feature, enhancement, etc.) |
+| `change_type_skills` | 3-outline | Domain-specific skills per change type (feature, enhancement, etc.) |
 | `triage` | 6-verify, 7-finalize | Decision-making knowledge for findings (suppression syntax, severity rules) |
 
-**Change-Type Agents** (replaces `outline` skill extension):
-- Domains can provide agents for specific change types
-- Agents handle full outline workflow: discovery, analysis, deliverable creation
-- Falls back to generic `pm-workflow:change-{type}-agent` if not configured
+**Change-Type Skills** (replaces `outline` skill extension):
+- Domains can provide skills for specific change types
+- Skills provide sub-skill instructions for: discovery, analysis, deliverable creation
+- Falls back to generic `pm-workflow:outline-change-type/standards/change-{type}.md` if not configured
 
 **Phases without extensions:**
 
@@ -83,21 +83,21 @@ The extension API allows domains to **extend** system workflow skills without **
 
 ## Extension Resolution
 
-### Change-Type Agent Resolution
+### Change-Type Skill Resolution
 
 ```bash
-# Resolve change-type agent for a domain and change type
+# Resolve change-type skill for a domain and change type
 python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
-  resolve-change-type-agent --domain plan-marshall-plugin-dev --change-type feature
+  resolve-change-type-skill --domain plan-marshall-plugin-dev --change-type feature
 ```
 
-Returns agent (domain-specific or generic fallback):
+Returns skill (domain-specific or generic fallback):
 
 ```toon
 status: success
 domain: plan-marshall-plugin-dev
 change_type: feature
-agent: pm-plugin-development:change-feature-outline-agent
+skill: pm-plugin-development:ext-outline-workflow
 source: domain_specific
 ```
 
@@ -125,11 +125,11 @@ extension: pm-dev-java:ext-triage-java
 ```json
 "plan-marshall-plugin-dev": {
   "bundle": "pm-plugin-development",
-  "change_type_agents": {
-    "feature": "pm-plugin-development:change-feature-outline-agent",
-    "enhancement": "pm-plugin-development:change-enhancement-outline-agent",
-    "bug_fix": "pm-plugin-development:change-bug_fix-outline-agent",
-    "tech_debt": "pm-plugin-development:change-tech_debt-outline-agent"
+  "change_type_skills": {
+    "feature": "pm-plugin-development:ext-outline-workflow",
+    "enhancement": "pm-plugin-development:ext-outline-workflow",
+    "bug_fix": "pm-plugin-development:ext-outline-workflow",
+    "tech_debt": "pm-plugin-development:ext-outline-workflow"
   },
   "workflow_skill_extensions": {
     "triage": "pm-plugin-development:ext-triage-plugin"
@@ -139,7 +139,7 @@ extension: pm-dev-java:ext-triage-java
 
 | Key | Purpose | Used By |
 |-----|---------|---------|
-| `change_type_agents` | Maps change types to domain-specific outline agents | phase-3-outline |
+| `change_type_skills` | Maps change types to domain-specific outline skills | phase-3-outline |
 | `triage` | Domain-specific findings handling | Verify, Finalize phases |
 
 ---
@@ -162,7 +162,7 @@ Instructions for this extension point...
 
 ---
 
-## Change-Type Agent Extension
+## Change-Type Skill Extension
 
 ### Phase Overview
 
@@ -170,7 +170,7 @@ Instructions for this extension point...
 
 **Purpose**: Transform user request into solution outline with deliverables.
 
-**Agent Purpose**: Provide domain-specific outline workflow for each change type.
+**Skill Purpose**: Provide domain-specific outline instructions for each change type.
 
 ### Change Types
 
@@ -185,47 +185,50 @@ Instructions for this extension point...
 
 See `pm-workflow:workflow-architecture/standards/change-types.md` for full vocabulary.
 
-### Agent Resolution
+### Skill Resolution
 
 1. **Detect change type** via `pm-workflow:detect-change-type-agent`
-2. **Check domain config** for `change_type_agents.{type}`
-3. **Fall back to generic** if not configured: `pm-workflow:change-{type}-agent`
+2. **Check domain config** for `change_type_skills.{type}`
+3. **Fall back to generic** if not configured: `pm-workflow:outline-change-type/standards/change-{type}.md`
 
-### Implementing Domain-Specific Agents
+### Implementing Domain-Specific Skills
 
-Create agents in your bundle following the naming convention:
-- `change-{type}-outline-agent.md` (e.g., `change-feature-outline-agent.md`)
+Create a skill in your bundle that provides change-type-specific instructions:
+- Single skill with `standards/change-{type}.md` sub-skill files (e.g., `ext-outline-workflow`)
 
-Each agent handles the full workflow:
-- Discovery (spawn inventory agent if needed)
-- Analysis (spawn component analysis agent if needed)
+Each sub-skill provides instructions for:
+- Discovery (using inventory agents if needed)
+- Analysis (using component analysis agents if needed)
 - Deliverable creation
 - Solution outline writing
 
-### Example: Plugin Development Agents
+### Example: Plugin Development Skill
 
-```markdown
-# pm-plugin-development agents
-
-change-feature-outline-agent.md     # Create new components
-change-enhancement-outline-agent.md # Improve existing components
-change-bug_fix-outline-agent.md     # Fix component bugs
-change-tech_debt-outline-agent.md   # Refactor/cleanup components
+```
+pm-plugin-development/skills/ext-outline-workflow/
+├── SKILL.md                           # Shared workflow steps
+└── standards/
+    ├── change-feature.md              # Create new components
+    ├── change-enhancement.md          # Improve existing components
+    ├── change-bug_fix.md              # Fix component bugs
+    └── change-tech_debt.md            # Refactor/cleanup components
 ```
 
-Each agent spawns shared sub-agents:
+The skill can spawn sub-agents for specific tasks:
 - `ext-outline-inventory-agent` - Marketplace inventory discovery
 - `ext-outline-component-agent` - Component analysis
 
 ### Extension API
 
-Domains declare agents in `extension.py`:
+Domains declare skills in `extension.py`:
 
 ```python
-def provides_change_type_agents(self) -> dict[str, str] | None:
+def provides_change_type_skills(self) -> dict[str, str] | None:
     return {
-        'feature': 'my-bundle:change-feature-outline-agent',
-        'enhancement': 'my-bundle:change-enhancement-outline-agent',
+        'feature': 'pm-plugin-development:ext-outline-workflow',
+        'enhancement': 'pm-plugin-development:ext-outline-workflow',
+        'bug_fix': 'pm-plugin-development:ext-outline-workflow',
+        'tech_debt': 'pm-plugin-development:ext-outline-workflow',
     }
 ```
 

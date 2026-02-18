@@ -35,7 +35,7 @@ allowed-tools: Read, Glob, Grep, Bash, Task, AskUserQuestion
 ## Workflow Overview
 
 ```
-Step 2: Load Inputs → Step 3: Detect Change Type → Step 4: Route by Track → {Simple: Steps 5-7 | Complex: Steps 8-11} → Step 13: Return
+Step 2: Load Inputs → Step 3: Detect Change Type → Step 4: Route by Track → {Simple: Steps 5-7 | Complex: Steps 8-10} → Step 11: Return
 ```
 
 ---
@@ -332,99 +332,65 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   decision --plan-id {plan_id} --level INFO --message "(pm-workflow:phase-3-outline:qgate) Simple: Deliverable {N}: pass"
 ```
 
-→ Go to Step 13.
+→ Go to Step 11.
 
 ---
 
-<!-- ─── Complex Track (Steps 8-11) ─── -->
+<!-- ─── Complex Track (Steps 8-10) ─── -->
 <!-- For codebase-wide changes requiring discovery and analysis. -->
 
-## Step 8: Resolve Change-Type Agent (Complex Track)
+## Step 8: Follow Outline-Change-Type Skill (Complex Track)
 
-**Purpose**: Find the appropriate agent for the detected change type and domain.
+**Purpose**: Follow the `outline-change-type` skill workflow inline to handle discovery, analysis, and deliverable creation. The skill routes to domain-specific or generic sub-skill instructions based on change_type and domain.
 
-### Resolve Agent
+### Execute Skill Workflow
 
-For the primary domain in references.json:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
-  resolve-change-type-agent --domain {domain} --change-type {change_type} --trace-plan-id {plan_id}
-```
-
-**Output** (TOON):
-```toon
-status: success
-domain: {domain}
-change_type: {change_type}
-agent: pm-plugin-development:change-feature-outline-agent  # or generic fallback
-```
-
-**Fallback**: If no domain-specific agent configured, use generic: `pm-workflow:change-{change_type}-agent`
-
-### Log Resolution
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision --plan-id {plan_id} --level INFO --message "(pm-workflow:phase-3-outline) Resolved agent: {agent_notation}"
-```
-
----
-
-## Step 9: Spawn Change-Type Agent (Complex Track)
-
-**Purpose**: Spawn the resolved agent to handle discovery, analysis, and deliverable creation.
-
-### Spawn Agent
-
-```
-Task: {resolved_agent_notation}
-  Input:
-    plan_id: {plan_id}
-```
-
-The agent handles the complete Complex Track workflow internally:
-- Discovery (running inventory scan)
-- Analysis (assessing each component from inventory)
-- Persist assessments → assessments.jsonl
-- Confirm uncertainties with user
+Follow the `outline-change-type` skill workflow with `plan_id`. The skill handles:
+- Read change_type from status.json metadata
+- Load context (request, domains, compatibility, module mapping)
+- Resolve domain skill (if domain provides change_type_skills)
+- Load change-type sub-skill instructions (domain-specific or generic)
+- Discovery (running inventory scan or targeted search)
+- Analysis (assessing components, resolving uncertainties)
+- Persist assessments -> assessments.jsonl
 - Group into deliverables
 - Write solution_outline.md (must include `compatibility: {value} — {description}` in header metadata)
 
-### Log Agent Spawn
+### Log Skill Start
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision --plan-id {plan_id} --level INFO --message "(pm-workflow:phase-3-outline) Spawned {agent} for {domain}"
+  decision --plan-id {plan_id} --level INFO --message "(pm-workflow:phase-3-outline) Starting outline-change-type skill for {domain}"
 ```
 
 ---
 
-## Step 10: Agent Completion (Complex Track)
+## Step 9: Skill Workflow Completion (Complex Track)
 
-**Purpose**: Agent returns minimal status; data is in sinks.
+**Purpose**: Skill workflow returns minimal status; data is in sinks.
 
-### Agent Return Value
+### Skill Return Value
 
 ```toon
 status: success
 plan_id: {plan_id}
 deliverable_count: {N}
 change_type: {change_type}
+domain: {domain or "generic"}
 ```
 
-### Log Agent Completion
+### Log Skill Completion
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision --plan-id {plan_id} --level INFO --message "(pm-workflow:phase-3-outline) Agent complete: {deliverable_count} deliverables"
+  decision --plan-id {plan_id} --level INFO --message "(pm-workflow:phase-3-outline) Skill workflow complete: {deliverable_count} deliverables"
 ```
 
-**If agent returns error**: HALT and return error.
+**If skill workflow returns error**: HALT and return error.
 
 ---
 
-## Step 11: Q-Gate Verification (Complex Track)
+## Step 10: Q-Gate Verification (Complex Track)
 
 **Purpose**: Verify skill output meets quality standards.
 
@@ -472,88 +438,14 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 The Q-Gate agent writes findings to `artifacts/qgate-3-outline.jsonl`. The phase returns `qgate_pending_count` to the orchestrator:
 
-- If `qgate_pending_count == 0`: Continue to Step 13
+- If `qgate_pending_count == 0`: Continue to Step 11
 - If `qgate_pending_count > 0`: Return with `qgate_pending_count` in output. The orchestrator auto-loops (re-enters this phase) until Q-Gate passes clean. No user prompt — Q-Gate findings are objective quality failures that must be self-corrected
 
-→ Go to Step 13.
+→ Go to Step 11.
 
 ---
 
-## Step 12: Generic Workflow (No Domain Agent)
-
-For domains without domain-specific change-type agents, the generic agents in pm-workflow are used.
-These generic agents (e.g., `pm-workflow:change-feature-agent`) provide baseline behavior.
-
-### Read Module Mapping
-
-Module mapping from phase-2-refine specifies target modules.
-
-```bash
-python3 .plan/execute-script.py pm-workflow:manage-references:manage-references get \
-  --plan-id {plan_id} --field module_mapping
-```
-
-### Create Deliverables per Module
-
-For each module in module_mapping:
-
-1. Create deliverable with appropriate profile
-2. No discovery needed - modules already identified in phase-2-refine
-
-### Check Module Test Infrastructure
-
-```bash
-python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture modules \
-  --command module-tests \
-  --trace-plan-id {plan_id}
-```
-
-The architecture query result helps assess module capability, but `module_testing` is assigned only when the deliverable itself creates or modifies test files — not merely because the module has test infrastructure.
-
-### Deliverable Structure
-
-Use same template as Simple Track (Step 6).
-
-### Write Solution Outline
-
-Use `write` on first entry (solution_outline.md does not exist yet).
-Use `update` on re-entry (Q-Gate loop — solution_outline.md already exists).
-
-Check with `manage-solution-outline exists --plan-id {plan_id}` to determine which command to use:
-
-```bash
-python3 .plan/execute-script.py pm-workflow:manage-solution-outline:manage-solution-outline exists \
-  --plan-id {plan_id}
-```
-
-If `exists: false`:
-```bash
-python3 .plan/execute-script.py pm-workflow:manage-solution-outline:manage-solution-outline write \
-  --plan-id {plan_id} <<'EOF'
-{solution document with deliverables}
-EOF
-```
-
-If `exists: true`:
-```bash
-python3 .plan/execute-script.py pm-workflow:manage-solution-outline:manage-solution-outline update \
-  --plan-id {plan_id} <<'EOF'
-{solution document with deliverables}
-EOF
-```
-
-### Log Completion
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision --plan-id {plan_id} --level INFO --message "(pm-workflow:phase-3-outline) Generic workflow: {N} deliverables"
-```
-
-→ Go to Step 13.
-
----
-
-## Step 13: Write Solution and Return
+## Step 11: Write Solution and Return
 
 ---
 
@@ -637,12 +529,11 @@ qgate_pending_count: {0 if no findings}
 | Track not set | Return `{status: error, message: "phase-2-refine incomplete - track not set"}` |
 | Target not found (Simple) | Return error with invalid target |
 | Change type not detected | Return `{status: error, message: "detect-change-type-agent failed to determine change type"}` |
-| Agent not found | Fall back to generic: `pm-workflow:change-{change_type}-agent` |
-| Agent fails (Complex) | Return error, do not fall back |
+| Skill workflow fails (Complex) | Return error, do not fall back |
 | Q-Gate fails | Return with `qgate_passed: false` and findings |
 | Request not found | Return `{status: error, message: "Request not found"}` |
 
-**CRITICAL**: If Complex Track agent fails, do NOT fall back to grep/search. Fail clearly.
+**CRITICAL**: If Complex Track skill workflow fails, do NOT fall back to grep/search. Fail clearly.
 
 ---
 
@@ -657,13 +548,14 @@ qgate_pending_count: {0 if no findings}
 - `pm-workflow:manage-solution-outline:manage-solution-outline` - Write solution document
 - `pm-workflow:manage-findings:manage-findings` - Q-Gate findings (qgate add/query/resolve)
 - `pm-workflow:manage-status:manage_status` - Read/write change_type metadata
-- `plan-marshall:manage-plan-marshall-config:plan-marshall-config` - Resolve change-type agent, read compatibility (fallback)
 - `plan-marshall:manage-logging:manage-log` - Decision and work logging
 
 **Spawns** (Complex Track):
 - `pm-workflow:detect-change-type-agent` (Step 3 - change type detection)
-- Change-type agent (e.g., `pm-plugin-development:change-feature-outline-agent` or `pm-workflow:change-feature-agent`)
 - `pm-workflow:q-gate-validation-agent` (Q-Gate verification)
+
+**Inline Skills** (Complex Track):
+- `pm-workflow:outline-change-type` (Step 8 - skill-based outline for all change types and domains)
 
 **Consumed By**:
 - `pm-workflow:phase-4-plan` skill (reads deliverables for task creation)

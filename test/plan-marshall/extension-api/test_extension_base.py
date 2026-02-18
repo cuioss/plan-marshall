@@ -167,10 +167,10 @@ def test_extension_base_default_triage():
     assert ext.provides_triage() is None
 
 
-def test_extension_base_default_change_type_agents():
-    """Default provides_change_type_agents returns None."""
+def test_extension_base_default_change_type_skills():
+    """Default provides_change_type_skills returns None."""
     ext = ConcreteExtension()
-    assert ext.provides_change_type_agents() is None
+    assert ext.provides_change_type_skills() is None
 
 
 if __name__ == '__main__':
@@ -189,7 +189,7 @@ if __name__ == '__main__':
         test_extension_base_abstract_methods,
         test_extension_base_default_discover_modules,
         test_extension_base_default_triage,
-        test_extension_base_default_change_type_agents,
+        test_extension_base_default_change_type_skills,
     ]
 
     passed = 0
