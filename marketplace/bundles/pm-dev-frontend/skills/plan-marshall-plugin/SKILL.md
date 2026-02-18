@@ -26,20 +26,6 @@ Configuration in `extension.py` implements the Extension API contract:
 | `provides_triage()` | Returns `pm-dev-frontend:ext-triage-js` |
 | `discover_modules(project_root)` | Discover npm modules with metadata, commands |
 
-### Capabilities
-
-Domain capabilities for `${domain}` placeholder resolution in verification/finalize pipelines:
-
-```json
-"capabilities": {
-  "quality-gate": null,
-  "build-verify": null,
-  "triage": "pm-dev-frontend:ext-triage-js"
-}
-```
-
-Capabilities set to `null` are skipped during pipeline execution. JavaScript verification relies on npm scripts rather than dedicated agents.
-
 ---
 
 ## Scripts Overview

@@ -99,16 +99,6 @@ class Extension(ExtensionBase):
         """Return triage skill reference."""
         return 'pm-dev-java:ext-triage-java'
 
-    def provides_capabilities(self) -> dict[str, str]:
-        """Return capability map for Java domain."""
-        return {
-            'quality-gate': 'pm-dev-java:java-quality-agent',
-            'build-verify': 'pm-dev-java:java-verify-agent',
-            'impl-verify': 'pm-dev-java:java-verify-agent',
-            'test-verify': 'pm-dev-java:java-coverage-agent',
-            'triage': 'pm-dev-java:ext-triage-java',
-        }
-
     def provides_verify_steps(self) -> list[dict]:
         """Return Java-specific verification steps."""
         return [

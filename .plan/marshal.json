@@ -58,18 +58,12 @@
       "bundle": "pm-documents",
       "workflow_skill_extensions": {
         "triage": "pm-documents:ext-triage-docs"
-      },
-      "capabilities": {
-        "triage": "pm-documents:ext-triage-docs"
       }
     },
     "plan-marshall-plugin-dev": {
       "bundle": "pm-plugin-development",
       "outline_skill": "pm-plugin-development:ext-outline-workflow",
       "workflow_skill_extensions": {
-        "triage": "pm-plugin-development:ext-triage-plugin"
-      },
-      "capabilities": {
         "triage": "pm-plugin-development:ext-triage-plugin"
       }
     }

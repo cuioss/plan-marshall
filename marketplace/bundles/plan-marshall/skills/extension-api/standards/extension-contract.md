@@ -164,32 +164,6 @@ def provides_outline_skill(self) -> str | None:
     """
 ```
 
-#### provides_capabilities
-
-```python
-def provides_capabilities(self) -> dict[str, str]:
-    """Return capability map for ${domain} placeholder resolution.
-
-    Keys are capability names used in verification/finalize pipeline steps.
-    Values are fully-qualified skill/agent references (bundle:skill).
-
-    Standard capability keys:
-        - quality-gate: Static analysis and quality checks
-        - build-verify: Build verification
-        - impl-verify: Implementation standards verification
-        - test-verify: Test coverage verification
-        - triage: Finding categorization during verify phase
-
-    Returns:
-        Dict mapping capability names to skill references.
-        Only include capabilities this domain actually provides.
-
-    Default: Derives triage from provides_triage().
-    """
-```
-
-Capabilities are persisted to `marshal.json` under `skill_domains.{domain}.capabilities` during domain configuration. They enable `${domain}` placeholder resolution in verification and finalize pipeline steps.
-
 ---
 
 ## Canonical Constants
@@ -313,14 +287,14 @@ Some domain bundles are **additive** - they extend a base domain bundle rather t
 
 ## Existing Extensions
 
-| Bundle | Domain Key | Triage | Change-Type Skills | Capabilities | Notes |
-|--------|------------|--------|-------------------|-------------|-------|
-| pm-dev-java | java | ext-triage-java | - | quality-gate, build-verify, impl-verify, test-verify, triage | Base Java bundle |
-| pm-dev-java-cui | java-cui | - | - | (none) | Additive to pm-dev-java |
-| pm-dev-frontend | javascript | ext-triage-js | - | triage (default) | |
-| pm-documents | documentation | ext-triage-docs | - | triage (default) | Uses generic skills |
-| pm-requirements | requirements | ext-triage-reqs | - | triage (default) | |
-| pm-plugin-development | plan-marshall-plugin-dev | ext-triage-plugin | ext-outline-workflow | triage (default) | |
+| Bundle | Domain Key | Triage | Change-Type Skills | Notes |
+|--------|------------|--------|-------------------|-------|
+| pm-dev-java | java | ext-triage-java | - | Base Java bundle |
+| pm-dev-java-cui | java-cui | - | - | Additive to pm-dev-java |
+| pm-dev-frontend | javascript | ext-triage-js | - | |
+| pm-documents | documentation | ext-triage-docs | - | Uses generic skills |
+| pm-requirements | requirements | ext-triage-reqs | - | |
+| pm-plugin-development | plan-marshall-plugin-dev | ext-triage-plugin | ext-outline-workflow | |
 
 ---
 

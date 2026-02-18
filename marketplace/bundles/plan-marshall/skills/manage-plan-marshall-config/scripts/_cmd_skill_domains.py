@@ -236,12 +236,6 @@ def convert_extension_to_domain_config(module, domain_info: dict, bundle_name: s
         if extensions:
             config['workflow_skill_extensions'] = extensions
 
-    # Extract capabilities for ${domain} placeholder resolution
-    if hasattr(module, 'provides_capabilities'):
-        capabilities = module.provides_capabilities()
-        if capabilities:
-            config['capabilities'] = capabilities
-
     return config
 
 

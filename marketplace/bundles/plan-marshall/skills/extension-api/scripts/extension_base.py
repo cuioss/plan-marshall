@@ -303,7 +303,7 @@ class ExtensionBase(ABC):
         pass  # Default no-op implementation
 
     # =========================================================================
-    # Workflow Extension Methods (override if providing capabilities)
+    # Workflow Extension Methods
     # =========================================================================
 
     def provides_triage(self) -> str | None:
@@ -343,30 +343,6 @@ class ExtensionBase(ABC):
             are used.
         """
         return None
-
-    def provides_capabilities(self) -> dict[str, str]:
-        """Return capability map for ${domain} placeholder resolution.
-
-        Keys are capability names used in verification/finalize pipeline steps.
-        Values are fully-qualified skill/agent references (bundle:skill).
-
-        Standard capability keys:
-            - quality-gate: Static analysis and quality checks
-            - build-verify: Build verification
-            - impl-verify: Implementation standards verification
-            - test-verify: Test coverage verification
-            - triage: Finding categorization during verify phase
-
-        Returns:
-            Dict mapping capability names to skill references.
-            Only include capabilities this domain actually provides.
-            Default implementation derives triage from provides_triage().
-        """
-        result: dict[str, str] = {}
-        triage = self.provides_triage()
-        if triage:
-            result['triage'] = triage
-        return result
 
     def provides_verify_steps(self) -> list[dict]:
         """Return domain-specific verification steps for phase-6-verify.
