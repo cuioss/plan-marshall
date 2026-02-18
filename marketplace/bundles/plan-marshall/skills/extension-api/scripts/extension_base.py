@@ -319,37 +319,28 @@ class ExtensionBase(ABC):
         """
         return None
 
-    def provides_change_type_skills(self) -> dict[str, str] | None:
-        """Return change_type to skill mappings if available.
+    def provides_outline_skill(self) -> str | None:
+        """Return the domain-specific outline skill reference, or None.
 
         Returns:
-            Dict mapping change_type keys to skill references, or None.
-            Example: {
-                "feature": "my-bundle:ext-outline-workflow",
-                "enhancement": "my-bundle:ext-outline-workflow"
-            }
+            Skill reference as 'bundle:skill' (e.g.,
+            'pm-plugin-development:ext-outline-workflow') or None.
 
-            The skill reference points to the skill whose standards/
-            directory contains change-{type}.md sub-skill instructions.
-
-        Valid change_type keys:
-            - analysis: Investigation and research
-            - feature: New functionality
-            - enhancement: Improve existing
-            - bug_fix: Fix defects
-            - tech_debt: Refactoring and cleanup
-            - verification: Validation and confirmation
+            The skill's standards/change-{type}.md files contain
+            domain-specific discovery, analysis, and deliverable
+            creation logic. The change_type is passed to the skill
+            for internal routing.
 
         Purpose:
-            Change-type skills provide domain-specific outline instructions
-            loaded by the outline-change-type skill (via solution-outline-agent). The skill's
-            standards/change-{type}.md file contains the domain-specific
-            discovery, analysis, and deliverable creation logic.
+            Loaded by the outline-change-type skill (via
+            solution-outline-agent). Provides domain-specific outline
+            instructions instead of generic pm-workflow:outline-change-type
+            standards.
 
         Fallback:
-            If a domain doesn't provide a skill for a change_type,
-            generic instructions from pm-workflow:outline-change-type
-            standards/change-{type}.md are used.
+            If a domain returns None, generic instructions from
+            pm-workflow:outline-change-type/standards/change-{type}.md
+            are used.
         """
         return None
 

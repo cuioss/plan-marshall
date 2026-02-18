@@ -39,10 +39,10 @@ OPTIONAL_METHODS = {
         'description': 'Discover modules with metadata and commands',
     },
     'provides_triage': {'args': [], 'return_type': 'str | None', 'description': 'Return triage skill reference'},
-    'provides_change_type_skills': {
+    'provides_outline_skill': {
         'args': [],
-        'return_type': 'dict[str, str] | None',
-        'description': 'Return change_type to skill mappings',
+        'return_type': 'str | None',
+        'description': 'Return domain-specific outline skill reference',
     },
 }
 
@@ -142,8 +142,8 @@ def agent_exists(agent_ref: str, marketplace_root: Path) -> bool:
     return agent_path.is_file()
 
 
-def validate_triage_and_change_type_skills(module, marketplace_root: Path) -> list:
-    """Validate provides_triage() and provides_change_type_skills() return valid refs."""
+def validate_triage_and_outline_skill(module, marketplace_root: Path) -> list:
+    """Validate provides_triage() and provides_outline_skill() return valid refs."""
     issues = []
 
     if hasattr(module, 'provides_triage'):
@@ -164,57 +164,28 @@ def validate_triage_and_change_type_skills(module, marketplace_root: Path) -> li
         except Exception as e:
             issues.append({'type': 'triage_error', 'message': f'provides_triage() raised: {e}'})
 
-    if hasattr(module, 'provides_change_type_skills'):
+    if hasattr(module, 'provides_outline_skill'):
         try:
-            skills = module.provides_change_type_skills()
-            if skills is not None:
-                if not isinstance(skills, dict):
+            outline_skill = module.provides_outline_skill()
+            if outline_skill is not None:
+                if not isinstance(outline_skill, str):
                     issues.append(
                         {
-                            'type': 'invalid_change_type_skills',
-                            'message': 'provides_change_type_skills() must return dict[str, str] or None',
+                            'type': 'invalid_outline_skill',
+                            'message': 'provides_outline_skill() must return str or None',
                         }
                     )
-                else:
-                    # Validate each skill reference
-                    valid_change_types = {'analysis', 'feature', 'enhancement', 'bug_fix', 'tech_debt', 'verification'}
-                    for change_type, skill_ref in skills.items():
-                        # Validate change_type is known
-                        if change_type not in valid_change_types:
-                            issues.append(
-                                {
-                                    'type': 'unknown_change_type',
-                                    'change_type': change_type,
-                                    'location': 'provides_change_type_skills()',
-                                    'severity': 'warning',
-                                    'message': f"Unknown change_type '{change_type}' in provides_change_type_skills()",
-                                }
-                            )
-
-                        # Validate skill reference is a string
-                        if not isinstance(skill_ref, str):
-                            issues.append(
-                                {
-                                    'type': 'invalid_skill_ref',
-                                    'change_type': change_type,
-                                    'message': f"Skill reference for '{change_type}' must be a string",
-                                }
-                            )
-                            continue
-
-                        # Validate skill exists
-                        if not skill_exists(skill_ref, marketplace_root):
-                            issues.append(
-                                {
-                                    'type': 'missing_skill',
-                                    'skill': skill_ref,
-                                    'change_type': change_type,
-                                    'location': 'provides_change_type_skills()',
-                                    'message': f"Skill '{skill_ref}' for change_type '{change_type}' does not exist",
-                                }
-                            )
+                elif not skill_exists(outline_skill, marketplace_root):
+                    issues.append(
+                        {
+                            'type': 'missing_skill',
+                            'skill': outline_skill,
+                            'location': 'provides_outline_skill()',
+                            'message': f"Outline skill '{outline_skill}' does not exist",
+                        }
+                    )
         except Exception as e:
-            issues.append({'type': 'change_type_skills_error', 'message': f'provides_change_type_skills() raised: {e}'})
+            issues.append({'type': 'outline_skill_error', 'message': f'provides_outline_skill() raised: {e}'})
 
     return issues
 
@@ -555,9 +526,9 @@ def validate_extension(extension_path: Path, deep: bool = True) -> dict[str, Any
                         }
                     )
 
-            # Validate provides_triage() and provides_change_type_skills() references
+            # Validate provides_triage() and provides_outline_skill() references
             if marketplace_root:
-                triage_outline_issues = validate_triage_and_change_type_skills(module, marketplace_root)
+                triage_outline_issues = validate_triage_and_outline_skill(module, marketplace_root)
                 if triage_outline_issues:
                     result['valid'] = False
                 issues.extend(triage_outline_issues)

@@ -56,21 +56,15 @@ class Extension(ExtensionBase):
         """Return triage skill reference."""
         return 'pm-plugin-development:ext-triage-plugin'
 
-    def provides_change_type_skills(self) -> dict[str, str] | None:
-        """Return change_type to skill mappings for plugin development.
+    def provides_outline_skill(self) -> str | None:
+        """Return domain-specific outline skill for plugin development.
 
-        Provides domain-specific outline skill for feature, enhancement,
-        bug_fix, and tech_debt change types. The skill's standards/
-        directory contains change-{type}.md sub-skill instructions.
-        Other types (analysis, verification) fall back to generic
-        pm-workflow:outline-change-type standards.
+        The skill's standards/ directory contains change-{type}.md
+        sub-skill instructions for feature, enhancement, bug_fix, and
+        tech_debt. Other types (analysis, verification) fall back to
+        generic pm-workflow:outline-change-type standards.
         """
-        return {
-            'feature': 'pm-plugin-development:ext-outline-workflow',
-            'enhancement': 'pm-plugin-development:ext-outline-workflow',
-            'bug_fix': 'pm-plugin-development:ext-outline-workflow',
-            'tech_debt': 'pm-plugin-development:ext-outline-workflow',
-        }
+        return 'pm-plugin-development:ext-outline-workflow'
 
     def discover_modules(self, project_root: str) -> list:
         """Discover plugin bundles as modules.

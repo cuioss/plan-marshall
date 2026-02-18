@@ -23,8 +23,8 @@ from _cmd_init import cmd_init
 from _cmd_skill_domains import (
     cmd_configure_task_executors,
     cmd_get_skills_by_profile,
-    cmd_resolve_change_type_skill,
     cmd_resolve_domain_skills,
+    cmd_resolve_outline_skill,
     cmd_resolve_task_executor,
     cmd_resolve_workflow_skill_extension,
     cmd_skill_domains,
@@ -239,17 +239,11 @@ def main():
     p_rte = subparsers.add_parser('resolve-task-executor', help='Resolve task executor skill for a profile')
     p_rte.add_argument('--profile', required=True, help='Profile name (e.g., implementation, module_testing)')
 
-    # --- resolve-change-type-skill ---
-    p_rcts = subparsers.add_parser(
-        'resolve-change-type-skill', help='Resolve change-type skill for domain and change type'
+    # --- resolve-outline-skill ---
+    p_ros = subparsers.add_parser(
+        'resolve-outline-skill', help='Resolve outline skill for domain'
     )
-    p_rcts.add_argument('--domain', required=True, help='Domain key (e.g., plan-marshall-plugin-dev, java)')
-    p_rcts.add_argument(
-        '--change-type',
-        required=True,
-        choices=['analysis', 'feature', 'enhancement', 'bug_fix', 'tech_debt', 'verification'],
-        help='Change type',
-    )
+    p_ros.add_argument('--domain', required=True, help='Domain key (e.g., plan-marshall-plugin-dev, java)')
 
     args = parser.parse_args()
 
@@ -295,8 +289,8 @@ def main():
         return cmd_configure_task_executors(args)
     elif args.noun == 'resolve-task-executor':
         return cmd_resolve_task_executor(args)
-    elif args.noun == 'resolve-change-type-skill':
-        return cmd_resolve_change_type_skill(args)
+    elif args.noun == 'resolve-outline-skill':
+        return cmd_resolve_outline_skill(args)
     else:
         parser.print_help()
         return EXIT_ERROR

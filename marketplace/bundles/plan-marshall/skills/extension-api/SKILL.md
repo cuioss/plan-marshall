@@ -71,7 +71,7 @@ All extensions **must** inherit from `ExtensionBase` and implement required meth
 |--------|---------|---------|
 | `config_defaults(project_root: str) -> None` | no-op | Configure project defaults (called during init) |
 | `provides_triage() -> str \| None` | `None` | Return triage skill reference |
-| `provides_change_type_skills() -> dict[str, str] \| None` | `None` | Return change-type to skill mappings |
+| `provides_outline_skill() -> str \| None` | `None` | Return domain-specific outline skill reference |
 
 ---
 

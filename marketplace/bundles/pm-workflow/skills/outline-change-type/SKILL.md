@@ -74,18 +74,17 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 ### Step 3: Resolve Domain Skill
 
-Resolve whether a domain provides change-type-specific skill instructions:
+Resolve whether a domain provides a domain-specific outline skill:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
-  resolve-change-type-skill --domain {domain} --change-type {change_type} --trace-plan-id {plan_id}
+  resolve-outline-skill --domain {domain} --trace-plan-id {plan_id}
 ```
 
 **Output** (TOON):
 ```toon
 status: success
 domain: {domain}
-change_type: {change_type}
 skill: pm-plugin-development:ext-outline-workflow
 source: domain_specific
 ```
@@ -95,7 +94,6 @@ or:
 ```toon
 status: success
 domain: {domain}
-change_type: {change_type}
 skill: none
 source: generic
 ```
@@ -104,7 +102,7 @@ source: generic
 
 Based on Step 3 resolution:
 
-**IF source == domain_specific** (domain has registered change_type_skills):
+**IF source == domain_specific** (domain has registered outline_skill):
 1. Load the domain skill: `Skill: {resolved_skill}` (e.g., `Skill: pm-plugin-development:ext-outline-workflow`)
 2. Read the domain-specific change-type instructions from the skill's standards directory. The file path is: `marketplace/bundles/{bundle}/skills/{skill_name}/standards/change-{change_type}.md`
 3. Follow the instructions from that file for discovery, analysis, and deliverable creation
@@ -229,7 +227,7 @@ domain: {domain or "generic"}
 
 ### MUST DO
 - Access `.plan/` files ONLY via execute-script.py
-- Load domain skill when domain provides change_type_skills
+- Load domain skill when domain provides outline_skill
 - Follow change-type sub-skill instructions exactly
 - Return structured TOON output
 - Every deliverable MUST include ALL 6 required sections (Metadata, Profiles, Affected files, Change per file, Verification, Success Criteria)

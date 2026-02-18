@@ -167,10 +167,10 @@ def test_extension_base_default_triage():
     assert ext.provides_triage() is None
 
 
-def test_extension_base_default_change_type_skills():
-    """Default provides_change_type_skills returns None."""
+def test_extension_base_default_outline_skill():
+    """Default provides_outline_skill returns None."""
     ext = ConcreteExtension()
-    assert ext.provides_change_type_skills() is None
+    assert ext.provides_outline_skill() is None
 
 
 if __name__ == '__main__':
@@ -189,7 +189,7 @@ if __name__ == '__main__':
         test_extension_base_abstract_methods,
         test_extension_base_default_discover_modules,
         test_extension_base_default_triage,
-        test_extension_base_default_change_type_skills,
+        test_extension_base_default_outline_skill,
     ]
 
     passed = 0

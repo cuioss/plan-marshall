@@ -348,7 +348,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 Follow the `outline-change-type` skill workflow with `plan_id`. The skill handles:
 - Read change_type from status.json metadata
 - Load context (request, domains, compatibility, module mapping)
-- Resolve domain skill (if domain provides change_type_skills)
+- Resolve domain skill (if domain provides outline_skill)
 - Load change-type sub-skill instructions (domain-specific or generic)
 - Discovery (running inventory scan or targeted search)
 - Analysis (assessing components, resolving uncertainties)

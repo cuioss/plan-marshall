@@ -196,12 +196,7 @@ Quality (linting, formatting, JavaDoc) is a **profile**, not a change-type.
 ```json
 "skill_domains": {
   "plan-marshall-plugin-dev": {
-    "change_type_skills": {
-      "feature": "pm-plugin-development:ext-outline-workflow",
-      "enhancement": "pm-plugin-development:ext-outline-workflow",
-      "bug_fix": "pm-plugin-development:ext-outline-workflow",
-      "tech_debt": "pm-plugin-development:ext-outline-workflow"
-    }
+    "outline_skill": "pm-plugin-development:ext-outline-workflow"
   }
 }
 ```

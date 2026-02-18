@@ -7,7 +7,7 @@ Domain discovery uses extension.py files in each bundle's plan-marshall-plugin s
 Extension API functions:
 - get_skill_domains() -> domain metadata with profiles
 - provides_triage() -> triage skill reference or None
-- provides_change_type_skills() -> dict mapping change_type to skill reference or None
+- provides_outline_skill() -> outline skill reference or None
 """
 
 import copy
@@ -146,10 +146,10 @@ def discover_available_domains(project_root: Path | None = None) -> dict:
                     # Check for extension functions
                     if hasattr(module, 'provides_triage'):
                         has_triage = module.provides_triage() is not None
-                    has_change_type_skills = False
-                    if hasattr(module, 'provides_change_type_skills'):
-                        change_type_skills = module.provides_change_type_skills()
-                        has_change_type_skills = change_type_skills is not None and len(change_type_skills) > 0
+                    has_outline_skill = False
+                    if hasattr(module, 'provides_outline_skill'):
+                        outline_skill = module.provides_outline_skill()
+                        has_outline_skill = outline_skill is not None
 
                     domain_entry = {
                         'key': domain_data.get('key', ''),
@@ -157,7 +157,7 @@ def discover_available_domains(project_root: Path | None = None) -> dict:
                         'description': domain_data.get('description', ''),
                         'bundle': ext['bundle'],
                         'has_triage': has_triage,
-                        'has_change_type_skills': has_change_type_skills,
+                        'has_outline_skill': has_outline_skill,
                     }
 
                     # Add applicability flag if project_root was provided
@@ -223,13 +223,12 @@ def convert_extension_to_domain_config(module, domain_info: dict, bundle_name: s
     config: dict[str, Any] = {'bundle': bundle_name}
 
     # Extract extensions from dedicated functions
-    if hasattr(module, 'provides_triage') or hasattr(module, 'provides_change_type_skills'):
+    if hasattr(module, 'provides_triage') or hasattr(module, 'provides_outline_skill'):
         extensions: dict[str, Any] = {}
-        if hasattr(module, 'provides_change_type_skills'):
-            change_type_skills = module.provides_change_type_skills()
-            if change_type_skills:
-                # Store change_type_skills at config level, not in workflow_skill_extensions
-                config['change_type_skills'] = change_type_skills
+        if hasattr(module, 'provides_outline_skill'):
+            outline_skill = module.provides_outline_skill()
+            if outline_skill:
+                config['outline_skill'] = outline_skill
         if hasattr(module, 'provides_triage'):
             triage = module.provides_triage()
             if triage:
@@ -853,16 +852,15 @@ def cmd_resolve_task_executor(args) -> int:
     return success_exit({'profile': profile, 'task_executor': task_executor})
 
 
-def cmd_resolve_change_type_skill(args) -> int:
-    """Resolve change-type skill for a domain and change type.
+def cmd_resolve_outline_skill(args) -> int:
+    """Resolve outline skill for a domain.
 
     Resolution order:
-    1. Check skill_domains.{domain}.change_type_skills.{change_type}
+    1. Check skill_domains.{domain}.outline_skill
     2. If not configured, return source=generic (no domain override)
 
     Args:
         args.domain: Domain key (e.g., 'plan-marshall-plugin-dev', 'java')
-        args.change_type: Change type (analysis, feature, enhancement, bug_fix, tech_debt, verification)
 
     Returns:
         TOON output with resolved skill reference or generic indicator
@@ -873,25 +871,18 @@ def cmd_resolve_change_type_skill(args) -> int:
         return error_exit(str(e))
 
     domain = args.domain
-    change_type = args.change_type
-
-    # Validate change_type
-    valid_change_types = ['analysis', 'feature', 'enhancement', 'bug_fix', 'tech_debt', 'verification']
-    if change_type not in valid_change_types:
-        return error_exit(f"Invalid change_type '{change_type}'. Valid types: {', '.join(valid_change_types)}")
 
     config = load_config()
     skill_domains = config.get('skill_domains', {})
 
-    # Check for domain-specific skill
+    # Check for domain-specific outline skill
     if domain in skill_domains:
         domain_config = skill_domains[domain]
-        change_type_skills = domain_config.get('change_type_skills', {})
-        if change_type in change_type_skills:
-            domain_skill = change_type_skills[change_type]
+        outline_skill = domain_config.get('outline_skill')
+        if outline_skill:
             return success_exit(
-                {'domain': domain, 'change_type': change_type, 'skill': domain_skill, 'source': 'domain_specific'}
+                {'domain': domain, 'skill': outline_skill, 'source': 'domain_specific'}
             )
 
     # No domain override — generic instructions will be used
-    return success_exit({'domain': domain, 'change_type': change_type, 'skill': 'none', 'source': 'generic'})
+    return success_exit({'domain': domain, 'skill': 'none', 'source': 'generic'})

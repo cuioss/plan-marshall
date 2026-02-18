@@ -20,7 +20,7 @@ Declares the documentation domain configuration including:
 All configuration is in `extension.py` which implements the Extension API:
 - `get_skill_domains()` - Domain metadata with profiles
 - `provides_triage()` - Triage skill reference or None
-- `provides_change_type_skills()` - Change-type to skill mappings or None
+- `provides_outline_skill()` - Domain-specific outline skill reference or None
 
 ### Capabilities
 

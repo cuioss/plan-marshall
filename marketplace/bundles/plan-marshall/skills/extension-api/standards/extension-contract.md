@@ -145,26 +145,20 @@ def provides_triage(self) -> str | None:
     """
 ```
 
-#### provides_change_type_skills
+#### provides_outline_skill
 
 ```python
-def provides_change_type_skills(self) -> dict[str, str] | None:
-    """Return change_type to skill mappings if available.
+def provides_outline_skill(self) -> str | None:
+    """Return domain-specific outline skill reference, or None.
 
     Returns:
-        Dict mapping change_type keys to skill references:
-        {
-            "feature": "bundle:ext-outline-workflow",
-            "enhancement": "bundle:ext-outline-workflow",
-            "bug_fix": "bundle:ext-outline-workflow",
-            "tech_debt": "bundle:ext-outline-workflow"
-        }
+        Skill reference as 'bundle:skill' (e.g.,
+        'pm-plugin-development:ext-outline-workflow')
         or None if domain uses generic outline-change-type standards.
 
-    The skill's standards/change-{type}.md file contains the domain-specific
-    discovery, analysis, and deliverable creation logic.
-
-    Valid change_types: analysis, feature, enhancement, bug_fix, tech_debt, verification
+    The skill's standards/change-{type}.md files contain
+    domain-specific discovery, analysis, and deliverable creation
+    logic. The change_type is passed to the skill for internal routing.
 
     Default: None (uses generic pm-workflow:outline-change-type standards)
     """
@@ -298,7 +292,7 @@ Validation checks:
 - Skill references (bundle:skill) point to existing skills
 - Build bundles: discover_modules() returns contract-compliant structure with commands
 - provides_triage() references exist if non-null
-- provides_change_type_skills() skill references exist if non-null
+- provides_outline_skill() skill reference exists if non-null
 
 ---
 
@@ -326,7 +320,7 @@ Some domain bundles are **additive** - they extend a base domain bundle rather t
 | pm-dev-frontend | javascript | ext-triage-js | - | triage (default) | |
 | pm-documents | documentation | ext-triage-docs | - | triage (default) | Uses generic skills |
 | pm-requirements | requirements | ext-triage-reqs | - | triage (default) | |
-| pm-plugin-development | plan-marshall-plugin-dev | ext-triage-plugin | 4 change_type_skills (all -> ext-outline-workflow) | triage (default) | |
+| pm-plugin-development | plan-marshall-plugin-dev | ext-triage-plugin | ext-outline-workflow | triage (default) | |
 
 ---
 

@@ -79,7 +79,7 @@ All configuration is in `extension.py` which implements the Extension API:
 | `get_skill_domains()` | Domain metadata with profiles |
 | `discover_modules()` | Module discovery for derived-data.json |
 | `provides_triage()` | Triage skill reference |
-| `provides_change_type_skills()` | Change-type to skill mappings |
+| `provides_outline_skill()` | Domain-specific outline skill reference |
 
 ### Capabilities
 

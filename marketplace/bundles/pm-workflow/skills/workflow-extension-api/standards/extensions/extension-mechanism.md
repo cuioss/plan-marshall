@@ -63,7 +63,7 @@ The extension API allows domains to **extend** system workflow skills without **
 
 | Extension Key | Phase | Purpose |
 |---------------|-------|---------|
-| `change_type_skills` | 3-outline | Domain-specific skills per change type (feature, enhancement, etc.) |
+| `outline_skill` | 3-outline | Domain-specific outline skill (dispatches internally by change type) |
 | `triage` | 6-verify, 7-finalize | Decision-making knowledge for findings (suppression syntax, severity rules) |
 
 **Change-Type Skills** (replaces `outline` skill extension):
@@ -83,12 +83,12 @@ The extension API allows domains to **extend** system workflow skills without **
 
 ## Extension Resolution
 
-### Change-Type Skill Resolution
+### Outline Skill Resolution
 
 ```bash
-# Resolve change-type skill for a domain and change type
+# Resolve outline skill for a domain
 python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
-  resolve-change-type-skill --domain plan-marshall-plugin-dev --change-type feature
+  resolve-outline-skill --domain plan-marshall-plugin-dev
 ```
 
 Returns skill (domain-specific or generic fallback):
@@ -96,7 +96,6 @@ Returns skill (domain-specific or generic fallback):
 ```toon
 status: success
 domain: plan-marshall-plugin-dev
-change_type: feature
 skill: pm-plugin-development:ext-outline-workflow
 source: domain_specific
 ```
@@ -125,12 +124,7 @@ extension: pm-dev-java:ext-triage-java
 ```json
 "plan-marshall-plugin-dev": {
   "bundle": "pm-plugin-development",
-  "change_type_skills": {
-    "feature": "pm-plugin-development:ext-outline-workflow",
-    "enhancement": "pm-plugin-development:ext-outline-workflow",
-    "bug_fix": "pm-plugin-development:ext-outline-workflow",
-    "tech_debt": "pm-plugin-development:ext-outline-workflow"
-  },
+  "outline_skill": "pm-plugin-development:ext-outline-workflow",
   "workflow_skill_extensions": {
     "triage": "pm-plugin-development:ext-triage-plugin"
   }
@@ -139,7 +133,7 @@ extension: pm-dev-java:ext-triage-java
 
 | Key | Purpose | Used By |
 |-----|---------|---------|
-| `change_type_skills` | Maps change types to domain-specific outline skills | phase-3-outline |
+| `outline_skill` | Domain-specific outline skill (dispatches internally by change type) | phase-3-outline |
 | `triage` | Domain-specific findings handling | Verify, Finalize phases |
 
 ---
@@ -188,7 +182,7 @@ See `pm-workflow:workflow-architecture/standards/change-types.md` for full vocab
 ### Skill Resolution
 
 1. **Detect change type** via `pm-workflow:detect-change-type-agent`
-2. **Check domain config** for `change_type_skills.{type}`
+2. **Check domain config** for `outline_skill`
 3. **Fall back to generic** if not configured: `pm-workflow:outline-change-type/standards/change-{type}.md`
 
 ### Implementing Domain-Specific Skills
@@ -220,16 +214,11 @@ The skill can spawn sub-agents for specific tasks:
 
 ### Extension API
 
-Domains declare skills in `extension.py`:
+Domains declare their outline skill in `extension.py`:
 
 ```python
-def provides_change_type_skills(self) -> dict[str, str] | None:
-    return {
-        'feature': 'pm-plugin-development:ext-outline-workflow',
-        'enhancement': 'pm-plugin-development:ext-outline-workflow',
-        'bug_fix': 'pm-plugin-development:ext-outline-workflow',
-        'tech_debt': 'pm-plugin-development:ext-outline-workflow',
-    }
+def provides_outline_skill(self) -> str | None:
+    return 'pm-plugin-development:ext-outline-workflow'
 ```
 
 ---

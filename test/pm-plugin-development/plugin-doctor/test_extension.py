@@ -28,7 +28,7 @@ from pathlib import Path
 class ExtensionBase:
     def provides_triage(self) -> str | None:
         return None
-    def provides_change_type_skills(self) -> dict[str, str] | None:
+    def provides_outline_skill(self) -> str | None:
         return None
 
 

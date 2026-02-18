@@ -93,18 +93,13 @@ Visual overview of the change-type routing architecture for human readers.
 
 ## Domain Override Pattern
 
-Domains can provide domain-specific sub-skill instructions via `change_type_skills` in marshal.json:
+Domains can provide a domain-specific outline skill via `outline_skill` in marshal.json:
 
 ```json
 "skill_domains": {
   "plan-marshall-plugin-dev": {
     "bundle": "pm-plugin-development",
-    "change_type_skills": {
-      "feature": "pm-plugin-development:ext-outline-workflow",
-      "enhancement": "pm-plugin-development:ext-outline-workflow",
-      "bug_fix": "pm-plugin-development:ext-outline-workflow",
-      "tech_debt": "pm-plugin-development:ext-outline-workflow"
-    }
+    "outline_skill": "pm-plugin-development:ext-outline-workflow"
   }
 }
 ```

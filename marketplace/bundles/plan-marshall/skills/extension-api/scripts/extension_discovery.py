@@ -244,13 +244,13 @@ def get_skill_domains_from_extensions(extensions: list[dict[str, Any]]) -> list[
 
 
 def get_workflow_extensions_from_extensions(extensions: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
-    """Get workflow extensions (triage, change_type_skills) from extensions.
+    """Get workflow extensions (triage, outline_skill) from extensions.
 
     Args:
         extensions: List of extension info dicts
 
     Returns:
-        Dict mapping bundle to {triage: skill_ref, change_type_skills: {type: skill_ref}}
+        Dict mapping bundle to {triage: skill_ref, outline_skill: skill_ref}
     """
     workflow_extensions: dict[str, dict[str, Any]] = {}
 
@@ -269,11 +269,11 @@ def get_workflow_extensions_from_extensions(extensions: list[dict[str, Any]]) ->
             except Exception:
                 pass
 
-        if hasattr(module, 'provides_change_type_skills'):
+        if hasattr(module, 'provides_outline_skill'):
             try:
-                change_type_skills = module.provides_change_type_skills()
-                if change_type_skills:
-                    ext_info['change_type_skills'] = change_type_skills
+                outline_skill = module.provides_outline_skill()
+                if outline_skill:
+                    ext_info['outline_skill'] = outline_skill
             except Exception:
                 pass
 
