@@ -170,20 +170,41 @@ Common mistakes: Do NOT use `--component {path}`, file paths as scope parameters
 
 ### Decision Guide
 
+**Primary factor**: The deliverable's **Profiles** list determines verification. Since `phase-4-plan` copies verification verbatim to ALL tasks from a deliverable, choose the command that covers the most demanding profile.
+
+**Profile-based priority** (highest wins):
+
+| Profiles Include | Verification Command | Rationale |
+|------------------|---------------------|-----------|
+| `module_testing` | Resolve `module-tests` from architecture | Tests passing implicitly verifies implementation |
+| `implementation` only (scripts) | Resolve `compile` from architecture | Type-check without running tests |
+| `implementation` only (markdown) | Plugin-doctor for the component | Structural/standards check |
+| `verification` only | Deliverable-specific command | As defined in deliverable |
+
+**Scope-based secondary guidance** (when profile-based priority doesn't differentiate):
+
 | Deliverable Scope | Verification Pattern |
 |-------------------|---------------------|
-| Single component | Plugin-doctor for specific component type |
-| Single test file | `./pw module-tests {bundle}` |
+| Single component (markdown only) | Plugin-doctor for specific component type |
+| Single component (scripts + tests) | Resolve `module-tests` from architecture |
 | Multiple components in one bundle | `./pw verify {bundle}` for final deliverable |
 | Cross-bundle changes | `./pw verify {bundle}` per affected bundle |
 | Plugin.json registration | Plugin-doctor for the registered component |
 
-### Deliverable Verification Template
+### Deliverable Verification Templates
 
+**Markdown-only deliverable** (implementation profile, no tests):
 ```markdown
 **Verification:**
 - Command: `/pm-plugin-development:plugin-doctor scope={component_type}s {component_type}-name={name}`
 - Criteria: No errors, structure compliant
+```
+
+**Script deliverable with tests** (implementation + module_testing profiles):
+```markdown
+**Verification:**
+- Command: `{resolved module-tests command from architecture}`
+- Criteria: All tests pass, no regressions
 ```
 
 ## Test Deliverable vs module_testing Profile
@@ -320,6 +341,6 @@ domain: plan-marshall-plugin-dev
 
 - Access `.plan/` files ONLY via execute-script.py
 - Log assessments to assessments.jsonl for Q-Gate verification
-- Include plugin-doctor verification commands (see Verification Commands above)
+- Select verification commands using the profile-based priority (see Decision Guide above)
 - Return structured TOON output
 - Every deliverable MUST include ALL required fields from deliverable-contract.md
