@@ -229,25 +229,19 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 - `skills`: Domain skills only (system skills loaded by agent). Empty for `verification` profile.
 - `steps`: File paths from `Affected files` (NOT descriptive text). For `verification` profile: verification commands as steps instead of file paths.
 
-**Verification per profile**: Each task gets profile-appropriate verification using a uniform algorithm:
+**Verification**: Copy the deliverable's Verification block verbatim into the task:
 
-1. If the deliverable has a Verification Command → use it as-is (e.g., plugin-doctor, domain agent)
-2. If no Verification Command → resolve via architecture (with cascading fallback to root module):
-   ```bash
-   python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture \
-     resolve --command {profile_cmd} --name {module} \
-     --trace-plan-id {plan_id}
-   ```
-3. If architecture resolve fails (exit 1) → **no verification command** for this task, log WARN:
-   ```bash
-   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-     work --plan-id {plan_id} --level WARN --message "[TASK] (pm-workflow:phase-4-plan) No {profile_cmd} command for module {module} — task has no verification step"
-   ```
+- `verification.commands` = deliverable's `Verification: Command` value(s)
+- `verification.criteria` = deliverable's `Verification: Criteria` value
 
-Where `{profile_cmd}` is:
-- `implementation` → `compile`
-- `module_testing` → `module-tests`
-- `verification` → deliverable's Verification Command (always present for verification profile)
+The outline phase is the single source of truth for verification commands — this phase performs ZERO resolution. If a deliverable arrives without a Verification Command, this is an outline defect. Record a Q-Gate finding in Step 7 instead of resolving it here:
+
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-findings:manage-findings \
+  qgate add --plan-id {plan_id} --phase 4-plan --source qgate \
+  --type triage --title "Missing verification: deliverable {N} has no Verification Command" \
+  --detail "Outline must provide Verification Command and Criteria for every deliverable"
+```
 
 ### Step 5.5: Create Holistic Verification Tasks
 

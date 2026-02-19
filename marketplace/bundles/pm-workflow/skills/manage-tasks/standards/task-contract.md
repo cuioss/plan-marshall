@@ -302,7 +302,7 @@ For each deliverable, check:
 For each deliverable, for each profile in deliverable.profiles:
 1. Resolve skills from architecture: `module.skills_by_profile.{profile}`
 2. Set `domain` from deliverable, `profile` from current iteration
-3. Consolidate verification commands
+3. Copy verification from deliverable (Command + Criteria — verbatim, no resolution)
 4. Generate steps from file lists
 5. Compute task dependencies (testing depends on implementation)
 6. Identify parallelizable tasks

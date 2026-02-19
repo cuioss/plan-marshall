@@ -303,7 +303,7 @@ python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:archi
   resolve --command compile --name {module} \
   --trace-plan-id {plan_id}
 ```
-Use the returned `executable` value as the Verification Command. If architecture has no `compile` command for this module, omit the Command field (phase-4-plan will resolve it).
+Use the returned `executable` value as the Verification Command. Both Command and Criteria are mandatory — do NOT omit. If architecture has no `compile` command, use the most specific available command (e.g., `verify`, `quality-gate`) or flag for user decision.
 
 ### Log Deliverable Creation
 

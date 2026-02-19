@@ -47,7 +47,7 @@ python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:archi
   resolve --command module-tests --name {module} --trace-plan-id {plan_id}
 ```
 
-Use the returned `executable` value as the Verification Command. If unavailable, omit — phase-4-plan will resolve it.
+Use the returned `executable` value as the Verification Command. Both Command and Criteria are MANDATORY — do NOT omit.
 
 ## Field Requirements
 

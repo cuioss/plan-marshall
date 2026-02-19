@@ -92,12 +92,12 @@ Assign profiles based on what the **deliverable itself** creates or modifies —
 
 Each profile has a distinct verification purpose. Implementation verifies compilability. Module_testing verifies test execution. Running existing tests is NOT the job of the implementation task.
 
-| Profile | Verification Purpose | How to resolve command |
-|---------|---------------------|----------------------|
-| `implementation` | Compile/build only | `architecture resolve --command compile --name {module}` |
-| `module_testing` | Run tests | `architecture resolve --command module-tests --name {module}` |
+| Profile | Verification Purpose |
+|---------|---------------------|
+| `implementation` | Compile/build only |
+| `module_testing` | Run tests |
 
-The architecture API returns the domain-appropriate executable (Maven, npm, pw, plugin-doctor, etc.) — do NOT hardcode build tool commands.
+Verification commands are resolved during the **outline phase** (phase-3-outline / outline-change-type) using architecture resolution or domain-specific commands. The deliverable's Verification block is the single source of truth — downstream phases copy it verbatim.
 
 ### 1:N Task Creation
 

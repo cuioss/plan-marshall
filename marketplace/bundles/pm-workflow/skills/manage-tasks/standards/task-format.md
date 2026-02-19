@@ -157,6 +157,8 @@ The verification block defines how to verify task completion:
 | `criteria` | Yes | Human-readable success description |
 | `manual` | No | Set to `true` if requires human verification |
 
+**Provenance**: The `commands` array is copied verbatim from the deliverable's `Verification: Command` field by phase-4-plan. Verification commands are resolved during the outline phase (phase-3-outline) — downstream phases do not re-resolve them.
+
 ## Numbering Rules
 
 ### Task Numbers

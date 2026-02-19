@@ -169,15 +169,18 @@ After all steps complete, run task verification:
 
 **Verification** (implementation tasks verify compilability only — full test execution belongs to module_testing profile):
 
-Use the verification commands from the task. If verification commands are missing or generic, resolve the compile command from architecture:
+Execute the verification commands from `task.verification.commands`. Every task SHOULD have commands populated by the plan phase (copied from the deliverable).
+
+**Safety net** (should never trigger in normal operation): If verification commands are missing, log a WARN and resolve from architecture:
 
 ```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  work --plan-id {plan_id} --level WARN --message "[VERIFY] (pm-workflow:task-implementation) TASK-{N} missing verification — falling back to architecture resolve"
+
 python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture \
   resolve --command compile --name {module} \
   --trace-plan-id {plan_id}
 ```
-
-Execute the returned `executable` value as the verification command.
 
 ### Step 7: Handle Verification Results
 
