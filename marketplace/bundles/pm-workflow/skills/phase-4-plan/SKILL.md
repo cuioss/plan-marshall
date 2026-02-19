@@ -229,19 +229,57 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 - `skills`: Domain skills only (system skills loaded by agent). Empty for `verification` profile.
 - `steps`: File paths from `Affected files` (NOT descriptive text). For `verification` profile: verification commands as steps instead of file paths.
 
-**Verification per profile**: Each task gets profile-appropriate verification:
-- `implementation` task → use the deliverable's Verification Command (should be a compile command). If missing or generic, resolve via:
-  ```bash
-  python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture \
-    resolve --command compile --name {module} \
-    --trace-plan-id {plan_id}
-  ```
-- `module_testing` task → if the deliverable is module_testing-only (single profile), use its Verification Command directly. If the deliverable has multiple profiles, resolve via:
-  ```bash
-  python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture \
-    resolve --command module-tests --name {module} \
-    --trace-plan-id {plan_id}
-  ```
+**Verification per profile**: Each task gets profile-appropriate verification using a uniform algorithm:
+
+1. If the deliverable has a Verification Command → use it as-is (e.g., plugin-doctor, domain agent)
+2. If no Verification Command → resolve via architecture (with cascading fallback to root module):
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture \
+     resolve --command {profile_cmd} --name {module} \
+     --trace-plan-id {plan_id}
+   ```
+3. If architecture resolve fails (exit 1) → **no verification command** for this task, log WARN:
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+     work --plan-id {plan_id} --level WARN --message "[TASK] (pm-workflow:phase-4-plan) No {profile_cmd} command for module {module} — task has no verification step"
+   ```
+
+Where `{profile_cmd}` is:
+- `implementation` → `compile`
+- `module_testing` → `module-tests`
+- `verification` → deliverable's Verification Command (always present for verification profile)
+
+### Step 5.5: Create Holistic Verification Tasks
+
+After creating per-deliverable tasks, create plan-level verification tasks that depend on ALL previously created tasks.
+
+**Read verification config**:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+  plan phase-5-execute get --trace-plan-id {plan_id}
+```
+
+**1. Quality check task** (if `verification_1_quality_check` is true):
+- Resolve via `architecture resolve --command quality-gate --name {module}`
+- Create task with: `profile: verification`, `deliverable: 0`, `origin: holistic`
+- `depends_on: [ALL non-holistic tasks]`
+
+**2. Domain-specific verification tasks** (from `verification_domain_steps` config):
+- For each enabled domain step in config → create a verification task
+- Steps contain agent references from domain extensions
+- `profile: verification`, `deliverable: 0`, `origin: holistic`
+- `depends_on: [ALL non-holistic tasks]`
+
+**3. Full test suite task** (if `verification_2_build_verify` is true):
+- Resolve via `architecture resolve --command module-tests --name {module}`
+- Create task with: `profile: verification`, `deliverable: 0`, `origin: holistic`
+- `depends_on: [ALL non-holistic tasks]`
+
+**Log each holistic task creation**:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  work --plan-id {plan_id} --level INFO --message "[ARTIFACT] (pm-workflow:phase-4-plan) Created holistic verification TASK-{N}: {title}"
+```
 
 ### Step 6: Determine Execution Order
 

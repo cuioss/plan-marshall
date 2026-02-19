@@ -84,7 +84,7 @@ python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks finalize-s
 **If a command fails**:
 1. Analyze error output
 2. This is a verification task — do NOT modify source files
-3. Report the failure clearly
+3. Report the failure with structured output for triage
 
 If verification fails:
 ```bash
@@ -96,6 +96,7 @@ python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks update \
 
 ### Step 4: Return Results
 
+On **success**:
 ```toon
 status: success
 plan_id: {plan_id}
@@ -110,6 +111,31 @@ verification:
   command: "{verification command}"
 next_action: task_complete
 ```
+
+On **failure** (structured output for phase-5-execute triage):
+```toon
+status: success
+plan_id: {plan_id}
+task_number: {task_number}
+execution_summary:
+  steps_completed: {N}
+  steps_total: {M}
+  commands_run:
+    - {cmd1}
+verification:
+  passed: false
+  command: "{failed command}"
+  exit_code: {exit_code}
+  stderr: "{truncated stderr, max 2000 chars}"
+  findings:
+    - type: {compile-error|test-failure|lint-issue}
+      file: {file_path}
+      line: {line_number}
+      message: "{error message}"
+next_action: requires_triage
+```
+
+The `findings` array is best-effort: parse compiler errors, test failures, or lint output into structured entries. If parsing fails, include the raw `stderr` for the triage step to analyze.
 
 ## Integration
 

@@ -2,7 +2,7 @@
 Phase-based plan command handler for plan-marshall-config.
 
 Handles plan sub-nouns: phase-1-init, phase-2-refine, phase-5-execute,
-phase-6-verify, phase-7-finalize.
+phase-6-finalize.
 
 All phases read/write from config['plan'][phase_section].
 """
@@ -24,15 +24,14 @@ PHASE_SECTIONS = {
     'phase-3-outline',
     'phase-4-plan',
     'phase-5-execute',
-    'phase-6-verify',
-    'phase-7-finalize',
+    'phase-6-finalize',
 }
 
 # Phases that have max_iterations and boolean steps
-PIPELINE_PHASES = {'phase-6-verify', 'phase-7-finalize'}
+PIPELINE_PHASES = {'phase-5-execute', 'phase-6-finalize'}
 
 # Phases with simple scalar fields only
-SCALAR_PHASES = {'phase-1-init', 'phase-2-refine', 'phase-3-outline', 'phase-4-plan', 'phase-5-execute'}
+SCALAR_PHASES = {'phase-1-init', 'phase-2-refine', 'phase-3-outline', 'phase-4-plan'}
 
 
 def _coerce_value(value: str) -> str | bool | int:
@@ -51,7 +50,7 @@ def cmd_phase(args, phase_section: str) -> int:
 
     Args:
         args: Parsed arguments with verb and optional parameters
-        phase_section: Phase key (e.g., 'phase-6-verify')
+        phase_section: Phase key (e.g., 'phase-5-execute')
     """
     try:
         require_initialized()
@@ -70,7 +69,7 @@ def cmd_phase(args, phase_section: str) -> int:
             return success_exit({'phase': phase_section, 'field': field, 'value': section[field]})
         return success_exit({'phase': phase_section, **section})
 
-    elif args.verb == 'set' and phase_section in SCALAR_PHASES:
+    elif args.verb == 'set' and phase_section in (SCALAR_PHASES | {'phase-5-execute'}):
         field = args.field
         value = _coerce_value(args.value)
         section[field] = value
@@ -81,11 +80,12 @@ def cmd_phase(args, phase_section: str) -> int:
 
     elif args.verb == 'set-max-iterations' and phase_section in PIPELINE_PHASES:
         value = int(args.value)
-        section['max_iterations'] = value
+        key = 'verification_max_iterations' if phase_section == 'phase-5-execute' else 'max_iterations'
+        section[key] = value
         plan_config[phase_section] = section
         config['plan'] = plan_config
         save_config(config)
-        return success_exit({'phase': phase_section, 'max_iterations': value})
+        return success_exit({'phase': phase_section, key: value})
 
     elif args.verb == 'set-step' and phase_section in PIPELINE_PHASES:
         step = args.step
@@ -101,18 +101,18 @@ def cmd_phase(args, phase_section: str) -> int:
         save_config(config)
         return success_exit({'phase': phase_section, 'step': step, 'enabled': enabled})
 
-    elif args.verb == 'set-domain-step' and phase_section == 'phase-6-verify':
+    elif args.verb == 'set-domain-step' and phase_section == 'phase-5-execute':
         domain = args.domain
         step = args.step
         enabled = args.enabled.lower() == 'true'
 
-        domain_steps = section.get('domain_steps', {})
+        domain_steps = section.get('verification_domain_steps', {})
         if domain not in domain_steps:
-            return error_exit(f"Unknown domain '{domain}' in domain_steps")
+            return error_exit(f"Unknown domain '{domain}' in verification_domain_steps")
 
         domain_step_config = domain_steps[domain]
         if step not in domain_step_config:
-            return error_exit(f"Unknown step '{step}' in domain_steps.{domain}")
+            return error_exit(f"Unknown step '{step}' in verification_domain_steps.{domain}")
 
         # When disabling, set to false; when enabling, caller must provide agent reference
         if not enabled:
@@ -127,23 +127,23 @@ def cmd_phase(args, phase_section: str) -> int:
                 )
 
         domain_steps[domain] = domain_step_config
-        section['domain_steps'] = domain_steps
+        section['verification_domain_steps'] = domain_steps
         plan_config[phase_section] = section
         config['plan'] = plan_config
         save_config(config)
         return success_exit({'phase': phase_section, 'domain': domain, 'step': step, 'enabled': enabled})
 
-    elif args.verb == 'set-domain-step-agent' and phase_section == 'phase-6-verify':
+    elif args.verb == 'set-domain-step-agent' and phase_section == 'phase-5-execute':
         domain = args.domain
         step = args.step
         agent = args.agent
 
-        domain_steps = section.get('domain_steps', {})
+        domain_steps = section.get('verification_domain_steps', {})
         if domain not in domain_steps:
             domain_steps[domain] = {}
 
         domain_steps[domain][step] = agent
-        section['domain_steps'] = domain_steps
+        section['verification_domain_steps'] = domain_steps
         plan_config[phase_section] = section
         config['plan'] = plan_config
         save_config(config)

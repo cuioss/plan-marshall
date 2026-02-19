@@ -36,8 +36,7 @@ PHASE_ROUTING = {
     '3-outline': ('solution-outline', 'Create solution outline with deliverables'),
     '4-plan': ('task-plan', 'Create tasks from deliverables'),
     '5-execute': ('plan-execute', 'Execute implementation tasks'),
-    '6-verify': ('plan-verify', 'Verify implementation quality'),
-    '7-finalize': ('plan-finalize', 'Finalize with commit/PR'),
+    '6-finalize': ('plan-finalize', 'Finalize with commit/PR'),
 }
 
 

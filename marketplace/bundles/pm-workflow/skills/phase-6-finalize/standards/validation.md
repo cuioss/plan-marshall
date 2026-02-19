@@ -3,7 +3,7 @@
 ## Configuration
 
 - [ ] Accept `plan_id` parameter (never paths)
-- [ ] Read finalize config from marshal.json: `plan.phase-7-finalize` (step booleans), `plan.phase-1-init` (branch_strategy)
+- [ ] Read finalize config from marshal.json: `plan.phase-6-finalize` (step booleans), `plan.phase-1-init` (branch_strategy)
 - [ ] Read context from references.json: `branch`, `base_branch`, `issue_url`, `build_system`
 
 ## Commit Workflow (ALWAYS)

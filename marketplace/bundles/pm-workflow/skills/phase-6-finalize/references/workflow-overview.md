@@ -2,12 +2,12 @@
 
 Visual overview of the finalization workflow for human readers.
 
-## 7-Phase Model
+## 6-Phase Model
 
 ```
-1-init → 2-refine → 3-outline → 4-plan → 5-execute → 6-verify → 7-finalize
-                                              ↑                       │
-                                              └───────────────────────┘
+1-init → 2-refine → 3-outline → 4-plan → 5-execute → 6-finalize
+                                              ↑              │
+                                              └──────────────┘
                                               (loop on PR issues)
 ```
 

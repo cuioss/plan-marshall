@@ -594,14 +594,14 @@ MARSHAL_SCHEMA_DEFAULT: dict[str, Any] = {
     MARSHAL_KEY_PLAN: {
         'phase-1-init': {'branch_strategy': 'direct'},
         'phase-2-refine': {'confidence_threshold': 95, 'compatibility': 'breaking'},
-        'phase-5-execute': {'commit_strategy': 'per_deliverable'},
-        'phase-6-verify': {
-            'max_iterations': 5,
-            '1_quality_check': True,
-            '2_build_verify': True,
-            'domain_steps': {},
+        'phase-5-execute': {
+            'commit_strategy': 'per_deliverable',
+            'verification_max_iterations': 5,
+            'verification_1_quality_check': True,
+            'verification_2_build_verify': True,
+            'verification_domain_steps': {},
         },
-        'phase-7-finalize': {
+        'phase-6-finalize': {
             'max_iterations': 3,
             '1_commit_push': True,
             '2_create_pr': True,

@@ -46,7 +46,7 @@ def _create_plan(plan_id: str, title: str, phases: str) -> None:
 def test_get_routing_context():
     """Test getting routing context combines phase, skill, and progress."""
     with TestContext(plan_id='routing-plan'):
-        _create_plan('routing-plan', 'Routing Test', '1-init,2-refine,3-outline,4-plan,5-execute,6-verify,7-finalize')
+        _create_plan('routing-plan', 'Routing Test', '1-init,2-refine,3-outline,4-plan,5-execute,6-finalize')
         result = run_script(LIFECYCLE_SCRIPT, 'get-routing-context', '--plan-id', 'routing-plan')
         assert result.success, f'Script failed: {result.stderr}'
         data = parse_toon(result.stdout)
@@ -64,7 +64,7 @@ def test_get_routing_context_after_transition():
     """Test routing context updates after phase transition."""
     with TestContext(plan_id='transition-routing'):
         _create_plan(
-            'transition-routing', 'Transition Test', '1-init,2-refine,3-outline,4-plan,5-execute,6-verify,7-finalize'
+            'transition-routing', 'Transition Test', '1-init,2-refine,3-outline,4-plan,5-execute,6-finalize'
         )
         run_script(LIFECYCLE_SCRIPT, 'transition', '--plan-id', 'transition-routing', '--completed', '1-init')
         result = run_script(LIFECYCLE_SCRIPT, 'get-routing-context', '--plan-id', 'transition-routing')
@@ -209,8 +209,7 @@ def test_route_all_phases():
         '3-outline': 'solution-outline',
         '4-plan': 'task-plan',
         '5-execute': 'plan-execute',
-        '6-verify': 'plan-verify',
-        '7-finalize': 'plan-finalize',
+        '6-finalize': 'plan-finalize',
     }
     with TestContext():
         for phase, expected_skill in phases.items():

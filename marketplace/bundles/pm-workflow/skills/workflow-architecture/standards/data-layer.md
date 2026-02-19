@@ -15,7 +15,7 @@ The pm-workflow bundle uses manage-* skills as the data access layer for all pla
 │  │                                                                      │  │
 │  │   WORKFLOW SKILLS                                                    │  │
 │  │   ═══════════════                                                    │  │
-│  │   phase-1-init  phase-2-refine  phase-3-outline  phase-4-plan  phase-5-execute  phase-6-verify  phase-7-finalize │
+│  │   phase-1-init  phase-2-refine  phase-3-outline  phase-4-plan  phase-5-execute  phase-6-finalize │
 │  │       │           │               │            │             │       │  │
 │  │       │           │               │            │             │       │  │
 │  │       ▼           ▼               ▼            ▼             ▼       │  │
@@ -256,8 +256,7 @@ The pm-workflow bundle uses manage-* skills as the data access layer for all pla
 │  │      {"name": "3-outline", "status": "done"},                        │  │
 │  │      {"name": "4-plan", "status": "done"},                           │  │
 │  │      {"name": "5-execute", "status": "in_progress"},                 │  │
-│  │      {"name": "6-verify", "status": "pending"},                      │  │
-│  │      {"name": "7-finalize", "status": "pending"}                     │  │
+│  │      {"name": "6-finalize", "status": "pending"}                     │  │
 │  │    ],                                                                │  │
 │  │    "metadata": {                                                     │  │
 │  │      "change_type": "feature"                                        │  │

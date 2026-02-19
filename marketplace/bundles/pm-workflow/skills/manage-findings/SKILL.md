@@ -16,7 +16,7 @@ Unified storage for plan-level findings and phase-scoped Q-Gate findings. Both s
 | **Plan findings** | `.plan/plans/{plan_id}/artifacts/findings.jsonl` | Long-lived, promotable |
 | **Q-Gate findings** | `.plan/plans/{plan_id}/artifacts/qgate-{phase}.jsonl` | Per-phase, not promotable |
 
-Plan findings are working data during plan execution. Notable findings are promoted to project-level at `7-finalize`. Q-Gate findings track per-phase verification issues.
+Plan findings are working data during plan execution. Notable findings are promoted to project-level at `6-finalize`. Q-Gate findings track per-phase verification issues.
 
 ## Storage Structure
 
@@ -28,8 +28,8 @@ Plan findings are working data during plan execution. Notable findings are promo
     ├── qgate-2-refine.jsonl   # Per-phase Q-Gate findings
     ├── qgate-3-outline.jsonl
     ├── qgate-4-plan.jsonl
-    ├── qgate-6-verify.jsonl
-    └── qgate-7-finalize.jsonl
+    ├── qgate-5-execute.jsonl
+    └── qgate-6-finalize.jsonl
 ```
 
 ## Finding Types
@@ -108,7 +108,7 @@ python3 .plan/execute-script.py pm-workflow:manage-findings:manage-findings \
   qgate clear --plan-id {plan_id} --phase {phase}
 ```
 
-**Phases**: `2-refine`, `3-outline`, `4-plan`, `6-verify`, `7-finalize`
+**Phases**: `2-refine`, `3-outline`, `4-plan`, `5-execute`, `6-finalize`
 
 **Sources**: `qgate` (automated verification), `user_review` (user feedback)
 
@@ -148,7 +148,7 @@ b4e3d2,sonar-issue,TODO comment,fixed
 |--------|----------|-----------|
 | Sonar integration | finding (sonar-issue) | add, resolve |
 | CI integration | finding (pr-comment) | add, resolve |
-| phase-7-finalize | finding | add, promote |
+| phase-6-finalize | finding | add, promote |
 | Q-Gate agent | qgate finding | add, resolve |
 | Phase agents | qgate finding | add |
 
@@ -156,12 +156,12 @@ b4e3d2,sonar-issue,TODO comment,fixed
 
 | Client | Artifact | Operation |
 |--------|----------|-----------|
-| phase-7-finalize | finding | query, resolve, promote |
+| phase-6-finalize | finding | query, resolve, promote |
 | Phase agents (2-7) | qgate finding | query, resolve |
 
 ## Promotion Workflow
 
-At `7-finalize`:
+At `6-finalize`:
 
 1. Query unpromoted findings: `query --plan-id {plan_id} --promoted false`
 2. For each finding to promote:

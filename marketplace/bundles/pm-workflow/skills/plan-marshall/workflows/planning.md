@@ -289,14 +289,13 @@ TOON format with phases table:
 title: Implement JWT Authentication
 current_phase: 5-execute
 
-phases[7]{name,status}:
+phases[6]{name,status}:
 1-init,done
 2-refine,done
 3-outline,done
 4-plan,done
 5-execute,in_progress
-6-verify,pending
-7-finalize,pending
+6-finalize,pending
 
 created: 2025-12-02T10:00:00Z
 updated: 2025-12-02T14:30:00Z
@@ -322,6 +321,5 @@ The `route` command returns skill names for each phase:
 | 2-refine | `request-refine` | Clarify request until confident |
 | 3-outline | `solution-outline` | Create solution outline with deliverables |
 | 4-plan | `task-plan` | Create tasks from deliverables |
-| 5-execute | `plan-execute` | Execute implementation tasks |
-| 6-verify | `plan-verify` | Verify implementation quality |
-| 7-finalize | `plan-finalize` | Finalize with commit/PR |
+| 5-execute | `plan-execute` | Execute implementation tasks + verification |
+| 6-finalize | `plan-finalize` | Finalize with commit/PR |

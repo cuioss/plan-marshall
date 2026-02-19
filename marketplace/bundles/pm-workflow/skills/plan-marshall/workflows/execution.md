@@ -1,13 +1,12 @@
-# Execution Workflows (Phases 5-7)
+# Execution Workflows (Phases 5 & 7)
 
-Workflows for plan execution phases: execute (task implementation), verify (quality checks), and finalize (commit, PR).
+Workflows for plan execution phases: execute (task implementation + verification) and finalize (commit, PR).
 
 ## Action Routing
 
 | Action | Workflow |
 |--------|----------|
-| `execute` (default) | Run execute phase (task iteration) |
-| `verify` | Run verify phase (quality checks) |
+| `execute` (default) | Run execute phase (task iteration + verification) |
 | `finalize` | Run finalize phase (commit, PR) |
 
 ### Default (no parameters)
@@ -33,7 +32,7 @@ If plan is in 1-init, 3-outline, or 4-plan phase:
 ```
 Plan 'jwt-auth' is in '3-outline' phase.
 
-This workflow handles 5-execute/6-verify/7-finalize phases only.
+This workflow handles 5-execute/6-finalize phases only.
 Use /plan-marshall to complete 1-init through 4-plan phases first.
 ```
 
@@ -68,32 +67,10 @@ For each task:
 
 ---
 
-## Verify Phase
-
-Load the verify phase skill:
-
-```
-Skill: pm-workflow:phase-6-verify
-```
-
-**Input**: `plan_id`
-
-The verify skill handles:
-- Quality check (lint, format, analysis)
-- Build verify (compile, tests)
-- Technical implementation verification
-- Technical test verification
-- Documentation sync (advisory)
-- Formal spec drift check
-
-On findings: Creates fix tasks and loops back to execute phase (max 5 iterations).
-
----
-
 ## Finalize Phase
 
 ```
-Skill: pm-workflow:phase-7-finalize
+Skill: pm-workflow:phase-6-finalize
 operation: finalize
 plan_id: {plan_id}
 ```

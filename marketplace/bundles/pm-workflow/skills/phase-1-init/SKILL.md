@@ -199,16 +199,16 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 ### Step 8: Create Status
 
-Create status.json with phases (7-phase model):
+Create status.json with phases (6-phase model):
 
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-status:manage_status create \
   --plan-id {plan_id} \
   --title "{title_from_task_md}" \
-  --phases 1-init,2-refine,3-outline,4-plan,5-execute,6-verify,7-finalize
+  --phases 1-init,2-refine,3-outline,4-plan,5-execute,6-finalize
 ```
 
-**Note**: Domain information is stored in `references.json` (as a `domains` list), not in `status.json`. All plans use the standard 7-phase model.
+**Note**: Domain information is stored in `references.json` (as a `domains` list), not in `status.json`. All plans use the standard 6-phase model (verification is integrated into phase-5-execute).
 
 ### Step 9: Store Domains in References
 

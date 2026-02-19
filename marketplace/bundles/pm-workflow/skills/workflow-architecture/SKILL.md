@@ -7,7 +7,7 @@ allowed-tools: Read
 
 # PM-Workflow Architecture
 
-**Role**: Central architecture reference for the pm-workflow bundle. Provides visual documentation of the 7-phase execution model, thin agent pattern, and data layer.
+**Role**: Central architecture reference for the pm-workflow bundle. Provides visual documentation of the 6-phase execution model, thin agent pattern, and data layer.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -15,27 +15,24 @@ allowed-tools: Read
 │                         PM-WORKFLOW ARCHITECTURE                            │
 │                                                                             │
 │  ┌───────────────────────────────────────────────────────────────────────┐  │
-│  │                      7-PHASE EXECUTION MODEL                          │  │
+│  │                      6-PHASE EXECUTION MODEL                          │  │
 │  │                                                                       │  │
-│  │  1-init → 2-refine → 3-outline → 4-plan → 5-execute                   │  │
-│  │                                                ↓                       │  │
-│  │                                           6-verify ←────┐             │  │
-│  │                                              ↓          │             │  │
-│  │                                      [findings?]        │             │  │
-│  │                                       ↓       ↓         │             │  │
-│  │                                     yes      no         │             │  │
-│  │                                      ↓        ↓         │             │  │
-│  │                              create fix  7-finalize     │             │  │
-│  │                              tasks       (max 3x)       │             │  │
-│  │                                 ↓          ↓            │             │  │
-│  │                              5-execute  [PR issues?]    │             │  │
-│  │                              (loop)      ↓       ↓      │             │  │
-│  │                                 ↑       yes     no      │             │  │
-│  │                                 │        │      ↓       │             │  │
-│  │                                 │   fix tasks  COMPLETE │             │  │
-│  │                                 └────────┴──────────────┘             │  │
+│  │  1-init → 2-refine → 3-outline → 4-plan → 5-execute ──┐             │  │
+│  │                                                ↑        │             │  │
+│  │                                                │   [findings?]        │  │
+│  │                                                │    ↓       ↓         │  │
+│  │                                                │  yes      no         │  │
+│  │                                                │   ↓        ↓         │  │
+│  │                                           fix tasks  6-finalize       │  │
+│  │                                           (triage)   (max 3x)        │  │
+│  │                                                │      ↓       ↓       │  │
+│  │                                                │   [PR issues?]       │  │
+│  │                                                │    ↓       ↓         │  │
+│  │                                                │  yes      no         │  │
+│  │                                                │   │       ↓          │  │
+│  │                                                └───┘    COMPLETE      │  │
 │  │                                                                       │  │
-│  │  Iteration Limits: 6-verify (max 5x) | 7-finalize (max 3x)           │  │
+│  │  Iteration Limits: 5-execute verify (max 5x) | 6-finalize (max 3x)   │  │
 │  └───────────────────────────────────────────────────────────────────────┘  │
 │                                                                             │
 │  ┌───────────────────────────────────────────────────────────────────────┐  │
@@ -68,7 +65,7 @@ allowed-tools: Read
 
 | Document | Focus | Key Visuals |
 |----------|-------|-------------|
-| [standards/phases.md](standards/phases.md) | 7-phase model | Phase flow, transitions, outputs |
+| [standards/phases.md](standards/phases.md) | 6-phase model | Phase flow, transitions, outputs |
 | [standards/agents.md](standards/agents.md) | Thin agent pattern | Agent structure, skill invocation |
 | [standards/data-layer.md](standards/data-layer.md) | manage-* skills | File operations, TOON format |
 | [standards/skill-loading.md](standards/skill-loading.md) | Two-tier loading | System vs domain skills |
@@ -133,8 +130,8 @@ allowed-tools: Read
 │  ┌─────────────────────────────────────────────────────────────────────┐   │
 │  │  AGENTS (Single Parameterized Agent)                                 │   │
 │  │  ═══════════════════════════════════                                 │   │
-│  │  plan-phase-agent phase=1-init | 2-refine | 3-outline | 4-plan | 5-execute | 6-verify | 7-finalize │
-│  │  (One agent, 7 invocation modes)                                     │   │
+│  │  plan-phase-agent phase=1-init | 2-refine | 3-outline | 4-plan | 5-execute | 6-finalize │
+│  │  (One agent, 6 invocation modes)                                     │   │
 │  └─────────────────────────────────────────────────────────────────────┘   │
 │                                     │                                       │
 │                                     ▼                                       │
@@ -142,7 +139,7 @@ allowed-tools: Read
 │  │  WORKFLOW SKILLS (Phase Logic)                                       │   │
 │  │  ═════════════════════════════                                       │   │
 │  │  phase-1-init   phase-2-refine   phase-3-outline   phase-4-plan      │   │
-│  │  phase-5-execute   phase-6-verify    phase-7-finalize                 │   │
+│  │  phase-5-execute   phase-6-finalize                                  │   │
 │  │  task-implementation           task-module_testing                   │   │
 │  │  git-workflow         pr-workflow                                    │   │
 │  └─────────────────────────────────────────────────────────────────────┘   │
@@ -179,9 +176,8 @@ allowed-tools: Read
 | `pm-workflow:phase-2-refine` | Refine phase implementation |
 | `pm-workflow:phase-3-outline` | Outline phase implementation |
 | `pm-workflow:phase-4-plan` | Plan phase implementation |
-| `pm-workflow:phase-5-execute` | Execute phase implementation |
-| `pm-workflow:phase-6-verify` | Verify phase implementation |
-| `pm-workflow:phase-7-finalize` | Finalize phase implementation |
+| `pm-workflow:phase-5-execute` | Execute phase implementation (includes verification + triage) |
+| `pm-workflow:phase-6-finalize` | Finalize phase implementation |
 | `pm-workflow:task-implementation` | Implementation profile workflow |
 | `pm-workflow:task-module_testing` | Module testing profile workflow |
 
@@ -192,7 +188,7 @@ allowed-tools: Read
 Load on-demand based on what aspect of the architecture you need to understand:
 
 ```bash
-# Understanding the 7-phase model
+# Understanding the 6-phase model
 Read standards/phases.md
 
 # Understanding thin agent pattern

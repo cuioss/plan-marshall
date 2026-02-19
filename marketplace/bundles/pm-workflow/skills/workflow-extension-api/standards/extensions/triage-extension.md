@@ -1,6 +1,6 @@
 # Triage Extension Contract
 
-Defines the structure and requirements for domain-specific triage extensions used during the verify and finalize phases.
+Defines the structure and requirements for domain-specific triage extensions used during the execute (verification) and finalize phases.
 
 ## Purpose
 
@@ -84,7 +84,7 @@ Document situations where accepting a finding (no fix, no suppress) is appropria
 
 ## Triage Decision Flow
 
-The plan-verify and plan-finalize skills use triage extensions in this flow:
+The phase-5-execute (verification sub-loop) and plan-finalize skills use triage extensions in this flow:
 
 ```
 1. Run verification (build, test, lint, Sonar)
@@ -160,7 +160,7 @@ Triage decisions can be informed by lessons learned:
 3. If new situation, make decision and optionally record lesson
 4. Lessons are stored per domain for context-aware decisions
 
-See: [phase-7-finalize-contract.md](phase-7-finalize-contract.md) for lessons integration details.
+See: phase-6-finalize contract for lessons integration details.
 
 ## Validation Checklist
 

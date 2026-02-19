@@ -395,7 +395,7 @@ When `scope: planning` is specified, apply these additional checks for planning 
 
 ### After Each Phase Completes (MANDATORY)
 
-**CRITICAL**: Execute the **Post-Phase Verification Protocol** after EVERY phase transition (1-init→3-outline, 4-plan→5-execute, 5-execute→6-verify). This is NOT optional.
+**CRITICAL**: Execute the **Post-Phase Verification Protocol** after EVERY phase transition (1-init→3-outline, 4-plan→5-execute, 5-execute→6-finalize). This is NOT optional.
 
 Load and follow the protocol from `standards/planning-compliance.md`:
 
@@ -542,8 +542,7 @@ phases[7]{name,status}:
 3-outline,done
 4-plan,done
 5-execute,in_progress
-6-verify,pending
-7-finalize,pending
+6-finalize,pending
 ```
 
 ### Verification Result

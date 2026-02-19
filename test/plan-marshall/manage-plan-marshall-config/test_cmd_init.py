@@ -141,8 +141,8 @@ def test_init_key_ordering():
         assert actual_order == expected_filtered, f'Key order should be {expected_filtered}, got {actual_order}'
 
 
-def test_init_includes_phase_6_verify():
-    """Test init creates marshal.json with plan.phase-6-verify section."""
+def test_init_includes_verification_in_phase_5_execute():
+    """Test init creates marshal.json with verification config in phase-5-execute."""
     with PlanContext() as ctx:
         result = run_script(SCRIPT_PATH, 'init')
         assert result.success, f'Init should succeed: {result.stderr}'
@@ -150,16 +150,16 @@ def test_init_includes_phase_6_verify():
         marshal_path = ctx.fixture_dir / 'marshal.json'
         config = json.loads(marshal_path.read_text())
         plan = config.get('plan', {})
-        assert 'phase-6-verify' in plan, 'Should have plan.phase-6-verify section'
-        verify = plan['phase-6-verify']
-        assert verify['max_iterations'] == 5
-        assert verify['1_quality_check'] is True
-        assert verify['2_build_verify'] is True
-        assert 'domain_steps' in verify
+        assert 'phase-6-verify' not in plan, 'Should NOT have plan.phase-6-verify section'
+        execute = plan['phase-5-execute']
+        assert execute['verification_max_iterations'] == 5
+        assert execute['verification_1_quality_check'] is True
+        assert execute['verification_2_build_verify'] is True
+        assert 'verification_domain_steps' in execute
 
 
-def test_init_includes_phase_7_finalize():
-    """Test init creates marshal.json with plan.phase-7-finalize section."""
+def test_init_includes_phase_6_finalize():
+    """Test init creates marshal.json with plan.phase-6-finalize section."""
     with PlanContext() as ctx:
         result = run_script(SCRIPT_PATH, 'init')
         assert result.success, f'Init should succeed: {result.stderr}'
@@ -167,8 +167,8 @@ def test_init_includes_phase_7_finalize():
         marshal_path = ctx.fixture_dir / 'marshal.json'
         config = json.loads(marshal_path.read_text())
         plan = config.get('plan', {})
-        assert 'phase-7-finalize' in plan, 'Should have plan.phase-7-finalize section'
-        finalize = plan['phase-7-finalize']
+        assert 'phase-6-finalize' in plan, 'Should have plan.phase-6-finalize section'
+        finalize = plan['phase-6-finalize']
         assert finalize['max_iterations'] == 3
         assert finalize['1_commit_push'] is True
         assert finalize['2_create_pr'] is True

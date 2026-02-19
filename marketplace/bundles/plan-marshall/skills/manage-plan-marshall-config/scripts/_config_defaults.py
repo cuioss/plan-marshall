@@ -62,13 +62,10 @@ DEFAULT_PLAN_PLAN = {
 
 DEFAULT_PLAN_EXECUTE = {
     'commit_strategy': 'per_deliverable',
-}
-
-DEFAULT_PLAN_VERIFY = {
-    'max_iterations': 5,
-    '1_quality_check': True,
-    '2_build_verify': True,
-    'domain_steps': {},
+    'verification_max_iterations': 5,
+    'verification_1_quality_check': True,
+    'verification_2_build_verify': True,
+    'verification_domain_steps': {},
 }
 
 DEFAULT_PLAN_FINALIZE = {
@@ -97,7 +94,7 @@ def get_default_config() -> dict:
     NOTE:
     - build_systems is NOT included - determined at runtime via extension discovery
     - Module facts come from derived-data.json (see plan-marshall:analyze-project-architecture)
-    - domain_steps in phase-6-verify is auto-populated by skill-domains configure
+    - verification_domain_steps in phase-5-execute is auto-populated by skill-domains configure
     """
     import copy
 
@@ -110,7 +107,6 @@ def get_default_config() -> dict:
             'phase-3-outline': copy.deepcopy(DEFAULT_PLAN_OUTLINE),
             'phase-4-plan': copy.deepcopy(DEFAULT_PLAN_PLAN),
             'phase-5-execute': copy.deepcopy(DEFAULT_PLAN_EXECUTE),
-            'phase-6-verify': copy.deepcopy(DEFAULT_PLAN_VERIFY),
-            'phase-7-finalize': copy.deepcopy(DEFAULT_PLAN_FINALIZE),
+            'phase-6-finalize': copy.deepcopy(DEFAULT_PLAN_FINALIZE),
         },
     }

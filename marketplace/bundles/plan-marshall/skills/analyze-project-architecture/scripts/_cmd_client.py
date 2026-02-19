@@ -383,7 +383,12 @@ def get_module_commands(module_name: str | None = None, project_dir: str = '.') 
 
 
 def resolve_command(command_name: str, module_name: str | None = None, project_dir: str = '.') -> dict[str, str]:
-    """Resolve command to executable form.
+    """Resolve command to executable form with cascading fallback.
+
+    Resolution order:
+    1. Try command at specified module
+    2. If not found AND module is not the root module → try at root module
+    3. If still not found → raise ValueError
 
     Args:
         command_name: Command name to resolve
@@ -391,7 +396,7 @@ def resolve_command(command_name: str, module_name: str | None = None, project_d
         project_dir: Project directory path
 
     Returns:
-        Dict with module, command, and executable
+        Dict with module, command, executable, and resolution_level
     """
     derived = load_derived_data(project_dir)
 
@@ -404,14 +409,27 @@ def resolve_command(command_name: str, module_name: str | None = None, project_d
     module = get_module(derived, module_name)
     commands = module.get('commands', {})
 
-    if command_name not in commands:
-        raise ValueError(f'Command not found: {command_name}')
+    if command_name in commands:
+        cmd_data = commands[command_name]
+        executable = cmd_data if isinstance(cmd_data, str) else cmd_data.get('executable', '')
+        return {'module': module_name, 'command': command_name, 'executable': executable, 'resolution_level': 'module'}
 
-    cmd_data = commands[command_name]
+    # Cascade: try root module if current module is not already root
+    root_module_name = get_root_module(derived)
+    if root_module_name and module_name != root_module_name:
+        root_module = get_module(derived, root_module_name)
+        root_commands = root_module.get('commands', {})
+        if command_name in root_commands:
+            cmd_data = root_commands[command_name]
+            executable = cmd_data if isinstance(cmd_data, str) else cmd_data.get('executable', '')
+            return {
+                'module': root_module_name,
+                'command': command_name,
+                'executable': executable,
+                'resolution_level': 'root',
+            }
 
-    # Commands are always strings (virtual modules have single build system)
-    executable = cmd_data if isinstance(cmd_data, str) else cmd_data.get('executable', '')
-    return {'module': module_name, 'command': command_name, 'executable': executable}
+    raise ValueError(f'Command not found: {command_name}')
 
 
 # =============================================================================
@@ -716,6 +734,7 @@ def cmd_resolve(args) -> int:
         print(f'module: {result["module"]}')
         print(f'command: {result["command"]}')
         print(f'executable: {result["executable"]}')
+        print(f'resolution_level: {result["resolution_level"]}')
 
         return 0
     except DataNotFoundError:

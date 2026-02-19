@@ -1,5 +1,5 @@
 ---
-name: phase-7-finalize
+name: phase-6-finalize
 description: Complete plan execution with git workflow and PR management
 user-invocable: false
 allowed-tools: Read, Bash, Glob, Skill, Task
@@ -7,20 +7,20 @@ allowed-tools: Read, Bash, Glob, Skill, Task
 
 # Phase Finalize Skill
 
-**Role**: Finalize phase skill. Handles shipping workflow (commit, push, PR) and plan completion. Verification has already completed in phase-6-verify.
+**Role**: Finalize phase skill. Handles shipping workflow (commit, push, PR) and plan completion. Verification tasks have already been executed within phase-5-execute.
 
-**Key Pattern**: Shipping-focused execution. No verification steps—all quality checks run in phase-6-verify before reaching this phase.
+**Key Pattern**: Shipping-focused execution. No verification steps—all quality checks run as verification tasks within phase-5-execute before reaching this phase.
 
 ## When to Activate This Skill
 
 Activate when:
-- Verify phase has completed (all quality checks passed)
+- Execute phase has completed (all implementation and verification tasks passed)
 - Ready to commit and potentially create PR
-- Plan is in `7-finalize` phase
+- Plan is in `6-finalize` phase
 
 ---
 
-## Phase Position in 7-Phase Model
+## Phase Position in 6-Phase Model
 
 See [references/workflow-overview.md](references/workflow-overview.md) for the visual phase flow diagram.
 
@@ -34,7 +34,7 @@ Finalize configuration comes from marshal.json phase sections:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
-  plan phase-7-finalize get --trace-plan-id {plan_id}
+  plan phase-6-finalize get --trace-plan-id {plan_id}
 ```
 
 Cross-phase settings (also from marshal.json):
@@ -52,13 +52,13 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-m
 
 | Source | Field | Description |
 |--------|-------|-------------|
-| phase-7-finalize | `1_commit_push` | Whether to commit and push |
-| phase-7-finalize | `2_create_pr` | Whether to create a pull request |
-| phase-7-finalize | `3_automated_review` | Whether to run CI review |
-| phase-7-finalize | `4_sonar_roundtrip` | Whether to run Sonar analysis |
-| phase-7-finalize | `5_knowledge_capture` | Whether to capture learnings |
-| phase-7-finalize | `6_lessons_capture` | Whether to record lessons |
-| phase-7-finalize | `max_iterations` | Maximum finalize-verify loops |
+| phase-6-finalize | `1_commit_push` | Whether to commit and push |
+| phase-6-finalize | `2_create_pr` | Whether to create a pull request |
+| phase-6-finalize | `3_automated_review` | Whether to run CI review |
+| phase-6-finalize | `4_sonar_roundtrip` | Whether to run Sonar analysis |
+| phase-6-finalize | `5_knowledge_capture` | Whether to capture learnings |
+| phase-6-finalize | `6_lessons_capture` | Whether to record lessons |
+| phase-6-finalize | `max_iterations` | Maximum finalize-verify loops |
 | phase-5-execute | `commit_strategy` | per_deliverable/per_plan/none |
 | phase-1-init | `branch_strategy` | feature/direct |
 
@@ -74,14 +74,14 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-m
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work --plan-id {plan_id} --level INFO --message "[STATUS] (pm-workflow:phase-7-finalize) Starting finalize phase"
+  work --plan-id {plan_id} --level INFO --message "[STATUS] (pm-workflow:phase-6-finalize) Starting finalize phase"
 ```
 
 ### Query Unresolved Findings
 
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-findings:manage-findings \
-  qgate query --plan-id {plan_id} --phase 7-finalize --resolution pending
+  qgate query --plan-id {plan_id} --phase 6-finalize --resolution pending
 ```
 
 If unresolved findings exist from a previous iteration (filtered_count > 0):
@@ -91,20 +91,20 @@ For each pending finding:
 2. Resolve:
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-findings:manage-findings \
-  qgate resolve --plan-id {plan_id} --hash-id {hash_id} --resolution fixed --phase 7-finalize \
+  qgate resolve --plan-id {plan_id} --hash-id {hash_id} --resolution fixed --phase 6-finalize \
   --detail "{fix task reference or description}"
 ```
 3. Log:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision --plan-id {plan_id} --level INFO --message "(pm-workflow:phase-7-finalize:qgate) Finding {hash_id} [qgate]: fixed — {resolution_detail}"
+  decision --plan-id {plan_id} --level INFO --message "(pm-workflow:phase-6-finalize:qgate) Finding {hash_id} [qgate]: fixed — {resolution_detail}"
 ```
 
 ### Step 2: Read Configuration
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
-  plan phase-7-finalize get --trace-plan-id {plan_id}
+  plan phase-6-finalize get --trace-plan-id {plan_id}
 ```
 
 ```bash
@@ -130,7 +130,7 @@ Returns: `branch`, `base_branch`, `issue_url`, `build_system`, and file counts i
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision --plan-id {plan_id} --level INFO --message "(pm-workflow:phase-7-finalize) Finalize strategy: commit={commit_strategy}, PR={create_pr}, branch={branch_strategy}"
+  decision --plan-id {plan_id} --level INFO --message "(pm-workflow:phase-6-finalize) Finalize strategy: commit={commit_strategy}, PR={create_pr}, branch={branch_strategy}"
 ```
 
 ### Step 3: Conditional Commit Workflow
@@ -139,7 +139,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision --plan-id {plan_id} --level INFO --message "(pm-workflow:phase-7-finalize) Commit skipped: commit_strategy=none"
+  decision --plan-id {plan_id} --level INFO --message "(pm-workflow:phase-6-finalize) Commit skipped: commit_strategy=none"
 ```
 
 Proceed directly to Step 4.
@@ -185,7 +185,7 @@ This monitors CI status and handles review comments.
 1. Persist each finding to Q-Gate:
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-findings:manage-findings \
-  qgate add --plan-id {plan_id} --phase 7-finalize --source qgate \
+  qgate add --plan-id {plan_id} --phase 6-finalize --source qgate \
   --type {pr-comment|build-error} --title "{finding title}" \
   --detail "{finding details}"
 ```
@@ -233,14 +233,14 @@ Transition to complete:
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-lifecycle:manage-lifecycle transition \
   --plan-id {plan_id} \
-  --completed 7-finalize
+  --completed 6-finalize
 ```
 
 ### Step 10: Log Completion
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work --plan-id {plan_id} --level INFO --message "[STATUS] (pm-workflow:phase-7-finalize) Plan completed: commit={commit_hash}, PR={pr_url|skipped}"
+  work --plan-id {plan_id} --level INFO --message "[STATUS] (pm-workflow:phase-6-finalize) Plan completed: commit={commit_hash}, PR={pr_url|skipped}"
 ```
 
 ---
@@ -294,7 +294,7 @@ On any error, **first log the error** to work-log:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work --plan-id {plan_id} --level ERROR --message "[ERROR] (pm-workflow:phase-7-finalize) {step} failed - {error_type}: {error_context}"
+  work --plan-id {plan_id} --level ERROR --message "[ERROR] (pm-workflow:phase-6-finalize) {step} failed - {error_type}: {error_context}"
 ```
 
 ### Git Commit Failure
@@ -358,7 +358,7 @@ See [references/workflow-overview.md](references/workflow-overview.md) for the v
 
 | Document | Purpose |
 |----------|---------|
-| [references/workflow-overview.md](references/workflow-overview.md) | Visual diagrams: 7-Phase Model and Shipping Pipeline flowchart |
+| [references/workflow-overview.md](references/workflow-overview.md) | Visual diagrams: 6-Phase Model and Shipping Pipeline flowchart |
 
 ---
 
@@ -390,10 +390,10 @@ Contains: How lessons are captured at plan completion, knowledge extraction patt
 
 ### Phase Routing
 
-This skill is invoked when plan is in `7-finalize` phase:
+This skill is invoked when plan is in `6-finalize` phase:
 
 ```
-pm-workflow:manage-lifecycle:manage-lifecycle route --phase 7-finalize → pm-workflow:phase-7-finalize
+pm-workflow:manage-lifecycle:manage-lifecycle route --phase 6-finalize → pm-workflow:phase-6-finalize
 ```
 
 ### Loop-Back to Execute
@@ -402,7 +402,7 @@ On PR issues (CI failures, review comments, Sonar findings):
 1. Create fix tasks via `pm-workflow:manage-tasks`
 2. Increment `finalize_iteration` counter
 3. Transition to `5-execute` phase
-4. Fix tasks run, then re-verify (6-verify), then return to `7-finalize`
+4. Fix tasks run within `5-execute`, then return to `6-finalize`
 5. Repeat until clean or max iterations (3)
 
 ### Command Integration
@@ -417,7 +417,7 @@ On PR issues (CI failures, review comments, Sonar findings):
 | `pm-workflow:workflow-integration-git` | Commit, push, PR creation |
 | `pm-workflow:workflow-integration-ci` | CI monitoring, review handling |
 | `pm-workflow:workflow-integration-sonar` | Sonar quality gate |
-| `pm-workflow:phase-6-verify` | Loop-back target for fix verification |
+| `pm-workflow:phase-5-execute` | Loop-back target for fix task execution |
 | `pm-workflow:plan-marshall` | Phase transitions (manage-lifecycle script) |
 | `plan-marshall:manage-memories` | Knowledge capture |
 | `plan-marshall:manage-lessons` | Lessons capture |

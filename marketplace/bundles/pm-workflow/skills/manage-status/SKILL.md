@@ -50,8 +50,7 @@ JSON format for storage:
     {"name": "3-outline", "status": "pending"},
     {"name": "4-plan", "status": "pending"},
     {"name": "5-execute", "status": "pending"},
-    {"name": "6-verify", "status": "pending"},
-    {"name": "7-finalize", "status": "pending"}
+    {"name": "6-finalize", "status": "pending"}
   ],
   "metadata": {
     "change_type": "feature"

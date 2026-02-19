@@ -101,7 +101,7 @@ Log lesson capture:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work --plan-id {plan_id} --level INFO --message "[ARTIFACT] (pm-workflow:phase-7-finalize) Captured {count} lessons"
+  work --plan-id {plan_id} --level INFO --message "[ARTIFACT] (pm-workflow:phase-6-finalize) Captured {count} lessons"
 ```
 
 ## Related Skills

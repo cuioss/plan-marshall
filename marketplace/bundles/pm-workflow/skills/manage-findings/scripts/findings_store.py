@@ -79,7 +79,7 @@ RESOLUTIONS = ['pending', 'fixed', 'suppressed', 'accepted', 'taken_into_account
 SEVERITIES = ['error', 'warning', 'info']
 
 # Q-Gate phases (per-phase findings files)
-QGATE_PHASES = ['2-refine', '3-outline', '4-plan', '6-verify', '7-finalize']
+QGATE_PHASES = ['2-refine', '3-outline', '4-plan', '5-execute', '6-finalize']
 
 # Valid Q-Gate finding sources
 QGATE_SOURCES = ['qgate', 'user_review']

@@ -25,13 +25,11 @@ JSON structure and field definitions for project configuration.
       "compatibility": "breaking"
     },
     "phase-5-execute": {
-      "commit_strategy": "per_deliverable"
-    },
-    "phase-6-verify": {
-      "max_iterations": 5,
-      "1_quality_check": true,
-      "2_build_verify": true,
-      "domain_steps": {
+      "commit_strategy": "per_deliverable",
+      "verification_max_iterations": 5,
+      "verification_1_quality_check": true,
+      "verification_2_build_verify": true,
+      "verification_domain_steps": {
         "java": {
           "1_technical_impl": "pm-dev-java:java-verify-agent",
           "2_technical_test": "pm-dev-java:java-coverage-agent"
@@ -41,7 +39,7 @@ JSON structure and field definitions for project configuration.
         }
       }
     },
-    "phase-7-finalize": {
+    "phase-6-finalize": {
       "max_iterations": 3,
       "1_commit_push": true,
       "2_create_pr": true,
@@ -181,7 +179,7 @@ System-level infrastructure settings.
 
 ## Section: plan
 
-Phase-specific configuration for the 7-phase workflow model. Each phase with configurable settings has its own sub-section.
+Phase-specific configuration for the 6-phase workflow model. Each phase with configurable settings has its own sub-section.
 
 ### phase-1-init
 
@@ -219,32 +217,17 @@ Phase-specific configuration for the 7-phase workflow model. Each phase with con
 
 ### phase-5-execute
 
+Execute phase with integrated verification pipeline. Contains commit strategy and verification settings (generic boolean steps + domain-contributed agent steps).
+
 ```json
 {
   "plan": {
     "phase-5-execute": {
-      "commit_strategy": "per_deliverable"
-    }
-  }
-}
-```
-
-| Field | Type | Default | Values |
-|-------|------|---------|--------|
-| `commit_strategy` | string | "per_deliverable" | per_deliverable, per_plan, none |
-
-### phase-6-verify
-
-Verification pipeline with generic boolean steps and domain-contributed agent steps.
-
-```json
-{
-  "plan": {
-    "phase-6-verify": {
-      "max_iterations": 5,
-      "1_quality_check": true,
-      "2_build_verify": true,
-      "domain_steps": {
+      "commit_strategy": "per_deliverable",
+      "verification_max_iterations": 5,
+      "verification_1_quality_check": true,
+      "verification_2_build_verify": true,
+      "verification_domain_steps": {
         "java": {
           "1_technical_impl": "pm-dev-java:java-verify-agent",
           "2_technical_test": "pm-dev-java:java-coverage-agent"
@@ -258,35 +241,39 @@ Verification pipeline with generic boolean steps and domain-contributed agent st
 }
 ```
 
-#### Generic Steps
+| Field | Type | Default | Values |
+|-------|------|---------|--------|
+| `commit_strategy` | string | "per_deliverable" | per_deliverable, per_plan, none |
 
-Steps `1_quality_check` and `2_build_verify` are static booleans. They run canonical commands from `analyze-project-architecture`.
+#### Verification Steps
+
+Steps `verification_1_quality_check` and `verification_2_build_verify` are static booleans. They run canonical commands from `analyze-project-architecture`.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `max_iterations` | int | 5 | Maximum verify-execute-verify loops |
-| `1_quality_check` | bool | true | Run build quality gate |
-| `2_build_verify` | bool | true | Run build verification |
+| `verification_max_iterations` | int | 5 | Maximum verify-execute-verify loops |
+| `verification_1_quality_check` | bool | true | Run build quality gate |
+| `verification_2_build_verify` | bool | true | Run build verification |
 
-#### Domain Steps
+#### Verification Domain Steps
 
-`domain_steps` contains per-domain verification steps with fully-qualified agent references. Each domain bundle declares its verification steps via `provides_verify_steps()` in `extension.py`.
+`verification_domain_steps` contains per-domain verification steps with fully-qualified agent references. Each domain bundle declares its verification steps via `provides_verify_steps()` in `extension.py`.
 
 - String value → invoke the agent reference
 - `false` → skip the step
 
 Domain steps are auto-populated by `skill-domains configure` and can be toggled via:
-- `plan phase-6-verify set-domain-step --domain X --step Y --enabled false`
-- `plan phase-6-verify set-domain-step-agent --domain X --step Y --agent bundle:agent`
+- `plan phase-5-execute set-domain-step --domain X --step Y --enabled false`
+- `plan phase-5-execute set-domain-step-agent --domain X --step Y --agent bundle:agent`
 
-### phase-7-finalize
+### phase-6-finalize
 
 Finalize pipeline with numbered boolean steps.
 
 ```json
 {
   "plan": {
-    "phase-7-finalize": {
+    "phase-6-finalize": {
       "max_iterations": 3,
       "1_commit_push": true,
       "2_create_pr": true,

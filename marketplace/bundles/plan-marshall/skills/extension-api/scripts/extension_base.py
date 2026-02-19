@@ -345,11 +345,11 @@ class ExtensionBase(ABC):
         return None
 
     def provides_verify_steps(self) -> list[dict]:
-        """Return domain-specific verification steps for phase-6-verify.
+        """Return domain-specific verification steps for phase-5-execute.
 
         Each step declares a verification agent that can be enabled during
         project configuration via /marshall-steward. Steps are persisted in
-        marshal.json under plan.phase-6-verify.domain_steps.{domain_key}.
+        marshal.json under plan.phase-5-execute.verification_domain_steps.{domain_key}.
 
         Returns:
             List of step dicts, each containing:

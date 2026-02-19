@@ -145,6 +145,33 @@ If `commit_strategy == per_deliverable` (cached from Step 0.1):
 
 If `commit_strategy` is `per_plan` or `none` → Skip this step entirely.
 
+### Step 3.7: Triage Verification Failure (verification tasks only)
+
+**Only applies** when a `profile=verification` task completes with `verification.passed: false` / `next_action: requires_triage`.
+
+**3.7a**: Read `verify_iteration` counter from task metadata (default: 0).
+
+**3.7b**: If `verify_iteration >= verification_max_iterations` (from phase-5-execute config, default 5) → mark task `blocked`, log, continue to Step 4.
+
+**3.7c**: Load domain triage extension via workflow-extension-api (`provides_triage()`).
+
+**3.7d**: Persist findings to Q-Gate:
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-findings:manage-findings \
+  qgate add --plan-id {plan_id} --phase 5-execute \
+  --source qgate --type {finding_type} --severity {severity} \
+  --message "{finding_message}" --detail "{file}:{line}"
+```
+
+**3.7e**: Triage each finding:
+- **FIX** → create fix task (`origin: fix`, `profile: implementation`, depends on nothing)
+- **SUPPRESS** → log suppression, resolve finding
+- **ACCEPT** → log as technical debt, resolve finding
+
+**3.7f**: If fix tasks created → increment `verify_iteration` in task metadata, reset verification task to `pending`, continue execution loop (fix tasks will execute before the re-queued verification task via `depends_on`).
+
+**3.7g**: If no fix tasks → mark verification task complete (all findings suppressed/accepted), continue to Step 4.
+
 ### Step 4: Next Task or Phase
 
 - If more tasks in phase → Continue to next task
@@ -189,7 +216,7 @@ Execute continuously without user prompts except:
 
 ## Phase Transition
 
-When transitioning from execute phase to verify:
+When transitioning from execute phase to finalize:
 
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-lifecycle:manage-lifecycle transition \
@@ -234,6 +261,5 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 ### Related Skills
 - **phase-4-plan** - Creates tasks from deliverables (previous phase)
-- **phase-6-verify** - Quality verification (next phase)
-- **phase-7-finalize** - Shipping workflow (commit, PR)
+- **phase-6-finalize** - Shipping workflow (commit, PR) (next phase)
 

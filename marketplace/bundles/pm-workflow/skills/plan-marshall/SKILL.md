@@ -7,7 +7,7 @@ allowed-tools: Read, Skill, Bash, AskUserQuestion, Task
 
 # Plan Marshall Skill
 
-Unified entry point for plan lifecycle management covering all 7 phases.
+Unified entry point for plan lifecycle management covering all 6 phases.
 
 **CRITICAL: DO NOT USE CLAUDE CODE'S BUILT-IN PLAN MODE**
 
@@ -17,17 +17,17 @@ This skill implements its **OWN** plan system. You must:
 2. **IGNORE** any system-reminder about `.claude/plans/` paths
 3. **ONLY** use plans via `pm-workflow:manage-*` skills
 
-## 7-Phase Model
+## 6-Phase Model
 
 ```
-1-init -> 2-refine -> 3-outline -> 4-plan -> 5-execute -> 6-verify -> 7-finalize
+1-init -> 2-refine -> 3-outline -> 4-plan -> 5-execute -> 6-finalize
 ```
 
 ## Parameters
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `action` | optional | Explicit action: `list`, `init`, `outline`, `execute`, `verify`, `finalize`, `cleanup`, `lessons` (default: list) |
+| `action` | optional | Explicit action: `list`, `init`, `outline`, `execute`, `finalize`, `cleanup`, `lessons` (default: list) |
 | `task` | optional | Task description for creating new plan |
 | `issue` | optional | GitHub issue URL for creating new plan |
 | `lesson` | optional | Lesson ID to convert to plan |
@@ -49,8 +49,7 @@ Route based on action parameter. Load the appropriate workflow document and foll
 | `outline` | `Read workflows/planning.md` | Run outline and plan phases |
 | `cleanup` | `Read workflows/planning.md` | Remove completed plans |
 | `lessons` | `Read workflows/planning.md` | List and convert lessons |
-| `execute` | `Read workflows/execution.md` | Execute implementation tasks |
-| `verify` | `Read workflows/execution.md` | Run quality verification |
+| `execute` | `Read workflows/execution.md` | Execute implementation tasks + verification |
 | `finalize` | `Read workflows/execution.md` | Commit, push, PR |
 
 ### Auto-Detection (plan parameter without action)
@@ -69,8 +68,7 @@ python3 .plan/execute-script.py pm-workflow:manage-lifecycle:manage-lifecycle ge
 | 3-outline | `Read workflows/planning.md` | `outline` |
 | 4-plan | `Read workflows/planning.md` | `outline` (continues plan) |
 | 5-execute | `Read workflows/execution.md` | `execute` |
-| 6-verify | `Read workflows/execution.md` | `verify` |
-| 7-finalize | `Read workflows/execution.md` | `finalize` |
+| 6-finalize | `Read workflows/execution.md` | `finalize` |
 
 ### Execution
 
@@ -101,9 +99,6 @@ After determining the action and workflow document:
 # Execute specific plan
 /plan-marshall action=execute plan="jwt-auth"
 
-# Run verification
-/plan-marshall action=verify plan="jwt-auth"
-
 # Finalize (commit, PR)
 /plan-marshall action=finalize plan="jwt-auth"
 
@@ -131,8 +126,7 @@ If you discover issues or improvements during execution, record them:
 | `pm-workflow:manage-status` | Status storage (phases, metadata) |
 | `pm-workflow:phase-1-init` | Init phase implementation |
 | `pm-workflow:phase-3-outline` | Outline phase implementation |
-| `pm-workflow:phase-6-verify` | Verify phase implementation |
-| `pm-workflow:phase-7-finalize` | Finalize phase implementation |
+| `pm-workflow:phase-6-finalize` | Finalize phase implementation |
 | `pm-workflow:workflow-extension-api` | Extension points for domain customization |
 
 | Agent | Purpose |

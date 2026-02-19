@@ -4,7 +4,7 @@ System and plan command handlers for plan-marshall-config.
 Handles: system, plan
 
 Plan sub-nouns delegate to phase handlers in _cmd_quality_phases:
-  phase-1-init, phase-2-refine, phase-5-execute, phase-6-verify, phase-7-finalize
+  phase-1-init, phase-2-refine, phase-5-execute, phase-6-finalize
 """
 
 from _cmd_quality_phases import PHASE_SECTIONS, cmd_phase

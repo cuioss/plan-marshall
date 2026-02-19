@@ -84,7 +84,7 @@ plan-marshall-config skill-domains set \
   --optionals "pm-dev-java:java-lombok,pm-dev-java:javadoc"
 ```
 
-**Profile-based update (7-phase model):**
+**Profile-based update (6-phase model):**
 ```bash
 plan-marshall-config skill-domains set \
   --domain java \
@@ -242,7 +242,7 @@ Resolve domain-specific workflow skill extension. Returns null (not error) if ex
 
 **Extension Types:**
 - `outline` - Additional context for solution-outline phase
-- `triage` - Finding triage logic for verify phase
+- `triage` - Finding triage logic for execute (verification) and finalize phases
 
 ```bash
 plan-marshall-config resolve-workflow-skill-extension \
@@ -435,77 +435,77 @@ plan-marshall-config plan phase-5-execute set \
   --field commit_strategy --value per_plan
 ```
 
-### phase-6-verify get
+### phase-5-execute get (verification settings)
 
-Get verify phase configuration including generic steps and domain steps.
+Get execute phase configuration including verification generic steps and domain steps.
 
 ```bash
-plan-marshall-config plan phase-6-verify get
+plan-marshall-config plan phase-5-execute get
 ```
 
 Optional `--field` to get a specific field:
 
 ```bash
-plan-marshall-config plan phase-6-verify get --field max_iterations
+plan-marshall-config plan phase-5-execute get --field verification_max_iterations
 ```
 
-### phase-6-verify set-max-iterations
+### phase-5-execute set-max-iterations
 
 Set maximum verification iterations.
 
 ```bash
-plan-marshall-config plan phase-6-verify set-max-iterations --value 10
+plan-marshall-config plan phase-5-execute set-max-iterations --value 10
 ```
 
-### phase-6-verify set-step
+### phase-5-execute set-step
 
-Enable or disable a generic boolean step.
+Enable or disable a generic boolean verification step.
 
 ```bash
-plan-marshall-config plan phase-6-verify set-step \
-  --step 1_quality_check --enabled false
+plan-marshall-config plan phase-5-execute set-step \
+  --step verification_1_quality_check --enabled false
 ```
 
-### phase-6-verify set-domain-step
+### phase-5-execute set-domain-step
 
 Enable or disable a domain verification step.
 
 ```bash
-plan-marshall-config plan phase-6-verify set-domain-step \
+plan-marshall-config plan phase-5-execute set-domain-step \
   --domain java --step 1_technical_impl --enabled false
 ```
 
-### phase-6-verify set-domain-step-agent
+### phase-5-execute set-domain-step-agent
 
 Set a domain verification step's agent reference.
 
 ```bash
-plan-marshall-config plan phase-6-verify set-domain-step-agent \
+plan-marshall-config plan phase-5-execute set-domain-step-agent \
   --domain java --step 1_technical_impl --agent pm-dev-java:java-verify-agent
 ```
 
-### phase-7-finalize get
+### phase-6-finalize get
 
 Get finalize phase configuration.
 
 ```bash
-plan-marshall-config plan phase-7-finalize get
+plan-marshall-config plan phase-6-finalize get
 ```
 
-### phase-7-finalize set-max-iterations
+### phase-6-finalize set-max-iterations
 
 Set maximum finalize iterations.
 
 ```bash
-plan-marshall-config plan phase-7-finalize set-max-iterations --value 5
+plan-marshall-config plan phase-6-finalize set-max-iterations --value 5
 ```
 
-### phase-7-finalize set-step
+### phase-6-finalize set-step
 
 Enable or disable a finalize step.
 
 ```bash
-plan-marshall-config plan phase-7-finalize set-step \
+plan-marshall-config plan phase-6-finalize set-step \
   --step 2_create_pr --enabled false
 ```
 

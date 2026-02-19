@@ -35,7 +35,7 @@ def test_create_status():
             '--title',
             'Test Plan',
             '--phases',
-            '1-init,2-refine,3-outline,4-plan,5-execute,6-verify,7-finalize',
+            '1-init,2-refine,3-outline,4-plan,5-execute,6-finalize',
         )
         assert result.success, f'Script failed: {result.stderr}'
         data = parse_toon(result.stdout)

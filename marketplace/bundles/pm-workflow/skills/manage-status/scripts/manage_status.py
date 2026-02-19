@@ -481,7 +481,7 @@ def main() -> None:
     create_parser.add_argument(
         '--phases',
         required=True,
-        help='Comma-separated phase names (e.g., 1-init,2-refine,3-outline,4-plan,5-execute,6-verify,7-finalize)',
+        help='Comma-separated phase names (e.g., 1-init,2-refine,3-outline,4-plan,5-execute,6-finalize)',
     )
     create_parser.add_argument('--force', action='store_true', help='Overwrite existing status')
     create_parser.set_defaults(func=cmd_create)

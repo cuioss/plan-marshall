@@ -237,7 +237,7 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-m
 
 ## Step 7: Quality Pipeline Configuration (Optional)
 
-Configure verification (phase 6) and finalize (phase 7) pipeline settings.
+Configure verification (phase 5 sub-loop) and finalize (phase 7) pipeline settings.
 
 ```
 AskUserQuestion:
@@ -275,7 +275,7 @@ AskUserQuestion:
 Apply: for each deselected step:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
-  plan phase-6-verify set-step --step {step_name} --enabled false
+  plan phase-5-execute set-step --step {step_name} --enabled false
 ```
 
 **Domain verification steps** are auto-populated from extensions during Step 11 (skill domain configuration). Each domain bundle declares its verification steps via `provides_verify_steps()` in `extension.py`.
@@ -306,7 +306,7 @@ AskUserQuestion:
 Apply: for each deselected step:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
-  plan phase-7-finalize set-step --step {step_name} --enabled false
+  plan phase-6-finalize set-step --step {step_name} --enabled false
 ```
 
 ### Step 7c: Max Iterations
@@ -314,7 +314,7 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-m
 ```
 AskUserQuestion:
   questions:
-    - question: "Max iterations for verification phase (phase 6)?"
+    - question: "Max iterations for verification (phase 5 sub-loop)?"
       header: "Verify Iters"
       multiSelect: false
       options:
@@ -339,12 +339,12 @@ AskUserQuestion:
 Apply selections:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
-  plan phase-6-verify set-max-iterations --value {5|3|10}
+  plan phase-5-execute set-max-iterations --value {5|3|10}
 ```
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
-  plan phase-7-finalize set-max-iterations --value {3|1|5}
+  plan phase-6-finalize set-max-iterations --value {3|1|5}
 ```
 
 ---

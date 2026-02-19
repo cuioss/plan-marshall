@@ -64,7 +64,7 @@ The extension API allows domains to **extend** system workflow skills without **
 | Extension Key | Phase | Purpose |
 |---------------|-------|---------|
 | `outline_skill` | 3-outline | Domain-specific outline skill (dispatches internally by change type) |
-| `triage` | 6-verify, 7-finalize | Decision-making knowledge for findings (suppression syntax, severity rules) |
+| `triage` | 5-execute, 6-finalize | Decision-making knowledge for findings (suppression syntax, severity rules) |
 
 **Change-Type Skills** (replaces `outline` skill extension):
 - Domains can provide skills for specific change types
@@ -134,7 +134,7 @@ extension: pm-dev-java:ext-triage-java
 | Key | Purpose | Used By |
 |-----|---------|---------|
 | `outline_skill` | Domain-specific outline skill (dispatches internally by change type) | phase-3-outline |
-| `triage` | Domain-specific findings handling | Verify, Finalize phases |
+| `triage` | Domain-specific findings handling | Execute (verification), Finalize phases |
 
 ---
 
@@ -394,8 +394,8 @@ At extension point "Deliverable Patterns":
 ## Related Documents
 
 - [phase-3-outline SKILL.md](../../../phase-3-outline/SKILL.md) - Outline phase skill (self-documenting)
-- [phase-6-verify SKILL.md](../../../phase-6-verify/SKILL.md) - Verify phase skill (self-documenting)
-- [phase-7-finalize SKILL.md](../../../phase-7-finalize/SKILL.md) - Finalize phase skill (self-documenting)
+- [phase-5-execute SKILL.md](../../../phase-5-execute/SKILL.md) - Execute phase skill with verification (self-documenting)
+- [phase-6-finalize SKILL.md](../../../phase-6-finalize/SKILL.md) - Finalize phase skill (self-documenting)
 - [triage-extension.md](triage-extension.md) - Triage extension contract
 - [change-types.md](../../../workflow-architecture/standards/change-types.md) - Change type vocabulary
 - [deliverable-contract.md](../../../manage-solution-outline/standards/deliverable-contract.md) - Deliverable structure

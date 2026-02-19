@@ -6,12 +6,12 @@ Implementation skill management with profile-based structure and workflow skill 
 
 Skill domains configure which implementation skills are loaded when working on code in different domains. The structure supports:
 
-- **System Domain**: Contains workflow skills for the 7-phase execution model
+- **System Domain**: Contains workflow skills for the 6-phase execution model
 - **Technical Domains**: Language-specific with profiles and workflow skill extensions (java, javascript)
 
 ## 7-Phase Workflow Model
 
-The system domain contains workflow skills for the 7 execution phases:
+The system domain contains workflow skills for the 6 execution phases:
 
 | Phase | Purpose | Workflow Skill |
 |-------|---------|----------------|
@@ -19,9 +19,8 @@ The system domain contains workflow skills for the 7 execution phases:
 | `2-refine` | Clarify request | `pm-workflow:phase-2-refine` |
 | `3-outline` | Create solution outline | `pm-workflow:phase-3-outline` |
 | `4-plan` | Decompose into tasks | `pm-workflow:phase-4-plan` |
-| `5-execute` | Run implementation | `pm-workflow:phase-5-execute` |
-| `6-verify` | Quality verification | `pm-workflow:phase-6-verify` |
-| `7-finalize` | Commit, PR | `pm-workflow:phase-7-finalize` |
+| `5-execute` | Run implementation + verification | `pm-workflow:phase-5-execute` |
+| `6-finalize` | Commit, PR | `pm-workflow:phase-6-finalize` |
 
 ## Structure
 
@@ -39,8 +38,7 @@ The system domain contains workflow skills for the 7 execution phases:
         "3-outline": "pm-workflow:phase-3-outline",
         "4-plan": "pm-workflow:phase-4-plan",
         "5-execute": "pm-workflow:phase-5-execute",
-        "6-verify": "pm-workflow:phase-6-verify",
-        "7-finalize": "pm-workflow:phase-7-finalize"
+        "6-finalize": "pm-workflow:phase-6-finalize"
       }
     }
   }
@@ -91,7 +89,7 @@ Domain-specific extensions that augment workflow skills. Only in technical domai
 | Type | Phase | Purpose |
 |------|-------|---------|
 | `outline` | outline | Domain detection, deliverable patterns |
-| `triage` | finalize | Finding decision-making (fix/suppress/accept) |
+| `triage` | execute (verification), finalize | Finding decision-making (fix/suppress/accept) |
 
 ### Profiles
 
@@ -115,13 +113,13 @@ Foundation skills always included when the domain is selected.
 
 ## System Domain
 
-Applied to all agents and skills. Contains workflow skills for the 7-phase model.
+Applied to all agents and skills. Contains workflow skills for the 6-phase model.
 
 | Field | Content |
 |-------|---------|
 | defaults | `plan-marshall:ref-development-standards` |
 | optionals | `plan-marshall:ref-development-standards` |
-| workflow_skills | 7 phases: init, refine, outline, plan, execute, verify, finalize |
+| workflow_skills | 6 phases: init, refine, outline, plan, execute, finalize |
 
 ## Technical Domains
 
@@ -220,7 +218,7 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-m
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `--phase` | string | Yes | Phase name (1-init, 2-refine, 3-outline, 4-plan, 5-execute, 6-verify, 7-finalize) |
+| `--phase` | string | Yes | Phase name (1-init, 2-refine, 3-outline, 4-plan, 5-execute, 6-finalize) |
 
 **Output**:
 ```toon
@@ -231,7 +229,7 @@ workflow_skill: pm-workflow:phase-3-outline
 
 **Error Cases**:
 - System domain missing → `error: System domain not configured. Run /marshall-steward to initialize.`
-- Unknown phase → `error: Unknown phase: {phase}. Available: 1-init, 2-refine, 3-outline, 4-plan, 5-execute, 6-verify, 7-finalize`
+- Unknown phase → `error: Unknown phase: {phase}. Available: 1-init, 2-refine, 3-outline, 4-plan, 5-execute, 6-finalize`
 
 ### resolve-workflow-skill-extension Command
 
@@ -284,7 +282,7 @@ optionals:
 
 ### get-workflow-skills Command
 
-Returns all workflow skills from the system domain (7-phase model).
+Returns all workflow skills from the system domain (6-phase model).
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
@@ -299,8 +297,7 @@ status: success
 3-outline: pm-workflow:phase-3-outline
 4-plan: pm-workflow:phase-4-plan
 5-execute: pm-workflow:phase-5-execute
-6-verify: pm-workflow:phase-6-verify
-7-finalize: pm-workflow:phase-7-finalize
+6-finalize: pm-workflow:phase-6-finalize
 ```
 
 ### Aggregation Logic

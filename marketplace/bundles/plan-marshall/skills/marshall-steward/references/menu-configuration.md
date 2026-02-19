@@ -170,18 +170,18 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-m
 
 ## Configuration: Quality Pipelines
 
-Manage verification (phase 6) and finalize (phase 7) pipeline settings.
+Manage verification (phase 5 sub-loop) and finalize (phase 7) pipeline settings.
 
 ### Step 1: Show Current Pipeline Config
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
-  plan phase-6-verify get
+  plan phase-5-execute get
 ```
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
-  plan phase-7-finalize get
+  plan phase-6-finalize get
 ```
 
 ### Step 2: Select What to Configure
@@ -219,7 +219,7 @@ AskUserQuestion:
 Apply: for each deselected step:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
-  plan phase-6-verify set-step --step {step_name} --enabled false
+  plan phase-5-execute set-step --step {step_name} --enabled false
 ```
 
 Domain steps (auto-populated from extensions via `provides_verify_steps()`):
@@ -227,7 +227,7 @@ Domain steps (auto-populated from extensions via `provides_verify_steps()`):
 ```bash
 # Toggle a domain step off
 python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
-  plan phase-6-verify set-domain-step --domain java --step 1_technical_impl --enabled false
+  plan phase-5-execute set-domain-step --domain java --step 1_technical_impl --enabled false
 ```
 
 ### Step 3b: Configure Finalize Steps
@@ -255,7 +255,7 @@ AskUserQuestion:
 Apply: for each deselected step:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
-  plan phase-7-finalize set-step --step {step_name} --enabled false
+  plan phase-6-finalize set-step --step {step_name} --enabled false
 ```
 
 ### Step 3c: Set Max Iterations
@@ -288,12 +288,12 @@ AskUserQuestion:
 Apply:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
-  plan phase-6-verify set-max-iterations --value {5|3|10}
+  plan phase-5-execute set-max-iterations --value {5|3|10}
 ```
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
-  plan phase-7-finalize set-max-iterations --value {3|1|5}
+  plan phase-6-finalize set-max-iterations --value {3|1|5}
 ```
 
 ---
@@ -561,8 +561,8 @@ The pm-workflow bundle uses thin agents that load phase skills statically:
 | `solution-outline-agent` | Create deliverables | `pm-workflow:phase-3-outline` |
 | `task-plan-agent` | Create tasks from deliverables | `pm-workflow:phase-4-plan` |
 | `task-execute-agent` | Execute single task | `pm-workflow:phase-5-execute` + `task.skills` |
-| `q-gate-validation-agent` | Quality verification | `pm-workflow:phase-6-verify` |
-| `plan-finalize-agent` | Commit, PR | `pm-workflow:phase-7-finalize` |
+| `q-gate-validation-agent` | Quality verification | `pm-workflow:phase-5-execute` |
+| `plan-finalize-agent` | Commit, PR | `pm-workflow:phase-6-finalize` |
 
 Phase skills are statically known (not resolved from config). Domain-specific extensions are loaded via `resolve-workflow-skill-extension --domain {domain} --type {outline|triage}`.
 

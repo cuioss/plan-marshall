@@ -211,7 +211,7 @@ Returns null (not error) if extension doesn't exist for the domain.
 
 | Parameters | Purpose |
 |------------|---------|
-| (none) | Get all workflow skills from system domain (7-phase model) |
+| (none) | Get all workflow skills from system domain (6-phase model) |
 
 ### get-skills-by-profile
 
@@ -258,15 +258,14 @@ Phase-specific configuration using `plan {phase} {verb}` pattern.
 | `phase-1-init set` | `--field --value` | Set init phase field (branch_strategy) |
 | `phase-2-refine get` | `[--field]` | Get refine phase configuration |
 | `phase-2-refine set` | `--field --value` | Set refine phase field (confidence_threshold, compatibility) |
-| `phase-5-execute get` | `[--field]` | Get execute phase configuration |
+| `phase-5-execute get` | `[--field]` | Get execute phase configuration (includes verification settings) |
 | `phase-5-execute set` | `--field --value` | Set execute phase field (commit_strategy) |
-| `phase-6-verify get` | `[--field]` | Get verify phase configuration |
-| `phase-6-verify set-step` | `--step --enabled` | Toggle generic verify step |
-| `phase-6-verify set-domain-step` | `--domain --step --enabled` | Toggle domain verify step |
-| `phase-6-verify set-max-iterations` | `--value` | Set verify max iterations |
-| `phase-7-finalize get` | (none) | Get finalize phase configuration |
-| `phase-7-finalize set-step` | `--step --enabled` | Toggle finalize step |
-| `phase-7-finalize set-max-iterations` | `--value` | Set finalize max iterations |
+| `phase-5-execute set-step` | `--step --enabled` | Toggle generic verify step |
+| `phase-5-execute set-domain-step` | `--domain --step --enabled` | Toggle domain verify step |
+| `phase-5-execute set-max-iterations` | `--value` | Set verification max iterations |
+| `phase-6-finalize get` | (none) | Get finalize phase configuration |
+| `phase-6-finalize set-step` | `--step --enabled` | Toggle finalize step |
+| `phase-6-finalize set-max-iterations` | `--value` | Set finalize max iterations |
 
 ### Noun: ci
 
@@ -337,15 +336,13 @@ The defaults template contains only `system` domain. Technical domains (java, ja
       "compatibility": "breaking"
     },
     "phase-5-execute": {
-      "commit_strategy": "per_deliverable"
+      "commit_strategy": "per_deliverable",
+      "verification_max_iterations": 5,
+      "verification_1_quality_check": true,
+      "verification_2_build_verify": true,
+      "verification_domain_steps": {}
     },
-    "phase-6-verify": {
-      "max_iterations": 5,
-      "1_quality_check": true,
-      "2_build_verify": true,
-      "domain_steps": {}
-    },
-    "phase-7-finalize": {
+    "phase-6-finalize": {
       "max_iterations": 3,
       "1_commit_push": true,
       "2_create_pr": true,

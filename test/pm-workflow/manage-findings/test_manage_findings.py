@@ -508,7 +508,7 @@ def test_qgate_resolve_all_statuses():
             add_result = run_script(
                 SCRIPT_PATH,
                 'qgate', 'add', '--plan-id', 'qgate-resolve-all-st',
-                '--phase', '6-verify', '--source', 'qgate',
+                '--phase', '5-execute', '--source', 'qgate',
                 '--type', 'triage', '--title', f'Finding for {res}', '--detail', 'd',
             )
             assert add_result.success, f'Add failed for {res}: {add_result.stdout}'
@@ -516,7 +516,7 @@ def test_qgate_resolve_all_statuses():
 
             result = run_script(
                 SCRIPT_PATH, 'qgate', 'resolve', '--plan-id', 'qgate-resolve-all-st', '--hash-id', hash_id,
-                '--resolution', res, '--phase', '6-verify',
+                '--resolution', res, '--phase', '5-execute',
             )
             assert result.success, f'Failed for resolution {res}: stdout={result.stdout}'
 

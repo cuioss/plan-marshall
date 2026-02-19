@@ -242,14 +242,14 @@ def test_skill_domains_detect_runs():
             'plan': {
                 'phase-1-init': {'branch_strategy': 'direct'},
                 'phase-2-refine': {'confidence_threshold': 95, 'compatibility': 'breaking'},
-                'phase-5-execute': {'commit_strategy': 'per_deliverable'},
-                'phase-6-verify': {
-                    'max_iterations': 5,
-                    '1_quality_check': True,
-                    '2_build_verify': True,
-                    'domain_steps': {},
+                'phase-5-execute': {
+                    'commit_strategy': 'per_deliverable',
+                    'verification_max_iterations': 5,
+                    'verification_1_quality_check': True,
+                    'verification_2_build_verify': True,
+                    'verification_domain_steps': {},
                 },
-                'phase-7-finalize': {
+                'phase-6-finalize': {
                     'max_iterations': 3,
                     '1_commit_push': True,
                     '2_create_pr': True,
@@ -286,14 +286,14 @@ def test_skill_domains_detect_no_overwrite():
             'plan': {
                 'phase-1-init': {'branch_strategy': 'direct'},
                 'phase-2-refine': {'confidence_threshold': 95, 'compatibility': 'breaking'},
-                'phase-5-execute': {'commit_strategy': 'per_deliverable'},
-                'phase-6-verify': {
-                    'max_iterations': 5,
-                    '1_quality_check': True,
-                    '2_build_verify': True,
-                    'domain_steps': {},
+                'phase-5-execute': {
+                    'commit_strategy': 'per_deliverable',
+                    'verification_max_iterations': 5,
+                    'verification_1_quality_check': True,
+                    'verification_2_build_verify': True,
+                    'verification_domain_steps': {},
                 },
-                'phase-7-finalize': {
+                'phase-6-finalize': {
                     'max_iterations': 3,
                     '1_commit_push': True,
                     '2_create_pr': True,
@@ -555,14 +555,14 @@ def test_get_available_uses_discovery():
             'plan': {
                 'phase-1-init': {'branch_strategy': 'direct'},
                 'phase-2-refine': {'confidence_threshold': 95, 'compatibility': 'breaking'},
-                'phase-5-execute': {'commit_strategy': 'per_deliverable'},
-                'phase-6-verify': {
-                    'max_iterations': 5,
-                    '1_quality_check': True,
-                    '2_build_verify': True,
-                    'domain_steps': {},
+                'phase-5-execute': {
+                    'commit_strategy': 'per_deliverable',
+                    'verification_max_iterations': 5,
+                    'verification_1_quality_check': True,
+                    'verification_2_build_verify': True,
+                    'verification_domain_steps': {},
                 },
-                'phase-7-finalize': {
+                'phase-6-finalize': {
                     'max_iterations': 3,
                     '1_commit_push': True,
                     '2_create_pr': True,
@@ -592,14 +592,14 @@ def test_configure_domains():
             'plan': {
                 'phase-1-init': {'branch_strategy': 'direct'},
                 'phase-2-refine': {'confidence_threshold': 95, 'compatibility': 'breaking'},
-                'phase-5-execute': {'commit_strategy': 'per_deliverable'},
-                'phase-6-verify': {
-                    'max_iterations': 5,
-                    '1_quality_check': True,
-                    '2_build_verify': True,
-                    'domain_steps': {},
+                'phase-5-execute': {
+                    'commit_strategy': 'per_deliverable',
+                    'verification_max_iterations': 5,
+                    'verification_1_quality_check': True,
+                    'verification_2_build_verify': True,
+                    'verification_domain_steps': {},
                 },
-                'phase-7-finalize': {
+                'phase-6-finalize': {
                     'max_iterations': 3,
                     '1_commit_push': True,
                     '2_create_pr': True,
@@ -636,14 +636,14 @@ def test_configure_always_adds_system():
             'plan': {
                 'phase-1-init': {'branch_strategy': 'direct'},
                 'phase-2-refine': {'confidence_threshold': 95, 'compatibility': 'breaking'},
-                'phase-5-execute': {'commit_strategy': 'per_deliverable'},
-                'phase-6-verify': {
-                    'max_iterations': 5,
-                    '1_quality_check': True,
-                    '2_build_verify': True,
-                    'domain_steps': {},
+                'phase-5-execute': {
+                    'commit_strategy': 'per_deliverable',
+                    'verification_max_iterations': 5,
+                    'verification_1_quality_check': True,
+                    'verification_2_build_verify': True,
+                    'verification_domain_steps': {},
                 },
-                'phase-7-finalize': {
+                'phase-6-finalize': {
                     'max_iterations': 3,
                     '1_commit_push': True,
                     '2_create_pr': True,
@@ -791,14 +791,14 @@ def test_get_available_works_without_skill_domains():
             'plan': {
                 'phase-1-init': {'branch_strategy': 'direct'},
                 'phase-2-refine': {'confidence_threshold': 95, 'compatibility': 'breaking'},
-                'phase-5-execute': {'commit_strategy': 'per_deliverable'},
-                'phase-6-verify': {
-                    'max_iterations': 5,
-                    '1_quality_check': True,
-                    '2_build_verify': True,
-                    'domain_steps': {},
+                'phase-5-execute': {
+                    'commit_strategy': 'per_deliverable',
+                    'verification_max_iterations': 5,
+                    'verification_1_quality_check': True,
+                    'verification_2_build_verify': True,
+                    'verification_domain_steps': {},
                 },
-                'phase-7-finalize': {
+                'phase-6-finalize': {
                     'max_iterations': 3,
                     '1_commit_push': True,
                     '2_create_pr': True,
@@ -832,14 +832,14 @@ def test_configure_works_without_skill_domains():
             'plan': {
                 'phase-1-init': {'branch_strategy': 'direct'},
                 'phase-2-refine': {'confidence_threshold': 95, 'compatibility': 'breaking'},
-                'phase-5-execute': {'commit_strategy': 'per_deliverable'},
-                'phase-6-verify': {
-                    'max_iterations': 5,
-                    '1_quality_check': True,
-                    '2_build_verify': True,
-                    'domain_steps': {},
+                'phase-5-execute': {
+                    'commit_strategy': 'per_deliverable',
+                    'verification_max_iterations': 5,
+                    'verification_1_quality_check': True,
+                    'verification_2_build_verify': True,
+                    'verification_domain_steps': {},
                 },
-                'phase-7-finalize': {
+                'phase-6-finalize': {
                     'max_iterations': 3,
                     '1_commit_push': True,
                     '2_create_pr': True,
@@ -880,14 +880,14 @@ def test_list_requires_skill_domains():
             'plan': {
                 'phase-1-init': {'branch_strategy': 'direct'},
                 'phase-2-refine': {'confidence_threshold': 95, 'compatibility': 'breaking'},
-                'phase-5-execute': {'commit_strategy': 'per_deliverable'},
-                'phase-6-verify': {
-                    'max_iterations': 5,
-                    '1_quality_check': True,
-                    '2_build_verify': True,
-                    'domain_steps': {},
+                'phase-5-execute': {
+                    'commit_strategy': 'per_deliverable',
+                    'verification_max_iterations': 5,
+                    'verification_1_quality_check': True,
+                    'verification_2_build_verify': True,
+                    'verification_domain_steps': {},
                 },
-                'phase-7-finalize': {
+                'phase-6-finalize': {
                     'max_iterations': 3,
                     '1_commit_push': True,
                     '2_create_pr': True,
