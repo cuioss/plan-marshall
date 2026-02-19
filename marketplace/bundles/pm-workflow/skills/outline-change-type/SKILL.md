@@ -104,8 +104,13 @@ Based on Step 3 resolution:
 
 **IF source == domain_specific** (domain has registered outline_skill):
 1. Load the domain skill: `Skill: {resolved_skill}` (e.g., `Skill: pm-plugin-development:ext-outline-workflow`)
-2. Read the domain-specific change-type instructions from the skill's standards directory. The file path is: `marketplace/bundles/{bundle}/skills/{skill_name}/standards/change-{change_type}.md`
-3. Follow the instructions from that file for discovery, analysis, and deliverable creation
+2. Log the loaded skill:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  work --plan-id {plan_id} --level INFO --message "[SKILL] (pm-workflow:outline-change-type) Loaded domain skill: {resolved_skill}"
+```
+3. Read the domain-specific change-type instructions from the skill's standards directory. The file path is: `marketplace/bundles/{bundle}/skills/{skill_name}/standards/change-{change_type}.md`
+4. Follow the instructions from that file for discovery, analysis, and deliverable creation
 
 **IF source == generic** (no domain override):
 1. Read the generic change-type instructions from this skill's own standards directory: read `standards/change-{change_type}.md` (relative to this skill)

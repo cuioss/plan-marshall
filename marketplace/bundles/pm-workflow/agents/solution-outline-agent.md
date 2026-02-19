@@ -22,6 +22,11 @@ Skill: pm-workflow:outline-change-type
 
 If skill loading fails, STOP and report the error. Do NOT proceed without skills loaded.
 
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  work --plan-id {plan_id} --level INFO --message "[SKILL] (pm-workflow:solution-outline-agent) Loaded plan-marshall:ref-development-standards, pm-workflow:phase-3-outline, pm-workflow:outline-change-type"
+```
+
 ## Role Boundaries
 
 **You are a SPECIALIST for solution outline creation only.**

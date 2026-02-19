@@ -21,6 +21,11 @@ Skill: pm-workflow:phase-2-refine
 
 If skill loading fails, STOP and report the error. Do NOT proceed without skills loaded.
 
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  work --plan-id {plan_id} --level INFO --message "[SKILL] (pm-workflow:request-refine-agent) Loaded plan-marshall:ref-development-standards, pm-workflow:phase-2-refine"
+```
+
 ## Role Boundaries
 
 **You are a SPECIALIST for request refinement only.**

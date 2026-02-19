@@ -58,19 +58,17 @@ Task: pm-workflow:plan-init-agent
 
 **2-Refine Phase**: Load refine phase skill directly (maintains main context for user interaction)
 
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  work --plan-id {plan_id} --level INFO --message "[SKILL] (pm-workflow:plan-marshall) Loading pm-workflow:phase-2-refine"
+```
+
 ```
 Skill: pm-workflow:phase-2-refine
   Arguments: --plan-id {plan_id}
 ```
 
 The skill runs in main conversation context so `AskUserQuestion` works directly with the user. Do NOT run this as a Task agent — the 12-step workflow requires too many tool calls for a subagent turn budget, and Step 9 (user clarification) needs direct user access.
-
-After the skill returns, log and transition:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work --plan-id {plan_id} --level INFO --message "[ARTIFACT] (pm-workflow:plan-marshall) Refine complete - proceeding to outline"
-```
 
 Then continue to **Action: outline** with the same plan_id.
 
@@ -91,6 +89,11 @@ python3 .plan/execute-script.py pm-workflow:manage-references:manage-references 
 ---
 
 **Step 2**: Load outline phase skill directly (maintains main context)
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  work --plan-id {plan_id} --level INFO --message "[SKILL] (pm-workflow:plan-marshall) Loading pm-workflow:phase-3-outline"
+```
 
 ```
 Skill: pm-workflow:phase-3-outline

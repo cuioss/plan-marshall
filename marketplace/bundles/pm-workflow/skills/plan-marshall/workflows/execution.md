@@ -69,6 +69,11 @@ For each task:
 
 ## Finalize Phase
 
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  work --plan-id {plan_id} --level INFO --message "[SKILL] (pm-workflow:plan-marshall) Loading pm-workflow:phase-6-finalize"
+```
+
 ```
 Skill: pm-workflow:phase-6-finalize
 operation: finalize

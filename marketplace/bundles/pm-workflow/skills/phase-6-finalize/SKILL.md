@@ -150,6 +150,11 @@ Proceed directly to Step 4.
 
 For `per_deliverable` and `per_plan`, load the git-workflow skill:
 
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  work --plan-id {plan_id} --level INFO --message "[SKILL] (pm-workflow:phase-6-finalize) Loading pm-workflow:workflow-integration-git"
+```
+
 ```
 Skill: pm-workflow:workflow-integration-git
 ```
@@ -174,6 +179,11 @@ If `create_pr == true`, the git-workflow skill creates the PR with:
 ### Step 5: Automated Review (if PR created)
 
 If PR was created:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  work --plan-id {plan_id} --level INFO --message "[SKILL] (pm-workflow:phase-6-finalize) Loading pm-workflow:workflow-integration-ci"
+```
 
 ```
 Skill: pm-workflow:workflow-integration-ci
@@ -204,6 +214,11 @@ python3 .plan/execute-script.py pm-workflow:manage-status:manage_status set-phas
 
 If Sonar integration is enabled:
 
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  work --plan-id {plan_id} --level INFO --message "[SKILL] (pm-workflow:phase-6-finalize) Loading pm-workflow:workflow-integration-sonar"
+```
+
 ```
 Skill: pm-workflow:workflow-integration-sonar
 ```
@@ -212,6 +227,11 @@ Handles Sonar quality gate and issue resolution. On findings, follows same loop-
 
 ### Step 7: Knowledge Capture (Advisory)
 
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  work --plan-id {plan_id} --level INFO --message "[SKILL] (pm-workflow:phase-6-finalize) Loading plan-marshall:manage-memories"
+```
+
 ```
 Skill: plan-marshall:manage-memories
 ```
@@ -219,6 +239,11 @@ Skill: plan-marshall:manage-memories
 Records any significant patterns discovered during implementation. Advisory only—does not block.
 
 ### Step 8: Lessons Capture (Advisory)
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  work --plan-id {plan_id} --level INFO --message "[SKILL] (pm-workflow:phase-6-finalize) Loading plan-marshall:manage-lessons"
+```
 
 ```
 Skill: plan-marshall:manage-lessons
