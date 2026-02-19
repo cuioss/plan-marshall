@@ -123,10 +123,18 @@ Follow the loaded change-type instructions from Step 4. These instructions defin
 For each deliverable, resolve verification commands from architecture:
 
 ```bash
+# Build/compile verification
 python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture \
   resolve --command compile --name {module} \
   --trace-plan-id {plan_id}
+
+# Test verification (for deliverables with module_testing profile)
+python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture \
+  resolve --command module-tests --name {module} \
+  --trace-plan-id {plan_id}
 ```
+
+**Available architecture commands**: `compile`, `test-compile`, `module-tests`, `quality-gate`, `verify`, `coverage`, `clean`. Do NOT use `test` (use `module-tests` instead).
 
 Use the returned `executable` value as the Verification Command.
 
