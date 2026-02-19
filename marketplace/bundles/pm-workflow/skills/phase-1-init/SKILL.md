@@ -249,6 +249,13 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   work --plan-id {plan_id} --level INFO --message "[STATUS] (pm-workflow:phase-1-init) Init phase complete - plan created with {domain} domain"
 ```
 
+**Add visual separator** after END log:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  separator --plan-id {plan_id} --type work
+```
+
 ### Step 12: Return Result
 
 **Output**:

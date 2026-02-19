@@ -505,6 +505,18 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   decision --plan-id {plan_id} --level INFO --message "(pm-workflow:phase-3-outline) Complete: {N} deliverables, Q-Gate: {pass/fail}"
 ```
 
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  work --plan-id {plan_id} --level INFO --message "[STATUS] (pm-workflow:phase-3-outline) Outline phase complete - {N} deliverables, Q-Gate: {pass/fail}"
+```
+
+**Add visual separator** after END log:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  separator --plan-id {plan_id} --type work
+```
+
 ---
 
 ### Return Results

@@ -213,3 +213,46 @@ def test_read_invalid_type():
     result = run_script(SCRIPT_PATH, 'read', '--plan-id', 'test-plan', '--type', 'invalid')
     assert not result.success, 'Expected failure with invalid type'
     assert 'invalid choice' in result.stderr
+
+
+# =============================================================================
+# Test: Separator Subcommand
+# =============================================================================
+
+
+def test_separator_writes_blank_line():
+    """Test separator subcommand appends a blank line to the log."""
+    with PlanContext(plan_id='log-separator') as ctx:
+        # Write an entry first
+        run_script(SCRIPT_PATH, 'work', '--plan-id', 'log-separator', '--level', 'INFO', '--message', 'Before separator')
+
+        # Add separator
+        result = run_script(SCRIPT_PATH, 'separator', '--plan-id', 'log-separator', '--type', 'work')
+        assert result.success, f'Separator failed: {result.stderr}'
+        assert result.stdout == '', 'Expected no stdout output'
+
+        # Write another entry after
+        run_script(SCRIPT_PATH, 'work', '--plan-id', 'log-separator', '--level', 'INFO', '--message', 'After separator')
+
+        # Verify blank line exists between entries
+        log_content = read_log_file(ctx.plan_dir, 'work')
+        assert 'Before separator' in log_content
+        assert 'After separator' in log_content
+        # The log entry ends with \n, separator adds \n → \n\n creates a blank line
+        assert '\n\n' in log_content, 'Separator should create visual gap between entries'
+
+
+def test_separator_default_type():
+    """Test separator defaults to work log type."""
+    with PlanContext(plan_id='log-separator-default') as ctx:
+        # Write an entry
+        run_script(SCRIPT_PATH, 'work', '--plan-id', 'log-separator-default', '--level', 'INFO', '--message', 'Test entry')
+
+        # Add separator without --type (should default to work)
+        result = run_script(SCRIPT_PATH, 'separator', '--plan-id', 'log-separator-default')
+        assert result.success, f'Separator failed: {result.stderr}'
+
+        log_content = read_log_file(ctx.plan_dir, 'work')
+        assert 'Test entry' in log_content
+        # Verify blank line was added
+        assert log_content.endswith('\n\n'), 'Separator should append blank line after existing content'

@@ -185,6 +185,13 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   work --plan-id {plan_id} --level INFO --message "[STATUS] (pm-workflow:phase-5-execute) Completed {phase} phase: {tasks_completed} tasks"
 ```
 
+**Add visual separator** after END log:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  separator --plan-id {plan_id} --type work
+```
+
 ---
 
 ## Delegation

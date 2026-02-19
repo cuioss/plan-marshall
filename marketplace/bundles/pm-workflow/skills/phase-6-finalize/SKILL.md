@@ -243,6 +243,13 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   work --plan-id {plan_id} --level INFO --message "[STATUS] (pm-workflow:phase-6-finalize) Plan completed: commit={commit_hash}, PR={pr_url|skipped}"
 ```
 
+**Add visual separator** after END log:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  separator --plan-id {plan_id} --type work
+```
+
 ---
 
 ## Output

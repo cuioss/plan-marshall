@@ -60,6 +60,22 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 **Output**: None (exit code only)
 
+### Separator API
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  separator --plan-id {plan_id} [--type {work|script|decision}]
+```
+
+**Arguments**:
+
+| Argument | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `--plan-id` | Yes | - | Plan identifier |
+| `--type` | No | `work` | Log type: `work`, `script`, or `decision` |
+
+**Output**: None (appends a blank line to the log file for visual separation between phases)
+
 ### Read API
 
 ```bash
@@ -270,4 +286,5 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 | Command | Parameters | Description |
 |---------|------------|-------------|
 | (subcommand) | `{type} --plan-id {plan_id} --level {level} --message "{message}"` | Write log entry |
+| `separator` | `--plan-id {plan_id} [--type {work\|script\|decision}]` | Add blank line for visual separation |
 | `read` | `--plan-id --type [--limit] [--phase]` | Read log entries (TOON output) |

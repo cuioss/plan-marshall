@@ -68,6 +68,13 @@ The skill handles:
 8. Updating request with clarifications
 9. Looping until confidence >= threshold
 
+## Log Completion
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  work --plan-id {plan_id} --level INFO --message "[STATUS] (pm-workflow:request-refine-agent) Complete"
+```
+
 ## Return Results
 
 Return the skill's output in TOON format:

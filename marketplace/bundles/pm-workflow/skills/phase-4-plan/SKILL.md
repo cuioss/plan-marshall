@@ -87,6 +87,13 @@ Then continue with normal Steps 2..9 (phase re-runs with corrections applied).
 
 If no unresolved findings: Continue with normal Steps 2..9 (first entry).
 
+### Step 1.5: Log Phase Start
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  work --plan-id {plan_id} --level INFO --message "[STATUS] (pm-workflow:phase-4-plan) Starting plan phase"
+```
+
 ### Step 2: Load All Deliverables
 
 Read the solution document to get all deliverables with metadata:
@@ -337,6 +344,20 @@ python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lesson add \
 **Valid categories**: `bug`, `improvement`, `anti-pattern`
 
 ### Step 9: Return Results
+
+**Log phase completion** before returning:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  work --plan-id {plan_id} --level INFO --message "[STATUS] (pm-workflow:phase-4-plan) Plan phase complete - {M} tasks created from {N} deliverables"
+```
+
+**Add visual separator** after END log:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  separator --plan-id {plan_id} --type work
+```
 
 See [Task Creation Flow](references/task-creation-flow.md) for the full output structure.
 

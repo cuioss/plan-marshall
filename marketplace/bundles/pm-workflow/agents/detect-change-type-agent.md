@@ -103,6 +103,13 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   decision --plan-id {plan_id} --level INFO --message "(pm-workflow:detect-change-type-agent) Detected: {change_type} (confidence: {confidence})"
 ```
 
+### Step 6: Log Completion
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  work --plan-id {plan_id} --level INFO --message "[STATUS] (pm-workflow:detect-change-type-agent) Complete"
+```
+
 ## Output
 
 ```toon

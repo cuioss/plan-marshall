@@ -69,6 +69,13 @@ The skill handles:
 5. Determining execution order
 6. Returning structured result
 
+## Log Completion
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  work --plan-id {plan_id} --level INFO --message "[STATUS] (pm-workflow:task-plan-agent) Complete"
+```
+
 ## Return Results
 
 Return the skill's output in TOON format:

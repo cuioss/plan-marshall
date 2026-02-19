@@ -417,6 +417,25 @@ def list_recent_work(plan_id: str, limit: int = 10) -> dict:
 # =============================================================================
 
 
+def log_separator(log_type: str, plan_id: str) -> None:
+    """
+    Append a blank line to the specified log file for visual separation.
+
+    Args:
+        log_type: 'work' or 'decision'
+        plan_id: Plan identifier
+    """
+    try:
+        log_file = get_log_path(plan_id, log_type)
+        log_file.parent.mkdir(parents=True, exist_ok=True)
+
+        with open(log_file, 'a', encoding='utf-8') as f:
+            f.write('\n')
+
+    except Exception:
+        pass  # Silent failure for logging
+
+
 def log_decision(plan_id: str, message: str, phase: str, detail: str | None = None) -> dict:
     """
     Add entry to decision.log.

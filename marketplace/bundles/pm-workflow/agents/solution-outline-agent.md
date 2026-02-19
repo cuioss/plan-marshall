@@ -66,6 +66,13 @@ The skill handles:
 5. Writing solution_outline.md
 6. Returning results
 
+## Log Completion
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  work --plan-id {plan_id} --level INFO --message "[STATUS] (pm-workflow:solution-outline-agent) Complete"
+```
+
 ## Return Results
 
 Return the skill's output in TOON format:

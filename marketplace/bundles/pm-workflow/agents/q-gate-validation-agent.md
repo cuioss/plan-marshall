@@ -278,6 +278,13 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   --trace-plan-id {plan_id}
 ```
 
+### Step 6.5: Log Completion
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  work --plan-id {plan_id} --level INFO --message "[STATUS] (pm-workflow:q-gate-validation-agent) Complete"
+```
+
 ---
 
 ## Output

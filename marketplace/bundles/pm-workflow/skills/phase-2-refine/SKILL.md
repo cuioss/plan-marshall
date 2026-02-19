@@ -64,6 +64,15 @@ If no unresolved findings: Continue with normal Steps 2..12 (first entry).
 
 ---
 
+## Step 1.5: Log Phase Start
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  work --plan-id {plan_id} --level INFO --message "[STATUS] (pm-workflow:phase-2-refine) Starting refine phase"
+```
+
+---
+
 ## Step 2: Load Confidence Threshold
 
 Read the confidence threshold from project configuration.
@@ -701,6 +710,13 @@ python3 .plan/execute-script.py pm-workflow:manage-lifecycle:manage-lifecycle tr
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   work --plan-id {plan_id} --level INFO --message "[STATUS] (pm-workflow:phase-2-refine) Refine phase complete - confidence: {confidence}%, track: {track}"
+```
+
+**Add visual separator** after END log:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  separator --plan-id {plan_id} --type work
 ```
 
 ---

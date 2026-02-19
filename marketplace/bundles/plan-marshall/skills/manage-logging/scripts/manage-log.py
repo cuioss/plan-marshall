@@ -8,6 +8,9 @@ Usage:
         python3 manage-log.py decision --plan-id <plan_id> --level INFO --message "msg"
         python3 manage-log.py script --plan-id <plan_id> --level INFO --message "msg"
 
+    Separator:
+        python3 manage-log.py separator --plan-id <plan_id> [--type work]
+
     Read:
         python3 manage-log.py read --plan-id <plan_id> --type work [--limit N] [--phase PHASE]
         python3 manage-log.py read --plan-id <plan_id> --type decision [--limit N] [--phase PHASE]
@@ -41,7 +44,7 @@ import argparse
 import sys
 
 # Direct imports from same directory (local imports)
-from plan_logging import get_log_path, list_recent_work, log_entry, read_decision_log, read_work_log
+from plan_logging import get_log_path, list_recent_work, log_entry, log_separator, read_decision_log, read_work_log
 
 VALID_TYPES = ('script', 'work', 'decision')
 VALID_LEVELS = ('INFO', 'WARN', 'ERROR')
@@ -159,6 +162,11 @@ def handle_read(args: argparse.Namespace) -> None:
         print(format_toon_output(result))
 
 
+def handle_separator(args: argparse.Namespace) -> None:
+    """Handle separator subcommand."""
+    log_separator(args.type, args.plan_id)
+
+
 def handle_write(args: argparse.Namespace) -> None:
     """Handle write subcommand."""
     log_type = args.log_type
@@ -196,6 +204,11 @@ def main():
         _add_write_args(write_parser)
         write_parser.set_defaults(log_type=log_type)
 
+    # Separator subcommand
+    sep_parser = subparsers.add_parser('separator', help='Add visual separator (blank line) to log')
+    sep_parser.add_argument('--plan-id', required=True, dest='plan_id', help='Plan identifier')
+    sep_parser.add_argument('--type', default='work', choices=VALID_TYPES, help='Log type (default: work)')
+
     # Read subcommand
     read_parser = subparsers.add_parser('read', help='Read log entries')
     read_parser.add_argument('--plan-id', required=True, dest='plan_id', help='Plan identifier')
@@ -207,6 +220,8 @@ def main():
 
     if args.command == 'read':
         handle_read(args)
+    elif args.command == 'separator':
+        handle_separator(args)
     else:
         handle_write(args)
 
