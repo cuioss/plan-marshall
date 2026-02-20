@@ -363,7 +363,7 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-m
 This configures:
 - `system` domain (always) with task_executors
 - Each selected domain with bundle reference and workflow_skill_extensions
-- Collects verify steps from domain extensions for presentation
+- Auto-persists verify steps from domain extensions to `verification_domain_steps`
 
 **Note**: The `configure` command replaces all existing domains with the selected ones.
 

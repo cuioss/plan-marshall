@@ -521,7 +521,7 @@ domains: java,java-cui,javascript
 This populates `skill_domains` in marshal.json with:
 - `system` domain (always) with task_executors
 - Each selected domain with bundle reference and workflow_skill_extensions (outline, triage)
-- Domain verification steps collected from `provides_verify_steps()` are returned in output for presentation to user
+- Domain verification steps from `provides_verify_steps()` auto-persisted to `plan.phase-5-execute.verification_domain_steps`
 
 **Step 11e: Configure Task Executors**
 

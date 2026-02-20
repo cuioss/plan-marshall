@@ -8,6 +8,7 @@ Extension API functions:
 - get_skill_domains() -> domain metadata with profiles
 - provides_triage() -> triage skill reference or None
 - provides_outline_skill() -> outline skill reference or None
+- provides_verify_steps() -> list of verification step dicts
 """
 
 import copy
@@ -575,6 +576,23 @@ def cmd_skill_domains(args) -> int:
                 domains_not_found.append(domain_key)
 
         config['skill_domains'] = skill_domains
+
+        # Persist verify steps to plan.phase-5-execute.verification_domain_steps
+        # Replace entirely (configure replaces all domains, so stale entries must go)
+        plan_config = config.get('plan', {})
+        execute_section = plan_config.get('phase-5-execute', {})
+        domain_steps: dict = {}
+
+        for domain_key, steps in verify_steps_by_domain.items():
+            domain_steps[domain_key] = {
+                f'{i + 1}_{step["name"]}': step['agent']
+                for i, step in enumerate(steps)
+            }
+
+        execute_section['verification_domain_steps'] = domain_steps
+        plan_config['phase-5-execute'] = execute_section
+        config['plan'] = plan_config
+
         save_config(config)
 
         result = {

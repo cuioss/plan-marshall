@@ -21,7 +21,7 @@ The method is invoked during project analysis:
 1. Extension discovery and loading
 2. discover_project_modules() aggregates across all extensions
 3. ➤ discover_modules(project_root) → modules per extension
-4. Results persisted to .plan/project-structure.json
+4. Results persisted to .plan/project-architecture/derived-data.json
 5. Consumed by phase-4-plan for task creation
 6. Consumed by build commands for execution
 ```
