@@ -107,23 +107,20 @@ def slugify(title: str, max_length: int = 40) -> str:
 
 
 def validate_deliverable(deliverable_input) -> int:
-    """Validate deliverable number. Exactly one deliverable per task (1:1 constraint)."""
+    """Validate deliverable number. 0 for holistic tasks, >= 1 for deliverable-linked tasks."""
     if deliverable_input is None:
         raise ValueError('Deliverable is required')
 
     if isinstance(deliverable_input, int):
-        if deliverable_input < 1:
-            raise ValueError(f'Invalid deliverable number: {deliverable_input}. Must be positive integer.')
+        if deliverable_input < 0:
+            raise ValueError(f'Invalid deliverable number: {deliverable_input}. Must be non-negative integer.')
         return deliverable_input
     else:
         item_str = str(deliverable_input).strip()
         if item_str.isdigit():
-            num = int(item_str)
-            if num < 1:
-                raise ValueError(f'Invalid deliverable number: {num}. Must be positive integer.')
-            return num
+            return int(item_str)
         else:
-            raise ValueError(f'Invalid deliverable format: {item_str}. Expected positive integer.')
+            raise ValueError(f'Invalid deliverable format: {item_str}. Expected non-negative integer.')
 
 
 def validate_domain(domain: str) -> str:
