@@ -660,46 +660,6 @@ def test_next_tasks_includes_in_progress():
         cleanup(temp_dir)
 
 
-# =============================================================================
-# Tests: backward compatibility
-# =============================================================================
-
-
-def test_backward_compat_old_file_without_new_fields():
-    """Old task files without new fields are handled gracefully (JSON format)."""
-    temp_dir = setup_plan_dir()
-    try:
-        import json
-
-        # Create task file manually without new fields (simulating old format)
-        task_dir = Path(os.environ['PLAN_BASE_DIR']) / 'plans' / 'test-plan' / 'tasks'
-        task_dir.mkdir(parents=True, exist_ok=True)
-
-        old_format = {
-            'number': 1,
-            'title': 'Old task',
-            'status': 'pending',
-            'phase': '5-execute',
-            'deliverables': [1],
-            'depends_on': [],
-            'description': 'Old task without new fields',
-            'steps': [{'number': 1, 'title': 'Step 1', 'status': 'pending'}],
-            'current_step': 1,
-        }
-        (task_dir / 'TASK-001.json').write_text(json.dumps(old_format, indent=2), encoding='utf-8')
-
-        # Get should work and return defaults for missing fields
-        result = run_script(SCRIPT_PATH, 'get', '--plan-id', 'test-plan', '--number', '1')
-
-        assert result.returncode == 0
-        assert 'Old task' in result.stdout
-        # Should have default values
-        assert 'origin: plan' in result.stdout  # default
-        assert 'skills: []' in result.stdout  # empty array
-    finally:
-        cleanup(temp_dir)
-
-
 def test_next_returns_new_fields():
     """Next command returns domain, profile, skills in output."""
     temp_dir = setup_plan_dir()

@@ -58,7 +58,7 @@ class TaskDict(TypedDict, total=False):
 
 # Domains are arbitrary strings - defined in marshal.json, not hardcoded
 # Profiles are arbitrary strings - defined in marshal.json per-domain, not hardcoded
-VALID_ORIGINS = ['plan', 'fix', 'sonar', 'pr', 'lint', 'security', 'documentation']
+VALID_ORIGINS = ['plan', 'fix', 'sonar', 'pr', 'lint', 'security', 'documentation', 'holistic']
 VALID_FILE_EXTENSIONS = [
     '.md',
     '.py',
@@ -278,14 +278,6 @@ def parse_task_file(content: str) -> dict[str, Any]:
     # Ensure required fields have defaults
     if 'steps' not in task:
         task['steps'] = []
-    # Migration: convert old deliverables array to single deliverable
-    if 'deliverables' in task and 'deliverable' not in task:
-        old_deliverables = task.pop('deliverables')
-        task['deliverable'] = old_deliverables[0] if old_deliverables else 0
-    # Migration: rename step 'title' to 'target'
-    for step in task.get('steps', []):
-        if 'title' in step and 'target' not in step:
-            step['target'] = step.pop('title')
     if 'deliverable' not in task:
         task['deliverable'] = 0
     if 'depends_on' not in task:
@@ -314,14 +306,8 @@ def format_task_file(task: dict) -> str:
 
 def find_task_file(task_dir: Path, number: int) -> Path | None:
     """Find task file by number."""
-    # Current format: TASK-NNN.json
     direct = task_dir / f'TASK-{number:03d}.json'
-    if direct.exists():
-        return direct
-    # Legacy format: TASK-NNN-TYPE.json
-    pattern = f'TASK-{number:03d}-*.json'
-    matches = list(task_dir.glob(pattern))
-    return matches[0] if matches else None
+    return direct if direct.exists() else None
 
 
 def get_next_number(task_dir: Path) -> int:
@@ -484,7 +470,7 @@ def parse_stdin_task(stdin_content: str) -> dict[str, Any]:
     # Validate required fields
     if not result['title']:
         raise ValueError('Missing required field: title')
-    if result['deliverable'] == 0:  # 0 means not parsed (init value)
+    if result['deliverable'] == 0 and result.get('origin') != 'holistic':  # 0 is valid for holistic tasks only
         raise ValueError('Missing required field: deliverable')
     if not result['domain']:
         raise ValueError('Missing required field: domain')

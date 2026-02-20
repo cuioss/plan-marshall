@@ -49,19 +49,12 @@ def build_task_toon(
     depends_on='none',
     verification_commands=None,
     verification_criteria='',
-    # Legacy parameter for migration - will be removed
-    deliverables=None,
+    origin=None,
 ):
     """Build TOON content for task definition via stdin.
 
     Steps MUST be file paths per task contract (plan-type-api/standards/task-contract.md).
     """
-    # Handle legacy deliverables parameter during migration
-    if deliverables is not None:
-        if isinstance(deliverables, list) and len(deliverables) == 1:
-            deliverable = deliverables[0]
-        else:
-            raise ValueError(f'Legacy deliverables parameter must be single-item list, got: {deliverables}')
     if deliverable is None:
         deliverable = 1
     if steps is None:
@@ -77,6 +70,9 @@ def build_task_toon(
         f'description: {description}',
         'steps:',
     ]
+
+    if origin is not None:
+        lines.insert(3, f'origin: {origin}')
 
     for step in steps:
         lines.append(f'  - {step}')
@@ -164,8 +160,8 @@ def test_add_creates_numbered_filename():
         cleanup(temp_dir)
 
 
-def test_add_rejects_zero_deliverable():
-    """Adding task with deliverable=0 is rejected (treated as missing)."""
+def test_add_rejects_zero_deliverable_for_plan_origin():
+    """deliverable=0 is rejected for non-holistic origins."""
     temp_dir = setup_plan_dir()
     try:
         toon = build_task_toon(
@@ -178,8 +174,27 @@ def test_add_rejects_zero_deliverable():
         result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
 
         assert result.returncode == 1, f'Should have failed but got: {result.stdout}'
-        # 0 is treated as "not provided" since deliverables must be positive
         assert 'deliverable' in result.stderr.lower()
+    finally:
+        cleanup(temp_dir)
+
+
+def test_add_accepts_holistic_with_zero_deliverable():
+    """deliverable=0 is accepted for holistic origin tasks."""
+    temp_dir = setup_plan_dir()
+    try:
+        toon = build_task_toon(
+            title='Holistic verification task',
+            deliverable=0,
+            domain='plan-marshall-plugin-dev',
+            description='Bundle-wide verification',
+            steps=['./pw verify pm-workflow'],
+            origin='holistic',
+        )
+        result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
+
+        assert result.returncode == 0, f'Holistic task should succeed: {result.stderr}'
+        assert 'TASK-001' in result.stdout
     finally:
         cleanup(temp_dir)
 
@@ -1141,9 +1156,8 @@ def test_deliverable_is_single_number_not_array():
         import json
 
         task = json.loads(content)
-        # New format: deliverable is integer, not array
-        assert 'deliverable' in task, 'Expected "deliverable" field (singular)'
-        assert 'deliverables' not in task, 'Should not have "deliverables" field (plural)'
+        assert 'deliverable' in task
+        assert 'deliverables' not in task
         assert isinstance(task['deliverable'], int), f'Expected int, got {type(task["deliverable"])}'
         assert task['deliverable'] == 1
     finally:
