@@ -69,21 +69,27 @@ Handles Sonar issue workflows - fetching issues from SonarQube, triaging them, a
 3. **Return Structured List**
 
 **Output:**
-```toon
-project_key: ...
-pull_request_id: ...
-
-issues[N]{key,type,severity,file,line,rule,message}:
-...,BUG,BLOCKER,...,42,java:S1234,...
-
-statistics:
-  total_issues_fetched: N
-  by_severity:
-    BLOCKER: N
-    MAJOR: N
-  by_type:
-    BUG: N
-    CODE_SMELL: N
+```json
+{
+  "project_key": "...",
+  "pull_request_id": "...",
+  "issues": [
+    {
+      "key": "...",
+      "type": "BUG|CODE_SMELL|VULNERABILITY",
+      "severity": "BLOCKER|CRITICAL|MAJOR|MINOR|INFO",
+      "file": "...",
+      "line": N,
+      "rule": "java:S1234",
+      "message": "..."
+    }
+  ],
+  "statistics": {
+    "total_issues_fetched": N,
+    "by_severity": {...},
+    "by_type": {...}
+  }
+}
 ```
 
 ---
@@ -109,13 +115,15 @@ statistics:
    ```
 
    Script outputs decision:
-   ```toon
-   issue_key: ...
-   action: fix|suppress
-   reason: ...
-   priority: critical|high|medium|low
-   suggested_implementation: ...
-   suppression_string: "// NOSONAR rule - reason"
+   ```json
+   {
+     "issue_key": "...",
+     "action": "fix|suppress",
+     "reason": "...",
+     "priority": "critical|high|medium|low",
+     "suggested_implementation": "...",
+     "suppression_string": "// NOSONAR rule - reason"
+   }
    ```
 
 3. **Process by Priority**
@@ -144,14 +152,16 @@ statistics:
 6. **Return Summary**
 
 **Output:**
-```toon
-status: success
-processed:
-  fixed: 4
-  suppressed: 1
-  failed: 0
-files_modified[1]:
-  - ...
+```json
+{
+  "processed": {
+    "fixed": 4,
+    "suppressed": 1,
+    "failed": 0
+  },
+  "files_modified": ["..."],
+  "status": "success"
+}
 ```
 
 ---
