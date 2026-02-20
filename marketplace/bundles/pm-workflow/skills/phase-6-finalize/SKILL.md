@@ -135,6 +135,15 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 ### Step 3: Conditional Commit Workflow
 
+**IF `1_commit_push == false`**: Skip the entire commit+push step.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  decision --plan-id {plan_id} --level INFO --message "(pm-workflow:phase-6-finalize) Commit+Push skipped: 1_commit_push=false"
+```
+
+Proceed directly to Step 4.
+
 **If `commit_strategy == none`**: Skip commit entirely.
 
 ```bash
@@ -178,6 +187,15 @@ If `create_pr == true`, the git-workflow skill creates the PR with:
 
 ### Step 5: Automated Review (if PR created)
 
+**IF `3_automated_review == false`**: Skip automated review.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  decision --plan-id {plan_id} --level INFO --message "(pm-workflow:phase-6-finalize) Automated review skipped: 3_automated_review=false"
+```
+
+Proceed directly to Step 6.
+
 If PR was created:
 
 ```bash
@@ -212,6 +230,15 @@ python3 .plan/execute-script.py pm-workflow:manage-status:manage_status set-phas
 
 ### Step 6: Sonar Roundtrip (if configured)
 
+**IF `4_sonar_roundtrip == false`**: Skip Sonar roundtrip.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  decision --plan-id {plan_id} --level INFO --message "(pm-workflow:phase-6-finalize) Sonar roundtrip skipped: 4_sonar_roundtrip=false"
+```
+
+Proceed directly to Step 7.
+
 If Sonar integration is enabled:
 
 ```bash
@@ -227,6 +254,15 @@ Handles Sonar quality gate and issue resolution. On findings, follows same loop-
 
 ### Step 7: Knowledge Capture (Advisory)
 
+**IF `5_knowledge_capture == false`**: Skip knowledge capture.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  decision --plan-id {plan_id} --level INFO --message "(pm-workflow:phase-6-finalize) Knowledge capture skipped: 5_knowledge_capture=false"
+```
+
+Proceed directly to Step 8.
+
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   work --plan-id {plan_id} --level INFO --message "[SKILL] (pm-workflow:phase-6-finalize) Loading plan-marshall:manage-memories"
@@ -239,6 +275,15 @@ Skill: plan-marshall:manage-memories
 Records any significant patterns discovered during implementation. Advisory only—does not block.
 
 ### Step 8: Lessons Capture (Advisory)
+
+**IF `6_lessons_capture == false`**: Skip lessons capture.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  decision --plan-id {plan_id} --level INFO --message "(pm-workflow:phase-6-finalize) Lessons capture skipped: 6_lessons_capture=false"
+```
+
+Proceed directly to Step 9.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
@@ -369,8 +414,16 @@ recovery: Manual intervention required - review remaining PR issues
 
 ## Resumability
 
-The skill checks current state before each step:
+The skill checks config gates first, then current state before each step:
 
+**Config gates** (checked first — take priority over state checks):
+- `1_commit_push == false` → skip Step 3 (commit+push)
+- `3_automated_review == false` → skip Step 5 (automated review)
+- `4_sonar_roundtrip == false` → skip Step 6 (Sonar roundtrip)
+- `5_knowledge_capture == false` → skip Step 7 (knowledge capture)
+- `6_lessons_capture == false` → skip Step 8 (lessons capture)
+
+**State checks** (for steps not disabled by config):
 1. **Are there uncommitted changes?** Skip commit if clean
 2. **Is branch pushed?** Skip push if remote is current
 3. **Does PR exist?** Skip creation if PR exists

@@ -172,6 +172,40 @@ python3 .plan/execute-script.py pm-workflow:manage-references:manage-references 
   --issue-url {issue_url}
 ```
 
+**Branch Strategy** — read `branch_strategy` from marshal.json phase-1-init config:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+  plan phase-1-init get --trace-plan-id {plan_id}
+```
+
+**IF `branch_strategy == "feature"`**:
+1. Create and switch to a feature branch:
+```bash
+git checkout -b feature/{plan_id}
+```
+2. Update references.json with the new branch:
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-references:manage-references update \
+  --plan-id {plan_id} \
+  --field branch \
+  --value feature/{plan_id}
+```
+3. Store the original branch as base_branch:
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-references:manage-references update \
+  --plan-id {plan_id} \
+  --field base_branch \
+  --value {branch_name}
+```
+4. Log the decision:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  decision --plan-id {plan_id} --level INFO --message "(pm-workflow:phase-1-init) Created feature branch: feature/{plan_id} (base: {branch_name})"
+```
+
+**IF `branch_strategy == "direct"` (default)**: Keep current branch — no action needed.
+
 ### Step 7: Detect Domain
 
 Query configured domains from marshal.json and select appropriate domain for the task.
