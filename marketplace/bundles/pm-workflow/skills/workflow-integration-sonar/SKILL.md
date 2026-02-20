@@ -69,27 +69,21 @@ Handles Sonar issue workflows - fetching issues from SonarQube, triaging them, a
 3. **Return Structured List**
 
 **Output:**
-```json
-{
-  "project_key": "...",
-  "pull_request_id": "...",
-  "issues": [
-    {
-      "key": "...",
-      "type": "BUG|CODE_SMELL|VULNERABILITY",
-      "severity": "BLOCKER|CRITICAL|MAJOR|MINOR|INFO",
-      "file": "...",
-      "line": N,
-      "rule": "java:S1234",
-      "message": "..."
-    }
-  ],
-  "statistics": {
-    "total_issues_fetched": N,
-    "by_severity": {...},
-    "by_type": {...}
-  }
-}
+```toon
+project_key: ...
+pull_request_id: ...
+issues[1]{key,type,severity,file,line,rule,message}:
+  - key: ...
+    type: BUG|CODE_SMELL|VULNERABILITY
+    severity: BLOCKER|CRITICAL|MAJOR|MINOR|INFO
+    file: ...
+    line: N
+    rule: java:S1234
+    message: ...
+statistics:
+  total_issues_fetched: N
+  by_severity: {}
+  by_type: {}
 ```
 
 ---
@@ -115,15 +109,13 @@ Handles Sonar issue workflows - fetching issues from SonarQube, triaging them, a
    ```
 
    Script outputs decision:
-   ```json
-   {
-     "issue_key": "...",
-     "action": "fix|suppress",
-     "reason": "...",
-     "priority": "critical|high|medium|low",
-     "suggested_implementation": "...",
-     "suppression_string": "// NOSONAR rule - reason"
-   }
+   ```toon
+   issue_key: ...
+   action: fix|suppress
+   reason: ...
+   priority: critical|high|medium|low
+   suggested_implementation: ...
+   suppression_string: "// NOSONAR rule - reason"
    ```
 
 3. **Process by Priority**
@@ -152,16 +144,14 @@ Handles Sonar issue workflows - fetching issues from SonarQube, triaging them, a
 6. **Return Summary**
 
 **Output:**
-```json
-{
-  "processed": {
-    "fixed": 4,
-    "suppressed": 1,
-    "failed": 0
-  },
-  "files_modified": ["..."],
-  "status": "success"
-}
+```toon
+processed:
+  fixed: 4
+  suppressed: 1
+  failed: 0
+files_modified[1]:
+  - ...
+status: success
 ```
 
 ---
@@ -179,7 +169,7 @@ Script: `pm-workflow:workflow-integration-sonar` → `sonar.py`
 python3 .plan/execute-script.py pm-workflow:workflow-integration-sonar:sonar fetch --project <key> [--pr <id>] [--severities <list>]
 ```
 
-**Output:** JSON with MCP instruction and expected structure
+**Output:** TOON with MCP instruction and expected structure
 
 ### sonar.py triage
 
@@ -190,7 +180,7 @@ python3 .plan/execute-script.py pm-workflow:workflow-integration-sonar:sonar fet
 python3 .plan/execute-script.py pm-workflow:workflow-integration-sonar:sonar triage --issue '{"key":"...", "rule":"...", ...}'
 ```
 
-**Output:** JSON with action decision
+**Output:** TOON with action decision
 
 ## References (Load On-Demand)
 
@@ -248,7 +238,7 @@ Provides:
 
 - [x] Self-contained with relative path pattern
 - [x] Progressive disclosure (references loaded on-demand)
-- [x] Scripts output JSON for machine processing
+- [x] Scripts output TOON for machine processing
 - [x] Both fetcher and triager agents absorbed
 - [x] Clear workflow definitions
 - [x] MCP tool integration documented

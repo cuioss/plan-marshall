@@ -32,6 +32,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from toon_parser import serialize_toon  # type: ignore[import-not-found]
+
 # ============================================================================
 # TRIAGE CONFIGURATION
 # ============================================================================
@@ -248,14 +250,14 @@ def cmd_fetch_comments(args):
         pr_number = get_current_pr_number()
         if not pr_number:
             print(
-                json.dumps(
-                    {'error': 'No PR found for current branch. Use --pr to specify.', 'status': 'failure'}, indent=2
+                serialize_toon(
+                    {'error': 'No PR found for current branch. Use --pr to specify.', 'status': 'failure'}
                 )
             )
             return 1
 
     result = fetch_comments(pr_number, getattr(args, 'unresolved_only', False))
-    print(json.dumps(result, indent=2))
+    print(serialize_toon(result))
 
     return 0 if result.get('status') == 'success' else 1
 
@@ -353,11 +355,11 @@ def cmd_triage(args):
     try:
         comment = json.loads(args.comment)
     except json.JSONDecodeError as e:
-        print(json.dumps({'error': f'Invalid JSON input: {e}', 'status': 'failure'}, indent=2))
+        print(serialize_toon({'error': f'Invalid JSON input: {e}', 'status': 'failure'}))
         return 1
 
     result = triage_comment(comment)
-    print(json.dumps(result, indent=2))
+    print(serialize_toon(result))
 
     return 0 if result.get('status') == 'success' else 1
 

@@ -14,7 +14,7 @@ Options:
     --include-descriptions  Include component descriptions from frontmatter
 
 Exit codes:
-    0 - Success (JSON output)
+    0 - Success (TOON output)
     1 - Error (marketplace-inventory failed)
 """
 
@@ -24,7 +24,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from toon_parser import parse_toon  # type: ignore[import-not-found]
+from toon_parser import parse_toon, serialize_toon  # type: ignore[import-not-found]
 
 # Planning-related name patterns
 PLANNING_PATTERNS = [
@@ -255,7 +255,7 @@ def main():
                 'statistics': stats,
             }
 
-        print(json.dumps(output, indent=2))
+        print(serialize_toon(output))
         return 0
 
     except FileNotFoundError as e:

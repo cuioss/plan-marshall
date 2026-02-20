@@ -20,11 +20,12 @@ Examples:
 """
 
 import argparse
-import json
 import re
 import sys
 from pathlib import Path
 from typing import Any
+
+from toon_parser import serialize_toon  # type: ignore[import-not-found]
 
 # ============================================================================
 # CONFIGURATION
@@ -176,7 +177,7 @@ def cmd_format_commit(args):
         'status': 'success',
     }
 
-    print(json.dumps(result, indent=2))
+    print(serialize_toon(result))
     return 0 if is_valid else 1
 
 
@@ -255,13 +256,13 @@ def cmd_analyze_diff(args):
     """Handle analyze-diff subcommand."""
     path = Path(args.file)
     if not path.exists():
-        print(json.dumps({'error': f'File not found: {args.file}', 'status': 'failure'}, indent=2))
+        print(serialize_toon({'error': f'File not found: {args.file}', 'status': 'failure'}))
         return 1
 
     diff_content = path.read_text()
     suggestions = analyze_diff(diff_content)
 
-    print(json.dumps({'mode': 'analysis', 'suggestions': suggestions, 'status': 'success'}, indent=2))
+    print(serialize_toon({'mode': 'analysis', 'suggestions': suggestions, 'status': 'success'}))
     return 0
 
 

@@ -95,14 +95,12 @@ Handles PR review comment workflows - fetching comments, triaging them, and gene
    ```
 
    Script outputs decision:
-   ```json
-   {
-     "comment_id": "...",
-     "action": "code_change|explain|ignore",
-     "reason": "...",
-     "priority": "high|medium|low|none",
-     "suggested_implementation": "..."
-   }
+   ```toon
+   comment_id: ...
+   action: code_change|explain|ignore
+   reason: ...
+   priority: high|medium|low|none
+   suggested_implementation: ...
    ```
 
 3. **Process by Action Type**
@@ -130,17 +128,15 @@ Handles PR review comment workflows - fetching comments, triaging them, and gene
 5. **Return Summary**
 
 **Output:**
-```json
-{
-  "pr_number": 123,
-  "processed": {
-    "code_changes": 3,
-    "explanations": 1,
-    "ignored": 1
-  },
-  "files_modified": ["..."],
-  "status": "success"
-}
+```toon
+pr_number: 123
+processed:
+  code_changes: 3
+  explanations: 1
+  ignored: 1
+files_modified[1]:
+  - ...
+status: success
 ```
 
 ---
@@ -160,7 +156,7 @@ python3 .plan/execute-script.py pm-workflow:workflow-integration-ci:pr fetch-com
 
 **Requirements:** gh CLI installed and authenticated
 
-**Output:** JSON with comments array
+**Output:** TOON with comments array
 
 ### pr.py triage
 
@@ -171,7 +167,7 @@ python3 .plan/execute-script.py pm-workflow:workflow-integration-ci:pr fetch-com
 python3 .plan/execute-script.py pm-workflow:workflow-integration-ci:pr triage --comment '{"id":"...", "body":"...", ...}'
 ```
 
-**Output:** JSON with action decision
+**Output:** TOON with action decision
 
 ## References (Load On-Demand)
 
@@ -210,7 +206,7 @@ Provides:
 
 - [x] Self-contained with relative path pattern
 - [x] Progressive disclosure (references loaded on-demand)
-- [x] Scripts output TOON/JSON for machine processing
+- [x] Scripts output TOON for machine processing
 - [x] Both fetcher and triager agents absorbed
 - [x] Clear workflow definitions
 - [x] Provider-agnostic via tools-integration-ci

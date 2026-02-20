@@ -45,7 +45,7 @@ python3 .plan/execute-script.py pm-workflow:planning-inventory:scan-planning-inv
 
 ### Step 2: Parse and Return Results
 
-The script outputs JSON organized into core and derived categories.
+The script outputs TOON organized into core and derived categories.
 
 ## Script Parameters
 
@@ -76,47 +76,73 @@ python3 .plan/execute-script.py pm-workflow:planning-inventory:scan-planning-inv
 
 ### Full Format
 
-```json
-{
-  "patterns": ["plan-*", "manage-*", "*-workflow", "*-task-plan", "*-solution-outline", "*-plan-*"],
-  "bundles_scanned": ["pm-workflow", "pm-plugin-development"],
-  "core": {
-    "bundle": "pm-workflow",
-    "agents": [{"name": "plan-init-agent"}, {"name": "solution-outline-agent"}, {"name": "task-plan-agent"}, {"name": "task-execute-agent"}],
-    "commands": [...],
-    "skills": [...],
-    "scripts": [...]
-  },
-  "derived": [
-    {
-      "bundle": "pm-plugin-development",
-      "agents": [],
-      "skills": [{"name": "plugin-task-plan"}, {"name": "plugin-solution-outline"}, {"name": "plugin-plan-implement"}]
-    }
-  ],
-  "statistics": {
-    "core": {"agents": 4, "commands": 4, "skills": 20, "scripts": 12, "total": 40},
-    "derived": {"bundles": 1, "agents": 0, "skills": 3, "total": 3},
-    "total_components": 43
-  }
-}
+```toon
+patterns[6]:
+  - plan-*
+  - manage-*
+  - *-workflow
+  - task-*
+  - pr-*
+  - *-task-plan
+
+bundles_scanned[2]:
+  - pm-workflow
+  - pm-plugin-development
+
+core:
+  bundle: pm-workflow
+  agents[4]{name}:
+  plan-init-agent
+  solution-outline-agent
+  task-plan-agent
+  task-execute-agent
+  commands: [...]
+  skills: [...]
+  scripts: [...]
+
+derived[1]:
+  - bundle: pm-plugin-development
+    agents: []
+    skills[3]{name}:
+    plugin-task-plan
+    plugin-solution-outline
+    plugin-plan-implement
+
+statistics:
+  core:
+    agents: 4
+    commands: 4
+    skills: 20
+    scripts: 12
+    total: 40
+  derived:
+    bundles: 1
+    agents: 0
+    skills: 3
+    total: 3
+  total_components: 43
 ```
 
 ### Summary Format
 
-```json
-{
-  "core_bundle": "pm-workflow",
-  "core_components": [
-    {"type": "skills", "names": ["plan-init", "plan-execute", "plan-finalize", ...]},
-    {"type": "agents", "names": ["plan-init-agent", "solution-outline-agent", "task-plan-agent", "task-execute-agent"]},
-    {"type": "commands", "names": ["task-implement", "plan-marshall", "pr-doctor"]}
-  ],
-  "derived_bundles": [
-    {"bundle": "pm-plugin-development", "agents": [], "skills": ["plugin-task-plan", "plugin-solution-outline", "plugin-plan-implement"]}
-  ],
-  "statistics": {...}
-}
+```toon
+core_bundle: pm-workflow
+
+core_components[3]{type,names}:
+  - type: skills
+    names: [plan-init, plan-execute, plan-finalize, ...]
+  - type: agents
+    names: [plan-init-agent, solution-outline-agent, task-plan-agent, task-execute-agent]
+  - type: commands
+    names: [task-implement, plan-marshall, pr-doctor]
+
+derived_bundles[1]:
+  - bundle: pm-plugin-development
+    agents: []
+    skills: [plugin-task-plan, plugin-solution-outline, plugin-plan-implement]
+
+statistics:
+  ...
 ```
 
 ## Component Categories

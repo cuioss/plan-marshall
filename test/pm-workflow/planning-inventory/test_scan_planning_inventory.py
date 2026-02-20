@@ -10,17 +10,12 @@ from pathlib import Path
 
 # Import shared infrastructure
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from conftest import get_script_path, run_script
+from toon_parser import parse_toon  # type: ignore[import-not-found]  # noqa: E402
+
+from conftest import get_script_path, run_script  # noqa: E402
 
 # Script under test
 SCRIPT_PATH = get_script_path('pm-workflow', 'planning-inventory', 'scan-planning-inventory.py')
-
-
-def parse_json(output):
-    """Parse JSON from output."""
-    import json
-
-    return json.loads(output)
 
 
 # =============================================================================
@@ -34,15 +29,15 @@ def test_default_execution_succeeds():
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
 
-def test_default_produces_valid_json():
-    """Test default mode produces valid JSON."""
+def test_default_produces_valid_toon():
+    """Test default mode produces valid TOON."""
     result = run_script(SCRIPT_PATH)
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
     try:
-        parse_json(result.stdout)
+        parse_toon(result.stdout)
     except Exception as e:
-        raise AssertionError(f'Default mode should produce valid JSON: {e}') from e
+        raise AssertionError(f'Default mode should produce valid TOON: {e}') from e
 
 
 # =============================================================================
@@ -55,7 +50,7 @@ def test_full_format_has_required_fields():
     result = run_script(SCRIPT_PATH, '--format', 'full')
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
-    data = parse_json(result.stdout)
+    data = parse_toon(result.stdout)
     assert 'patterns' in data, 'Should have patterns field'
     assert 'bundles_scanned' in data, 'Should have bundles_scanned field'
     assert 'core' in data, 'Should have core field'
@@ -68,7 +63,7 @@ def test_core_has_required_fields():
     result = run_script(SCRIPT_PATH)
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
-    data = parse_json(result.stdout)
+    data = parse_toon(result.stdout)
     core = data.get('core', {})
     assert 'bundle' in core, 'Core should have bundle field'
     assert core['bundle'] == 'pm-workflow', "Core bundle should be 'pm-workflow'"
@@ -82,7 +77,7 @@ def test_derived_is_list():
     result = run_script(SCRIPT_PATH)
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
-    data = parse_json(result.stdout)
+    data = parse_toon(result.stdout)
     derived = data.get('derived', [])
     assert isinstance(derived, list), 'Derived should be a list'
 
@@ -92,7 +87,7 @@ def test_statistics_has_required_fields():
     result = run_script(SCRIPT_PATH)
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
-    data = parse_json(result.stdout)
+    data = parse_toon(result.stdout)
     stats = data.get('statistics', {})
     assert 'core' in stats, 'Statistics should have core field'
     assert 'derived' in stats, 'Statistics should have derived field'
@@ -109,7 +104,7 @@ def test_core_has_plan_skills():
     result = run_script(SCRIPT_PATH)
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
-    data = parse_json(result.stdout)
+    data = parse_toon(result.stdout)
     core_skills = data.get('core', {}).get('skills', [])
     skill_names = [s['name'] for s in core_skills]
 
@@ -124,7 +119,7 @@ def test_core_has_manage_skills():
     result = run_script(SCRIPT_PATH)
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
-    data = parse_json(result.stdout)
+    data = parse_toon(result.stdout)
     core_skills = data.get('core', {}).get('skills', [])
     skill_names = [s['name'] for s in core_skills]
 
@@ -138,7 +133,7 @@ def test_core_has_workflow_skills():
     result = run_script(SCRIPT_PATH)
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
-    data = parse_json(result.stdout)
+    data = parse_toon(result.stdout)
     core_skills = data.get('core', {}).get('skills', [])
     skill_names = [s['name'] for s in core_skills]
 
@@ -153,7 +148,7 @@ def test_core_has_user_invocable_skills():
     result = run_script(SCRIPT_PATH)
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
-    data = parse_json(result.stdout)
+    data = parse_toon(result.stdout)
     core_skills = data.get('core', {}).get('skills', [])
 
     # Commands were absorbed into skills - verify key user-facing skills exist
@@ -173,7 +168,7 @@ def test_derived_plugin_has_plan_components():
     result = run_script(SCRIPT_PATH)
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
-    data = parse_json(result.stdout)
+    data = parse_toon(result.stdout)
     derived = data.get('derived', [])
 
     plugin_bundle = next((d for d in derived if d['bundle'] == 'pm-plugin-development'), None)
@@ -192,7 +187,7 @@ def test_java_and_frontend_not_in_derived():
     result = run_script(SCRIPT_PATH)
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
-    data = parse_json(result.stdout)
+    data = parse_toon(result.stdout)
     derived = data.get('derived', [])
     bundle_names = [d['bundle'] for d in derived]
 
@@ -208,7 +203,7 @@ def test_derived_includes_plugin_tools():
     result = run_script(SCRIPT_PATH)
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
-    data = parse_json(result.stdout)
+    data = parse_toon(result.stdout)
     derived = data.get('derived', [])
     bundle_names = [d['bundle'] for d in derived]
     assert 'pm-plugin-development' in bundle_names, 'Derived should include pm-plugin-development'
@@ -224,7 +219,7 @@ def test_summary_format_has_required_fields():
     result = run_script(SCRIPT_PATH, '--format', 'summary')
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
-    data = parse_json(result.stdout)
+    data = parse_toon(result.stdout)
     assert 'core_bundle' in data, 'Summary should have core_bundle field'
     assert 'core_components' in data, 'Summary should have core_components field'
     assert 'derived_bundles' in data, 'Summary should have derived_bundles field'
@@ -236,7 +231,7 @@ def test_summary_core_components_structure():
     result = run_script(SCRIPT_PATH, '--format', 'summary')
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
-    data = parse_json(result.stdout)
+    data = parse_toon(result.stdout)
     core_components = data.get('core_components', [])
 
     assert isinstance(core_components, list), 'core_components should be a list'
@@ -251,7 +246,7 @@ def test_summary_derived_bundles_structure():
     result = run_script(SCRIPT_PATH, '--format', 'summary')
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
-    data = parse_json(result.stdout)
+    data = parse_toon(result.stdout)
     derived_bundles = data.get('derived_bundles', [])
 
     assert isinstance(derived_bundles, list), 'derived_bundles should be a list'
@@ -269,7 +264,7 @@ def test_statistics_totals_are_consistent():
     result = run_script(SCRIPT_PATH)
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
-    data = parse_json(result.stdout)
+    data = parse_toon(result.stdout)
     stats = data.get('statistics', {})
     core = data.get('core', {})
     derived = data.get('derived', [])
@@ -291,7 +286,7 @@ def test_total_components_is_sum():
     result = run_script(SCRIPT_PATH)
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
-    data = parse_json(result.stdout)
+    data = parse_toon(result.stdout)
     stats = data.get('statistics', {})
 
     core_total = stats.get('core', {}).get('total', 0)
@@ -313,7 +308,7 @@ def test_include_descriptions_adds_descriptions():
     result = run_script(SCRIPT_PATH, '--include-descriptions')
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
-    data = parse_json(result.stdout)
+    data = parse_toon(result.stdout)
     core_skills = data.get('core', {}).get('skills', [])
 
     # At least some skills should have descriptions

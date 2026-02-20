@@ -24,6 +24,8 @@ import json
 import sys
 from typing import Any
 
+from toon_parser import serialize_toon  # type: ignore[import-not-found]
+
 # ============================================================================
 # TRIAGE CONFIGURATION
 # ============================================================================
@@ -95,7 +97,7 @@ def create_fetch_output(
 def cmd_fetch(args):
     """Handle fetch subcommand - fetch Sonar issues for a PR."""
     result = create_fetch_output(args.project, args.pr, args.severities, args.types)
-    print(json.dumps(result, indent=2))
+    print(serialize_toon(result))
     return 0
 
 
@@ -201,11 +203,11 @@ def cmd_triage(args):
     try:
         issue = json.loads(args.issue)
     except json.JSONDecodeError as e:
-        print(json.dumps({'error': f'Invalid JSON input: {e}', 'status': 'failure'}, indent=2))
+        print(serialize_toon({'error': f'Invalid JSON input: {e}', 'status': 'failure'}))
         return 1
 
     result = triage_issue(issue)
-    print(json.dumps(result, indent=2))
+    print(serialize_toon(result))
 
     return 0 if result.get('status') == 'success' else 1
 
