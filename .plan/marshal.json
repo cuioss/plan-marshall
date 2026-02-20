@@ -33,9 +33,9 @@
     "phase-6-finalize": {
       "max_iterations": 3,
       "1_commit_push": true,
-      "2_create_pr": true,
-      "3_automated_review": true,
-      "4_sonar_roundtrip": true,
+      "2_create_pr": false,
+      "3_automated_review": false,
+      "4_sonar_roundtrip": false,
       "5_knowledge_capture": true,
       "6_lessons_capture": true
     }
