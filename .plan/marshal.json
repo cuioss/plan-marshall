@@ -21,8 +21,12 @@
       "confidence_threshold": 95,
       "compatibility": "breaking"
     },
-    "phase-3-outline": {},
-    "phase-4-plan": {},
+    "phase-3-outline": {
+      "plan_without_asking": false
+    },
+    "phase-4-plan": {
+      "execute_without_asking": false
+    },
     "phase-5-execute": {
       "commit_strategy": "none",
       "verification_max_iterations": 5,

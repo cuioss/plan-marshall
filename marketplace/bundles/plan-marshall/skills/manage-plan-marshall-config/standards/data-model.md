@@ -24,6 +24,12 @@ JSON structure and field definitions for project configuration.
       "confidence_threshold": 95,
       "compatibility": "breaking"
     },
+    "phase-3-outline": {
+      "plan_without_asking": false
+    },
+    "phase-4-plan": {
+      "execute_without_asking": false
+    },
     "phase-5-execute": {
       "commit_strategy": "per_deliverable",
       "verification_max_iterations": 5,
@@ -214,6 +220,38 @@ Phase-specific configuration for the 6-phase workflow model. Each phase with con
 |-------|------|---------|--------|
 | `confidence_threshold` | int | 95 | Confidence threshold for refinement completion |
 | `compatibility` | string | "breaking" | breaking, deprecation, smart_and_ask |
+
+### phase-3-outline
+
+```json
+{
+  "plan": {
+    "phase-3-outline": {
+      "plan_without_asking": false
+    }
+  }
+}
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `plan_without_asking` | bool | false | Auto-proceed from outline to task creation without user review |
+
+### phase-4-plan
+
+```json
+{
+  "plan": {
+    "phase-4-plan": {
+      "execute_without_asking": false
+    }
+  }
+}
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `execute_without_asking` | bool | false | Auto-continue to execute phase after task creation |
 
 ### phase-5-execute
 

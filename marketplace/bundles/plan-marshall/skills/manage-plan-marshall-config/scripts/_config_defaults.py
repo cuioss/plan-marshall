@@ -48,9 +48,13 @@ DEFAULT_PLAN_REFINE = {
     'compatibility': 'breaking',
 }
 
-DEFAULT_PLAN_OUTLINE: dict[str, object] = {}
+DEFAULT_PLAN_OUTLINE = {
+    'plan_without_asking': False,
+}
 
-DEFAULT_PLAN_PLAN: dict[str, object] = {}
+DEFAULT_PLAN_PLAN = {
+    'execute_without_asking': False,
+}
 
 DEFAULT_PLAN_EXECUTE = {
     'commit_strategy': 'per_deliverable',

@@ -2,7 +2,7 @@
 
 Workflows for plan creation and setup phases: init, refine, outline, and plan.
 
-**CRITICAL CONSTRAINT**: These workflows create and manage **plans only**. NEVER implement tasks directly. All task descriptions MUST result in plans - not actual implementation. After completing 1-init through 4-plan phases, STOP and wait for execute action.
+**CRITICAL CONSTRAINT**: These workflows create and manage **plans only**. NEVER implement tasks directly. All task descriptions MUST result in plans - not actual implementation. After completing 1-init through 4-plan phases, check `execute_without_asking` config. If false (default): STOP and wait for execute action. If true: Auto-continue to execute phase.
 
 ## Action Routing
 
@@ -76,7 +76,7 @@ Then continue to **Action: outline** with the same plan_id.
 
 ## Action: outline (3-Outline + 4-Plan Phases)
 
-**CRITICAL**: This action has 4 steps. Step 3 is a MANDATORY user review gate. Do NOT skip from Step 2 to Step 4.
+**CRITICAL**: This action has 4 steps. Step 3 is a user review gate controlled by `plan_without_asking` config. If false (default): MANDATORY user review — do NOT skip. If true: Auto-proceed to Step 4.
 
 ---
 
@@ -137,11 +137,21 @@ python3 .plan/execute-script.py pm-workflow:manage-lifecycle:manage-lifecycle tr
 
 ---
 
-## Step 3: MANDATORY USER REVIEW
-
-**STOP HERE. Do NOT proceed to Step 4 without user approval.**
+## Step 3: USER REVIEW GATE
 
 The outline presented here has already passed Q-Gate verification. The user reviews the quality-verified outline.
+
+**Config check** — Read `plan_without_asking` to determine gate behavior:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+  plan phase-3-outline get --field plan_without_asking --trace-plan-id {plan_id}
+```
+
+**IF `plan_without_asking == true`**:
+- Log: `"(pm-workflow:plan-marshall) Config: plan_without_asking=true — auto-proceeding to task creation"`
+- Skip Steps 3a-3c, continue directly to Step 4
+
+**ELSE (default)**: **STOP HERE. Do NOT proceed to Step 4 without user approval.**
 
 ### 3a. Read and display the solution outline for review:
 
@@ -215,6 +225,21 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 python3 .plan/execute-script.py pm-workflow:manage-lifecycle:manage-lifecycle transition \
   --plan-id {plan_id} --completed 4-plan
 ```
+
+**Step 4c**: Check `execute_without_asking` config to determine next action:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+  plan phase-4-plan get --field execute_without_asking --trace-plan-id {plan_id}
+```
+
+**IF `execute_without_asking == true`**:
+- Log: `"(pm-workflow:plan-marshall) Config: execute_without_asking=true — auto-continuing to execute"`
+- Load `workflows/execution.md` and follow **Action: execute** with `plan_id`
+
+**ELSE (default)**:
+- Display: `"Tasks created. Ready to execute."`
+- Display: `"Run '/plan-marshall action=execute plan={plan_id}' when ready."`
+- **STOP** (current behavior)
 
 ---
 
