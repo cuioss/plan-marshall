@@ -38,8 +38,13 @@ extension-api/
 │   └── build_parse.py              # Issue structures, warning filtering
 └── standards/
     ├── extension-contract.md       # Extension API contract
+    ├── skill-domains.md            # Skill domains contract (required method)
+    ├── module-discovery.md         # Module discovery contract
     ├── canonical-commands.md       # Command vocabulary and resolution
     ├── config-callback.md          # Project configuration callback
+    ├── triage-extension.md         # Triage extension contract
+    ├── outline-extension.md        # Outline extension contract
+    ├── verify-steps.md             # Verify steps contract
     ├── build-base-libs.md          # Base library API reference (optional)
     ├── build-execution.md          # Execution patterns (optional)
     ├── build-return.md             # Return value structure (optional)
@@ -72,6 +77,7 @@ All extensions **must** inherit from `ExtensionBase` and implement required meth
 | `config_defaults(project_root: str) -> None` | no-op | Configure project defaults (called during init) |
 | `provides_triage() -> str \| None` | `None` | Return triage skill reference |
 | `provides_outline_skill() -> str \| None` | `None` | Return domain-specific outline skill reference |
+| `provides_verify_steps() -> list[dict]` | `[]` | Return domain-specific verification steps |
 
 ---
 
@@ -81,13 +87,18 @@ For understanding the complete system architecture, reference these documents:
 
 | Document | Purpose | When to Read |
 |----------|---------|--------------|
+| [skill-domains.md](standards/skill-domains.md) | Skill domains contract | Implementing `get_skill_domains()` |
+| [module-discovery.md](standards/module-discovery.md) | Module discovery contract | Implementing `discover_modules()` |
+| [config-callback.md](standards/config-callback.md) | Project configuration callback | Implementing `config_defaults()` |
+| [triage-extension.md](standards/triage-extension.md) | Triage extension contract | Implementing `provides_triage()` |
+| [outline-extension.md](standards/outline-extension.md) | Outline extension contract | Implementing `provides_outline_skill()` |
+| [verify-steps.md](standards/verify-steps.md) | Verify steps contract | Implementing `provides_verify_steps()` |
 | [architecture-overview.md](standards/architecture-overview.md) | System flow, data dependencies | Understanding overall data flow |
 | [build-execution-flow.md](standards/build-execution-flow.md) | Complete execution lifecycle diagram | Understanding the end-to-end flow |
-| [config-callback.md](standards/config-callback.md) | Project configuration callback | Implementing `config_defaults()` |
 | [build-base-libs.md](standards/build-base-libs.md) | Base library API reference | Implementing extension scripts |
 | [build-execution.md](standards/build-execution.md) | Execution patterns | Running build commands |
 | [build-return.md](standards/build-return.md) | Return value structure | Formatting command output |
-| [build-project-structure.md](standards/build-project-structure.md) | Module discovery output | Implementing `discover_modules()` |
+| [build-project-structure.md](standards/build-project-structure.md) | Module discovery output spec | Understanding `discover_modules()` output format |
 | [orchestrator-integration.md](../analyze-project-architecture/standards/orchestrator-integration.md) | Orchestrator merge logic | Understanding hybrid modules |
 
 **Note**: These documents define the target architecture. Implementation may be in progress.
@@ -275,7 +286,12 @@ class Extension(ExtensionBase):
 ## References
 
 - `standards/extension-contract.md` - Extension API contract (required)
+- `standards/skill-domains.md` - Skill domains contract (required)
+- `standards/module-discovery.md` - Module discovery contract (required)
 - `standards/canonical-commands.md` - Command vocabulary and resolution (required)
 - `standards/config-callback.md` - Project configuration callback (required)
+- `standards/triage-extension.md` - Triage extension contract (required)
+- `standards/outline-extension.md` - Outline extension contract (required)
+- `standards/verify-steps.md` - Verify steps contract (required)
 - `standards/build-base-libs.md` - Base library API reference (optional)
 - `standards/architecture-overview.md` - System architecture (optional)

@@ -214,6 +214,8 @@ The skill can spawn sub-agents for specific tasks:
 
 ### Extension API
 
+For the `provides_outline_skill()` API contract, see `plan-marshall:extension-api/standards/outline-extension.md`.
+
 Domains declare their outline skill in `extension.py`:
 
 ```python

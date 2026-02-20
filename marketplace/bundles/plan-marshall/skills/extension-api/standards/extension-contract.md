@@ -69,6 +69,8 @@ def get_skill_domains(self) -> dict:
     """
 ```
 
+See [skill-domains.md](skill-domains.md) for the complete contract including profile categories, validation, and examples.
+
 ---
 
 ## Optional Methods (With Defaults)
@@ -127,7 +129,7 @@ def discover_modules(self, project_root: str) -> list:
     """
 ```
 
-See [build-project-structure.md](build-project-structure.md) for the complete output specification and implementation patterns.
+See [module-discovery.md](module-discovery.md) for the method contract and [build-project-structure.md](build-project-structure.md) for the complete output specification.
 
 ### Workflow Extension Methods
 
@@ -144,6 +146,8 @@ def provides_triage(self) -> str | None:
     Default: None
     """
 ```
+
+See [triage-extension.md](triage-extension.md) for the complete contract including required skill sections and resolution.
 
 #### provides_outline_skill
 
@@ -163,6 +167,29 @@ def provides_outline_skill(self) -> str | None:
     Default: None (uses generic pm-workflow:outline-change-type standards)
     """
 ```
+
+See [outline-extension.md](outline-extension.md) for the complete contract including skill structure convention and fallback behavior.
+
+#### provides_verify_steps
+
+```python
+def provides_verify_steps(self) -> list[dict]:
+    """Return domain-specific verification steps.
+
+    Each step declares a verification agent that can be enabled during
+    project configuration via /marshall-steward.
+
+    Returns:
+        List of step dicts, each containing:
+        - name: Step identifier (e.g., 'technical_impl')
+        - agent: Fully-qualified agent reference (e.g., 'pm-dev-java:java-verify-agent')
+        - description: Human-readable description for wizard presentation
+
+    Default: []
+    """
+```
+
+See [verify-steps.md](verify-steps.md) for the complete contract including marshal.json storage, enable/disable commands, and runtime consumption.
 
 ---
 
@@ -287,21 +314,26 @@ Some domain bundles are **additive** - they extend a base domain bundle rather t
 
 ## Existing Extensions
 
-| Bundle | Domain Key | Triage | Change-Type Skills | Notes |
-|--------|------------|--------|-------------------|-------|
-| pm-dev-java | java | ext-triage-java | - | Base Java bundle |
-| pm-dev-java-cui | java-cui | - | - | Additive to pm-dev-java |
-| pm-dev-frontend | javascript | ext-triage-js | - | |
-| pm-documents | documentation | ext-triage-docs | - | Uses generic skills |
-| pm-requirements | requirements | ext-triage-reqs | - | |
-| pm-plugin-development | plan-marshall-plugin-dev | ext-triage-plugin | ext-outline-workflow | |
+| Bundle | Domain Key | Triage | Change-Type Skills | Verify Steps | Notes |
+|--------|------------|--------|-------------------|-------------|-------|
+| pm-dev-java | java | ext-triage-java | - | 2 (impl, test) | Base Java bundle |
+| pm-dev-java-cui | java-cui | - | - | - | Additive to pm-dev-java |
+| pm-dev-frontend | javascript | ext-triage-js | - | - | |
+| pm-documents | documentation | ext-triage-docs | - | 1 (doc_sync) | Uses generic skills |
+| pm-requirements | requirements | ext-triage-reqs | - | 1 (formal_spec) | |
+| pm-plugin-development | plan-marshall-plugin-dev | ext-triage-plugin | ext-outline-workflow | - | |
 
 ---
 
 ## Related Specifications
 
-- [architecture-overview.md](architecture-overview.md) - System flow and data dependencies
+- [skill-domains.md](skill-domains.md) - Skill domains contract (required method)
+- [module-discovery.md](module-discovery.md) - Module discovery contract
 - [config-callback.md](config-callback.md) - Project configuration callback
+- [triage-extension.md](triage-extension.md) - Triage extension contract
+- [outline-extension.md](outline-extension.md) - Outline extension contract
+- [verify-steps.md](verify-steps.md) - Verify steps contract
+- [architecture-overview.md](architecture-overview.md) - System flow and data dependencies
 - [build-execution.md](build-execution.md) - Build command execution API
 - [build-return.md](build-return.md) - Build return value structure
 - [build-project-structure.md](build-project-structure.md) - Project structure discovery

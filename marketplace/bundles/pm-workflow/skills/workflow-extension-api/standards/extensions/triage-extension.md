@@ -4,6 +4,8 @@ Defines the structure and requirements for domain-specific triage extensions use
 
 ## Purpose
 
+For the `provides_triage()` API contract, see `plan-marshall:extension-api/standards/triage-extension.md`.
+
 Triage extensions provide **decision-making knowledge** for handling findings during verification. They do NOT control workflow - the plan-finalize skill owns the workflow. Extensions provide domain-specific guidance for:
 
 - How to suppress findings in that domain

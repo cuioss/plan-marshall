@@ -265,7 +265,7 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-m
 - Create task with: `profile: verification`, `deliverable: 0`, `origin: holistic`
 - `depends_on: [ALL non-holistic tasks]`
 
-**2. Domain-specific verification tasks** (from `verification_domain_steps` config):
+**2. Domain-specific verification tasks** (from `verification_domain_steps` config — see [verify-steps.md](../../../plan-marshall/skills/extension-api/standards/verify-steps.md)):
 - For each enabled domain step in config → create a verification task
 - Steps contain agent references from domain extensions
 - `profile: verification`, `deliverable: 0`, `origin: holistic`
