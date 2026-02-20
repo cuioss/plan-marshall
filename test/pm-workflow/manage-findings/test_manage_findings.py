@@ -184,11 +184,11 @@ def test_finding_resolve_all_statuses():
 
 def test_finding_promote():
     """Test promoting a finding."""
-    with TestContext():
+    with TestContext(plan_id='finding-promote'):
         add_result = run_script(
             SCRIPT_PATH,
             'add',
-            '--plan-id', 'test-plan',
+            '--plan-id', 'finding-promote',
             '--type', 'tip',
             '--title', 'Use constructor injection',
             '--detail',
@@ -196,7 +196,7 @@ def test_finding_promote():
         )
         hash_id = str(parse_toon(add_result.stdout)['hash_id'])
 
-        result = run_script(SCRIPT_PATH, 'promote', '--plan-id', 'test-plan', '--hash-id', hash_id, '--promoted-to', 'architecture')
+        result = run_script(SCRIPT_PATH, 'promote', '--plan-id', 'finding-promote', '--hash-id', hash_id, '--promoted-to', 'architecture')
         assert result.success
         data = parse_toon(result.stdout)
         assert data['status'] == 'success'
