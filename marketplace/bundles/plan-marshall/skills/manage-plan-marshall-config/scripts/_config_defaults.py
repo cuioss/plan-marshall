@@ -46,19 +46,11 @@ DEFAULT_PLAN_INIT = {
 DEFAULT_PLAN_REFINE = {
     'confidence_threshold': 95,
     'compatibility': 'breaking',
-    'qgate_enabled': True,
-    'qgate_max_iterations': 3,
 }
 
-DEFAULT_PLAN_OUTLINE = {
-    'qgate_enabled': True,
-    'qgate_max_iterations': 3,
-}
+DEFAULT_PLAN_OUTLINE: dict[str, object] = {}
 
-DEFAULT_PLAN_PLAN = {
-    'qgate_enabled': True,
-    'qgate_max_iterations': 3,
-}
+DEFAULT_PLAN_PLAN: dict[str, object] = {}
 
 DEFAULT_PLAN_EXECUTE = {
     'commit_strategy': 'per_deliverable',

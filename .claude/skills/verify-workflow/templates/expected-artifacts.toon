@@ -8,8 +8,7 @@
 #   3-outline: solution_outline.md, config.toon, status.toon, references.json
 #   4-plan:    TASK-*.json files
 #   5-execute: references.json with modified files
-#   6-verify:   quality check results
-#   7-finalize: git artifacts
+#   6-finalize: git artifacts
 
 artifacts[4]{file,standard_ref}:
 solution_outline.md,pm-workflow:manage-solution-outline:deliverable-contract

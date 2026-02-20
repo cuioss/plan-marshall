@@ -927,13 +927,8 @@
           "type": "skill",
           "description": "Execute phase skill for plan management. DUMB TASK RUNNER that executes tasks from TASK-*.json files sequentially."
         },
-        "skill:phase-6-verify": {
-          "path": "skills/phase-6-verify",
-          "type": "skill",
-          "description": "Verification pipeline for quality checks before finalization"
-        },
-        "skill:phase-7-finalize": {
-          "path": "skills/phase-7-finalize",
+        "skill:phase-6-finalize": {
+          "path": "skills/phase-6-finalize",
           "type": "skill",
           "description": "Complete plan execution with git workflow and PR management"
         },

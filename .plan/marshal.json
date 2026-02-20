@@ -21,16 +21,16 @@
       "confidence_threshold": 95,
       "compatibility": "breaking"
     },
+    "phase-3-outline": {},
+    "phase-4-plan": {},
     "phase-5-execute": {
-      "commit_strategy": "per_deliverable"
+      "commit_strategy": "none",
+      "verification_max_iterations": 5,
+      "verification_1_quality_check": true,
+      "verification_2_build_verify": true,
+      "verification_domain_steps": {}
     },
-    "phase-6-verify": {
-      "max_iterations": 5,
-      "1_quality_check": true,
-      "2_build_verify": true,
-      "domain_steps": {}
-    },
-    "phase-7-finalize": {
+    "phase-6-finalize": {
       "max_iterations": 3,
       "1_commit_push": true,
       "2_create_pr": true,
@@ -49,9 +49,10 @@
         "plan-marshall:ref-development-standards"
       ],
       "task_executors": {
-        "documentation": "pm-workflow:task-documentation",
         "implementation": "pm-workflow:task-implementation",
-        "module_testing": "pm-workflow:task-module_testing"
+        "module_testing": "pm-workflow:task-module_testing",
+        "integration_testing": "pm-workflow:task-integration_testing",
+        "verification": "pm-workflow:task-verification"
       }
     },
     "documentation": {

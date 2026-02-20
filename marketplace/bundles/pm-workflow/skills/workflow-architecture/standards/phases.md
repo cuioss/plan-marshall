@@ -24,7 +24,7 @@ The pm-workflow bundle implements a 6-phase execution model for structured task 
 │  │   └───────┘    └─────────┘    └─────────┘   └─────────┘             │  │
 │  │                                                                      │  │
 │  │       ┌───────────┐   ┌──────────┐                                  │  │
-│  │   ───▶│ 5-EXECUTE │──▶│7-FINALIZE│                                  │  │
+│  │   ───▶│ 5-EXECUTE │──▶│6-FINALIZE│                                  │  │
 │  │       └───────────┘   └──────────┘                                  │  │
 │  │            │               │                                        │  │
 │  │       ┌────▼────┐    ┌───▼───┐                                      │  │
@@ -286,12 +286,12 @@ The pm-workflow bundle implements a 6-phase execution model for structured task 
 
 ---
 
-### Phase 7: 7-FINALIZE
+### Phase 6: 6-FINALIZE
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                                                                             │
-│  PHASE: 7-FINALIZE                                                          │
+│  PHASE: 6-FINALIZE                                                          │
 │  ═══════════════                                                            │
 │                                                                             │
 │  ┌─────────────────────────────────────────────────────────────────────┐   │
@@ -366,7 +366,7 @@ The pm-workflow bundle implements a 6-phase execution model for structured task 
 │  auto-continue  threshold met  user-approval  auto-continue                 │
 │                                                                             │
 │       ┌───────────┐   ┌───────────┐                                        │
-│   ───▶│ 5-EXECUTE │──▶│7-FINALIZE │                                        │
+│   ───▶│ 5-EXECUTE │──▶│6-FINALIZE │                                        │
 │       └───────────┘   └───────────┘                                        │
 │            │  ↑              │                                              │
 │       auto-continue    pass/fail                                            │
