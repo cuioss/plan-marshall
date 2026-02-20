@@ -130,16 +130,14 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr cre
 
 ### Output
 
-```json
-{
-  "status": "success",
-  "commit_hash": "abc123",
-  "commit_message": "feat(http): add retry configuration",
-  "files_changed": 5,
-  "artifacts_cleaned": 2,
-  "pushed": true,
-  "pr_url": "https://github.com/..."
-}
+```toon
+status: success
+commit_hash: abc123
+commit_message: "feat(http): add retry configuration"
+files_changed: 5
+artifacts_cleaned: 2
+pushed: true
+pr_url: https://github.com/...
 ```
 
 ## Scripts
@@ -173,16 +171,16 @@ python3 .plan/execute-script.py pm-workflow:workflow-integration-git:git-workflo
 - `--breaking`: Optional breaking change description
 - `--footer`: Optional additional footer
 
-**Output** (JSON):
-```json
-{
-  "type": "feat",
-  "scope": "http",
-  "subject": "add retry config",
-  "formatted_message": "feat(http): add retry config\n\n🤖 Generated...",
-  "validation": {"valid": true, "warnings": []},
-  "status": "success"
-}
+**Output** (TOON):
+```toon
+status: success
+type: feat
+scope: http
+subject: add retry config
+formatted_message: "feat(http): add retry config\n\n..."
+validation:
+  valid: true
+  warnings[0]:
 ```
 
 ### analyze-diff
@@ -197,19 +195,18 @@ python3 .plan/execute-script.py pm-workflow:workflow-integration-git:git-workflo
 **Parameters**:
 - `--file` (required): Path to diff file to analyze
 
-**Output** (JSON):
-```json
-{
-  "mode": "analysis",
-  "suggestions": {
-    "type": "feat",
-    "scope": "auth",
-    "subject": null,
-    "detected_changes": ["Significant new code added"],
-    "files_changed": ["src/main/java/auth/Login.java"]
-  },
-  "status": "success"
-}
+**Output** (TOON):
+```toon
+status: success
+mode: analysis
+suggestions:
+  type: feat
+  scope: auth
+  subject: null
+  detected_changes[1]:
+    - Significant new code added
+  files_changed[1]:
+    - src/main/java/auth/Login.java
 ```
 
 ## Standards (Load On-Demand)
