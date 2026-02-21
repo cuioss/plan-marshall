@@ -9,13 +9,30 @@ allowed-tools: Read, Edit, Write, Bash, AskUserQuestion, Glob, Grep, Skill
 
 Comprehensive diagnostic and fix skill for marketplace components. Combines diagnosis, automated safe fixes, prompted risky fixes, and verification into a single workflow.
 
+## Enforcement
+
+**Execution mode**: Select workflow based on scope parameter and execute immediately. Do not explain — execute.
+
+**Prohibited actions:**
+- Do not prompt for safe fixes — apply them automatically without AskUserQuestion
+- Agents cannot use the Task tool (Rule 6 — unavailable at runtime)
+- Only maven-builder agent may execute Maven commands (Rule 7)
+- Do not invent script notations — use only documented notations from the skill being called (Rule 10)
+
+**Constraints:**
+- Load prerequisite skills and the component reference guide before analyzing
+- Every workflow step that performs a script operation must have an explicit bash code block with the full `python3 .plan/execute-script.py` command (Rule 9)
+- Agents must record lessons via manage-lessons skill, not self-invoke commands (Pattern 22)
+- Only `doctor-marketplace.py` is registered in the executor; other scripts (`_analyze.py`, `_validate.py`, `_fix.py`) are internal modules accessed via `doctor-marketplace` subcommands
+- Prose instructions adjacent to script calls must reference parameter values consistent with the script API (Rule 12)
+
 ## Purpose
 
 Provides unified doctor workflows following the pattern: **Diagnose → Auto-Fix Safe → Prompt Risky → Verify**
 
 ## Workflow Decision Tree
 
-**MANDATORY**: Select workflow based on input and execute IMMEDIATELY.
+Select workflow based on input and execute immediately.
 
 ### If scope = "agents" or agent-name specified
 → **EXECUTE** Workflow 1: doctor-agents (jump to that section)
@@ -73,29 +90,28 @@ All 5 workflows follow the same pattern:
 
 ### Phase 1: Discover and Analyze
 
-1. **MANDATORY - Load Prerequisites**
+1. **Load Prerequisites**
 
-   **EXECUTE** these skill loads before proceeding:
+   Load these skills before proceeding:
    ```
    Skill: plan-marshall:ref-development-standards
    Skill: pm-plugin-development:plugin-architecture
    Skill: pm-plugin-development:tools-marketplace-inventory
    ```
 
-2. **MANDATORY - Load Component Reference** (progressive disclosure)
+2. **Load Component Reference** (progressive disclosure)
 
-   **READ**: `references/{component}-guide.md`
+   Read: `references/{component}-guide.md`
 
 3. **Discover Components** (based on scope parameter)
    - marketplace scope: Use marketplace-inventory
    - global scope: Glob ~/.claude/{component}/
    - project scope: Glob .claude/{component}/
 
-4. **MANDATORY - Analyze Components** (using doctor-marketplace)
+4. **Analyze Components** (using doctor-marketplace)
 
    Use the batch analyze command with appropriate filters:
 
-   **EXECUTE**:
    ```bash
    python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marketplace analyze \
      --bundles {bundle} --type {component_type}
@@ -127,10 +143,10 @@ All 5 workflows follow the same pattern:
 
 ### Phase 3: Apply Fixes
 
-1. **Auto-Apply Safe Fixes (NO PROMPT)**
+1. **Auto-Apply Safe Fixes (no prompt)**
 
-   **CRITICAL**: Safe fixes are applied automatically WITHOUT user confirmation.
-   Do NOT use AskUserQuestion for safe fixes.
+   Safe fixes are applied automatically without user confirmation.
+   Do not use AskUserQuestion for safe fixes.
 
    - Apply each safe fix immediately using Edit tool
    - Track success/failure
@@ -207,7 +223,7 @@ See [standards/doctor-pm-workflow.md](standards/doctor-pm-workflow.md) for the c
 
 ### Scripts (scripts/)
 
-**IMPORTANT**: Only `doctor-marketplace.py` is registered in the executor. The other scripts (`_analyze.py`, `_validate.py`, `_fix.py`) are internal modules with underscore prefix and are accessed via `doctor-marketplace` subcommands.
+Only `doctor-marketplace.py` is registered in the executor. The other scripts (`_analyze.py`, `_validate.py`, `_fix.py`) are internal modules with underscore prefix and are accessed via `doctor-marketplace` subcommands.
 
 **Registered Script** (callable via executor):
 
@@ -322,19 +338,21 @@ After Phase 1 creates the report directory and JSON, the LLM:
 
 ---
 
-## Critical Rules
+## Rule Definitions
+
+Rules that plugin-doctor validates in other components. See Enforcement block for this skill's own constraints.
 
 ### Rule 6: Task Tool Prohibition in Agents
-Agents CANNOT use Task tool (unavailable at runtime).
+Agents cannot use the Task tool (unavailable at runtime).
 
 ### Rule 7: Maven Execution Restriction
-Only maven-builder agent may execute Maven commands.
+Only the maven-builder agent may execute Maven commands.
 
 ### Pattern 22: Agent Lessons Learned Requirement
-Agents MUST record lessons via manage-lessons skill, not self-invoke commands.
+Agents record lessons via manage-lessons skill, not self-invoke commands.
 
 ### Rule 9: Explicit Script Calls in Workflows
-All script/tool invocations in workflow documentation MUST have explicit bash code blocks. Vague instructions like "read the file", "display the content", or "check the status" are NOT acceptable. Every operation requiring a script call MUST document the exact `python3 .plan/execute-script.py` command.
+All script/tool invocations in workflow documentation have explicit bash code blocks. Vague instructions like "read the file", "display the content", or "check the status" are not acceptable. Every operation requiring a script call documents the exact `python3 .plan/execute-script.py` command.
 
 **Detection**: Scan workflow steps for action verbs (read, write, display, check, validate, get, list) without accompanying bash code blocks containing `execute-script.py`.
 
@@ -355,7 +373,7 @@ python3 .plan/execute-script.py pm-workflow:manage-solution-outline:manage-solut
 
 ### Rule 10: Self-Contained Command Definition
 
-Components that execute scripts MUST have the EXACT notation (`bundle:skill:script`) explicitly defined WITHIN themselves.
+Components that execute scripts have the exact notation (`bundle:skill:script`) explicitly defined within themselves.
 
 **Four Detection Modes**:
 
@@ -375,14 +393,14 @@ Components that execute scripts MUST have the EXACT notation (`bundle:skill:scri
 **Required Pattern**:
 - Explicit "## Logging Command" or "## Script Commands" section
 - Full bash block with `python3 .plan/execute-script.py {bundle}:{skill}:{script}`
-- Every notation MUST match format: `bundle:skill:script`
+- Every notation matches format: `bundle:skill:script`
 - Parameter table showing where values come from
 
-**CRITICAL**: Do NOT invent notations. Use only documented notations from the skill being called.
+Do not invent notations. Use only documented notations from the skill being called.
 
 ### Rule 12: Prose-Parameter Consistency
 
-Prose instructions adjacent to `execute-script.py` bash blocks MUST NOT reference parameter values that are inconsistent with the actual script API.
+Prose instructions adjacent to `execute-script.py` bash blocks do not reference parameter values that are inconsistent with the actual script API.
 
 **Detection**: Scan prose near script call templates for fallback/alternative instructions that reference invalid or incorrect parameter values.
 

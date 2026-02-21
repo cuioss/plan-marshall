@@ -43,10 +43,12 @@ This returns JSON with per-skill analysis including structure validation, markdo
 - No unreferenced files
 - **Foundation skill loading** (see below)
 - **Rule 9 compliance** (explicit script calls in workflows)
+- **Rule 10a compliance** (enforcement block existence for script-bearing skills)
+- **Rule 11 compliance** (no banned enforcement keywords outside enforcement block)
 
 ### Validate Foundation Skill Loading
 
-**CRITICAL**: Skills with workflows MUST load foundation skills.
+Skills with workflows load foundation skills.
 
 **Required foundation skills**:
 ```
@@ -66,7 +68,7 @@ Skill: plan-marshall:ref-development-standards
 
 ### Validate Rule 9 - Explicit Script Calls
 
-**CRITICAL**: Workflow steps that perform script operations MUST have explicit bash code blocks.
+Workflow steps that perform script operations have explicit bash code blocks.
 
 **Detection logic**:
 1. Find workflow steps (### Step N: ...)
@@ -85,6 +87,46 @@ Skill: plan-marshall:ref-development-standards
 - Steps with explicit bash blocks containing `execute-script.py`
 
 **If violation found**: Flag as risky fix (requires manual intervention to add proper script call).
+
+### Validate Rule 10a - Enforcement Block Existence
+
+Script-bearing skills have a single `## Enforcement` block at the top of the SKILL.md (after frontmatter and title/description, before workflow content).
+
+**Detection logic**:
+1. Check if skill has a `scripts/` directory (use Glob)
+2. If scripts exist, search SKILL.md for `## Enforcement` heading
+3. Verify the enforcement block appears before any `## Workflow` or `## Step` headings
+
+**Enforcement block contents** (validate presence of these subsections):
+- `**Execution mode**:` — how the skill operates
+- `**Prohibited actions:**` — what the skill must not do
+- `**Constraints:**` — rules governing execution
+
+**Exempt skills** (skip check):
+- Skills without a `scripts/` directory (pure reference/knowledge skills)
+- Skills with `allowed-tools: Read` only (pure reference libraries)
+
+**If missing**: Flag as risky fix (requires manual creation of enforcement block with skill-specific rules).
+
+### Validate Rule 11 - Banned Enforcement Keywords
+
+Skills with an enforcement block do not use banned emphasis keywords outside that block.
+
+**Banned keywords** (as ALL-CAPS standalone words, not inside code blocks or headings):
+`CRITICAL`, `MUST`, `NEVER`, `REQUIRED`, `MANDATORY`, `FORBIDDEN`, `ALWAYS`, `DO NOT`, `IMPORTANT`
+
+Also check for: `CANNOT` (use "cannot" lowercase instead)
+
+**Detection logic**:
+1. Locate the `## Enforcement` block boundaries (from `## Enforcement` heading to next `##` heading)
+2. For all content OUTSIDE the enforcement block:
+   - Scan for banned keywords as standalone ALL-CAPS words
+   - Exclude matches inside fenced code blocks (``` ... ```)
+   - Exclude matches inside inline code (backticks)
+   - Exclude matches that are part of a section heading (## or ###)
+3. Report each occurrence with line number and context
+
+**If violations found**: Flag as risky fix (requires manual rephrasing to use lowercase equivalents).
 
 ### Validate plan-marshall-plugin Manifest
 
@@ -120,6 +162,8 @@ Read references/plan-marshall-plugin-validation.md
 
 **Risky fixes** (require confirmation):
 - **Rule 9 violations** (missing explicit script calls in workflows)
+- **Rule 10a violations** (missing enforcement block in script-bearing skills)
+- **Rule 11 violations** (banned enforcement keywords outside enforcement block)
 
 **Auto-fix pattern for missing foundation skills**:
 ```markdown

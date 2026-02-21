@@ -9,6 +9,23 @@ allowed-tools: Read, Write, Bash, AskUserQuestion, Skill
 
 Interactive wizard for creating well-structured Claude Code marketplace components following architecture best practices.
 
+## Enforcement
+
+**Execution mode**: Interactive wizard — gather user input via AskUserQuestion, validate, generate, verify.
+
+**Prohibited actions:**
+- Agents cannot use the Task tool (Rule 6 — unavailable at runtime). If user lists `Task` in tools, reject and suggest creating a command instead.
+- Only maven-builder agent may execute Maven commands (Rule 7). If a non-maven-builder agent needs Bash and Maven, reject.
+- Do not invent script notations — use only documented notations
+
+**Constraints:**
+- Use comma-separated format for frontmatter tools: `tools: Read, Write, Edit` (not array syntax)
+- All questionnaire responses are validated with clear error messages and retry prompts
+- Check for duplicates before creating any component
+- Load reference guides on-demand (never load all at once); use relative paths for all resources
+- Agents and commands use manage-lessons skill for the CONTINUOUS IMPROVEMENT RULE section; skills do not have this section
+- Each workflow step that performs a script operation has an explicit bash code block with the full `python3 .plan/execute-script.py` command
+
 ## What This Skill Provides
 
 **Component Creation**: Unified workflows for creating agents, commands, skills, and bundles with proper structure, frontmatter, and standards compliance.
@@ -102,14 +119,13 @@ Ask user for:
 - Examples: Read, Write, Edit, Glob, Grep, Bash, WebFetch
 - Validation: Must list at least one tool
 - Error if none: "At least one tool required" and retry
-- **CRITICAL Validation - Task Tool**:
-  - If user lists `Task`: ERROR
-  - Message: "Agents CANNOT use Task tool (Rule 6) - unavailable at runtime. Create a COMMAND instead if delegation needed."
+- **Task Tool validation**:
+  - If user lists `Task`: Error — "Agents cannot use Task tool (Rule 6) — unavailable at runtime. Create a command instead if delegation needed."
   - Force removal from list or abort
-- **CRITICAL Validation - Maven Execution**:
-  - If user lists `Bash` AND agent name ≠ "maven-builder":
+- **Maven Execution validation**:
+  - If user lists `Bash` AND agent name is not "maven-builder":
   - Prompt: "Does this agent need to execute Maven commands?"
-  - If yes: ERROR "Only maven-builder agent may execute Maven (Rule 7)"
+  - If yes: Error — "Only maven-builder agent may execute Maven (Rule 7)"
   - If no: Continue
 
 **G. When should agent be used** (trigger conditions)
@@ -172,8 +188,8 @@ Read assets/templates/agent-template.md
 - Critical rules (based on selected tools)
 - CONTINUOUS IMPROVEMENT RULE with 3-5 improvement areas specific to agent type
 
-**CRITICAL - CONTINUOUS IMPROVEMENT RULE Pattern**:
-Agent template MUST use pattern:
+**Continuous Improvement Rule pattern**:
+Agent template uses this pattern:
 ```markdown
 ## CONTINUOUS IMPROVEMENT RULE
 
@@ -321,7 +337,7 @@ Read assets/templates/command-template.md
 - CONTINUOUS IMPROVEMENT RULE with command-specific improvements
 - PARAMETERS section (if applicable)
 - WORKFLOW section (numbered steps)
-- CRITICAL RULES section
+- RULES section
 - USAGE EXAMPLES section
 - RELATED section
 
@@ -768,28 +784,30 @@ This skill uses the following templates in assets/templates/:
 - **skill-template.md** - Template for new skills (SKILL.md)
 - **bundle-structure.json** - Bundle directory structure template
 
-## Critical Rules
+## Rule Definitions
+
+Rules applied during component creation. See Enforcement block for this skill's own constraints.
 
 **Frontmatter Format**:
-- ALWAYS use comma-separated format for tools: `tools: Read, Write, Edit`
-- NEVER use array syntax: `tools: [Read, Write, Edit]`
+- Use comma-separated format for tools: `tools: Read, Write, Edit`
+- Do not use array syntax: `tools: [Read, Write, Edit]`
 
 **Tool Prohibitions**:
-- Agents CANNOT use Task tool (Rule 6) - unavailable at runtime
+- Agents cannot use Task tool (Rule 6) — unavailable at runtime
 - Only maven-builder agent can execute Maven (Rule 7)
 
-**CONTINUOUS IMPROVEMENT RULE**:
+**Continuous Improvement Rule**:
 - Agents: Use manage-lessons skill to record lessons (report to caller)
 - Commands: Use manage-lessons skill to record lessons
-- Skills: No CONTINUOUS IMPROVEMENT RULE
+- Skills: No Continuous Improvement Rule section
 
 **Validation**:
-- ALL questionnaire responses must be validated
+- All questionnaire responses are validated
 - Clear error messages with retry prompts
 - Check for duplicates before creating
 
 **Progressive Disclosure**:
-- Load reference guides on-demand (never load all at once)
+- Load reference guides on-demand (not all at once)
 - Use relative paths for all resources
 
 ## Quality Standards

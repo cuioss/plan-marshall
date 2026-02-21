@@ -9,6 +9,24 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash, AskUserQuestion, Skill
 
 Comprehensive maintenance automation for marketplace bundles. Consolidates update, knowledge management, README maintenance, refactoring, and orchestration compliance into a single skill with progressive disclosure.
 
+## Enforcement
+
+**Execution mode**: Select workflow based on parameters and execute. Load only the reference guide needed for that workflow.
+
+**Prohibited actions:**
+- Do not add content without checking for duplication first
+- Do not skip quality analysis before and after updates
+- Do not make structural changes without running diagnosis afterward
+
+**Constraints:**
+- Target 0 to -10% line change when updating components (anti-bloat)
+- Prefer consolidation over addition; prefer skill references over duplicating content
+- Extract to a skill if content appears in 3+ components
+- Verify quality score does not decrease significantly after changes
+- Check duplication before adding knowledge; consolidate at >40% overlap, skip at >70%
+- Git provides version control — no manual backup files needed; prompt user for risky changes
+- Each workflow step that performs a script operation has an explicit bash code block with the full `python3 .plan/execute-script.py` command
+
 ## Overview
 
 This skill provides 5 maintenance workflows:
@@ -374,35 +392,37 @@ If `verify=true`:
 - Validate checklist completeness
 - Test command with sample bundle
 
-## Critical Rules
+## Rule Definitions
+
+Rules applied during maintenance operations. See Enforcement block for this skill's own constraints.
 
 ### Anti-Bloat
 
-- **TARGET 0 to -10% line change** when updating components
-- **PREFER consolidation** over addition
-- **PREFER skill references** over duplicating content
-- **EXTRACT to skill** if content appears in 3+ components
+- Target 0 to -10% line change when updating components
+- Prefer consolidation over addition
+- Prefer skill references over duplicating content
+- Extract to skill if content appears in 3+ components
 
 ### Quality Verification
 
-- **ALWAYS analyze** before and after updates
-- **VERIFY quality score** doesn't decrease significantly
-- **RUN diagnosis** after structural changes
-- **CHECK for new issues** introduced by changes
+- Analyze before and after updates
+- Verify quality score does not decrease significantly
+- Run diagnosis after structural changes
+- Check for new issues introduced by changes
 
 ### Backup and Safety
 
-- **CREATE backups** before modifications (scripts do this automatically)
-- **RESTORE on failure** (scripts handle rollback)
-- **GIT provides version control** - no manual backup files needed
-- **PROMPT user** for risky changes (duplication found, manual edits detected)
+- Scripts create backups before modifications automatically
+- Scripts handle rollback on failure
+- Git provides version control — no manual backup files needed
+- Prompt user for risky changes (duplication found, manual edits detected)
 
 ### Knowledge Management
 
-- **CHECK duplication** before adding knowledge
-- **CONSOLIDATE** when overlap detected (>40%)
-- **SKIP** when high duplication (>70%)
-- **REFERENCE existing** instead of duplicating
+- Check duplication before adding knowledge
+- Consolidate when overlap detected (>40%)
+- Skip when high duplication (>70%)
+- Reference existing content instead of duplicating
 
 ## Error Handling
 
