@@ -233,6 +233,15 @@ python3 .plan/execute-script.py pm-workflow:manage-lifecycle:manage-lifecycle tr
 
 This automatically updates status.toon and moves to the next phase.
 
+**After transition**, check `finalize_without_asking` config:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+  plan phase-5-execute get --field finalize_without_asking --trace-plan-id {plan_id}
+```
+
+- **IF `finalize_without_asking == true`**: Log and auto-continue to finalize phase
+- **ELSE (default)**: Stop and display `"Run '/plan-marshall action=finalize plan={plan_id}' when ready."`
+
 ---
 
 ## Error Handling

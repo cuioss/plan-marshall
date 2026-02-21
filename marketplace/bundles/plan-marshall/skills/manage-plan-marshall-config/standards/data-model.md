@@ -262,6 +262,7 @@ Execute phase with integrated verification pipeline. Contains commit strategy an
   "plan": {
     "phase-5-execute": {
       "commit_strategy": "per_deliverable",
+      "finalize_without_asking": false,
       "verification_max_iterations": 5,
       "verification_1_quality_check": true,
       "verification_2_build_verify": true,
@@ -282,6 +283,7 @@ Execute phase with integrated verification pipeline. Contains commit strategy an
 | Field | Type | Default | Values |
 |-------|------|---------|--------|
 | `commit_strategy` | string | "per_deliverable" | per_deliverable, per_plan, none |
+| `finalize_without_asking` | bool | false | Auto-continue to finalize phase after execute completes |
 
 #### Verification Steps
 

@@ -56,6 +56,30 @@ For each task:
 3. Mark task complete
 4. Repeat until all tasks done
 
+### Execute Phase Completion
+
+After all tasks complete, transition and check auto-continue:
+
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-lifecycle:manage-lifecycle transition \
+  --plan-id {plan_id} --completed 5-execute
+```
+
+**Config check** — Read `finalize_without_asking` to determine next action:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+  plan phase-5-execute get --field finalize_without_asking --trace-plan-id {plan_id}
+```
+
+**IF `finalize_without_asking == true`**:
+- Log: `"(pm-workflow:plan-marshall) Config: finalize_without_asking=true — auto-continuing to finalize"`
+- Continue to **Finalize Phase** below
+
+**ELSE (default)**:
+- Display: `"Execute phase complete. Ready to finalize."`
+- Display: `"Run '/plan-marshall action=finalize plan={plan_id}' when ready."`
+- **STOP**
+
 ### Domain Agent Routing
 
 | Domain | Agent |

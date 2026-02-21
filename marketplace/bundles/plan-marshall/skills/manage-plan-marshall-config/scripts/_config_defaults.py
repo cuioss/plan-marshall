@@ -58,6 +58,7 @@ DEFAULT_PLAN_PLAN = {
 
 DEFAULT_PLAN_EXECUTE = {
     'commit_strategy': 'per_deliverable',
+    'finalize_without_asking': False,
     'verification_max_iterations': 5,
     'verification_1_quality_check': True,
     'verification_2_build_verify': True,
