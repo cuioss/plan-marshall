@@ -1,0 +1,15 @@
+name: Dependency Review
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  dependency-review:
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-dependency-review.yml@10e359dfd5cff4bb6fd758dcbe4692d6f70d2b03 # v0.6.0
+    permissions:
+      contents: read
+      pull-requests: write
