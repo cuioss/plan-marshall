@@ -306,7 +306,51 @@ python3 .plan/execute-script.py pm-workflow:manage-lifecycle:manage-lifecycle tr
   --completed 6-finalize
 ```
 
-### Step 10: Log Completion
+### Step 10: Archive Plan
+
+Archive the completed plan from `.plan/plans/` to `.plan/archived-plans/`:
+
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-lifecycle:manage-lifecycle archive \
+  --plan-id {plan_id}
+```
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  work --plan-id {plan_id} --level INFO --message "[STATUS] (pm-workflow:phase-6-finalize) Plan archived: {plan_id}"
+```
+
+### Step 11: Mark Lesson Applied (conditional)
+
+If the plan originated from a lesson, mark that lesson as applied.
+
+Read the request source:
+
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-plan-documents:manage-plan-documents request read \
+  --plan-id {plan_id} --section source
+```
+
+**IF `source == "lesson"`**: Read `source_id` from the same request and mark the lesson applied:
+
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-plan-documents:manage-plan-documents request read \
+  --plan-id {plan_id} --section source_id
+```
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lesson update \
+  --id {source_id} --applied true
+```
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  work --plan-id {plan_id} --level INFO --message "[STATUS] (pm-workflow:phase-6-finalize) Lesson {source_id} marked as applied"
+```
+
+**ELSE**: Skip — plan did not originate from a lesson.
+
+### Step 12: Log Completion
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
@@ -338,6 +382,8 @@ actions:
   sonar: {passed|skipped|loop_back}
   knowledge_capture: done
   lessons_capture: done
+  archive: done
+  lesson_applied: {done|skipped}
 
 next_state: complete
 ```

@@ -112,6 +112,8 @@ Handles:
 - Knowledge capture (advisory)
 - Lessons capture (advisory)
 - Mark plan complete
+- Archive plan (move to `.plan/archived-plans/`)
+- Mark lesson applied (if plan originated from a lesson)
 
 ### Finalize Validation
 
