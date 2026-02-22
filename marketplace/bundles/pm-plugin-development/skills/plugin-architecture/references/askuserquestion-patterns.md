@@ -1,6 +1,6 @@
 # AskUserQuestion Patterns
 
-Guide for using the `AskUserQuestion` tool effectively in Claude Code marketplace components.
+Guide for using the `AskUserQuestion` tool effectively in marketplace components.
 
 ## Concept
 

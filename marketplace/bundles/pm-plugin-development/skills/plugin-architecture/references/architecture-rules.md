@@ -1,6 +1,6 @@
 # Architecture Rules
 
-Core architectural principles for Claude Code marketplace components following goal-based organization.
+Core architectural principles for marketplace components following goal-based organization.
 
 ## Rule 1: Skills Must Be Self-Contained
 

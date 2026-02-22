@@ -1,6 +1,6 @@
-# Claude Skills: Core Principles
+# Skills: Core Principles
 
-Foundational principles for building Claude Skills based on official Claude Skills architecture.
+Foundational principles for building skills based on marketplace architecture.
 
 **Source**: [Claude Skills Deep Dive](https://leehanchung.github.io/blogs/2025/10/26/claude-skills-deep-dive/)
 

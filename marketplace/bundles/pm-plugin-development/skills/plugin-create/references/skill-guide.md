@@ -1,6 +1,6 @@
 # Skill Creation Guide
 
-Comprehensive guide for creating well-structured Claude Code skills following progressive disclosure and pattern-based design.
+Comprehensive guide for creating well-structured marketplace skills following progressive disclosure and pattern-based design.
 
 ## When to Create Skills vs Other Components
 

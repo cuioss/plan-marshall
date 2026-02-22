@@ -1,6 +1,6 @@
 # Agent Creation Guide
 
-Comprehensive guide for creating well-structured Claude Code agents following marketplace architecture.
+Comprehensive guide for creating well-structured marketplace agents following marketplace architecture.
 
 ## When to Create Agents vs Other Components
 

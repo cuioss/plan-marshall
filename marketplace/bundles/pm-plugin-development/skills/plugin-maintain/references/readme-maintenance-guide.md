@@ -43,7 +43,7 @@ scripts/generate-readme.sh {bundle_path}
 
 ## Installation
 
-Add to your Claude Code settings or install via marketplace.
+Add to your AI assistant settings or install via marketplace.
 ```
 
 ## Frontmatter as Source of Truth
