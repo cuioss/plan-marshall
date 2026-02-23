@@ -103,7 +103,7 @@ context:
 
 ## CONTINUOUS IMPROVEMENT RULE
 
-**CRITICAL:** Every time you execute this agent and discover a more precise, better, or more efficient approach, **REPORT the improvement to your caller** with:
+**Critical:** Every time you execute this agent and discover a more precise, better, or more efficient approach, **REPORT the improvement to your caller** with:
 1. New refactoring patterns not yet covered by existing standards
 2. Edge cases where refactoring introduces regressions
 3. Missing standard checks that would improve refactoring quality

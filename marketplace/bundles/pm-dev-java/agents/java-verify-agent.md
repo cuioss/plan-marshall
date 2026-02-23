@@ -106,7 +106,7 @@ context:
 
 ## CONTINUOUS IMPROVEMENT RULE
 
-**CRITICAL:** Every time you execute this agent and discover a more precise, better, or more efficient approach, **REPORT the improvement to your caller** with:
+**Critical:** Every time you execute this agent and discover a more precise, better, or more efficient approach, **REPORT the improvement to your caller** with:
 1. More accurate verification checklist items
 2. Better detection patterns for standards violations
 3. Missing checklist categories

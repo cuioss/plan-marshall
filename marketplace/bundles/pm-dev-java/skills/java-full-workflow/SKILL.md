@@ -102,13 +102,11 @@ Task:
 
 ### Step 6: Final Build Verification
 
-```
-Skill: pm-dev-java:plan-marshall-plugin
-Workflow: Execute Maven Build
-Parameters:
-  goals: clean verify
-  module: {module if specified}
-  output_mode: errors
+```bash
+python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run \
+    --targets "clean verify" \
+    --module {module if specified} \
+    --mode errors
 ```
 
 ### Step 7: Generate Summary

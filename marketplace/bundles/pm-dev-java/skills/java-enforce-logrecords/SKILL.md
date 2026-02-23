@@ -309,14 +309,12 @@ COMPLIANCE STATUS: {COMPLIANT / ISSUES REMAINING}
 
 **Build Verification Protocol:**
 - Execute at Steps 2, 8, and 11
-- Use builder-maven-rules skill workflow:
-  ```
-  Skill: pm-dev-java:plan-marshall-plugin
-  Workflow: Execute Maven Build
-  Parameters:
-    goals: clean verify
-    module: {module if specified}
-    output_mode: errors
+- Run build verification:
+  ```bash
+  python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run \
+      --targets "clean verify" \
+      --module {module if specified} \
+      --mode errors
   ```
 - Success criteria: Exit code 0, zero errors, zero test failures
 - On failure: Report details (errors, test failures) and stop execution

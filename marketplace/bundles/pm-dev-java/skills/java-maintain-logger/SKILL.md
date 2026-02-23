@@ -81,13 +81,11 @@ This loads comprehensive logging standards including:
 
 **2.1 Build Verification:**
 
-```
-Skill: pm-dev-java:plan-marshall-plugin
-Workflow: Execute Maven Build
-Parameters:
-  goals: -Ppre-commit clean verify -DskipTests
-  module: {module if specified}
-  output_mode: errors
+```bash
+python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run \
+    --targets "-Ppre-commit clean verify -DskipTests" \
+    --module {module if specified} \
+    --mode errors
 ```
 
 **On build failure:** Prompt user "[F]ix build first / [A]bort", track in `pre_verification_failures`.
@@ -252,13 +250,11 @@ Then add LogAsserts to existing test (see `pm-dev-java-cui:cui-logging` skill fo
 
 **6.1 Module Build Verification:**
 
-```
-Skill: pm-dev-java:plan-marshall-plugin
-Workflow: Execute Maven Build
-Parameters:
-  goals: clean test
-  module: {module}
-  output_mode: structured
+```bash
+python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run \
+    --targets "clean test" \
+    --module {module} \
+    --mode structured
 ```
 
 **On failure:** Analyze cause, apply bug handling protocol if non-logging.
@@ -272,13 +268,11 @@ For each LogRecord in module:
 
 **6.3 Full Build Verification:**
 
-```
-Skill: pm-dev-java:plan-marshall-plugin
-Workflow: Execute Maven Build
-Parameters:
-  goals: -Ppre-commit clean install
-  module: {module}
-  output_mode: errors
+```bash
+python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run \
+    --targets "-Ppre-commit clean install" \
+    --module {module} \
+    --mode errors
 ```
 
 **6.4 Module Commit:**
@@ -309,12 +303,10 @@ Proceed to next module.
 
 **7.1 Complete Build:**
 
-```
-Skill: pm-dev-java:plan-marshall-plugin
-Workflow: Execute Maven Build
-Parameters:
-  goals: -Ppre-commit clean install
-  output_mode: errors
+```bash
+python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run \
+    --targets "-Ppre-commit clean install" \
+    --mode errors
 ```
 
 **7.2 Final plan.md Update:** Update with completion timestamp.

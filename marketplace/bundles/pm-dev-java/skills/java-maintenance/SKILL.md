@@ -83,10 +83,10 @@ Use when: Verifying code meets all Java development standards.
 
 ### Compliance Verification
 
-Use the builder skill for all build operations:
-- **Analysis**: `Skill: pm-dev-java:plan-marshall-plugin` with targets `verify -Pcode-analysis`
-- **Coverage**: `Skill: pm-dev-java:plan-marshall-plugin` with targets `jacoco:report`
-- **Sonar**: `Skill: pm-dev-java:plan-marshall-plugin` with targets `sonar:sonar`
+Use explicit script calls for all build operations:
+- **Analysis**: `python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --targets "verify -Pcode-analysis"`
+- **Coverage**: `python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --targets "jacoco:report"`
+- **Sonar**: `python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --targets "sonar:sonar"`
 
 ## Related Skills
 

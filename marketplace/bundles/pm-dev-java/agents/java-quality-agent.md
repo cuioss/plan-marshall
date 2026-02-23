@@ -103,7 +103,7 @@ context:
 
 ## CONTINUOUS IMPROVEMENT RULE
 
-**CRITICAL:** Every time you execute this agent and discover a more precise, better, or more efficient approach, **REPORT the improvement to your caller** with:
+**Critical:** Every time you execute this agent and discover a more precise, better, or more efficient approach, **REPORT the improvement to your caller** with:
 1. New quality patterns not yet covered by existing standards
 2. False positive patterns that waste analysis time
 3. Missing standard checks that would catch real issues
