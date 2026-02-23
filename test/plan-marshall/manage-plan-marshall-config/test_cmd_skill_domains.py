@@ -6,6 +6,7 @@ including nested structure variants and edge cases.
 """
 
 import json
+from pathlib import Path
 
 from test_helpers import SCRIPT_PATH, create_marshal_json, create_nested_marshal_json
 
@@ -906,6 +907,327 @@ def test_list_requires_skill_domains():
 
         assert not result.success, 'list should fail without skill_domains'
         assert 'skill_domains not configured' in result.stdout
+
+
+# =============================================================================
+# Project Skills Tests
+# =============================================================================
+
+
+def test_discover_project_discovers_skills():
+    """Test discover-project finds skills in .claude/skills/."""
+    with PlanContext() as ctx:
+        create_nested_marshal_json(ctx.fixture_dir)
+
+        # Create .claude/skills/ with a test skill (relative to cwd)
+        # discover-project scans .claude/skills/ relative to working directory
+        skills_dir = Path('.claude/skills/test-skill')
+        skills_dir.mkdir(parents=True, exist_ok=True)
+        skill_md = skills_dir / 'SKILL.md'
+        skill_md.write_text('---\nname: test-skill\ndescription: A test skill\n---\n# Test Skill\n')
+
+        try:
+            result = run_script(SCRIPT_PATH, 'skill-domains', 'discover-project')
+
+            assert result.success, f'Should succeed: {result.stderr}'
+            assert 'project:test-skill' in result.stdout
+            assert 'test-skill' in result.stdout
+        finally:
+            # Clean up
+            skill_md.unlink()
+            skills_dir.rmdir()
+
+
+def test_discover_project_returns_structured_output():
+    """Test discover-project returns TOON output with status, count, and skills fields."""
+    with PlanContext() as ctx:
+        create_nested_marshal_json(ctx.fixture_dir)
+
+        # discover-project scans .claude/skills/ relative to cwd (project root).
+        # The project root has real .claude/skills/ entries, so count >= 0.
+        result = run_script(SCRIPT_PATH, 'skill-domains', 'discover-project')
+
+        assert result.success, f'Should succeed: {result.stderr}'
+        assert 'status: success' in result.stdout
+        assert 'count: ' in result.stdout
+
+
+def test_attach_project_to_domain():
+    """Test attach-project adds project skills to a domain."""
+    with PlanContext() as ctx:
+        create_nested_marshal_json(ctx.fixture_dir)
+
+        result = run_script(
+            SCRIPT_PATH,
+            'skill-domains',
+            'attach-project',
+            '--domain',
+            'java',
+            '--skills',
+            'project:my-custom-skill',
+        )
+
+        assert result.success, f'Should succeed: {result.stderr}'
+        assert 'project_skills' in result.stdout
+        assert 'project:my-custom-skill' in result.stdout
+
+        # Verify marshal.json was updated
+        marshal_path = ctx.fixture_dir / 'marshal.json'
+        updated = json.loads(marshal_path.read_text())
+        assert 'project_skills' in updated['skill_domains']['java']
+        assert 'project:my-custom-skill' in updated['skill_domains']['java']['project_skills']
+
+
+def test_attach_project_to_system_domain():
+    """Test attach-project works with system domain."""
+    with PlanContext() as ctx:
+        create_nested_marshal_json(ctx.fixture_dir)
+
+        result = run_script(
+            SCRIPT_PATH,
+            'skill-domains',
+            'attach-project',
+            '--domain',
+            'system',
+            '--skills',
+            'project:cross-domain-skill',
+        )
+
+        assert result.success, f'Should succeed: {result.stderr}'
+
+        # Verify marshal.json was updated
+        marshal_path = ctx.fixture_dir / 'marshal.json'
+        updated = json.loads(marshal_path.read_text())
+        assert 'project:cross-domain-skill' in updated['skill_domains']['system']['project_skills']
+
+
+def test_attach_project_rejects_invalid_notation():
+    """Test attach-project rejects skills not starting with project:."""
+    with PlanContext() as ctx:
+        create_nested_marshal_json(ctx.fixture_dir)
+
+        result = run_script(
+            SCRIPT_PATH,
+            'skill-domains',
+            'attach-project',
+            '--domain',
+            'java',
+            '--skills',
+            'pm-dev-java:invalid-notation',
+        )
+
+        assert 'error' in result.stdout.lower(), 'Should reject non-project: notation'
+
+
+def test_attach_project_rejects_unknown_domain():
+    """Test attach-project rejects unknown domain."""
+    with PlanContext() as ctx:
+        create_nested_marshal_json(ctx.fixture_dir)
+
+        result = run_script(
+            SCRIPT_PATH,
+            'skill-domains',
+            'attach-project',
+            '--domain',
+            'nonexistent',
+            '--skills',
+            'project:some-skill',
+        )
+
+        assert 'error' in result.stdout.lower(), 'Should reject unknown domain'
+
+
+def test_attach_project_no_duplicates():
+    """Test attach-project does not add duplicate skills."""
+    with PlanContext() as ctx:
+        create_nested_marshal_json(ctx.fixture_dir)
+
+        # Attach first time
+        run_script(
+            SCRIPT_PATH,
+            'skill-domains',
+            'attach-project',
+            '--domain',
+            'java',
+            '--skills',
+            'project:my-skill',
+        )
+
+        # Attach same skill again
+        run_script(
+            SCRIPT_PATH,
+            'skill-domains',
+            'attach-project',
+            '--domain',
+            'java',
+            '--skills',
+            'project:my-skill',
+        )
+
+        # Verify no duplicate
+        marshal_path = ctx.fixture_dir / 'marshal.json'
+        updated = json.loads(marshal_path.read_text())
+        project_skills = updated['skill_domains']['java']['project_skills']
+        assert project_skills.count('project:my-skill') == 1
+
+
+def test_configure_preserves_project_skills():
+    """Test configure preserves existing project_skills when reconfiguring domains."""
+    with PlanContext() as ctx:
+        # Create marshal with project_skills already attached
+        config = {
+            'skill_domains': {
+                'system': {
+                    'defaults': ['plan-marshall:ref-development-standards'],
+                    'project_skills': ['project:system-skill'],
+                    'task_executors': {
+                        'implementation': 'pm-workflow:task-implementation',
+                    },
+                },
+                'java': {
+                    'bundle': 'pm-dev-java',
+                    'project_skills': ['project:java-helper'],
+                    'workflow_skill_extensions': {'triage': 'pm-dev-java:ext-triage-java'},
+                },
+            },
+            'system': {'retention': {}},
+            'plan': {
+                'phase-1-init': {'branch_strategy': 'direct'},
+                'phase-2-refine': {'confidence_threshold': 95, 'compatibility': 'breaking'},
+                'phase-5-execute': {
+                    'commit_strategy': 'per_deliverable',
+                    'verification_max_iterations': 5,
+                    'verification_1_quality_check': True,
+                    'verification_2_build_verify': True,
+                    'verification_domain_steps': {},
+                },
+                'phase-6-finalize': {
+                    'max_iterations': 3,
+                    '1_commit_push': True,
+                    '2_create_pr': True,
+                    '3_automated_review': True,
+                    '4_sonar_roundtrip': True,
+                    '5_knowledge_capture': True,
+                    '6_lessons_capture': True,
+                },
+            },
+        }
+        marshal_path = ctx.fixture_dir / 'marshal.json'
+        marshal_path.write_text(json.dumps(config, indent=2))
+
+        # Reconfigure with java domain
+        result = run_script(SCRIPT_PATH, 'skill-domains', 'configure', '--domains', 'java')
+
+        assert result.success, f'Should succeed: {result.stderr}'
+
+        # Verify project_skills were preserved
+        updated = json.loads(marshal_path.read_text())
+
+        # System domain should have preserved project_skills
+        assert 'project_skills' in updated['skill_domains']['system']
+        assert 'project:system-skill' in updated['skill_domains']['system']['project_skills']
+
+        # Java domain should have preserved project_skills
+        assert 'project_skills' in updated['skill_domains']['java']
+        assert 'project:java-helper' in updated['skill_domains']['java']['project_skills']
+
+
+def test_configure_drops_project_skills_for_removed_domains():
+    """Test configure drops project_skills for domains that are no longer selected."""
+    with PlanContext() as ctx:
+        # Create marshal with project_skills on a domain that will be removed
+        config = {
+            'skill_domains': {
+                'system': {'defaults': [], 'task_executors': {}},
+                'java': {
+                    'bundle': 'pm-dev-java',
+                    'project_skills': ['project:java-helper'],
+                },
+                'javascript': {
+                    'bundle': 'pm-dev-frontend',
+                    'project_skills': ['project:js-helper'],
+                },
+            },
+            'system': {'retention': {}},
+            'plan': {
+                'phase-1-init': {'branch_strategy': 'direct'},
+                'phase-2-refine': {'confidence_threshold': 95, 'compatibility': 'breaking'},
+                'phase-5-execute': {
+                    'commit_strategy': 'per_deliverable',
+                    'verification_max_iterations': 5,
+                    'verification_1_quality_check': True,
+                    'verification_2_build_verify': True,
+                    'verification_domain_steps': {},
+                },
+                'phase-6-finalize': {
+                    'max_iterations': 3,
+                    '1_commit_push': True,
+                    '2_create_pr': True,
+                    '3_automated_review': True,
+                    '4_sonar_roundtrip': True,
+                    '5_knowledge_capture': True,
+                    '6_lessons_capture': True,
+                },
+            },
+        }
+        marshal_path = ctx.fixture_dir / 'marshal.json'
+        marshal_path.write_text(json.dumps(config, indent=2))
+
+        # Reconfigure with only java (removes javascript)
+        result = run_script(SCRIPT_PATH, 'skill-domains', 'configure', '--domains', 'java')
+
+        assert result.success, f'Should succeed: {result.stderr}'
+
+        updated = json.loads(marshal_path.read_text())
+
+        # Java should keep its project_skills
+        assert 'project:java-helper' in updated['skill_domains']['java'].get('project_skills', [])
+
+        # JavaScript should be gone entirely
+        assert 'javascript' not in updated['skill_domains']
+
+
+def test_get_nested_includes_project_skills():
+    """Test skill-domains get includes project_skills in output for nested domains."""
+    with PlanContext() as ctx:
+        config = {
+            'skill_domains': {
+                'system': {
+                    'defaults': ['plan-marshall:ref-development-standards'],
+                    'project_skills': ['project:my-tool'],
+                    'task_executors': {},
+                },
+            },
+            'system': {'retention': {}},
+            'plan': {
+                'phase-1-init': {'branch_strategy': 'direct'},
+                'phase-2-refine': {'confidence_threshold': 95, 'compatibility': 'breaking'},
+                'phase-5-execute': {
+                    'commit_strategy': 'per_deliverable',
+                    'verification_max_iterations': 5,
+                    'verification_1_quality_check': True,
+                    'verification_2_build_verify': True,
+                    'verification_domain_steps': {},
+                },
+                'phase-6-finalize': {
+                    'max_iterations': 3,
+                    '1_commit_push': True,
+                    '2_create_pr': True,
+                    '3_automated_review': True,
+                    '4_sonar_roundtrip': True,
+                    '5_knowledge_capture': True,
+                    '6_lessons_capture': True,
+                },
+            },
+        }
+        marshal_path = ctx.fixture_dir / 'marshal.json'
+        marshal_path.write_text(json.dumps(config, indent=2))
+
+        result = run_script(SCRIPT_PATH, 'skill-domains', 'get', '--domain', 'system')
+
+        assert result.success, f'Should succeed: {result.stderr}'
+        assert 'project_skills' in result.stdout
+        assert 'project:my-tool' in result.stdout
 
 
 # =============================================================================

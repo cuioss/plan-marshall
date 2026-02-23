@@ -551,6 +551,46 @@ This auto-discovers profiles from configured domains and registers default task 
 
 ---
 
+**Step 11f: Discover and Attach Project-Level Skills**
+
+Scan `.claude/skills/` for project-level skills and let the user assign them to configured domains.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+  skill-domains discover-project
+```
+
+**Output (TOON)**:
+```toon
+status: success
+count: 2
+skills:
+  - notation: project:verify-workflow
+    name: verify-workflow
+    description: Verify workflow outputs using hybrid script + LLM assessment
+  - notation: project:sync-plugin-cache
+    name: sync-plugin-cache
+    description: Synchronize all marketplace bundles to the Claude plugin cache
+```
+
+If skills are found (`count > 0`), present them to the user with `AskUserQuestion`:
+- List each discovered skill with its description
+- For each skill, let the user select which configured domain to attach it to:
+  - "system" = cross-domain (always loaded)
+  - A specific domain (e.g., "documentation") = loaded during that domain's tasks
+  - "skip" = do not attach
+
+For each assignment, call:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+  skill-domains attach-project --domain {domain} --skills {comma-separated project:skill notations}
+```
+
+If no project-level skills are found (`count == 0`), skip this step silently.
+
+---
+
 ## Step 12: Verify Skill Domain Configuration
 
 Skill domains configure which implementation skills are loaded during plan execution:

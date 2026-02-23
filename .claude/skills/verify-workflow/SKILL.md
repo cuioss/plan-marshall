@@ -117,7 +117,7 @@ workflow-verification/test-cases/{test-id}/   # Version-controlled
 
 ## Scripts
 
-Scripts are invoked via the executor using `local:` notation for automatic PYTHONPATH setup.
+Scripts are invoked via the executor using `default-bundle:` notation for automatic PYTHONPATH setup.
 
 ### verify-structure.py
 Structural verification via manage-* tool interfaces.
@@ -126,7 +126,7 @@ Structural verification via manage-* tool interfaces.
 **Output**: TOON file with structural check results
 
 ```bash
-python3 .plan/execute-script.py local:verify-workflow:verify-structure \
+python3 .plan/execute-script.py default-bundle:verify-workflow:verify-structure \
   --plan-id {plan_id} \
   --test-case workflow-verification/test-cases/{test-id} \
   --output {results_dir}/structural-checks.toon \
@@ -140,7 +140,7 @@ Artifact collection via manage-* tool interfaces.
 **Output**: Directory with collected artifacts (solution_outline.md, config.toon, etc.)
 
 ```bash
-python3 .plan/execute-script.py local:verify-workflow:collect-artifacts \
+python3 .plan/execute-script.py default-bundle:verify-workflow:collect-artifacts \
   --plan-id {plan_id} \
   --output {results_dir}/artifacts/ \
   --phases {workflow_phase}

@@ -101,11 +101,52 @@ def success_exit(data: dict) -> int:
     return EXIT_SUCCESS
 
 
+def _parse_skill_md_description(skill_path: Path, fallback: str) -> str:
+    """Parse description from a SKILL.md file's YAML frontmatter.
+
+    Args:
+        skill_path: Path to SKILL.md file
+        fallback: Value to return if parsing fails
+
+    Returns:
+        Description string or fallback
+    """
+    if not skill_path.exists():
+        return fallback
+
+    content = skill_path.read_text(encoding='utf-8')
+
+    # Parse YAML frontmatter (between --- markers)
+    if not content.startswith('---'):
+        return fallback
+
+    end_marker = content.find('---', 3)
+    if end_marker == -1:
+        return fallback
+
+    frontmatter = content[3:end_marker].strip()
+
+    # Simple YAML parsing for description field
+    for line in frontmatter.split('\n'):
+        if line.lstrip().startswith('description:'):
+            desc = line.split(':', 1)[1].strip()
+            # Remove quotes if present
+            if len(desc) > 1 and desc[0] == desc[-1] and desc[0] in ('"', "'"):
+                desc = desc[1:-1]
+            return desc
+
+    return fallback
+
+
 def get_skill_description(skill_notation: str) -> str:
     """Extract description from SKILL.md frontmatter.
 
+    Supports two notation formats:
+    - Marketplace: "bundle:skill" → bundles/{bundle}/skills/{skill}/SKILL.md
+    - Project-level: "project:skill" → .claude/skills/{skill}/SKILL.md
+
     Args:
-        skill_notation: e.g., "pm-dev-java:java-core"
+        skill_notation: e.g., "pm-dev-java:java-core" or "project:verify-workflow"
 
     Returns:
         Description string or skill name as fallback
@@ -114,34 +155,16 @@ def get_skill_description(skill_notation: str) -> str:
         parts = skill_notation.split(':')
         if len(parts) != 2:
             return skill_notation
-        bundle, skill = parts
-        skill_path = BUNDLES_DIR / bundle / 'skills' / skill / 'SKILL.md'
+        prefix, skill = parts
 
-        if not skill_path.exists():
-            return skill_notation
+        if prefix == 'project':
+            # Project-level skill: resolve from .claude/skills/
+            skill_path = Path('.claude') / 'skills' / skill / 'SKILL.md'
+        else:
+            # Marketplace skill: resolve from bundles directory
+            skill_path = BUNDLES_DIR / prefix / 'skills' / skill / 'SKILL.md'
 
-        content = skill_path.read_text(encoding='utf-8')
-
-        # Parse YAML frontmatter (between --- markers)
-        if not content.startswith('---'):
-            return skill_notation
-
-        end_marker = content.find('---', 3)
-        if end_marker == -1:
-            return skill_notation
-
-        frontmatter = content[3:end_marker].strip()
-
-        # Simple YAML parsing for description field
-        for line in frontmatter.split('\n'):
-            if line.startswith('description:'):
-                desc = line[12:].strip()
-                # Remove quotes if present
-                if (desc.startswith('"') and desc.endswith('"')) or (desc.startswith("'") and desc.endswith("'")):
-                    desc = desc[1:-1]
-                return desc
-
-        return skill_notation
+        return _parse_skill_md_description(skill_path, skill_notation)
     except Exception:
         return skill_notation
 
@@ -153,9 +176,13 @@ def is_nested_domain(domain_config: dict) -> bool:
     - 'bundle' key (technical domains with profiles in extension.py)
     - 'task_executors' key (system domain with profile-to-executor mapping)
     - 'workflow_skill_extensions' key (domain extensions for outline/triage)
+    - 'project_skills' key (project-level skills attached to a domain)
     """
     return (
-        'bundle' in domain_config or 'task_executors' in domain_config or 'workflow_skill_extensions' in domain_config
+        'bundle' in domain_config
+        or 'task_executors' in domain_config
+        or 'workflow_skill_extensions' in domain_config
+        or 'project_skills' in domain_config
     )
 
 

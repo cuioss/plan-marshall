@@ -109,6 +109,41 @@ def _build_skill_dict_with_descriptions(entries: list) -> dict[str, str]:
     return result
 
 
+def discover_project_skills() -> list[dict]:
+    """Discover project-level skills from .claude/skills/ directory.
+
+    Scans for SKILL.md files and extracts name + description from frontmatter.
+
+    Returns:
+        List of dicts: [{notation: "project:{name}", name: str, description: str}]
+    """
+    claude_skills = Path('.claude/skills')
+    if not claude_skills.is_dir():
+        return []
+
+    skills: list[dict] = []
+    for skill_dir in sorted(claude_skills.iterdir()):
+        if not skill_dir.is_dir() or skill_dir.name.startswith('.'):
+            continue
+        skill_md = skill_dir / 'SKILL.md'
+        if not skill_md.exists():
+            continue
+
+        notation = f'project:{skill_dir.name}'
+        description = get_skill_description(notation)
+        # If get_skill_description returns the notation itself, use the name as fallback
+        if description == notation:
+            description = skill_dir.name
+
+        skills.append({
+            'notation': notation,
+            'name': skill_dir.name,
+            'description': description,
+        })
+
+    return skills
+
+
 def discover_available_domains(project_root: Path | None = None) -> dict:
     """Discover domains from extension.py files.
 
@@ -347,6 +382,10 @@ def cmd_skill_domains(args) -> int:
             if 'optionals' in domain_config:
                 result['optionals'] = domain_config['optionals']
 
+            # Include project_skills if present
+            if 'project_skills' in domain_config:
+                result['project_skills'] = domain_config['project_skills']
+
             # Load profiles from extension.py if bundle is present
             bundle = domain_config.get('bundle')
             if bundle:
@@ -550,6 +589,12 @@ def cmd_skill_domains(args) -> int:
     elif args.verb == 'configure':
         selected_domains = [d.strip() for d in args.domains.split(',') if d.strip()]
 
+        # Preserve existing project_skills before clearing
+        existing_project_skills: dict[str, list] = {}
+        for domain_key, domain_config in skill_domains.items():
+            if isinstance(domain_config, dict) and 'project_skills' in domain_config:
+                existing_project_skills[domain_key] = domain_config['project_skills']
+
         # Clear existing domains and start fresh with only selected ones
         skill_domains = {}
 
@@ -574,6 +619,11 @@ def cmd_skill_domains(args) -> int:
                     verify_steps_by_domain[domain_key] = steps
             else:
                 domains_not_found.append(domain_key)
+
+        # Restore project_skills to domains that still exist
+        for domain_key, ps in existing_project_skills.items():
+            if domain_key in skill_domains:
+                skill_domains[domain_key]['project_skills'] = ps
 
         config['skill_domains'] = skill_domains
 
@@ -606,6 +656,45 @@ def cmd_skill_domains(args) -> int:
             result['verify_steps'] = verify_steps_by_domain
 
         return success_exit(result)
+
+    elif args.verb == 'discover-project':
+        skills = discover_project_skills()
+        return success_exit({
+            'skills': skills,
+            'count': len(skills),
+        })
+
+    elif args.verb == 'attach-project':
+        domain = args.domain
+        if domain not in skill_domains:
+            return error_exit(f'Unknown domain: {domain}')
+
+        skills_input = [s.strip() for s in args.skills.split(',') if s.strip()]
+
+        # Validate notation
+        invalid = [s for s in skills_input if not s.startswith('project:')]
+        if invalid:
+            return error_exit(f'Invalid notation (must start with project:): {", ".join(invalid)}')
+
+        domain_config = skill_domains[domain]
+        existing = domain_config.get('project_skills', [])
+
+        # Merge without duplicates, preserve order
+        merged = list(existing)
+        for skill in skills_input:
+            if skill not in merged:
+                merged.append(skill)
+
+        domain_config['project_skills'] = merged
+        skill_domains[domain] = domain_config
+        config['skill_domains'] = skill_domains
+        save_config(config)
+
+        return success_exit({
+            'domain': domain,
+            'project_skills': merged,
+            'added': len(merged) - len(existing),
+        })
 
     return EXIT_ERROR
 
@@ -663,9 +752,15 @@ def cmd_resolve_domain_skills(args) -> int:
     defaults_with_desc = _build_skill_dict_with_descriptions(defaults)
     optionals_with_desc = _build_skill_dict_with_descriptions(optionals)
 
-    return success_exit(
-        {'domain': domain, 'profile': profile, 'defaults': defaults_with_desc, 'optionals': optionals_with_desc}
-    )
+    # Include project_skills if attached to this domain
+    project_skills = domain_config.get('project_skills', [])
+    project_skills_with_desc = {s: get_skill_description(s) for s in project_skills}
+
+    result: dict = {'domain': domain, 'profile': profile, 'defaults': defaults_with_desc, 'optionals': optionals_with_desc}
+    if project_skills_with_desc:
+        result['project_skills'] = project_skills_with_desc
+
+    return success_exit(result)
 
 
 def cmd_resolve_workflow_skill_extension(args) -> int:

@@ -392,6 +392,11 @@ def _serialize_value(value: Any, indent: int = 0) -> str:
         # Quote if contains special characters
         if ',' in value or ':' in value or '\n' in value:
             return f'"{value}"'
+        # Quote if _parse_value would misinterpret as non-string type
+        if value in ('true', 'false', 'null', ''):
+            return f'"{value}"'
+        if re.match(r'^-?\d+$', value) or re.match(r'^-?\d+\.\d+$', value) or re.match(r'^\d+%$', value):
+            return f'"{value}"'
         return value
     if isinstance(value, dict):
         # Serialize dict as JSON string (wrapped in quotes, internal quotes escaped)

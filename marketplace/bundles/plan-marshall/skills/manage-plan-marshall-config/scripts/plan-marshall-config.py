@@ -140,6 +140,12 @@ def main():
     sd_configure = sd_sub.add_parser('configure', help='Configure selected domains')
     sd_configure.add_argument('--domains', required=True, help='Comma-separated domain names to enable')
 
+    sd_sub.add_parser('discover-project', help='Discover project-level skills from .claude/skills/')
+
+    sd_attach = sd_sub.add_parser('attach-project', help='Attach project-level skills to a domain')
+    sd_attach.add_argument('--domain', required=True, help='Domain to attach skills to')
+    sd_attach.add_argument('--skills', required=True, help='Comma-separated project:skill notations')
+
     # --- system ---
     p_sys = subparsers.add_parser('system', help='Manage system settings')
     sys_sub = p_sys.add_subparsers(dest='sub_noun', required=True, help='Sub-noun')
