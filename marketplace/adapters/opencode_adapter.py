@@ -377,11 +377,38 @@ class OpenCodeAdapter(AdapterBase):
         return generated
 
     def _discover_bundles(self, marketplace_dir: Path, bundles: list[str] | None) -> list[Path]:
-        """Find bundle directories to process."""
+        """Find bundle directories to process.
+
+        Bundle names are sanitized to prevent path traversal attacks.
+        Names containing path separators or '..' are rejected.
+        """
+        resolved_marketplace = marketplace_dir.resolve()
         if bundles:
-            return [marketplace_dir / b for b in bundles if (marketplace_dir / b).is_dir()]
+            result = []
+            for b in bundles:
+                # Reject path traversal attempts
+                if '..' in b or '/' in b or '\\' in b:
+                    continue
+                candidate = marketplace_dir / b
+                # Verify resolved path stays within marketplace_dir
+                if candidate.resolve().parent == resolved_marketplace and candidate.is_dir():
+                    result.append(candidate)
+            return result
 
         return sorted(d for d in marketplace_dir.iterdir() if d.is_dir() and not d.name.startswith('.'))
+
+    @staticmethod
+    def _safe_rmtree(path: Path, output_dir: Path) -> None:
+        """Remove a directory tree only if it is within output_dir.
+
+        Prevents accidental deletion of directories outside the intended
+        output location, guarding against path traversal via user inputs.
+        """
+        resolved = path.resolve()
+        resolved_output = output_dir.resolve()
+        if not str(resolved).startswith(str(resolved_output) + '/') and resolved != resolved_output:
+            raise ValueError(f'Refusing to delete {resolved}: not within output directory {resolved_output}')
+        shutil.rmtree(path)
 
     def _export_skills(
         self, bundle_dir: Path, config: dict, bundle_name: str, output_dir: Path
@@ -417,7 +444,7 @@ class OpenCodeAdapter(AdapterBase):
                 if src_subdir.exists() and src_subdir.is_dir():
                     dst_subdir = oc_skill_dir / subdir_name
                     if dst_subdir.exists():
-                        shutil.rmtree(dst_subdir)
+                        self._safe_rmtree(dst_subdir, output_dir)
                     shutil.copytree(src_subdir, dst_subdir)
                     for f in dst_subdir.rglob('*'):
                         if f.is_file():
@@ -428,7 +455,7 @@ class OpenCodeAdapter(AdapterBase):
             if src_scripts.exists() and src_scripts.is_dir():
                 dst_scripts = oc_skill_dir / 'scripts'
                 if dst_scripts.exists():
-                    shutil.rmtree(dst_scripts)
+                    self._safe_rmtree(dst_scripts, output_dir)
                 shutil.copytree(src_scripts, dst_scripts)
                 for f in dst_scripts.rglob('*'):
                     if f.is_file():

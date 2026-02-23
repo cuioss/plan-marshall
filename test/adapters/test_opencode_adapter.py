@@ -502,6 +502,36 @@ class TestOpenCodeAdapter:
         gen2 = adapter.generate(marketplace_dir, output_dir)
         assert len(gen1) == len(gen2)
 
+    def test_bundle_path_traversal_rejected(self, adapter, marketplace_dir, output_dir):
+        """Bundle names with path traversal sequences are rejected."""
+        generated = adapter.generate(marketplace_dir, output_dir, bundles=['../../etc'])
+        # Only opencode.json — traversal bundle was rejected
+        assert len(generated) == 1
+        assert generated[0].name == 'opencode.json'
+
+    def test_bundle_with_slash_rejected(self, adapter, marketplace_dir, output_dir):
+        """Bundle names containing slashes are rejected."""
+        generated = adapter.generate(marketplace_dir, output_dir, bundles=['foo/bar'])
+        assert len(generated) == 1
+
+    def test_safe_rmtree_rejects_outside_output(self, adapter, tmp_path):
+        """_safe_rmtree refuses to delete directories outside output_dir."""
+        outside = tmp_path / 'outside'
+        outside.mkdir()
+        output = tmp_path / 'output'
+        output.mkdir()
+        with pytest.raises(ValueError, match='not within output directory'):
+            adapter._safe_rmtree(outside, output)
+
+    def test_safe_rmtree_allows_inside_output(self, adapter, tmp_path):
+        """_safe_rmtree allows deletion within output_dir."""
+        output = tmp_path / 'output'
+        inside = output / 'subdir'
+        inside.mkdir(parents=True)
+        (inside / 'file.txt').write_text('test')
+        adapter._safe_rmtree(inside, output)
+        assert not inside.exists()
+
 
 # =============================================================================
 # Model mapping tests
