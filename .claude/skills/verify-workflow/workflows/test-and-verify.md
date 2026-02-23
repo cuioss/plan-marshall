@@ -124,7 +124,7 @@ Read the `workflow_phase` from test-definition.toon to determine which phases to
 - `1-init,2-refine,3-outline` → verify early phases including request refinement
 
 ```bash
-python3 .plan/execute-script.py local:verify-workflow:collect-artifacts \
+python3 .plan/execute-script.py default-bundle:verify-workflow:collect-artifacts \
   --plan-id {plan_id} \
   --output {results_dir}/artifacts/ \
   --phases {workflow_phase from test-definition}
@@ -150,7 +150,7 @@ This creates sequential component IDs (C1, C2, ...) for later attribution.
 Verify against the locally collected artifacts (from Step V1).
 
 ```bash
-python3 .plan/execute-script.py local:verify-workflow:verify-structure \
+python3 .plan/execute-script.py default-bundle:verify-workflow:verify-structure \
   --plan-id {plan_id} \
   --test-case workflow-verification/test-cases/{test-id} \
   --artifacts-dir {results_dir}/artifacts/ \

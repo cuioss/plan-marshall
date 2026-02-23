@@ -343,7 +343,9 @@ def discover_local_scripts(cwd: Path | None = None) -> dict[str, str]:
     """
     Discover scripts from .claude/skills/*/scripts/ in project root.
 
-    Uses 'local:{skill}:{script}' notation to distinguish from marketplace.
+    Uses 'default-bundle:{skill}:{script}' notation — an internal key
+    for collision avoidance in the SCRIPTS dict. This is not user-facing;
+    the user-facing notation for project-level skills is 'project:{skill}'.
 
     Args:
         cwd: Working directory to search from. Defaults to Path.cwd().
@@ -375,7 +377,7 @@ def discover_local_scripts(cwd: Path | None = None) -> dict[str, str]:
             if script_file.name.startswith('_'):
                 continue
             if script_file.is_file():
-                notation = f'local:{skill_name}:{script_file.stem}'
+                notation = f'default-bundle:{skill_name}:{script_file.stem}'
                 abs_path = str(script_file.resolve())
                 mappings[notation] = abs_path
 
