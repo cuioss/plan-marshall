@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Plugin bundle discovery for marketplace bundles.
 
-Discovers Claude Code marketplace bundles with complete metadata.
+Discovers marketplace bundles with complete metadata.
 Each bundle becomes a module in derived-data.json format.
 
 Packages are:

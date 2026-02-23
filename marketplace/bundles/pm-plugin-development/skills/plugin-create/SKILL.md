@@ -7,7 +7,7 @@ allowed-tools: Read, Write, Bash, AskUserQuestion, Skill
 
 # Plugin Create Skill
 
-Interactive wizard for creating well-structured Claude Code marketplace components following architecture best practices.
+Interactive wizard for creating well-structured marketplace components following architecture best practices.
 
 ## Enforcement
 

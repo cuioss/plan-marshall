@@ -35,7 +35,7 @@ This avoids duplicate modules when both extensions are active.
 
 ## Module Discovery
 
-Discovers Claude Code marketplace bundles as modules. Each bundle in `marketplace/bundles/` becomes a module with:
+Discovers marketplace bundles as modules. Each bundle in `marketplace/bundles/` becomes a module with:
 
 | Aspect | Value |
 |--------|-------|

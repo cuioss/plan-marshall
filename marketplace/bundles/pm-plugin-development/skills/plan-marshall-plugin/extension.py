@@ -25,7 +25,7 @@ class Extension(ExtensionBase):
             'domain': {
                 'key': 'plan-marshall-plugin-dev',
                 'name': 'Plugin Development',
-                'description': 'Claude Code marketplace component development',
+                'description': 'marketplace component development',
             },
             'profiles': {
                 'core': {

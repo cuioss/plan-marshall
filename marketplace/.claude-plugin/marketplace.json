@@ -40,7 +40,7 @@
     },
     {
       "name": "pm-plugin-development",
-      "description": "Complete toolchain for creating and diagnosing Claude Code plugins",
+      "description": "Complete toolchain for creating and diagnosing marketplace plugins",
       "source": "./bundles/pm-plugin-development",
       "strict": false
     },

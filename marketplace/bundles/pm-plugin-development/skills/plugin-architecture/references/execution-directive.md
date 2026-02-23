@@ -455,7 +455,7 @@ The plugin-doctor skill should check for:
 
 ### Research Basis
 - Anthropic Skills Repository analysis
-- Claude Code best practices documentation
+- best practices documentation
 - LLM prompt engineering patterns for action vs explanation
 
 ### Related Standards

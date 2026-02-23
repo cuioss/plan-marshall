@@ -1,6 +1,6 @@
 # Command Creation Guide
 
-Comprehensive guide for creating well-structured Claude Code commands following thin orchestrator pattern.
+Comprehensive guide for creating well-structured marketplace commands following thin orchestrator pattern.
 
 ## When to Create Commands vs Other Components
 

@@ -122,7 +122,7 @@ def generate_readme_content(bundle_name: str, commands: list[dict], agents: list
         lines.append('')
 
     # Installation section
-    lines.extend(['## Installation', '', 'Add to your Claude Code settings or install via marketplace.'])
+    lines.extend(['## Installation', '', 'Add to your AI assistant settings or install via marketplace.'])
 
     return '\n'.join(lines)
 

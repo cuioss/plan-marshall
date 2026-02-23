@@ -1,6 +1,6 @@
 # Frontmatter Standards
 
-YAML frontmatter configuration standards for agents, commands, and skills in the Claude Code marketplace.
+YAML frontmatter configuration standards for agents, commands, and skills in the marketplace.
 
 ## Table of Contents
 

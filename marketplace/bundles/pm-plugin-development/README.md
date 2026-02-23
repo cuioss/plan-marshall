@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Complete toolchain for creating, diagnosing, fixing, and maintaining Claude Code marketplace components. This bundle provides goal-based commands and skills for plugin developers to manage the full lifecycle of marketplace components (commands, skills, bundles).
+Complete toolchain for creating, diagnosing, fixing, and maintaining marketplace components. This bundle provides goal-based commands and skills for plugin developers to manage the full lifecycle of marketplace components (commands, skills, bundles).
 
 ## Architecture
 

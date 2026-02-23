@@ -83,7 +83,7 @@ Workflow steps that perform script operations have explicit bash code blocks.
 **Exempt patterns**:
 - Steps that use `Task:` (agent delegation)
 - Steps that use `Skill:` (skill loading)
-- Steps that use `Read:` or `Glob:` (Claude Code tools)
+- Steps that use `Read:` or `Glob:` (assistant tools)
 - Steps with explicit bash blocks containing `execute-script.py`
 
 **If violation found**: Flag as risky fix (requires manual intervention to add proper script call).

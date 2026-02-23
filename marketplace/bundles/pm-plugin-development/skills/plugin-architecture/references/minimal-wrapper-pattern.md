@@ -2,7 +2,7 @@
 
 ## Overview
 
-The **Minimal Wrapper Pattern** solves context handling challenges in Claude Code by reintroducing agents and commands as thin orchestration layers (< 150 lines) that delegate all business logic to specialized skills.
+The **Minimal Wrapper Pattern** solves context handling challenges in AI assistants by reintroducing agents and commands as thin orchestration layers (< 150 lines) that delegate all business logic to specialized skills.
 
 This pattern enables context isolation while maintaining clean separation of concerns.
 

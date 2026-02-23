@@ -16,7 +16,7 @@
 
 ## Installation
 
-Add to your Claude Code settings or install via marketplace.
+Add to your AI assistant settings or install via marketplace.
 
 ## Usage
 

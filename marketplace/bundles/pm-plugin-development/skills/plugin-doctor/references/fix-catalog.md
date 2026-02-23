@@ -308,7 +308,7 @@ Risky fixes require user confirmation because they involve judgment calls or may
 **Exempt Patterns** (no violation):
 - Steps using `Task:` (agent delegation)
 - Steps using `Skill:` (skill loading)
-- Steps using Claude Code tools (`Read:`, `Glob:`, `Grep:`)
+- Steps using assistant tools (`Read:`, `Glob:`, `Grep:`)
 - Steps that already have `execute-script.py` bash blocks
 
 ### 7. pattern-22-violation

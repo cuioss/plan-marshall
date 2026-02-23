@@ -15,6 +15,7 @@ plan-marshall/
 ├── marketplace/                    # Claude Code marketplace system
 │   ├── .claude-plugin/
 │   │   └── marketplace.json        # Master marketplace configuration
+│   ├── adapters/                   # Multi-assistant export adapters
 │   └── bundles/                    # 8 production bundles
 │       ├── pm-dev-java/            # Java development standards + agents
 │       ├── pm-dev-frontend/        # JavaScript/CSS standards + agents
@@ -191,6 +192,64 @@ When modifying plugin source files (skills, agents, commands), changes won't tak
 ```
 
 This synchronizes all bundles from `marketplace/bundles/` to `~/.claude/plugins/cache/plan-marshall/` using rsync with `--delete` to ensure exact mirroring.
+
+## Multi-Assistant Support
+
+The marketplace uses an adapter system to export bundles to other AI assistant formats while keeping Claude Code as the primary, native format. **Only Claude Code is tested as a runtime.** The OpenCode adapter generates output conforming to the OpenCode specification but has not been validated in a live OpenCode environment.
+
+```
+Source of truth:     marketplace/bundles/*  (Claude Code format)
+                            │
+            ┌───────────────┼───────────────┐
+            ▼               ▼               ▼
+    Claude Code (native)  OpenCode       Future adapters
+    .claude-plugin/       .opencode/     .cursor/, etc.
+```
+
+### Generating OpenCode Output
+
+```bash
+# Export all bundles
+python3 marketplace/adapters/generate.py --target opencode --output .opencode/
+
+# Export specific bundles
+python3 marketplace/adapters/generate.py --target opencode --output .opencode/ --bundles pm-dev-java,pm-workflow
+```
+
+The adapter transforms frontmatter, maps tool names, handles `Skill:` directives, and copies standards/scripts verbatim. Agents that rely on Claude-specific tools (`Task`, `Skill`) are excluded from export.
+
+### Using Generated Output with OpenCode
+
+After running the adapter:
+
+1. Copy the generated `.opencode/` directory into your OpenCode project root
+2. Copy `opencode.json` into your project root (or merge with existing config)
+3. Skills appear automatically in OpenCode's skill tool — invoke them by name (e.g., `pm-dev-java-junit-core`)
+4. Agents are available via `@agent-name` in OpenCode's TUI
+5. Commands are available as `/command-name`
+
+**Format mapping** (Claude Code -> OpenCode):
+
+| Aspect | Claude Code | OpenCode |
+|--------|-------------|----------|
+| Skills directory | `.claude/skills/` | `.opencode/skills/` |
+| Agents directory | Built-in only | `.opencode/agents/` |
+| Commands directory | `.claude/commands/` | `.opencode/commands/` |
+| Skill loading | `Skill:` directive in prompts | `skill` tool invoked at runtime |
+| Tool names | `Read`, `Write`, `Edit` | `read`, `write`, `edit` |
+| Model format | `sonnet`, `haiku`, `opus` | `anthropic/claude-sonnet-4` etc. |
+| Agent tool access | `tools:` frontmatter field | `permission:` object |
+
+**Limitations of the adapter output:**
+
+- `Skill:` directives are annotated with comments but not executable — OpenCode loads skills via its built-in `skill` tool based on task matching
+- Agents using Claude Code's `Task` or `Skill` delegation tools are excluded (no direct OpenCode equivalent for cross-agent orchestration)
+- The `execute-script.py` executor is Claude Code specific — scripts are copied verbatim but the executor integration does not apply
+- Standards and reference documents are portable (pure markdown) and work as-is
+
+### Adding New Adapters
+
+Implement `marketplace.adapters.adapter_base.AdapterBase` and register in `marketplace/adapters/generate.py`.
 
 ## Integration Points
 

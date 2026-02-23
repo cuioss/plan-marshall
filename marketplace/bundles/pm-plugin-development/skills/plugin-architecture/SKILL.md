@@ -1,6 +1,6 @@
 ---
 name: plugin-architecture
-description: Architecture principles, skill patterns, and design guidance for building goal-based Claude Code marketplace components
+description: Architecture principles, skill patterns, and design guidance for building goal-based marketplace components
 user-invocable: false
 allowed-tools: Read
 ---
@@ -9,11 +9,11 @@ allowed-tools: Read
 
 **REFERENCE MODE**: This skill provides reference material. Load specific references on-demand based on current task. Do not load all references at once.
 
-Pure reference skill providing architecture principles, skill patterns, and design guidance for building goal-based Claude Code marketplace components.
+Pure reference skill providing architecture principles, skill patterns, and design guidance for building goal-based marketplace components.
 
 ## What This Skill Provides
 
-**Architecture Foundation**: Core principles for building marketplace components that follow Claude Skills best practices and goal-based organization.
+**Architecture Foundation**: Core principles for building marketplace components that follow skills best practices and goal-based organization.
 
 **Skill Patterns**: 10 implementation patterns for building different types of skills (automation, analysis, validation, etc.).
 
@@ -75,7 +75,7 @@ Load references progressively based on current task. **Never load all references
 
 **Load When**:
 - Starting any marketplace component development
-- Learning Claude Skills fundamentals
+- Learning skills fundamentals
 - Understanding relative path pattern
 - Reviewing progressive disclosure strategy
 
