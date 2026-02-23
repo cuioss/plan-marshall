@@ -31,7 +31,9 @@ if _toon_parser_path.exists():
     sys.path.insert(0, str(_toon_parser_path))
     from toon_parser import serialize_toon
 else:
-    # Fallback: simple dict-to-toon for basic cases
+    # Fallback for standalone execution without executor PYTHONPATH setup.
+    # Intentionally duplicates _serialize_value quoting logic from toon_parser.py
+    # to ensure correct round-trip behavior even when the main parser is unreachable.
     def serialize_toon(data: dict[str, Any], indent: int = 0) -> str:
         import re as _re
 
