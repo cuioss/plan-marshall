@@ -128,10 +128,10 @@ def _parse_skill_md_description(skill_path: Path, fallback: str) -> str:
 
     # Simple YAML parsing for description field
     for line in frontmatter.split('\n'):
-        if line.startswith('description:'):
-            desc = line[12:].strip()
+        if line.lstrip().startswith('description:'):
+            desc = line.split(':', 1)[1].strip()
             # Remove quotes if present
-            if (desc.startswith('"') and desc.endswith('"')) or (desc.startswith("'") and desc.endswith("'")):
+            if len(desc) > 1 and desc[0] == desc[-1] and desc[0] in ('"', "'"):
                 desc = desc[1:-1]
             return desc
 

@@ -938,18 +938,18 @@ def test_discover_project_discovers_skills():
             skills_dir.rmdir()
 
 
-def test_discover_project_empty_when_no_skills():
-    """Test discover-project returns empty when no .claude/skills/ exists."""
+def test_discover_project_returns_structured_output():
+    """Test discover-project returns TOON output with status, count, and skills fields."""
     with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
 
-        # Ensure no project skills directory
-        # (test runs in project root which has .claude/skills/, so we test count > 0 instead)
+        # discover-project scans .claude/skills/ relative to cwd (project root).
+        # The project root has real .claude/skills/ entries, so count >= 0.
         result = run_script(SCRIPT_PATH, 'skill-domains', 'discover-project')
 
         assert result.success, f'Should succeed: {result.stderr}'
-        # Should have count field
-        assert 'count' in result.stdout
+        assert 'status: success' in result.stdout
+        assert 'count: ' in result.stdout
 
 
 def test_attach_project_to_domain():
