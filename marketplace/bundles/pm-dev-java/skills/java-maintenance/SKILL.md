@@ -19,7 +19,7 @@ This skill applies to all Java projects requiring maintenance or refactoring.
 
 ### Step 1: Load Prioritization Framework
 
-**CRITICAL**: Load this standard for any maintenance work.
+**Important**: Load this standard for any maintenance work.
 
 ```
 Read: standards/maintenance-prioritization.md
@@ -82,16 +82,11 @@ Use when: Verifying code meets all Java development standards.
 ```
 
 ### Compliance Verification
-```bash
-# Run analysis
-mvn verify -Pcode-analysis
 
-# Check coverage
-mvn jacoco:report
-
-# Run Sonar
-mvn sonar:sonar
-```
+Use the builder skill for all build operations:
+- **Analysis**: `Skill: pm-dev-java:plan-marshall-plugin` with targets `verify -Pcode-analysis`
+- **Coverage**: `Skill: pm-dev-java:plan-marshall-plugin` with targets `jacoco:report`
+- **Sonar**: `Skill: pm-dev-java:plan-marshall-plugin` with targets `sonar:sonar`
 
 ## Related Skills
 

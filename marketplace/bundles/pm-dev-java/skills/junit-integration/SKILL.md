@@ -237,8 +237,8 @@ Without proper `<executions>` configuration, failsafe tests might not run or res
 ## Related Skills
 
 - `pm-dev-java:junit-core` - JUnit 5 core patterns
-- `pm-dev-java:java-cdi-quarkus` - Quarkus-specific testing
-- `pm-dev-builder:builder-maven-rules` - Maven build standards
+- `pm-dev-java:java-cdi` - CDI patterns and container configuration
+- `pm-dev-java:plan-marshall-plugin` - Maven build standards
 
 ## Additional Resources
 

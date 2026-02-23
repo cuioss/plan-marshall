@@ -38,7 +38,7 @@ def test_skill_domains_get():
         result = run_script(SCRIPT_PATH, 'skill-domains', 'get', '--domain', 'java')
 
         assert result.success, f'Should succeed: {result.stderr}'
-        assert 'pm-dev-java:java-create' in result.stdout
+        assert 'pm-dev-java:java-core' in result.stdout
 
 
 def test_skill_domains_get_defaults():
@@ -49,7 +49,7 @@ def test_skill_domains_get_defaults():
         result = run_script(SCRIPT_PATH, 'skill-domains', 'get-defaults', '--domain', 'java')
 
         assert result.success, f'Should succeed: {result.stderr}'
-        assert 'pm-dev-java:java-create' in result.stdout
+        assert 'pm-dev-java:java-core' in result.stdout
 
 
 def test_skill_domains_get_optionals():
@@ -97,7 +97,7 @@ def test_skill_domains_validate():
 
         # Valid skill
         result = run_script(
-            SCRIPT_PATH, 'skill-domains', 'validate', '--domain', 'java', '--skill', 'pm-dev-java:java-create'
+            SCRIPT_PATH, 'skill-domains', 'validate', '--domain', 'java', '--skill', 'pm-dev-java:java-core'
         )
 
         assert result.success, f'Should succeed: {result.stderr}'
@@ -111,7 +111,7 @@ def test_skill_domains_validate_returns_location():
 
         # Skill in defaults
         result_defaults = run_script(
-            SCRIPT_PATH, 'skill-domains', 'validate', '--domain', 'java', '--skill', 'pm-dev-java:java-create'
+            SCRIPT_PATH, 'skill-domains', 'validate', '--domain', 'java', '--skill', 'pm-dev-java:java-core'
         )
 
         assert result_defaults.success, f'Should succeed: {result_defaults.stderr}'
@@ -168,7 +168,7 @@ def test_skill_domains_get_defaults_nested():
 
         assert result.success, f'Should succeed: {result.stderr}'
         # Should return core.defaults loaded from pm-dev-java extension.py
-        assert 'pm-dev-java:java-create' in result.stdout
+        assert 'pm-dev-java:java-core' in result.stdout
 
 
 def test_skill_domains_get_optionals_nested():
@@ -191,7 +191,7 @@ def test_skill_domains_validate_nested():
 
         # Validate skill in core.defaults (loaded from extension.py)
         result = run_script(
-            SCRIPT_PATH, 'skill-domains', 'validate', '--domain', 'java', '--skill', 'pm-dev-java:java-create'
+            SCRIPT_PATH, 'skill-domains', 'validate', '--domain', 'java', '--skill', 'pm-dev-java:java-core'
         )
 
         assert result.success, f'Should succeed: {result.stderr}'
@@ -330,8 +330,8 @@ def test_resolve_domain_skills_java_implementation():
         result = run_script(SCRIPT_PATH, 'resolve-domain-skills', '--domain', 'java', '--profile', 'implementation')
 
         assert result.success, f'Should succeed: {result.stderr}'
-        # Should include core defaults (java-create)
-        assert 'pm-dev-java:java-create' in result.stdout
+        # Should include core defaults (java-core)
+        assert 'pm-dev-java:java-core' in result.stdout
         # Should include implementation optionals (java-cdi, java-maintenance)
         assert 'pm-dev-java:java-cdi' in result.stdout
         # Should NOT include testing defaults (junit-core)
@@ -346,8 +346,8 @@ def test_resolve_domain_skills_java_testing():
         result = run_script(SCRIPT_PATH, 'resolve-domain-skills', '--domain', 'java', '--profile', 'module_testing')
 
         assert result.success, f'Should succeed: {result.stderr}'
-        # Should include core defaults (java-create)
-        assert 'pm-dev-java:java-create' in result.stdout
+        # Should include core defaults (java-core)
+        assert 'pm-dev-java:java-core' in result.stdout
         # Should include module_testing defaults (junit-core)
         assert 'pm-dev-java:junit-core' in result.stdout
         # Should include module_testing optionals (junit-integration)
@@ -402,8 +402,8 @@ def test_resolve_domain_skills_java_quality():
         result = run_script(SCRIPT_PATH, 'resolve-domain-skills', '--domain', 'java', '--profile', 'quality')
 
         assert result.success, f'Should succeed: {result.stderr}'
-        # Should include core defaults (java-create)
-        assert 'pm-dev-java:java-create' in result.stdout
+        # Should include core defaults (java-core)
+        assert 'pm-dev-java:java-core' in result.stdout
         # Should include quality defaults (javadoc)
         assert 'pm-dev-java:javadoc' in result.stdout
 
@@ -722,8 +722,8 @@ def test_get_skills_by_profile_includes_core_skills():
         result = run_script(SCRIPT_PATH, 'get-skills-by-profile', '--domain', 'java')
 
         assert result.success, f'Should succeed: {result.stderr}'
-        # Core skill should appear in output (java-create from extension.py core.defaults)
-        assert 'pm-dev-java:java-create' in result.stdout
+        # Core skill should appear in output (java-core from extension.py core.defaults)
+        assert 'pm-dev-java:java-core' in result.stdout
 
 
 def test_get_skills_by_profile_includes_profile_skills():

@@ -15,7 +15,7 @@ If you discover issues or improvements during execution, record them:
 
 1. **Activate skill**: `Skill: plan-marshall:manage-lessons`
 2. **Record lesson** with:
-   - Component: `{type: "command", name: "java-maintain-logger", bundle: "pm-dev-java"}`
+   - Component: `{type: "skill", name: "java-maintain-logger", bundle: "pm-dev-java"}`
    - Category: bug | improvement | pattern | anti-pattern
    - Summary and detail of the finding
 
@@ -82,7 +82,7 @@ This loads comprehensive logging standards including:
 **2.1 Build Verification:**
 
 ```
-Skill: pm-dev-builder:builder-maven-rules
+Skill: pm-dev-java:plan-marshall-plugin
 Workflow: Execute Maven Build
 Parameters:
   goals: -Ppre-commit clean verify -DskipTests
@@ -253,7 +253,7 @@ Then add LogAsserts to existing test (see `pm-dev-java-cui:cui-logging` skill fo
 **6.1 Module Build Verification:**
 
 ```
-Skill: pm-dev-builder:builder-maven-rules
+Skill: pm-dev-java:plan-marshall-plugin
 Workflow: Execute Maven Build
 Parameters:
   goals: clean test
@@ -273,7 +273,7 @@ For each LogRecord in module:
 **6.3 Full Build Verification:**
 
 ```
-Skill: pm-dev-builder:builder-maven-rules
+Skill: pm-dev-java:plan-marshall-plugin
 Workflow: Execute Maven Build
 Parameters:
   goals: -Ppre-commit clean install
@@ -310,7 +310,7 @@ Proceed to next module.
 **7.1 Complete Build:**
 
 ```
-Skill: pm-dev-builder:builder-maven-rules
+Skill: pm-dev-java:plan-marshall-plugin
 Workflow: Execute Maven Build
 Parameters:
   goals: -Ppre-commit clean install
@@ -394,13 +394,13 @@ Orchestrates skill workflows and commands:
 - **Explore agent** - Violation detection and business test location
 - **/java-implement-code command** - Logging code modifications
 - **Bash** - Maven builds for verification
-- **pm-dev-builder:builder-maven-rules skill** - Build output parsing
+- **pm-dev-java:plan-marshall-plugin skill** - Build output parsing
 - **Bash** - LogRecord discovery script and plan.md updates (scripts from skill)
 
 ## RELATED
 
 - `pm-dev-java-cui:cui-logging` skill - Logging standards and maintenance reference
 - `/java-implement-code` command - Code modifications
-- `pm-dev-builder:builder-maven-rules` skill - Maven standards and output parsing
+- `pm-dev-java:plan-marshall-plugin` skill - Maven standards and output parsing
 - `/java-refactor-code` command - Broader code refactoring
 - `/java-enforce-logrecords` command - Automated logging enforcement

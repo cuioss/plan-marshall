@@ -1,6 +1,6 @@
 ---
-name: java-optimize-quarkus-native
-description: Systematic Quarkus native image optimization with reflection registration and performance improvements
+name: java-quarkus
+description: Quarkus-specific CDI standards with testing, native image support, and GraalVM reflection configuration
 user-invocable: true
 allowed-tools: Read, Grep, Glob, Write, Edit, Bash
 ---
@@ -21,7 +21,7 @@ This skill applies to Quarkus projects:
 
 ### Step 1: Load Quarkus Testing Standards
 
-**CRITICAL**: Load this standard for any Quarkus testing work.
+Load this standard for any Quarkus testing work.
 
 ```
 Read: standards/quarkus-testing.md

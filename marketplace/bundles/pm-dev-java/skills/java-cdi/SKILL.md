@@ -248,6 +248,6 @@ public class PaymentService {
 
 ## Related Skills
 
-- `pm-dev-java:java-cdi-quarkus` - Quarkus-specific CDI patterns, container/Docker config, security
+- `pm-dev-java:java-quarkus` - Quarkus-specific CDI patterns, container/Docker config, security
 - `pm-dev-java:java-core` - Core Java patterns
 - `pm-dev-java:junit-core` - CDI testing patterns

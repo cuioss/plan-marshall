@@ -9,6 +9,20 @@ allowed-tools: Read, Bash, AskUserQuestion
 
 Classify Maven build profiles that weren't auto-matched during discovery.
 
+## Enforcement
+
+**Execution mode**: Invoked conditionally from architecture analysis workflow when unmatched profiles are found. Execute workflow steps sequentially.
+
+**Prohibited actions:**
+- Do not invoke this skill directly -- it is called by `analyze-project-architecture` only
+- Do not invent script notations -- use only documented notations from this skill and referenced skills
+
+**Constraints:**
+- Every workflow step that performs a script operation has an explicit bash code block with the full `python3 .plan/execute-script.py` command (Rule 9)
+- Use `pm-dev-java:manage-maven-profiles:profiles` notation for this skill's own script operations
+- Use `plan-marshall:analyze-project-architecture:architecture` notation for architecture queries
+- Use `plan-marshall:manage-plan-marshall-config:plan-marshall-config` notation for config operations
+
 ## When to Use
 
 This skill is invoked by `analyze-project-architecture` when:
@@ -178,6 +192,44 @@ Configuration stored in `marshal.json` under `extension_defaults`:
 - `build.maven.profiles.map.canonical` - Comma-separated `profile:canonical` pairs
 
 Skip list and profile mappings are read during architecture discovery to classify profiles.
+
+---
+
+## External Resources
+
+### Scripts (scripts/)
+
+| Script | Subcommand | Purpose |
+|--------|------------|---------|
+| `profiles.py` | `list` | List Maven profiles from all modules |
+| `profiles.py` | `unmatched` | List unmatched profiles (NO-MATCH-FOUND), excluding configured skip/mapped profiles |
+| `profiles.py` | `classify` | Classify a single profile by pattern matching |
+| `profiles.py` | `suggest` | Suggest classifications for all unmatched profiles |
+
+**Notation**: `pm-dev-java:manage-maven-profiles:profiles {subcommand}`
+
+**List profiles**:
+```bash
+python3 .plan/execute-script.py pm-dev-java:manage-maven-profiles:profiles list
+python3 .plan/execute-script.py pm-dev-java:manage-maven-profiles:profiles list --module {module-name}
+```
+
+**List unmatched profiles**:
+```bash
+python3 .plan/execute-script.py pm-dev-java:manage-maven-profiles:profiles unmatched
+```
+
+**Classify a single profile**:
+```bash
+python3 .plan/execute-script.py pm-dev-java:manage-maven-profiles:profiles classify --profile-id {profile-id}
+```
+
+**Suggest classifications for unmatched profiles**:
+```bash
+python3 .plan/execute-script.py pm-dev-java:manage-maven-profiles:profiles suggest
+```
+
+All subcommands accept `--project-dir {path}` (default: current directory).
 
 ---
 

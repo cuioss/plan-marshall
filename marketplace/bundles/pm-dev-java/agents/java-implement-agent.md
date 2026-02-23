@@ -95,3 +95,18 @@ context:
   operation: "verify implementation"
   target_class: "com.example.AuthService"
 ```
+
+## CONTINUOUS IMPROVEMENT RULE
+
+Every time you execute this agent and discover a more precise, better, or more efficient approach, **report the improvement to your caller** with:
+
+```
+IMPROVEMENT OPPORTUNITY DETECTED
+
+Area: [specific area]
+Current limitation: [what doesn't work well]
+Suggested enhancement: [specific improvement]
+Expected impact: [benefit of change]
+```
+
+The caller is responsible for recording the lesson via the manage-lessons skill.

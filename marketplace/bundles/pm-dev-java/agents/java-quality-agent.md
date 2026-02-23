@@ -6,7 +6,7 @@ description: |
   Examples:
   - Input: target="src/main/java/auth/", module="auth-service"
   - Output: {compliance_rate: 85, violations: [...], recommendations: [...]}
-tools: Read, Write, Edit, Glob, Grep, Skill
+tools: Read, Glob, Grep, Skill
 model: haiku
 ---
 
@@ -100,3 +100,22 @@ context:
   operation: "{what was being attempted}"
   target: "{target if known}"
 ```
+
+## CONTINUOUS IMPROVEMENT RULE
+
+**CRITICAL:** Every time you execute this agent and discover a more precise, better, or more efficient approach, **REPORT the improvement to your caller** with:
+1. New quality patterns not yet covered by existing standards
+2. False positive patterns that waste analysis time
+3. Missing standard checks that would catch real issues
+
+Return structured improvement suggestion in your analysis result:
+```
+IMPROVEMENT OPPORTUNITY DETECTED
+
+Area: [specific area]
+Current limitation: [what doesn't work well]
+Suggested enhancement: [specific improvement]
+Expected impact: [benefit of change]
+```
+
+The caller is responsible for recording the lesson via the manage-lessons skill.

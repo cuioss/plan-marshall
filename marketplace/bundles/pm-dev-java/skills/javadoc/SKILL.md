@@ -19,7 +19,7 @@ This skill applies to all Java projects using standard JavaDoc.
 
 ### Step 1: Load Core Standards
 
-**CRITICAL**: Load this standard for any JavaDoc work.
+Load this standard for any JavaDoc work.
 
 ```
 Read: standards/javadoc-core.md

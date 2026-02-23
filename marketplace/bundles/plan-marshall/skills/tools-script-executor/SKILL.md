@@ -22,7 +22,7 @@ Simplified notation: `{bundle}:{skill}`
 | Example |
 |---------|
 | `pm-workflow:manage-files` |
-| `pm-dev-builder:builder-maven-rules` |
+| `pm-dev-java:plan-marshall-plugin` |
 
 ## Examples
 

@@ -207,7 +207,7 @@ class TestEnsureWildcards(ScriptTestCase):
                         'pm-dev-java': {
                             'path': 'marketplace/bundles/pm-dev-java',
                             'skills': ['cui-java-core'],
-                            'commands': ['java-create'],
+                            'commands': ['java-core'],
                         },
                     }
                 }

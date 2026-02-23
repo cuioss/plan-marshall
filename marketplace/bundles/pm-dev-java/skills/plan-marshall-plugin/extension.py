@@ -41,8 +41,8 @@ class Extension(ExtensionBase):
                 'core': {
                     'defaults': [
                         {
-                            'skill': 'pm-dev-java:java-create',
-                            'description': 'Core Java patterns including modern features and interactive component creation wizard',
+                            'skill': 'pm-dev-java:java-core',
+                            'description': 'Core Java patterns including modern features and performance optimization',
                         }
                     ],
                     'optionals': [
