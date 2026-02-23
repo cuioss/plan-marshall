@@ -212,3 +212,4 @@ This extension is discovered by:
 - `plan-marshall:extension-api/standards/build-execution-flow.md` - Complete execution lifecycle
 - `standards/maven-impl.md` - Maven execution details
 - `standards/gradle-impl.md` - Gradle execution details
+- `standards/pom-maintenance.md` - POM structure and dependency management standards

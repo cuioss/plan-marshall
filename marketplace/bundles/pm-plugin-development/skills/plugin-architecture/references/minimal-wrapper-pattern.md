@@ -80,7 +80,7 @@ Reintroduce agents and commands as **thin orchestration wrappers** that:
 │  • Integration with other skills                            │
 │                                                              │
 │  Skills can call other skills:                             │
-│    Skill(pm-dev-builder:builder-maven-rules)                        │
+│    Skill(pm-dev-java:plan-marshall-plugin)                        │
 │    Skill(plan-marshall:script-runner)                      │
 │                                                              │
 └─────────────────────────────────────────────────────────────┘
@@ -300,12 +300,12 @@ Parameters:
 # Inside cui-java-core skill:
 
 Step 3: Verify Build
-Skill: pm-dev-builder:builder-maven-rules
-Workflow: Execute Maven Build
-Parameters:
-  goals: "clean test"
-  module: {module}
-  output_mode: structured
+```bash
+python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run \
+    --targets "clean test" \
+    --module {module} \
+    --mode structured
+```
 ```
 
 **Characteristics:**
@@ -466,9 +466,9 @@ Agent reads Maven log, parses errors, categorizes... (100 lines)
 
 **Solution:**
 ```markdown
-# GOOD: Agent delegates to builder-maven skill
-Agent: Skill: pm-dev-builder:builder-maven-rules
-       Workflow: parse-build-output
+# GOOD: Agent delegates to builder skill via script
+python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven parse \
+    --log-file {log_file}
 ```
 
 ## Correct Patterns (Best Practices)
@@ -507,9 +507,9 @@ Step 3: Format and Return (20 lines)
 
 Agent: java-create-agent (120 lines)
   ├─→ Skill: cui-java-core (600 lines)
-  │   └─→ Skill: pm-dev-builder:builder-maven-rules (400 lines)
+  │   └─→ Skill: pm-dev-java:plan-marshall-plugin (400 lines)
   └─→ Skill: cui-java-unit-testing (500 lines)
-      └─→ Skill: pm-dev-builder:builder-maven-rules (400 lines)
+      └─→ Skill: pm-dev-java:plan-marshall-plugin (400 lines)
 ```
 
 **Why Good:**
@@ -548,11 +548,11 @@ Skill (business logic - 600 lines):
 
 Skill: cui-java-core (600 lines)
   Step 3: Verify Build
-    Skill: pm-dev-builder:builder-maven-rules
+    Skill: pm-dev-java:plan-marshall-plugin
     Workflow: Execute Maven Build
 
   Step 7: Run Tests
-    Skill: pm-dev-builder:builder-maven-rules
+    Skill: pm-dev-java:plan-marshall-plugin
     Workflow: Execute Maven Build
 
   Step 9: Analyze Coverage

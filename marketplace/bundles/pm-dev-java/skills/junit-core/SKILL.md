@@ -20,7 +20,7 @@ This skill applies to Java projects using JUnit 5:
 
 ### Step 1: Load Core Testing Standards
 
-**CRITICAL**: Load this standard for any testing work.
+**Important**: Load this standard for any testing work.
 
 ```
 Read: standards/testing-junit-core.md

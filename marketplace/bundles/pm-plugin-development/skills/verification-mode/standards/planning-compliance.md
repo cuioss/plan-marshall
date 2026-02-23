@@ -192,7 +192,7 @@ python3 .plan/execute-script.py {notation} [subcommand] {args...}
 
 Examples:
 - `python3 .plan/execute-script.py pm-workflow:manage-files:manage-files add --plan-id my-plan`
-- `python3 .plan/execute-script.py pm-dev-builder:builder-maven-rules:maven run --targets verify`
+- `python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --targets verify`
 
 **Violation** (after executor migration complete):
 - Direct script execution: `python3 /path/to/script.py {args}` (bypasses logging and standardization)

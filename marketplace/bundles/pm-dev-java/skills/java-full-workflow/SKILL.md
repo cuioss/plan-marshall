@@ -102,13 +102,11 @@ Task:
 
 ### Step 6: Final Build Verification
 
-```
-Skill: pm-dev-builder:builder-maven-rules
-Workflow: Execute Maven Build
-Parameters:
-  goals: clean verify
-  module: {module if specified}
-  output_mode: errors
+```bash
+python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run \
+    --targets "clean verify" \
+    --module {module if specified} \
+    --mode errors
 ```
 
 ### Step 7: Generate Summary
@@ -167,6 +165,6 @@ If you discover issues or improvements during execution, record them:
 
 1. **Activate skill**: `Skill: plan-marshall:manage-lessons`
 2. **Record lesson** with:
-   - Component: `{type: "command", name: "java-full-workflow", bundle: "pm-dev-java"}`
+   - Component: `{type: "skill", name: "java-full-workflow", bundle: "pm-dev-java"}`
    - Category: bug | improvement | pattern | anti-pattern
    - Summary and detail of the finding

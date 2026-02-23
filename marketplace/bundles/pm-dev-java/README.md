@@ -23,10 +23,10 @@ pm-dev-java/
 ├── commands/                # 6 orchestration commands
 │   ├── java-analyze-all.md          # Parallel analysis (Task tool)
 │   ├── java-full-workflow.md        # Complete implement-test-verify
-│   ├── java-create.md               # Interactive component creation
+│   ├── java-core.md                 # Core Java patterns reference
 │   ├── java-enforce-logrecords.md   # Logging standards enforcement
 │   ├── java-maintain-logger.md      # Logger maintenance workflow
-│   └── java-optimize-quarkus-native.md # Native image optimization
+│   └── java-quarkus.md                # Quarkus CDI standards
 └── skills/                  # 12 skills with workflows
     ├── java-core/           # Core Java patterns, modern features
     ├── java-null-safety/    # JSpecify null annotations
@@ -34,7 +34,7 @@ pm-dev-java/
     ├── junit-core/          # JUnit 5 testing, AAA structure
     ├── junit-integration/   # Integration testing with Failsafe
     ├── java-cdi/            # Core CDI patterns, constructor injection
-    ├── java-cdi-quarkus/    # Quarkus-specific CDI, @QuarkusTest
+    ├── java-quarkus/        # Quarkus-specific CDI, @QuarkusTest
     ├── javadoc/             # JavaDoc documentation standards
     └── java-maintenance/    # Maintenance prioritization
 ```
@@ -94,7 +94,7 @@ Commands use the Task tool to coordinate multiple agents:
 
 **CDI/Quarkus:**
 - **java-cdi** - Core CDI patterns, constructor injection, scopes
-- **java-cdi-quarkus** - Quarkus-specific CDI, @QuarkusTest, native image
+- **java-quarkus** - Quarkus-specific CDI, @QuarkusTest, native image
 
 **Documentation & Maintenance:**
 - **javadoc** - JavaDoc documentation standards
@@ -124,12 +124,12 @@ Commands use the Task tool to coordinate multiple agents:
 **Orchestration Commands** (use Task tool):
 - java-analyze-all - Parallel analysis agents
 - java-full-workflow - Complete implement→test→verify
-- java-create - Interactive wizard
+- java-core - Core Java patterns reference
 
 **Specialized Commands** (complex workflows):
 - java-enforce-logrecords - Logging enforcement
 - java-maintain-logger - Logger maintenance
-- java-optimize-quarkus-native - Native optimization
+- java-quarkus - Quarkus CDI standards
 
 ## Installation
 
@@ -154,7 +154,7 @@ Commands use the Task tool to coordinate multiple agents:
 ### Interactive Creation
 
 ```
-/java-create
+/java-core
 ```
 
 ### Direct Agent Invocation

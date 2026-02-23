@@ -6,7 +6,7 @@ description: |
   Examples:
   - Input: module="auth-service", threshold=80
   - Output: {coverage_status: "below_threshold", line: 72.5, gaps_by_priority: {...}}
-tools: Read, Write, Edit, Glob, Grep, Skill
+tools: Read, Glob, Grep, Skill
 model: haiku
 ---
 
@@ -93,3 +93,23 @@ context:
   operation: "{what was being attempted}"
   module: "{module if known}"
 ```
+
+## CONTINUOUS IMPROVEMENT RULE
+
+Every time you execute this agent and discover a more precise, better, or more efficient approach, **report the improvement to your caller** with:
+1. Coverage analysis accuracy improvements
+2. Better gap prioritization heuristics
+3. More effective threshold evaluation strategies
+
+Return structured improvement suggestion in your analysis result:
+
+```
+IMPROVEMENT OPPORTUNITY DETECTED
+
+Area: [specific area]
+Current limitation: [what doesn't work well]
+Suggested enhancement: [specific improvement]
+Expected impact: [benefit of change]
+```
+
+The caller is responsible for recording the lesson via the manage-lessons skill.

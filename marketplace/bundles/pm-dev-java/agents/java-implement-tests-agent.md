@@ -86,3 +86,23 @@ context:
   operation: "{what was being attempted}"
   target_class: "{target_class if known}"
 ```
+
+## CONTINUOUS IMPROVEMENT RULE
+
+Every time you execute this agent and discover a more precise, better, or more efficient approach, **report the improvement to your caller** with:
+1. Test generation accuracy improvements
+2. Better coverage gap detection strategies
+3. More effective test pattern selection
+
+Return structured improvement suggestion in your analysis result:
+
+```
+IMPROVEMENT OPPORTUNITY DETECTED
+
+Area: [specific area]
+Current limitation: [what doesn't work well]
+Suggested enhancement: [specific improvement]
+Expected impact: [benefit of change]
+```
+
+The caller is responsible for recording the lesson via the manage-lessons skill.

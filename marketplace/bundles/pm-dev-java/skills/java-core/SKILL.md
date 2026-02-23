@@ -1,6 +1,6 @@
 ---
-name: java-create
-description: Interactive wizard for creating Java components with standards compliance
+name: java-core
+description: Core Java development standards for patterns, modern features, and performance optimization
 user-invocable: true
 allowed-tools: Read, Grep, Glob, Write, Edit, Bash
 ---
@@ -19,7 +19,7 @@ This skill applies to Java 17+ projects with no CUI-specific dependencies.
 
 ### Step 1: Load Core Patterns
 
-**CRITICAL**: Load this standard for any Java implementation work.
+Load this standard for any Java implementation work.
 
 ```
 Read: standards/java-core-patterns.md

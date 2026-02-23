@@ -47,7 +47,7 @@ If you discover issues or improvements during execution, record them:
 
 ### Step 2: Verify Build Precondition
 
-Execute build verification (see Build Verification Protocol in CRITICAL RULES).
+Execute build verification (see Build Verification Protocol in Enforcement).
 
 If build fails, report to caller and stop execution.
 
@@ -212,7 +212,7 @@ See: `standards/logging-enforcement-patterns.md` → Pattern 11 (Batch Templates
 
 ### Step 8: Verify Corrections
 
-Execute build verification (see Build Verification Protocol in CRITICAL RULES).
+Execute build verification (see Build Verification Protocol in Enforcement).
 
 If verification fails, report details and stop execution.
 
@@ -263,7 +263,7 @@ scripts/document-logrecord.py --holder {holder_class} --output {output_file}
 
 ### Step 11: Final Verification and Report
 
-Execute final build verification (see Build Verification Protocol in CRITICAL RULES).
+Execute final build verification (see Build Verification Protocol in Enforcement).
 
 **Generate summary report:**
 
@@ -300,23 +300,21 @@ COMPLIANCE STATUS: {COMPLIANT / ISSUES REMAINING}
 ═══════════════════════════════════════════════════════════════
 ```
 
-## CRITICAL RULES
+## Enforcement
 
 **Module Handling:**
-- ALWAYS verify module parameter for multi-module projects
+- MUST verify module parameter for multi-module projects
 - Ask user if module unset and project is multi-module
 - Use module parameter in all Maven build commands
 
 **Build Verification Protocol:**
 - Execute at Steps 2, 8, and 11
-- Use builder-maven-rules skill workflow:
-  ```
-  Skill: pm-dev-builder:builder-maven-rules
-  Workflow: Execute Maven Build
-  Parameters:
-    goals: clean verify
-    module: {module if specified}
-    output_mode: errors
+- Run build verification:
+  ```bash
+  python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run \
+      --targets "clean verify" \
+      --module {module if specified} \
+      --mode errors
   ```
 - Success criteria: Exit code 0, zero errors, zero test failures
 - On failure: Report details (errors, test failures) and stop execution
@@ -395,4 +393,4 @@ COMPLIANCE STATUS: {COMPLIANT / ISSUES REMAINING}
 - Standards: `logging-standards.md`, `logmessages-documentation.md`, `logging-enforcement-patterns.md`
 - Command: `/java-implement-code` - Fix production code
 - Command: `/java-implement-tests` - Add tests
-- Skill: `pm-dev-builder:builder-maven-rules` - Maven standards and build output parsing
+- Skill: `pm-dev-java:plan-marshall-plugin` - Maven standards and build output parsing

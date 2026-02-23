@@ -6,7 +6,7 @@ description: |
   Examples:
   - Input: target="src/main/java/auth/TokenValidator.java"
   - Output: {compliant: true, checklist: {...}, issues: []}
-tools: Read, Write, Edit, Glob, Grep, Skill
+tools: Read, Glob, Grep, Skill
 model: haiku
 ---
 
@@ -103,3 +103,22 @@ context:
   operation: "{what was being attempted}"
   target: "{target if known}"
 ```
+
+## CONTINUOUS IMPROVEMENT RULE
+
+**Critical:** Every time you execute this agent and discover a more precise, better, or more efficient approach, **REPORT the improvement to your caller** with:
+1. More accurate verification checklist items
+2. Better detection patterns for standards violations
+3. Missing checklist categories
+
+Return structured improvement suggestion in your analysis result:
+```
+IMPROVEMENT OPPORTUNITY DETECTED
+
+Area: [specific area]
+Current limitation: [what doesn't work well]
+Suggested enhancement: [specific improvement]
+Expected impact: [benefit of change]
+```
+
+The caller is responsible for recording the lesson via the manage-lessons skill.

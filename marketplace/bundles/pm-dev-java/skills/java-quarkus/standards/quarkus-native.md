@@ -240,7 +240,7 @@ find . -name "*Processor.java" -exec grep -l "ReflectiveClassBuildItem" {} \;
 **Commands**:
 ```
 # Run reflection verification tests
-Skill: pm-dev-builder:builder-maven-rules
+Skill: pm-dev-java:plan-marshall-plugin
 Workflow: Execute Maven Build
 Parameters:
   goals: test -Dtest="*Reflection*Test"
@@ -248,7 +248,7 @@ Parameters:
   output_mode: structured
 
 # Run full test suite
-Skill: pm-dev-builder:builder-maven-rules
+Skill: pm-dev-java:plan-marshall-plugin
 Workflow: Execute Maven Build
 Parameters:
   goals: clean install
@@ -263,7 +263,7 @@ Parameters:
 **What to Test**:
 - [ ] **Native Compilation**: Verify native image builds successfully
   ```
-  Skill: pm-dev-builder:builder-maven-rules
+  Skill: pm-dev-java:plan-marshall-plugin
   Workflow: Execute Maven Build
   Parameters:
     goals: clean package -Dnative
@@ -294,7 +294,7 @@ Parameters:
 **Mandatory Checks**:
 ```
 # Quality verification (mandatory)
-Skill: pm-dev-builder:builder-maven-rules
+Skill: pm-dev-java:plan-marshall-plugin
 Workflow: Execute Maven Build
 Parameters:
   goals: -Ppre-commit clean verify -DskipTests
@@ -302,7 +302,7 @@ Parameters:
   output_mode: structured
 
 # Final verification (mandatory)
-Skill: pm-dev-builder:builder-maven-rules
+Skill: pm-dev-java:plan-marshall-plugin
 Workflow: Execute Maven Build
 Parameters:
   goals: clean install

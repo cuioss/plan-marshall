@@ -54,14 +54,15 @@ Use Edit tool to apply refactoring:
 
 ### Step 4: Verify Build
 
-Execute Fix Compilation Errors workflow to ensure build passes:
+Run build verification using the plan-marshall-plugin skill:
 
+```bash
+python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run \
+    --targets "clean verify" \
+    --mode errors
 ```
-Workflow: Fix Compilation Errors
-Parameters:
-  module: {module if provided}
-  max_iterations: 2
-```
+
+If build fails, fix compilation errors (max 2 iterations) then re-verify.
 
 ### Step 5: Return Results
 
@@ -99,3 +100,22 @@ context:
   operation: "{what was being attempted}"
   target: "{target if known}"
 ```
+
+## CONTINUOUS IMPROVEMENT RULE
+
+**Critical:** Every time you execute this agent and discover a more precise, better, or more efficient approach, **REPORT the improvement to your caller** with:
+1. New refactoring patterns not yet covered by existing standards
+2. Edge cases where refactoring introduces regressions
+3. Missing standard checks that would improve refactoring quality
+
+Return structured improvement suggestion in your analysis result:
+```
+IMPROVEMENT OPPORTUNITY DETECTED
+
+Area: [specific area]
+Current limitation: [what doesn't work well]
+Suggested enhancement: [specific improvement]
+Expected impact: [benefit of change]
+```
+
+The caller is responsible for recording the lesson via the manage-lessons skill.
