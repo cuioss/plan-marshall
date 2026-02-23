@@ -15,7 +15,7 @@
   },
   "plan": {
     "phase-1-init": {
-      "branch_strategy": "direct"
+      "branch_strategy": "feature"
     },
     "phase-2-refine": {
       "confidence_threshold": 95,
