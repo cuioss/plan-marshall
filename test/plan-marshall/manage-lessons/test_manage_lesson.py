@@ -275,7 +275,7 @@ Body.
 
         self.assert_success(result)
         self.assertIn('field: applied', result.stdout)
-        self.assertIn('value: true', result.stdout)
+        self.assertIn('value: "true"', result.stdout)
 
         # Verify file was updated
         updated_content = (lessons_dir / '2025-01-01-001.md').read_text()
