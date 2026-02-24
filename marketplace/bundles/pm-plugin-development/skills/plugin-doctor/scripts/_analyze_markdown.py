@@ -393,11 +393,6 @@ def check_rule_violations(content: str, frontmatter: str, component_type: str, h
     # Prose-parameter consistency (all component types)
     workflow_prose_param_violations = check_prose_parameter_consistency(content)
 
-    # Banned keywords outside enforcement (skills only)
-    banned_keyword_violations: list[dict] = []
-    if component_type == 'skill':
-        banned_keyword_violations = check_banned_keywords(content, enforcement_block=True)
-
     return {
         'agent_task_tool_prohibited': agent_task_tool_prohibited,
         'agent_maven_restricted': agent_maven_restricted,
@@ -406,7 +401,6 @@ def check_rule_violations(content: str, frontmatter: str, component_type: str, h
         'command_self_contained_violations': command_self_contained_violations,
         'agent_skill_tool_visibility': agent_skill_tool_visibility,
         'workflow_prose_param_violations': workflow_prose_param_violations,
-        'banned_keyword_violations': banned_keyword_violations,
     }
 
 
@@ -419,76 +413,6 @@ def check_forbidden_metadata(content: str) -> tuple[bool, str]:
         return True, ','.join(matches)
     return False, ''
 
-
-BANNED_KEYWORDS = [
-    'CRITICAL', 'MUST', 'NEVER', 'REQUIRED', 'MANDATORY',
-    'FORBIDDEN', 'ALWAYS', 'DO NOT', 'IMPORTANT', 'CANNOT',
-]
-
-
-def check_banned_keywords(content: str, enforcement_block: bool = False) -> list[dict]:
-    """Check for banned ALL-CAPS keywords outside enforcement blocks and code.
-
-    Args:
-        content: Markdown content to scan.
-        enforcement_block: If True, exclude content within ## Enforcement block.
-
-    Returns:
-        List of violations with keyword, line number, and context.
-    """
-    lines = content.split('\n')
-
-    # Find fenced code block ranges (line indices to skip)
-    in_code_block = False
-    code_block_lines: set[int] = set()
-    for i, line in enumerate(lines):
-        if re.match(r'^```', line):
-            if in_code_block:
-                code_block_lines.add(i)
-                in_code_block = False
-            else:
-                in_code_block = True
-                code_block_lines.add(i)
-        elif in_code_block:
-            code_block_lines.add(i)
-
-    # Find enforcement block range (if requested)
-    enforcement_lines: set[int] = set()
-    if enforcement_block:
-        enforcement_start = None
-        for i, line in enumerate(lines):
-            if re.match(r'^## Enforcement\b', line):
-                enforcement_start = i
-            elif enforcement_start is not None and re.match(r'^## ', line):
-                # End of enforcement block at next ## heading
-                break
-            if enforcement_start is not None:
-                enforcement_lines.add(i)
-
-    violations: list[dict] = []
-    for i, line in enumerate(lines):
-        # Skip code blocks, enforcement block, and heading lines
-        if i in code_block_lines or i in enforcement_lines:
-            continue
-        if re.match(r'^#+\s', line):
-            continue
-
-        # Strip inline code before scanning
-        stripped = re.sub(r'`[^`]+`', '', line)
-
-        for keyword in BANNED_KEYWORDS:
-            if keyword == 'DO NOT':
-                pattern = r'\bDO\s+NOT\b'
-            else:
-                pattern = r'\b' + re.escape(keyword) + r'\b'
-            if re.search(pattern, stripped):
-                violations.append({
-                    'keyword': keyword,
-                    'line': i + 1,
-                    'context': line.strip()[:120],
-                })
-
-    return violations
 
 
 def analyze_markdown_file(file_path: Path, component_type: str) -> dict:

@@ -171,19 +171,6 @@ def extract_issues_from_markdown_analysis(analysis: dict, file_path: str, compon
             }
         )
 
-    # Check banned keywords outside enforcement block (skills only)
-    for violation in rules.get('banned_keyword_violations', []):
-        issues.append(
-            {
-                'type': 'skill-banned-keywords',
-                'file': file_path,
-                'severity': 'warning',
-                'fixable': False,
-                'description': f'Banned keyword "{violation["keyword"]}" at line {violation["line"]}',
-                'details': violation,
-            }
-        )
-
     return issues
 
 

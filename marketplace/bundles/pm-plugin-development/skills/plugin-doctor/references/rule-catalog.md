@@ -45,8 +45,6 @@ Four detection modes:
 
 **skill-enforcement-block-required**: Script-bearing skills need an `## Enforcement` block.
 
-**skill-banned-keywords-outside-enforcement**: ALL-CAPS keywords (CRITICAL, MUST, NEVER, etc.) only appear inside enforcement blocks.
-
 ## PM-Workflow Rules
 
 **pm-implicit-script-call** (PM-001): Script operations without explicit bash code blocks.
