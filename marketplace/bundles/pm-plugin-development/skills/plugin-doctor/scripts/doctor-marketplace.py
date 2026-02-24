@@ -17,7 +17,7 @@ Output: JSON to stdout.
 Usage:
     python3 doctor-marketplace.py scan [--bundles NAMES]
     python3 doctor-marketplace.py analyze [--bundles NAMES] [--type TYPE]
-    python3 doctor-marketplace.py fix [--bundles NAMES] [--dry-run]
+    python3 doctor-marketplace.py fix [--bundles NAMES] [--type TYPE] [--dry-run]
     python3 doctor-marketplace.py report [--bundles NAMES] [--output FILE]
 """
 
@@ -171,11 +171,22 @@ def cmd_fix(args) -> int:
 
     bundles = find_bundles(marketplace_root, bundle_filter)
 
+    type_filter = None
+    if args.type:
+        type_filter = {t.strip() for t in args.type.split(',') if t.strip()}
+
     # First analyze to find issues
     all_issues = []
     for bundle_dir in bundles:
         components = discover_components(bundle_dir)
-        for comp_type in ['agents', 'commands', 'skills']:
+        comp_types = []
+        if not type_filter or 'agent' in type_filter or 'agents' in type_filter:
+            comp_types.append('agents')
+        if not type_filter or 'command' in type_filter or 'commands' in type_filter:
+            comp_types.append('commands')
+        if not type_filter or 'skill' in type_filter or 'skills' in type_filter:
+            comp_types.append('skills')
+        for comp_type in comp_types:
             for component in components[comp_type]:
                 result = analyze_component(component)
                 all_issues.extend(result.get('issues', []))
@@ -346,6 +357,7 @@ Examples:
     # fix subcommand
     p_fix = subparsers.add_parser('fix', help='Apply safe fixes across marketplace')
     p_fix.add_argument('--bundles', help='Comma-separated list of bundle names')
+    p_fix.add_argument('--type', help='Component types to fix (agents,commands,skills)')
     p_fix.add_argument('--dry-run', action='store_true', help='Preview fixes without applying')
     p_fix.set_defaults(func=cmd_fix)
 
