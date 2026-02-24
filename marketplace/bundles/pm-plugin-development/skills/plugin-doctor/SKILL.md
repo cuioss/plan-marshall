@@ -60,19 +60,6 @@ Select workflow based on input and execute immediately.
 
 ---
 
-**9 Doctor Workflows**:
-1. **doctor-agents**: Analyze and fix agent issues
-2. **doctor-commands**: Analyze and fix command issues
-3. **doctor-skills**: Analyze and fix skill issues
-4. **doctor-metadata**: Analyze and fix plugin.json issues
-5. **doctor-scripts**: Analyze and fix script issues
-6. **doctor-skill-content**: Analyze and reorganize skill content files
-7. **doctor-marketplace**: Full marketplace batch analysis with report
-8. **doctor-pm-workflow**: Validate pm-workflow components and contract compliance
-9. **doctor-skill-knowledge**: Review knowledge skill content quality
-
-Each workflow performs the complete cycle: discover → analyze → categorize → fix → verify.
-
 ## Progressive Disclosure Strategy
 
 **Load ONE reference guide per workflow** (not all 10):
@@ -126,11 +113,11 @@ All 9 workflows follow the same pattern:
      --bundles {bundle} --type {component_type}
    ```
 
-   This performs markdown analysis, coverage extraction, and reference validation for all matching components. For skills, it also analyzes all sub-documents (`references/*.md`, `standards/*.md`, `workflows/*.md`, `templates/*.md`) for bloat, forbidden metadata, banned ALL-CAPS keywords, and hardcoded script paths. The output includes per-component analysis results in JSON format with a `subdocuments` key for skills.
+   This performs markdown analysis, coverage extraction, and reference validation for all matching components. For skills, it also analyzes sub-documents (`references/*.md`, `standards/*.md`, `workflows/*.md`, `templates/*.md`) for bloat, forbidden metadata, and hardcoded script paths. The output includes per-component analysis results in JSON format with a `subdocuments` key for skills.
 
 ### Phase 1.5: LLM Optimization Check
 
-Load `references/llm-optimization-guide.md` and review the analyzed components for low-value patterns. For skills, this includes SKILL.md and all sub-documents reported in the `subdocuments` key of the analysis output. Flag motivational text, redundant emphasis, obvious checklists, verbose examples, and duplicated content.
+Load `references/llm-optimization-guide.md` and review the analyzed components for low-value patterns (motivational text, redundant emphasis, verbose examples, duplicated content). For skills, review both SKILL.md and sub-documents from the `subdocuments` key.
 
 ### Phase 2: Categorize Issues
 
@@ -283,87 +270,19 @@ Only `doctor-marketplace.py` is registered in the executor. The other scripts (`
 | `_validate.py` | Reference extraction and validation |
 | `_fix.py` | Fix application and verification |
 
-#### Hybrid Batch Processing (doctor-marketplace.py)
+#### Hybrid Batch Processing
 
-The `doctor-marketplace.py` script provides Phase 1 of the hybrid doctor workflow for full marketplace operations:
-
-**Phase 1 (Script - Deterministic)**:
-```bash
-# Scan entire marketplace
-python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marketplace scan
-
-# Analyze all components
-python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marketplace analyze
-
-# Preview safe fixes (dry run)
-python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marketplace fix --dry-run
-
-# Apply safe fixes
-python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marketplace fix
-
-# Generate report for LLM review (writes to: .plan/temp/plugin-doctor-report/)
-python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marketplace report
-
-# Or specify custom output directory
-python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marketplace report --output .plan/temp/my-review
-```
-
-**Report Output**: Reports are written to a fixed directory with timestamped, scoped files:
-```
-.plan/temp/plugin-doctor-report/
-├── 20251213-155927-pm-plugin-development-report.json   # Single bundle
-├── 20251213-155927-pm-plugin-development-findings.md
-├── 20251213-160530-marketplace-report.json             # All bundles
-└── 20251213-160530-marketplace-findings.md
-```
-
-Filename includes scope: single bundle name, multiple bundle names (up to 3), or "marketplace" for all.
-Use `--output` to specify a custom directory path. Multiple reports accumulate in the directory.
-
-**Phase 2 (LLM - Semantic)**:
-After Phase 1 creates the report directory and JSON, the LLM:
-1. Reads `{timestamp}-{scope}-report.json` for structured data
-2. Applies contextual judgment (identifies false positives, priorities)
-3. Creates `{timestamp}-{scope}-findings.md` in the same directory with:
-   - Executive summary and statistics
-   - Bundle-by-bundle analysis
-   - Categorization of remaining issues (fixed, false positive, intentional)
-   - Recommendations for manual review
-4. Processes risky fixes with user confirmation
-5. Documents complex refactoring recommendations
-
-**Workflow for `/plugin-doctor marketplace`**:
-1. Run `doctor-marketplace scan` to discover components
-2. Run `doctor-marketplace analyze` to find issues
-3. Run `doctor-marketplace fix` to auto-apply safe fixes
-4. Run `doctor-marketplace report` to generate LLM review items
-5. LLM processes remaining risky/unfixable issues
+Subcommands: `scan` → `analyze` → `fix` → `report`. See [standards/doctor-marketplace.md](standards/doctor-marketplace.md) for the complete two-phase (script + LLM) workflow, report output format, and directory structure.
 
 ### References (references/)
 
-**Cross-Cutting References** (1) - **READ** for all workflows:
-- `llm-optimization-guide.md` - LLM consumption efficiency patterns
-
-**Diagnosis References** (8) - **READ** before analyzing:
-- `agents-guide.md` - Agent quality standards
-- `commands-guide.md` - Command quality standards
-- `skills-guide.md` - Skill structure standards
-- `metadata-guide.md` - plugin.json schema
-- `content-classification-guide.md` - Content type classification criteria (for doctor-skill-content)
-- `content-quality-guide.md` - Content quality analysis dimensions (for doctor-skill-content)
-- `plan-marshall-plugin-validation.md` - Domain manifest validation (for plan-marshall-plugin skills)
-- `pm-workflow-guide.md` - pm-workflow component validation (for doctor-pm-workflow)
-
-**External Standards** (from plugin-architecture) - **READ** for script analysis:
-- `script-standards.md` - Script documentation, testing, and quality standards
-
-**Fix References** (4) - **READ** before applying fixes:
-- `fix-catalog.md` - Fix categorization rules
-- `safe-fixes-guide.md` - Safe fix patterns
-- `risky-fixes-guide.md` - Risky fix patterns
-- `verification-guide.md` - Verification procedures
-
-**Reporting** (1) - **REFERENCE** for output formatting:
+Loaded per workflow via Progressive Disclosure table above. Key files:
+- `rule-catalog.md` - Rule definitions for all validated rules
+- `llm-optimization-guide.md` - Cross-cutting LLM optimization patterns
+- `fix-catalog.md`, `safe-fixes-guide.md`, `risky-fixes-guide.md`, `verification-guide.md` - Fix workflow
+- `plan-marshall-plugin-validation.md` - Domain manifest validation
+- Per-component guides: `agents-guide.md`, `commands-guide.md`, `skills-guide.md`, `metadata-guide.md`, `pm-workflow-guide.md`
+- Content analysis: `content-classification-guide.md`, `content-quality-guide.md`
 - `reporting-templates.md` - Summary report templates
 
 ### Assets (assets/)
@@ -378,84 +297,7 @@ After Phase 1 creates the report directory and JSON, the LLM:
 
 ## Rule Definitions
 
-Rules that plugin-doctor validates in other components. See Enforcement block for this skill's own constraints.
-
-### Agent Rules
-
-**agent-task-tool-prohibited**: Agents cannot declare the Task tool (unavailable at runtime).
-
-**agent-maven-restricted**: Only the maven-builder agent may execute Maven commands.
-
-**agent-lessons-via-skill**: Agents record lessons via manage-lessons skill, not self-invoke commands.
-
-**agent-skill-tool-visibility**: Agents declaring explicit tools must include Skill, otherwise invisible to Task dispatcher.
-
-### Workflow Rules
-
-**workflow-explicit-script-calls**: All script/tool invocations in workflow documentation have explicit bash code blocks. Vague instructions like "read the file" or "check the status" are not acceptable — every operation requiring a script call documents the exact `python3 .plan/execute-script.py` command.
-
-**Detection**: Scan workflow steps for action verbs (read, write, display, check, validate, get, list) without accompanying bash code blocks containing `execute-script.py`.
-
-**Example violation**: "Display the solution outline for review" (missing bash block)
-
-**Correct pattern**:
-```markdown
-### Step N: Read the solution outline
-
-```bash
-python3 .plan/execute-script.py pm-workflow:manage-solution-outline:manage-solution-outline read \
-  --plan-id {plan_id}
-```
-```
-
-**workflow-hardcoded-script-path**: Use executor notation (`bundle:skill:script`) instead of hardcoded file paths.
-
-**workflow-prose-parameter-consistency**: Prose instructions adjacent to `execute-script.py` bash blocks must reference parameter values consistent with the actual script API.
-
-**Currently detected**: `body` referenced as section name near `manage-plan-documents` calls (correct fallback is `original_input`).
-
-### Command Rules
-
-**command-self-contained-notation**: Components that execute scripts have the exact notation (`bundle:skill:script`) explicitly defined within themselves.
-
-**Four Detection Modes**:
-
-| Mode | Catches |
-|------|---------|
-| A: Delegation | "Execute command from section Nb" - parent-passed |
-| B: Notation | `execute-script.py artifact_store` - missing bundle:skill |
-| C: Missing Section | "Log the assessment" without ## Logging Command section |
-| D: Parameters | `--plan-id` when should be positional (via --help) |
-
-Do not invent notations. Use only documented notations from the skill being called.
-
-**command-thin-wrapper**: Commands delegate all logic to skills; they are thin orchestrators.
-
-**command-progressive-disclosure**: Load skills on-demand, not all at once.
-
-**command-completion-checks**: Mandatory post-fix verification after applying changes.
-
-**command-no-embedded-standards**: No standards blocks in commands; standards belong in skills.
-
-### Skill Rules
-
-**skill-enforcement-block-required**: Script-bearing skills need an `## Enforcement` block.
-
-**skill-banned-keywords-outside-enforcement**: ALL-CAPS keywords (CRITICAL, MUST, NEVER, etc.) only appear inside enforcement blocks.
-
-### PM-Workflow Rules
-
-**pm-implicit-script-call** (PM-001): Script operations without explicit bash code blocks.
-
-**pm-generic-api-reference** (PM-002): Generic API references instead of specific script notation.
-
-**pm-wrong-plan-parameter** (PM-003): Incorrect plan parameter values in script calls.
-
-**pm-missing-plan-parameter** (PM-004): Missing required plan parameters.
-
-**pm-invalid-contract-path** (PM-005): Invalid contract file path references.
-
-**pm-contract-non-compliance** (PM-006): Contract specification violations.
+See [references/rule-catalog.md](references/rule-catalog.md) for the complete catalog of rules that plugin-doctor validates (agent, workflow, command, skill, and PM-workflow rules).
 
 ---
 
@@ -486,12 +328,3 @@ This skill is designed to run without user prompts for safe operations. Required
 - Script paths resolved from `.plan/scripts-library.toon` (system convention)
 - Skill invocations use bundle-qualified names covered by `Skill({bundle}:*)` wildcards
 - AskUserQuestion is ONLY used for risky fix confirmations
-
-## Notes
-
-- **Unified workflow**: Diagnose → Auto-Fix → Prompt Risky → Verify
-- **Progressive disclosure**: Load 2 references per workflow (~800 lines)
-- **Stdlib-only scripts**: No external dependencies
-- **Backup before modify**: `fix apply` creates backups
-- **User control**: Risky fixes require explicit approval
-- **Non-prompting safe fixes**: Safe fixes never prompt - applied automatically
