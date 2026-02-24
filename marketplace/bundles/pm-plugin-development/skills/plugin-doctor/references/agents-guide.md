@@ -1,675 +1,102 @@
 # Agent Quality Standards
 
-Comprehensive quality standards for marketplace agents including tool coverage, architectural rules, and best practices.
+Agents are specialized execution units invoked via Task tool by commands. They execute autonomously and return results to the caller.
 
-## Overview
+**Key constraints**: Cannot invoke other agents (Task unavailable at runtime). Cannot invoke commands (SlashCommand unavailable).
 
-Agents are specialized execution units invoked via Task tool by commands. They perform focused analysis, validation, or transformation operations.
-
-**Key Characteristics**:
-- Invoked by commands via `Task: subagent_type="bundle:agent-name"`
-- Have access to specific tools (declared in frontmatter)
-- Execute autonomously and return results to caller
-- CANNOT invoke other agents (Task tool unavailable at runtime)
-- CANNOT invoke commands (SlashCommand tool unavailable at runtime)
-
-## Required Frontmatter Structure
-
-All agents MUST have YAML frontmatter with required fields:
+## Required Frontmatter
 
 ```yaml
 ---
-name: agent-name
-description: Clear, concise description of agent purpose
-tools:
+name: agent-name                            # kebab-case, matches filename
+description: One-sentence purpose statement
+tools:                                      # array format, must include Skill
   - Read
   - Write
-  - Edit
-  - Grep
-  - Bash
   - Skill
-model: sonnet
+model: sonnet                               # optional, defaults to sonnet
 ---
 ```
 
-**Required Fields**:
-- `name`: Agent identifier (kebab-case, matches filename)
-- `description`: One-sentence purpose statement
-- `tools`: Array of tool names (must include `Skill` — see agent-skill-tool-visibility)
-
-**Optional Fields**:
-- `model`: Preferred model (sonnet, opus, haiku) - defaults to sonnet
-
-**Common Errors**:
-- ❌ `tools: Read, Write, Edit` (comma-separated string)
-- ✅ `tools: ["Read", "Write", "Edit"]` or YAML array format
-- ❌ Missing `name` or `description`
-- ❌ Invalid YAML syntax (missing colons, incorrect indentation)
+Common errors: comma-separated tools string (`tools: Read, Write` — wrong), missing `name`/`description`, invalid YAML.
 
-## Tool Coverage Requirements
+## Tool Coverage
 
-### Tool Fit Score
-
-**Calculation**:
-```
-tool_fit_score = (used_tools / total_needed_tools) * 100
-total_needed_tools = used_tools + missing_tools
-```
-
-**Rating Thresholds**:
-- **Excellent**: >= 90% (all needed tools declared, minimal unused)
-- **Good**: >= 70% (most needed tools declared)
-- **Needs improvement**: >= 50% (significant gaps)
-- **Poor**: < 50% (major tool coverage issues)
-
-**Target**: All agents should achieve "Excellent" (>= 90%) tool fit score.
-
-### Common Tool Patterns
-
-**File Reading**:
-- `Read`: Read file contents
-- `Glob`: Find files by pattern
-- `Grep`: Search file contents
-
-**File Modification**:
-- `Edit`: Modify existing files (preferred for changes)
-- `Write`: Create new files
-
-**Execution**:
-- `Bash`: Execute shell commands (use sparingly)
+**Tool fit score** = `used_tools / (used_tools + missing_tools) * 100`
 
-**Interaction**:
-- `AskUserQuestion`: Prompt user for decisions
+| Rating | Threshold |
+|--------|-----------|
+| Excellent | >= 90% |
+| Good | >= 70% |
+| Needs improvement | >= 50% |
+| Poor | < 50% |
 
-**Orchestration** (Skills only):
-- `Skill`: Invoke other skills
+**Target**: >= 90%. Add missing tools (used but undeclared — causes runtime failure). Remove unused tools (declared but not used — over-specification).
 
-**PROHIBITED in Agents**:
-- ❌ `Task`: Agents CANNOT invoke other agents (agent-task-tool-prohibited violation)
-- ❌ `SlashCommand`: Agents CANNOT invoke commands (architectural violation)
+Prohibited tools: `Task` (agent-task-tool-prohibited), `SlashCommand` (architectural violation).
 
-### Tool Coverage Analysis
+## Critical Rules
 
-**Missing Tools** (declared but not used):
-- Indicates over-specification
-- Should be removed from frontmatter
-- Low-priority issue (doesn't break functionality)
+### agent-task-tool-prohibited
 
-**Unused Tools** (used but not declared):
-- **CRITICAL** - agent will fail at runtime
-- Must be added to frontmatter immediately
-- High-priority issue
+Agents cannot declare or use Task tool (unavailable at runtime). Detection: check frontmatter `tools` for "Task", search content for `subagent_type` patterns. Fix: convert to command, inline logic, or use Skill invocation.
 
-**Example**:
-```yaml
-# Agent declares: Read, Write, Edit, Grep
-# Agent uses: Read, Edit, Grep, Bash
-# Missing: Write (declared but not used) → remove from frontmatter
-# Unused: Bash (used but not declared) → add to frontmatter
-```
+### agent-maven-restricted
 
-## agent-task-tool-prohibited
+Only `maven-builder` agent may execute Maven commands. Detection: search for `mvn`, `./mvnw`, `maven` in Bash calls. Fix: delegate to maven-builder agent via Task tool from the calling command.
 
-**CRITICAL RULE**: Agents CANNOT use Task tool to invoke other agents.
+### agent-lessons-via-skill
 
-**Rationale**: Task tool is unavailable at agent runtime. Attempting to use Task will cause runtime failure.
-
-**Detection**:
-- Check frontmatter `tools` array for "Task"
-- Search agent content for `Task tool`, `subagent_type`, `Task:` patterns
-
-**Violation Example**:
-```yaml
----
-name: my-agent
-tools:
-  - Read
-  - Task  # ❌ VIOLATION
----
-```
+Agents report improvements to caller (not self-invoke commands). The CONTINUOUS IMPROVEMENT RULE section should use the caller-reporting pattern: "report to caller" + structured suggestion. Violation: direct `/plugin-update-agent` invocation instructions.
 
-**Fix**:
-- **Option 1**: Convert agent to command (commands CAN use Task tool)
-- **Option 2**: Inline the agent logic into calling command
-- **Option 3**: Refactor to use Skill invocation (if applicable)
+### command-self-contained-notation
 
-**Valid Alternatives**:
-- Commands invoke agents via Task tool
-- Agents invoke skills via Skill tool
-- Agents return results to caller for orchestration
+Script commands must be explicitly defined with exact `bundle:skill:script` notation. Four detection modes: (A) delegation patterns, (B) malformed notations, (C) missing command sections, (D) wrong parameters vs `--help`.
 
-## agent-maven-restricted
+### agent-skill-tool-visibility
 
-**CRITICAL RULE**: Only `maven-builder` agent may execute Maven commands directly.
+Agents with explicit `tools:` declarations must include `Skill` to be visible to the Task dispatcher. No violation if `tools:` field is absent (inherits all). Safe fix: append `Skill` to tools list.
 
-**Rationale**: Maven execution is centralized in maven-builder agent for consistency, error handling, and performance tracking.
+## Bloat Thresholds
 
-**Prohibited Patterns** (for non-maven-builder agents):
-```bash
-# ❌ Direct Maven execution
-Bash: ./mvnw clean install
-Bash: mvn test
-Bash: maven package
-```
+| Classification | Lines | Action |
+|---------------|-------|--------|
+| NORMAL | < 300 | Healthy |
+| LARGE | 300-500 | Review for extraction |
+| BLOATED | 500-800 | Refactor required |
+| CRITICAL | > 800 | Immediate refactoring |
 
-**Detection**:
-- Search agent content for: `Bash.*mvn`, `Bash.*./mvnw`, `Bash.*maven`
-- Check agent name: violations allowed ONLY if agent name == "maven-builder"
-
-**Fix**:
-```yaml
-# Instead of direct Maven execution:
-# ❌ Bash: ./mvnw test
-
-# Use maven-builder agent:
-# ✅ Task: subagent_type="pm-dev-builder:maven-builder"
-#    Parameters: goals="test", capture_output=true
-```
-
-**Valid Maven Usage**:
-- Commands invoke maven-builder agent via Task tool
-- maven-builder agent executes Maven and returns results
-- Non-maven-builder agents receive results, no direct Maven execution
-
-## agent-lessons-via-skill
-
-**CRITICAL PATTERN**: Agents MUST report improvements to caller via lessons skill (not self-invoke commands).
-
-**CONTINUOUS IMPROVEMENT RULE Format**:
-
-**Valid Pattern** (caller-reporting):
-```markdown
-## CONTINUOUS IMPROVEMENT RULE
-
-**CRITICAL:** Every time you execute this agent and discover a more precise, better, or more efficient approach, **REPORT the improvement to your caller** with:
-1. [Specific improvement areas]
-
-Return structured improvement suggestion in your analysis result:
-```
-IMPROVEMENT OPPORTUNITY DETECTED
-
-Area: [specific area]
-Current limitation: [what doesn't work well]
-Suggested enhancement: [specific improvement]
-Expected impact: [benefit of change]
-```
-
-The caller can then invoke `/plugin-update-agent agent-name=... update="..."` based on your report.
-```
-
-**Invalid Pattern** (self-update) - agent-lessons-via-skill Violation:
-```markdown
-## CONTINUOUS IMPROVEMENT RULE
-
-If you discover improvements, invoke `/plugin-update-agent` directly to update yourself.
-```
-
-**Detection**:
-- Check for CONTINUOUS IMPROVEMENT RULE section
-- Verify pattern: "report to caller" + "The caller can then invoke"
-- Violation: Direct invocation instructions (agent invokes command itself)
-
-**Rationale**:
-- Agents cannot invoke commands (no SlashCommand tool)
-- Agents should not self-modify (architectural separation)
-- Commands orchestrate all modifications based on agent reports
-
-**Fix**:
-- Update CONTINUOUS IMPROVEMENT RULE section to use caller-reporting pattern
-- Remove any `/plugin-update-agent` invocation instructions
-- Add "return structured improvement suggestion" guidance
-
-## command-self-contained-notation
-
-**CRITICAL RULE**: Commands (and agents with script calls) MUST have all script commands explicitly defined within themselves with EXACT notation format `bundle:skill:script`.
-
-**Rationale**: When agents rely on parent-passed commands or generic descriptions, they:
-- Invent incorrect notations (wrong bundle, wrong skill)
-- Use malformed notations (missing bundle:skill prefix)
-- Fail silently with wrong script paths
-
-**Four Detection Modes**:
-
-| Mode | What It Catches | Example Violation |
-|------|-----------------|-------------------|
-| A: Delegation | Parent-passed commands | "Execute command from section Nb" |
-| B: Notation | Malformed notations | `execute-script.py artifact_store` |
-| C: Missing Section | Script ops without explicit commands | "Log the assessment" (no command section) |
-| D: Parameters | Wrong parameters vs --help | `--plan-id` when positional (via --help) |
-
-**Notation Format Requirement**:
-```
-✅ pm-workflow:manage-assessments:manage-assessments
-✅ plan-marshall:manage-logging:manage-log
-❌ artifact_store (missing bundle:skill)
-❌ manage-files:artifact-store (missing bundle)
-```
-
-**Violation Examples**:
-```markdown
-# Mode A violation (delegation)
-5. Execute the logging command from section Nb - fill in the placeholders
-
-# Mode B violation (malformed notation)
-```bash
-python3 .plan/execute-script.py artifact_store assessment add...
-```
-
-# Mode C violation (missing section)
-[Has "log the assessment" instruction but no ## Logging Command section]
-```
-
-**Required Fix Pattern**:
-```markdown
-## Logging Command
-
-Use this EXACT command:
-
-\`\`\`bash
-python3 .plan/execute-script.py pm-workflow:manage-assessments:manage-assessments \
-  add --plan-id {plan_id} --file-path {file_path} --certainty {certainty} --confidence {confidence} \
-  --agent {agent_name} --detail "{reasoning}" --evidence "{evidence}"
-\`\`\`
-
-**Parameters to fill:**
-| Parameter | Source |
-|-----------|--------|
-| `{plan_id}` | From input parameters |
-| `{file_path}` | Current file being analyzed |
-
-**CRITICAL**: Use ONLY this notation. Do NOT invent other notations.
-```
-
-**Detection**:
-- Mode A: Search for patterns like "execute.*command.*from.*section", "fill in.*placeholders.*from"
-- Mode B: Search for `execute-script.py` calls and verify notation matches `bundle:skill:script` format
-- Mode C: Search for script action verbs (log, store, persist, record) without explicit command section
-- Mode D: Run `--help` on each script call and compare parameters against actual usage
-
-**Fix**:
-- Add explicit "## Logging Command" or "## Script Commands" section to the agent
-- Include full bash block with complete `bundle:skill:script` notation
-- Add parameter table showing where each value comes from
-- Add CRITICAL warning about not inventing notations
-
-## agent-skill-tool-visibility
-
-**CRITICAL RULE**: Agents with explicit `tools:` declarations MUST include `Skill` to be visible to the Task tool dispatcher.
-
-**Rationale**: Claude Code only exposes plugin agents to the Task tool when `Skill` is listed in their `tools:` frontmatter. When an agent restricts its tools and omits `Skill`, it becomes invisible to Task dispatching — meaning no command or workflow can invoke it. If no `tools:` field is declared at all, the agent inherits all tools (including Skill) and is visible.
-
-**Detection**:
-- Check if agent has explicit `tools:` or `allowed-tools:` field
-- If tools are declared, verify `Skill` is in the list
-- No violation if tools field is absent (inherits all)
-
-**Violation Example**:
-```yaml
----
-name: my-agent
-tools: Read, Write, Edit, Grep  # ❌ Missing Skill — agent invisible
----
-```
-
-**Fix** (safe — purely additive):
-```yaml
----
-name: my-agent
-tools: Read, Write, Edit, Grep, Skill  # ✅ Agent visible to Task dispatcher
----
-```
-
-**Classification**: Safe fix — appending `Skill` never breaks anything, only makes the agent discoverable.
-
-## Bloat Detection
-
-**Classification**:
-- **NORMAL**: < 300 lines (healthy agent size)
-- **LARGE**: 300-500 lines (approaching bloat, review for opportunities to extract logic)
-- **BLOATED**: 500-800 lines (excessive, should be refactored)
-- **CRITICAL**: > 800 lines (severe bloat, immediate refactoring required)
-
-**Target**: Keep agents < 300 lines (NORMAL).
-
-**Bloat Indicators**:
-1. **Embedded Standards**: Large sections documenting standards instead of using external references
-2. **Duplicate Logic**: Logic repeated from other agents/commands
-3. **Over-Specification**: Excessive detail in workflow steps
-4. **Example Overload**: Too many examples instead of concise patterns
-5. **Inline Documentation**: Large documentation blocks instead of separate reference files
-
-**Anti-Bloat Strategies**:
-
-### 1. Extract Standards to Reference Files
-**Before** (embedded in agent):
-```markdown
-### Java Code Quality Standards
-
-- Use descriptive variable names
-- Avoid magic numbers
-- [100 lines of standards...]
-```
-
-**After** (reference):
-```markdown
-### Step 2: Load Quality Standards
-
-Read references/java-quality-standards.md
-```
-
-### 2. Use Skill Dependencies
-**Before** (duplicate logic):
-```markdown
-### Step 3: Validate Logging
-
-[50 lines of logging validation logic copied from logging-validator agent]
-```
-
-**After** (skill invocation):
-```markdown
-### Step 3: Validate Logging
-
-Skill: pm-dev-java:logging-validator
-```
-
-### 3. Concise Workflow Steps
-**Before** (over-specified):
-```markdown
-### Step 4: Analyze File
-
-First, use the Read tool to read the file.
-Then, parse the content line by line.
-For each line, check if it matches pattern X.
-If it matches, extract the value.
-Store the value in a list.
-After processing all lines, count the matches.
-Return the count to the caller.
-```
-
-**After** (concise):
-```markdown
-### Step 4: Analyze File
-
-Read file, parse content, extract matches for pattern X, return count.
-```
-
-### 4. Condense Examples
-**Before** (example overload):
-```markdown
-## Examples
-
-### Example 1: Valid File
-[20 lines...]
-
-### Example 2: Invalid File
-[20 lines...]
-
-### Example 3: Edge Case A
-[20 lines...]
-
-### Example 4: Edge Case B
-[20 lines...]
-```
-
-**After** (concise examples):
-```markdown
-## Examples
-
-**Valid**: File with correct format → analysis succeeds
-**Invalid**: Missing required field → error reported
-**Edge Cases**: Empty file → handled gracefully, malformed → specific error
-```
+Anti-bloat strategies: extract standards to reference files, use Skill dependencies, condense workflow steps, move deterministic logic to scripts.
 
 ## Best Practices
 
-### 1. Single Responsibility
+- **Single responsibility**: one agent, one focused task
+- **Deterministic logic in scripts**: pattern matching, JSON parsing, validation in scripts; judgment and context interpretation in agent
+- **Progressive disclosure**: load references on-demand, not all upfront
+- **Error handling**: validate inputs, return structured errors with clear messages
+- **Output format**: return JSON with `status`, `issues`, counts
+- **Tool efficiency**: use Read/Grep/Glob/Edit instead of Bash equivalents; Bash only for builds, git, tests, script execution
+- **Required sections**: Purpose, PARAMETERS, WORKFLOW, CONTINUOUS IMPROVEMENT RULE
 
-Each agent should do ONE thing well.
+## Common Issues
 
-**Good**:
-- `analyze-file-structure` - Analyzes file structure only
-- `validate-references` - Validates references only
-- `generate-report` - Generates reports only
-
-**Bad**:
-- `analyze-and-fix-and-report` - Does multiple things (violates SRP)
-
-### 2. Deterministic Logic in Scripts
-
-Move deterministic validation logic to external scripts:
-
-**Agent** (AI-powered logic):
-- Context interpretation
-- Judgment calls
-- User interaction
-- Complex reasoning
-
-**Script** (deterministic logic):
-- Pattern matching
-- JSON parsing
-- File structure validation
-- Score calculation
-
-**Example**:
-```bash
-# Agent workflow:
-### Step 3: Analyze Structure
-
-Bash: scripts/analyze-structure.sh {file_path}
-# Parse JSON output
-# Apply AI reasoning to categorize issues
-# Determine fix strategy
-```
-
-### 3. Progressive Disclosure
-
-Load external resources on-demand:
-
-```markdown
-### Step 2: Load Standards (Progressive Disclosure)
-
-Read references/coding-standards.md
-
-# Do NOT load all references upfront:
-# ❌ Read references/standard1.md
-# ❌ Read references/standard2.md
-# ❌ Read references/standard3.md
-```
-
-### 4. Proper Error Handling
-
-Always validate inputs and handle errors gracefully:
-
-```markdown
-### Step 1: Validate Parameters
-
-**Required Parameters**:
-- `file_path`: Path to file to analyze
-- `mode`: Analysis mode (strict|lenient)
-
-**Validation**:
-- If file_path not provided: ERROR with clear message
-- If file not found: ERROR with path
-- If mode invalid: ERROR with valid options
-
-**Error Format**:
-ERROR: [Clear description]
-Expected: [What was expected]
-Actual: [What was received]
-Action: [How to fix]
-```
-
-### 5. Clear Output Format
-
-Define clear output structure:
-
-```markdown
-### Step 7: Return Results
-
-**Output Format**:
-{
-  "status": "success|error",
-  "file_analyzed": "{file_path}",
-  "issues_found": {count},
-  "issues": [
-    {
-      "line": {line_number},
-      "severity": "critical|warning|info",
-      "message": "{description}",
-      "fix_available": true|false
-    }
-  ]
-}
-```
-
-### 6. Tool Usage Efficiency
-
-Use appropriate tools for tasks:
-
-**File Operations**:
-- ✅ `Read` for reading files (NOT `Bash: cat`)
-- ✅ `Grep` for searching (NOT `Bash: grep`)
-- ✅ `Glob` for finding files (NOT `Bash: find`)
-- ✅ `Edit` for modifications (NOT `Bash: sed`)
-
-**Bash Tool**: Only for operations without specialized tools:
-- Build commands (npm, maven)
-- Git operations
-- Test execution
-- Script execution
-
-### 7. Documentation Requirements
-
-**Required Sections**:
-- **Purpose**: One-sentence description
-- **PARAMETERS**: Clear parameter documentation with types, defaults, validation
-- **WORKFLOW**: Step-by-step execution logic
-- **TOOL USAGE**: List of tools and their specific uses
-- **CRITICAL RULES**: Any critical constraints or requirements
-- **CONTINUOUS IMPROVEMENT RULE**: Caller-reporting pattern
-
-**Optional Sections**:
-- **Examples**: Concise usage examples
-- **Error Handling**: Common errors and solutions
-- **Performance**: Notes on performance characteristics
-
-## Common Issues and Fixes
-
-### Issue 1: Low Tool Fit Score
-
-**Symptoms**:
-- Tool fit score < 70%
-- Missing tools array shows required tools not declared
-- Unused tools array shows tools declared but not used
-
-**Diagnosis**:
-```bash
-# Run tool coverage analysis
-Bash: scripts/analyze-tool-coverage.sh {agent_path}
-
-# Check JSON output:
-# - tool_coverage.missing_tools: Tools used but not declared
-# - tool_coverage.unused_tools: Tools declared but not used
-# - tool_coverage.tool_fit_score: Overall score
-```
-
-**Fix**:
-1. Add missing tools to frontmatter
-2. Remove unused tools from frontmatter
-3. Re-run analysis to verify 90%+ score
-
-### Issue 2: agent-task-tool-prohibited (Task Tool)
-
-**Symptoms**:
-- `Task` appears in frontmatter tools array
-- Agent attempts to invoke other agents
-
-**Diagnosis**:
-```bash
-Bash: scripts/analyze-markdown-file.sh {agent_path} agent
-# Check: rules.agent_task_tool_prohibited = true
-```
-
-**Fix Options**:
-- **Convert to command**: Commands CAN use Task tool
-- **Inline logic**: Absorb agent logic into calling command
-- **Use skills**: Replace Task with Skill invocation
-
-### Issue 3: agent-maven-restricted (Maven Usage)
-
-**Symptoms**:
-- Direct Maven execution in non-maven-builder agent
-- `Bash: mvn ...` or `Bash: ./mvnw ...` patterns
-
-**Diagnosis**:
-```bash
-Bash: scripts/analyze-markdown-file.sh {agent_path} agent
-# Check: rules.agent_maven_restricted = true
-```
-
-**Fix**:
-```yaml
-# Replace direct Maven:
-# ❌ Bash: ./mvnw test
-
-# With maven-builder invocation:
-# ✅ Task: subagent_type="pm-dev-builder:maven-builder"
-#    Parameters: goals="test"
-```
-
-### Issue 4: agent-lessons-via-skill (Self-Invocation)
-
-**Symptoms**:
-- CONTINUOUS IMPROVEMENT RULE instructs agent to invoke commands directly
-- Pattern contains `/plugin-update-agent` invocation instructions
-
-**Diagnosis**:
-```bash
-Bash: scripts/analyze-markdown-file.sh {agent_path} agent
-# Check: continuous_improvement_rule.format.agent_lessons_via_skill_violation = true
-```
-
-**Fix**:
-Update CONTINUOUS IMPROVEMENT RULE to use caller-reporting pattern (see agent-lessons-via-skill section above).
-
-### Issue 5: Bloat (>500 Lines)
-
-**Symptoms**:
-- Agent exceeds 500 lines
-- Classification: BLOATED or CRITICAL
-
-**Diagnosis**:
-```bash
-Bash: scripts/analyze-markdown-file.sh {agent_path} agent
-# Check: bloat.classification = "BLOATED" or "CRITICAL"
-```
-
-**Fix**:
-Apply anti-bloat strategies:
-1. Extract embedded standards to reference files
-2. Use skill dependencies for shared logic
-3. Condense workflow steps
-4. Move deterministic logic to scripts
-5. Reduce example verbosity
+| Issue | Symptom | Fix |
+|-------|---------|-----|
+| Low tool fit score | < 70% score | Add missing tools, remove unused tools |
+| Task tool in agent | `Task` in frontmatter | Convert to command or use Skill |
+| Direct Maven usage | `mvn`/`./mvnw` calls | Delegate to maven-builder |
+| Self-invocation | `/plugin-update-agent` in CI rule | Use caller-reporting pattern |
+| Bloat > 500 lines | BLOATED/CRITICAL classification | Extract standards, use skills, condense |
 
 ## Summary Checklist
 
-**Before marking agent as "quality approved"**:
-- ✅ Frontmatter present and valid (name, description, tools)
-- ✅ Tool fit score >= 90% (Excellent)
-- ✅ No agent-task-tool-prohibited violations (no Task tool)
-- ✅ No agent-maven-restricted violations (no Maven unless maven-builder)
-- ✅ No agent-lessons-via-skill violations (caller-reporting pattern)
-- ✅ No command-self-contained-notation violations (self-contained command definitions)
-- ✅ No agent-skill-tool-visibility violations (Skill in tools for Task visibility)
-- ✅ All script commands have explicit bash blocks
-- ✅ All notations match `bundle:skill:script` format
-- ✅ Has "## Logging Command" or "## Script Commands" section if performs script operations
-- ✅ No delegation patterns ("command from section", "placeholders from prompt")
-- ✅ Bloat classification NORMAL (<300 lines)
-- ✅ Clear workflow with step-by-step logic
-- ✅ Proper error handling
-- ✅ CONTINUOUS IMPROVEMENT RULE present (caller-reporting)
-- ✅ Tool usage follows best practices (Read/Grep/Glob instead of Bash)
-- ✅ Single responsibility principle
-- ✅ Progressive disclosure for external resources
+- Frontmatter valid (name, description, tools array with Skill)
+- Tool fit score >= 90%
+- No agent-task-tool-prohibited violations
+- No agent-maven-restricted violations
+- No agent-lessons-via-skill violations
+- No command-self-contained-notation violations
+- No agent-skill-tool-visibility violations
+- All script notations match `bundle:skill:script` format
+- Bloat classification NORMAL (< 300 lines)
+- CONTINUOUS IMPROVEMENT RULE present (caller-reporting)
