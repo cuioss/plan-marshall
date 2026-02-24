@@ -104,6 +104,25 @@ Skills with an enforcement block do not use banned emphasis keywords outside tha
 - Missing extension skills → Risky fix
 - Invalid skill references → Risky fix
 
+### Validate Sub-Document Quality
+
+All `.md` files in `references/`, `standards/`, `workflows/`, and `templates/` are checked for content quality.
+
+**Checks performed** (automated via `analyze` subcommand):
+- **Bloat classification**: Sub-documents use `subdoc` thresholds (LARGE >400, BLOATED >600, CRITICAL >800 lines)
+- **Forbidden metadata sections**: Version History, Changelog, Author, etc.
+- **Banned ALL-CAPS keywords**: CRITICAL, MUST, NEVER, etc. Sub-documents have no enforcement blocks, so all occurrences are violations. Use lowercase equivalents.
+- **Hardcoded script paths**: `python3 .../scripts/` patterns instead of executor notation
+
+**Checks performed** (LLM Phase 1.5):
+- **LLM optimization**: Review sub-document content for low-value patterns per `llm-optimization-guide.md`
+
+**Issue types**:
+- `subdoc-bloat` (BLOATED/CRITICAL) → Unfixable (requires human judgment to split/trim)
+- `subdoc-forbidden-metadata` → Safe fix (remove forbidden sections)
+- `subdoc-banned-keywords` → Risky fix (requires manual rephrasing to lowercase)
+- `subdoc-hardcoded-script-path` → Risky fix (requires conversion to executor notation)
+
 ## Skill-Specific Fix Categories
 
 **Safe fixes** (auto-apply):

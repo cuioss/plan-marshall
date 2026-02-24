@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Analysis functions for doctor-marketplace."""
 
+import re
 from pathlib import Path
+from typing import Any
 
 # Import from analyze.py
 from _analyze import (
@@ -9,6 +11,10 @@ from _analyze import (
     analyze_skill_structure,
     analyze_tool_coverage,
 )
+from _analyze_markdown import check_banned_keywords, check_forbidden_metadata, get_bloat_classification
+
+# Subdirectories that may contain markdown sub-documents
+SUBDOC_DIRS = ['references', 'standards', 'workflows', 'templates']
 
 
 def analyze_component(component: dict) -> dict:
@@ -16,8 +22,8 @@ def analyze_component(component: dict) -> dict:
     component_type = component.get('type')
     path = component.get('path')
 
-    issues = []
-    analysis = {}
+    issues: list[dict[str, Any]] = []
+    analysis: dict[str, Any] = {}
 
     if component_type in ('agent', 'command'):
         # Markdown analysis
@@ -53,6 +59,12 @@ def analyze_component(component: dict) -> dict:
                 md_analysis = analyze_markdown_file(md_path, 'skill')
                 analysis['markdown'] = md_analysis
                 issues.extend(extract_issues_from_markdown_analysis(md_analysis, skill_md_path, 'skill'))
+
+        # Sub-document analysis (references/, standards/, workflows/, templates/)
+        subdoc_results = analyze_subdocuments(skill_dir)
+        if subdoc_results:
+            analysis['subdocuments'] = subdoc_results
+            issues.extend(extract_issues_from_subdoc_analysis(subdoc_results, str(skill_dir)))
 
     return {'component': component, 'analysis': analysis, 'issues': issues, 'issue_count': len(issues)}
 
@@ -159,6 +171,19 @@ def extract_issues_from_markdown_analysis(analysis: dict, file_path: str, compon
             }
         )
 
+    # Check banned keywords outside enforcement block (skills only)
+    for violation in rules.get('banned_keyword_violations', []):
+        issues.append(
+            {
+                'type': 'skill-banned-keywords',
+                'file': file_path,
+                'severity': 'warning',
+                'fixable': False,
+                'description': f'Banned keyword "{violation["keyword"]}" at line {violation["line"]}',
+                'details': violation,
+            }
+        )
+
     return issues
 
 
@@ -217,5 +242,122 @@ def extract_issues_from_coverage_analysis(coverage: dict, file_path: str, compon
                 'details': {'patterns': backup_patterns},
             }
         )
+
+    return issues
+
+
+def analyze_subdocuments(skill_dir: Path) -> list[dict]:
+    """Analyze markdown sub-documents in a skill directory.
+
+    Checks references/, standards/, workflows/, templates/ for:
+    - Line count and bloat classification
+    - Forbidden metadata sections
+    - Banned ALL-CAPS keywords (sub-docs have no enforcement blocks)
+    - Hardcoded script paths
+    """
+    results = []
+
+    for subdir_name in SUBDOC_DIRS:
+        subdir = skill_dir / subdir_name
+        if not subdir.is_dir():
+            continue
+
+        for md_file in sorted(subdir.glob('*.md')):
+            try:
+                content = md_file.read_text(encoding='utf-8', errors='replace')
+            except OSError:
+                continue
+
+            line_count = content.count('\n') + (1 if content and not content.endswith('\n') else 0)
+            bloat_class = get_bloat_classification(line_count, 'subdoc')
+            has_forbidden, forbidden_sections = check_forbidden_metadata(content)
+
+            entry: dict = {
+                'path': str(md_file),
+                'relative_path': f'{subdir_name}/{md_file.name}',
+                'line_count': line_count,
+                'bloat': bloat_class,
+            }
+
+            issues: list[dict] = []
+            if bloat_class in ('CRITICAL', 'BLOATED'):
+                issues.append({
+                    'type': 'subdoc-bloat',
+                    'classification': bloat_class,
+                    'line_count': line_count,
+                })
+            if has_forbidden:
+                issues.append({
+                    'type': 'subdoc-forbidden-metadata',
+                    'sections': forbidden_sections,
+                })
+
+            # Banned ALL-CAPS keywords (sub-docs have no enforcement block)
+            banned_violations = check_banned_keywords(content, enforcement_block=False)
+            if banned_violations:
+                issues.append({
+                    'type': 'subdoc-banned-keywords',
+                    'violations': banned_violations,
+                })
+
+            # Hardcoded script paths
+            if re.search(r'python3 .*/scripts/|bash .*/scripts/|\{[^}]+\}/scripts/', content):
+                if not re.search(r'Skill:.*script-runner', content):
+                    issues.append({
+                        'type': 'subdoc-hardcoded-script-path',
+                    })
+
+            if issues:
+                entry['issues'] = issues
+
+            results.append(entry)
+
+    return results
+
+
+def extract_issues_from_subdoc_analysis(subdoc_results: list[dict], skill_path: str) -> list[dict]:
+    """Extract issues from sub-document analysis into the component issue list."""
+    issues = []
+
+    for subdoc in subdoc_results:
+        for issue in subdoc.get('issues', []):
+            file_path = subdoc['path']
+
+            if issue['type'] == 'subdoc-bloat':
+                issues.append({
+                    'type': 'subdoc-bloat',
+                    'file': file_path,
+                    'severity': 'warning' if issue['classification'] == 'BLOATED' else 'error',
+                    'fixable': False,
+                    'classification': issue['classification'],
+                    'line_count': issue['line_count'],
+                    'description': f'Sub-document bloat ({issue["classification"]}, {issue["line_count"]} lines)',
+                })
+            elif issue['type'] == 'subdoc-forbidden-metadata':
+                issues.append({
+                    'type': 'subdoc-forbidden-metadata',
+                    'file': file_path,
+                    'severity': 'warning',
+                    'fixable': True,
+                    'description': f'Forbidden metadata sections: {issue["sections"]}',
+                })
+            elif issue['type'] == 'subdoc-banned-keywords':
+                violations = issue['violations']
+                issues.append({
+                    'type': 'subdoc-banned-keywords',
+                    'file': file_path,
+                    'severity': 'warning',
+                    'fixable': False,
+                    'description': f'Banned ALL-CAPS keywords: {len(violations)} occurrence(s)',
+                    'details': {'violations': violations},
+                })
+            elif issue['type'] == 'subdoc-hardcoded-script-path':
+                issues.append({
+                    'type': 'subdoc-hardcoded-script-path',
+                    'file': file_path,
+                    'severity': 'warning',
+                    'fixable': False,
+                    'description': 'Hardcoded script path in sub-document',
+                })
 
     return issues

@@ -86,6 +86,8 @@ Each workflow performs the complete cycle: discover → analyze → categorize �
 | doctor-scripts | `scripts-guide.md` | `fix-catalog.md` |
 | doctor-pm-workflow | `pm-workflow-guide.md` | `fix-catalog.md` |
 | doctor-skill-knowledge | `llm-optimization-guide.md` | `fix-catalog.md` |
+| doctor-skill-content | `content-classification-guide.md` + `content-quality-guide.md` | `fix-catalog.md` |
+| doctor-marketplace | (batch: uses all guides via report) | `fix-catalog.md` |
 
 **Cross-cutting reference** (loaded by all workflows): `llm-optimization-guide.md`
 
@@ -93,7 +95,7 @@ Each workflow performs the complete cycle: discover → analyze → categorize �
 
 ## Common Workflow Pattern
 
-All 5 workflows follow the same pattern:
+All 9 workflows follow the same pattern:
 
 ### Phase 1: Discover and Analyze
 
@@ -124,11 +126,11 @@ All 5 workflows follow the same pattern:
      --bundles {bundle} --type {component_type}
    ```
 
-   This performs markdown analysis, coverage extraction, and reference validation for all matching components. The output includes per-component analysis results in JSON format.
+   This performs markdown analysis, coverage extraction, and reference validation for all matching components. For skills, it also analyzes all sub-documents (`references/*.md`, `standards/*.md`, `workflows/*.md`, `templates/*.md`) for bloat, forbidden metadata, banned ALL-CAPS keywords, and hardcoded script paths. The output includes per-component analysis results in JSON format with a `subdocuments` key for skills.
 
 ### Phase 1.5: LLM Optimization Check
 
-Load `references/llm-optimization-guide.md` and flag low-value patterns (motivational text, redundant emphasis, obvious checklists, verbose examples, duplicated content).
+Load `references/llm-optimization-guide.md` and review the analyzed components for low-value patterns. For skills, this includes SKILL.md and all sub-documents reported in the `subdocuments` key of the analysis output. Flag motivational text, redundant emphasis, obvious checklists, verbose examples, and duplicated content.
 
 ### Phase 2: Categorize Issues
 

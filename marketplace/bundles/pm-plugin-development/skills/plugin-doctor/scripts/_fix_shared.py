@@ -22,6 +22,7 @@ FIXABLE_ISSUE_TYPES = {
     'improper-indentation',
     'missing-blank-line-before-list',
     'agent-skill-tool-visibility',
+    'subdoc-forbidden-metadata',
     # Risky fixes (require confirmation)
     'unused-tool-declared',
     'tool-not-declared',
@@ -44,6 +45,7 @@ SAFE_FIX_TYPES = {
     'improper-indentation',
     'missing-blank-line-before-list',
     'agent-skill-tool-visibility',
+    'subdoc-forbidden-metadata',
 }
 
 # Risky fix types - require user confirmation
@@ -55,6 +57,9 @@ RISKY_FIX_TYPES = {
     'agent-lessons-via-skill',
     'backup-file-pattern',
     'ci-rule-self-update',
+    'skill-banned-keywords',
+    'subdoc-banned-keywords',
+    'subdoc-hardcoded-script-path',
 }
 
 # Backward-compatibility aliases: old identifier → new identifier.
