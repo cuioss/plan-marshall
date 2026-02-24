@@ -80,68 +80,68 @@ def extract_issues_from_markdown_analysis(analysis: dict, file_path: str, compon
 
     # Check rule violations
     rules = analysis.get('rules', {})
-    if rules.get('rule_6_violation'):
+    if rules.get('agent_task_tool_prohibited'):
         issues.append(
             {
-                'type': 'rule-6-violation',
+                'type': 'agent-task-tool-prohibited',
                 'file': file_path,
                 'severity': 'warning',
                 'fixable': True,
-                'description': 'Agent declares Task tool (Rule 6)',
+                'description': 'Agent declares Task tool (agent-task-tool-prohibited)',
             }
         )
-    if rules.get('rule_7_violation'):
+    if rules.get('agent_maven_restricted'):
         issues.append(
             {
-                'type': 'rule-7-violation',
+                'type': 'agent-maven-restricted',
                 'file': file_path,
                 'severity': 'warning',
                 'fixable': False,
-                'description': 'Direct Maven usage outside builder (Rule 7)',
+                'description': 'Direct Maven usage outside builder (agent-maven-restricted)',
             }
         )
-    if rules.get('rule_8_violation'):
+    if rules.get('workflow_hardcoded_script_path'):
         issues.append(
             {
-                'type': 'rule-8-violation',
+                'type': 'workflow-hardcoded-script-path',
                 'file': file_path,
                 'severity': 'warning',
                 'fixable': False,
-                'description': 'Hardcoded script path - use executor notation instead (Rule 8)',
+                'description': 'Hardcoded script path - use executor notation instead (workflow-hardcoded-script-path)',
             }
         )
-    if rules.get('rule_11_violation'):
+    if rules.get('agent_skill_tool_visibility'):
         issues.append(
             {
-                'type': 'rule-11-violation',
+                'type': 'agent-skill-tool-visibility',
                 'file': file_path,
                 'severity': 'warning',
                 'fixable': True,
-                'description': 'Agent tools missing Skill — invisible to Task dispatcher (Rule 11)',
+                'description': 'Agent tools missing Skill — invisible to Task dispatcher (agent-skill-tool-visibility)',
             }
         )
-    for violation in rules.get('rule_12_violations', []):
+    for violation in rules.get('workflow_prose_param_violations', []):
         issues.append(
             {
-                'type': 'rule-12-violation',
+                'type': 'workflow-prose-parameter-inconsistency',
                 'file': file_path,
                 'severity': 'warning',
                 'fixable': False,
-                'description': f'Prose-parameter inconsistency (Rule 12): {violation.get("issue", "")}',
+                'description': f'Prose-parameter inconsistency: {violation.get("issue", "")}',
                 'details': violation,
             }
         )
 
     # Check CI rule
     ci = analysis.get('continuous_improvement_rule', {})
-    if ci.get('format', {}).get('pattern_22_violation'):
+    if ci.get('format', {}).get('agent_lessons_via_skill'):
         issues.append(
             {
-                'type': 'pattern-22-violation',
+                'type': 'agent-lessons-via-skill',
                 'file': file_path,
                 'severity': 'warning',
                 'fixable': True,
-                'description': 'Agent uses self-update pattern (Pattern 22)',
+                'description': 'Agent uses self-update pattern (agent-lessons-via-skill)',
             }
         )
 
@@ -166,8 +166,8 @@ def extract_issues_from_coverage_analysis(coverage: dict, file_path: str, compon
     """Extract deterministic issues from tool coverage analysis.
 
     NOTE: This function extracts issues that can be determined structurally:
-    - Rule 6 violations (Task declared in agent frontmatter)
-    - Rule 7 violations (Maven calls outside builder)
+    - agent-task-tool-prohibited (Task declared in agent frontmatter)
+    - agent-maven-restricted (Maven calls outside builder)
     - Backup file patterns (quality issue)
 
     Tool usage analysis (missing/unused) is NOT done here - that requires
@@ -178,28 +178,28 @@ def extract_issues_from_coverage_analysis(coverage: dict, file_path: str, compon
     # Only extract deterministic violations
     violations = coverage.get('critical_violations', {})
 
-    # Rule 6: Agent declares Task tool (deterministic - check frontmatter only)
+    # agent-task-tool-prohibited: Agent declares Task tool (deterministic - check frontmatter only)
     if component_type == 'agent' and violations.get('has_task_declared'):
         issues.append(
             {
-                'type': 'rule-6-violation',
+                'type': 'agent-task-tool-prohibited',
                 'file': file_path,
                 'severity': 'warning',
                 'fixable': True,
-                'description': 'Agent declares Task tool (Rule 6)',
+                'description': 'Agent declares Task tool (agent-task-tool-prohibited)',
             }
         )
 
-    # Rule 7: Maven calls outside builder (only flag if not in builder bundle)
+    # agent-maven-restricted: Maven calls outside builder (only flag if not in builder bundle)
     maven_calls = violations.get('maven_calls', [])
     if maven_calls and 'builder' not in file_path:
         issues.append(
             {
-                'type': 'rule-7-violation',
+                'type': 'agent-maven-restricted',
                 'file': file_path,
                 'severity': 'warning',
                 'fixable': False,
-                'description': f'Direct Maven usage (Rule 7) - {len(maven_calls)} call(s)',
+                'description': f'Direct Maven usage (agent-maven-restricted) - {len(maven_calls)} call(s)',
                 'details': {'maven_calls': maven_calls},
             }
         )

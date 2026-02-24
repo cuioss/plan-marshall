@@ -6,7 +6,7 @@ import re
 import sys
 from pathlib import Path
 
-from _fix_shared import extract_frontmatter
+from _fix_shared import extract_frontmatter, resolve_issue_type
 
 
 def verify_frontmatter_fix(file_path: Path) -> dict:
@@ -52,7 +52,7 @@ def verify_array_syntax_fix(file_path: Path) -> dict:
     return {'verified': True, 'issue_resolved': True, 'details': 'Tools now using comma-separated format'}
 
 
-def verify_rule_6_fix(file_path: Path) -> dict:
+def verify_task_tool_fix(file_path: Path) -> dict:
     """Verify Task tool was removed from declaration."""
     try:
         content = file_path.read_text(encoding='utf-8', errors='replace')
@@ -65,7 +65,11 @@ def verify_rule_6_fix(file_path: Path) -> dict:
         return {'verified': True, 'issue_resolved': True, 'details': 'No frontmatter to check'}
 
     if re.search(r'^tools:.*\bTask\b', frontmatter, re.MULTILINE):
-        return {'verified': True, 'issue_resolved': False, 'details': 'Task tool still declared (Rule 6 violation)'}
+        return {
+            'verified': True,
+            'issue_resolved': False,
+            'details': 'Task tool still declared (agent-task-tool-prohibited)',
+        }
 
     return {'verified': True, 'issue_resolved': True, 'details': 'Task tool removed from declaration'}
 
@@ -89,7 +93,7 @@ def verify_trailing_whitespace_fix(file_path: Path) -> dict:
     return {'verified': True, 'issue_resolved': True, 'details': 'No trailing whitespace found'}
 
 
-def verify_pattern_22_fix(file_path: Path) -> dict:
+def verify_lessons_via_skill_fix(file_path: Path) -> dict:
     """Verify self-update patterns were removed."""
     try:
         content = file_path.read_text(encoding='utf-8', errors='replace')
@@ -100,13 +104,13 @@ def verify_pattern_22_fix(file_path: Path) -> dict:
         return {
             'verified': True,
             'issue_resolved': False,
-            'details': 'Still contains self-update commands (Pattern 22 violation)',
+            'details': 'Still contains self-update commands (agent-lessons-via-skill violation)',
         }
 
     return {'verified': True, 'issue_resolved': True, 'details': 'Self-update patterns removed'}
 
 
-def verify_rule_11_fix(file_path: Path) -> dict:
+def verify_skill_tool_visibility_fix(file_path: Path) -> dict:
     """Verify Skill tool was added to agent's tools declaration."""
     try:
         content = file_path.read_text(encoding='utf-8', errors='replace')
@@ -133,7 +137,7 @@ def verify_rule_11_fix(file_path: Path) -> dict:
     return {
         'verified': True,
         'issue_resolved': False,
-        'details': 'Skill tool still missing from tools declaration (Rule 11 violation)',
+        'details': 'Skill tool still missing from tools declaration (agent-skill-tool-visibility violation)',
     }
 
 
@@ -154,20 +158,20 @@ def cmd_verify(args) -> int:
         print(json.dumps({'verified': False, 'error': f'Not a file: {args.file}'}), file=sys.stderr)
         return 1
 
-    fix_type = args.fix_type
+    fix_type = resolve_issue_type(args.fix_type)
 
     if fix_type in ('missing-frontmatter', 'missing-name-field', 'missing-description-field', 'missing-tools-field'):
         result = verify_frontmatter_fix(file_path)
     elif fix_type == 'array-syntax-tools':
         result = verify_array_syntax_fix(file_path)
-    elif fix_type == 'rule-6-violation':
-        result = verify_rule_6_fix(file_path)
+    elif fix_type == 'agent-task-tool-prohibited':
+        result = verify_task_tool_fix(file_path)
     elif fix_type == 'trailing-whitespace':
         result = verify_trailing_whitespace_fix(file_path)
-    elif fix_type == 'pattern-22-violation':
-        result = verify_pattern_22_fix(file_path)
-    elif fix_type == 'rule-11-violation':
-        result = verify_rule_11_fix(file_path)
+    elif fix_type == 'agent-lessons-via-skill':
+        result = verify_lessons_via_skill_fix(file_path)
+    elif fix_type == 'agent-skill-tool-visibility':
+        result = verify_skill_tool_visibility_fix(file_path)
     else:
         result = verify_generic(file_path, fix_type)
 

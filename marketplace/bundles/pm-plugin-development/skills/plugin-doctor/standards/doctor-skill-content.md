@@ -13,14 +13,15 @@ Comprehensive analysis and refactoring of skill subdirectory content (references
 This workflow analyzes all markdown files within a skill's subdirectories for proper organization, quality, and consistency. It uses LLM-based semantic analysis for classification and quality assessment.
 
 **Phases**:
-1. **Inventory** - Discover all files (SCRIPT)
-2. **Classify** - Categorize each file as reference/workflow/template (LLM)
-3. **Analyze** - Content quality analysis (LLM)
-4. **Reorganize** - Move files to correct directories (LLM + Bash)
-5. **Verify** - Link verification (SCRIPT)
-6. **Report** - Generate findings report (LLM)
+1. **Load Prerequisites** - Standards and reference guides
+2. **Inventory** - Discover all files
+3. **Classify** - Categorize each file as reference/workflow/template
+4. **Analyze Quality** - Content quality analysis (cross-file + single-file)
+5. **Reorganize** - Move files to correct directories
+6. **Verify Links** - Link verification
+7. **Report** - Generate findings report
 
-## Step 1: Load Prerequisites
+## Phase 1: Load Prerequisites
 
 ```
 Skill: plan-marshall:ref-development-standards
@@ -29,7 +30,7 @@ Read references/content-classification-guide.md
 Read references/content-quality-guide.md
 ```
 
-## Step 2: Phase 1 - Inventory (LLM)
+## Phase 2: Inventory
 
 Use Glob and Read tools to inventory skill content:
 
@@ -43,7 +44,7 @@ For each file, collect:
 - Line count (via Read tool)
 - Extension statistics
 
-## Step 3: Phase 2 - Classify (LLM)
+## Phase 3: Classify
 
 For each `.md` file discovered in subdirectories:
 
@@ -66,11 +67,11 @@ Needs Move: {yes|no}
 Needs Splitting: {yes|no}
 ```
 
-## Step 4: Phase 3 - Analyze Quality (LLM-Hybrid)
+## Phase 4: Analyze Quality
 
 Skip if `--skip-quality` specified.
 
-### Cross-File Analysis (LLM)
+### 4.1: Cross-File Analysis
 
 Perform cross-file analysis by reading and comparing content:
 
@@ -85,7 +86,7 @@ Produce analysis with:
 - `extraction_candidates`: Queue for LLM extraction recommendations
 - `terminology_variants`: Queue for LLM consistency analysis
 
-### LLM Semantic Analysis
+### 4.2: Semantic Analysis
 
 For each `similarity_candidate` (40-95% similarity):
 1. Read both content blocks from file locations
@@ -100,7 +101,7 @@ For each `terminology_variant`:
 1. Review variant terms and their files
 2. Recommend standardization term or keep variants
 
-### Single-File Quality Analysis
+### 4.3: Single-File Quality Analysis
 
 Read each content file and analyze:
 
@@ -112,7 +113,7 @@ Read each content file and analyze:
 - Conflicting rules
 - Examples violating stated rules
 
-### Verify LLM Findings
+### 4.4: Verify Findings
 
 Verify LLM findings by re-reading referenced files:
 
@@ -129,7 +130,7 @@ Verify LLM findings by re-reading referenced files:
 - Verified terminology issues
 - Single-file quality scores
 
-## Step 5: Phase 4 - Reorganize (LLM + Bash)
+## Phase 5: Reorganize
 
 Based on Phase 2 classification results:
 
@@ -158,7 +159,7 @@ AskUserQuestion:
 1. Grep for old paths in SKILL.md and all content files
 2. Update references using Edit tool
 
-## Step 6: Phase 5 - Verify Links (LLM)
+## Phase 6: Verify Links
 
 Use Grep and Read tools to verify references:
 
@@ -170,7 +171,7 @@ For each content file, verify:
 - Internal cross-references valid
 - SKILL.md references point to existing files
 
-## Step 7: Phase 6 - Report (LLM)
+## Phase 7: Report
 
 Generate comprehensive report:
 

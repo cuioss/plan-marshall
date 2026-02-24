@@ -10,11 +10,11 @@
     },
     {
       "id": "issue-2",
-      "type": "rule-6-violation",
+      "type": "agent-task-tool-prohibited",
       "severity": "critical",
       "file": "agents/task-agent.md",
       "line": 5,
-      "message": "Agent declares Task tool which violates Rule 6"
+      "message": "Agent declares Task tool (agent-task-tool-prohibited)"
     },
     {
       "id": "issue-3",

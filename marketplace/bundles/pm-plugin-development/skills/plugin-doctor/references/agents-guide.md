@@ -35,7 +35,7 @@ model: sonnet
 **Required Fields**:
 - `name`: Agent identifier (kebab-case, matches filename)
 - `description`: One-sentence purpose statement
-- `tools`: Array of tool names (must include `Skill` — see Rule 11)
+- `tools`: Array of tool names (must include `Skill` — see agent-skill-tool-visibility)
 
 **Optional Fields**:
 - `model`: Preferred model (sonnet, opus, haiku) - defaults to sonnet
@@ -85,7 +85,7 @@ total_needed_tools = used_tools + missing_tools
 - `Skill`: Invoke other skills
 
 **PROHIBITED in Agents**:
-- ❌ `Task`: Agents CANNOT invoke other agents (Rule 6 violation)
+- ❌ `Task`: Agents CANNOT invoke other agents (agent-task-tool-prohibited violation)
 - ❌ `SlashCommand`: Agents CANNOT invoke commands (architectural violation)
 
 ### Tool Coverage Analysis
@@ -108,7 +108,7 @@ total_needed_tools = used_tools + missing_tools
 # Unused: Bash (used but not declared) → add to frontmatter
 ```
 
-## Architecture Rule 6: Task Tool Prohibition
+## agent-task-tool-prohibited
 
 **CRITICAL RULE**: Agents CANNOT use Task tool to invoke other agents.
 
@@ -138,7 +138,7 @@ tools:
 - Agents invoke skills via Skill tool
 - Agents return results to caller for orchestration
 
-## Architecture Rule 7: Maven Execution Restriction
+## agent-maven-restricted
 
 **CRITICAL RULE**: Only `maven-builder` agent may execute Maven commands directly.
 
@@ -171,9 +171,9 @@ Bash: maven package
 - maven-builder agent executes Maven and returns results
 - Non-maven-builder agents receive results, no direct Maven execution
 
-## Pattern 22: Agent Reporting Requirement
+## agent-lessons-via-skill
 
-**CRITICAL PATTERN**: Agents MUST report improvements to caller (not self-invoke commands).
+**CRITICAL PATTERN**: Agents MUST report improvements to caller via lessons skill (not self-invoke commands).
 
 **CONTINUOUS IMPROVEMENT RULE Format**:
 
@@ -197,7 +197,7 @@ Expected impact: [benefit of change]
 The caller can then invoke `/plugin-update-agent agent-name=... update="..."` based on your report.
 ```
 
-**Invalid Pattern** (self-update) - Pattern 22 Violation:
+**Invalid Pattern** (self-update) - agent-lessons-via-skill Violation:
 ```markdown
 ## CONTINUOUS IMPROVEMENT RULE
 
@@ -219,9 +219,9 @@ If you discover improvements, invoke `/plugin-update-agent` directly to update y
 - Remove any `/plugin-update-agent` invocation instructions
 - Add "return structured improvement suggestion" guidance
 
-## Rule 10: Self-Contained Command Definition
+## command-self-contained-notation
 
-**CRITICAL RULE**: Agents MUST have all script commands explicitly defined within themselves with EXACT notation format `bundle:skill:script`.
+**CRITICAL RULE**: Commands (and agents with script calls) MUST have all script commands explicitly defined within themselves with EXACT notation format `bundle:skill:script`.
 
 **Rationale**: When agents rely on parent-passed commands or generic descriptions, they:
 - Invent incorrect notations (wrong bundle, wrong skill)
@@ -292,7 +292,7 @@ python3 .plan/execute-script.py pm-workflow:manage-assessments:manage-assessment
 - Add parameter table showing where each value comes from
 - Add CRITICAL warning about not inventing notations
 
-## Rule 11: Skill Tool Visibility Requirement
+## agent-skill-tool-visibility
 
 **CRITICAL RULE**: Agents with explicit `tools:` declarations MUST include `Skill` to be visible to the Task tool dispatcher.
 
@@ -578,7 +578,7 @@ Bash: scripts/analyze-tool-coverage.sh {agent_path}
 2. Remove unused tools from frontmatter
 3. Re-run analysis to verify 90%+ score
 
-### Issue 2: Rule 6 Violation (Task Tool)
+### Issue 2: agent-task-tool-prohibited (Task Tool)
 
 **Symptoms**:
 - `Task` appears in frontmatter tools array
@@ -587,7 +587,7 @@ Bash: scripts/analyze-tool-coverage.sh {agent_path}
 **Diagnosis**:
 ```bash
 Bash: scripts/analyze-markdown-file.sh {agent_path} agent
-# Check: rules.rule_6_violation = true
+# Check: rules.agent_task_tool_prohibited = true
 ```
 
 **Fix Options**:
@@ -595,7 +595,7 @@ Bash: scripts/analyze-markdown-file.sh {agent_path} agent
 - **Inline logic**: Absorb agent logic into calling command
 - **Use skills**: Replace Task with Skill invocation
 
-### Issue 3: Rule 7 Violation (Maven Usage)
+### Issue 3: agent-maven-restricted (Maven Usage)
 
 **Symptoms**:
 - Direct Maven execution in non-maven-builder agent
@@ -604,7 +604,7 @@ Bash: scripts/analyze-markdown-file.sh {agent_path} agent
 **Diagnosis**:
 ```bash
 Bash: scripts/analyze-markdown-file.sh {agent_path} agent
-# Check: rules.rule_7_violation = true
+# Check: rules.agent_maven_restricted = true
 ```
 
 **Fix**:
@@ -617,7 +617,7 @@ Bash: scripts/analyze-markdown-file.sh {agent_path} agent
 #    Parameters: goals="test"
 ```
 
-### Issue 4: Pattern 22 Violation (Self-Invocation)
+### Issue 4: agent-lessons-via-skill (Self-Invocation)
 
 **Symptoms**:
 - CONTINUOUS IMPROVEMENT RULE instructs agent to invoke commands directly
@@ -626,11 +626,11 @@ Bash: scripts/analyze-markdown-file.sh {agent_path} agent
 **Diagnosis**:
 ```bash
 Bash: scripts/analyze-markdown-file.sh {agent_path} agent
-# Check: continuous_improvement_rule.format.pattern_22_violation = true
+# Check: continuous_improvement_rule.format.agent_lessons_via_skill_violation = true
 ```
 
 **Fix**:
-Update CONTINUOUS IMPROVEMENT RULE to use caller-reporting pattern (see Pattern 22 section above).
+Update CONTINUOUS IMPROVEMENT RULE to use caller-reporting pattern (see agent-lessons-via-skill section above).
 
 ### Issue 5: Bloat (>500 Lines)
 
@@ -657,11 +657,11 @@ Apply anti-bloat strategies:
 **Before marking agent as "quality approved"**:
 - ✅ Frontmatter present and valid (name, description, tools)
 - ✅ Tool fit score >= 90% (Excellent)
-- ✅ No Rule 6 violations (no Task tool)
-- ✅ No Rule 7 violations (no Maven unless maven-builder)
-- ✅ No Pattern 22 violations (caller-reporting pattern)
-- ✅ No Rule 10 violations (self-contained command definitions)
-- ✅ No Rule 11 violations (Skill in tools for Task visibility)
+- ✅ No agent-task-tool-prohibited violations (no Task tool)
+- ✅ No agent-maven-restricted violations (no Maven unless maven-builder)
+- ✅ No agent-lessons-via-skill violations (caller-reporting pattern)
+- ✅ No command-self-contained-notation violations (self-contained command definitions)
+- ✅ No agent-skill-tool-visibility violations (Skill in tools for Task visibility)
 - ✅ All script commands have explicit bash blocks
 - ✅ All notations match `bundle:skill:script` format
 - ✅ Has "## Logging Command" or "## Script Commands" section if performs script operations

@@ -35,7 +35,7 @@ def check_continuous_improvement(content: str, component_type: str) -> dict:
     """Check CONTINUOUS IMPROVEMENT RULE presence and pattern."""
     ci_present = bool(re.search(r'CONTINUOUS IMPROVEMENT', content, re.IGNORECASE))
     ci_pattern = 'none'
-    pattern_22_violation = False
+    agent_lessons_via_skill = False
 
     if ci_present:
         if re.search(r'/plugin-update-command|/plugin-update-agent', content):
@@ -44,9 +44,9 @@ def check_continuous_improvement(content: str, component_type: str) -> dict:
             ci_pattern = 'caller-reporting'
 
         if component_type == 'agent' and ci_pattern == 'self-update':
-            pattern_22_violation = True
+            agent_lessons_via_skill = True
 
-    return {'present': ci_present, 'format': {'pattern': ci_pattern, 'pattern_22_violation': pattern_22_violation}}
+    return {'present': ci_present, 'format': {'pattern': ci_pattern, 'agent_lessons_via_skill': agent_lessons_via_skill}}
 
 
 def get_bloat_classification(line_count: int, component_type: str) -> str:
@@ -86,7 +86,7 @@ def check_execution_patterns(content: str) -> dict:
     }
 
 
-def check_rule_9_violations(content: str) -> list:
+def check_explicit_script_violations(content: str) -> list:
     """Check for Rule 9 violations: workflow steps with action verbs but no explicit script calls."""
     violations = []
 
@@ -253,8 +253,8 @@ def check_command_self_containment(content: str) -> dict:
     }
 
 
-def check_rule_11_violation(frontmatter: str, has_tools: bool) -> bool:
-    """Check Rule 11: Agent tools missing Skill — invisible to Task dispatcher.
+def check_skill_tool_visibility(frontmatter: str, has_tools: bool) -> bool:
+    """Check agent-skill-tool-visibility: Agent tools missing Skill — invisible to Task dispatcher.
 
     When an agent declares explicit tools but omits Skill, it becomes invisible
     to the Task tool dispatcher. If no tools are declared (inherits all), Skill
@@ -276,8 +276,8 @@ def check_rule_11_violation(frontmatter: str, has_tools: bool) -> bool:
     return 'Skill' not in tools
 
 
-def check_rule_12_violations(content: str) -> list:
-    """Check Rule 12: Prose-parameter consistency near script call templates.
+def check_prose_parameter_consistency(content: str) -> list:
+    """Check workflow-prose-parameter-consistency near script call templates.
 
     Detects prose instructions adjacent to execute-script.py bash blocks that
     reference parameter values inconsistent with the actual script API.
@@ -349,51 +349,51 @@ def check_rule_12_violations(content: str) -> list:
 
 def check_rule_violations(content: str, frontmatter: str, component_type: str, has_tools: bool, file_path: str) -> dict:
     """Check for rule violations."""
-    rule_6_violation = False
+    agent_task_tool_prohibited = False
     if component_type == 'agent' and has_tools:
         if re.search(r'^  - Task$|Task,|Task$', frontmatter, re.MULTILINE):
-            rule_6_violation = True
+            agent_task_tool_prohibited = True
 
-    rule_7_violation = False
+    agent_maven_restricted = False
     if re.search(r'mvn |maven |./mvnw ', content):
         if 'builder-maven' not in file_path:
             pattern = r'^Bash:.*mvn|^Bash:.*maven|^Bash:.*\./mvnw|`.*mvn |`.*\./mvnw |^\s+mvn |^\s+\./mvnw '
             matches = re.findall(pattern, content, re.MULTILINE)
             for match in matches:
                 if 'Rule 7' not in match and 'should use' not in match and 'instead of' not in match:
-                    rule_7_violation = True
+                    agent_maven_restricted = True
                     break
 
-    rule_8_violation = False
+    workflow_hardcoded_script_path = False
     if re.search(r'python3 .*/scripts/|bash .*/scripts/|\{[^}]+\}/scripts/', content):
         if not re.search(r'Skill:.*script-runner', content):
-            rule_8_violation = True
+            workflow_hardcoded_script_path = True
 
-    rule_9_violations = []
+    workflow_explicit_script_violations = []
     if component_type == 'skill':
-        rule_9_violations = check_rule_9_violations(content)
+        workflow_explicit_script_violations = check_explicit_script_violations(content)
 
-    # Rule 10: Self-contained command definition (applies to agents primarily)
-    rule_10_result = {}
+    # Self-contained command definition (applies to agents primarily)
+    command_self_contained_violations = {}
     if component_type == 'agent':
-        rule_10_result = check_command_self_containment(content)
+        command_self_contained_violations = check_command_self_containment(content)
 
-    # Rule 11: Agent Skill tool visibility (agents only)
-    rule_11_violation = False
+    # Agent Skill tool visibility (agents only)
+    agent_skill_tool_visibility = False
     if component_type == 'agent':
-        rule_11_violation = check_rule_11_violation(frontmatter, has_tools)
+        agent_skill_tool_visibility = check_skill_tool_visibility(frontmatter, has_tools)
 
-    # Rule 12: Prose-parameter consistency (all component types)
-    rule_12_violations = check_rule_12_violations(content)
+    # Prose-parameter consistency (all component types)
+    workflow_prose_param_violations = check_prose_parameter_consistency(content)
 
     return {
-        'rule_6_violation': rule_6_violation,
-        'rule_7_violation': rule_7_violation,
-        'rule_8_violation': rule_8_violation,
-        'rule_9_violations': rule_9_violations,
-        'rule_10_violations': rule_10_result,
-        'rule_11_violation': rule_11_violation,
-        'rule_12_violations': rule_12_violations,
+        'agent_task_tool_prohibited': agent_task_tool_prohibited,
+        'agent_maven_restricted': agent_maven_restricted,
+        'workflow_hardcoded_script_path': workflow_hardcoded_script_path,
+        'workflow_explicit_script_violations': workflow_explicit_script_violations,
+        'command_self_contained_violations': command_self_contained_violations,
+        'agent_skill_tool_visibility': agent_skill_tool_visibility,
+        'workflow_prose_param_violations': workflow_prose_param_violations,
     }
 
 

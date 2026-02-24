@@ -34,7 +34,7 @@
       "replacement": "",
       "description": "Remove trailing whitespace from all lines"
     },
-    "rule-6-violation": {
+    "agent-task-tool-prohibited": {
       "patterns": [
         {
           "match": ",\\s*Task\\b",
@@ -55,7 +55,7 @@
       "strategy": "remove_from_comma_list",
       "description": "Remove unused tools from declaration"
     },
-    "pattern-22-violation": {
+    "agent-lessons-via-skill": {
       "replacements": [
         {
           "pattern": "/plugin-update-agent",
@@ -79,14 +79,15 @@
       "array-syntax-tools",
       "trailing-whitespace",
       "improper-indentation",
-      "missing-blank-line-before-list"
+      "missing-blank-line-before-list",
+      "agent-skill-tool-visibility"
     ],
     "risky": [
       "unused-tool-declared",
       "tool-not-declared",
-      "rule-6-violation",
-      "rule-7-violation",
-      "pattern-22-violation",
+      "agent-task-tool-prohibited",
+      "agent-maven-restricted",
+      "agent-lessons-via-skill",
       "backup-file-pattern",
       "ci-rule-self-update"
     ]

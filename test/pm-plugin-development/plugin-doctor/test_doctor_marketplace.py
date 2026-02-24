@@ -597,14 +597,14 @@ def test_fixture_analyze_detects_rule_11():
         assert result.returncode == 0, f'Analyze failed: {result.stderr}'
 
         data = result.json()
-        # Find rule-11-violation in all issues
+        # Find agent-skill-tool-visibility in all issues
         all_issues = []
         for item in data['analysis']:
             all_issues.extend(item.get('issues', []))
 
-        rule_11_issues = [i for i in all_issues if i['type'] == 'rule-11-violation']
+        rule_11_issues = [i for i in all_issues if i['type'] == 'agent-skill-tool-visibility']
         assert len(rule_11_issues) >= 1, (
-            f'Should detect rule-11-violation, got issues: {[i["type"] for i in all_issues]}'
+            f'Should detect agent-skill-tool-visibility, got issues: {[i["type"] for i in all_issues]}'
         )
         assert rule_11_issues[0]['fixable'] is True, 'Rule 11 should be fixable'
         assert rule_11_issues[0]['severity'] == 'warning', 'Rule 11 should be warning severity'
@@ -633,8 +633,8 @@ def test_fixture_analyze_no_rule_11_with_skill():
             if 'has-skill-agent' in item.get('component', {}).get('path', ''):
                 all_issues.extend(item.get('issues', []))
 
-        rule_11_issues = [i for i in all_issues if i['type'] == 'rule-11-violation']
-        assert len(rule_11_issues) == 0, 'Should NOT detect rule-11-violation when Skill is present'
+        rule_11_issues = [i for i in all_issues if i['type'] == 'agent-skill-tool-visibility']
+        assert len(rule_11_issues) == 0, 'Should NOT detect agent-skill-tool-visibility when Skill is present'
     finally:
         fixture.cleanup()
 
@@ -660,8 +660,8 @@ def test_fixture_analyze_no_rule_11_without_tools():
             if 'no-tools-agent' in item.get('component', {}).get('path', ''):
                 all_issues.extend(item.get('issues', []))
 
-        rule_11_issues = [i for i in all_issues if i['type'] == 'rule-11-violation']
-        assert len(rule_11_issues) == 0, 'Should NOT detect rule-11-violation when no tools field'
+        rule_11_issues = [i for i in all_issues if i['type'] == 'agent-skill-tool-visibility']
+        assert len(rule_11_issues) == 0, 'Should NOT detect agent-skill-tool-visibility when no tools field'
     finally:
         fixture.cleanup()
 

@@ -259,7 +259,7 @@ python3 .plan/execute-script.py pm-workflow:manage-plan-documents:manage-plan-do
         result = run_script(SCRIPT_PATH, 'markdown', '--file', str(temp_file), '--type', 'agent')
         assert result.returncode == 0, f'Script returned error: {result.stderr}'
         data = result.json()
-        rule_12 = data.get('rules', {}).get('rule_12_violations', [])
+        rule_12 = data.get('rules', {}).get('workflow_prose_param_violations', [])
         assert len(rule_12) >= 1, f'Should detect body section reference, found {len(rule_12)}'
         assert rule_12[0]['pattern'] == 'invalid_section_reference'
     finally:
@@ -290,7 +290,7 @@ python3 .plan/execute-script.py pm-workflow:manage-plan-documents:manage-plan-do
         result = run_script(SCRIPT_PATH, 'markdown', '--file', str(temp_file), '--type', 'skill')
         assert result.returncode == 0, f'Script returned error: {result.stderr}'
         data = result.json()
-        rule_12 = data.get('rules', {}).get('rule_12_violations', [])
+        rule_12 = data.get('rules', {}).get('workflow_prose_param_violations', [])
         assert len(rule_12) >= 1, f'Should detect "otherwise body" pattern, found {len(rule_12)}'
     finally:
         temp_file.unlink()
@@ -321,7 +321,7 @@ python3 .plan/execute-script.py pm-workflow:manage-plan-documents:manage-plan-do
         result = run_script(SCRIPT_PATH, 'markdown', '--file', str(temp_file), '--type', 'agent')
         assert result.returncode == 0, f'Script returned error: {result.stderr}'
         data = result.json()
-        rule_12 = data.get('rules', {}).get('rule_12_violations', [])
+        rule_12 = data.get('rules', {}).get('workflow_prose_param_violations', [])
         assert len(rule_12) == 0, f'Should NOT flag correct original_input reference, found {len(rule_12)}'
     finally:
         temp_file.unlink()
@@ -351,7 +351,7 @@ python3 .plan/execute-script.py pm-workflow:manage-references:manage-references 
         result = run_script(SCRIPT_PATH, 'markdown', '--file', str(temp_file), '--type', 'agent')
         assert result.returncode == 0, f'Script returned error: {result.stderr}'
         data = result.json()
-        rule_12 = data.get('rules', {}).get('rule_12_violations', [])
+        rule_12 = data.get('rules', {}).get('workflow_prose_param_violations', [])
         assert len(rule_12) == 0, f'Should NOT flag body reference without plan-documents call, found {len(rule_12)}'
     finally:
         temp_file.unlink()

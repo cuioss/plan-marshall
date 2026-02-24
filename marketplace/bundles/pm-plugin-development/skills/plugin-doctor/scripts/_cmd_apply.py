@@ -6,7 +6,7 @@ import re
 import shutil
 from pathlib import Path
 
-from _fix_shared import read_json_input
+from _fix_shared import read_json_input, resolve_issue_type
 
 
 def load_templates(script_dir: Path) -> dict:
@@ -138,7 +138,7 @@ def apply_trailing_whitespace_fix(file_path: Path, fix: dict, templates: dict) -
     }
 
 
-def apply_rule_6_fix(file_path: Path, fix: dict, templates: dict) -> dict:
+def apply_task_tool_fix(file_path: Path, fix: dict, templates: dict) -> dict:
     """Remove Task tool from agent's tools declaration."""
     with open(file_path, encoding='utf-8') as f:
         content = f.read()
@@ -162,11 +162,11 @@ def apply_rule_6_fix(file_path: Path, fix: dict, templates: dict) -> dict:
     with open(file_path, 'w', encoding='utf-8') as f:
         f.write(new_content)
 
-    return {'success': True, 'changes': ['Removed Task tool from tools declaration (Rule 6)'], 'rule': 'Rule 6'}
+    return {'success': True, 'changes': ['Removed Task tool from tools declaration (agent-task-tool-prohibited)']}
 
 
-def apply_rule_11_fix(file_path: Path, fix: dict, templates: dict) -> dict:
-    """Add Skill tool to agent's tools declaration (Rule 11)."""
+def apply_skill_tool_visibility_fix(file_path: Path, fix: dict, templates: dict) -> dict:
+    """Add Skill tool to agent's tools declaration (agent-skill-tool-visibility)."""
     with open(file_path, encoding='utf-8') as f:
         content = f.read()
 
@@ -192,7 +192,7 @@ def apply_rule_11_fix(file_path: Path, fix: dict, templates: dict) -> dict:
     with open(file_path, 'w', encoding='utf-8') as f:
         f.write(new_content)
 
-    return {'success': True, 'changes': ['Added Skill tool to tools declaration (Rule 11)'], 'rule': 'Rule 11'}
+    return {'success': True, 'changes': ['Added Skill tool to tools declaration (agent-skill-tool-visibility)']}
 
 
 def apply_unused_tool_fix(file_path: Path, fix: dict, templates: dict) -> dict:
@@ -226,8 +226,8 @@ def apply_unused_tool_fix(file_path: Path, fix: dict, templates: dict) -> dict:
     return {'success': True, 'changes': [f'Removed unused tools: {", ".join(removed)}'], 'tools_removed': removed}
 
 
-def apply_pattern_22_fix(file_path: Path, fix: dict, templates: dict) -> dict:
-    """Fix Pattern 22 violation by changing self-update to caller reporting."""
+def apply_lessons_via_skill_fix(file_path: Path, fix: dict, templates: dict) -> dict:
+    """Fix agent-lessons-via-skill violation by changing self-update to caller reporting."""
     with open(file_path, encoding='utf-8') as f:
         content = f.read()
 
@@ -246,12 +246,12 @@ def apply_pattern_22_fix(file_path: Path, fix: dict, templates: dict) -> dict:
             changes_made.append(f"Replaced '{pattern}' with caller reporting")
 
     if not changes_made:
-        return {'success': False, 'error': 'No Pattern 22 violations found to fix'}
+        return {'success': False, 'error': 'No agent-lessons-via-skill violations found to fix'}
 
     with open(file_path, 'w', encoding='utf-8') as f:
         f.write(new_content)
 
-    return {'success': True, 'changes': changes_made, 'pattern': 'Pattern 22'}
+    return {'success': True, 'changes': changes_made}
 
 
 FIX_HANDLERS = {
@@ -261,16 +261,16 @@ FIX_HANDLERS = {
     'missing-description-field': apply_missing_field_fix,
     'missing-tools-field': apply_missing_field_fix,
     'trailing-whitespace': apply_trailing_whitespace_fix,
-    'rule-6-violation': apply_rule_6_fix,
-    'rule-11-violation': apply_rule_11_fix,
+    'agent-task-tool-prohibited': apply_task_tool_fix,
+    'agent-skill-tool-visibility': apply_skill_tool_visibility_fix,
     'unused-tool-declared': apply_unused_tool_fix,
-    'pattern-22-violation': apply_pattern_22_fix,
+    'agent-lessons-via-skill': apply_lessons_via_skill_fix,
 }
 
 
 def apply_single_fix(fix: dict, bundle_dir: Path, templates: dict) -> dict:
     """Apply a single fix to a component file."""
-    fix_type = fix.get('type', '')
+    fix_type = resolve_issue_type(fix.get('type', ''))
     file_path = fix.get('file', '')
 
     if not fix_type:

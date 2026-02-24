@@ -46,7 +46,7 @@ Step-by-step workflow.
 
 Commands MUST follow these 9 anti-bloat rules to remain thin orchestrators.
 
-### Rule 0: Delegate to Skills (FOUNDATIONAL)
+### command-thin-wrapper (Delegate to Skills, FOUNDATIONAL)
 
 **CRITICAL**: Commands MUST delegate ALL workflow logic to skills. Commands are thin wrappers.
 
@@ -125,7 +125,7 @@ Format output...
 - Commands remain simple entry points
 - Logic changes don't require command updates
 
-### Rule 1: Delegate to Agents (NOT Inline Logic)
+### command-delegate-to-agents (Delegate to Agents, NOT Inline Logic)
 
 **CRITICAL**: Commands MUST delegate complex operations to agents, NOT implement logic inline.
 
@@ -160,7 +160,7 @@ Parse JSON result from agent.
 
 **Rationale**: Keeps command focused on orchestration, agents handle implementation details.
 
-### Rule 2: Use Task Tool for Complex Operations
+### command-use-task-tool (Use Task Tool for Complex Operations)
 
 **CRITICAL**: Commands MUST use Task tool to invoke agents for any non-trivial operation.
 
@@ -193,7 +193,7 @@ For EACH component:
   Add to bundle summary
 ```
 
-### Rule 3: No Duplicate Agent Logic
+### command-no-duplicate-logic (No Duplicate Agent Logic)
 
 **CRITICAL**: Commands MUST NOT duplicate logic from agents.
 
@@ -225,7 +225,7 @@ Parse validation results from agent.
 
 **Rationale**: Agents are reusable, commands just orchestrate them.
 
-### Rule 4: Clear Parameter Documentation
+### command-clear-parameters (Clear Parameter Documentation)
 
 **CRITICAL**: Commands MUST have clear PARAMETERS section documenting all parameters.
 
@@ -256,7 +256,7 @@ Parse validation results from agent.
 Takes some parameters. You can specify scope and other options.
 ```
 
-### Rule 5: Bundle-by-Bundle Orchestration
+### command-bundle-orchestration (Bundle-by-Bundle Orchestration)
 
 **CRITICAL**: Commands processing multiple components MUST use sequential bundle processing.
 
@@ -296,7 +296,7 @@ Generate summary.
 - Mandatory completion checks prevent skipping steps
 - Sequential processing easier to debug
 
-### Rule 6: Progressive Disclosure
+### command-progressive-disclosure (Progressive Disclosure)
 
 **CRITICAL**: Commands MUST use progressive disclosure - load skills/resources on-demand.
 
@@ -328,7 +328,7 @@ Skill: pm-dev-frontend:cui-javascript
 
 **Rationale**: Progressive disclosure reduces context usage, loads only what's needed.
 
-### Rule 7: Mandatory Completion Checks
+### command-completion-checks (Mandatory Completion Checks)
 
 **CRITICAL**: Commands MUST have mandatory completion checks for bundle-by-bundle processing.
 
@@ -373,7 +373,7 @@ Move to next bundle.  # ❌ No verification!
 - Incomplete workflows
 - Unreported errors
 
-### Rule 8: No Embedded Standards
+### command-no-embedded-standards (No Embedded Standards)
 
 **CRITICAL**: Commands MUST NOT contain embedded standards documentation. Use reference guides or skill dependencies.
 
@@ -674,13 +674,13 @@ Bash: scripts/analyze-markdown-file.sh {command_path} command
 ```
 
 **Fix Strategy**:
-Apply 8 anti-bloat rules:
+Apply anti-bloat rules (command-thin-wrapper, command-progressive-disclosure, command-no-embedded-standards):
 1. Extract inline logic → create new agent
 2. Replace duplicate logic → use existing agent
-3. Extract embedded standards → reference skill or guide
+3. Extract embedded standards → reference skill or guide (command-no-embedded-standards)
 4. Condense workflow steps (remove verbose explanations)
 5. Remove redundant examples
-6. Use progressive disclosure (load skills on-demand)
+6. Use progressive disclosure (load skills on-demand) (command-progressive-disclosure)
 
 **Example Refactoring**:
 ```markdown
@@ -714,7 +714,7 @@ Bash: scripts/analyze-markdown-file.sh {command_path} command
 ```
 
 **Fix**:
-Add clear PARAMETERS section following format in Rule 4.
+Add clear PARAMETERS section following format in command-clear-parameters.
 
 ### Issue 3: No Bundle-by-Bundle Orchestration
 
@@ -748,7 +748,7 @@ Grep: pattern="git status|POST-FIX", path={command_path}, output_mode="content"
 ```
 
 **Fix**:
-Add POST-FIX VERIFICATION step (see Rule 7).
+Add POST-FIX VERIFICATION step (see command-completion-checks).
 
 ### Issue 5: Incorrect Bundle Prefix Usage
 
@@ -768,7 +768,7 @@ Bash: python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:analyz
 - Task: Add bundle prefix
 - Skill: Add bundle prefix
 
-### Issue 6: Embedded Standards (Rule 8 Violation)
+### Issue 6: command-no-embedded-standards Violation
 
 **Symptoms**:
 - Command contains large standards documentation blocks
@@ -786,17 +786,17 @@ Extract standards to:
 ## Summary Checklist
 
 **Before marking command as "quality approved"**:
-- ✅ **Rule 0**: Thin wrapper delegating to skill (< 100 lines ideal, < 150 acceptable)
-- ✅ **Rule 0**: No workflow logic in command (all in skill)
+- ✅ **command-thin-wrapper**: Thin wrapper delegating to skill (< 100 lines ideal, < 150 acceptable)
+- ✅ **command-thin-wrapper**: No workflow logic in command (all in skill)
 - ✅ File size < 150 lines (ACCEPTABLE) - CRITICAL if > 200 lines
-- ✅ Rule 1: Delegates to agents for complex operations (if agents used)
-- ✅ Rule 2: Uses Task tool for complex operations (if agents used)
-- ✅ Rule 3: No duplicate agent logic
-- ✅ Rule 4: Clear PARAMETERS section
-- ✅ Rule 5: Bundle-by-bundle orchestration (if multi-component)
-- ✅ Rule 6: Progressive disclosure (skills loaded on-demand)
-- ✅ Rule 7: Mandatory completion checks and POST-FIX VERIFICATION
-- ✅ Rule 8: No embedded standards
+- ✅ command-delegate-to-agents: Delegates to agents for complex operations (if agents used)
+- ✅ command-use-task-tool: Uses Task tool for complex operations (if agents used)
+- ✅ command-no-duplicate-logic: No duplicate agent logic
+- ✅ command-clear-parameters: Clear PARAMETERS section
+- ✅ command-bundle-orchestration: Bundle-by-bundle orchestration (if multi-component)
+- ✅ command-progressive-disclosure: Progressive disclosure (skills loaded on-demand)
+- ✅ command-completion-checks: Mandatory completion checks and POST-FIX VERIFICATION
+- ✅ command-no-embedded-standards: No embedded standards
 - ✅ Proper bundle prefix usage (SlashCommand no prefix, Task/Skill have prefix)
 - ✅ CONTINUOUS IMPROVEMENT RULE present
 - ✅ Clear section structure (PURPOSE, PARAMETERS, WORKFLOW)

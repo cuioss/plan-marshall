@@ -857,3 +857,27 @@ Use relative paths instead of absolute paths:
 - ✅ Integrated standards coherence (no conflicts, gaps, inconsistencies)
 - ✅ Clear workflow structure with step-by-step logic
 - ✅ External resources properly referenced (scripts/, references/, assets/)
+
+## Human-Audience Content Separation
+
+All human-targeted content — verbose descriptions, ASCII diagrams, flowcharts, architecture overviews, motivational text — belongs in separate companion files, not inline in SKILL.md or standards files. These are noise for LLMs and waste token budget.
+
+**Convention**:
+- Companion file: `*-diagrams.md` or `*-overview.md`
+- File starts with HTML comment: `<!-- audience: human-visual -->`
+- SKILL.md references it briefly: "For visual overview, see diagrams.md"
+- The LLM skips these files during execution (no actionable instructions)
+- Humans read them for orientation and high-level understanding
+
+**What to separate**:
+- ASCII diagrams and flowcharts
+- Architecture overviews that restate what SKILL.md already specifies
+- Verbose descriptions and rationale prose
+- Motivational or explanatory text aimed at human readers
+
+**What stays inline** (LLM-relevant):
+- Decision tables (the LLM indexes into them)
+- Concrete examples directly adjacent to rules they illustrate
+- Explicit constraints and action instructions
+
+**Plugin-doctor validation**: The `doctor-skill-knowledge` workflow flags inline human-audience content and recommends extraction.

@@ -699,7 +699,7 @@ test/{bundle}/{skill}/fixtures/{script-name}/
 ├── valid-input.md           # Happy path
 ├── invalid-frontmatter.md   # Error case
 ├── empty-file.md            # Edge case
-├── rule-6-violation.md      # Architectural rule
+├── agent-task-tool-prohibited.md  # Architectural rule
 └── expected-output.json     # Expected results
 ```
 

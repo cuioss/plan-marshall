@@ -58,7 +58,7 @@ awk '/^---$/...' "$file" | grep -q "^description:"
 
 ### Tool Declaration Fixes
 
-**Verifies**: unused-tool-declared, tool-not-declared, rule-6-violation
+**Verifies**: unused-tool-declared, tool-not-declared, agent-task-tool-prohibited
 
 **Strategy**: Re-run tool coverage analysis
 
@@ -73,18 +73,18 @@ if fix_type == "unused-tool-declared":
     success = result['unused_count'] == 0
 elif fix_type == "tool-not-declared":
     success = result['missing_count'] == 0
-elif fix_type == "rule-6-violation":
+elif fix_type == "agent-task-tool-prohibited":
     success = not result['has_task_tool']
 ```
 
 ### Pattern Violation Fixes
 
-**Verifies**: pattern-22-violation, ci-rule-self-update
+**Verifies**: agent-lessons-via-skill, ci-rule-self-update
 
 **Strategy**: Check for prohibited patterns
 
 ```bash
-# Pattern 22: No self-update commands
+# agent-lessons-via-skill: No self-update commands
 ! grep -qi "/plugin-update-agent\|/plugin-update-command" "$file"
 ```
 
@@ -139,7 +139,7 @@ print(f"Verified: {resolved}/{total} fixes resolved issues")
       "issue_resolved": true
     },
     {
-      "fix_type": "rule-6-violation",
+      "fix_type": "agent-task-tool-prohibited",
       "file": "agents/task-agent.md",
       "verified": true,
       "issue_resolved": false,

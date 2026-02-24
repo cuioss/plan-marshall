@@ -1,6 +1,6 @@
 # Risky Fixes Guide
 
-Guide for presenting and applying risky fixes that require user confirmation.
+Guide for presenting and applying risky fixes that require user confirmation. See `fix-catalog.md` for the complete list of risky fix types and their detection patterns.
 
 ## Risky Fix Principles
 
@@ -49,124 +49,11 @@ For each risky fix, explain:
 **Why This Needs Confirmation**:
 - The tool may be intentionally reserved for future use
 - Removal changes what tools the agent can access
-- If tool is needed, it must be re-added manually
 
 **Current tools**: Read, Write, Edit, WebSearch, Glob
 **After fix**: Read, Write, Edit, Glob
 
 Apply this fix?
-```
-
-## Fix-Specific Guidance
-
-### unused-tool-declared
-
-**What It Fixes**: Removes tools declared but not used
-
-**User Decision Points**:
-- Is the tool actually unused, or is detection incomplete?
-- Was the tool intentionally declared for future use?
-- Are there plans to use this tool soon?
-
-**Presentation**:
-```
-Unused tools found: WebSearch, NotebookEdit
-These tools are declared but not referenced in the content.
-Removing them will:
-- Clean up the tools declaration
-- Better reflect actual component capabilities
-- Require re-adding if needed later
-```
-
-### tool-not-declared
-
-**What It Fixes**: Adds tools used but not declared
-
-**User Decision Points**:
-- Should this tool actually be used?
-- Is the usage accidental and should be removed instead?
-- What's the minimal set of tools needed?
-
-**Presentation**:
-```
-Missing tool declarations found: Grep, Glob
-These tools are used in content but not declared.
-Adding them will:
-- Allow the component to use these tools
-- Make the declaration accurate
-- Potentially expand component capabilities
-```
-
-### rule-6-violation
-
-**What It Fixes**: Removes Task tool from agents
-
-**User Decision Points**:
-- How will the agent work without Task?
-- Does the agent need restructuring?
-- Should this be a command instead?
-
-**Presentation**:
-```
-Rule 6 Violation: Agent declares Task tool
-
-Rule 6 prohibits agents from using Task to spawn other agents.
-Agents should be self-contained and not orchestrate sub-agents.
-
-Removing Task will:
-- Make agent compliant with Rule 6
-- Require rethinking any sub-agent workflows
-- May require converting to command if orchestration needed
-
-Consider: Should this component be a command instead?
-```
-
-### rule-7-violation
-
-**What It Fixes**: Removes direct Maven usage from non-maven-builder agents
-
-**User Decision Points**:
-- How should Maven builds be triggered?
-- Is delegation to maven-builder acceptable?
-- Does the agent need this build functionality?
-
-**Presentation**:
-```
-Rule 7 Violation: Direct Maven execution
-
-Rule 7 restricts Maven execution to the maven-builder agent.
-This agent should delegate Maven tasks rather than run them directly.
-
-Fix will:
-- Remove direct Maven/mvn commands
-- Add delegation pattern to maven-builder
-- Require testing build functionality
-```
-
-### pattern-22-violation
-
-**What It Fixes**: Changes self-update to caller reporting
-
-**User Decision Points**:
-- Is caller-reporting pattern acceptable?
-- How should improvements be communicated?
-- Does the CI section need complete rewrite?
-
-**Presentation**:
-```
-Pattern 22 Violation: Self-update pattern
-
-Pattern 22 prohibits agents from updating themselves.
-Improvements should be reported to the caller, not self-applied.
-
-Current pattern:
-- Uses /plugin-update-agent for self-modification
-
-Fix will change to:
-- Report suggested improvements to caller
-- Caller decides whether to apply changes
-
-This is a behavioral change in how improvements are handled.
 ```
 
 ## Handling User Responses
@@ -204,11 +91,10 @@ break  # Exit fix loop
       "type": "unused-tool-declared",
       "file": "agents/my-agent.md",
       "decision": "approved",
-      "applied": true,
-      "timestamp": "2025-11-21T10:05:00Z"
+      "applied": true
     },
     {
-      "type": "rule-6-violation",
+      "type": "agent-task-tool-prohibited",
       "file": "agents/task-agent.md",
       "decision": "declined",
       "applied": false,
@@ -242,6 +128,6 @@ If risky fix causes problems:
 
 ## See Also
 
-- `fix-catalog.md` - All fix types reference
-- `safe-fixes-guide.md` - Auto-applicable fixes
+- `fix-catalog.md` - All fix types reference with detection and fix strategies
+- `safe-fixes-guide.md` - Auto-applicable fix process
 - `verification-guide.md` - Verify fixes worked
