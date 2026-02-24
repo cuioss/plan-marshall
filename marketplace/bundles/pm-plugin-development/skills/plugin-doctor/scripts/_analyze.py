@@ -69,7 +69,7 @@ Examples:
         '--type',
         '-t',
         default='auto',
-        choices=['agent', 'command', 'skill', 'auto'],
+        choices=['agent', 'command', 'skill', 'subdoc', 'auto'],
         help='Component type (default: auto-detect)',
     )
     p_md.set_defaults(func=cmd_markdown)

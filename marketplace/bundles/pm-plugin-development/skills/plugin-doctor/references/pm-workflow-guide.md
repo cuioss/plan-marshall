@@ -8,7 +8,7 @@ Load this guide when validating:
 - Components in `marketplace/bundles/pm-workflow/`
 - Components with `implements:` frontmatter pointing to pm-workflow contracts
 
-## Rule 1: Explicit Script Commands
+## pm-implicit-script-call (PM-001): Explicit Script Commands
 
 **Requirement**: All bash script calls must be explicit with all parameters shown.
 
@@ -35,7 +35,7 @@ python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks get ...
 
 **Fix**: Replace generic references with explicit parameter lists.
 
-## Rule 2: No Generic API Documentation
+## pm-generic-api-reference (PM-002): No Generic API Documentation
 
 **Requirement**: Never reference "API documentation" or "see X for details" for script calls.
 
@@ -50,7 +50,7 @@ SCAN document for:
 
 **Fix**: Replace with explicit command examples showing all parameters.
 
-## Rule 3: Correct plan-id vs trace-plan-id Usage
+## pm-wrong-plan-parameter (PM-003) / pm-missing-plan-parameter (PM-004): Correct plan-id vs trace-plan-id Usage
 
 **Requirement**: Plan-related components must use correct parameter:
 - `--plan-id`: For data operations (read/write plan files, artifacts)
@@ -80,7 +80,7 @@ FOR each script call:
 | `manage-findings` | `--plan-id` |
 | `manage-lifecycle` | `--plan-id` |
 
-## Rule 4: Contract Implementation Validation
+## pm-invalid-contract-path (PM-005) / pm-contract-non-compliance (PM-006): Contract Implementation Validation
 
 **Requirement**: Skills declaring `implements:` must:
 1. Have valid contract path
@@ -103,18 +103,18 @@ IF frontmatter contains implements:
 
 ## Issue Types
 
-| ID | Type | Severity | Description |
-|----|------|----------|-------------|
-| PM-001 | implicit_script_call | error | Script call missing explicit parameters |
-| PM-002 | generic_api_reference | error | References API docs instead of explicit call |
-| PM-003 | wrong_plan_parameter | error | Uses --plan-id where --trace-plan-id required or vice versa |
-| PM-004 | missing_plan_parameter | error | Script call missing required plan parameter |
-| PM-005 | invalid_contract_path | error | implements: points to non-existent file |
-| PM-006 | contract_non_compliance | warning | Component doesn't follow contract requirements |
+| ID | Descriptive Name | Severity | Description |
+|----|-----------------|----------|-------------|
+| PM-001 | pm-implicit-script-call | error | Script call missing explicit parameters |
+| PM-002 | pm-generic-api-reference | error | References API docs instead of explicit call |
+| PM-003 | pm-wrong-plan-parameter | error | Uses --plan-id where --trace-plan-id required or vice versa |
+| PM-004 | pm-missing-plan-parameter | error | Script call missing required plan parameter |
+| PM-005 | pm-invalid-contract-path | error | implements: points to non-existent file |
+| PM-006 | pm-contract-non-compliance | warning | Component doesn't follow contract requirements |
 
 ## Detection Patterns
 
-### PM-001: Implicit Script Call
+### PM-001 (pm-implicit-script-call)
 
 **Regex patterns**:
 ```
@@ -125,7 +125,7 @@ execute-script\.py[^`]*#\s*See
 
 **Context**: Check bash blocks for incomplete parameter specification.
 
-### PM-002: Generic API Reference
+### PM-002 (pm-generic-api-reference)
 
 **Regex patterns**:
 ```
@@ -138,7 +138,7 @@ execute-script\.py[^`]*#\s*See
 
 **Context**: Scan entire document, especially sections near bash blocks.
 
-### PM-003: Wrong Plan Parameter
+### PM-003 (pm-wrong-plan-parameter)
 
 **Detection logic**:
 1. Extract script name from `execute-script.py {bundle}:{skill}:{script}`
@@ -146,14 +146,14 @@ execute-script\.py[^`]*#\s*See
 3. Flag if `--plan-id` used with config/log scripts
 4. Flag if `--trace-plan-id` used with data scripts
 
-### PM-004: Missing Plan Parameter
+### PM-004 (pm-missing-plan-parameter)
 
 **Detection logic**:
 1. Identify script calls to plan-related scripts
 2. Check if any plan parameter (`--plan-id` or `--trace-plan-id`) is present
 3. Flag if neither parameter found
 
-### PM-005: Invalid Contract Path
+### PM-005 (pm-invalid-contract-path)
 
 **Detection logic**:
 1. Extract `implements:` value from frontmatter
@@ -161,7 +161,7 @@ execute-script\.py[^`]*#\s*See
 3. Check if file exists at resolved path
 4. Flag if file not found
 
-### PM-006: Contract Non-Compliance
+### PM-006 (pm-contract-non-compliance)
 
 **Detection logic**:
 1. Load contract file
@@ -171,39 +171,39 @@ execute-script\.py[^`]*#\s*See
 
 ## Fix Strategies
 
-### PM-001 Fix: Add Explicit Parameters
+### PM-001 (pm-implicit-script-call) Fix: Add Explicit Parameters
 
 1. Identify the script being called
 2. Look up script's `--help` output or documentation
 3. Replace ellipsis/reference with explicit parameters
 4. Use `{variable_name}` for dynamic values
 
-### PM-002 Fix: Replace with Explicit Call
+### PM-002 (pm-generic-api-reference) Fix: Replace with Explicit Call
 
 1. Identify what operation is being referenced
 2. Find the correct script command
 3. Write complete bash block with all parameters
 4. Remove generic reference text
 
-### PM-003 Fix: Swap Parameter
+### PM-003 (pm-wrong-plan-parameter) Fix: Swap Parameter
 
 1. Determine correct parameter from matrix
 2. Replace `--plan-id` with `--trace-plan-id` or vice versa
 3. Verify parameter name matches script expectations
 
-### PM-004 Fix: Add Plan Parameter
+### PM-004 (pm-missing-plan-parameter) Fix: Add Plan Parameter
 
 1. Determine which parameter is needed from matrix
 2. Add appropriate `--plan-id {plan_id}` or `--trace-plan-id {plan_id}`
 3. Ensure variable name matches context
 
-### PM-005 Fix: Correct Contract Path
+### PM-005 (pm-invalid-contract-path) Fix: Correct Contract Path
 
 1. Verify the intended contract exists
 2. Fix path typos or outdated references
 3. If contract doesn't exist, either create it or remove `implements:`
 
-### PM-006 Fix: Add Missing Contract Requirements
+### PM-006 (pm-contract-non-compliance) Fix: Add Missing Contract Requirements
 
 1. Read the contract requirements
 2. Add missing sections or outputs
@@ -230,7 +230,7 @@ API references in documentation sections (not workflow steps) may be acceptable 
 1. **Load component**
 2. **Check path**: Is it in `pm-workflow/` or has `implements:` with pm-workflow contract?
 3. **If yes, load this guide**
-4. **Scan bash blocks**: Apply Rules 1, 3, 4
-5. **Scan full text**: Apply Rule 2
-6. **Check frontmatter**: Apply Rule 4 if `implements:` present
+4. **Scan bash blocks**: Apply PM-001, PM-003/PM-004, PM-005/PM-006
+5. **Scan full text**: Apply PM-002
+6. **Check frontmatter**: Apply PM-005/PM-006 if `implements:` present
 7. **Report findings** with severity and fix guidance

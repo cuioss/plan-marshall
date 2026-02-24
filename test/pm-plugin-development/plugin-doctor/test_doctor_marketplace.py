@@ -577,6 +577,163 @@ def test_fixture_report():
 
 
 # =============================================================================
+# Sub-Document Analysis Tests
+# =============================================================================
+
+
+def test_fixture_analyze_includes_subdocuments():
+    """Test analyze includes subdocuments key for skills with sub-documents."""
+    fixture = TestWithTempMarketplace()
+    temp_dir = fixture.setup_temp_marketplace()
+
+    # Add references/ to the test skill
+    skill_refs_dir = fixture.marketplace_root / 'test-bundle' / 'skills' / 'test-skill' / 'references'
+    skill_refs_dir.mkdir(parents=True)
+    (skill_refs_dir / 'guide.md').write_text('# Guide\n\nSome guidance content.\n')
+
+    # Update SKILL.md to reference the guide
+    skill_md = fixture.marketplace_root / 'test-bundle' / 'skills' / 'test-skill' / 'SKILL.md'
+    skill_md.write_text("""---
+name: test-skill
+description: A test skill
+user-invocable: true
+allowed-tools: Read
+---
+
+# Test Skill
+
+Read `references/guide.md` for standards.
+""")
+
+    try:
+        result = run_script(SCRIPT_PATH, 'analyze', '--type', 'skills', cwd=str(temp_dir))
+        assert result.returncode == 0, f'Analyze failed: {result.stderr}'
+
+        data = result.json()
+        # Find the test-skill analysis
+        skill_analysis = None
+        for item in data['analysis']:
+            if item.get('component', {}).get('name') == 'test-skill':
+                skill_analysis = item
+                break
+
+        assert skill_analysis is not None, 'Should find test-skill in analysis'
+        assert 'subdocuments' in skill_analysis.get('analysis', {}), (
+            'Skill analysis should include subdocuments key'
+        )
+        subdocs = skill_analysis['analysis']['subdocuments']
+        assert len(subdocs) >= 1, f'Should have at least 1 sub-document, got {len(subdocs)}'
+        assert subdocs[0]['relative_path'] == 'references/guide.md', (
+            f'Expected references/guide.md, got {subdocs[0]["relative_path"]}'
+        )
+    finally:
+        fixture.cleanup()
+
+
+def test_fixture_analyze_detects_subdoc_bloat():
+    """Test analyze detects bloated sub-documents."""
+    fixture = TestWithTempMarketplace()
+    temp_dir = fixture.setup_temp_marketplace()
+
+    # Add a bloated reference file (>600 lines)
+    skill_refs_dir = fixture.marketplace_root / 'test-bundle' / 'skills' / 'test-skill' / 'references'
+    skill_refs_dir.mkdir(parents=True)
+    bloated_content = '# Bloated Guide\n\n' + 'This is a line of content that adds to the bloat.\n' * 650
+    (skill_refs_dir / 'bloated-guide.md').write_text(bloated_content)
+
+    # Update SKILL.md to reference it
+    skill_md = fixture.marketplace_root / 'test-bundle' / 'skills' / 'test-skill' / 'SKILL.md'
+    skill_md.write_text("""---
+name: test-skill
+description: A test skill
+user-invocable: true
+allowed-tools: Read
+---
+
+# Test Skill
+
+Read `references/bloated-guide.md` for standards.
+""")
+
+    try:
+        result = run_script(SCRIPT_PATH, 'analyze', '--type', 'skills', cwd=str(temp_dir))
+        assert result.returncode == 0, f'Analyze failed: {result.stderr}'
+
+        data = result.json()
+        # Find subdoc-bloat issues
+        all_issues = []
+        for item in data['analysis']:
+            all_issues.extend(item.get('issues', []))
+
+        bloat_issues = [i for i in all_issues if i['type'] == 'subdoc-bloat']
+        assert len(bloat_issues) >= 1, (
+            f'Should detect subdoc-bloat, got issues: {[i["type"] for i in all_issues]}'
+        )
+        assert bloat_issues[0]['classification'] == 'BLOATED', (
+            f'Expected BLOATED, got {bloat_issues[0]["classification"]}'
+        )
+    finally:
+        fixture.cleanup()
+
+
+def test_fixture_analyze_no_subdoc_for_normal_files():
+    """Test analyze does not flag normal-sized sub-documents."""
+    fixture = TestWithTempMarketplace()
+    temp_dir = fixture.setup_temp_marketplace()
+
+    # Add a normal-sized reference file
+    skill_refs_dir = fixture.marketplace_root / 'test-bundle' / 'skills' / 'test-skill' / 'references'
+    skill_refs_dir.mkdir(parents=True)
+    (skill_refs_dir / 'small-guide.md').write_text('# Small Guide\n\nJust a few lines.\n')
+
+    try:
+        result = run_script(SCRIPT_PATH, 'analyze', '--type', 'skills', cwd=str(temp_dir))
+        assert result.returncode == 0, f'Analyze failed: {result.stderr}'
+
+        data = result.json()
+        all_issues = []
+        for item in data['analysis']:
+            all_issues.extend(item.get('issues', []))
+
+        bloat_issues = [i for i in all_issues if i['type'] == 'subdoc-bloat']
+        assert len(bloat_issues) == 0, f'Should NOT flag normal sub-documents, found {len(bloat_issues)}'
+    finally:
+        fixture.cleanup()
+
+
+# =============================================================================
+# Sub-document Hardcoded Path Tests
+# =============================================================================
+
+
+def test_fixture_analyze_detects_subdoc_hardcoded_path():
+    """Test analyze detects hardcoded script paths in sub-documents."""
+    fixture = TestWithTempMarketplace()
+    temp_dir = fixture.setup_temp_marketplace()
+
+    # Add a standards file with hardcoded script path
+    skill_stds_dir = fixture.marketplace_root / 'test-bundle' / 'skills' / 'test-skill' / 'standards'
+    skill_stds_dir.mkdir(parents=True)
+    (skill_stds_dir / 'test-workflow.md').write_text(
+        '# Test Workflow\n\n```bash\npython3 marketplace/bundles/my-bundle/skills/my-skill/scripts/run.py\n```\n'
+    )
+
+    try:
+        result = run_script(SCRIPT_PATH, 'analyze', '--type', 'skills', cwd=str(temp_dir))
+        assert result.returncode == 0, f'Analyze failed: {result.stderr}'
+
+        data = result.json()
+        all_issues = []
+        for item in data['analysis']:
+            all_issues.extend(item.get('issues', []))
+
+        path_issues = [i for i in all_issues if i['type'] == 'subdoc-hardcoded-script-path']
+        assert len(path_issues) >= 1, f'Should detect hardcoded path in subdoc, found {len(path_issues)}'
+    finally:
+        fixture.cleanup()
+
+
+# =============================================================================
 # Rule 11 Detection Tests
 # =============================================================================
 
@@ -597,14 +754,14 @@ def test_fixture_analyze_detects_rule_11():
         assert result.returncode == 0, f'Analyze failed: {result.stderr}'
 
         data = result.json()
-        # Find rule-11-violation in all issues
+        # Find agent-skill-tool-visibility in all issues
         all_issues = []
         for item in data['analysis']:
             all_issues.extend(item.get('issues', []))
 
-        rule_11_issues = [i for i in all_issues if i['type'] == 'rule-11-violation']
+        rule_11_issues = [i for i in all_issues if i['type'] == 'agent-skill-tool-visibility']
         assert len(rule_11_issues) >= 1, (
-            f'Should detect rule-11-violation, got issues: {[i["type"] for i in all_issues]}'
+            f'Should detect agent-skill-tool-visibility, got issues: {[i["type"] for i in all_issues]}'
         )
         assert rule_11_issues[0]['fixable'] is True, 'Rule 11 should be fixable'
         assert rule_11_issues[0]['severity'] == 'warning', 'Rule 11 should be warning severity'
@@ -633,8 +790,8 @@ def test_fixture_analyze_no_rule_11_with_skill():
             if 'has-skill-agent' in item.get('component', {}).get('path', ''):
                 all_issues.extend(item.get('issues', []))
 
-        rule_11_issues = [i for i in all_issues if i['type'] == 'rule-11-violation']
-        assert len(rule_11_issues) == 0, 'Should NOT detect rule-11-violation when Skill is present'
+        rule_11_issues = [i for i in all_issues if i['type'] == 'agent-skill-tool-visibility']
+        assert len(rule_11_issues) == 0, 'Should NOT detect agent-skill-tool-visibility when Skill is present'
     finally:
         fixture.cleanup()
 
@@ -660,8 +817,8 @@ def test_fixture_analyze_no_rule_11_without_tools():
             if 'no-tools-agent' in item.get('component', {}).get('path', ''):
                 all_issues.extend(item.get('issues', []))
 
-        rule_11_issues = [i for i in all_issues if i['type'] == 'rule-11-violation']
-        assert len(rule_11_issues) == 0, 'Should NOT detect rule-11-violation when no tools field'
+        rule_11_issues = [i for i in all_issues if i['type'] == 'agent-skill-tool-visibility']
+        assert len(rule_11_issues) == 0, 'Should NOT detect agent-skill-tool-visibility when no tools field'
     finally:
         fixture.cleanup()
 

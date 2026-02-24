@@ -6,7 +6,7 @@ Full marketplace batch analysis using hybrid two-phase workflow.
 
 - `--no-fix` (optional): Generate report only, skip fix phase
 
-## Step 1: Phase 1 - Script Batch Processing
+## Phase 1: Script Batch Processing
 
 **EXECUTE** the batch script to scan, analyze, and apply safe fixes.
 
@@ -28,7 +28,7 @@ Parse the JSON output to get:
 - `findings_file`: Path where LLM should write findings.md
 - `summary`: Issue counts and categorization
 
-## Step 2: Phase 2 - LLM Analysis
+## Phase 2: LLM Analysis
 
 1. **Read the JSON report**:
    ```
@@ -99,7 +99,7 @@ Parse the JSON output to get:
    Write: {findings_file}
    ```
 
-## Step 3: Process Risky Fixes
+## Phase 3: Process Risky Fixes
 
 For each item in `llm_review_items` from the JSON report:
 
@@ -115,7 +115,7 @@ For each item in `llm_review_items` from the JSON report:
    ```
 3. **Apply fix if approved** using Edit tool
 
-## Step 4: Report Summary
+## Phase 4: Report Summary
 
 Display final summary:
 ```

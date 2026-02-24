@@ -21,13 +21,14 @@ FIXABLE_ISSUE_TYPES = {
     'trailing-whitespace',
     'improper-indentation',
     'missing-blank-line-before-list',
-    'rule-11-violation',
+    'agent-skill-tool-visibility',
+    'subdoc-forbidden-metadata',
     # Risky fixes (require confirmation)
     'unused-tool-declared',
     'tool-not-declared',
-    'rule-6-violation',
-    'rule-7-violation',
-    'pattern-22-violation',
+    'agent-task-tool-prohibited',
+    'agent-maven-restricted',
+    'agent-lessons-via-skill',
     'backup-file-pattern',
     'ci-rule-self-update',
 }
@@ -43,19 +44,38 @@ SAFE_FIX_TYPES = {
     'trailing-whitespace',
     'improper-indentation',
     'missing-blank-line-before-list',
-    'rule-11-violation',
+    'agent-skill-tool-visibility',
+    'subdoc-forbidden-metadata',
 }
 
 # Risky fix types - require user confirmation
 RISKY_FIX_TYPES = {
     'unused-tool-declared',
     'tool-not-declared',
-    'rule-6-violation',
-    'rule-7-violation',
-    'pattern-22-violation',
+    'agent-task-tool-prohibited',
+    'agent-maven-restricted',
+    'agent-lessons-via-skill',
     'backup-file-pattern',
     'ci-rule-self-update',
+    'skill-banned-keywords',
+    'subdoc-hardcoded-script-path',
 }
+
+# Backward-compatibility aliases: old identifier → new identifier.
+# Allows external consumers to use old names during migration.
+RULE_ID_ALIASES = {
+    'rule-6-violation': 'agent-task-tool-prohibited',
+    'rule-7-violation': 'agent-maven-restricted',
+    'rule-8-violation': 'workflow-hardcoded-script-path',
+    'rule-11-violation': 'agent-skill-tool-visibility',
+    'rule-12-violation': 'workflow-prose-parameter-inconsistency',
+    'pattern-22-violation': 'agent-lessons-via-skill',
+}
+
+
+def resolve_issue_type(issue_type: str) -> str:
+    """Resolve an issue type, accepting old aliases for backward compatibility."""
+    return RULE_ID_ALIASES.get(issue_type, issue_type)
 
 
 # =============================================================================

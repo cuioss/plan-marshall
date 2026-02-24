@@ -104,13 +104,13 @@ def check_tool_compliance(frontmatter: dict | None, body: str) -> list:
 
     tools = [t.strip() for t in tools_str.split(',') if t.strip()]
 
-    # Rule 6: Agents should not use Task tool
+    # agent-task-tool-prohibited: Agents should not use Task tool
     if 'Task' in tools:
         issues.append(
             {
-                'type': 'rule-6-violation',
+                'type': 'agent-task-tool-prohibited',
                 'severity': 'high',
-                'message': 'Agent declares Task tool (Rule 6 violation)',
+                'message': 'Agent declares Task tool (agent-task-tool-prohibited)',
                 'location': 'frontmatter tools',
             }
         )
@@ -157,7 +157,7 @@ def generate_suggestions(frontmatter: dict | None, body: str, issues: list, sect
     for issue in issues:
         if issue['type'] == 'bloat':
             suggestions.append('Consider splitting into smaller components or extracting to skill')
-        elif issue['type'] == 'rule-6-violation':
+        elif issue['type'] == 'agent-task-tool-prohibited':
             suggestions.append('Remove Task tool from agent - agents should be self-contained')
         elif issue['type'] == 'duplicate-content':
             suggestions.append('Remove duplicate content to reduce bloat')

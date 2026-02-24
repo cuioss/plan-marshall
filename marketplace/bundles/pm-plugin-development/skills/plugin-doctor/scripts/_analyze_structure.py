@@ -13,7 +13,7 @@ def extract_skill_references(content: str, skill_dir: Path) -> set[str]:
     """Extract file references from SKILL.md content."""
     references = set()
 
-    local_pattern = r'(scripts|references|assets)(/[a-zA-Z0-9_.-]+)+\.[a-z]+'
+    local_pattern = r'(scripts|references|standards|workflows|templates|assets)(/[a-zA-Z0-9_.-]+)+\.[a-z]+'
     for match in re.finditer(local_pattern, content):
         ref = match.group(0)
         start = match.start()
@@ -22,12 +22,12 @@ def extract_skill_references(content: str, skill_dir: Path) -> set[str]:
         references.add(ref)
 
     content_no_codeblocks = remove_code_blocks(content)
-    table_pattern = r'`(scripts|references|assets)(/[a-zA-Z0-9_.-]+)+\.[a-z]+`'
+    table_pattern = r'`(scripts|references|standards|workflows|templates|assets)(/[a-zA-Z0-9_.-]+)+\.[a-z]+`'
     for match in re.finditer(table_pattern, content_no_codeblocks):
         ref = match.group(0).strip('`')
         references.add(ref)
 
-    for subdir in ['scripts', 'references', 'assets']:
+    for subdir in ['scripts', 'references', 'standards', 'workflows', 'templates', 'assets']:
         subdir_path = skill_dir / subdir
         if subdir_path.is_dir():
             for file_path in subdir_path.iterdir():
@@ -40,10 +40,10 @@ def extract_skill_references(content: str, skill_dir: Path) -> set[str]:
 
 
 def find_existing_files(skill_dir: Path) -> set[str]:
-    """Find all files in scripts/, references/, and assets/ directories."""
+    """Find all files in skill subdirectories."""
     existing = set()
 
-    for subdir in ['scripts', 'references', 'assets']:
+    for subdir in ['scripts', 'references', 'standards', 'workflows', 'templates', 'assets']:
         subdir_path = skill_dir / subdir
         if subdir_path.is_dir():
             for file_path in subdir_path.rglob('*'):
@@ -98,7 +98,7 @@ def analyze_skill_structure(skill_dir: Path) -> dict:
 
         content_no_codeblocks = remove_code_blocks(content)
         refs_outside_codeblocks = set()
-        local_pattern = r'(scripts|references|assets)(/[a-zA-Z0-9_.-]+)+\.[a-z]+'
+        local_pattern = r'(scripts|references|standards|workflows|templates|assets)(/[a-zA-Z0-9_.-]+)+\.[a-z]+'
         for match in re.finditer(local_pattern, content_no_codeblocks):
             ref = match.group(0)
             start = match.start()

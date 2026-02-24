@@ -1,6 +1,6 @@
 # Safe Fixes Guide
 
-Detailed guide for applying safe fixes automatically without user confirmation.
+Detailed guide for applying safe fixes automatically without user confirmation. See `fix-catalog.md` for the complete list of safe fix types and their detection patterns.
 
 ## Safe Fix Principles
 
@@ -37,115 +37,6 @@ Output:
 }
 ```
 
-## Fix-Specific Strategies
-
-### missing-frontmatter
-
-**Strategy**: Prepend generated frontmatter
-
-**Agent Template**:
-```yaml
----
-name: {filename}
-description: [Description needed]
-tools: Read, Write, Edit
-model: sonnet
----
-
-```
-
-**Command Template**:
-```yaml
----
-name: {filename}
-description: [Description needed]
----
-
-```
-
-**Implementation**:
-1. Determine component type from path
-2. Extract filename for name field
-3. Generate frontmatter from template
-4. Prepend to existing content
-
-### array-syntax-tools
-
-**Strategy**: Regex replacement in frontmatter
-
-**Pattern**: `^tools:\s*\[([^\]]+)\]`
-**Replacement**: `tools: \1`
-
-**Examples**:
-- `tools: [Read, Write]` → `tools: Read, Write`
-- `tools: [Read]` → `tools: Read`
-
-**Implementation**:
-1. Read file content
-2. Apply regex substitution
-3. Write back
-
-### missing-*-field
-
-**Strategy**: Insert field at appropriate position
-
-**Insertion Order**:
-1. `name` - After opening `---`
-2. `description` - After `name`
-3. `tools` - After `description`
-
-**Implementation**:
-1. Find frontmatter boundaries
-2. Determine insertion point
-3. Insert field with default value
-4. Preserve existing content
-
-### rule-11-violation
-
-**Strategy**: Append Skill to existing tools declaration
-
-**Detection**: Agent has `tools:` or `allowed-tools:` field without `Skill`
-
-**Implementation**:
-1. Read file content
-2. Find the `tools:` or `allowed-tools:` line in frontmatter
-3. Append `, Skill` to end of the line
-4. Write back
-
-**Examples**:
-- `tools: Read, Write` → `tools: Read, Write, Skill`
-- `tools: Read, Write, Edit, Grep` → `tools: Read, Write, Edit, Grep, Skill`
-
-**Edge Cases**:
-- If `Skill` already present → no change (fix returns success=False)
-- If no `tools:` field → no violation (inherits all tools)
-
-### trailing-whitespace
-
-**Strategy**: Strip trailing characters from each line
-
-**Pattern**: `[[:space:]]+$` per line
-**Replacement**: Empty string
-
-**Implementation**:
-1. Read all lines
-2. Strip trailing whitespace from each
-3. Write back preserving line count
-
-### improper-indentation
-
-**Strategy**: Normalize whitespace
-
-**Rules**:
-- YAML: 2-space indentation
-- Lists: Consistent bullet alignment
-- Code blocks: Preserve as-is
-
-**Implementation**:
-1. Detect indentation style
-2. Convert to standard (2-space)
-3. Preserve code block indentation
-
 ## Batch Application
 
 When applying multiple safe fixes to same file:
@@ -161,16 +52,14 @@ for fix in fixes:
         continue
 ```
 
-**Priority Order**:
+**Priority Order** (see fix-catalog.md for full list):
 1. missing-frontmatter (required for others)
 2. invalid-yaml
-3. missing-name-field
-4. missing-description-field
-5. missing-tools-field
-6. array-syntax-tools
-7. rule-11-violation
-8. trailing-whitespace
-9. improper-indentation
+3. missing-*-field (name, description, user-invocable, tools)
+4. array-syntax-tools
+5. agent-skill-tool-visibility
+6. trailing-whitespace
+7. improper-indentation
 
 ## Error Recovery
 
@@ -217,38 +106,12 @@ Maintain tracking JSON:
 
 ## Common Pitfalls
 
-### 1. Applying to Wrong Component Type
-
-**Problem**: Agent frontmatter applied to command
-**Solution**: Check path for `/agents/`, `/commands/`, `/skills/`
-
-### 2. Overwriting Existing Content
-
-**Problem**: Fix adds field that already exists
-**Solution**: Check for field before adding
-
-### 3. Breaking YAML Structure
-
-**Problem**: Insertion breaks YAML indentation
-**Solution**: Validate YAML after insertion
-
-### 4. Empty File Handling
-
-**Problem**: File is empty or only whitespace
-**Solution**: Check file has content before fixing
-
-## Quality Checklist
-
-Before marking safe fix as complete:
-
-- [ ] Backup created successfully
-- [ ] Fix applied without errors
-- [ ] File still readable
-- [ ] YAML still valid (if applicable)
-- [ ] No unintended changes to other content
-- [ ] Changes recorded in tracking
+1. **Applying to Wrong Component Type**: Check path for `/agents/`, `/commands/`, `/skills/`
+2. **Overwriting Existing Content**: Check for field before adding
+3. **Breaking YAML Structure**: Validate YAML after insertion
+4. **Empty File Handling**: Check file has content before fixing
 
 ## See Also
 
-- `fix-catalog.md` - Complete fix type reference
+- `fix-catalog.md` - Complete fix type reference with detection and fix strategies
 - `verification-guide.md` - Verify fixes worked

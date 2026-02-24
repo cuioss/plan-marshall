@@ -2,11 +2,11 @@
   "fixable_issues": [
     {
       "id": "issue-1",
-      "type": "rule-6-violation",
+      "type": "agent-task-tool-prohibited",
       "severity": "critical",
       "file": "agents/task-agent.md",
       "line": 5,
-      "message": "Agent declares Task tool which violates Rule 6"
+      "message": "Agent declares Task tool (agent-task-tool-prohibited)"
     },
     {
       "id": "issue-2",
@@ -21,11 +21,11 @@
     },
     {
       "id": "issue-3",
-      "type": "pattern-22-violation",
+      "type": "agent-lessons-via-skill",
       "severity": "critical",
       "file": "agents/self-updating.md",
       "line": 50,
-      "message": "Agent uses self-update pattern"
+      "message": "Agent uses self-update pattern (agent-lessons-via-skill)"
     }
   ],
   "total_count": 3

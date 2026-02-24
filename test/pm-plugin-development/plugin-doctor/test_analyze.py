@@ -230,6 +230,63 @@ def test_crossfile_custom_threshold():
 
 
 # =============================================================================
+# Markdown Subcommand Tests - Subdoc Bloat Thresholds
+# =============================================================================
+
+
+def test_markdown_subdoc_bloat_normal():
+    """Test subdoc bloat classification: NORMAL for small files."""
+    content = '---\nname: test\ndescription: test\n---\n\n# Test\n\n' + 'Line\n' * 100
+    temp_file = create_temp_file(content)
+    try:
+        result = run_script(SCRIPT_PATH, 'markdown', '--file', str(temp_file), '--type', 'subdoc')
+        assert result.returncode == 0, f'Script returned error: {result.stderr}'
+        data = result.json()
+        assert data['bloat']['classification'] == 'NORMAL', f'Expected NORMAL, got {data["bloat"]["classification"]}'
+    finally:
+        temp_file.unlink()
+
+
+def test_markdown_subdoc_bloat_large():
+    """Test subdoc bloat classification: LARGE for >400 lines."""
+    content = '# Test\n\n' + 'Line of content here.\n' * 450
+    temp_file = create_temp_file(content)
+    try:
+        result = run_script(SCRIPT_PATH, 'markdown', '--file', str(temp_file), '--type', 'subdoc')
+        assert result.returncode == 0, f'Script returned error: {result.stderr}'
+        data = result.json()
+        assert data['bloat']['classification'] == 'LARGE', f'Expected LARGE, got {data["bloat"]["classification"]}'
+    finally:
+        temp_file.unlink()
+
+
+def test_markdown_subdoc_bloat_bloated():
+    """Test subdoc bloat classification: BLOATED for >600 lines."""
+    content = '# Test\n\n' + 'Line of content here.\n' * 650
+    temp_file = create_temp_file(content)
+    try:
+        result = run_script(SCRIPT_PATH, 'markdown', '--file', str(temp_file), '--type', 'subdoc')
+        assert result.returncode == 0, f'Script returned error: {result.stderr}'
+        data = result.json()
+        assert data['bloat']['classification'] == 'BLOATED', f'Expected BLOATED, got {data["bloat"]["classification"]}'
+    finally:
+        temp_file.unlink()
+
+
+def test_markdown_subdoc_bloat_critical():
+    """Test subdoc bloat classification: CRITICAL for >800 lines."""
+    content = '# Test\n\n' + 'Line of content here.\n' * 850
+    temp_file = create_temp_file(content)
+    try:
+        result = run_script(SCRIPT_PATH, 'markdown', '--file', str(temp_file), '--type', 'subdoc')
+        assert result.returncode == 0, f'Script returned error: {result.stderr}'
+        data = result.json()
+        assert data['bloat']['classification'] == 'CRITICAL', f'Expected CRITICAL, got {data["bloat"]["classification"]}'
+    finally:
+        temp_file.unlink()
+
+
+# =============================================================================
 # Markdown Subcommand Tests - Rule 12 (Prose-Parameter Consistency)
 # =============================================================================
 
@@ -259,7 +316,7 @@ python3 .plan/execute-script.py pm-workflow:manage-plan-documents:manage-plan-do
         result = run_script(SCRIPT_PATH, 'markdown', '--file', str(temp_file), '--type', 'agent')
         assert result.returncode == 0, f'Script returned error: {result.stderr}'
         data = result.json()
-        rule_12 = data.get('rules', {}).get('rule_12_violations', [])
+        rule_12 = data.get('rules', {}).get('workflow_prose_param_violations', [])
         assert len(rule_12) >= 1, f'Should detect body section reference, found {len(rule_12)}'
         assert rule_12[0]['pattern'] == 'invalid_section_reference'
     finally:
@@ -290,7 +347,7 @@ python3 .plan/execute-script.py pm-workflow:manage-plan-documents:manage-plan-do
         result = run_script(SCRIPT_PATH, 'markdown', '--file', str(temp_file), '--type', 'skill')
         assert result.returncode == 0, f'Script returned error: {result.stderr}'
         data = result.json()
-        rule_12 = data.get('rules', {}).get('rule_12_violations', [])
+        rule_12 = data.get('rules', {}).get('workflow_prose_param_violations', [])
         assert len(rule_12) >= 1, f'Should detect "otherwise body" pattern, found {len(rule_12)}'
     finally:
         temp_file.unlink()
@@ -321,7 +378,7 @@ python3 .plan/execute-script.py pm-workflow:manage-plan-documents:manage-plan-do
         result = run_script(SCRIPT_PATH, 'markdown', '--file', str(temp_file), '--type', 'agent')
         assert result.returncode == 0, f'Script returned error: {result.stderr}'
         data = result.json()
-        rule_12 = data.get('rules', {}).get('rule_12_violations', [])
+        rule_12 = data.get('rules', {}).get('workflow_prose_param_violations', [])
         assert len(rule_12) == 0, f'Should NOT flag correct original_input reference, found {len(rule_12)}'
     finally:
         temp_file.unlink()
@@ -351,8 +408,135 @@ python3 .plan/execute-script.py pm-workflow:manage-references:manage-references 
         result = run_script(SCRIPT_PATH, 'markdown', '--file', str(temp_file), '--type', 'agent')
         assert result.returncode == 0, f'Script returned error: {result.stderr}'
         data = result.json()
-        rule_12 = data.get('rules', {}).get('rule_12_violations', [])
+        rule_12 = data.get('rules', {}).get('workflow_prose_param_violations', [])
         assert len(rule_12) == 0, f'Should NOT flag body reference without plan-documents call, found {len(rule_12)}'
+    finally:
+        temp_file.unlink()
+
+
+# =============================================================================
+# Banned Keywords Tests
+# =============================================================================
+
+
+def test_banned_keywords_detects_critical():
+    """Test banned keyword detection: CRITICAL outside code blocks."""
+    content = '---\nname: test\ndescription: test\n---\n\n# Test\n\nThis is CRITICAL for operation.\n'
+    temp_file = create_temp_file(content)
+    try:
+        result = run_script(SCRIPT_PATH, 'markdown', '--file', str(temp_file), '--type', 'skill')
+        assert result.returncode == 0, f'Script returned error: {result.stderr}'
+        data = result.json()
+        violations = data.get('rules', {}).get('banned_keyword_violations', [])
+        assert len(violations) >= 1, f'Should detect CRITICAL keyword, found {len(violations)}'
+        assert violations[0]['keyword'] == 'CRITICAL'
+    finally:
+        temp_file.unlink()
+
+
+def test_banned_keywords_excludes_code_blocks():
+    """Test banned keyword detection: MUST inside fenced code block is not flagged."""
+    content = '---\nname: test\ndescription: test\n---\n\n# Test\n\n```\nThis MUST be done.\n```\n'
+    temp_file = create_temp_file(content)
+    try:
+        result = run_script(SCRIPT_PATH, 'markdown', '--file', str(temp_file), '--type', 'skill')
+        assert result.returncode == 0, f'Script returned error: {result.stderr}'
+        data = result.json()
+        violations = data.get('rules', {}).get('banned_keyword_violations', [])
+        assert len(violations) == 0, f'Should NOT flag MUST inside code block, found {len(violations)}'
+    finally:
+        temp_file.unlink()
+
+
+def test_banned_keywords_excludes_inline_code():
+    """Test banned keyword detection: NEVER inside inline code is not flagged."""
+    content = '---\nname: test\ndescription: test\n---\n\n# Test\n\nUse `NEVER` as a constant.\n'
+    temp_file = create_temp_file(content)
+    try:
+        result = run_script(SCRIPT_PATH, 'markdown', '--file', str(temp_file), '--type', 'skill')
+        assert result.returncode == 0, f'Script returned error: {result.stderr}'
+        data = result.json()
+        violations = data.get('rules', {}).get('banned_keyword_violations', [])
+        assert len(violations) == 0, f'Should NOT flag NEVER inside inline code, found {len(violations)}'
+    finally:
+        temp_file.unlink()
+
+
+def test_banned_keywords_excludes_enforcement_block():
+    """Test banned keyword detection: keywords inside ## Enforcement are not flagged."""
+    content = """---
+name: test
+description: test
+---
+
+# Test
+
+## Enforcement
+
+**Constraints:**
+- MUST follow this rule
+- NEVER skip validation
+- This is CRITICAL
+
+## Workflow
+
+Normal content here.
+"""
+    temp_file = create_temp_file(content)
+    try:
+        result = run_script(SCRIPT_PATH, 'markdown', '--file', str(temp_file), '--type', 'skill')
+        assert result.returncode == 0, f'Script returned error: {result.stderr}'
+        data = result.json()
+        violations = data.get('rules', {}).get('banned_keyword_violations', [])
+        assert len(violations) == 0, f'Should NOT flag keywords inside enforcement block, found {len(violations)}'
+    finally:
+        temp_file.unlink()
+
+
+def test_banned_keywords_flags_outside_enforcement():
+    """Test banned keyword detection: keywords before/after enforcement block are flagged."""
+    content = """---
+name: test
+description: test
+---
+
+# Test
+
+This MUST be done before enforcement.
+
+## Enforcement
+
+**Constraints:**
+- MUST follow this rule
+
+## Workflow
+
+This is CRITICAL in the workflow.
+"""
+    temp_file = create_temp_file(content)
+    try:
+        result = run_script(SCRIPT_PATH, 'markdown', '--file', str(temp_file), '--type', 'skill')
+        assert result.returncode == 0, f'Script returned error: {result.stderr}'
+        data = result.json()
+        violations = data.get('rules', {}).get('banned_keyword_violations', [])
+        keywords = [v['keyword'] for v in violations]
+        assert 'MUST' in keywords, f'Should flag MUST before enforcement, got {keywords}'
+        assert 'CRITICAL' in keywords, f'Should flag CRITICAL after enforcement, got {keywords}'
+    finally:
+        temp_file.unlink()
+
+
+def test_banned_keywords_do_not_phrase():
+    """Test banned keyword detection: DO NOT is detected as a 2-word keyword."""
+    content = '---\nname: test\ndescription: test\n---\n\n# Test\n\nDO NOT use this pattern.\n'
+    temp_file = create_temp_file(content)
+    try:
+        result = run_script(SCRIPT_PATH, 'markdown', '--file', str(temp_file), '--type', 'skill')
+        assert result.returncode == 0, f'Script returned error: {result.stderr}'
+        data = result.json()
+        violations = data.get('rules', {}).get('banned_keyword_violations', [])
+        keywords = [v['keyword'] for v in violations]
+        assert 'DO NOT' in keywords, f'Should detect DO NOT keyword, got {keywords}'
     finally:
         temp_file.unlink()
 

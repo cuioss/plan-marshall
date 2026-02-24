@@ -15,16 +15,16 @@ Comprehensive diagnostic and fix skill for marketplace components. Combines diag
 
 **Prohibited actions:**
 - Do not prompt for safe fixes — apply them automatically without AskUserQuestion
-- Agents cannot use the Task tool (Rule 6 — unavailable at runtime)
-- Only maven-builder agent may execute Maven commands (Rule 7)
-- Do not invent script notations — use only documented notations from the skill being called (Rule 10)
+- Agents cannot use the Task tool (agent-task-tool-prohibited — unavailable at runtime)
+- Only maven-builder agent may execute Maven commands (agent-maven-restricted)
+- Do not invent script notations — use only documented notations from the skill being called (command-self-contained-notation)
 
 **Constraints:**
 - Load prerequisite skills and the component reference guide before analyzing
-- Every workflow step that performs a script operation must have an explicit bash code block with the full `python3 .plan/execute-script.py` command (Rule 9)
-- Agents must record lessons via manage-lessons skill, not self-invoke commands (Pattern 22)
+- Every workflow step that performs a script operation must have an explicit bash code block with the full `python3 .plan/execute-script.py` command (workflow-explicit-script-calls)
+- Agents must record lessons via manage-lessons skill, not self-invoke commands (agent-lessons-via-skill)
 - Only `doctor-marketplace.py` is registered in the executor; other scripts (`_analyze.py`, `_validate.py`, `_fix.py`) are internal modules accessed via `doctor-marketplace` subcommands
-- Prose instructions adjacent to script calls must reference parameter values consistent with the script API (Rule 12)
+- Prose instructions adjacent to script calls must reference parameter values consistent with the script API (workflow-prose-parameter-consistency)
 
 ## Purpose
 
@@ -55,19 +55,10 @@ Select workflow based on input and execute immediately.
 ### If scope = "skill-content" or skill-path specified with content analysis
 → **EXECUTE** Workflow 6: doctor-skill-content (jump to that section)
 
+### If scope = "skill-knowledge" or skill-path specified with knowledge review
+→ **EXECUTE** Workflow 9: doctor-skill-knowledge (jump to that section)
+
 ---
-
-**8 Doctor Workflows**:
-1. **doctor-agents**: Analyze and fix agent issues
-2. **doctor-commands**: Analyze and fix command issues
-3. **doctor-skills**: Analyze and fix skill issues
-4. **doctor-metadata**: Analyze and fix plugin.json issues
-5. **doctor-scripts**: Analyze and fix script issues
-6. **doctor-skill-content**: Analyze and reorganize skill content files
-7. **doctor-marketplace**: Full marketplace batch analysis with report
-8. **doctor-pm-workflow**: Validate pm-workflow components and contract compliance
-
-Each workflow performs the complete cycle: discover → analyze → categorize → fix → verify.
 
 ## Progressive Disclosure Strategy
 
@@ -81,12 +72,17 @@ Each workflow performs the complete cycle: discover → analyze → categorize �
 | doctor-metadata | `metadata-guide.md` | `fix-catalog.md` |
 | doctor-scripts | `scripts-guide.md` | `fix-catalog.md` |
 | doctor-pm-workflow | `pm-workflow-guide.md` | `fix-catalog.md` |
+| doctor-skill-knowledge | `llm-optimization-guide.md` | `fix-catalog.md` |
+| doctor-skill-content | `content-classification-guide.md` + `content-quality-guide.md` | `fix-catalog.md` |
+| doctor-marketplace | (batch: uses all guides via report) | `fix-catalog.md` |
+
+**Cross-cutting reference** (loaded by all workflows): `llm-optimization-guide.md`
 
 **Context Efficiency**: ~800 lines per workflow vs ~4,000 lines if loading everything.
 
 ## Common Workflow Pattern
 
-All 5 workflows follow the same pattern:
+All 9 workflows follow the same pattern:
 
 ### Phase 1: Discover and Analyze
 
@@ -117,7 +113,11 @@ All 5 workflows follow the same pattern:
      --bundles {bundle} --type {component_type}
    ```
 
-   This performs markdown analysis, coverage extraction, and reference validation for all matching components. The output includes per-component analysis results in JSON format.
+   This performs markdown analysis, coverage extraction, and reference validation for all matching components. For skills, it also analyzes sub-documents (`references/*.md`, `standards/*.md`, `workflows/*.md`, `templates/*.md`) for bloat, forbidden metadata, and hardcoded script paths. The output includes per-component analysis results in JSON format with a `subdocuments` key for skills.
+
+### Phase 1.5: LLM Optimization Check
+
+Load `references/llm-optimization-guide.md` and review the analyzed components for low-value patterns (motivational text, redundant emphasis, verbose examples, duplicated content). For skills, review both SKILL.md and sub-documents from the `subdocuments` key.
 
 ### Phase 2: Categorize Issues
 
@@ -133,11 +133,11 @@ All 5 workflows follow the same pattern:
 - Legacy CONTINUOUS IMPROVEMENT RULE (uses /plugin-update-* or /plugin-maintain instead of manage-lessons)
 
 **Risky Fixes** (require confirmation):
-- Rule 6 violations (Task tool in agents)
-- Rule 7 violations (Direct Maven usage - should use builder-maven skill)
-- Rule 8 violations (Hardcoded script paths - should use script-runner)
-- Rule 9 violations (Missing explicit script calls in workflows)
-- Pattern 22 violations (self-invocation)
+- agent-task-tool-prohibited (Task tool in agents)
+- agent-maven-restricted (Direct Maven usage - should use builder-maven skill)
+- workflow-hardcoded-script-path (Hardcoded script paths - should use executor notation)
+- workflow-explicit-script-calls (Missing explicit script calls in workflows)
+- agent-lessons-via-skill (self-invocation instead of manage-lessons)
 - Structural changes
 - Content removal
 
@@ -187,23 +187,41 @@ All 5 workflows follow the same pattern:
 
 ## Workflow 1: doctor-agents
 
-See [standards/doctor-agents.md](standards/doctor-agents.md) for the complete workflow.
+Follows common workflow pattern. See [standards/doctor-agents.md](standards/doctor-agents.md) for agent-specific checks and thresholds.
 
 ## Workflow 2: doctor-commands
 
-See [standards/doctor-commands.md](standards/doctor-commands.md) for the complete workflow.
+Follows common workflow pattern. See [standards/doctor-commands.md](standards/doctor-commands.md) for command-thin-wrapper checks and fix patterns.
 
 ## Workflow 3: doctor-skills
 
-See [standards/doctor-skills.md](standards/doctor-skills.md) for the complete workflow.
+Follows common workflow pattern. See [standards/doctor-skills.md](standards/doctor-skills.md) for enforcement block, keyword, and foundation skill validations.
 
 ## Workflow 4: doctor-metadata
 
-See [standards/doctor-metadata.md](standards/doctor-metadata.md) for the complete workflow.
+Follows the common workflow pattern. Reference guide: `metadata-guide.md`.
+
+**Metadata-specific checks**:
+- Verify JSON syntax of each `plugin.json`
+- Check required fields (name, version, description)
+- Validate component arrays (commands, skills, agents)
+- Cross-check declared components vs actual files on disk
+
+**Discovery**: `Glob: pattern="**/plugin.json", path="marketplace/bundles"`
+
+**Safe fixes**: Missing required fields, extra entries (files don't exist), missing entries (files exist but not listed).
 
 ## Workflow 5: doctor-scripts
 
-See [standards/doctor-scripts.md](standards/doctor-scripts.md) for the complete workflow.
+Follows the common workflow pattern. Additional prerequisite: `Skill: pm-plugin-development:plugin-script-architecture`.
+
+**Script-specific checks**:
+- Verify SKILL.md documents the script
+- Check test file exists in `test/` directory
+- Verify `--help` output is functional
+- Check stdlib-only compliance (no external dependencies)
+
+**Discovery**: `Glob: pattern="scripts/*.{sh,py}", path="marketplace/bundles/*/skills"`
 
 ## Workflow 6: doctor-skill-content
 
@@ -215,7 +233,11 @@ See [standards/doctor-marketplace.md](standards/doctor-marketplace.md) for the c
 
 ## Workflow 8: doctor-pm-workflow
 
-See [standards/doctor-pm-workflow.md](standards/doctor-pm-workflow.md) for the complete workflow.
+Follows common workflow pattern. See [standards/doctor-pm-workflow.md](standards/doctor-pm-workflow.md) for PM-001 through PM-006 validation rules.
+
+## Workflow 9: doctor-skill-knowledge
+
+Reviews knowledge skill content quality. See [standards/doctor-skill-knowledge.md](standards/doctor-skill-knowledge.md) for correctness, consistency, structure, and LLM optimization checks.
 
 ---
 
@@ -240,7 +262,7 @@ Only `doctor-marketplace.py` is registered in the executor. The other scripts (`
 
 | Module | Purpose |
 |--------|---------|
-| `_analyze.py` | Structural analysis, bloat, Rule 6/7/Pattern 22 |
+| `_analyze.py` | Structural analysis, bloat, agent-task-tool-prohibited/maven-restricted/lessons-via-skill |
 | `_analyze_markdown.py` | Markdown structure analysis |
 | `_analyze_coverage.py` | Tool coverage extraction |
 | `_analyze_structure.py` | Skill directory structure validation |
@@ -248,84 +270,19 @@ Only `doctor-marketplace.py` is registered in the executor. The other scripts (`
 | `_validate.py` | Reference extraction and validation |
 | `_fix.py` | Fix application and verification |
 
-#### Hybrid Batch Processing (doctor-marketplace.py)
+#### Hybrid Batch Processing
 
-The `doctor-marketplace.py` script provides Phase 1 of the hybrid doctor workflow for full marketplace operations:
-
-**Phase 1 (Script - Deterministic)**:
-```bash
-# Scan entire marketplace
-python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marketplace scan
-
-# Analyze all components
-python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marketplace analyze
-
-# Preview safe fixes (dry run)
-python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marketplace fix --dry-run
-
-# Apply safe fixes
-python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marketplace fix
-
-# Generate report for LLM review (writes to: .plan/temp/plugin-doctor-report/)
-python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marketplace report
-
-# Or specify custom output directory
-python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marketplace report --output .plan/temp/my-review
-```
-
-**Report Output**: Reports are written to a fixed directory with timestamped, scoped files:
-```
-.plan/temp/plugin-doctor-report/
-├── 20251213-155927-pm-plugin-development-report.json   # Single bundle
-├── 20251213-155927-pm-plugin-development-findings.md
-├── 20251213-160530-marketplace-report.json             # All bundles
-└── 20251213-160530-marketplace-findings.md
-```
-
-Filename includes scope: single bundle name, multiple bundle names (up to 3), or "marketplace" for all.
-Use `--output` to specify a custom directory path. Multiple reports accumulate in the directory.
-
-**Phase 2 (LLM - Semantic)**:
-After Phase 1 creates the report directory and JSON, the LLM:
-1. Reads `{timestamp}-{scope}-report.json` for structured data
-2. Applies contextual judgment (identifies false positives, priorities)
-3. Creates `{timestamp}-{scope}-findings.md` in the same directory with:
-   - Executive summary and statistics
-   - Bundle-by-bundle analysis
-   - Categorization of remaining issues (fixed, false positive, intentional)
-   - Recommendations for manual review
-4. Processes risky fixes with user confirmation
-5. Documents complex refactoring recommendations
-
-**Workflow for `/plugin-doctor marketplace`**:
-1. Run `doctor-marketplace scan` to discover components
-2. Run `doctor-marketplace analyze` to find issues
-3. Run `doctor-marketplace fix` to auto-apply safe fixes
-4. Run `doctor-marketplace report` to generate LLM review items
-5. LLM processes remaining risky/unfixable issues
+Subcommands: `scan` → `analyze` → `fix` → `report`. See [standards/doctor-marketplace.md](standards/doctor-marketplace.md) for the complete two-phase (script + LLM) workflow, report output format, and directory structure.
 
 ### References (references/)
 
-**Diagnosis References** (8) - **READ** before analyzing:
-- `agents-guide.md` - Agent quality standards
-- `commands-guide.md` - Command quality standards
-- `skills-guide.md` - Skill structure standards
-- `metadata-guide.md` - plugin.json schema
-- `content-classification-guide.md` - Content type classification criteria (for doctor-skill-content)
-- `content-quality-guide.md` - Content quality analysis dimensions (for doctor-skill-content)
-- `plan-marshall-plugin-validation.md` - Domain manifest validation (for plan-marshall-plugin skills)
-- `pm-workflow-guide.md` - pm-workflow component validation (for doctor-pm-workflow)
-
-**External Standards** (from plugin-architecture) - **READ** for script analysis:
-- `script-standards.md` - Script documentation, testing, and quality standards
-
-**Fix References** (4) - **READ** before applying fixes:
-- `fix-catalog.md` - Fix categorization rules
-- `safe-fixes-guide.md` - Safe fix patterns
-- `risky-fixes-guide.md` - Risky fix patterns
-- `verification-guide.md` - Verification procedures
-
-**Reporting** (1) - **REFERENCE** for output formatting:
+Loaded per workflow via Progressive Disclosure table above. Key files:
+- `rule-catalog.md` - Rule definitions for all validated rules
+- `llm-optimization-guide.md` - Cross-cutting LLM optimization patterns
+- `fix-catalog.md`, `safe-fixes-guide.md`, `risky-fixes-guide.md`, `verification-guide.md` - Fix workflow
+- `plan-marshall-plugin-validation.md` - Domain manifest validation
+- Per-component guides: `agents-guide.md`, `commands-guide.md`, `skills-guide.md`, `metadata-guide.md`, `pm-workflow-guide.md`
+- Content analysis: `content-classification-guide.md`, `content-quality-guide.md`
 - `reporting-templates.md` - Summary report templates
 
 ### Assets (assets/)
@@ -340,91 +297,7 @@ After Phase 1 creates the report directory and JSON, the LLM:
 
 ## Rule Definitions
 
-Rules that plugin-doctor validates in other components. See Enforcement block for this skill's own constraints.
-
-### Rule 6: Task Tool Prohibition in Agents
-Agents cannot use the Task tool (unavailable at runtime).
-
-### Rule 7: Maven Execution Restriction
-Only the maven-builder agent may execute Maven commands.
-
-### Pattern 22: Agent Lessons Learned Requirement
-Agents record lessons via manage-lessons skill, not self-invoke commands.
-
-### Rule 9: Explicit Script Calls in Workflows
-All script/tool invocations in workflow documentation have explicit bash code blocks. Vague instructions like "read the file", "display the content", or "check the status" are not acceptable. Every operation requiring a script call documents the exact `python3 .plan/execute-script.py` command.
-
-**Detection**: Scan workflow steps for action verbs (read, write, display, check, validate, get, list) without accompanying bash code blocks containing `execute-script.py`.
-
-**Examples of violations**:
-- "Display the solution outline for review" (missing bash block)
-- "Read the config to get domains" (missing bash block)
-- "Validate the output" (missing bash block)
-
-**Correct pattern**:
-```markdown
-### Step N: Read the solution outline
-
-```bash
-python3 .plan/execute-script.py pm-workflow:manage-solution-outline:manage-solution-outline read \
-  --plan-id {plan_id}
-```
-```
-
-### Rule 10: Self-Contained Command Definition
-
-Components that execute scripts have the exact notation (`bundle:skill:script`) explicitly defined within themselves.
-
-**Four Detection Modes**:
-
-| Mode | Catches |
-|------|---------|
-| A: Delegation | "Execute command from section Nb" - parent-passed |
-| B: Notation | `execute-script.py artifact_store` - missing bundle:skill |
-| C: Missing Section | "Log the assessment" without ## Logging Command section |
-| D: Parameters | `--plan-id` when should be positional (via --help) |
-
-**Notation Format**:
-- `pm-workflow:manage-assessments:manage-assessments`
-- `pm-workflow:manage-findings:manage-findings`
-- `artifact_store` (missing bundle:skill)
-- `manage-files:artifact-store` (missing bundle)
-
-**Required Pattern**:
-- Explicit "## Logging Command" or "## Script Commands" section
-- Full bash block with `python3 .plan/execute-script.py {bundle}:{skill}:{script}`
-- Every notation matches format: `bundle:skill:script`
-- Parameter table showing where values come from
-
-Do not invent notations. Use only documented notations from the skill being called.
-
-### Rule 12: Prose-Parameter Consistency
-
-Prose instructions adjacent to `execute-script.py` bash blocks do not reference parameter values that are inconsistent with the actual script API.
-
-**Detection**: Scan prose near script call templates for fallback/alternative instructions that reference invalid or incorrect parameter values.
-
-**Currently detected patterns**:
-- `body` referenced as a section name near `manage-plan-documents` calls (`body` is not a valid section for description-sourced requests; the correct fallback is `original_input`)
-
-**Examples of violations**:
-- "If clarified_request is empty, fall back to body section" (should be `original_input`)
-- "Read request (clarified_request falls back to body automatically):" (should be `original_input`)
-
-**Correct pattern**:
-```markdown
-Read request (clarified_request falls back to original_input automatically):
-
-```bash
-python3 .plan/execute-script.py pm-workflow:manage-plan-documents:manage-plan-documents request read \
-  --plan-id {plan_id} \
-  --section clarified_request
-```
-```
-
-**Applies to**: All component types (agents, skills, commands).
-
-**Fix**: Manual — update prose to reference the correct parameter values matching the script API.
+See [references/rule-catalog.md](references/rule-catalog.md) for the complete catalog of rules that plugin-doctor validates (agent, workflow, command, skill, and PM-workflow rules).
 
 ---
 
@@ -455,12 +328,3 @@ This skill is designed to run without user prompts for safe operations. Required
 - Script paths resolved from `.plan/scripts-library.toon` (system convention)
 - Skill invocations use bundle-qualified names covered by `Skill({bundle}:*)` wildcards
 - AskUserQuestion is ONLY used for risky fix confirmations
-
-## Notes
-
-- **Unified workflow**: Diagnose → Auto-Fix → Prompt Risky → Verify
-- **Progressive disclosure**: Load 2 references per workflow (~800 lines)
-- **Stdlib-only scripts**: No external dependencies
-- **Backup before modify**: `fix apply` creates backups
-- **User control**: Risky fixes require explicit approval
-- **Non-prompting safe fixes**: Safe fixes never prompt - applied automatically

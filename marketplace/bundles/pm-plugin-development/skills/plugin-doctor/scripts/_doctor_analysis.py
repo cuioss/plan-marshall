@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Analysis functions for doctor-marketplace."""
 
+import re
 from pathlib import Path
+from typing import Any
 
 # Import from analyze.py
 from _analyze import (
@@ -9,6 +11,10 @@ from _analyze import (
     analyze_skill_structure,
     analyze_tool_coverage,
 )
+from _analyze_markdown import check_forbidden_metadata, get_bloat_classification
+
+# Subdirectories that may contain markdown sub-documents
+SUBDOC_DIRS = ['references', 'standards', 'workflows', 'templates']
 
 
 def analyze_component(component: dict) -> dict:
@@ -16,8 +22,8 @@ def analyze_component(component: dict) -> dict:
     component_type = component.get('type')
     path = component.get('path')
 
-    issues = []
-    analysis = {}
+    issues: list[dict[str, Any]] = []
+    analysis: dict[str, Any] = {}
 
     if component_type in ('agent', 'command'):
         # Markdown analysis
@@ -54,6 +60,12 @@ def analyze_component(component: dict) -> dict:
                 analysis['markdown'] = md_analysis
                 issues.extend(extract_issues_from_markdown_analysis(md_analysis, skill_md_path, 'skill'))
 
+        # Sub-document analysis (references/, standards/, workflows/, templates/)
+        subdoc_results = analyze_subdocuments(skill_dir)
+        if subdoc_results:
+            analysis['subdocuments'] = subdoc_results
+            issues.extend(extract_issues_from_subdoc_analysis(subdoc_results, str(skill_dir)))
+
     return {'component': component, 'analysis': analysis, 'issues': issues, 'issue_count': len(issues)}
 
 
@@ -80,68 +92,68 @@ def extract_issues_from_markdown_analysis(analysis: dict, file_path: str, compon
 
     # Check rule violations
     rules = analysis.get('rules', {})
-    if rules.get('rule_6_violation'):
+    if rules.get('agent_task_tool_prohibited'):
         issues.append(
             {
-                'type': 'rule-6-violation',
+                'type': 'agent-task-tool-prohibited',
                 'file': file_path,
                 'severity': 'warning',
                 'fixable': True,
-                'description': 'Agent declares Task tool (Rule 6)',
+                'description': 'Agent declares Task tool (agent-task-tool-prohibited)',
             }
         )
-    if rules.get('rule_7_violation'):
+    if rules.get('agent_maven_restricted'):
         issues.append(
             {
-                'type': 'rule-7-violation',
+                'type': 'agent-maven-restricted',
                 'file': file_path,
                 'severity': 'warning',
                 'fixable': False,
-                'description': 'Direct Maven usage outside builder (Rule 7)',
+                'description': 'Direct Maven usage outside builder (agent-maven-restricted)',
             }
         )
-    if rules.get('rule_8_violation'):
+    if rules.get('workflow_hardcoded_script_path'):
         issues.append(
             {
-                'type': 'rule-8-violation',
+                'type': 'workflow-hardcoded-script-path',
                 'file': file_path,
                 'severity': 'warning',
                 'fixable': False,
-                'description': 'Hardcoded script path - use executor notation instead (Rule 8)',
+                'description': 'Hardcoded script path - use executor notation instead (workflow-hardcoded-script-path)',
             }
         )
-    if rules.get('rule_11_violation'):
+    if rules.get('agent_skill_tool_visibility'):
         issues.append(
             {
-                'type': 'rule-11-violation',
+                'type': 'agent-skill-tool-visibility',
                 'file': file_path,
                 'severity': 'warning',
                 'fixable': True,
-                'description': 'Agent tools missing Skill — invisible to Task dispatcher (Rule 11)',
+                'description': 'Agent tools missing Skill — invisible to Task dispatcher (agent-skill-tool-visibility)',
             }
         )
-    for violation in rules.get('rule_12_violations', []):
+    for violation in rules.get('workflow_prose_param_violations', []):
         issues.append(
             {
-                'type': 'rule-12-violation',
+                'type': 'workflow-prose-parameter-inconsistency',
                 'file': file_path,
                 'severity': 'warning',
                 'fixable': False,
-                'description': f'Prose-parameter inconsistency (Rule 12): {violation.get("issue", "")}',
+                'description': f'Prose-parameter inconsistency: {violation.get("issue", "")}',
                 'details': violation,
             }
         )
 
     # Check CI rule
     ci = analysis.get('continuous_improvement_rule', {})
-    if ci.get('format', {}).get('pattern_22_violation'):
+    if ci.get('format', {}).get('agent_lessons_via_skill'):
         issues.append(
             {
-                'type': 'pattern-22-violation',
+                'type': 'agent-lessons-via-skill',
                 'file': file_path,
                 'severity': 'warning',
                 'fixable': True,
-                'description': 'Agent uses self-update pattern (Pattern 22)',
+                'description': 'Agent uses self-update pattern (agent-lessons-via-skill)',
             }
         )
 
@@ -159,6 +171,19 @@ def extract_issues_from_markdown_analysis(analysis: dict, file_path: str, compon
             }
         )
 
+    # Check banned keywords outside enforcement block (skills only)
+    for violation in rules.get('banned_keyword_violations', []):
+        issues.append(
+            {
+                'type': 'skill-banned-keywords',
+                'file': file_path,
+                'severity': 'warning',
+                'fixable': False,
+                'description': f'Banned keyword "{violation["keyword"]}" at line {violation["line"]}',
+                'details': violation,
+            }
+        )
+
     return issues
 
 
@@ -166,8 +191,8 @@ def extract_issues_from_coverage_analysis(coverage: dict, file_path: str, compon
     """Extract deterministic issues from tool coverage analysis.
 
     NOTE: This function extracts issues that can be determined structurally:
-    - Rule 6 violations (Task declared in agent frontmatter)
-    - Rule 7 violations (Maven calls outside builder)
+    - agent-task-tool-prohibited (Task declared in agent frontmatter)
+    - agent-maven-restricted (Maven calls outside builder)
     - Backup file patterns (quality issue)
 
     Tool usage analysis (missing/unused) is NOT done here - that requires
@@ -178,28 +203,28 @@ def extract_issues_from_coverage_analysis(coverage: dict, file_path: str, compon
     # Only extract deterministic violations
     violations = coverage.get('critical_violations', {})
 
-    # Rule 6: Agent declares Task tool (deterministic - check frontmatter only)
+    # agent-task-tool-prohibited: Agent declares Task tool (deterministic - check frontmatter only)
     if component_type == 'agent' and violations.get('has_task_declared'):
         issues.append(
             {
-                'type': 'rule-6-violation',
+                'type': 'agent-task-tool-prohibited',
                 'file': file_path,
                 'severity': 'warning',
                 'fixable': True,
-                'description': 'Agent declares Task tool (Rule 6)',
+                'description': 'Agent declares Task tool (agent-task-tool-prohibited)',
             }
         )
 
-    # Rule 7: Maven calls outside builder (only flag if not in builder bundle)
+    # agent-maven-restricted: Maven calls outside builder (only flag if not in builder bundle)
     maven_calls = violations.get('maven_calls', [])
     if maven_calls and 'builder' not in file_path:
         issues.append(
             {
-                'type': 'rule-7-violation',
+                'type': 'agent-maven-restricted',
                 'file': file_path,
                 'severity': 'warning',
                 'fixable': False,
-                'description': f'Direct Maven usage (Rule 7) - {len(maven_calls)} call(s)',
+                'description': f'Direct Maven usage (agent-maven-restricted) - {len(maven_calls)} call(s)',
                 'details': {'maven_calls': maven_calls},
             }
         )
@@ -217,5 +242,103 @@ def extract_issues_from_coverage_analysis(coverage: dict, file_path: str, compon
                 'details': {'patterns': backup_patterns},
             }
         )
+
+    return issues
+
+
+def analyze_subdocuments(skill_dir: Path) -> list[dict]:
+    """Analyze markdown sub-documents in a skill directory.
+
+    Checks references/, standards/, workflows/, templates/ for:
+    - Line count and bloat classification
+    - Forbidden metadata sections
+    - Hardcoded script paths
+    """
+    results = []
+
+    for subdir_name in SUBDOC_DIRS:
+        subdir = skill_dir / subdir_name
+        if not subdir.is_dir():
+            continue
+
+        for md_file in sorted(subdir.glob('*.md')):
+            try:
+                content = md_file.read_text(encoding='utf-8', errors='replace')
+            except OSError:
+                continue
+
+            line_count = content.count('\n') + (1 if content and not content.endswith('\n') else 0)
+            bloat_class = get_bloat_classification(line_count, 'subdoc')
+            has_forbidden, forbidden_sections = check_forbidden_metadata(content)
+
+            entry: dict = {
+                'path': str(md_file),
+                'relative_path': f'{subdir_name}/{md_file.name}',
+                'line_count': line_count,
+                'bloat': bloat_class,
+            }
+
+            issues: list[dict] = []
+            if bloat_class in ('CRITICAL', 'BLOATED'):
+                issues.append({
+                    'type': 'subdoc-bloat',
+                    'classification': bloat_class,
+                    'line_count': line_count,
+                })
+            if has_forbidden:
+                issues.append({
+                    'type': 'subdoc-forbidden-metadata',
+                    'sections': forbidden_sections,
+                })
+
+            # Hardcoded script paths
+            if re.search(r'python3 .*/scripts/|bash .*/scripts/|\{[^}]+\}/scripts/', content):
+                if not re.search(r'Skill:.*script-runner', content):
+                    issues.append({
+                        'type': 'subdoc-hardcoded-script-path',
+                    })
+
+            if issues:
+                entry['issues'] = issues
+
+            results.append(entry)
+
+    return results
+
+
+def extract_issues_from_subdoc_analysis(subdoc_results: list[dict], skill_path: str) -> list[dict]:
+    """Extract issues from sub-document analysis into the component issue list."""
+    issues = []
+
+    for subdoc in subdoc_results:
+        for issue in subdoc.get('issues', []):
+            file_path = subdoc['path']
+
+            if issue['type'] == 'subdoc-bloat':
+                issues.append({
+                    'type': 'subdoc-bloat',
+                    'file': file_path,
+                    'severity': 'warning' if issue['classification'] == 'BLOATED' else 'error',
+                    'fixable': False,
+                    'classification': issue['classification'],
+                    'line_count': issue['line_count'],
+                    'description': f'Sub-document bloat ({issue["classification"]}, {issue["line_count"]} lines)',
+                })
+            elif issue['type'] == 'subdoc-forbidden-metadata':
+                issues.append({
+                    'type': 'subdoc-forbidden-metadata',
+                    'file': file_path,
+                    'severity': 'warning',
+                    'fixable': True,
+                    'description': f'Forbidden metadata sections: {issue["sections"]}',
+                })
+            elif issue['type'] == 'subdoc-hardcoded-script-path':
+                issues.append({
+                    'type': 'subdoc-hardcoded-script-path',
+                    'file': file_path,
+                    'severity': 'warning',
+                    'fixable': False,
+                    'description': 'Hardcoded script path in sub-document',
+                })
 
     return issues

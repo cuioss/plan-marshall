@@ -153,7 +153,7 @@ description: [Description needed]
 
 **Why Safe**: Adding whitespace doesn't change content.
 
-### 10. rule-11-violation
+### 10. agent-skill-tool-visibility
 
 **Description**: Agent declares explicit tools but omits `Skill`, making it invisible to Task dispatcher.
 
@@ -238,9 +238,9 @@ Risky fixes require user confirmation because they involve judgment calls or may
 - May indicate accidental tool usage that should be removed instead
 - User should confirm desired tools
 
-### 3. rule-6-violation
+### 3. agent-task-tool-prohibited
 
-**Description**: Agent declares Task tool (prohibited by Rule 6).
+**Description**: Agent declares Task tool (prohibited for agents).
 
 **Detection**: `Task` in agent's tools declaration
 
@@ -253,7 +253,7 @@ Risky fixes require user confirmation because they involve judgment calls or may
 - Agent may need restructuring to work without Task
 - User should understand implications
 
-### 4. rule-7-violation
+### 4. agent-maven-restricted
 
 **Description**: Component uses Maven directly instead of builder-maven skill.
 
@@ -270,7 +270,7 @@ Risky fixes require user confirmation because they involve judgment calls or may
 - User should verify build still works
 - Requires builder-maven skill to be available
 
-### 5. rule-8-violation
+### 5. workflow-hardcoded-script-path
 
 **Description**: Component uses hardcoded script paths instead of the executor pattern.
 
@@ -286,7 +286,7 @@ Risky fixes require user confirmation because they involve judgment calls or may
 - May break if executor is not generated (run `/marshall-steward` first)
 - User should verify script notation and subcommands
 
-### 6. rule-9-violation
+### 6. workflow-explicit-script-calls
 
 **Description**: Skill workflow step contains action verbs without explicit script call.
 
@@ -311,9 +311,9 @@ Risky fixes require user confirmation because they involve judgment calls or may
 - Steps using assistant tools (`Read:`, `Glob:`, `Grep:`)
 - Steps that already have `execute-script.py` bash blocks
 
-### 7. pattern-22-violation
+### 7. agent-lessons-via-skill
 
-**Description**: Agent uses self-update pattern instead of caller reporting.
+**Description**: Agent uses self-update pattern instead of reporting lessons via skill to caller.
 
 **Detection**: `/plugin-update-agent` or `/plugin-update-command` in agent content
 
@@ -475,18 +475,18 @@ def categorize(issue_type):
         "missing-user-invocable-field",
         "array-syntax-tools", "trailing-whitespace",
         "improper-indentation", "missing-blank-line-before-list",
-        "rule-11-violation",         # Rule 11: additive Skill append
-        "wrong-plan-parameter",      # PM-003: mechanical swap
-        "missing-plan-parameter",    # PM-004: add required param
-        "positional-argument",       # SCR-009: convert to named flag
-        "camelcase-flag",            # SCR-010: rename to kebab-case
-        "missing-subparser-required" # SCR-011: add required=True
+        "agent-skill-tool-visibility",  # additive Skill append
+        "wrong-plan-parameter",         # PM-003: mechanical swap
+        "missing-plan-parameter",       # PM-004: add required param
+        "positional-argument",          # SCR-009: convert to named flag
+        "camelcase-flag",               # SCR-010: rename to kebab-case
+        "missing-subparser-required"    # SCR-011: add required=True
     }
     RISKY = {
         "unused-tool-declared", "tool-not-declared",
-        "rule-6-violation", "rule-7-violation", "rule-8-violation",
-        "rule-9-violation",
-        "pattern-22-violation", "backup-file-pattern",
+        "agent-task-tool-prohibited", "agent-maven-restricted",
+        "workflow-hardcoded-script-path", "workflow-explicit-script-calls",
+        "agent-lessons-via-skill", "backup-file-pattern",
         "ci-rule-self-update",
         "implicit-script-call",      # PM-001: needs param lookup
         "generic-api-reference",     # PM-002: needs script identification
@@ -510,8 +510,8 @@ When multiple fixes needed for same file:
 3. **missing-*-field** (complete frontmatter - name, description, user-invocable, tools/allowed-tools)
 4. **array-syntax-tools** (syntax normalization)
 5. **trailing-whitespace** (cleanup)
-6. **Rule violations** (architectural - Rules 6, 7, 8, 9, 11)
-7. **Pattern violations** (behavioral - Pattern 22)
+6. **Rule violations** (architectural - agent-task-tool-prohibited, agent-maven-restricted, workflow-hardcoded-script-path, workflow-explicit-script-calls, agent-skill-tool-visibility)
+7. **Pattern violations** (behavioral - agent-lessons-via-skill)
 8. **pm-workflow violations** (PM-001 through PM-005 - script call compliance)
 9. **Script argument violations** (SCR-009 through SCR-011 - argparse conventions)
 

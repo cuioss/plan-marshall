@@ -1,6 +1,6 @@
 # Doctor PM-Workflow Workflow
 
-Validate pm-workflow components and contract compliance.
+Follows the common workflow pattern (see SKILL.md). Reference guide: `pm-workflow-guide.md`.
 
 ## Trigger
 
@@ -13,55 +13,35 @@ Execute this workflow when:
 - `component` (optional): Specific component path to validate
 - `--no-fix` (optional): Diagnosis only, no fixes
 
-## Step 1: Load Prerequisites and Standards
-
-```
-Skill: plan-marshall:ref-development-standards
-Skill: pm-plugin-development:plugin-architecture
-Read references/pm-workflow-guide.md
-Read references/fix-catalog.md
-```
-
-## Step 2: Discover Components
-
-**If specific component provided**:
-- Validate single component
-
-**If pm-workflow bundle**:
-```
-Glob: pattern="**/*.md", path="marketplace/bundles/pm-workflow"
-```
-
-**If contract implementers**:
-```
-Grep: pattern="^implements:" path="marketplace/bundles"
-```
-
-## Step 3: Apply pm-workflow Validation Rules
+## PM-Workflow Validation Rules
 
 For each component, check against `pm-workflow-guide.md`:
 
-**Rule 1 - Explicit Script Commands**:
+### pm-implicit-script-call (PM-001)
+
 - Scan all bash blocks for `execute-script.py` calls
 - Verify all parameters are explicit (no "see API" references)
-- Flag PM-001 if ellipsis or placeholder notation found
+- Flag if ellipsis or placeholder notation found
 
-**Rule 2 - No Generic API Documentation**:
+### pm-generic-api-reference (PM-002)
+
 - Scan document for phrases like "see * API", "refer to * documentation"
-- Flag PM-002 if found near script call context
+- Flag if found near script call context
 
-**Rule 3 - Correct plan-id vs trace-plan-id**:
+### pm-wrong-plan-parameter (PM-003) / pm-missing-plan-parameter (PM-004)
+
 - Extract script name from each `execute-script.py` call
 - Check parameter against matrix in pm-workflow-guide.md
 - Flag PM-003 if wrong parameter used
 - Flag PM-004 if required plan parameter missing
 
-**Rule 4 - Contract Implementation** (if `implements:` present):
+### pm-invalid-contract-path (PM-005) / pm-contract-non-compliance (PM-006)
+
 - Extract contract path from frontmatter
 - Verify contract file exists (PM-005 if not)
 - Load contract and check compliance (PM-006 if non-compliant)
 
-## Step 4: Categorize and Fix
+## PM-Workflow Fix Categories
 
 **Safe fixes** (auto-apply unless --no-fix):
 - PM-003: Swap `--plan-id` ↔ `--trace-plan-id`
@@ -72,15 +52,3 @@ For each component, check against `pm-workflow-guide.md`:
 - PM-002: Replace generic reference with explicit call
 - PM-005: Correct contract path or remove `implements:`
 - PM-006: Add missing contract requirements
-
-## Step 5: Verify and Report
-
-```bash
-git status --short
-```
-
-Display summary with pm-workflow-specific metrics:
-- Components validated
-- Script calls checked
-- Parameter issues found/fixed
-- Contract compliance status

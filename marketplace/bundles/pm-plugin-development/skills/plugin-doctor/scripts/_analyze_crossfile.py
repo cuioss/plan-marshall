@@ -10,7 +10,7 @@ from difflib import SequenceMatcher
 from pathlib import Path
 
 # Constants
-CONTENT_DIRS = ['references', 'workflows', 'templates']
+CONTENT_DIRS = ['references', 'standards', 'workflows', 'templates']
 DEFAULT_SIMILARITY_THRESHOLD = 0.4
 EXACT_THRESHOLD = 0.95
 MIN_SECTION_LENGTH = 100

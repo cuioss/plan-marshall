@@ -151,7 +151,7 @@ def test_apply_rule_11_fix():
         agent_file = Path(tmp_dir) / 'test-agent.md'
         agent_file.write_text('---\nname: test-agent\ndescription: Test\ntools: Read, Write\n---\n\n# Test Agent\n')
 
-        fix_json = json.dumps({'type': 'rule-11-violation', 'file': 'test-agent.md'})
+        fix_json = json.dumps({'type': 'agent-skill-tool-visibility', 'file': 'test-agent.md'})
         result = run_script(SCRIPT_PATH, 'apply', '--fix', '-', '--bundle-dir', tmp_dir, input_data=fix_json)
         data = result.json()
         assert data['success'] is True, f'Fix should succeed: {data}'
@@ -168,7 +168,7 @@ def test_apply_rule_11_fix_already_present():
         agent_file = Path(tmp_dir) / 'test-agent.md'
         agent_file.write_text('---\nname: test-agent\ndescription: Test\ntools: Read, Skill\n---\n\n# Test Agent\n')
 
-        fix_json = json.dumps({'type': 'rule-11-violation', 'file': 'test-agent.md'})
+        fix_json = json.dumps({'type': 'agent-skill-tool-visibility', 'file': 'test-agent.md'})
         result = run_script(SCRIPT_PATH, 'apply', '--fix', '-', '--bundle-dir', tmp_dir, input_data=fix_json)
         data = result.json()
         assert data['success'] is False, 'Fix should fail when Skill already present'
@@ -185,7 +185,7 @@ def test_verify_rule_11_fixed():
         f.write('---\nname: test\ndescription: Test\ntools: Read, Write, Skill\n---\n\n# Test\n')
         f.flush()
 
-        result = run_script(SCRIPT_PATH, 'verify', '--fix-type', 'rule-11-violation', '--file', f.name)
+        result = run_script(SCRIPT_PATH, 'verify', '--fix-type', 'agent-skill-tool-visibility', '--file', f.name)
         data = result.json()
         assert data['issue_resolved'] is True, f'Issue should be resolved: {data}'
 
@@ -198,7 +198,7 @@ def test_verify_rule_11_still_missing():
         f.write('---\nname: test\ndescription: Test\ntools: Read, Write\n---\n\n# Test\n')
         f.flush()
 
-        result = run_script(SCRIPT_PATH, 'verify', '--fix-type', 'rule-11-violation', '--file', f.name)
+        result = run_script(SCRIPT_PATH, 'verify', '--fix-type', 'agent-skill-tool-visibility', '--file', f.name)
         data = result.json()
         assert data['issue_resolved'] is False, f'Issue should NOT be resolved: {data}'
 
@@ -211,7 +211,7 @@ def test_verify_rule_11_no_tools_field():
         f.write('---\nname: test\ndescription: Test\n---\n\n# Test\n')
         f.flush()
 
-        result = run_script(SCRIPT_PATH, 'verify', '--fix-type', 'rule-11-violation', '--file', f.name)
+        result = run_script(SCRIPT_PATH, 'verify', '--fix-type', 'agent-skill-tool-visibility', '--file', f.name)
         data = result.json()
         assert data['issue_resolved'] is True, f'Issue should be resolved (no tools = inherits all): {data}'
 
