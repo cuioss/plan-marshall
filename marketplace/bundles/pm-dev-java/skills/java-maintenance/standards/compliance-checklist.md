@@ -213,7 +213,7 @@ This checklist ensures systematic verification of standards compliance after ref
 ## Modern Java Features
 
 **Standards Reference**: Modern Features Standards in java-core
-**See**: `pm-dev-java:java-core` skill, `standards/java-modern-features.md`
+**See**: `pm-dev-java:java-core` skill, `standards/java-17-features.md` and `standards/java-21-features.md`
 
 ### Verification Items
 
