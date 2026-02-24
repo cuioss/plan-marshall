@@ -702,35 +702,8 @@ def test_fixture_analyze_no_subdoc_for_normal_files():
 
 
 # =============================================================================
-# Sub-document Banned Keywords and Hardcoded Path Tests
+# Sub-document Hardcoded Path Tests
 # =============================================================================
-
-
-def test_fixture_analyze_detects_subdoc_banned_keywords():
-    """Test analyze detects banned ALL-CAPS keywords in sub-documents."""
-    fixture = TestWithTempMarketplace()
-    temp_dir = fixture.setup_temp_marketplace()
-
-    # Add a standards file with banned keyword
-    skill_stds_dir = fixture.marketplace_root / 'test-bundle' / 'skills' / 'test-skill' / 'standards'
-    skill_stds_dir.mkdir(parents=True)
-    (skill_stds_dir / 'test-standard.md').write_text(
-        '# Test Standard\n\nYou MUST follow this rule.\n'
-    )
-
-    try:
-        result = run_script(SCRIPT_PATH, 'analyze', '--type', 'skills', cwd=str(temp_dir))
-        assert result.returncode == 0, f'Analyze failed: {result.stderr}'
-
-        data = result.json()
-        all_issues = []
-        for item in data['analysis']:
-            all_issues.extend(item.get('issues', []))
-
-        keyword_issues = [i for i in all_issues if i['type'] == 'subdoc-banned-keywords']
-        assert len(keyword_issues) >= 1, f'Should detect banned keyword in subdoc, found {len(keyword_issues)}'
-    finally:
-        fixture.cleanup()
 
 
 def test_fixture_analyze_detects_subdoc_hardcoded_path():
@@ -756,33 +729,6 @@ def test_fixture_analyze_detects_subdoc_hardcoded_path():
 
         path_issues = [i for i in all_issues if i['type'] == 'subdoc-hardcoded-script-path']
         assert len(path_issues) >= 1, f'Should detect hardcoded path in subdoc, found {len(path_issues)}'
-    finally:
-        fixture.cleanup()
-
-
-def test_fixture_analyze_no_banned_keywords_in_code_blocks():
-    """Test analyze does not flag banned keywords inside code blocks in sub-documents."""
-    fixture = TestWithTempMarketplace()
-    temp_dir = fixture.setup_temp_marketplace()
-
-    # Add a reference file with keyword only inside code block
-    skill_refs_dir = fixture.marketplace_root / 'test-bundle' / 'skills' / 'test-skill' / 'references'
-    skill_refs_dir.mkdir(parents=True)
-    (skill_refs_dir / 'example-guide.md').write_text(
-        '# Example Guide\n\nSome text here.\n\n```\nThis MUST be inside a code block.\n```\n'
-    )
-
-    try:
-        result = run_script(SCRIPT_PATH, 'analyze', '--type', 'skills', cwd=str(temp_dir))
-        assert result.returncode == 0, f'Analyze failed: {result.stderr}'
-
-        data = result.json()
-        all_issues = []
-        for item in data['analysis']:
-            all_issues.extend(item.get('issues', []))
-
-        keyword_issues = [i for i in all_issues if i['type'] == 'subdoc-banned-keywords']
-        assert len(keyword_issues) == 0, f'Should NOT flag keywords in code blocks, found {len(keyword_issues)}'
     finally:
         fixture.cleanup()
 

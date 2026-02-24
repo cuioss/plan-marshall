@@ -58,7 +58,6 @@ RISKY_FIX_TYPES = {
     'backup-file-pattern',
     'ci-rule-self-update',
     'skill-banned-keywords',
-    'subdoc-banned-keywords',
     'subdoc-hardcoded-script-path',
 }
 

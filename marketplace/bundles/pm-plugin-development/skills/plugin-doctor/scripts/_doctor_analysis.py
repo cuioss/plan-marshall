@@ -11,7 +11,7 @@ from _analyze import (
     analyze_skill_structure,
     analyze_tool_coverage,
 )
-from _analyze_markdown import check_banned_keywords, check_forbidden_metadata, get_bloat_classification
+from _analyze_markdown import check_forbidden_metadata, get_bloat_classification
 
 # Subdirectories that may contain markdown sub-documents
 SUBDOC_DIRS = ['references', 'standards', 'workflows', 'templates']
@@ -252,7 +252,6 @@ def analyze_subdocuments(skill_dir: Path) -> list[dict]:
     Checks references/, standards/, workflows/, templates/ for:
     - Line count and bloat classification
     - Forbidden metadata sections
-    - Banned ALL-CAPS keywords (sub-docs have no enforcement blocks)
     - Hardcoded script paths
     """
     results = []
@@ -290,14 +289,6 @@ def analyze_subdocuments(skill_dir: Path) -> list[dict]:
                 issues.append({
                     'type': 'subdoc-forbidden-metadata',
                     'sections': forbidden_sections,
-                })
-
-            # Banned ALL-CAPS keywords (sub-docs have no enforcement block)
-            banned_violations = check_banned_keywords(content, enforcement_block=False)
-            if banned_violations:
-                issues.append({
-                    'type': 'subdoc-banned-keywords',
-                    'violations': banned_violations,
                 })
 
             # Hardcoded script paths
@@ -340,16 +331,6 @@ def extract_issues_from_subdoc_analysis(subdoc_results: list[dict], skill_path: 
                     'severity': 'warning',
                     'fixable': True,
                     'description': f'Forbidden metadata sections: {issue["sections"]}',
-                })
-            elif issue['type'] == 'subdoc-banned-keywords':
-                violations = issue['violations']
-                issues.append({
-                    'type': 'subdoc-banned-keywords',
-                    'file': file_path,
-                    'severity': 'warning',
-                    'fixable': False,
-                    'description': f'Banned ALL-CAPS keywords: {len(violations)} occurrence(s)',
-                    'details': {'violations': violations},
                 })
             elif issue['type'] == 'subdoc-hardcoded-script-path':
                 issues.append({
