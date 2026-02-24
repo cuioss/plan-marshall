@@ -117,7 +117,18 @@ All 9 workflows follow the same pattern:
 
 ### Phase 1.5: LLM Optimization Check
 
-Load `references/llm-optimization-guide.md` and review the analyzed components for low-value patterns (motivational text, redundant emphasis, verbose examples, duplicated content). For skills, review both SKILL.md and sub-documents from the `subdocuments` key.
+Load `references/llm-optimization-guide.md` and review the analyzed components for low-value patterns. For skills, review both SKILL.md and sub-documents from the `subdocuments` key.
+
+**For each section in the component, apply these checks:**
+
+| Check | Action |
+|-------|--------|
+| Checklist/summary section (e.g., "Best Practices", "Quality Checklist", "Quick Reference") | Evaluate each item: would an LLM do this without being told? Flag if >50% are obvious. |
+| Motivational text ("This is important because...", "Following best practices ensures...") | Flag if removing it loses zero decision-relevant information. |
+| Redundant emphasis (same rule stated multiple ways) | Flag — once is enough. |
+| Verbose examples (multiple examples of the same pattern) | Flag — one example + the rule is sufficient. |
+| Rationale sections ("Why this standard exists") | Keep only if it influences edge-case decisions. |
+| Duplicated content (rule defined in multiple places) | Flag — use cross-references instead. |
 
 ### Phase 2: Categorize Issues
 

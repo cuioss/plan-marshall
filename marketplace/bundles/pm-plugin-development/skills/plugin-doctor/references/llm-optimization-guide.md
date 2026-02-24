@@ -24,9 +24,15 @@ Cross-cutting reference for evaluating marketplace components for LLM consumptio
 
 All human-targeted content — verbose descriptions, ASCII diagrams, flowcharts, architecture overviews, motivational prose — belongs in separate companion files (`*-diagrams.md`, `*-overview.md`), not inline. These files use `<!-- audience: human-visual -->` markers. The LLM skips them during execution. See `skills-guide.md` "Human-Audience Content Separation" for the full convention.
 
-## Assessment Criteria
+## Review Procedure
 
-For each flagged section, answer: "If I remove this, would the LLM produce different (worse) output?" If no — it's noise. If yes — keep it but consider whether it could be shorter.
+Review every `##` and `###` section in the component. For each section:
+
+1. Check against the low-value patterns above — does the section match any pattern?
+2. For checklists: evaluate each item individually. Count how many are obvious (LLM would do without being told). Flag if >50%.
+3. Apply the removal test: "If I remove this section, would the LLM produce different (worse) output?" If no — flag it as noise.
+
+Do not rationalize keeping a section by inventing a purpose it might serve. Evaluate what it actually contributes.
 
 ## Token Budget Awareness
 
