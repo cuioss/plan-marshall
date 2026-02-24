@@ -104,6 +104,18 @@ class MyServiceTest {
 }
 ```
 
+## Forbidden Libraries (CUI Projects)
+
+| Library | Reason | Alternative |
+|---------|--------|-------------|
+| **Mockito** | Use CUI framework alternatives | EasyMock for simple mocking, `cui-test-mockwebserver-junit5` for HTTP |
+| **PowerMock** | Refactor to dependency injection | EasyMock or CUI test patterns |
+
+When encountering Mockito in existing CUI code:
+- Replace `when().thenReturn()` with EasyMock equivalents or dependency injection
+- Use `cui-test-mockwebserver-junit5` for HTTP client testing
+- See `pm-dev-java-cui:cui-testing-http` for MockWebServer patterns
+
 ## Related Skills
 
 - `pm-dev-java:junit-core` - General JUnit 5 patterns (no CUI dependencies)
