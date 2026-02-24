@@ -58,7 +58,7 @@ public void markAsInvalid() {
 
 ### Parameter Objects
 
-Only introduce parameter objects when replacing **3 or more parameters**. Use records for simple parameter objects in Java 17+.
+Only introduce parameter objects when replacing **3 or more parameters**. Use records for simple parameter objects.
 
 ```java
 // Good: Multiple related parameters grouped

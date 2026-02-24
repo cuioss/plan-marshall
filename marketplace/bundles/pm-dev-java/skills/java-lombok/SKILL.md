@@ -158,7 +158,7 @@ Makes class final, constructor private, all methods static.
 
 | Criteria | Use Records | Use Lombok @Value |
 |----------|-------------|-------------------|
-| Java version | Java 17+ | Java 11+ |
+| Java version | Java 21+ (baseline) | Java 11+ |
 | Builder pattern | Not built-in | @Value + @Builder |
 | Collection builders | Not available | @Singular |
 | Pattern matching | Java 21+ | Not available |
@@ -166,7 +166,7 @@ Makes class final, constructor private, all methods static.
 | Customization | Limited | More flexible |
 
 ```java
-// Simple case - prefer records (Java 17+)
+// Simple case - prefer records
 public record User(String id, String name, String email) {}
 
 // Complex case - use Lombok
@@ -244,7 +244,7 @@ CUI projects use `CuiLogger`, not SLF4J. See `pm-dev-java-cui:cui-logging` for d
 3. **Provide @Builder.Default**: For optional fields with sensible defaults
 4. **Use @Singular for collections**: Cleaner builder API
 5. **Use @Delegate for composition**: Avoid inheritance hierarchies
-6. **Consider records (Java 17+)**: For simple data carriers
+6. **Consider records**: For simple data carriers
 7. **Use @UtilityClass**: For static-only classes
 
 ## Quality Checklist
@@ -254,7 +254,7 @@ CUI projects use `CuiLogger`, not SLF4J. See `pm-dev-java-cui:cui-logging` for d
 - [ ] @Delegate used instead of inheritance
 - [ ] @Builder.Default provided for optional fields
 - [ ] @Singular used for collection builders
-- [ ] Records considered as alternative (Java 17+)
+- [ ] Records considered as alternative
 - [ ] No Lombok logging annotations (use CuiLogger)
 - [ ] @Data used only when mutability required
 - [ ] @UtilityClass used for utility classes

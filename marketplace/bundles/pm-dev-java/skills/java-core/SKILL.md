@@ -9,11 +9,11 @@ allowed-tools: Read, Grep, Glob, Write, Edit, Bash
 
 **REFERENCE MODE**: This skill provides reference material. Load specific standards on-demand based on current task.
 
-Core Java development standards for general Java projects. This skill covers fundamental patterns, modern Java features, performance optimization, and implementation verification.
+Core Java development standards for general Java projects. This skill covers fundamental patterns, modern Java features, and performance optimization.
 
 ## Prerequisites
 
-This skill applies to Java 17+ projects with no CUI-specific dependencies.
+This skill applies to Java 21+ projects with no CUI-specific dependencies.
 
 ## Workflow
 
@@ -46,20 +46,6 @@ Read: standards/java-performance-patterns.md
 ```
 
 Use when: Optimizing code or designing high-performance components.
-
-**Build Precondition Pattern** (load for validation logic):
-```
-Read: standards/build-precondition-pattern.md
-```
-
-Use when: Implementing validation logic or precondition checking.
-
-**Implementation Verification** (load for code review):
-```
-Read: standards/implementation-verification.md
-```
-
-Use when: Reviewing implementations or verifying code quality.
 
 ## Key Rules Summary
 
@@ -113,5 +99,3 @@ public boolean validate(ValidationRequest request) {
 | java-core-patterns.md | Code organization and design principles |
 | java-modern-features.md | Records, pattern matching, sealed classes |
 | java-performance-patterns.md | Performance optimization patterns |
-| build-precondition-pattern.md | Validation logic patterns |
-| implementation-verification.md | Code review and verification |

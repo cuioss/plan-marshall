@@ -184,6 +184,51 @@ String name = user.getName().orElseGet(() -> database.lookupDefaultName(userId))
 String value = optional.orElse("");
 ```
 
+## Virtual Threads
+
+Virtual threads (Java 21) are lightweight threads managed by the JVM. Use for I/O-bound workloads with high concurrency:
+
+```java
+// Good - virtual thread per task for I/O-bound work
+try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+    List<Future<String>> futures = urls.stream()
+        .map(url -> executor.submit(() -> fetchContent(url)))
+        .toList();
+    List<String> results = futures.stream()
+        .map(f -> { try { return f.get(); } catch (Exception e) { throw new RuntimeException(e); } })
+        .toList();
+}
+
+// Good - simple virtual thread for one-off tasks
+Thread.ofVirtual().start(() -> sendNotification(event));
+```
+
+### When to Use Virtual Threads vs Platform Threads
+
+| Workload | Use | Reason |
+|----------|-----|--------|
+| I/O-bound (HTTP calls, DB queries, file I/O) | Virtual threads | Scales to millions of concurrent tasks |
+| CPU-bound (computation, data processing) | Platform threads / parallel streams | Virtual threads add no benefit for CPU work |
+| Short-lived tasks with high concurrency | Virtual threads | Minimal overhead per thread |
+
+### Virtual Thread Caveats
+
+- Avoid `synchronized` blocks in virtual thread code — they pin the carrier thread. Use `ReentrantLock` instead:
+
+```java
+// Bad - pins carrier thread when virtual thread blocks inside synchronized
+private final Object lock = new Object();
+synchronized (lock) { blockingOperation(); }
+
+// Good - ReentrantLock does not pin
+private final ReentrantLock lock = new ReentrantLock();
+lock.lock();
+try { blockingOperation(); } finally { lock.unlock(); }
+```
+
+- Avoid ThreadLocal with virtual threads — memory cost multiplies with millions of threads. Prefer passing context explicitly or using `ScopedValue` (preview).
+- Do not pool virtual threads — they are cheap to create. Using `Executors.newFixedThreadPool()` with virtual threads defeats the purpose.
+
 ## Thread Safety Patterns
 
 ### Lazy Initialization
@@ -208,10 +253,10 @@ public class ResourceHolder {
 
 ### ThreadLocal Cleanup
 
-Always clean up ThreadLocal in pooled thread environments:
+Always clean up ThreadLocal in pooled thread environments. Avoid ThreadLocal with virtual threads (use explicit parameter passing instead):
 
 ```java
-// Good - always remove in finally
+// Good for platform threads - always remove in finally
 private static final ThreadLocal<UserContext> context = new ThreadLocal<>();
 
 public void processRequest(Request request) {

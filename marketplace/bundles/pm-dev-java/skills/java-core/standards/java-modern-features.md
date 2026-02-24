@@ -1,6 +1,6 @@
 # Java Modern Features Standards
 
-Use modern Java features (17+) to write concise, readable code. Always use the most recent features from the version you compile against.
+Use modern Java features (21+) to write concise, readable code. Always use the most recent features from the version you compile against.
 
 ## Records for Data Carriers
 
@@ -71,6 +71,105 @@ String processToken(TokenType type, String token) {
     };
 }
 ```
+
+## Pattern Matching
+
+### Pattern Matching for instanceof
+
+```java
+// Good - pattern matching
+if (obj instanceof String str) {
+    return str.toUpperCase();
+}
+
+// With logical operators
+if (obj instanceof String str && str.length() > 10) {
+    return str.substring(0, 10);
+}
+```
+
+### Pattern Matching in Switch
+
+```java
+String describe(Object obj) {
+    return switch (obj) {
+        case String str -> "String of length " + str.length();
+        case Integer i -> "Integer: " + i;
+        case null -> "null value";
+        default -> "Unknown type: " + obj.getClass();
+    };
+}
+```
+
+### Record Patterns
+
+Deconstruct records directly in pattern matching — avoids accessor calls:
+
+```java
+public record Point(int x, int y) {}
+public record Line(Point start, Point end) {}
+
+// Deconstruct record in switch
+String describe(Object obj) {
+    return switch (obj) {
+        case Point(int x, int y) -> "Point at (%d, %d)".formatted(x, y);
+        case Line(Point(int x1, int y1), Point(int x2, int y2)) ->
+            "Line from (%d,%d) to (%d,%d)".formatted(x1, y1, x2, y2);
+        default -> "Unknown shape";
+    };
+}
+
+// Deconstruct in instanceof
+if (obj instanceof Point(int x, int y)) {
+    return Math.sqrt(x * x + y * y);
+}
+```
+
+## Sealed Classes
+
+Use sealed classes for restricted hierarchies with exhaustive switch:
+
+```java
+public sealed interface Token
+    permits JwtToken, OAuth2Token, LegacyToken {
+    ValidationResult validate();
+    String getTokenId();
+}
+
+public final class JwtToken implements Token { /* ... */ }
+
+// Exhaustive switch - no default needed
+ValidationResult validate(Token token) {
+    return switch (token) {
+        case JwtToken jwt -> jwtValidator.validate(jwt);
+        case OAuth2Token oauth -> oauth2Validator.validate(oauth);
+        case LegacyToken legacy -> ValidationResult.invalid("Not supported");
+    };
+}
+```
+
+## Sequenced Collections
+
+`SequencedCollection`, `SequencedSet`, and `SequencedMap` provide uniform access to first/last elements and reverse views:
+
+```java
+// First/last element access (replaces verbose workarounds)
+SequencedCollection<String> names = new LinkedHashSet<>(List.of("Alice", "Bob", "Charlie"));
+String first = names.getFirst();   // "Alice"
+String last = names.getLast();     // "Charlie"
+
+// Reverse view
+SequencedCollection<String> reversed = names.reversed();
+
+// SequencedMap — ordered map with first/last entry access
+SequencedMap<String, Integer> scores = new LinkedHashMap<>();
+scores.put("Alice", 95);
+scores.put("Bob", 87);
+Map.Entry<String, Integer> firstEntry = scores.firstEntry();
+Map.Entry<String, Integer> lastEntry = scores.lastEntry();
+```
+
+**Interface hierarchy**: `SequencedCollection` extends `Collection`, `SequencedSet` extends `SequencedCollection` and `Set`, `SequencedMap` extends `Map`. Existing classes (`LinkedHashSet`, `LinkedHashMap`, `TreeSet`, `TreeMap`, `ArrayList`) implement the appropriate sequenced interface.
 
 ## Stream Processing
 
@@ -151,7 +250,7 @@ Avoid side effects in streams — do not modify state inside `map`/`forEach`.
 
 ## Text Blocks
 
-Use text blocks for multi-line strings (Java 15+):
+Use text blocks for multi-line strings:
 
 ```java
 String json = """
@@ -171,59 +270,7 @@ String sql = """
     """;
 ```
 
-## Pattern Matching
-
-### Pattern Matching for instanceof (Java 16+)
-
-```java
-// Good - pattern matching
-if (obj instanceof String str) {
-    return str.toUpperCase();
-}
-
-// With logical operators
-if (obj instanceof String str && str.length() > 10) {
-    return str.substring(0, 10);
-}
-```
-
-### Pattern Matching in Switch (Preview)
-
-```java
-String describe(Object obj) {
-    return switch (obj) {
-        case String str -> "String of length " + str.length();
-        case Integer i -> "Integer: " + i;
-        case null -> "null value";
-        default -> "Unknown type: " + obj.getClass();
-    };
-}
-```
-
-## Sealed Classes (Java 17+)
-
-Use sealed classes for restricted hierarchies:
-
-```java
-public sealed interface Token
-    permits JwtToken, OAuth2Token, LegacyToken {
-    ValidationResult validate();
-    String getTokenId();
-}
-
-public final class JwtToken implements Token { /* ... */ }
-
-// Exhaustive switch - no default needed
-ValidationResult validate(Token token) {
-    return switch (token) {
-        case JwtToken jwt -> jwtValidator.validate(jwt);
-        case OAuth2Token oauth -> oauth2Validator.validate(oauth);
-        case LegacyToken legacy -> ValidationResult.invalid("Not supported");
-    };
-}
-```
-
-## Optional Enhancements
+## Optional Usage
 
 ```java
 // orElseThrow for required values
@@ -250,7 +297,7 @@ List<String> emails = users.stream()
     .toList();
 ```
 
-## Modern Collection Factories
+## Collection Factories
 
 ```java
 List<String> roles = List.of("USER", "ADMIN");
