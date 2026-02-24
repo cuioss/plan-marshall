@@ -210,30 +210,12 @@ SearchCriteria criteria = SearchCriteria.builder()
     .build();
 ```
 
-## Logging: @Slf4j Prohibition
-
-**Do NOT use `@Slf4j`** or similar logging annotations in CUI projects:
-
-```java
-// WRONG - Do not use in CUI projects
-@Slf4j
-public class TokenValidator { }
-
-// CORRECT - Use CuiLogger explicitly
-public class TokenValidator {
-    private static final CuiLogger LOGGER = new CuiLogger(TokenValidator.class);
-}
-```
-
-CUI projects use `CuiLogger`, not SLF4J. See `pm-dev-java-cui:cui-logging` for details.
-
 ## Common Pitfalls
 
 | Pitfall | Wrong | Correct |
 |---------|-------|---------|
 | Overusing @Data | `@Data` for immutable objects | Use `@Value` |
 | Missing defaults | Builder without `@Builder.Default` | Add defaults for optional fields |
-| Wrong logger | `@Slf4j` in CUI projects | Use `CuiLogger` explicitly |
 | No toBuilder | Immutable without copy method | `@Builder(toBuilder = true)` |
 | Inheritance | `extends BaseClass` | `@Delegate` with composition |
 
@@ -255,7 +237,6 @@ CUI projects use `CuiLogger`, not SLF4J. See `pm-dev-java-cui:cui-logging` for d
 - [ ] @Builder.Default provided for optional fields
 - [ ] @Singular used for collection builders
 - [ ] Records considered as alternative
-- [ ] No Lombok logging annotations (use CuiLogger)
 - [ ] @Data used only when mutability required
 - [ ] @UtilityClass used for utility classes
 
