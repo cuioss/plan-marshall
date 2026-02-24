@@ -219,27 +219,6 @@ SearchCriteria criteria = SearchCriteria.builder()
 | No toBuilder | Immutable without copy method | `@Builder(toBuilder = true)` |
 | Inheritance | `extends BaseClass` | `@Delegate` with composition |
 
-## Best Practices Summary
-
-1. **Prefer immutability**: Use `@Value` over `@Data`
-2. **Use @Builder for 3+ parameters**: Avoid long constructors
-3. **Provide @Builder.Default**: For optional fields with sensible defaults
-4. **Use @Singular for collections**: Cleaner builder API
-5. **Use @Delegate for composition**: Avoid inheritance hierarchies
-6. **Consider records**: For simple data carriers
-7. **Use @UtilityClass**: For static-only classes
-
-## Quality Checklist
-
-- [ ] @Value used for immutable objects
-- [ ] @Builder used for classes with 3+ parameters
-- [ ] @Delegate used instead of inheritance
-- [ ] @Builder.Default provided for optional fields
-- [ ] @Singular used for collection builders
-- [ ] Records considered as alternative
-- [ ] @Data used only when mutability required
-- [ ] @UtilityClass used for utility classes
-
 ## Related Skills
 
 - `pm-dev-java:java-core` - Core Java patterns, records migration
