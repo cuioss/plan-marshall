@@ -1,8 +1,7 @@
 ---
 name: tools-integration-ci
 description: CI provider abstraction with unified API for GitHub and GitLab operations (PR, issues, CI status)
-user-invocable: false
-allowed-tools: Read, Bash
+user-invokable: false
 ---
 
 # Tools Integration CI Skill

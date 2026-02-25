@@ -1,8 +1,7 @@
 ---
 name: outline-change-type
 description: Common workflow for change-type outline creation with conditional routing by change_type and domain
-user-invocable: false
-allowed-tools: Read, Glob, Grep, Bash, AskUserQuestion
+user-invokable: false
 ---
 
 # Outline Change-Type Skill

@@ -1,8 +1,7 @@
 ---
 name: plugin-architecture
 description: Architecture principles, skill patterns, and design guidance for building goal-based marketplace components
-user-invocable: false
-allowed-tools: Read
+user-invokable: false
 ---
 
 # Plugin Architecture Skill

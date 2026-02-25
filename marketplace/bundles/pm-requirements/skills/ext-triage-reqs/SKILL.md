@@ -1,8 +1,7 @@
 ---
 name: ext-triage-reqs
 description: Triage extension for requirements findings during plan-finalize phase
-user-invocable: false
-allowed-tools: Read
+user-invokable: false
 ---
 
 # Requirements Triage Extension

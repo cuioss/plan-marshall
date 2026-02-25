@@ -1,8 +1,7 @@
 ---
 name: manage-interface
 description: Manage Interface specifications with CRUD operations, automatic numbering, and AsciiDoc formatting
-user-invocable: false
-allowed-tools: Read, Edit, Write, Bash, Grep, Glob, Skill
+user-invokable: false
 ---
 
 # Interface Management Skill

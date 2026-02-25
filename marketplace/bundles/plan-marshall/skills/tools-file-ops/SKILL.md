@@ -1,8 +1,7 @@
 ---
 name: tools-file-ops
 description: Base module providing reusable file operations patterns for CUI workflow scripts
-user-invocable: false
-allowed-tools: Bash
+user-invokable: false
 ---
 
 # File Operations Base Skill

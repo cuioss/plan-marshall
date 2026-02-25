@@ -1,8 +1,7 @@
 ---
 name: js-refactor-code
 description: Execute systematic JavaScript refactoring with standards compliance verification
-user-invocable: true
-allowed-tools: Read, Grep, Glob, Write, Edit, Bash
+user-invokable: true
 ---
 
 # CUI JavaScript Maintenance Skill

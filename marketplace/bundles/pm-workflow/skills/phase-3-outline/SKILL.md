@@ -1,8 +1,7 @@
 ---
 name: phase-3-outline
 description: Two-track solution outline creation - Simple Track for localized changes, Complex Track for codebase-wide discovery
-user-invocable: false
-allowed-tools: Read, Glob, Grep, Bash, Task, AskUserQuestion
+user-invokable: false
 ---
 
 # Phase Outline Skill

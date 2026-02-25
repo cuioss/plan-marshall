@@ -1,8 +1,7 @@
 ---
 name: plugin-plan-implement
 description: Implement plugin tasks from plan with step iteration and progress tracking
-user-invocable: false
-allowed-tools: Read, Write, Edit, Glob, Grep, Bash, Skill
+user-invokable: false
 ---
 
 # Plugin Plan Implement Skill

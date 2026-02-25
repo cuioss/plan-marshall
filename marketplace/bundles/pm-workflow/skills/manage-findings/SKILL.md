@@ -1,8 +1,7 @@
 ---
 name: manage-findings
 description: Unified finding and Q-Gate storage with JSONL persistence for plan-scoped and phase-scoped findings
-user-invocable: false
-allowed-tools: Bash
+user-invokable: false
 ---
 
 # Manage Findings

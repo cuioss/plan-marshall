@@ -1,8 +1,7 @@
 ---
 name: python-best-practices
 description: Modern Python development patterns and best practices
-user-invocable: false
-allowed-tools: Read
+user-invokable: false
 ---
 
 # Python Best Practices

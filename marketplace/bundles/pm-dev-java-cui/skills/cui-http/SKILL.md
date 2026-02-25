@@ -1,8 +1,7 @@
 ---
 name: cui-http
 description: CUI HTTP client standards with HttpHandler, HttpResult pattern, and async-first adapters
-user-invocable: false
-allowed-tools: Read, Grep, Glob
+user-invokable: false
 ---
 
 # CUI HTTP Skill

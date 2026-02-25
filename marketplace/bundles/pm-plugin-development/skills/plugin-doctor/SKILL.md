@@ -1,8 +1,7 @@
 ---
 name: plugin-doctor
 description: Diagnose and fix quality issues in marketplace components with automated safe fixes and prompted risky fixes
-user-invocable: true
-allowed-tools: Read, Edit, Write, Bash, AskUserQuestion, Glob, Grep, Skill
+user-invokable: true
 ---
 
 # Plugin Doctor Skill

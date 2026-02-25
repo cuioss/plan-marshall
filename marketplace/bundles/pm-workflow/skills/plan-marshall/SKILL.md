@@ -1,8 +1,7 @@
 ---
 name: plan-marshall
 description: Unified plan lifecycle management - create, outline, execute, verify, and finalize plans
-user-invocable: true
-allowed-tools: Read, Skill, Bash, AskUserQuestion, Task
+user-invokable: true
 ---
 
 # Plan Marshall Skill

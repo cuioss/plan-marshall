@@ -1,8 +1,7 @@
 ---
 name: manage-plan-documents
 description: Manage request documents within plan directories with schema validation and template-based creation
-user-invocable: false
-allowed-tools: Read, Glob, Bash
+user-invokable: false
 ---
 
 # Manage Plan Documents Skill

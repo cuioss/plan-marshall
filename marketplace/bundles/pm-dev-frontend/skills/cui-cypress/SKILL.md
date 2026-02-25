@@ -1,8 +1,7 @@
 ---
 name: cui-cypress
 description: Cypress E2E testing standards including framework adaptations, test organization, and best practices
-user-invocable: false
-allowed-tools: Read, Grep, Glob
+user-invokable: false
 requirements:
   - Modern JavaScript knowledge
   - Understanding of E2E testing concepts

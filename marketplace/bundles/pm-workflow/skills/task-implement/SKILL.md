@@ -1,8 +1,7 @@
 ---
 name: task-implement
 description: Implement GitHub issues or standalone tasks with full verification
-user-invocable: true
-allowed-tools: Skill, Read, Write, Edit, Glob, Grep, Bash, Task, AskUserQuestion
+user-invokable: true
 ---
 
 # Task Implementation Skill

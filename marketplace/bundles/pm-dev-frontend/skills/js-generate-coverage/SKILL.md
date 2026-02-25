@@ -1,8 +1,7 @@
 ---
 name: js-generate-coverage
 description: Self-contained command for coverage generation and analysis
-user-invocable: true
-allowed-tools: Skill, Read, Glob, Grep, Bash
+user-invokable: true
 ---
 
 # JavaScript Coverage Report Skill

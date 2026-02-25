@@ -1,8 +1,7 @@
 ---
 name: doc-maintain
 description: Maintain documentation (sync, cleanup, update)
-user-invocable: true
-allowed-tools: Skill, Read, Write, Edit, Glob, Grep, Bash
+user-invokable: true
 ---
 
 # Documentation Maintain Skill

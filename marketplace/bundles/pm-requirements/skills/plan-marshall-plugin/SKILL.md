@@ -1,8 +1,7 @@
 ---
 name: plan-marshall-plugin
 description: Requirements domain manifest for plan-marshall workflow integration
-user-invocable: false
-allowed-tools: Read
+user-invokable: false
 ---
 
 # Plan Marshall Plugin - Requirements Domain

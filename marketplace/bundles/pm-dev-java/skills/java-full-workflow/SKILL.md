@@ -1,8 +1,7 @@
 ---
 name: java-full-workflow
 description: Execute complete implement-test-verify workflow with coordinated agents
-user-invocable: true
-allowed-tools: Read, Edit, Write, Glob, Grep, Task, Skill
+user-invokable: true
 ---
 
 # Java Full Workflow Skill

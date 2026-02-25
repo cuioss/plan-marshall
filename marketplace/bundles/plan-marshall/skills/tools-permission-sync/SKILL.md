@@ -1,8 +1,7 @@
 ---
 name: tools-permission-sync
 description: Synchronize marketplace permissions - generate wildcards, manage executor permissions, and migrate to executor pattern.
-user-invocable: false
-allowed-tools: Read, Bash, Glob
+user-invokable: false
 ---
 
 # Marketplace Sync Skill

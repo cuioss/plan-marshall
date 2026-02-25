@@ -1,8 +1,7 @@
 ---
 name: js-maintain-tests
 description: Execute systematic JavaScript test quality improvement with NO production code changes
-user-invocable: true
-allowed-tools: Skill, Read, Write, Edit, Glob, Grep, Bash, Task, SlashCommand
+user-invokable: true
 ---
 
 # JavaScript Test Maintain Skill

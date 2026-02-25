@@ -1,8 +1,7 @@
 ---
 name: plugin-apply-lessons-learned
 description: Apply accumulated lessons learned to component documentation
-user-invocable: true
-allowed-tools: Skill, Read, Edit, Glob, Bash
+user-invokable: true
 ---
 
 # Apply Lessons Learned Skill

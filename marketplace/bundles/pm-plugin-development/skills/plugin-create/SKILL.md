@@ -1,8 +1,7 @@
 ---
 name: plugin-create
 description: Create new marketplace components (agents, commands, skills, bundles) with proper structure and standards compliance
-user-invocable: true
-allowed-tools: Read, Write, Bash, AskUserQuestion, Skill
+user-invokable: true
 ---
 
 # Plugin Create Skill

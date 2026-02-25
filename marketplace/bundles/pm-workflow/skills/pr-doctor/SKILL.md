@@ -1,8 +1,7 @@
 ---
 name: pr-doctor
 description: Diagnose and fix PR issues (build, reviews, Sonar)
-user-invocable: true
-allowed-tools: Skill, Read, Edit, Glob, Grep, Bash, Task
+user-invokable: true
 ---
 
 # PR Doctor Skill

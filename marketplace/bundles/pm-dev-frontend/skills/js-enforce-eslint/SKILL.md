@@ -1,8 +1,7 @@
 ---
 name: js-enforce-eslint
 description: Enforce ESLint standards by fixing violations systematically
-user-invocable: true
-allowed-tools: Read, Grep, Glob, Write, Edit, Bash
+user-invokable: true
 ---
 
 # JavaScript Linting and Formatting Standards

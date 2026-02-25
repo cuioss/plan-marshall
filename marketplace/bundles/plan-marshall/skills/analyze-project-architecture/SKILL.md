@@ -1,8 +1,7 @@
 ---
 name: analyze-project-architecture
 description: LLM-based architectural analysis that transforms raw project data into meaningful structure
-user-invocable: false
-allowed-tools: Read, Write, Edit, Glob, Grep, Bash
+user-invokable: false
 ---
 
 # Analyze Project Architecture Skill
