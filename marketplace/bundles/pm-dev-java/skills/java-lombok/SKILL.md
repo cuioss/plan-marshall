@@ -101,7 +101,7 @@ TokenConfig modified = config.toBuilder()
     .build();
 ```
 
-**Use @Builder for**: Classes with 3+ parameters, optional parameters, immutable configuration objects, DTOs with many fields.
+**Use @Builder for**: Classes with 3+ parameters, optional parameters, immutable configuration objects, DTOs with many fields. **Always use @Builder for classes with 4+ constructor parameters** — direct constructor calls with many positional arguments are error-prone and hard to read. **Always add @Singular to collection-type fields** in @Builder classes — it generates convenient single-element add methods and ensures the collection is built as an immutable copy.
 
 ### @Value - Immutable Objects
 
