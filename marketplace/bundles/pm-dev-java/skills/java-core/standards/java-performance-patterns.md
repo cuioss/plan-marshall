@@ -92,98 +92,6 @@ Set<DayOfWeek> workDays = EnumSet.of(MONDAY, TUESDAY, WEDNESDAY, THURSDAY, FRIDA
 Map<Status, Handler> handlers = new EnumMap<>(Status.class);
 ```
 
-## Hot Path Optimization
-
-### Streams vs Simple Loops
-
-Streams add overhead (lambda objects, Optional wrappers, infrastructure). On hot paths, prefer simple loops:
-
-```java
-// Bad on hot path - scattered allocations, cache unfriendly
-BigDecimal totalAmount(List<Order> orders) {
-    return orders.stream()
-        .filter(Order::isActive)
-        .map(o -> Optional.ofNullable(o.getAmount())
-            .orElse(BigDecimal.ZERO))
-        .reduce(BigDecimal.ZERO, BigDecimal::add);
-}
-
-// Good on hot path - predictable access, cache friendly
-BigDecimal totalAmount(List<Order> orders) {
-    BigDecimal sum = BigDecimal.ZERO;
-    for (int i = 0; i < orders.size(); i++) {
-        Order order = orders.get(i);
-        if (!order.isActive()) continue;
-        BigDecimal amount = order.getAmount();
-        if (amount != null) sum = sum.add(amount);
-    }
-    return sum;
-}
-```
-
-**Use streams when**: code runs once per request, readability matters more than microseconds.
-**Use simple loops when**: code runs per item in large collections, method appears in profiler hot spots.
-
-### Avoid Optional.ofNullable in Streams
-
-```java
-// Bad - creates Optional for every element
-items.stream()
-    .map(item -> Optional.ofNullable(item.getValue()).orElse(BigDecimal.ZERO))
-    .reduce(BigDecimal.ZERO, BigDecimal::add);
-
-// Good - filter nulls directly
-items.stream()
-    .map(Item::getValue)
-    .filter(Objects::nonNull)
-    .reduce(BigDecimal.ZERO, BigDecimal::add);
-```
-
-### Avoid Stream Creation in Loops
-
-```java
-// Bad - creates stream on each iteration (O(n*m) stream creations)
-for (Order order : orders) {
-    Optional<Product> product = products.stream()
-        .filter(p -> p.getId().equals(order.getProductId()))
-        .findFirst();
-}
-
-// Good - build lookup map once, O(1) lookups
-Map<String, Product> productMap = products.stream()
-    .collect(Collectors.toMap(Product::getId, Function.identity()));
-for (Order order : orders) {
-    Product product = productMap.get(order.getProductId());
-}
-```
-
-### Parallel Streams
-
-Use only for CPU-intensive operations on large datasets. Never for I/O-bound or small collections:
-
-```java
-// Bad - parallel for small collection or I/O
-smallList.parallelStream().map(this::fetchFromNetwork).toList();
-
-// Good - parallel for CPU-intensive with large data
-largeDataset.parallelStream().map(this::complexCalculation).toList();
-```
-
-## Optional Usage
-
-`orElse()` evaluates eagerly; `orElseGet()` evaluates lazily:
-
-```java
-// Bad - database call happens EVERY time, even when value exists
-String name = user.getName().orElse(database.lookupDefaultName(userId));
-
-// Good - lambda only invoked when Optional is empty
-String name = user.getName().orElseGet(() -> database.lookupDefaultName(userId));
-
-// OK - cheap constant, orElse is fine
-String value = optional.orElse("");
-```
-
 ## Thread Safety Patterns
 
 ### Lazy Initialization
@@ -208,10 +116,10 @@ public class ResourceHolder {
 
 ### ThreadLocal Cleanup
 
-Always clean up ThreadLocal in pooled thread environments:
+Always clean up ThreadLocal in pooled thread environments. Avoid ThreadLocal with virtual threads (use explicit parameter passing instead):
 
 ```java
-// Good - always remove in finally
+// Good for platform threads - always remove in finally
 private static final ThreadLocal<UserContext> context = new ThreadLocal<>();
 
 public void processRequest(Request request) {

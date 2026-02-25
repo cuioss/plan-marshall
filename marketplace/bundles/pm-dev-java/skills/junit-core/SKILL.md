@@ -27,12 +27,28 @@ Read: standards/testing-junit-core.md
 ```
 
 This provides foundational rules for:
-- Test class requirements (1:1 mapping with production classes)
-- AAA pattern (Arrange-Act-Assert)
+- Test class requirements (1:1 mapping, splitting at 200+ lines)
+- AAA pattern with generated test data (no literals, no phase comments)
+- Full JUnit 5 assertion API (`assertAll`, `assertInstanceOf`, `assertDoesNotThrow`)
+- @Nested for grouping (3+ related tests)
+- Corner case testing
 - Coverage requirements (80% line/branch minimum)
-- @DisplayName usage
 
-### Step 2: Load Coverage Analysis (As Needed)
+### Step 2: Load Additional Standards (As Needed)
+
+**Integration Testing** (load for IT work):
+```
+Read: standards/testing-integration.md
+```
+
+Use when: Writing or reviewing integration tests (`*IT.java`). Covers naming, separation, and lifecycle.
+
+**Async Testing** (load for async/concurrent code):
+```
+Read: standards/testing-async-patterns.md
+```
+
+Use when: Testing asynchronous behavior. Covers Awaitility patterns (never Thread.sleep).
 
 **Coverage Analysis** (load for coverage work):
 ```
@@ -50,40 +66,42 @@ Use when: Analyzing test coverage or improving coverage metrics.
 // UserService.java → UserServiceTest.java
 ```
 
-### AAA Pattern (Arrange-Act-Assert)
+### AAA Pattern — No Phase Comments
 ```java
 @Test
 @DisplayName("Should validate token with correct issuer")
 void shouldValidateTokenWithCorrectIssuer() {
-    // Arrange
-    String issuer = "https://example.com";
-    Token token = createTokenWithIssuer(issuer);
+    var issuer = Generators.nonBlankStrings().next();
+    var token = createTokenWithIssuer(issuer);
 
-    // Act
-    ValidationResult result = validator.validate(token);
+    var result = validator.validate(token);
 
-    // Assert
-    assertTrue(result.isValid());
-    assertEquals(issuer, result.getIssuer());
+    assertTrue(result.isValid(), "Token should be valid");
+    assertEquals(issuer, result.getIssuer(), "Issuer should match");
 }
 ```
 
-### DisplayName Annotations
+### Grouped Assertions with assertAll
 ```java
-// CORRECT - Descriptive test names
 @Test
-@DisplayName("Should throw exception when token is null")
-void shouldThrowExceptionWhenTokenIsNull() { }
+@DisplayName("Should parse all token claims")
+void shouldParseAllTokenClaims() {
+    var token = createValidToken();
 
-@Test
-@DisplayName("Should return empty when no users found")
-void shouldReturnEmptyWhenNoUsersFound() { }
+    var claims = parser.parse(token);
+
+    assertAll("Token claims",
+        () -> assertNotNull(claims.getSubject(), "Subject should be present"),
+        () -> assertInstanceOf(Instant.class, claims.getExpiry(), "Expiry should be Instant"),
+        () -> assertFalse(claims.getRoles().isEmpty(), "Roles should not be empty")
+    );
+}
 ```
 
 ### Coverage Requirements
 - Minimum 80% line coverage
 - Minimum 80% branch coverage
-- Critical paths: 100% coverage
+- Critical/hot paths: near 100% coverage
 - All public APIs must be tested
 
 ## Related Skills
@@ -96,5 +114,7 @@ void shouldReturnEmptyWhenNoUsersFound() { }
 
 | Standard | Purpose |
 |----------|---------|
-| testing-junit-core.md | Test structure, AAA pattern, naming |
-| coverage-analysis-pattern.md | Coverage analysis and improvement |
+| testing-junit-core.md | Test structure, AAA pattern, assertions, nesting |
+| testing-integration.md | Integration test naming, separation, lifecycle |
+| testing-async-patterns.md | Awaitility patterns (never Thread.sleep) |
+| coverage-analysis-pattern.md | Coverage analysis and gap improvement |

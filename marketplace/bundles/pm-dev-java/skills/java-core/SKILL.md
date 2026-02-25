@@ -1,19 +1,18 @@
 ---
 name: java-core
 description: Core Java development standards for patterns, modern features, and performance optimization
-user-invocable: true
-allowed-tools: Read, Grep, Glob, Write, Edit, Bash
+user-invokable: true
 ---
 
 # Java Core Skill
 
 **REFERENCE MODE**: This skill provides reference material. Load specific standards on-demand based on current task.
 
-Core Java development standards for general Java projects. This skill covers fundamental patterns, modern Java features, performance optimization, and implementation verification.
+Core Java development standards for general Java projects. This skill covers fundamental patterns, modern Java features, and performance optimization.
 
 ## Prerequisites
 
-This skill applies to Java 17+ projects with no CUI-specific dependencies.
+This skill applies to Java 21+ projects with no CUI-specific dependencies.
 
 ## Workflow
 
@@ -33,71 +32,26 @@ This provides foundational rules for:
 
 ### Step 2: Load Additional Standards (As Needed)
 
-**Modern Java Features** (load for new code):
+**Java 17 Features** (load for new code):
 ```
-Read: standards/java-modern-features.md
+Read: standards/java-17-features.md
 ```
 
-Use when: Writing new code or modernizing existing code. Covers records, pattern matching, sealed classes, and text blocks.
+Use when: Writing new code or modernizing existing code. Covers records, switch expressions, pattern matching for instanceof, sealed classes, text blocks, streams, and Optional usage.
+
+**Java 21 Features** (load for Java 21+ code):
+```
+Read: standards/java-21-features.md
+```
+
+Use when: Using Java 21 features — pattern matching in switch, record patterns, sequenced collections, and virtual threads.
 
 **Performance Patterns** (load for optimization work):
 ```
 Read: standards/java-performance-patterns.md
 ```
 
-Use when: Optimizing code or designing high-performance components.
-
-**Build Precondition Pattern** (load for validation logic):
-```
-Read: standards/build-precondition-pattern.md
-```
-
-Use when: Implementing validation logic or precondition checking.
-
-**Implementation Verification** (load for code review):
-```
-Read: standards/implementation-verification.md
-```
-
-Use when: Reviewing implementations or verifying code quality.
-
-## Key Rules Summary
-
-### Package Structure
-```java
-// CORRECT - Feature-based organization
-de.example.portal.authentication     // Authentication feature
-de.example.portal.configuration      // Configuration feature
-de.example.portal.user.management    // User management feature
-```
-
-### Command-Query Separation
-```java
-// Query - returns value, no side effects
-public boolean isValid() {
-    return status == Status.VALID;
-}
-
-// Command - modifies state, returns void
-public void markAsInvalid() {
-    this.status = Status.INVALID;
-}
-```
-
-### Parameter Objects (3+ parameters)
-```java
-// CORRECT - Multiple related parameters grouped
-public record ValidationRequest(
-    String tokenId,
-    Set<String> expectedScopes,
-    Duration maxAge,
-    String issuer
-) {}
-
-public boolean validate(ValidationRequest request) {
-    // Clear, organized parameters
-}
-```
+Use when: Optimizing code or designing high-performance components. Covers string handling, autoboxing, collection sizing, thread safety, exception handling, and logging performance.
 
 ## Related Skills
 
@@ -105,13 +59,3 @@ public boolean validate(ValidationRequest request) {
 - `pm-dev-java:java-lombok` - Lombok patterns
 - `pm-dev-java:junit-core` - JUnit 5 testing patterns
 - `pm-dev-java:javadoc` - JavaDoc documentation standards
-
-## Standards Reference
-
-| Standard | Purpose |
-|----------|---------|
-| java-core-patterns.md | Code organization and design principles |
-| java-modern-features.md | Records, pattern matching, sealed classes |
-| java-performance-patterns.md | Performance optimization patterns |
-| build-precondition-pattern.md | Validation logic patterns |
-| implementation-verification.md | Code review and verification |

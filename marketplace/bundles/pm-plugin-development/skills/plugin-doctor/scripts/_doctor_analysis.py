@@ -60,6 +60,12 @@ def analyze_component(component: dict) -> dict:
                 analysis['markdown'] = md_analysis
                 issues.extend(extract_issues_from_markdown_analysis(md_analysis, skill_md_path, 'skill'))
 
+                # Tool coverage analysis for skills
+                coverage = analyze_tool_coverage(md_path)
+                if 'error' not in coverage:
+                    analysis['coverage'] = coverage
+                    issues.extend(extract_issues_from_coverage_analysis(coverage, skill_md_path, 'skill'))
+
         # Sub-document analysis (references/, standards/, workflows/, templates/)
         subdoc_results = analyze_subdocuments(skill_dir)
         if subdoc_results:
@@ -168,19 +174,6 @@ def extract_issues_from_markdown_analysis(analysis: dict, file_path: str, compon
                 'fixable': False,
                 'classification': bloat,
                 'line_count': analysis.get('metrics', {}).get('line_count', 0),
-            }
-        )
-
-    # Check banned keywords outside enforcement block (skills only)
-    for violation in rules.get('banned_keyword_violations', []):
-        issues.append(
-            {
-                'type': 'skill-banned-keywords',
-                'file': file_path,
-                'severity': 'warning',
-                'fixable': False,
-                'description': f'Banned keyword "{violation["keyword"]}" at line {violation["line"]}',
-                'details': violation,
             }
         )
 

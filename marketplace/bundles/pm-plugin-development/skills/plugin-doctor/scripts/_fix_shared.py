@@ -57,7 +57,7 @@ RISKY_FIX_TYPES = {
     'agent-lessons-via-skill',
     'backup-file-pattern',
     'ci-rule-self-update',
-    'skill-banned-keywords',
+
     'subdoc-hardcoded-script-path',
 }
 

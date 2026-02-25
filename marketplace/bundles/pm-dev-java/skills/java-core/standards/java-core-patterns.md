@@ -39,7 +39,7 @@ public class TokenValidator {
 ### Method Design
 
 * Follow Command-Query Separation
-* Limit parameters (3 or fewer preferred, use parameter objects for 4+)
+* Limit parameters (2 or fewer preferred, use parameter objects for 3+)
 * Keep methods short (under 50 lines preferred, 100 max)
 * Keep cyclomatic complexity low (prefer <15, max 20)
 * Use early returns to reduce nesting
@@ -58,7 +58,7 @@ public void markAsInvalid() {
 
 ### Parameter Objects
 
-Only introduce parameter objects when replacing **3 or more parameters**. Use records for simple parameter objects in Java 17+.
+Only introduce parameter objects when replacing **3 or more parameters**. Use records for simple parameter objects.
 
 ```java
 // Good: Multiple related parameters grouped

@@ -2,7 +2,6 @@
 name: java-lombok
 description: Lombok patterns including @Delegate, @Builder, @Value, @UtilityClass for reducing boilerplate
 user-invocable: false
-allowed-tools: Read, Edit, Write, Bash, Grep, Glob
 ---
 
 # Java Lombok Skill
@@ -17,23 +16,6 @@ Lombok standards for reducing boilerplate code while maintaining code quality an
     <artifactId>lombok</artifactId>
     <scope>provided</scope>
 </dependency>
-```
-
-## Required Imports
-
-```java
-// Lombok Core
-import lombok.Builder;
-import lombok.Value;
-import lombok.Data;
-import lombok.Getter;
-import lombok.Setter;
-
-// Lombok Advanced
-import lombok.Delegate;
-import lombok.Singular;
-import lombok.experimental.UtilityClass;
-import lombok.Builder.Default;
 ```
 
 ## Core Annotations
@@ -101,7 +83,7 @@ TokenConfig modified = config.toBuilder()
     .build();
 ```
 
-**Use @Builder for**: Classes with 3+ parameters, optional parameters, immutable configuration objects, DTOs with many fields.
+**Use @Builder for**: Classes with 3+ parameters, optional parameters, immutable configuration objects, DTOs with many fields. **Always use @Builder for classes with 4+ constructor parameters** — direct constructor calls with many positional arguments are error-prone and hard to read. **Always add @Singular to collection-type fields** in @Builder classes — it generates convenient single-element add methods and ensures the collection is built as an immutable copy.
 
 ### @Value - Immutable Objects
 
@@ -158,7 +140,7 @@ Makes class final, constructor private, all methods static.
 
 | Criteria | Use Records | Use Lombok @Value |
 |----------|-------------|-------------------|
-| Java version | Java 17+ | Java 11+ |
+| Java version | Java 21+ (baseline) | Java 11+ |
 | Builder pattern | Not built-in | @Value + @Builder |
 | Collection builders | Not available | @Singular |
 | Pattern matching | Java 21+ | Not available |
@@ -166,7 +148,7 @@ Makes class final, constructor private, all methods static.
 | Customization | Limited | More flexible |
 
 ```java
-// Simple case - prefer records (Java 17+)
+// Simple case - prefer records
 public record User(String id, String name, String email) {}
 
 // Complex case - use Lombok
@@ -184,80 +166,14 @@ public class ApiResponse {
 
 **Migration guidance**: See `pm-dev-java:java-core` skill for Lombok to records migration.
 
-## Combining Annotations
-
-```java
-@Value
-@Builder
-public class SearchCriteria {
-    String query;
-
-    @Builder.Default
-    int maxResults = 100;
-
-    @Singular
-    Set<String> categories;
-
-    LocalDate startDate;
-    LocalDate endDate;
-}
-
-// Usage - only specify what differs from defaults
-SearchCriteria criteria = SearchCriteria.builder()
-    .query("example")
-    .category("tech")
-    .category("java")
-    .build();
-```
-
-## Logging: @Slf4j Prohibition
-
-**Do NOT use `@Slf4j`** or similar logging annotations in CUI projects:
-
-```java
-// WRONG - Do not use in CUI projects
-@Slf4j
-public class TokenValidator { }
-
-// CORRECT - Use CuiLogger explicitly
-public class TokenValidator {
-    private static final CuiLogger LOGGER = new CuiLogger(TokenValidator.class);
-}
-```
-
-CUI projects use `CuiLogger`, not SLF4J. See `pm-dev-java-cui:cui-logging` for details.
-
 ## Common Pitfalls
 
 | Pitfall | Wrong | Correct |
 |---------|-------|---------|
 | Overusing @Data | `@Data` for immutable objects | Use `@Value` |
 | Missing defaults | Builder without `@Builder.Default` | Add defaults for optional fields |
-| Wrong logger | `@Slf4j` in CUI projects | Use `CuiLogger` explicitly |
 | No toBuilder | Immutable without copy method | `@Builder(toBuilder = true)` |
 | Inheritance | `extends BaseClass` | `@Delegate` with composition |
-
-## Best Practices Summary
-
-1. **Prefer immutability**: Use `@Value` over `@Data`
-2. **Use @Builder for 3+ parameters**: Avoid long constructors
-3. **Provide @Builder.Default**: For optional fields with sensible defaults
-4. **Use @Singular for collections**: Cleaner builder API
-5. **Use @Delegate for composition**: Avoid inheritance hierarchies
-6. **Consider records (Java 17+)**: For simple data carriers
-7. **Use @UtilityClass**: For static-only classes
-
-## Quality Checklist
-
-- [ ] @Value used for immutable objects
-- [ ] @Builder used for classes with 3+ parameters
-- [ ] @Delegate used instead of inheritance
-- [ ] @Builder.Default provided for optional fields
-- [ ] @Singular used for collection builders
-- [ ] Records considered as alternative (Java 17+)
-- [ ] No Lombok logging annotations (use CuiLogger)
-- [ ] @Data used only when mutability required
-- [ ] @UtilityClass used for utility classes
 
 ## Related Skills
 

@@ -147,17 +147,17 @@ This section defines when and how to identify violations of Java coding standard
 
 **Legacy Switch Statements**: Classic switch statements with breaks detected
 - **Action Required**: Convert to switch expressions per Switch Expressions Standards
-- **See**: `pm-dev-java:java-core` skill, `standards/java-modern-features.md` section "Switch Expressions"
+- **See**: `pm-dev-java:java-core` skill, `standards/java-17-features.md` section "Switch Expressions"
 - **Detection**: Switch statements with break keywords, fall-through cases
 
 **Verbose Object Creation**: Manual data classes without records
 - **Action Required**: Replace with records per Records Standards
-- **See**: `pm-dev-java:java-core` skill, `standards/java-modern-features.md` section "Records"
+- **See**: `pm-dev-java:java-core` skill, `standards/java-17-features.md` section "Records"
 - **Detection**: Classes with only fields, constructor, getters, equals, hashCode, toString
 
 **Manual Stream Operations**: Imperative loops that could use streams
 - **Action Required**: Simplify with streams per Stream Processing Standards
-- **See**: `pm-dev-java:java-core` skill, `standards/java-modern-features.md` section "Stream API"
+- **See**: `pm-dev-java:java-core` skill, `standards/java-17-features.md` section "Stream Processing"
 - **Detection**: Loops with filters, maps, or accumulations that could be replaced with streams
 - **Exception**: Simple loops where streams would reduce readability (e.g., single iteration with early return, nested streams >3 levels deep, complex stateful operations requiring mutable accumulation)
 

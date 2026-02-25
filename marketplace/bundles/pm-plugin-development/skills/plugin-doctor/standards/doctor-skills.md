@@ -67,24 +67,6 @@ Script-bearing skills have a single `## Enforcement` block at the top of the SKI
 
 **If missing**: Flag as risky fix (requires manual creation of enforcement block with skill-specific rules).
 
-### Validate skill-banned-keywords-outside-enforcement
-
-Skills with an enforcement block do not use banned emphasis keywords outside that block.
-
-**Banned keywords** (as ALL-CAPS standalone words, not inside code blocks or headings):
-`CRITICAL`, `MUST`, `NEVER`, `REQUIRED`, `MANDATORY`, `FORBIDDEN`, `ALWAYS`, `DO NOT`, `IMPORTANT`, `CANNOT`
-
-**Detection logic**:
-1. Locate the `## Enforcement` block boundaries (from `## Enforcement` heading to next `##` heading)
-2. For all content OUTSIDE the enforcement block:
-   - Scan for banned keywords as standalone ALL-CAPS words
-   - Exclude matches inside fenced code blocks
-   - Exclude matches inside inline code (backticks)
-   - Exclude matches that are part of a section heading
-3. Report each occurrence with line number and context
-
-**If violations found**: Flag as risky fix (requires manual rephrasing to use lowercase equivalents).
-
 ### Validate plan-marshall-plugin Manifest
 
 **Conditional**: Only execute if skill name is `plan-marshall-plugin`.
@@ -129,7 +111,6 @@ All `.md` files in `references/`, `standards/`, `workflows/`, and `templates/` a
 **Risky fixes** (require confirmation):
 - workflow-explicit-script-calls violations (missing explicit script calls in workflows)
 - skill-enforcement-block-required violations (missing enforcement block in script-bearing skills)
-- skill-banned-keywords-outside-enforcement violations (banned enforcement keywords outside enforcement block)
 
 ### Auto-fix: Missing Foundation Skills
 
