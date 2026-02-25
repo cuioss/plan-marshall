@@ -45,6 +45,8 @@ Four detection modes:
 
 **skill-enforcement-block-required**: Script-bearing skills need an `## Enforcement` block.
 
+**skill-unused-tools-declared**: Skills declare `allowed-tools` that are never referenced in SKILL.md content. Detection is structural (frontmatter extraction); semantic usage analysis is delegated to tool-coverage-agent.
+
 ## PM-Workflow Rules
 
 **pm-implicit-script-call** (PM-001): Script operations without explicit bash code blocks.

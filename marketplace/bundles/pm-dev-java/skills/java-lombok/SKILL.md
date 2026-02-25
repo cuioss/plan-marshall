@@ -2,7 +2,6 @@
 name: java-lombok
 description: Lombok patterns including @Delegate, @Builder, @Value, @UtilityClass for reducing boilerplate
 user-invocable: false
-allowed-tools: Read, Edit, Write, Bash, Grep, Glob
 ---
 
 # Java Lombok Skill
@@ -17,23 +16,6 @@ Lombok standards for reducing boilerplate code while maintaining code quality an
     <artifactId>lombok</artifactId>
     <scope>provided</scope>
 </dependency>
-```
-
-## Required Imports
-
-```java
-// Lombok Core
-import lombok.Builder;
-import lombok.Value;
-import lombok.Data;
-import lombok.Getter;
-import lombok.Setter;
-
-// Lombok Advanced
-import lombok.Delegate;
-import lombok.Singular;
-import lombok.experimental.UtilityClass;
-import lombok.Builder.Default;
 ```
 
 ## Core Annotations
@@ -183,32 +165,6 @@ public class ApiResponse {
 ```
 
 **Migration guidance**: See `pm-dev-java:java-core` skill for Lombok to records migration.
-
-## Combining Annotations
-
-```java
-@Value
-@Builder
-public class SearchCriteria {
-    String query;
-
-    @Builder.Default
-    int maxResults = 100;
-
-    @Singular
-    Set<String> categories;
-
-    LocalDate startDate;
-    LocalDate endDate;
-}
-
-// Usage - only specify what differs from defaults
-SearchCriteria criteria = SearchCriteria.builder()
-    .query("example")
-    .category("tech")
-    .category("java")
-    .build();
-```
 
 ## Common Pitfalls
 

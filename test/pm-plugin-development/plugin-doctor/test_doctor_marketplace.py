@@ -824,5 +824,55 @@ def test_fixture_analyze_no_rule_11_without_tools():
 
 
 # =============================================================================
+# Skill Tool Coverage Tests
+# =============================================================================
+
+
+def test_fixture_analyze_skill_has_coverage():
+    """Test analyze includes tool coverage for skills with allowed-tools."""
+    fixture = TestWithTempMarketplace()
+    temp_dir = fixture.setup_temp_marketplace()
+
+    # Update SKILL.md to declare allowed-tools
+    skill_md = fixture.marketplace_root / 'test-bundle' / 'skills' / 'test-skill' / 'SKILL.md'
+    skill_md.write_text("""---
+name: test-skill
+description: A test skill
+user-invocable: true
+allowed-tools: Read, Write, Bash
+---
+
+# Test Skill
+
+This skill provides testing capabilities.
+""")
+
+    try:
+        result = run_script(SCRIPT_PATH, 'analyze', '--type', 'skills', cwd=str(temp_dir))
+        assert result.returncode == 0, f'Analyze failed: {result.stderr}'
+
+        data = result.json()
+        # Find the test-skill analysis
+        skill_analysis = None
+        for item in data['analysis']:
+            if item.get('component', {}).get('name') == 'test-skill':
+                skill_analysis = item
+                break
+
+        assert skill_analysis is not None, 'Should find test-skill in analysis'
+        analysis = skill_analysis.get('analysis', {})
+        assert 'coverage' in analysis, f'Skill analysis should include coverage key, got keys: {list(analysis.keys())}'
+
+        coverage = analysis['coverage']
+        tool_coverage = coverage.get('tool_coverage', {})
+        assert tool_coverage.get('declared_tools') == ['Read', 'Write', 'Bash'], (
+            f'Expected [Read, Write, Bash], got {tool_coverage.get("declared_tools")}'
+        )
+        assert tool_coverage.get('needs_llm_analysis') is True, 'Should need LLM analysis'
+    finally:
+        fixture.cleanup()
+
+
+# =============================================================================
 # Main
 # =============================================================================
