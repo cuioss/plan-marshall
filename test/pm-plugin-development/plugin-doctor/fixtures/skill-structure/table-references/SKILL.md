@@ -1,7 +1,7 @@
 ---
 name: table-references-test
 description: Test skill with table-format references
-allowed-tools: Read, Bash
+user-invokable: false
 ---
 
 # Table References Test Skill

@@ -596,8 +596,7 @@ def test_fixture_analyze_includes_subdocuments():
     skill_md.write_text("""---
 name: test-skill
 description: A test skill
-user-invocable: true
-allowed-tools: Read
+user-invokable: true
 ---
 
 # Test Skill
@@ -646,8 +645,7 @@ def test_fixture_analyze_detects_subdoc_bloat():
     skill_md.write_text("""---
 name: test-skill
 description: A test skill
-user-invocable: true
-allowed-tools: Read
+user-invokable: true
 ---
 
 # Test Skill
@@ -829,17 +827,16 @@ def test_fixture_analyze_no_rule_11_without_tools():
 
 
 def test_fixture_analyze_skill_has_coverage():
-    """Test analyze includes tool coverage for skills with allowed-tools."""
+    """Test analyze includes tool coverage for skills (no tools declared)."""
     fixture = TestWithTempMarketplace()
     temp_dir = fixture.setup_temp_marketplace()
 
-    # Update SKILL.md to declare allowed-tools
+    # Skills don't support tools/allowed-tools fields
     skill_md = fixture.marketplace_root / 'test-bundle' / 'skills' / 'test-skill' / 'SKILL.md'
     skill_md.write_text("""---
 name: test-skill
 description: A test skill
-user-invocable: true
-allowed-tools: Read, Write, Bash
+user-invokable: true
 ---
 
 # Test Skill
@@ -865,10 +862,9 @@ This skill provides testing capabilities.
 
         coverage = analysis['coverage']
         tool_coverage = coverage.get('tool_coverage', {})
-        assert tool_coverage.get('declared_tools') == ['Read', 'Write', 'Bash'], (
-            f'Expected [Read, Write, Bash], got {tool_coverage.get("declared_tools")}'
-        )
-        assert tool_coverage.get('needs_llm_analysis') is True, 'Should need LLM analysis'
+        # Skills don't declare tools - should have empty declared_tools
+        declared = tool_coverage.get('declared_tools', [])
+        assert declared == [], f'Skills should have no declared tools, got {declared}'
     finally:
         fixture.cleanup()
 

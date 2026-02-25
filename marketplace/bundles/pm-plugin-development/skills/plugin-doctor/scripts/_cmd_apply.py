@@ -98,7 +98,7 @@ def apply_missing_field_fix(file_path: Path, fix: dict, templates: dict) -> dict
     if frontmatter_end == -1:
         return {'success': False, 'error': 'Invalid frontmatter structure'}
 
-    defaults = {'name': file_path.stem, 'description': '[Description needed]', 'tools': 'Read'}
+    defaults = {'name': file_path.stem, 'description': '[Description needed]', 'tools': 'Read', 'user-invokable': 'false'}
     default_value = defaults.get(field_name, '[Value needed]')
 
     new_line = f'{field_name}: {default_value}'
@@ -275,7 +275,7 @@ def apply_remove_frontmatter_field(file_path: Path, fix: dict, templates: dict) 
     with open(file_path, 'w', encoding='utf-8') as f:
         f.write(new_content)
 
-    return {'success': True, 'changes': [f'Removed unsupported field from frontmatter']}
+    return {'success': True, 'changes': ['Removed unsupported field from frontmatter']}
 
 
 def apply_rename_frontmatter_field(file_path: Path, fix: dict, templates: dict) -> dict:
@@ -317,6 +317,7 @@ FIX_HANDLERS = {
     'agent-lessons-via-skill': apply_lessons_via_skill_fix,
     'unsupported-skill-tools-field': apply_remove_frontmatter_field,
     'misspelled-user-invokable': apply_rename_frontmatter_field,
+    'missing-user-invokable': apply_missing_field_fix,
 }
 
 

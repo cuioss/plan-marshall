@@ -1,7 +1,7 @@
 ---
 name: cross-skill-references-test
 description: Test skill with cross-skill reference notation
-allowed-tools: Read, Skill
+user-invokable: false
 ---
 
 # Cross-Skill References Test Skill

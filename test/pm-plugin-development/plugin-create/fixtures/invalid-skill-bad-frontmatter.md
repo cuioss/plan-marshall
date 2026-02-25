@@ -1,6 +1,6 @@
 ---
 description: This skill is missing the required name field
-allowed-tools: Read
+user-invokable: true
 ---
 
 # Invalid Skill

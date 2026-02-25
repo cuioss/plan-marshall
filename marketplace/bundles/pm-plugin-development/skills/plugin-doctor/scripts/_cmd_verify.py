@@ -141,6 +141,50 @@ def verify_skill_tool_visibility_fix(file_path: Path) -> dict:
     }
 
 
+def verify_unsupported_tools_field_fix(file_path: Path) -> dict:
+    """Verify unsupported tools/allowed-tools field was removed from skill frontmatter."""
+    try:
+        content = file_path.read_text(encoding='utf-8', errors='replace')
+    except OSError as e:
+        return {'verified': False, 'error': f'Failed to read file: {e}'}
+
+    frontmatter_present, frontmatter = extract_frontmatter(content)
+
+    if not frontmatter_present:
+        return {'verified': True, 'issue_resolved': True, 'details': 'No frontmatter to check'}
+
+    if re.search(r'^(?:allowed-tools|tools):', frontmatter, re.MULTILINE):
+        return {
+            'verified': True,
+            'issue_resolved': False,
+            'details': 'Unsupported tools/allowed-tools field still present in skill frontmatter',
+        }
+
+    return {'verified': True, 'issue_resolved': True, 'details': 'Unsupported tools field removed'}
+
+
+def verify_misspelled_user_invokable_fix(file_path: Path) -> dict:
+    """Verify misspelled user-invocable was renamed to user-invokable."""
+    try:
+        content = file_path.read_text(encoding='utf-8', errors='replace')
+    except OSError as e:
+        return {'verified': False, 'error': f'Failed to read file: {e}'}
+
+    frontmatter_present, frontmatter = extract_frontmatter(content)
+
+    if not frontmatter_present:
+        return {'verified': True, 'issue_resolved': True, 'details': 'No frontmatter to check'}
+
+    if re.search(r'^user-invocable:', frontmatter, re.MULTILINE):
+        return {
+            'verified': True,
+            'issue_resolved': False,
+            'details': 'Still using misspelled user-invocable (should be user-invokable)',
+        }
+
+    return {'verified': True, 'issue_resolved': True, 'details': 'Field correctly named user-invokable'}
+
+
 def verify_generic(file_path: Path, fix_type: str) -> dict:
     """Generic verification for unknown fix types."""
     return {'verified': True, 'issue_resolved': None, 'details': 'Manual verification recommended'}
@@ -172,6 +216,10 @@ def cmd_verify(args) -> int:
         result = verify_lessons_via_skill_fix(file_path)
     elif fix_type == 'agent-skill-tool-visibility':
         result = verify_skill_tool_visibility_fix(file_path)
+    elif fix_type == 'unsupported-skill-tools-field':
+        result = verify_unsupported_tools_field_fix(file_path)
+    elif fix_type == 'misspelled-user-invokable':
+        result = verify_misspelled_user_invokable_fix(file_path)
     else:
         result = verify_generic(file_path, fix_type)
 
