@@ -73,7 +73,16 @@ try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
         .map(url -> executor.submit(() -> fetchContent(url)))
         .toList();
     List<String> results = futures.stream()
-        .map(f -> { try { return f.get(); } catch (Exception e) { throw new RuntimeException(e); } })
+        .map(f -> {
+            try {
+                return f.get();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new RuntimeException("Interrupted while waiting for future", e);
+            } catch (ExecutionException e) {
+                throw new RuntimeException("Exception in task", e.getCause());
+            }
+        })
         .toList();
 }
 
