@@ -1,7 +1,7 @@
 ---
 name: js-fix-jsdoc
 description: Fix JSDoc errors and warnings from build/lint with content preservation
-user-invokable: true
+user-invokable: false
 ---
 
 # JSDoc Documentation Standards

@@ -1,7 +1,7 @@
 ---
 name: js-enforce-eslint
 description: Enforce ESLint standards by fixing violations systematically
-user-invokable: true
+user-invokable: false
 ---
 
 # JavaScript Linting and Formatting Standards
