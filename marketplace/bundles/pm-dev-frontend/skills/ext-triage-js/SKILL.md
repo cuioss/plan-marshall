@@ -1,8 +1,7 @@
 ---
 name: ext-triage-js
 description: Triage extension for JavaScript/TypeScript findings during plan-finalize phase
-user-invocable: false
-allowed-tools: Read
+user-invokable: false
 ---
 
 # JavaScript Triage Extension

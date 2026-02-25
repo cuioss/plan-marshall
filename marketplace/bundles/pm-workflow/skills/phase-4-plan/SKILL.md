@@ -1,8 +1,7 @@
 ---
 name: phase-4-plan
 description: Domain-agnostic task planning from deliverables with skill resolution and optimization
-user-invocable: false
-allowed-tools: Read, Bash
+user-invokable: false
 ---
 
 # Phase Plan Skill

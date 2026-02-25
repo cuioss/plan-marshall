@@ -96,6 +96,38 @@ def extract_issues_from_markdown_analysis(analysis: dict, file_path: str, compon
         if component_type in ('agent', 'command') and not required.get('tools', {}).get('present'):
             issues.append({'type': 'missing-tools-field', 'file': file_path, 'severity': 'warning', 'fixable': True})
 
+        # Skill-specific field checks
+        if component_type == 'skill':
+            user_inv = required.get('user_invokable', {})
+            # Check for unsupported allowed-tools field
+            tools_info = required.get('tools', {})
+            if tools_info.get('present'):
+                issues.append({
+                    'type': 'unsupported-skill-tools-field',
+                    'file': file_path,
+                    'severity': 'warning',
+                    'fixable': True,
+                    'description': f'Skill declares unsupported `{tools_info.get("field_type")}` field (not in plugin schema)',
+                })
+            # Check for misspelled user-invocable (should be user-invokable)
+            if user_inv.get('misspelled') and not user_inv.get('present'):
+                issues.append({
+                    'type': 'misspelled-user-invokable',
+                    'file': file_path,
+                    'severity': 'warning',
+                    'fixable': True,
+                    'description': 'Skill uses `user-invocable` (misspelled) — should be `user-invokable`',
+                })
+            # Check for missing user-invokable entirely
+            elif not user_inv.get('present') and not user_inv.get('misspelled'):
+                issues.append({
+                    'type': 'missing-user-invokable',
+                    'file': file_path,
+                    'severity': 'warning',
+                    'fixable': True,
+                    'description': 'Skill missing required `user-invokable` field',
+                })
+
     # Check rule violations
     rules = analysis.get('rules', {})
     if rules.get('agent_task_tool_prohibited'):

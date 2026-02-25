@@ -1,8 +1,7 @@
 ---
 name: setup
 description: Standards for setting up requirements and specification documentation in new CUI projects with proper directory structure and initial documents
-user-invocable: false
-allowed-tools: Read
+user-invokable: false
 ---
 
 # Project Setup Standards for Requirements Documentation

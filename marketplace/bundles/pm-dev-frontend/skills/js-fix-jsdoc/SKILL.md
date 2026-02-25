@@ -1,8 +1,7 @@
 ---
 name: js-fix-jsdoc
 description: Fix JSDoc errors and warnings from build/lint with content preservation
-user-invocable: true
-allowed-tools: Read, Grep, Glob, Write, Edit, Bash
+user-invokable: true
 ---
 
 # JSDoc Documentation Standards

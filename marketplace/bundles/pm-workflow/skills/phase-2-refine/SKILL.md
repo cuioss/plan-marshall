@@ -1,8 +1,7 @@
 ---
 name: phase-2-refine
 description: Iterative request clarification until confidence threshold reached
-user-invocable: false
-allowed-tools: Read, Glob, Grep, Bash, AskUserQuestion
+user-invokable: false
 ---
 
 # Phase 2: Refine Request

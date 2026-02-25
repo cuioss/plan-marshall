@@ -1,8 +1,7 @@
 ---
 name: manage-assessments
 description: Component evaluation storage with certainty/confidence assessments in JSONL persistence
-user-invocable: false
-allowed-tools: Bash
+user-invokable: false
 ---
 
 # Manage Assessments

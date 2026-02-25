@@ -1,8 +1,7 @@
 ---
 name: java-quarkus
 description: Quarkus-specific CDI standards with testing, native image support, and GraalVM reflection configuration
-user-invocable: true
-allowed-tools: Read, Grep, Glob, Write, Edit, Bash
+user-invokable: true
 ---
 
 # Java CDI Quarkus Skill

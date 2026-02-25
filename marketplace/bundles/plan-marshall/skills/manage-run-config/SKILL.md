@@ -1,8 +1,7 @@
 ---
 name: manage-run-config
 description: Run configuration handling for persistent command configuration storage
-user-invocable: false
-allowed-tools: Read, Write, Edit, Bash
+user-invokable: false
 ---
 
 # Run Config Skill

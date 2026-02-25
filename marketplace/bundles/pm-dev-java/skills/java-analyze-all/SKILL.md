@@ -1,8 +1,7 @@
 ---
 name: java-analyze-all
 description: Run parallel analysis agents for quality, coverage, and standards compliance
-user-invocable: true
-allowed-tools: Read, Glob, Task, Skill
+user-invokable: true
 ---
 
 # Java Analyze All Skill

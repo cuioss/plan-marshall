@@ -1,8 +1,7 @@
 ---
 name: js-implement-tests
 description: Self-contained command for JavaScript test implementation with verification and iteration
-user-invocable: true
-allowed-tools: Read, Grep, Glob, Write, Edit, Bash, Task
+user-invokable: true
 ---
 
 # JavaScript Unit Testing Standards

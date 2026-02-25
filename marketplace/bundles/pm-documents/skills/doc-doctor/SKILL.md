@@ -1,8 +1,7 @@
 ---
 name: doc-doctor
 description: Diagnose documentation issues (format, links, content)
-user-invocable: true
-allowed-tools: Skill, Read, Glob, Grep, Bash
+user-invokable: true
 ---
 
 # Documentation Doctor Skill

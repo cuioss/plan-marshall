@@ -1,8 +1,7 @@
 ---
 name: manage-files
 description: Generic file I/O operations for plan directories
-user-invocable: false
-allowed-tools: Read, Glob, Bash
+user-invokable: false
 ---
 
 # Manage Files Skill

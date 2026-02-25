@@ -1,7 +1,7 @@
 ---
 name: test-skill
 description: Test skill for validation purposes
-allowed-tools: Read, Grep
+user-invokable: true
 ---
 
 # Test Skill

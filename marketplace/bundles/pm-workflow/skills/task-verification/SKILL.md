@@ -1,8 +1,7 @@
 ---
 name: task-verification
 description: Verification-only task execution — runs commands without modifying files
-user-invocable: false
-allowed-tools: Bash
+user-invokable: false
 ---
 
 # Task Verification Skill

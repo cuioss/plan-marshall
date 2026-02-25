@@ -1,8 +1,7 @@
 ---
 name: manage-plan-marshall-config
 description: Project-level infrastructure configuration for marshal.json
-user-invocable: false
-allowed-tools: Read, Write, Edit, Bash
+user-invokable: false
 ---
 
 # Plan-Marshall Config Skill

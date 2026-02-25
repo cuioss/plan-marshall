@@ -1,8 +1,7 @@
 ---
 name: cui-logging
 description: CUI logging standards with CuiLogger, LogRecord patterns, and DSL-style LogMessages classes
-user-invocable: false
-allowed-tools: Read, Grep, Glob
+user-invokable: false
 ---
 
 # CUI Logging Skill

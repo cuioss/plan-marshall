@@ -1,8 +1,7 @@
 ---
 name: permission-fix
 description: Write operations for fixing and managing Claude Code permissions - add, remove, consolidate, ensure, apply-fixes.
-user-invocable: true
-allowed-tools: Read, Bash, Glob
+user-invokable: true
 ---
 
 # Permission Fix Skill

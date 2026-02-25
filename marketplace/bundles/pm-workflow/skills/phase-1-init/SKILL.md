@@ -1,8 +1,7 @@
 ---
 name: phase-1-init
 description: Init phase skill. Creates plan directory, request.md, references, and status. Complete initialization in a single agent call.
-user-invocable: false
-allowed-tools: Read, Bash, Skill, AskUserQuestion
+user-invokable: false
 ---
 
 # Phase Init Skill

@@ -1,8 +1,7 @@
 ---
 name: tools-analyze-script-failures
 description: Analyze script failures to identify source components and propose fixes
-user-invocable: true
-allowed-tools: Read, Grep, Glob, Bash, AskUserQuestion, Skill
+user-invokable: true
 ---
 
 # Analyze Script Failures Skill

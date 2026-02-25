@@ -1,8 +1,7 @@
 ---
 name: manage-memories
 description: Memory layer operations for persistent session storage
-user-invocable: false
-allowed-tools: Read, Write, Edit, Bash, Glob
+user-invokable: false
 ---
 
 # Claude Memory Skill

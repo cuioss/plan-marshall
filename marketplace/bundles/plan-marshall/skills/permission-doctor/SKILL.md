@@ -1,8 +1,7 @@
 ---
 name: permission-doctor
 description: Diagnose permission issues across settings files (read-only analysis)
-user-invocable: true
-allowed-tools: Read, Grep, Bash
+user-invokable: true
 ---
 
 # Permission Doctor Skill

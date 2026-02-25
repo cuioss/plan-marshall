@@ -219,5 +219,149 @@ def test_verify_rule_11_no_tools_field():
 
 
 # =============================================================================
+# Apply unsupported-skill-tools-field Tests
+# =============================================================================
+
+
+def test_apply_remove_unsupported_tools_field():
+    """Test applying unsupported-skill-tools-field fix removes allowed-tools."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        skill_file = Path(tmp_dir) / 'SKILL.md'
+        skill_file.write_text('---\nname: test-skill\ndescription: Test\nallowed-tools: Read, Grep\nuser-invokable: true\n---\n\n# Test\n')
+
+        fix_json = json.dumps({'type': 'unsupported-skill-tools-field', 'file': 'SKILL.md'})
+        result = run_script(SCRIPT_PATH, 'apply', '--fix', '-', '--bundle-dir', tmp_dir, input_data=fix_json)
+        data = result.json()
+        assert data['success'] is True, f'Fix should succeed: {data}'
+
+        content = skill_file.read_text()
+        assert 'allowed-tools' not in content, f'allowed-tools should be removed: {content}'
+        assert 'user-invokable: true' in content, 'Other fields should be preserved'
+        assert 'name: test-skill' in content, 'Name field should be preserved'
+
+
+def test_apply_remove_unsupported_tools_field_with_tools():
+    """Test applying unsupported-skill-tools-field fix removes tools: field."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        skill_file = Path(tmp_dir) / 'SKILL.md'
+        skill_file.write_text('---\nname: test-skill\ndescription: Test\ntools: Read\nuser-invokable: true\n---\n\n# Test\n')
+
+        fix_json = json.dumps({'type': 'unsupported-skill-tools-field', 'file': 'SKILL.md'})
+        result = run_script(SCRIPT_PATH, 'apply', '--fix', '-', '--bundle-dir', tmp_dir, input_data=fix_json)
+        data = result.json()
+        assert data['success'] is True, f'Fix should succeed: {data}'
+
+        content = skill_file.read_text()
+        assert 'tools:' not in content, f'tools field should be removed: {content}'
+
+
+def test_apply_remove_unsupported_tools_no_field():
+    """Test applying unsupported-skill-tools-field fix when field absent fails gracefully."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        skill_file = Path(tmp_dir) / 'SKILL.md'
+        skill_file.write_text('---\nname: test-skill\ndescription: Test\nuser-invokable: true\n---\n\n# Test\n')
+
+        fix_json = json.dumps({'type': 'unsupported-skill-tools-field', 'file': 'SKILL.md'})
+        result = run_script(SCRIPT_PATH, 'apply', '--fix', '-', '--bundle-dir', tmp_dir, input_data=fix_json)
+        data = result.json()
+        assert data['success'] is False, 'Fix should fail when field not present'
+
+
+# =============================================================================
+# Apply misspelled-user-invokable Tests
+# =============================================================================
+
+
+def test_apply_rename_misspelled_user_invokable():
+    """Test applying misspelled-user-invokable fix renames user-invocable."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        skill_file = Path(tmp_dir) / 'SKILL.md'
+        skill_file.write_text('---\nname: test-skill\ndescription: Test\nuser-invocable: true\n---\n\n# Test\n')
+
+        fix_json = json.dumps({'type': 'misspelled-user-invokable', 'file': 'SKILL.md'})
+        result = run_script(SCRIPT_PATH, 'apply', '--fix', '-', '--bundle-dir', tmp_dir, input_data=fix_json)
+        data = result.json()
+        assert data['success'] is True, f'Fix should succeed: {data}'
+
+        content = skill_file.read_text()
+        assert 'user-invokable: true' in content, f'Should rename to user-invokable: {content}'
+        assert 'user-invocable' not in content, f'Misspelled field should be gone: {content}'
+
+
+def test_apply_rename_misspelled_user_invokable_not_present():
+    """Test applying misspelled-user-invokable fix when not misspelled fails gracefully."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        skill_file = Path(tmp_dir) / 'SKILL.md'
+        skill_file.write_text('---\nname: test-skill\ndescription: Test\nuser-invokable: true\n---\n\n# Test\n')
+
+        fix_json = json.dumps({'type': 'misspelled-user-invokable', 'file': 'SKILL.md'})
+        result = run_script(SCRIPT_PATH, 'apply', '--fix', '-', '--bundle-dir', tmp_dir, input_data=fix_json)
+        data = result.json()
+        assert data['success'] is False, 'Fix should fail when not misspelled'
+
+
+# =============================================================================
+# Verify unsupported-skill-tools-field Tests
+# =============================================================================
+
+
+def test_verify_unsupported_tools_resolved():
+    """Test verify reports resolved after allowed-tools removed."""
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False) as f:
+        f.write('---\nname: test\ndescription: Test\nuser-invokable: true\n---\n\n# Test\n')
+        f.flush()
+
+        result = run_script(SCRIPT_PATH, 'verify', '--fix-type', 'unsupported-skill-tools-field', '--file', f.name)
+        data = result.json()
+        assert data['issue_resolved'] is True, f'Issue should be resolved: {data}'
+
+        Path(f.name).unlink()
+
+
+def test_verify_unsupported_tools_still_present():
+    """Test verify reports not resolved when allowed-tools still present."""
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False) as f:
+        f.write('---\nname: test\ndescription: Test\nallowed-tools: Read\n---\n\n# Test\n')
+        f.flush()
+
+        result = run_script(SCRIPT_PATH, 'verify', '--fix-type', 'unsupported-skill-tools-field', '--file', f.name)
+        data = result.json()
+        assert data['issue_resolved'] is False, f'Issue should NOT be resolved: {data}'
+
+        Path(f.name).unlink()
+
+
+# =============================================================================
+# Verify misspelled-user-invokable Tests
+# =============================================================================
+
+
+def test_verify_misspelled_user_invokable_resolved():
+    """Test verify reports resolved after user-invocable renamed."""
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False) as f:
+        f.write('---\nname: test\ndescription: Test\nuser-invokable: true\n---\n\n# Test\n')
+        f.flush()
+
+        result = run_script(SCRIPT_PATH, 'verify', '--fix-type', 'misspelled-user-invokable', '--file', f.name)
+        data = result.json()
+        assert data['issue_resolved'] is True, f'Issue should be resolved: {data}'
+
+        Path(f.name).unlink()
+
+
+def test_verify_misspelled_user_invokable_still_present():
+    """Test verify reports not resolved when user-invocable still misspelled."""
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False) as f:
+        f.write('---\nname: test\ndescription: Test\nuser-invocable: true\n---\n\n# Test\n')
+        f.flush()
+
+        result = run_script(SCRIPT_PATH, 'verify', '--fix-type', 'misspelled-user-invokable', '--file', f.name)
+        data = result.json()
+        assert data['issue_resolved'] is False, f'Issue should NOT be resolved: {data}'
+
+        Path(f.name).unlink()
+
+
+# =============================================================================
 # Main
 # =============================================================================

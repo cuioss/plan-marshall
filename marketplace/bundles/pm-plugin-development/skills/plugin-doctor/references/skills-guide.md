@@ -22,14 +22,13 @@ Each directory serves one purpose: `references/` = criteria/standards, `workflow
 ---
 name: skill-name                    # kebab-case, matches directory name
 description: One-sentence purpose
-user-invocable: true                # true = slash menu, false = internal
-allowed-tools: Read, Bash, Glob     # comma-separated string (NOT array)
+user-invokable: true                # true = slash menu, false = internal
 ---
 ```
 
-Required fields: `name`, `description`, `user-invocable`, `allowed-tools`.
+Required fields: `name`, `description`, `user-invokable`.
 
-Common errors: array format for tools (`["Read", "Write"]` — wrong), missing `user-invocable` field.
+Skills do **not** support `tools` or `allowed-tools` fields (silently ignored by the plugin schema). Common errors: misspelling `user-invokable` as `user-invocable`, declaring unsupported `allowed-tools` field.
 
 ## Progressive Disclosure
 
@@ -112,7 +111,8 @@ Human-targeted content (ASCII diagrams, architecture overviews, motivational tex
 ## Summary Checklist
 
 - SKILL.md exists with valid YAML frontmatter
-- `user-invocable` field present (true or false)
+- `user-invokable` field present (true or false)
+- No `allowed-tools` or `tools` field (unsupported for skills)
 - Structure score >= 90
 - No missing or unreferenced files
 - Progressive disclosure implemented

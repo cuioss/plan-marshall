@@ -1,8 +1,7 @@
 ---
 name: manage-tasks
 description: Manage implementation tasks with sequential sub-steps within a plan
-user-invocable: false
-allowed-tools: Read, Glob, Bash
+user-invokable: false
 ---
 
 # Manage Tasks Skill

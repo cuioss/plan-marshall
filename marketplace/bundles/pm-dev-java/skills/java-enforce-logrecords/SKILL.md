@@ -1,8 +1,7 @@
 ---
 name: java-enforce-logrecords
 description: Enforce CUI logging standards by validating LogRecord usage, testing coverage, and identifier organization
-user-invocable: true
-allowed-tools: Skill, Read, Write, Edit, Glob, Grep, Bash, Task
+user-invokable: true
 ---
 
 # Log Record Enforcer Skill

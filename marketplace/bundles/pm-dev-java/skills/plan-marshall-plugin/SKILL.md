@@ -1,8 +1,7 @@
 ---
 name: plan-marshall-plugin
 description: Java domain extension with Maven/Gradle build operations and workflow integration
-user-invocable: false
-allowed-tools: Read, Bash
+user-invokable: false
 ---
 
 # Plan Marshall Plugin - Java Domain

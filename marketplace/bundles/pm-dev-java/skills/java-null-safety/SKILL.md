@@ -1,8 +1,7 @@
 ---
 name: java-null-safety
 description: JSpecify null safety annotations with @NullMarked, @Nullable, and package-level configuration
-user-invocable: false
-allowed-tools: Read, Edit, Write, Bash, Grep, Glob
+user-invokable: false
 ---
 
 # Java Null Safety Skill

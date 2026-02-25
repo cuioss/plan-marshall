@@ -1,8 +1,7 @@
 ---
 name: cui-maintain-requirements
 description: Maintain and synchronize requirements and specifications with comprehensive validation
-user-invocable: true
-allowed-tools: Skill, Read, Write, Edit, Glob, Grep, Bash, Task
+user-invokable: true
 ---
 
 # Requirements and Specifications Maintenance Skill

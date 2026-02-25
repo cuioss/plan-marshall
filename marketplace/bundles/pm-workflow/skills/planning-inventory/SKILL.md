@@ -1,8 +1,7 @@
 ---
 name: planning-inventory
 description: Scans and reports all planning-related components across marketplace bundles
-user-invocable: false
-allowed-tools: Read, Bash
+user-invokable: false
 ---
 
 # Planning Inventory Skill

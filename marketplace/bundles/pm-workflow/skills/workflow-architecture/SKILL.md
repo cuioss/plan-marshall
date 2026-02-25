@@ -1,8 +1,7 @@
 ---
 name: workflow-architecture
 description: Centralized architecture documentation for the pm-workflow bundle with visual diagrams
-user-invocable: false
-allowed-tools: Read
+user-invokable: false
 ---
 
 # PM-Workflow Architecture

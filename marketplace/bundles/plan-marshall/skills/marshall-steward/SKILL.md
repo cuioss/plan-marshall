@@ -1,8 +1,7 @@
 ---
 name: marshall-steward
 description: Project configuration wizard for planning system. Manages executor generation, health checks, build systems, and skill domains.
-user-invocable: true
-allowed-tools: Read, Write, Edit, Bash, Glob, Skill, AskUserQuestion
+user-invokable: true
 ---
 
 # Marshall Steward Skill

@@ -1,8 +1,7 @@
 ---
 name: tools-json-ops
 description: Generic JSON file CRUD operations with path notation support
-user-invocable: false
-allowed-tools: Read, Write, Edit, Bash
+user-invokable: false
 ---
 
 # JSON File Operations Skill

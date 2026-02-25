@@ -165,8 +165,7 @@ color: green
 ---
 name: skill-name
 description: Brief description of skill domain
-user-invocable: true
-allowed-tools: Read, Edit, Write, Bash, Grep, Glob
+user-invokable: true
 ---
 ```
 
@@ -183,32 +182,26 @@ allowed-tools: Read, Edit, Write, Bash, Grep, Glob
 - Should describe the standards domain covered
 - Single-line preferred
 
-**user-invocable** (required):
+**user-invokable** (required):
+- **Field name**: `user-invokable` (note the 'k' spelling)
 - **Values**: `true` or `false`
 - `true`: Skill appears in slash menu and can be invoked directly by users (e.g., `/plugin-doctor`)
-- `false`: Internal skill, not directly user-invocable (e.g., reference libraries, internal utilities)
+- `false`: Internal skill, not directly user-invokable (e.g., reference libraries, internal utilities)
 - **CRITICAL**: Every skill MUST have this field explicitly set
-- See [User-Invocable Guidelines](#user-invocable-guidelines) for when to use each value
-
-**allowed-tools** (required):
-- **Field name**: `allowed-tools` (NOT `tools`)
-- Format: **Comma-separated list** (NOT array syntax)
-- Available tools: `Read`, `Edit`, `Write`, `Bash`, `Grep`, `Glob`
-- These tools are available when skill is loaded via `Skill:` tool invocation
-- Empty list is valid: `allowed-tools:` (no tools available)
+- See [User-Invokable Guidelines](#user-invokable-guidelines) for when to use each value
 
 ### Optional Fields
 
-Skills do not use `model` or `color` fields (those apply only to agents/commands).
+Skills do not use `model`, `color`, or `tools`/`allowed-tools` fields. The plugin schema for skills supports only: `name`, `description`, `user-invokable`, `argument-hint`, `compatibility`, `disable-model-invocation`, `license`, `metadata`.
 
-### User-Invocable Guidelines
+### User-Invokable Guidelines
 
-**Use `user-invocable: true` when**:
+**Use `user-invokable: true` when**:
 - Skill provides a user-facing workflow (e.g., `/plugin-doctor`, `/verify-workflow`)
 - Skill should appear in slash menu for direct invocation
 - Skill is the primary entry point for a capability
 
-**Use `user-invocable: false` when**:
+**Use `user-invokable: false` when**:
 - Skill is a reference library (Pattern 10) - pure documentation
 - Skill is an internal utility invoked only by other skills/agents
 - Skill is an extension point (e.g., `ext-triage-java`)
@@ -222,12 +215,12 @@ Skills do not use `model` or `color` fields (those apply only to agents/commands
 
 | Category | plugin.json | Example |
 |----------|-------------|---------|
-| **User-invocable** (`user-invocable: true`) | Required | `plugin-doctor`, `phase-3-outline` |
-| **Context-loaded** (`user-invocable: false`, loaded via `Skill:` directive) | Required | `manage-tasks`, `manage-lessons` |
-| **Script-only** (`user-invocable: false`, accessed only via script notation) | Not needed | `manage-files`, `manage-logging` |
+| **User-invocable** (`user-invokable: true`) | Required | `plugin-doctor`, `phase-3-outline` |
+| **Context-loaded** (`user-invokable: false`, loaded via `Skill:` directive) | Required | `manage-tasks`, `manage-lessons` |
+| **Script-only** (`user-invokable: false`, accessed only via script notation) | Not needed | `manage-files`, `manage-logging` |
 
 **How to determine the category:**
-1. If `user-invocable: true` → register in plugin.json
+1. If `user-invokable: true` → register in plugin.json
 2. If any component uses `Skill: bundle:skill-name` to load it as LLM context → register in plugin.json
 3. If all references are 3-part script notations (`bundle:skill:script` with `execute-script.py`) → do NOT register
 
@@ -237,13 +230,12 @@ Skills do not use `model` or `color` fields (those apply only to agents/commands
 
 ### Complete Skill Examples
 
-**User-Invocable Skill** (appears in slash menu):
+**User-Invokable Skill** (appears in slash menu):
 ```yaml
 ---
 name: plugin-doctor
 description: Diagnose and fix quality issues in marketplace components
-user-invocable: true
-allowed-tools: Read, Edit, Write, Bash, Grep, Glob, Skill
+user-invokable: true
 ---
 ```
 
@@ -252,8 +244,7 @@ allowed-tools: Read, Edit, Write, Bash, Grep, Glob, Skill
 ---
 name: manage-tasks
 description: Task CRUD operations for planning workflow
-user-invocable: false
-allowed-tools: Read, Bash
+user-invokable: false
 ---
 ```
 
@@ -262,8 +253,7 @@ allowed-tools: Read, Bash
 ---
 name: manage-files
 description: File operations for plan work directories
-user-invocable: false
-allowed-tools: Bash
+user-invokable: false
 ---
 ```
 
@@ -415,19 +405,21 @@ Task:
 ```
 ```
 
-### Issue 4: Wrong Field Name in Skills
+### Issue 4: Unsupported Fields in Skills
 
-**Problem**: Skills use `tools:` instead of `allowed-tools:`.
+**Problem**: Skills declare `allowed-tools` or `tools` which are not supported by the plugin schema.
 
-**Why This Fails**: Skills require different field name than agents/commands.
+**Why This Fails**: The skill schema only supports: `name`, `description`, `user-invokable`, `argument-hint`, `compatibility`, `disable-model-invocation`, `license`, `metadata`. Any other field is silently ignored.
 
-**Fix**: Use `allowed-tools:` for skills.
+**Fix**: Remove the field entirely. Skills do not have tool declarations.
 
 ❌ **INCORRECT**:
 ```yaml
 ---
 name: my-skill
-tools: Read, Write
+description: My skill
+user-invokable: true
+allowed-tools: Read, Write
 ---
 ```
 
@@ -435,7 +427,8 @@ tools: Read, Write
 ```yaml
 ---
 name: my-skill
-allowed-tools: Read, Write
+description: My skill
+user-invokable: true
 ---
 ```
 
@@ -485,7 +478,7 @@ tools: Read, Write, Bash
 3. **Capitalization**: Must match exactly (`Read` not `read`)
 4. **Task tool**: Must not be in agents (commands only)
 5. **Grep tool**: Should not be combined with parameterized Bash
-6. **Field name**: `tools` for agents/commands, `allowed-tools` for skills
+6. **Field name**: `tools` for agents/commands only (skills do not have tool declarations)
 
 **Detection Script**: `analyze-markdown-file.sh` and `analyze-skill-structure.sh` validate tools
 
@@ -618,12 +611,9 @@ Use this checklist when creating or reviewing frontmatter:
 - [ ] `description` is user-focused (what command does, not how)
 
 **Skills**:
-- [ ] Uses `allowed-tools` field name (not `tools`)
-- [ ] `allowed-tools` uses comma-separated format (not array)
-- [ ] Empty list is valid: `allowed-tools:` with no value
-- [ ] No `model` or `color` fields (not applicable to skills)
-- [ ] **`user-invocable` field present** (either `true` or `false`)
-- [ ] `user-invocable` value matches skill purpose (true for user-facing, false for internal)
+- [ ] No `tools`, `allowed-tools`, `model`, or `color` fields (not supported for skills)
+- [ ] **`user-invokable` field present** (either `true` or `false`, note the 'k' spelling)
+- [ ] `user-invokable` value matches skill purpose (true for user-facing, false for internal)
 
 ## Reference
 

@@ -80,7 +80,7 @@ class TestExtractDescription(unittest.TestCase):
 
     def test_no_description(self):
         """Test frontmatter without description field."""
-        fm = 'name: test\nallowed-tools: Read'
+        fm = 'name: test\nuser-invokable: true'
         desc = extract_description_from_frontmatter(fm)
         self.assertIsNone(desc)
 

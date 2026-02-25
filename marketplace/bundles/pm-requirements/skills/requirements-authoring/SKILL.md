@@ -1,8 +1,7 @@
 ---
 name: requirements-authoring
 description: Comprehensive standards for creating and maintaining requirements and specification documents with SMART principles, proper structure, integrity, and traceability
-user-invocable: false
-allowed-tools: Read
+user-invokable: false
 ---
 
 # Requirements and Specification Authoring Standards

@@ -1,8 +1,7 @@
 ---
 name: manage-lifecycle
 description: Plan lifecycle operations - discovery, phase transitions, archiving, and routing
-user-invocable: false
-allowed-tools: Read, Glob, Bash
+user-invokable: false
 ---
 
 # Manage Lifecycle Skill
