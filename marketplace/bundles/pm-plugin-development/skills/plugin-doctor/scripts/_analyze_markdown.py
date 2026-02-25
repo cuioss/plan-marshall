@@ -24,10 +24,16 @@ def check_frontmatter_fields(frontmatter: str) -> dict:
         has_tools = True
         tools_field_type = 'allowed-tools'
 
+    # Check user-invokable field (skills only, correct spelling)
+    has_user_invokable = bool(re.search(r'^user-invokable:', frontmatter, re.MULTILINE))
+    # Detect misspelled variant
+    has_user_invocable_misspelled = bool(re.search(r'^user-invocable:', frontmatter, re.MULTILINE))
+
     return {
         'name': {'present': has_name},
         'description': {'present': has_desc},
         'tools': {'present': has_tools, 'field_type': tools_field_type},
+        'user_invokable': {'present': has_user_invokable, 'misspelled': has_user_invocable_misspelled},
     }
 
 
@@ -436,6 +442,7 @@ def analyze_markdown_file(file_path: Path, component_type: str) -> dict:
             'name': {'present': False},
             'description': {'present': False},
             'tools': {'present': False, 'field_type': 'none'},
+            'user_invokable': {'present': False, 'misspelled': False},
         }
     )
 
