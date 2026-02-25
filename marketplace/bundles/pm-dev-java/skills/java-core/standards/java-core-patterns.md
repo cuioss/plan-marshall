@@ -39,7 +39,7 @@ public class TokenValidator {
 ### Method Design
 
 * Follow Command-Query Separation
-* Limit parameters (3 or fewer preferred, use parameter objects for 4+)
+* Limit parameters (2 or fewer preferred, use parameter objects for 3+)
 * Keep methods short (under 50 lines preferred, 100 max)
 * Keep cyclomatic complexity low (prefer <15, max 20)
 * Use early returns to reduce nesting
