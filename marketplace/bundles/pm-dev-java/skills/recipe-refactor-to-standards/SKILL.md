@@ -86,13 +86,18 @@ de.cuioss.portal.auth,Authentication core logic
 de.cuioss.portal.auth.impl,Authentication implementation
 de.cuioss.portal.auth.model,Authentication data model
 
+packages[3]{name,path,has_package_info,file_count}:
+de.cuioss.portal.auth	my-core/src/main/java/de/cuioss/portal/auth	true	5
+de.cuioss.portal.auth.impl	my-core/src/main/java/de/cuioss/portal/auth/impl	false	3
+de.cuioss.portal.auth.model	my-core/src/main/java/de/cuioss/portal/auth/model	false	2
+
 commands[3]:
   - module-tests
   - verify
   - quality-gate
 ```
 
-The `key_packages` table contains the packages discovered during architecture analysis. Use the package `name` to derive the source path (e.g., `de.cuioss.portal.auth` → `src/main/java/de/cuioss/portal/auth`).
+The `key_packages` table contains the packages discovered during architecture analysis. The `packages` table (in `--full` mode) includes `file_count` — the number of direct source files per package. The actual file list is available in `derived-data.json` for programmatic access.
 
 Build package inventory from architecture data. Skip modules with empty `key_packages`.
 
@@ -136,7 +141,7 @@ Each deliverable:
   - `module`: `{module_name}`
   - `profile`: `implementation`
 - **Skills**: All skills resolved in Step 1 (comma-separated)
-- **Affected files**: All `.java` files in the package directory
+- **Affected files**: All `.java` files in the package (from architecture data `files` field)
 
 Write each deliverable via manage-plan-documents:
 

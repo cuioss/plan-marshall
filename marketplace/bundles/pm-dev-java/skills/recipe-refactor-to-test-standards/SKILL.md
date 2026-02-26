@@ -88,13 +88,18 @@ de.cuioss.portal.auth,Authentication core logic
 de.cuioss.portal.auth.impl,Authentication implementation
 de.cuioss.portal.auth.model,Authentication data model
 
+packages[3]{name,path,has_package_info,file_count}:
+de.cuioss.portal.auth	my-core/src/main/java/de/cuioss/portal/auth	true	5
+de.cuioss.portal.auth.impl	my-core/src/main/java/de/cuioss/portal/auth/impl	false	3
+de.cuioss.portal.auth.model	my-core/src/main/java/de/cuioss/portal/auth/model	false	2
+
 commands[3]:
   - module-tests
   - verify
   - quality-gate
 ```
 
-The `key_packages` table contains the packages discovered during architecture analysis. Test packages mirror the main package structure under `src/test/java/`. For each package `de.cuioss.portal.auth`, the corresponding test path is `src/test/java/de/cuioss/portal/auth`.
+The `key_packages` table contains the packages discovered during architecture analysis. The `packages` table (in `--full` mode) includes `file_count` — the number of direct source files per package. The actual file list is available in `derived-data.json` for programmatic access. Test packages mirror the main package structure under `src/test/java/`. For each package `de.cuioss.portal.auth`, the corresponding test path is `src/test/java/de/cuioss/portal/auth`.
 
 Build test package inventory from architecture data. Only include packages where the test path actually contains `*Test.java` files. Skip modules with empty `key_packages`.
 

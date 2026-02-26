@@ -2,10 +2,8 @@
 
 import json
 import shutil
-from pathlib import Path
 
 import pytest
-
 from marketplace.adapters.opencode_adapter import (
     MODEL_MAP,
     TOOL_NAME_MAP,
@@ -18,7 +16,6 @@ from marketplace.adapters.opencode_adapter import (
     transform_command_frontmatter,
     transform_skill_frontmatter,
 )
-
 
 # =============================================================================
 # Fixtures

@@ -622,7 +622,7 @@ def _discover_packages(module_path: Path, sources: dict, relative_path: str) -> 
                 if relative_path:
                     rel_path = f'{relative_path}/{rel_path}'
 
-                pkg_info = {'path': rel_path}
+                pkg_info: dict[str, str | list[str]] = {'path': rel_path}
 
                 # Check for package-info.java
                 info_file = pkg_dir / 'package-info.java'
@@ -631,6 +631,14 @@ def _discover_packages(module_path: Path, sources: dict, relative_path: str) -> 
                     if relative_path:
                         info_path = f'{relative_path}/{info_path}'
                     pkg_info['package_info'] = info_path
+
+                # List direct .java files (not recursive — sub-package files belong to their own entry)
+                direct_files = sorted(
+                    f.name for f in pkg_dir.iterdir()
+                    if f.is_file() and f.suffix == '.java' and f.name != 'package-info.java'
+                )
+                if direct_files:
+                    pkg_info['files'] = direct_files
 
                 packages[pkg_name] = pkg_info
 

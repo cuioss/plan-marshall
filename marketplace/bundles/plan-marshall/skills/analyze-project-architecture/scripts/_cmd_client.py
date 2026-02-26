@@ -615,8 +615,14 @@ def cmd_module(args) -> int:
                 pkg_items = []
                 for pkg_name, pkg_data in packages.items():
                     has_info = 'true' if pkg_data.get('package_info') else 'false'
-                    pkg_items.append({'name': pkg_name, 'path': pkg_data.get('path', ''), 'has_package_info': has_info})
-                print_toon_table('packages', pkg_items, ['name', 'path', 'has_package_info'])
+                    file_count = str(len(pkg_data.get('files', [])))
+                    pkg_items.append({
+                        'name': pkg_name,
+                        'path': pkg_data.get('path', ''),
+                        'has_package_info': has_info,
+                        'file_count': file_count,
+                    })
+                print_toon_table('packages', pkg_items, ['name', 'path', 'has_package_info', 'file_count'])
                 print()
 
         # Output key_dependencies
