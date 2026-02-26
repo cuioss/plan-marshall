@@ -1,7 +1,7 @@
 ---
 name: js-maintain-tests
 description: Execute systematic JavaScript test quality improvement with NO production code changes
-user-invokable: true
+user-invokable: false
 ---
 
 # JavaScript Test Maintain Skill

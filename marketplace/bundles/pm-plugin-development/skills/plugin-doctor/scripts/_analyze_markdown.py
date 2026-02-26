@@ -28,12 +28,21 @@ def check_frontmatter_fields(frontmatter: str) -> dict:
     has_user_invokable = bool(re.search(r'^user-invokable:', frontmatter, re.MULTILINE))
     # Detect misspelled variant
     has_user_invocable_misspelled = bool(re.search(r'^user-invocable:', frontmatter, re.MULTILINE))
+    # Extract the value (true/false)
+    user_invokable_value = None
+    invokable_match = re.search(r'^user-invokable:\s*(\S+)', frontmatter, re.MULTILINE)
+    if invokable_match:
+        user_invokable_value = invokable_match.group(1).strip().lower() == 'true'
 
     return {
         'name': {'present': has_name},
         'description': {'present': has_desc},
         'tools': {'present': has_tools, 'field_type': tools_field_type},
-        'user_invokable': {'present': has_user_invokable, 'misspelled': has_user_invocable_misspelled},
+        'user_invokable': {
+            'present': has_user_invokable,
+            'misspelled': has_user_invocable_misspelled,
+            'value': user_invokable_value,
+        },
     }
 
 
@@ -456,6 +465,9 @@ def analyze_markdown_file(file_path: Path, component_type: str) -> dict:
     )
     has_forbidden, forbidden_sections = check_forbidden_metadata(content)
 
+    # Detect reference-mode pattern (skills only)
+    is_reference_mode = bool(re.search(r'\*\*REFERENCE MODE\*\*|REFERENCE MODE:', content))
+
     return {
         'file_path': str(file_path),
         'file_type': {'type': component_type},
@@ -468,6 +480,7 @@ def analyze_markdown_file(file_path: Path, component_type: str) -> dict:
         'execution_patterns': exec_patterns,
         'rules': rules,
         'quality': {'has_forbidden_metadata': has_forbidden, 'forbidden_sections': forbidden_sections},
+        'content_mode': {'is_reference': is_reference_mode},
     }
 
 

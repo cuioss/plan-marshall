@@ -1,7 +1,7 @@
 ---
 name: doc-doctor
 description: Diagnose documentation issues (format, links, content)
-user-invokable: true
+user-invokable: false
 ---
 
 # Documentation Doctor Skill

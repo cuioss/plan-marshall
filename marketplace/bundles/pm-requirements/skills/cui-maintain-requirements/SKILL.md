@@ -1,7 +1,7 @@
 ---
 name: cui-maintain-requirements
 description: Maintain and synchronize requirements and specifications with comprehensive validation
-user-invokable: true
+user-invokable: false
 ---
 
 # Requirements and Specifications Maintenance Skill
