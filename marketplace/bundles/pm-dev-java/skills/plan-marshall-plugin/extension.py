@@ -114,6 +114,27 @@ class Extension(ExtensionBase):
             },
         ]
 
+    def provides_recipes(self) -> list[dict]:
+        """Return Java-specific recipe definitions."""
+        return [
+            {
+                'key': 'refactor-to-standards',
+                'name': 'Refactor to Implementation Standards',
+                'description': 'Refactor production code to comply with java-core and java-maintenance standards, package by package',
+                'skill': 'pm-dev-java:recipe-refactor-to-standards',
+                'default_change_type': 'tech_debt',
+                'scope': 'codebase_wide',
+            },
+            {
+                'key': 'refactor-to-test-standards',
+                'name': 'Refactor to Test Standards',
+                'description': 'Refactor test code to comply with junit-core standards, test-package by test-package',
+                'skill': 'pm-dev-java:recipe-refactor-to-test-standards',
+                'default_change_type': 'tech_debt',
+                'scope': 'codebase_wide',
+            },
+        ]
+
     def discover_modules(self, project_root: str) -> list:
         """Discover all modules with complete metadata.
 

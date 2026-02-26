@@ -44,6 +44,7 @@ extension-api/
     ├── triage-extension.md         # Triage extension contract
     ├── outline-extension.md        # Outline extension contract
     ├── verify-steps.md             # Verify steps contract
+    ├── recipe-extension.md         # Recipe extension contract
     ├── build-base-libs.md          # Base library API reference (optional)
     ├── build-execution.md          # Execution patterns (optional)
     ├── build-return.md             # Return value structure (optional)
@@ -77,6 +78,7 @@ All extensions **must** inherit from `ExtensionBase` and implement required meth
 | `provides_triage() -> str \| None` | `None` | Return triage skill reference |
 | `provides_outline_skill() -> str \| None` | `None` | Return domain-specific outline skill reference |
 | `provides_verify_steps() -> list[dict]` | `[]` | Return domain-specific verification steps |
+| `provides_recipes() -> list[dict]` | `[]` | Return available recipe definitions |
 
 ---
 
@@ -92,6 +94,7 @@ For understanding the complete system architecture, reference these documents:
 | [triage-extension.md](standards/triage-extension.md) | Triage extension contract | Implementing `provides_triage()` |
 | [outline-extension.md](standards/outline-extension.md) | Outline extension contract | Implementing `provides_outline_skill()` |
 | [verify-steps.md](standards/verify-steps.md) | Verify steps contract | Implementing `provides_verify_steps()` |
+| [recipe-extension.md](standards/recipe-extension.md) | Recipe extension contract | Implementing `provides_recipes()` |
 | [architecture-overview.md](standards/architecture-overview.md) | System flow, data dependencies | Understanding overall data flow |
 | [build-execution-flow.md](standards/build-execution-flow.md) | Complete execution lifecycle diagram | Understanding the end-to-end flow |
 | [build-base-libs.md](standards/build-base-libs.md) | Base library API reference | Implementing extension scripts |
@@ -292,5 +295,6 @@ class Extension(ExtensionBase):
 - `standards/triage-extension.md` - Triage extension contract (required)
 - `standards/outline-extension.md` - Outline extension contract (required)
 - `standards/verify-steps.md` - Verify steps contract (required)
+- `standards/recipe-extension.md` - Recipe extension contract (required)
 - `standards/build-base-libs.md` - Base library API reference (optional)
 - `standards/architecture-overview.md` - System architecture (optional)

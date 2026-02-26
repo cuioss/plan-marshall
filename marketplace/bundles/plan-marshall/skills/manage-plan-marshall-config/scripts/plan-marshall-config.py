@@ -23,8 +23,10 @@ from _cmd_init import cmd_init
 from _cmd_skill_domains import (
     cmd_configure_task_executors,
     cmd_get_skills_by_profile,
+    cmd_list_recipes,
     cmd_resolve_domain_skills,
     cmd_resolve_outline_skill,
+    cmd_resolve_recipe,
     cmd_resolve_task_executor,
     cmd_resolve_workflow_skill_extension,
     cmd_skill_domains,
@@ -244,6 +246,13 @@ def main():
     p_rte = subparsers.add_parser('resolve-task-executor', help='Resolve task executor skill for a profile')
     p_rte.add_argument('--profile', required=True, help='Profile name (e.g., implementation, module_testing)')
 
+    # --- list-recipes ---
+    subparsers.add_parser('list-recipes', help='List all available recipes from configured domains')
+
+    # --- resolve-recipe ---
+    p_rr = subparsers.add_parser('resolve-recipe', help='Resolve a specific recipe by key')
+    p_rr.add_argument('--recipe', required=True, help='Recipe key (e.g., refactor-to-standards)')
+
     # --- resolve-outline-skill ---
     p_ros = subparsers.add_parser(
         'resolve-outline-skill', help='Resolve outline skill for domain'
@@ -294,6 +303,10 @@ def main():
         return cmd_configure_task_executors(args)
     elif args.noun == 'resolve-task-executor':
         return cmd_resolve_task_executor(args)
+    elif args.noun == 'list-recipes':
+        return cmd_list_recipes(args)
+    elif args.noun == 'resolve-recipe':
+        return cmd_resolve_recipe(args)
     elif args.noun == 'resolve-outline-skill':
         return cmd_resolve_outline_skill(args)
     else:

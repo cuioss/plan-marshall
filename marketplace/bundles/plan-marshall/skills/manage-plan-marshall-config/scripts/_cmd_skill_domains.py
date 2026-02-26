@@ -1,7 +1,7 @@
 """
 Skill domains command handlers for plan-marshall-config.
 
-Handles: skill-domains, resolve-domain-skills
+Handles: skill-domains, resolve-domain-skills, list-recipes, resolve-recipe
 
 Domain discovery uses extension.py files in each bundle's plan-marshall-plugin skill.
 Extension API functions:
@@ -9,6 +9,7 @@ Extension API functions:
 - provides_triage() -> triage skill reference or None
 - provides_outline_skill() -> outline skill reference or None
 - provides_verify_steps() -> list of verification step dicts
+- provides_recipes() -> list of recipe definition dicts
 """
 
 import copy
@@ -187,6 +188,11 @@ def discover_available_domains(project_root: Path | None = None) -> dict:
                         outline_skill = module.provides_outline_skill()
                         has_outline_skill = outline_skill is not None
 
+                    has_recipes = False
+                    if hasattr(module, 'provides_recipes'):
+                        recipes = module.provides_recipes()
+                        has_recipes = bool(recipes)
+
                     domain_entry = {
                         'key': domain_data.get('key', ''),
                         'name': domain_data.get('name', ''),
@@ -194,6 +200,7 @@ def discover_available_domains(project_root: Path | None = None) -> dict:
                         'bundle': ext['bundle'],
                         'has_triage': has_triage,
                         'has_outline_skill': has_outline_skill,
+                        'has_recipes': has_recipes,
                     }
 
                     # Add applicability flag if project_root was provided
@@ -271,6 +278,12 @@ def convert_extension_to_domain_config(module, domain_info: dict, bundle_name: s
                 extensions['triage'] = triage
         if extensions:
             config['workflow_skill_extensions'] = extensions
+
+    # Extract recipes from dedicated function
+    if hasattr(module, 'provides_recipes'):
+        recipes: list = module.provides_recipes()
+        if recipes:
+            config['recipes'] = recipes
 
     return config
 
@@ -957,6 +970,64 @@ def cmd_resolve_task_executor(args) -> int:
     task_executor = task_executors[profile]
 
     return success_exit({'profile': profile, 'task_executor': task_executor})
+
+
+def cmd_list_recipes(args) -> int:
+    """List all available recipes from configured domains.
+
+    Aggregates recipes from all configured domains in marshal.json.
+    """
+    try:
+        require_initialized()
+    except MarshalNotInitializedError as e:
+        return error_exit(str(e))
+
+    config = load_config()
+    skill_domains = config.get('skill_domains', {})
+
+    all_recipes = []
+    for domain_key, domain_config in skill_domains.items():
+        if not isinstance(domain_config, dict):
+            continue
+        recipes = domain_config.get('recipes', [])
+        for recipe in recipes:
+            entry = dict(recipe)
+            entry['domain'] = domain_key
+            all_recipes.append(entry)
+
+    return success_exit({'recipes': all_recipes, 'count': len(all_recipes)})
+
+
+def cmd_resolve_recipe(args) -> int:
+    """Resolve a specific recipe by key.
+
+    Searches all configured domains for a recipe matching the given key.
+    """
+    try:
+        require_initialized()
+    except MarshalNotInitializedError as e:
+        return error_exit(str(e))
+
+    recipe_key = args.recipe
+    config = load_config()
+    skill_domains = config.get('skill_domains', {})
+
+    for domain_key, domain_config in skill_domains.items():
+        if not isinstance(domain_config, dict):
+            continue
+        recipes = domain_config.get('recipes', [])
+        for recipe in recipes:
+            if recipe.get('key') == recipe_key:
+                return success_exit({
+                    'recipe_key': recipe['key'],
+                    'recipe_name': recipe.get('name', ''),
+                    'recipe_skill': recipe.get('skill', ''),
+                    'default_change_type': recipe.get('default_change_type', ''),
+                    'scope': recipe.get('scope', ''),
+                    'domain': domain_key,
+                })
+
+    return error_exit(f"Recipe not found: {recipe_key}")
 
 
 def cmd_resolve_outline_skill(args) -> int:

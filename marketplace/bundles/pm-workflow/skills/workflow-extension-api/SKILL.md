@@ -46,8 +46,12 @@ user-invokable: false
 │  │ triage-ext: Suppression syntax, severity guidelines          │ │
 │  │   → Loaded by phase-5-execute and phase-6-finalize           │ │
 │  │                                                              │ │
+│  │ recipe-ext: Predefined repeatable transformations            │ │
+│  │   → Loaded by phase-3-outline (recipe source plans)          │ │
+│  │                                                              │ │
 │  │ Contract: standards/extensions/                              │ │
-│  │ Discovery: provides_triage(), provides_outline_skill()       │ │
+│  │ Discovery: provides_triage(), provides_outline_skill(),      │ │
+│  │            provides_recipes()                                 │ │
 │  └─────────────────────────────────────────────────────────────┘ │
 │                            │                                     │
 │                            │ loads                               │
@@ -142,6 +146,7 @@ Extensions are **additive** - domains provide additional knowledge that system s
 |----------------|---------|-----------|----------|
 | outline_skill | Domain-specific outline skill (dispatches internally by change type) | phase-3-outline | [extensions/extension-mechanism.md](standards/extensions/extension-mechanism.md) |
 | triage-ext | Suppression syntax, severity rules | phase-5-execute, phase-6-finalize | [extensions/triage-extension.md](standards/extensions/triage-extension.md) |
+| recipe-ext | Predefined repeatable transformations (discovery, analysis, deliverables) | phase-3-outline | [extensions/recipe-extension.md](standards/extensions/recipe-extension.md) |
 
 ### Extension Discovery
 
@@ -155,6 +160,10 @@ class Extension(ExtensionBase):
     def provides_outline_skill(self) -> str | None:
         return "pm-plugin-development:ext-outline-workflow"
         # Returns None if domain uses generic skills
+
+    def provides_recipes(self) -> list[dict]:
+        return [{"key": "refactor-to-standards", "name": "...", "skill": "...", ...}]
+        # Returns [] if domain has no recipes
 ```
 
 ### Extension Resolution
@@ -185,6 +194,7 @@ Domain skills are NOT extensions of the workflow - they are knowledge loaded by 
 | [architecture.md](standards/architecture.md) | High-level workflow overview |
 | [extensions/extension-mechanism.md](standards/extensions/extension-mechanism.md) | How extensions work (including outline_skill) |
 | [extensions/triage-extension.md](standards/extensions/triage-extension.md) | Triage extension contract |
+| [extensions/recipe-extension.md](standards/extensions/recipe-extension.md) | Recipe extension contract |
 | [profiles/implementation.md](standards/profiles/implementation.md) | Implementation profile contract |
 | [profiles/module_testing.md](standards/profiles/module_testing.md) | Module testing profile contract |
 | [profiles/profile-mechanism.md](standards/profiles/profile-mechanism.md) | How profile overrides work |
@@ -208,6 +218,8 @@ Domain skills are NOT extensions of the workflow - they are knowledge loaded by 
 **Extension Discovery**:
 - `plan-marshall:extension-api` - ExtensionBase with provides_*() methods
 - `plan-marshall:manage-plan-marshall-config resolve-workflow-skill-extension` - Resolves extensions
+- `plan-marshall:manage-plan-marshall-config list-recipes` - Lists all available recipes
+- `plan-marshall:manage-plan-marshall-config resolve-recipe` - Resolves specific recipe by key
 
 **Visual Overview**:
 - [workflow-architecture](../workflow-architecture/SKILL.md) - High-level diagrams

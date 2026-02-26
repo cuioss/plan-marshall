@@ -174,6 +174,70 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 ---
 
+## Step 2.5: Recipe Detection
+
+**Purpose**: Recipe-sourced plans skip change-type detection and use the recipe skill directly for discovery, analysis, and deliverable creation.
+
+### Check for Recipe Source
+
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-status:manage_status metadata \
+  --plan-id {plan_id} \
+  --get \
+  --field plan_source
+```
+
+**If `plan_source == recipe`**:
+
+1. Read recipe metadata:
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-status:manage_status metadata \
+  --plan-id {plan_id} \
+  --get \
+  --field recipe_key
+
+python3 .plan/execute-script.py pm-workflow:manage-status:manage_status metadata \
+  --plan-id {plan_id} \
+  --get \
+  --field recipe_skill
+```
+
+2. Resolve recipe to get `default_change_type`:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+  resolve-recipe --recipe {recipe_key}
+```
+
+3. Set `change_type` from recipe's `default_change_type` (skip detect-change-type-agent):
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-status:manage_status metadata \
+  --plan-id {plan_id} \
+  --set \
+  --field change_type \
+  --value {default_change_type}
+```
+
+4. Log decision:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  decision --plan-id {plan_id} --level INFO --message "(pm-workflow:phase-3-outline) Recipe plan — using recipe skill {recipe_skill} with change_type={default_change_type}"
+```
+
+5. Load the recipe skill directly:
+```
+Skill: {recipe_skill}
+  Input:
+    plan_id: {plan_id}
+```
+
+The recipe skill handles: discovery, analysis, deliverable creation, and solution outline writing.
+
+6. **Skip Steps 3-10**. Jump directly to **Step 10: Q-Gate Verification** to validate the recipe's output.
+
+**If `plan_source != recipe` or field not found**: Continue with normal Step 3.
+
+---
+
 ## Step 3: Detect Change Type
 
 **Purpose**: Determine the change type for agent routing.
