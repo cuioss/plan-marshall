@@ -34,45 +34,60 @@ Store the resolved `defaults` and `optionals` skill lists for use in Step 4. Bui
 
 ---
 
-## Step 2: Scope Selection
+## Step 2: Load Architecture Data
 
-Use module mapping from refine phase. If empty, discover all modules:
+Packages are already discovered and stored during architecture analysis. Load them from `derived-data.json`:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:extension-api:extension_discovery \
-  discover-modules
+# Read the architecture data
+Read .plan/project-architecture/derived-data.json
 ```
 
-Present module list to user for confirmation/filtering. User may exclude modules (e.g., parent POMs, test-only modules).
+The `modules` object contains each module with its `packages` field — an object keyed by package name:
+
+```json
+{
+  "modules": {
+    "my-module": {
+      "packages": {
+        "de.cuioss.portal.auth": { "path": "src/main/java/de/cuioss/portal/auth" },
+        "de.cuioss.portal.auth.impl": { "path": "src/main/java/de/cuioss/portal/auth/impl" },
+        "de.cuioss.portal.auth.model": { "path": "src/main/java/de/cuioss/portal/auth/model" }
+      },
+      "stats": { "source_files": 15, "test_files": 10 }
+    }
+  }
+}
+```
 
 ---
 
-## Step 3: Discovery
+## Step 3: Scope Selection
 
-For each selected module, scan `src/main/java/` for packages containing `.java` files.
+Present module list to user for confirmation/filtering. Skip modules with 0 source files (`stats.source_files == 0`) and parent POMs (`packaging == pom`).
 
-Build package inventory:
+For each selected module, extract the `packages` object. Build a package inventory from the architecture data:
 
 ```
-Module: my-module
-  de.cuioss.portal.auth       - 5 files
-  de.cuioss.portal.auth.impl  - 3 files
-  de.cuioss.portal.auth.model - 7 files
+Module: my-module (15 source files)
+  de.cuioss.portal.auth       - path: src/main/java/de/cuioss/portal/auth
+  de.cuioss.portal.auth.impl  - path: src/main/java/de/cuioss/portal/auth/impl
+  de.cuioss.portal.auth.model - path: src/main/java/de/cuioss/portal/auth/model
 ```
 
-Skip packages with 0 `.java` files. Record file counts per package.
+Skip modules with empty `packages`.
 
 ---
 
 ## Step 4: Analysis
 
-For each package, run read-only quality analysis:
+For each package, run read-only quality analysis using the path from architecture data:
 
 ```
 Task: pm-dev-java:java-quality-agent
   model: haiku
   Input:
-    target: src/main/java/{package_path}/
+    target: {package.path}/
     module: {module_name}
     plan_id: {plan_id}
 ```

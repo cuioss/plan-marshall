@@ -34,45 +34,48 @@ Store the resolved `defaults` and `optionals` skill lists for use in Step 4. Bui
 
 ---
 
-## Step 2: Scope Selection
+## Step 2: Load Architecture Data
 
-Use module mapping from refine phase. If empty, discover all modules:
+Packages are already discovered and stored during architecture analysis. Load them from `derived-data.json`:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:extension-api:extension_discovery \
-  discover-modules
+# Read the architecture data
+Read .plan/project-architecture/derived-data.json
 ```
 
-Present module list to user for confirmation/filtering. User may exclude modules without test sources.
+The `modules` object contains each module with its `packages` field and `stats.test_files` count. Test packages mirror the main package structure under `src/test/java/`.
 
 ---
 
-## Step 3: Discovery
+## Step 3: Scope Selection
 
-For each selected module, scan `src/test/java/` for test packages containing `*Test.java` files.
+Present module list to user for confirmation/filtering. Skip modules with 0 test files (`stats.test_files == 0`).
+
+For each selected module, derive test packages from the architecture `packages` data — the test directory mirrors the main source package structure. For each package `de.cuioss.portal.auth` with path `src/main/java/de/cuioss/portal/auth`, the corresponding test path is `src/test/java/de/cuioss/portal/auth`.
+
+Only include packages where the test path actually contains `*Test.java` files.
 
 Build test package inventory:
 
 ```
-Module: my-module
-  de.cuioss.portal.auth       - 3 test files
-  de.cuioss.portal.auth.impl  - 5 test files
-  de.cuioss.portal.auth.model - 2 test files
+Module: my-module (10 test files)
+  de.cuioss.portal.auth       - src/test/java/de/cuioss/portal/auth
+  de.cuioss.portal.auth.impl  - src/test/java/de/cuioss/portal/auth/impl
 ```
 
-Skip packages with 0 test files. Record test file counts per package.
+Skip packages with no test files in the corresponding test directory.
 
 ---
 
 ## Step 4: Analysis
 
-For each test package, run read-only verification analysis:
+For each test package, run read-only verification analysis using the derived test path:
 
 ```
 Task: pm-dev-java:java-verify-agent
   model: haiku
   Input:
-    target: src/test/java/{package_path}/
+    target: {test_package_path}/
     module: {module_name}
     plan_id: {plan_id}
 ```
