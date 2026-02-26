@@ -185,6 +185,31 @@ def verify_misspelled_user_invokable_fix(file_path: Path) -> dict:
     return {'verified': True, 'issue_resolved': True, 'details': 'Field correctly named user-invokable'}
 
 
+def verify_invokable_mismatch_fix(file_path: Path) -> dict:
+    """Verify reference-mode skill has user-invokable: false."""
+    try:
+        content = file_path.read_text(encoding='utf-8', errors='replace')
+    except OSError as e:
+        return {'verified': False, 'error': f'Failed to read file: {e}'}
+
+    frontmatter_present, frontmatter = extract_frontmatter(content)
+
+    if not frontmatter_present:
+        return {'verified': True, 'issue_resolved': True, 'details': 'No frontmatter to check'}
+
+    is_reference = bool(re.search(r'\*\*REFERENCE MODE\*\*|REFERENCE MODE:', content))
+    invokable_match = re.search(r'^user-invokable:\s*(\S+)', frontmatter, re.MULTILINE)
+
+    if is_reference and invokable_match and invokable_match.group(1).strip().lower() == 'true':
+        return {
+            'verified': True,
+            'issue_resolved': False,
+            'details': 'Reference-mode skill still has user-invokable: true',
+        }
+
+    return {'verified': True, 'issue_resolved': True, 'details': 'No invokable mismatch'}
+
+
 def verify_generic(file_path: Path, fix_type: str) -> dict:
     """Generic verification for unknown fix types."""
     return {'verified': True, 'issue_resolved': None, 'details': 'Manual verification recommended'}
@@ -220,6 +245,8 @@ def cmd_verify(args) -> int:
         result = verify_unsupported_tools_field_fix(file_path)
     elif fix_type == 'misspelled-user-invokable':
         result = verify_misspelled_user_invokable_fix(file_path)
+    elif fix_type == 'skill-invokable-mismatch':
+        result = verify_invokable_mismatch_fix(file_path)
     else:
         result = verify_generic(file_path, fix_type)
 

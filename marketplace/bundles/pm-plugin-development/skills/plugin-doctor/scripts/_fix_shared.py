@@ -34,6 +34,7 @@ FIXABLE_ISSUE_TYPES = {
     'agent-lessons-via-skill',
     'backup-file-pattern',
     'ci-rule-self-update',
+    'skill-invokable-mismatch',
 }
 
 # Safe fix types - can be auto-applied without user confirmation
@@ -65,6 +66,7 @@ RISKY_FIX_TYPES = {
     'ci-rule-self-update',
 
     'subdoc-hardcoded-script-path',
+    'skill-invokable-mismatch',
 }
 
 # Backward-compatibility aliases: old identifier → new identifier.

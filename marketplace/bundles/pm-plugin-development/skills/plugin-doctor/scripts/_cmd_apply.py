@@ -304,6 +304,23 @@ def apply_rename_frontmatter_field(file_path: Path, fix: dict, templates: dict) 
     return {'success': True, 'changes': [f'Renamed misspelled field to {new_name}']}
 
 
+def apply_invokable_mismatch_fix(file_path: Path, fix: dict, templates: dict) -> dict:
+    """Change user-invokable: true to false for reference-mode skills."""
+    with open(file_path, encoding='utf-8') as f:
+        content = f.read()
+
+    new_content, count = re.subn(
+        r'^(user-invokable:\s*)true', r'\1false', content, count=1, flags=re.MULTILINE
+    )
+    if count == 0:
+        return {'success': False, 'error': 'user-invokable: true not found in frontmatter'}
+
+    with open(file_path, 'w', encoding='utf-8') as f:
+        f.write(new_content)
+
+    return {'success': True, 'changes': ['Changed user-invokable from true to false (reference-mode skill)']}
+
+
 FIX_HANDLERS = {
     'missing-frontmatter': apply_missing_frontmatter,
     'array-syntax-tools': apply_array_syntax_fix,
@@ -318,6 +335,7 @@ FIX_HANDLERS = {
     'unsupported-skill-tools-field': apply_remove_frontmatter_field,
     'misspelled-user-invokable': apply_rename_frontmatter_field,
     'missing-user-invokable': apply_missing_field_fix,
+    'skill-invokable-mismatch': apply_invokable_mismatch_fix,
 }
 
 

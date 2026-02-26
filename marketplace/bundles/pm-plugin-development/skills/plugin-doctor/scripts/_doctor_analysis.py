@@ -128,6 +128,17 @@ def extract_issues_from_markdown_analysis(analysis: dict, file_path: str, compon
                     'description': 'Skill missing required `user-invokable` field',
                 })
 
+            # Check for invokable value vs content-mode mismatch
+            content_mode = analysis.get('content_mode', {})
+            if user_inv.get('present') and user_inv.get('value') is True and content_mode.get('is_reference'):
+                issues.append({
+                    'type': 'skill-invokable-mismatch',
+                    'file': file_path,
+                    'severity': 'warning',
+                    'fixable': True,
+                    'description': 'Skill declares REFERENCE MODE but has `user-invokable: true` — reference skills should be `false`',
+                })
+
     # Check rule violations
     rules = analysis.get('rules', {})
     if rules.get('agent_task_tool_prohibited'):
