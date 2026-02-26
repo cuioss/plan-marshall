@@ -147,8 +147,8 @@ Each recipe references a skill that handles discovery, analysis, and deliverable
 ### Required Sections
 
 1. **Skill Resolution**: Resolve skills dynamically from the configured profile (see below)
-2. **Scope Selection**: Use module mapping from refine phase or discover all modules
-3. **Discovery**: Scan source trees for applicable packages/files
+2. **Module Listing**: Query available modules via `architecture modules` command
+3. **Package Discovery**: For each module, query `architecture module --name {module} --full` and use `key_packages` from the architecture data
 4. **Analysis**: Assess current compliance level per package (read-only agents)
 5. **Deliverable Creation**: Create one deliverable per scope unit (package, module)
 6. **Outline Writing**: Write solution_outline.md with all deliverables

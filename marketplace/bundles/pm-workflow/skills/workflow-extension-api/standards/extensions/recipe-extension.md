@@ -37,9 +37,9 @@ Each recipe references a skill (via `recipe.skill`) that handles the outline pha
 
 1. **Skill Resolution**: Resolve skills dynamically from the configured profile using `resolve-domain-skills --domain {domain} --profile {profile}`. This ensures recipes use the same skills as regular workflow tasks and pick up project-level customizations.
 
-2. **Scope Selection**: Use module mapping from refine phase or discover all modules via `discover_modules()`. Let user confirm/filter modules.
+2. **Module Listing**: Query available modules via `architecture modules` command. Let user confirm/filter modules.
 
-3. **Discovery**: For each selected module, scan source trees for applicable packages/files. Build inventory with file counts.
+3. **Package Discovery**: For each selected module, query full module details via `architecture module --name {module} --full`. Use `key_packages` from the architecture data to build package inventory. Derive source paths from package names.
 
 4. **Analysis**: For each scope unit (package), run read-only analysis agent to assess current compliance. Record findings.
 

@@ -28,69 +28,90 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-m
   resolve-domain-skills --domain java --profile implementation
 ```
 
-This returns the aggregated skills: core defaults + core optionals + implementation defaults + implementation optionals (plus project_skills if attached).
+**Output (TOON)**:
+```toon
+status	success
+domain	java
+profile	implementation
+defaults	{"pm-dev-java:java-core": "Core Java patterns including modern features and performance optimization"}
+optionals	{"pm-dev-java:java-cdi": "CDI patterns...", "pm-dev-java:java-maintenance": "Java code maintenance..."}
+```
 
-Store the resolved `defaults` and `optionals` skill lists for use in Step 4. Build the comma-separated `--skills` argument from all resolved skill names.
+Store all resolved skill names (keys from `defaults` and `optionals`). Build the comma-separated `--skills` argument for deliverables.
 
 ---
 
-## Step 2: Load Architecture Data
+## Step 2: List Modules
 
-Packages are already discovered and stored during architecture analysis. Load them from `derived-data.json`:
+Query the project architecture for available modules:
 
 ```bash
-# Read the architecture data
-Read .plan/project-architecture/derived-data.json
+python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture modules
 ```
 
-The `modules` object contains each module with its `packages` field — an object keyed by package name:
-
-```json
-{
-  "modules": {
-    "my-module": {
-      "packages": {
-        "de.cuioss.portal.auth": { "path": "src/main/java/de/cuioss/portal/auth" },
-        "de.cuioss.portal.auth.impl": { "path": "src/main/java/de/cuioss/portal/auth/impl" },
-        "de.cuioss.portal.auth.model": { "path": "src/main/java/de/cuioss/portal/auth/model" }
-      },
-      "stats": { "source_files": 15, "test_files": 10 }
-    }
-  }
-}
+**Output (TOON)**:
+```toon
+modules[4]:
+  - my-parent
+  - my-core
+  - my-api
+  - my-web
 ```
+
+Present module list to user for confirmation/filtering. User may exclude modules (e.g., parent POMs, modules without source files).
 
 ---
 
-## Step 3: Scope Selection
+## Step 3: Load Packages Per Module
 
-Present module list to user for confirmation/filtering. Skip modules with 0 source files (`stats.source_files == 0`) and parent POMs (`packaging == pom`).
+For each selected module, query full module details including all packages:
 
-For each selected module, extract the `packages` object. Build a package inventory from the architecture data:
-
-```
-Module: my-module (15 source files)
-  de.cuioss.portal.auth       - path: src/main/java/de/cuioss/portal/auth
-  de.cuioss.portal.auth.impl  - path: src/main/java/de/cuioss/portal/auth/impl
-  de.cuioss.portal.auth.model - path: src/main/java/de/cuioss/portal/auth/model
+```bash
+python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture \
+  module --name {module_name} --full
 ```
 
-Skip modules with empty `packages`.
+**Output (TOON)** — relevant fields:
+```toon
+module:
+  name: my-core
+  path: my-core
+
+paths:
+  sources[1]:
+    - src/main/java
+
+key_packages[3]{name,description}:
+de.cuioss.portal.auth,Authentication core logic
+de.cuioss.portal.auth.impl,Authentication implementation
+de.cuioss.portal.auth.model,Authentication data model
+
+commands[3]:
+  - module-tests
+  - verify
+  - quality-gate
+```
+
+The `key_packages` table contains the packages discovered during architecture analysis. Use the package `name` to derive the source path (e.g., `de.cuioss.portal.auth` → `src/main/java/de/cuioss/portal/auth`).
+
+Build package inventory from architecture data. Skip modules with empty `key_packages`.
 
 ---
 
 ## Step 4: Analysis
 
-For each package, run read-only quality analysis using the path from architecture data:
+For each package, run read-only quality analysis:
 
 ```
 Task: pm-dev-java:java-quality-agent
   model: haiku
   Input:
-    target: {package.path}/
+    target: {sources_path}/{package_as_path}/
     module: {module_name}
     plan_id: {plan_id}
 ```
+
+Where `{package_as_path}` is the package name with dots replaced by `/` (e.g., `de.cuioss.portal.auth` → `de/cuioss/portal/auth`).
 
 Record compliance findings per package:
 - Current compliance level (percentage)
@@ -106,7 +127,7 @@ Skip packages with 100% compliance (no deliverable needed).
 Create one deliverable per package with compliance gaps > 0.
 
 Each deliverable:
-- **Title**: `Refactor: {module}/{package.path}`
+- **Title**: `Refactor: {module}/{package_name}`
 - **Description**: Summary of quality findings and what needs to change
 - **Metadata**:
   - `change_type`: `tech_debt`
@@ -115,7 +136,7 @@ Each deliverable:
   - `module`: `{module_name}`
   - `profile`: `implementation`
 - **Skills**: All skills resolved in Step 1 (comma-separated)
-- **Affected files**: All `.java` files in the package
+- **Affected files**: All `.java` files in the package directory
 
 Write each deliverable via manage-plan-documents:
 
@@ -123,7 +144,7 @@ Write each deliverable via manage-plan-documents:
 python3 .plan/execute-script.py pm-workflow:manage-plan-documents:manage-plan-documents \
   deliverable add \
   --plan-id {plan_id} \
-  --title "Refactor: {module}/{package}" \
+  --title "Refactor: {module}/{package_name}" \
   --description "{compliance_summary}" \
   --change-type tech_debt \
   --domain java \
@@ -150,7 +171,7 @@ Write `solution_outline.md` with all deliverables, grouped by module:
 
 ## Module: {module_name}
 
-### Deliverable {n}: Refactor {module}/{package}
+### Deliverable {n}: Refactor {module}/{package_name}
 - **Files**: {count} Java files
 - **Findings**: {summary}
 - **Profile**: implementation
@@ -172,5 +193,6 @@ Each task uses `java-refactor-agent` (Sonnet) with the package scope. The agent:
 ## Related
 
 - `plan-marshall:manage-plan-marshall-config resolve-domain-skills` — Dynamic skill resolution
+- `plan-marshall:analyze-project-architecture architecture module` — Module/package query
 - `pm-dev-java:java-quality-agent` — Read-only quality analysis agent
 - `pm-dev-java:java-refactor-agent` — Refactoring execution agent

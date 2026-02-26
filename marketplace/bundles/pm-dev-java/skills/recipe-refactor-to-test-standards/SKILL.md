@@ -28,42 +28,75 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-m
   resolve-domain-skills --domain java --profile module_testing
 ```
 
-This returns the aggregated skills: core defaults + core optionals + module_testing defaults + module_testing optionals (plus project_skills if attached).
+**Output (TOON)**:
+```toon
+status	success
+domain	java
+profile	module_testing
+defaults	{"pm-dev-java:junit-core": "JUnit 5 core testing patterns with AAA structure and coverage standards"}
+optionals	{"pm-dev-java:java-core": "Core Java patterns...", "pm-dev-java:java-maintenance": "Java code maintenance..."}
+```
 
-Store the resolved `defaults` and `optionals` skill lists for use in Step 4. Build the comma-separated `--skills` argument from all resolved skill names.
+Store all resolved skill names (keys from `defaults` and `optionals`). Build the comma-separated `--skills` argument for deliverables.
 
 ---
 
-## Step 2: Load Architecture Data
+## Step 2: List Modules
 
-Packages are already discovered and stored during architecture analysis. Load them from `derived-data.json`:
+Query the project architecture for available modules:
 
 ```bash
-# Read the architecture data
-Read .plan/project-architecture/derived-data.json
+python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture modules
 ```
 
-The `modules` object contains each module with its `packages` field and `stats.test_files` count. Test packages mirror the main package structure under `src/test/java/`.
+**Output (TOON)**:
+```toon
+modules[4]:
+  - my-parent
+  - my-core
+  - my-api
+  - my-web
+```
+
+Present module list to user for confirmation/filtering. User may exclude modules (e.g., parent POMs, modules without test files).
 
 ---
 
-## Step 3: Scope Selection
+## Step 3: Load Packages Per Module
 
-Present module list to user for confirmation/filtering. Skip modules with 0 test files (`stats.test_files == 0`).
+For each selected module, query full module details including all packages:
 
-For each selected module, derive test packages from the architecture `packages` data — the test directory mirrors the main source package structure. For each package `de.cuioss.portal.auth` with path `src/main/java/de/cuioss/portal/auth`, the corresponding test path is `src/test/java/de/cuioss/portal/auth`.
-
-Only include packages where the test path actually contains `*Test.java` files.
-
-Build test package inventory:
-
-```
-Module: my-module (10 test files)
-  de.cuioss.portal.auth       - src/test/java/de/cuioss/portal/auth
-  de.cuioss.portal.auth.impl  - src/test/java/de/cuioss/portal/auth/impl
+```bash
+python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture \
+  module --name {module_name} --full
 ```
 
-Skip packages with no test files in the corresponding test directory.
+**Output (TOON)** — relevant fields:
+```toon
+module:
+  name: my-core
+  path: my-core
+
+paths:
+  sources[1]:
+    - src/main/java
+  test_sources[1]:
+    - src/test/java
+
+key_packages[3]{name,description}:
+de.cuioss.portal.auth,Authentication core logic
+de.cuioss.portal.auth.impl,Authentication implementation
+de.cuioss.portal.auth.model,Authentication data model
+
+commands[3]:
+  - module-tests
+  - verify
+  - quality-gate
+```
+
+The `key_packages` table contains the packages discovered during architecture analysis. Test packages mirror the main package structure under `src/test/java/`. For each package `de.cuioss.portal.auth`, the corresponding test path is `src/test/java/de/cuioss/portal/auth`.
+
+Build test package inventory from architecture data. Only include packages where the test path actually contains `*Test.java` files. Skip modules with empty `key_packages`.
 
 ---
 
@@ -75,10 +108,12 @@ For each test package, run read-only verification analysis using the derived tes
 Task: pm-dev-java:java-verify-agent
   model: haiku
   Input:
-    target: {test_package_path}/
+    target: {test_sources_path}/{package_as_path}/
     module: {module_name}
     plan_id: {plan_id}
 ```
+
+Where `{package_as_path}` is the package name with dots replaced by `/` (e.g., `de.cuioss.portal.auth` -> `de/cuioss/portal/auth`).
 
 Record compliance findings per package:
 - AAA pattern compliance
@@ -96,7 +131,7 @@ Skip packages with full compliance (no deliverable needed).
 Create one deliverable per test package with compliance gaps > 0.
 
 Each deliverable:
-- **Title**: `Refactor tests: {module}/{package.path}`
+- **Title**: `Refactor tests: {module}/{package_name}`
 - **Description**: Summary of test quality findings and what needs to change
 - **Metadata**:
   - `change_type`: `tech_debt`
@@ -113,7 +148,7 @@ Write each deliverable via manage-plan-documents:
 python3 .plan/execute-script.py pm-workflow:manage-plan-documents:manage-plan-documents \
   deliverable add \
   --plan-id {plan_id} \
-  --title "Refactor tests: {module}/{package}" \
+  --title "Refactor tests: {module}/{package_name}" \
   --description "{compliance_summary}" \
   --change-type tech_debt \
   --domain java \
@@ -140,7 +175,7 @@ Write `solution_outline.md` with all deliverables, grouped by module:
 
 ## Module: {module_name}
 
-### Deliverable {n}: Refactor tests {module}/{package}
+### Deliverable {n}: Refactor tests {module}/{package_name}
 - **Test files**: {count}
 - **Findings**: {summary}
 - **Profile**: module_testing
@@ -162,4 +197,5 @@ Each task uses the `module_testing` profile executor. The agent:
 ## Related
 
 - `plan-marshall:manage-plan-marshall-config resolve-domain-skills` — Dynamic skill resolution
+- `plan-marshall:analyze-project-architecture architecture module` — Module/package query
 - `pm-dev-java:java-verify-agent` — Read-only verification agent
