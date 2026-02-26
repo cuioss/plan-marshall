@@ -1,7 +1,7 @@
 ---
 name: doc-create
 description: Create new documentation from templates
-user-invokable: true
+user-invokable: false
 ---
 
 # Documentation Create Skill

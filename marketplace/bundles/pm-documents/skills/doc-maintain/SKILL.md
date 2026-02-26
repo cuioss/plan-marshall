@@ -1,7 +1,7 @@
 ---
 name: doc-maintain
 description: Maintain documentation (sync, cleanup, update)
-user-invokable: true
+user-invokable: false
 ---
 
 # Documentation Maintain Skill

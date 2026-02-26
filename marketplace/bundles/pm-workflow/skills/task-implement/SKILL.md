@@ -1,7 +1,7 @@
 ---
 name: task-implement
 description: Implement GitHub issues or standalone tasks with full verification
-user-invokable: true
+user-invokable: false
 ---
 
 # Task Implementation Skill
