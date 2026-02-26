@@ -310,7 +310,7 @@ def apply_invokable_mismatch_fix(file_path: Path, fix: dict, templates: dict) ->
         content = f.read()
 
     new_content, count = re.subn(
-        r'^(user-invokable:\s*)true', r'\1false', content, count=1, flags=re.MULTILINE
+        r'^(user-invokable:\s*)true', r'\1false', content, count=1, flags=re.MULTILINE | re.IGNORECASE
     )
     if count == 0:
         return {'success': False, 'error': 'user-invokable: true not found in frontmatter'}
