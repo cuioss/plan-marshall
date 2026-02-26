@@ -217,6 +217,18 @@ See [build-execution.md](build-execution.md) for `execute_direct` API and [build
 - Omitted when empty (no direct source files — only sub-packages)
 - All paths are project-relative
 
+**Java test packages** (same structure, keyed by package name):
+```json
+"test_packages": {
+  "de.cuioss.tools": {
+    "path": "core/src/test/java/de/cuioss/tools",
+    "files": ["CollectionBuilderTest.java", "MoreStringsTest.java"]
+  }
+}
+```
+- Same conventions as `packages` (sorted files, direct children only, omitted when empty)
+- Separate field because test packages mirror main package names
+
 **npm packages** (directory-based or exports-defined):
 ```json
 "packages": {

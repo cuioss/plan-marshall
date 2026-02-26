@@ -93,15 +93,20 @@ de.cuioss.portal.auth	my-core/src/main/java/de/cuioss/portal/auth	true	5
 de.cuioss.portal.auth.impl	my-core/src/main/java/de/cuioss/portal/auth/impl	false	3
 de.cuioss.portal.auth.model	my-core/src/main/java/de/cuioss/portal/auth/model	false	2
 
+test_packages[3]{name,path,file_count}:
+de.cuioss.portal.auth	my-core/src/test/java/de/cuioss/portal/auth	3
+de.cuioss.portal.auth.impl	my-core/src/test/java/de/cuioss/portal/auth/impl	2
+de.cuioss.portal.auth.model	my-core/src/test/java/de/cuioss/portal/auth/model	1
+
 commands[3]:
   - module-tests
   - verify
   - quality-gate
 ```
 
-The `key_packages` table contains the packages discovered during architecture analysis. The `packages` table (in `--full` mode) includes `file_count` — the number of direct source files per package. The actual file list is available in `derived-data.json` for programmatic access. Test packages mirror the main package structure under `src/test/java/`. For each package `de.cuioss.portal.auth`, the corresponding test path is `src/test/java/de/cuioss/portal/auth`.
+The `key_packages` table contains the packages discovered during architecture analysis. The `packages` and `test_packages` tables (in `--full` mode) include `file_count` — the number of direct source files per package. The actual file lists are available in `derived-data.json` for programmatic access.
 
-Build test package inventory from architecture data. Only include packages where the test path actually contains `*Test.java` files. Skip modules with empty `key_packages`.
+Build test package inventory from `test_packages` in the architecture data. Skip modules with empty `test_packages`.
 
 ---
 
@@ -145,7 +150,7 @@ Each deliverable:
   - `module`: `{module_name}`
   - `profile`: `module_testing`
 - **Skills**: All skills resolved in Step 1 (comma-separated)
-- **Affected files**: All `*Test.java` files in the package
+- **Affected files**: All test files in the package (from architecture data `test_packages` `files` field)
 
 Write each deliverable via manage-plan-documents:
 
