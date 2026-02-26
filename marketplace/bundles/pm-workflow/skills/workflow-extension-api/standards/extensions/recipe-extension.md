@@ -35,22 +35,24 @@ Each recipe references a skill (via `recipe.skill`) that handles the outline pha
 
 ### Required Workflow Sections
 
-1. **Scope Selection**: Use module mapping from refine phase or discover all modules via `discover_modules()`. Let user confirm/filter modules.
+1. **Skill Resolution**: Resolve skills dynamically from the configured profile using `resolve-domain-skills --domain {domain} --profile {profile}`. This ensures recipes use the same skills as regular workflow tasks and pick up project-level customizations.
 
-2. **Discovery**: For each selected module, scan source trees for applicable packages/files. Build inventory with file counts.
+2. **Scope Selection**: Use module mapping from refine phase or discover all modules via `discover_modules()`. Let user confirm/filter modules.
 
-3. **Analysis**: For each scope unit (package), run read-only analysis agent to assess current compliance. Record findings.
+3. **Discovery**: For each selected module, scan source trees for applicable packages/files. Build inventory with file counts.
 
-4. **Deliverable Creation**: Create one deliverable per scope unit with compliance gaps. Each deliverable must include:
+4. **Analysis**: For each scope unit (package), run read-only analysis agent to assess current compliance. Record findings.
+
+5. **Deliverable Creation**: Create one deliverable per scope unit with compliance gaps. Each deliverable must include:
    - `change_type`: From recipe's `default_change_type`
    - `execution_mode`: `automated`
    - `domain`: From the recipe's domain key
    - `module`: Module containing the scope unit
    - `profile`: Task execution profile (e.g., `implementation`, `module_testing`)
-   - `skills`: Skill references for task execution
+   - `skills`: Resolved from configured profile (not hardcoded)
    - Affected files list
 
-5. **Outline Writing**: Write `solution_outline.md` with all deliverables, grouped by module.
+6. **Outline Writing**: Write `solution_outline.md` with all deliverables, grouped by module.
 
 ### Granularity Convention
 

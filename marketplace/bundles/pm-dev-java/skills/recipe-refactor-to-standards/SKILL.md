@@ -1,15 +1,15 @@
 ---
 name: recipe-refactor-to-standards
-description: Recipe skill for refactoring production code to comply with java-core and java-maintenance standards, package by package
+description: Recipe skill for refactoring production code to comply with configured implementation profile standards, package by package
 user-invokable: false
 ---
 
 # Recipe: Refactor to Implementation Standards
 
-Predefined recipe skill for refactoring production code to comply with applicable implementation skill standards. Iterates module-by-module, package-by-package.
+Predefined recipe skill for refactoring production code to comply with the currently configured implementation profile standards. Iterates module-by-module, package-by-package.
 
 **Profile**: `implementation`
-**Skills applied**: `pm-dev-java:java-core` (core defaults), `pm-dev-java:java-maintenance` (implementation optionals)
+**Skills applied**: Dynamically resolved from `resolve-domain-skills --domain java --profile implementation` (core + implementation defaults and optionals)
 
 ## Input
 
@@ -19,7 +19,22 @@ Predefined recipe skill for refactoring production code to comply with applicabl
 
 ---
 
-## Step 1: Scope Selection
+## Step 1: Resolve Skills
+
+Resolve the skills for the `implementation` profile from the configured skill domains. This picks up whatever skills are currently configured — including project-level skills attached to the domain.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+  resolve-domain-skills --domain java --profile implementation
+```
+
+This returns the aggregated skills: core defaults + core optionals + implementation defaults + implementation optionals (plus project_skills if attached).
+
+Store the resolved `defaults` and `optionals` skill lists for use in Step 4. Build the comma-separated `--skills` argument from all resolved skill names.
+
+---
+
+## Step 2: Scope Selection
 
 Use module mapping from refine phase. If empty, discover all modules:
 
@@ -32,7 +47,7 @@ Present module list to user for confirmation/filtering. User may exclude modules
 
 ---
 
-## Step 2: Discovery
+## Step 3: Discovery
 
 For each selected module, scan `src/main/java/` for packages containing `.java` files.
 
@@ -49,7 +64,7 @@ Skip packages with 0 `.java` files. Record file counts per package.
 
 ---
 
-## Step 3: Analysis
+## Step 4: Analysis
 
 For each package, run read-only quality analysis:
 
@@ -71,7 +86,7 @@ Skip packages with 100% compliance (no deliverable needed).
 
 ---
 
-## Step 4: Deliverable Creation
+## Step 5: Deliverable Creation
 
 Create one deliverable per package with compliance gaps > 0.
 
@@ -84,7 +99,7 @@ Each deliverable:
   - `domain`: `java`
   - `module`: `{module_name}`
   - `profile`: `implementation`
-- **Skills**: `pm-dev-java:java-core`, `pm-dev-java:java-maintenance`
+- **Skills**: All skills resolved in Step 1 (comma-separated)
 - **Affected files**: All `.java` files in the package
 
 Write each deliverable via manage-plan-documents:
@@ -99,13 +114,13 @@ python3 .plan/execute-script.py pm-workflow:manage-plan-documents:manage-plan-do
   --domain java \
   --module {module} \
   --profile implementation \
-  --skills "pm-dev-java:java-core,pm-dev-java:java-maintenance" \
+  --skills "{resolved_skills_csv}" \
   --files "{file_list}"
 ```
 
 ---
 
-## Step 5: Outline Writing
+## Step 6: Outline Writing
 
 Write `solution_outline.md` with all deliverables, grouped by module:
 
@@ -113,7 +128,10 @@ Write `solution_outline.md` with all deliverables, grouped by module:
 # Solution Outline: Refactor to Implementation Standards
 
 ## Scope
-{N} packages across {M} modules requiring refactoring to comply with java-core and java-maintenance standards.
+{N} packages across {M} modules requiring refactoring to comply with implementation profile standards.
+
+## Resolved Skills
+{list of resolved skills from Step 1}
 
 ## Module: {module_name}
 
@@ -121,7 +139,6 @@ Write `solution_outline.md` with all deliverables, grouped by module:
 - **Files**: {count} Java files
 - **Findings**: {summary}
 - **Profile**: implementation
-- **Skills**: java-core, java-maintenance
 
 ...
 ```
@@ -131,7 +148,7 @@ Write `solution_outline.md` with all deliverables, grouped by module:
 ## Task Execution
 
 Each task uses `java-refactor-agent` (Sonnet) with the package scope. The agent:
-1. Loads java-core and java-maintenance skills
+1. Loads the skills specified in the deliverable (resolved from implementation profile)
 2. Applies refactoring rules to all files in the package
 3. Verifies build passes after changes
 
@@ -139,7 +156,6 @@ Each task uses `java-refactor-agent` (Sonnet) with the package scope. The agent:
 
 ## Related
 
-- `pm-dev-java:java-core` — Core Java development standards
-- `pm-dev-java:java-maintenance` — Java code maintenance standards
+- `plan-marshall:manage-plan-marshall-config resolve-domain-skills` — Dynamic skill resolution
 - `pm-dev-java:java-quality-agent` — Read-only quality analysis agent
 - `pm-dev-java:java-refactor-agent` — Refactoring execution agent

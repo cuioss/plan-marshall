@@ -146,11 +146,25 @@ Each recipe references a skill that handles discovery, analysis, and deliverable
 
 ### Required Sections
 
-1. **Scope Selection**: Use module mapping from refine phase or discover all modules
-2. **Discovery**: Scan source trees for applicable packages/files
-3. **Analysis**: Assess current compliance level per package (read-only agents)
-4. **Deliverable Creation**: Create one deliverable per scope unit (package, module)
-5. **Outline Writing**: Write solution_outline.md with all deliverables
+1. **Skill Resolution**: Resolve skills dynamically from the configured profile (see below)
+2. **Scope Selection**: Use module mapping from refine phase or discover all modules
+3. **Discovery**: Scan source trees for applicable packages/files
+4. **Analysis**: Assess current compliance level per package (read-only agents)
+5. **Deliverable Creation**: Create one deliverable per scope unit (package, module)
+6. **Outline Writing**: Write solution_outline.md with all deliverables
+
+### Skill Resolution (Critical)
+
+Recipe skills must **not** hardcode skill references. Instead, resolve skills dynamically from the configured profile using `resolve-domain-skills`:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+  resolve-domain-skills --domain {domain} --profile {profile}
+```
+
+This returns the aggregated skills for the profile: core defaults + core optionals + profile defaults + profile optionals + project_skills. The resolved skill names are passed to each deliverable's `--skills` argument.
+
+This ensures recipes use the same skills as regular workflow tasks for the same profile, and automatically pick up any project-level skill customizations.
 
 ### Deliverable Properties
 
@@ -161,7 +175,7 @@ Each deliverable created by a recipe must include:
 - `domain`: From the recipe's domain key
 - `module`: Module containing the scope unit
 - `profile`: Task execution profile (e.g., `implementation`, `module_testing`)
-- `skills`: Skill references for task execution
+- `skills`: Resolved from configured profile (not hardcoded)
 
 ---
 
