@@ -48,7 +48,22 @@ If wait=true:
 gh pr checks {pr} --json name,status,conclusion
 ```
 
-Poll every 30 seconds. Timeout after 30 minutes with prompt: "[C]ontinue / [S]kip / [A]bort"
+Poll every 30 seconds. On timeout after 30 minutes, present using `AskUserQuestion`:
+
+```
+AskUserQuestion:
+  questions:
+    - question: "CI checks timed out after 30 minutes. How would you like to proceed?"
+      header: "Timeout"
+      options:
+        - label: "Continue waiting"
+          description: "Keep polling for another 30 minutes"
+        - label: "Skip checks"
+          description: "Proceed to diagnosis without waiting"
+        - label: "Abort"
+          description: "Stop PR doctor"
+      multiSelect: false
+```
 
 ### Step 3: Diagnose Issues
 

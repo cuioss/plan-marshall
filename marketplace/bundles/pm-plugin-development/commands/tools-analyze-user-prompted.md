@@ -180,16 +180,26 @@ allowed-tools:
 
 ### Step 7: Interactive Resolution
 
-Prompt user:
+Present solutions using `AskUserQuestion`:
+
 ```
-Which solution would you like to apply?
-[1] Add global permission
-[2] Add project permission
-[3] Update component declaration
-[4] Manual (show details only)
+AskUserQuestion:
+  questions:
+    - question: "Which solution would you like to apply?"
+      header: "Fix"
+      options:
+        - label: "Add global permission"
+          description: "Add permission pattern to ~/.claude/settings.json"
+        - label: "Add project permission"
+          description: "Add permission pattern to .claude/settings.local.json"
+        - label: "Update component declaration"
+          description: "Add missing tool to component's allowed-tools"
+        - label: "Manual (show details only)"
+          description: "Display fix details without applying"
+      multiSelect: false
 ```
 
-If user selects 1-3:
+If user selects a fix option (not "Manual"):
 - Apply the fix using Edit tool
 - Verify fix applied correctly
 

@@ -154,12 +154,20 @@ Alternatives found:
 - /project/requirements/specifications.adoc (similar name)
 - /project/docs/requirements.adoc (similar path)
 
-Actions:
-1. Remove link
-2. Update to alternative path
-3. Keep link (manual review needed)
+Present using AskUserQuestion:
 
-Select action [1/2/3]:
+AskUserQuestion:
+  questions:
+    - question: "How should this broken link be handled?"
+      header: "Link"
+      options:
+        - label: "Remove link"
+          description: "Remove the broken cross-reference"
+        - label: "Update to alternative"
+          description: "Update link to an alternative path"
+        - label: "Keep link"
+          description: "Keep link for manual review"
+      multiSelect: false
 ----
 
 == False Positive Patterns
@@ -254,12 +262,20 @@ Searched for sections:
 - "OWASP Top 10" (not found)
 - "Security Standards" (found at line 45)
 
-Possible actions:
-1. Add section "OWASP Top 10 2021"
-2. Update reference to existing section
-3. Remove reference
+Present using AskUserQuestion:
 
-Select action [1/2/3]:
+AskUserQuestion:
+  questions:
+    - question: "How should this missing anchor be handled?"
+      header: "Anchor"
+      options:
+        - label: "Add section"
+          description: "Create a new section for the anchor"
+        - label: "Update reference"
+          description: "Point to an existing matching section"
+        - label: "Remove reference"
+          description: "Delete the broken anchor reference"
+      multiSelect: false
 ----
 
 == Path Resolution

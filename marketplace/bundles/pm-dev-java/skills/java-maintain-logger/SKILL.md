@@ -87,7 +87,22 @@ python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run \
     --mode errors
 ```
 
-**On build failure:** Prompt user "[F]ix build first / [A]bort", track in `pre_verification_failures`.
+**On build failure:** Present using `AskUserQuestion`:
+
+```
+AskUserQuestion:
+  questions:
+    - question: "Pre-maintenance build failed. How would you like to proceed?"
+      header: "Build"
+      options:
+        - label: "Fix build first"
+          description: "Fix build issues before starting maintenance"
+        - label: "Abort"
+          description: "Cancel logger maintenance"
+      multiSelect: false
+```
+
+Track in `pre_verification_failures`.
 
 **2.2 Module Identification:**
 
@@ -184,7 +199,22 @@ Task:
     Suggest consolidation opportunities.
 ```
 
-**4.6 Display Module Analysis Summary** and prompt user: "[P]roceed / [S]kip / [A]bort"
+**4.6 Display Module Analysis Summary** and present using `AskUserQuestion`:
+
+```
+AskUserQuestion:
+  questions:
+    - question: "Review the module analysis above. How would you like to proceed?"
+      header: "Module"
+      options:
+        - label: "Proceed"
+          description: "Start implementing logging fixes for this module"
+        - label: "Skip"
+          description: "Skip this module and move to next"
+        - label: "Abort"
+          description: "Stop logger maintenance"
+      multiSelect: false
+```
 
 ### Step 5: Implementation Phase
 
@@ -243,7 +273,22 @@ Task:
 
 Then add LogAsserts to existing test (see `pm-dev-java-cui:cui-logging` skill for LogAsserts patterns).
 
-**If no business logic test exists:** Prompt user "[C]reate business test first / [S]kip / [A]bort"
+**If no business logic test exists:** Present using `AskUserQuestion`:
+
+```
+AskUserQuestion:
+  questions:
+    - question: "No business logic test exists for this LogRecord. How would you like to proceed?"
+      header: "Test"
+      options:
+        - label: "Create business test first"
+          description: "Create a new business logic test, then add LogAsserts"
+        - label: "Skip"
+          description: "Skip this LogRecord's test"
+        - label: "Abort"
+          description: "Stop logger maintenance"
+      multiSelect: false
+```
 
 ### Step 6: Verification Phase
 

@@ -44,7 +44,22 @@ Otherwise → PLAN mode (Plan → Execute)
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-memories:manage-memory list --category handoffs
 ```
-If pending found: Prompt "[R]esume / [S]tart fresh / [A]bort"
+If pending found, present using `AskUserQuestion`:
+
+```
+AskUserQuestion:
+  questions:
+    - question: "A pending workflow was found. How would you like to proceed?"
+      header: "Pending"
+      options:
+        - label: "Resume"
+          description: "Continue from where the previous workflow left off"
+        - label: "Start fresh"
+          description: "Discard pending state and start a new workflow"
+        - label: "Abort"
+          description: "Cancel task implementation"
+      multiSelect: false
+```
 
 ### Step 3: Execute Mode-Specific Workflow
 

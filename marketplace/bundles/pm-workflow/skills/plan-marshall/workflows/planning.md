@@ -29,32 +29,43 @@ python3 .plan/execute-script.py pm-workflow:manage-lifecycle:manage-lifecycle li
 
 **Step 2**: Check if lessons exist:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons list
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lesson list
 ```
 Parse `total` from output. If `total > 0`, lessons are available.
 
-**Step 3**: Present combined menu:
+**Step 3**: Present interactive menu using `AskUserQuestion`:
+
+Build options dynamically from Step 1 and Step 2 results:
+
 ```
-Available Plans:
-
-1. jwt-authentication [5-execute] - 3/12 tasks complete
-2. user-profile-api [3-outline] - Requirements analysis
-
-0. Create new plan
-r. Create plan from recipe
-l. List lessons                    ← only if lessons total > 0
-
-Select plan (number) or action:
+AskUserQuestion:
+  questions:
+    - question: "Which plan would you like to work on?"
+      header: "Plans"
+      options:
+        # For each plan from Step 1 (dynamic):
+        - label: "{plan_name} [{phase}]"
+          description: "{task_count} tasks - {title or summary}"
+        # Always include these static options:
+        - label: "Create new plan"
+          description: "Start a new plan from a task description or GitHub issue"
+        - label: "Create plan from recipe"
+          description: "Start a new plan using a project recipe"
+        # Only include if Step 2 returned total > 0:
+        - label: "List lessons"
+          description: "Browse lessons learned and convert to plans"
+      multiSelect: false
 ```
 
-- Always show `0. Create new plan` and `r. Create plan from recipe`
-- Only show `l. List lessons` when Step 2 returned `total > 0`
+- Always include "Create new plan" and "Create plan from recipe" as options
+- Only include "List lessons" when Step 2 returned `total > 0`
+- Maximum 4 options per `AskUserQuestion` — if plans + static options exceed 4, present plans first with a "More actions..." option, then show static options in a follow-up question
 
 **Step 4**: Handle selection:
-- **Number (1-N)**: Select plan, auto-detect action from phase
-- **0**: Route to `Action: init`
-- **r**: Route to `Action: recipe` (load `workflows/recipe.md`)
-- **l**: Route to `Action: lessons`
+- **Plan selected**: Auto-detect action from plan's current phase
+- **"Create new plan"**: Route to `Action: init`
+- **"Create plan from recipe"**: Route to `Action: recipe` (load `workflows/recipe.md`)
+- **"List lessons"**: Route to `Action: lessons`
 
 ---
 
@@ -272,17 +283,21 @@ Remove completed plans. Shows completed plans for selective or batch deletion wi
 
 List lessons learned and convert selected lesson to a plan.
 
-Shows:
+Present lessons using `AskUserQuestion`:
+
 ```
-Lessons Learned:
-
-1. [bug] Build fails on special characters in paths
-   Component: builder-maven:maven-build-and-fix
-   Date: 2025-11-27
-
-0. Back to main menu
-
-Select lesson to convert to plan:
+AskUserQuestion:
+  questions:
+    - question: "Which lesson would you like to convert to a plan?"
+      header: "Lessons"
+      options:
+        # For each lesson from list (dynamic):
+        - label: "[{category}] {title}"
+          description: "Component: {component} — {date}"
+        # Always include:
+        - label: "Back to main menu"
+          description: "Return to plan list"
+      multiSelect: false
 ```
 
 When a lesson is selected:

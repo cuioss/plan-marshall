@@ -12,17 +12,10 @@ Create a plan from a predefined recipe. Recipes bypass change-type detection and
 
 ### Step 1: List or Resolve Recipe
 
-Present three categories of recipes to the user:
+Collect recipes from all sources, then present via `AskUserQuestion`.
 
 **Built-in recipes** (always available when domains are configured):
-
-```
-Built-in Recipes:
-
-1. Refactor to Profile Standards
-   Refactor code to comply with configured profile standards, package by package
-   Requires: configured domains
-```
+- "Refactor to Profile Standards" — Refactor code to comply with configured profile standards, package by package. Requires: configured domains.
 
 **Domain recipes** (custom recipes registered via `provides_recipes()`) and **project recipes** (added via `skill-domains add-recipe`):
 
@@ -33,7 +26,24 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-m
 
 This returns both extension-provided and project-level recipes. Project recipes have `"source": "project"` in their metadata.
 
-Present the combined list to the user with numbered selection. If no domain or project recipes exist, only show the built-in recipe.
+Present the combined list using `AskUserQuestion`:
+
+```
+AskUserQuestion:
+  questions:
+    - question: "Which recipe would you like to use?"
+      header: "Recipes"
+      options:
+        # Always include built-in:
+        - label: "Refactor to Profile Standards"
+          description: "Refactor code to comply with configured profile standards, package by package"
+        # For each domain/project recipe (dynamic):
+        - label: "{recipe_name}"
+          description: "{recipe_description} (source: {source})"
+      multiSelect: false
+```
+
+If no domain or project recipes exist, only show the built-in recipe.
 
 **If `recipe` parameter provided** — resolve directly:
 
@@ -55,9 +65,34 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-m
   list-domains
 ```
 
-2. **Select profile**: Ask user to choose between:
-   - `implementation` — Refactor production code
-   - `module_testing` — Refactor test code
+Present domain selection using `AskUserQuestion`:
+
+```
+AskUserQuestion:
+  questions:
+    - question: "Which domain should be refactored?"
+      header: "Domain"
+      options:
+        # For each configured domain (dynamic):
+        - label: "{domain_name}"
+          description: "Domain from {source}"
+      multiSelect: false
+```
+
+2. **Select profile**: Present profile selection using `AskUserQuestion`:
+
+```
+AskUserQuestion:
+  questions:
+    - question: "Which code should be refactored?"
+      header: "Profile"
+      options:
+        - label: "Implementation"
+          description: "Refactor production code"
+        - label: "Module testing"
+          description: "Refactor test code"
+      multiSelect: false
+```
 
 3. **Derive package source** from profile:
    - `implementation` → `packages`
