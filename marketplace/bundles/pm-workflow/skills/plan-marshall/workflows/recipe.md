@@ -134,7 +134,7 @@ Continue through the standard phases:
 1. **2-refine**: Load `Skill: pm-workflow:phase-2-refine` with `plan_id`
    - Recipe plans get automatic scope selection and confidence=100
 2. **3-outline**: Load `Skill: pm-workflow:phase-3-outline` with `plan_id`
-   - Recipe plans skip change-type detection, load recipe skill directly
+   - Recipe plans skip change-type detection and Q-Gate, load recipe skill directly
 3. **4-plan**: Load `Skill: pm-workflow:phase-4-plan` with `plan_id`
    - Standard task creation from deliverables
 

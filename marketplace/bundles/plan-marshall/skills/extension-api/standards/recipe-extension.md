@@ -77,7 +77,7 @@ Each dict in the returned list must contain:
 
 ## Storage in marshal.json
 
-Recipes are stored under `skill_domains.{domain}.recipes`:
+Custom recipes (from `provides_recipes()`) are stored under `skill_domains.{domain}.recipes`. The built-in recipe is not stored in marshal.json — it is always available.
 
 ```json
 {
@@ -86,12 +86,14 @@ Recipes are stored under `skill_domains.{domain}.recipes`:
       "bundle": "pm-dev-java",
       "recipes": [
         {
-          "key": "refactor-to-standards",
-          "name": "Refactor to Implementation Standards",
-          "description": "Refactor production code to comply with java-core and java-maintenance standards",
-          "skill": "pm-dev-java:recipe-refactor-to-standards",
+          "key": "null-safety-compliance",
+          "name": "Null Safety Compliance",
+          "description": "Add JSpecify annotations across all packages",
+          "skill": "pm-dev-java:recipe-null-safety",
           "default_change_type": "tech_debt",
-          "scope": "codebase_wide"
+          "scope": "codebase_wide",
+          "profile": "implementation",
+          "package_source": "packages"
         }
       ],
       "workflow_skill_extensions": { "triage": "..." }
@@ -128,15 +130,15 @@ Resolves a specific recipe by key:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
-  resolve-recipe --recipe refactor-to-standards
+  resolve-recipe --recipe null-safety-compliance
 ```
 
 **Output (TOON)**:
 ```toon
 status	success
-recipe_key	refactor-to-standards
-recipe_name	Refactor to Implementation Standards
-recipe_skill	pm-dev-java:recipe-refactor-to-standards
+recipe_key	null-safety-compliance
+recipe_name	Null Safety Compliance
+recipe_skill	pm-dev-java:recipe-null-safety
 default_change_type	tech_debt
 scope	codebase_wide
 domain	java
@@ -148,41 +150,55 @@ Fields `profile` and `package_source` are empty strings when not set on the reci
 
 ---
 
-## Recipe Skill Contract
+## Recipe Skill Interface
 
-Each recipe references a skill that handles discovery, analysis, and deliverable creation during phase-3-outline. The recipe skill must follow this structure:
+All recipe skills — built-in and custom — are loaded by phase-3-outline via the same `Skill: {recipe_skill}` call. This section defines the contract.
 
-### Required Sections
+### Input Parameters
 
-1. **Skill Resolution**: Resolve skills dynamically from the configured profile (see below)
-2. **Module Listing**: Query available modules via `architecture modules` command
-3. **Package Discovery**: For each module, query `architecture module --name {module} --full` and use packages from the architecture data
-4. **Deliverable Creation**: Create one deliverable per scope unit (package). No separate analysis step — the task executor loads profile skills and handles analysis+fixing in one pass
-5. **Outline Writing**: Write solution_outline.md with all deliverables
+Phase-3-outline passes these input parameters to the recipe skill:
+
+| Parameter | Type | Guaranteed | Description |
+|-----------|------|------------|-------------|
+| `plan_id` | string | Always | Plan identifier |
+| `recipe_domain` | string | Built-in only | Domain key (e.g., `java`). Empty for custom recipes unless the extension sets `profile`/`package_source` on the recipe dict |
+| `recipe_profile` | string | Built-in only | Profile name (e.g., `implementation`). Empty for custom recipes unless set |
+| `recipe_package_source` | string | Built-in only | Architecture field to iterate (`packages` or `test_packages`). Empty for custom recipes unless set |
+
+Custom recipes that need these values should declare `profile` and `package_source` on the recipe dict in `provides_recipes()`. The recipe workflow stores them in status metadata, and phase-3-outline passes them as input.
+
+### Required Sinks
+
+The recipe skill must write:
+
+| Sink | Description |
+|------|-------------|
+| `solution_outline.md` | Deliverables grouped by module, written via `manage-solution-outline write` |
+
+### Required Deliverable Properties
+
+| Property | Source |
+|----------|--------|
+| `change_type` | Recipe's `default_change_type` (set by phase-3-outline before skill load) |
+| `execution_mode` | `automated` |
+| `domain` | Input `recipe_domain` or hardcoded |
+| `module` | From architecture discovery |
+| `profile` | Input `recipe_profile` or hardcoded |
+| `skills` | Resolved dynamically via `resolve-domain-skills` (not hardcoded) |
+| Affected files | From architecture data |
 
 ### Skill Resolution (Critical)
 
-Recipe skills must **not** hardcode skill references. Instead, resolve skills dynamically from the configured profile using `resolve-domain-skills`:
+Recipe skills must **not** hardcode skill references. Instead, resolve skills dynamically:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
   resolve-domain-skills --domain {domain} --profile {profile}
 ```
 
-This returns the aggregated skills for the profile: core defaults + core optionals + profile defaults + profile optionals + project_skills. The resolved skill names are passed to each deliverable's `--skills` argument.
+This returns core defaults + core optionals + profile defaults + profile optionals + project_skills. The resolved skill names are passed to each deliverable's `--skills` argument.
 
-This ensures recipes use the same skills as regular workflow tasks for the same profile, and automatically pick up any project-level skill customizations.
-
-### Deliverable Properties
-
-Each deliverable created by a recipe must include:
-
-- `change_type`: From recipe's `default_change_type`
-- `execution_mode`: `automated` (recipes are designed for agent execution)
-- `domain`: From the recipe's domain key
-- `module`: Module containing the scope unit
-- `profile`: Task execution profile (e.g., `implementation`, `module_testing`)
-- `skills`: Resolved from configured profile (not hardcoded)
+For the full flow with ASCII diagrams, see `pm-workflow:phase-3-outline` [references/recipe-flow.md](../../phase-3-outline/references/recipe-flow.md).
 
 ---
 
@@ -192,7 +208,7 @@ Each deliverable created by a recipe must include:
 |-------|-------------|-------------|
 | 1-init | Creates plan from task/issue/lesson | Creates plan with `source=recipe`, stores recipe metadata |
 | 2-refine | Full quality analysis, iterative clarification | Scope selection only, auto-confidence=100 |
-| 3-outline | Detect change_type → route by track → create deliverables | Load recipe skill → recipe handles discovery+analysis+deliverables |
+| 3-outline | Detect change_type → route by track → create deliverables → Q-Gate | Load recipe skill → recipe creates deliverables (no Q-Gate — deterministic output) |
 | 4-plan | Standard | Standard (no changes) |
 | 5-execute | Standard | Standard (no changes) |
 | 6-finalize | Standard | Standard (no changes) |

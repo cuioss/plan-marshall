@@ -22,35 +22,73 @@ Use cases:
 |-------|-------------|-------------|
 | 1-init | Creates plan from task/issue/lesson | Creates plan with `source=recipe`, stores recipe metadata |
 | 2-refine | Full quality analysis, iterative clarification | Scope selection only, auto-confidence=100 |
-| 3-outline | Detect change_type → route by track → create deliverables | Built-in: inline generic recipe workflow. Custom: load recipe skill → recipe handles discovery+analysis+deliverables |
+| 3-outline | Detect change_type → route by track → create deliverables → Q-Gate | Load recipe skill → recipe creates deliverables (no Q-Gate — deterministic output) |
 | 4-plan | Standard | Standard (no changes) |
 | 5-execute | Standard | Standard (no changes) |
 | 6-finalize | Standard | Standard (no changes) |
 
 ---
 
-## Recipe Skill Contract
+## Recipe Skill Interface
 
-Each recipe references a skill (via `recipe.skill`) that handles the outline phase. The recipe skill must provide:
+All recipe skills — built-in and custom — are loaded by phase-3-outline via the same mechanism. This section defines the contract between phase-3-outline (caller) and any recipe skill (callee).
 
-### Required Workflow Sections
+### Input Parameters
 
-1. **Skill Resolution**: Resolve skills dynamically from the configured profile using `resolve-domain-skills --domain {domain} --profile {profile}`. This ensures recipes use the same skills as regular workflow tasks and pick up project-level customizations.
+Phase-3-outline loads the recipe skill with:
 
-2. **Module Listing**: Query available modules via `architecture modules` command. Let user confirm/filter modules.
+```
+Skill: {recipe_skill}
+  Input:
+    plan_id: {plan_id}
+    recipe_domain: {recipe_domain or empty}
+    recipe_profile: {recipe_profile or empty}
+    recipe_package_source: {recipe_package_source or empty}
+```
 
-3. **Package Discovery**: For each selected module, query full module details via `architecture module --name {module} --full`. Use packages from the architecture data to build package inventory.
+| Parameter | Type | Guaranteed | Description |
+|-----------|------|------------|-------------|
+| `plan_id` | string | Always | Plan identifier |
+| `recipe_domain` | string | Built-in only | Domain key (e.g., `java`). Empty for custom recipes unless the extension sets it |
+| `recipe_profile` | string | Built-in only | Profile name (e.g., `implementation`). Empty for custom recipes unless the extension sets it |
+| `recipe_package_source` | string | Built-in only | Architecture field to iterate (`packages` or `test_packages`). Empty for custom recipes unless the extension sets it |
 
-4. **Deliverable Creation**: Create one deliverable per package. No separate analysis step — the task executor loads the profile skills and handles both analysis and fixing in a single pass. Each deliverable must include:
-   - `change_type`: From recipe's `default_change_type`
-   - `execution_mode`: `automated`
-   - `domain`: From the recipe's domain key
-   - `module`: Module containing the scope unit
-   - `profile`: Task execution profile (e.g., `implementation`, `module_testing`)
-   - `skills`: Resolved from configured profile (not hardcoded)
-   - Affected files list
+Custom recipe skills that need domain/profile/package_source should either:
+- Declare `profile` and `package_source` on the recipe dict in `provides_recipes()` (recipe.md Step 3 stores them in metadata, phase-3-outline passes them)
+- Or hardcode the values if the recipe is domain-specific
 
-5. **Outline Writing**: Write `solution_outline.md` with all deliverables, grouped by module.
+### Required Sinks
+
+The recipe skill must write these artifacts before returning:
+
+| Sink | Written via | Description |
+|------|-------------|-------------|
+| `solution_outline.md` | `pm-workflow:manage-solution-outline:manage-solution-outline write` | Deliverables grouped by module |
+| Deliverables in outline | Embedded in solution_outline.md | One per scope unit (typically per package) |
+
+### Required Deliverable Properties
+
+Each deliverable created by a recipe must include:
+
+| Property | Source | Description |
+|----------|--------|-------------|
+| `change_type` | Recipe's `default_change_type` | Set by phase-3-outline before skill load |
+| `execution_mode` | `automated` | Recipes are designed for agent execution |
+| `domain` | Input `recipe_domain` or hardcoded | Domain key for task routing |
+| `module` | Architecture discovery | Module containing the scope unit |
+| `profile` | Input `recipe_profile` or hardcoded | Task execution profile |
+| `skills` | Resolved dynamically | From `resolve-domain-skills` (not hardcoded) |
+| Affected files | Architecture data | Explicit file list per deliverable |
+
+### Workflow Sections
+
+Recipe skills typically follow these sections (order may vary for custom recipes):
+
+1. **Skill Resolution**: `resolve-domain-skills --domain {domain} --profile {profile}`
+2. **Module Listing**: `architecture modules` — present to user for filtering
+3. **Package Discovery**: `architecture module --name {module} --full` — iterate the package source field
+4. **Deliverable Creation**: One per package, no separate analysis step
+5. **Outline Writing**: Write `solution_outline.md`
 
 ### Granularity Convention
 
@@ -59,26 +97,31 @@ Recipes should create one deliverable per package (not per file, not per module)
 - Small enough units to complete reliably
 - Natural grouping for code review
 
+For the full flow with ASCII diagrams, see [phase-3-outline references/recipe-flow.md](../../phase-3-outline/references/recipe-flow.md).
+
 ---
 
 ## Discovery and Resolution Flow
 
 ```
 1. /plan-marshall action=recipe
-2. list-recipes → aggregate from all configured domains
-3. User selects recipe (or provides --recipe key)
-4. resolve-recipe → returns recipe metadata
-5. plan-init-agent creates plan with source=recipe
+2. Present built-in recipe + list-recipes (custom from domains)
+3. User selects recipe
+   - Built-in: user also selects domain + profile
+   - Custom: resolve-recipe returns metadata
+4. plan-init-agent creates plan with source=recipe
+5. Store metadata in status (recipe_key, recipe_skill, recipe_domain, ...)
 6. phase-2-refine: scope selection only, confidence=100
-7. phase-3-outline: loads recipe skill → discovery → analysis → deliverables
-8. phase-4-plan: standard task creation
+7. phase-3-outline Step 2.5: loads recipe skill with input parameters
+8. Recipe skill writes deliverables + solution_outline.md
+9. phase-4-plan: standard task creation (no Q-Gate — recipe output is deterministic)
 ```
 
 ---
 
 ## marshal.json Storage
 
-Recipes are stored under `skill_domains.{domain}.recipes`:
+Custom recipes (from `provides_recipes()`) are stored under `skill_domains.{domain}.recipes`. The built-in recipe is not stored in marshal.json — it is always available.
 
 ```json
 {
@@ -87,12 +130,14 @@ Recipes are stored under `skill_domains.{domain}.recipes`:
       "bundle": "pm-dev-java",
       "recipes": [
         {
-          "key": "refactor-to-standards",
-          "name": "Refactor to Implementation Standards",
-          "description": "Refactor production code to comply with java-core and java-maintenance standards",
-          "skill": "pm-dev-java:recipe-refactor-to-standards",
+          "key": "null-safety-compliance",
+          "name": "Null Safety Compliance",
+          "description": "Add JSpecify annotations across all packages",
+          "skill": "pm-dev-java:recipe-null-safety",
           "default_change_type": "tech_debt",
-          "scope": "codebase_wide"
+          "scope": "codebase_wide",
+          "profile": "implementation",
+          "package_source": "packages"
         }
       ]
     }
@@ -159,3 +204,4 @@ See `plan-marshall:extension-api` standards/recipe-extension.md for the full ext
 - [triage-extension.md](triage-extension.md) — Triage extension contract
 - `plan-marshall:extension-api` — ExtensionBase with `provides_recipes()`
 - `pm-workflow:phase-3-outline` — Recipe detection in Step 2.5
+- `pm-workflow:phase-3-outline` [references/recipe-flow.md](../../phase-3-outline/references/recipe-flow.md) — Visual flow diagrams (built-in vs custom)

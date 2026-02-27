@@ -252,7 +252,7 @@ Skill: {recipe_skill}
 
 The recipe skill handles: discovery, deliverable creation, and solution outline writing.
 
-6. **Skip Steps 3-10**. Jump directly to **Step 10: Q-Gate Verification** to validate the recipe's output.
+6. **Skip Steps 3-10 and Q-Gate**. Jump directly to **Step 11: Write Solution and Return**. Recipe deliverables are deterministic architecture-to-deliverable mappings — Q-Gate checks (request alignment, assessment coverage, missing coverage) validate artifacts that recipes never create. File existence is verified at execution time.
 
 **If `plan_source != recipe` or field not found**: Continue with normal Step 3.
 
@@ -649,6 +649,9 @@ qgate_pending_count: {0 if no findings}
 - `pm-workflow:detect-change-type-agent` (Step 3 - change type detection)
 - `pm-workflow:q-gate-validation-agent` (Q-Gate verification)
 
+**Loads Skills** (Recipe path):
+- `{recipe_skill}` (Step 2.5 - recipe skill with input parameters, built-in or custom)
+
 **Inline Skills** (Complex Track):
 - `pm-workflow:outline-change-type` (Step 8 - skill-based outline for all change types and domains)
 
@@ -659,7 +662,8 @@ qgate_pending_count: {0 if no findings}
 
 ## Related Documents
 
-- [architecture-diagram.md](references/architecture-diagram.md) - Visual architecture overview (for human readers)
+- [architecture-diagram.md](references/architecture-diagram.md) - Change-type routing architecture (normal plans)
+- [recipe-flow.md](references/recipe-flow.md) - Recipe flow architecture (built-in and custom recipes)
 - [change-types.md](../../workflow-architecture/standards/change-types.md) - Change type vocabulary and agent routing
 - [deliverable-contract.md](../../manage-solution-outline/standards/deliverable-contract.md) - Deliverable structure
 - [workflow-architecture](../../workflow-architecture) - Workflow architecture overview
