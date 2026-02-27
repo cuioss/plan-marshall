@@ -8,6 +8,21 @@ user-invokable: false
 
 Implement tasks through goal-based workflow with automatic mode selection and verification.
 
+## Enforcement
+
+**Execution mode**: Auto-detect mode (FULL/PLAN/QUICK) from input, execute workflow, verify build, commit.
+
+**Prohibited actions:**
+- Never push to remote unless `push` parameter is explicitly set
+- Never skip build verification after implementation
+- Do not discard pending workflow state without user confirmation
+
+**Constraints:**
+- Memory cleanup must happen after workflow completion (handoffs category)
+- Build verification iterates up to 3 times on failure before stopping
+- All user interactions use `AskUserQuestion` tool with proper YAML structure
+- Each workflow step that performs a script operation has an explicit bash code block with the full `python3 .plan/execute-script.py` command
+
 ## Parameters
 
 | Parameter | Type | Description |

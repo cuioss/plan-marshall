@@ -8,6 +8,21 @@ user-invokable: false
 
 Orchestrates systematic JavaScript test quality improvement workflow while ensuring NO production code changes except confirmed bugs (with user approval).
 
+## Enforcement
+
+**Execution mode**: Systematic workspace-by-workspace test improvement with continuous verification after each batch.
+
+**Prohibited actions:**
+- Never modify production code unless a confirmed bug is discovered and user explicitly approves
+- Never decrease test coverage — if coverage drops, investigate immediately
+- Never skip pre-maintenance verification (all tests must pass before starting)
+
+**Constraints:**
+- Production bug fixes require separate commits with user approval
+- Workspace-level rollback capability must be maintained throughout
+- All user interactions use `AskUserQuestion` tool with proper YAML structure
+- Track all statistics (improvements_applied/failed/skipped, coverage_baseline/final, bugs_found/fixed) throughout workflow
+
 ## CONTINUOUS IMPROVEMENT RULE
 
 If you discover issues or improvements during execution, record them:

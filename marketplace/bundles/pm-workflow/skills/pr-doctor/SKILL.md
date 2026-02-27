@@ -8,6 +8,21 @@ user-invokable: true
 
 Diagnose and fix pull request issues with parameterized checks.
 
+## Enforcement
+
+**Execution mode**: Diagnose PR issues by category (build, reviews, Sonar), present report, fix with user approval unless auto-fix enabled.
+
+**Prohibited actions:**
+- Never force-push or amend published commits
+- Never suppress Sonar issues without justification and user approval (unless auto-fix=true)
+- Do not resolve review comments without addressing the reviewer's concern
+
+**Constraints:**
+- Fixes require build verification before committing
+- Review comment responses must explain the fix or provide rationale for disagreement
+- All user interactions use `AskUserQuestion` tool with proper YAML structure
+- CI wait timeout (30 minutes) must be respected with user prompt on expiry
+
 ## Parameters
 
 | Parameter | Type | Description |

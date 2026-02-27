@@ -8,6 +8,21 @@ user-invokable: true
 
 Analyzes WebFetch domains across global and project settings, researches domains for security, consolidates permissions, and provides recommendations.
 
+## Enforcement
+
+**Execution mode**: Analyze permissions, research unknown domains, present recommendations, apply with user approval.
+
+**Prohibited actions:**
+- Never auto-remove permissions without explicit user approval
+- Never suggest overly broad permissions (e.g., `Bash(*)`)
+- Do not skip security research for unknown domains
+
+**Constraints:**
+- Always research unknown domains before categorizing them
+- Prefer project-local permissions over global when appropriate
+- All user interactions use `AskUserQuestion` tool with proper YAML structure
+- Track all statistics (domains_analyzed, permissions_added/removed, security_checks, files_read/modified) throughout workflow
+
 ## Parameters
 
 **scope** - Which settings to analyze (global/local/both, default: both)

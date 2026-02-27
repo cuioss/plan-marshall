@@ -8,6 +8,22 @@ user-invokable: true
 
 Unified entry point for plan lifecycle management covering all 6 phases.
 
+## Enforcement
+
+**Execution mode**: Route action to workflow document, then follow workflow instructions step-by-step.
+
+**Prohibited actions:**
+- Never use Claude Code's built-in `EnterPlanMode` or `ExitPlanMode` tools
+- Never access `.plan/` files directly — all access must go through `python3 .plan/execute-script.py` manage-* scripts
+- Never implement tasks directly — this skill creates and manages plans only
+- Do not invent script notations — use only those documented in workflow files
+
+**Constraints:**
+- Each workflow step that invokes a script has an explicit bash code block with the full `python3 .plan/execute-script.py` command
+- User review gates (`plan_without_asking`, `execute_without_asking`) must be respected — never skip when config is false
+- All user interactions use `AskUserQuestion` tool with proper YAML structure
+- Phase transitions use `manage-lifecycle transition` — never set phase status directly
+
 **CRITICAL: DO NOT USE CLAUDE CODE'S BUILT-IN PLAN MODE**
 
 This skill implements its **OWN** plan system. You must:

@@ -8,6 +8,22 @@ user-invokable: false
 
 Systematically implements and maintains logging standards across modules while preserving functionality and tracking progress via plan.md.
 
+## Enforcement
+
+**Execution mode**: Module-by-module logging standards implementation with build verification after each module.
+
+**Prohibited actions:**
+- Never modify non-logging production code without explicit user approval
+- Never alter business logic behavior or change method signatures/APIs
+- Never create standalone LogRecord coverage tests — LogAsserts must be in existing business logic tests
+
+**Constraints:**
+- Non-logging bug discovery triggers immediate stop, documentation, and user approval before proceeding
+- Bug fixes require separate commits
+- Each workflow step that performs a script operation has an explicit bash code block with the full `python3 .plan/execute-script.py` command
+- All user interactions use `AskUserQuestion` tool with proper YAML structure
+- Track all statistics (logger_migrations, logrecord_implementations, tests_updated, bugs_found/fixed) throughout workflow
+
 ## CONTINUOUS IMPROVEMENT RULE
 
 If you discover issues or improvements during execution, record them:
