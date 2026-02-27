@@ -87,7 +87,7 @@ When phase-3-outline detects `plan_source == recipe`, it bypasses the normal cha
 ```
 phase-3-outline
      │
-     ├─ Step 1: Check Q-Gate findings (re-entry)
+     ├─ Step 1: Check Q-Gate findings (re-entry, n/a for recipes)
      │
      ├─ Step 2: Load inputs (request, domains, track, ...)
      │
@@ -156,7 +156,7 @@ phase-3-outline Step 2.5
      │    • change_type, execution_mode=automated, domain
      │    • module, profile, skills (resolved dynamically), files
      │
-     └── Returns to phase-3-outline → Q-Gate verification
+     └── Returns to phase-3-outline → Step 11 (no Q-Gate)
 ```
 
 The three `recipe_*` parameters are guaranteed non-empty for the built-in recipe. Custom recipes receive them if the extension declares `profile` and `package_source` on the recipe dict; otherwise they are empty strings and the custom skill must determine these values itself.
