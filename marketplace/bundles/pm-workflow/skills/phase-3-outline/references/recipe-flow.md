@@ -28,7 +28,7 @@ User request (free-form)                 User selects recipe + parameters
    │ type    │                                   │
    └────┬────┘                              (no Q-Gate — deterministic)
         │                                        │
-   phase-4-plan ◄────── same from here ──► phase-4-plan
+   phase-4-plan ◄────── same from here ──►  phase-4-plan
         │                                        │
    phase-5-execute                          phase-5-execute
         │                                        │
@@ -38,7 +38,7 @@ User request (free-form)                 User selects recipe + parameters
 ## Two Recipe Categories
 
 ```
-                    ┌─────────────────────────┐
+                    ┌────────────────-─────────┐
                     │   Recipe Selection       │
                     │   (recipe.md Step 1)     │
                     └────────────┬─────────────┘
@@ -69,12 +69,12 @@ User request (free-form)                 User selects recipe + parameters
                     │  Store metadata in      │
                     │  status.json            │
                     │                         │
-                    │  plan_source = recipe    │
+                    │  plan_source = recipe   │
                     │  recipe_key             │
                     │  recipe_skill           │
                     │  recipe_domain *        │
                     │  recipe_profile *       │
-                    │  recipe_package_source * │
+                    │  recipe_package_source *│
                     │                         │
                     │  * built-in only        │
                     └─────────────────────────┘
@@ -113,7 +113,7 @@ phase-3-outline
      │       │       │     plan_id                      │
      │       │       │     recipe_domain                │
      │       │       │     recipe_profile               │
-     │       │       │     recipe_package_source         │
+     │       │       │     recipe_package_source        │
      │       │       └──────────────┬───────────────────┘
      │       │                      │
      │       │              skill writes:
@@ -296,11 +296,11 @@ User: /plan-marshall action=recipe
   │                                 │
   │   Recipe skill:                 │
   │   1. resolve-domain-skills      │
-  │      → java-core, java-cdi, ...│
+  │      → java-core, java-cdi, ... │
   │   2. architecture modules       │
-  │      → my-core, my-api, my-web │
+  │      → my-core, my-api, my-web  │
   │   3. Per module: iterate pkgs   │
-  │      → 1 deliverable per pkg   │
+  │      → 1 deliverable per pkg    │
   │   4. Write solution_outline.md  │
   │                                 │
   │   (no Q-Gate — deterministic)   │
