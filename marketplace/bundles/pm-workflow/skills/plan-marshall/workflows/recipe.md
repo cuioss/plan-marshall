@@ -12,7 +12,7 @@ Create a plan from a predefined recipe. Recipes bypass change-type detection and
 
 ### Step 1: List or Resolve Recipe
 
-Present two categories of recipes to the user:
+Present three categories of recipes to the user:
 
 **Built-in recipes** (always available when domains are configured):
 
@@ -24,14 +24,16 @@ Built-in Recipes:
    Requires: configured domains
 ```
 
-**Domain recipes** (custom recipes registered via `provides_recipes()`):
+**Domain recipes** (custom recipes registered via `provides_recipes()`) and **project recipes** (added via `skill-domains add-recipe`):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
   list-recipes
 ```
 
-Present the combined list to the user with numbered selection. If no domain recipes exist, only show the built-in recipe.
+This returns both extension-provided and project-level recipes. Project recipes have `"source": "project"` in their metadata.
+
+Present the combined list to the user with numbered selection. If no domain or project recipes exist, only show the built-in recipe.
 
 **If `recipe` parameter provided** — resolve directly:
 

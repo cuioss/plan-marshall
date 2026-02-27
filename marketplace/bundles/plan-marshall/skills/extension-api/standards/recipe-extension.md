@@ -244,14 +244,42 @@ class Extension(ExtensionBase):
 
 ---
 
-## Built-in vs Custom Recipes
+## Built-in vs Custom vs Project Recipes
 
-| Type | Source | When to use |
-|------|--------|-------------|
-| **Built-in** | pm-workflow `recipe-refactor-to-profile-standards` | Standard refactoring to profile standards (any domain/profile) |
-| **Custom** | Domain `provides_recipes()` | Domain-specific transformations requiring custom discovery/analysis logic |
+| Type | Source | `source` field | When to use |
+|------|--------|----------------|-------------|
+| **Built-in** | pm-workflow `recipe-refactor-to-profile-standards` | — (not stored) | Standard refactoring to profile standards (any domain/profile) |
+| **Custom** | Domain `provides_recipes()` | absent | Domain-specific transformations requiring custom discovery/analysis logic |
+| **Project** | `skill-domains add-recipe` CLI | `"project"` | Project-specific recipes for projects without domain extensions |
 
 The built-in recipe handles: skill resolution, module listing, package iteration, neutral compliance analysis, and deliverable creation — all parameterized by domain and profile.
+
+### Project-Level Recipes
+
+Projects that have project-level skills in `.claude/skills/` but no domain extension can define recipes via the CLI:
+
+```bash
+# Add a project-level recipe
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+  skill-domains add-recipe \
+  --domain java \
+  --key my-project-recipe \
+  --skill project:my-recipe-skill \
+  --name "My Project Recipe" \
+  --description "Project-specific transformation" \
+  --profile implementation \
+  --package-source packages
+
+# Remove a project-level recipe
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+  skill-domains remove-recipe \
+  --domain java \
+  --key my-project-recipe
+```
+
+Project recipes are stored in `marshal.json` under `skill_domains.{domain}.recipes` with `"source": "project"`. They are preserved across `skill-domains configure` runs (extension-provided recipes are regenerated, project recipes are restored).
+
+Only project-level recipes (`source: "project"`) can be removed via `remove-recipe`. Extension-provided recipes are managed by the extension lifecycle.
 
 ---
 

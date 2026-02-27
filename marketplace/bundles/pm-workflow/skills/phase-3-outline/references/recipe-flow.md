@@ -35,49 +35,50 @@ User request (free-form)                 User selects recipe + parameters
    phase-6-finalize                         phase-6-finalize
 ```
 
-## Two Recipe Categories
+## Three Recipe Categories
 
 ```
-                    ┌────────────────-─────────┐
+                    ┌─────────────────────────┐
                     │   Recipe Selection       │
                     │   (recipe.md Step 1)     │
                     └────────────┬─────────────┘
                                  │
-              ┌──────────────────┴──────────────────┐
-              │                                     │
-    ┌─────────▼──────────┐              ┌───────────▼───────────┐
-    │  Built-in Recipe   │              │   Custom Recipes      │
-    │                    │              │                       │
-    │  "Refactor to      │              │  Registered via       │
-    │   Profile          │              │  provides_recipes()   │
-    │   Standards"       │              │  in extension.py      │
-    │                    │              │                       │
-    │  pm-workflow:      │              │  Each has its own     │
-    │  recipe-refactor-  │              │  skill reference      │
-    │  to-profile-       │              │  in marshal.json      │
-    │  standards         │              │                       │
-    └─────────┬──────────┘              └───────────┬───────────┘
-              │                                     │
-    User selects:                          resolve-recipe returns
-    • domain (java, js..)                  skill, change_type, scope
-    • profile (impl/test)                           │
-    • derives package_source                        │
-              │                                     │
-              └──────────────────┬──────────────────┘
-                                 │
-                    ┌────────────▼────────────┐
-                    │  Store metadata in      │
-                    │  status.json            │
-                    │                         │
-                    │  plan_source = recipe   │
-                    │  recipe_key             │
-                    │  recipe_skill           │
-                    │  recipe_domain *        │
-                    │  recipe_profile *       │
-                    │  recipe_package_source *│
-                    │                         │
-                    │  * built-in only        │
-                    └─────────────────────────┘
+         ┌───────────────────────┼───────────────────────┐
+         │                       │                       │
+┌────────▼─────────┐  ┌─────────▼──────────┐  ┌─────────▼──────────┐
+│  Built-in Recipe │  │  Custom Recipes     │  │  Project Recipes   │
+│                  │  │                     │  │                    │
+│  "Refactor to    │  │  Registered via     │  │  Added via         │
+│   Profile        │  │  provides_recipes() │  │  skill-domains     │
+│   Standards"     │  │  in extension.py    │  │  add-recipe CLI    │
+│                  │  │                     │  │                    │
+│  pm-workflow:    │  │  Each has its own   │  │  source: "project" │
+│  recipe-refactor-│  │  skill reference    │  │  in marshal.json   │
+│  to-profile-     │  │  in marshal.json    │  │                    │
+│  standards       │  │                     │  │  For projects w/o  │
+│                  │  │                     │  │  domain extensions  │
+└────────┬─────────┘  └─────────┬──────────┘  └─────────┬──────────┘
+         │                      │                        │
+User selects:          resolve-recipe returns   resolve-recipe returns
+• domain (java, js..)  skill, change_type,      skill, change_type,
+• profile (impl/test)  scope                    scope (source=project)
+• derives pkg_source            │                        │
+         │                      │                        │
+         └──────────────────────┼────────────────────────┘
+                                │
+                   ┌────────────▼────────────┐
+                   │  Store metadata in      │
+                   │  status.json            │
+                   │                         │
+                   │  plan_source = recipe   │
+                   │  recipe_key             │
+                   │  recipe_skill           │
+                   │  recipe_domain *        │
+                   │  recipe_profile *       │
+                   │  recipe_package_source *│
+                   │                         │
+                   │  * built-in only        │
+                   └─────────────────────────┘
 ```
 
 ## Phase-3-Outline: Recipe Detection (Step 2.5)

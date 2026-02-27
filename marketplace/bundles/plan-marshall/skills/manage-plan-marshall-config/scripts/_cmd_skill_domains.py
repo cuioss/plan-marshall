@@ -602,11 +602,17 @@ def cmd_skill_domains(args) -> int:
     elif args.verb == 'configure':
         selected_domains = [d.strip() for d in args.domains.split(',') if d.strip()]
 
-        # Preserve existing project_skills before clearing
+        # Preserve existing project_skills and project recipes before clearing
         existing_project_skills: dict[str, list] = {}
+        existing_project_recipes: dict[str, list] = {}
         for domain_key, domain_config in skill_domains.items():
-            if isinstance(domain_config, dict) and 'project_skills' in domain_config:
-                existing_project_skills[domain_key] = domain_config['project_skills']
+            if isinstance(domain_config, dict):
+                if 'project_skills' in domain_config:
+                    existing_project_skills[domain_key] = domain_config['project_skills']
+                # Preserve project-sourced recipes (extension recipes get regenerated)
+                project_recipes = [r for r in domain_config.get('recipes', []) if r.get('source') == 'project']
+                if project_recipes:
+                    existing_project_recipes[domain_key] = project_recipes
 
         # Clear existing domains and start fresh with only selected ones
         skill_domains = {}
@@ -637,6 +643,13 @@ def cmd_skill_domains(args) -> int:
         for domain_key, ps in existing_project_skills.items():
             if domain_key in skill_domains:
                 skill_domains[domain_key]['project_skills'] = ps
+
+        # Restore project recipes to domains that still exist
+        for domain_key, pr in existing_project_recipes.items():
+            if domain_key in skill_domains:
+                existing = skill_domains[domain_key].get('recipes', [])
+                existing.extend(pr)
+                skill_domains[domain_key]['recipes'] = existing
 
         config['skill_domains'] = skill_domains
 
@@ -707,6 +720,83 @@ def cmd_skill_domains(args) -> int:
             'domain': domain,
             'project_skills': merged,
             'added': len(merged) - len(existing),
+        })
+
+    elif args.verb == 'add-recipe':
+        domain = args.domain
+        if domain not in skill_domains:
+            return error_exit(f'Unknown domain: {domain}')
+
+        # Validate required fields
+        key = args.key
+        skill = args.skill
+        name = args.name or key  # default name from key
+
+        # Validate skill notation (must be project:name or bundle:skill)
+        if not skill.startswith('project:') and ':' not in skill:
+            return error_exit(f'Invalid skill notation: {skill}. Must be project:name or bundle:skill')
+
+        domain_config = skill_domains[domain]
+        existing_recipes = domain_config.get('recipes', [])
+
+        # Check for duplicate key
+        for r in existing_recipes:
+            if r.get('key') == key:
+                return error_exit(f'Recipe key already exists: {key}')
+
+        recipe: dict = {
+            'key': key,
+            'name': name,
+            'description': args.description or '',
+            'skill': skill,
+            'default_change_type': args.change_type or 'tech_debt',
+            'scope': args.scope or 'codebase_wide',
+            'source': 'project',
+        }
+        # Optional fields
+        if args.profile:
+            recipe['profile'] = args.profile
+        if args.package_source:
+            recipe['package_source'] = args.package_source
+
+        existing_recipes.append(recipe)
+        domain_config['recipes'] = existing_recipes
+        config['skill_domains'] = skill_domains
+        save_config(config)
+
+        return success_exit({
+            'domain': domain,
+            'recipe_key': key,
+            'added': True,
+        })
+
+    elif args.verb == 'remove-recipe':
+        domain = args.domain
+        if domain not in skill_domains:
+            return error_exit(f'Unknown domain: {domain}')
+
+        key = args.key
+        domain_config = skill_domains[domain]
+        existing_recipes = domain_config.get('recipes', [])
+
+        # Find recipe
+        found: dict | None = next((r for r in existing_recipes if r.get('key') == key), None)
+        if not found:
+            return error_exit(f'Recipe not found: {key}')
+
+        # Only allow removing project-level recipes
+        if found.get('source') != 'project':
+            return error_exit(f'Cannot remove non-project recipe: {key}. Only project-level recipes can be removed.')
+
+        existing_recipes.remove(found)
+        domain_config['recipes'] = existing_recipes
+        config['skill_domains'] = skill_domains
+        save_config(config)
+
+        return success_exit({
+            'domain': domain,
+            'recipe_key': key,
+            'removed': True,
         })
 
     return EXIT_ERROR

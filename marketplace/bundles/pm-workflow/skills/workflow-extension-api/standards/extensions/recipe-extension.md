@@ -165,14 +165,17 @@ Recipe plans store these metadata fields in status:
 
 ---
 
-## Built-in vs Custom Recipes
+## Built-in vs Custom vs Project Recipes
 
-| Type | Source | When to use |
-|------|--------|-------------|
-| **Built-in** | pm-workflow `recipe-refactor-to-profile-standards` | Standard refactoring to profile standards (any domain/profile) |
-| **Custom** | Domain `provides_recipes()` | Domain-specific transformations requiring custom discovery/analysis logic |
+| Type | Source | `source` field | When to use |
+|------|--------|----------------|-------------|
+| **Built-in** | pm-workflow `recipe-refactor-to-profile-standards` | — (not stored) | Standard refactoring to profile standards (any domain/profile) |
+| **Custom** | Domain `provides_recipes()` | absent | Domain-specific transformations requiring custom discovery/analysis logic |
+| **Project** | `skill-domains add-recipe` CLI | `"project"` | Project-specific recipes for projects without domain extensions |
 
 The built-in recipe is always available when domains are configured. It handles skill resolution, module listing, package iteration, neutral compliance analysis, and deliverable creation — all parameterized by domain and profile selected at invocation time.
+
+Project-level recipes enable projects that have `.claude/skills/` but no domain extension to define recipes via CLI commands (`add-recipe` / `remove-recipe`). They are stored with `"source": "project"` and preserved across `skill-domains configure` runs.
 
 ## Extension API
 
