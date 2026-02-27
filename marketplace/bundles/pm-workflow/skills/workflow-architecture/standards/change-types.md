@@ -239,6 +239,21 @@ reasoning: "Request describes improving existing plugin functionality"
 
 ---
 
+## What's NOT a Change-Type
+
+### Recipes
+
+Recipes are a **plan source**, not a change-type.
+
+- A recipe provides its own `default_change_type` for deliverables
+- Change_type is not detected via LLM — it comes from the recipe definition
+- Example: "refactor-to-standards" recipe uses change_type=tech_debt
+- Example: "refactor-to-test-standards" recipe uses change_type=tech_debt
+
+See `pm-workflow:workflow-extension-api` standards/extensions/recipe-extension.md for the recipe contract.
+
+---
+
 ## Related
 
 - [task-executor-routing.md](task-executor-routing.md) - Profile-based executor routing

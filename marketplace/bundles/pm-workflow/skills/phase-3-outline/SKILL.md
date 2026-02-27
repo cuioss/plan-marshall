@@ -174,6 +174,90 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 ---
 
+## Step 2.5: Recipe Detection
+
+**Purpose**: Recipe-sourced plans skip change-type detection and use the recipe skill directly for discovery, analysis, and deliverable creation.
+
+### Check for Recipe Source
+
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-status:manage_status metadata \
+  --plan-id {plan_id} \
+  --get \
+  --field plan_source
+```
+
+**If `plan_source == recipe`**:
+
+1. Read recipe metadata:
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-status:manage_status metadata \
+  --plan-id {plan_id} \
+  --get \
+  --field recipe_key
+
+python3 .plan/execute-script.py pm-workflow:manage-status:manage_status metadata \
+  --plan-id {plan_id} \
+  --get \
+  --field recipe_skill
+
+python3 .plan/execute-script.py pm-workflow:manage-status:manage_status metadata \
+  --plan-id {plan_id} \
+  --get \
+  --field recipe_domain
+
+python3 .plan/execute-script.py pm-workflow:manage-status:manage_status metadata \
+  --plan-id {plan_id} \
+  --get \
+  --field recipe_profile
+
+python3 .plan/execute-script.py pm-workflow:manage-status:manage_status metadata \
+  --plan-id {plan_id} \
+  --get \
+  --field recipe_package_source
+```
+
+Note: `recipe_domain`, `recipe_profile`, `recipe_package_source` are set for the built-in recipe only. Custom recipes may leave them empty.
+
+2. Resolve recipe to get `default_change_type`:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+  resolve-recipe --recipe {recipe_key}
+```
+
+3. Set `change_type` from recipe's `default_change_type` (skip detect-change-type-agent):
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-status:manage_status metadata \
+  --plan-id {plan_id} \
+  --set \
+  --field change_type \
+  --value {default_change_type}
+```
+
+4. Log decision:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  decision --plan-id {plan_id} --level INFO --message "(pm-workflow:phase-3-outline) Recipe plan — using recipe skill {recipe_skill} with change_type={default_change_type}"
+```
+
+5. Load the recipe skill directly:
+```
+Skill: {recipe_skill}
+  Input:
+    plan_id: {plan_id}
+    recipe_domain: {recipe_domain from metadata, or empty}
+    recipe_profile: {recipe_profile from metadata, or empty}
+    recipe_package_source: {recipe_package_source from metadata, or empty}
+```
+
+The recipe skill handles: discovery, deliverable creation, and solution outline writing.
+
+6. **Skip Steps 3-10 and Q-Gate**. Jump directly to **Step 11: Write Solution and Return**. Recipe deliverables are deterministic architecture-to-deliverable mappings — Q-Gate checks (request alignment, assessment coverage, missing coverage) validate artifacts that recipes never create. File existence is verified at execution time.
+
+**If `plan_source != recipe` or field not found**: Continue with normal Step 3.
+
+---
+
 ## Step 3: Detect Change Type
 
 **Purpose**: Determine the change type for agent routing.
@@ -565,6 +649,9 @@ qgate_pending_count: {0 if no findings}
 - `pm-workflow:detect-change-type-agent` (Step 3 - change type detection)
 - `pm-workflow:q-gate-validation-agent` (Q-Gate verification)
 
+**Loads Skills** (Recipe path):
+- `{recipe_skill}` (Step 2.5 - recipe skill with input parameters, built-in or custom)
+
 **Inline Skills** (Complex Track):
 - `pm-workflow:outline-change-type` (Step 8 - skill-based outline for all change types and domains)
 
@@ -575,7 +662,8 @@ qgate_pending_count: {0 if no findings}
 
 ## Related Documents
 
-- [architecture-diagram.md](references/architecture-diagram.md) - Visual architecture overview (for human readers)
+- [architecture-diagram.md](references/architecture-diagram.md) - Change-type routing architecture (normal plans)
+- [recipe-flow.md](references/recipe-flow.md) - Recipe flow architecture (built-in and custom recipes)
 - [change-types.md](../../workflow-architecture/standards/change-types.md) - Change type vocabulary and agent routing
 - [deliverable-contract.md](../../manage-solution-outline/standards/deliverable-contract.md) - Deliverable structure
 - [workflow-architecture](../../workflow-architecture) - Workflow architecture overview

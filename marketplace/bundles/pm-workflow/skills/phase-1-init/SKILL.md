@@ -27,6 +27,7 @@ Activate when:
 - `description`: Free-form task description
 - `lesson_id`: Lesson identifier to implement (e.g., `2025-12-02-001`)
 - `issue`: GitHub issue URL or identifier
+- `recipe`: Recipe key for predefined transformation (e.g., `refactor-to-standards`)
 
 **Optional**:
 - `plan_id`: Override auto-generated plan_id
@@ -34,7 +35,7 @@ Activate when:
 
 ### Step 1: Validate Input
 
-Ensure exactly one input source is provided (description, lesson_id, or issue). If multiple or none provided, return error: "Provide exactly one of: description, lesson_id, issue"
+Ensure exactly one input source is provided (description, lesson_id, issue, or recipe). If multiple or none provided, return error: "Provide exactly one of: description, lesson_id, issue, recipe"
 
 ### Step 2: Derive Plan ID
 
@@ -42,6 +43,7 @@ If `plan_id` not provided, derive from input:
 - From description: first 3-5 meaningful words
 - From lesson: lesson_id slug (e.g., `2025-12-02-001` → `lesson-2025-12-02-001`)
 - From issue: issue number (e.g., `#123` → `issue-123`)
+- From recipe: `recipe-{recipe_key}` (e.g., `recipe-refactor-to-standards`)
 - Always: kebab-case, max 50 chars
 
 ### Step 3: Create or Reference Plan
@@ -113,6 +115,16 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github issue 
 
 Parse TOON output to extract: title, body, labels, milestone, assignees
 
+**From Recipe**:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+  resolve-recipe --recipe {recipe_key}
+```
+
+Parse TOON output to extract: recipe_name, recipe_skill, default_change_type, scope, domain.
+Use recipe_name as title, recipe description as body.
+
 ### Step 5: Write request.md
 
 Create the request document via manage-plan-documents:
@@ -122,7 +134,7 @@ python3 .plan/execute-script.py pm-workflow:manage-plan-documents:manage-plan-do
   request create \
   --plan-id {plan_id} \
   --title "{derived_title}" \
-  --source {description|lesson|issue} \
+  --source {description|lesson|issue|recipe} \
   --body "{verbatim_content}" \
   [--source-id "{lesson_id|issue_url}"] \
   [--context "{extracted_context}"]
@@ -130,11 +142,12 @@ python3 .plan/execute-script.py pm-workflow:manage-plan-documents:manage-plan-do
 
 **Parameters:**
 - `--title`: Derived title from input
-- `--source`: One of `description`, `lesson`, or `issue`
+- `--source`: One of `description`, `lesson`, `issue`, or `recipe`
 - `--body`: The verbatim original input content
 - `--source-id`: (only for traceable sources) External reference identifier:
   - For `lesson`: The lesson ID (e.g., `2025-12-02-001`)
   - For `issue`: The issue URL
+  - For `recipe`: The recipe key (e.g., `refactor-to-standards`)
   - For `description`: Omit (no external reference)
 - `--context`: (optional) Extracted context from lesson or issue metadata
 

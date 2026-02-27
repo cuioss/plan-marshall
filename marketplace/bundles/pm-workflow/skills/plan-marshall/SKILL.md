@@ -26,10 +26,11 @@ This skill implements its **OWN** plan system. You must:
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `action` | optional | Explicit action: `list`, `init`, `outline`, `execute`, `finalize`, `cleanup`, `lessons` (default: list) |
+| `action` | optional | Explicit action: `list`, `init`, `outline`, `execute`, `finalize`, `cleanup`, `lessons`, `recipe` (default: list) |
 | `task` | optional | Task description for creating new plan |
 | `issue` | optional | GitHub issue URL for creating new plan |
 | `lesson` | optional | Lesson ID to convert to plan |
+| `recipe` | optional | Recipe key for creating plan from predefined recipe |
 | `plan` | optional | Plan name for specific operations (e.g., `jwt-auth`, not path) |
 | `stop-after-init` | optional | If true, stop after 1-init phase without continuing to 2-refine (default: false) |
 
@@ -50,6 +51,7 @@ Route based on action parameter. Load the appropriate workflow document and foll
 | `lessons` | `Read workflows/planning.md` | List and convert lessons |
 | `execute` | `Read workflows/execution.md` | Execute implementation tasks + verification |
 | `finalize` | `Read workflows/execution.md` | Commit, push, PR |
+| `recipe` | `Read workflows/recipe.md` | Create plan from predefined recipe |
 
 ### Auto-Detection (plan parameter without action)
 
@@ -109,6 +111,12 @@ After determining the action and workflow document:
 
 # List lessons and convert to plan
 /plan-marshall action=lessons
+
+# Create plan from predefined recipe (lists available recipes for selection)
+/plan-marshall action=recipe
+
+# Create plan from specific recipe
+/plan-marshall action=recipe recipe="refactor-to-standards"
 ```
 
 ## Continuous Improvement

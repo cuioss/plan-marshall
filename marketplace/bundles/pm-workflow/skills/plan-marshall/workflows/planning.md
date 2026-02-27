@@ -14,18 +14,26 @@ Workflows for plan creation and setup phases: init, refine, outline, and plan.
 | `outline` | Run 3-outline and 4-plan phases |
 | `cleanup` | Remove completed plans |
 | `lessons` | List and convert lessons to plans |
+| `recipe` | Create plan from recipe (routes to `workflows/recipe.md`) |
 
 ---
 
 ## Action: list (default)
 
-Display all plans with numbered selection.
+Display all plans with numbered selection, recipe option, and conditional lessons.
 
+**Step 1**: Get existing plans:
 ```bash
 python3 .plan/execute-script.py pm-workflow:manage-lifecycle:manage-lifecycle list
 ```
 
-Shows:
+**Step 2**: Check if lessons exist:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons list
+```
+Parse `total` from output. If `total > 0`, lessons are available.
+
+**Step 3**: Present combined menu:
 ```
 Available Plans:
 
@@ -33,9 +41,20 @@ Available Plans:
 2. user-profile-api [3-outline] - Requirements analysis
 
 0. Create new plan
+r. Create plan from recipe
+l. List lessons                    ← only if lessons total > 0
 
-Select plan (number) or action (c/n/q):
+Select plan (number) or action:
 ```
+
+- Always show `0. Create new plan` and `r. Create plan from recipe`
+- Only show `l. List lessons` when Step 2 returned `total > 0`
+
+**Step 4**: Handle selection:
+- **Number (1-N)**: Select plan, auto-detect action from phase
+- **0**: Route to `Action: init`
+- **r**: Route to `Action: recipe` (load `workflows/recipe.md`)
+- **l**: Route to `Action: lessons`
 
 ---
 

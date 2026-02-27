@@ -23,8 +23,10 @@ from _cmd_init import cmd_init
 from _cmd_skill_domains import (
     cmd_configure_task_executors,
     cmd_get_skills_by_profile,
+    cmd_list_recipes,
     cmd_resolve_domain_skills,
     cmd_resolve_outline_skill,
+    cmd_resolve_recipe,
     cmd_resolve_task_executor,
     cmd_resolve_workflow_skill_extension,
     cmd_skill_domains,
@@ -146,6 +148,21 @@ def main():
     sd_attach.add_argument('--domain', required=True, help='Domain to attach skills to')
     sd_attach.add_argument('--skills', required=True, help='Comma-separated project:skill notations')
 
+    sd_add_recipe = sd_sub.add_parser('add-recipe', help='Add a project-level recipe to a domain')
+    sd_add_recipe.add_argument('--domain', required=True, help='Domain to add recipe to')
+    sd_add_recipe.add_argument('--key', required=True, help='Unique recipe key')
+    sd_add_recipe.add_argument('--skill', required=True, help='Skill reference (project:name or bundle:skill)')
+    sd_add_recipe.add_argument('--name', help='Human-readable name (defaults to key)')
+    sd_add_recipe.add_argument('--description', help='Recipe description')
+    sd_add_recipe.add_argument('--change-type', help='Default change type (default: tech_debt)')
+    sd_add_recipe.add_argument('--scope', help='Scope hint (default: codebase_wide)')
+    sd_add_recipe.add_argument('--profile', help='Optional execution profile')
+    sd_add_recipe.add_argument('--package-source', help='Optional package source field name')
+
+    sd_rm_recipe = sd_sub.add_parser('remove-recipe', help='Remove a project-level recipe from a domain')
+    sd_rm_recipe.add_argument('--domain', required=True, help='Domain to remove recipe from')
+    sd_rm_recipe.add_argument('--key', required=True, help='Recipe key to remove')
+
     # --- system ---
     p_sys = subparsers.add_parser('system', help='Manage system settings')
     sys_sub = p_sys.add_subparsers(dest='sub_noun', required=True, help='Sub-noun')
@@ -244,6 +261,13 @@ def main():
     p_rte = subparsers.add_parser('resolve-task-executor', help='Resolve task executor skill for a profile')
     p_rte.add_argument('--profile', required=True, help='Profile name (e.g., implementation, module_testing)')
 
+    # --- list-recipes ---
+    subparsers.add_parser('list-recipes', help='List all available recipes from configured domains')
+
+    # --- resolve-recipe ---
+    p_rr = subparsers.add_parser('resolve-recipe', help='Resolve a specific recipe by key')
+    p_rr.add_argument('--recipe', required=True, help='Recipe key (e.g., refactor-to-standards)')
+
     # --- resolve-outline-skill ---
     p_ros = subparsers.add_parser(
         'resolve-outline-skill', help='Resolve outline skill for domain'
@@ -294,6 +318,10 @@ def main():
         return cmd_configure_task_executors(args)
     elif args.noun == 'resolve-task-executor':
         return cmd_resolve_task_executor(args)
+    elif args.noun == 'list-recipes':
+        return cmd_list_recipes(args)
+    elif args.noun == 'resolve-recipe':
+        return cmd_resolve_recipe(args)
     elif args.noun == 'resolve-outline-skill':
         return cmd_resolve_outline_skill(args)
     else:

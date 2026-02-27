@@ -173,6 +173,18 @@ def test_extension_base_default_outline_skill():
     assert ext.provides_outline_skill() is None
 
 
+def test_extension_base_default_verify_steps():
+    """Default provides_verify_steps returns empty list."""
+    ext = ConcreteExtension()
+    assert ext.provides_verify_steps() == []
+
+
+def test_extension_base_default_recipes():
+    """Default provides_recipes returns empty list."""
+    ext = ConcreteExtension()
+    assert ext.provides_recipes() == []
+
+
 if __name__ == '__main__':
     import traceback
 
@@ -190,6 +202,8 @@ if __name__ == '__main__':
         test_extension_base_default_discover_modules,
         test_extension_base_default_triage,
         test_extension_base_default_outline_skill,
+        test_extension_base_default_verify_steps,
+        test_extension_base_default_recipes,
     ]
 
     passed = 0
