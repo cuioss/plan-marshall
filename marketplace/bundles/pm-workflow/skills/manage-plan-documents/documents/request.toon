@@ -5,7 +5,7 @@ template: templates/request.md
 
 fields[7]{name,type,required,default}:
 title,string,true,
-source,enum(description|lesson|issue),true,
+source,enum(description|lesson|issue|recipe),true,
 source_id,string,false,
 body,text,true,
 context,text,false,

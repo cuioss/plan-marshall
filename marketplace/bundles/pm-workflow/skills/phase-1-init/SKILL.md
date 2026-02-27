@@ -198,14 +198,14 @@ git checkout -b feature/{plan_id}
 ```
 2. Update references.json with the new branch:
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-references:manage-references update \
+python3 .plan/execute-script.py pm-workflow:manage-references:manage-references set \
   --plan-id {plan_id} \
   --field branch \
   --value feature/{plan_id}
 ```
 3. Store the original branch as base_branch:
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-references:manage-references update \
+python3 .plan/execute-script.py pm-workflow:manage-references:manage-references set \
   --plan-id {plan_id} \
   --field base_branch \
   --value {branch_name}

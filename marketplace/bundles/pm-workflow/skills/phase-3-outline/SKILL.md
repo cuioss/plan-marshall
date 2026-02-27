@@ -201,6 +201,12 @@ python3 .plan/execute-script.py pm-workflow:manage-status:manage_status metadata
   --get \
   --field recipe_skill
 
+```
+
+**Built-in recipe only** (`recipe_key == "refactor-to-profile-standards"`): Read additional fields. Skip these for custom recipes — they are not set and will return `field_not_found` errors.
+
+```bash
+# Only read these if recipe_key == "refactor-to-profile-standards"
 python3 .plan/execute-script.py pm-workflow:manage-status:manage_status metadata \
   --plan-id {plan_id} \
   --get \
@@ -216,8 +222,6 @@ python3 .plan/execute-script.py pm-workflow:manage-status:manage_status metadata
   --get \
   --field recipe_package_source
 ```
-
-Note: `recipe_domain`, `recipe_profile`, `recipe_package_source` are set for the built-in recipe only. Custom recipes may leave them empty.
 
 2. Resolve recipe to get `default_change_type`:
 ```bash
