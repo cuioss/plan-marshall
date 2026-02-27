@@ -368,6 +368,10 @@ class ExtensionBase(ABC):
         discovery, analysis, and deliverable patterns. Unlike ad-hoc plans, recipes
         already know WHAT to do and HOW — they only discover WHERE to apply.
 
+        Note: The built-in "Refactor to Profile Standards" recipe in pm-workflow
+        handles the common case of refactoring code to profile standards. Only
+        return custom recipes here for domain-specific logic.
+
         Returns:
             List of recipe dicts, each containing:
             - key: str           # Unique identifier (e.g., 'null-safety-compliance')
@@ -376,6 +380,8 @@ class ExtensionBase(ABC):
             - skill: str         # Skill reference (e.g., 'pm-dev-java:recipe-null-safety')
             - default_change_type: str  # Default change_type for deliverables
             - scope: str         # 'single_module' | 'multi_module' | 'codebase_wide'
+            - profile: str       # (Optional) Execution profile (e.g., 'implementation')
+            - package_source: str  # (Optional) Package source field ('packages' or 'test_packages')
 
         Default implementation returns empty list (no recipes).
         """

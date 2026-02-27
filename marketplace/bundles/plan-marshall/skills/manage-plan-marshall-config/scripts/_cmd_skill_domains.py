@@ -1025,6 +1025,8 @@ def cmd_resolve_recipe(args) -> int:
                     'default_change_type': recipe.get('default_change_type', ''),
                     'scope': recipe.get('scope', ''),
                     'domain': domain_key,
+                    'profile': recipe.get('profile', ''),
+                    'package_source': recipe.get('package_source', ''),
                 })
 
     return error_exit(f"Recipe not found: {recipe_key}")

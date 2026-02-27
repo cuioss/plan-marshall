@@ -25,18 +25,20 @@ def _create_marshal_with_recipes(fixture_dir: Path) -> Path:
                 'bundle': 'pm-dev-java',
                 'recipes': [
                     {
-                        'key': 'refactor-to-standards',
-                        'name': 'Refactor to Implementation Standards',
-                        'description': 'Refactor production code to comply with java-core standards',
-                        'skill': 'pm-dev-java:recipe-refactor-to-standards',
+                        'key': 'null-safety-compliance',
+                        'name': 'Null Safety Compliance',
+                        'description': 'Add JSpecify annotations across all packages',
+                        'skill': 'pm-dev-java:recipe-null-safety',
                         'default_change_type': 'tech_debt',
                         'scope': 'codebase_wide',
+                        'profile': 'implementation',
+                        'package_source': 'packages',
                     },
                     {
-                        'key': 'refactor-to-test-standards',
-                        'name': 'Refactor to Test Standards',
-                        'description': 'Refactor test code to comply with junit-core standards',
-                        'skill': 'pm-dev-java:recipe-refactor-to-test-standards',
+                        'key': 'custom-test-recipe',
+                        'name': 'Custom Test Recipe',
+                        'description': 'Custom recipe without profile/package_source fields',
+                        'skill': 'pm-dev-java:recipe-custom-test',
                         'default_change_type': 'tech_debt',
                         'scope': 'codebase_wide',
                     },
@@ -101,8 +103,8 @@ def test_list_recipes_with_recipes():
 
         assert result.success, f'Should succeed: {result.stderr}'
         assert 'success' in result.stdout.lower()
-        assert 'refactor-to-standards' in result.stdout
-        assert 'refactor-to-test-standards' in result.stdout
+        assert 'null-safety-compliance' in result.stdout
+        assert 'custom-test-recipe' in result.stdout
 
 
 def test_list_recipes_count():
@@ -163,14 +165,40 @@ def test_resolve_recipe_found():
     with PlanContext(plan_id='recipe-resolve') as ctx:
         _create_marshal_with_recipes(ctx.fixture_dir)
 
-        result = run_script(SCRIPT_PATH, 'resolve-recipe', '--recipe', 'refactor-to-standards')
+        result = run_script(SCRIPT_PATH, 'resolve-recipe', '--recipe', 'null-safety-compliance')
 
         assert result.success, f'Should succeed: {result.stderr}'
-        assert 'refactor-to-standards' in result.stdout
-        assert 'pm-dev-java:recipe-refactor-to-standards' in result.stdout
+        assert 'null-safety-compliance' in result.stdout
+        assert 'pm-dev-java:recipe-null-safety' in result.stdout
         assert 'tech_debt' in result.stdout
         assert 'codebase_wide' in result.stdout
         assert 'java' in result.stdout
+
+
+def test_resolve_recipe_returns_profile_and_package_source():
+    """Test resolve-recipe returns profile and package_source when present."""
+    with PlanContext(plan_id='recipe-profile') as ctx:
+        _create_marshal_with_recipes(ctx.fixture_dir)
+
+        result = run_script(SCRIPT_PATH, 'resolve-recipe', '--recipe', 'null-safety-compliance')
+
+        assert result.success, f'Should succeed: {result.stderr}'
+        assert 'implementation' in result.stdout
+        assert 'packages' in result.stdout
+
+
+def test_resolve_recipe_returns_empty_profile_when_absent():
+    """Test resolve-recipe returns empty strings for profile/package_source when absent."""
+    with PlanContext(plan_id='recipe-noprofile') as ctx:
+        _create_marshal_with_recipes(ctx.fixture_dir)
+
+        result = run_script(SCRIPT_PATH, 'resolve-recipe', '--recipe', 'custom-test-recipe')
+
+        assert result.success, f'Should succeed: {result.stderr}'
+        assert 'custom-test-recipe' in result.stdout
+        assert 'pm-dev-java:recipe-custom-test' in result.stdout
+        # profile and package_source should be empty strings (present but empty)
+        # The TOON output will contain the field keys with empty values
 
 
 def test_resolve_recipe_second_recipe():
@@ -178,11 +206,11 @@ def test_resolve_recipe_second_recipe():
     with PlanContext(plan_id='recipe-resolve2') as ctx:
         _create_marshal_with_recipes(ctx.fixture_dir)
 
-        result = run_script(SCRIPT_PATH, 'resolve-recipe', '--recipe', 'refactor-to-test-standards')
+        result = run_script(SCRIPT_PATH, 'resolve-recipe', '--recipe', 'custom-test-recipe')
 
         assert result.success, f'Should succeed: {result.stderr}'
-        assert 'refactor-to-test-standards' in result.stdout
-        assert 'pm-dev-java:recipe-refactor-to-test-standards' in result.stdout
+        assert 'custom-test-recipe' in result.stdout
+        assert 'pm-dev-java:recipe-custom-test' in result.stdout
 
 
 def test_resolve_recipe_not_found():

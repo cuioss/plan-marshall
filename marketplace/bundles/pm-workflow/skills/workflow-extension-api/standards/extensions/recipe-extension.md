@@ -22,7 +22,7 @@ Use cases:
 |-------|-------------|-------------|
 | 1-init | Creates plan from task/issue/lesson | Creates plan with `source=recipe`, stores recipe metadata |
 | 2-refine | Full quality analysis, iterative clarification | Scope selection only, auto-confidence=100 |
-| 3-outline | Detect change_type → route by track → create deliverables | Load recipe skill directly → recipe handles discovery+analysis+deliverables |
+| 3-outline | Detect change_type → route by track → create deliverables | Built-in: inline generic recipe workflow. Custom: load recipe skill → recipe handles discovery+analysis+deliverables |
 | 4-plan | Standard | Standard (no changes) |
 | 5-execute | Standard | Standard (no changes) |
 | 6-finalize | Standard | Standard (no changes) |
@@ -39,11 +39,9 @@ Each recipe references a skill (via `recipe.skill`) that handles the outline pha
 
 2. **Module Listing**: Query available modules via `architecture modules` command. Let user confirm/filter modules.
 
-3. **Package Discovery**: For each selected module, query full module details via `architecture module --name {module} --full`. Use `key_packages` from the architecture data to build package inventory. Derive source paths from package names.
+3. **Package Discovery**: For each selected module, query full module details via `architecture module --name {module} --full`. Use packages from the architecture data to build package inventory.
 
-4. **Analysis**: For each scope unit (package), run read-only analysis agent to assess current compliance. Record findings.
-
-5. **Deliverable Creation**: Create one deliverable per scope unit with compliance gaps. Each deliverable must include:
+4. **Deliverable Creation**: Create one deliverable per package. No separate analysis step — the task executor loads the profile skills and handles both analysis and fixing in a single pass. Each deliverable must include:
    - `change_type`: From recipe's `default_change_type`
    - `execution_mode`: `automated`
    - `domain`: From the recipe's domain key
@@ -52,7 +50,7 @@ Each recipe references a skill (via `recipe.skill`) that handles the outline pha
    - `skills`: Resolved from configured profile (not hardcoded)
    - Affected files list
 
-6. **Outline Writing**: Write `solution_outline.md` with all deliverables, grouped by module.
+5. **Outline Writing**: Write `solution_outline.md` with all deliverables, grouped by module.
 
 ### Granularity Convention
 
@@ -113,26 +111,40 @@ Recipe plans store these metadata fields in status:
 | `plan_source` | `recipe` | recipe workflow (Step 3) |
 | `recipe_key` | Recipe key string | recipe workflow (Step 3) |
 | `recipe_skill` | Skill reference | recipe workflow (Step 3) |
+| `recipe_domain` | Domain key (e.g., `java`) | recipe workflow (Step 3) — built-in recipe only |
+| `recipe_profile` | Profile name (e.g., `implementation`) | recipe workflow (Step 3) — built-in recipe only |
+| `recipe_package_source` | `packages` or `test_packages` | recipe workflow (Step 3) — built-in recipe only |
 | `track` | `complex` | phase-2-refine (Step 1.6) |
 | `confidence` | `100` | phase-2-refine (Step 1.6) |
 | `change_type` | From `default_change_type` | phase-3-outline (Step 2.5) |
 
 ---
 
+## Built-in vs Custom Recipes
+
+| Type | Source | When to use |
+|------|--------|-------------|
+| **Built-in** | pm-workflow `recipe-refactor-to-profile-standards` | Standard refactoring to profile standards (any domain/profile) |
+| **Custom** | Domain `provides_recipes()` | Domain-specific transformations requiring custom discovery/analysis logic |
+
+The built-in recipe is always available when domains are configured. It handles skill resolution, module listing, package iteration, neutral compliance analysis, and deliverable creation — all parameterized by domain and profile selected at invocation time.
+
 ## Extension API
 
-Recipes are declared via `provides_recipes()` in `extension.py`:
+Custom recipes are declared via `provides_recipes()` in `extension.py`. Only use this for recipes that need domain-specific logic beyond what the built-in recipe provides:
 
 ```python
 def provides_recipes(self) -> list[dict]:
     return [
         {
-            'key': 'refactor-to-standards',
-            'name': 'Refactor to Implementation Standards',
-            'description': 'Refactor production code to comply with standards',
-            'skill': 'pm-dev-java:recipe-refactor-to-standards',
+            'key': 'null-safety-compliance',
+            'name': 'Null Safety Compliance',
+            'description': 'Add JSpecify annotations across all packages',
+            'skill': 'pm-dev-java:recipe-null-safety',
             'default_change_type': 'tech_debt',
             'scope': 'codebase_wide',
+            'profile': 'implementation',
+            'package_source': 'packages',
         },
     ]
 ```

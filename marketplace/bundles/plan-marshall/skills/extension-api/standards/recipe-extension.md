@@ -68,6 +68,10 @@ Each dict in the returned list must contain:
 | `skill` | str | Skill reference (`bundle:skill`) loaded during phase-3-outline |
 | `default_change_type` | str | Change type for deliverables (e.g., `tech_debt`, `feature`) |
 | `scope` | str | Scope hint: `single_module`, `multi_module`, or `codebase_wide` |
+| `profile` | str | (Optional) Execution profile (e.g., `implementation`, `module_testing`). Used by custom recipes that need profile-specific behavior |
+| `package_source` | str | (Optional) Package source field name (`packages` or `test_packages`). Used by custom recipes that iterate architecture packages |
+
+**Note**: The built-in "Refactor to Profile Standards" recipe is provided by pm-workflow. Domains only need `provides_recipes()` for truly custom recipes that require domain-specific logic beyond profile-based refactoring.
 
 ---
 
@@ -136,7 +140,11 @@ recipe_skill	pm-dev-java:recipe-refactor-to-standards
 default_change_type	tech_debt
 scope	codebase_wide
 domain	java
+profile	implementation
+package_source	packages
 ```
+
+Fields `profile` and `package_source` are empty strings when not set on the recipe.
 
 ---
 
@@ -148,10 +156,9 @@ Each recipe references a skill that handles discovery, analysis, and deliverable
 
 1. **Skill Resolution**: Resolve skills dynamically from the configured profile (see below)
 2. **Module Listing**: Query available modules via `architecture modules` command
-3. **Package Discovery**: For each module, query `architecture module --name {module} --full` and use `key_packages` from the architecture data
-4. **Analysis**: Assess current compliance level per package (read-only agents)
-5. **Deliverable Creation**: Create one deliverable per scope unit (package, module)
-6. **Outline Writing**: Write solution_outline.md with all deliverables
+3. **Package Discovery**: For each module, query `architecture module --name {module} --full` and use packages from the architecture data
+4. **Deliverable Creation**: Create one deliverable per scope unit (package). No separate analysis step — the task executor loads profile skills and handles analysis+fixing in one pass
+5. **Outline Writing**: Write solution_outline.md with all deliverables
 
 ### Skill Resolution (Critical)
 
@@ -194,36 +201,49 @@ Each deliverable created by a recipe must include:
 
 ## Implementation Pattern
 
+The built-in "Refactor to Profile Standards" recipe in pm-workflow handles the common case of refactoring code to comply with profile standards. Domains only need custom recipes for domain-specific logic:
+
 ```python
 from extension_base import ExtensionBase
 
 
 class Extension(ExtensionBase):
-    """Domain extension with recipes."""
+    """Domain extension with custom recipes."""
 
     def provides_recipes(self) -> list[dict]:
         """Return domain-specific recipe definitions."""
         return [
             {
-                'key': 'refactor-to-standards',
-                'name': 'Refactor to Implementation Standards',
-                'description': 'Refactor production code to comply with standards, package by package',
-                'skill': 'pm-dev-java:recipe-refactor-to-standards',
+                'key': 'null-safety-compliance',
+                'name': 'Null Safety Compliance',
+                'description': 'Add JSpecify annotations across all packages',
+                'skill': 'pm-dev-java:recipe-null-safety',
                 'default_change_type': 'tech_debt',
                 'scope': 'codebase_wide',
+                'profile': 'implementation',
+                'package_source': 'packages',
             },
         ]
 ```
 
 ---
 
+## Built-in vs Custom Recipes
+
+| Type | Source | When to use |
+|------|--------|-------------|
+| **Built-in** | pm-workflow `recipe-refactor-to-profile-standards` | Standard refactoring to profile standards (any domain/profile) |
+| **Custom** | Domain `provides_recipes()` | Domain-specific transformations requiring custom discovery/analysis logic |
+
+The built-in recipe handles: skill resolution, module listing, package iteration, neutral compliance analysis, and deliverable creation — all parameterized by domain and profile.
+
+---
+
 ## Existing Implementations
 
-| Bundle | Domain | Recipes | Details |
-|--------|--------|---------|---------|
-| pm-dev-java | java | 2 | `refactor-to-standards` (implementation), `refactor-to-test-standards` (module_testing) |
+All standard refactoring recipes are handled by the built-in pm-workflow recipe. No domain bundles currently register custom recipes.
 
-Bundles without recipes (returns `[]`): pm-dev-frontend, pm-dev-java-cui, pm-documents, pm-plugin-development, pm-requirements.
+Bundles returning `[]`: pm-dev-java, pm-dev-frontend, pm-dev-java-cui, pm-documents, pm-plugin-development, pm-requirements.
 
 ---
 

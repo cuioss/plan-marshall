@@ -200,7 +200,24 @@ python3 .plan/execute-script.py pm-workflow:manage-status:manage_status metadata
   --plan-id {plan_id} \
   --get \
   --field recipe_skill
+
+python3 .plan/execute-script.py pm-workflow:manage-status:manage_status metadata \
+  --plan-id {plan_id} \
+  --get \
+  --field recipe_domain
+
+python3 .plan/execute-script.py pm-workflow:manage-status:manage_status metadata \
+  --plan-id {plan_id} \
+  --get \
+  --field recipe_profile
+
+python3 .plan/execute-script.py pm-workflow:manage-status:manage_status metadata \
+  --plan-id {plan_id} \
+  --get \
+  --field recipe_package_source
 ```
+
+Note: `recipe_domain`, `recipe_profile`, `recipe_package_source` are set for the built-in recipe only. Custom recipes may leave them empty.
 
 2. Resolve recipe to get `default_change_type`:
 ```bash
@@ -228,9 +245,12 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 Skill: {recipe_skill}
   Input:
     plan_id: {plan_id}
+    recipe_domain: {recipe_domain from metadata, or empty}
+    recipe_profile: {recipe_profile from metadata, or empty}
+    recipe_package_source: {recipe_package_source from metadata, or empty}
 ```
 
-The recipe skill handles: discovery, analysis, deliverable creation, and solution outline writing.
+The recipe skill handles: discovery, deliverable creation, and solution outline writing.
 
 6. **Skip Steps 3-10**. Jump directly to **Step 10: Q-Gate Verification** to validate the recipe's output.
 

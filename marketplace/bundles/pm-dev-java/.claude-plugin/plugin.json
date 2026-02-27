@@ -38,8 +38,6 @@
     "./skills/junit-core",
     "./skills/junit-integration",
     "./skills/manage-maven-profiles",
-    "./skills/plan-marshall-plugin",
-    "./skills/recipe-refactor-to-standards",
-    "./skills/recipe-refactor-to-test-standards"
+    "./skills/plan-marshall-plugin"
   ]
 }

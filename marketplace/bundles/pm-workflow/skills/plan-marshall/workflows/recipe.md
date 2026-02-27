@@ -12,30 +12,26 @@ Create a plan from a predefined recipe. Recipes bypass change-type detection and
 
 ### Step 1: List or Resolve Recipe
 
-**If no `recipe` parameter provided** — list available recipes for selection:
+Present two categories of recipes to the user:
+
+**Built-in recipes** (always available when domains are configured):
+
+```
+Built-in Recipes:
+
+1. Refactor to Profile Standards
+   Refactor code to comply with configured profile standards, package by package
+   Requires: configured domains
+```
+
+**Domain recipes** (custom recipes registered via `provides_recipes()`):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
   list-recipes
 ```
 
-Present the list to the user with numbered selection:
-
-```
-Available Recipes:
-
-1. Refactor to Implementation Standards
-   Refactor production code to comply with java-core and java-maintenance standards, package by package
-   Domain: java | Scope: codebase_wide
-
-2. Refactor to Test Standards
-   Refactor test code to comply with junit-core standards, test-package by test-package
-   Domain: java | Scope: codebase_wide
-
-Select recipe (number):
-```
-
-If no recipes are available, inform the user and exit.
+Present the combined list to the user with numbered selection. If no domain recipes exist, only show the built-in recipe.
 
 **If `recipe` parameter provided** — resolve directly:
 
@@ -45,6 +41,32 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-m
 ```
 
 If recipe not found, show error with available recipes.
+
+### Step 1a: Built-in Recipe Selected
+
+If the user selects the built-in "Refactor to Profile Standards" recipe:
+
+1. **Select domain**: Query configured domains and present for selection:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+  list-domains
+```
+
+2. **Select profile**: Ask user to choose between:
+   - `implementation` — Refactor production code
+   - `module_testing` — Refactor test code
+
+3. **Derive package source** from profile:
+   - `implementation` → `packages`
+   - `module_testing` → `test_packages`
+
+4. Set recipe metadata for downstream use:
+   - `recipe_key` = `refactor-to-profile-standards`
+   - `recipe_name` = `Refactor to Profile Standards`
+   - `recipe_skill` = `pm-workflow:recipe-refactor-to-profile-standards`
+   - `default_change_type` = `tech_debt`
+   - `scope` = `codebase_wide`
 
 ### Step 2: Create Plan via Init Agent
 
@@ -81,6 +103,28 @@ python3 .plan/execute-script.py pm-workflow:manage-status:manage_status metadata
   --set \
   --field recipe_skill \
   --value {recipe_skill}
+```
+
+**For built-in recipe only** — store additional fields for the generic recipe skill:
+
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-status:manage_status metadata \
+  --plan-id {plan_id} \
+  --set \
+  --field recipe_domain \
+  --value {selected_domain}
+
+python3 .plan/execute-script.py pm-workflow:manage-status:manage_status metadata \
+  --plan-id {plan_id} \
+  --set \
+  --field recipe_profile \
+  --value {selected_profile}
+
+python3 .plan/execute-script.py pm-workflow:manage-status:manage_status metadata \
+  --plan-id {plan_id} \
+  --set \
+  --field recipe_package_source \
+  --value {derived_package_source}
 ```
 
 ### Step 4: Continue Through Phases
