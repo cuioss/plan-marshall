@@ -1,6 +1,7 @@
 ---
 name: tools-analyze-user-prompted
 description: Analyze permission prompts to identify source and provide solutions
+tools: Read
 ---
 
 # Analyze User Prompted Command
