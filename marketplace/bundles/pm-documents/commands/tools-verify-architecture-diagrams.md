@@ -19,7 +19,19 @@ Analyze all PlantUML files in the specified directory (default: doc/plantuml), v
 
 - `plantuml_dir` (optional): Path to PlantUML directory, defaults to "doc/plantuml"
    - **Validation**: If provided, must be a valid directory path
-   - **Error**: If invalid: "Directory '{plantuml_dir}' not found" and prompt "[E]nter different path/[A]bort"
+   - **Error**: If invalid: "Directory '{plantuml_dir}' not found" — present using `AskUserQuestion`:
+     ```
+     AskUserQuestion:
+       questions:
+         - question: "PlantUML directory not found. How would you like to proceed?"
+           header: "Path"
+           options:
+             - label: "Enter different path"
+               description: "Specify an alternative PlantUML directory"
+             - label: "Abort"
+               description: "Cancel diagram verification"
+           multiSelect: false
+     ```
 - `push` (optional): When provided, automatically commits all changes with a descriptive message and pushes to remote repository after successful verification
 
 ## Process
@@ -32,10 +44,22 @@ Before analyzing any diagram, check if the PNG image is referenced in documentat
 - Search for references in `**/*.adoc`, `**/*.md`, and `**/*.java` files
 - Look for the PNG filename in image includes, links, and javadoc references
 - If NO references are found (orphaned diagram):
-  - **STOP** and prompt the user: "The diagram `{filename}` appears to be orphaned (not referenced in any .adoc, .md, or .java files). Remove both .puml and .png files? [Y/n]"
-  - **WAIT** for user approval before proceeding
-  - If approved (Y): delete both files, track in diagrams_analyzed
-  - If not approved (n): skip to next diagram, track in diagrams_analyzed
+  - **STOP** and present using `AskUserQuestion`:
+    ```
+    AskUserQuestion:
+      questions:
+        - question: "Diagram '{filename}' appears orphaned (not referenced in any .adoc, .md, or .java files). Remove both .puml and .png files?"
+          header: "Orphaned"
+          options:
+            - label: "Remove files"
+              description: "Delete both .puml and .png files"
+            - label: "Keep files"
+              description: "Skip to next diagram"
+          multiSelect: false
+    ```
+  - **WAIT** for user selection before proceeding
+  - If "Remove files": delete both files, track in diagrams_analyzed
+  - If "Keep files": skip to next diagram, track in diagrams_analyzed
 - If references ARE found:
   - Read the surrounding context to understand the diagram's purpose
   - Use this context to improve diagram clarity and ensure it serves its documented purpose
@@ -49,7 +73,19 @@ For each referenced diagram:
 - Track in diagrams_analyzed counter
 
 **Error handling:**
-- **If Read fails**: Display "Failed to read {filename}.puml: {error}" and prompt "[S]kip diagram/[A]bort all"
+- **If Read fails**: Display "Failed to read {filename}.puml: {error}" and present using `AskUserQuestion`:
+  ```
+  AskUserQuestion:
+    questions:
+      - question: "Failed to read diagram file. How would you like to proceed?"
+        header: "Read error"
+        options:
+          - label: "Skip diagram"
+            description: "Move to next diagram"
+          - label: "Abort all"
+            description: "Stop processing all diagrams"
+        multiSelect: false
+  ```
 
 ### 3. Verify Against Current Codebase
 
@@ -63,7 +99,21 @@ For each referenced diagram:
 - Track mismatches found in mismatches_found counter
 
 **Error handling:**
-- **If codebase analysis fails**: Display "Failed to analyze codebase for {filename}: {error}" and prompt "[C]ontinue with best effort/[S]kip diagram/[A]bort"
+- **If codebase analysis fails**: Display "Failed to analyze codebase for {filename}: {error}" and present using `AskUserQuestion`:
+  ```
+  AskUserQuestion:
+    questions:
+      - question: "Codebase analysis failed. How would you like to proceed?"
+        header: "Analysis"
+        options:
+          - label: "Continue with best effort"
+            description: "Proceed with available information"
+          - label: "Skip diagram"
+            description: "Move to next diagram"
+          - label: "Abort"
+            description: "Stop processing all diagrams"
+        multiSelect: false
+  ```
 
 ### 4. Identify Required Updates
 
@@ -89,9 +139,21 @@ Before making updates, evaluate if the diagram is becoming too large or complex:
     - Show the pros and cons of each splitting approach
     - Recommend your preferred approach with justification
     - Example: "I analyzed 3 splitting approaches: (1) by validation pipeline [pros: X, cons: Y], (2) by token type [pros: A, cons: B], (3) by component layer [pros: M, cons: N]. I recommend approach (1) because..."
-  - **WAIT** for user approval: "Approve this splitting approach? [Y/n]"
-  - Only proceed with the split if user approves (Y)
-  - If user declines (n), update the existing diagram as-is
+  - **WAIT** for user approval using `AskUserQuestion`:
+    ```
+    AskUserQuestion:
+      questions:
+        - question: "Do you approve the proposed diagram splitting approach?"
+          header: "Split"
+          options:
+            - label: "Approve split"
+              description: "Proceed with the recommended splitting approach"
+            - label: "Keep as-is"
+              description: "Update the existing diagram without splitting"
+          multiSelect: false
+    ```
+  - Only proceed with the split if user approves
+  - If user declines, update the existing diagram as-is
 - **If splitting is approved**:
   - Create the new `.puml` files for each split diagram
   - Generate PNG files for all new diagrams
@@ -107,7 +169,21 @@ Before making updates, evaluate if the diagram is becoming too large or complex:
 - Track successful updates in diagrams_updated counter
 
 **Error handling:**
-- **If Edit fails**: Display "Failed to update {filename}.puml: {error}" and prompt "[R]etry/[S]kip/[A]bort"
+- **If Edit fails**: Display "Failed to update {filename}.puml: {error}" and present using `AskUserQuestion`:
+  ```
+  AskUserQuestion:
+    questions:
+      - question: "Edit failed for diagram update. How would you like to proceed?"
+        header: "Edit error"
+        options:
+          - label: "Retry"
+            description: "Attempt the edit again"
+          - label: "Skip"
+            description: "Move to next diagram"
+          - label: "Abort"
+            description: "Stop processing all diagrams"
+        multiSelect: false
+  ```
 
 ### 7. Generate and Verify PNG
 
@@ -120,9 +196,49 @@ Before making updates, evaluate if the diagram is becoming too large or complex:
 - Track successful PNG generation in images_regenerated counter
 
 **Error handling:**
-- **If plantuml command not found**: Display "PlantUML not installed. Install with: brew install plantuml (macOS) or apt-get install plantuml (Linux)" and prompt "[C]ontinue after install/[A]bort"
-- **If PNG generation fails**: Display "Failed to generate {filename}.png: {error}" and prompt "[F]ix .puml syntax/[S]kip/[A]bort"
-- **If PNG has visual errors**: Display error description and prompt "[F]ix and regenerate/[S]kip/[A]bort"
+- **If plantuml command not found**: Display "PlantUML not installed. Install with: brew install plantuml (macOS) or apt-get install plantuml (Linux)" and present using `AskUserQuestion`:
+  ```
+  AskUserQuestion:
+    questions:
+      - question: "PlantUML is not installed. How would you like to proceed?"
+        header: "Install"
+        options:
+          - label: "Continue after install"
+            description: "I will install PlantUML, then continue"
+          - label: "Abort"
+            description: "Cancel diagram verification"
+        multiSelect: false
+  ```
+- **If PNG generation fails**: Display "Failed to generate {filename}.png: {error}" and present using `AskUserQuestion`:
+  ```
+  AskUserQuestion:
+    questions:
+      - question: "PNG generation failed. How would you like to proceed?"
+        header: "PNG error"
+        options:
+          - label: "Fix .puml syntax"
+            description: "Attempt to fix syntax errors and regenerate"
+          - label: "Skip"
+            description: "Move to next diagram"
+          - label: "Abort"
+            description: "Stop processing all diagrams"
+        multiSelect: false
+  ```
+- **If PNG has visual errors**: Display error description and present using `AskUserQuestion`:
+  ```
+  AskUserQuestion:
+    questions:
+      - question: "PNG has visual rendering errors. How would you like to proceed?"
+        header: "Visual"
+        options:
+          - label: "Fix and regenerate"
+            description: "Diagnose and fix the rendering issue"
+          - label: "Skip"
+            description: "Move to next diagram"
+          - label: "Abort"
+            description: "Stop processing all diagrams"
+        multiSelect: false
+  ```
 
 ### 8. Repeat for All Diagrams
 

@@ -8,6 +8,21 @@ user-invokable: false
 
 Orchestrates systematic JavaScript test quality improvement workflow while ensuring NO production code changes except confirmed bugs (with user approval).
 
+## Enforcement
+
+**Execution mode**: Systematic workspace-by-workspace test improvement with continuous verification after each batch.
+
+**Prohibited actions:**
+- Never modify production code unless a confirmed bug is discovered and user explicitly approves
+- Never decrease test coverage — if coverage drops, investigate immediately
+- Never skip pre-maintenance verification (all tests must pass before starting)
+
+**Constraints:**
+- Production bug fixes require separate commits with user approval
+- Workspace-level rollback capability must be maintained throughout
+- All user interactions use `AskUserQuestion` tool with proper YAML structure
+- Track all statistics (improvements_applied/failed/skipped, coverage_baseline/final, bugs_found/fixed) throughout workflow
+
 ## CONTINUOUS IMPROVEMENT RULE
 
 If you discover issues or improvements during execution, record them:
@@ -70,7 +85,19 @@ Task:
 
 **On test failure:**
 - Display test failures
-- Prompt user: "[F]ix manually and retry / [A]bort"
+- Present using `AskUserQuestion`:
+  ```
+  AskUserQuestion:
+    questions:
+      - question: "Pre-maintenance tests are failing. How would you like to proceed?"
+        header: "Tests"
+        options:
+          - label: "Fix manually and retry"
+            description: "Fix failing tests, then re-run verification"
+          - label: "Abort"
+            description: "Cancel test maintenance"
+        multiSelect: false
+  ```
 - Track in `pre_verification_failures` counter
 - Cannot proceed until tests pass
 
@@ -108,7 +135,20 @@ Task:
     Return structured findings: issue type, location, description, priority (HIGH/MEDIUM/LOW)
 ```
 
-Store findings for prioritization. On analysis failure, prompt user: "[R]etry / [A]bort"
+Store findings for prioritization. On analysis failure, present using `AskUserQuestion`:
+
+```
+AskUserQuestion:
+  questions:
+    - question: "Test quality audit failed. How would you like to proceed?"
+      header: "Audit"
+      options:
+        - label: "Retry"
+          description: "Re-run the test quality analysis"
+        - label: "Abort"
+          description: "Cancel test maintenance"
+      multiSelect: false
+```
 
 ### Step 4: Prioritize Test Improvements
 
@@ -148,8 +188,22 @@ Apply test prioritization framework from maintenance-prioritization.md:
    Processing order: HIGH → MEDIUM → LOW
    ```
 
-6. **Prompt user for confirmation**:
-   - "[P]roceed with test improvement / [M]odify priorities / [A]bort"
+6. **Prompt user for confirmation** using `AskUserQuestion`:
+
+   ```
+   AskUserQuestion:
+     questions:
+       - question: "Review the prioritized test improvements above. How would you like to proceed?"
+         header: "Proceed"
+         options:
+           - label: "Proceed with test improvement"
+             description: "Start improving tests in priority order"
+           - label: "Modify priorities"
+             description: "Adjust the prioritization before proceeding"
+           - label: "Abort"
+             description: "Cancel test maintenance"
+         multiSelect: false
+   ```
 
 ### Step 5: Execute Test Improvements
 
@@ -195,12 +249,40 @@ Track in `improvements_applied` counter.
 **On implementation error:**
 - Log error details
 - Track in `improvements_failed` counter
-- Prompt user: "[S]kip this improvement / [R]etry / [A]bort workspace"
+- Present using `AskUserQuestion`:
+  ```
+  AskUserQuestion:
+    questions:
+      - question: "Test improvement implementation failed. How would you like to proceed?"
+        header: "Error"
+        options:
+          - label: "Skip this improvement"
+            description: "Move to next improvement in the list"
+          - label: "Retry"
+            description: "Attempt the improvement again"
+          - label: "Abort workspace"
+            description: "Stop processing this workspace"
+        multiSelect: false
+  ```
 
 **On production bug discovery:**
 - **STOP immediately**
 - Document bug details (location, issue, impact)
-- Ask user: "[F]ix production bug / [S]kip and continue test-only work / [A]bort"
+- Present using `AskUserQuestion`:
+  ```
+  AskUserQuestion:
+    questions:
+      - question: "A production bug was discovered during test maintenance. How would you like to handle it?"
+        header: "Bug"
+        options:
+          - label: "Fix production bug"
+            description: "Fix the bug and create a separate commit"
+          - label: "Skip and continue"
+            description: "Document bug for later, continue test-only work"
+          - label: "Abort"
+            description: "Stop test maintenance"
+        multiSelect: false
+  ```
 - If approved to fix:
   - Track in `production_bugs_fixed` counter
   - Fix bug and create separate commit
@@ -230,7 +312,21 @@ Task:
 **On verification failure:**
 - Increment `workspace_verification_failures` counter
 - Attempt to rollback workspace changes
-- Prompt user: "[R]etry / [S]kip workspace / [A]bort"
+- Present using `AskUserQuestion`:
+  ```
+  AskUserQuestion:
+    questions:
+      - question: "Workspace verification failed after improvements. How would you like to proceed?"
+        header: "Verify"
+        options:
+          - label: "Retry"
+            description: "Re-run verification after rollback"
+          - label: "Skip workspace"
+            description: "Move to next workspace"
+          - label: "Abort"
+            description: "Stop all test maintenance"
+        multiSelect: false
+  ```
 
 **5.4 Workspace Coverage Check:**
 

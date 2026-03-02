@@ -199,18 +199,22 @@ A new script API is needed:
 
 ### Step 6: Interactive Resolution
 
-Present solutions using AskUserQuestion:
+For each failure, present resolution options using `AskUserQuestion`:
 
 ```
-Based on my analysis, I found {n} script failure(s).
-
-For each failure, which action would you like to take?
+AskUserQuestion:
+  questions:
+    - question: "How would you like to handle failure {n}: {short_description}?"
+      header: "Action"
+      options:
+        - label: "Apply fix"
+          description: "Apply the proposed fix to the component"
+        - label: "Record as lesson"
+          description: "Document this analysis in lessons learned"
+        - label: "Skip"
+          description: "Take no action for this failure"
+      multiSelect: false
 ```
-
-Options for each failure:
-1. **Apply fix** - Apply the proposed fix to the component
-2. **Record as lesson** - Document this analysis in lessons learned
-3. **Skip** - Take no action for this failure
 
 ### Step 7: Apply Selected Actions
 

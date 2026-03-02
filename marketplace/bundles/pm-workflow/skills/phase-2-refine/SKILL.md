@@ -72,6 +72,59 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 ---
 
+## Step 1.6: Recipe Shortcut
+
+**Purpose**: Recipe-sourced plans skip quality analysis and iterative refinement. They only need scope selection.
+
+### Check for Recipe Source
+
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-status:manage_status metadata \
+  --plan-id {plan_id} \
+  --get \
+  --field plan_source
+```
+
+**If `plan_source == recipe`**:
+
+1. Force `track = complex` (recipes always need codebase discovery):
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-status:manage_status metadata \
+  --plan-id {plan_id} \
+  --set \
+  --field track \
+  --value complex
+```
+
+2. Set confidence = 100 immediately:
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-status:manage_status metadata \
+  --plan-id {plan_id} \
+  --set \
+  --field confidence \
+  --value 100
+```
+
+3. Log decision:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  decision --plan-id {plan_id} --level INFO --message "(pm-workflow:phase-2-refine) Recipe plan — skipping quality analysis, setting confidence=100, track=complex"
+```
+
+4. **Skip Steps 2-12**. Jump directly to persist/return (update phase to 3-outline and return).
+
+```bash
+python3 .plan/execute-script.py pm-workflow:manage-status:manage_status phase \
+  --plan-id {plan_id} \
+  --phase 3-outline
+```
+
+Return success. Phase 3 will handle recipe-specific outline creation.
+
+**If `plan_source != recipe` or field not found**: Continue with normal Steps 2..12.
+
+---
+
 ## Step 2: Load Confidence Threshold
 
 Read the confidence threshold from project configuration.

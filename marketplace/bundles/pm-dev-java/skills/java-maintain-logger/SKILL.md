@@ -8,6 +8,22 @@ user-invokable: false
 
 Systematically implements and maintains logging standards across modules while preserving functionality and tracking progress via plan.md.
 
+## Enforcement
+
+**Execution mode**: Module-by-module logging standards implementation with build verification after each module.
+
+**Prohibited actions:**
+- Never modify non-logging production code without explicit user approval
+- Never alter business logic behavior or change method signatures/APIs
+- Never create standalone LogRecord coverage tests — LogAsserts must be in existing business logic tests
+
+**Constraints:**
+- Non-logging bug discovery triggers immediate stop, documentation, and user approval before proceeding
+- Bug fixes require separate commits
+- Each workflow step that performs a script operation has an explicit bash code block with the full `python3 .plan/execute-script.py` command
+- All user interactions use `AskUserQuestion` tool with proper YAML structure
+- Track all statistics (logger_migrations, logrecord_implementations, tests_updated, bugs_found/fixed) throughout workflow
+
 ## CONTINUOUS IMPROVEMENT RULE
 
 If you discover issues or improvements during execution, record them:
@@ -87,7 +103,22 @@ python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run \
     --mode errors
 ```
 
-**On build failure:** Prompt user "[F]ix build first / [A]bort", track in `pre_verification_failures`.
+**On build failure:** Present using `AskUserQuestion`:
+
+```
+AskUserQuestion:
+  questions:
+    - question: "Pre-maintenance build failed. How would you like to proceed?"
+      header: "Build"
+      options:
+        - label: "Fix build first"
+          description: "Fix build issues before starting maintenance"
+        - label: "Abort"
+          description: "Cancel logger maintenance"
+      multiSelect: false
+```
+
+Track in `pre_verification_failures`.
 
 **2.2 Module Identification:**
 
@@ -184,7 +215,22 @@ Task:
     Suggest consolidation opportunities.
 ```
 
-**4.6 Display Module Analysis Summary** and prompt user: "[P]roceed / [S]kip / [A]bort"
+**4.6 Display Module Analysis Summary** and present using `AskUserQuestion`:
+
+```
+AskUserQuestion:
+  questions:
+    - question: "Review the module analysis above. How would you like to proceed?"
+      header: "Module"
+      options:
+        - label: "Proceed"
+          description: "Start implementing logging fixes for this module"
+        - label: "Skip"
+          description: "Skip this module and move to next"
+        - label: "Abort"
+          description: "Stop logger maintenance"
+      multiSelect: false
+```
 
 ### Step 5: Implementation Phase
 
@@ -243,7 +289,22 @@ Task:
 
 Then add LogAsserts to existing test (see `pm-dev-java-cui:cui-logging` skill for LogAsserts patterns).
 
-**If no business logic test exists:** Prompt user "[C]reate business test first / [S]kip / [A]bort"
+**If no business logic test exists:** Present using `AskUserQuestion`:
+
+```
+AskUserQuestion:
+  questions:
+    - question: "No business logic test exists for this LogRecord. How would you like to proceed?"
+      header: "Test"
+      options:
+        - label: "Create business test first"
+          description: "Create a new business logic test, then add LogAsserts"
+        - label: "Skip"
+          description: "Skip this LogRecord's test"
+        - label: "Abort"
+          description: "Stop logger maintenance"
+      multiSelect: false
+```
 
 ### Step 6: Verification Phase
 

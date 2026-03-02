@@ -8,6 +8,22 @@ user-invokable: true
 
 Unified entry point for plan lifecycle management covering all 6 phases.
 
+## Enforcement
+
+**Execution mode**: Route action to workflow document, then follow workflow instructions step-by-step.
+
+**Prohibited actions:**
+- Never use Claude Code's built-in `EnterPlanMode` or `ExitPlanMode` tools
+- Never access `.plan/` files directly — all access must go through `python3 .plan/execute-script.py` manage-* scripts
+- Never implement tasks directly — this skill creates and manages plans only
+- Do not invent script notations — use only those documented in workflow files
+
+**Constraints:**
+- Each workflow step that invokes a script has an explicit bash code block with the full `python3 .plan/execute-script.py` command
+- User review gates (`plan_without_asking`, `execute_without_asking`) must be respected — never skip when config is false
+- All user interactions use `AskUserQuestion` tool with proper YAML structure
+- Phase transitions use `manage-lifecycle transition` — never set phase status directly
+
 **CRITICAL: DO NOT USE CLAUDE CODE'S BUILT-IN PLAN MODE**
 
 This skill implements its **OWN** plan system. You must:
@@ -26,10 +42,11 @@ This skill implements its **OWN** plan system. You must:
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `action` | optional | Explicit action: `list`, `init`, `outline`, `execute`, `finalize`, `cleanup`, `lessons` (default: list) |
+| `action` | optional | Explicit action: `list`, `init`, `outline`, `execute`, `finalize`, `cleanup`, `lessons`, `recipe` (default: list) |
 | `task` | optional | Task description for creating new plan |
 | `issue` | optional | GitHub issue URL for creating new plan |
 | `lesson` | optional | Lesson ID to convert to plan |
+| `recipe` | optional | Recipe key for creating plan from predefined recipe |
 | `plan` | optional | Plan name for specific operations (e.g., `jwt-auth`, not path) |
 | `stop-after-init` | optional | If true, stop after 1-init phase without continuing to 2-refine (default: false) |
 
@@ -50,6 +67,7 @@ Route based on action parameter. Load the appropriate workflow document and foll
 | `lessons` | `Read workflows/planning.md` | List and convert lessons |
 | `execute` | `Read workflows/execution.md` | Execute implementation tasks + verification |
 | `finalize` | `Read workflows/execution.md` | Commit, push, PR |
+| `recipe` | `Read workflows/recipe.md` | Create plan from predefined recipe |
 
 ### Auto-Detection (plan parameter without action)
 
@@ -109,6 +127,12 @@ After determining the action and workflow document:
 
 # List lessons and convert to plan
 /plan-marshall action=lessons
+
+# Create plan from predefined recipe (lists available recipes for selection)
+/plan-marshall action=recipe
+
+# Create plan from specific recipe
+/plan-marshall action=recipe recipe="refactor-to-standards"
 ```
 
 ## Continuous Improvement

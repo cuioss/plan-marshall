@@ -8,6 +8,21 @@ user-invokable: true
 
 Diagnose and fix pull request issues with parameterized checks.
 
+## Enforcement
+
+**Execution mode**: Diagnose PR issues by category (build, reviews, Sonar), present report, fix with user approval unless auto-fix enabled.
+
+**Prohibited actions:**
+- Never force-push or amend published commits
+- Never suppress Sonar issues without justification and user approval (unless auto-fix=true)
+- Do not resolve review comments without addressing the reviewer's concern
+
+**Constraints:**
+- Fixes require build verification before committing
+- Review comment responses must explain the fix or provide rationale for disagreement
+- All user interactions use `AskUserQuestion` tool with proper YAML structure
+- CI wait timeout (30 minutes) must be respected with user prompt on expiry
+
 ## Parameters
 
 | Parameter | Type | Description |
@@ -48,7 +63,22 @@ If wait=true:
 gh pr checks {pr} --json name,status,conclusion
 ```
 
-Poll every 30 seconds. Timeout after 30 minutes with prompt: "[C]ontinue / [S]kip / [A]bort"
+Poll every 30 seconds. On timeout after 30 minutes, present using `AskUserQuestion`:
+
+```
+AskUserQuestion:
+  questions:
+    - question: "CI checks timed out after 30 minutes. How would you like to proceed?"
+      header: "Timeout"
+      options:
+        - label: "Continue waiting"
+          description: "Keep polling for another 30 minutes"
+        - label: "Skip checks"
+          description: "Proceed to diagnosis without waiting"
+        - label: "Abort"
+          description: "Stop PR doctor"
+      multiSelect: false
+```
 
 ### Step 3: Diagnose Issues
 

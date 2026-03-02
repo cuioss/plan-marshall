@@ -105,3 +105,5 @@ Domains can provide a domain-specific outline skill via `outline_skill` in marsh
 ```
 
 When no domain-specific skill is configured, the generic sub-skill instructions from `pm-workflow:outline-change-type/standards/change-{type}.md` are used as fallback.
+
+**Note**: Recipe-sourced plans bypass this entire change-type routing. See [recipe-flow.md](recipe-flow.md) for the recipe path through phase-3-outline.

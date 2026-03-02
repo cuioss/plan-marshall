@@ -143,7 +143,9 @@ def _build_module(base, pom_path: Path, project_root: Path, maven_data: dict) ->
     test_paths = [f'{relative_path}/{t}' if relative_path != '.' else t for t in sources['test']]
 
     # Packages
-    packages = _discover_packages(module_path, sources, relative_path if relative_path != '.' else '')
+    rel = relative_path if relative_path != '.' else ''
+    packages = _discover_packages(module_path, sources, rel)
+    test_packages = _discover_test_packages(module_path, sources, rel)
 
     # Stats
     source_files = _count_java_files(module_path, sources['main'])
@@ -182,6 +184,7 @@ def _build_module(base, pom_path: Path, project_root: Path, maven_data: dict) ->
         },
         'metadata': metadata,
         'packages': packages,
+        'test_packages': test_packages,
         'dependencies': dependencies,
         'stats': {'source_files': source_files, 'test_files': test_files},
         'commands': commands,
@@ -600,11 +603,17 @@ def _discover_sources(module_path: Path) -> dict:
     return sources
 
 
-def _discover_packages(module_path: Path, sources: dict, relative_path: str) -> dict:
-    """Discover Java packages as dict keyed by package name."""
+def _discover_packages_from_dirs(
+    module_path: Path, source_dirs: list[str], relative_path: str
+) -> dict:
+    """Discover Java packages from a list of source directories.
+
+    Returns dict keyed by package name with path, optional package_info,
+    and optional files (sorted list of direct .java children).
+    """
     packages = {}
 
-    for source_dir in sources.get('main', []):
+    for source_dir in source_dirs:
         source_path = module_path / source_dir
         if not source_path.exists():
             continue
@@ -614,7 +623,7 @@ def _discover_packages(module_path: Path, sources: dict, relative_path: str) -> 
             pkg_dir = java_file.parent
             pkg_name = str(pkg_dir.relative_to(source_path)).replace('/', '.').replace('\\', '.')
 
-            # Skip root "." package - files directly in src/main/java are not valid packages
+            # Skip root "." package - files directly in source root are not valid packages
             if pkg_name and pkg_name != '.' and pkg_name not in seen:
                 seen.add(pkg_name)
 
@@ -622,7 +631,7 @@ def _discover_packages(module_path: Path, sources: dict, relative_path: str) -> 
                 if relative_path:
                     rel_path = f'{relative_path}/{rel_path}'
 
-                pkg_info = {'path': rel_path}
+                pkg_info: dict[str, str | list[str]] = {'path': rel_path}
 
                 # Check for package-info.java
                 info_file = pkg_dir / 'package-info.java'
@@ -632,9 +641,27 @@ def _discover_packages(module_path: Path, sources: dict, relative_path: str) -> 
                         info_path = f'{relative_path}/{info_path}'
                     pkg_info['package_info'] = info_path
 
+                # List direct .java files (not recursive — sub-package files belong to their own entry)
+                direct_files = sorted(
+                    f.name for f in pkg_dir.iterdir()
+                    if f.is_file() and f.suffix == '.java' and f.name != 'package-info.java'
+                )
+                if direct_files:
+                    pkg_info['files'] = direct_files
+
                 packages[pkg_name] = pkg_info
 
     return packages
+
+
+def _discover_packages(module_path: Path, sources: dict, relative_path: str) -> dict:
+    """Discover Java packages as dict keyed by package name."""
+    return _discover_packages_from_dirs(module_path, sources.get('main', []), relative_path)
+
+
+def _discover_test_packages(module_path: Path, sources: dict, relative_path: str) -> dict:
+    """Discover Java test packages as dict keyed by package name."""
+    return _discover_packages_from_dirs(module_path, sources.get('test', []), relative_path)
 
 
 def _count_java_files(module_path: Path, source_dirs: list) -> int:

@@ -71,7 +71,20 @@
       "outline_skill": "pm-plugin-development:ext-outline-workflow",
       "workflow_skill_extensions": {
         "triage": "pm-plugin-development:ext-triage-plugin"
-      }
+      },
+      "recipes": [
+        {
+          "key": "plugin-compliance-sweep",
+          "name": "Plugin Compliance Sweep",
+          "description": "Sweep all marketplace bundles for plugin architecture standards compliance",
+          "skill": "project:recipe-plugin-compliance",
+          "default_change_type": "tech_debt",
+          "scope": "codebase_wide",
+          "profile": "implementation",
+          "package_source": "packages",
+          "source": "project"
+        }
+      ]
     }
   },
   "system": {

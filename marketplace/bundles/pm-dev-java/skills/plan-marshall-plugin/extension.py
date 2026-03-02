@@ -114,6 +114,14 @@ class Extension(ExtensionBase):
             },
         ]
 
+    def provides_recipes(self) -> list[dict]:
+        """Return Java-specific recipe definitions.
+
+        Built-in "Refactor to Profile Standards" recipe in pm-workflow handles
+        the standard refactoring use cases. Only return custom recipes here.
+        """
+        return []
+
     def discover_modules(self, project_root: str) -> list:
         """Discover all modules with complete metadata.
 

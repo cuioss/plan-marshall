@@ -8,6 +8,21 @@ user-invokable: true
 
 Analyzes WebFetch domains across global and project settings, researches domains for security, consolidates permissions, and provides recommendations.
 
+## Enforcement
+
+**Execution mode**: Analyze permissions, research unknown domains, present recommendations, apply with user approval.
+
+**Prohibited actions:**
+- Never auto-remove permissions without explicit user approval
+- Never suggest overly broad permissions (e.g., `Bash(*)`)
+- Do not skip security research for unknown domains
+
+**Constraints:**
+- Always research unknown domains before categorizing them
+- Prefer project-local permissions over global when appropriate
+- All user interactions use `AskUserQuestion` tool with proper YAML structure
+- Track all statistics (domains_analyzed, permissions_added/removed, security_checks, files_read/modified) throughout workflow
+
 ## Parameters
 
 **scope** - Which settings to analyze (global/local/both, default: both)
@@ -36,19 +51,61 @@ Loads trusted domains, security assessment patterns, and research methodology.
 **A. Read global settings** (`~/.claude/settings.json`)
    - **Error handling**: If Read fails (file not found):
      - Display: "Global settings not found: ~/.claude/settings.json"
-     - Prompt: "[C]reate default settings/[S]kip global analysis/[A]bort"
+     - Present using `AskUserQuestion`:
+       ```
+       AskUserQuestion:
+         questions:
+           - question: "Global settings file not found. How would you like to proceed?"
+             header: "Global"
+             options:
+               - label: "Create default settings"
+                 description: "Create a new ~/.claude/settings.json with defaults"
+               - label: "Skip global analysis"
+                 description: "Continue with local settings only"
+               - label: "Abort"
+                 description: "Cancel permission analysis"
+             multiSelect: false
+       ```
      - Track in files_read counter
 
 **B. Read local settings** (`./.claude/settings.local.json`)
    - **Error handling**: If Read fails (file not found):
      - Display: "Local settings not found: ./.claude/settings.local.json"
-     - Prompt: "[C]reate default settings/[S]kip local analysis/[A]bort"
+     - Present using `AskUserQuestion`:
+       ```
+       AskUserQuestion:
+         questions:
+           - question: "Local settings file not found. How would you like to proceed?"
+             header: "Local"
+             options:
+               - label: "Create default settings"
+                 description: "Create a new .claude/settings.local.json with defaults"
+               - label: "Skip local analysis"
+                 description: "Continue with global settings only"
+               - label: "Abort"
+                 description: "Cancel permission analysis"
+             multiSelect: false
+       ```
      - Track in files_read counter
 
 **C. Extract all WebFetch permissions** from both sources
    - **Error handling**: If JSON parsing fails:
      - Display: "Invalid JSON in {file}: {error}"
-     - Prompt: "[F]ix manually/[S]kip this file/[A]bort"
+     - Present using `AskUserQuestion`:
+       ```
+       AskUserQuestion:
+         questions:
+           - question: "Settings file has invalid JSON. How would you like to proceed?"
+             header: "JSON"
+             options:
+               - label: "Fix manually"
+                 description: "Open the file and fix JSON syntax"
+               - label: "Skip this file"
+                 description: "Continue without this settings file"
+               - label: "Abort"
+                 description: "Cancel permission analysis"
+             multiSelect: false
+       ```
 
 **D. Categorize domains**:
 - Universal (domain:*)
@@ -146,23 +203,60 @@ Recommendations:
 
 ### Step 7: Apply Recommendations (Optional)
 
-Prompt user:
+Present options using `AskUserQuestion`:
+
 ```
-Apply recommended changes? [Y/n/r]
-Y - Apply all recommendations
-n - Skip (display only)
-r - Review each change
+AskUserQuestion:
+  questions:
+    - question: "How would you like to apply the recommendations?"
+      header: "Apply"
+      options:
+        - label: "Apply all"
+          description: "Apply all recommended permission changes"
+        - label: "Review each change"
+          description: "Review and approve each change individually"
+        - label: "Skip"
+          description: "Display recommendations only, make no changes"
+      multiSelect: false
 ```
 
-If yes:
+If "Apply all" or "Review each change":
 - Update global settings (track in permissions_added and permissions_removed counters)
 - Update local settings (track in permissions_added and permissions_removed counters)
 - Remove duplicates and redundant permissions
 - Consolidate domains per recommendations
 
 **Error handling:**
-- **If Write fails**: Display "Failed to update {file}: {error}" and prompt "[R]etry/[S]kip file/[A]bort"
-- **If Edit fails**: Display "Failed to edit {file}: {error}" and prompt "[R]etry/[S]kip change/[A]bort"
+- **If Write fails**: Display "Failed to update {file}: {error}" and present using `AskUserQuestion`:
+  ```
+  AskUserQuestion:
+    questions:
+      - question: "Failed to write settings file. How would you like to proceed?"
+        header: "Write"
+        options:
+          - label: "Retry"
+            description: "Attempt the write again"
+          - label: "Skip file"
+            description: "Skip this file, continue with others"
+          - label: "Abort"
+            description: "Stop applying changes"
+        multiSelect: false
+  ```
+- **If Edit fails**: Display "Failed to edit {file}: {error}" and present using `AskUserQuestion`:
+  ```
+  AskUserQuestion:
+    questions:
+      - question: "Failed to edit settings file. How would you like to proceed?"
+        header: "Edit"
+        options:
+          - label: "Retry"
+            description: "Attempt the edit again"
+          - label: "Skip change"
+            description: "Skip this change, continue with others"
+          - label: "Abort"
+            description: "Stop applying changes"
+        multiSelect: false
+  ```
 - Track all successful updates in files_modified counter
 
 ### Step 8: Report Results

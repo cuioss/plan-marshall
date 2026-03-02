@@ -3,7 +3,6 @@
 from pathlib import Path
 
 import pytest
-
 from marketplace.adapters.adapter_base import AdapterBase
 
 

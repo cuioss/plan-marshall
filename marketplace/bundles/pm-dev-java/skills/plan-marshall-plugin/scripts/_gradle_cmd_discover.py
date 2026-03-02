@@ -405,6 +405,7 @@ def _extract_gradle_module(
             if v is not None
         },
         'packages': {},
+        'test_packages': {},
         'dependencies': dependencies,
         'stats': {'source_files': source_files, 'test_files': test_files},
         'commands': commands,

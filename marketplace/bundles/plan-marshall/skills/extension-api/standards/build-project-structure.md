@@ -202,34 +202,57 @@ See [build-execution.md](build-execution.md) for `execute_direct` API and [build
 "packages": {
   "de.cuioss.tools": {
     "path": "core/src/main/java/de/cuioss/tools",
-    "package_info": "core/src/main/java/de/cuioss/tools/package-info.java"
+    "package_info": "core/src/main/java/de/cuioss/tools/package-info.java",
+    "files": ["CollectionBuilder.java", "MoreCollections.java", "MoreStrings.java"]
   },
   "de.cuioss.tools.util": {
-    "path": "core/src/main/java/de/cuioss/tools/util"
+    "path": "core/src/main/java/de/cuioss/tools/util",
+    "files": ["MorePaths.java"]
   }
 }
 ```
 - Include `package_info` path if `package-info.java` exists, omit otherwise
+- `files`: Sorted list of source file names (direct children only, sub-package files excluded)
+- Java: `.java` files, excluding `package-info.java` (tracked separately via `package_info`)
+- Omitted when empty (no direct source files — only sub-packages)
 - All paths are project-relative
+
+**Java test packages** (same structure, keyed by package name):
+```json
+"test_packages": {
+  "de.cuioss.tools": {
+    "path": "core/src/test/java/de/cuioss/tools",
+    "files": ["CollectionBuilderTest.java", "MoreStringsTest.java"]
+  }
+}
+```
+- Same conventions as `packages` (sorted files, direct children only, omitted when empty)
+- Separate field because test packages mirror main package names
 
 **npm packages** (directory-based or exports-defined):
 ```json
 "packages": {
   "components": {
-    "path": "my-lib/src/components"
+    "path": "my-lib/src/components",
+    "files": ["Button.js", "Card.js", "Modal.js"]
   },
   "hooks": {
-    "path": "my-lib/src/hooks"
+    "path": "my-lib/src/hooks",
+    "files": ["useAuth.ts", "useForm.ts"]
   },
   "utils": {
     "path": "my-lib/src/utils",
-    "exports": "./utils"
+    "exports": "./utils",
+    "files": ["format.js", "validate.js"]
   }
 }
 ```
 - Discover from `package.json` [subpath exports](https://nodejs.org/api/packages.html) field
 - Fall back to top-level directories under `src/` or `lib/`
 - Include `exports` path if defined in package.json exports field
+- `files`: Sorted list of source file names (direct children only)
+- npm: `.js`, `.ts`, `.mjs`, `.cjs` files, excluding `.d.ts`
+- Omitted when empty (no direct source files)
 - All paths are project-relative
 
 ## Orchestrator Integration

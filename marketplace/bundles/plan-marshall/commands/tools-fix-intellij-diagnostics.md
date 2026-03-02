@@ -51,7 +51,19 @@ mcp__ide__getDiagnostics uri="file:///{absolute_path}"
 **Error handling:** If MCP getDiagnostics fails or times out:
 - Increment mcp_failures counter
 - Display: "MCP server not responding or file not active in IDE. Ensure IntelliJ is running and file is focused."
-- Prompt user: "[R]etry/[A]bort"
+- Present using `AskUserQuestion`:
+  ```
+  AskUserQuestion:
+    questions:
+      - question: "MCP diagnostics failed. How would you like to proceed?"
+        header: "MCP"
+        options:
+          - label: "Retry"
+            description: "Wait 5 seconds and try again (max 3 retries)"
+          - label: "Abort"
+            description: "Exit with error report"
+        multiSelect: false
+  ```
 - If retry: Wait 5 seconds, try again (max 3 retries)
 - If abort or max retries: Exit with error report
 
@@ -65,11 +77,41 @@ Group by:
 **Decision logic for each issue type:**
 - **Error (severity: Error)**:
   - Display: "ERROR in {file}:{line} - {message}"
-  - Options: "[F]ix automatically/[S]uppress with justification/[S]kip this issue"
+  - Present using `AskUserQuestion`:
+    ```
+    AskUserQuestion:
+      questions:
+        - question: "How should this error be handled?"
+          header: "Error"
+          options:
+            - label: "Fix automatically"
+              description: "Attempt automatic code fix"
+            - label: "Suppress with justification"
+              description: "Add suppression annotation with reason"
+            - label: "Skip this issue"
+              description: "Move to next diagnostic without action"
+          multiSelect: false
+    ```
 
 - **Warning (severity: Warning)**:
   - Display: "WARNING in {file}:{line} - {message}"
-  - Options: "[F]ix automatically/[S]uppress with justification/[I]gnore (skip)/[A]bort all"
+  - Present using `AskUserQuestion`:
+    ```
+    AskUserQuestion:
+      questions:
+        - question: "How should this warning be handled?"
+          header: "Warning"
+          options:
+            - label: "Fix automatically"
+              description: "Attempt automatic code fix"
+            - label: "Suppress with justification"
+              description: "Add suppression annotation with reason"
+            - label: "Ignore (skip)"
+              description: "Move to next diagnostic without action"
+            - label: "Abort all"
+              description: "Stop processing all remaining diagnostics"
+          multiSelect: false
+    ```
 
 ### Step 3: Attempt Fixes
 
@@ -85,7 +127,24 @@ For each diagnostic marked for automatic fix:
 
 **C. Apply fix** using Edit tool
 
-**Error handling:** If Edit fails, display error and prompt "[R]etry edit/[S]uppress issue/[S]kip/[A]bort"
+**Error handling:** If Edit fails, display error and present using `AskUserQuestion`:
+
+```
+AskUserQuestion:
+  questions:
+    - question: "Edit failed for this fix. How would you like to proceed?"
+      header: "Fix error"
+      options:
+        - label: "Retry edit"
+          description: "Attempt the edit again"
+        - label: "Suppress issue"
+          description: "Add suppression instead of fixing"
+        - label: "Skip"
+          description: "Move to next diagnostic"
+        - label: "Abort"
+          description: "Stop processing all diagnostics"
+      multiSelect: false
+```
 
 ### Step 4: Re-verify Build
 
@@ -111,7 +170,22 @@ For issues that cannot be reasonably fixed:
 
 Call getDiagnostics again to verify issues resolved.
 
-**Error handling:** If MCP fails during re-check, increment mcp_failures and prompt "[R]etry/[C]ontinue without verification/[A]bort".
+**Error handling:** If MCP fails during re-check, increment mcp_failures and present using `AskUserQuestion`:
+
+```
+AskUserQuestion:
+  questions:
+    - question: "MCP re-check failed. How would you like to proceed?"
+      header: "Re-check"
+      options:
+        - label: "Retry"
+          description: "Try re-checking diagnostics again"
+        - label: "Continue without verification"
+          description: "Skip re-check and proceed to build"
+        - label: "Abort"
+          description: "Stop and report current state"
+      multiSelect: false
+```
 
 ### Step 7: Build and Commit
 

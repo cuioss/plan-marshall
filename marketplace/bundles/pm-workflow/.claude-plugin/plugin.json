@@ -40,6 +40,7 @@
     "./skills/workflow-integration-ci",
     "./skills/workflow-integration-git",
     "./skills/workflow-integration-sonar",
-    "./skills/outline-change-type"
+    "./skills/outline-change-type",
+    "./skills/recipe-refactor-to-profile-standards"
   ]
 }

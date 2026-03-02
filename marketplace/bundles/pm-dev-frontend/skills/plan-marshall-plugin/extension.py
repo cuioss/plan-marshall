@@ -404,9 +404,20 @@ class Extension(ExtensionBase):
                 if pkg_name:
                     # Resolve export path
                     export_path = export_value if isinstance(export_value, str) else None
-                    pkg_entry = {'path': f'{module_rel}/src/{pkg_name}' if module_rel != '.' else f'src/{pkg_name}'}
+                    pkg_path = f'{module_rel}/src/{pkg_name}' if module_rel != '.' else f'src/{pkg_name}'
+                    pkg_entry = {'path': pkg_path}
                     if export_path:
                         pkg_entry['exports'] = export_key
+                    # List direct source files in the package directory
+                    pkg_dir = module_path / 'src' / pkg_name
+                    if pkg_dir.exists():
+                        direct_files = sorted(
+                            f.name for f in pkg_dir.iterdir()
+                            if f.is_file() and f.suffix in {'.js', '.ts', '.mjs', '.cjs'}
+                            and not f.name.endswith('.d.ts')
+                        )
+                        if direct_files:
+                            pkg_entry['files'] = direct_files
                     packages[pkg_name] = pkg_entry
 
         # Fall back to top-level directories under src/ or lib/
@@ -421,7 +432,16 @@ class Extension(ExtensionBase):
                                 pkg_path = f'{module_rel}/{src_dir_name}/{pkg_name}'
                             else:
                                 pkg_path = f'{src_dir_name}/{pkg_name}'
-                            packages[pkg_name] = {'path': pkg_path}
+                            pkg_entry = {'path': pkg_path}
+                            # List direct source files in the package directory
+                            direct_files = sorted(
+                                f.name for f in subdir.iterdir()
+                                if f.is_file() and f.suffix in {'.js', '.ts', '.mjs', '.cjs'}
+                                and not f.name.endswith('.d.ts')
+                            )
+                            if direct_files:
+                                pkg_entry['files'] = direct_files
+                            packages[pkg_name] = pkg_entry
                     break  # Only check first existing src directory
 
         return packages

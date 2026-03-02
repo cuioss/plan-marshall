@@ -102,13 +102,24 @@ Ask user for:
 - Validation: Must not be empty, ≤100 chars
 - Error if invalid: "Description required (max 100 chars): {current_length}/100" and retry
 
-**D. Agent type**
-1. Analysis agent (code review, diagnostics)
-2. Execution agent (build, test, deploy)
-3. Coordination agent (multi-step workflows)
-4. Research agent (information gathering)
-- Validation: Must select 1-4
-- Error if invalid: "Please select agent type (1-4)" and retry
+**D. Agent type** — Present using `AskUserQuestion`:
+
+```
+AskUserQuestion:
+  questions:
+    - question: "What type of agent is this?"
+      header: "Type"
+      options:
+        - label: "Analysis agent"
+          description: "Code review, diagnostics"
+        - label: "Execution agent"
+          description: "Build, test, deploy"
+        - label: "Coordination agent"
+          description: "Multi-step workflows"
+        - label: "Research agent"
+          description: "Information gathering"
+      multiSelect: false
+```
 
 **E. Detailed capabilities** (what agent does)
 - Validation: Must not be empty
@@ -143,8 +154,22 @@ Track `questions_answered` counter.
 1. Use Glob to find all agents in target bundle
 2. Use Grep to search for similar names/descriptions
 3. If duplicates found:
-   - Display: "⚠️ Similar agents found: {list with descriptions}"
-   - Prompt: "[C]ontinue anyway/[R]ename agent/[A]bort creation?"
+   - Display: "Similar agents found: {list with descriptions}"
+   - Present using `AskUserQuestion`:
+     ```
+     AskUserQuestion:
+       questions:
+         - question: "Similar agents already exist. How would you like to proceed?"
+           header: "Duplicate"
+           options:
+             - label: "Continue anyway"
+               description: "Create the agent despite similarities"
+             - label: "Rename agent"
+               description: "Go back and choose a different name"
+             - label: "Abort creation"
+               description: "Cancel agent creation"
+           multiSelect: false
+     ```
    - If rename: Return to Step 2A
    - If abort: Exit workflow
    - Track in `duplication_checks` counter
@@ -220,7 +245,20 @@ Validation checks:
 - CONTINUOUS IMPROVEMENT RULE uses manage-lessons skill pattern
 - All required sections present
 
-If validation fails: Display errors and prompt "[R]etry generation/[A]bort"
+If validation fails: Display errors and present using `AskUserQuestion`:
+
+```
+AskUserQuestion:
+  questions:
+    - question: "Validation failed. How would you like to proceed?"
+      header: "Validate"
+      options:
+        - label: "Retry generation"
+          description: "Regenerate the component and validate again"
+        - label: "Abort"
+          description: "Cancel component creation"
+      multiSelect: false
+```
 
 Track `validations_performed` counter.
 
@@ -293,12 +331,24 @@ Ask user for:
 
 **C. Description** (one sentence, <100 chars)
 
-**D. Command type**
-1. Orchestration (coordinates agents/commands)
-2. Diagnostic (analyzes and reports)
-3. Interactive (user questionnaire)
-4. Automation (executes workflow)
-- Validation: Must select 1-4
+**D. Command type** — Present using `AskUserQuestion`:
+
+```
+AskUserQuestion:
+  questions:
+    - question: "What type of command is this?"
+      header: "Type"
+      options:
+        - label: "Orchestration"
+          description: "Coordinates agents/commands"
+        - label: "Diagnostic"
+          description: "Analyzes and reports"
+        - label: "Interactive"
+          description: "User questionnaire"
+        - label: "Automation"
+          description: "Executes workflow"
+      multiSelect: false
+```
 
 **E. Parameters** (what parameters command accepts)
 - Can be empty for commands with no parameters
@@ -422,11 +472,22 @@ Ask user for:
 - Validation: Must be at least 100 chars
 - Error if too short: "Detailed description must be at least 100 characters: {current_length}/100" and retry
 
-**E. Skill type**
-1. Standards skill (provides coding/process standards)
-2. Reference skill (provides reference material)
-3. Diagnostic skill (provides diagnostic patterns/tools)
-- Validation: Must select 1-3
+**E. Skill type** — Present using `AskUserQuestion`:
+
+```
+AskUserQuestion:
+  questions:
+    - question: "What type of skill is this?"
+      header: "Type"
+      options:
+        - label: "Standards skill"
+          description: "Provides coding/process standards"
+        - label: "Reference skill"
+          description: "Provides reference material"
+        - label: "Diagnostic skill"
+          description: "Provides diagnostic patterns/tools"
+      multiSelect: false
+```
 
 **F. Standards categories** (if standards skill)
 - What domains does this cover? (e.g., Java, Testing, Documentation)
@@ -596,11 +657,22 @@ Ask user for:
 
 **E. Author** (bundle author name)
 
-**F. Bundle type**
-1. Standards bundle (provides development standards)
-2. Tool bundle (provides commands/agents)
-3. Mixed bundle (standards + tools)
-- Validation: Must select 1-3
+**F. Bundle type** — Present using `AskUserQuestion`:
+
+```
+AskUserQuestion:
+  questions:
+    - question: "What type of bundle is this?"
+      header: "Type"
+      options:
+        - label: "Standards bundle"
+          description: "Provides development standards"
+        - label: "Tool bundle"
+          description: "Provides commands/agents"
+        - label: "Mixed bundle"
+          description: "Standards + tools"
+      multiSelect: false
+```
 
 **G. Initial components**
 - Skills? (y/n) - If yes, how many initially?

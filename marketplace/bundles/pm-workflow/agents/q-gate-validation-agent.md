@@ -1,7 +1,7 @@
 ---
 name: q-gate-validation-agent
 description: Verify deliverables against request intent and assessments, catching false positives and missing coverage
-tools: Read, Bash
+tools: Read, Bash, Skill
 model: sonnet
 ---
 
