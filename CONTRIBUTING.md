@@ -10,8 +10,7 @@ Before we can accept your contribution, you must sign our Contributor License Ag
 
 The CLA ensures that:
 - You have the right to contribute the code
-- We have the necessary rights to distribute the code under the FSL-1.1-ALv2 license
-- Your contribution remains usable after the automatic conversion to Apache 2.0 (after 2 years)
+- We have the necessary rights to distribute the code under the AGPL-3.0-only license
 
 ## How to Contribute
 
@@ -54,7 +53,7 @@ We expect all contributors to interact respectfully and constructively. Insults,
 
 ## License
 
-By contributing, you agree that your contribution will be published under the [FSL-1.1-ALv2](LICENSE.md) license. After 2 years, the code will automatically become available under Apache 2.0.
+By contributing, you agree that your contribution will be published under the [AGPL-3.0-only](LICENSE.md) license.
 
 ## Questions?
 
