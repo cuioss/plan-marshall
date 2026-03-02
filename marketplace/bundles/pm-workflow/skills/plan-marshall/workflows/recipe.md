@@ -112,9 +112,7 @@ Use the selected recipe to create a plan:
 ```
 Task: pm-workflow:plan-init-agent
   Input:
-    description: "{recipe_name}: {recipe_description}"
-    source: recipe
-    source_id: {recipe_key}
+    recipe: {recipe_key}
   Output: plan_id, domains array
 ```
 
