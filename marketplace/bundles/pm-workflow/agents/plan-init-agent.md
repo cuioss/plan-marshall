@@ -45,8 +45,8 @@ Stay in your lane:
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `plan_id` | string | No | Plan identifier (derived if not provided) |
-| `source` | string | Yes | One of: description, issue, lesson |
-| `content` | string | Yes | Task description, issue URL, or lesson ID |
+| `source` | string | Yes | One of: description, issue, lesson, recipe |
+| `content` | string | Yes | Task description, issue URL, lesson ID, or recipe key |
 
 ## Workflow
 
