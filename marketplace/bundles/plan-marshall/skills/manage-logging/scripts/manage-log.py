@@ -29,7 +29,7 @@ Arguments (read):
 
 Examples:
     # Write operations
-    python3 manage-log.py script --plan-id my-plan --level INFO --message "pm-workflow:manage-task:manage-task add (0.15s)"
+    python3 manage-log.py script --plan-id my-plan --level INFO --message "plan-marshall:manage-task:manage-task add (0.15s)"
     python3 manage-log.py work --plan-id my-plan --level INFO --message "[ARTIFACT] Created deliverable: auth module"
     python3 manage-log.py decision --plan-id my-plan --level INFO --message "(skill-name) Detected domain: java"
 

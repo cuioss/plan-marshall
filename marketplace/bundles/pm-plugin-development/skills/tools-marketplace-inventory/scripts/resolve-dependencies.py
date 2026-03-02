@@ -23,9 +23,9 @@ Options:
     --dep-types <types>      Filter: script,skill,import,path,implements (comma-separated)
 
 Component Notation:
-    bundle:skill                    Skill (e.g., pm-workflow:phase-1-init)
-    bundle:skill:script             Script (e.g., pm-workflow:manage-files:manage-files)
-    bundle:agents:name              Agent (e.g., pm-workflow:agents:plan-init-agent)
+    bundle:skill                    Skill (e.g., plan-marshall:phase-1-init)
+    bundle:skill:script             Script (e.g., plan-marshall:manage-files:manage-files)
+    bundle:agents:name              Agent (e.g., plan-marshall:agents:plan-init-agent)
     bundle:commands:name            Command (e.g., plan-marshall:commands:tools-fix-intellij-diagnostics)
 
 Exit codes:

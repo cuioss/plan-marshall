@@ -60,9 +60,9 @@ JSON structure and field definitions for project configuration.
       "defaults": ["plan-marshall:ref-development-standards"],
       "optionals": ["plan-marshall:ref-development-standards"],
       "task_executors": {
-        "implementation": "pm-workflow:task-implementation",
-        "module_testing": "pm-workflow:task-module_testing",
-        "integration_testing": "pm-workflow:task-integration_testing"
+        "implementation": "plan-marshall:task-implementation",
+        "module_testing": "plan-marshall:task-module_testing",
+        "integration_testing": "plan-marshall:task-integration_testing"
       }
     },
     "java": {
@@ -98,9 +98,9 @@ The `system` domain contains task executors and base skills applied globally.
       "defaults": ["bundle:skill", ...],
       "optionals": ["bundle:skill", ...],
       "task_executors": {
-        "implementation": "pm-workflow:task-implementation",
-        "module_testing": "pm-workflow:task-module_testing",
-        "integration_testing": "pm-workflow:task-integration_testing"
+        "implementation": "plan-marshall:task-implementation",
+        "module_testing": "plan-marshall:task-module_testing",
+        "integration_testing": "plan-marshall:task-integration_testing"
       }
     }
   }

@@ -289,7 +289,7 @@ Recorded lessons:
 To query assessments for context during failure analysis:
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-assessments:manage-assessments \
+python3 .plan/execute-script.py plan-marshall:manage-assessments:manage-assessments \
   query --plan-id {plan_id} --certainty {CERTAIN_INCLUDE|CERTAIN_EXCLUDE|UNCERTAIN}
 ```
 

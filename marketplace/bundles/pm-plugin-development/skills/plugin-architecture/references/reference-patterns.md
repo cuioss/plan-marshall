@@ -76,7 +76,7 @@ python3 .plan/execute-script.py {bundle}:{skill}:{subcommand} {args}
 ```markdown
 ✅ python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:analyze {input_file}
 ✅ python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:validate {component_path}
-✅ python3 .plan/execute-script.py pm-workflow:manage-files:manage-files add --plan-id {id} --file {file}
+✅ python3 .plan/execute-script.py plan-marshall:manage-files:manage-files add --plan-id {id} --file {file}
 ```
 
 **Prohibited**:

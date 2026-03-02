@@ -16,7 +16,7 @@ user-invokable: false
 
 | Contract | Location | Purpose |
 |----------|----------|---------|
-| Task Contract | `pm-workflow:manage-tasks/standards/task-contract.md` | Task structure and optimization workflow |
+| Task Contract | `plan-marshall:manage-tasks/standards/task-contract.md` | Task structure and optimization workflow |
 
 **Non-compliant tasks will be rejected by validation.**
 
@@ -25,8 +25,8 @@ user-invokable: false
 ```yaml
 # CORRECT - file paths from deliverable
 steps:
-  - marketplace/bundles/pm-workflow/agents/plan-init-agent.md
-  - marketplace/bundles/pm-workflow/agents/solution-outline-agent.md
+  - marketplace/bundles/plan-marshall/agents/plan-init-agent.md
+  - marketplace/bundles/plan-marshall/agents/solution-outline-agent.md
 
 # WRONG - descriptive text (violates contract)
 steps[2]{number,target,status}:
@@ -52,7 +52,7 @@ The `steps` field lists FILES TO MODIFY, not progress tracking entries.
 Read the solution document to get all deliverables with metadata:
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-solution-outline:manage-solution-outline \
+python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-solution-outline \
   list-deliverables \
   --plan-id {plan_id}
 ```
@@ -113,7 +113,7 @@ For aggregated deliverables or single deliverables, create tasks using heredoc.
 **CRITICAL**: The `steps` field MUST contain file paths copied from the deliverable's `Affected files` section.
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks add \
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks add \
   --plan-id {plan_id} <<'EOF'
 title: {Action Verb} {Target}: {Scope}
 deliverable: {n}
@@ -158,20 +158,20 @@ EOF
 **Example with real paths**:
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks add \
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks add \
   --plan-id migrate-json-to-toon <<'EOF'
-title: Migrate pm-workflow Agents to TOON Format
+title: Migrate plan-marshall Agents to TOON Format
 deliverable: 2
 domain: plan-marshall-plugin-dev
 phase: 5-execute
 description: |
-  Convert all JSON output blocks to TOON format in pm-workflow agents.
+  Convert all JSON output blocks to TOON format in plan-marshall agents.
 
 steps:
-  - marketplace/bundles/pm-workflow/agents/plan-init-agent.md
-  - marketplace/bundles/pm-workflow/agents/solution-outline-agent.md
-  - marketplace/bundles/pm-workflow/agents/task-plan-agent.md
-  - marketplace/bundles/pm-workflow/agents/task-execute-agent.md
+  - marketplace/bundles/plan-marshall/agents/plan-init-agent.md
+  - marketplace/bundles/plan-marshall/agents/solution-outline-agent.md
+  - marketplace/bundles/plan-marshall/agents/task-plan-agent.md
+  - marketplace/bundles/plan-marshall/agents/task-execute-agent.md
 
 depends_on: TASK-1
 
@@ -182,7 +182,7 @@ delegation:
 
 verification:
   commands:
-    - grep -r '```json' marketplace/bundles/pm-workflow/agents/
+    - grep -r '```json' marketplace/bundles/plan-marshall/agents/
   criteria: Returns no matches (exit code 1)
 EOF
 ```
@@ -294,12 +294,12 @@ delegation:
 The `steps` field lists ALL files to migrate (copied from `Affected files`):
 
 ```yaml
-title: Migrate pm-workflow Agents to TOON Format
+title: Migrate plan-marshall Agents to TOON Format
 steps:
-  - marketplace/bundles/pm-workflow/agents/plan-init-agent.md
-  - marketplace/bundles/pm-workflow/agents/solution-outline-agent.md
-  - marketplace/bundles/pm-workflow/agents/task-plan-agent.md
-  - marketplace/bundles/pm-workflow/agents/task-execute-agent.md
+  - marketplace/bundles/plan-marshall/agents/plan-init-agent.md
+  - marketplace/bundles/plan-marshall/agents/solution-outline-agent.md
+  - marketplace/bundles/plan-marshall/agents/task-plan-agent.md
+  - marketplace/bundles/plan-marshall/agents/task-execute-agent.md
 delegation:
   skill: pm-plugin-development:plugin-maintain
   workflow: update-component
@@ -312,8 +312,8 @@ Scripts are created within skills. The `steps` lists the script file AND its tes
 ```yaml
 title: Create script: manage-references
 steps:
-  - marketplace/bundles/pm-workflow/skills/manage-references/scripts/manage-references.py
-  - test/pm-workflow/manage-references/test_manage_references.py
+  - marketplace/bundles/plan-marshall/skills/manage-references/scripts/manage-references.py
+  - test/plan-marshall/manage-references/test_manage_references.py
 delegation:
   skill: pm-plugin-development:plugin-create
   workflow: create-skill
@@ -406,8 +406,8 @@ If deliverable lacks required parameters:
 **Caller**: `pm-plugin-development:plugin-task-plan-agent`
 
 **Script Notations** (use EXACTLY as shown):
-- `pm-workflow:manage-solution-outline:manage-solution-outline` - Read solution and list deliverables (list-deliverables, read)
-- `pm-workflow:manage-tasks:manage-tasks` - Create tasks (add --plan-id X <<'EOF' ... EOF)
+- `plan-marshall:manage-solution-outline:manage-solution-outline` - Read solution and list deliverables (list-deliverables, read)
+- `plan-marshall:manage-tasks:manage-tasks` - Create tasks (add --plan-id X <<'EOF' ... EOF)
 - `plan-marshall:manage-lessons:manage-lesson` - Record lessons on issues (add)
 - `plan-marshall:manage-logging:manage-log` - Log progress (work)
 
@@ -416,4 +416,4 @@ If deliverable lacks required parameters:
 - `pm-plugin-development:plugin-maintain` - Component updates and refactoring (handles verification internally)
 
 **Contract Reference**:
-- [manage-tasks/standards/task-contract.md](../../pm-workflow/skills/manage-tasks/standards/task-contract.md) - Optimization workflow and decision tables
+- [manage-tasks/standards/task-contract.md](../../plan-marshall/skills/manage-tasks/standards/task-contract.md) - Optimization workflow and decision tables

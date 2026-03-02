@@ -313,7 +313,7 @@ skills_by_profile:
 ### configure-task-executors
 
 Auto-discover profiles from configured domains and register task executors.
-Convention: profile X maps to skill `pm-workflow:task-X`.
+Convention: profile X maps to skill `plan-marshall:task-X`.
 
 ```bash
 plan-marshall-config configure-task-executors
@@ -324,9 +324,9 @@ plan-marshall-config configure-task-executors
 status: success
 task_executors_configured: 3
 executors:
-  implementation: pm-workflow:task-implementation
-  integration_testing: pm-workflow:task-integration_testing
-  module_testing: pm-workflow:task-module_testing
+  implementation: plan-marshall:task-implementation
+  integration_testing: plan-marshall:task-integration_testing
+  module_testing: plan-marshall:task-module_testing
 ```
 
 ### resolve-task-executor
@@ -341,7 +341,7 @@ plan-marshall-config resolve-task-executor --profile implementation
 ```toon
 status: success
 profile: implementation
-task_executor: pm-workflow:task-implementation
+task_executor: plan-marshall:task-implementation
 ```
 
 ---

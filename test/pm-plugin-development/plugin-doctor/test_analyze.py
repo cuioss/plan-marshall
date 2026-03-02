@@ -306,7 +306,7 @@ tools: Read, Bash
 If clarified_request is empty, fall back to body section.
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-plan-documents:manage-plan-documents request read \\
+python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-documents request read \\
   --plan-id {plan_id} \\
   --section clarified_request
 ```
@@ -337,7 +337,7 @@ description: Test skill
 Read request (clarified_request otherwise body):
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-plan-documents:manage-plan-documents request read \\
+python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-documents request read \\
   --plan-id {plan_id} \\
   --section clarified_request
 ```
@@ -368,7 +368,7 @@ tools: Read, Bash
 Read request (clarified_request falls back to original_input automatically):
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-plan-documents:manage-plan-documents request read \\
+python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-documents request read \\
   --plan-id {plan_id} \\
   --section clarified_request
 ```
@@ -399,7 +399,7 @@ tools: Read, Bash
 Process the body of the request.
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-references:manage-references get \\
+python3 .plan/execute-script.py plan-marshall:manage-references:manage-references get \\
   --plan-id {plan_id} --field domains
 ```
 """

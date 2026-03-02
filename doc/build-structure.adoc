@@ -17,7 +17,7 @@ Pyprojectx was chosen because it provides a proven, mvnw/gradlew-style wrapper f
 ./pw compile                      # mypy marketplace/bundles/
 ./pw compile pm-dev-frontend      # mypy single bundle
 ./pw test-compile                 # mypy test/
-./pw test-compile pm-workflow     # mypy single test directory
+./pw test-compile plan-marshall     # mypy single test directory
 ./pw module-tests                 # pytest test/
 ./pw module-tests pm-dev-frontend # pytest single directory
 ./pw quality-gate                 # ruff check all
@@ -60,7 +60,7 @@ Tests use pytest via the wrapper with optional module filtering:
 [source,bash]
 ----
 ./pw module-tests                 # pytest test/
-./pw module-tests pm-workflow     # pytest test/pm-workflow
+./pw module-tests plan-marshall     # pytest test/plan-marshall
 ./pw module-tests -p              # pytest test/ --parallel
 ./pw coverage                     # pytest with coverage (to .plan/temp/htmlcov/)
 ./pw coverage pm-dev-frontend     # coverage for single module

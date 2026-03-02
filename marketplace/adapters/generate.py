@@ -3,7 +3,7 @@
 
 Usage:
     python3 marketplace/adapters/generate.py --target opencode --output .opencode/
-    python3 marketplace/adapters/generate.py --target opencode --output .opencode/ --bundles pm-dev-java,pm-workflow
+    python3 marketplace/adapters/generate.py --target opencode --output .opencode/ --bundles pm-dev-java,plan-marshall
 """
 
 import argparse

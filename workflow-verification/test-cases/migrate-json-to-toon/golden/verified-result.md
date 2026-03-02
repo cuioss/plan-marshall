@@ -4,7 +4,7 @@
 
 **Scope Clarifications** (from user during refine phase):
 - Output type: "Both docs and scripts"
-- Bundles in scope: "pm-workflow only"
+- Bundles in scope: "plan-marshall only"
 - Script migration: "Yes - full migration"
 
 This is the EXPECTED correct assessment that the outline phase should produce.
@@ -16,7 +16,7 @@ This is the EXPECTED correct assessment that the outline phase should produce.
 **Request Analysis:**
 - "agents/commands/skills outputs" → All three component types
 - "JSON to TOON format" → Find JSON **stdout** output specifications
-- User clarified "pm-workflow only" → Single bundle scope
+- User clarified "plan-marshall only" → Single bundle scope
 - User clarified "both docs and scripts" → Include Python scripts
 
 **Key Distinction:**
@@ -26,7 +26,7 @@ This is the EXPECTED correct assessment that the outline phase should produce.
 **Scope Decision** (in decision.log):
 ```
 (pm-plugin-development:ext-outline-plugin) Component scope: [skills, agents, commands, scripts, tests]
-(pm-plugin-development:ext-outline-plugin) Context loaded: domains=[plan-marshall-plugin-dev], bundle=pm-workflow
+(pm-plugin-development:ext-outline-plugin) Context loaded: domains=[plan-marshall-plugin-dev], bundle=plan-marshall
 ```
 
 ---
@@ -38,7 +38,7 @@ Uses `scan-marketplace-inventory` with content filter for ```json patterns.
 
 **Script Discovery:**
 ```bash
-grep -r "print.*json.dumps" marketplace/bundles/pm-workflow/skills/*/scripts/*.py
+grep -r "print.*json.dumps" marketplace/bundles/plan-marshall/skills/*/scripts/*.py
 ```
 
 Results:
@@ -51,13 +51,13 @@ Results:
 
 ## Agents with JSON Output Specs (0 files)
 
-All pm-workflow agents already use TOON format.
+All plan-marshall agents already use TOON format.
 
 ---
 
 ## Commands with JSON Output Specs (0 files)
 
-No pm-workflow commands have JSON output specifications.
+No plan-marshall commands have JSON output specifications.
 
 ---
 
@@ -65,10 +65,10 @@ No pm-workflow commands have JSON output specifications.
 
 | File | Reason |
 |------|--------|
-| pm-workflow/skills/planning-inventory/SKILL.md | ```json output blocks |
-| pm-workflow/skills/workflow-integration-ci/SKILL.md | ```json output blocks |
-| pm-workflow/skills/workflow-integration-git/SKILL.md | ```json output blocks |
-| pm-workflow/skills/workflow-integration-sonar/SKILL.md | ```json output blocks |
+| plan-marshall/skills/planning-inventory/SKILL.md | ```json output blocks |
+| plan-marshall/skills/workflow-integration-ci/SKILL.md | ```json output blocks |
+| plan-marshall/skills/workflow-integration-git/SKILL.md | ```json output blocks |
+| plan-marshall/skills/workflow-integration-sonar/SKILL.md | ```json output blocks |
 
 ---
 
@@ -76,10 +76,10 @@ No pm-workflow commands have JSON output specifications.
 
 | File | Reason |
 |------|--------|
-| pm-workflow/skills/planning-inventory/scripts/scan-planning-inventory.py | print(json.dumps()) |
-| pm-workflow/skills/workflow-integration-ci/scripts/pr.py | print(json.dumps()) |
-| pm-workflow/skills/workflow-integration-git/scripts/git-workflow.py | print(json.dumps()) |
-| pm-workflow/skills/workflow-integration-sonar/scripts/sonar.py | print(json.dumps()) |
+| plan-marshall/skills/planning-inventory/scripts/scan-planning-inventory.py | print(json.dumps()) |
+| plan-marshall/skills/workflow-integration-ci/scripts/pr.py | print(json.dumps()) |
+| plan-marshall/skills/workflow-integration-git/scripts/git-workflow.py | print(json.dumps()) |
+| plan-marshall/skills/workflow-integration-sonar/scripts/sonar.py | print(json.dumps()) |
 
 ---
 
@@ -87,10 +87,10 @@ No pm-workflow commands have JSON output specifications.
 
 | File | Reason |
 |------|--------|
-| test/pm-workflow/planning-inventory/test_scan_planning_inventory.py | Tests for scan-planning-inventory.py |
-| test/pm-workflow/workflow-integration-ci/test_pr.py | Tests for pr.py |
-| test/pm-workflow/workflow-integration-git/test_git_workflow.py | Tests for git-workflow.py |
-| test/pm-workflow/workflow-integration-sonar/test_sonar.py | Tests for sonar.py |
+| test/plan-marshall/planning-inventory/test_scan_planning_inventory.py | Tests for scan-planning-inventory.py |
+| test/plan-marshall/workflow-integration-ci/test_pr.py | Tests for pr.py |
+| test/plan-marshall/workflow-integration-git/test_git_workflow.py | Tests for git-workflow.py |
+| test/plan-marshall/workflow-integration-sonar/test_sonar.py | Tests for sonar.py |
 
 ---
 
@@ -101,7 +101,7 @@ No pm-workflow commands have JSON output specifications.
 artifact_store.py - writes JSON to JSONL files for internal storage (NOT script output)
 ```
 
-**pm-workflow skills already using TOON output:**
+**plan-marshall skills already using TOON output:**
 ```
 manage-config/scripts/manage-config.py - Outputs TOON
 manage-tasks/scripts/manage-tasks.py - Outputs TOON
@@ -123,25 +123,25 @@ manage-solution-outline/scripts/manage_solution_outline.py - Outputs TOON
 **Deliverable 1**: Migrate planning-inventory outputs to TOON
 - Files: SKILL.md, scan-planning-inventory.py, test_scan_planning_inventory.py
 - Domain: plan-marshall-plugin-dev
-- Module: pm-workflow
+- Module: plan-marshall
 - Profiles: implementation, testing
 
 **Deliverable 2**: Migrate workflow-integration-ci outputs to TOON
 - Files: SKILL.md, pr.py, test_pr.py
 - Domain: plan-marshall-plugin-dev
-- Module: pm-workflow
+- Module: plan-marshall
 - Profiles: implementation, testing
 
 **Deliverable 3**: Migrate workflow-integration-git outputs to TOON
 - Files: SKILL.md, git-workflow.py, test_git_workflow.py
 - Domain: plan-marshall-plugin-dev
-- Module: pm-workflow
+- Module: plan-marshall
 - Profiles: implementation, testing
 
 **Deliverable 4**: Migrate workflow-integration-sonar outputs to TOON
 - Files: SKILL.md, sonar.py, test_sonar.py
 - Domain: plan-marshall-plugin-dev
-- Module: pm-workflow
+- Module: plan-marshall
 - Profiles: implementation, testing
 
 **Alternative grouping** (also acceptable):
@@ -154,24 +154,24 @@ manage-solution-outline/scripts/manage_solution_outline.py - Outputs TOON
 ```toon
 track: complex
 scope_estimate: few_files
-module_mapping: pm-workflow
+module_mapping: plan-marshall
 
 affected_files[12]:
   # Skills documentation (4)
-  marketplace/bundles/pm-workflow/skills/planning-inventory/SKILL.md
-  marketplace/bundles/pm-workflow/skills/workflow-integration-ci/SKILL.md
-  marketplace/bundles/pm-workflow/skills/workflow-integration-git/SKILL.md
-  marketplace/bundles/pm-workflow/skills/workflow-integration-sonar/SKILL.md
+  marketplace/bundles/plan-marshall/skills/planning-inventory/SKILL.md
+  marketplace/bundles/plan-marshall/skills/workflow-integration-ci/SKILL.md
+  marketplace/bundles/plan-marshall/skills/workflow-integration-git/SKILL.md
+  marketplace/bundles/plan-marshall/skills/workflow-integration-sonar/SKILL.md
   # Python scripts (4)
-  marketplace/bundles/pm-workflow/skills/planning-inventory/scripts/scan-planning-inventory.py
-  marketplace/bundles/pm-workflow/skills/workflow-integration-ci/scripts/pr.py
-  marketplace/bundles/pm-workflow/skills/workflow-integration-git/scripts/git-workflow.py
-  marketplace/bundles/pm-workflow/skills/workflow-integration-sonar/scripts/sonar.py
+  marketplace/bundles/plan-marshall/skills/planning-inventory/scripts/scan-planning-inventory.py
+  marketplace/bundles/plan-marshall/skills/workflow-integration-ci/scripts/pr.py
+  marketplace/bundles/plan-marshall/skills/workflow-integration-git/scripts/git-workflow.py
+  marketplace/bundles/plan-marshall/skills/workflow-integration-sonar/scripts/sonar.py
   # Test files (4)
-  test/pm-workflow/planning-inventory/test_scan_planning_inventory.py
-  test/pm-workflow/workflow-integration-ci/test_pr.py
-  test/pm-workflow/workflow-integration-git/test_git_workflow.py
-  test/pm-workflow/workflow-integration-sonar/test_sonar.py
+  test/plan-marshall/planning-inventory/test_scan_planning_inventory.py
+  test/plan-marshall/workflow-integration-ci/test_pr.py
+  test/plan-marshall/workflow-integration-git/test_git_workflow.py
+  test/plan-marshall/workflow-integration-sonar/test_sonar.py
 ```
 
 ---
@@ -181,9 +181,9 @@ affected_files[12]:
 ### decision.log Entries
 
 ```
-(pm-workflow:phase-2-refine) Track: complex - migration pattern requires discovery
+(plan-marshall:phase-2-refine) Track: complex - migration pattern requires discovery
 (pm-plugin-development:ext-outline-plugin) Component scope: [skills, agents, commands, scripts, tests]
-(pm-plugin-development:ext-outline-plugin) Context loaded: domains=[plan-marshall-plugin-dev], bundle=pm-workflow
+(pm-plugin-development:ext-outline-plugin) Context loaded: domains=[plan-marshall-plugin-dev], bundle=plan-marshall
 (pm-plugin-development:ext-outline-plugin) Change type: migrate
 (pm-plugin-development:ext-outline-plugin) Complete: 4 deliverables, 8 affected files, 4 test files
 ```
@@ -191,9 +191,9 @@ affected_files[12]:
 ### work.log Entries
 
 ```
-[REFINE:6] (pm-workflow:phase-2-refine) Confidence: 64%. Threshold: 95%. Issues: Completeness, Ambiguity
-[REFINE:8] (pm-workflow:phase-2-refine) Updated request with 3 clarifications
-[REFINE:6] (pm-workflow:phase-2-refine) Confidence: 100%. Threshold: 95%. All issues resolved.
-[PROGRESS] (pm-plugin-development:ext-outline-plugin) Inventory: 4-5 skills with JSON code blocks in pm-workflow
+[REFINE:6] (plan-marshall:phase-2-refine) Confidence: 64%. Threshold: 95%. Issues: Completeness, Ambiguity
+[REFINE:8] (plan-marshall:phase-2-refine) Updated request with 3 clarifications
+[REFINE:6] (plan-marshall:phase-2-refine) Confidence: 100%. Threshold: 95%. All issues resolved.
+[PROGRESS] (pm-plugin-development:ext-outline-plugin) Inventory: 4-5 skills with JSON code blocks in plan-marshall
 [ARTIFACT] (pm-plugin-development:ext-outline-plugin) Created solution_outline.md - 4 deliverables
 ```

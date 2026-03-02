@@ -34,27 +34,27 @@ class TestComponentId:
 
     def test_from_notation_skill(self):
         """Test parsing skill notation."""
-        comp = ComponentId.from_notation('pm-workflow:manage-files')
+        comp = ComponentId.from_notation('plan-marshall:manage-files')
         assert comp is not None
-        assert comp.bundle == 'pm-workflow'
+        assert comp.bundle == 'plan-marshall'
         assert comp.component_type == 'skill'
         assert comp.name == 'manage-files'
         assert comp.parent_skill is None
 
     def test_from_notation_script(self):
         """Test parsing script notation."""
-        comp = ComponentId.from_notation('pm-workflow:manage-files:manage-files')
+        comp = ComponentId.from_notation('plan-marshall:manage-files:manage-files')
         assert comp is not None
-        assert comp.bundle == 'pm-workflow'
+        assert comp.bundle == 'plan-marshall'
         assert comp.component_type == 'script'
         assert comp.name == 'manage-files'
         assert comp.parent_skill == 'manage-files'
 
     def test_from_notation_agent(self):
         """Test parsing agent notation."""
-        comp = ComponentId.from_notation('pm-workflow:agents:plan-init-agent')
+        comp = ComponentId.from_notation('plan-marshall:agents:plan-init-agent')
         assert comp is not None
-        assert comp.bundle == 'pm-workflow'
+        assert comp.bundle == 'plan-marshall'
         assert comp.component_type == 'agent'
         assert comp.name == 'plan-init-agent'
 
@@ -68,18 +68,18 @@ class TestComponentId:
 
     def test_to_notation_skill(self):
         """Test converting skill to notation."""
-        comp = ComponentId(bundle='pm-workflow', component_type='skill', name='manage-files')
-        assert comp.to_notation() == 'pm-workflow:manage-files'
+        comp = ComponentId(bundle='plan-marshall', component_type='skill', name='manage-files')
+        assert comp.to_notation() == 'plan-marshall:manage-files'
 
     def test_to_notation_script(self):
         """Test converting script to notation."""
         comp = ComponentId(
-            bundle='pm-workflow',
+            bundle='plan-marshall',
             component_type='script',
             name='manage-files',
             parent_skill='manage-files',
         )
-        assert comp.to_notation() == 'pm-workflow:manage-files:manage-files'
+        assert comp.to_notation() == 'plan-marshall:manage-files:manage-files'
 
 
 # =============================================================================
@@ -111,7 +111,7 @@ user-invokable: true
         content = """---
 name: test-skill
 skills:
-  - pm-workflow:manage-files
+  - plan-marshall:manage-files
   - plan-marshall:ref-toon-format
 ---
 
@@ -119,20 +119,20 @@ skills:
 """
         frontmatter, _ = extract_frontmatter(content)
         assert frontmatter['name'] == 'test-skill'
-        assert frontmatter['skills'] == ['pm-workflow:manage-files', 'plan-marshall:ref-toon-format']
+        assert frontmatter['skills'] == ['plan-marshall:manage-files', 'plan-marshall:ref-toon-format']
 
     def test_extract_implements(self):
         """Test extracting implements field."""
         content = """---
 name: ext-outline-plugin
-implements: pm-workflow:workflow-extension-api/standards/extensions/outline-extension.md
+implements: plan-marshall:workflow-extension-api/standards/extensions/outline-extension.md
 ---
 
 # Content
 """
         frontmatter, _ = extract_frontmatter(content)
         assert (
-            frontmatter['implements'] == 'pm-workflow:workflow-extension-api/standards/extensions/outline-extension.md'
+            frontmatter['implements'] == 'plan-marshall:workflow-extension-api/standards/extensions/outline-extension.md'
         )
 
     def test_no_frontmatter(self):
@@ -158,12 +158,12 @@ class TestScriptNotationDetection:
         """Test detecting python3 .plan/execute-script.py notation."""
         content = """
 # Example usage
-python3 .plan/execute-script.py pm-workflow:manage-files:manage-files add --plan-id test
+python3 .plan/execute-script.py plan-marshall:manage-files:manage-files add --plan-id test
 """
         source = ComponentId(bundle='test', component_type='skill', name='test')
         deps = detect_script_notations(content, source)
         assert len(deps) == 1
-        assert deps[0].target.bundle == 'pm-workflow'
+        assert deps[0].target.bundle == 'plan-marshall'
         assert deps[0].target.parent_skill == 'manage-files'
         assert deps[0].target.name == 'manage-files'
         assert deps[0].dep_type == DependencyType.SCRIPT_NOTATION
@@ -202,12 +202,12 @@ class TestSkillReferenceDetection:
         """Test detecting skills from frontmatter."""
         content = """Content after frontmatter"""
         frontmatter = {
-            'skills': ['pm-workflow:manage-files', 'plan-marshall:ref-toon-format'],
+            'skills': ['plan-marshall:manage-files', 'plan-marshall:ref-toon-format'],
         }
         source = ComponentId(bundle='test', component_type='skill', name='test')
         deps = detect_skill_references(content, frontmatter, source)
         assert len(deps) == 2
-        assert deps[0].target.bundle == 'pm-workflow'
+        assert deps[0].target.bundle == 'plan-marshall'
         assert deps[0].target.name == 'manage-files'
         assert deps[1].target.bundle == 'plan-marshall'
         assert deps[1].target.name == 'ref-toon-format'
@@ -217,14 +217,14 @@ class TestSkillReferenceDetection:
         content = """
 ## Required Skills
 
-Skill: pm-workflow:phase-1-init
+Skill: plan-marshall:phase-1-init
 
 This skill depends on the initialization phase.
 """
         source = ComponentId(bundle='test', component_type='skill', name='test')
         deps = detect_skill_references(content, {}, source)
         assert len(deps) == 1
-        assert deps[0].target.bundle == 'pm-workflow'
+        assert deps[0].target.bundle == 'plan-marshall'
         assert deps[0].target.name == 'phase-1-init'
 
 
@@ -283,12 +283,12 @@ class TestImplementsDetection:
     def test_detect_implements(self):
         """Test detecting implements field."""
         frontmatter = {
-            'implements': 'pm-workflow:workflow-extension-api/standards/extensions/outline-extension.md',
+            'implements': 'plan-marshall:workflow-extension-api/standards/extensions/outline-extension.md',
         }
         source = ComponentId(bundle='pm-plugin-development', component_type='skill', name='ext-outline-plugin')
         deps = detect_implements(frontmatter, source)
         assert len(deps) == 1
-        assert deps[0].target.bundle == 'pm-workflow'
+        assert deps[0].target.bundle == 'plan-marshall'
         assert deps[0].target.name == 'workflow-extension-api'
         assert deps[0].dep_type == DependencyType.IMPLEMENTS
 
@@ -320,14 +320,14 @@ class TestDepsSubcommand:
             SCRIPT_PATH,
             'deps',
             '--component',
-            'pm-workflow:manage-files',
+            'plan-marshall:manage-files',
             '--direct-result',
         )
         assert result.returncode == 0
 
         data = parse_toon(result.stdout)
         assert data['status'] == 'success'
-        assert data['component'] == 'pm-workflow:manage-files'
+        assert data['component'] == 'plan-marshall:manage-files'
         assert 'direct_dependencies' in data or data.get('statistics', {}).get('direct_count', 0) >= 0
 
     def test_deps_unknown_component(self):
@@ -408,7 +408,7 @@ class TestTreeSubcommand:
             SCRIPT_PATH,
             'tree',
             '--component',
-            'pm-workflow:manage-files',
+            'plan-marshall:manage-files',
             '--direct-result',
             '--depth',
             '2',
@@ -418,7 +418,7 @@ class TestTreeSubcommand:
         data = parse_toon(result.stdout)
         assert data['status'] == 'success'
         assert 'tree' in data
-        assert 'pm-workflow:manage-files' in data['tree']
+        assert 'plan-marshall:manage-files' in data['tree']
 
 
 # =============================================================================
@@ -435,7 +435,7 @@ class TestDepTypeFiltering:
             SCRIPT_PATH,
             'deps',
             '--component',
-            'pm-workflow:manage-files',
+            'plan-marshall:manage-files',
             '--dep-types',
             'import',
             '--direct-result',
@@ -454,7 +454,7 @@ class TestDepTypeFiltering:
             SCRIPT_PATH,
             'deps',
             '--component',
-            'pm-workflow:manage-files',
+            'plan-marshall:manage-files',
             '--dep-types',
             'import,skill',
             '--direct-result',
@@ -473,7 +473,7 @@ class TestDepTypeFiltering:
             SCRIPT_PATH,
             'deps',
             '--component',
-            'pm-workflow:manage-files',
+            'plan-marshall:manage-files',
             '--dep-types',
             'invalid',
             '--direct-result',
@@ -568,7 +568,7 @@ class TestSkillToScriptDeps:
             SCRIPT_PATH,
             'deps',
             '--component',
-            'pm-workflow:planning-inventory',
+            'plan-marshall:planning-inventory',
             '--dep-types',
             'script',
             '--direct-result',
@@ -583,7 +583,7 @@ class TestSkillToScriptDeps:
 
         # Should find the scan-planning-inventory script
         targets = [d['target'] for d in data.get('direct_dependencies', [])]
-        assert 'pm-workflow:planning-inventory:scan-planning-inventory' in targets
+        assert 'plan-marshall:planning-inventory:scan-planning-inventory' in targets
 
     def test_skill_deps_filters_to_script_type(self):
         """Test that --dep-types script only returns script dependencies."""
@@ -591,7 +591,7 @@ class TestSkillToScriptDeps:
             SCRIPT_PATH,
             'deps',
             '--component',
-            'pm-workflow:manage-files',
+            'plan-marshall:manage-files',
             '--dep-types',
             'script',
             '--direct-result',
@@ -620,7 +620,7 @@ class TestIntegration:
             SCRIPT_PATH,
             'deps',
             '--component',
-            'pm-workflow:manage-files',
+            'plan-marshall:manage-files',
             '--direct-result',
             '--format',
             'json',

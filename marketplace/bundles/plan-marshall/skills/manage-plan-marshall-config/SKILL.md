@@ -222,7 +222,7 @@ Returns null (not error) if extension doesn't exist for the domain.
 
 | Parameters | Purpose |
 |------------|---------|
-| (none) | Auto-discover profiles and register task executors (convention: profile X -> `pm-workflow:task-X`) |
+| (none) | Auto-discover profiles and register task executors (convention: profile X -> `plan-marshall:task-X`) |
 
 ### resolve-task-executor
 
@@ -306,9 +306,9 @@ The defaults template contains only `system` domain. Technical domains (java, ja
       "defaults": ["plan-marshall:ref-development-standards"],
       "optionals": ["plan-marshall:ref-development-standards"],
       "task_executors": {
-        "implementation": "pm-workflow:task-implementation",
-        "module_testing": "pm-workflow:task-module_testing",
-        "integration_testing": "pm-workflow:task-integration_testing"
+        "implementation": "plan-marshall:task-implementation",
+        "module_testing": "plan-marshall:task-module_testing",
+        "integration_testing": "plan-marshall:task-integration_testing"
       }
     },
     "java": {
@@ -366,7 +366,7 @@ The `system` domain contains task executors and base skills applied to all tasks
 |-------|---------|
 | `defaults` | Base skills loaded for all tasks (`plan-marshall:ref-development-standards`) |
 | `optionals` | Optional base skills available for selection |
-| `task_executors` | Maps profiles to task executor skills (convention: profile X -> `pm-workflow:task-X`) |
+| `task_executors` | Maps profiles to task executor skills (convention: profile X -> `plan-marshall:task-X`) |
 
 ### Technical Domains (Profile Structure)
 

@@ -228,7 +228,7 @@ MARKETPLACE HEALTH REPORT
 1. pm-dev-java: 92/100 ✅
 2. pm-dev-frontend: 88/100 ✅
 3. pm-plugin-development: 82/100 ✅
-4. pm-workflow: 78/100 ⚠️
+4. plan-marshall: 78/100 ⚠️
 5. plan-marshall: 95/100 ✅
 
 ### Recommendations

@@ -78,7 +78,7 @@ Tests use pytest via the `pw` (Pyprojectx) wrapper. Only Python 3 is required - 
 ./pw compile                      # mypy marketplace/bundles/
 ./pw compile pm-dev-frontend      # mypy single bundle
 ./pw module-tests                 # pytest test/
-./pw module-tests pm-workflow     # pytest single directory
+./pw module-tests plan-marshall     # pytest single directory
 ./pw quality-gate                 # ruff check all
 ./pw verify                       # Full: compile + quality-gate + module-tests
 ./pw verify pm-dev-java           # Full verification on single bundle

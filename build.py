@@ -8,7 +8,7 @@ Usage:
     ./pw build compile                      # All production sources
     ./pw build compile pm-dev-frontend      # Single bundle
     ./pw build module-tests                 # All tests
-    ./pw build module-tests pm-workflow     # Single test directory
+    ./pw build module-tests plan-marshall     # Single test directory
     ./pw build verify pm-dev-java           # Full verification on single bundle
 """
 
@@ -156,7 +156,7 @@ Examples:
   %(prog)s compile                    # mypy marketplace/bundles/
   %(prog)s compile pm-dev-frontend    # mypy marketplace/bundles/pm-dev-frontend
   %(prog)s module-tests               # pytest test/
-  %(prog)s module-tests pm-workflow   # pytest test/pm-workflow
+  %(prog)s module-tests plan-marshall   # pytest test/plan-marshall
   %(prog)s verify pm-dev-java         # Full verification on single bundle
 '''
     )
@@ -169,11 +169,11 @@ Examples:
 
     # test-compile
     p = subparsers.add_parser('test-compile', help='mypy on test sources')
-    p.add_argument('module', nargs='?', help='Test directory (e.g., pm-workflow)')
+    p.add_argument('module', nargs='?', help='Test directory (e.g., plan-marshall)')
 
     # module-tests
     p = subparsers.add_parser('module-tests', help='pytest on test sources')
-    p.add_argument('module', nargs='?', help='Test directory (e.g., pm-workflow)')
+    p.add_argument('module', nargs='?', help='Test directory (e.g., plan-marshall)')
     p.add_argument('--parallel', '-p', action='store_true', help='Run tests in parallel')
 
     # quality-gate

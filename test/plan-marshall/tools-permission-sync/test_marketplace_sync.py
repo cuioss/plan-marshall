@@ -56,7 +56,7 @@ class TestGenerateWildcards(ScriptTestCase):
         """Should generate SlashCommand() wildcards from inventory."""
         inventory = {
             'bundles': [
-                {'name': 'pm-workflow', 'skills': [], 'commands': [{'name': 'plan-manage'}, {'name': 'task-implement'}]}
+                {'name': 'plan-marshall', 'skills': [], 'commands': [{'name': 'plan-manage'}, {'name': 'task-implement'}]}
             ]
         }
 
@@ -66,7 +66,7 @@ class TestGenerateWildcards(ScriptTestCase):
 
         self.assertIn('permissions', data)
         self.assertIn('command_bundle_wildcards', data['permissions'])
-        self.assertIn('SlashCommand(/pm-workflow:*)', data['permissions']['command_bundle_wildcards'])
+        self.assertIn('SlashCommand(/plan-marshall:*)', data['permissions']['command_bundle_wildcards'])
 
     def test_includes_statistics(self):
         """Should include statistics in output."""

@@ -191,4 +191,4 @@ Before completing requirements/specification work:
 **External:**
 - pm-documents:ref-documentation - AsciiDoc formatting
 - pm-dev-java:javadoc - JavaDoc requirement references
-- pm-workflow:workflow-integration-git - Committing requirement changes
+- plan-marshall:workflow-integration-git - Committing requirement changes

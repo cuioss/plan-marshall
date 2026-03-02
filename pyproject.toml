@@ -33,7 +33,7 @@ add = "uv add"
 # Examples:
 #   ./pw compile                    # All bundles
 #   ./pw compile pm-dev-frontend    # Single bundle
-#   ./pw module-tests pm-workflow   # Single test directory
+#   ./pw module-tests plan-marshall   # Single test directory
 build = "uv run python build.py"
 compile = "uv run python build.py compile"
 test-compile = "uv run python build.py test-compile"

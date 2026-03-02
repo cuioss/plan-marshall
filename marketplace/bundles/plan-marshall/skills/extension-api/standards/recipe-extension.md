@@ -71,7 +71,7 @@ Each dict in the returned list must contain:
 | `profile` | str | (Optional) Execution profile (e.g., `implementation`, `module_testing`). Used by custom recipes that need profile-specific behavior |
 | `package_source` | str | (Optional) Package source field name (`packages` or `test_packages`). Used by custom recipes that iterate architecture packages |
 
-**Note**: The built-in "Refactor to Profile Standards" recipe is provided by pm-workflow. Domains only need `provides_recipes()` for truly custom recipes that require domain-specific logic beyond profile-based refactoring.
+**Note**: The built-in "Refactor to Profile Standards" recipe is provided by plan-marshall. Domains only need `provides_recipes()` for truly custom recipes that require domain-specific logic beyond profile-based refactoring.
 
 ---
 
@@ -198,7 +198,7 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-m
 
 This returns core defaults + core optionals + profile defaults + profile optionals + project_skills. The resolved skill names are passed to each deliverable's `--skills` argument.
 
-For the full flow with ASCII diagrams, see `pm-workflow:phase-3-outline` [references/recipe-flow.md](../../phase-3-outline/references/recipe-flow.md).
+For the full flow with ASCII diagrams, see `plan-marshall:phase-3-outline` [references/recipe-flow.md](../../phase-3-outline/references/recipe-flow.md).
 
 ---
 
@@ -217,7 +217,7 @@ For the full flow with ASCII diagrams, see `pm-workflow:phase-3-outline` [refere
 
 ## Implementation Pattern
 
-The built-in "Refactor to Profile Standards" recipe in pm-workflow handles the common case of refactoring code to comply with profile standards. Domains only need custom recipes for domain-specific logic:
+The built-in "Refactor to Profile Standards" recipe in plan-marshall handles the common case of refactoring code to comply with profile standards. Domains only need custom recipes for domain-specific logic:
 
 ```python
 from extension_base import ExtensionBase
@@ -248,7 +248,7 @@ class Extension(ExtensionBase):
 
 | Type | Source | `source` field | When to use |
 |------|--------|----------------|-------------|
-| **Built-in** | pm-workflow `recipe-refactor-to-profile-standards` | — (not stored) | Standard refactoring to profile standards (any domain/profile) |
+| **Built-in** | plan-marshall `recipe-refactor-to-profile-standards` | — (not stored) | Standard refactoring to profile standards (any domain/profile) |
 | **Custom** | Domain `provides_recipes()` | absent | Domain-specific transformations requiring custom discovery/analysis logic |
 | **Project** | `skill-domains add-recipe` CLI | `"project"` | Project-specific recipes for projects without domain extensions |
 
@@ -285,7 +285,7 @@ Only project-level recipes (`source: "project"`) can be removed via `remove-reci
 
 ## Existing Implementations
 
-All standard refactoring recipes are handled by the built-in pm-workflow recipe. No domain bundles currently register custom recipes.
+All standard refactoring recipes are handled by the built-in plan-marshall recipe. No domain bundles currently register custom recipes.
 
 Bundles returning `[]`: pm-dev-java, pm-dev-frontend, pm-dev-java-cui, pm-documents, pm-plugin-development, pm-requirements.
 

@@ -334,12 +334,12 @@ class ExtensionBase(ABC):
         Purpose:
             Loaded by the outline-change-type skill (via
             solution-outline-agent). Provides domain-specific outline
-            instructions instead of generic pm-workflow:outline-change-type
+            instructions instead of generic plan-marshall:outline-change-type
             standards.
 
         Fallback:
             If a domain returns None, generic instructions from
-            pm-workflow:outline-change-type/standards/change-{type}.md
+            plan-marshall:outline-change-type/standards/change-{type}.md
             are used.
         """
         return None
@@ -368,7 +368,7 @@ class ExtensionBase(ABC):
         discovery, analysis, and deliverable patterns. Unlike ad-hoc plans, recipes
         already know WHAT to do and HOW — they only discover WHERE to apply.
 
-        Note: The built-in "Refactor to Profile Standards" recipe in pm-workflow
+        Note: The built-in "Refactor to Profile Standards" recipe in plan-marshall
         handles the common case of refactoring code to profile standards. Only
         return custom recipes here for domain-specific logic.
 

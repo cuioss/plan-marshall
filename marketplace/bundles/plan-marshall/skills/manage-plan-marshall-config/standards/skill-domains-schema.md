@@ -15,17 +15,17 @@ The skill domains configuration uses a 6-phase workflow model with profile-based
       "defaults": ["bundle:skill"],
       "optionals": ["bundle:skill"],
       "workflow_skills": {
-        "1-init": "pm-workflow:phase-1-init",
-        "2-refine": "pm-workflow:phase-2-refine",
-        "3-outline": "pm-workflow:phase-3-outline",
-        "4-plan": "pm-workflow:phase-4-plan",
-        "5-execute": "pm-workflow:phase-5-execute",
-        "6-finalize": "pm-workflow:phase-6-finalize"
+        "1-init": "plan-marshall:phase-1-init",
+        "2-refine": "plan-marshall:phase-2-refine",
+        "3-outline": "plan-marshall:phase-3-outline",
+        "4-plan": "plan-marshall:phase-4-plan",
+        "5-execute": "plan-marshall:phase-5-execute",
+        "6-finalize": "plan-marshall:phase-6-finalize"
       },
       "task_executors": {
-        "implementation": "pm-workflow:task-implementation",
-        "module_testing": "pm-workflow:task-module_testing",
-        "integration_testing": "pm-workflow:task-integration_testing"
+        "implementation": "plan-marshall:task-implementation",
+        "module_testing": "plan-marshall:task-module_testing",
+        "integration_testing": "plan-marshall:task-integration_testing"
       }
     },
     "{domain}": {
@@ -62,24 +62,24 @@ The `system` domain is required and contains:
 ```json
 {
   "workflow_skills": {
-    "1-init": "pm-workflow:phase-1-init",
-    "2-refine": "pm-workflow:phase-2-refine",
-    "3-outline": "pm-workflow:phase-3-outline",
-    "4-plan": "pm-workflow:phase-4-plan",
-    "5-execute": "pm-workflow:phase-5-execute",
-    "6-finalize": "pm-workflow:phase-6-finalize"
+    "1-init": "plan-marshall:phase-1-init",
+    "2-refine": "plan-marshall:phase-2-refine",
+    "3-outline": "plan-marshall:phase-3-outline",
+    "4-plan": "plan-marshall:phase-4-plan",
+    "5-execute": "plan-marshall:phase-5-execute",
+    "6-finalize": "plan-marshall:phase-6-finalize"
   }
 }
 ```
 
 | Phase | Purpose | Workflow Skill |
 |-------|---------|----------------|
-| `1-init` | Initialize plan, detect artifacts | `pm-workflow:phase-1-init` |
-| `2-refine` | Clarify request until confidence threshold | `pm-workflow:phase-2-refine` |
-| `3-outline` | Create solution outline with deliverables | `pm-workflow:phase-3-outline` |
-| `4-plan` | Transform deliverables into executable tasks | `pm-workflow:phase-4-plan` |
-| `5-execute` | Execute individual tasks + verification | `pm-workflow:phase-5-execute` |
-| `6-finalize` | Commit, push, PR creation | `pm-workflow:phase-6-finalize` |
+| `1-init` | Initialize plan, detect artifacts | `plan-marshall:phase-1-init` |
+| `2-refine` | Clarify request until confidence threshold | `plan-marshall:phase-2-refine` |
+| `3-outline` | Create solution outline with deliverables | `plan-marshall:phase-3-outline` |
+| `4-plan` | Transform deliverables into executable tasks | `plan-marshall:phase-4-plan` |
+| `5-execute` | Execute individual tasks + verification | `plan-marshall:phase-5-execute` |
+| `6-finalize` | Commit, push, PR creation | `plan-marshall:phase-6-finalize` |
 
 ### Task Executors
 
@@ -88,25 +88,25 @@ Task executors map profile values to the workflow skill that executes tasks of t
 ```json
 {
   "task_executors": {
-    "implementation": "pm-workflow:task-implementation",
-    "module_testing": "pm-workflow:task-module_testing",
-    "integration_testing": "pm-workflow:task-integration_testing"
+    "implementation": "plan-marshall:task-implementation",
+    "module_testing": "plan-marshall:task-module_testing",
+    "integration_testing": "plan-marshall:task-integration_testing"
   }
 }
 ```
 
 | Profile | Purpose | Default Executor |
 |---------|---------|------------------|
-| `implementation` | Production code tasks | `pm-workflow:task-implementation` |
-| `module_testing` | Unit/module test tasks | `pm-workflow:task-module_testing` |
-| `integration_testing` | Integration test tasks | `pm-workflow:task-integration_testing` |
+| `implementation` | Production code tasks | `plan-marshall:task-implementation` |
+| `module_testing` | Unit/module test tasks | `plan-marshall:task-module_testing` |
+| `integration_testing` | Integration test tasks | `plan-marshall:task-integration_testing` |
 
 **Extensibility**: The profile list is open for extension. To add a new profile:
 1. Add profile key to `skills_by_profile` in domain `extension.py`
-2. Create corresponding `pm-workflow:task-{profile}` skill
+2. Create corresponding `plan-marshall:task-{profile}` skill
 3. Marshall-steward auto-discovers and registers in `task_executors`
 
-**Convention**: Profile `X` maps to skill `pm-workflow:task-X` by default.
+**Convention**: Profile `X` maps to skill `plan-marshall:task-X` by default.
 
 ## Technical Domains
 
@@ -173,10 +173,10 @@ Each profile contains defaults and optionals:
 ```bash
 # Resolves profile to task executor skill from system.task_executors
 plan-marshall-config resolve-task-executor --profile implementation
-# Returns: pm-workflow:task-implementation
+# Returns: plan-marshall:task-implementation
 
 plan-marshall-config resolve-task-executor --profile module_testing
-# Returns: pm-workflow:task-module_testing
+# Returns: plan-marshall:task-module_testing
 ```
 
 ### Workflow Skill Resolution
@@ -184,7 +184,7 @@ plan-marshall-config resolve-task-executor --profile module_testing
 ```bash
 # Always resolves from system domain
 plan-marshall-config resolve-workflow-skill --phase 3-outline
-# Returns: pm-workflow:phase-3-outline
+# Returns: plan-marshall:phase-3-outline
 ```
 
 ### Workflow Extension Resolution

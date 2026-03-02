@@ -15,12 +15,12 @@ The system domain contains workflow skills for the 6 execution phases:
 
 | Phase | Purpose | Workflow Skill |
 |-------|---------|----------------|
-| `1-init` | Initialize plan | `pm-workflow:phase-1-init` |
-| `2-refine` | Clarify request | `pm-workflow:phase-2-refine` |
-| `3-outline` | Create solution outline | `pm-workflow:phase-3-outline` |
-| `4-plan` | Decompose into tasks | `pm-workflow:phase-4-plan` |
-| `5-execute` | Run implementation + verification | `pm-workflow:phase-5-execute` |
-| `6-finalize` | Commit, PR | `pm-workflow:phase-6-finalize` |
+| `1-init` | Initialize plan | `plan-marshall:phase-1-init` |
+| `2-refine` | Clarify request | `plan-marshall:phase-2-refine` |
+| `3-outline` | Create solution outline | `plan-marshall:phase-3-outline` |
+| `4-plan` | Decompose into tasks | `plan-marshall:phase-4-plan` |
+| `5-execute` | Run implementation + verification | `plan-marshall:phase-5-execute` |
+| `6-finalize` | Commit, PR | `plan-marshall:phase-6-finalize` |
 
 ## Structure
 
@@ -33,12 +33,12 @@ The system domain contains workflow skills for the 6 execution phases:
       "defaults": ["plan-marshall:ref-development-standards"],
       "optionals": ["plan-marshall:ref-development-standards"],
       "workflow_skills": {
-        "1-init": "pm-workflow:phase-1-init",
-        "2-refine": "pm-workflow:phase-2-refine",
-        "3-outline": "pm-workflow:phase-3-outline",
-        "4-plan": "pm-workflow:phase-4-plan",
-        "5-execute": "pm-workflow:phase-5-execute",
-        "6-finalize": "pm-workflow:phase-6-finalize"
+        "1-init": "plan-marshall:phase-1-init",
+        "2-refine": "plan-marshall:phase-2-refine",
+        "3-outline": "plan-marshall:phase-3-outline",
+        "4-plan": "plan-marshall:phase-4-plan",
+        "5-execute": "plan-marshall:phase-5-execute",
+        "6-finalize": "plan-marshall:phase-6-finalize"
       }
     }
   }
@@ -224,7 +224,7 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-m
 ```toon
 status: success
 phase: 3-outline
-workflow_skill: pm-workflow:phase-3-outline
+workflow_skill: plan-marshall:phase-3-outline
 ```
 
 **Error Cases**:
@@ -292,12 +292,12 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-m
 **Output**:
 ```toon
 status: success
-1-init: pm-workflow:phase-1-init
-2-refine: pm-workflow:phase-2-refine
-3-outline: pm-workflow:phase-3-outline
-4-plan: pm-workflow:phase-4-plan
-5-execute: pm-workflow:phase-5-execute
-6-finalize: pm-workflow:phase-6-finalize
+1-init: plan-marshall:phase-1-init
+2-refine: plan-marshall:phase-2-refine
+3-outline: plan-marshall:phase-3-outline
+4-plan: plan-marshall:phase-4-plan
+5-execute: plan-marshall:phase-5-execute
+6-finalize: plan-marshall:phase-6-finalize
 ```
 
 ### Aggregation Logic

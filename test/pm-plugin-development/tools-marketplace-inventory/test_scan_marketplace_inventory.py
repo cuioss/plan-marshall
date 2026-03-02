@@ -33,7 +33,7 @@ METADATA_KEYS = {
 def get_bundles(data: dict) -> list[dict[str, Any]]:
     """Extract bundle dicts from data where bundles are top-level keys.
 
-    The new format has bundles as top-level keys (e.g., 'plan-marshall:', 'pm-workflow:')
+    The new format has bundles as top-level keys (e.g., 'plan-marshall:', 'plan-marshall:')
     rather than a 'bundles' list. This helper extracts them as a list of dicts
     with 'name' field added for backward compatibility with tests.
     """
@@ -495,24 +495,24 @@ def test_name_pattern_skills_filter():
 
 def test_bundles_filter_single():
     """Test --bundles filters to single bundle."""
-    result = run_script(SCRIPT_PATH, '--direct-result', '--bundles', 'pm-workflow')
+    result = run_script(SCRIPT_PATH, '--direct-result', '--bundles', 'plan-marshall')
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
     data = parse_toon(result.stdout)
     bundles = get_bundles(data)
     assert len(bundles) == 1, f'Should have exactly 1 bundle, found {len(bundles)}'
-    assert bundles[0]['name'] == 'pm-workflow', f"Bundle should be 'pm-workflow', got '{bundles[0]['name']}'"
+    assert bundles[0]['name'] == 'plan-marshall', f"Bundle should be 'plan-marshall', got '{bundles[0]['name']}'"
 
 
 def test_bundles_filter_multiple():
     """Test --bundles filters to multiple bundles."""
-    result = run_script(SCRIPT_PATH, '--direct-result', '--bundles', 'pm-workflow,pm-dev-java')
+    result = run_script(SCRIPT_PATH, '--direct-result', '--bundles', 'plan-marshall,pm-dev-java')
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
     data = parse_toon(result.stdout)
     bundles = get_bundles(data)
     bundle_names = {b['name'] for b in bundles}
-    assert bundle_names == {'pm-workflow', 'pm-dev-java'}, f'Expected pm-workflow and pm-dev-java, got {bundle_names}'
+    assert bundle_names == {'plan-marshall', 'pm-dev-java'}, f'Expected plan-marshall and pm-dev-java, got {bundle_names}'
 
 
 def test_bundles_filter_nonexistent():
@@ -536,7 +536,7 @@ def test_combined_bundle_and_name_pattern():
         SCRIPT_PATH,
         '--direct-result',
         '--bundles',
-        'pm-workflow',
+        'plan-marshall',
         '--resource-types',
         'agents',
         '--name-pattern',
@@ -547,11 +547,11 @@ def test_combined_bundle_and_name_pattern():
     data = parse_toon(result.stdout)
     bundles = get_bundles(data)
     assert len(bundles) == 1, 'Should have exactly 1 bundle'
-    assert bundles[0]['name'] == 'pm-workflow', 'Bundle should be pm-workflow'
+    assert bundles[0]['name'] == 'plan-marshall', 'Bundle should be plan-marshall'
 
     # Should find plan-init-agent (thin agent pattern)
     agents = bundles[0].get('agents', [])
-    assert len(agents) >= 1, 'Should find at least 1 plan-* agent in pm-workflow'
+    assert len(agents) >= 1, 'Should find at least 1 plan-* agent in plan-marshall'
     for agent in agents:
         agent_name = agent if isinstance(agent, str) else agent.get('name', '')
         assert agent_name.startswith('plan-'), f'Agent {agent_name} should match plan-*'
@@ -568,7 +568,7 @@ def test_default_file_output_creates_file(tmp_path, monkeypatch):
     plan_dir = tmp_path / '.plan'
     monkeypatch.setenv('PLAN_BASE_DIR', str(plan_dir))
 
-    result = run_script(SCRIPT_PATH, '--bundles', 'pm-workflow')
+    result = run_script(SCRIPT_PATH, '--bundles', 'plan-marshall')
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
     # Verify summary output contains expected fields
@@ -643,7 +643,7 @@ def test_file_output_respects_plan_base_dir(tmp_path, monkeypatch):
     plan_dir = tmp_path / 'custom-plan-dir'
     monkeypatch.setenv('PLAN_BASE_DIR', str(plan_dir))
 
-    result = run_script(SCRIPT_PATH, '--bundles', 'pm-workflow')
+    result = run_script(SCRIPT_PATH, '--bundles', 'plan-marshall')
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
     # Verify file was created in expected location
@@ -661,7 +661,7 @@ def test_output_param_creates_file_at_path(tmp_path):
     """Test --output parameter writes to specified path."""
     output_file = tmp_path / 'custom-inventory.toon'
 
-    result = run_script(SCRIPT_PATH, '--output', str(output_file), '--bundles', 'pm-workflow')
+    result = run_script(SCRIPT_PATH, '--output', str(output_file), '--bundles', 'plan-marshall')
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
     # Verify file was created at specified path
@@ -672,7 +672,7 @@ def test_output_param_creates_file_at_path(tmp_path):
     data = parse_toon(content)
     bundles = get_bundles(data)
     assert len(bundles) == 1, 'Should have one bundle'
-    assert bundles[0]['name'] == 'pm-workflow', 'Bundle should be pm-workflow'
+    assert bundles[0]['name'] == 'plan-marshall', 'Bundle should be plan-marshall'
 
 
 def test_output_param_creates_parent_dirs(tmp_path):
@@ -690,7 +690,7 @@ def test_output_param_summary_shows_custom_path(tmp_path):
     """Test --output parameter summary includes the custom path."""
     output_file = tmp_path / 'my-inventory.toon'
 
-    result = run_script(SCRIPT_PATH, '--output', str(output_file), '--bundles', 'pm-workflow')
+    result = run_script(SCRIPT_PATH, '--output', str(output_file), '--bundles', 'plan-marshall')
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
     # Verify summary contains custom path
@@ -709,7 +709,7 @@ def test_output_param_ignores_plan_base_dir(tmp_path, monkeypatch):
     # But specify --output to a different location
     output_file = tmp_path / 'custom-output' / 'inventory.toon'
 
-    result = run_script(SCRIPT_PATH, '--output', str(output_file), '--bundles', 'pm-workflow')
+    result = run_script(SCRIPT_PATH, '--output', str(output_file), '--bundles', 'plan-marshall')
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
     # Verify file was created at custom path, not PLAN_BASE_DIR
@@ -727,7 +727,7 @@ def test_output_param_with_filters(tmp_path):
         '--output',
         str(output_file),
         '--bundles',
-        'pm-workflow',
+        'plan-marshall',
         '--resource-types',
         'skills',
         '--name-pattern',
@@ -913,7 +913,7 @@ def test_content_pattern_with_bundles_filter():
         SCRIPT_PATH,
         '--direct-result',
         '--bundles',
-        'pm-workflow',
+        'plan-marshall',
         '--resource-types',
         'skills',
         '--content-pattern',
@@ -925,10 +925,10 @@ def test_content_pattern_with_bundles_filter():
     data = parse_toon(result.stdout)
     bundles = get_bundles(data)
 
-    # Should only have pm-workflow bundle
-    assert len(bundles) <= 1, 'Should have at most one bundle (pm-workflow)'
+    # Should only have plan-marshall bundle
+    assert len(bundles) <= 1, 'Should have at most one bundle (plan-marshall)'
     if bundles:
-        assert bundles[0]['name'] == 'pm-workflow'
+        assert bundles[0]['name'] == 'plan-marshall'
 
 
 def test_content_pattern_no_matches_returns_empty():
@@ -999,20 +999,20 @@ def test_include_tests_includes_conftest():
 
 def test_include_tests_maps_to_bundles():
     """Test --include-tests correctly maps test directories to bundles."""
-    result = run_script(SCRIPT_PATH, '--direct-result', '--include-tests', '--bundles', 'pm-workflow')
+    result = run_script(SCRIPT_PATH, '--direct-result', '--include-tests', '--bundles', 'plan-marshall')
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
     data = parse_toon(result.stdout)
     bundles = get_bundles(data)
 
-    # pm-workflow should have tests in test/pm-workflow/
+    # plan-marshall should have tests in test/plan-marshall/
     if bundles:
         bundle = bundles[0]
         tests = bundle.get('tests', [])
         # Verify paths are from the correct test directory
         for test in tests:
             if isinstance(test, dict) and 'path' in test:
-                assert 'test/pm-workflow' in test['path'], f'Test path should be in test/pm-workflow: {test["path"]}'
+                assert 'test/plan-marshall' in test['path'], f'Test path should be in test/plan-marshall: {test["path"]}'
 
 
 def test_include_tests_updates_statistics():
@@ -1100,7 +1100,7 @@ def test_include_project_skills_with_bundle_filter():
         '--direct-result',
         '--include-project-skills',
         '--bundles',
-        'pm-workflow',
+        'plan-marshall',
     )
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
@@ -1108,8 +1108,8 @@ def test_include_project_skills_with_bundle_filter():
     bundles = get_bundles(data)
     bundle_names = {b['name'] for b in bundles}
 
-    # Should only have pm-workflow, not project-skills (unless explicitly in filter)
-    assert 'pm-workflow' in bundle_names or len(bundle_names) == 0
+    # Should only have plan-marshall, not project-skills (unless explicitly in filter)
+    assert 'plan-marshall' in bundle_names or len(bundle_names) == 0
     # project-skills not in filter, so shouldn't appear
     assert 'project-skills' not in bundle_names, 'project-skills should be filtered out when not in --bundles'
 
@@ -1179,7 +1179,7 @@ def test_full_with_content_pattern_filters_subdocs():
         '--format',
         'json',
         '--bundles',
-        'pm-workflow',
+        'plan-marshall',
         '--resource-types',
         'skills',
         '--content-pattern',
@@ -1219,7 +1219,7 @@ def test_full_without_content_pattern_includes_all_subdocs():
         '--format',
         'json',
         '--bundles',
-        'pm-workflow',
+        'plan-marshall',
         '--resource-types',
         'skills',
     )
@@ -1237,7 +1237,7 @@ def test_full_without_content_pattern_includes_all_subdocs():
                 total_subdoc_files += len(subdoc_files)
 
     # Should have subdocs when no content pattern filter is applied
-    # pm-workflow has skills with standards/ directories
+    # plan-marshall has skills with standards/ directories
     assert total_subdoc_files >= 1, 'Should include subdocuments with --full and no content pattern'
 
 
@@ -1253,7 +1253,7 @@ def test_full_content_pattern_excludes_non_matching_subdocs():
         '--format',
         'json',
         '--bundles',
-        'pm-workflow',
+        'plan-marshall',
         '--resource-types',
         'skills',
     )
@@ -1275,7 +1275,7 @@ def test_full_content_pattern_excludes_non_matching_subdocs():
         '--format',
         'json',
         '--bundles',
-        'pm-workflow',
+        'plan-marshall',
         '--resource-types',
         'skills',
         '--content-pattern',

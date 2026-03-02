@@ -16,7 +16,7 @@ class Extension(ExtensionBase):
         """Return triage skill reference."""
         return 'pm-documents:ext-triage-docs'
 
-    # Note: Documentation domain uses generic outline-change-type standards from pm-workflow.
+    # Note: Documentation domain uses generic outline-change-type standards from plan-marshall.
     # Domain-specific skills can be added later if needed by implementing
     # provides_outline_skill() with documentation-specific outline instructions.
 

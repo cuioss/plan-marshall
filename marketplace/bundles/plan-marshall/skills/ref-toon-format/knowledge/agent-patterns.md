@@ -481,7 +481,7 @@ When creating TOON handoffs or memory files:
 
 ### Internal References
 - toon-specification.md - Complete TOON format technical reference
-- pm-workflow:workflow-patterns - Agent handoff workflow patterns
+- plan-marshall:workflow-patterns - Agent handoff workflow patterns
 - plan-marshall:manage-memories - Memory layer operations
 
 ### Template Files

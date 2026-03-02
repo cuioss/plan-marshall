@@ -77,6 +77,6 @@ Focus areas per deliverable:
 Write all deliverables to `solution_outline.md` grouped by module:
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-solution-outline:manage-solution-outline \
+python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-solution-outline \
   write --plan-id {plan_id}
 ```

@@ -39,7 +39,7 @@ pm-plugin-development:plugin-doctor/scripts/analyze-markdown-file.sh
 pm-plugin-development:tools-marketplace-inventory/scripts/scan-marketplace-inventory.py
 plan-marshall:permission-doctor/scripts/permission-doctor.py
 pm-dev-java:java-core/scripts/analyze-logging-violations.py
-pm-workflow:workflow-integration-github/scripts/fetch-pr-comments.py
+plan-marshall:workflow-integration-github/scripts/fetch-pr-comments.py
 ```
 
 ## Resolution

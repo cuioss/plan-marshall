@@ -322,7 +322,7 @@ Examples:
   %(prog)s scan
 
   # Scan specific bundles
-  %(prog)s scan --bundles pm-dev-java,pm-workflow
+  %(prog)s scan --bundles pm-dev-java,plan-marshall
 
   # Analyze all components
   %(prog)s analyze

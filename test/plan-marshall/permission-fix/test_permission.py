@@ -199,8 +199,8 @@ class TestEnsureWildcards(ScriptTestCase):
             json.dumps(
                 {
                     'bundles': {
-                        'pm-workflow': {
-                            'path': 'marketplace/bundles/pm-workflow',
+                        'plan-marshall': {
+                            'path': 'marketplace/bundles/plan-marshall',
                             'skills': ['manage-lifecycle', 'plan-manage'],
                             'commands': ['plan-manage'],
                         },
@@ -229,8 +229,8 @@ class TestEnsureWildcards(ScriptTestCase):
         # Should generate wildcards for both bundles
         self.assertIn('added', data)
         added = data['added']
-        self.assertIn('Skill(pm-workflow:*)', added)
-        self.assertIn('SlashCommand(/pm-workflow:*)', added)
+        self.assertIn('Skill(plan-marshall:*)', added)
+        self.assertIn('SlashCommand(/plan-marshall:*)', added)
         self.assertIn('Skill(pm-dev-java:*)', added)
         self.assertIn('SlashCommand(/pm-dev-java:*)', added)
         self.assertEqual(data['total'], 4)  # 2 bundles × 2 wildcards each
@@ -250,8 +250,8 @@ class TestEnsureWildcards(ScriptTestCase):
             json.dumps(
                 {
                     'bundles': {
-                        'pm-workflow': {
-                            'path': 'marketplace/bundles/pm-workflow',
+                        'plan-marshall': {
+                            'path': 'marketplace/bundles/plan-marshall',
                         },
                         'pm-dev-java': {
                             'path': 'marketplace/bundles/pm-dev-java',
@@ -276,8 +276,8 @@ class TestEnsureWildcards(ScriptTestCase):
         # Should generate wildcards for ALL bundles (assume both skills and commands)
         self.assertIn('added', data)
         added = data['added']
-        self.assertIn('Skill(pm-workflow:*)', added)
-        self.assertIn('SlashCommand(/pm-workflow:*)', added)
+        self.assertIn('Skill(plan-marshall:*)', added)
+        self.assertIn('SlashCommand(/plan-marshall:*)', added)
         self.assertIn('Skill(pm-dev-java:*)', added)
         self.assertIn('SlashCommand(/pm-dev-java:*)', added)
         self.assertEqual(data['bundles_analyzed'], 2)

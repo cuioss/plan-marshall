@@ -70,7 +70,7 @@ Select workflow based on input and execute immediately.
 | doctor-skills | `skills-guide.md` | `fix-catalog.md` |
 | doctor-metadata | `metadata-guide.md` | `fix-catalog.md` |
 | doctor-scripts | `scripts-guide.md` | `fix-catalog.md` |
-| doctor-pm-workflow | `pm-workflow-guide.md` | `fix-catalog.md` |
+| doctor-plan-marshall | `plan-marshall-guide.md` | `fix-catalog.md` |
 | doctor-skill-knowledge | `llm-optimization-guide.md` | `fix-catalog.md` |
 | doctor-skill-content | `content-classification-guide.md` + `content-quality-guide.md` | `fix-catalog.md` |
 | doctor-marketplace | (batch: uses all guides via report) | `fix-catalog.md` |
@@ -241,9 +241,9 @@ See [standards/doctor-skill-content.md](standards/doctor-skill-content.md) for t
 
 See [standards/doctor-marketplace.md](standards/doctor-marketplace.md) for the complete workflow.
 
-## Workflow 8: doctor-pm-workflow
+## Workflow 8: doctor-plan-marshall
 
-Follows common workflow pattern. See [standards/doctor-pm-workflow.md](standards/doctor-pm-workflow.md) for PM-001 through PM-006 validation rules.
+Follows common workflow pattern. See [standards/doctor-plan-marshall.md](standards/doctor-plan-marshall.md) for PM-001 through PM-006 validation rules.
 
 ## Workflow 9: doctor-skill-knowledge
 
@@ -291,7 +291,7 @@ Loaded per workflow via Progressive Disclosure table above. Key files:
 - `llm-optimization-guide.md` - Cross-cutting LLM optimization patterns
 - `fix-catalog.md`, `safe-fixes-guide.md`, `risky-fixes-guide.md`, `verification-guide.md` - Fix workflow
 - `plan-marshall-plugin-validation.md` - Domain manifest validation
-- Per-component guides: `agents-guide.md`, `commands-guide.md`, `skills-guide.md`, `metadata-guide.md`, `pm-workflow-guide.md`
+- Per-component guides: `agents-guide.md`, `commands-guide.md`, `skills-guide.md`, `metadata-guide.md`, `plan-marshall-guide.md`
 - Content analysis: `content-classification-guide.md`, `content-quality-guide.md`
 - `reporting-templates.md` - Summary report templates
 

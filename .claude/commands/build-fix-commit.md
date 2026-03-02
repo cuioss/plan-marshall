@@ -200,4 +200,4 @@ Commit: {commit_hash}
 ## RELATED
 
 - `pm-dev-python:plan-marshall-plugin` - Python build script
-- `pm-workflow:workflow-integration-git` - Git commit standards
+- `plan-marshall:workflow-integration-git` - Git commit standards

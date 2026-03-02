@@ -970,7 +970,7 @@ def cmd_configure_task_executors(args) -> int:
     """Configure task executors from discovered profiles.
 
     Auto-discovers profiles from configured domains and registers task executors
-    using convention: profile X → skill pm-workflow:task-X
+    using convention: profile X → skill plan-marshall:task-X
 
     Task executors map profile values to workflow skills that execute tasks.
     """
@@ -1006,13 +1006,13 @@ def cmd_configure_task_executors(args) -> int:
                 if key != 'core':
                     discovered_profiles.add(key)
 
-    # Build task_executors mapping using convention: profile X → pm-workflow:task-X
+    # Build task_executors mapping using convention: profile X → plan-marshall:task-X
     task_executors = {}
     for profile in sorted(discovered_profiles):
         # Skip quality profile - it's handled by verify phase, not task execution
         if profile == 'quality':
             continue
-        task_executors[profile] = f'pm-workflow:task-{profile}'
+        task_executors[profile] = f'plan-marshall:task-{profile}'
 
     # Update system domain with task_executors
     system_config = skill_domains['system']
