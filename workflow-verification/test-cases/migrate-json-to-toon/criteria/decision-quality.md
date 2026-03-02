@@ -2,17 +2,17 @@
 
 ## Scope Decision
 
-**Expected**: Analyze agents, commands, AND skills + scripts in pm-workflow bundle ONLY
+**Expected**: Analyze agents, commands, AND skills + scripts in plan-marshall bundle ONLY
 
 **User clarification handling**:
 The request requires user clarification during refine phase:
 - Output type: "Both docs and scripts"
-- Bundles in scope: "pm-workflow only"
+- Bundles in scope: "plan-marshall only"
 - Script migration: "Yes - full migration"
 
 **Rationale should explain**:
 - Request mentions "agents/commands/skills outputs" - all component types
-- User clarified "pm-workflow only" - single bundle scope
+- User clarified "plan-marshall only" - single bundle scope
 - User clarified "both docs and scripts" - includes Python scripts, not just SKILL.md
 - "Full migration" means scripts should emit TOON, docs should document TOON
 
@@ -30,12 +30,12 @@ The request requires user clarification during refine phase:
 **Expected pattern for identifying affected components**:
 
 For agents:
-- Check pm-workflow agents for JSON output sections
-- Exclude agents using TOON format (all pm-workflow agents already use TOON)
+- Check plan-marshall agents for JSON output sections
+- Exclude agents using TOON format (all plan-marshall agents already use TOON)
 
 For commands:
-- Check pm-workflow commands for JSON output specs
-- Note: pm-workflow has no commands with JSON output specs
+- Check plan-marshall commands for JSON output specs
+- Note: plan-marshall has no commands with JSON output specs
 
 For skills:
 - Look for "Output", "JSON Output", "Return...Results" sections with ```json blocks
@@ -56,12 +56,12 @@ For scripts:
 In decision.log:
 ```
 (pm-plugin-development:ext-outline-plugin) Component scope: [skills, agents, commands, scripts, tests]
-(pm-plugin-development:ext-outline-plugin) Context loaded: domains=[plan-marshall-plugin-dev], bundle=pm-workflow
+(pm-plugin-development:ext-outline-plugin) Context loaded: domains=[plan-marshall-plugin-dev], bundle=plan-marshall
 ```
 
 In work.log:
 ```
-[PROGRESS] (pm-plugin-development:ext-outline-plugin) Inventory: 4-5 skills with JSON code blocks in pm-workflow
+[PROGRESS] (pm-plugin-development:ext-outline-plugin) Inventory: 4-5 skills with JSON code blocks in plan-marshall
 ```
 
 ## Script Migration Decision
@@ -85,25 +85,25 @@ In work.log:
 
 **Must document exclusions for**:
 
-### pm-workflow agents (all use TOON already):
-- `pm-workflow/agents/plan-init-agent.md`
-- `pm-workflow/agents/task-plan-agent.md`
-- `pm-workflow/agents/task-execute-agent.md`
-- `pm-workflow/agents/solution-outline-agent.md`
-- `pm-workflow/agents/q-gate-validation-agent.md`
-- `pm-workflow/agents/request-refine-agent.md`
+### plan-marshall agents (all use TOON already):
+- `plan-marshall/agents/plan-init-agent.md`
+- `plan-marshall/agents/task-plan-agent.md`
+- `plan-marshall/agents/task-execute-agent.md`
+- `plan-marshall/agents/solution-outline-agent.md`
+- `plan-marshall/agents/q-gate-validation-agent.md`
+- `plan-marshall/agents/request-refine-agent.md`
 
 ### Other bundles (out of scope):
 - `pm-dev-java/agents/*` - per user clarification
 - `plan-marshall/skills/*` - per user clarification
 
-### pm-workflow scripts using TOON already:
+### plan-marshall scripts using TOON already:
 - `manage-config/scripts/manage-config.py` - Outputs TOON
 - `manage-tasks/scripts/manage-tasks.py` - Outputs TOON
 - `manage-references/scripts/manage-references.py` - Outputs TOON
 - `manage-solution-outline/scripts/manage_solution_outline.py` - Outputs TOON
 
-### pm-workflow scripts that write JSON to files (not stdout):
+### plan-marshall scripts that write JSON to files (not stdout):
 - `manage-plan-artifacts/scripts/artifact_store.py` - Uses f.write(json.dumps())
   - This writes to JSONL files for internal storage, NOT script output
 
@@ -132,7 +132,7 @@ In work.log:
 **NOT acceptable**:
 - 12 separate deliverables (one per file)
 - Including files from other bundles
-- Including pm-workflow agents (all use TOON already)
+- Including plan-marshall agents (all use TOON already)
 
 ## Clarification Handling Decision
 
@@ -156,7 +156,7 @@ Q: Should the migration include Python script outputs in addition to documentati
 A: Both docs and scripts
 
 Q: Which bundles are in scope for this migration?
-A: pm-workflow only
+A: plan-marshall only
 
 Q: Should scripts be modified to emit TOON, or only documentation updated?
 A: Yes - full migration

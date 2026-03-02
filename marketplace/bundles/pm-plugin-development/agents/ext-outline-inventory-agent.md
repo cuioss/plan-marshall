@@ -41,7 +41,7 @@ You will receive:
 Create the work directory and capture the path:
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-files:manage-files mkdir \
+python3 .plan/execute-script.py plan-marshall:manage-files:manage-files mkdir \
   --plan-id {plan_id} \
   --dir work
 ```
@@ -103,7 +103,7 @@ Note: Combine flags as needed based on input parameters.
 Read the raw inventory file:
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-files:manage-files read \
+python3 .plan/execute-script.py plan-marshall:manage-files:manage-files read \
   --plan-id {plan_id} \
   --file work/inventory_raw.toon \
   --trace-plan-id {plan_id}
@@ -160,7 +160,7 @@ Group all paths by component type across all bundles.
 Build the filtered inventory TOON content and persist it:
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-files:manage-files write \
+python3 .plan/execute-script.py plan-marshall:manage-files:manage-files write \
   --plan-id {plan_id} \
   --file work/inventory_filtered.toon \
   --trace-plan-id {plan_id} \

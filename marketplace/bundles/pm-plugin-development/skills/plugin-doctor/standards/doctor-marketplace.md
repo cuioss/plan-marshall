@@ -71,7 +71,7 @@ Parse the JSON output to get:
 
    results[5]{file,type,bundle,declared_tools,used_tools,missing_tools,unused_tools,confidence}:
    agents/foo.md,agent,pm-dev-java,"Read,Write","Read,Write",,Write,high
-   commands/bar.md,command,pm-workflow,"Skill,Read","Skill,Read,Bash",,Bash,medium
+   commands/bar.md,command,plan-marshall,"Skill,Read","Skill,Read,Bash",,Bash,medium
    ...
 
    summary:

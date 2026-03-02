@@ -31,7 +31,7 @@ EXECUTOR_TEMPLATE = TEMPLATES_DIR / 'execute-script.py.template'
 LOGGING_DIR = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'logging' / 'scripts'
 
 # A simple script that we know exists for testing
-TEST_SCRIPT_BUNDLE = 'pm-workflow'
+TEST_SCRIPT_BUNDLE = 'plan-marshall'
 TEST_SCRIPT_SKILL = 'manage-references'
 TEST_SCRIPT_PATH = (
     MARKETPLACE_ROOT / TEST_SCRIPT_BUNDLE / 'skills' / TEST_SCRIPT_SKILL / 'scripts' / 'manage-references.py'
@@ -111,8 +111,8 @@ class ExecutorTestEnvironment:
 
         # Add specific scripts we want to test
         test_scripts = [
-            ('pm-workflow', 'manage-references', 'manage-references.py'),
-            ('pm-workflow', 'manage-lifecycle', 'manage-lifecycle.py'),
+            ('plan-marshall', 'manage-references', 'manage-references.py'),
+            ('plan-marshall', 'manage-lifecycle', 'manage-lifecycle.py'),
             ('plan-marshall', 'toon-usage', 'toon_parser.py'),
         ]
 
@@ -228,7 +228,7 @@ def test_executor_contains_mappings():
     content = env.executor_path.read_text()
 
     # Check for expected notations
-    assert 'pm-workflow:manage-references' in content, 'Missing pm-workflow:manage-references mapping'
+    assert 'plan-marshall:manage-references' in content, 'Missing plan-marshall:manage-references mapping'
     assert 'SCRIPTS = {' in content, 'Missing SCRIPTS dict'
 
 
@@ -242,7 +242,7 @@ def test_executor_list_command():
 
     # Should list our test scripts
     output = result.stdout
-    assert 'pm-workflow:manage-references' in output, f'Missing pm-workflow:manage-references in list: {output}'
+    assert 'plan-marshall:manage-references' in output, f'Missing plan-marshall:manage-references in list: {output}'
 
 
 # ============================================================================
@@ -255,7 +255,7 @@ def test_execute_script_help():
     env = get_test_env()
     env.clear_logs()
 
-    result = env.run_executor('pm-workflow:manage-references', '--help')
+    result = env.run_executor('plan-marshall:manage-references', '--help')
 
     # --help typically exits with 0
     assert result.returncode == 0, f'Script --help failed: {result.stderr}'
@@ -270,7 +270,7 @@ def test_execute_script_with_subcommand():
     env.clear_logs()
 
     # manage-references has a --help that works without a real plan
-    result = env.run_executor('pm-workflow:manage-references', '--help')
+    result = env.run_executor('plan-marshall:manage-references', '--help')
 
     assert result.returncode == 0, f'Script failed: {result.stderr}'
 
@@ -281,12 +281,12 @@ def test_successful_execution_logged():
     env.clear_logs()
 
     # Execute something that succeeds
-    result = env.run_executor('pm-workflow:manage-references', '--help')
+    result = env.run_executor('plan-marshall:manage-references', '--help')
     assert result.returncode == 0, f'Script failed: {result.stderr}'
 
     # Check log was created
     log_content = env.get_log_content()
-    assert 'pm-workflow:manage-references' in log_content, f'Missing log entry. Log content: {log_content}'
+    assert 'plan-marshall:manage-references' in log_content, f'Missing log entry. Log content: {log_content}'
     assert '[INFO]' in log_content, f'Expected INFO marker in log: {log_content}'
 
 
@@ -295,14 +295,14 @@ def test_log_format_success_compact():
     env = get_test_env()
     env.clear_logs()
 
-    env.run_executor('pm-workflow:manage-references', '--help')
+    env.run_executor('plan-marshall:manage-references', '--help')
 
     log_content = env.get_log_content()
 
     # Success entries should be single line with bracket format
     # Format: [timestamp] [INFO] notation subcommand (duration)
-    lines = [line for line in log_content.strip().split('\n') if 'pm-workflow:manage-references' in line]
-    assert len(lines) >= 1, 'No log entry found for pm-workflow:manage-references'
+    lines = [line for line in log_content.strip().split('\n') if 'plan-marshall:manage-references' in line]
+    assert len(lines) >= 1, 'No log entry found for plan-marshall:manage-references'
 
     entry = lines[0]
     # Check bracket format
@@ -348,14 +348,14 @@ def test_execute_script_that_fails():
     env.clear_logs()
 
     # manage-references 'get' without required --plan-id should fail
-    result = env.run_executor('pm-workflow:manage-references', 'get')
+    result = env.run_executor('plan-marshall:manage-references', 'get')
 
     # This should fail because no --plan-id provided
     assert result.returncode != 0, 'Expected non-zero exit for missing required args'
 
     # Verify error was logged
     log_content = env.get_log_content()
-    assert 'pm-workflow:manage-references' in log_content, f'Missing log entry for failed execution: {log_content}'
+    assert 'plan-marshall:manage-references' in log_content, f'Missing log entry for failed execution: {log_content}'
     # Error entries have [ERROR] marker, not [SUCCESS]
     assert '[ERROR]' in log_content, f'Expected [ERROR] marker in log: {log_content}'
 
@@ -366,13 +366,13 @@ def test_error_execution_logged_with_details():
     env.clear_logs()
 
     # Execute something that fails - use a command that definitely fails
-    result = env.run_executor('pm-workflow:manage-references', 'get', '--plan-id', 'nonexistent-plan-xyz')
+    result = env.run_executor('plan-marshall:manage-references', 'get', '--plan-id', 'nonexistent-plan-xyz')
 
     # This should fail (plan doesn't exist)
     assert result.returncode != 0, 'Expected non-zero exit for nonexistent plan'
 
     log_content = env.get_log_content()
-    assert 'pm-workflow:manage-references' in log_content, f'Missing log entry: {log_content}'
+    assert 'plan-marshall:manage-references' in log_content, f'Missing log entry: {log_content}'
 
     # Error entries should contain [ERROR] marker and args detail
     assert '[ERROR]' in log_content, f'Expected [ERROR] marker in log: {log_content}'
@@ -386,14 +386,14 @@ def test_log_format_error_multi_line():
     env.clear_logs()
 
     # Execute with invalid arguments to force error
-    result = env.run_executor('pm-workflow:manage-references', 'get', '--plan-id', 'test-error-format')
+    result = env.run_executor('plan-marshall:manage-references', 'get', '--plan-id', 'test-error-format')
     assert result.returncode != 0, 'Expected failure'
 
     log_content = env.get_log_content()
 
     # Error entries should span multiple lines
     lines = log_content.strip().split('\n')
-    error_lines = [line for line in lines if 'pm-workflow:manage-references' in line or line.startswith('  ')]
+    error_lines = [line for line in lines if 'plan-marshall:manage-references' in line or line.startswith('  ')]
 
     # Should have at least the main entry line + args line
     assert len(error_lines) >= 2, f'Expected multi-line error entry, got: {error_lines}'
@@ -416,7 +416,7 @@ def test_arguments_forwarded_correctly():
     env = get_test_env()
 
     # Use --help which should be forwarded
-    result = env.run_executor('pm-workflow:manage-references', '--help')
+    result = env.run_executor('plan-marshall:manage-references', '--help')
 
     assert result.returncode == 0
     assert '--help' not in result.stderr, 'Help flag should be consumed by target script'
@@ -427,7 +427,7 @@ def test_subcommand_forwarded():
     env = get_test_env()
 
     # The subcommand 'get' should be forwarded to manage-references
-    result = env.run_executor('pm-workflow:manage-references', 'get', '--help')
+    result = env.run_executor('plan-marshall:manage-references', 'get', '--help')
 
     # Should get help for the 'get' subcommand
     assert result.returncode == 0
@@ -440,7 +440,7 @@ def test_complex_arguments_forwarded():
 
     # Test with multiple argument types (use correct arg name --field)
     result = env.run_executor(
-        'pm-workflow:manage-references', 'get', '--plan-id', 'test-arg-forward', '--field', 'some.nested.field'
+        'plan-marshall:manage-references', 'get', '--plan-id', 'test-arg-forward', '--field', 'some.nested.field'
     )
 
     # Will fail because plan doesn't exist, but args should be forwarded
@@ -476,8 +476,8 @@ def test_partial_notation_resolution():
     """Partial notation resolves to first matching script."""
     env = get_test_env()
 
-    # The executor has fuzzy matching - 'pm-workflow' should match 'planning:*'
-    result = env.run_executor('pm-workflow', '--help')
+    # The executor has fuzzy matching - 'plan-marshall' should match 'planning:*'
+    result = env.run_executor('plan-marshall', '--help')
 
     # Should resolve to first planning:* script and succeed with --help
     assert result.returncode == 0, f'Partial notation resolution failed: {result.stderr}'
@@ -492,7 +492,7 @@ def test_partial_notation_matches_substring():
     """Partial notation matches substring in script notation."""
     env = get_test_env()
 
-    # 'manage-references' should match 'pm-workflow:manage-references'
+    # 'manage-references' should match 'plan-marshall:manage-references'
     result = env.run_executor('manage-references', '--help')
 
     # Should resolve and show help
@@ -505,14 +505,14 @@ def test_multiple_executions_append_to_log():
     env.clear_logs()
 
     # Execute multiple times
-    env.run_executor('pm-workflow:manage-references', '--help')
-    env.run_executor('pm-workflow:manage-references', '--help')
-    env.run_executor('pm-workflow:manage-references', '--help')
+    env.run_executor('plan-marshall:manage-references', '--help')
+    env.run_executor('plan-marshall:manage-references', '--help')
+    env.run_executor('plan-marshall:manage-references', '--help')
 
     log_content = env.get_log_content()
 
     # Count occurrences
-    count = log_content.count('pm-workflow:manage-references')
+    count = log_content.count('plan-marshall:manage-references')
     assert count >= 3, f'Expected at least 3 log entries, found {count}'
 
 
@@ -526,7 +526,7 @@ def test_global_log_used_without_plan_id():
     env = get_test_env()
     env.clear_logs()
 
-    result = env.run_executor('pm-workflow:manage-references', '--help')
+    result = env.run_executor('plan-marshall:manage-references', '--help')
     assert result.returncode == 0
 
     # Check global log exists
@@ -547,14 +547,14 @@ def test_plan_scoped_log_when_plan_exists():
     try:
         env.clear_logs()
 
-        env.run_executor('pm-workflow:manage-references', 'get', '--plan-id', plan_id, '--field', 'branch')
+        env.run_executor('plan-marshall:manage-references', 'get', '--plan-id', plan_id, '--field', 'branch')
 
         # Check if plan-scoped log was created (now in logs/ subdirectory)
         plan_log = plan_dir / 'logs' / 'script-execution.log'
         assert plan_log.exists(), f'Plan-scoped log not created at {plan_log}'
 
         log_content = plan_log.read_text()
-        assert 'pm-workflow:manage-references' in log_content, f'Plan log missing entry: {log_content}'
+        assert 'plan-marshall:manage-references' in log_content, f'Plan log missing entry: {log_content}'
 
         # Verify plan-id appears in plan log, confirming it went to the right place
         assert plan_id in log_content, f'Plan-id should appear in plan-scoped log: {log_content}'

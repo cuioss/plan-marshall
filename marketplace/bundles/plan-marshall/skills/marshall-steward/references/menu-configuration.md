@@ -552,17 +552,17 @@ This regenerates `.plan/project-architecture/derived-data.json` from current bui
 
 ## Thin Agent Architecture (7-Phase Model)
 
-The pm-workflow bundle uses thin agents that load phase skills statically:
+The plan-marshall bundle uses thin agents that load phase skills statically:
 
 | Agent | Purpose | Phase Skill |
 |-------|---------|-------------|
-| `plan-init-agent` | Initialize plan, detect domains | `pm-workflow:phase-1-init` |
-| `request-refine-agent` | Clarify request | `pm-workflow:phase-2-refine` |
-| `solution-outline-agent` | Create deliverables | `pm-workflow:phase-3-outline` |
-| `task-plan-agent` | Create tasks from deliverables | `pm-workflow:phase-4-plan` |
-| `task-execute-agent` | Execute single task | `pm-workflow:phase-5-execute` + `task.skills` |
-| `q-gate-validation-agent` | Quality verification | `pm-workflow:phase-5-execute` |
-| `plan-finalize-agent` | Commit, PR | `pm-workflow:phase-6-finalize` |
+| `plan-init-agent` | Initialize plan, detect domains | `plan-marshall:phase-1-init` |
+| `request-refine-agent` | Clarify request | `plan-marshall:phase-2-refine` |
+| `solution-outline-agent` | Create deliverables | `plan-marshall:phase-3-outline` |
+| `task-plan-agent` | Create tasks from deliverables | `plan-marshall:phase-4-plan` |
+| `task-execute-agent` | Execute single task | `plan-marshall:phase-5-execute` + `task.skills` |
+| `q-gate-validation-agent` | Quality verification | `plan-marshall:phase-5-execute` |
+| `plan-finalize-agent` | Commit, PR | `plan-marshall:phase-6-finalize` |
 
 Phase skills are statically known (not resolved from config). Domain-specific extensions are loaded via `resolve-workflow-skill-extension --domain {domain} --type {outline|triage}`.
 

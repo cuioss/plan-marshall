@@ -16,13 +16,12 @@ plan-marshall/
 │   ├── .claude-plugin/
 │   │   └── marketplace.json        # Master marketplace configuration
 │   ├── adapters/                   # Multi-assistant export adapters
-│   └── bundles/                    # 8 production bundles
+│   └── bundles/                    # 7 production bundles
 │       ├── pm-dev-java/            # Java development standards + agents
 │       ├── pm-dev-frontend/        # JavaScript/CSS standards + agents
 │       ├── pm-dev-builder/         # Maven/Gradle/npm build automation
-│       ├── planning/               # Task planning & workflow management
 │       ├── pm-documents/           # AsciiDoc, ADRs, interfaces
-│       ├── plan-marshall/          # Utility commands & file operations
+│       ├── plan-marshall/          # Utilities, workflow, and orchestration
 │       ├── pm-plugin-development/  # Plugin creation toolkit
 │       └── pm-requirements/        # Requirements engineering
 ├── test/                           # Python pytest tests for scripts
@@ -59,7 +58,7 @@ bundle-name/
 └── README.md               # Bundle documentation
 ```
 
-## The 8 Production Bundles
+## The 7 Production Bundles
 
 ### pm-dev-java
 Java development standards covering core patterns, null safety, Lombok, CDI/Quarkus, unit testing with JUnit 5, JavaDoc, and logging. Includes agents for implementation, testing, refactoring, and build fixing.
@@ -70,14 +69,11 @@ JavaScript and frontend standards for ES modules, modern patterns, CSS, JSDoc, p
 ### builder
 Unified build automation supporting Maven, Gradle, and npm. Features environment detection, build output parsing, error routing, and auto-fixing workflows.
 
-### planning
-Complete development workflow automation with 14 skills covering task planning, implementation phases, plan refinement, finalization, git workflows, PR management, work logging, and Sonar integration.
-
 ### pm-documents
 Documentation standards for AsciiDoc, Architectural Decision Records (ADRs), and interface specifications. Includes validation, formatting, and maintenance workflows.
 
 ### plan-marshall
-Utility commands for script execution, permission management, file operations, memory management, lessons learned tracking, and project configuration.
+Utility commands for script execution, permission management, file operations, memory management, lessons learned tracking, and project configuration. Also includes the complete development workflow from task implementation to PR quality verification, with task planning, implementation phases, plan refinement, finalization, git workflows, PR management, and Sonar integration.
 
 ### pm-plugin-development
 Plugin development toolkit with creation wizards, quality diagnosis, marketplace inventory scanning, architecture guidance, and component maintenance workflows.
@@ -156,14 +152,14 @@ Tests use pytest via the `pw` (Pyprojectx) wrapper. Only Python 3 is required on
 ./pw compile                      # mypy marketplace/bundles/
 ./pw compile pm-dev-frontend      # mypy marketplace/bundles/pm-dev-frontend
 ./pw test-compile                 # mypy test/
-./pw test-compile pm-workflow     # mypy test/pm-workflow
+./pw test-compile plan-marshall     # mypy test/plan-marshall
 ./pw module-tests                 # pytest test/
 ./pw module-tests pm-dev-frontend # pytest test/pm-dev-frontend
 ./pw module-tests -p              # pytest test/ --parallel
 ./pw quality-gate                 # ruff check marketplace/bundles/ test/
 ./pw quality-gate pm-dev-java     # ruff on single bundle + tests
 ./pw coverage                     # pytest with coverage
-./pw coverage pm-workflow         # coverage for single module
+./pw coverage plan-marshall         # coverage for single module
 ./pw verify                       # Full: compile + quality-gate + module-tests
 ./pw verify pm-dev-frontend       # Full verification on single bundle
 ./pw clean                        # Remove build artifacts
@@ -213,7 +209,7 @@ Source of truth:     marketplace/bundles/*  (Claude Code format)
 python3 marketplace/adapters/generate.py --target opencode --output .opencode/
 
 # Export specific bundles
-python3 marketplace/adapters/generate.py --target opencode --output .opencode/ --bundles pm-dev-java,pm-workflow
+python3 marketplace/adapters/generate.py --target opencode --output .opencode/ --bundles pm-dev-java,plan-marshall
 ```
 
 The adapter transforms frontmatter, maps tool names, handles `Skill:` directives, and copies standards/scripts verbatim. Agents that rely on Claude-specific tools (`Task`, `Skill`) are excluded from export.

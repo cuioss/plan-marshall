@@ -58,10 +58,10 @@ If "Yes":
 2. Capture artifacts via manage-* tools:
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-solution-outline:manage-solution-outline \
+python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-solution-outline \
   list-deliverables --plan-id {temp_plan_id}
 
-python3 .plan/execute-script.py pm-workflow:manage-config:manage-config \
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   read --plan-id {temp_plan_id}
 ```
 

@@ -13,11 +13,11 @@ Shared workflow steps for plugin development outline, loaded by the `outline-cha
 Read request, domains, and compatibility:
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-plan-documents:manage-plan-documents request read \
+python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-documents request read \
   --plan-id {plan_id} \
   --section clarified_request
 
-python3 .plan/execute-script.py pm-workflow:manage-references:manage-references get \
+python3 .plan/execute-script.py plan-marshall:manage-references:manage-references get \
   --plan-id {plan_id} --field domains
 
 python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
@@ -38,7 +38,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 Create work directory and run full inventory scan:
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-files:manage-files mkdir \
+python3 .plan/execute-script.py plan-marshall:manage-files:manage-files mkdir \
   --plan-id {plan_id} --dir work
 # Output includes: path: /absolute/path/to/.plan/plans/{plan_id}/work
 # Use the returned `path` value as {work_dir_path} below
@@ -62,7 +62,7 @@ Omit `--bundles` only if scanning all bundles.
 Read and extract file paths:
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-files:manage-files read \
+python3 .plan/execute-script.py plan-marshall:manage-files:manage-files read \
   --plan-id {plan_id} --file work/inventory_raw.toon --trace-plan-id {plan_id}
 ```
 
@@ -77,14 +77,14 @@ Path conventions:
 ### Clear stale assessments
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-assessments:manage-assessments \
+python3 .plan/execute-script.py plan-marshall:manage-assessments:manage-assessments \
   clear --plan-id {plan_id} --agent {agent_name}
 ```
 
 ### Log assessment per file
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-assessments:manage-assessments \
+python3 .plan/execute-script.py plan-marshall:manage-assessments:manage-assessments \
   add --plan-id {plan_id} --file-path {file_path} --certainty {CERTAINTY} --confidence {CONFIDENCE} \
   --agent {agent_name} --detail "{reasoning}" --evidence "{evidence}"
 ```
@@ -98,7 +98,7 @@ Where:
 **STOP** before proceeding. Verify assessments were persisted:
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-assessments:manage-assessments \
+python3 .plan/execute-script.py plan-marshall:manage-assessments:manage-assessments \
   query --plan-id {plan_id}
 ```
 
@@ -119,7 +119,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 Query UNCERTAIN assessments and ask user:
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-assessments:manage-assessments \
+python3 .plan/execute-script.py plan-marshall:manage-assessments:manage-assessments \
   query --plan-id {plan_id} --certainty UNCERTAIN
 ```
 
@@ -255,13 +255,13 @@ Use `update` on re-entry (Q-Gate loop — solution_outline.md already exists).
 
 Check first:
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-solution-outline:manage-solution-outline exists \
+python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-solution-outline exists \
   --plan-id {plan_id}
 ```
 
 If `exists: false`:
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-solution-outline:manage-solution-outline write \
+python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-solution-outline write \
   --plan-id {plan_id} <<'EOF'
 # Solution: {Title}
 
@@ -313,7 +313,7 @@ EOF
 
 If `exists: true`:
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-solution-outline:manage-solution-outline update \
+python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-solution-outline update \
   --plan-id {plan_id} <<'EOF'
 {updated solution document}
 EOF

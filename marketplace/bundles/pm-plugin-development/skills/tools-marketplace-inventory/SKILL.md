@@ -284,7 +284,7 @@ Output full TOON directly to stdout instead of writing to file.
 ```bash
 # Get full TOON directly (for small/filtered results)
 python3 .plan/execute-script.py pm-plugin-development:tools-marketplace-inventory:scan-marketplace-inventory \
-  --bundles pm-workflow --direct-result
+  --bundles plan-marshall --direct-result
 ```
 
 ### --format (optional)
@@ -315,7 +315,7 @@ Output format. Default: `toon`
 **Example**:
 ```bash
 python3 .plan/execute-script.py pm-plugin-development:tools-marketplace-inventory:scan-marketplace-inventory \
-  --format json --bundles pm-workflow
+  --format json --bundles plan-marshall
 ```
 
 ### --include-tests (optional flag)
@@ -416,9 +416,9 @@ The `resolve-dependencies.py` script tracks and resolves all dependency relation
 ### Component Notation
 
 ```
-bundle:skill                    # Skill (e.g., pm-workflow:phase-1-init)
-bundle:skill:script             # Script (e.g., pm-workflow:manage-files:manage-files)
-bundle:agents:name              # Agent (e.g., pm-workflow:agents:plan-init-agent)
+bundle:skill                    # Skill (e.g., plan-marshall:phase-1-init)
+bundle:skill:script             # Script (e.g., plan-marshall:manage-files:manage-files)
+bundle:agents:name              # Agent (e.g., plan-marshall:agents:plan-init-agent)
 bundle:commands:name            # Command (e.g., plan-marshall:commands:tools-fix)
 ```
 
@@ -430,15 +430,15 @@ Get direct and transitive dependencies of a component:
 
 ```bash
 python3 .plan/execute-script.py pm-plugin-development:tools-marketplace-inventory:resolve-dependencies \
-  deps --component pm-workflow:manage-files --direct-result
+  deps --component plan-marshall:manage-files --direct-result
 ```
 
 **Output**:
 ```toon
 status: success
-component: pm-workflow:manage-files
+component: plan-marshall:manage-files
 component_type: skill
-file_path: marketplace/bundles/pm-workflow/skills/manage-files/SKILL.md
+file_path: marketplace/bundles/plan-marshall/skills/manage-files/SKILL.md
 
 direct_dependencies[4]:
   - target: plan-marshall:ref-toon-format:toon_parser, type: import, context: line:28
@@ -468,12 +468,12 @@ Generate a visual dependency tree:
 
 ```bash
 python3 .plan/execute-script.py pm-plugin-development:tools-marketplace-inventory:resolve-dependencies \
-  tree --component pm-workflow:manage-files --depth 3 --direct-result
+  tree --component plan-marshall:manage-files --depth 3 --direct-result
 ```
 
 **Output**:
 ```
-pm-workflow:manage-files
+plan-marshall:manage-files
 ├── plan-marshall:ref-toon-format:toon_parser (import)
 │   └── plan-marshall:ref-toon-format (skill)
 ├── plan-marshall:tools-file-ops:file_ops (import)
@@ -499,7 +499,7 @@ resolved: 231
 unresolved_count: 3
 
 unresolved[3]:
-  - source: pm-workflow:manage-files, target: nonexistent:skill, type: skill, context: frontmatter
+  - source: plan-marshall:manage-files, target: nonexistent:skill, type: skill, context: frontmatter
 ```
 
 ### Options
@@ -518,11 +518,11 @@ unresolved[3]:
 ```bash
 # Get all dependencies of a skill
 python3 .plan/execute-script.py pm-plugin-development:tools-marketplace-inventory:resolve-dependencies \
-  deps --component pm-workflow:phase-1-init --direct-result
+  deps --component plan-marshall:phase-1-init --direct-result
 
 # Get only import dependencies
 python3 .plan/execute-script.py pm-plugin-development:tools-marketplace-inventory:resolve-dependencies \
-  deps --component pm-workflow:manage-files --dep-types import --direct-result
+  deps --component plan-marshall:manage-files --dep-types import --direct-result
 
 # Find what depends on a module
 python3 .plan/execute-script.py pm-plugin-development:tools-marketplace-inventory:resolve-dependencies \

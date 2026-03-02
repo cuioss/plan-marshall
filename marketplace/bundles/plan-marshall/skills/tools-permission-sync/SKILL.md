@@ -41,8 +41,8 @@ python3 .plan/execute-script.py plan-marshall:tools-permission-sync:marketplace-
     "wildcards_generated": 22
   },
   "permissions": {
-    "skill_wildcards": ["Skill(pm-dev-builder:*)", "Skill(pm-workflow:*)"],
-    "command_bundle_wildcards": ["SlashCommand(/pm-dev-builder:*)", "SlashCommand(/pm-workflow:*)"],
+    "skill_wildcards": ["Skill(pm-dev-builder:*)", "Skill(plan-marshall:*)"],
+    "command_bundle_wildcards": ["SlashCommand(/pm-dev-builder:*)", "SlashCommand(/plan-marshall:*)"],
     "command_shortform": ["SlashCommand(/java-core:*)"]
   }
 }

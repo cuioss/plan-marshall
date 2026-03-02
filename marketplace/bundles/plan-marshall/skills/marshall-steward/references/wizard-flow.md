@@ -537,16 +537,16 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-m
 status: success
 task_executors_configured: 3
 executors:
-  implementation: pm-workflow:task-implementation
-  module_testing: pm-workflow:task-module_testing
-  integration_testing: pm-workflow:task-integration_testing
+  implementation: plan-marshall:task-implementation
+  module_testing: plan-marshall:task-module_testing
+  integration_testing: plan-marshall:task-integration_testing
 ```
 
-This auto-discovers profiles from configured domains and registers default task executors using convention: profile `X` → skill `pm-workflow:task-X`.
+This auto-discovers profiles from configured domains and registers default task executors using convention: profile `X` → skill `plan-marshall:task-X`.
 
 **Extensibility**: New profiles can be added by:
 1. Adding profile to `skills_by_profile` in domain `extension.py`
-2. Creating corresponding `pm-workflow:task-{profile}` skill
+2. Creating corresponding `plan-marshall:task-{profile}` skill
 3. Re-running `/marshall-steward` to auto-discover and register
 
 ---
@@ -608,9 +608,9 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-m
     "defaults": ["plan-marshall:ref-development-standards"],
     "optionals": [...],
     "task_executors": {
-      "implementation": "pm-workflow:task-implementation",
-      "module_testing": "pm-workflow:task-module_testing",
-      "integration_testing": "pm-workflow:task-integration_testing"
+      "implementation": "plan-marshall:task-implementation",
+      "module_testing": "plan-marshall:task-module_testing",
+      "integration_testing": "plan-marshall:task-integration_testing"
     }
   },
   "java": {

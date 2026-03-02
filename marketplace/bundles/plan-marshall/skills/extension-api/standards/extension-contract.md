@@ -164,7 +164,7 @@ def provides_outline_skill(self) -> str | None:
     domain-specific discovery, analysis, and deliverable creation
     logic. The change_type is passed to the skill for internal routing.
 
-    Default: None (uses generic pm-workflow:outline-change-type standards)
+    Default: None (uses generic plan-marshall:outline-change-type standards)
     """
 ```
 

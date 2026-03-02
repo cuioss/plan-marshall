@@ -30,7 +30,7 @@ Output Format:
 
 Script Output:
     Scripts include a 'notation' field in {bundle}:{skill}:{script} format for use with
-    the script executor (e.g., "pm-workflow:manage-files:manage-files").
+    the script executor (e.g., "plan-marshall:manage-files:manage-files").
 
 Exit codes:
     0 - Success

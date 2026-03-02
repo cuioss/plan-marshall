@@ -42,7 +42,7 @@ get-config.py --key foo
 **Detection in SKILL.md files**:
 ```markdown
 # COMPLIANT
-python3 .plan/execute-script.py pm-workflow:manage-files:manage-files add --plan-id my-plan
+python3 .plan/execute-script.py plan-marshall:manage-files:manage-files add --plan-id my-plan
 python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --targets verify
 
 # VIOLATION (direct path)

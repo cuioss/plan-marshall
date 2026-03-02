@@ -296,7 +296,7 @@ Risky fixes require user confirmation because they involve judgment calls or may
 - Add explicit bash code block with the correct script call
 - Example: If step says "Display the solution outline for review", add:
   ```bash
-  python3 .plan/execute-script.py pm-workflow:manage-solution-outline:manage-solution-outline read \
+  python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-solution-outline read \
     --plan-id {plan_id}
   ```
 
@@ -407,7 +407,7 @@ Risky fixes require user confirmation because they involve judgment calls or may
 
 **Fix Strategy**:
 - Swap `--plan-id` to `--trace-plan-id` or vice versa
-- Consult parameter matrix in pm-workflow-guide.md
+- Consult parameter matrix in plan-marshall-guide.md
 
 **Why Safe** (when pattern is clear):
 - Mechanical swap based on known script requirements
@@ -512,7 +512,7 @@ When multiple fixes needed for same file:
 5. **trailing-whitespace** (cleanup)
 6. **Rule violations** (architectural - agent-task-tool-prohibited, agent-maven-restricted, workflow-hardcoded-script-path, workflow-explicit-script-calls, agent-skill-tool-visibility)
 7. **Pattern violations** (behavioral - agent-lessons-via-skill)
-8. **pm-workflow violations** (PM-001 through PM-005 - script call compliance)
+8. **plan-marshall violations** (PM-001 through PM-005 - script call compliance)
 9. **Script argument violations** (SCR-009 through SCR-011 - argparse conventions)
 
 ## See Also

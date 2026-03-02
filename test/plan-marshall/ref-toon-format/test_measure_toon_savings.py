@@ -15,11 +15,11 @@ TEST_ROOT = Path(__file__).parent.parent.parent
 # Expected TOON files to measure (relative to test root)
 # Note: cui-task-workflow was renamed to planning
 EXPECTED_TOON_FILES = [
-    'pm-workflow/workflow-integration-sonar/sonar-issues.toon',
-    'pm-workflow/workflow-integration-sonar/triage-results.toon',
-    'pm-workflow/workflow-integration-sonar/fix-suggestions.toon',
-    'pm-workflow/workflow-integration-github/review-comments.toon',
-    'pm-workflow/workflow-integration-github/triage-results.toon',
+    'plan-marshall/workflow-integration-sonar/sonar-issues.toon',
+    'plan-marshall/workflow-integration-sonar/triage-results.toon',
+    'plan-marshall/workflow-integration-sonar/fix-suggestions.toon',
+    'plan-marshall/workflow-integration-github/review-comments.toon',
+    'plan-marshall/workflow-integration-github/triage-results.toon',
     'pm-dev-frontend/coverage/coverage-analysis.toon',
     'pm-dev-java/coverage/coverage-analysis.toon',
     'pm-dev-builder/maven/build-failure/expected-categorization.toon',

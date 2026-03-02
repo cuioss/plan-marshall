@@ -76,10 +76,10 @@ Defines expected output files and their validation standards.
 ```toon
 # Reference existing skill standards - do not duplicate
 artifacts[N]{file,standard_ref}:
-solution_outline.md,pm-workflow:manage-solution-outline:deliverable-contract
-config.toon,pm-workflow:manage-config:config-schema
-status.toon,pm-workflow:manage-lifecycle:status-schema
-references.json,pm-workflow:manage-references:references-schema
+solution_outline.md,plan-marshall:manage-solution-outline:deliverable-contract
+config.toon,plan-marshall:manage-config:config-schema
+status.toon,plan-marshall:manage-lifecycle:status-schema
+references.json,plan-marshall:manage-references:references-schema
 
 # Expected counts
 deliverable_count: {N}

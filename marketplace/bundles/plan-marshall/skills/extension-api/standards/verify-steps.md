@@ -193,4 +193,4 @@ Steps reference agents rather than embedding verification logic because:
 
 - [extension-contract.md](extension-contract.md) — Extension API contract
 - [data-model.md](../../manage-plan-marshall-config/standards/data-model.md) — marshal.json structure for `verification_domain_steps`
-- [phase-4-plan SKILL.md](../../../../pm-workflow/skills/phase-4-plan/SKILL.md) — Holistic verification task creation
+- [phase-4-plan SKILL.md](../../../../plan-marshall/skills/phase-4-plan/SKILL.md) — Holistic verification task creation

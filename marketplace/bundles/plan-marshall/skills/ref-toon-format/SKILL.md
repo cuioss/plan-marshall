@@ -274,7 +274,7 @@ Components using this skill should demonstrate:
 - Original Analysis: https://devtoolhub.com/toon-vs-json-token-efficient-ai-format/
 
 ### Related Skills
-- pm-workflow:workflow-patterns - Agent handoff workflow patterns
+- plan-marshall:workflow-patterns - Agent handoff workflow patterns
 - plan-marshall:manage-memories - Memory layer operations
 
 ### Internal References (Load On-Demand)

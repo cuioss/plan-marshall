@@ -27,7 +27,7 @@ def load_executor_module():
     code = code.replace(
         '{{SCRIPT_MAPPINGS}}',
         """
-    "pm-workflow:manage-files": "/test/path/manage-files.py",
+    "plan-marshall:manage-files": "/test/path/manage-files.py",
     "pm-dev-builder:builder-maven-rules": "/test/path/maven.py",
     "test:skill": "/test/path/test-skill.py",
 """,
@@ -55,14 +55,14 @@ def load_executor_module():
 def test_resolve_exact_match():
     """Resolve exact notation match."""
     executor = load_executor_module()
-    result = executor.resolve_notation('pm-workflow:manage-files')
+    result = executor.resolve_notation('plan-marshall:manage-files')
     assert result == '/test/path/manage-files.py', f"Expected '/test/path/manage-files.py', got {result}"
 
 
 def test_resolve_partial_match():
     """Resolve partial notation match."""
     executor = load_executor_module()
-    result = executor.resolve_notation('pm-workflow')
+    result = executor.resolve_notation('plan-marshall')
     # Should find planning:manage-files
     assert result is not None, 'Expected a result for partial match'
     assert 'manage-files' in result, f"Expected 'manage-files' in result, got {result}"
@@ -78,7 +78,7 @@ def test_resolve_unknown_notation():
 def test_resolve_all_mappings():
     """All mappings are available in SCRIPTS dict."""
     executor = load_executor_module()
-    assert 'pm-workflow:manage-files' in executor.SCRIPTS
+    assert 'plan-marshall:manage-files' in executor.SCRIPTS
     assert 'pm-dev-builder:builder-maven-rules' in executor.SCRIPTS
     assert 'test:skill' in executor.SCRIPTS
 
@@ -210,14 +210,14 @@ def test_log_manage_log_on_error():
 def test_log_normal_scripts_success():
     """Log normal scripts even on success."""
     executor = load_executor_module()
-    result = executor.should_skip_logging('pm-workflow:manage-files', exit_code=0)
+    result = executor.should_skip_logging('plan-marshall:manage-files', exit_code=0)
     assert result is False, 'Should log normal script calls'
 
 
 def test_log_normal_scripts_failure():
     """Log normal scripts on failure."""
     executor = load_executor_module()
-    result = executor.should_skip_logging('pm-workflow:manage-files', exit_code=1)
+    result = executor.should_skip_logging('plan-marshall:manage-files', exit_code=1)
     assert result is False, 'Should log normal script calls on failure'
 
 

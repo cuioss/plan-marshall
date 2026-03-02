@@ -2,7 +2,7 @@
 
 ## Overview
 
-Verifies that the outline phase correctly identifies all pm-workflow components with JSON **stdout output** that should be migrated to TOON format. This includes both documentation (SKILL.md files) AND Python scripts.
+Verifies that the outline phase correctly identifies all plan-marshall components with JSON **stdout output** that should be migrated to TOON format. This includes both documentation (SKILL.md files) AND Python scripts.
 
 **Key distinction**: Only scripts that use `print(json.dumps())` for stdout output are in scope. Scripts that write JSON to files (internal storage) are NOT in scope.
 
@@ -14,13 +14,13 @@ The workflow must analyze the correct scope:
 - [ ] Analyzes **commands** (request says "agents/commands/skills outputs")
 - [ ] Analyzes **skills** (request says "agents/commands/skills outputs")
 - [ ] Analyzes **scripts** (clarification: "Both docs and scripts")
-- [ ] Scans **pm-workflow bundle ONLY** (clarification: "pm-workflow only")
+- [ ] Scans **plan-marshall bundle ONLY** (clarification: "plan-marshall only")
 - [ ] Logs scope decision to `decision.log`
 
 **Expected scope decision** (in decision.log):
 ```
 (pm-plugin-development:ext-outline-plugin) Component scope: [skills, agents, commands, scripts, tests]
-(pm-plugin-development:ext-outline-plugin) Context loaded: domains=[plan-marshall-plugin-dev], bundle=pm-workflow
+(pm-plugin-development:ext-outline-plugin) Context loaded: domains=[plan-marshall-plugin-dev], bundle=plan-marshall
 ```
 
 ## Completeness
@@ -46,7 +46,7 @@ All expected items must be found:
 - [ ] test_sonar.py identified
 
 ### Agents and Commands (0 files)
-- [ ] No pm-workflow agents/commands have JSON output specs that need migration
+- [ ] No plan-marshall agents/commands have JSON output specs that need migration
 
 **Expected count**: 12 affected files total
 
@@ -54,10 +54,10 @@ All expected items must be found:
 
 | File | Reason |
 |------|--------|
-| pm-workflow/skills/planning-inventory/SKILL.md | JSON output documentation |
-| pm-workflow/skills/planning-inventory/scripts/scan-planning-inventory.py | print(json.dumps()) |
-| pm-workflow/skills/workflow-integration-ci/SKILL.md | JSON output documentation |
-| pm-workflow/skills/workflow-integration-ci/scripts/pr.py | print(json.dumps()) |
+| plan-marshall/skills/planning-inventory/SKILL.md | JSON output documentation |
+| plan-marshall/skills/planning-inventory/scripts/scan-planning-inventory.py | print(json.dumps()) |
+| plan-marshall/skills/workflow-integration-ci/SKILL.md | JSON output documentation |
+| plan-marshall/skills/workflow-integration-ci/scripts/pr.py | print(json.dumps()) |
 
 ## Exclusion Criteria
 
@@ -68,17 +68,17 @@ All expected items must be found:
 - `pm-plugin-development/agents/*` - Wrong bundle
 - `plan-marshall/skills/*` - Wrong bundle
 
-### pm-workflow agents (all use TOON already):
-- `pm-workflow/agents/plan-init-agent.md` - Uses TOON format
-- `pm-workflow/agents/task-plan-agent.md` - Uses TOON format
-- `pm-workflow/agents/solution-outline-agent.md` - Uses TOON format
-- `pm-workflow/agents/q-gate-validation-agent.md` - Uses TOON format
+### plan-marshall agents (all use TOON already):
+- `plan-marshall/agents/plan-init-agent.md` - Uses TOON format
+- `plan-marshall/agents/task-plan-agent.md` - Uses TOON format
+- `plan-marshall/agents/solution-outline-agent.md` - Uses TOON format
+- `plan-marshall/agents/q-gate-validation-agent.md` - Uses TOON format
 
-### pm-workflow scripts that write JSON to files (not stdout):
+### plan-marshall scripts that write JSON to files (not stdout):
 - `manage-plan-artifacts/scripts/artifact_store.py` - Uses f.write(json.dumps()), not print()
   - This writes to JSONL files for internal storage, not script output
 
-### pm-workflow skills already using TOON output:
+### plan-marshall skills already using TOON output:
 - `manage-config/scripts/manage-config.py` - Outputs TOON
 - `manage-tasks/scripts/manage-tasks.py` - Outputs TOON
 - `manage-references/scripts/manage-references.py` - Outputs TOON
@@ -96,7 +96,7 @@ All expected items must be found:
 
 **Expected decision logs**:
 ```
-[PROGRESS] (pm-plugin-development:ext-outline-plugin) Inventory: 4-5 skills with JSON code blocks in pm-workflow
+[PROGRESS] (pm-plugin-development:ext-outline-plugin) Inventory: 4-5 skills with JSON code blocks in plan-marshall
 ```
 
 ## Scoring Guidance
@@ -104,7 +104,7 @@ All expected items must be found:
 **90-100 (Excellent)**:
 - All 12 files found (4 SKILL.md + 4 scripts + 4 tests)
 - All critical checks passed
-- Scope correctly limited to pm-workflow bundle
+- Scope correctly limited to plan-marshall bundle
 - Both docs and scripts included
 - File-write JSON correctly excluded
 

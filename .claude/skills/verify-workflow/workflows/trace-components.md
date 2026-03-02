@@ -48,11 +48,11 @@ Review the conversation history from the workflow execution. Identify **componen
 
 **Skills** (loaded via Skill tool):
 - Pattern: `Skill: bundle:skill-name` or direct skill loading
-- Example: `Skill: pm-workflow:phase-3-outline`
+- Example: `Skill: plan-marshall:phase-3-outline`
 
 **Agents** (Task tool with subagent):
 - Pattern: Task tool invocation with `subagent_type`
-- Example: `Task: pm-workflow:solution-outline-agent`
+- Example: `Task: plan-marshall:solution-outline-agent`
 
 **Note**: Scripts are tracked separately in Step 2.5.
 
@@ -82,9 +82,9 @@ Parse log entries for the pattern `({bundle}:{skill})` to identify components:
 ```
 
 Example extractions:
-- `(pm-workflow:phase-1-init)` → skill: phase-1-init
+- `(plan-marshall:phase-1-init)` → skill: phase-1-init
 - `(pm-plugin-development:ext-outline-plugin)` → skill: ext-outline-plugin
-- `(pm-workflow:phase-4-plan)` → skill: phase-4-plan
+- `(plan-marshall:phase-4-plan)` → skill: phase-4-plan
 
 **Build invocation hierarchy:**
 For each component found in work.log or decision.log:
@@ -138,12 +138,12 @@ For each script invocation found:
 | ID | Type | Component | Notation | Invoked By |
 |----|------|-----------|----------|------------|
 | C1 | command | plan-manage | /plan-marshall | user |
-| C2 | agent | plan-init-agent | pm-workflow:plan-init-agent | C1 |
-| C3 | skill | phase-1-init | pm-workflow:phase-1-init | C2 |
-| C4 | agent | solution-outline-agent | pm-workflow:solution-outline-agent | C1 |
+| C2 | agent | plan-init-agent | plan-marshall:plan-init-agent | C1 |
+| C3 | skill | phase-1-init | plan-marshall:phase-1-init | C2 |
+| C4 | agent | solution-outline-agent | plan-marshall:solution-outline-agent | C1 |
 | C5 | skill | ext-outline-plugin | pm-plugin-development:ext-outline-plugin | C4 |
-| C6 | agent | task-plan-agent | pm-workflow:task-plan-agent | C1 |
-| C7 | skill | phase-4-plan | pm-workflow:phase-4-plan | C6 |
+| C6 | agent | task-plan-agent | plan-marshall:task-plan-agent | C1 |
+| C7 | skill | phase-4-plan | plan-marshall:phase-4-plan | C6 |
 ```
 
 **Scripts Used** (separate table):
@@ -151,10 +151,10 @@ For each script invocation found:
 ```markdown
 | ID | Script | Notation | Called By |
 |----|--------|----------|-----------|
-| S1 | manage-config | pm-workflow:manage-config:manage-config | C3 |
+| S1 | manage-config | plan-marshall:manage-config:manage-config | C3 |
 | S2 | manage-log | plan-marshall:manage-logging:manage-log | C5 |
-| S3 | manage-solution-outline | pm-workflow:manage-solution-outline:manage-solution-outline | C4 |
-| S4 | manage-tasks | pm-workflow:manage-tasks:manage-tasks | C7 |
+| S3 | manage-solution-outline | plan-marshall:manage-solution-outline:manage-solution-outline | C4 |
+| S4 | manage-tasks | plan-marshall:manage-tasks:manage-tasks | C7 |
 ```
 
 ## Step 5: Add Summary Statistics
@@ -202,21 +202,21 @@ Plan ID: migrate-outputs-to-toon
 | ID | Type | Component | Notation | Invoked By |
 |----|------|-----------|----------|------------|
 | C1 | command | plan-manage | /plan-marshall | user |
-| C2 | agent | plan-init-agent | pm-workflow:plan-init-agent | C1 |
-| C3 | skill | phase-1-init | pm-workflow:phase-1-init | C2 |
-| C4 | agent | solution-outline-agent | pm-workflow:solution-outline-agent | C1 |
+| C2 | agent | plan-init-agent | plan-marshall:plan-init-agent | C1 |
+| C3 | skill | phase-1-init | plan-marshall:phase-1-init | C2 |
+| C4 | agent | solution-outline-agent | plan-marshall:solution-outline-agent | C1 |
 | C5 | skill | ext-outline-plugin | pm-plugin-development:ext-outline-plugin | C4 |
-| C6 | agent | task-plan-agent | pm-workflow:task-plan-agent | C1 |
-| C7 | skill | phase-4-plan | pm-workflow:phase-4-plan | C6 |
+| C6 | agent | task-plan-agent | plan-marshall:task-plan-agent | C1 |
+| C7 | skill | phase-4-plan | plan-marshall:phase-4-plan | C6 |
 
 ## Scripts Used
 
 | ID | Script | Notation | Called By |
 |----|--------|----------|-----------|
-| S1 | manage-config | pm-workflow:manage-config:manage-config | C3 |
+| S1 | manage-config | plan-marshall:manage-config:manage-config | C3 |
 | S2 | manage-log | plan-marshall:manage-logging:manage-log | C5 |
-| S3 | manage-solution-outline | pm-workflow:manage-solution-outline:manage-solution-outline | C4 |
-| S4 | manage-tasks | pm-workflow:manage-tasks:manage-tasks | C7 |
+| S3 | manage-solution-outline | plan-marshall:manage-solution-outline:manage-solution-outline | C4 |
+| S4 | manage-tasks | plan-marshall:manage-tasks:manage-tasks | C7 |
 
 ## Summary
 

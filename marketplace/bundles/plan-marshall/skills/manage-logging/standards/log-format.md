@@ -17,7 +17,7 @@ This document defines the standard log entry format used by the unified logging 
 | `timestamp` | ISO 8601 UTC timestamp | `2025-12-11T12:14:26Z` |
 | `level` | Log severity level | `INFO`, `WARN`, `ERROR` |
 | `category` | Entry categorization | `SCRIPT`, `DECISION`, `ARTIFACT` |
-| `message` | Primary log message | `pm-workflow:manage-files add (0.15s)` |
+| `message` | Primary log message | `plan-marshall:manage-files add (0.15s)` |
 | `field: value` | Additional data (indented) | `phase: 1-init` |
 
 ---
@@ -46,7 +46,7 @@ YYYY-MM-DDTHH:MM:SSZ
 Additional data is provided as indented key-value pairs:
 
 ```
-[2025-12-11T12:14:26Z] [ERROR] [SCRIPT] pm-workflow:manage-log add (0.16s)
+[2025-12-11T12:14:26Z] [ERROR] [SCRIPT] plan-marshall:manage-log add (0.16s)
   exit_code: 2
   args: add --plan-id test --phase 3-outline
   stderr: error: invalid argument
@@ -73,7 +73,7 @@ Additional data is provided as indented key-value pairs:
 
 **Example**:
 ```
-[2025-12-11T12:14:26Z] [INFO] [SCRIPT] pm-workflow:manage-files:manage-files create-or-reference (0.19s)
+[2025-12-11T12:14:26Z] [INFO] [SCRIPT] plan-marshall:manage-files:manage-files create-or-reference (0.19s)
 ```
 
 ### Error Entry
@@ -87,7 +87,7 @@ Additional data is provided as indented key-value pairs:
 
 **Example**:
 ```
-[2025-12-11T12:17:50Z] [ERROR] [SCRIPT] pm-workflow:manage-log:manage-work-log add (0.16s)
+[2025-12-11T12:17:50Z] [ERROR] [SCRIPT] plan-marshall:manage-log:manage-work-log add (0.16s)
   exit_code: 2
   args: add --plan-id test --phase 3-outline --type milestone
   stderr: error: argument --type: invalid choice: 'milestone'
@@ -186,7 +186,7 @@ Decision entries are written to a dedicated log file. They do NOT include a `[DE
 ### Examples
 
 ```
-[2025-12-11T11:14:48Z] [INFO] (pm-workflow:phase-1-init) Detected domain: java - pom.xml found
+[2025-12-11T11:14:48Z] [INFO] (plan-marshall:phase-1-init) Detected domain: java - pom.xml found
   phase: 1-init
 ```
 

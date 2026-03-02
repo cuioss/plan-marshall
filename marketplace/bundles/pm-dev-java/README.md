@@ -102,7 +102,7 @@ Commands use the Task tool to coordinate multiple agents:
 
 > **Note**: CUI library-specific patterns (CuiLogger, test generators) are in the separate `pm-dev-java-cui` bundle.
 >
-> **Planning Integration**: Java domain skills are loaded by `pm-workflow` thin agents during plan execution via `task.skills` array.
+> **Planning Integration**: Java domain skills are loaded by `plan-marshall` thin agents during plan execution via `task.skills` array.
 
 ### Agents (9 autonomous agents)
 

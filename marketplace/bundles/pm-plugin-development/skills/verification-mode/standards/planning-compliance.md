@@ -62,7 +62,7 @@ This indicates an agent silently retried after failure. Investigate WHY the firs
 Load the contract skill and verify artifacts for the **completed phase**:
 
 ```
-Skill: pm-workflow:workflow-extension-api
+Skill: plan-marshall:workflow-extension-api
 ```
 
 | Completed Phase | Contract to Verify |
@@ -76,21 +76,21 @@ Skill: pm-workflow:workflow-extension-api
 
 **1-Init Phase** - Verify references.json:
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-references:manage-references read --plan-id {plan_id}
+python3 .plan/execute-script.py plan-marshall:manage-references:manage-references read --plan-id {plan_id}
 ```
 
 **Refine (solution)** - Validate solution outline:
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-solution-outline:manage-solution-outline validate --plan-id {plan_id}
+python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-solution-outline validate --plan-id {plan_id}
 ```
 
 **Refine (tasks)** - List and verify each task:
 ```bash
 # List all tasks
-python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks list --plan-id {plan_id}
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks list --plan-id {plan_id}
 
 # Get each task by number (replace {N} with 1, 2, 3, etc.)
-python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks get --plan-id {plan_id} --number {N}
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks get --plan-id {plan_id} --number {N}
 
 # Verify work-log has entry for each task creation
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log read --plan-id {plan_id} --type work
@@ -100,7 +100,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log read --p
 **4-Execute Phase** - Run task verification commands:
 ```bash
 # Get task to retrieve verification.commands
-python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks get --plan-id {plan_id} --number {N}
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks get --plan-id {plan_id} --number {N}
 
 # Then execute each command from the task's verification.commands array
 ```
@@ -112,7 +112,7 @@ python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks get --plan
 Verify plan status reflects the transition:
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-status:manage_status read \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status read \
   --plan-id {plan_id}
 ```
 
@@ -191,7 +191,7 @@ python3 .plan/execute-script.py {notation} [subcommand] {args...}
 ```
 
 Examples:
-- `python3 .plan/execute-script.py pm-workflow:manage-files:manage-files add --plan-id my-plan`
+- `python3 .plan/execute-script.py plan-marshall:manage-files:manage-files add --plan-id my-plan`
 - `python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --targets verify`
 
 **Violation** (after executor migration complete):
@@ -203,28 +203,28 @@ Examples:
 
 | Tool | Prohibited Pattern | Correct Alternative |
 |------|-------------------|---------------------|
-| Read | `.plan/plans/{id}/status.toon` | `python3 .plan/execute-script.py pm-workflow:manage-status:manage_status read --plan-id {id}` |
-| Read | `.plan/plans/{id}/references.json` | `python3 .plan/execute-script.py pm-workflow:manage-references:manage-references read --plan-id {id}` |
+| Read | `.plan/plans/{id}/status.toon` | `python3 .plan/execute-script.py plan-marshall:manage-status:manage_status read --plan-id {id}` |
+| Read | `.plan/plans/{id}/references.json` | `python3 .plan/execute-script.py plan-marshall:manage-references:manage-references read --plan-id {id}` |
 | Read | `.plan/plans/{id}/work.log` | `python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log read --plan-id {id} --type work` |
-| Read | `.plan/plans/{id}/solution_outline.md` | `python3 .plan/execute-script.py pm-workflow:manage-solution-outline:manage-solution-outline read --plan-id {id}` |
-| Read | `.plan/plans/{id}/tasks/TASK-*.toon` | `python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks get --plan-id {id} --number 1` |
+| Read | `.plan/plans/{id}/solution_outline.md` | `python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-solution-outline read --plan-id {id}` |
+| Read | `.plan/plans/{id}/tasks/TASK-*.toon` | `python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks get --plan-id {id} --number 1` |
 | Write | `.plan/plans/{id}/*` | Use appropriate manage-* create/update via execute-script.py |
 | Edit | `.plan/plans/{id}/*` | Use appropriate manage-* update via execute-script.py |
 | Glob | `.plan/plans/**/*.toon` | Use manage-* list operations via execute-script.py |
-| Glob | `.plan/plans/{id}/solution_outline.md` | `python3 .plan/execute-script.py pm-workflow:manage-solution-outline:manage-solution-outline read --plan-id {id}` |
-| Glob | `.plan/plans/{id}/tasks/*` | `python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks list --plan-id {id}` |
+| Glob | `.plan/plans/{id}/solution_outline.md` | `python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-solution-outline read --plan-id {id}` |
+| Glob | `.plan/plans/{id}/tasks/*` | `python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks list --plan-id {id}` |
 | Bash find | `find .plan/plans -name "*.toon"` | Use manage-* list operations via execute-script.py |
-| Bash ls | `ls .plan/plans/{id}/tasks/` | `python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks list --plan-id {id}` |
+| Bash ls | `ls .plan/plans/{id}/tasks/` | `python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks list --plan-id {id}` |
 
 **No Exceptions**: All .plan file access must go through manage-* scripts. The following scripts provide complete coverage:
 
 | File | Read Script | Write Script |
 |------|-------------|--------------|
-| `request.md` | `pm-workflow:manage-plan-documents:manage-plan-documents request read --plan-id {id}` | `pm-workflow:manage-plan-documents:manage-plan-documents request create --plan-id {id} --title ... --source ... --body ...` |
-| `solution_outline.md` | `pm-workflow:manage-solution-outline:manage-solution-outline read --plan-id {id}` | `pm-workflow:manage-solution-outline:manage-solution-outline write --plan-id {id} <<'EOF'` then validate |
+| `request.md` | `plan-marshall:manage-plan-documents:manage-plan-documents request read --plan-id {id}` | `plan-marshall:manage-plan-documents:manage-plan-documents request create --plan-id {id} --title ... --source ... --body ...` |
+| `solution_outline.md` | `plan-marshall:manage-solution-outline:manage-solution-outline read --plan-id {id}` | `plan-marshall:manage-solution-outline:manage-solution-outline write --plan-id {id} <<'EOF'` then validate |
 | `work.log` | `plan-marshall:manage-logging:manage-log read --plan-id {id} --type work` | `plan-marshall:manage-logging:manage-log work --plan-id {id} --level {level} --message "{message}"` |
 | `lessons-learned/*.md` | `plan-marshall:manage-lessons:manage-lesson get --id {lesson_id}` | `plan-marshall:manage-lessons:manage-lesson add` |
-| Any plan file | `pm-workflow:manage-files:manage-files read --plan-id {id} --file {path}` | `pm-workflow:manage-files:manage-files write --plan-id {id} --file {path}` |
+| Any plan file | `plan-marshall:manage-files:manage-files read --plan-id {id} --file {path}` | `plan-marshall:manage-files:manage-files write --plan-id {id} --file {path}` |
 
 **Detection Pattern**:
 
@@ -239,7 +239,7 @@ Direct .plan file access bypassing manage-* API
 ### Context
 - **Operation**: [Read/Write/Edit/Glob]
 - **Target**: [.plan/plans/{id}/status.toon]
-- **Expected**: Use `python3 .plan/execute-script.py pm-workflow:manage-status:manage_status read`
+- **Expected**: Use `python3 .plan/execute-script.py plan-marshall:manage-status:manage_status read`
 - **Actual**: Direct file read attempted
 
 ### Root Cause Analysis
@@ -332,18 +332,18 @@ All marketplace script execution MUST use the universal executor pattern.
 python3 .plan/execute-script.py {notation} {subcommand} {args...}
 ```
 
-**Notation Format**: `{bundle}:{skill}:{script}` (e.g., `pm-workflow:manage-files:manage-files`)
+**Notation Format**: `{bundle}:{skill}:{script}` (e.g., `plan-marshall:manage-files:manage-files`)
 
 **CRITICAL - Singular vs Plural Script Names**:
 
 | Skill Name (plural) | Script Name (SINGULAR) | Full Notation |
 |---------------------|------------------------|---------------|
-| `manage-plan-documents` | `manage-plan-document` | `pm-workflow:manage-plan-documents:manage-plan-documents` |
-| `manage-tasks` | `manage-task` | `pm-workflow:manage-tasks:manage-tasks` |
+| `manage-plan-documents` | `manage-plan-document` | `plan-marshall:manage-plan-documents:manage-plan-documents` |
+| `manage-tasks` | `manage-task` | `plan-marshall:manage-tasks:manage-tasks` |
 | `manage-lessons` | `manage-lesson` | `plan-marshall:manage-lessons:manage-lesson` |
-| `manage-lifecycle` | `manage-lifecycle` | `pm-workflow:manage-lifecycle:manage-lifecycle` |
-| `manage-references` | `manage-references` | `pm-workflow:manage-references:manage-references` |
-| `manage-files` | `manage-files` | `pm-workflow:manage-files:manage-files` |
+| `manage-lifecycle` | `manage-lifecycle` | `plan-marshall:manage-lifecycle:manage-lifecycle` |
+| `manage-references` | `manage-references` | `plan-marshall:manage-references:manage-references` |
+| `manage-files` | `manage-files` | `plan-marshall:manage-files:manage-files` |
 | `logging` | `manage-log` | `plan-marshall:manage-logging:manage-log` |
 
 **Prohibited Operations** (direct script paths must use executor):
@@ -373,7 +373,7 @@ Direct script execution bypassing execute-script.py
 ### Context
 - **Operation**: Bash
 - **Target**: `python3 {path}/manage-files.py add --plan-id my-plan`
-- **Expected**: `python3 .plan/execute-script.py pm-workflow:manage-files:manage-files add --plan-id my-plan`
+- **Expected**: `python3 .plan/execute-script.py plan-marshall:manage-files:manage-files add --plan-id my-plan`
 - **Actual**: Direct script path used
 
 ### Root Cause Analysis
@@ -413,8 +413,8 @@ Standard entry:
 
 Example:
 ```
-[2025-12-11T12:14:26Z] [INFO] [SCRIPT] pm-workflow:manage-files:manage-files create (0.19s)
-[2025-12-11T12:17:50Z] [ERROR] [SCRIPT] pm-workflow:manage-task:manage-task add failed (exit 1)
+[2025-12-11T12:14:26Z] [INFO] [SCRIPT] plan-marshall:manage-files:manage-files create (0.19s)
+[2025-12-11T12:17:50Z] [ERROR] [SCRIPT] plan-marshall:manage-task:manage-task add failed (exit 1)
 ```
 
 **Verification Checks**:
@@ -556,7 +556,7 @@ Actively scan execution logs to detect script issues:
 
 1. After phase-affecting operation, query status:
    ```bash
-   python3 .plan/execute-script.py pm-workflow:manage-status:manage_status read --plan-id {plan_id}
+   python3 .plan/execute-script.py plan-marshall:manage-status:manage_status read --plan-id {plan_id}
    ```
 
 2. Verify status consistency:
@@ -576,7 +576,7 @@ Actively scan execution logs to detect script issues:
 
 ### Actual State
 ```toon
-[Output from pm-workflow:manage-status:manage_status read]
+[Output from plan-marshall:manage-status:manage_status read]
 ```
 
 ### Consistency Check
@@ -594,15 +594,15 @@ Actively scan execution logs to detect script issues:
 
 ## Workflow Skill API Contract Verification
 
-After each planning phase completes, verify artifacts comply with the workflow skill API contracts. Reference: [pm-workflow:workflow-extension-api](../../../pm-workflow/skills/workflow-extension-api/SKILL.md)
+After each planning phase completes, verify artifacts comply with the workflow skill API contracts. Reference: [plan-marshall:workflow-extension-api](../../../plan-marshall/skills/workflow-extension-api/SKILL.md)
 
 ### Phase 1: Init Complete
 
-**Contract Reference**: Phase skills are self-documenting. See `pm-workflow:phase-1-init/SKILL.md`
+**Contract Reference**: Phase skills are self-documenting. See `plan-marshall:phase-1-init/SKILL.md`
 
 **Verification**:
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-references:manage-references read --plan-id {plan_id}
+python3 .plan/execute-script.py plan-marshall:manage-references:manage-references read --plan-id {plan_id}
 ```
 
 **Required Fields**:
@@ -612,11 +612,11 @@ python3 .plan/execute-script.py pm-workflow:manage-references:manage-references 
 
 ### Phase 2: Solution Outline Complete
 
-**Contract Reference**: [manage-solution-outline/standards/deliverable-contract.md](../../../pm-workflow/skills/manage-solution-outline/standards/deliverable-contract.md)
+**Contract Reference**: [manage-solution-outline/standards/deliverable-contract.md](../../../plan-marshall/skills/manage-solution-outline/standards/deliverable-contract.md)
 
 **Verification**:
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-solution-outline:manage-solution-outline validate --plan-id {plan_id}
+python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-solution-outline validate --plan-id {plan_id}
 ```
 
 **Required Deliverable Fields**:
@@ -644,7 +644,7 @@ python3 .plan/execute-script.py pm-workflow:manage-solution-outline:manage-solut
 
 ### Phase 3: User Review (Mandatory)
 
-**Contract Reference**: [workflow-extension-api/standards/protocols/user-review.md](../../../pm-workflow/skills/workflow-extension-api/standards/protocols/user-review.md)
+**Contract Reference**: [workflow-extension-api/standards/protocols/user-review.md](../../../plan-marshall/skills/workflow-extension-api/standards/protocols/user-review.md)
 
 **Verification**: Check work.log for user approval entry
 
@@ -656,16 +656,16 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log read --p
 
 ### Phase 4: Tasks Created
 
-**Contract Reference**: [manage-tasks/standards/task-contract.md](../../../pm-workflow/skills/manage-tasks/standards/task-contract.md)
+**Contract Reference**: [manage-tasks/standards/task-contract.md](../../../plan-marshall/skills/manage-tasks/standards/task-contract.md)
 
 **Verification**:
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks list --plan-id {plan_id}
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks list --plan-id {plan_id}
 ```
 
 For each task, verify:
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks get --plan-id {plan_id} --number {N}
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks get --plan-id {plan_id} --number {N}
 ```
 
 **Required Task Fields**:
@@ -769,10 +769,10 @@ When `/plan-marshall` executes execute/verify/finalize actions, verify after eac
 
 ```
 Claude uses: Read .plan/plans/my-plan/status.toon
-Should use: python3 .plan/execute-script.py pm-workflow:manage-status:manage_status read --plan-id my-plan
+Should use: python3 .plan/execute-script.py plan-marshall:manage-status:manage_status read --plan-id my-plan
 ```
 
-**Note**: Script notation is `pm-workflow:manage-status:manage_status` for status reads.
+**Note**: Script notation is `plan-marshall:manage-status:manage_status` for status reads.
 
 **Why It Matters**: Direct reads bypass the managed parser, may read stale data during atomic writes, and don't leverage script validation.
 
@@ -799,7 +799,7 @@ Actual: current_phase=5-execute (not updated)
 
 ```
 Claude uses: Write .plan/plans/my-plan/tasks/TASK-003.toon
-Should use: python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks add --plan-id my-plan <<'EOF'
+Should use: python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks add --plan-id my-plan <<'EOF'
 title: Task title
 deliverable: 1
 domain: java
@@ -809,7 +809,7 @@ steps:
 EOF
 ```
 
-**Note**: Script notation uses SINGULAR `manage-task` (not `manage-tasks`). Full notation: `pm-workflow:manage-tasks:manage-tasks`. Task definitions are passed via stdin using heredoc to avoid shell metacharacter issues.
+**Note**: Script notation uses SINGULAR `manage-task` (not `manage-tasks`). Full notation: `plan-marshall:manage-tasks:manage-tasks`. Task definitions are passed via stdin using heredoc to avoid shell metacharacter issues.
 
 **Why It Matters**: Bypasses numbering logic, validation, and work-log entry creation.
 
@@ -822,7 +822,7 @@ Some operations legitimately need direct access:
 1. **Lessons learned** - standalone markdown files accessed via manage-lessons skill
 2. **Diagnostics/debugging** - when investigating issues with user approval
 
-**Note**: `request.md` and `solution_outline.md` are now managed via `pm-workflow:manage-plan-documents` skill.
+**Note**: `request.md` and `solution_outline.md` are now managed via `plan-marshall:manage-plan-documents` skill.
 
 ### Documenting Exceptions
 
@@ -853,11 +853,11 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log read \
   --plan-id {plan_id} --type work --limit 20
 
 # Verify status is consistent
-python3 .plan/execute-script.py pm-workflow:manage-status:manage_status read \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status read \
   --plan-id {plan_id}
 
 # Verify no orphaned files (optional)
-python3 .plan/execute-script.py pm-workflow:manage-files:manage-files list \
+python3 .plan/execute-script.py plan-marshall:manage-files:manage-files list \
   --plan-id {plan_id}
 ```
 

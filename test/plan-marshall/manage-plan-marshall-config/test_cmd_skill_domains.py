@@ -1081,7 +1081,7 @@ def test_configure_preserves_project_skills():
                     'defaults': ['plan-marshall:ref-development-standards'],
                     'project_skills': ['project:system-skill'],
                     'task_executors': {
-                        'implementation': 'pm-workflow:task-implementation',
+                        'implementation': 'plan-marshall:task-implementation',
                     },
                 },
                 'java': {

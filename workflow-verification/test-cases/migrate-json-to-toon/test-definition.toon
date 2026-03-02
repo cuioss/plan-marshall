@@ -1,5 +1,5 @@
 id: migrate-json-to-toon
-name: Verify outline and planning phases for JSON to TOON migration task (pm-workflow)
+name: Verify outline and planning phases for JSON to TOON migration task (plan-marshall)
 workflow_phase: 3-outline,4-plan
 
 trigger:
@@ -8,7 +8,7 @@ trigger:
 
 # User clarification answers (expected during 2-refine phase):
 # - Output type: "Both docs and scripts"
-# - Bundles in scope: "pm-workflow only"
+# - Bundles in scope: "plan-marshall only"
 # - Script migration: "Yes - full migration"
 
 cleanup:

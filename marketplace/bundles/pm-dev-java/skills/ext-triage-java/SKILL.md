@@ -74,5 +74,5 @@ Registered in marshal.json under the java domain:
 
 ## Related Documents
 
-- [workflow-extension-api:triage-extension](../../../pm-workflow/skills/workflow-extension-api/standards/extensions/triage-extension.md) - Triage extension contract
+- [workflow-extension-api:triage-extension](../../../plan-marshall/skills/workflow-extension-api/standards/extensions/triage-extension.md) - Triage extension contract
 - [pm-dev-java:java-core](../java-core/SKILL.md) - Core Java patterns

@@ -21,7 +21,7 @@ Reads all plan artifacts and cross-checks them for consistency. Reports findings
 If `plan` parameter provided, use it. Otherwise auto-detect:
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-lifecycle:manage-lifecycle list
+python3 .plan/execute-script.py plan-marshall:manage-lifecycle:manage-lifecycle list
 ```
 
 Pick the plan with `in_progress` phase. If multiple, pick most recently updated. If none, report "No active plan found" and stop.
@@ -34,22 +34,22 @@ Read these in parallel — collect all outputs before analyzing:
 
 ```bash
 # A: Status
-python3 .plan/execute-script.py pm-workflow:manage-status:manage_status read --plan-id {plan_id}
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status read --plan-id {plan_id}
 
 # B: References
-python3 .plan/execute-script.py pm-workflow:manage-references:manage-references read --plan-id {plan_id}
+python3 .plan/execute-script.py plan-marshall:manage-references:manage-references read --plan-id {plan_id}
 
 # C: Solution outline
-python3 .plan/execute-script.py pm-workflow:manage-solution-outline:manage-solution-outline read --plan-id {plan_id}
+python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-solution-outline read --plan-id {plan_id}
 
 # D: Solution outline validation
-python3 .plan/execute-script.py pm-workflow:manage-solution-outline:manage-solution-outline validate --plan-id {plan_id}
+python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-solution-outline validate --plan-id {plan_id}
 
 # E: Task list
-python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks list --plan-id {plan_id}
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks list --plan-id {plan_id}
 
 # F: Assessments summary
-python3 .plan/execute-script.py pm-workflow:manage-assessments:manage-assessments query --plan-id {plan_id} --certainty CERTAIN_INCLUDE
+python3 .plan/execute-script.py plan-marshall:manage-assessments:manage-assessments query --plan-id {plan_id} --certainty CERTAIN_INCLUDE
 
 # G: Script execution log (errors only)
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log read --plan-id {plan_id} --type script
@@ -72,7 +72,7 @@ If an artifact does not exist yet (phase not reached), note it and skip. Only ch
 For each task from E, read full task content:
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks get --plan-id {plan_id} --number {N}
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks get --plan-id {plan_id} --number {N}
 ```
 
 ## Step 4: Cross-Check Consistency

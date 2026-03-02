@@ -327,7 +327,7 @@ This skill is designed to be loaded alongside other skills:
 
 ```
 Skill: pm-plugin-development:verification-mode
-Skill: pm-workflow:phase-3-outline
+Skill: plan-marshall:phase-3-outline
 ```
 
 When both are loaded, verification mode applies to all solution-outline operations.
@@ -353,11 +353,11 @@ Executing plan-init for my-plan...
 ## SCRIPT FAILURE Analysis Required
 
 ### Issue Detected
-Script pm-workflow:manage-lifecycle:manage-lifecycle returned non-zero exit code (1)
+Script plan-marshall:manage-lifecycle:manage-lifecycle returned non-zero exit code (1)
 
 ### Context
 - **Operation**: Create plan status
-- **Component**: pm-workflow:plan-manage
+- **Component**: plan-marshall:plan-manage
 - **Expected**: status: success with plan created
 - **Actual**: status: error with invalid_domain
 
@@ -418,7 +418,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log read --p
 
 **Step 4 Command**:
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-status:manage_status read --plan-id {plan_id}
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status read --plan-id {plan_id}
 ```
 
 **Step 3 Contract Verification Details**:
@@ -434,21 +434,21 @@ python3 .plan/execute-script.py pm-workflow:manage-status:manage_status read --p
 
 **1-Init Phase** - Verify references.json:
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-references:manage-references read --plan-id {plan_id}
+python3 .plan/execute-script.py plan-marshall:manage-references:manage-references read --plan-id {plan_id}
 ```
 
 **2-Outline Phase** - Validate solution outline:
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-solution-outline:manage-solution-outline validate --plan-id {plan_id}
+python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-solution-outline validate --plan-id {plan_id}
 ```
 
 **3-Plan Phase** - List and verify each task:
 ```bash
 # List all tasks
-python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks list --plan-id {plan_id}
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks list --plan-id {plan_id}
 
 # Get each task by number (replace {N} with 1, 2, 3, etc.)
-python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks get --plan-id {plan_id} --number {N}
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks get --plan-id {plan_id} --number {N}
 
 # Verify work-log has entry for each task creation
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log read --plan-id {plan_id} --type work
@@ -458,7 +458,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log read --p
 **Execute Phase** - Run task verification commands:
 ```bash
 # Get task to retrieve verification.commands
-python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks get --plan-id {plan_id} --number {N}
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks get --plan-id {plan_id} --number {N}
 
 # Then execute each command from the task's verification.commands array
 ```
@@ -487,12 +487,12 @@ Direct .plan file access bypassing manage-* API
 ### Context
 - **Operation**: Read
 - **Target**: .plan/plans/jwt-auth/status.toon
-- **Expected**: Use `python3 .plan/execute-script.py pm-workflow:manage-status:manage_status read --plan-id jwt-auth`
+- **Expected**: Use `python3 .plan/execute-script.py plan-marshall:manage-status:manage_status read --plan-id jwt-auth`
 - **Actual**: Direct file read attempted
 
 ### Root Cause Analysis
 Command is reading status.toon directly instead of using
-`python3 .plan/execute-script.py pm-workflow:manage-status:manage_status read`.
+`python3 .plan/execute-script.py plan-marshall:manage-status:manage_status read`.
 This bypasses audit trail and validation.
 
 ### Impact Assessment
@@ -504,11 +504,11 @@ This bypasses audit trail and validation.
 | Maintainability | Poor - mixed access patterns |
 
 ### Options
-1. **Use pm-workflow:manage-lifecycle:manage-lifecycle**: Consistent abstraction layer
+1. **Use plan-marshall:manage-lifecycle:manage-lifecycle**: Consistent abstraction layer
 2. **Proceed with warning**: Log deviation but continue
 
 ### Recommendation
-Use `python3 .plan/execute-script.py pm-workflow:manage-status:manage_status read` for all status access
+Use `python3 .plan/execute-script.py plan-marshall:manage-status:manage_status read` for all status access
 
 ---
 **Verification Mode Active** - Awaiting user decision before proceeding.
@@ -517,7 +517,7 @@ Use `python3 .plan/execute-script.py pm-workflow:manage-status:manage_status rea
 ### Example Post-Operation Audit
 
 ```
-User: (approved using pm-workflow:manage-lifecycle:manage-lifecycle)
+User: (approved using plan-marshall:manage-lifecycle:manage-lifecycle)
 
 Claude: Task TASK-001 completed successfully.
 

@@ -232,7 +232,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from conftest import run_script, TestRunner, get_script_path, PlanTestContext
 
-SCRIPT_PATH = get_script_path('pm-workflow', 'manage-references', 'manage-references.py')
+SCRIPT_PATH = get_script_path('plan-marshall', 'manage-references', 'manage-references.py')
 
 # Alias for backward compatibility (optional)
 TestContext = PlanTestContext

@@ -20,24 +20,24 @@ Simplified notation: `{bundle}:{skill}`
 
 | Example |
 |---------|
-| `pm-workflow:manage-files` |
+| `plan-marshall:manage-files` |
 | `pm-dev-java:plan-marshall-plugin` |
 
 ## Examples
 
 ```bash
 # Document operations (typed documents)
-python3 .plan/execute-script.py pm-workflow:manage-plan-documents:manage-plan-documents request create --plan-id my-plan --title "My Task" --source description --body "Task details"
-python3 .plan/execute-script.py pm-workflow:manage-plan-documents:manage-plan-documents request read --plan-id my-plan
+python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-documents request create --plan-id my-plan --title "My Task" --source description --body "Task details"
+python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-documents request read --plan-id my-plan
 
 # File operations (generic files)
-python3 .plan/execute-script.py pm-workflow:manage-files:manage-files write --plan-id my-plan --file notes.md --content "..."
+python3 .plan/execute-script.py plan-marshall:manage-files:manage-files write --plan-id my-plan --file notes.md --content "..."
 
 # Build operations
 python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --targets clean,verify
 
 # References operations
-python3 .plan/execute-script.py pm-workflow:manage-references:manage-references set --plan-id my-plan --key foo --value bar
+python3 .plan/execute-script.py plan-marshall:manage-references:manage-references set --plan-id my-plan --key foo --value bar
 ```
 
 ## Error Handling
@@ -68,7 +68,7 @@ When a plan ID is provided, logs to:
 
 **Example with --plan-id** (script uses it):
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-files:manage-files add \
+python3 .plan/execute-script.py plan-marshall:manage-files:manage-files add \
   --plan-id my-plan --file task.md
 ```
 
@@ -99,12 +99,12 @@ Fallback when no plan context:
 
 **Success entries** (single-line):
 ```
-[2025-12-08T10:30:00Z] [INFO] [SCRIPT] pm-workflow:manage-files:manage-files add (0.15s)
+[2025-12-08T10:30:00Z] [INFO] [SCRIPT] plan-marshall:manage-files:manage-files add (0.15s)
 ```
 
 **Error entries** (multi-line with fields):
 ```
-[2025-12-08T10:31:00Z] [ERROR] [SCRIPT] pm-workflow:manage-files:manage-files add (0.23s)
+[2025-12-08T10:31:00Z] [ERROR] [SCRIPT] plan-marshall:manage-files:manage-files add (0.23s)
   exit_code: 1
   args: --plan-id my-plan --file missing.md
   stderr: FileNotFoundError: missing.md not found

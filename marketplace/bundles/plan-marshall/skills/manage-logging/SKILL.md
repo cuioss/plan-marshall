@@ -104,12 +104,12 @@ entries:
   - timestamp: 2025-12-11T11:14:30Z
     level: INFO
     hash_id: c8d3e2
-    message: [STATUS] (pm-workflow:phase-1-init) Starting init phase
+    message: [STATUS] (plan-marshall:phase-1-init) Starting init phase
     phase: 1-init
   - timestamp: 2025-12-11T11:15:20Z
     level: INFO
     hash_id: f1a9b3
-    message: [ARTIFACT] (pm-workflow:phase-1-init) Created deliverable: auth module
+    message: [ARTIFACT] (plan-marshall:phase-1-init) Created deliverable: auth module
 ```
 
 ### Examples
@@ -117,21 +117,21 @@ entries:
 ```bash
 # Write: Script execution logging
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  script --plan-id my-plan --level INFO --message "pm-workflow:manage-task:manage-task add (0.15s)"
+  script --plan-id my-plan --level INFO --message "plan-marshall:manage-task:manage-task add (0.15s)"
 
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  script --plan-id my-plan --level ERROR --message "pm-workflow:manage-task:manage-task add failed (exit 1)"
+  script --plan-id my-plan --level ERROR --message "plan-marshall:manage-task:manage-task add failed (exit 1)"
 
 # Write: Work logging (include [CATEGORY] (caller) prefix)
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work --plan-id my-plan --level INFO --message "[ARTIFACT] (pm-workflow:phase-1-init) Created deliverable: auth module"
+  work --plan-id my-plan --level INFO --message "[ARTIFACT] (plan-marshall:phase-1-init) Created deliverable: auth module"
 
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work --plan-id my-plan --level WARN --message "[STATUS] (pm-workflow:phase-5-execute) Skipped validation step"
+  work --plan-id my-plan --level WARN --message "[STATUS] (plan-marshall:phase-5-execute) Skipped validation step"
 
 # Write: Decision logging (NO [DECISION] prefix - file is the category)
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision --plan-id my-plan --level INFO --message "(pm-workflow:phase-1-init) Detected domain: java - pom.xml found"
+  decision --plan-id my-plan --level INFO --message "(plan-marshall:phase-1-init) Detected domain: java - pom.xml found"
 
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   decision --plan-id my-plan --level INFO --message "(pm-plugin-development:ext-outline-plugin) Scope: bundles=all"
@@ -172,20 +172,20 @@ Every log entry automatically includes a 6-character hash computed from the mess
 
 **script-execution.log**:
 ```
-[2025-12-11T12:14:26Z] [INFO] [a3f2c1] pm-workflow:manage-files:manage-files create (0.19s)
-[2025-12-11T12:17:50Z] [ERROR] [b7e4d9] pm-workflow:manage-task:manage-task add failed (exit 1)
+[2025-12-11T12:14:26Z] [INFO] [a3f2c1] plan-marshall:manage-files:manage-files create (0.19s)
+[2025-12-11T12:17:50Z] [ERROR] [b7e4d9] plan-marshall:manage-task:manage-task add failed (exit 1)
 ```
 
 **work.log**:
 ```
-[2025-12-11T11:14:30Z] [INFO] [c8d3e2] [STATUS] (pm-workflow:phase-1-init) Starting init phase
-[2025-12-11T11:15:20Z] [INFO] [f1a9b3] [ARTIFACT] (pm-workflow:phase-1-init) Created deliverable: auth module
-[2025-12-11T11:17:30Z] [INFO] [e5c7d4] [PROGRESS] (pm-workflow:phase-5-execute) Task 1 completed
+[2025-12-11T11:14:30Z] [INFO] [c8d3e2] [STATUS] (plan-marshall:phase-1-init) Starting init phase
+[2025-12-11T11:15:20Z] [INFO] [f1a9b3] [ARTIFACT] (plan-marshall:phase-1-init) Created deliverable: auth module
+[2025-12-11T11:17:30Z] [INFO] [e5c7d4] [PROGRESS] (plan-marshall:phase-5-execute) Task 1 completed
 ```
 
 **decision.log**:
 ```
-[2025-12-11T11:14:48Z] [INFO] [d2e8f1] (pm-workflow:phase-1-init) Detected domain: java - pom.xml found
+[2025-12-11T11:14:48Z] [INFO] [d2e8f1] (plan-marshall:phase-1-init) Detected domain: java - pom.xml found
 [2025-12-11T11:20:15Z] [INFO] [a4b6c8] (pm-plugin-development:ext-outline-plugin) Scope: bundles=all
 ```
 
@@ -268,7 +268,7 @@ Planning skills call the simplified API:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work --plan-id my-plan --level INFO --message "[ARTIFACT] (pm-workflow:phase-4-plan) Created task: implement auth module"
+  work --plan-id my-plan --level INFO --message "[ARTIFACT] (plan-marshall:phase-4-plan) Created task: implement auth module"
 ```
 
 ---

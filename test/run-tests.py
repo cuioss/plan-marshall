@@ -4,8 +4,8 @@ Central test runner for plan-marshall.
 
 Usage:
     python3 test/run-tests.py                    # Run all tests
-    python3 test/run-tests.py test/pm-workflow/     # Run tests in directory
-    python3 test/run-tests.py test/pm-workflow/plan-files/test_parse_plan.py  # Run single test
+    python3 test/run-tests.py test/plan-marshall/     # Run tests in directory
+    python3 test/run-tests.py test/plan-marshall/plan-files/test_parse_plan.py  # Run single test
 
 Features:
     - Centralized test fixture directory at .plan/temp/test-fixture/{timestamp}

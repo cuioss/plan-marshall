@@ -20,7 +20,7 @@ Output (TOON format):
         source	cached|detected
 
     resolve:
-        resolved_path	/Users/user/.claude/plugins/cache/plan-marshall/pm-workflow/1.0.0/skills/...
+        resolved_path	/Users/user/.claude/plugins/cache/plan-marshall/plan-marshall/1.0.0/skills/...
 
 Environment:
     PLAN_BASE_DIR   Override .plan directory location (for testing)
@@ -151,7 +151,7 @@ def resolve_bundle_path(plugin_root: Path, bundle: str, relative_path: str) -> P
 
     Args:
         plugin_root: The plugin root directory
-        bundle: Bundle name (e.g., 'pm-workflow')
+        bundle: Bundle name (e.g., 'plan-marshall')
         relative_path: Path relative to bundle root (e.g., 'skills/manage-tasks/SKILL.md')
 
     Returns:
@@ -214,7 +214,7 @@ def main() -> int:
 
     # resolve subcommand
     resolve_parser = subparsers.add_parser('resolve', help='Resolve a path relative to a bundle')
-    resolve_parser.add_argument('--bundle', required=True, help="Bundle name (e.g., 'pm-workflow')")
+    resolve_parser.add_argument('--bundle', required=True, help="Bundle name (e.g., 'plan-marshall')")
     resolve_parser.add_argument('--path', required=True, help='Path relative to bundle root')
 
     args = parser.parse_args()

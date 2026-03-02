@@ -14,7 +14,7 @@ user-invokable: false
 
 | Script | Purpose |
 |--------|---------|
-| `pm-workflow:manage-tasks:manage-tasks` | Task retrieval and progress tracking |
+| `plan-marshall:manage-tasks:manage-tasks` | Task retrieval and progress tracking |
 | `plan-marshall:manage-logging:manage-log` | Work log entries |
 | `plan-marshall:manage-plan-marshall-config:plan-marshall-config` | Domain skill retrieval |
 
@@ -40,7 +40,7 @@ Contains: How to execute each step type (modify, create, etc.)
 ### Step 1: Load Task Details
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks get \
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks get \
   --plan-id {plan_id} \
   --number {task_number}
 ```
@@ -118,7 +118,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 #### 4c. Finalize Step
 
 ```bash
-python3 .plan/execute-script.py pm-workflow:manage-tasks:manage-tasks finalize-step \
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks finalize-step \
   --plan-id {plan_id} \
   --task {task_number} \
   --step {step_number} \
@@ -226,10 +226,10 @@ If verification fails:
 
 ### Uses
 - `pm-plugin-development:plugin-architecture` - Architecture principles
-- `pm-workflow:manage-tasks` - Task and step management
+- `plan-marshall:manage-tasks` - Task and step management
 - `plan-marshall:manage-logging:manage-log` - Work logging
 - Context skills from task delegation (loaded dynamically)
 
 ### Related Skills
-- `pm-workflow:phase-5-execute` - Generic plan execution orchestrator
+- `plan-marshall:phase-5-execute` - Generic plan execution orchestrator
 - `pm-plugin-development:plugin-maintain` - Plugin maintenance operations

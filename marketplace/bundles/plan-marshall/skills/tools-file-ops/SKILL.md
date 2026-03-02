@@ -190,7 +190,7 @@ Files are stored in `.plan/` directory:
 
 ## Cross-Domain Access Pattern
 
-When scripts in one domain (e.g., `pm-workflow:plan-files`) need to access resources in another domain (e.g., `plan-marshall:manage-lessons`), follow the **ID-based access pattern**.
+When scripts in one domain (e.g., `plan-marshall:plan-files`) need to access resources in another domain (e.g., `plan-marshall:manage-lessons`), follow the **ID-based access pattern**.
 
 ### Principle
 

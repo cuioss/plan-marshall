@@ -117,7 +117,7 @@ class Extension(ExtensionBase):
     def provides_recipes(self) -> list[dict]:
         """Return Java-specific recipe definitions.
 
-        Built-in "Refactor to Profile Standards" recipe in pm-workflow handles
+        Built-in "Refactor to Profile Standards" recipe in plan-marshall handles
         the standard refactoring use cases. Only return custom recipes here.
         """
         return []

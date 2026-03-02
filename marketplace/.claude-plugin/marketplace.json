@@ -46,14 +46,8 @@
     },
     {
       "name": "plan-marshall",
-      "description": "Environment setup, permission management, and cross-cutting utilities",
+      "description": "Environment setup, permission management, cross-cutting utilities, and complete development workflow from issue implementation to PR review and quality verification",
       "source": "./bundles/plan-marshall",
-      "strict": false
-    },
-    {
-      "name": "pm-workflow",
-      "description": "Complete development workflow from issue implementation to PR review and quality verification",
-      "source": "./bundles/pm-workflow",
       "strict": false
     },
     {

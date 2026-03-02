@@ -129,10 +129,7 @@ After setup, Plan Marshall creates:
 |Bundle |Purpose
 
 |`plan-marshall`
-|Core infrastructure, permissions, script execution
-
-|`pm-workflow`
-|5-phase planning workflow, task execution
+|Core infrastructure, permissions, script execution, and 5-phase planning workflow with task execution
 
 |`pm-dev-java`
 |Java development standards and agents

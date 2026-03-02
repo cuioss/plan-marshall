@@ -46,12 +46,12 @@ def provides_outline_skill(self) -> str | None:
     Purpose:
         Loaded by the outline-change-type skill (via
         solution-outline-agent). Provides domain-specific outline
-        instructions instead of generic pm-workflow:outline-change-type
+        instructions instead of generic plan-marshall:outline-change-type
         standards.
 
     Fallback:
         If a domain returns None, generic instructions from
-        pm-workflow:outline-change-type/standards/change-{type}.md
+        plan-marshall:outline-change-type/standards/change-{type}.md
         are used.
     """
     return None
@@ -73,7 +73,7 @@ The referenced skill must provide `standards/change-{type}.md` files for support
     └── change-tech_debt.md        # Refactor/cleanup components
 ```
 
-Not all change types need coverage — unsupported types fall back to the generic `pm-workflow:outline-change-type/standards/change-{type}.md`.
+Not all change types need coverage — unsupported types fall back to the generic `plan-marshall:outline-change-type/standards/change-{type}.md`.
 
 ### Change Types
 
@@ -93,7 +93,7 @@ Not all change types need coverage — unsupported types fall back to the generi
 When `provides_outline_skill()` returns `None` (the default), the outline-change-type skill uses generic standards:
 
 ```
-pm-workflow:outline-change-type/standards/change-{type}.md
+plan-marshall:outline-change-type/standards/change-{type}.md
 ```
 
 This is the behavior for most domains. Only domains with highly specialized outline needs (e.g., marketplace plugin development with inventory agents) should provide a custom skill.
@@ -143,7 +143,7 @@ source	domain_specific
 ```toon
 status	success
 domain	java
-skill	pm-workflow:outline-change-type
+skill	plan-marshall:outline-change-type
 source	generic_fallback
 ```
 
@@ -155,7 +155,7 @@ source	generic_fallback
 |--------|--------|--------------|
 | pm-plugin-development | plan-marshall-plugin-dev | `pm-plugin-development:ext-outline-workflow` |
 
-All other domains return `None` and use the generic `pm-workflow:outline-change-type` standards.
+All other domains return `None` and use the generic `plan-marshall:outline-change-type` standards.
 
 ---
 
@@ -178,5 +178,5 @@ A single skill with `change-{type}.md` sub-files allows:
 ## Related Specifications
 
 - [extension-contract.md](extension-contract.md) — Extension API contract
-- [extension-mechanism.md (workflow)](../../../../pm-workflow/skills/workflow-extension-api/standards/extensions/extension-mechanism.md) — Extension mechanism overview, change-type skill structure, resolution flow
-- [change-types.md](../../../../pm-workflow/skills/workflow-architecture/standards/change-types.md) — Change type vocabulary
+- [extension-mechanism.md (workflow)](../../../../plan-marshall/skills/workflow-extension-api/standards/extensions/extension-mechanism.md) — Extension mechanism overview, change-type skill structure, resolution flow
+- [change-types.md](../../../../plan-marshall/skills/workflow-architecture/standards/change-types.md) — Change type vocabulary
