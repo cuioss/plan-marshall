@@ -155,7 +155,7 @@ plan-marshall:
         - permission-syntax.md
         - security-patterns.md
       scripts[1]:
-        - tools-permission-doctor.py
+        - permission-doctor.py
 ```
 
 **Full mode includes:**
