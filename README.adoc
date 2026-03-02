@@ -151,6 +151,12 @@ After setup, Plan Marshall creates:
 
 See individual bundle READMEs in `marketplace/bundles/*/README.md` for details.
 
+== License
+
+This project is licensed under the link:LICENSE.md[GNU Affero General Public License v3.0 (AGPL-3.0-only)].
+
+For organizations that cannot comply with the AGPL's copyleft requirements (e.g., proprietary or closed-source deployments), commercial licenses are available. Contact: contact@cuioss.de
+
 == Support
 
 * Report issues: https://github.com/cuioss/plan-marshall/issues

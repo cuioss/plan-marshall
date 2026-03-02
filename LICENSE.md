@@ -2,6 +2,14 @@ SPDX-License-Identifier: AGPL-3.0-only
 
 Copyright 2025 Oliver Wolff
 
+## Commercial Licensing
+
+This software is dual-licensed. For organizations that cannot comply with the
+AGPL's copyleft requirements (e.g., proprietary or closed-source deployments),
+commercial licenses are available. Contact: contact@cuioss.de
+
+---
+
 # GNU AFFERO GENERAL PUBLIC LICENSE
 
 Version 3, 19 November 2007
