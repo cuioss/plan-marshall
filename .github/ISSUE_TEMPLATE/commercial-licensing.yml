@@ -1,0 +1,44 @@
+name: Commercial Licensing Inquiry
+description: Request information about commercial licensing options
+title: "[Licensing] "
+labels: ["licensing"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Commercial Licensing
+
+        Plan Marshall is available under the [AGPL-3.0-only](https://github.com/cuioss/plan-marshall/blob/main/LICENSE.md) license.
+
+        For organizations that cannot comply with the AGPL's copyleft requirements, commercial licenses are available. Please provide some context so we can help you.
+
+  - type: input
+    id: organization
+    attributes:
+      label: Organization
+      description: Your company or organization name
+      placeholder: Acme Corp
+    validations:
+      required: false
+
+  - type: dropdown
+    id: use-case
+    attributes:
+      label: Use case
+      description: How do you plan to use Plan Marshall?
+      options:
+        - Internal tooling (not distributed)
+        - Integrated into a commercial product
+        - SaaS / hosted service
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: details
+    attributes:
+      label: Additional details
+      description: Any other context about your licensing needs
+      placeholder: Describe your use case and requirements
+    validations:
+      required: false
