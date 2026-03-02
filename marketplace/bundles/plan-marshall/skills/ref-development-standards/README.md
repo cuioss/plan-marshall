@@ -12,7 +12,7 @@ This skill provides foundational rules that apply across ALL development activit
 
 **general-development-rules.md** - Core development principles
 - User interaction guidelines (when to ask vs proceed)
-- Research requirements (using research-best-practices agent)
+- Research requirements (using research-best-practices-agent)
 - Tool usage standards (Read, Write, Edit vs cat, tail, find)
 - Document proliferation guidelines
 - Dependency management rules
@@ -23,14 +23,14 @@ This skill provides foundational rules that apply across ALL development activit
 
 All CUI development work follows these rules:
 - Ask when in doubt (never guess)
-- Research current best practices using research-best-practices agent
+- Research current best practices using research-best-practices-agent
 - Use proper tools for file operations
 - Don't proliferate documents
 - Get approval before adding dependencies
 
 ### Integration Points
 
-**Delegates to research-best-practices agent:**
+**Delegates to research-best-practices-agent:**
 - For finding current best practices
 - For researching technologies/frameworks
 - For discovering latest recommendations
@@ -49,9 +49,9 @@ All CUI development work follows these rules:
 - If creative interpretation needed → YES
 
 **Should I research this?**
-- Need current best practices → Use research-best-practices agent
-- Unfamiliar technology/framework → Use research-best-practices agent
-- Want latest recommendations → Use research-best-practices agent
+- Need current best practices → Use research-best-practices-agent
+- Unfamiliar technology/framework → Use research-best-practices-agent
+- Want latest recommendations → Use research-best-practices-agent
 
 **Which tool should I use?**
 - File discovery → Glob (not find or ls)
@@ -92,7 +92,7 @@ Commands should reference this skill when they need to enforce general developme
 ### With plan-marshall Bundle
 
 **Agents:**
-- **research-best-practices** - Used for researching current best practices
+- **research-best-practices-agent** - Used for researching current best practices
 
 **Skills:**
 - **diagnostic-patterns** - Detailed tool usage patterns
@@ -100,7 +100,7 @@ Commands should reference this skill when they need to enforce general developme
 
 **Commands:**
 - All commands benefit from following these principles
-- Commands delegate research to research-best-practices agent
+- Commands delegate research to research-best-practices-agent
 
 ### With Other Bundles
 
@@ -117,7 +117,7 @@ This skill provides cross-cutting principles useful for:
 **When:** Uncertain about requirements, approach, or interpretation.
 
 ### 2. Research Best Practices
-**Principle:** Always research topics using research-best-practices agent.
+**Principle:** Always research topics using research-best-practices-agent.
 **When:** Need current best practices for technologies/frameworks.
 **Goal:** Find latest best practices, not outdated knowledge.
 
@@ -155,10 +155,10 @@ Which approach would you prefer?
 ```markdown
 Following general-development-rules: Research current best practices.
 
-Launching research-best-practices agent to find latest best practices for {technology}.
+Launching research-best-practices-agent to find latest best practices for {technology}.
 
 Task:
-  subagent_type: plan-marshall:research-best-practices
+  subagent_type: plan-marshall:research-best-practices-agent
   prompt: Research best practices for {technology/framework}
 ```
 
@@ -181,7 +181,7 @@ Part of the **plan-marshall** bundle - Utility commands and agents for CUI devel
 
 ## See Also
 
-- research-best-practices agent - Comprehensive web research for current best practices
+- research-best-practices-agent - Comprehensive web research for current best practices
 - diagnostic-patterns skill - Detailed tool usage patterns for non-prompting operations
 - planning bundle - Development workflow integration
 - pm-plugin-development bundle - Creating agents and commands following these principles

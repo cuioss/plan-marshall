@@ -448,7 +448,7 @@ def test_documents_extension_no_outline_skill():
     """Test pm-documents does not provide outline_skill (uses generic)."""
     ext = load_extension('pm-documents')
 
-    # pm-documents uses generic outline-change-type standards, so should return None
+    # pm-documents uses generic workflow-outline-change-type standards, so should return None
     outline_skill = ext.provides_outline_skill()
     assert outline_skill is None, 'pm-documents should not provide domain-specific outline_skill'
 

@@ -35,15 +35,15 @@ deliverable_count_check: informational
 # - 4 Python scripts using print(json.dumps()) for stdout output
 # - 4 test files for the affected scripts
 affected_files[12]:
-marketplace/bundles/plan-marshall/skills/planning-inventory/SKILL.md
+marketplace/bundles/plan-marshall/skills/tools-planning-inventory/SKILL.md
 marketplace/bundles/plan-marshall/skills/workflow-integration-ci/SKILL.md
 marketplace/bundles/plan-marshall/skills/workflow-integration-git/SKILL.md
 marketplace/bundles/plan-marshall/skills/workflow-integration-sonar/SKILL.md
-marketplace/bundles/plan-marshall/skills/planning-inventory/scripts/scan-planning-inventory.py
+marketplace/bundles/plan-marshall/skills/tools-planning-inventory/scripts/scan-tools-planning-inventory.py
 marketplace/bundles/plan-marshall/skills/workflow-integration-ci/scripts/pr.py
 marketplace/bundles/plan-marshall/skills/workflow-integration-git/scripts/git-workflow.py
 marketplace/bundles/plan-marshall/skills/workflow-integration-sonar/scripts/sonar.py
-test/plan-marshall/planning-inventory/test_scan_planning_inventory.py
+test/plan-marshall/tools-planning-inventory/test_scan_planning_inventory.py
 test/plan-marshall/workflow-integration-ci/test_pr.py
 test/plan-marshall/workflow-integration-git/test_git_workflow.py
 test/plan-marshall/workflow-integration-sonar/test_sonar.py

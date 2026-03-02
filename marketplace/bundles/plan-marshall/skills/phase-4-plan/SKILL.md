@@ -142,7 +142,7 @@ For each deliverable D:
 
 **Query architecture**:
 ```bash
-python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture \
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
   module --name {deliverable.module} \
   --trace-plan-id {plan_id}
 ```
@@ -429,7 +429,7 @@ If deliverable metadata incomplete:
 
 **Script Notations** (use EXACTLY as shown):
 - `plan-marshall:manage-solution-outline:manage-solution-outline` - Read deliverables (list-deliverables, read)
-- `plan-marshall:analyze-project-architecture:architecture` - Query module skills (module --name {module}) and resolve commands (resolve --command {cmd} --name {module}). Uses `--trace-plan-id`, NOT `--plan-id`.
+- `plan-marshall:manage-architecture:architecture` - Query module skills (module --name {module}) and resolve commands (resolve --command {cmd} --name {module}). Uses `--trace-plan-id`, NOT `--plan-id`.
 - `plan-marshall:manage-tasks:manage-tasks` - Create tasks (add --plan-id X <<'EOF' ... EOF)
 - `plan-marshall:manage-findings:manage-findings` - Q-Gate findings (qgate add/query/resolve)
 - `plan-marshall:manage-lessons:manage-lesson` - Record lessons on issues (add)

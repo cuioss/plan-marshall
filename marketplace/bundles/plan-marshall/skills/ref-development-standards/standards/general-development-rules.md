@@ -50,7 +50,7 @@ Agent asks: "What error handling approach would you prefer?
 
 ### Principle 2: Always Research Topics
 
-**Rule:** Always research topics using the research-best-practices agent. The goal is to find the most recent best practices for a given technology or framework.
+**Rule:** Always research topics using the research-best-practices-agent. The goal is to find the most recent best practices for a given technology or framework.
 
 **When to Research:**
 - Need current best practices for a technology/framework
@@ -61,11 +61,11 @@ Agent asks: "What error handling approach would you prefer?
 
 **How to Research:**
 
-**Use research-best-practices agent** (NOT web search tools directly):
+**Use research-best-practices-agent** (NOT web search tools directly):
 
 ```
 Task:
-  subagent_type: plan-marshall:research-best-practices
+  subagent_type: plan-marshall:research-best-practices-agent
   description: Research {topic} best practices
   prompt: |
     Research current best practices for {specific topic}.
@@ -82,7 +82,7 @@ Task:
 - ❌ "Search GitHub" (Not comprehensive, misses documentation)
 - ❌ Direct WebSearch without structured analysis (Lacks synthesis)
 
-**✅ ALWAYS use research-best-practices agent:**
+**✅ ALWAYS use research-best-practices-agent:**
 - Structured comprehensive research
 - Analyzes top 10+ sources
 - Provides confidence levels
@@ -94,14 +94,14 @@ Task:
 **Researching Java Testing Practices:**
 ```
 Task:
-  subagent_type: plan-marshall:research-best-practices
+  subagent_type: plan-marshall:research-best-practices-agent
   prompt: Research best practices for Java unit testing with JUnit 5
 ```
 
 **Researching CDI Patterns:**
 ```
 Task:
-  subagent_type: plan-marshall:research-best-practices
+  subagent_type: plan-marshall:research-best-practices-agent
   prompt: Research current CDI (Contexts and Dependency Injection) best practices for Quarkus applications
 ```
 
@@ -254,7 +254,7 @@ Agent: "I found feature documentation in README.md. Should I:
 **Required Approval Process:**
 
 1. **Identify need for dependency**
-2. **Research alternatives** using research-best-practices agent if needed
+2. **Research alternatives** using research-best-practices-agent if needed
 3. **Ask user** with specific recommendation:
    ```
    I need to add {functionality}. I recommend adding {dependency-name} because:
@@ -450,7 +450,7 @@ This loads all core principles to guide your work.
 | Situation | Action |
 |-----------|--------|
 | Uncertain about requirements | Ask user |
-| Need current best practices | Use research-best-practices agent |
+| Need current best practices | Use research-best-practices-agent |
 | Would need to guess | Ask user |
 | File operations (find/read/search/write/edit) | See Principle 4 for complete tool selection guide |
 | Need to create document | Ask user first |
@@ -458,10 +458,10 @@ This loads all core principles to guide your work.
 
 ### Key Agents and Skills
 
-**research-best-practices agent** - For comprehensive web research:
+**research-best-practices-agent** - For comprehensive web research:
 ```
 Task:
-  subagent_type: plan-marshall:research-best-practices
+  subagent_type: plan-marshall:research-best-practices-agent
   prompt: Research {topic}
 ```
 
@@ -491,7 +491,7 @@ Agent: "Let me search GitHub for examples..."
 
 ### ✅ DO: Use Structured Research
 ```
-Agent: "Using research-best-practices agent to find current best practices..."
+Agent: "Using research-best-practices-agent to find current best practices..."
 ```
 
 ### ❌ DON'T: Use Bash for File Operations
@@ -539,7 +539,7 @@ Following these rules ensures:
 ## Related Standards
 
 - **diagnostic-patterns skill** - Detailed tool usage patterns for file operations
-- **research-best-practices agent** - Structured web research for current best practices
+- **research-best-practices-agent** - Structured web research for current best practices
 - **planning skills** - Development workflow integration
 - **pm-plugin-development skills** - Creating components following these principles
 

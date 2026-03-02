@@ -199,7 +199,7 @@ The orchestrator resolves commands per module in `.plan/raw-project-data.json`. 
 }
 ```
 
-See [orchestrator-integration.md](../../analyze-project-architecture/standards/orchestrator-integration.md) for command resolution.
+See [orchestrator-integration.md](../../manage-architecture/standards/orchestrator-integration.md) for command resolution.
 
 ### From discover_modules()
 

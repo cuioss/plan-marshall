@@ -348,7 +348,7 @@ name: task-execute-agent
 description: Execute single task with two-tier skill loading
 tools: Read, Write, Edit, Bash, Skill
 model: sonnet
-skills: plan-marshall:task-execution, plan-marshall:ref-development-standards
+skills: plan-marshall:task-implementation, plan-marshall:ref-development-standards
 ---
 
 # Task Execute Agent
@@ -359,7 +359,7 @@ then loads task.skills array for domain knowledge.
 ## Step 0: Load System Skills (MANDATORY)
 
 ```
-Skill: plan-marshall:task-execution
+Skill: plan-marshall:task-implementation
 Skill: plan-marshall:ref-development-standards
 ```
 

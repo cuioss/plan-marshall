@@ -88,7 +88,7 @@ When a directory contains multiple technologies (Maven + npm), it creates separa
 
 Query modules at a physical path:
 ```bash
-python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture modules \
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture modules \
   --physical-path {directory}
 ```
 
@@ -113,7 +113,7 @@ modules[2]:
 
 Query sibling virtual modules:
 ```bash
-python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture siblings \
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture siblings \
   --name {module-name}
 ```
 

@@ -72,7 +72,7 @@ Add the executor permission to project-local settings so script execution doesn'
 **BOOTSTRAP**: Use DIRECT Python call (no executor yet):
 
 ```bash
-python3 ${PLUGIN_ROOT}/plan-marshall/skills/permission-fix/scripts/permission-fix.py ensure \
+python3 ${PLUGIN_ROOT}/plan-marshall/skills/tools-permission-fix/scripts/permission-fix.py ensure \
   --permissions "Bash(python3 .plan/execute-script.py *)" \
   --target project
 ```
@@ -117,7 +117,7 @@ python3 -m py_compile .plan/execute-script.py && echo "Executor syntax OK"
 
 **Ensure executor permission** (prevents permission prompts when using executor):
 ```bash
-python3 ${PLUGIN_ROOT}/plan-marshall/skills/permission-fix/scripts/permission-fix.py ensure \
+python3 ${PLUGIN_ROOT}/plan-marshall/skills/tools-permission-fix/scripts/permission-fix.py ensure \
   --permissions "Bash(python3 .plan/execute-script.py *)" \
   --target project
 ```
@@ -391,7 +391,7 @@ Discover modules directly from filesystem via extension API. This creates `deriv
 **Prerequisites**: Step 8 sets up profile skip lists and mappings in `run-configuration.json`, so discovered profiles are already filtered.
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture discover --force
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture discover --force
 ```
 
 **Output (TOON)**:
@@ -436,7 +436,7 @@ Load skill `pm-dev-java:manage-maven-profiles` and follow its workflow to:
 3. Re-run discovery to apply changes:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture discover --force
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture discover --force
 ```
 
 **If no Maven modules OR no unmatched profiles** → Skip to Step 11.
@@ -452,7 +452,7 @@ Skill domains are determined from the architecture analysis results. The `extens
 The architecture analysis already determined which extensions are applicable by calling each extension's `discover_modules()` method. Query the results:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture derived
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture derived
 ```
 
 Look for `extensions_used` in the output - this lists bundles that found modules in the project.
@@ -538,7 +538,7 @@ status: success
 task_executors_configured: 3
 executors:
   implementation: plan-marshall:task-implementation
-  module_testing: plan-marshall:task-module_testing
+  module_testing: plan-marshall:task-module-testing
   integration_testing: plan-marshall:task-integration_testing
 ```
 
@@ -609,7 +609,7 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-m
     "optionals": [...],
     "task_executors": {
       "implementation": "plan-marshall:task-implementation",
-      "module_testing": "plan-marshall:task-module_testing",
+      "module_testing": "plan-marshall:task-module-testing",
       "integration_testing": "plan-marshall:task-integration_testing"
     }
   },
@@ -638,7 +638,7 @@ Generate project structure knowledge for solution outline support.
 Invoke the analysis skill to read raw data and generate meaningful structure:
 
 ```
-Skill: plan-marshall:analyze-project-architecture
+Skill: plan-marshall:manage-architecture
 ```
 
 The LLM analysis reads discovered data, samples documentation and source code, then enriches with:
@@ -682,14 +682,14 @@ AskUserQuestion:
 
 Update with user input:
 ```bash
-python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture \
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
   enrich module --name oauth-sheriff-core --responsibility "Core OAuth token validation and refresh logic"
 ```
 
 ### Step 13c: Verify Structure
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture info
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture info
 ```
 
 Verify that all modules have responsibilities and key packages. Missing fields indicate areas needing attention.
@@ -733,7 +733,7 @@ AskUserQuestion:
 
 If yes:
 ```bash
-python3 .plan/execute-script.py plan-marshall:permission-fix:permission-fix apply-fixes --scope project
+python3 .plan/execute-script.py plan-marshall:tools-permission-fix:permission-fix apply-fixes --scope project
 ```
 
 ---

@@ -78,7 +78,7 @@ Each extension returns modules it discovered with `build_systems` field:
 
 ### Output (Aggregated by Orchestrator)
 
-See [orchestrator-integration.md](../../analyze-project-architecture/standards/orchestrator-integration.md) for:
+See [orchestrator-integration.md](../../manage-architecture/standards/orchestrator-integration.md) for:
 - Complete aggregated output structure including `commands`
 - Hybrid module merging algorithm
 - Command resolution flow
@@ -259,7 +259,7 @@ See [build-execution.md](build-execution.md) for `execute_direct` API and [build
 
 The `project-structure` skill orchestrates discovery across all extensions, splits multi-tech directories into virtual modules, and persists results.
 
-See [orchestrator-integration.md](../../analyze-project-architecture/standards/orchestrator-integration.md) for:
+See [orchestrator-integration.md](../../manage-architecture/standards/orchestrator-integration.md) for:
 - Orchestrator flow and extension discovery
 - Virtual module splitting algorithm
 - Output location (`.plan/raw-project-data.json`)
@@ -288,7 +288,7 @@ Extensions providing module discovery must:
 
 ## Related Specifications
 
-- [orchestrator-integration.md](../../analyze-project-architecture/standards/orchestrator-integration.md) - Orchestrator flow and merging
+- [orchestrator-integration.md](../../manage-architecture/standards/orchestrator-integration.md) - Orchestrator flow and merging
 - [extension-contract.md](extension-contract.md) - Extension API contract
 - [build-execution.md](build-execution.md) - Build command execution
 - [canonical-commands.md](canonical-commands.md) - Command vocabulary

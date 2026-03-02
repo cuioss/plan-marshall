@@ -3,7 +3,7 @@ name: solution-outline-agent
 description: Create solution outline with deliverables using two-track workflow
 tools: Read, Glob, Grep, Bash, AskUserQuestion, Skill
 model: sonnet
-skills: plan-marshall:phase-3-outline, plan-marshall:outline-change-type, plan-marshall:ref-development-standards
+skills: plan-marshall:phase-3-outline, plan-marshall:workflow-outline-change-type, plan-marshall:ref-development-standards
 ---
 
 # Solution Outline Agent
@@ -17,14 +17,14 @@ Load these skills using the Skill tool BEFORE any other action:
 ```
 Skill: plan-marshall:ref-development-standards
 Skill: plan-marshall:phase-3-outline
-Skill: plan-marshall:outline-change-type
+Skill: plan-marshall:workflow-outline-change-type
 ```
 
 If skill loading fails, STOP and report the error. Do NOT proceed without skills loaded.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work --plan-id {plan_id} --level INFO --message "[SKILL] (plan-marshall:solution-outline-agent) Loaded plan-marshall:ref-development-standards, plan-marshall:phase-3-outline, plan-marshall:outline-change-type"
+  work --plan-id {plan_id} --level INFO --message "[SKILL] (plan-marshall:solution-outline-agent) Loaded plan-marshall:ref-development-standards, plan-marshall:phase-3-outline, plan-marshall:workflow-outline-change-type"
 ```
 
 ## Role Boundaries
@@ -115,5 +115,5 @@ context:
 ### MUST DO - Skill Delegation
 - Load skills (Step 0) before any action
 - Delegate to phase-3-outline for outline logic
-- For Complex Track, the skill follows outline-change-type skill inline
+- For Complex Track, the skill follows workflow-outline-change-type skill inline
 - Return structured TOON output

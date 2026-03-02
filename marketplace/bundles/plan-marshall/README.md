@@ -21,7 +21,7 @@ This bundle provides **core infrastructure** organized into functional areas:
 |---------|-------------|
 | `/marshall-steward` | Project configuration wizard for planning system |
 | `/tools-fix-intellij-diagnostics` | Retrieve and fix IDE diagnostics automatically |
-| `/tools-manage-web-permissions` | Analyze and consolidate WebFetch domain permissions |
+| `/tools-web-permissions` | Analyze and consolidate WebFetch domain permissions |
 | `/tools-sync-agents-file` | Create or update project-specific agents.md file |
 
 ### Skills (20)
@@ -29,8 +29,8 @@ This bundle provides **core infrastructure** organized into functional areas:
 | Category | Skills |
 |----------|--------|
 | **Configuration** | `plan-marshall-config`, `run-config`, `marshall-steward` |
-| **Permissions** | `permission-doctor`, `permission-fix`, `web-permissions` |
-| **Extension API** | `extension-api`, `analyze-project-architecture` |
+| **Permissions** | `tools-permission-doctor`, `tools-permission-fix`, `tools-web-permissions` |
+| **Extension API** | `extension-api`, `manage-architecture` |
 | **Utilities** | `logging`, `script-executor`, `file-operations-base`, `json-file-operations` |
 | **Inventory** | `marketplace-inventory`, `marketplace-sync` |
 | **Standards** | `general-development-rules`, `diagnostic-patterns`, `toon-usage` |
@@ -41,7 +41,7 @@ This bundle provides **core infrastructure** organized into functional areas:
 
 | Agent | Description |
 |-------|-------------|
-| `research-best-practices` | Web research for best practices and recommendations |
+| `research-best-practices-agent` | Web research for best practices and recommendations |
 
 ## Key Concepts
 

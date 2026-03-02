@@ -568,7 +568,7 @@ class TestSkillToScriptDeps:
             SCRIPT_PATH,
             'deps',
             '--component',
-            'plan-marshall:planning-inventory',
+            'plan-marshall:tools-planning-inventory',
             '--dep-types',
             'script',
             '--direct-result',
@@ -583,7 +583,7 @@ class TestSkillToScriptDeps:
 
         # Should find the scan-planning-inventory script
         targets = [d['target'] for d in data.get('direct_dependencies', [])]
-        assert 'plan-marshall:planning-inventory:scan-planning-inventory' in targets
+        assert 'plan-marshall:tools-planning-inventory:scan-planning-inventory' in targets
 
     def test_skill_deps_filters_to_script_type(self):
         """Test that --dep-types script only returns script dependencies."""

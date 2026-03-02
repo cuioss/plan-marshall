@@ -326,7 +326,7 @@ task_executors_configured: 3
 executors:
   implementation: plan-marshall:task-implementation
   integration_testing: plan-marshall:task-integration_testing
-  module_testing: plan-marshall:task-module_testing
+  module_testing: plan-marshall:task-module-testing
 ```
 
 ### resolve-task-executor

@@ -17,7 +17,7 @@ Foundational development principles that guide all work in CUI projects.
 
 ### Core Development Principles
 - **User Interaction Guidelines** - When to ask vs when to proceed
-- **Research Requirements** - Using research-best-practices agent for finding current best practices
+- **Research Requirements** - Using research-best-practices-agent for finding current best practices
 - **Tool Usage Standards** - Proper tools for file operations (Read, Write, Edit vs cat, tail, find)
 - **Document Management** - When to create vs reuse documents
 - **Dependency Management** - Approval requirements for adding dependencies
@@ -68,7 +68,7 @@ Read: standards/general-development-rules.md
 
 This provides:
 - Decision tree for when to ask users
-- Research best practices using research-best-practices agent
+- Research best practices using research-best-practices-agent
 - Tool usage standards (references ref-development-standards skill)
 - Document proliferation guidelines
 - Dependency approval requirements
@@ -78,7 +78,7 @@ This provides:
 **During development, follow these principles:**
 
 1. **When uncertain** - Ask the user (don't guess or be creative)
-2. **When researching** - Use research-best-practices agent for current best practices
+2. **When researching** - Use research-best-practices-agent for current best practices
 3. **When performing file operations** - Use proper tools (Read, Write, Edit, Glob, Grep)
 4. **When creating documents** - Check if context-relevant documents exist first
 5. **When adding dependencies** - Always get user approval
@@ -97,7 +97,7 @@ Skill: plan-marshall:ref-development-standards
 
 **Research Execution:**
 ```
-Task: plan-marshall:research-best-practices
+Task: plan-marshall:research-best-practices-agent
 ```
 - Comprehensive web research
 - Finding current best practices for technologies/frameworks
@@ -115,13 +115,13 @@ standards/
 **Consolidated structure:**
 - Core development rules plus detailed tool usage patterns
 - All patterns now in one skill for easier reference
-- Delegates to research-best-practices agent for research
+- Delegates to research-best-practices-agent for research
 
 ## Tool Access
 
 **No special tools required** - This skill uses standard Read tool to load standards.
 
-**For research:** Delegates to research-best-practices agent (has WebSearch, WebFetch)
+**For research:** Delegates to research-best-practices-agent (has WebSearch, WebFetch)
 **For tool patterns:** References ref-development-standards skill
 
 ## Usage Examples
@@ -143,7 +143,7 @@ Before implementing, research current best practices:
 
 ```
 Task:
-  subagent_type: plan-marshall:research-best-practices
+  subagent_type: plan-marshall:research-best-practices-agent
   prompt: Research best practices for {feature/technology}
 ```
 ```
@@ -185,14 +185,14 @@ I need clarification on: {specific question}
 This skill integrates with other plan-marshall components:
 
 ### Agents
-- **research-best-practices** - This skill delegates research to this agent for finding current best practices
+- **research-best-practices-agent** - This skill delegates research to this agent for finding current best practices
 
 ### Skills
 - **ref-development-standards** - This skill references ref-development-standards for detailed tool usage patterns
 
 ### Commands
 - All commands should follow these general development rules
-- Commands that need research should delegate to research-best-practices agent
+- Commands that need research should delegate to research-best-practices-agent
 
 ## Key Principles
 
@@ -200,7 +200,7 @@ This skill integrates with other plan-marshall components:
 Never guess or be creative. If uncertain, ask the user for guidance.
 
 ### 2. Research Current Best Practices
-Always use research-best-practices agent to find latest best practices for technologies/frameworks. Don't rely on outdated knowledge.
+Always use research-best-practices-agent to find latest best practices for technologies/frameworks. Don't rely on outdated knowledge.
 
 ### 3. Use Proper Tools
 Use Read, Write, Edit, Glob, Grep (not cat, tail, find, test via Bash). See ref-development-standards skill for details.
@@ -218,11 +218,11 @@ Standards in this skill ensure:
 - [x] Self-contained (no external references except to other skills/agents)
 - [x] Clear decision guidance for common scenarios
 - [x] Proper delegation to specialized skills (ref-development-standards)
-- [x] Proper delegation to specialized agents (research-best-practices)
+- [x] Proper delegation to specialized agents (research-best-practices-agent)
 - [x] Simple, focused structure (single standards file)
 - [x] Cross-cutting applicability to all development work
 
 ## References
 
-- research-best-practices agent - For comprehensive web research and finding current best practices
+- research-best-practices-agent - For comprehensive web research and finding current best practices
 - ref-development-standards skill - For detailed tool usage patterns and non-prompting file operations

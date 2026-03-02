@@ -23,9 +23,9 @@ Change types are orthogonal to other dimensions:
 ### Skill-Based Handling
 
 Each change type has:
-- **Generic sub-skill instructions** in `plan-marshall:outline-change-type/standards/` (baseline behavior)
+- **Generic sub-skill instructions** in `plan-marshall:workflow-outline-change-type/standards/` (baseline behavior)
 - Optional **domain-specific sub-skill instructions** that override generic behavior
-- A single **unified skill** (`plan-marshall:outline-change-type`) that routes to the appropriate instructions
+- A single **unified skill** (`plan-marshall:workflow-outline-change-type`) that routes to the appropriate instructions
 
 ---
 
@@ -188,7 +188,7 @@ Quality (linting, formatting, JavaDoc) is a **profile**, not a change-type.
 ### Resolution Process
 
 1. **Detect change_type** via LLM analysis (detect-change-type-agent)
-2. **Follow** `plan-marshall:outline-change-type` skill inline (no separate agent spawn)
+2. **Follow** `plan-marshall:workflow-outline-change-type` skill inline (no separate agent spawn)
 3. Skill resolves domain-specific or generic sub-skill instructions
 
 ### Configuration in marshal.json
@@ -204,15 +204,15 @@ Quality (linting, formatting, JavaDoc) is a **profile**, not a change-type.
 ### Fallback Pattern
 
 If no domain-specific skill is configured:
-- Use generic instructions from `plan-marshall:outline-change-type/standards/change-{type}.md`
+- Use generic instructions from `plan-marshall:workflow-outline-change-type/standards/change-{type}.md`
 
 ### Architecture
 
 | Component | Purpose |
 |-----------|---------|
-| `plan-marshall:outline-change-type` | Skill loaded by solution-outline-agent, executed inline |
-| `plan-marshall:outline-change-type` | Parent skill with common workflow + conditional routing |
-| `outline-change-type/standards/change-{type}.md` | Generic sub-skill instructions per change type |
+| `plan-marshall:workflow-outline-change-type` | Skill loaded by solution-outline-agent, executed inline |
+| `plan-marshall:workflow-outline-change-type` | Parent skill with common workflow + conditional routing |
+| `workflow-outline-change-type/standards/change-{type}.md` | Generic sub-skill instructions per change type |
 | `{domain-skill}/standards/change-{type}.md` | Domain-specific sub-skill instructions (override) |
 
 ---

@@ -48,7 +48,7 @@ Store all resolved skill names (keys from `defaults` and `optionals`). Build the
 Query the project architecture for available modules:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture modules
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture modules
 ```
 
 Present module list to user for confirmation/filtering. User may exclude modules (e.g., parent POMs, modules without source/test files).
@@ -60,7 +60,7 @@ Present module list to user for confirmation/filtering. User may exclude modules
 For each selected module, query full module details:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture \
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
   module --name {module_name} --full
 ```
 
@@ -125,6 +125,6 @@ Write `solution_outline.md` with all deliverables, grouped by module:
 ## Related
 
 - `plan-marshall:manage-plan-marshall-config resolve-domain-skills` — Dynamic skill resolution
-- `plan-marshall:analyze-project-architecture architecture module` — Module/package query
+- `plan-marshall:manage-architecture architecture module` — Module/package query
 - `plan-marshall:plan-marshall` recipe workflow — Sets metadata and invokes phase-3-outline
 - `plan-marshall:phase-3-outline` Step 2.5 — Loads this skill with input parameters

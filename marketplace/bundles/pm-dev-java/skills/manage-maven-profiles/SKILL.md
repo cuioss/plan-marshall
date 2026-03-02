@@ -13,18 +13,18 @@ Classify Maven build profiles that weren't auto-matched during discovery.
 **Execution mode**: Invoked conditionally from architecture analysis workflow when unmatched profiles are found. Execute workflow steps sequentially.
 
 **Prohibited actions:**
-- Do not invoke this skill directly -- it is called by `analyze-project-architecture` only
+- Do not invoke this skill directly -- it is called by `manage-architecture` only
 - Do not invent script notations -- use only documented notations from this skill and referenced skills
 
 **Constraints:**
 - Every workflow step that performs a script operation has an explicit bash code block with the full `python3 .plan/execute-script.py` command (Rule 9)
 - Use `pm-dev-java:manage-maven-profiles:profiles` notation for this skill's own script operations
-- Use `plan-marshall:analyze-project-architecture:architecture` notation for architecture queries
+- Use `plan-marshall:manage-architecture:architecture` notation for architecture queries
 - Use `plan-marshall:manage-plan-marshall-config:plan-marshall-config` notation for config operations
 
 ## When to Use
 
-This skill is invoked by `analyze-project-architecture` when:
+This skill is invoked by `manage-architecture` when:
 1. Project contains Maven modules (`build_systems` includes `maven`)
 2. Discovery found NO-MATCH-FOUND profiles
 
@@ -55,7 +55,7 @@ Maven profiles enable optional build features. Extension API classifies profiles
 #### Step 1a: Get Module List
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture modules
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture modules
 ```
 
 **Output (TOON)**:
@@ -71,7 +71,7 @@ modules[N]:
 For each module in the list:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture \
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
   derived-module --name {module-name}
 ```
 
@@ -144,7 +144,7 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-m
 After any configuration change:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture discover --force
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture discover --force
 ```
 
 ---

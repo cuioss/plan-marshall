@@ -309,7 +309,7 @@ Skill domains configure which implementation skills are loaded for different cod
 Query `extensions_used` from the architecture analysis (populated during project discovery):
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture derived
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture derived
 ```
 
 Look for `extensions_used` in the output - these are bundles that detected modules in this project.
@@ -430,7 +430,7 @@ AskUserQuestion:
 Display current project architecture:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture info
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture info
 ```
 
 Shows all modules with their purpose, responsibilities, and key packages.
@@ -440,19 +440,19 @@ Shows all modules with their purpose, responsibilities, and key packages.
 **Step 1: List modules**
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture modules
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture modules
 ```
 
 **Step 2: Get module details**
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture module --name "{module}"
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture module --name "{module}"
 ```
 
 For full details including reasoning:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture module --name "{module}" --full
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture module --name "{module}" --full
 ```
 
 ### Operation: Enrich Module
@@ -461,19 +461,19 @@ Add learned information to a module:
 
 ```bash
 # Update responsibility
-python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture \
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
   enrich module --name "{module}" --responsibility "{description}"
 
 # Add tip
-python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture \
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
   enrich tip --module "{module}" --tip "{tip text}"
 
 # Add insight
-python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture \
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
   enrich insight --module "{module}" --insight "{insight text}"
 
 # Add best practice
-python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture \
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
   enrich best-practice --module "{module}" --practice "{practice text}"
 ```
 
@@ -484,7 +484,7 @@ Regenerate project architecture from build files with optional enrichment.
 **Step 1: Check for existing enrichment**
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture init --check
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture init --check
 ```
 
 If status is `exists`, ask user:
@@ -504,7 +504,7 @@ AskUserQuestion:
 **Step 2: Run discovery**
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture discover --force
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture discover --force
 ```
 
 **Step 3: Initialize enrichment (if reset or new)**
@@ -512,7 +512,7 @@ python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:archi
 If user chose "Reset enrichment" or no enrichment existed:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture init --force
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture init --force
 ```
 
 **Step 4: LLM Architectural Analysis (automatic)**
@@ -520,7 +520,7 @@ python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:archi
 Invoke the analysis skill to auto-populate enrichment with semantic descriptions:
 
 ```
-Skill: plan-marshall:analyze-project-architecture
+Skill: plan-marshall:manage-architecture
 ```
 
 The LLM reads discovered data, samples documentation and source code, then enriches with:

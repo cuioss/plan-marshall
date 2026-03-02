@@ -122,7 +122,7 @@ user-invokable: false
 │  ┌─────────────────────────────────────────────────────────────────────┐   │
 │  │  COMMANDS (User-facing)                                              │   │
 │  │  ══════════════════════                                              │   │
-│  │  /plan-marshall  /pr-doctor                                          │   │
+│  │  /plan-marshall  /workflow-pr-doctor                                          │   │
 │  └─────────────────────────────────────────────────────────────────────┘   │
 │                                     │                                       │
 │                                     ▼                                       │
@@ -139,7 +139,7 @@ user-invokable: false
 │  │  ═════════════════════════════                                       │   │
 │  │  phase-1-init   phase-2-refine   phase-3-outline   phase-4-plan      │   │
 │  │  phase-5-execute   phase-6-finalize                                  │   │
-│  │  task-implementation           task-module_testing                   │   │
+│  │  task-implementation           task-module-testing                   │   │
 │  │  git-workflow         pr-workflow                                    │   │
 │  └─────────────────────────────────────────────────────────────────────┘   │
 │                                     │                                       │
@@ -178,7 +178,7 @@ user-invokable: false
 | `plan-marshall:phase-5-execute` | Execute phase implementation (includes verification + triage) |
 | `plan-marshall:phase-6-finalize` | Finalize phase implementation |
 | `plan-marshall:task-implementation` | Implementation profile workflow |
-| `plan-marshall:task-module_testing` | Module testing profile workflow |
+| `plan-marshall:task-module-testing` | Module testing profile workflow |
 
 ---
 

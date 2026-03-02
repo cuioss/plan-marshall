@@ -26,7 +26,7 @@ The method is invoked during project analysis:
 6. Consumed by build commands for execution
 ```
 
-**Timing**: Called by `discover_project_modules()` in `extension_discovery.py` during project analysis (typically via `/marshall-steward` or `analyze-project-architecture`). Results are persisted and consumed throughout the planning lifecycle.
+**Timing**: Called by `discover_project_modules()` in `extension_discovery.py` during project analysis (typically via `/marshall-steward` or `manage-architecture`). Results are persisted and consumed throughout the planning lifecycle.
 
 ---
 
@@ -151,4 +151,4 @@ Directories with multiple build systems (e.g., `pom.xml` + `package.json`) are s
 - [build-project-structure.md](build-project-structure.md) — Complete output specification
 - [canonical-commands.md](canonical-commands.md) — Command vocabulary and resolution
 - [build-base-libs.md](build-base-libs.md) — Base library API (`discover_descriptors`, `build_module_base`)
-- [orchestrator-integration.md](../../analyze-project-architecture/standards/orchestrator-integration.md) — Orchestrator flow and hybrid merging
+- [orchestrator-integration.md](../../manage-architecture/standards/orchestrator-integration.md) — Orchestrator flow and hybrid merging

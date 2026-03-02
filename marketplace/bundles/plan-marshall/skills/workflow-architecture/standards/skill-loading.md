@@ -45,7 +45,7 @@ The plan-marshall bundle uses a two-tier skill loading pattern for domain-agnost
 │                                                                             │
 │  ┌──────────────────────────────────────────────────────────────────────┐  │
 │  │                                                                      │  │
-│  │  analyze-project-architecture                                        │  │
+│  │  manage-architecture                                        │  │
 │  │  ════════════════════════════                                        │  │
 │  │                                                                      │  │
 │  │  Each module has skills_by_profile:                                  │  │
@@ -188,7 +188,7 @@ The plan-marshall bundle uses a two-tier skill loading pattern for domain-agnost
 │  │   │                                                            │    │  │
 │  │   │  Based on task.profile:                                    │    │  │
 │  │   │    implementation → plan-marshall:task-implementation    │    │  │
-│  │   │    module_testing → plan-marshall:task-module_testing    │    │  │
+│  │   │    module_testing → plan-marshall:task-module-testing    │    │  │
 │  │   │                                                            │    │  │
 │  │   │  • Determines HOW to execute                               │    │  │
 │  │   │  • Applies domain skill patterns                           │    │  │
@@ -293,6 +293,6 @@ The plan-marshall bundle uses a two-tier skill loading pattern for domain-agnost
 |----------|---------|
 | [agents.md](agents.md) | Agent skill loading steps |
 | [phases.md](phases.md) | When each skill type is used |
-| `plan-marshall:analyze-project-architecture` | Source of module.skills_by_profile |
+| `plan-marshall:manage-architecture` | Source of module.skills_by_profile |
 | `plan-marshall:phase-3-outline` | Where module/skills are selected |
 | `plan-marshall:workflow-extension-api` | Extension points |

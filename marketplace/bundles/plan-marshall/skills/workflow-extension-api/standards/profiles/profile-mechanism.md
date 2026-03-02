@@ -59,7 +59,7 @@ Profile skills handle the actual implementation/testing work during phase-5-exec
 | Profile | Purpose | System Default |
 |---------|---------|----------------|
 | `implementation` | Create/modify production code | `plan-marshall:task-implementation` |
-| `module_testing` | Create/modify test code | `plan-marshall:task-module_testing` |
+| `module_testing` | Create/modify test code | `plan-marshall:task-module-testing` |
 
 ---
 

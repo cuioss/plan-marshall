@@ -24,7 +24,7 @@ The skill domains configuration uses a 6-phase workflow model with profile-based
       },
       "task_executors": {
         "implementation": "plan-marshall:task-implementation",
-        "module_testing": "plan-marshall:task-module_testing",
+        "module_testing": "plan-marshall:task-module-testing",
         "integration_testing": "plan-marshall:task-integration_testing"
       }
     },
@@ -89,7 +89,7 @@ Task executors map profile values to the workflow skill that executes tasks of t
 {
   "task_executors": {
     "implementation": "plan-marshall:task-implementation",
-    "module_testing": "plan-marshall:task-module_testing",
+    "module_testing": "plan-marshall:task-module-testing",
     "integration_testing": "plan-marshall:task-integration_testing"
   }
 }
@@ -98,7 +98,7 @@ Task executors map profile values to the workflow skill that executes tasks of t
 | Profile | Purpose | Default Executor |
 |---------|---------|------------------|
 | `implementation` | Production code tasks | `plan-marshall:task-implementation` |
-| `module_testing` | Unit/module test tasks | `plan-marshall:task-module_testing` |
+| `module_testing` | Unit/module test tasks | `plan-marshall:task-module-testing` |
 | `integration_testing` | Integration test tasks | `plan-marshall:task-integration_testing` |
 
 **Extensibility**: The profile list is open for extension. To add a new profile:
@@ -176,7 +176,7 @@ plan-marshall-config resolve-task-executor --profile implementation
 # Returns: plan-marshall:task-implementation
 
 plan-marshall-config resolve-task-executor --profile module_testing
-# Returns: plan-marshall:task-module_testing
+# Returns: plan-marshall:task-module-testing
 ```
 
 ### Workflow Skill Resolution

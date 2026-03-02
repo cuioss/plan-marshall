@@ -183,11 +183,11 @@ Query project architecture BEFORE any analysis. Architecture data is pre-compute
 
 **EXECUTE**:
 ```bash
-python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture info \
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture info \
   --trace-plan-id {plan_id}
 ```
 
-Output format: `plan-marshall:analyze-project-architecture/standards/client-api.md`
+Output format: `plan-marshall:manage-architecture/standards/client-api.md`
 
 **If status=error or architecture not found**: Return error and abort:
 ```toon
@@ -373,7 +373,7 @@ For each requirement, identify candidate modules:
 If mapping is unclear (confidence < 70%), query detailed module info:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture module \
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture module \
   --name {candidate_module} --trace-plan-id {plan_id}
 ```
 
@@ -394,7 +394,7 @@ This provides:
 
 **Graph query** (for cross-module changes):
 ```bash
-python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture graph \
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture graph \
   --trace-plan-id {plan_id}
 ```
 
@@ -795,7 +795,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 **Invoked by**: `plan-marshall:request-refine-agent` (thin agent wrapper)
 
 **Script Notations** (use EXACTLY as shown):
-- `plan-marshall:analyze-project-architecture:architecture` - Architecture queries
+- `plan-marshall:manage-architecture:architecture` - Architecture queries
 - `plan-marshall:manage-plan-documents:manage-plan-documents` - Request operations
 - `plan-marshall:manage-references:manage-references` - References persistence (track, scope, module_mapping, compatibility)
 - `plan-marshall:manage-findings:manage-findings` - Q-Gate findings (qgate add/query/resolve)

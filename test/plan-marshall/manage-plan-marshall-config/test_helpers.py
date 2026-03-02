@@ -115,7 +115,7 @@ def create_nested_marshal_json(fixture_dir: Path) -> Path:
                 'optionals': ['plan-marshall:diagnostic-patterns'],
                 'task_executors': {
                     'implementation': 'plan-marshall:task-implementation',
-                    'module_testing': 'plan-marshall:task-module_testing',
+                    'module_testing': 'plan-marshall:task-module-testing',
                     'integration_testing': 'plan-marshall:task-integration_testing',
                 },
             },

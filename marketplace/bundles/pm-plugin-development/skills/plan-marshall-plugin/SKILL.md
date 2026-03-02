@@ -89,5 +89,5 @@ This skill depends on:
 
 This extension is discovered by:
 - `plan-marshall:extension-api` - Module discovery aggregation
-- `plan-marshall:analyze-project-architecture` - Architecture analysis
+- `plan-marshall:manage-architecture` - Architecture analysis
 - `marshall-steward` wizard - Domain selection during project setup

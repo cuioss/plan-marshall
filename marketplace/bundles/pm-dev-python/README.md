@@ -44,7 +44,7 @@ python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build 
 
 This extension is discovered by:
 - `extension-api` - Build system detection
-- `analyze-project-architecture` - Module discovery
+- `manage-architecture` - Module discovery
 - `marshall-steward` - Project setup wizard
 
 ## References

@@ -83,7 +83,7 @@ How modules are discovered, merged, and persisted.
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                         3. STRUCTURE ENRICHMENT                              │
 │                                                                              │
-│  analyze-project-architecture skill: discover + LLM enrichment               │
+│  manage-architecture skill: discover + LLM enrichment               │
 │                                                                              │
 │  Reads: .plan/project-architecture/derived-data.json                         │
 │  Writes: .plan/project-architecture/llm-enriched.json                        │
@@ -118,7 +118,7 @@ How modules are discovered, merged, and persisted.
 
 | Function | Purpose | Used By |
 |----------|---------|---------|
-| `discover_project_modules(root)` | **Primary API**: Discover + merge modules | analyze-project-architecture |
+| `discover_project_modules(root)` | **Primary API**: Discover + merge modules | manage-architecture |
 | `discover_all_extensions()` | List all bundles with extensions | plan-marshall-config |
 | `discover_extensions(root)` | List applicable extensions | plan-marshall-config |
 | `get_skill_domains_from_extensions()` | Skill domain metadata | plan-marshall-config |
@@ -142,8 +142,8 @@ Commands are resolved at two levels:
 
 | File | Owner | Purpose |
 |------|-------|---------|
-| `.plan/project-architecture/derived-data.json` | `analyze-project-architecture` | Merged module data (includes commands) |
-| `.plan/project-architecture/llm-enriched.json` | `analyze-project-architecture` | LLM-enriched structure with descriptions |
+| `.plan/project-architecture/derived-data.json` | `manage-architecture` | Merged module data (includes commands) |
+| `.plan/project-architecture/llm-enriched.json` | `manage-architecture` | LLM-enriched structure with descriptions |
 
 ## Library Responsibilities
 

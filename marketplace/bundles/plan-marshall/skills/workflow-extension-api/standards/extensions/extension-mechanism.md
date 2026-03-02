@@ -69,7 +69,7 @@ The extension API allows domains to **extend** system workflow skills without **
 **Change-Type Skills** (replaces `outline` skill extension):
 - Domains can provide skills for specific change types
 - Skills provide sub-skill instructions for: discovery, analysis, deliverable creation
-- Falls back to generic `plan-marshall:outline-change-type/standards/change-{type}.md` if not configured
+- Falls back to generic `plan-marshall:workflow-outline-change-type/standards/change-{type}.md` if not configured
 
 **Phases without extensions:**
 
@@ -183,7 +183,7 @@ See `plan-marshall:workflow-architecture/standards/change-types.md` for full voc
 
 1. **Detect change type** via `plan-marshall:detect-change-type-agent`
 2. **Check domain config** for `outline_skill`
-3. **Fall back to generic** if not configured: `plan-marshall:outline-change-type/standards/change-{type}.md`
+3. **Fall back to generic** if not configured: `plan-marshall:workflow-outline-change-type/standards/change-{type}.md`
 
 ### Implementing Domain-Specific Skills
 

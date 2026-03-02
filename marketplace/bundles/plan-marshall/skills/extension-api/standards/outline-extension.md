@@ -21,7 +21,7 @@ The hook is invoked by `marshall-steward` during domain configuration:
 2. get_skill_domains() → domain metadata
 3. ➤ provides_outline_skill() → outline skill reference per domain
 4. Stored in marshal.json under skill_domains.{domain}.outline_skill
-5. Resolved at runtime by phase-3-outline via outline-change-type skill
+5. Resolved at runtime by phase-3-outline via workflow-outline-change-type skill
 ```
 
 **Timing**: Called during `/marshall-steward` domain configuration (`skill-domains configure`). The returned skill reference is persisted in `marshal.json` and resolved at runtime during the outline phase.
@@ -44,14 +44,14 @@ def provides_outline_skill(self) -> str | None:
         for internal routing.
 
     Purpose:
-        Loaded by the outline-change-type skill (via
+        Loaded by the workflow-outline-change-type skill (via
         solution-outline-agent). Provides domain-specific outline
-        instructions instead of generic plan-marshall:outline-change-type
+        instructions instead of generic plan-marshall:workflow-outline-change-type
         standards.
 
     Fallback:
         If a domain returns None, generic instructions from
-        plan-marshall:outline-change-type/standards/change-{type}.md
+        plan-marshall:workflow-outline-change-type/standards/change-{type}.md
         are used.
     """
     return None
@@ -73,7 +73,7 @@ The referenced skill must provide `standards/change-{type}.md` files for support
     └── change-tech_debt.md        # Refactor/cleanup components
 ```
 
-Not all change types need coverage — unsupported types fall back to the generic `plan-marshall:outline-change-type/standards/change-{type}.md`.
+Not all change types need coverage — unsupported types fall back to the generic `plan-marshall:workflow-outline-change-type/standards/change-{type}.md`.
 
 ### Change Types
 
@@ -90,10 +90,10 @@ Not all change types need coverage — unsupported types fall back to the generi
 
 ## Fallback Behavior
 
-When `provides_outline_skill()` returns `None` (the default), the outline-change-type skill uses generic standards:
+When `provides_outline_skill()` returns `None` (the default), the workflow-outline-change-type skill uses generic standards:
 
 ```
-plan-marshall:outline-change-type/standards/change-{type}.md
+plan-marshall:workflow-outline-change-type/standards/change-{type}.md
 ```
 
 This is the behavior for most domains. Only domains with highly specialized outline needs (e.g., marketplace plugin development with inventory agents) should provide a custom skill.
@@ -143,7 +143,7 @@ source	domain_specific
 ```toon
 status	success
 domain	java
-skill	plan-marshall:outline-change-type
+skill	plan-marshall:workflow-outline-change-type
 source	generic_fallback
 ```
 
@@ -155,7 +155,7 @@ source	generic_fallback
 |--------|--------|--------------|
 | pm-plugin-development | plan-marshall-plugin-dev | `pm-plugin-development:ext-outline-workflow` |
 
-All other domains return `None` and use the generic `plan-marshall:outline-change-type` standards.
+All other domains return `None` and use the generic `plan-marshall:workflow-outline-change-type` standards.
 
 ---
 

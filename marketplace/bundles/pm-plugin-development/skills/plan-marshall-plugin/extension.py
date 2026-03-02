@@ -62,7 +62,7 @@ class Extension(ExtensionBase):
         The skill's standards/ directory contains change-{type}.md
         sub-skill instructions for feature, enhancement, bug_fix, and
         tech_debt. Other types (analysis, verification) fall back to
-        generic plan-marshall:outline-change-type standards.
+        generic plan-marshall:workflow-outline-change-type standards.
         """
         return 'pm-plugin-development:ext-outline-workflow'
 
