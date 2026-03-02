@@ -34,7 +34,7 @@ All expected items must be found:
 - [ ] workflow-integration-sonar/SKILL.md identified
 
 ### Python Scripts (4 files)
-- [ ] scan-tools-planning-inventory.py identified (has print(json.dumps()))
+- [ ] scan-planning-inventory.py identified (has print(json.dumps()))
 - [ ] pr.py identified (has print(json.dumps()))
 - [ ] git-workflow.py identified (has print(json.dumps()))
 - [ ] sonar.py identified (has print(json.dumps()))
@@ -55,7 +55,7 @@ All expected items must be found:
 | File | Reason |
 |------|--------|
 | plan-marshall/skills/tools-planning-inventory/SKILL.md | JSON output documentation |
-| plan-marshall/skills/tools-planning-inventory/scripts/scan-tools-planning-inventory.py | print(json.dumps()) |
+| plan-marshall/skills/tools-planning-inventory/scripts/scan-planning-inventory.py | print(json.dumps()) |
 | plan-marshall/skills/workflow-integration-ci/SKILL.md | JSON output documentation |
 | plan-marshall/skills/workflow-integration-ci/scripts/pr.py | print(json.dumps()) |
 

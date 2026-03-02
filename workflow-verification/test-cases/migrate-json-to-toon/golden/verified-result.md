@@ -42,7 +42,7 @@ grep -r "print.*json.dumps" marketplace/bundles/plan-marshall/skills/*/scripts/*
 ```
 
 Results:
-- `tools-planning-inventory/scripts/scan-tools-planning-inventory.py` - print(json.dumps())
+- `tools-planning-inventory/scripts/scan-planning-inventory.py` - print(json.dumps())
 - `workflow-integration-ci/scripts/pr.py` - print(json.dumps())
 - `workflow-integration-git/scripts/git-workflow.py` - print(json.dumps())
 - `workflow-integration-sonar/scripts/sonar.py` - print(json.dumps())
@@ -76,7 +76,7 @@ No plan-marshall commands have JSON output specifications.
 
 | File | Reason |
 |------|--------|
-| plan-marshall/skills/tools-planning-inventory/scripts/scan-tools-planning-inventory.py | print(json.dumps()) |
+| plan-marshall/skills/tools-planning-inventory/scripts/scan-planning-inventory.py | print(json.dumps()) |
 | plan-marshall/skills/workflow-integration-ci/scripts/pr.py | print(json.dumps()) |
 | plan-marshall/skills/workflow-integration-git/scripts/git-workflow.py | print(json.dumps()) |
 | plan-marshall/skills/workflow-integration-sonar/scripts/sonar.py | print(json.dumps()) |
@@ -87,7 +87,7 @@ No plan-marshall commands have JSON output specifications.
 
 | File | Reason |
 |------|--------|
-| test/plan-marshall/tools-planning-inventory/test_scan_planning_inventory.py | Tests for scan-tools-planning-inventory.py |
+| test/plan-marshall/tools-planning-inventory/test_scan_planning_inventory.py | Tests for scan-planning-inventory.py |
 | test/plan-marshall/workflow-integration-ci/test_pr.py | Tests for pr.py |
 | test/plan-marshall/workflow-integration-git/test_git_workflow.py | Tests for git-workflow.py |
 | test/plan-marshall/workflow-integration-sonar/test_sonar.py | Tests for sonar.py |
@@ -121,7 +121,7 @@ manage-solution-outline/scripts/manage_solution_outline.py - Outputs TOON
 **Preferred grouping**: 4 deliverables, one per skill (each includes SKILL.md + script + test)
 
 **Deliverable 1**: Migrate tools-planning-inventory outputs to TOON
-- Files: SKILL.md, scan-tools-planning-inventory.py, test_scan_planning_inventory.py
+- Files: SKILL.md, scan-planning-inventory.py, test_scan_planning_inventory.py
 - Domain: plan-marshall-plugin-dev
 - Module: plan-marshall
 - Profiles: implementation, testing
@@ -163,7 +163,7 @@ affected_files[12]:
   marketplace/bundles/plan-marshall/skills/workflow-integration-git/SKILL.md
   marketplace/bundles/plan-marshall/skills/workflow-integration-sonar/SKILL.md
   # Python scripts (4)
-  marketplace/bundles/plan-marshall/skills/tools-planning-inventory/scripts/scan-tools-planning-inventory.py
+  marketplace/bundles/plan-marshall/skills/tools-planning-inventory/scripts/scan-planning-inventory.py
   marketplace/bundles/plan-marshall/skills/workflow-integration-ci/scripts/pr.py
   marketplace/bundles/plan-marshall/skills/workflow-integration-git/scripts/git-workflow.py
   marketplace/bundles/plan-marshall/skills/workflow-integration-sonar/scripts/sonar.py

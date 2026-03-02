@@ -39,7 +39,7 @@ marketplace/bundles/plan-marshall/skills/tools-planning-inventory/SKILL.md
 marketplace/bundles/plan-marshall/skills/workflow-integration-ci/SKILL.md
 marketplace/bundles/plan-marshall/skills/workflow-integration-git/SKILL.md
 marketplace/bundles/plan-marshall/skills/workflow-integration-sonar/SKILL.md
-marketplace/bundles/plan-marshall/skills/tools-planning-inventory/scripts/scan-tools-planning-inventory.py
+marketplace/bundles/plan-marshall/skills/tools-planning-inventory/scripts/scan-planning-inventory.py
 marketplace/bundles/plan-marshall/skills/workflow-integration-ci/scripts/pr.py
 marketplace/bundles/plan-marshall/skills/workflow-integration-git/scripts/git-workflow.py
 marketplace/bundles/plan-marshall/skills/workflow-integration-sonar/scripts/sonar.py
