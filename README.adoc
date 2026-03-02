@@ -12,6 +12,7 @@
 == Status
 
 image:https://github.com/cuioss/plan-marshall/actions/workflows/python-verify.yml/badge.svg[Python Verify,link=https://github.com/cuioss/plan-marshall/actions/workflows/python-verify.yml]
+image:https://img.shields.io/badge/license-AGPL--3.0--only-blue.svg[License: AGPL-3.0-only,link=LICENSE.md]
 
 [.discrete]
 == What is it?
