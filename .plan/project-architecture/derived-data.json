@@ -25,7 +25,7 @@
       "packages": {},
       "dependencies": [],
       "stats": {
-        "bundle_count": 9
+        "bundle_count": 8
       },
       "commands": {
         "compile": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"compile\"",
@@ -69,58 +69,83 @@
       },
       "metadata": {
         "bundle_name": "plan-marshall",
-        "description": "Environment setup, permission management, and cross-cutting utilities"
+        "description": "Environment setup, permission management, cross-cutting utilities, and solution-based development workflow from task implementation to PR quality verification"
       },
       "packages": {
-        "skill:analyze-project-architecture": {
-          "path": "skills/analyze-project-architecture",
-          "type": "skill",
-          "description": "LLM-based architectural analysis that transforms raw project data into meaningful structure"
-        },
         "skill:extension-api": {
           "path": "skills/extension-api",
           "type": "skill",
           "description": "Extension API for domain bundle discovery, module detection, and canonical command generation"
+        },
+        "skill:manage-architecture": {
+          "path": "skills/manage-architecture",
+          "type": "skill",
+          "description": "LLM-based architectural analysis that transforms raw project data into meaningful structure"
         },
         "skill:manage-lessons": {
           "path": "skills/manage-lessons",
           "type": "skill",
           "description": "Manage lessons learned with global scope"
         },
-        "skill:manage-logging": {
-          "path": "skills/manage-logging",
-          "type": "skill",
-          "description": "Unified logging infrastructure for script execution, work progress, and decision tracking"
-        },
         "skill:manage-memories": {
           "path": "skills/manage-memories",
           "type": "skill",
           "description": "Memory layer operations for persistent session storage"
-        },
-        "skill:manage-plan-marshall-config": {
-          "path": "skills/manage-plan-marshall-config",
-          "type": "skill",
-          "description": "Project-level infrastructure configuration for marshal.json"
         },
         "skill:manage-run-config": {
           "path": "skills/manage-run-config",
           "type": "skill",
           "description": "Run configuration handling for persistent command configuration storage"
         },
+        "skill:manage-tasks": {
+          "path": "skills/manage-tasks",
+          "type": "skill",
+          "description": "Manage implementation tasks with sequential sub-steps within a plan"
+        },
         "skill:marshall-steward": {
           "path": "skills/marshall-steward",
           "type": "skill",
           "description": "Project configuration wizard for planning system. Manages executor generation, health checks, build systems, and skill domains."
         },
-        "skill:permission-doctor": {
-          "path": "skills/permission-doctor",
+        "skill:phase-1-init": {
+          "path": "skills/phase-1-init",
           "type": "skill",
-          "description": "Diagnose permission issues across settings files (read-only analysis)"
+          "description": "Init phase skill. Creates plan directory, request.md, references, and status. Complete initialization in a single agent call."
         },
-        "skill:permission-fix": {
-          "path": "skills/permission-fix",
+        "skill:phase-2-refine": {
+          "path": "skills/phase-2-refine",
           "type": "skill",
-          "description": "Write operations for fixing and managing Claude Code permissions - add, remove, consolidate, ensure, apply-fixes."
+          "description": "Iterative request clarification until confidence threshold reached"
+        },
+        "skill:phase-3-outline": {
+          "path": "skills/phase-3-outline",
+          "type": "skill",
+          "description": "Two-track solution outline creation - Simple Track for localized changes, Complex Track for codebase-wide discovery"
+        },
+        "skill:phase-4-plan": {
+          "path": "skills/phase-4-plan",
+          "type": "skill",
+          "description": "Domain-agnostic task planning from deliverables with skill resolution and optimization"
+        },
+        "skill:phase-5-execute": {
+          "path": "skills/phase-5-execute",
+          "type": "skill",
+          "description": "Execute phase skill for plan management. DUMB TASK RUNNER that executes tasks from TASK-*.json files sequentially."
+        },
+        "skill:phase-6-finalize": {
+          "path": "skills/phase-6-finalize",
+          "type": "skill",
+          "description": "Complete plan execution with git workflow and PR management"
+        },
+        "skill:plan-marshall": {
+          "path": "skills/plan-marshall",
+          "type": "skill",
+          "description": "Unified plan lifecycle management - create, outline, execute, verify, and finalize plans"
+        },
+        "skill:recipe-refactor-to-profile-standards": {
+          "path": "skills/recipe-refactor-to-profile-standards",
+          "type": "skill",
+          "description": "Domain-invariant recipe for refactoring code to comply with configured profile standards, package by package"
         },
         "skill:ref-development-standards": {
           "path": "skills/ref-development-standards",
@@ -131,6 +156,36 @@
           "path": "skills/ref-toon-format",
           "type": "skill",
           "description": "TOON format knowledge and usage patterns for agent communication and memory persistence in plan-marshall marketplace"
+        },
+        "skill:ref-workflow-architecture": {
+          "path": "skills/ref-workflow-architecture",
+          "type": "skill",
+          "description": "Centralized architecture documentation for the plan-marshall bundle with visual diagrams"
+        },
+        "skill:ref-workflow-extension-api": {
+          "path": "skills/ref-workflow-extension-api",
+          "type": "skill",
+          "description": "Defines extension points for domain-specific workflow customization. Covers profile overrides (implementation, module_testing) and extensions (outline, triage)."
+        },
+        "skill:task-implementation": {
+          "path": "skills/task-implementation",
+          "type": "skill",
+          "description": "Domain-agnostic implementation task execution with two-tier skill loading"
+        },
+        "skill:task-module-testing": {
+          "path": "skills/task-module-testing",
+          "type": "skill",
+          "description": "Domain-agnostic module testing task execution with two-tier skill loading"
+        },
+        "skill:task-standalone": {
+          "path": "skills/task-standalone",
+          "type": "skill",
+          "description": "Implement GitHub issues or standalone tasks with full verification"
+        },
+        "skill:task-verification": {
+          "path": "skills/task-verification",
+          "type": "skill",
+          "description": "Verification-only task execution \u2014 runs commands without modifying files"
         },
         "skill:tools-file-ops": {
           "path": "skills/tools-file-ops",
@@ -147,23 +202,98 @@
           "type": "skill",
           "description": "Generic JSON file CRUD operations with path notation support"
         },
-        "skill:tools-manage-web-permissions": {
-          "path": "skills/tools-manage-web-permissions",
+        "skill:tools-permission-doctor": {
+          "path": "skills/tools-permission-doctor",
           "type": "skill",
-          "description": "Analyze and consolidate WebFetch domain permissions across projects with security research and validation"
+          "description": "Diagnose permission issues across settings files (read-only analysis)"
+        },
+        "skill:tools-permission-fix": {
+          "path": "skills/tools-permission-fix",
+          "type": "skill",
+          "description": "Write operations for fixing and managing Claude Code permissions - add, remove, consolidate, ensure, apply-fixes."
         },
         "skill:tools-permission-sync": {
           "path": "skills/tools-permission-sync",
           "type": "skill",
           "description": "Synchronize marketplace permissions - generate wildcards, manage executor permissions, and migrate to executor pattern."
         },
+        "skill:tools-permission-web": {
+          "path": "skills/tools-permission-web",
+          "type": "skill",
+          "description": "Analyze and consolidate WebFetch domain permissions across projects with security research and validation"
+        },
+        "skill:tools-planning-inventory": {
+          "path": "skills/tools-planning-inventory",
+          "type": "skill",
+          "description": "Scans and reports all planning-related components across marketplace bundles"
+        },
         "skill:tools-script-executor": {
           "path": "skills/tools-script-executor",
           "type": "skill",
           "description": "Universal script execution pattern via execute-script.py proxy"
         },
-        "agent:research-best-practices": {
-          "path": "agents/research-best-practices.md",
+        "skill:workflow-integration-ci": {
+          "path": "skills/workflow-integration-ci",
+          "type": "skill",
+          "description": "PR review response workflow - fetch comments, triage, and respond to review feedback (GitHub and GitLab)"
+        },
+        "skill:workflow-integration-git": {
+          "path": "skills/workflow-integration-git",
+          "type": "skill",
+          "description": "Git commit workflow with conventional commits, artifact cleanup, and optional push/PR creation"
+        },
+        "skill:workflow-integration-sonar": {
+          "path": "skills/workflow-integration-sonar",
+          "type": "skill",
+          "description": "Sonar issue workflow - fetch issues, triage, and fix or suppress based on context"
+        },
+        "skill:workflow-outline-change-type": {
+          "path": "skills/workflow-outline-change-type",
+          "type": "skill",
+          "description": "Common workflow for change-type outline creation with conditional routing by change_type and domain"
+        },
+        "skill:workflow-pr-doctor": {
+          "path": "skills/workflow-pr-doctor",
+          "type": "skill",
+          "description": "Diagnose and fix PR issues (build, reviews, Sonar)"
+        },
+        "agent:detect-change-type-agent": {
+          "path": "agents/detect-change-type-agent.md",
+          "type": "agent",
+          "description": "Detect change type from request using LLM analysis"
+        },
+        "agent:phase-1-init-agent": {
+          "path": "agents/phase-1-init-agent.md",
+          "type": "agent",
+          "description": "Initialize a plan with artifacts, detect domains, store in references.json"
+        },
+        "agent:phase-2-refine-agent": {
+          "path": "agents/phase-2-refine-agent.md",
+          "type": "agent",
+          "description": "Clarify and refine request until confidence threshold reached"
+        },
+        "agent:phase-3-outline-agent": {
+          "path": "agents/phase-3-outline-agent.md",
+          "type": "agent",
+          "description": "Create solution outline with deliverables using two-track workflow"
+        },
+        "agent:q-gate-validation-agent": {
+          "path": "agents/q-gate-validation-agent.md",
+          "type": "agent",
+          "description": "Verify deliverables against request intent and assessments, catching false positives and missing coverage"
+        },
+        "agent:phase-4-plan-agent": {
+          "path": "agents/phase-4-plan-agent.md",
+          "type": "agent",
+          "description": "Transform deliverables into optimized tasks with explicit domain skills"
+        },
+        "agent:phase-5-execute-agent": {
+          "path": "agents/phase-5-execute-agent.md",
+          "type": "agent",
+          "description": "Execute a single task with two-tier skill loading and profile-based task executor routing"
+        },
+        "agent:research-best-practices-agent": {
+          "path": "agents/research-best-practices-agent.md",
           "type": "agent",
           "description": "Performs comprehensive web research to find best practices, recommendations, and information about a specified topic using multiple online sources."
         },
@@ -180,8 +310,8 @@
       },
       "dependencies": [],
       "stats": {
-        "skill_count": 18,
-        "agent_count": 1,
+        "skill_count": 37,
+        "agent_count": 8,
         "command_count": 2
       },
       "commands": {
@@ -334,10 +464,10 @@
           "type": "skill",
           "description": "Core CDI patterns including constructor injection, scopes, producers, and container configuration"
         },
-        "skill:java-create": {
-          "path": "skills/java-create",
+        "skill:java-core": {
+          "path": "skills/java-core",
           "type": "skill",
-          "description": "Interactive wizard for creating Java components with standards compliance"
+          "description": "Core Java development standards for patterns, modern features, and performance optimization"
         },
         "skill:java-enforce-logrecords": {
           "path": "skills/java-enforce-logrecords",
@@ -369,10 +499,10 @@
           "type": "skill",
           "description": "JSpecify null safety annotations with @NullMarked, @Nullable, and package-level configuration"
         },
-        "skill:java-optimize-quarkus-native": {
-          "path": "skills/java-optimize-quarkus-native",
+        "skill:java-quarkus": {
+          "path": "skills/java-quarkus",
           "type": "skill",
-          "description": "Systematic Quarkus native image optimization with reflection registration and performance improvements"
+          "description": "Quarkus-specific CDI standards with testing, native image support, and GraalVM reflection configuration"
         },
         "skill:javadoc": {
           "path": "skills/javadoc",
@@ -614,16 +744,6 @@
           "type": "skill",
           "description": "Triage extension for documentation findings during plan-finalize phase"
         },
-        "skill:manage-adr": {
-          "path": "skills/manage-adr",
-          "type": "skill",
-          "description": "Manage Architectural Decision Records (ADRs) with CRUD operations, automatic numbering, and AsciiDoc formatting"
-        },
-        "skill:manage-interface": {
-          "path": "skills/manage-interface",
-          "type": "skill",
-          "description": "Manage Interface specifications with CRUD operations, automatic numbering, and AsciiDoc formatting"
-        },
         "skill:plan-marshall-plugin": {
           "path": "skills/plan-marshall-plugin",
           "type": "skill",
@@ -642,7 +762,7 @@
       },
       "dependencies": [],
       "stats": {
-        "skill_count": 8,
+        "skill_count": 6,
         "agent_count": 0,
         "command_count": 1
       },
@@ -676,9 +796,14 @@
       },
       "metadata": {
         "bundle_name": "pm-plugin-development",
-        "description": "Complete toolchain for creating, diagnosing, fixing, and maintaining Claude Code marketplace components"
+        "description": "Complete toolchain for creating, diagnosing, fixing, and maintaining marketplace components"
       },
       "packages": {
+        "skill:ext-outline-workflow": {
+          "path": "skills/ext-outline-workflow",
+          "type": "skill",
+          "description": "Shared workflow steps and verification knowledge for plugin development outline, loaded by workflow-outline-change-type skill"
+        },
         "skill:ext-triage-plugin": {
           "path": "skills/ext-triage-plugin",
           "type": "skill",
@@ -697,7 +822,7 @@
         "skill:plugin-architecture": {
           "path": "skills/plugin-architecture",
           "type": "skill",
-          "description": "Architecture principles, skill patterns, and design guidance for building goal-based Claude Code marketplace components"
+          "description": "Architecture principles, skill patterns, and design guidance for building goal-based marketplace components"
         },
         "skill:plugin-create": {
           "path": "skills/plugin-create",
@@ -767,7 +892,7 @@
       },
       "dependencies": [],
       "stats": {
-        "skill_count": 13,
+        "skill_count": 14,
         "agent_count": 3,
         "command_count": 1
       },
@@ -853,185 +978,6 @@
         "verify": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"verify pm-requirements\"",
         "coverage": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"coverage pm-requirements\"",
         "clean": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"clean pm-requirements\""
-      }
-    },
-    "pm-workflow": {
-      "name": "pm-workflow",
-      "build_systems": [
-        "marshall-plugin"
-      ],
-      "paths": {
-        "module": "marketplace/bundles/pm-workflow",
-        "descriptor": "marketplace/bundles/pm-workflow/.claude-plugin/plugin.json",
-        "sources": [
-          "marketplace/bundles/pm-workflow/skills",
-          "marketplace/bundles/pm-workflow/agents"
-        ],
-        "tests": [
-          "test/pm-workflow"
-        ],
-        "readme": "marketplace/bundles/pm-workflow/README.md"
-      },
-      "metadata": {
-        "bundle_name": "pm-workflow",
-        "description": "Solution-based development workflow from task implementation to PR quality verification"
-      },
-      "packages": {
-        "skill:manage-files": {
-          "path": "skills/manage-files",
-          "type": "skill",
-          "description": "Generic file I/O operations for plan directories"
-        },
-        "skill:manage-plan-documents": {
-          "path": "skills/manage-plan-documents",
-          "type": "skill",
-          "description": "Manage request documents within plan directories with schema validation and template-based creation"
-        },
-        "skill:manage-references": {
-          "path": "skills/manage-references",
-          "type": "skill",
-          "description": "Manage references.json files with field-level access and list management"
-        },
-        "skill:manage-solution-outline": {
-          "path": "skills/manage-solution-outline",
-          "type": "skill",
-          "description": "Manage solution outline documents - standards, examples, validation, and deliverable extraction"
-        },
-        "skill:manage-tasks": {
-          "path": "skills/manage-tasks",
-          "type": "skill",
-          "description": "Manage implementation tasks with sequential sub-steps within a plan"
-        },
-        "skill:phase-1-init": {
-          "path": "skills/phase-1-init",
-          "type": "skill",
-          "description": "Init phase skill. Creates plan directory, request.md, references, and status. Complete initialization in a single agent call."
-        },
-        "skill:phase-2-refine": {
-          "path": "skills/phase-2-refine",
-          "type": "skill",
-          "description": "Iterative request clarification until confidence threshold reached"
-        },
-        "skill:phase-3-outline": {
-          "path": "skills/phase-3-outline",
-          "type": "skill",
-          "description": "Two-track solution outline creation - Simple Track for localized changes, Complex Track for codebase-wide discovery"
-        },
-        "skill:phase-4-plan": {
-          "path": "skills/phase-4-plan",
-          "type": "skill",
-          "description": "Domain-agnostic task planning from deliverables with skill resolution and optimization"
-        },
-        "skill:phase-5-execute": {
-          "path": "skills/phase-5-execute",
-          "type": "skill",
-          "description": "Execute phase skill for plan management. DUMB TASK RUNNER that executes tasks from TASK-*.json files sequentially."
-        },
-        "skill:phase-6-finalize": {
-          "path": "skills/phase-6-finalize",
-          "type": "skill",
-          "description": "Complete plan execution with git workflow and PR management"
-        },
-        "skill:plan-marshall": {
-          "path": "skills/plan-marshall",
-          "type": "skill",
-          "description": "Unified plan lifecycle management - create, outline, execute, verify, and finalize plans"
-        },
-        "skill:planning-inventory": {
-          "path": "skills/planning-inventory",
-          "type": "skill",
-          "description": "Scans and reports all planning-related components across marketplace bundles"
-        },
-        "skill:pr-doctor": {
-          "path": "skills/pr-doctor",
-          "type": "skill",
-          "description": "Diagnose and fix PR issues (build, reviews, Sonar)"
-        },
-        "skill:task-implement": {
-          "path": "skills/task-implement",
-          "type": "skill",
-          "description": "Implement GitHub issues or standalone tasks with full verification"
-        },
-        "skill:task-implementation": {
-          "path": "skills/task-implementation",
-          "type": "skill",
-          "description": "Domain-agnostic implementation task execution with two-tier skill loading"
-        },
-        "skill:task-module_testing": {
-          "path": "skills/task-module_testing",
-          "type": "skill",
-          "description": "Domain-agnostic module testing task execution with two-tier skill loading"
-        },
-        "skill:workflow-architecture": {
-          "path": "skills/workflow-architecture",
-          "type": "skill",
-          "description": "Centralized architecture documentation for the pm-workflow bundle with visual diagrams"
-        },
-        "skill:workflow-extension-api": {
-          "path": "skills/workflow-extension-api",
-          "type": "skill",
-          "description": "Defines extension points for domain-specific workflow customization. Covers profile overrides (implementation, module_testing) and extensions (outline, triage)."
-        },
-        "skill:workflow-integration-ci": {
-          "path": "skills/workflow-integration-ci",
-          "type": "skill",
-          "description": "PR review response workflow - fetch comments, triage, and respond to review feedback (GitHub and GitLab)"
-        },
-        "skill:workflow-integration-git": {
-          "path": "skills/workflow-integration-git",
-          "type": "skill",
-          "description": "Git commit workflow with conventional commits, artifact cleanup, and optional push/PR creation"
-        },
-        "skill:workflow-integration-sonar": {
-          "path": "skills/workflow-integration-sonar",
-          "type": "skill",
-          "description": "Sonar issue workflow - fetch issues, triage, and fix or suppress based on context"
-        },
-        "agent:plan-init-agent": {
-          "path": "agents/plan-init-agent.md",
-          "type": "agent",
-          "description": "Initialize a plan with artifacts, detect domains, store in references.json"
-        },
-        "agent:q-gate-validation-agent": {
-          "path": "agents/q-gate-validation-agent.md",
-          "type": "agent",
-          "description": "Verify deliverables against request intent and assessments, catching false positives and missing coverage"
-        },
-        "agent:request-refine-agent": {
-          "path": "agents/request-refine-agent.md",
-          "type": "agent",
-          "description": "Clarify and refine request until confidence threshold reached"
-        },
-        "agent:solution-outline-agent": {
-          "path": "agents/solution-outline-agent.md",
-          "type": "agent",
-          "description": "Create solution outline with deliverables using two-track workflow"
-        },
-        "agent:task-execute-agent": {
-          "path": "agents/task-execute-agent.md",
-          "type": "agent",
-          "description": "Execute a single task with two-tier skill loading and profile-based task executor routing"
-        },
-        "agent:task-plan-agent": {
-          "path": "agents/task-plan-agent.md",
-          "type": "agent",
-          "description": "Transform deliverables into optimized tasks with explicit domain skills"
-        }
-      },
-      "dependencies": [],
-      "stats": {
-        "skill_count": 23,
-        "agent_count": 6,
-        "command_count": 0
-      },
-      "commands": {
-        "compile": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"compile pm-workflow\"",
-        "test-compile": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"test-compile pm-workflow\"",
-        "module-tests": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"module-tests pm-workflow\"",
-        "quality-gate": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"quality-gate pm-workflow\"",
-        "verify": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"verify pm-workflow\"",
-        "coverage": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"coverage pm-workflow\"",
-        "clean": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"clean pm-workflow\""
       }
     }
   },
