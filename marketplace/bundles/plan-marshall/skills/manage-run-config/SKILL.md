@@ -105,10 +105,6 @@ python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config valid
 
 ## Integration Points
 
-### With json-file-operations Skill
-- Uses generic JSON operations for field access and updates
-- All CRUD operations delegate to json-file-operations
-
 ### With planning Bundle
 - Commands record execution history to run configuration
 

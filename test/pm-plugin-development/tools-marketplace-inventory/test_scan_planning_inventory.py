@@ -15,7 +15,7 @@ from toon_parser import parse_toon  # type: ignore[import-not-found]  # noqa: E4
 from conftest import get_script_path, run_script  # noqa: E402
 
 # Script under test
-SCRIPT_PATH = get_script_path('plan-marshall', 'tools-planning-inventory', 'scan-planning-inventory.py')
+SCRIPT_PATH = get_script_path('pm-plugin-development', 'tools-marketplace-inventory', 'scan-planning-inventory.py')
 
 
 # =============================================================================

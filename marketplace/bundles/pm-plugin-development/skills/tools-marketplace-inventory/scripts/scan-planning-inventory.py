@@ -50,32 +50,9 @@ CORE_BUNDLE = 'plan-marshall'
 
 
 def find_marketplace_inventory_script() -> Path:
-    """Find the marketplace-inventory script."""
-    # Try relative to this script's location
-    this_script = Path(__file__).resolve()
-    marketplace_bundles = this_script.parent.parent.parent.parent.parent
-
-    inventory_script = (
-        marketplace_bundles
-        / 'pm-plugin-development'
-        / 'skills'
-        / 'tools-marketplace-inventory'
-        / 'scripts'
-        / 'scan-marketplace-inventory.py'
-    )
-
-    if inventory_script.exists():
-        return inventory_script
-
-    # Try from cwd
-    cwd_path = (
-        Path.cwd()
-        / 'marketplace/bundles/pm-plugin-development/skills/tools-marketplace-inventory/scripts/scan-marketplace-inventory.py'
-    )
-    if cwd_path.exists():
-        return cwd_path
-
-    raise FileNotFoundError('Cannot find scan-marketplace-inventory.py')
+    """Find the marketplace-inventory script (sibling file)."""
+    script_dir = Path(__file__).resolve().parent
+    return script_dir / 'scan-marketplace-inventory.py'
 
 
 def run_marketplace_inventory(include_descriptions: bool) -> dict:
