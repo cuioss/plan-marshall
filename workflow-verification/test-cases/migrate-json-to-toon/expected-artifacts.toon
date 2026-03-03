@@ -1,6 +1,6 @@
 # Expected artifacts for migrate-json-to-toon test case
-# Updated 2026-01-25 - scoped to plan-marshall bundle only (docs + scripts)
-# Corrected 2026-01-25 - verified actual files with json.dumps() stdout output
+# Scoped to plan-marshall bundle only (docs + scripts)
+# tools-planning-inventory removed from scope (absorbed into pm-plugin-development)
 
 artifacts[4]{file,standard_ref}:
 solution_outline.md,plan-marshall:manage-solution-outline:deliverable-contract
@@ -8,12 +8,14 @@ config.toon,plan-marshall:manage-config:config-schema
 status.toon,plan-marshall:manage-lifecycle:status-schema
 references.json,plan-marshall:manage-references:references-schema
 
-# Expected deliverables: 4 (grouped by skill)
+# Expected deliverables: 3 (grouped by skill)
 # Each deliverable covers one skill: SKILL.md + script + test
-deliverable_count: 4
+# Note: tools-planning-inventory was absorbed into pm-plugin-development:tools-marketplace-inventory
+# and is no longer in the plan-marshall bundle scope.
+deliverable_count: 3
 deliverable_count_check: informational
 
-# Expected affected files: 12 total (plan-marshall bundle only)
+# Expected affected files: 9 total (plan-marshall bundle only)
 #
 # Inclusion criteria:
 # - Python scripts with print(json.dumps()) for STDOUT output consumed by callers
@@ -24,26 +26,24 @@ deliverable_count_check: informational
 # - Scripts that write JSON to files (internal storage, not output)
 # - Components using TOON format already (manage-config, manage-tasks, etc.)
 # - Components in bundles OTHER than plan-marshall
+# - tools-marketplace-inventory (moved to pm-plugin-development bundle)
 #
 # Key scope restriction:
 # - ONLY plan-marshall bundle (per user clarification)
 # - Only scripts with print(json.dumps()) - actual stdout output
 # - NOT scripts that write JSON to files (like artifact_store.py)
 
-# All expected affected files (12 total)
-# - 4 SKILL.md files with ```json code blocks documenting output
-# - 4 Python scripts using print(json.dumps()) for stdout output
-# - 4 test files for the affected scripts
-affected_files[12]:
-marketplace/bundles/pm-plugin-development/skills/tools-marketplace-inventory/SKILL.md
+# All expected affected files (9 total)
+# - 3 SKILL.md files with ```json code blocks documenting output
+# - 3 Python scripts using print(json.dumps()) for stdout output
+# - 3 test files for the affected scripts
+affected_files[9]:
 marketplace/bundles/plan-marshall/skills/workflow-integration-ci/SKILL.md
 marketplace/bundles/plan-marshall/skills/workflow-integration-git/SKILL.md
 marketplace/bundles/plan-marshall/skills/workflow-integration-sonar/SKILL.md
-marketplace/bundles/pm-plugin-development/skills/tools-marketplace-inventory/scripts/scan-planning-inventory.py
 marketplace/bundles/plan-marshall/skills/workflow-integration-ci/scripts/pr.py
 marketplace/bundles/plan-marshall/skills/workflow-integration-git/scripts/git-workflow.py
 marketplace/bundles/plan-marshall/skills/workflow-integration-sonar/scripts/sonar.py
-test/pm-plugin-development/tools-marketplace-inventory/test_scan_planning_inventory.py
 test/plan-marshall/workflow-integration-ci/test_pr.py
 test/plan-marshall/workflow-integration-git/test_git_workflow.py
 test/plan-marshall/workflow-integration-sonar/test_sonar.py

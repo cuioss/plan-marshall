@@ -42,10 +42,11 @@ grep -r "print.*json.dumps" marketplace/bundles/plan-marshall/skills/*/scripts/*
 ```
 
 Results:
-- `tools-marketplace-inventory/scripts/scan-planning-inventory.py` - print(json.dumps())
 - `workflow-integration-ci/scripts/pr.py` - print(json.dumps())
 - `workflow-integration-git/scripts/git-workflow.py` - print(json.dumps())
 - `workflow-integration-sonar/scripts/sonar.py` - print(json.dumps())
+
+Note: `scan-planning-inventory.py` was absorbed into pm-plugin-development:tools-marketplace-inventory and is no longer in the plan-marshall bundle scope.
 
 ---
 
@@ -61,33 +62,30 @@ No plan-marshall commands have JSON output specifications.
 
 ---
 
-## Skills Documentation with JSON Output Specs (4 files)
+## Skills Documentation with JSON Output Specs (3 files)
 
 | File | Reason |
 |------|--------|
-| pm-plugin-development/skills/tools-marketplace-inventory/SKILL.md | ```json output blocks |
 | plan-marshall/skills/workflow-integration-ci/SKILL.md | ```json output blocks |
 | plan-marshall/skills/workflow-integration-git/SKILL.md | ```json output blocks |
 | plan-marshall/skills/workflow-integration-sonar/SKILL.md | ```json output blocks |
 
 ---
 
-## Python Scripts with print(json.dumps()) Output (4 files)
+## Python Scripts with print(json.dumps()) Output (3 files)
 
 | File | Reason |
 |------|--------|
-| pm-plugin-development/skills/tools-marketplace-inventory/scripts/scan-planning-inventory.py | print(json.dumps()) |
 | plan-marshall/skills/workflow-integration-ci/scripts/pr.py | print(json.dumps()) |
 | plan-marshall/skills/workflow-integration-git/scripts/git-workflow.py | print(json.dumps()) |
 | plan-marshall/skills/workflow-integration-sonar/scripts/sonar.py | print(json.dumps()) |
 
 ---
 
-## Test Files (4 files)
+## Test Files (3 files)
 
 | File | Reason |
 |------|--------|
-| test/pm-plugin-development/tools-marketplace-inventory/test_scan_planning_inventory.py | Tests for scan-planning-inventory.py |
 | test/plan-marshall/workflow-integration-ci/test_pr.py | Tests for pr.py |
 | test/plan-marshall/workflow-integration-git/test_git_workflow.py | Tests for git-workflow.py |
 | test/plan-marshall/workflow-integration-sonar/test_sonar.py | Tests for sonar.py |
@@ -118,27 +116,23 @@ manage-solution-outline/scripts/manage_solution_outline.py - Outputs TOON
 
 ## Expected Deliverables
 
-**Preferred grouping**: 4 deliverables, one per skill (each includes SKILL.md + script + test)
+**Preferred grouping**: 3 deliverables, one per skill (each includes SKILL.md + script + test)
 
-**Deliverable 1**: Migrate tools-marketplace-inventory outputs to TOON
-- Files: SKILL.md, scan-planning-inventory.py, test_scan_planning_inventory.py
-- Domain: plan-marshall-plugin-dev
-- Module: plan-marshall
-- Profiles: implementation, testing
+Note: tools-planning-inventory was absorbed into pm-plugin-development:tools-marketplace-inventory and is no longer in scope.
 
-**Deliverable 2**: Migrate workflow-integration-ci outputs to TOON
+**Deliverable 1**: Migrate workflow-integration-ci outputs to TOON
 - Files: SKILL.md, pr.py, test_pr.py
 - Domain: plan-marshall-plugin-dev
 - Module: plan-marshall
 - Profiles: implementation, testing
 
-**Deliverable 3**: Migrate workflow-integration-git outputs to TOON
+**Deliverable 2**: Migrate workflow-integration-git outputs to TOON
 - Files: SKILL.md, git-workflow.py, test_git_workflow.py
 - Domain: plan-marshall-plugin-dev
 - Module: plan-marshall
 - Profiles: implementation, testing
 
-**Deliverable 4**: Migrate workflow-integration-sonar outputs to TOON
+**Deliverable 3**: Migrate workflow-integration-sonar outputs to TOON
 - Files: SKILL.md, sonar.py, test_sonar.py
 - Domain: plan-marshall-plugin-dev
 - Module: plan-marshall
@@ -156,19 +150,16 @@ track: complex
 scope_estimate: few_files
 module_mapping: plan-marshall
 
-affected_files[12]:
-  # Skills documentation (4)
-  marketplace/bundles/pm-plugin-development/skills/tools-marketplace-inventory/SKILL.md
+affected_files[9]:
+  # Skills documentation (3)
   marketplace/bundles/plan-marshall/skills/workflow-integration-ci/SKILL.md
   marketplace/bundles/plan-marshall/skills/workflow-integration-git/SKILL.md
   marketplace/bundles/plan-marshall/skills/workflow-integration-sonar/SKILL.md
-  # Python scripts (4)
-  marketplace/bundles/pm-plugin-development/skills/tools-marketplace-inventory/scripts/scan-planning-inventory.py
+  # Python scripts (3)
   marketplace/bundles/plan-marshall/skills/workflow-integration-ci/scripts/pr.py
   marketplace/bundles/plan-marshall/skills/workflow-integration-git/scripts/git-workflow.py
   marketplace/bundles/plan-marshall/skills/workflow-integration-sonar/scripts/sonar.py
-  # Test files (4)
-  test/pm-plugin-development/tools-marketplace-inventory/test_scan_planning_inventory.py
+  # Test files (3)
   test/plan-marshall/workflow-integration-ci/test_pr.py
   test/plan-marshall/workflow-integration-git/test_git_workflow.py
   test/plan-marshall/workflow-integration-sonar/test_sonar.py
@@ -185,7 +176,7 @@ affected_files[12]:
 (pm-plugin-development:ext-outline-plugin) Component scope: [skills, agents, commands, scripts, tests]
 (pm-plugin-development:ext-outline-plugin) Context loaded: domains=[plan-marshall-plugin-dev], bundle=plan-marshall
 (pm-plugin-development:ext-outline-plugin) Change type: migrate
-(pm-plugin-development:ext-outline-plugin) Complete: 4 deliverables, 8 affected files, 4 test files
+(pm-plugin-development:ext-outline-plugin) Complete: 3 deliverables, 6 affected files, 3 test files
 ```
 
 ### work.log Entries
@@ -194,6 +185,6 @@ affected_files[12]:
 [REFINE:6] (plan-marshall:phase-2-refine) Confidence: 64%. Threshold: 95%. Issues: Completeness, Ambiguity
 [REFINE:8] (plan-marshall:phase-2-refine) Updated request with 3 clarifications
 [REFINE:6] (plan-marshall:phase-2-refine) Confidence: 100%. Threshold: 95%. All issues resolved.
-[PROGRESS] (pm-plugin-development:ext-outline-plugin) Inventory: 4-5 skills with JSON code blocks in plan-marshall
-[ARTIFACT] (pm-plugin-development:ext-outline-plugin) Created solution_outline.md - 4 deliverables
+[PROGRESS] (pm-plugin-development:ext-outline-plugin) Inventory: 3-4 skills with JSON code blocks in plan-marshall
+[ARTIFACT] (pm-plugin-development:ext-outline-plugin) Created solution_outline.md - 3 deliverables
 ```

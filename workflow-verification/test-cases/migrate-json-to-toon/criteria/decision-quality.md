@@ -61,7 +61,7 @@ In decision.log:
 
 In work.log:
 ```
-[PROGRESS] (pm-plugin-development:ext-outline-plugin) Inventory: 4-5 skills with JSON code blocks in plan-marshall
+[PROGRESS] (pm-plugin-development:ext-outline-plugin) Inventory: 3-4 skills with JSON code blocks in plan-marshall
 ```
 
 ## Script Migration Decision
@@ -109,7 +109,7 @@ In work.log:
 
 **Format** (in work.log):
 ```
-[ARTIFACT] (pm-plugin-development:ext-outline-plugin) Created solution_outline.md - 4 deliverables
+[ARTIFACT] (pm-plugin-development:ext-outline-plugin) Created solution_outline.md - 3 deliverables
 ```
 
 ## Deliverable Grouping Decision
