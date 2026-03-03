@@ -6,7 +6,7 @@ user-invokable: false
 
 # Task Implementation Skill
 
-**Role**: Domain-agnostic workflow skill for executing implementation tasks (profile=implementation). Loaded by `plan-marshall:task-execute-agent` when `task.profile` is `implementation`.
+**Role**: Domain-agnostic workflow skill for executing implementation tasks (profile=implementation). Loaded by `plan-marshall:phase-5-execute-agent` when `task.profile` is `implementation`.
 
 **Key Pattern**: Agent loads this skill via `resolve-workflow-skill --domain {domain} --phase implementation`. Skill executes a generic workflow: understand context → plan → implement → verify. Domain-specific knowledge comes from `task.skills` (loaded by agent).
 
@@ -21,7 +21,7 @@ user-invokable: false
 
 ## Two-Tier Skill Loading
 
-See [workflow-architecture:skill-loading](../workflow-architecture/standards/skill-loading.md) for the complete two-tier skill loading pattern with visual diagrams.
+See [ref-workflow-architecture:skill-loading](../ref-workflow-architecture/standards/skill-loading.md) for the complete two-tier skill loading pattern with visual diagrams.
 
 **Summary**: Agent loads Tier 1 (system skills) automatically, then Tier 2 (domain skills from `task.skills`). This workflow skill defines HOW the agent executes.
 
@@ -75,7 +75,7 @@ Extract key fields:
 Read the compatibility approach from marshal.json project configuration:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-2-refine get --field compatibility --trace-plan-id {plan_id}
 ```
 
@@ -303,13 +303,13 @@ If changes conflict with existing code:
 
 ## Integration
 
-**Invoked by**: `plan-marshall:task-execute-agent` (when task.profile = implementation)
+**Invoked by**: `plan-marshall:phase-5-execute-agent` (when task.profile = implementation)
 
 **Skill Loading**: Agent loads this skill via `resolve-task-executor --profile implementation`
 
 **Script Notations** (use EXACTLY as shown):
 - `plan-marshall:manage-tasks:manage-tasks` - Task operations (get, update, finalize-step)
-- `plan-marshall:manage-plan-marshall-config:plan-marshall-config` - Read compatibility from project config
+- `plan-marshall:manage-config:manage-config` - Read compatibility from project config
 - `plan-marshall:manage-lessons:manage-lesson` - Record lessons (add)
 
 **Domain Skills Applied** (loaded by agent from task.skills):

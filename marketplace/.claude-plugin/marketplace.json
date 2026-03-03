@@ -9,6 +9,18 @@
   },
   "plugins": [
     {
+      "name": "plan-marshall",
+      "description": "Environment setup, permission management, cross-cutting utilities, and complete development workflow from issue implementation to PR review and quality verification",
+      "source": "./bundles/plan-marshall",
+      "strict": false
+    },
+    {
+      "name": "pm-dev-frontend",
+      "description": "JavaScript, CSS, and web component standards for applications",
+      "source": "./bundles/pm-dev-frontend",
+      "strict": false
+    },
+    {
       "name": "pm-dev-java",
       "description": "Comprehensive Java development expertise bundle aggregating core Java patterns, CDI/Quarkus, and unit testing standards",
       "source": "./bundles/pm-dev-java",
@@ -18,12 +30,6 @@
       "name": "pm-dev-java-cui",
       "description": "CUI-specific Java development standards for CuiLogger, test generators, and HTTP client patterns",
       "source": "./bundles/pm-dev-java-cui",
-      "strict": false
-    },
-    {
-      "name": "pm-dev-frontend",
-      "description": "JavaScript, CSS, and web component standards for applications",
-      "source": "./bundles/pm-dev-frontend",
       "strict": false
     },
     {
@@ -42,12 +48,6 @@
       "name": "pm-plugin-development",
       "description": "Complete toolchain for creating and diagnosing marketplace plugins",
       "source": "./bundles/pm-plugin-development",
-      "strict": false
-    },
-    {
-      "name": "plan-marshall",
-      "description": "Environment setup, permission management, cross-cutting utilities, and complete development workflow from issue implementation to PR review and quality verification",
-      "source": "./bundles/plan-marshall",
       "strict": false
     },
     {

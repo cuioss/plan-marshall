@@ -119,10 +119,10 @@ How modules are discovered, merged, and persisted.
 | Function | Purpose | Used By |
 |----------|---------|---------|
 | `discover_project_modules(root)` | **Primary API**: Discover + merge modules | manage-architecture |
-| `discover_all_extensions()` | List all bundles with extensions | plan-marshall-config |
-| `discover_extensions(root)` | List applicable extensions | plan-marshall-config |
-| `get_skill_domains_from_extensions()` | Skill domain metadata | plan-marshall-config |
-| `get_workflow_extensions_from_extensions()` | Triage/outline refs | plan-marshall-config |
+| `discover_all_extensions()` | List all bundles with extensions | manage-config |
+| `discover_extensions(root)` | List applicable extensions | manage-config |
+| `get_skill_domains_from_extensions()` | Skill domain metadata | manage-config |
+| `get_workflow_extensions_from_extensions()` | Triage/outline refs | manage-config |
 
 ## Command Resolution
 

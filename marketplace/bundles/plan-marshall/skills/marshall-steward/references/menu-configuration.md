@@ -62,7 +62,7 @@ AskUserQuestion:
 ### Phase 1 - Init Settings
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-1-init get
 ```
 
@@ -81,14 +81,14 @@ AskUserQuestion:
 
 Apply:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-1-init set --field branch_strategy --value {direct|feature}
 ```
 
 ### Phase 2 - Refine Settings
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-2-refine get
 ```
 
@@ -109,7 +109,7 @@ AskUserQuestion:
 
 Apply:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-2-refine set --field confidence_threshold --value {95|90|100}
 ```
 
@@ -132,14 +132,14 @@ Maps to values: `breaking`, `deprecation`, `smart_and_ask`
 
 Apply:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-2-refine set --field compatibility --value {breaking|deprecation|smart_and_ask}
 ```
 
 ### Phase 5 - Execute Settings
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-5-execute get
 ```
 
@@ -162,7 +162,7 @@ Maps to values: `per_deliverable`, `per_plan`, `none`
 
 Apply:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-5-execute set --field commit_strategy --value {per_deliverable|per_plan|none}
 ```
 
@@ -175,12 +175,12 @@ Manage verification (phase 5 sub-loop) and finalize (phase 7) pipeline settings.
 ### Step 1: Show Current Pipeline Config
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-5-execute get
 ```
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-6-finalize get
 ```
 
@@ -218,7 +218,7 @@ AskUserQuestion:
 
 Apply: for each deselected step:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-5-execute set-step --step {step_name} --enabled false
 ```
 
@@ -226,7 +226,7 @@ Domain steps (auto-populated from extensions via `provides_verify_steps()`):
 
 ```bash
 # Toggle a domain step off
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-5-execute set-domain-step --domain java --step 1_technical_impl --enabled false
 ```
 
@@ -254,7 +254,7 @@ AskUserQuestion:
 
 Apply: for each deselected step:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-6-finalize set-step --step {step_name} --enabled false
 ```
 
@@ -287,12 +287,12 @@ AskUserQuestion:
 
 Apply:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-5-execute set-max-iterations --value {5|3|10}
 ```
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-6-finalize set-max-iterations --value {3|1|5}
 ```
 
@@ -319,7 +319,7 @@ Look for `extensions_used` in the output - these are bundles that detected modul
 Get all available domains with bundle mappings:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   skill-domains get-available
 ```
 
@@ -356,7 +356,7 @@ AskUserQuestion:
 **Step 4: Configure selected domains**
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   skill-domains configure --domains "java,documentation"
 ```
 
@@ -370,13 +370,13 @@ This configures:
 ### List Domains
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config skill-domains list
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config skill-domains list
 ```
 
 ### View Domain Configuration
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config skill-domains get --domain java
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config skill-domains get --domain java
 ```
 
 ### Resolve Domain Skills (for task planning)
@@ -384,7 +384,7 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-m
 Aggregate core + profile skills with descriptions for LLM skill selection:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config resolve-domain-skills \
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config resolve-domain-skills \
   --domain java --profile implementation
 ```
 
@@ -394,7 +394,7 @@ Update skills for a specific profile:
 
 ```bash
 # Update implementation profile skills
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config skill-domains set \
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config skill-domains set \
   --domain java \
   --profile implementation \
   --defaults "pm-dev-java:java-core" \
@@ -556,11 +556,11 @@ The plan-marshall bundle uses thin agents that load phase skills statically:
 
 | Agent | Purpose | Phase Skill |
 |-------|---------|-------------|
-| `plan-init-agent` | Initialize plan, detect domains | `plan-marshall:phase-1-init` |
-| `request-refine-agent` | Clarify request | `plan-marshall:phase-2-refine` |
-| `solution-outline-agent` | Create deliverables | `plan-marshall:phase-3-outline` |
-| `task-plan-agent` | Create tasks from deliverables | `plan-marshall:phase-4-plan` |
-| `task-execute-agent` | Execute single task | `plan-marshall:phase-5-execute` + `task.skills` |
+| `phase-1-init-agent` | Initialize plan, detect domains | `plan-marshall:phase-1-init` |
+| `phase-2-refine-agent` | Clarify request | `plan-marshall:phase-2-refine` |
+| `phase-3-outline-agent` | Create deliverables | `plan-marshall:phase-3-outline` |
+| `phase-4-plan-agent` | Create tasks from deliverables | `plan-marshall:phase-4-plan` |
+| `phase-5-execute-agent` | Execute single task | `plan-marshall:phase-5-execute` + `task.skills` |
 | `q-gate-validation-agent` | Quality verification | `plan-marshall:phase-5-execute` |
 | `plan-finalize-agent` | Commit, PR | `plan-marshall:phase-6-finalize` |
 

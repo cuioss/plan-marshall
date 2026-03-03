@@ -100,8 +100,8 @@ Configurable via marshal.json:
 ### Configure Retention
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config system retention set --field logs_days --value 7
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config system retention set --field archived_plans_days --value 14
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config system retention set --field logs_days --value 7
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config system retention set --field archived_plans_days --value 14
 ```
 
 ### Cleanup with Custom Retention

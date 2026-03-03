@@ -16,7 +16,7 @@ user-invokable: false
 |--------|---------|
 | `plan-marshall:manage-tasks:manage-tasks` | Task retrieval and progress tracking |
 | `plan-marshall:manage-logging:manage-log` | Work log entries |
-| `plan-marshall:manage-plan-marshall-config:plan-marshall-config` | Domain skill retrieval |
+| `plan-marshall:manage-config:manage-config` | Domain skill retrieval |
 
 ## Standards (Load On-Demand)
 
@@ -58,7 +58,7 @@ Extract from response:
 #### 2a. Get Domain Defaults
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   skill-domains get-defaults \
   --domain {delegation.domain}
 ```

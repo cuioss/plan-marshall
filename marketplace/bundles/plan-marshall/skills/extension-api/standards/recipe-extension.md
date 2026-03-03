@@ -113,7 +113,7 @@ Two commands support recipe discovery at plan-time:
 Aggregates recipes from all configured domains:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   list-recipes
 ```
 
@@ -129,7 +129,7 @@ recipes	[{"key": "refactor-to-standards", "name": "Refactor to Implementation St
 Resolves a specific recipe by key:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   resolve-recipe --recipe null-safety-compliance
 ```
 
@@ -192,7 +192,7 @@ The recipe skill must write:
 Recipe skills must **not** hardcode skill references. Instead, resolve skills dynamically:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   resolve-domain-skills --domain {domain} --profile {profile}
 ```
 
@@ -260,7 +260,7 @@ Projects that have project-level skills in `.claude/skills/` but no domain exten
 
 ```bash
 # Add a project-level recipe
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   skill-domains add-recipe \
   --domain java \
   --key my-project-recipe \
@@ -271,7 +271,7 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-m
   --package-source packages
 
 # Remove a project-level recipe
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   skill-domains remove-recipe \
   --domain java \
   --key my-project-recipe
@@ -295,4 +295,4 @@ Bundles returning `[]`: pm-dev-java, pm-dev-frontend, pm-dev-java-cui, pm-docume
 
 - [extension-contract.md](extension-contract.md) — Extension API contract
 - [verify-steps.md](verify-steps.md) — Verify steps contract (similar pattern)
-- [data-model.md](../../manage-plan-marshall-config/standards/data-model.md) — marshal.json structure
+- [data-model.md](../../manage-config/standards/data-model.md) — marshal.json structure

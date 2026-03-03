@@ -91,10 +91,10 @@ bundles_scanned[2]:
 core:
   bundle: plan-marshall
   agents[4]{name}:
-  plan-init-agent
-  solution-outline-agent
-  task-plan-agent
-  task-execute-agent
+  phase-1-init-agent
+  phase-3-outline-agent
+  phase-4-plan-agent
+  phase-5-execute-agent
   commands: [...]
   skills: [...]
   scripts: [...]
@@ -131,7 +131,7 @@ core_components[3]{type,names}:
   - type: skills
     names: [plan-init, plan-execute, plan-finalize, ...]
   - type: agents
-    names: [plan-init-agent, solution-outline-agent, task-plan-agent, task-execute-agent]
+    names: [phase-1-init-agent, phase-3-outline-agent, phase-4-plan-agent, phase-5-execute-agent]
   - type: commands
     names: [task-standalone, plan-marshall, workflow-pr-doctor]
 
@@ -157,10 +157,10 @@ statistics:
 | `task-*` | task-standalone |
 
 **Thin Agents** (4 generic agents that load domain skills dynamically):
-- `plan-init-agent` - Initialize plan, detect domains
-- `solution-outline-agent` - Create deliverables
-- `task-plan-agent` - Create tasks from deliverables
-- `task-execute-agent` - Execute single task
+- `phase-1-init-agent` - Initialize plan, detect domains
+- `phase-3-outline-agent` - Create deliverables
+- `phase-4-plan-agent` - Create tasks from deliverables
+- `phase-5-execute-agent` - Execute single task
 
 ### Derived Components (domain bundles)
 

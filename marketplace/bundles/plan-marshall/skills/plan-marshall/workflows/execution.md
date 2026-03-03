@@ -67,7 +67,7 @@ python3 .plan/execute-script.py plan-marshall:manage-lifecycle:manage-lifecycle 
 
 **Config check** — Read `finalize_without_asking` to determine next action:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-5-execute get --field finalize_without_asking --trace-plan-id {plan_id}
 ```
 

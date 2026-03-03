@@ -280,7 +280,7 @@ class Extension(ExtensionBase):
 ## Integration Points
 
 - **project-structure** - Orchestrates extensions, owns `.plan/*.json` files
-- **plan-marshall-config** - Uses `discover_all_extensions()` for domain configuration
+- **manage-config** - Uses `discover_all_extensions()` for domain configuration
 - **Domain bundles** - Implement `extension.py` inheriting from `ExtensionBase`
 
 ---

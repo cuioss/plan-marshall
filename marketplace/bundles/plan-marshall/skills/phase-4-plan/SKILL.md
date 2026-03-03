@@ -6,7 +6,7 @@ user-invokable: false
 
 # Phase Plan Skill
 
-**Role**: Domain-agnostic workflow skill for transforming solution outline deliverables into optimized, executable tasks. Loaded by `plan-marshall:task-plan-agent`.
+**Role**: Domain-agnostic workflow skill for transforming solution outline deliverables into optimized, executable tasks. Loaded by `plan-marshall:phase-4-plan-agent`.
 
 **Key Pattern**: Reads deliverables with metadata and profiles list from `solution_outline.md`, creates one task per deliverable per profile (1:N mapping), resolves skills from architecture based on `module` + `profile`, creates tasks with explicit skill lists. **No aggregation** - each deliverable maps to exactly one task per profile.
 
@@ -255,7 +255,7 @@ After creating per-deliverable tasks, create plan-level verification tasks that 
 
 **Read verification config**:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-5-execute get --trace-plan-id {plan_id}
 ```
 
@@ -425,7 +425,7 @@ If deliverable metadata incomplete:
 
 ## Integration
 
-**Invoked by**: `plan-marshall:task-plan-agent` (thin agent)
+**Invoked by**: `plan-marshall:phase-4-plan-agent` (thin agent)
 
 **Script Notations** (use EXACTLY as shown):
 - `plan-marshall:manage-solution-outline:manage-solution-outline` - Read deliverables (list-deliverables, read)
@@ -435,4 +435,4 @@ If deliverable metadata incomplete:
 - `plan-marshall:manage-lessons:manage-lesson` - Record lessons on issues (add)
 
 **Consumed By**:
-- `plan-marshall:task-execute-agent` - Reads tasks and executes them
+- `plan-marshall:phase-5-execute-agent` - Reads tasks and executes them

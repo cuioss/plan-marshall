@@ -32,18 +32,18 @@ See [references/workflow-overview.md](references/workflow-overview.md) for the v
 Finalize configuration comes from marshal.json phase sections:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-6-finalize get --trace-plan-id {plan_id}
 ```
 
 Cross-phase settings (also from marshal.json):
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-5-execute get --trace-plan-id {plan_id}
 ```
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-1-init get --trace-plan-id {plan_id}
 ```
 
@@ -102,17 +102,17 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 ### Step 2: Read Configuration
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-6-finalize get --trace-plan-id {plan_id}
 ```
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-5-execute get --trace-plan-id {plan_id}
 ```
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-1-init get --trace-plan-id {plan_id}
 ```
 

@@ -20,7 +20,7 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-
 python3 .plan/execute-script.py plan-marshall:manage-references:manage-references get \
   --plan-id {plan_id} --field domains
 
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-2-refine get --field compatibility --trace-plan-id {plan_id}
 ```
 

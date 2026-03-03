@@ -401,7 +401,7 @@ Risky fixes require user confirmation because they involve judgment calls or may
 **Description**: Uses `--plan-id` where `--trace-plan-id` required or vice versa.
 
 **Detection**: Script calls with incorrect plan parameter based on script type:
-- `manage-plan-marshall-config` should use `--trace-plan-id`
+- `manage-config` should use `--trace-plan-id`
 - `manage-log` should use `--trace-plan-id`
 - `manage-files`, `manage-tasks`, `manage-references` should use `--plan-id`
 

@@ -20,7 +20,7 @@ Collect recipes from all sources, then present via `AskUserQuestion`.
 **Domain recipes** (custom recipes registered via `provides_recipes()`) and **project recipes** (added via `skill-domains add-recipe`):
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   list-recipes
 ```
 
@@ -48,7 +48,7 @@ If no domain or project recipes exist, only show the built-in recipe.
 **If `recipe` parameter provided** — resolve directly:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   resolve-recipe --recipe {recipe_key}
 ```
 
@@ -61,7 +61,7 @@ If the user selects the built-in "Refactor to Profile Standards" recipe:
 1. **Select domain**: Query configured domains and present for selection:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   list-domains
 ```
 
@@ -110,7 +110,7 @@ AskUserQuestion:
 Use the selected recipe to create a plan:
 
 ```
-Task: plan-marshall:plan-init-agent
+Task: plan-marshall:phase-1-init-agent
   Input:
     recipe: {recipe_key}
   Output: plan_id, domains array

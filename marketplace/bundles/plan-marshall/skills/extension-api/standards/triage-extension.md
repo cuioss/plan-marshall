@@ -59,7 +59,7 @@ The referenced triage skill MUST include these sections:
 | `## Severity Guidelines` | When to fix vs suppress vs accept | Decision table by severity |
 | `## Acceptable to Accept` | What can be accepted without fixing | Situations where accepting is appropriate |
 
-For detailed section templates and examples, see the [workflow triage extension contract](../../../../plan-marshall/skills/workflow-extension-api/standards/extensions/triage-extension.md).
+For detailed section templates and examples, see the [workflow triage extension contract](../../../../plan-marshall/skills/ref-workflow-extension-api/standards/extensions/triage-extension.md).
 
 ---
 
@@ -88,7 +88,7 @@ The triage skill reference is stored under `workflow_skill_extensions.triage` wi
 Runtime resolution of the triage skill for a domain:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   resolve-workflow-skill-extension --domain java --type triage
 ```
 
@@ -159,5 +159,5 @@ Not all domains need custom triage:
 ## Related Specifications
 
 - [extension-contract.md](extension-contract.md) — Extension API contract
-- [triage-extension.md (workflow)](../../../../plan-marshall/skills/workflow-extension-api/standards/extensions/triage-extension.md) — Workflow integration details, required section templates, triage decision flow
-- [extension-mechanism.md](../../../../plan-marshall/skills/workflow-extension-api/standards/extensions/extension-mechanism.md) — Extension mechanism overview
+- [triage-extension.md (workflow)](../../../../plan-marshall/skills/ref-workflow-extension-api/standards/extensions/triage-extension.md) — Workflow integration details, required section templates, triage decision flow
+- [extension-mechanism.md](../../../../plan-marshall/skills/ref-workflow-extension-api/standards/extensions/extension-mechanism.md) — Extension mechanism overview

@@ -61,9 +61,9 @@ The critical contract: **only write if the key doesn't exist**. This ensures use
 
 The `extension-defaults set-default` command implements this automatically - it only writes if the key doesn't exist, eliminating the need for check-then-set patterns.
 
-### Using plan-marshall-config Commands
+### Using manage-config Commands
 
-All configuration operations use the `plan-marshall-config` script API. The script handles file location internally - no file paths needed.
+All configuration operations use the `manage-config` script API. The script handles file location internally - no file paths needed.
 
 **Recommended pattern** - Direct import for simplicity and performance:
 
@@ -79,13 +79,13 @@ def config_defaults(self, project_root: str) -> None:
 **Alternative** - CLI via subprocess (when import path unavailable):
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config ext-defaults set-default \
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config ext-defaults set-default \
   --key "my_bundle.my_setting" --value "default_value"
 ```
 
 Values are stored in the isolated `extension_defaults` section of `marshal.json`.
 
-### Available plan-marshall-config Operations
+### Available manage-config Operations
 
 | Operation | Description |
 |-----------|-------------|
@@ -142,7 +142,7 @@ class Extension(ExtensionBase):
 
 ## Configuration Operations
 
-Extensions should use plan-marshall-config operations:
+Extensions should use manage-config operations:
 
 | Operation | Use Case |
 |-----------|----------|

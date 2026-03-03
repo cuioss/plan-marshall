@@ -10,6 +10,11 @@
   "homepage": "https://github.com/cuioss/plan-marshall",
   "repository": "https://github.com/cuioss/plan-marshall.git",
   "keywords": ["plugin", "development", "tools", "doctor", "create", "maintain"],
+  "agents": [
+    "./agents/ext-outline-component-agent.md",
+    "./agents/ext-outline-inventory-agent.md",
+    "./agents/tool-coverage-agent.md"
+  ],
   "commands": [
     "./commands/tools-analyze-user-prompted.md"
   ],
@@ -28,10 +33,5 @@
     "./skills/tools-analyze-script-failures",
     "./skills/tools-marketplace-inventory",
     "./skills/verification-mode"
-  ],
-  "agents": [
-    "./agents/ext-outline-component-agent.md",
-    "./agents/ext-outline-inventory-agent.md",
-    "./agents/tool-coverage-agent.md"
   ]
 }

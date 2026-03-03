@@ -45,7 +45,7 @@ def provides_outline_skill(self) -> str | None:
 
     Purpose:
         Loaded by the workflow-outline-change-type skill (via
-        solution-outline-agent). Provides domain-specific outline
+        phase-3-outline-agent). Provides domain-specific outline
         instructions instead of generic plan-marshall:workflow-outline-change-type
         standards.
 
@@ -127,7 +127,7 @@ The outline skill reference is stored directly on the domain object (not inside 
 Runtime resolution of the outline skill for a domain:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   resolve-outline-skill --domain plan-marshall-plugin-dev
 ```
 
@@ -178,5 +178,5 @@ A single skill with `change-{type}.md` sub-files allows:
 ## Related Specifications
 
 - [extension-contract.md](extension-contract.md) — Extension API contract
-- [extension-mechanism.md (workflow)](../../../../plan-marshall/skills/workflow-extension-api/standards/extensions/extension-mechanism.md) — Extension mechanism overview, change-type skill structure, resolution flow
-- [change-types.md](../../../../plan-marshall/skills/workflow-architecture/standards/change-types.md) — Change type vocabulary
+- [extension-mechanism.md (workflow)](../../../../plan-marshall/skills/ref-workflow-extension-api/standards/extensions/extension-mechanism.md) — Extension mechanism overview, change-type skill structure, resolution flow
+- [change-types.md](../../../../plan-marshall/skills/ref-workflow-architecture/standards/change-types.md) — Change type vocabulary

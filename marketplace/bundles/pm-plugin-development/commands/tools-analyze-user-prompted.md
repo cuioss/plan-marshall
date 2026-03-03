@@ -256,6 +256,6 @@ If user selects a fix option (not "Manual"):
 
 ## RELATED
 
-- `/plan-marshall:tools-web-permissions` - Manage WebFetch domain permissions
+- `/plan-marshall:tools-permission-web` - Manage WebFetch domain permissions
 - `plan-marshall:tools-script-executor` - Script execution permission patterns
 - `pm-plugin-development:plugin-architecture` - Component tool declarations

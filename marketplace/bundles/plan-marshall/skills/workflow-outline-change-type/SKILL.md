@@ -8,7 +8,7 @@ user-invokable: false
 
 Common workflow for creating solution outlines based on change_type. Routes to domain-specific or generic sub-skill instructions based on the detected change type and domain configuration.
 
-**Loaded by**: `plan-marshall:solution-outline-agent` (inline execution, no separate agent spawn)
+**Loaded by**: `plan-marshall:phase-3-outline-agent` (inline execution, no separate agent spawn)
 
 ---
 
@@ -45,7 +45,7 @@ python3 .plan/execute-script.py plan-marshall:manage-references:manage-reference
 Read compatibility:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-2-refine get --field compatibility --trace-plan-id {plan_id}
 ```
 
@@ -76,7 +76,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 Resolve whether a domain provides a domain-specific outline skill:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   resolve-outline-skill --domain {domain} --trace-plan-id {plan_id}
 ```
 
@@ -248,7 +248,7 @@ domain: {domain or "generic"}
 
 ## Integration
 
-**Invoked by**: `plan-marshall:solution-outline-agent` (inline execution during Complex Track)
+**Invoked by**: `plan-marshall:phase-3-outline-agent` (inline execution during Complex Track)
 
 **Script Notations** (use EXACTLY as shown):
 - `plan-marshall:manage-plan-documents:manage-plan-documents` - Read request
@@ -257,6 +257,6 @@ domain: {domain or "generic"}
 - `plan-marshall:manage-files:manage-files` - Read module_mapping
 - `plan-marshall:manage-solution-outline:manage-solution-outline` - Write solution document
 - `plan-marshall:manage-assessments:manage-assessments` - Log assessments (domain skills)
-- `plan-marshall:manage-plan-marshall-config:plan-marshall-config` - Resolve change-type skill, read compatibility
+- `plan-marshall:manage-config:manage-config` - Resolve change-type skill, read compatibility
 - `plan-marshall:manage-logging:manage-log` - Decision and work logging
 - `plan-marshall:manage-architecture:architecture` - Resolve verification commands

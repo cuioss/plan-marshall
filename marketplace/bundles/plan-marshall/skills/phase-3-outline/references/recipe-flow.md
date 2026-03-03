@@ -162,7 +162,7 @@ phase-3-outline Step 2.5
 
 The three `recipe_*` parameters are guaranteed non-empty for the built-in recipe. Custom recipes receive them if the extension declares `profile` and `package_source` on the recipe dict; otherwise they are empty strings and the custom skill must determine these values itself.
 
-Full interface contract: see `plan-marshall:workflow-extension-api` [recipe-extension.md](../../workflow-extension-api/standards/extensions/recipe-extension.md#recipe-skill-interface) and `plan-marshall:extension-api` [recipe-extension.md](../../../plan-marshall/skills/extension-api/standards/recipe-extension.md#recipe-skill-interface).
+Full interface contract: see `plan-marshall:ref-workflow-extension-api` [recipe-extension.md](../../ref-workflow-extension-api/standards/extensions/recipe-extension.md#recipe-skill-interface) and `plan-marshall:extension-api` [recipe-extension.md](../../../plan-marshall/skills/extension-api/standards/recipe-extension.md#recipe-skill-interface).
 
 ---
 
@@ -269,7 +269,7 @@ User: /plan-marshall action=recipe
   │ Package source: packages        │ ◄── derived
   └────────────────┬────────────────┘
                    │
-  recipe.md Step 2: plan-init-agent
+  recipe.md Step 2: phase-1-init-agent
          │ creates plan, plan_id = "recipe-java-impl"
          │
   recipe.md Step 3: store metadata
@@ -354,4 +354,4 @@ recipe_package_source ───────► recipe_package_source ───�
 - `plan-marshall:plan-marshall` workflows/recipe.md — Recipe workflow entry point
 - `plan-marshall:recipe-refactor-to-profile-standards` — Built-in recipe skill
 - `plan-marshall:extension-api` recipe-extension.md — Extension API contract
-- `plan-marshall:workflow-extension-api` recipe-extension.md — Workflow-perspective contract
+- `plan-marshall:ref-workflow-extension-api` recipe-extension.md — Workflow-perspective contract

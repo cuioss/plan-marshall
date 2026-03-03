@@ -17,7 +17,7 @@ user-invokable: false
 Activate when:
 - Starting a new plan (no existing plan_id)
 - User provides task via description, lesson_id, or issue URL
-- Called by plan-init-agent
+- Called by phase-1-init-agent
 
 ---
 
@@ -118,7 +118,7 @@ Parse TOON output to extract: title, body, labels, milestone, assignees
 **From Recipe**:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   resolve-recipe --recipe {recipe_key}
 ```
 
@@ -187,7 +187,7 @@ python3 .plan/execute-script.py plan-marshall:manage-references:manage-reference
 **Branch Strategy** — read `branch_strategy` from marshal.json phase-1-init config:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-1-init get --trace-plan-id {plan_id}
 ```
 
@@ -227,7 +227,7 @@ Query configured domains from marshal.json and select appropriate domain for the
 **Otherwise**, query available domains:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   skill-domains list --trace-plan-id {plan_id}
 ```
 
