@@ -189,7 +189,7 @@ This document shows the end-to-end flow from command resolution through structur
 
 | File | Owner | Content |
 |------|-------|---------|
-| `.plan/project-architecture/derived-data.json` | analyze-project-architecture | Discovered modules with command strings |
+| `.plan/project-architecture/derived-data.json` | manage-architecture | Discovered modules with command strings |
 | `.plan/run-configuration.json` | run-config | Learned timeouts, acceptable warnings |
 | `.plan/temp/build-output/{scope}/{system}-{ts}.log` | build scripts | Raw build output (timestamped) |
 

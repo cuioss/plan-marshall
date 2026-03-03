@@ -30,7 +30,7 @@ user-invokable: false
 │  LAYER 2: PROFILE SKILLS (System default, domain CAN override)  │
 │  ┌─────────────────────────────────────────────────────────────┐ │
 │  │ task-implementation (profile=implementation)                 │ │
-│  │ task-module_testing (profile=module_testing)                │ │
+│  │ task-module-testing (profile=module_testing)                │ │
 │  │                                                              │ │
 │  │ Contract: standards/profiles/                                │ │
 │  │ Override: resolve-workflow-skill --domain X --phase Y        │ │
@@ -104,7 +104,7 @@ Profile skills handle the actual implementation/testing work. Domains CAN overri
 | Profile | System Default | Override Example |
 |---------|----------------|------------------|
 | `implementation` | `plan-marshall:task-implementation` | `pm-dev-java:java-implementation` |
-| `module_testing` | `plan-marshall:task-module_testing` | `pm-dev-java:java-module-testing` |
+| `module_testing` | `plan-marshall:task-module-testing` | `pm-dev-java:java-module-testing` |
 
 ### Resolution Mechanism
 

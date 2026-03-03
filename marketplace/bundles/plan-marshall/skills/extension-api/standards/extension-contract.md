@@ -158,13 +158,13 @@ def provides_outline_skill(self) -> str | None:
     Returns:
         Skill reference as 'bundle:skill' (e.g.,
         'pm-plugin-development:ext-outline-workflow')
-        or None if domain uses generic outline-change-type standards.
+        or None if domain uses generic workflow-outline-change-type standards.
 
     The skill's standards/change-{type}.md files contain
     domain-specific discovery, analysis, and deliverable creation
     logic. The change_type is passed to the skill for internal routing.
 
-    Default: None (uses generic plan-marshall:outline-change-type standards)
+    Default: None (uses generic plan-marshall:workflow-outline-change-type standards)
     """
 ```
 
@@ -337,5 +337,5 @@ Some domain bundles are **additive** - they extend a base domain bundle rather t
 - [build-execution.md](build-execution.md) - Build command execution API
 - [build-return.md](build-return.md) - Build return value structure
 - [build-project-structure.md](build-project-structure.md) - Project structure discovery
-- [orchestrator-integration.md](../../analyze-project-architecture/standards/orchestrator-integration.md) - Orchestrator flow and hybrid merging
+- [orchestrator-integration.md](../../manage-architecture/standards/orchestrator-integration.md) - Orchestrator flow and hybrid merging
 - [canonical-commands.md](canonical-commands.md) - Command vocabulary

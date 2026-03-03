@@ -82,8 +82,8 @@ Output this banner directly as text at command start (do NOT use Bash echo - out
 | ci_health | `plan-marshall:tools-integration-ci:ci_health` | CI provider detection (delegated to tools-integration-ci) |
 | plan-marshall-config | `plan-marshall:manage-plan-marshall-config:plan-marshall-config` | Project-level marshal.json CRUD |
 | scan-marketplace-inventory | `pm-plugin-development:tools-marketplace-inventory:scan-marketplace-inventory` | Script discovery |
-| permission-doctor | `plan-marshall:permission-doctor:permission-doctor` | Permission analysis |
-| permission-fix | `plan-marshall:permission-fix:permission-fix` | Permission fixes |
+| tools-permission-doctor | `plan-marshall:tools-permission-doctor:permission-doctor` | Permission analysis |
+| tools-permission-fix | `plan-marshall:tools-permission-fix:permission-fix` | Permission fixes |
 | generate-executor | `plan-marshall:tools-script-executor:generate-executor` | Executor generation |
 
 ---

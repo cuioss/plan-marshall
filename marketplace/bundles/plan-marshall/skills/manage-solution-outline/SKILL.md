@@ -15,7 +15,7 @@ Load this skill in Step 0 when:
 - Reviewing or updating an existing solution outline
 - Validating solution document structure
 
-**First action**: Load `plan-marshall:analyze-project-architecture` skill for module information and architectural context.
+**First action**: Load `plan-marshall:manage-architecture` skill for module information and architectural context.
 
 **Not needed for**: Creating tasks from deliverables (use manage-tasks skill)
 
@@ -116,17 +116,17 @@ Examples provide starting points for different task categories:
 
 ### Step 0: Load Project Architecture
 
-Load project architecture knowledge via the `plan-marshall:analyze-project-architecture` skill:
+Load project architecture knowledge via the `plan-marshall:manage-architecture` skill:
 
 ```
-Skill: plan-marshall:analyze-project-architecture
+Skill: plan-marshall:manage-architecture
 ```
 
 Then query module information:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture info
-python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture module --name {module-name}
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture info
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture module --name {module-name}
 ```
 
 Use the returned structure for:
@@ -228,7 +228,7 @@ python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-sol
 - Domain skills: `pm-plugin-development:ext-outline-plugin`, etc.
 
 **Data Sources** (via skills):
-- `plan-marshall:analyze-project-architecture` - Project architecture knowledge (modules, responsibilities, packages)
+- `plan-marshall:manage-architecture` - Project architecture knowledge (modules, responsibilities, packages)
 - `marshal.json` - Module domains for skill routing
 - Request document - What is being requested
 
@@ -246,7 +246,7 @@ python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-sol
 | `exists` | `--plan-id` | Check if solution exists |
 
 **Related Skills**:
-- `plan-marshall:analyze-project-architecture` - Project architecture knowledge (load in Step 0)
+- `plan-marshall:manage-architecture` - Project architecture knowledge (load in Step 0)
 - `plan-marshall:manage-tasks` - Task creation with deliverable references
 - `plan-marshall:manage-plan-documents` - Request document operations
 

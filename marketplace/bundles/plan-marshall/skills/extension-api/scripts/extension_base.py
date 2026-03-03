@@ -332,14 +332,14 @@ class ExtensionBase(ABC):
             for internal routing.
 
         Purpose:
-            Loaded by the outline-change-type skill (via
+            Loaded by the workflow-outline-change-type skill (via
             solution-outline-agent). Provides domain-specific outline
-            instructions instead of generic plan-marshall:outline-change-type
+            instructions instead of generic plan-marshall:workflow-outline-change-type
             standards.
 
         Fallback:
             If a domain returns None, generic instructions from
-            plan-marshall:outline-change-type/standards/change-{type}.md
+            plan-marshall:workflow-outline-change-type/standards/change-{type}.md
             are used.
         """
         return None

@@ -23,7 +23,7 @@ RESERVED_DOMAIN_KEYS = [
 # These are defaults; marshall-steward auto-discovers from extension.py files
 DEFAULT_TASK_EXECUTORS = {
     'implementation': 'plan-marshall:task-implementation',
-    'module_testing': 'plan-marshall:task-module_testing',
+    'module_testing': 'plan-marshall:task-module-testing',
     'integration_testing': 'plan-marshall:task-integration_testing',
     'verification': 'plan-marshall:task-verification',
 }
@@ -90,7 +90,7 @@ def get_default_config() -> dict:
 
     NOTE:
     - build_systems is NOT included - determined at runtime via extension discovery
-    - Module facts come from derived-data.json (see plan-marshall:analyze-project-architecture)
+    - Module facts come from derived-data.json (see plan-marshall:manage-architecture)
     - verification_domain_steps in phase-5-execute is auto-populated by skill-domains configure
     """
     import copy

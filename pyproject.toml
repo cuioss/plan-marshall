@@ -101,7 +101,7 @@ explicit_package_bases = true
 exclude = [
     "plan-marshall-plugin/extension\\.py$",
     "test/.*/plan-marshall-plugin/",
-    "test/plan-marshall/permission-fix/test_permission\\.py$",
+    "test/plan-marshall/tools-permission-fix/test_permission\\.py$",
     "test/pm-dev-java/plan-marshall-plugin/test_discover_modules\\.py$",
     "test/pm-plugin-development/plugin-doctor/test_extension\\.py$",
     "test/.*/integration/",

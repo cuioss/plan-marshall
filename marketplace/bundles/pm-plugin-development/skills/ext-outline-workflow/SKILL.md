@@ -1,12 +1,12 @@
 ---
 name: ext-outline-workflow
-description: Shared workflow steps and verification knowledge for plugin development outline, loaded by outline-change-type skill
+description: Shared workflow steps and verification knowledge for plugin development outline, loaded by workflow-outline-change-type skill
 user-invokable: false
 ---
 
 # Plugin Development Outline Workflow
 
-Shared workflow steps for plugin development outline, loaded by the `outline-change-type` skill when the domain is `plan-marshall-plugin-dev`. Change-type-specific instructions are in `standards/change-{type}.md`.
+Shared workflow steps for plugin development outline, loaded by the `workflow-outline-change-type` skill when the domain is `plan-marshall-plugin-dev`. Change-type-specific instructions are in `standards/change-{type}.md`.
 
 ## Context Loading
 
@@ -239,10 +239,10 @@ Plugin development deliverables have different verification depending on content
 | Deliverable Content | Profiles | Implementation Verification | Module_testing Verification |
 |---------------------|----------|---------------------------|----------------------------|
 | Markdown components (skills/agents/commands) | `implementation` only | plugin-doctor | N/A |
-| Scripts without test files | `implementation` only | `plan-marshall:analyze-project-architecture:architecture resolve --command compile --name {module} --trace-plan-id {plan_id}` | N/A |
-| Scripts with test files | `implementation`, `module_testing` | `plan-marshall:analyze-project-architecture:architecture resolve --command compile --name {module} --trace-plan-id {plan_id}` | `plan-marshall:analyze-project-architecture:architecture resolve --command module-tests --name {module} --trace-plan-id {plan_id}` |
+| Scripts without test files | `implementation` only | `plan-marshall:manage-architecture:architecture resolve --command compile --name {module} --trace-plan-id {plan_id}` | N/A |
+| Scripts with test files | `implementation`, `module_testing` | `plan-marshall:manage-architecture:architecture resolve --command compile --name {module} --trace-plan-id {plan_id}` | `plan-marshall:manage-architecture:architecture resolve --command module-tests --name {module} --trace-plan-id {plan_id}` |
 
-Resolve commands from architecture (`plan-marshall:analyze-project-architecture:architecture`) — do NOT hardcode build tool invocations. Always pass `--trace-plan-id {plan_id}` for execution logging.
+Resolve commands from architecture (`plan-marshall:manage-architecture:architecture`) — do NOT hardcode build tool invocations. Always pass `--trace-plan-id {plan_id}` for execution logging.
 
 **Key rule**: Markdown-only deliverables never get `module_testing` — there are no tests to run. Only deliverables that create or modify Python/Bash test files should include the `module_testing` profile.
 

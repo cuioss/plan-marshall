@@ -28,7 +28,7 @@ The workflow must analyze the correct scope:
 All expected items must be found:
 
 ### Skills Documentation (4 files)
-- [ ] planning-inventory/SKILL.md identified
+- [ ] tools-planning-inventory/SKILL.md identified
 - [ ] workflow-integration-ci/SKILL.md identified
 - [ ] workflow-integration-git/SKILL.md identified
 - [ ] workflow-integration-sonar/SKILL.md identified
@@ -54,8 +54,8 @@ All expected items must be found:
 
 | File | Reason |
 |------|--------|
-| plan-marshall/skills/planning-inventory/SKILL.md | JSON output documentation |
-| plan-marshall/skills/planning-inventory/scripts/scan-planning-inventory.py | print(json.dumps()) |
+| plan-marshall/skills/tools-planning-inventory/SKILL.md | JSON output documentation |
+| plan-marshall/skills/tools-planning-inventory/scripts/scan-planning-inventory.py | print(json.dumps()) |
 | plan-marshall/skills/workflow-integration-ci/SKILL.md | JSON output documentation |
 | plan-marshall/skills/workflow-integration-ci/scripts/pr.py | print(json.dumps()) |
 

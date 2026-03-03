@@ -56,7 +56,7 @@ class TestGenerateWildcards(ScriptTestCase):
         """Should generate SlashCommand() wildcards from inventory."""
         inventory = {
             'bundles': [
-                {'name': 'plan-marshall', 'skills': [], 'commands': [{'name': 'plan-manage'}, {'name': 'task-implement'}]}
+                {'name': 'plan-marshall', 'skills': [], 'commands': [{'name': 'plan-manage'}, {'name': 'task-standalone'}]}
             ]
         }
 

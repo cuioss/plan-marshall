@@ -39,8 +39,8 @@ TEST_FIXTURE_BASE = PROJECT_ROOT / PLAN_DIR_NAME / 'temp' / 'test-fixture'
 # Pre-existing issues: duplicate test file basenames cause pytest collection errors
 # These need to be renamed to unique names in a separate cleanup
 collect_ignore = [
-    # Duplicate: test_permission.py exists in permission-doctor and permission-fix
-    'plan-marshall/permission-fix/test_permission.py',
+    # Duplicate: test_permission.py exists in tools-permission-doctor and tools-permission-fix
+    'plan-marshall/tools-permission-fix/test_permission.py',
     # Duplicate: test_discover_modules.py exists in multiple bundles
     'pm-dev-java/plan-marshall-plugin/test_discover_modules.py',
     # Duplicate: test_extension.py exists in extension-api and plugin-doctor

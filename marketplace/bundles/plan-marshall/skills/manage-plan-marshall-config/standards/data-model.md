@@ -61,7 +61,7 @@ JSON structure and field definitions for project configuration.
       "optionals": ["plan-marshall:ref-development-standards"],
       "task_executors": {
         "implementation": "plan-marshall:task-implementation",
-        "module_testing": "plan-marshall:task-module_testing",
+        "module_testing": "plan-marshall:task-module-testing",
         "integration_testing": "plan-marshall:task-integration_testing"
       }
     },
@@ -99,7 +99,7 @@ The `system` domain contains task executors and base skills applied globally.
       "optionals": ["bundle:skill", ...],
       "task_executors": {
         "implementation": "plan-marshall:task-implementation",
-        "module_testing": "plan-marshall:task-module_testing",
+        "module_testing": "plan-marshall:task-module-testing",
         "integration_testing": "plan-marshall:task-integration_testing"
       }
     }
@@ -287,7 +287,7 @@ Execute phase with integrated verification pipeline. Contains commit strategy an
 
 #### Verification Steps
 
-Steps `verification_1_quality_check` and `verification_2_build_verify` are static booleans. They run canonical commands from `analyze-project-architecture`.
+Steps `verification_1_quality_check` and `verification_2_build_verify` are static booleans. They run canonical commands from `manage-architecture`.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|

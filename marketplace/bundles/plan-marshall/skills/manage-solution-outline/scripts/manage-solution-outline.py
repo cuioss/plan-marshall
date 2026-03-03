@@ -591,7 +591,7 @@ def cmd_get_module_context(args) -> int:
                     'status': 'not_found',
                     'file': str(arch_dir),
                     'message': 'Project architecture not discovered. Run architecture discovery first.',
-                    'suggestion': 'Run: python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture discover',
+                    'suggestion': 'Run: python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture discover',
                 }
             )
         )

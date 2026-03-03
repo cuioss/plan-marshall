@@ -386,7 +386,7 @@ Use template from `plan-marshall:manage-solution-outline/templates/deliverable-t
 
 **Resolve verification command** for each deliverable before writing:
 ```bash
-python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture \
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
   resolve --command compile --name {module} \
   --trace-plan-id {plan_id}
 ```
@@ -428,11 +428,11 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 ## Step 8: Follow Outline-Change-Type Skill (Complex Track)
 
-**Purpose**: Follow the `outline-change-type` skill workflow inline to handle discovery, analysis, and deliverable creation. The skill routes to domain-specific or generic sub-skill instructions based on change_type and domain.
+**Purpose**: Follow the `workflow-outline-change-type` skill workflow inline to handle discovery, analysis, and deliverable creation. The skill routes to domain-specific or generic sub-skill instructions based on change_type and domain.
 
 ### Execute Skill Workflow
 
-Follow the `outline-change-type` skill workflow with `plan_id`. The skill handles:
+Follow the `workflow-outline-change-type` skill workflow with `plan_id`. The skill handles:
 - Read change_type from status.json metadata
 - Load context (request, domains, compatibility, module mapping)
 - Resolve domain skill (if domain provides outline_skill)
@@ -447,7 +447,7 @@ Follow the `outline-change-type` skill workflow with `plan_id`. The skill handle
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-3-outline) Starting outline-change-type skill for {domain}"
+  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-3-outline) Starting workflow-outline-change-type skill for {domain}"
 ```
 
 ---
@@ -657,7 +657,7 @@ qgate_pending_count: {0 if no findings}
 - `{recipe_skill}` (Step 2.5 - recipe skill with input parameters, built-in or custom)
 
 **Inline Skills** (Complex Track):
-- `plan-marshall:outline-change-type` (Step 8 - skill-based outline for all change types and domains)
+- `plan-marshall:workflow-outline-change-type` (Step 8 - skill-based outline for all change types and domains)
 
 **Consumed By**:
 - `plan-marshall:phase-4-plan` skill (reads deliverables for task creation)

@@ -31,11 +31,11 @@ When and how to create separate deliverables for integration tests.
 
 **EXECUTE**:
 ```bash
-python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture modules \
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture modules \
   --command integration-tests
 ```
 
-Output format: `plan-marshall:analyze-project-architecture/standards/client-api.md`
+Output format: `plan-marshall:manage-architecture/standards/client-api.md`
 
 ---
 
@@ -100,7 +100,7 @@ Follows the deliverable contract.
 
 **EXECUTE**:
 ```bash
-python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture modules \
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture modules \
   --command integration-tests
 ```
 

@@ -176,7 +176,7 @@ Execute the verification commands from `task.verification.commands`. Every task 
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   work --plan-id {plan_id} --level WARN --message "[VERIFY] (plan-marshall:task-implementation) TASK-{N} missing verification — falling back to architecture resolve"
 
-python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture \
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
   resolve --command compile --name {module} \
   --trace-plan-id {plan_id}
 ```

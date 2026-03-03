@@ -126,7 +126,7 @@ The plan-marshall bundle implements a 6-phase execution model for structured tas
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-**(*) Project Architecture**: Module context from `plan-marshall:analyze-project-architecture`.
+**(*) Project Architecture**: Module context from `plan-marshall:manage-architecture`.
 
 ---
 
@@ -259,7 +259,7 @@ The plan-marshall bundle implements a 6-phase execution model for structured tas
 │  └─────────────────────────────────────────────────────────────────────┘   │
 │                                                                             │
 │  AGENT: task-execute-agent                                                  │
-│  SKILL: plan-marshall:task-implementation (or task-module_testing)            │
+│  SKILL: plan-marshall:task-implementation (or task-module-testing)            │
 │                                                                             │
 │  EXECUTION LOOP:                                                            │
 │  ───────────────                                                            │

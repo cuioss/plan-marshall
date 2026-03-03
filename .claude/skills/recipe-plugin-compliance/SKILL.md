@@ -39,7 +39,7 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-m
 Then list available modules (marketplace bundles):
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture modules
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture modules
 ```
 
 Present module list to user for filtering. User may select all or a subset.
@@ -49,7 +49,7 @@ Present module list to user for filtering. User may select all or a subset.
 For each selected module (bundle), load its packages:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:analyze-project-architecture:architecture \
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
   module --name {module_name} --full
 ```
 

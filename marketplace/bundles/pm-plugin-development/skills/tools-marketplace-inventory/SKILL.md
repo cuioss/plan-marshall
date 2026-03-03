@@ -53,12 +53,12 @@ base_path: /path/to/marketplace/bundles
 plan-marshall:
   path: marketplace/bundles/plan-marshall
   agents[1]:
-    - research-best-practices
+    - research-best-practices-agent
   commands[2]:
     - tools-fix-intellij-diagnostics
     - tools-sync-agents-file
   skills[18]:
-    - analyze-project-architecture
+    - manage-architecture
     - extension-api
     - manage-lessons
 
@@ -146,8 +146,8 @@ plan-marshall:
   path: marketplace/bundles/plan-marshall
 
   skills[18]:
-    - name: permission-doctor
-      path: marketplace/bundles/plan-marshall/skills/permission-doctor
+    - name: tools-permission-doctor
+      path: marketplace/bundles/plan-marshall/skills/tools-permission-doctor
       description: Diagnose permission issues across settings files
       user_invocable: true
       allowed_tools: Read, Grep, Bash
@@ -304,8 +304,8 @@ Output format. Default: `toon`
   "bundles": {
     "plan-marshall": {
       "path": "marketplace/bundles/plan-marshall",
-      "agents": ["research-best-practices"],
-      "skills": ["permission-doctor", "manage-lessons"]
+      "agents": ["research-best-practices-agent"],
+      "skills": ["tools-permission-doctor", "manage-lessons"]
     }
   },
   "statistics": {...}

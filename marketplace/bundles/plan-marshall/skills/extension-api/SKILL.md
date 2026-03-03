@@ -101,7 +101,7 @@ For understanding the complete system architecture, reference these documents:
 | [build-execution.md](standards/build-execution.md) | Execution patterns | Running build commands |
 | [build-return.md](standards/build-return.md) | Return value structure | Formatting command output |
 | [build-project-structure.md](standards/build-project-structure.md) | Module discovery output spec | Understanding `discover_modules()` output format |
-| [orchestrator-integration.md](../analyze-project-architecture/standards/orchestrator-integration.md) | Orchestrator merge logic | Understanding hybrid modules |
+| [orchestrator-integration.md](../manage-architecture/standards/orchestrator-integration.md) | Orchestrator merge logic | Understanding hybrid modules |
 
 **Note**: These documents define the target architecture. Implementation may be in progress.
 

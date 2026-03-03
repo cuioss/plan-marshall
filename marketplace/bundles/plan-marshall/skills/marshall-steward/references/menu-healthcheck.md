@@ -45,7 +45,7 @@ If drift detected (added/removed/changed > 0): Offer to regenerate executor.
 Check that enabled plugins have corresponding Skill/SlashCommand wildcards:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:permission-fix:permission-fix ensure-wildcards \
+python3 .plan/execute-script.py plan-marshall:tools-permission-fix:permission-fix ensure-wildcards \
   --settings ~/.claude/settings.json \
   --marketplace-json marketplace/.claude-plugin/marketplace.json \
   --dry-run
@@ -77,7 +77,7 @@ If yes, run without `--dry-run`.
 Detect permissions for bundles that no longer exist:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:permission-doctor:permission-doctor detect-redundant --scope both
+python3 .plan/execute-script.py plan-marshall:tools-permission-doctor:permission-doctor detect-redundant --scope both
 ```
 
 Report any redundant or stale permissions found.

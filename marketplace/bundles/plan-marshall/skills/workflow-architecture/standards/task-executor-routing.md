@@ -31,7 +31,7 @@ Task executors are workflow skills that handle the actual implementation or test
 │  ┌─────────────────────────────────────────────────────────────┐ │
 │  │ "task_executors": {                                         │ │
 │  │   "implementation": "plan-marshall:task-implementation",      │ │
-│  │   "module_testing": "plan-marshall:task-module_testing",      │ │
+│  │   "module_testing": "plan-marshall:task-module-testing",      │ │
 │  │   "integration_testing": "plan-marshall:task-integration_testing" │
 │  │ }                                                           │ │
 │  └─────────────────────────────────────────────────────────────┘ │
@@ -63,7 +63,7 @@ Task executors are configured in the system domain:
       "workflow_skills": { ... },
       "task_executors": {
         "implementation": "plan-marshall:task-implementation",
-        "module_testing": "plan-marshall:task-module_testing",
+        "module_testing": "plan-marshall:task-module-testing",
         "integration_testing": "plan-marshall:task-integration_testing"
       }
     }
@@ -111,7 +111,7 @@ error: Unknown profile 'X'. Available profiles: implementation, module_testing, 
 | Profile | Purpose | Default Task Executor |
 |---------|---------|----------------------|
 | `implementation` | Production code creation/modification | `plan-marshall:task-implementation` |
-| `module_testing` | Unit/module test creation | `plan-marshall:task-module_testing` |
+| `module_testing` | Unit/module test creation | `plan-marshall:task-module-testing` |
 | `integration_testing` | Integration test creation | `plan-marshall:task-integration_testing` |
 
 **Why underscores?** Profiles are used as:

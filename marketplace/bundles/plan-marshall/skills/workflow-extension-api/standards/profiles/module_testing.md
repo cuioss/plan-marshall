@@ -2,7 +2,7 @@
 
 Workflow skill contract for module_testing profile - implements test creation tasks.
 
-**System Default**: `plan-marshall:task-module_testing`
+**System Default**: `plan-marshall:task-module-testing`
 
 ---
 
@@ -55,7 +55,7 @@ fallback: false
 **Result (no domain override, system fallback)**:
 ```toon
 status: success
-workflow_skill: plan-marshall:task-module_testing
+workflow_skill: plan-marshall:task-module-testing
 fallback: true
 ```
 
