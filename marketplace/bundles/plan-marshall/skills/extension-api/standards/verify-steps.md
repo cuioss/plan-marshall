@@ -104,11 +104,11 @@ Users can toggle individual steps after initial configuration:
 
 ```bash
 # Disable a step
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-5-execute set-domain-step --domain java --step 1_technical_impl --enabled false
 
 # Change the agent for a step
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-5-execute set-domain-step-agent --domain java --step 1_technical_impl --agent pm-dev-java:java-verify-agent
 ```
 
@@ -192,5 +192,5 @@ Steps reference agents rather than embedding verification logic because:
 ## Related Specifications
 
 - [extension-contract.md](extension-contract.md) — Extension API contract
-- [data-model.md](../../manage-plan-marshall-config/standards/data-model.md) — marshal.json structure for `verification_domain_steps`
+- [data-model.md](../../manage-config/standards/data-model.md) — marshal.json structure for `verification_domain_steps`
 - [phase-4-plan SKILL.md](../../../../plan-marshall/skills/phase-4-plan/SKILL.md) — Holistic verification task creation

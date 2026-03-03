@@ -26,7 +26,7 @@ Generic, domain-invariant recipe skill for refactoring code to comply with the c
 Resolve the skills for the selected profile from the configured skill domains:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   resolve-domain-skills --domain {recipe_domain} --profile {recipe_profile}
 ```
 
@@ -124,7 +124,7 @@ Write `solution_outline.md` with all deliverables, grouped by module:
 
 ## Related
 
-- `plan-marshall:manage-plan-marshall-config resolve-domain-skills` — Dynamic skill resolution
+- `plan-marshall:manage-config resolve-domain-skills` — Dynamic skill resolution
 - `plan-marshall:manage-architecture architecture module` — Module/package query
 - `plan-marshall:plan-marshall` recipe workflow — Sets metadata and invokes phase-3-outline
 - `plan-marshall:phase-3-outline` Step 2.5 — Loads this skill with input parameters

@@ -13,12 +13,12 @@
   "agents": [
     "./agents/research-best-practices-agent.md",
     "./agents/detect-change-type-agent.md",
-    "./agents/plan-init-agent.md",
+    "./agents/phase-1-init-agent.md",
     "./agents/q-gate-validation-agent.md",
-    "./agents/request-refine-agent.md",
-    "./agents/solution-outline-agent.md",
-    "./agents/task-execute-agent.md",
-    "./agents/task-plan-agent.md"
+    "./agents/phase-2-refine-agent.md",
+    "./agents/phase-3-outline-agent.md",
+    "./agents/phase-5-execute-agent.md",
+    "./agents/phase-4-plan-agent.md"
   ],
   "commands": [
     "./commands/tools-fix-intellij-diagnostics.md",
@@ -38,7 +38,7 @@
     "./skills/tools-file-ops",
     "./skills/tools-integration-ci",
     "./skills/tools-json-ops",
-    "./skills/tools-web-permissions",
+    "./skills/tools-permission-web",
     "./skills/tools-permission-sync",
     "./skills/tools-script-executor",
     "./skills/manage-tasks",
@@ -55,8 +55,8 @@
     "./skills/task-implementation",
     "./skills/task-module-testing",
     "./skills/task-verification",
-    "./skills/workflow-architecture",
-    "./skills/workflow-extension-api",
+    "./skills/ref-workflow-architecture",
+    "./skills/ref-workflow-extension-api",
     "./skills/workflow-integration-ci",
     "./skills/workflow-integration-git",
     "./skills/workflow-integration-sonar",

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for triage extension loading via plan-marshall-config API.
+"""Tests for triage extension loading via manage-config API.
 
 Tests the resolve-workflow-skill-extension command for triage extensions.
 """
@@ -12,8 +12,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from conftest import PlanContext, get_script_path, run_script  # noqa: E402
 
-# Get script path for plan-marshall-config
-SCRIPT_PATH = get_script_path('plan-marshall', 'manage-plan-marshall-config', 'plan-marshall-config.py')
+# Get script path for manage-config
+SCRIPT_PATH = get_script_path('plan-marshall', 'manage-config', 'manage-config.py')
 
 # Import toon_parser - conftest sets up PYTHONPATH
 from toon_parser import parse_toon  # type: ignore[import-not-found]  # noqa: E402

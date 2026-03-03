@@ -333,7 +333,7 @@ class ExtensionBase(ABC):
 
         Purpose:
             Loaded by the workflow-outline-change-type skill (via
-            solution-outline-agent). Provides domain-specific outline
+            phase-3-outline-agent). Provides domain-specific outline
             instructions instead of generic plan-marshall:workflow-outline-change-type
             standards.
 

@@ -20,7 +20,7 @@ Classify Maven build profiles that weren't auto-matched during discovery.
 - Every workflow step that performs a script operation has an explicit bash code block with the full `python3 .plan/execute-script.py` command (Rule 9)
 - Use `pm-dev-java:manage-maven-profiles:profiles` notation for this skill's own script operations
 - Use `plan-marshall:manage-architecture:architecture` notation for architecture queries
-- Use `plan-marshall:manage-plan-marshall-config:plan-marshall-config` notation for config operations
+- Use `plan-marshall:manage-config:manage-config` notation for config operations
 
 ## When to Use
 
@@ -120,22 +120,22 @@ AskUserQuestion:
 **Skip** - Add to skip list:
 ```bash
 # Get current value first
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config ext-defaults get \
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config ext-defaults get \
   --key build.maven.profiles.skip
 
 # Append new profile (comma-separated)
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config ext-defaults set \
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config ext-defaults set \
   --key build.maven.profiles.skip --value "{existing},{profile-id}"
 ```
 
 **Map** - Add canonical mapping:
 ```bash
 # Get current mappings first
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config ext-defaults get \
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config ext-defaults get \
   --key build.maven.profiles.map.canonical
 
 # Append new mapping (comma-separated profile:canonical pairs)
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config ext-defaults set \
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config ext-defaults set \
   --key build.maven.profiles.map.canonical --value "{existing},{profile-id}:{canonical}"
 ```
 

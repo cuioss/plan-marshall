@@ -41,7 +41,7 @@ Architecture for unified CI operations using static routing pattern.
 |----------------|-------|
 | Menu presentation | marshall-steward |
 | User interaction | marshall-steward |
-| Configuration storage | plan-marshall-config |
+| Configuration storage | manage-config |
 | Timeout management | run-config |
 | Build commands | pm-dev-builder |
 

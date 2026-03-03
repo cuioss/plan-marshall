@@ -11,7 +11,7 @@ This skill provides structure guidelines, examples, and operations for `solution
 ## When to Load This Skill
 
 Load this skill in Step 0 when:
-- Creating a solution outline (via `solution-outline-agent` thin agent)
+- Creating a solution outline (via `phase-3-outline-agent` thin agent)
 - Reviewing or updating an existing solution outline
 - Validating solution document structure
 
@@ -224,7 +224,7 @@ python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-sol
 ## Integration
 
 **Loaded by**:
-- `plan-marshall:solution-outline-agent` (thin agent that loads domain skills from references.json)
+- `plan-marshall:phase-3-outline-agent` (thin agent that loads domain skills from references.json)
 - Domain skills: `pm-plugin-development:ext-outline-plugin`, etc.
 
 **Data Sources** (via skills):

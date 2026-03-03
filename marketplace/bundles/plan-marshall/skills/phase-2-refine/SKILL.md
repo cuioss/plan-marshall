@@ -131,7 +131,7 @@ Read the confidence threshold from project configuration.
 
 **EXECUTE**:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-2-refine get --field confidence_threshold --trace-plan-id {plan_id}
 ```
 
@@ -153,7 +153,7 @@ Read the compatibility approach from project configuration and persist to refere
 
 **EXECUTE**:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-2-refine get --field compatibility --trace-plan-id {plan_id}
 ```
 
@@ -792,7 +792,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 ## Integration
 
-**Invoked by**: `plan-marshall:request-refine-agent` (thin agent wrapper)
+**Invoked by**: `plan-marshall:phase-2-refine-agent` (thin agent wrapper)
 
 **Script Notations** (use EXACTLY as shown):
 - `plan-marshall:manage-architecture:architecture` - Architecture queries
@@ -800,7 +800,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 - `plan-marshall:manage-references:manage-references` - References persistence (track, scope, module_mapping, compatibility)
 - `plan-marshall:manage-findings:manage-findings` - Q-Gate findings (qgate add/query/resolve)
 - `plan-marshall:manage-logging:manage-log` - Work and decision logging
-- `plan-marshall:manage-plan-marshall-config:plan-marshall-config` - Project config (threshold, compatibility)
+- `plan-marshall:manage-config:manage-config` - Project config (threshold, compatibility)
 - `plan-marshall:manage-lifecycle:manage-lifecycle` - Phase transition management
 
 **Persistence Locations**:

@@ -21,15 +21,15 @@ This bundle provides **core infrastructure** organized into functional areas:
 |---------|-------------|
 | `/marshall-steward` | Project configuration wizard for planning system |
 | `/tools-fix-intellij-diagnostics` | Retrieve and fix IDE diagnostics automatically |
-| `/tools-web-permissions` | Analyze and consolidate WebFetch domain permissions |
+| `/tools-permission-web` | Analyze and consolidate WebFetch domain permissions |
 | `/tools-sync-agents-file` | Create or update project-specific agents.md file |
 
 ### Skills (20)
 
 | Category | Skills |
 |----------|--------|
-| **Configuration** | `plan-marshall-config`, `run-config`, `marshall-steward` |
-| **Permissions** | `tools-permission-doctor`, `tools-permission-fix`, `tools-web-permissions` |
+| **Configuration** | `manage-config`, `run-config`, `marshall-steward` |
+| **Permissions** | `tools-permission-doctor`, `tools-permission-fix`, `tools-permission-web` |
 | **Extension API** | `extension-api`, `manage-architecture` |
 | **Utilities** | `logging`, `script-executor`, `file-operations-base`, `json-file-operations` |
 | **Inventory** | `marketplace-inventory`, `marketplace-sync` |

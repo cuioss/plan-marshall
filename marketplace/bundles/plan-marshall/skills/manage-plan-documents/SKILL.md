@@ -372,7 +372,7 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-
   --body "$BODY"
 ```
 
-### With solution-outline-agent
+### With phase-3-outline-agent
 
 The thin agent reads the request document:
 

@@ -59,7 +59,7 @@ SCAN document for:
 **Check**:
 ```
 FOR each script call:
-  IF script is manage-plan-marshall-config:
+  IF script is manage-config:
     REQUIRE --trace-plan-id (not --plan-id)
   IF script is manage-log:
     REQUIRE --trace-plan-id for context
@@ -70,7 +70,7 @@ FOR each script call:
 **Parameter Matrix**:
 | Script Pattern | Required Parameter |
 |---------------|-------------------|
-| `manage-plan-marshall-config` | `--trace-plan-id` |
+| `manage-config` | `--trace-plan-id` |
 | `manage-log` | `--trace-plan-id` |
 | `manage-files` | `--plan-id` |
 | `manage-tasks` | `--plan-id` |
@@ -99,7 +99,7 @@ IF frontmatter contains implements:
 
 **Contract Locations**:
 - `plan-marshall:manage-solution-outline/standards/deliverable-contract.md`
-- `plan-marshall:workflow-extension-api/standards/extensions/*.md`
+- `plan-marshall:ref-workflow-extension-api/standards/extensions/*.md`
 
 ## Issue Types
 

@@ -444,20 +444,20 @@ def test_name_pattern_filters_agents():
 
 def test_name_pattern_multiple_patterns():
     """Test --name-pattern with multiple pipe-separated patterns."""
-    result = run_script(SCRIPT_PATH, '--direct-result', '--resource-types', 'agents', '--name-pattern', 'plan-*|task-*')
+    result = run_script(SCRIPT_PATH, '--direct-result', '--resource-types', 'agents', '--name-pattern', 'phase-*|detect-*')
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
     data = parse_toon(result.stdout)
     bundles = get_bundles(data)
     total_agents = data.get('statistics', {}).get('total_agents', 0)
-    assert total_agents >= 2, 'Should find at least 2 agents matching plan-* or task-* patterns'
+    assert total_agents >= 2, 'Should find at least 2 agents matching phase-* or detect-* patterns'
 
     # Verify all agents match one of the patterns (agents are strings in default mode)
     for bundle in bundles:
         for agent in bundle.get('agents', []):
             agent_name = agent if isinstance(agent, str) else agent.get('name', '')
-            assert agent_name.startswith('plan-') or agent_name.startswith('task-'), (
-                f'Agent {agent_name} should match plan-* or task-* pattern'
+            assert agent_name.startswith('phase-') or agent_name.startswith('detect-'), (
+                f'Agent {agent_name} should match phase-* or detect-* pattern'
             )
 
 
@@ -540,7 +540,7 @@ def test_combined_bundle_and_name_pattern():
         '--resource-types',
         'agents',
         '--name-pattern',
-        'plan-*',
+        'phase-*',
     )
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
@@ -549,12 +549,12 @@ def test_combined_bundle_and_name_pattern():
     assert len(bundles) == 1, 'Should have exactly 1 bundle'
     assert bundles[0]['name'] == 'plan-marshall', 'Bundle should be plan-marshall'
 
-    # Should find plan-init-agent (thin agent pattern)
+    # Should find phase-1-init-agent and other phase agents
     agents = bundles[0].get('agents', [])
-    assert len(agents) >= 1, 'Should find at least 1 plan-* agent in plan-marshall'
+    assert len(agents) >= 1, 'Should find at least 1 phase-* agent in plan-marshall'
     for agent in agents:
         agent_name = agent if isinstance(agent, str) else agent.get('name', '')
-        assert agent_name.startswith('plan-'), f'Agent {agent_name} should match plan-*'
+        assert agent_name.startswith('phase-'), f'Agent {agent_name} should match phase-*'
 
 
 # =============================================================================

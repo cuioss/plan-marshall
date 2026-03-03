@@ -66,7 +66,7 @@ Use `current_phase` for logging, `skill` for dynamic routing, and `completed_pha
 Cache the commit strategy for the entire execute loop:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-5-execute get --trace-plan-id {plan_id}
 ```
 
@@ -152,7 +152,7 @@ If `commit_strategy` is `per_plan` or `none` → Skip this step entirely.
 
 **3.7b**: If `verify_iteration >= verification_max_iterations` (from phase-5-execute config, default 5) → mark task `blocked`, log, continue to Step 4.
 
-**3.7c**: Load domain triage extension via workflow-extension-api (`provides_triage()`).
+**3.7c**: Load domain triage extension via ref-workflow-extension-api (`provides_triage()`).
 
 **3.7d**: Persist findings to Q-Gate:
 ```bash
@@ -234,7 +234,7 @@ This automatically updates status.toon and moves to the next phase.
 
 **After transition**, check `finalize_without_asking` config:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-5-execute get --field finalize_without_asking --trace-plan-id {plan_id}
 ```
 

@@ -23,7 +23,7 @@ Recipe skill for sweeping all marketplace bundles against plugin architecture st
 ### Step 1: Resolve Skills
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   resolve-domain-skills --domain plan-marshall-plugin-dev --profile implementation
 ```
 
@@ -32,7 +32,7 @@ Collect core + implementation defaults and optionals for skill references in del
 ### Step 2: List Modules
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   skill-domains get --domain plan-marshall-plugin-dev
 ```
 

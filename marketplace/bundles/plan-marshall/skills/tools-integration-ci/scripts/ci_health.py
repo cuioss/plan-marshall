@@ -290,7 +290,7 @@ def generate_ci_commands(provider: str) -> dict:
 def cmd_persist(args: argparse.Namespace) -> int:
     """Handle the 'persist' subcommand.
 
-    Delegates to plan-marshall-config ci persist for centralized marshal.json writes.
+    Delegates to manage-config ci persist for centralized marshal.json writes.
     """
     plan_dir = Path(args.plan_dir)
     marshal_path = plan_dir / 'marshal.json'

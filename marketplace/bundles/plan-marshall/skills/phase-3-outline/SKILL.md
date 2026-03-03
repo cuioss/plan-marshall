@@ -156,7 +156,7 @@ The `compatibility` and `compatibility_description` values are received from the
 
 **If compatibility not provided in input**, read from marshal.json:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-2-refine get --field compatibility --trace-plan-id {plan_id}
 ```
 
@@ -225,7 +225,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status metada
 
 2. Resolve recipe to get `default_change_type`:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   resolve-recipe --recipe {recipe_key}
 ```
 
@@ -638,7 +638,7 @@ qgate_pending_count: {0 if no findings}
 
 ## Integration
 
-**Invoked by**: `plan-marshall:solution-outline-agent` (thin agent)
+**Invoked by**: `plan-marshall:phase-3-outline-agent` (thin agent)
 
 **Script Notations** (use EXACTLY as shown):
 - `plan-marshall:manage-files:manage-files` - Read module_mapping from work/module_mapping.toon
@@ -668,6 +668,6 @@ qgate_pending_count: {0 if no findings}
 
 - [architecture-diagram.md](references/architecture-diagram.md) - Change-type routing architecture (normal plans)
 - [recipe-flow.md](references/recipe-flow.md) - Recipe flow architecture (built-in and custom recipes)
-- [change-types.md](../../workflow-architecture/standards/change-types.md) - Change type vocabulary and agent routing
+- [change-types.md](../../ref-workflow-architecture/standards/change-types.md) - Change type vocabulary and agent routing
 - [deliverable-contract.md](../../manage-solution-outline/standards/deliverable-contract.md) - Deliverable structure
-- [workflow-architecture](../../workflow-architecture) - Workflow architecture overview
+- [workflow-architecture](../../ref-workflow-architecture) - Workflow architecture overview

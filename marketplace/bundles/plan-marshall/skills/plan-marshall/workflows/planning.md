@@ -76,7 +76,7 @@ Create a new plan and automatically continue to 2-refine/3-outline/4-plan phases
 **1-Init Phase** uses a single agent:
 
 ```
-Task: plan-marshall:plan-init-agent
+Task: plan-marshall:phase-1-init-agent
   Input: description OR issue OR lesson_id
   Output: plan_id, domains array
 ```
@@ -173,7 +173,7 @@ The outline presented here has already passed Q-Gate verification. The user revi
 
 **Config check** — Read `plan_without_asking` to determine gate behavior:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-3-outline get --field plan_without_asking --trace-plan-id {plan_id}
 ```
 
@@ -239,7 +239,7 @@ AskUserQuestion:
 Only execute this step AFTER user approves in Step 3.
 
 ```
-Task: plan-marshall:task-plan-agent
+Task: plan-marshall:phase-4-plan-agent
   Input: plan_id={plan_id}
   Output: tasks created with domain, profile, skills
 ```
@@ -247,7 +247,7 @@ Task: plan-marshall:task-plan-agent
 Log task plan agent invocation:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:plan-marshall) Invoked task-plan-agent"
+  work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:plan-marshall) Invoked phase-4-plan-agent"
 ```
 
 **Step 4b**: Transition phase after tasks created:
@@ -258,7 +258,7 @@ python3 .plan/execute-script.py plan-marshall:manage-lifecycle:manage-lifecycle 
 
 **Step 4c**: Check `execute_without_asking` config to determine next action:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-4-plan get --field execute_without_asking --trace-plan-id {plan_id}
 ```
 

@@ -150,11 +150,11 @@ If you discover issues or improvements during execution, record them:
 | `plan-marshall:phase-1-init` | Init phase implementation |
 | `plan-marshall:phase-3-outline` | Outline phase implementation |
 | `plan-marshall:phase-6-finalize` | Finalize phase implementation |
-| `plan-marshall:workflow-extension-api` | Extension points for domain customization |
+| `plan-marshall:ref-workflow-extension-api` | Extension points for domain customization |
 
 | Agent | Purpose |
 |-------|---------|
-| `plan-marshall:plan-init-agent` | Init phase: creates plan, detects domains |
-| `plan-marshall:task-plan-agent` | Plan phase: creates tasks from deliverables |
+| `plan-marshall:phase-1-init-agent` | Init phase: creates plan, detects domains |
+| `plan-marshall:phase-4-plan-agent` | Plan phase: creates tasks from deliverables |
 | `pm-dev-java:java-implement-agent` | Java task implementation |
 | `pm-dev-frontend:js-implement-agent` | JavaScript task implementation |

@@ -25,7 +25,7 @@ Options:
 Component Notation:
     bundle:skill                    Skill (e.g., plan-marshall:phase-1-init)
     bundle:skill:script             Script (e.g., plan-marshall:manage-files:manage-files)
-    bundle:agents:name              Agent (e.g., plan-marshall:agents:plan-init-agent)
+    bundle:agents:name              Agent (e.g., plan-marshall:agents:phase-1-init-agent)
     bundle:commands:name            Command (e.g., plan-marshall:commands:tools-fix-intellij-diagnostics)
 
 Exit codes:

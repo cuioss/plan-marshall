@@ -133,7 +133,7 @@ python3 ${PLUGIN_ROOT}/plan-marshall/skills/tools-permission-fix/scripts/permiss
 Initialize marshal.json early to establish the `skill_domains` structure needed by later steps.
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config init
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config init
 ```
 
 **If marshal.json already exists**:
@@ -142,7 +142,7 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-m
 - If that fails with "skill_domains not configured", use `--force` to recreate:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config init --force
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config init --force
 ```
 
 **Output**: "Created .plan/marshal.json with defaults"
@@ -185,7 +185,7 @@ AskUserQuestion:
 
 Apply selection:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-1-init set --field branch_strategy --value {direct|feature}
 ```
 
@@ -207,7 +207,7 @@ Maps to values: `breaking`, `deprecation`, `smart_and_ask`
 
 Apply selection:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-2-refine set --field compatibility --value {breaking|deprecation|smart_and_ask}
 ```
 
@@ -229,7 +229,7 @@ Maps to values: `per_deliverable`, `per_plan`, `none`
 
 Apply selection:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-5-execute set --field commit_strategy --value {per_deliverable|per_plan|none}
 ```
 
@@ -274,7 +274,7 @@ AskUserQuestion:
 
 Apply: for each deselected step:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-5-execute set-step --step {step_name} --enabled false
 ```
 
@@ -305,7 +305,7 @@ AskUserQuestion:
 
 Apply: for each deselected step:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-6-finalize set-step --step {step_name} --enabled false
 ```
 
@@ -338,12 +338,12 @@ AskUserQuestion:
 
 Apply selections:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-5-execute set-max-iterations --value {5|3|10}
 ```
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-6-finalize set-max-iterations --value {3|1|5}
 ```
 
@@ -432,7 +432,7 @@ Check the `derived-data.json` for profiles with `"canonical": "NO-MATCH-FOUND"` 
 
 Load skill `pm-dev-java:manage-maven-profiles` and follow its workflow to:
 1. Ask user about each unmatched profile (Ignore/Skip/Map)
-2. Apply configuration via `plan-marshall-config ext-defaults` commands
+2. Apply configuration via `manage-config ext-defaults` commands
 3. Re-run discovery to apply changes:
 
 ```bash
@@ -475,7 +475,7 @@ extensions_used[2]:
 Query available domains dynamically from extension.py files:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   skill-domains get-available
 ```
 
@@ -506,7 +506,7 @@ Applicable domains (from architecture analysis):
 **Step 11d: Apply domain configuration**
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   skill-domains configure --domains "java,java-cui,javascript"
 ```
 
@@ -528,7 +528,7 @@ This populates `skill_domains` in marshal.json with:
 Task executors map profile values to workflow skills that execute tasks of that profile.
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   configure-task-executors
 ```
 
@@ -556,7 +556,7 @@ This auto-discovers profiles from configured domains and registers default task 
 Scan `.claude/skills/` for project-level skills and let the user assign them to configured domains.
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   skill-domains discover-project
 ```
 
@@ -583,7 +583,7 @@ If skills are found (`count > 0`), present them to the user with `AskUserQuestio
 For each assignment, call:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   skill-domains attach-project --domain {domain} --skills {comma-separated project:skill notations}
 ```
 
@@ -598,7 +598,7 @@ Skill domains configure which implementation skills are loaded during plan execu
 - **Technical domains**: Bundle reference and workflow_skill_extensions
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config skill-domains list
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config skill-domains list
 ```
 
 **Expected output**: Shows configured domains:

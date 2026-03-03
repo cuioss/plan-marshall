@@ -54,7 +54,7 @@ Multi-domain plans (e.g., fullstack features) have multiple domains in `marshal.
 Solution outline skills MUST validate domains exist in marshal.json:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-marshall-config:plan-marshall-config \
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   skill-domains get --domain {domain}
 ```
 
@@ -154,7 +154,7 @@ The `depends` field enables task-plan to determine execution order and paralleli
 
 ## Change Types
 
-The `change_type` field uses the fixed vocabulary defined in `plan-marshall:workflow-architecture/standards/change-types.md`.
+The `change_type` field uses the fixed vocabulary defined in `plan-marshall:ref-workflow-architecture/standards/change-types.md`.
 
 | Key | Priority | Description | Grouping Hint |
 |-----|----------|-------------|---------------|
