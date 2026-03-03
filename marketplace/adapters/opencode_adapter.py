@@ -25,7 +25,7 @@ import re
 import shutil
 from pathlib import Path
 
-from marketplace.adapters.adapter_base import AdapterBase
+from .adapter_base import AdapterBase
 
 # Tool name mapping: Claude Code -> OpenCode (lowercase equivalents)
 TOOL_NAME_MAP: dict[str, str] = {
