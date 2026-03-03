@@ -464,7 +464,7 @@ from run-config import timeout_get
 
 | Component | Naming | Example |
 |-----------|--------|---------|
-| Directory names | MAY use hyphens | `run-config/`, `json-file-operations/` |
+| Directory names | MAY use hyphens | `run-config/`, `manage-run-config/` |
 | Python files for import | MUST use underscores | `run_config.py`, `config_core.py` |
 | Entry-point-only scripts | MAY use hyphens | `doctor-marketplace.py` (if never imported) |
 

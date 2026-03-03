@@ -162,9 +162,6 @@ All scripts:
 
 ## Integration Points
 
-### With json-file-operations Skill
-- Uses generic JSON operations for low-level file access
-
 ### With Scripts Library
 - Memory scripts are discovered via scripts-library.toon
 - Use portable notation from Scripts table above

@@ -24,15 +24,14 @@ This bundle provides **core infrastructure** organized into functional areas:
 | `/tools-permission-web` | Analyze and consolidate WebFetch domain permissions |
 | `/tools-sync-agents-file` | Create or update project-specific agents.md file |
 
-### Skills (20)
+### Skills (18)
 
 | Category | Skills |
 |----------|--------|
 | **Configuration** | `manage-config`, `run-config`, `marshall-steward` |
 | **Permissions** | `tools-permission-doctor`, `tools-permission-fix`, `tools-permission-web` |
 | **Extension API** | `extension-api`, `manage-architecture` |
-| **Utilities** | `logging`, `script-executor`, `file-operations-base`, `json-file-operations` |
-| **Inventory** | `marketplace-inventory`, `marketplace-sync` |
+| **Utilities** | `logging`, `script-executor`, `file-operations-base` |
 | **Standards** | `general-development-rules`, `diagnostic-patterns`, `toon-usage` |
 | **Memory** | `manage-memories`, `lessons-learned` |
 | **CI** | `tools-integration-ci` |

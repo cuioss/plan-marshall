@@ -533,8 +533,43 @@ python3 .plan/execute-script.py pm-plugin-development:tools-marketplace-inventor
   validate --scope marketplace
 ```
 
+## Planning Inventory
+
+The `scan-planning-inventory` script provides a focused view of all planning-related components across the marketplace. It wraps `scan-marketplace-inventory` with predefined planning filters and categorizes results into core (plan-marshall) and derived (domain bundles) categories.
+
+### Usage
+
+```bash
+python3 .plan/execute-script.py pm-plugin-development:tools-marketplace-inventory:scan-planning-inventory scan
+```
+
+### Parameters
+
+| Parameter | Values | Default | Description |
+|-----------|--------|---------|-------------|
+| `--format` | `full`, `summary` | `full` | Output format |
+| `--include-descriptions` | flag | off | Include component descriptions from frontmatter |
+
+### Examples
+
+```bash
+# Full inventory with all details
+python3 .plan/execute-script.py pm-plugin-development:tools-marketplace-inventory:scan-planning-inventory scan --format full
+
+# Summary with component names only
+python3 .plan/execute-script.py pm-plugin-development:tools-marketplace-inventory:scan-planning-inventory scan --format summary
+
+# Include descriptions
+python3 .plan/execute-script.py pm-plugin-development:tools-marketplace-inventory:scan-planning-inventory scan --include-descriptions
+```
+
+### Output
+
+Results are organized into `core` (plan-marshall bundle) and `derived` (domain bundles) categories with statistics. Planning-related patterns: `plan-*`, `manage-*`, `*-workflow`, `workflow-*`, `task-*`, `*-task-plan`, `*-solution-outline`, `*-plan-*`.
+
 ## References
 
 - Script location: scripts/scan-marketplace-inventory.py
+- Planning inventory: scripts/scan-planning-inventory.py
 - Dependency resolution: scripts/resolve-dependencies.py
 - Marketplace root: marketplace/bundles/
