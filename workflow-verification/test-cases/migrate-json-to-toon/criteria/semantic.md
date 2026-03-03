@@ -54,8 +54,8 @@ All expected items must be found:
 
 | File | Reason |
 |------|--------|
-| plan-marshall/skills/tools-marketplace-inventory/SKILL.md | JSON output documentation |
-| plan-marshall/skills/tools-marketplace-inventory/scripts/scan-planning-inventory.py | print(json.dumps()) |
+| pm-plugin-development/skills/tools-marketplace-inventory/SKILL.md | JSON output documentation |
+| pm-plugin-development/skills/tools-marketplace-inventory/scripts/scan-planning-inventory.py | print(json.dumps()) |
 | plan-marshall/skills/workflow-integration-ci/SKILL.md | JSON output documentation |
 | plan-marshall/skills/workflow-integration-ci/scripts/pr.py | print(json.dumps()) |
 
