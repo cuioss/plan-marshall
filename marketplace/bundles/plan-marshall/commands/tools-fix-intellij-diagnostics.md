@@ -294,6 +294,16 @@ Uses:
 - pm-dev-builder:maven-builder agent (build verification)
 - general-purpose agent (git operations)
 
+## CONTINUOUS IMPROVEMENT RULE
+
+If you discover issues or improvements during execution:
+
+1. Activate `Skill: plan-marshall:manage-lessons`
+2. Record lesson with:
+   - Component: `{type: "command", name: "tools-fix-intellij-diagnostics", bundle: "plan-marshall"}`
+   - Category: bug | improvement | pattern | anti-pattern
+   - Summary and detail of the finding
+
 ## RELATED
 
 - pm-dev-builder:maven-builder agent
