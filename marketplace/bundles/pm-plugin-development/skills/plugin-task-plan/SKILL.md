@@ -1,7 +1,7 @@
 ---
 name: plugin-task-plan
 description: Create implementation tasks from deliverables using skill delegation
-user-invokable: false
+user-invocable: false
 ---
 
 # Plugin Task Plan Skill

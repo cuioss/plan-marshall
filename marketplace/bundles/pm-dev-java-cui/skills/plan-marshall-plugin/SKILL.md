@@ -1,7 +1,7 @@
 ---
 name: plan-marshall-plugin
 description: CUI Java domain manifest for plan-marshall workflow integration
-user-invokable: false
+user-invocable: false
 ---
 
 # Plan Marshall Plugin - CUI Java Domain

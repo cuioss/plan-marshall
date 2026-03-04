@@ -1,7 +1,7 @@
 ---
 name: workflow-integration-sonar
 description: Sonar issue workflow - fetch issues, triage, and fix or suppress based on context
-user-invokable: false
+user-invocable: false
 ---
 
 # Sonar Workflow Skill

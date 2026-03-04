@@ -1,7 +1,7 @@
 ---
 name: java-cdi
 description: Core CDI patterns including constructor injection, scopes, producers, and container configuration
-user-invokable: false
+user-invocable: false
 ---
 
 # Java CDI Skill

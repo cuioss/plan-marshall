@@ -1,7 +1,7 @@
 ---
 name: cui-javascript
 description: Core JavaScript development standards covering ES modules, modern patterns, code quality, async programming, and tooling
-user-invokable: false
+user-invocable: false
 ---
 
 # JavaScript Development Standards

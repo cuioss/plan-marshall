@@ -1,7 +1,7 @@
 ---
 name: tools-analyze-script-failures
 description: Analyze script failures to identify source components and propose fixes
-user-invokable: true
+user-invocable: true
 ---
 
 # Analyze Script Failures Skill

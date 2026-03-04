@@ -1,7 +1,7 @@
 ---
 name: phase-2-refine
 description: Iterative request clarification until confidence threshold reached
-user-invokable: false
+user-invocable: false
 ---
 
 # Phase 2: Refine Request

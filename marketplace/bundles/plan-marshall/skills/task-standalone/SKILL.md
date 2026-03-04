@@ -1,7 +1,7 @@
 ---
 name: task-standalone
 description: Implement GitHub issues or standalone tasks with full verification
-user-invokable: false
+user-invocable: false
 ---
 
 # Task Implementation Skill

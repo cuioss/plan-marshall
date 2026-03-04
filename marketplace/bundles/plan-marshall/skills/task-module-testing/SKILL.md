@@ -1,7 +1,7 @@
 ---
 name: task-module-testing
 description: Domain-agnostic module testing task execution with two-tier skill loading
-user-invokable: false
+user-invocable: false
 ---
 
 # Task Module Testing Skill

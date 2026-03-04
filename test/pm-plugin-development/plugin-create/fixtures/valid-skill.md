@@ -1,7 +1,7 @@
 ---
 name: test-skill
 description: Test skill for validation purposes
-user-invokable: true
+user-invocable: true
 ---
 
 # Test Skill

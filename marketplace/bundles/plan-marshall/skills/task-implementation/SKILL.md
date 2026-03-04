@@ -1,7 +1,7 @@
 ---
 name: task-implementation
 description: Domain-agnostic implementation task execution with two-tier skill loading
-user-invokable: false
+user-invocable: false
 ---
 
 # Task Implementation Skill

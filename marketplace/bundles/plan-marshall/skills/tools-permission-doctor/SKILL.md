@@ -1,7 +1,7 @@
 ---
 name: tools-permission-doctor
 description: Diagnose permission issues across settings files (read-only analysis)
-user-invokable: true
+user-invocable: true
 ---
 
 # Permission Doctor Skill

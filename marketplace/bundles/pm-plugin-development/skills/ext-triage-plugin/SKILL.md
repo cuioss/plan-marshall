@@ -1,7 +1,7 @@
 ---
 name: ext-triage-plugin
 description: Triage extension for marketplace plugin findings during plan-finalize phase
-user-invokable: false
+user-invocable: false
 ---
 
 # Plugin Development Triage Extension

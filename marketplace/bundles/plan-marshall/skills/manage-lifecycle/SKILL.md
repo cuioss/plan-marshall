@@ -1,7 +1,7 @@
 ---
 name: manage-lifecycle
 description: Plan lifecycle operations - discovery, phase transitions, archiving, and routing
-user-invokable: false
+user-invocable: false
 ---
 
 # Manage Lifecycle Skill

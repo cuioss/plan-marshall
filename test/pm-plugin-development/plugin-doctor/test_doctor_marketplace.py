@@ -596,7 +596,7 @@ def test_fixture_analyze_includes_subdocuments():
     skill_md.write_text("""---
 name: test-skill
 description: A test skill
-user-invokable: true
+user-invocable: true
 ---
 
 # Test Skill
@@ -645,7 +645,7 @@ def test_fixture_analyze_detects_subdoc_bloat():
     skill_md.write_text("""---
 name: test-skill
 description: A test skill
-user-invokable: true
+user-invocable: true
 ---
 
 # Test Skill
@@ -836,7 +836,7 @@ def test_fixture_analyze_skill_has_coverage():
     skill_md.write_text("""---
 name: test-skill
 description: A test skill
-user-invokable: true
+user-invocable: true
 ---
 
 # Test Skill

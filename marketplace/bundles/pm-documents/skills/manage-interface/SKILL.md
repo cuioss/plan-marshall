@@ -1,7 +1,7 @@
 ---
 name: manage-interface
 description: Manage Interface specifications with CRUD operations, automatic numbering, and AsciiDoc formatting
-user-invokable: false
+user-invocable: false
 ---
 
 # Interface Management Skill

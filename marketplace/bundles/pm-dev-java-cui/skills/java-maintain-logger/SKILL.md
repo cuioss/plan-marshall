@@ -1,7 +1,7 @@
 ---
 name: java-maintain-logger
 description: Execute systematic logging standards maintenance with plan tracking and comprehensive test coverage
-user-invokable: false
+user-invocable: false
 ---
 
 # Logger Maintain Skill

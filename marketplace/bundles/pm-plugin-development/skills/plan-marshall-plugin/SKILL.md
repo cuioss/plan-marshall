@@ -1,7 +1,7 @@
 ---
 name: plan-marshall-plugin
 description: Plugin development domain manifest with module discovery for plan-marshall workflow integration
-user-invokable: false
+user-invocable: false
 ---
 
 # Plan Marshall Plugin - Plugin Development Domain

@@ -1,7 +1,7 @@
 ---
 name: table-references-test
 description: Test skill with table-format references
-user-invokable: false
+user-invocable: false
 ---
 
 # Table References Test Skill

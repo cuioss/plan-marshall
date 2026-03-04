@@ -1,7 +1,7 @@
 ---
 name: manage-adr
 description: Manage Architectural Decision Records (ADRs) with CRUD operations, automatic numbering, and AsciiDoc formatting
-user-invokable: false
+user-invocable: false
 ---
 
 # ADR Management Skill

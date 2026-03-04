@@ -1,7 +1,7 @@
 ---
 name: java-maintenance
 description: Java code maintenance standards including prioritization, refactoring triggers, and compliance verification
-user-invokable: false
+user-invocable: false
 ---
 
 # Java Maintenance Skill

@@ -1,7 +1,7 @@
 ---
 name: code-block-examples-test
 description: Test skill with example code blocks that should NOT be detected as real references
-user-invokable: false
+user-invocable: false
 ---
 
 # Code Block Examples Test Skill

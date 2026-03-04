@@ -1,7 +1,7 @@
 ---
 name: ext-outline-workflow
 description: Shared workflow steps and verification knowledge for plugin development outline, loaded by workflow-outline-change-type skill
-user-invokable: false
+user-invocable: false
 ---
 
 # Plugin Development Outline Workflow

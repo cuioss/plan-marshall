@@ -1,7 +1,7 @@
 ---
 name: plugin-doctor
 description: Diagnose and fix quality issues in marketplace components with automated safe fixes and prompted risky fixes
-user-invokable: true
+user-invocable: true
 ---
 
 # Plugin Doctor Skill

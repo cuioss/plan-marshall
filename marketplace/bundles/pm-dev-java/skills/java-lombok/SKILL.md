@@ -1,7 +1,7 @@
 ---
 name: java-lombok
 description: Lombok patterns including @Delegate, @Builder, @Value, @UtilityClass for reducing boilerplate
-user-invokable: false
+user-invocable: false
 ---
 
 # Java Lombok Skill

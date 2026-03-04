@@ -95,7 +95,7 @@ class TestFrontmatterExtraction:
         content = """---
 name: test-skill
 description: A test skill
-user-invokable: true
+user-invocable: true
 ---
 
 # Content here
@@ -103,7 +103,7 @@ user-invokable: true
         frontmatter, end_line = extract_frontmatter(content)
         assert frontmatter['name'] == 'test-skill'
         assert frontmatter['description'] == 'A test skill'
-        assert frontmatter['user-invokable'] == 'true'
+        assert frontmatter['user-invocable'] == 'true'
         assert end_line > 0
 
     def test_extract_list_frontmatter(self):

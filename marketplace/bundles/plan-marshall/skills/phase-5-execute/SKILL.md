@@ -1,7 +1,7 @@
 ---
 name: phase-5-execute
 description: Execute phase skill for plan management. DUMB TASK RUNNER that executes tasks from TASK-*.json files sequentially.
-user-invokable: false
+user-invocable: false
 ---
 
 # Phase Execute Skill

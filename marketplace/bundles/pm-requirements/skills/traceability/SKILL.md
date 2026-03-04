@@ -1,7 +1,7 @@
 ---
 name: traceability
 description: Standards for linking specifications to implementation code and maintaining bidirectional traceability between documentation and source code
-user-invokable: false
+user-invocable: false
 ---
 
 # Traceability Standards

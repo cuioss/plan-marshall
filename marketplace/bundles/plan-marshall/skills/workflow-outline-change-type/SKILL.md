@@ -1,7 +1,7 @@
 ---
 name: workflow-outline-change-type
 description: Common workflow for change-type outline creation with conditional routing by change_type and domain
-user-invokable: false
+user-invocable: false
 ---
 
 # Outline Change-Type Skill

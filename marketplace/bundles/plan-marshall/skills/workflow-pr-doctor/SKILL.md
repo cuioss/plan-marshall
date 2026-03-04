@@ -1,7 +1,7 @@
 ---
 name: workflow-pr-doctor
 description: Diagnose and fix PR issues (build, reviews, Sonar)
-user-invokable: true
+user-invocable: true
 ---
 
 # PR Doctor Skill

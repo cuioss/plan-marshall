@@ -1,7 +1,7 @@
 ---
 name: tools-permission-web
 description: Analyze and consolidate WebFetch domain permissions across projects with security research and validation
-user-invokable: true
+user-invocable: true
 ---
 
 # Manage Web Permissions Skill

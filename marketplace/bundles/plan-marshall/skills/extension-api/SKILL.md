@@ -1,7 +1,7 @@
 ---
 name: extension-api
 description: Extension API for domain bundle discovery, module detection, and canonical command generation
-user-invokable: false
+user-invocable: false
 ---
 
 # Extension API Skill

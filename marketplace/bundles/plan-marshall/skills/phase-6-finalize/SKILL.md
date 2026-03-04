@@ -1,7 +1,7 @@
 ---
 name: phase-6-finalize
 description: Complete plan execution with git workflow and PR management
-user-invokable: false
+user-invocable: false
 ---
 
 # Phase Finalize Skill
