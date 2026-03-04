@@ -274,6 +274,16 @@ Track throughout workflow:
 - `files_modified`: Count of files updated with reference changes
 - `doc_ai_rules_removed`: Boolean flag
 
+## CONTINUOUS IMPROVEMENT RULE
+
+If you discover issues or improvements during execution:
+
+1. Activate `Skill: plan-marshall:manage-lessons`
+2. Record lesson with:
+   - Component: `{type: "command", name: "tools-sync-agents-file", bundle: "plan-marshall"}`
+   - Category: bug | improvement | pattern | anti-pattern
+   - Summary and detail of the finding
+
 ## RELATED
 
 - OpenAI agents.md specification: https://github.com/openai/agents.md
