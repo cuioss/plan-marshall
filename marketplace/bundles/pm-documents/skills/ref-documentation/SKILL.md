@@ -703,7 +703,7 @@ Status: ✅ Valid format
 
 Next steps:
 1. Edit {output_path} to fill in content
-2. Run /doc-doctor target={output_path} to validate
+2. Run ref-documentation validate-format workflow on {output_path} to validate
 ```
 
 ---

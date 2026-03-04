@@ -10,7 +10,7 @@ from pathlib import Path
 from conftest import get_script_path, run_script
 
 # Script under test
-SCRIPT_PATH = get_script_path('pm-dev-frontend', 'js-implement-tests', 'js-coverage.py')
+SCRIPT_PATH = get_script_path('pm-dev-frontend', 'plan-marshall-plugin', 'js-coverage.py')
 FIXTURES_DIR = Path(__file__).parent / 'coverage'
 
 

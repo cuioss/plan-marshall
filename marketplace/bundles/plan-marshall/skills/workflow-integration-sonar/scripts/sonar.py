@@ -193,7 +193,7 @@ def triage_issue(issue: dict) -> dict:
         'priority': priority,
         'suggested_implementation': fix_suggestion,
         'suppression_string': None,
-        'command_to_use': '/java-implement-code' if file.endswith('.java') else None,
+        'command_to_use': None,
         'status': 'success',
     }
 

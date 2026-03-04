@@ -17,6 +17,8 @@
     "./skills/cui-logging",
     "./skills/cui-testing",
     "./skills/cui-testing-http",
+    "./skills/java-enforce-logrecords",
+    "./skills/java-maintain-logger",
     "./skills/plan-marshall-plugin"
   ]
 }

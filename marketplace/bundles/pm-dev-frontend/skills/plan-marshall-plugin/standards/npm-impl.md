@@ -260,8 +260,8 @@ The `npm.py` script exposes these internal functions for use by `extension.py`:
 
 | Issue Type | Target Command |
 |------------|----------------|
-| compilation_error | `/js-implement-code` |
-| test_failure | `/js-implement-tests` |
+| compilation_error | Fix via task executor |
+| test_failure | Fix via task executor |
 | lint_error | `/js-enforce-eslint` |
 | dependency_error | Manual fix |
-| playwright_error | `/js-implement-tests` |
+| playwright_error | Fix via task executor |

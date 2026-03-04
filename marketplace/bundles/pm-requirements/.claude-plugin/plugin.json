@@ -13,7 +13,6 @@
   "agents": [],
   "commands": [],
   "skills": [
-    "./skills/cui-maintain-requirements",
     "./skills/ext-triage-reqs",
     "./skills/plan-marshall-plugin",
     "./skills/planning",

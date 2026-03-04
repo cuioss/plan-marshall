@@ -24,15 +24,6 @@ Task:
 
 ## Quality Operations
 
-### Java Quality
-**Trigger**: "quality check", "static analysis" (Java context)
-
-```
-Task:
-  subagent_type: pm-dev-java:java-quality-agent
-  prompt: Analyze code quality (checkstyle, PMD, SpotBugs)
-```
-
 ### JavaScript Lint
 **Trigger**: "lint", "eslint" (JavaScript context)
 
@@ -48,15 +39,6 @@ mcp__sonarqube__search_sonar_issues_in_projects
 ```
 
 ## Implementation Operations
-
-### Java Implementation
-**Trigger**: "implement" (Java context)
-
-```
-Task:
-  subagent_type: pm-dev-java:java-implement-agent
-  prompt: Execute Task {N}: {name}, Goal: {goal}, Criteria: {list}
-```
 
 ### JavaScript Implementation
 **Trigger**: "implement" (JavaScript context)
@@ -106,15 +88,6 @@ SlashCommand: /plugin-doctor {type}={name}
 ```
 
 ## Documentation Operations
-
-### JavaDoc Check
-**Trigger**: "javadoc", "documentation check" (Java)
-
-```
-Task:
-  subagent_type: pm-dev-java:java-fix-javadoc-agent
-  prompt: Check JavaDoc coverage (report only)
-```
 
 ### JSDoc Check
 **Trigger**: "jsdoc", "documentation check" (JavaScript)

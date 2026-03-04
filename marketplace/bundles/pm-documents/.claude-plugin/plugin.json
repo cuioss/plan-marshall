@@ -15,9 +15,6 @@
     "./commands/tools-verify-architecture-diagrams.md"
   ],
   "skills": [
-    "./skills/doc-create",
-    "./skills/doc-doctor",
-    "./skills/doc-maintain",
     "./skills/ext-triage-docs",
     "./skills/plan-marshall-plugin",
     "./skills/ref-documentation"

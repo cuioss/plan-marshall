@@ -80,15 +80,6 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 - Display: `"Run '/plan-marshall action=finalize plan={plan_id}' when ready."`
 - **STOP**
 
-### Domain Agent Routing
-
-| Domain | Agent |
-|--------|-------|
-| `java` | `pm-dev-java:java-implement-agent` |
-| `javascript` | `pm-dev-frontend:js-implement-agent` |
-| `plan-marshall-plugin-dev` | No delegation (inline) |
-| `generic` | No delegation (inline) |
-
 ---
 
 ## Finalize Phase
