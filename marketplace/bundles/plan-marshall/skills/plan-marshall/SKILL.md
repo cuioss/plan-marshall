@@ -156,5 +156,3 @@ If you discover issues or improvements during execution, record them:
 |-------|---------|
 | `plan-marshall:phase-1-init-agent` | Init phase: creates plan, detects domains |
 | `plan-marshall:phase-4-plan-agent` | Plan phase: creates tasks from deliverables |
-| `pm-dev-java:java-implement-agent` | Java task implementation |
-| `pm-dev-frontend:js-implement-agent` | JavaScript task implementation |

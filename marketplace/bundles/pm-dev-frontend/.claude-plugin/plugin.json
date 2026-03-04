@@ -20,11 +20,6 @@
     "./skills/ext-triage-js",
     "./skills/js-enforce-eslint",
     "./skills/js-fix-jsdoc",
-    "./skills/js-generate-coverage",
-    "./skills/js-implement-code",
-    "./skills/js-implement-tests",
-    "./skills/js-maintain-tests",
-    "./skills/js-refactor-code",
     "./skills/plan-marshall-plugin"
   ]
 }

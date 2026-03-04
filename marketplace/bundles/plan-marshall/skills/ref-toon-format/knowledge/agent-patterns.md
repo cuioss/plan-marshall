@@ -42,8 +42,8 @@ C.java,15
 
 **Example** - handoff-standard.toon:
 ```toon
-from_agent: java-quality-agent
-to_agent: java-implement-agent
+from_agent: quality-agent
+to_agent: verify-agent
 
 context:
   task: Fix code quality issues
@@ -129,7 +129,7 @@ next_steps[3]:
 **Example** - task-history.toon:
 ```toon
 session_id: 2025-11-26-001
-agent: java-implement-agent
+agent: implementation-agent
 
 completed_tasks[3]{task_id,description,status,timestamp}:
 TASK-001,Fix resource leak,completed,2025-11-26T10:00:00Z
@@ -205,15 +205,15 @@ Process and {action}.
 
 **Example**:
 ```
-You are receiving a handoff from java-quality-agent.
+You are receiving a handoff from quality-agent.
 
 The data uses TOON format:
 - Arrays: issues[N]{file,line,severity,rule,message}:
 - Rows: CSV-style values
 
 ---
-from_agent: java-quality-agent
-to_agent: java-implement-agent
+from_agent: quality-agent
+to_agent: verify-agent
 
 issues[2]{file,line,severity,rule,message}:
 Example.java,42,BLOCKER,S2095,Use try-with-resources
@@ -248,8 +248,8 @@ instructions[N]:
 ```
 Generate handoff in TOON format:
 
-from_agent: java-quality-agent
-to_agent: java-implement-agent
+from_agent: quality-agent
+to_agent: verify-agent
 
 context:
   task: Fix code quality issues

@@ -51,6 +51,22 @@ CUI MockWebServer wrapper for HTTP testing.
 - CUI MockWebServer usage
 - HTTP test patterns
 
+### java-enforce-logrecords
+Enforce CUI logging standards by validating LogRecord usage, testing coverage, and identifier organization.
+
+**Key workflows:**
+- Validate LogRecord patterns across modules
+- Enforce LogMessages class conventions
+- Verify test coverage for logging paths
+
+### java-maintain-logger
+Systematic logging standards maintenance with plan tracking and comprehensive test coverage.
+
+**Key workflows:**
+- Migrate legacy loggers to CuiLogger
+- Add LogRecord usage where missing
+- Create/update LogMessages classes
+
 ## Usage
 
 Load skills based on project needs:
@@ -65,6 +81,8 @@ skills:
   # CUI-specific (from this bundle)
   - pm-dev-java-cui:cui-logging
   - pm-dev-java-cui:cui-testing
+  - pm-dev-java-cui:java-enforce-logrecords
+  - pm-dev-java-cui:java-maintain-logger
 ```
 
 ## Dependencies

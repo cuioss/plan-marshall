@@ -64,11 +64,11 @@ plan-marshall:
 
 pm-dev-java:
   path: marketplace/bundles/pm-dev-java
-  agents[9]:
+  agents[2]:
     - java-coverage-agent
-    - java-implement-agent
-  skills[15]:
-    - cui-java-core
+    - java-verify-agent
+  skills[12]:
+    - java-core
     - java-cdi
 
 statistics:

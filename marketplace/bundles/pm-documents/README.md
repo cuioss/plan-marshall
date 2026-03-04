@@ -4,76 +4,9 @@ AsciiDoc and documentation standards enforcement for CUI projects. This bundle p
 
 ## Purpose
 
-This bundle covers the full documentation lifecycle through three goal-based commands:
-
-1. **CREATE** - Generate new documentation from templates
-2. **DOCTOR** - Diagnose documentation issues (format, links, content)
-3. **MAINTAIN** - Keep documentation healthy (sync, cleanup, update)
+This bundle provides documentation domain knowledge through the core `ref-documentation` skill, plus specialized management skills for ADRs and interface specifications.
 
 ## Components Included
-
-### Commands (3 goal-based orchestrators)
-
-| Command | Purpose | Use When |
-|---------|---------|----------|
-| **/doc-create** | Create new documentation | Starting a new doc |
-| **/doc-doctor** | Diagnose issues | Validating documentation |
-| **/doc-maintain** | Maintain documentation | Keeping docs healthy |
-
-#### /doc-doctor (Diagnose)
-
-Unified diagnostic command replacing the deprecated review commands.
-
-```
-/doc-doctor [target=<path>] [depth=quick|standard|thorough]
-
-Examples:
-  /doc-doctor                              # Current directory, standard depth
-  /doc-doctor target=standards/            # Specific directory
-  /doc-doctor target=README.adoc           # Single file
-  /doc-doctor depth=thorough               # Full review including content
-```
-
-**Depth levels:**
-- `quick` - Format validation only
-- `standard` - Format + link verification (default)
-- `thorough` - Format + links + content review
-
-#### /doc-create (Create)
-
-Create new documents from templates.
-
-```
-/doc-create type=<type> name=<name> [path=<path>]
-
-Examples:
-  /doc-create type=standard name=java-logging
-  /doc-create type=readme name=MyProject
-  /doc-create type=guide name=setup-guide
-```
-
-**Document types:**
-- `standard` - Technical specification (→ standards/{name}.adoc)
-- `readme` - Project README (→ README.adoc)
-- `guide` - How-to guide (→ docs/{name}.adoc)
-
-#### /doc-maintain (Maintain)
-
-Maintenance operations for existing documentation.
-
-```
-/doc-maintain action=<action> [target=<path>]
-
-Examples:
-  /doc-maintain action=update              # Refresh metadata
-  /doc-maintain action=sync target=docs/   # Sync with code
-  /doc-maintain action=cleanup             # Remove stale content
-```
-
-**Actions:**
-- `sync` - Sync documentation with code changes
-- `cleanup` - Remove stale/duplicate content
-- `update` - Refresh metadata and cross-references
 
 ### Skills (3 skills)
 
@@ -91,7 +24,7 @@ Examples:
 | **cleanup-stale** | Remove stale documentation |
 | **refresh-metadata** | Update metadata and xrefs |
 
-**manage-adr** - Architectural Decision Records skill (5 workflows):
+**manage-adr** - Architectural Decision Records skill (5 workflows, script-only):
 
 | Workflow | Purpose |
 |----------|---------|
@@ -101,7 +34,7 @@ Examples:
 | **update-adr** | Update ADR status |
 | **delete-adr** | Delete ADR with confirmation |
 
-**manage-interface** - Interface specifications skill (5 workflows):
+**manage-interface** - Interface specifications skill (5 workflows, script-only):
 
 | Workflow | Purpose |
 |----------|---------|
@@ -111,6 +44,16 @@ Examples:
 | **update-interface** | Update interface content |
 | **delete-interface** | Delete interface with confirmation |
 
+**ext-triage-docs** - Extension point for documentation finding triage
+
+**plan-marshall-plugin** - Extension registration
+
+### Commands (1 command)
+
+| Command | Purpose |
+|---------|---------|
+| **tools-verify-architecture-diagrams** | Specialized PlantUML verification |
+
 ### Templates
 
 Located in skill `templates/` directories:
@@ -119,52 +62,12 @@ Located in skill `templates/` directories:
 - `readme-template.adoc` - Project README template
 - `guide-template.adoc` - How-to guide template
 
-## Installation
-
-```bash
-/plugin install pm-documents
-```
-
-## Usage Examples
-
-### Quick Validation
-
-```
-/doc-doctor depth=quick
-```
-
-### Full Documentation Review
-
-```
-/doc-doctor depth=thorough
-```
-
-### Create New Standard
-
-```
-/doc-create type=standard name=new-feature
-```
-
-### Sync Documentation After Code Changes
-
-```
-/doc-maintain action=sync target=docs/
-```
-
-### Clean Up Stale Documentation
-
-```
-/doc-maintain action=cleanup
-```
-
 ## Architecture
 
 ```
 pm-documents/
-├── commands/                     # 3 goal-based commands
-│   ├── doc-doctor.md             # Unified diagnostic
-│   ├── doc-create.md             # Create from templates
-│   └── doc-maintain.md           # Maintenance operations
+├── commands/
+│   └── tools-verify-architecture-diagrams.md
 └── skills/
     ├── ref-documentation/        # Core documentation skill (9 workflows)
     │   ├── SKILL.md
@@ -172,30 +75,22 @@ pm-documents/
     │   ├── workflows/            # Operational procedures
     │   ├── templates/            # Document templates
     │   └── scripts/              # Automation scripts
-    ├── manage-adr/           # ADR management skill (5 workflows)
+    ├── manage-adr/               # ADR management skill (5 workflows)
     │   ├── SKILL.md
     │   ├── scripts/
     │   └── templates/
-    └── manage-interface/     # Interface spec skill (5 workflows)
-        ├── SKILL.md
-        ├── scripts/
-        └── templates/
+    ├── manage-interface/         # Interface spec skill (5 workflows)
+    │   ├── SKILL.md
+    │   ├── scripts/
+    │   └── templates/
+    ├── ext-triage-docs/          # Triage extension point
+    └── plan-marshall-plugin/     # Extension registration
 ```
-
-## Goal-Based Command Pattern
-
-```
-CREATE:   /doc-create   → ref-documentation → create-from-template
-DOCTOR:   /doc-doctor   → ref-documentation → comprehensive-review
-MAINTAIN: /doc-maintain → ref-documentation → sync/cleanup/refresh
-```
-
-All commands are thin orchestrators (<150 lines) that delegate to skill workflows.
 
 ## Bundle Statistics
 
-- **Commands**: 3
-- **Skills**: 3 (with 19 total workflows)
+- **Commands**: 1
+- **Skills**: 5 (with 19 total workflows)
 - **Templates**: 5+
 - **Scripts**: 8+
 
@@ -203,5 +98,4 @@ All commands are thin orchestrators (<150 lines) that delegate to skill workflow
 
 ### Inter-Bundle Dependencies
 
-- **planning** (optional) - For commit workflow in batch processing
 - **plan-marshall** (optional) - For script-runner workflow

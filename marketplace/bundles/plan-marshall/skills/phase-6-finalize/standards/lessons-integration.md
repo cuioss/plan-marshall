@@ -51,7 +51,7 @@ python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lesson add \
 ```
 
 **Component identifier** follows the pattern:
-- Skills: `{bundle}:{skill-name}` (e.g., `pm-dev-java:java-implement-code`)
+- Skills: `{bundle}:{skill-name}` (e.g., `pm-dev-java:java-core`)
 - Scripts: `{bundle}:{skill}:{script}` (e.g., `plan-marshall:manage-tasks:manage-tasks`)
 - Build: `{build-system}` (e.g., `maven`, `npm`)
 
@@ -82,7 +82,7 @@ python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lesson add \
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lesson add \
-  --component "pm-dev-java:java-implement-agent" \
+  --component "pm-dev-java:java-core" \
   --category improvement \
   --title "Use constructor injection over field injection for CDI beans" \
   --detail "Constructor injection makes dependencies explicit and testable. Field injection hides dependencies and makes unit testing harder."

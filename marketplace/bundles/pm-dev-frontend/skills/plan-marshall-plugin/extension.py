@@ -58,19 +58,10 @@ class Extension(ExtensionBase):
                             'skill': 'pm-dev-frontend:js-enforce-eslint',
                             'description': 'ESLint, Prettier, and Stylelint configuration and enforcement with systematic fixing',
                         },
-                        {
-                            'skill': 'pm-dev-frontend:js-refactor-code',
-                            'description': 'Execute systematic JavaScript refactoring with standards compliance verification',
-                        },
                     ],
                 },
                 'module_testing': {
-                    'defaults': [
-                        {
-                            'skill': 'pm-dev-frontend:js-implement-tests',
-                            'description': 'Self-contained JavaScript test implementation with verification and iteration',
-                        }
-                    ],
+                    'defaults': [],
                     'optionals': [
                         {
                             'skill': 'pm-dev-frontend:cui-cypress',

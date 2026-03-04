@@ -175,7 +175,7 @@ class TestSonarTriage(unittest.TestCase):
         self.assertEqual(code, 0)
         result = parse_toon(stdout)
         self.assertEqual(result['action'], 'fix')
-        self.assertEqual(result['command_to_use'], '/java-implement-code')
+        self.assertIsNone(result.get('command_to_use'))
 
 
 class TestSonarMain(unittest.TestCase):
