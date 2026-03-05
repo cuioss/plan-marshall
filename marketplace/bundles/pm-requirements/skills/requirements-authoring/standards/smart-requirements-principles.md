@@ -246,7 +246,7 @@ Every requirement must be verifiable through testing.
 **Testable**: Load testing with performance monitoring tools
 ```
 
-## Quality Checklist
+## Quality Rules
 
 Before finalizing requirements, verify each is:
 

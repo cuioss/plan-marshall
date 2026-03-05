@@ -223,7 +223,7 @@ Refs #456
 ✅ test(auth): add unit tests for token validation
 ```
 
-## Verification Checklist
+## Verify
 
 Before committing, verify:
 

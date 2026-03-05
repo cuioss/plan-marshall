@@ -1003,7 +1003,7 @@ Parameters:
   target: "standards/"
 ```
 
-## Quality Verification Checklist
+## Quality Verification Rules
 
 All documentation must pass:
 

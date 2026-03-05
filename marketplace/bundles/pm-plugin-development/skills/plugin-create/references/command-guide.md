@@ -631,7 +631,7 @@ Re-run diagnosis
 Confirm fixes applied
 ```
 
-## Validation Checklist
+## Validation Rules
 
 Before creating command, verify:
 

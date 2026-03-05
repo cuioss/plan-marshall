@@ -464,7 +464,7 @@ messages[1]{id,text}:
 ❌ Exceed 3 levels of nesting
 ❌ Use TOON for API interchange (internal only)
 
-## Quality Checklist
+## Quality Rules
 
 When creating TOON handoffs or memory files:
 

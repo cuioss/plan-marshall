@@ -492,7 +492,7 @@ Format as structured JSON
 - Include execution time in report
 ```
 
-## Validation Checklist
+## Validation Rules
 
 Before creating agent, verify:
 

@@ -485,7 +485,7 @@ public UserInfo validateAndExtractUser(String token, @Nullable String expectedAu
 }
 ```
 
-## Quality Checklist
+## Quality Rules
 
 For comprehensive JavaDoc quality checklist covering all API types, see [javadoc-core.md](javadoc-core.md) section "Quality Checklist".
 

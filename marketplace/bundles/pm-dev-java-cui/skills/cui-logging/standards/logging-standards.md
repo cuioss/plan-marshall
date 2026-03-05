@@ -371,7 +371,7 @@ Grep: pattern="\.identifier\((\d+)\)"
 
 ---
 
-## Quality Checklist
+## Quality Rules
 
 ### Implementation
 - CuiLogger used (not SLF4J or Log4j)

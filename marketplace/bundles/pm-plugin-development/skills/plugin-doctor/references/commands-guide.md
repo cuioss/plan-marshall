@@ -113,7 +113,7 @@ If you discover issues during execution:
 | Wrong bundle prefix | Prefix on SlashCommand or missing on Task/Skill | Fix per reference format rules |
 | Embedded standards | Large standards blocks | Move to skill or reference guide |
 
-## Summary Checklist
+## Summary Rules
 
 - Thin wrapper delegating to skill (< 100 lines ideal, < 150 acceptable)
 - No workflow logic in command (all in skill)

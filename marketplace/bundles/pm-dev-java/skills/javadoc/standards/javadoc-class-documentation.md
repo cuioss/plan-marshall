@@ -399,7 +399,7 @@ public class TokenCache<K, V extends Token> {
 }
 ```
 
-## Quality Checklist
+## Quality Rules
 
 For comprehensive JavaDoc quality checklist covering all API types, see [javadoc-core.md](javadoc-core.md) section "Quality Checklist".
 

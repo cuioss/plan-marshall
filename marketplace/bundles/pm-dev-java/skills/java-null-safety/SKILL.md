@@ -344,7 +344,7 @@ void shouldRejectNullParameters() {
 5. Add null checks with `Objects.requireNonNull()` at API boundaries
 6. Update tests to verify null-safety contracts
 
-## Quality Checklist
+## Quality Rules
 
 - Package has @NullMarked in package-info.java
 - No @Nullable used for return types (use Optional instead)

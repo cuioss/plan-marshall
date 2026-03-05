@@ -375,7 +375,7 @@ For non-marketplace use cases, external implementations exist:
 | **Human Readable** | ⚠️ OK | ✅ Good | ⚠️ OK | ✅ Excellent |
 | **Schema Clarity** | ❌ Implicit | ✅ Explicit | ❌ None | ❌ Implicit |
 
-## Adoption Checklist
+## Adoption Rules
 
 Before adopting TOON in your project:
 

@@ -591,7 +591,7 @@ standards/
 └── everything.md           (2500 lines - all standards in one file)
 ```
 
-## Validation Checklist
+## Validation Rules
 
 Before creating skill, verify:
 

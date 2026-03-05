@@ -235,7 +235,7 @@ public class PaymentService {
 
 ---
 
-## Quality Checklist
+## Quality Rules
 
 - Constructor injection used (never field/setter injection)
 - Final fields for all injected dependencies

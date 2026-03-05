@@ -612,7 +612,7 @@ grep -n "increment.*JWKS_JSON_PARSE_FAILED" src/main/java/
 
 ## Success Criteria
 
-### Logger Configuration Checklist
+### Logger Configuration Rules
 
 - Only CuiLogger instances used throughout codebase
 - No slf4j, log4j, or java.util.logging imports
@@ -621,7 +621,7 @@ grep -n "increment.*JWKS_JSON_PARSE_FAILED" src/main/java/
 - Logger instantiated with class: `new CuiLogger(ClassName.class)`
 - No @Slf4j or other logging annotations
 
-### LogRecord Implementation Checklist
+### LogRecord Implementation Rules
 
 - INFO level uses LogRecord (not direct strings)
 - WARN level uses LogRecord (not direct strings)
@@ -632,7 +632,7 @@ grep -n "increment.*JWKS_JSON_PARSE_FAILED" src/main/java/
 - All parameter substitutions use `%s` (not `{}`, `%d`, etc.)
 - Exception parameter comes first in all log calls with exceptions
 
-### LogMessages Structure Checklist
+### LogMessages Structure Rules
 
 - Module has LogMessages class if ≥10 types or ≥10 INFO+ messages
 - LogMessages follows 4-level DSL structure
@@ -644,7 +644,7 @@ grep -n "increment.*JWKS_JSON_PARSE_FAILED" src/main/java/
 - No duplicate identifiers within module
 - All LogRecords follow standard template pattern
 
-### Documentation Checklist
+### Documentation Rules
 
 - doc/LogMessages.adoc exists if module has LogMessages
 - Documentation follows standard table format
@@ -653,7 +653,7 @@ grep -n "increment.*JWKS_JSON_PARSE_FAILED" src/main/java/
 - Template strings match between docs and code
 - Identifier numbers match between docs and code
 
-### Testing Checklist
+### Testing Rules
 
 - All INFO level LogRecords tested with LogAsserts
 - All WARN level LogRecords tested with LogAsserts
@@ -668,7 +668,7 @@ grep -n "increment.*JWKS_JSON_PARSE_FAILED" src/main/java/
   - Production code (where .format() is called)
   - Business logic test (where LogAsserts verifies it)
 
-### Duplicate Resolution Checklist
+### Duplicate Resolution Rules
 
 - No identical log messages across different components
 - Similar messages consolidated with parameters

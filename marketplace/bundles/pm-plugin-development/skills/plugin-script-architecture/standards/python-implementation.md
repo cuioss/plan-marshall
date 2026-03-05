@@ -579,7 +579,7 @@ _PLAN_DIR_NAME = os.environ['PLAN_DIR_NAME']  # Raises KeyError if not set
 _PLAN_BASE = os.environ.get('PLAN_BASE_DIR')  # Wrong variable for path construction
 ```
 
-## Script Quality Checklist
+## Script Quality Rules
 
 Before marking script as "quality approved":
 

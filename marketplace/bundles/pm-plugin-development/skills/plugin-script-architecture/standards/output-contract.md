@@ -199,7 +199,7 @@ python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:fix extract 
   python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:fix apply
 ```
 
-## Output Quality Checklist
+## Output Quality Rules
 
 Before marking output as compliant:
 

@@ -6,7 +6,7 @@ Systematic process for optimizing Quarkus applications for native image compilat
 
 This process defines WHEN and WHAT to optimize in Quarkus applications for native image performance. It provides a systematic approach to identifying optimization opportunities, implementing improvements, and verifying results.
 
-## Pre-Optimization Checklist
+## Pre-Optimization Rules
 
 Before starting any native optimization work:
 

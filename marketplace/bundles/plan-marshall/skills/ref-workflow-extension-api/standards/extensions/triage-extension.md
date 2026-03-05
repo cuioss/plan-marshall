@@ -164,7 +164,7 @@ Triage decisions can be informed by lessons learned:
 
 See: phase-6-finalize contract for lessons integration details.
 
-## Validation Checklist
+## Validation Rules
 
 Triage extensions MUST:
 

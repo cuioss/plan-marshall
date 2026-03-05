@@ -265,7 +265,7 @@ The LogMessages.adoc file should be:
 4. **Reviewed in pull requests**: Documentation changes reviewed with code changes
 5. **Updated in same commit**: Update documentation in the same commit as LogMessages code changes
 
-## Quality Checklist
+## Quality Rules
 
 When creating or updating LogMessages.adoc:
 

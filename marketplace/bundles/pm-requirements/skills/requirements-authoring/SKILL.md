@@ -166,7 +166,7 @@ This skill integrates with:
 - ❌ Documenting features that don't exist or aren't planned
 - ✅ Verifying all documented features against code or approved plans
 
-## Quality Checklist
+## Quality Rules
 
 Before completing requirements/specification work:
 

@@ -369,7 +369,7 @@ public Optional<User> findUser(String userId) {
 }
 ```
 
-## Quality Checklist
+## Quality Rules
 
 Before completing JavaDoc documentation:
 

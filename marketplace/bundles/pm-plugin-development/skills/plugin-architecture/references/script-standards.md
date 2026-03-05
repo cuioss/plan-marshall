@@ -584,7 +584,7 @@ ls -l {script_path}
 chmod +x {script_path}
 ```
 
-## Script Quality Checklist
+## Script Quality Rules
 
 **Before marking script as "quality approved"**:
 - ✅ Documented in SKILL.md (purpose, input, output, usage)

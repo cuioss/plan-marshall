@@ -349,7 +349,7 @@ test -r "/app/certificates/tls.crt" && test -r "/app/certificates/tls.key"
 openssl s_client -connect localhost:8443 -verify_return_error
 ```
 
-## Security Validation Checklist
+## Security Validation Rules
 
 ### Pre-Deployment Security Validation
 

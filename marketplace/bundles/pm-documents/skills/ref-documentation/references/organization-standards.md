@@ -321,7 +321,7 @@ This directory contains standards for token validation:
 * Support collaborative editing through good organization
 * Use descriptive commit messages for documentation changes
 
-## Quality Checklist
+## Quality Rules
 
 ### Organization Compliance
 

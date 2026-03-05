@@ -88,7 +88,7 @@ Anti-bloat strategies: extract standards to reference files, use Skill dependenc
 | Self-invocation | `/plugin-update-agent` in CI rule | Use caller-reporting pattern |
 | Bloat > 500 lines | BLOATED/CRITICAL classification | Extract standards, use skills, condense |
 
-## Summary Checklist
+## Summary Rules
 
 - Frontmatter valid (name, description, tools array with Skill)
 - Tool fit score >= 90%

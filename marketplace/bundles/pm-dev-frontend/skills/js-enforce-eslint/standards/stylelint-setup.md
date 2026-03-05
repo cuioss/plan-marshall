@@ -460,7 +460,7 @@ export default {
 9. **Document exceptions** - Comment any rule overrides or disabled rules
 10. **Keep updated** - Regularly update StyleLint and plugins
 
-## Validation Checklist
+## Validation Rules
 
 - StyleLint 17+ installed with stylelint-order and postcss-lit plugins
 - .stylelintrc.js configured with ES module syntax

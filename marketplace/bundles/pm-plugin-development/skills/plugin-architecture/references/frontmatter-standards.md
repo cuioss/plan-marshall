@@ -585,7 +585,7 @@ tools: Bash(git:*), Bash(npm:*), Bash(mvn:*)
 2. **Can Be Bypassed**: Users can work around these restrictions
 3. **Purpose**: Convenience layer to prevent accidental operations, not foolproof isolation
 
-## Quality Checklist
+## Quality Rules
 
 Use this checklist when creating or reviewing frontmatter:
 

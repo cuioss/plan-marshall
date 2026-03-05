@@ -493,7 +493,7 @@ Run diagnosis:
 
 Fix any issues found.
 
-## Validation Checklist
+## Validation Rules
 
 Before releasing bundle, verify:
 

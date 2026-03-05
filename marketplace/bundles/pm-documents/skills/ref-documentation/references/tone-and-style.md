@@ -418,7 +418,7 @@ The validation engine supports three modes:
 Performance: Validates 50,000 tokens/second (example: benchmark details could be in benchmarks/results.md).
 ```
 
-## Quality Checklist
+## Quality Rules
 
 Before finalizing documentation, verify:
 

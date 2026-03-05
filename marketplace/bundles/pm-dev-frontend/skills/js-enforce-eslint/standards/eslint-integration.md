@@ -502,7 +502,7 @@ Solution:
 9. **Run incrementally in CI** - Lint only changed files
 10. **Monitor performance** - Optimize linting for large codebases
 
-## Integration Checklist
+## Integration Rules
 
 - ESLint v9 installed with all required plugins
 - package.json includes lint:js and lint:fix scripts

@@ -280,7 +280,7 @@ cp -r my-skill .claude/skills/
 # Test that relative paths resolve from marketplace/bundles/{bundle}/skills/my-skill/
 ```
 
-### Validation Checklist
+### Validation Rules
 
 - All `Read:` statements use relative paths
 - All script executions use relative paths

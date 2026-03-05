@@ -644,7 +644,7 @@ Skill: cui-java-core (600 lines)
 5. **Verify Context Isolation**
 6. **Document New Structure**
 
-## Quality Checklist
+## Quality Rules
 
 Use this checklist to verify minimal wrapper compliance:
 

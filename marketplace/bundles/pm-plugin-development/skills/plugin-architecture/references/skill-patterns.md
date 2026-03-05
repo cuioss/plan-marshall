@@ -563,7 +563,7 @@ Combines:
 - Pattern 9 (Validation): Validate output
 ```
 
-## Implementation Checklist
+## Implementation Rules
 
 When implementing a skill using these patterns:
 

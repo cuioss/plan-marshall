@@ -108,7 +108,7 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-
 
 ---
 
-## Checklist
+## Rules
 
 - Document definition created: `documents/{type}.toon`
 - All required fields marked with `true`

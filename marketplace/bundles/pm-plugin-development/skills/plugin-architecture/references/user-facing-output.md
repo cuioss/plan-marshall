@@ -313,7 +313,7 @@ See details: <plan-storage>/reports/analysis.md
 
 ---
 
-## Implementation Checklist
+## Implementation Rules
 
 When designing user-facing output:
 

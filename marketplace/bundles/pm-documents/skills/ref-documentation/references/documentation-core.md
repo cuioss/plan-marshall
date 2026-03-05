@@ -94,7 +94,7 @@ oauth.audience=your-api-id
 
 ## Documentation Quality
 
-### Review Checklist
+### Review Rules
 
 - Professional tone maintained
 - No marketing language

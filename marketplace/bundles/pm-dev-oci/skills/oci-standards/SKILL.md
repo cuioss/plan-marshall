@@ -77,7 +77,7 @@ Read standards/distroless-health-probes.md
 
 ## Quick Reference
 
-### Dockerfile Checklist
+### Dockerfile Rules
 
 - Minimal base image (distroless, alpine, slim)
 - Multi-stage build separating build and runtime

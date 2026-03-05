@@ -224,7 +224,7 @@ mvn clean verify -Pintegration-tests
 
 Without proper `<executions>` configuration, failsafe tests might not run or results might not be verified.
 
-## Verification Checklist
+## Verify
 
 - Normal build (`mvnw clean test`) excludes integration tests
 - Integration profile (`mvnw clean verify -Pintegration-tests`) skips unit tests

@@ -241,7 +241,7 @@ def copy_lesson_to_plan(lesson_file: Path, plan_dir: Path):  # BAD: accepts path
 | User-specified file | No | User explicitly provides path |
 | Configuration files | No | Paths defined in config are explicit |
 
-### Implementation Checklist
+### Implementation Rules
 
 When creating scripts that access cross-domain resources:
 

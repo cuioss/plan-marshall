@@ -373,7 +373,7 @@ _See Requirement link:Requirements.adoc#REQ-001[REQ-001: Token Validation]_
 - Maintain cross-reference integrity
 - Keep status indicators current
 
-## Quality Checklist
+## Quality Rules
 
 Before finalizing documentation:
 

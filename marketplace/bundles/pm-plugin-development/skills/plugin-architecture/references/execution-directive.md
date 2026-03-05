@@ -219,12 +219,12 @@ bash scripts/analyze-markdown-file.sh /path/to/component.md
 ```
 ```
 
-## Validation Checklist Pattern
+## Validation Pattern
 
 Convert passive reading into active verification:
 
 ```markdown
-## Verification Checklist
+## Verify
 
 After completing the workflow:
 
@@ -292,7 +292,7 @@ python3 .plan/execute-script.py {bundle}:{skill}:apply-changes --input results.j
 | `apply-changes.py` | **EXECUTE** | Applies processed changes |
 | `processing-rules.md` | READ | Rules for data processing |
 
-## Verification Checklist
+## Verify
 
 - Correct workflow selected based on conditions
 - All MANDATORY steps completed

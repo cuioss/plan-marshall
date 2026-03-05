@@ -723,7 +723,7 @@ After each phase completes, use this verification template:
 [PASS/FAIL with explanation]
 ```
 
-## Automated Verification Checklist
+## Automated Verification Rules
 
 After each planning command/skill execution, verify:
 

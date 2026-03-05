@@ -110,7 +110,7 @@ Periodically verify traceability integrity:
 - Don't defer link updates to later
 - Test navigation paths after changes
 
-## Maintenance Checklist
+## Maintenance Rules
 
 Run this checklist quarterly or after major changes:
 

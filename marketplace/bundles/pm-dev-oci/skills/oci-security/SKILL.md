@@ -92,7 +92,7 @@ Read standards/owasp-container-security.md
 
 ## Quick Reference
 
-### Runtime Security Checklist
+### Runtime Security Rules
 
 - `--cap-drop=ALL` with selective `--cap-add`
 - `--security-opt=no-new-privileges`

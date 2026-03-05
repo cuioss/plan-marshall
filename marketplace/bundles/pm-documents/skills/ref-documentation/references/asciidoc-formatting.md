@@ -277,7 +277,7 @@ information block
 
 ## Document Validation Requirements
 
-### Pre-Publication Checklist
+### Pre-Publication Rules
 
 Before finalizing any AsciiDoc document:
 
@@ -338,7 +338,7 @@ public class Example {
 ----  ✅ CORRECT
 ```
 
-## Quality Checklist
+## Quality Rules
 
 - Document header complete with all required attributes
 - Cross-references use `xref:` syntax

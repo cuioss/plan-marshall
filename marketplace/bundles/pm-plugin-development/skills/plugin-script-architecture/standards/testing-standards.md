@@ -568,7 +568,7 @@ Apply modularization when:
 - Main test file serves as API contract test
 - Individual module tests cover all variants and corner cases
 
-## Test Quality Checklist
+## Test Quality Rules
 
 Before marking tests as complete:
 

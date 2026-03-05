@@ -201,7 +201,7 @@ This catches:
 - New issues from fixes
 - Related issues now visible
 
-## Quality Checklist
+## Quality Rules
 
 After verification:
 

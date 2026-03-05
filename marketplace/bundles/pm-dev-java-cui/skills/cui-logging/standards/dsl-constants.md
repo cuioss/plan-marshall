@@ -325,7 +325,7 @@ public static final Duration SOME_OTHER_CONFIG = ...;
 public static final Duration TIMEOUT_2 = Duration.ofSeconds(30);
 ```
 
-## Quality Checklist
+## Quality Rules
 
 - @UtilityClass used for all levels
 - All classes and constants are public static final

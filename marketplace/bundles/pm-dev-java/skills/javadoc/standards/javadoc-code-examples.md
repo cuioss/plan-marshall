@@ -531,7 +531,7 @@ For links to external resources, use standard HTML anchors:
  */
 ```
 
-## Quality Checklist
+## Quality Rules
 
 For comprehensive JavaDoc quality checklist covering all API types, see [javadoc-core.md](javadoc-core.md) section "Quality Checklist".
 
