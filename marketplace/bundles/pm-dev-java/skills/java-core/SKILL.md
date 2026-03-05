@@ -53,6 +53,13 @@ Read: standards/java-performance-patterns.md
 
 Use when: Optimizing code or designing high-performance components. Covers string handling, autoboxing, collection sizing, thread safety, exception handling, and logging performance.
 
+**DSL-Style Nested Constants** (load for constant organization):
+```
+Read: standards/dsl-constants.md
+```
+
+Use when: Organizing related constants hierarchically using nested static classes with `@UtilityClass`. Covers configuration keys, error codes, resource bundles, logging messages, and best practices.
+
 ## Related Skills
 
 - `pm-dev-java:java-null-safety` - JSpecify null annotations
