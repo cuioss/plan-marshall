@@ -55,6 +55,12 @@
       "description": "Requirements engineering and specification standards for projects",
       "source": "./bundles/pm-requirements",
       "strict": false
+    },
+    {
+      "name": "pm-dev-oci",
+      "description": "OCI container security standards and best practices",
+      "source": "./bundles/pm-dev-oci",
+      "strict": false
     }
   ]
 }
