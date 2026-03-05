@@ -17,6 +17,7 @@ Activate when:
 - **Scanning vulnerabilities** - CI/CD integration, tool selection, remediation workflows
 - **Securing supply chain** - Image signing, SBOMs, provenance attestation
 - **Reviewing Dockerfiles** - Linting, security audit, compliance checks
+- **Health probes for distroless** - Management interface, Kubernetes probes, Prometheus scraping without TLS
 
 ## Available References
 
@@ -95,7 +96,32 @@ Read standards/runtime-security.md
 Read standards/supply-chain-security.md
 ```
 
-### 4. OWASP Container Security
+### 4. Distroless Health Probes
+
+**File**: `standards/distroless-health-probes.md`
+
+**Load When**:
+- Adding health checks to distroless container images
+- Configuring Quarkus management interface for health/metrics separation
+- Setting up Prometheus scraping without TLS complexity
+- Debugging missing health endpoints after native image builds
+- Writing Kubernetes liveness/readiness probes for distroless containers
+
+**Contents**:
+- Why standard HEALTHCHECK fails in distroless (no shell, no curl)
+- Quarkus management interface as the solution (port 9000, plain HTTP)
+- Build-time vs runtime properties — critical native image pitfall
+- Native build lifecycle requirements (`clean package` vs bare `quarkus:build`)
+- Startup log verification for management interface
+- Docker Compose, Prometheus, and Kubernetes probe configuration
+- Decision matrix for health strategy by image type
+
+**Load Command**:
+```
+Read standards/distroless-health-probes.md
+```
+
+### 5. OWASP Container Security
 
 **File**: `standards/owasp-container-security.md`
 
@@ -129,6 +155,7 @@ Read standards/owasp-container-security.md
 - [ ] BuildKit secrets for build-time credentials
 - [ ] Hadolint passes without errors
 - [ ] Vulnerability scan passes (no CRITICAL/HIGH)
+- [ ] Health probe strategy for distroless (management interface or orchestrator-native probes)
 
 ### Runtime Security Checklist
 
