@@ -28,7 +28,7 @@ user-invocable: true                # true = slash menu, false = internal
 
 Required fields: `name`, `description`, `user-invocable`.
 
-Skills do **not** support `tools` or `allowed-tools` fields (silently ignored by the plugin schema). Common errors: misspelling `user-invocable` as `user-invokable`, declaring unsupported `allowed-tools` field.
+Skills do **not** support `tools` or `allowed-tools` fields (silently ignored by the plugin schema). Common errors: using `user-invokable` instead of the correct `user-invocable`, declaring unsupported `allowed-tools` field.
 
 ## Progressive Disclosure
 
