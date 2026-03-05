@@ -335,11 +335,11 @@ When both are loaded, verification mode applies to all solution-outline operatio
 ## Quality Indicators
 
 Verification mode is working correctly when:
-- [ ] All script failures produce structured analysis
-- [ ] Resolution issues are caught before fallbacks
-- [ ] Workarounds are flagged before execution
-- [ ] User is always asked before proceeding
-- [ ] No silent failures or alternative paths taken
+- All script failures produce structured analysis
+- Resolution issues are caught before fallbacks
+- Workarounds are flagged before execution
+- User is always asked before proceeding
+- No silent failures or alternative paths taken
 
 ## Example Session
 

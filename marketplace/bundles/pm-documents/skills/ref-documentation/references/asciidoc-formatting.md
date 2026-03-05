@@ -281,14 +281,14 @@ information block
 
 Before finalizing any AsciiDoc document:
 
-- [ ] **Header Attributes**: All required document attributes present
-- [ ] **Section Hierarchy**: Proper heading levels and logical flow
-- [ ] **List Formatting**: Blank lines before all lists
-- [ ] **Cross-References**: All use `xref:` syntax for file references
-- [ ] **Code Blocks**: Language specification for all source blocks
-- [ ] **Grammar Check**: Proper AsciiDoc syntax throughout
-- [ ] **Link Validation**: All internal references resolve correctly
-- [ ] **Table of Contents**: Generated correctly with proper levels
+- **Header Attributes**: All required document attributes present
+- **Section Hierarchy**: Proper heading levels and logical flow
+- **List Formatting**: Blank lines before all lists
+- **Cross-References**: All use `xref:` syntax for file references
+- **Code Blocks**: Language specification for all source blocks
+- **Grammar Check**: Proper AsciiDoc syntax throughout
+- **Link Validation**: All internal references resolve correctly
+- **Table of Contents**: Generated correctly with proper levels
 
 ### Common Formatting Errors
 
@@ -340,17 +340,17 @@ public class Example {
 
 ## Quality Checklist
 
-- [ ] Document header complete with all required attributes
-- [ ] Cross-references use `xref:` syntax
-- [ ] Blank lines before all lists
-- [ ] Code blocks have language specification
-- [ ] Section hierarchy follows standards
-- [ ] Links have descriptive text
-- [ ] Tables properly formatted
-- [ ] Admonitions used appropriately
-- [ ] All validation scripts pass without errors
-- [ ] All cross-reference links resolve correctly
-- [ ] Document renders correctly in AsciiDoc processors
+- Document header complete with all required attributes
+- Cross-references use `xref:` syntax
+- Blank lines before all lists
+- Code blocks have language specification
+- Section hierarchy follows standards
+- Links have descriptive text
+- Tables properly formatted
+- Admonitions used appropriately
+- All validation scripts pass without errors
+- All cross-reference links resolve correctly
+- Document renders correctly in AsciiDoc processors
 
 ## References
 

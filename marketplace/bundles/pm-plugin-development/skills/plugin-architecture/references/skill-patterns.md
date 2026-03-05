@@ -567,19 +567,19 @@ Combines:
 
 When implementing a skill using these patterns:
 
-- [ ] Identify primary pattern type
-- [ ] Determine if combining patterns
-- [ ] Create directory structure matching pattern
-- [ ] Write SKILL.md following pattern template
-- [ ] Implement scripts (if pattern uses scripts)
-- [ ] Create templates/assets (if pattern uses them)
-- [ ] Write reference documentation (if pattern uses references)
-- [ ] Use relative paths for all resource paths
-- [ ] Keep SKILL.md under 800 lines
-- [ ] Test progressive disclosure (references loaded on-demand)
-- [ ] Validate allowed-tools list (minimal permissions)
-- [ ] Write unit tests for scripts
-- [ ] Test in different installation contexts
+- Identify primary pattern type
+- Determine if combining patterns
+- Create directory structure matching pattern
+- Write SKILL.md following pattern template
+- Implement scripts (if pattern uses scripts)
+- Create templates/assets (if pattern uses them)
+- Write reference documentation (if pattern uses references)
+- Use relative paths for all resource paths
+- Keep SKILL.md under 800 lines
+- Test progressive disclosure (references loaded on-demand)
+- Validate allowed-tools list (minimal permissions)
+- Write unit tests for scripts
+- Test in different installation contexts
 
 ## References
 

@@ -137,10 +137,10 @@ public static final LogRecord USER_LOGIN = LogRecordModel.builder()
 ```
 
 **Verification checklist**:
-- [ ] Identifier matches (AUTH-001 = prefix AUTH + identifier 1)
-- [ ] Component matches (AUTH)
-- [ ] Message template matches exactly (including `%s` placeholders)
-- [ ] Description explains when the message is logged
+- Identifier matches (AUTH-001 = prefix AUTH + identifier 1)
+- Component matches (AUTH)
+- Message template matches exactly (including `%s` placeholders)
+- Description explains when the message is logged
 
 ### 2. Update Synchronization
 
@@ -269,20 +269,20 @@ The LogMessages.adoc file should be:
 
 When creating or updating LogMessages.adoc:
 
-- [ ] File exists at `doc/LogMessages.adoc`
-- [ ] Contains all INFO level messages (001-099)
-- [ ] Contains all WARN level messages (100-199)
-- [ ] Contains all ERROR level messages (200-299)
-- [ ] Contains all FATAL level messages (300-399)
-- [ ] No DEBUG or TRACE messages documented
-- [ ] All identifiers match implementation exactly
-- [ ] All message templates match implementation exactly
-- [ ] All component prefixes match implementation
-- [ ] Tables organized by log level
-- [ ] Each message has a description
-- [ ] AsciiDoc syntax is correct
-- [ ] File is linked from Specification.adoc
-- [ ] Changes committed with corresponding code changes
+- File exists at `doc/LogMessages.adoc`
+- Contains all INFO level messages (001-099)
+- Contains all WARN level messages (100-199)
+- Contains all ERROR level messages (200-299)
+- Contains all FATAL level messages (300-399)
+- No DEBUG or TRACE messages documented
+- All identifiers match implementation exactly
+- All message templates match implementation exactly
+- All component prefixes match implementation
+- Tables organized by log level
+- Each message has a description
+- AsciiDoc syntax is correct
+- File is linked from Specification.adoc
+- Changes committed with corresponding code changes
 
 ## Benefits
 

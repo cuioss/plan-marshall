@@ -168,9 +168,9 @@ See: phase-6-finalize contract for lessons integration details.
 
 Triage extensions MUST:
 
-- [ ] Include suppression syntax section
-- [ ] Include severity guidelines section
-- [ ] Include acceptable-to-accept section
-- [ ] Be registered in marshal.json under `workflow_skill_extensions.triage`
-- [ ] Use `allowed-tools: Read` (reference skill, no writes)
-- [ ] Follow Pattern 10 (Reference Library) from plugin-architecture
+- Include suppression syntax section
+- Include severity guidelines section
+- Include acceptable-to-accept section
+- Be registered in marshal.json under `workflow_skill_extensions.triage`
+- Use `allowed-tools: Read` (reference skill, no writes)
+- Follow Pattern 10 (Reference Library) from plugin-architecture

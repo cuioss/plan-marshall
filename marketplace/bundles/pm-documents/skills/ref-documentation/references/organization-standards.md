@@ -325,31 +325,31 @@ This directory contains standards for token validation:
 
 ### Organization Compliance
 
-- [ ] Each document follows single aspect principle
-- [ ] Document size within 50-400 line range (or justified exception)
-- [ ] File naming follows kebab-case convention
-- [ ] No duplicate content across documents
-- [ ] All transitional markers removed
-- [ ] Current state only documented
-- [ ] All sources properly attributed
-- [ ] Cross-references accurate and up-to-date
+- Each document follows single aspect principle
+- Document size within 50-400 line range (or justified exception)
+- File naming follows kebab-case convention
+- No duplicate content across documents
+- All transitional markers removed
+- Current state only documented
+- All sources properly attributed
+- Cross-references accurate and up-to-date
 
 ### Structure Quality
 
-- [ ] Logical document organization
-- [ ] Clear navigation between related documents
-- [ ] README files provide overview where needed
-- [ ] Consistent formatting throughout
-- [ ] Proper section hierarchy
-- [ ] All links verified and working
+- Logical document organization
+- Clear navigation between related documents
+- README files provide overview where needed
+- Consistent formatting throughout
+- Proper section hierarchy
+- All links verified and working
 
 ### Maintenance Readiness
 
-- [ ] Documents easy to locate
-- [ ] Related content properly linked
-- [ ] Clear scope for each document
-- [ ] No orphaned documents
-- [ ] Documentation structure scalable
+- Documents easy to locate
+- Related content properly linked
+- Clear scope for each document
+- No orphaned documents
+- Documentation structure scalable
 
 ## Common Organization Issues and Solutions
 

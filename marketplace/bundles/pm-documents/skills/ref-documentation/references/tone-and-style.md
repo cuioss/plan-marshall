@@ -422,20 +422,20 @@ Performance: Validates 50,000 tokens/second (example: benchmark details could be
 
 Before finalizing documentation, verify:
 
-- [ ] Professional, neutral tone maintained
-- [ ] No marketing language (revolutionary, cutting-edge, powerful, etc.)
-- [ ] No self-praise or superlatives
-- [ ] No promotional wording
-- [ ] All claims are verifiable or attributed
-- [ ] No qualification patterns (production-proven, extensively tested, etc.)
-- [ ] No transitional markers (status indicators, TODO items)
-- [ ] Technical precision throughout
-- [ ] Concise, direct language
-- [ ] Jargon explained when used
-- [ ] Active voice preferred
-- [ ] Present tense for current features
-- [ ] Factual descriptions only
-- [ ] Sources attributed where appropriate
+- Professional, neutral tone maintained
+- No marketing language (revolutionary, cutting-edge, powerful, etc.)
+- No self-praise or superlatives
+- No promotional wording
+- All claims are verifiable or attributed
+- No qualification patterns (production-proven, extensively tested, etc.)
+- No transitional markers (status indicators, TODO items)
+- Technical precision throughout
+- Concise, direct language
+- Jargon explained when used
+- Active voice preferred
+- Present tense for current features
+- Factual descriptions only
+- Sources attributed where appropriate
 
 ## References
 

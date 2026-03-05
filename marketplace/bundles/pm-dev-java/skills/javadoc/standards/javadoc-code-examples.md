@@ -536,7 +536,7 @@ For links to external resources, use standard HTML anchors:
 For comprehensive JavaDoc quality checklist covering all API types, see [javadoc-core.md](javadoc-core.md) section "Quality Checklist".
 
 **Code example-specific verification:**
-- [ ] Inline code uses `{@code}` tag
-- [ ] Code blocks use `<pre><code>` tags
-- [ ] Examples are complete and compilable
-- [ ] Examples show error handling
+- Inline code uses `{@code}` tag
+- Code blocks use `<pre><code>` tags
+- Examples are complete and compilable
+- Examples show error handling

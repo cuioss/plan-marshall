@@ -346,14 +346,14 @@ void shouldRejectNullParameters() {
 
 ## Quality Checklist
 
-- [ ] Package has @NullMarked in package-info.java
-- [ ] No @Nullable used for return types (use Optional instead)
-- [ ] Nullable parameters documented and justified
-- [ ] Defensive null checks at API boundaries
-- [ ] Unit tests verify non-null contracts (see `pm-dev-java:junit-core` skill)
-- [ ] Static analysis configured and passing
-- [ ] JavaDoc documents null-safety contract
-- [ ] Collections specify element nullability if needed
+- Package has @NullMarked in package-info.java
+- No @Nullable used for return types (use Optional instead)
+- Nullable parameters documented and justified
+- Defensive null checks at API boundaries
+- Unit tests verify non-null contracts (see `pm-dev-java:junit-core` skill)
+- Static analysis configured and passing
+- JavaDoc documents null-safety contract
+- Collections specify element nullability if needed
 
 ## Related Skills
 

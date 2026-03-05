@@ -269,16 +269,16 @@ See [orchestrator-integration.md](../../manage-architecture/standards/orchestrat
 
 Extensions providing module discovery must:
 
-- [ ] Implement `discover_modules()` returning list of module dicts
-- [ ] Return empty list (not None) when no modules found
-- [ ] Use `build_systems` field as single-element array (e.g., `["maven"]`)
-- [ ] Use `paths` object with `module`, `descriptor`, `sources`, `tests`, `readme`
-- [ ] Use snake_case for metadata fields (`artifact_id`, `group_id`)
-- [ ] Include `metadata.profiles` for build-system-specific profiles (Maven)
-- [ ] Use `packages` as object keyed by package name
-- [ ] Use technology-native dependency format (Maven: `groupId:artifactId:scope`, npm: `name:scope`)
-- [ ] Include `commands` with resolved canonical command strings (not nested)
-- [ ] All paths project-relative (not absolute)
+- Implement `discover_modules()` returning list of module dicts
+- Return empty list (not None) when no modules found
+- Use `build_systems` field as single-element array (e.g., `["maven"]`)
+- Use `paths` object with `module`, `descriptor`, `sources`, `tests`, `readme`
+- Use snake_case for metadata fields (`artifact_id`, `group_id`)
+- Include `metadata.profiles` for build-system-specific profiles (Maven)
+- Use `packages` as object keyed by package name
+- Use technology-native dependency format (Maven: `groupId:artifactId:scope`, npm: `name:scope`)
+- Include `commands` with resolved canonical command strings (not nested)
+- All paths project-relative (not absolute)
 
 ## Known Limitations
 

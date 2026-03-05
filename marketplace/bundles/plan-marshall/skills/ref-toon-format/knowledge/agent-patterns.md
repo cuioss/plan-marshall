@@ -468,14 +468,14 @@ messages[1]{id,text}:
 
 When creating TOON handoffs or memory files:
 
-- [ ] Length declaration `[N]` matches actual row count
-- [ ] Field headers `{field1,field2}` match all rows
-- [ ] CSV escaping used for values with commas
-- [ ] Consistent field order across rows
-- [ ] Nesting depth ≤ 3 levels
-- [ ] Token reduction ≥ 30% vs JSON (measure)
-- [ ] Proper indentation (2 spaces or 1 tab)
-- [ ] No trailing commas in rows
+- Length declaration `[N]` matches actual row count
+- Field headers `{field1,field2}` match all rows
+- CSV escaping used for values with commas
+- Consistent field order across rows
+- Nesting depth ≤ 3 levels
+- Token reduction ≥ 30% vs JSON (measure)
+- Proper indentation (2 spaces or 1 tab)
+- No trailing commas in rows
 
 ## Resources
 

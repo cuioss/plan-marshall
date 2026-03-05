@@ -275,13 +275,13 @@ Post-implementation specifications include: Status: IMPLEMENTED, Implementation 
 
 Before marking a specification as IMPLEMENTED:
 
-- [ ] Status updated to IMPLEMENTED
-- [ ] All implementing classes linked
-- [ ] All tests linked
-- [ ] Redundant code examples removed
-- [ ] Backtracking links verified
-- [ ] JavaDoc references added
-- [ ] Architecture and rationale preserved
+- Status updated to IMPLEMENTED
+- All implementing classes linked
+- All tests linked
+- Redundant code examples removed
+- Backtracking links verified
+- JavaDoc references added
+- Architecture and rationale preserved
 
 ## Common Lifecycle Issues
 

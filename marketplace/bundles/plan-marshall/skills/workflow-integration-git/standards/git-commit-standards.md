@@ -227,16 +227,16 @@ Refs #456
 
 Before committing, verify:
 
-- [ ] Type is appropriate and from approved list
-- [ ] Subject is imperative, lowercase, no period
-- [ ] Subject is descriptive and specific
-- [ ] Subject is ≤ 50 characters (72 absolute max)
-- [ ] Body explains "why" not "what"
-- [ ] Body is wrapped at 72 characters
-- [ ] Footer includes issue references if applicable
-- [ ] Breaking changes are clearly documented
-- [ ] Code compiles and tests pass
-- [ ] Commit is atomic (single logical change)
+- Type is appropriate and from approved list
+- Subject is imperative, lowercase, no period
+- Subject is descriptive and specific
+- Subject is ≤ 50 characters (72 absolute max)
+- Body explains "why" not "what"
+- Body is wrapped at 72 characters
+- Footer includes issue references if applicable
+- Breaking changes are clearly documented
+- Code compiles and tests pass
+- Commit is atomic (single logical change)
 
 ## References
 

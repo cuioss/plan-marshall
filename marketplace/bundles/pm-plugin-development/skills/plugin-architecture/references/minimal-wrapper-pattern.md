@@ -649,36 +649,36 @@ Skill: cui-java-core (600 lines)
 Use this checklist to verify minimal wrapper compliance:
 
 ### Wrapper Quality (Agents/Commands)
-- [ ] Total lines < 150 (including comments)
-- [ ] No standards knowledge (delegated to skills)
-- [ ] No implementation logic (delegated to skills)
-- [ ] No verification logic (delegated to skills)
-- [ ] Clear parameter parsing (< 30 lines)
-- [ ] Structured skill invocation (< 70 lines)
-- [ ] Clean result formatting (< 50 lines)
-- [ ] No duplicate logic from skills
+- Total lines < 150 (including comments)
+- No standards knowledge (delegated to skills)
+- No implementation logic (delegated to skills)
+- No verification logic (delegated to skills)
+- Clear parameter parsing (< 30 lines)
+- Structured skill invocation (< 70 lines)
+- Clean result formatting (< 50 lines)
+- No duplicate logic from skills
 
 ### Delegation Quality
-- [ ] All business logic in skills
-- [ ] Clear skill workflow selection
-- [ ] Structured parameters passed
-- [ ] Result properly formatted
-- [ ] Error handling delegated
-- [ ] No agent-to-agent calls
+- All business logic in skills
+- Clear skill workflow selection
+- Structured parameters passed
+- Result properly formatted
+- Error handling delegated
+- No agent-to-agent calls
 
 ### Context Isolation
-- [ ] Agent spawns separately
-- [ ] Skills load on-demand
-- [ ] No context pollution
-- [ ] Predictable memory usage
-- [ ] Clean context release
+- Agent spawns separately
+- Skills load on-demand
+- No context pollution
+- Predictable memory usage
+- Clean context release
 
 ### Maintainability
-- [ ] Single source of truth (skills)
-- [ ] Easy to test (thin wrapper)
-- [ ] Easy to debug (clear flow)
-- [ ] Reusable skills
-- [ ] Clear separation of concerns
+- Single source of truth (skills)
+- Easy to test (thin wrapper)
+- Easy to debug (clear flow)
+- Reusable skills
+- Clear separation of concerns
 
 ## Real-World Example
 

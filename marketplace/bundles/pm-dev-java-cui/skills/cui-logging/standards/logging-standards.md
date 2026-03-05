@@ -374,22 +374,22 @@ Grep: pattern="\.identifier\((\d+)\)"
 ## Quality Checklist
 
 ### Implementation
-- [ ] CuiLogger used (not SLF4J or Log4j)
-- [ ] Logger is private static final named LOGGER
-- [ ] LogRecord REQUIRED for INFO/WARN/ERROR/FATAL
-- [ ] LogRecord NOT used for DEBUG/TRACE
-- [ ] LogMessages class follows DSL pattern
-- [ ] Identifiers in correct ranges
-- [ ] Exception parameter comes first
-- [ ] %s used for all substitutions
-- [ ] No sensitive information logged
-- [ ] No System.out or System.err usage
+- CuiLogger used (not SLF4J or Log4j)
+- Logger is private static final named LOGGER
+- LogRecord REQUIRED for INFO/WARN/ERROR/FATAL
+- LogRecord NOT used for DEBUG/TRACE
+- LogMessages class follows DSL pattern
+- Identifiers in correct ranges
+- Exception parameter comes first
+- %s used for all substitutions
+- No sensitive information logged
+- No System.out or System.err usage
 
 ### Documentation
-- [ ] doc/LogMessages.adoc exists and is up-to-date
-- [ ] LogMessages.adoc includes all production-level messages
+- doc/LogMessages.adoc exists and is up-to-date
+- LogMessages.adoc includes all production-level messages
 
 ### Compliance
-- [ ] All production-level logging uses LogRecord
-- [ ] All LogRecords have test coverage
-- [ ] Identifiers are sequential within ranges
+- All production-level logging uses LogRecord
+- All LogRecords have test coverage
+- Identifiers are sequential within ranges

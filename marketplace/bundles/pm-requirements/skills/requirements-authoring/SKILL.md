@@ -170,16 +170,16 @@ This skill integrates with:
 
 Before completing requirements/specification work:
 
-- [ ] All requirements follow SMART principles
-- [ ] All requirement IDs follow PREFIX-NUM format
-- [ ] All specifications have backtracking links to requirements
-- [ ] No hallucinated functionality documented
-- [ ] No duplicate information across documents
-- [ ] All cross-references verified and functional
-- [ ] Consistent terminology throughout
-- [ ] Clear traceability maintained
-- [ ] Implementation status indicators current
-- [ ] Documentation integrity validated
+- All requirements follow SMART principles
+- All requirement IDs follow PREFIX-NUM format
+- All specifications have backtracking links to requirements
+- No hallucinated functionality documented
+- No duplicate information across documents
+- All cross-references verified and functional
+- Consistent terminology throughout
+- Clear traceability maintained
+- Implementation status indicators current
+- Documentation integrity validated
 
 ## Related Standards
 

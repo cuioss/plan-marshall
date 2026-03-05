@@ -583,14 +583,14 @@ _PLAN_BASE = os.environ.get('PLAN_BASE_DIR')  # Wrong variable for path construc
 
 Before marking script as "quality approved":
 
-- [ ] Shebang: `#!/usr/bin/env python3`
-- [ ] Stdlib-only (no pip dependencies)
-- [ ] Subcommand pattern: `{noun}.py {verb}`
-- [ ] Argparse with subparsers
-- [ ] All arguments have help text
-- [ ] Error handling with clear messages
-- [ ] Exit codes (0 for success, 1 for error)
-- [ ] Executable permissions set
-- [ ] Test file exists and passes
-- [ ] Scripts >400 lines are modularized by subcommand
-- [ ] Uses `PLAN_DIR_NAME` env var for path construction (not hardcoded `.plan`)
+- Shebang: `#!/usr/bin/env python3`
+- Stdlib-only (no pip dependencies)
+- Subcommand pattern: `{noun}.py {verb}`
+- Argparse with subparsers
+- All arguments have help text
+- Error handling with clear messages
+- Exit codes (0 for success, 1 for error)
+- Executable permissions set
+- Test file exists and passes
+- Scripts >400 lines are modularized by subcommand
+- Uses `PLAN_DIR_NAME` env var for path construction (not hardcoded `.plan`)

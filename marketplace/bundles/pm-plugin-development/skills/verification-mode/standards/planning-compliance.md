@@ -727,15 +727,15 @@ After each phase completes, use this verification template:
 
 After each planning command/skill execution, verify:
 
-- [ ] No direct .plan file access (except request.md read)
-- [ ] work.log entry added for significant operations
-- [ ] Status reflects current phase correctly
-- [ ] All artifacts created via manage-* scripts
-- [ ] No orphaned files in .plan structure
-- [ ] Log files exist and are properly formatted (work.log, script-execution.log)
-- [ ] script-execution.log contains recent entries for script calls
-- [ ] script-execution.log scanned for ERROR entries - none found or issues addressed
-- [ ] No repeated script failures detected in logs
+- No direct .plan file access (except request.md read)
+- work.log entry added for significant operations
+- Status reflects current phase correctly
+- All artifacts created via manage-* scripts
+- No orphaned files in .plan structure
+- Log files exist and are properly formatted (work.log, script-execution.log)
+- script-execution.log contains recent entries for script calls
+- script-execution.log scanned for ERROR entries - none found or issues addressed
+- No repeated script failures detected in logs
 
 ## Integration with Commands
 

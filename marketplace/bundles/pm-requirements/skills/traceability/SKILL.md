@@ -108,12 +108,12 @@ Apply the loaded standards to your specific task:
 
 Use quality-standards checklists to verify:
 
-- [ ] All specifications link to implementation
-- [ ] All code links to specifications
-- [ ] All tests reference specifications
-- [ ] Links are accurate and current
-- [ ] Navigation is bidirectional
-- [ ] Status indicators are correct
+- All specifications link to implementation
+- All code links to specifications
+- All tests reference specifications
+- Links are accurate and current
+- Navigation is bidirectional
+- Status indicators are correct
 
 ## Related Standards
 

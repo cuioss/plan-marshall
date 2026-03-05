@@ -577,10 +577,10 @@ Note: `toon_parser.py` has its own tests in `test/plan-marshall/toon-usage/`.
 
 Implementations must:
 
-- [ ] Inherit from `ExtensionBase` for domain extensions
-- [ ] Use canonical command constants from `extension_base`
-- [ ] Use `extension.py` for discovery and aggregation
-- [ ] Use `project-structure` skill for persistence and lookup operations
+- Inherit from `ExtensionBase` for domain extensions
+- Use canonical command constants from `extension_base`
+- Use `extension.py` for discovery and aggregation
+- Use `project-structure` skill for persistence and lookup operations
 
 ## Related Specifications
 

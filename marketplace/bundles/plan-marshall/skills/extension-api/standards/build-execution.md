@@ -355,14 +355,14 @@ def execute_direct(...) -> DirectCommandResult:
 
 Extensions providing build commands must:
 
-- [ ] Capture output to log file (R1)
-- [ ] Prefer project wrappers over system commands (R2)
-- [ ] Integrate with timeout learning (R3)
-- [ ] Support `--format toon` and `--format json` (R4)
-- [ ] Support `--mode actionable`, `structured`, `errors` (R5)
-- [ ] Return `log_file` path in all results
-- [ ] Parse and return structured issues on build failure
-- [ ] Have tests for both output formats and all modes
+- Capture output to log file (R1)
+- Prefer project wrappers over system commands (R2)
+- Integrate with timeout learning (R3)
+- Support `--format toon` and `--format json` (R4)
+- Support `--mode actionable`, `structured`, `errors` (R5)
+- Return `log_file` path in all results
+- Parse and return structured issues on build failure
+- Have tests for both output formats and all modes
 
 ## Related Specifications
 

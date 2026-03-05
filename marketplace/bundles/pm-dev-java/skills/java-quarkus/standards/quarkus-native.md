@@ -37,10 +37,10 @@ Before starting any native optimization work:
 **When to Execute**: At the start of any native optimization project
 
 **What to Analyze**:
-- [ ] Scan for `@RegisterForReflection` annotations
-- [ ] Identify deployment processor `ReflectiveClassBuildItem` registrations
-- [ ] Review reflection scope parameters (`methods`, `fields`, `constructors`)
-- [ ] Document current reflection architecture
+- Scan for `@RegisterForReflection` annotations
+- Identify deployment processor `ReflectiveClassBuildItem` registrations
+- Review reflection scope parameters (`methods`, `fields`, `constructors`)
+- Document current reflection architecture
 
 **Commands**:
 ```bash
@@ -61,14 +61,14 @@ find . -name "*Processor.java" -exec grep -l "ReflectiveClassBuildItem" {} \;
 **When to Execute**: After completing reflection usage analysis
 
 **What to Assess**:
-- [ ] Categorize classes by reflection requirements:
+- Categorize classes by reflection requirements:
   * CDI beans (usually need constructors only)
   * Data classes (may need methods/fields for serialization)
   * Configuration classes (builder pattern vs. property binding)
   * Enum classes (usually need minimal reflection)
   * Annotation classes (framework-specific requirements)
 
-- [ ] Identify usage patterns:
+- Identify usage patterns:
   * Framework-managed instantiation (CDI, dependency injection)
   * Direct constructor calls
   * Getter/setter access patterns
@@ -86,7 +86,7 @@ find . -name "*Processor.java" -exec grep -l "ReflectiveClassBuildItem" {} \;
 **When to Execute**: First optimization phase - infrastructure level
 
 **What to Optimize**:
-- [ ] **Split by Reflection Requirements**: Group classes with similar reflection needs
+- **Split by Reflection Requirements**: Group classes with similar reflection needs
   ```java
   // Example: Constructor-only classes
   @BuildStep
@@ -101,7 +101,7 @@ find . -name "*Processor.java" -exec grep -l "ReflectiveClassBuildItem" {} \;
   }
   ```
 
-- [ ] **Builder Pattern Classes**: Eliminate unnecessary constructor reflection
+- **Builder Pattern Classes**: Eliminate unnecessary constructor reflection
   ```java
   // Configuration classes using builder pattern
   ReflectiveClassBuildItem.builder(
@@ -113,7 +113,7 @@ find . -name "*Processor.java" -exec grep -l "ReflectiveClassBuildItem" {} \;
           .build();
   ```
 
-- [ ] **Replace String Constants**: Use type-safe class references
+- **Replace String Constants**: Use type-safe class references
   ```java
   // Before
   ReflectiveClassBuildItem.builder("com.example.MyClass")
@@ -122,7 +122,7 @@ find . -name "*Processor.java" -exec grep -l "ReflectiveClassBuildItem" {} \;
   ReflectiveClassBuildItem.builder(MyClass.class)
   ```
 
-- [ ] **CDI Bean Registration**: Use type-safe AdditionalBeanBuildItem for CDI beans
+- **CDI Bean Registration**: Use type-safe AdditionalBeanBuildItem for CDI beans
   ```java
   // Type-safe CDI bean registration in deployment processor
   @BuildStep
@@ -160,7 +160,7 @@ find . -name "*Processor.java" -exec grep -l "ReflectiveClassBuildItem" {} \;
 **When to Execute**: After deployment processor optimization
 
 **What to Optimize**:
-- [ ] **CDI Beans**: Optimize to minimal reflection scope
+- **CDI Beans**: Optimize to minimal reflection scope
   ```java
   // Most CDI beans only need constructors
   @RegisterForReflection(methods = false, fields = false)
@@ -168,7 +168,7 @@ find . -name "*Processor.java" -exec grep -l "ReflectiveClassBuildItem" {} \;
   public class MyService {
   ```
 
-- [ ] **Data Classes**: Assess actual reflection needs
+- **Data Classes**: Assess actual reflection needs
   ```java
   // Lombok classes might need methods for builders
   @RegisterForReflection // Keep default for Lombok
@@ -181,13 +181,13 @@ find . -name "*Processor.java" -exec grep -l "ReflectiveClassBuildItem" {} \;
   public class SimpleData {
   ```
 
-- [ ] **Enum Classes**: Minimal reflection needed
+- **Enum Classes**: Minimal reflection needed
   ```java
   @RegisterForReflection(methods = false, fields = false)
   public enum Status {
   ```
 
-- [ ] **Annotation Classes**: Framework compatibility
+- **Annotation Classes**: Framework compatibility
   ```java
   @RegisterForReflection(methods = false, fields = false)
   @Qualifier
@@ -223,7 +223,7 @@ find . -name "*Processor.java" -exec grep -l "ReflectiveClassBuildItem" {} \;
 **When to Execute**: After completing all reflection optimizations
 
 **What to Verify**:
-- [ ] **Create Verification Test**: Implement test to verify reflection registration
+- **Create Verification Test**: Implement test to verify reflection registration
   ```java
   @Test
   void shouldHaveOptimalReflectionRegistration() {
@@ -233,9 +233,9 @@ find . -name "*Processor.java" -exec grep -l "ReflectiveClassBuildItem" {} \;
   }
   ```
 
-- [ ] **Test Application Functionality**: Verify core features work
-- [ ] **CDI Bean Resolution**: Test dependency injection works
-- [ ] **Serialization/Deserialization**: Test data classes if applicable
+- **Test Application Functionality**: Verify core features work
+- **CDI Bean Resolution**: Test dependency injection works
+- **Serialization/Deserialization**: Test data classes if applicable
 
 **Commands**:
 ```
@@ -261,7 +261,7 @@ Parameters:
 **When to Execute**: After reflection verification passes
 
 **What to Test**:
-- [ ] **Native Compilation**: Verify native image builds successfully
+- **Native Compilation**: Verify native image builds successfully
   ```
   Skill: pm-dev-java:plan-marshall-plugin
   Workflow: Execute Maven Build
@@ -272,8 +272,8 @@ Parameters:
   ```
   Record build time and executable size metrics after completion.
 
-- [ ] **Runtime Testing**: Test application functionality in native mode
-- [ ] **Performance Metrics**: Compare before/after metrics:
+- **Runtime Testing**: Test application functionality in native mode
+- **Performance Metrics**: Compare before/after metrics:
   * Native image build time
   * Native executable size
   * Application startup time
@@ -322,14 +322,14 @@ Fix all quality issues before committing. Ensure all tests and quality checks pa
 **When to Execute**: After all verifications pass
 
 **Documentation Requirements**:
-- [ ] Update module README if reflection architecture changed significantly
-- [ ] Document any special reflection requirements
-- [ ] Note performance improvements achieved
+- Update module README if reflection architecture changed significantly
+- Document any special reflection requirements
+- Note performance improvements achieved
 
 **Commit Requirements**:
-- [ ] Follow git commit standards
-- [ ] Include performance metrics in commit message
-- [ ] Reference any related issues or tasks
+- Follow git commit standards
+- Include performance metrics in commit message
+- Reference any related issues or tasks
 
 **Example Commit Message**:
 ```

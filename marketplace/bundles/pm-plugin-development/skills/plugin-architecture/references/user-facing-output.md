@@ -317,17 +317,17 @@ See details: <plan-storage>/reports/analysis.md
 
 When designing user-facing output:
 
-- [ ] Status uses structured format (key: value)
-- [ ] Phase transitions include all 4 required elements
-- [ ] Configurations displayed before proceeding
-- [ ] Progress shown via tables for multi-item work
-- [ ] Issues paired with fixes
-- [ ] Final output includes measurable outcomes
-- [ ] No internal step numbers visible
-- [ ] No skill loading messages visible
-- [ ] No raw tool commands visible
-- [ ] No line-by-line diffs visible
-- [ ] Next action always clear
+- Status uses structured format (key: value)
+- Phase transitions include all 4 required elements
+- Configurations displayed before proceeding
+- Progress shown via tables for multi-item work
+- Issues paired with fixes
+- Final output includes measurable outcomes
+- No internal step numbers visible
+- No skill loading messages visible
+- No raw tool commands visible
+- No line-by-line diffs visible
+- Next action always clear
 
 ---
 

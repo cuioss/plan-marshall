@@ -227,15 +227,15 @@ Output goes to log file (not captured to memory) because:
 ## Compliance
 
 Implementations must:
-- [ ] Return all 5 core fields on every invocation
-- [ ] Use `duration_seconds` (not milliseconds)
-- [ ] Use `command` (not `command_executed`)
-- [ ] Include `error` field when status is not `success`
-- [ ] Use TOON tab-separated format: `key\tvalue` (not colon-separated)
-- [ ] Support both TOON and JSON via `--format` parameter
-- [ ] Support `--mode` parameter with `actionable`, `structured`, `errors` values
-- [ ] Parse and include `errors`, `warnings`, `tests` on build failure
-- [ ] Filter warnings based on mode and acceptable patterns
+- Return all 5 core fields on every invocation
+- Use `duration_seconds` (not milliseconds)
+- Use `command` (not `command_executed`)
+- Include `error` field when status is not `success`
+- Use TOON tab-separated format: `key\tvalue` (not colon-separated)
+- Support both TOON and JSON via `--format` parameter
+- Support `--mode` parameter with `actionable`, `structured`, `errors` values
+- Parse and include `errors`, `warnings`, `tests` on build failure
+- Filter warnings based on mode and acceptable patterns
 
 ## Related Specifications
 

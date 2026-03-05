@@ -462,16 +462,16 @@ export default {
 
 ## Validation Checklist
 
-- [ ] StyleLint 17+ installed with stylelint-order and postcss-lit plugins
-- [ ] .stylelintrc.js configured with ES module syntax
-- [ ] postcss-lit configured as customSyntax
-- [ ] CSS custom property pattern defined
-- [ ] Property ordering configured
-- [ ] Web component pseudo-classes allowed
-- [ ] package.json includes lint:style scripts
-- [ ] Maven pom.xml includes CSS validation execution
-- [ ] Environment-specific overrides configured
-- [ ] Documentation updated with StyleLint procedures
+- StyleLint 17+ installed with stylelint-order and postcss-lit plugins
+- .stylelintrc.js configured with ES module syntax
+- postcss-lit configured as customSyntax
+- CSS custom property pattern defined
+- Property ordering configured
+- Web component pseudo-classes allowed
+- package.json includes lint:style scripts
+- Maven pom.xml includes CSS validation execution
+- Environment-specific overrides configured
+- Documentation updated with StyleLint procedures
 
 ## Example Lit Component with StyleLint
 

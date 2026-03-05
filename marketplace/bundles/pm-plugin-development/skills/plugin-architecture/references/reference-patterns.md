@@ -282,15 +282,15 @@ cp -r my-skill .claude/skills/
 
 ### Validation Checklist
 
-- [ ] All `Read:` statements use relative paths
-- [ ] All script executions use relative paths
-- [ ] All asset references use relative paths
-- [ ] No `../` escape sequences found
-- [ ] No absolute paths found
-- [ ] No hardcoded paths found
-- [ ] Skill works when installed globally
-- [ ] Skill works when installed in project
-- [ ] Skill works when bundled
+- All `Read:` statements use relative paths
+- All script executions use relative paths
+- All asset references use relative paths
+- No `../` escape sequences found
+- No absolute paths found
+- No hardcoded paths found
+- Skill works when installed globally
+- Skill works when installed in project
+- Skill works when bundled
 
 ### Automated Validation
 

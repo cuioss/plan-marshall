@@ -404,7 +404,7 @@ public class TokenCache<K, V extends Token> {
 For comprehensive JavaDoc quality checklist covering all API types, see [javadoc-core.md](javadoc-core.md) section "Quality Checklist".
 
 **Class-specific verification:**
-- [ ] Package-info.java exists with complete documentation
-- [ ] All public classes have clear purpose statements
-- [ ] Abstract classes document extension points
-- [ ] Interfaces document implementation requirements
+- Package-info.java exists with complete documentation
+- All public classes have clear purpose statements
+- Abstract classes document extension points
+- Interfaces document implementation requirements

@@ -94,12 +94,12 @@ Read standards/owasp-container-security.md
 
 ### Runtime Security Checklist
 
-- [ ] `--cap-drop=ALL` with selective `--cap-add`
-- [ ] `--security-opt=no-new-privileges`
-- [ ] `--read-only` with tmpfs for write directories
-- [ ] Memory and CPU limits set
-- [ ] Docker socket NOT mounted
-- [ ] Network segmented per service role
-- [ ] Images signed and verified
-- [ ] SBOM generated and attached
-- [ ] Vulnerability scan passes (no CRITICAL/HIGH)
+- `--cap-drop=ALL` with selective `--cap-add`
+- `--security-opt=no-new-privileges`
+- `--read-only` with tmpfs for write directories
+- Memory and CPU limits set
+- Docker socket NOT mounted
+- Network segmented per service role
+- Images signed and verified
+- SBOM generated and attached
+- Vulnerability scan passes (no CRITICAL/HIGH)

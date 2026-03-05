@@ -203,10 +203,10 @@ python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:fix extract 
 
 Before marking output as compliant:
 
-- [ ] Uses TOON format (unless complex nesting required)
-- [ ] Exit code 0 when script completes (success OR operation failure)
-- [ ] Exit code 1 only for script execution errors (crash, missing required file)
-- [ ] Status field present (`status: success|error`) in output
-- [ ] Operation failures use `status: error` with exit 0, not exit 1
-- [ ] Error messages are clear and actionable
-- [ ] Includes relevant context in errors
+- Uses TOON format (unless complex nesting required)
+- Exit code 0 when script completes (success OR operation failure)
+- Exit code 1 only for script execution errors (crash, missing required file)
+- Status field present (`status: success|error`) in output
+- Operation failures use `status: error` with exit 0, not exit 1
+- Error messages are clear and actionable
+- Includes relevant context in errors

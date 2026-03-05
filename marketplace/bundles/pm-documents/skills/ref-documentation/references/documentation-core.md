@@ -96,13 +96,13 @@ oauth.audience=your-api-id
 
 ### Review Checklist
 
-- [ ] Professional tone maintained
-- [ ] No marketing language
-- [ ] All references verified
-- [ ] Code examples complete
-- [ ] Consistent terminology
-- [ ] Public APIs documented
-- [ ] Documentation builds successfully
+- Professional tone maintained
+- No marketing language
+- All references verified
+- Code examples complete
+- Consistent terminology
+- Public APIs documented
+- Documentation builds successfully
 
 ## References
 

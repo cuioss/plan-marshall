@@ -30,9 +30,9 @@ Architecture provides curated `key_packages` with descriptions. Use these as pri
 
 Before finalizing package selection:
 
-- [ ] New class follows existing naming patterns (e.g., `*Validator`, `*Handler`)
-- [ ] Package aligns with module's responsibility scope
-- [ ] Prefer packages with `has_package_info: true` (better documented)
+- New class follows existing naming patterns (e.g., `*Validator`, `*Handler`)
+- Package aligns with module's responsibility scope
+- Prefer packages with `has_package_info: true` (better documented)
 
 ---
 

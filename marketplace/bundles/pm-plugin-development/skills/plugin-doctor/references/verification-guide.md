@@ -205,11 +205,11 @@ This catches:
 
 After verification:
 
-- [ ] All applied fixes verified
-- [ ] Issue resolution status known for each
-- [ ] Any failures investigated
-- [ ] Re-diagnosis considered
-- [ ] Backup files cleaned up (optional)
+- All applied fixes verified
+- Issue resolution status known for each
+- Any failures investigated
+- Re-diagnosis considered
+- Backup files cleaned up (optional)
 
 ## Cleanup
 

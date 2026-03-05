@@ -596,27 +596,27 @@ standards/
 Before creating skill, verify:
 
 **Frontmatter**:
-- [ ] Name is kebab-case and descriptive
-- [ ] Description is <100 chars
-- [ ] Uses `allowed-tools:` (not `tools:`) - comma-separated format
+- Name is kebab-case and descriptive
+- Description is <100 chars
+- Uses `allowed-tools:` (not `tools:`) - comma-separated format
 
 **Structure**:
-- [ ] SKILL.md is 400-800 lines (not bloated)
-- [ ] References organized in appropriate directory
-- [ ] All resource paths use relative paths
-- [ ] No hardcoded paths
-- [ ] Progressive disclosure implemented
-- [ ] Directory structure follows patterns
+- SKILL.md is 400-800 lines (not bloated)
+- References organized in appropriate directory
+- All resource paths use relative paths
+- No hardcoded paths
+- Progressive disclosure implemented
+- Directory structure follows patterns
 
 **Execution Patterns** (for non-reference skills):
-- [ ] Has **EXECUTION MODE** directive after title
-- [ ] Has **Workflow Decision Tree** for routing
-- [ ] Critical steps marked with **MANDATORY**
-- [ ] Resources labeled with EXECUTE/READ/REFERENCE modes
+- Has **EXECUTION MODE** directive after title
+- Has **Workflow Decision Tree** for routing
+- Critical steps marked with **MANDATORY**
+- Resources labeled with EXECUTE/READ/REFERENCE modes
 
 **Content**:
-- [ ] No CONTINUOUS IMPROVEMENT RULE (skills don't have this)
-- [ ] Tool access documented
+- No CONTINUOUS IMPROVEMENT RULE (skills don't have this)
+- Tool access documented
 
 ## Common Pitfalls
 
@@ -730,10 +730,10 @@ No other tools needed (pure reference skill).
 ## Quality Verification
 
 Skills are self-contained when:
-- [ ] All standards in standards/ directory
-- [ ] All paths use relative paths
-- [ ] No external file references
-- [ ] No cross-skill duplication
+- All standards in standards/ directory
+- All paths use relative paths
+- No external file references
+- No cross-skill duplication
 ```
 
 ## References

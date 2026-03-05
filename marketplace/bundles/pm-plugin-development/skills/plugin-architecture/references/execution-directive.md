@@ -228,12 +228,12 @@ Convert passive reading into active verification:
 
 After completing the workflow:
 
-- [ ] All diagnostic scripts executed successfully
-- [ ] JSON output parsed without errors
-- [ ] Issues categorized by severity
-- [ ] Safe fixes applied automatically
-- [ ] User prompted for risky fixes only
-- [ ] Re-ran diagnostics to verify fixes
+- All diagnostic scripts executed successfully
+- JSON output parsed without errors
+- Issues categorized by severity
+- Safe fixes applied automatically
+- User prompted for risky fixes only
+- Re-ran diagnostics to verify fixes
 ```
 
 ## Template: User-Invocable Execution Skill
@@ -294,10 +294,10 @@ python3 .plan/execute-script.py {bundle}:{skill}:apply-changes --input results.j
 
 ## Verification Checklist
 
-- [ ] Correct workflow selected based on conditions
-- [ ] All MANDATORY steps completed
-- [ ] Script outputs validated
-- [ ] Changes verified
+- Correct workflow selected based on conditions
+- All MANDATORY steps completed
+- Script outputs validated
+- Changes verified
 ```
 
 ## Explicit Item Sections Pattern
