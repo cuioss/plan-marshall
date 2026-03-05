@@ -1,54 +1,28 @@
 ---
 name: oci-security
-description: OCI container security best practices covering image building, runtime hardening, secrets management, and supply chain security
+description: OCI container security best practices covering runtime hardening, supply chain security, and OWASP container controls
 user-invocable: false
 ---
 
 # OCI Container Security
 
-**REFERENCE MODE**: This skill provides reference material for building and running secure OCI containers. Load specific references on-demand based on current task. Do not load all references at once.
+**REFERENCE MODE**: This skill provides reference material for securing OCI containers at runtime and across the supply chain. Load specific references on-demand based on current task. Do not load all references at once.
+
+For general image building practices (Dockerfiles, base images, multi-platform builds), see `Skill: pm-dev-oci:oci-standards`.
 
 ## When to Use This Skill
 
 Activate when:
-- **Building container images** - Dockerfile best practices, base image selection, layer optimization
 - **Hardening runtime** - Non-root users, capabilities, read-only filesystems, resource limits
-- **Managing secrets** - BuildKit secrets, runtime injection, avoiding embedded credentials
 - **Scanning vulnerabilities** - CI/CD integration, tool selection, remediation workflows
 - **Securing supply chain** - Image signing, SBOMs, provenance attestation
-- **Reviewing Dockerfiles** - Linting, security audit, compliance checks
-- **Health probes for distroless** - Management interface, Kubernetes probes, Prometheus scraping without TLS
+- **OWASP compliance** - Docker Top 10 controls, threat modeling, compliance audits
 
 ## Available References
 
 Load references progressively based on current task. **Never load all references at once.**
 
-### 1. Image Building Best Practices
-
-**File**: `standards/image-building.md`
-
-**Load When**:
-- Writing or reviewing Dockerfiles
-- Choosing base images
-- Configuring multi-stage builds
-- Managing build-time secrets
-- Linting with Hadolint
-
-**Contents**:
-- Minimal base images (scratch, distroless, alpine, slim)
-- Multi-stage builds
-- Version pinning (tags and digests)
-- COPY vs ADD
-- .dockerignore
-- Secrets management (BuildKit, runtime injection)
-- Dockerfile hygiene (Hadolint, layer minimization, port exposure)
-
-**Load Command**:
-```
-Read standards/image-building.md
-```
-
-### 2. Runtime Security
+### 1. Runtime Security
 
 **File**: `standards/runtime-security.md`
 
@@ -73,7 +47,7 @@ Read standards/image-building.md
 Read standards/runtime-security.md
 ```
 
-### 3. Supply Chain Security
+### 2. Supply Chain Security
 
 **File**: `standards/supply-chain-security.md`
 
@@ -96,32 +70,7 @@ Read standards/runtime-security.md
 Read standards/supply-chain-security.md
 ```
 
-### 4. Distroless Health Probes
-
-**File**: `standards/distroless-health-probes.md`
-
-**Load When**:
-- Adding health checks to distroless container images
-- Configuring Quarkus management interface for health/metrics separation
-- Setting up Prometheus scraping without TLS complexity
-- Debugging missing health endpoints after native image builds
-- Writing Kubernetes liveness/readiness probes for distroless containers
-
-**Contents**:
-- Why standard HEALTHCHECK fails in distroless (no shell, no curl)
-- Quarkus management interface as the solution (port 9000, plain HTTP)
-- Build-time vs runtime properties — critical native image pitfall
-- Native build lifecycle requirements (`clean package` vs bare `quarkus:build`)
-- Startup log verification for management interface
-- Docker Compose, Prometheus, and Kubernetes probe configuration
-- Decision matrix for health strategy by image type
-
-**Load Command**:
-```
-Read standards/distroless-health-probes.md
-```
-
-### 5. OWASP Container Security
+### 3. OWASP Container Security
 
 **File**: `standards/owasp-container-security.md`
 
@@ -143,20 +92,6 @@ Read standards/owasp-container-security.md
 
 ## Quick Reference
 
-### Dockerfile Security Checklist
-
-- [ ] Minimal base image (distroless, alpine, slim)
-- [ ] Multi-stage build separating build and runtime
-- [ ] Pinned image versions (no `latest`)
-- [ ] Non-root USER instruction
-- [ ] COPY instead of ADD
-- [ ] .dockerignore excludes secrets and build artifacts
-- [ ] No secrets in ENV, ARG, or COPY
-- [ ] BuildKit secrets for build-time credentials
-- [ ] Hadolint passes without errors
-- [ ] Vulnerability scan passes (no CRITICAL/HIGH)
-- [ ] Health probe strategy for distroless (management interface or orchestrator-native probes)
-
 ### Runtime Security Checklist
 
 - [ ] `--cap-drop=ALL` with selective `--cap-add`
@@ -167,3 +102,4 @@ Read standards/owasp-container-security.md
 - [ ] Network segmented per service role
 - [ ] Images signed and verified
 - [ ] SBOM generated and attached
+- [ ] Vulnerability scan passes (no CRITICAL/HIGH)

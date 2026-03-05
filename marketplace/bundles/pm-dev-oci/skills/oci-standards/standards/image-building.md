@@ -156,3 +156,82 @@ Declare only the ports your application needs. Do not expose debug or management
 # Explicit single port
 EXPOSE 8080
 ```
+
+## OCI Image Labels
+
+Use standardized OCI annotations for image metadata. These labels enable registry tooling, vulnerability scanners, and orchestrators to identify and manage images.
+
+```dockerfile
+LABEL org.opencontainers.image.title="myapp"
+LABEL org.opencontainers.image.description="Application description"
+LABEL org.opencontainers.image.version="1.2.3"
+LABEL org.opencontainers.image.vendor="Organization"
+LABEL org.opencontainers.image.source="https://github.com/org/repo"
+LABEL org.opencontainers.image.revision="${GIT_SHA}"
+LABEL org.opencontainers.image.created="${BUILD_DATE}"
+LABEL org.opencontainers.image.licenses="Apache-2.0"
+```
+
+Set dynamic labels at build time via `--build-arg`:
+
+```dockerfile
+ARG GIT_SHA
+ARG BUILD_DATE
+LABEL org.opencontainers.image.revision="${GIT_SHA}"
+LABEL org.opencontainers.image.created="${BUILD_DATE}"
+```
+
+```bash
+docker build \
+  --build-arg GIT_SHA=$(git rev-parse HEAD) \
+  --build-arg BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ) .
+```
+
+## Multi-Platform Builds
+
+Build images for multiple architectures using Docker Buildx.
+
+### Setup
+
+```bash
+# Create multi-platform builder (one-time)
+docker buildx create --name multiarch --use --driver docker-container
+
+# Verify available platforms
+docker buildx inspect --bootstrap
+```
+
+### Build and Push
+
+```bash
+# Build for amd64 and arm64, push to registry
+docker buildx build --platform linux/amd64,linux/arm64 \
+  -t registry.example.com/myapp:1.0 --push .
+```
+
+### CI/CD Integration
+
+In GitHub Actions:
+
+```yaml
+- uses: docker/setup-buildx-action@v3
+- uses: docker/build-push-action@v6
+  with:
+    platforms: linux/amd64,linux/arm64
+    push: true
+    tags: registry.example.com/myapp:${{ github.sha }}
+```
+
+### Architecture-Specific Considerations
+
+- Test on all target platforms — behavior can differ (e.g., musl vs glibc on alpine)
+- Pin base images that support multi-arch (most official images do)
+- Use `--platform=$BUILDPLATFORM` in build stages for faster cross-compilation
+
+## Containerfile Naming
+
+The OCI-standard filename is `Containerfile` (used by Podman and Buildah). Docker uses `Dockerfile`. Both are functionally identical.
+
+- Use `Containerfile` for OCI-first projects or Podman-based workflows
+- Use `Dockerfile` when Docker is the primary build tool
+- Both `docker build` and `podman build` accept either name via `-f` flag

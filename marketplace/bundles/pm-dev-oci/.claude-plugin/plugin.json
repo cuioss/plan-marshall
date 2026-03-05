@@ -1,7 +1,7 @@
 {
   "name": "pm-dev-oci",
   "version": "0.1-BETA",
-  "description": "OCI container security standards and best practices",
+  "description": "OCI container standards and security best practices",
   "author": {
     "name": "https://github.com/cuioss/plan-marshall",
     "email": "contact@cuioss.de"
@@ -13,6 +13,7 @@
   "agents": [],
   "commands": [],
   "skills": [
+    "./skills/oci-standards",
     "./skills/oci-security",
     "./skills/plan-marshall-plugin"
   ]
