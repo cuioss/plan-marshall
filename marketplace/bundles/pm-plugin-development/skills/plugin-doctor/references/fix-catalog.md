@@ -524,10 +524,10 @@ When multiple fixes needed for same file:
 4. **array-syntax-tools** (syntax normalization)
 5. **trailing-whitespace** (cleanup)
 6. **checklist-pattern** (content optimization)
-8. **Rule violations** (architectural - agent-task-tool-prohibited, agent-maven-restricted, workflow-hardcoded-script-path, workflow-explicit-script-calls, agent-skill-tool-visibility)
-9. **Pattern violations** (behavioral - agent-lessons-via-skill)
-10. **plan-marshall violations** (PM-001 through PM-005 - script call compliance)
-11. **Script argument violations** (SCR-009 through SCR-011 - argparse conventions)
+7. **Rule violations** (architectural - agent-task-tool-prohibited, agent-maven-restricted, workflow-hardcoded-script-path, workflow-explicit-script-calls, agent-skill-tool-visibility)
+8. **Pattern violations** (behavioral - agent-lessons-via-skill)
+9. **plan-marshall violations** (PM-001 through PM-005 - script call compliance)
+10. **Script argument violations** (SCR-009 through SCR-011 - argparse conventions)
 
 ## See Also
 

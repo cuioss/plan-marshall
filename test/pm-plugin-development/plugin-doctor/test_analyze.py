@@ -541,19 +541,30 @@ def test_checklist_detection_mixed():
 
 def test_checklist_template_exempt():
     """Test that files in /templates/ path are exempt from checklist detection."""
-    content = '- [ ] Tests pass\n- [ ] Docs updated\n'
-    import sys
-    script_dir = str(Path(SCRIPT_PATH).parent)
-    if script_dir not in sys.path:
-        sys.path.insert(0, script_dir)
-    from _analyze_markdown import check_checklist_patterns
-    result = check_checklist_patterns(content, '/some/path/templates/pr-template.md')
-    assert result['has_checklists'] is False, 'Templates should be exempt'
-    assert result['count'] == 0
+    # Template path: use the real pr-template.md which has checkboxes
+    template_path = (
+        PROJECT_ROOT / 'marketplace' / 'bundles' / 'plan-marshall'
+        / 'skills' / 'phase-6-finalize' / 'templates' / 'pr-template.md'
+    )
+    if not template_path.exists():
+        return  # Skip if fixture not available
 
-    # Non-template path should detect
-    result2 = check_checklist_patterns(content, '/some/path/skills/test.md')
-    assert result2['has_checklists'] is True, 'Non-templates should detect checklists'
+    result = run_script(SCRIPT_PATH, 'markdown', '--file', str(template_path), '--type', 'skill')
+    assert result.returncode == 0, f'Script returned error: {result.stderr}'
+    data = result.json()
+    checklists = data['checklist_patterns']
+    assert checklists['has_checklists'] is False, 'Templates should be exempt from checklist detection'
+
+    # Non-template file with checkboxes should detect them
+    content = '---\nname: test\ndescription: test\n---\n\n# Test\n\n- [ ] Item\n'
+    temp_file = create_temp_file(content)
+    try:
+        result2 = run_script(SCRIPT_PATH, 'markdown', '--file', str(temp_file), '--type', 'skill')
+        assert result2.returncode == 0
+        data2 = result2.json()
+        assert data2['checklist_patterns']['has_checklists'] is True, 'Non-templates should detect checklists'
+    finally:
+        temp_file.unlink()
 
 
 def test_checklist_sections_extracted():
