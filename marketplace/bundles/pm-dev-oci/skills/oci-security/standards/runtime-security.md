@@ -8,7 +8,7 @@ Never run containers as root. Create a dedicated user or use a numeric UID.
 
 ```dockerfile
 # Create non-root user
-RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+RUN groupadd -r appgroup && useradd -r -g appgroup -d /app -s /sbin/nologin appuser
 USER appuser
 
 # Or use numeric UID (no user creation needed)
