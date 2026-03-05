@@ -250,33 +250,14 @@ class SecurityIntegrationTest extends BaseIntegrationTest {
 
 ### OWASP-Compliant Deployment
 
-```bash
-# OWASP-compliant production deployment
-docker run -d \
-  --name secure-application \
-  --security-opt=no-new-privileges:true \
-  --cap-drop ALL \
-  --read-only \
-  --tmpfs /tmp:rw,noexec,nosuid,size=100m \
-  --tmpfs /app/tmp:rw,noexec,nosuid,size=50m \
-  --memory="256m" \
-  --cpus="1.0" \
-  --restart=unless-stopped \
-  --network=secure-app-network \
-  -v "./certificates:/app/certificates:ro" \
-  -e QUARKUS_LOG_LEVEL=INFO \
-  application:latest
-```
+For generic container runtime hardening (capabilities, read-only filesystem, resource limits, security contexts), see `Skill: pm-dev-oci:oci-security` → `standards/runtime-security.md`.
 
-### Security Options Explained
+For the complete OWASP Docker Top 10 control mapping, see `Skill: pm-dev-oci:oci-security` → `standards/owasp-container-security.md`.
 
-* **`--security-opt=no-new-privileges`**: Prevents privilege escalation via setuid/setgid binaries
-* **`--cap-drop ALL`**: Removes all Linux capabilities (principle of least privilege)
-* **`--read-only`**: Makes root filesystem read-only (immutable infrastructure)
-* **`--tmpfs`**: Provides temporary writable space without persistence
-* **`--memory/--cpus`**: Resource limits prevent DoS attacks
-* **`--restart=unless-stopped`**: Production resilience without security risks
-* **`--network`**: Network isolation for controlled communication
+**Quarkus-specific deployment additions**:
+* Mount PEM certificates as read-only: `-v "./certificates:/app/certificates:ro"`
+* Set Quarkus log level: `-e QUARKUS_LOG_LEVEL=INFO`
+* Use `--restart=unless-stopped` for production resilience
 
 ## Security Monitoring and Compliance
 
@@ -311,34 +292,18 @@ Monitor these security-related metrics continuously:
 
 #### Container Security Validation
 
-```bash
-# Verify container security configuration
-docker inspect container --format='User: {{.Config.User}}'
-docker inspect container --format='SecurityOpt: {{.HostConfig.SecurityOpt}}'
-docker inspect container --format='ReadOnly: {{.HostConfig.ReadonlyRootfs}}'
-docker inspect container --format='CapDrop: {{.HostConfig.CapDrop}}'
+For the complete pre-deployment verification checklist (non-root user, capabilities, read-only FS, resource limits, image signing, logging), see `Skill: pm-dev-oci:oci-security` → `standards/owasp-container-security.md` § "Container Security Verification".
 
+**Quarkus-specific validation**:
+
+```bash
 # Test application security endpoints
 curl -k https://localhost:8443/q/health/live   # Should return 200
 curl -k https://localhost:8443/q/health/ready  # Should return 200
 
 # Verify TLS configuration
 openssl s_client -connect localhost:8443 -servername localhost
-
-# Performance verification with security
-docker logs container | grep "started in"
-docker stats container --no-stream
 ```
-
-## Security Performance Metrics
-
-**Security Overhead Targets**:
-* **Image Size**: <100MB compact footprint
-* **Startup Time**: <0.5s with security hardening
-* **Memory Usage**: <150MB within security resource limits
-* **Attack Surface**: Minimal distroless + no shell access
-* **Privilege Level**: Non-root execution only
-* **Compliance**: OWASP Docker Top 10 aligned
 
 ## Enterprise Security Standards
 
@@ -498,7 +463,5 @@ void init() {
 ## References
 
 * [OWASP Top 10](https://owasp.org/www-project-top-ten/)
-* [OWASP Docker Top 10](https://owasp.org/www-project-docker-top-10/)
-* [NIST Container Security Guide](https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-190.pdf)
-* [CIS Docker Benchmark](https://www.cisecurity.org/benchmark/docker)
 * [Quarkus Security Guide](https://quarkus.io/guides/security)
+* Generic OCI/container security: `Skill: pm-dev-oci:oci-security` (OWASP Docker Top 10, runtime hardening, supply chain)

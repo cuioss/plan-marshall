@@ -6,12 +6,9 @@ Container standards for CUI Quarkus applications ensuring consistent, secure, an
 
 ## References
 
-* [OWASP Docker Top 10](https://owasp.org/www-project-docker-top-10/)
-* [NIST Container Security Guide](https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-190.pdf)
-* [CIS Docker Benchmark](https://www.cisecurity.org/benchmark/docker)
-* [Docker Security Best Practices](https://docs.docker.com/develop/security-best-practices/)
 * [Quarkus Container Guide](https://quarkus.io/guides/container-image)
 * [Distroless Images](https://gitingest.com/github.com/GoogleContainerTools/distroless)
+* Generic OCI security: `Skill: pm-dev-oci:oci-security` (OWASP, runtime hardening, supply chain, image building)
 
 ## Base Image Standards
 
@@ -223,28 +220,18 @@ exit 0
 
 ### OWASP Docker Top 10 Compliance
 
-**Production Mandatory Requirements**:
-- [x] **D01 - Secure User Mapping**: Non-root user execution (`USER nonroot`)
-- [x] **D02 - Patch Management**: Regular base image updates in CI/CD
-- [x] **D03 - Network Hardening**: HTTPS-only endpoints, network isolation
-- [x] **D04 - Security Defaults**: Read-only filesystem, no-new-privileges, capability dropping
-- [x] **D05 - Maintain Security Contexts**: Proper file permissions and ownership
-- [x] **D06 - Resource Protection**: Memory/CPU limits, DoS prevention
-- [x] **D07 - Data Protection**: Secure certificate management, no embedded secrets
-- [x] **D08 - Container Monitoring**: Health checks without external dependencies
-- [x] **D09 - Version Pinning**: Specific base image versions (never `latest`)
-- [x] **D10 - Secrets Management**: External secret stores, not embedded in images
+For the complete OWASP Docker Top 10 control mapping (D01-D10) with threats, mitigations, and implementation examples, see `Skill: pm-dev-oci:oci-security` → `standards/owasp-container-security.md`.
+
+The Docker Compose example above demonstrates OWASP compliance for Quarkus native applications (non-root user, capability dropping, read-only filesystem, resource limits, network isolation).
 
 ### Runtime Security Configuration
 
-For complete OWASP-compliant Docker deployment configuration with security options explained, see [security.md](security.md) section "OWASP-Compliant Deployment".
+For generic container runtime hardening (capabilities, seccomp, resource limits, daemon socket protection), see `Skill: pm-dev-oci:oci-security` → `standards/runtime-security.md`.
 
-**Key Security Requirements for Container Runtime**:
-- Use `--security-opt=no-new-privileges` to prevent privilege escalation
-- Drop all capabilities with `--cap-drop ALL` (principle of least privilege)
-- Enable read-only filesystem with `--read-only` and writable tmpfs mounts
-- Set resource limits (`--memory`, `--cpus`) to prevent DoS attacks
-- Mount certificates as read-only volumes
+**Quarkus-specific runtime requirements**:
+- Mount PEM certificates as read-only volumes
+- Configure HTTPS-only via `quarkus.http.insecure-requests=disabled`
+- Use distroless base image (`quay.io/quarkus/quarkus-distroless-image:2.0`)
 
 ## Certificate Management
 
