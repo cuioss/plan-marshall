@@ -1,6 +1,6 @@
 ---
 name: java-lombok
-description: Lombok patterns including @Delegate, @Builder, @Value, @UtilityClass for reducing boilerplate
+description: Lombok patterns including @Delegate, @Builder, @UtilityClass for reducing boilerplate
 user-invocable: false
 ---
 
@@ -50,23 +50,28 @@ public class CachedTokenValidator extends BaseTokenValidator { }
 
 ### @Builder - Complex Object Construction
 
-Use `@Builder` for classes with multiple optional parameters:
+Use `@Builder` for records or classes with multiple optional parameters. **Always use @Builder for types with 4+ constructor parameters** — direct constructor calls with many positional arguments are error-prone and hard to read.
+
+#### Records with @Builder
+
+Place `@Builder` on the record's compact constructor for reliable builder generation:
 
 ```java
-@Value
-@Builder(toBuilder = true)
-public class TokenConfig {
-    String issuer;
-    String audience;
+public record TokenConfig(
+    String issuer,
+    String audience,
+    Duration validity,
+    int clockSkewSeconds,
+    @Singular Set<String> requiredClaims
+) {
+    @Builder
+    TokenConfig {}
 
-    @Builder.Default
-    Duration validity = Duration.ofHours(1);
-
-    @Builder.Default
-    int clockSkewSeconds = 30;
-
-    @Singular
-    Set<String> requiredClaims;
+    // Partial manual builder to provide defaults (records don't support @Builder.Default)
+    public static class TokenConfigBuilder {
+        private Duration validity = Duration.ofHours(1);
+        private int clockSkewSeconds = 30;
+    }
 }
 
 // Usage
@@ -76,35 +81,56 @@ TokenConfig config = TokenConfig.builder()
     .requiredClaim("sub")    // @Singular generates add method
     .requiredClaim("exp")
     .build();
+```
+
+**Important limitations with records:**
+- `@Builder.Default` does not work on record components — provide defaults via a partial manual builder class instead (see example above)
+- `toBuilder = true` is not supported on records
+- `@Singular` works normally on collection-type components
+
+#### Classes with @Builder
+
+For cases requiring `@Builder.Default` or `toBuilder`, use a class:
+
+```java
+@Builder(toBuilder = true)
+public class ApiResponse {
+    private final String userId;
+    private final String status;
+
+    @Builder.Default
+    private final int retryCount = 3;
+
+    @Singular
+    private final List<String> messages;
+}
 
 // Copy with modifications via toBuilder()
-TokenConfig modified = config.toBuilder()
-    .validity(Duration.ofHours(2))
+ApiResponse modified = response.toBuilder()
+    .status("updated")
     .build();
 ```
 
-**Use @Builder for**: Classes with 3+ parameters, optional parameters, immutable configuration objects, DTOs with many fields. **Always use @Builder for classes with 4+ constructor parameters** — direct constructor calls with many positional arguments are error-prone and hard to read. **Always add @Singular to collection-type fields** in @Builder classes — it generates convenient single-element add methods and ensures the collection is built as an immutable copy.
+**Always add @Singular to collection-type fields** in @Builder classes — it generates convenient single-element add methods and ensures the collection is built as an immutable copy.
 
-### @Value - Immutable Objects
+### @Value - Replaced by Records
 
-Use `@Value` for immutable value objects and DTOs:
+`@Value` is superseded by Java records for immutable value objects. Use records instead:
 
 ```java
+// PREFER - Java record
+public record ValidationResult(boolean valid, List<String> errors, Instant validatedAt) {}
+
+// AVOID - Lombok @Value (use only if stuck on Java < 16)
 @Value
 public class ValidationResult {
     boolean valid;
     List<String> errors;
     Instant validatedAt;
 }
-
-// Usage
-ValidationResult result = new ValidationResult(true, List.of(), Instant.now());
-boolean isValid = result.isValid();  // Getter
 ```
 
-`@Value` generates: all-args constructor, getters (no setters), equals/hashCode, toString, all fields private final.
-
-**Use @Value for**: Immutable DTOs, value objects, API request/response objects, configuration data.
+Records provide the same guarantees as `@Value` (immutability, equals/hashCode, toString, accessors) as a language feature, with the additional benefit of pattern matching support.
 
 ### @Data - Mutable Objects (Use Sparingly)
 
@@ -117,7 +143,7 @@ public class UserPreferences {
 }
 ```
 
-**Prefer @Value or records for immutability**. Use @Data only when mutability is genuinely required.
+**Prefer records for immutability**. Use @Data only when mutability is genuinely required.
 
 ### @UtilityClass - Static Method Classes
 
@@ -136,43 +162,18 @@ public class TokenUtils {
 
 Makes class final, constructor private, all methods static.
 
-## Records vs Lombok @Value
+## When to Use @Builder with Records vs Classes
 
-| Criteria | Use Records | Use Lombok @Value |
-|----------|-------------|-------------------|
-| Java version | Java 21+ (baseline) | Java 11+ |
-| Builder pattern | Not built-in | @Value + @Builder |
-| Collection builders | Not available | @Singular |
-| Pattern matching | Java 21+ | Not available |
-| Project context | Minimal dependencies | Already using Lombok |
-| Customization | Limited | More flexible |
-
-```java
-// Simple case - prefer records
-public record User(String id, String name, String email) {}
-
-// Complex case - use Lombok
-@Value
-@Builder
-@JsonIgnoreProperties(ignoreUnknown = true)
-public class ApiResponse {
-    @JsonProperty("user_id")
-    String userId;
-    String status;
-    @Singular
-    List<String> messages;
-}
-```
-
-**Migration guidance**: See `pm-dev-java:java-core` skill for Lombok to records migration.
+- **Records + @Builder**: Default choice for immutable types with many parameters. Accept the limitation that defaults require a partial manual builder class.
+- **Classes + @Builder**: Use when you need `@Builder.Default`, `toBuilder`, or Jackson annotations that don't work well on record components.
 
 ## Common Pitfalls
 
 | Pitfall | Wrong | Correct |
 |---------|-------|---------|
-| Overusing @Data | `@Data` for immutable objects | Use `@Value` |
-| Missing defaults | Builder without `@Builder.Default` | Add defaults for optional fields |
-| No toBuilder | Immutable without copy method | `@Builder(toBuilder = true)` |
+| Using @Value | `@Value` for immutable objects | Use records |
+| Overusing @Data | `@Data` for immutable objects | Use records |
+| @Builder.Default on records | `@Builder.Default` on record component | Partial manual builder class with defaults |
 | Inheritance | `extends BaseClass` | `@Delegate` with composition |
 
 ## Related Skills
