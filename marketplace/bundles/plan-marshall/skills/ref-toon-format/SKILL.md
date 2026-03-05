@@ -258,12 +258,12 @@ Follow established patterns for handoffs, memory, and fixtures.
 ## Quality Verification
 
 Components using this skill should demonstrate:
-- [ ] TOON used for uniform array structures
-- [ ] Length declarations `[N]` match actual row counts
-- [ ] Field headers `{field1,field2}` match all rows
-- [ ] CSV escaping for values with commas
-- [ ] Proper indentation for nesting
-- [ ] 30%+ token reduction vs equivalent JSON
+- TOON used for uniform array structures
+- Length declarations `[N]` match actual row counts
+- Field headers `{field1,field2}` match all rows
+- CSV escaping for values with commas
+- Proper indentation for nesting
+- 30%+ token reduction vs equivalent JSON
 
 ## Resources
 

@@ -108,11 +108,11 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-
 
 ---
 
-## Checklist
+## Rules
 
-- [ ] Document definition created: `documents/{type}.toon`
-- [ ] All required fields marked with `true`
-- [ ] Field types match expected input format
-- [ ] Template created: `templates/{type}.md`
-- [ ] Template placeholders match field names
-- [ ] Sections defined in logical order
+- Document definition created: `documents/{type}.toon`
+- All required fields marked with `true`
+- Field types match expected input format
+- Template created: `templates/{type}.md`
+- Template placeholders match field names
+- Sections defined in logical order

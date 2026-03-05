@@ -490,5 +490,99 @@ def test_markdown_skill_detects_missing_user_invocable():
 
 
 # =============================================================================
+# Markdown Subcommand Tests - Checklist Pattern Detection
+# =============================================================================
+
+
+def test_checklist_detection_present():
+    """Test checklist detection finds - [ ] patterns."""
+    content = '---\nname: test\ndescription: test\n---\n\n# Test\n\n## Rules\n\n- [ ] First item\n- [ ] Second item\n- [ ] Third item\n'
+    temp_file = create_temp_file(content)
+    try:
+        result = run_script(SCRIPT_PATH, 'markdown', '--file', str(temp_file), '--type', 'skill')
+        assert result.returncode == 0, f'Script returned error: {result.stderr}'
+        data = result.json()
+        checklists = data['checklist_patterns']
+        assert checklists['has_checklists'] is True
+        assert checklists['count'] == 3
+    finally:
+        temp_file.unlink()
+
+
+def test_checklist_detection_absent():
+    """Test checklist detection returns False when no checkboxes."""
+    content = '---\nname: test\ndescription: test\n---\n\n# Test\n\n- First item\n- Second item\n'
+    temp_file = create_temp_file(content)
+    try:
+        result = run_script(SCRIPT_PATH, 'markdown', '--file', str(temp_file), '--type', 'skill')
+        assert result.returncode == 0, f'Script returned error: {result.stderr}'
+        data = result.json()
+        checklists = data['checklist_patterns']
+        assert checklists['has_checklists'] is False
+        assert checklists['count'] == 0
+    finally:
+        temp_file.unlink()
+
+
+def test_checklist_detection_mixed():
+    """Test checklist detection counts both - [ ] and - [x] patterns."""
+    content = '---\nname: test\ndescription: test\n---\n\n# Test\n\n- [ ] Unchecked\n- [x] Checked\n- [X] Also checked\n'
+    temp_file = create_temp_file(content)
+    try:
+        result = run_script(SCRIPT_PATH, 'markdown', '--file', str(temp_file), '--type', 'skill')
+        assert result.returncode == 0, f'Script returned error: {result.stderr}'
+        data = result.json()
+        checklists = data['checklist_patterns']
+        assert checklists['has_checklists'] is True
+        assert checklists['count'] == 3
+    finally:
+        temp_file.unlink()
+
+
+def test_checklist_template_exempt():
+    """Test that files in /templates/ path are exempt from checklist detection."""
+    # Template path: use the real pr-template.md which has checkboxes
+    template_path = (
+        PROJECT_ROOT / 'marketplace' / 'bundles' / 'plan-marshall'
+        / 'skills' / 'phase-6-finalize' / 'templates' / 'pr-template.md'
+    )
+    if not template_path.exists():
+        return  # Skip if fixture not available
+
+    result = run_script(SCRIPT_PATH, 'markdown', '--file', str(template_path), '--type', 'skill')
+    assert result.returncode == 0, f'Script returned error: {result.stderr}'
+    data = result.json()
+    checklists = data['checklist_patterns']
+    assert checklists['has_checklists'] is False, 'Templates should be exempt from checklist detection'
+
+    # Non-template file with checkboxes should detect them
+    content = '---\nname: test\ndescription: test\n---\n\n# Test\n\n- [ ] Item\n'
+    temp_file = create_temp_file(content)
+    try:
+        result2 = run_script(SCRIPT_PATH, 'markdown', '--file', str(temp_file), '--type', 'skill')
+        assert result2.returncode == 0
+        data2 = result2.json()
+        assert data2['checklist_patterns']['has_checklists'] is True, 'Non-templates should detect checklists'
+    finally:
+        temp_file.unlink()
+
+
+def test_checklist_sections_extracted():
+    """Test that section headers containing checklists are identified."""
+    content = '---\nname: test\ndescription: test\n---\n\n# Test\n\n## Quality Rules\n\n- [ ] Item A\n\n## Other Section\n\nNo checklists here.\n\n## Verification\n\n- [x] Item B\n'
+    temp_file = create_temp_file(content)
+    try:
+        result = run_script(SCRIPT_PATH, 'markdown', '--file', str(temp_file), '--type', 'skill')
+        assert result.returncode == 0, f'Script returned error: {result.stderr}'
+        data = result.json()
+        checklists = data['checklist_patterns']
+        assert 'Quality Rules' in checklists['sections']
+        assert 'Verification' in checklists['sections']
+        assert 'Other Section' not in checklists['sections']
+    finally:
+        temp_file.unlink()
+
+
+# =============================================================================
 # Main
 # =============================================================================

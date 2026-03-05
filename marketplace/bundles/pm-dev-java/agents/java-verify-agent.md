@@ -39,33 +39,33 @@ Skill: pm-dev-java:java-core
 Apply Step 6 verification checklist from the skill:
 
 **Core patterns check:**
-- [ ] Classes follow Single Responsibility Principle
-- [ ] Methods are short and focused (< 50 lines)
-- [ ] Meaningful names used throughout
-- [ ] Exception handling is appropriate
-- [ ] Immutability used where possible
+- Classes follow Single Responsibility Principle
+- Methods are short and focused (< 50 lines)
+- Meaningful names used throughout
+- Exception handling is appropriate
+- Immutability used where possible
 
 **Null safety check:**
-- [ ] @NullMarked in package-info.java
-- [ ] No @Nullable used for return types
-- [ ] Optional used for "no result" scenarios
-- [ ] Defensive null checks at API boundaries
+- @NullMarked in package-info.java
+- No @Nullable used for return types
+- Optional used for "no result" scenarios
+- Defensive null checks at API boundaries
 
 **Lombok check:**
-- [ ] @Builder used for complex construction
-- [ ] @Value used for immutable objects
-- [ ] @Delegate used for composition
-- [ ] No @Slf4j (use CuiLogger)
+- @Builder used for complex construction
+- @Value used for immutable objects
+- @Delegate used for composition
+- No @Slf4j (use CuiLogger)
 
 **Modern features check:**
-- [ ] Records used for simple data carriers
-- [ ] Switch expressions used instead of statements
-- [ ] Streams used appropriately
+- Records used for simple data carriers
+- Switch expressions used instead of statements
+- Streams used appropriately
 
 **Logging check:**
-- [ ] CuiLogger used (not SLF4J/Log4j)
-- [ ] LogRecord used for important messages
-- [ ] Exception parameter comes first
+- CuiLogger used (not SLF4J/Log4j)
+- LogRecord used for important messages
+- Exception parameter comes first
 
 ### Step 3: Return Compliance Report
 

@@ -239,12 +239,12 @@ Provides:
 
 ## Quality Verification
 
-- [x] Self-contained with relative path pattern
-- [x] Progressive disclosure (standards loaded on-demand)
-- [x] Script outputs TOON for machine processing
-- [x] commit-changes agent functionality absorbed
-- [x] Clear workflow definition
-- [x] Standards documentation maintained
+- Self-contained with relative path pattern
+- Progressive disclosure (standards loaded on-demand)
+- Script outputs TOON for machine processing
+- commit-changes agent functionality absorbed
+- Clear workflow definition
+- Standards documentation maintained
 
 ## References
 

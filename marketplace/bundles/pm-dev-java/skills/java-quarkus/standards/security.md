@@ -349,31 +349,31 @@ test -r "/app/certificates/tls.crt" && test -r "/app/certificates/tls.key"
 openssl s_client -connect localhost:8443 -verify_return_error
 ```
 
-## Security Validation Checklist
+## Security Validation Rules
 
 ### Pre-Deployment Security Validation
 
-- [ ] Container runs as non-root user
-- [ ] Read-only filesystem enabled
-- [ ] All capabilities dropped
-- [ ] Resource limits configured
-- [ ] Certificates externally mounted
-- [ ] No sensitive data in environment variables
-- [ ] HTTPS-only endpoints configured
-- [ ] Security scanning completed
-- [ ] Vulnerability assessment passed
-- [ ] Penetration testing completed (production)
+- Container runs as non-root user
+- Read-only filesystem enabled
+- All capabilities dropped
+- Resource limits configured
+- Certificates externally mounted
+- No sensitive data in environment variables
+- HTTPS-only endpoints configured
+- Security scanning completed
+- Vulnerability assessment passed
+- Penetration testing completed (production)
 
 ### Runtime Security Validation
 
-- [ ] Authentication mechanisms working correctly
-- [ ] Authorization policies enforced
-- [ ] Encryption working for sensitive data
-- [ ] Audit logging operational
-- [ ] Security monitoring active
-- [ ] Certificate rotation tested
-- [ ] Incident response procedures documented
-- [ ] Security metrics collected and analyzed
+- Authentication mechanisms working correctly
+- Authorization policies enforced
+- Encryption working for sensitive data
+- Audit logging operational
+- Security monitoring active
+- Certificate rotation tested
+- Incident response procedures documented
+- Security metrics collected and analyzed
 
 ## Security Anti-Patterns
 

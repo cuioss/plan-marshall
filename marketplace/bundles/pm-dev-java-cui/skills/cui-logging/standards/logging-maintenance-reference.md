@@ -612,69 +612,69 @@ grep -n "increment.*JWKS_JSON_PARSE_FAILED" src/main/java/
 
 ## Success Criteria
 
-### Logger Configuration Checklist
+### Logger Configuration Rules
 
-- [ ] Only CuiLogger instances used throughout codebase
-- [ ] No slf4j, log4j, or java.util.logging imports
-- [ ] No System.out.println() or System.err.println() calls
-- [ ] All loggers declared as `private static final CuiLogger LOGGER`
-- [ ] Logger instantiated with class: `new CuiLogger(ClassName.class)`
-- [ ] No @Slf4j or other logging annotations
+- Only CuiLogger instances used throughout codebase
+- No slf4j, log4j, or java.util.logging imports
+- No System.out.println() or System.err.println() calls
+- All loggers declared as `private static final CuiLogger LOGGER`
+- Logger instantiated with class: `new CuiLogger(ClassName.class)`
+- No @Slf4j or other logging annotations
 
-### LogRecord Implementation Checklist
+### LogRecord Implementation Rules
 
-- [ ] INFO level uses LogRecord (not direct strings)
-- [ ] WARN level uses LogRecord (not direct strings)
-- [ ] ERROR level uses LogRecord (not direct strings)
-- [ ] FATAL level uses LogRecord (not direct strings)
-- [ ] DEBUG level uses direct strings (not LogRecord)
-- [ ] TRACE level uses direct strings (not LogRecord)
-- [ ] All parameter substitutions use `%s` (not `{}`, `%d`, etc.)
-- [ ] Exception parameter comes first in all log calls with exceptions
+- INFO level uses LogRecord (not direct strings)
+- WARN level uses LogRecord (not direct strings)
+- ERROR level uses LogRecord (not direct strings)
+- FATAL level uses LogRecord (not direct strings)
+- DEBUG level uses direct strings (not LogRecord)
+- TRACE level uses direct strings (not LogRecord)
+- All parameter substitutions use `%s` (not `{}`, `%d`, etc.)
+- Exception parameter comes first in all log calls with exceptions
 
-### LogMessages Structure Checklist
+### LogMessages Structure Rules
 
-- [ ] Module has LogMessages class if ≥10 types or ≥10 INFO+ messages
-- [ ] LogMessages follows 4-level DSL structure
-- [ ] All LogMessages classes annotated with @UtilityClass
-- [ ] INFO identifiers in range 001-099
-- [ ] WARN identifiers in range 100-199
-- [ ] ERROR identifiers in range 200-299
-- [ ] FATAL identifiers in range 300-399
-- [ ] No duplicate identifiers within module
-- [ ] All LogRecords follow standard template pattern
+- Module has LogMessages class if ≥10 types or ≥10 INFO+ messages
+- LogMessages follows 4-level DSL structure
+- All LogMessages classes annotated with @UtilityClass
+- INFO identifiers in range 001-099
+- WARN identifiers in range 100-199
+- ERROR identifiers in range 200-299
+- FATAL identifiers in range 300-399
+- No duplicate identifiers within module
+- All LogRecords follow standard template pattern
 
-### Documentation Checklist
+### Documentation Rules
 
-- [ ] doc/LogMessages.adoc exists if module has LogMessages
-- [ ] Documentation follows standard table format
-- [ ] All INFO/WARN/ERROR/FATAL messages documented
-- [ ] Documentation matches implementation exactly
-- [ ] Template strings match between docs and code
-- [ ] Identifier numbers match between docs and code
+- doc/LogMessages.adoc exists if module has LogMessages
+- Documentation follows standard table format
+- All INFO/WARN/ERROR/FATAL messages documented
+- Documentation matches implementation exactly
+- Template strings match between docs and code
+- Identifier numbers match between docs and code
 
-### Testing Checklist
+### Testing Rules
 
-- [ ] All INFO level LogRecords tested with LogAsserts
-- [ ] All WARN level LogRecords tested with LogAsserts
-- [ ] All ERROR level LogRecords tested with LogAsserts
-- [ ] All FATAL level LogRecords tested with LogAsserts
-- [ ] LogAsserts present in BUSINESS LOGIC tests (not standalone)
-- [ ] Tests use @EnableTestLogger annotation
-- [ ] Tests use cui-test-juli-logger framework
-- [ ] Parameter substitution tested for all LogRecords
-- [ ] Exception logging tested where applicable
-- [ ] Every LogRecord referenced in at least 2 places:
-  - [ ] Production code (where .format() is called)
-  - [ ] Business logic test (where LogAsserts verifies it)
+- All INFO level LogRecords tested with LogAsserts
+- All WARN level LogRecords tested with LogAsserts
+- All ERROR level LogRecords tested with LogAsserts
+- All FATAL level LogRecords tested with LogAsserts
+- LogAsserts present in BUSINESS LOGIC tests (not standalone)
+- Tests use @EnableTestLogger annotation
+- Tests use cui-test-juli-logger framework
+- Parameter substitution tested for all LogRecords
+- Exception logging tested where applicable
+- Every LogRecord referenced in at least 2 places:
+  - Production code (where .format() is called)
+  - Business logic test (where LogAsserts verifies it)
 
-### Duplicate Resolution Checklist
+### Duplicate Resolution Rules
 
-- [ ] No identical log messages across different components
-- [ ] Similar messages consolidated with parameters
-- [ ] No redundant LogRecord declarations
-- [ ] Common errors logged from single point
-- [ ] All parameter formats standardized to `%s`
+- No identical log messages across different components
+- Similar messages consolidated with parameters
+- No redundant LogRecord declarations
+- Common errors logged from single point
+- All parameter formats standardized to `%s`
 
 ## LogRecord Discovery and Coverage Verification
 

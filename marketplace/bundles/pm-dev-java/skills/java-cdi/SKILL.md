@@ -235,15 +235,15 @@ public class PaymentService {
 
 ---
 
-## Quality Checklist
+## Quality Rules
 
-- [ ] Constructor injection used (never field/setter injection)
-- [ ] Final fields for all injected dependencies
-- [ ] Single constructor (no @Inject needed) or @Inject on injection constructor
-- [ ] Appropriate scope selected for each bean
-- [ ] Instance<T> used for optional dependencies
-- [ ] Producer methods use @Dependent if returning null
-- [ ] Normal-scoped producers never return null
+- Constructor injection used (never field/setter injection)
+- Final fields for all injected dependencies
+- Single constructor (no @Inject needed) or @Inject on injection constructor
+- Appropriate scope selected for each bean
+- Instance<T> used for optional dependencies
+- Producer methods use @Dependent if returning null
+- Normal-scoped producers never return null
 
 ## Related Skills
 

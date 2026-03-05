@@ -40,7 +40,7 @@ Before proceeding to next bundle:
 - Verification completed
 - Checklist confirmed
 
-## Mandatory Completion Checklist
+## Mandatory Completion Rules
 
 **Before proceeding to next bundle**, verify:
 

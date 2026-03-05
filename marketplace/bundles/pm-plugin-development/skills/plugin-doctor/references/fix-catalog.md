@@ -166,6 +166,18 @@ description: [Description needed]
 
 **Why Safe**: Purely additive — appending `Skill` never removes capabilities or changes behavior, only makes the agent discoverable by the Task dispatcher.
 
+### 11. checklist-pattern
+
+**Description**: Checkbox patterns (`- [ ]`, `- [x]`) in LLM-consumed markdown files.
+
+**Detection**: Lines matching `^- \[ \] ` or `^- \[[xX]\] `. Files in `/templates/` directories are exempt.
+
+**Fix Strategy**:
+- `re.sub(r'^(- )\[ \] ', r'\1', content, flags=re.MULTILINE)`
+- `re.sub(r'^(- )\[[xX]\] ', r'\1', content, flags=re.MULTILINE)`
+
+**Why Safe**: Checkbox markers are a human UI element (GitHub rendering). Removing them preserves the list item text. LLMs gain no value from `[ ]` prefixes.
+
 ### SCR-009. positional-argument
 
 **Description**: Script uses positional arguments instead of named `--kebab-case` flags.
@@ -476,6 +488,7 @@ def categorize(issue_type):
         "array-syntax-tools", "trailing-whitespace",
         "improper-indentation", "missing-blank-line-before-list",
         "agent-skill-tool-visibility",  # additive Skill append
+        "checklist-pattern",            # remove checkbox markers
         "wrong-plan-parameter",         # PM-003: mechanical swap
         "missing-plan-parameter",       # PM-004: add required param
         "positional-argument",          # SCR-009: convert to named flag
@@ -510,10 +523,11 @@ When multiple fixes needed for same file:
 3. **missing-*-field** (complete frontmatter - name, description, user-invocable, tools/allowed-tools)
 4. **array-syntax-tools** (syntax normalization)
 5. **trailing-whitespace** (cleanup)
-6. **Rule violations** (architectural - agent-task-tool-prohibited, agent-maven-restricted, workflow-hardcoded-script-path, workflow-explicit-script-calls, agent-skill-tool-visibility)
-7. **Pattern violations** (behavioral - agent-lessons-via-skill)
-8. **plan-marshall violations** (PM-001 through PM-005 - script call compliance)
-9. **Script argument violations** (SCR-009 through SCR-011 - argparse conventions)
+6. **checklist-pattern** (content optimization)
+7. **Rule violations** (architectural - agent-task-tool-prohibited, agent-maven-restricted, workflow-hardcoded-script-path, workflow-explicit-script-calls, agent-skill-tool-visibility)
+8. **Pattern violations** (behavioral - agent-lessons-via-skill)
+9. **plan-marshall violations** (PM-001 through PM-005 - script call compliance)
+10. **Script argument violations** (SCR-009 through SCR-011 - argparse conventions)
 
 ## See Also
 

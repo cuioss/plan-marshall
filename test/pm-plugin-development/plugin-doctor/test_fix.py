@@ -363,5 +363,62 @@ def test_verify_misspelled_user_invocable_still_present():
 
 
 # =============================================================================
+# Apply checklist-pattern Tests
+# =============================================================================
+
+
+def test_checklist_pattern_is_safe():
+    """Test checklist-pattern is categorized as safe fix."""
+    issues = {
+        'fixable_issues': [
+            {'type': 'checklist-pattern', 'file': 'test.md'},
+            {'type': 'subdoc-checklist-pattern', 'file': 'ref.md'},
+        ]
+    }
+    result = run_script(SCRIPT_PATH, 'categorize', input_data=json.dumps(issues))
+    data = result.json()
+    safe = data.get('safe', [])
+    safe_types = [f.get('type') for f in safe]
+    assert 'checklist-pattern' in safe_types, f'checklist-pattern should be safe, got {safe_types}'
+    assert 'subdoc-checklist-pattern' in safe_types, f'subdoc-checklist-pattern should be safe, got {safe_types}'
+
+
+def test_apply_checklist_pattern_fix():
+    """Test applying checklist-pattern fix removes - [ ] markers."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        md_file = Path(tmp_dir) / 'SKILL.md'
+        md_file.write_text('---\nname: test\n---\n\n# Test\n\n- [ ] First item\n- [ ] Second item\n- Normal item\n')
+
+        fix_json = json.dumps({'type': 'checklist-pattern', 'file': 'SKILL.md'})
+        result = run_script(SCRIPT_PATH, 'apply', '--fix', '-', '--bundle-dir', tmp_dir, input_data=fix_json)
+        data = result.json()
+        assert data['success'] is True, f'Fix should succeed: {data}'
+
+        content = md_file.read_text()
+        assert '- [ ]' not in content, f'Checkboxes should be removed: {content}'
+        assert '- First item' in content, 'List items should be preserved'
+        assert '- Normal item' in content, 'Non-checkbox items should be unchanged'
+
+
+def test_apply_checklist_pattern_fix_mixed():
+    """Test applying checklist-pattern fix removes both [ ] and [x] markers."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        md_file = Path(tmp_dir) / 'test.md'
+        md_file.write_text('# Test\n\n- [ ] Unchecked\n- [x] Checked\n- [X] Also checked\n')
+
+        fix_json = json.dumps({'type': 'subdoc-checklist-pattern', 'file': 'test.md'})
+        result = run_script(SCRIPT_PATH, 'apply', '--fix', '-', '--bundle-dir', tmp_dir, input_data=fix_json)
+        data = result.json()
+        assert data['success'] is True, f'Fix should succeed: {data}'
+
+        content = md_file.read_text()
+        assert '[ ]' not in content, 'Unchecked boxes should be removed'
+        assert '[x]' not in content, 'Checked boxes should be removed'
+        assert '- Unchecked' in content, 'List text should be preserved'
+        assert '- Checked' in content, 'List text should be preserved'
+        assert '- Also checked' in content, 'List text should be preserved'
+
+
+# =============================================================================
 # Main
 # =============================================================================

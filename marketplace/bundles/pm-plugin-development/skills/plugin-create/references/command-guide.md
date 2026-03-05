@@ -631,23 +631,23 @@ Re-run diagnosis
 Confirm fixes applied
 ```
 
-## Validation Checklist
+## Validation Rules
 
 Before creating command, verify:
 
-- [ ] Name is kebab-case with verb (create-agent, run-tests, diagnose-code)
-- [ ] Description is <100 chars
-- [ ] Frontmatter has only name and description (no tools)
-- [ ] CONTINUOUS IMPROVEMENT RULE uses manage-lessons skill
-- [ ] All required sections present
-- [ ] Workflow is numbered steps
-- [ ] Parameters documented (if any)
-- [ ] Usage examples provided
-- [ ] Related components listed
-- [ ] Command is <400 lines
-- [ ] No embedded templates
-- [ ] Delegates to skills for heavy lifting
-- [ ] Error handling specified
+- Name is kebab-case with verb (create-agent, run-tests, diagnose-code)
+- Description is <100 chars
+- Frontmatter has only name and description (no tools)
+- CONTINUOUS IMPROVEMENT RULE uses manage-lessons skill
+- All required sections present
+- Workflow is numbered steps
+- Parameters documented (if any)
+- Usage examples provided
+- Related components listed
+- Command is <400 lines
+- No embedded templates
+- Delegates to skills for heavy lifting
+- Error handling specified
 
 ## Common Pitfalls
 

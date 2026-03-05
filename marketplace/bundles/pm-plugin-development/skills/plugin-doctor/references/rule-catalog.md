@@ -47,6 +47,10 @@ Four detection modes:
 
 **skill-unused-tools-declared**: Skills declare `allowed-tools` that are never referenced in SKILL.md content. Detection is structural (frontmatter extraction); semantic usage analysis is delegated to tool-coverage-agent.
 
+## Content Rules
+
+**checklist-pattern**: Checkbox patterns (`- [ ]`, `- [x]`) in LLM-consumed files. These are human UI elements with zero value for LLMs. Exception: files in `/templates/` directories (rendered by GitHub).
+
 ## PM-Workflow Rules
 
 **pm-implicit-script-call** (PM-001): Script operations without explicit bash code blocks.

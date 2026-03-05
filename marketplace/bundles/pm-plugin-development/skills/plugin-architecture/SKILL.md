@@ -636,14 +636,14 @@ Build complex capabilities from simple, focused skills.
 ## Quality Verification
 
 Components using this skill should demonstrate:
-- [ ] Self-contained (no external file references)
-- [ ] relative path pattern used throughout
-- [ ] Progressive disclosure implemented
-- [ ] Appropriate skill pattern chosen
-- [ ] Goal-based organization followed
-- [ ] Architecture rules compliance
-- [ ] Token optimization applied
-- [ ] Quality standards met
+- Self-contained (no external file references)
+- relative path pattern used throughout
+- Progressive disclosure implemented
+- Appropriate skill pattern chosen
+- Goal-based organization followed
+- Architecture rules compliance
+- Token optimization applied
+- Quality standards met
 
 ## References
 

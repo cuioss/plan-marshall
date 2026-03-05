@@ -321,6 +321,27 @@ def apply_invokable_mismatch_fix(file_path: Path, fix: dict, templates: dict) ->
     return {'success': True, 'changes': ['Changed user-invocable from true to false (reference-mode skill)']}
 
 
+def apply_checklist_pattern_fix(file_path: Path, fix: dict, templates: dict) -> dict:
+    """Remove checkbox patterns (- [ ] / - [x]) from markdown."""
+    with open(file_path, encoding='utf-8') as f:
+        content = f.read()
+
+    new_content = re.sub(r'^(- )\[ \] ', r'\1', content, flags=re.MULTILINE)
+    new_content = re.sub(r'^(- )\[[xX]\] ', r'\1', new_content, flags=re.MULTILINE)
+
+    if new_content == content:
+        return {'success': False, 'error': 'No checkbox patterns found'}
+
+    with open(file_path, 'w', encoding='utf-8') as f:
+        f.write(new_content)
+
+    old_lines = content.splitlines()
+    new_lines = new_content.splitlines()
+    changes = sum(1 for old, new in zip(old_lines, new_lines, strict=False) if old != new)
+
+    return {'success': True, 'changes': [f'Removed {changes} checkbox patterns'], 'lines_fixed': changes}
+
+
 FIX_HANDLERS = {
     'missing-frontmatter': apply_missing_frontmatter,
     'array-syntax-tools': apply_array_syntax_fix,
@@ -336,6 +357,8 @@ FIX_HANDLERS = {
     'misspelled-user-invocable': apply_rename_frontmatter_field,
     'missing-user-invocable': apply_missing_field_fix,
     'skill-invokable-mismatch': apply_invokable_mismatch_fix,
+    'checklist-pattern': apply_checklist_pattern_fix,
+    'subdoc-checklist-pattern': apply_checklist_pattern_fix,
 }
 
 

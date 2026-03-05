@@ -180,18 +180,18 @@ Change types determine which agent handles the outline workflow:
 | `manual` | Requires human judgment/action | Must split |
 | `mixed` | Contains both auto and manual parts | Must split into separate tasks |
 
-## Validation Checklist
+## Validation Rules
 
 Solution outline skills MUST validate that each deliverable contains:
 
-- [ ] `change_type` metadata
-- [ ] `execution_mode` metadata
-- [ ] `domain` metadata (single value from config.domains)
-- [ ] `module` metadata (module name from architecture)
-- [ ] `depends` field (`none` or valid deliverable references)
-- [ ] `**Profiles:**` block with valid profiles (`implementation`, `module_testing`, `integration_testing`, `verification`)
-- [ ] Explicit file list (not "all files matching X") — except `verification` profile where affected files can be empty
-- [ ] Verification command and criteria
+- `change_type` metadata
+- `execution_mode` metadata
+- `domain` metadata (single value from config.domains)
+- `module` metadata (module name from architecture)
+- `depends` field (`none` or valid deliverable references)
+- `**Profiles:**` block with valid profiles (`implementation`, `module_testing`, `integration_testing`, `verification`)
+- Explicit file list (not "all files matching X") — except `verification` profile where affected files can be empty
+- Verification command and criteria
 
 ## Deliverable ID Format
 

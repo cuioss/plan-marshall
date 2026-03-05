@@ -585,35 +585,35 @@ tools: Bash(git:*), Bash(npm:*), Bash(mvn:*)
 2. **Can Be Bypassed**: Users can work around these restrictions
 3. **Purpose**: Convenience layer to prevent accidental operations, not foolproof isolation
 
-## Quality Checklist
+## Quality Rules
 
 Use this checklist when creating or reviewing frontmatter:
 
 **All Components** (agents, commands, skills):
-- [ ] YAML frontmatter present with `---` delimiters
-- [ ] `name` field present with valid pattern `^[a-z0-9-]+$`
-- [ ] `description` field present with adequate length
-- [ ] No blank lines in frontmatter
-- [ ] Valid YAML syntax (no tabs, proper spacing)
+- YAML frontmatter present with `---` delimiters
+- `name` field present with valid pattern `^[a-z0-9-]+$`
+- `description` field present with adequate length
+- No blank lines in frontmatter
+- Valid YAML syntax (no tabs, proper spacing)
 
 **Agents**:
-- [ ] `tools` field uses comma-separated format (not array)
-- [ ] Tools list does NOT include `Task`
-- [ ] Tools list does NOT include `Grep` if using parameterized `Bash`
-- [ ] `description` includes input/output examples
-- [ ] `model` field (if present) uses valid value: `sonnet`, `opus`, `haiku`
-- [ ] `color` field (if present) uses valid color name
+- `tools` field uses comma-separated format (not array)
+- Tools list does NOT include `Task`
+- Tools list does NOT include `Grep` if using parameterized `Bash`
+- `description` includes input/output examples
+- `model` field (if present) uses valid value: `sonnet`, `opus`, `haiku`
+- `color` field (if present) uses valid color name
 
 **Commands**:
-- [ ] `tools` field uses comma-separated format (not array)
-- [ ] Can include `Task` tool if orchestrating agents
-- [ ] Tools list does NOT include `Grep` if using parameterized `Bash`
-- [ ] `description` is user-focused (what command does, not how)
+- `tools` field uses comma-separated format (not array)
+- Can include `Task` tool if orchestrating agents
+- Tools list does NOT include `Grep` if using parameterized `Bash`
+- `description` is user-focused (what command does, not how)
 
 **Skills**:
-- [ ] No `tools`, `allowed-tools`, `model`, or `color` fields (not supported for skills)
-- [ ] **`user-invocable` field present** (either `true` or `false`)
-- [ ] `user-invocable` value matches skill purpose (true for user-facing, false for internal)
+- No `tools`, `allowed-tools`, `model`, or `color` fields (not supported for skills)
+- **`user-invocable` field present** (either `true` or `false`)
+- `user-invocable` value matches skill purpose (true for user-facing, false for internal)
 
 ## Reference
 

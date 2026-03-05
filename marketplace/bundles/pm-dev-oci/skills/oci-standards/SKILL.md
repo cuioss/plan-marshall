@@ -77,16 +77,16 @@ Read standards/distroless-health-probes.md
 
 ## Quick Reference
 
-### Dockerfile Checklist
+### Dockerfile Rules
 
-- [ ] Minimal base image (distroless, alpine, slim)
-- [ ] Multi-stage build separating build and runtime
-- [ ] Pinned image versions (no `latest`)
-- [ ] Non-root USER instruction
-- [ ] COPY instead of ADD
-- [ ] .dockerignore excludes secrets and build artifacts
-- [ ] No secrets in ENV, ARG, or COPY
-- [ ] BuildKit secrets for build-time credentials
-- [ ] OCI labels (`org.opencontainers.image.*`) present
-- [ ] Hadolint passes without errors
-- [ ] Health probe strategy for distroless (management interface or orchestrator-native probes)
+- Minimal base image (distroless, alpine, slim)
+- Multi-stage build separating build and runtime
+- Pinned image versions (no `latest`)
+- Non-root USER instruction
+- COPY instead of ADD
+- .dockerignore excludes secrets and build artifacts
+- No secrets in ENV, ARG, or COPY
+- BuildKit secrets for build-time credentials
+- OCI labels (`org.opencontainers.image.*`) present
+- Hadolint passes without errors
+- Health probe strategy for distroless (management interface or orchestrator-native probes)

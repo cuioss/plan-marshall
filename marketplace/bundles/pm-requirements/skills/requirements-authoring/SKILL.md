@@ -166,20 +166,20 @@ This skill integrates with:
 - ❌ Documenting features that don't exist or aren't planned
 - ✅ Verifying all documented features against code or approved plans
 
-## Quality Checklist
+## Quality Rules
 
 Before completing requirements/specification work:
 
-- [ ] All requirements follow SMART principles
-- [ ] All requirement IDs follow PREFIX-NUM format
-- [ ] All specifications have backtracking links to requirements
-- [ ] No hallucinated functionality documented
-- [ ] No duplicate information across documents
-- [ ] All cross-references verified and functional
-- [ ] Consistent terminology throughout
-- [ ] Clear traceability maintained
-- [ ] Implementation status indicators current
-- [ ] Documentation integrity validated
+- All requirements follow SMART principles
+- All requirement IDs follow PREFIX-NUM format
+- All specifications have backtracking links to requirements
+- No hallucinated functionality documented
+- No duplicate information across documents
+- All cross-references verified and functional
+- Consistent terminology throughout
+- Clear traceability maintained
+- Implementation status indicators current
+- Documentation integrity validated
 
 ## Related Standards
 

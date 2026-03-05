@@ -26,6 +26,8 @@ FIXABLE_ISSUE_TYPES = {
     'unsupported-skill-tools-field',
     'misspelled-user-invocable',
     'missing-user-invocable',
+    'checklist-pattern',
+    'subdoc-checklist-pattern',
     # Risky fixes (require confirmation)
     'unused-tool-declared',
     'tool-not-declared',
@@ -53,6 +55,8 @@ SAFE_FIX_TYPES = {
     'unsupported-skill-tools-field',
     'misspelled-user-invocable',
     'missing-user-invocable',
+    'checklist-pattern',
+    'subdoc-checklist-pattern',
 }
 
 # Risky fix types - require user confirmation

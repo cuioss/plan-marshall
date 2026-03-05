@@ -1003,14 +1003,14 @@ Parameters:
   target: "standards/"
 ```
 
-## Quality Verification Checklist
+## Quality Verification Rules
 
 All documentation must pass:
 
-- [ ] Professional, neutral tone (no marketing language)
-- [ ] Proper AsciiDoc formatting
-- [ ] Complete code examples
-- [ ] Verified references
-- [ ] Consistent terminology
-- [ ] Documents only existing features
-- [ ] All links valid
+- Professional, neutral tone (no marketing language)
+- Proper AsciiDoc formatting
+- Complete code examples
+- Verified references
+- Consistent terminology
+- Documents only existing features
+- All links valid

@@ -344,16 +344,16 @@ void shouldRejectNullParameters() {
 5. Add null checks with `Objects.requireNonNull()` at API boundaries
 6. Update tests to verify null-safety contracts
 
-## Quality Checklist
+## Quality Rules
 
-- [ ] Package has @NullMarked in package-info.java
-- [ ] No @Nullable used for return types (use Optional instead)
-- [ ] Nullable parameters documented and justified
-- [ ] Defensive null checks at API boundaries
-- [ ] Unit tests verify non-null contracts (see `pm-dev-java:junit-core` skill)
-- [ ] Static analysis configured and passing
-- [ ] JavaDoc documents null-safety contract
-- [ ] Collections specify element nullability if needed
+- Package has @NullMarked in package-info.java
+- No @Nullable used for return types (use Optional instead)
+- Nullable parameters documented and justified
+- Defensive null checks at API boundaries
+- Unit tests verify non-null contracts (see `pm-dev-java:junit-core` skill)
+- Static analysis configured and passing
+- JavaDoc documents null-safety contract
+- Collections specify element nullability if needed
 
 ## Related Skills
 

@@ -215,12 +215,12 @@ Never add dependencies without user approval. Always ask first.
 
 Standards in this skill ensure:
 
-- [x] Self-contained (no external references except to other skills/agents)
-- [x] Clear decision guidance for common scenarios
-- [x] Proper delegation to specialized skills (ref-development-standards)
-- [x] Proper delegation to specialized agents (research-best-practices-agent)
-- [x] Simple, focused structure (single standards file)
-- [x] Cross-cutting applicability to all development work
+- Self-contained (no external references except to other skills/agents)
+- Clear decision guidance for common scenarios
+- Proper delegation to specialized skills (ref-development-standards)
+- Proper delegation to specialized agents (research-best-practices-agent)
+- Simple, focused structure (single standards file)
+- Cross-cutting applicability to all development work
 
 ## References
 

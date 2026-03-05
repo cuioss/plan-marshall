@@ -375,20 +375,20 @@ For non-marketplace use cases, external implementations exist:
 | **Human Readable** | ⚠️ OK | ✅ Good | ⚠️ OK | ✅ Excellent |
 | **Schema Clarity** | ❌ Implicit | ✅ Explicit | ❌ None | ❌ Implicit |
 
-## Adoption Checklist
+## Adoption Rules
 
 Before adopting TOON in your project:
 
-- [ ] Identify data with uniform array structures
-- [ ] Measure current token usage (baseline)
-- [ ] Test TOON conversion with sample data
-- [ ] Measure token savings (should be >30%)
-- [ ] Verify LLM can parse TOON (test prompts)
-- [ ] Set up conversion layer (JSON ↔ TOON)
-- [ ] Update documentation/examples
-- [ ] Add to CI/CD if applicable
-- [ ] Monitor ecosystem maturity
-- [ ] Track actual cost savings
+- Identify data with uniform array structures
+- Measure current token usage (baseline)
+- Test TOON conversion with sample data
+- Measure token savings (should be >30%)
+- Verify LLM can parse TOON (test prompts)
+- Set up conversion layer (JSON ↔ TOON)
+- Update documentation/examples
+- Add to CI/CD if applicable
+- Monitor ecosystem maturity
+- Track actual cost savings
 
 ## Future Outlook
 

@@ -101,20 +101,20 @@ AskUserQuestion:
 ## Validation Criteria
 
 ### Input Validation
-- [ ] Exactly one source provided (description, lesson_id, OR issue)
-- [ ] If lesson_id: lesson exists and is readable
-- [ ] If issue: issue URL valid and accessible
-- [ ] Plan ID format: kebab-case, max 50 chars
+- Exactly one source provided (description, lesson_id, OR issue)
+- If lesson_id: lesson exists and is readable
+- If issue: issue URL valid and accessible
+- Plan ID format: kebab-case, max 50 chars
 
 ### Output Validation
-- [ ] Plan directory created (via manage-files create-or-reference)
-- [ ] request.md created with complete original input
-- [ ] references.json created with branch
-- [ ] status.toon created with phases
-- [ ] Domains stored in references.json
-- [ ] Work-log entry written
-- [ ] Phase transitioned to refine
-- [ ] plan_id returned
+- Plan directory created (via manage-files create-or-reference)
+- request.md created with complete original input
+- references.json created with branch
+- status.toon created with phases
+- Domains stored in references.json
+- Work-log entry written
+- Phase transitioned to refine
+- plan_id returned
 
 ## Error Handling
 

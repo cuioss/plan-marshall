@@ -203,12 +203,12 @@ Provides:
 
 ## Quality Verification
 
-- [x] Self-contained with relative path pattern
-- [x] Progressive disclosure (references loaded on-demand)
-- [x] Scripts output TOON for machine processing
-- [x] Both fetcher and triager agents absorbed
-- [x] Clear workflow definitions
-- [x] Provider-agnostic via tools-integration-ci
+- Self-contained with relative path pattern
+- Progressive disclosure (references loaded on-demand)
+- Scripts output TOON for machine processing
+- Both fetcher and triager agents absorbed
+- Clear workflow definitions
+- Provider-agnostic via tools-integration-ci
 
 ## References
 

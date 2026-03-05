@@ -11,7 +11,7 @@ from _analyze import (
     analyze_skill_structure,
     analyze_tool_coverage,
 )
-from _analyze_markdown import check_forbidden_metadata, get_bloat_classification
+from _analyze_markdown import check_checklist_patterns, check_forbidden_metadata, get_bloat_classification
 
 # Subdirectories that may contain markdown sub-documents
 SUBDOC_DIRS = ['references', 'standards', 'workflows', 'templates']
@@ -220,6 +220,21 @@ def extract_issues_from_markdown_analysis(analysis: dict, file_path: str, compon
             }
         )
 
+    # Check checklist patterns
+    checklists = analysis.get('checklist_patterns', {})
+    if checklists.get('has_checklists'):
+        issues.append(
+            {
+                'type': 'checklist-pattern',
+                'file': file_path,
+                'severity': 'warning',
+                'fixable': True,
+                'description': f'Checkbox patterns in LLM-consumed file ({checklists["count"]} items)',
+                'count': checklists['count'],
+                'sections': checklists.get('sections', []),
+            }
+        )
+
     return issues
 
 
@@ -334,6 +349,15 @@ def analyze_subdocuments(skill_dir: Path) -> list[dict]:
                         'type': 'subdoc-hardcoded-script-path',
                     })
 
+            # Checklist patterns
+            checklist_info = check_checklist_patterns(content, str(md_file))
+            if checklist_info['has_checklists']:
+                issues.append({
+                    'type': 'subdoc-checklist-pattern',
+                    'count': checklist_info['count'],
+                    'sections': checklist_info.get('sections', []),
+                })
+
             if issues:
                 entry['issues'] = issues
 
@@ -375,6 +399,16 @@ def extract_issues_from_subdoc_analysis(subdoc_results: list[dict], skill_path: 
                     'severity': 'warning',
                     'fixable': False,
                     'description': 'Hardcoded script path in sub-document',
+                })
+            elif issue['type'] == 'subdoc-checklist-pattern':
+                issues.append({
+                    'type': 'subdoc-checklist-pattern',
+                    'file': file_path,
+                    'severity': 'warning',
+                    'fixable': True,
+                    'description': f'Checkbox patterns in sub-document ({issue["count"]} items)',
+                    'count': issue['count'],
+                    'sections': issue.get('sections', []),
                 })
 
     return issues

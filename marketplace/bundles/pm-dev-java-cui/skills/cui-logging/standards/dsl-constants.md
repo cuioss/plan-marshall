@@ -325,15 +325,15 @@ public static final Duration SOME_OTHER_CONFIG = ...;
 public static final Duration TIMEOUT_2 = Duration.ofSeconds(30);
 ```
 
-## Quality Checklist
+## Quality Rules
 
-- [ ] @UtilityClass used for all levels
-- [ ] All classes and constants are public static final
-- [ ] Hierarchy depth is reasonable (≤ 4 levels)
-- [ ] Consistent naming conventions used
-- [ ] Each category level is documented
-- [ ] Related constants are grouped together
-- [ ] Static imports used at category level
-- [ ] Type-safe constants used where possible
-- [ ] Clear, self-documenting structure
-- [ ] IDE auto-completion works effectively
+- @UtilityClass used for all levels
+- All classes and constants are public static final
+- Hierarchy depth is reasonable (≤ 4 levels)
+- Consistent naming conventions used
+- Each category level is documented
+- Related constants are grouped together
+- Static imports used at category level
+- Type-safe constants used where possible
+- Clear, self-documenting structure
+- IDE auto-completion works effectively

@@ -246,15 +246,15 @@ Every requirement must be verifiable through testing.
 **Testable**: Load testing with performance monitoring tools
 ```
 
-## Quality Checklist
+## Quality Rules
 
 Before finalizing requirements, verify each is:
 
-- [ ] **Specific**: Clearly states what is needed
-- [ ] **Measurable**: Includes testable criteria
-- [ ] **Achievable**: Realistic within constraints
-- [ ] **Relevant**: Aligned with project goals
-- [ ] **Testable**: Can be verified through tests
+- **Specific**: Clearly states what is needed
+- **Measurable**: Includes testable criteria
+- **Achievable**: Realistic within constraints
+- **Relevant**: Aligned with project goals
+- **Testable**: Can be verified through tests
 
 ## Common Anti-Patterns
 

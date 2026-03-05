@@ -224,14 +224,14 @@ mvn clean verify -Pintegration-tests
 
 Without proper `<executions>` configuration, failsafe tests might not run or results might not be verified.
 
-## Verification Checklist
+## Verify
 
-- [ ] Normal build (`mvnw clean test`) excludes integration tests
-- [ ] Integration profile (`mvnw clean verify -Pintegration-tests`) skips unit tests
-- [ ] Integration profile successfully runs integration tests
-- [ ] CI/CD workflow includes integration test execution
-- [ ] Integration test naming follows Maven conventions
-- [ ] Both surefire exclusions and failsafe inclusions are properly configured
+- Normal build (`mvnw clean test`) excludes integration tests
+- Integration profile (`mvnw clean verify -Pintegration-tests`) skips unit tests
+- Integration profile successfully runs integration tests
+- CI/CD workflow includes integration test execution
+- Integration test naming follows Maven conventions
+- Both surefire exclusions and failsafe inclusions are properly configured
 
 ## Related Skills
 

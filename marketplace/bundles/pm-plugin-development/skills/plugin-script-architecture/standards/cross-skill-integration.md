@@ -351,17 +351,17 @@ def test_example():
 - **Direct imports work**: After conftest import, cross-skill imports are available
 - **IDE warnings expected**: Use `# type: ignore[import-not-found]`
 
-## Integration Checklist
+## Integration Rules
 
 Before publishing a script:
 
-- [ ] No `sys.path` manipulation for cross-skill imports
-- [ ] Direct imports instead of subprocess CLI calls (where possible)
-- [ ] Uses `plan_logging.log_entry()` for logging
-- [ ] Uses standard APIs (`file_ops`, `toon_parser`, `run_config`) where applicable
-- [ ] No bare `except: pass` blocks
-- [ ] Subprocess calls use minimal parameters
-- [ ] Entry point scripts follow naming convention (`script.py`)
-- [ ] Internal modules use underscore prefix (`_module.py`)
-- [ ] IDE import warnings suppressed with `# type: ignore[import-not-found]`
-- [ ] Tests use conftest import pattern (one sys.path insert only)
+- No `sys.path` manipulation for cross-skill imports
+- Direct imports instead of subprocess CLI calls (where possible)
+- Uses `plan_logging.log_entry()` for logging
+- Uses standard APIs (`file_ops`, `toon_parser`, `run_config`) where applicable
+- No bare `except: pass` blocks
+- Subprocess calls use minimal parameters
+- Entry point scripts follow naming convention (`script.py`)
+- Internal modules use underscore prefix (`_module.py`)
+- IDE import warnings suppressed with `# type: ignore[import-not-found]`
+- Tests use conftest import pattern (one sys.path insert only)

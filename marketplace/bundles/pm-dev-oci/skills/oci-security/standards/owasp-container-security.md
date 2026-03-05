@@ -411,7 +411,7 @@ services:
 
 ## Container Security Verification
 
-### Pre-Deployment Checklist
+### Pre-Deployment Rules
 
 | Control | Check | OWASP Ref |
 |---------|-------|-----------|

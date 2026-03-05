@@ -568,16 +568,16 @@ Apply modularization when:
 - Main test file serves as API contract test
 - Individual module tests cover all variants and corner cases
 
-## Test Quality Checklist
+## Test Quality Rules
 
 Before marking tests as complete:
 
-- [ ] Test file exists: `test/{bundle}/{skill}/test_{script}.py`
-- [ ] Happy path test with assertions
-- [ ] Missing input test with assertions
-- [ ] Invalid input test with assertions
-- [ ] Edge case tests with assertions
-- [ ] All tests have at least one `assert` statement
-- [ ] Fixtures are in `fixtures/` directory
-- [ ] Tests pass: `python3 test/run-tests.py test/{bundle}/{skill}/`
-- [ ] Test files >400 lines are modularized by command
+- Test file exists: `test/{bundle}/{skill}/test_{script}.py`
+- Happy path test with assertions
+- Missing input test with assertions
+- Invalid input test with assertions
+- Edge case tests with assertions
+- All tests have at least one `assert` statement
+- Fixtures are in `fixtures/` directory
+- Tests pass: `python3 test/run-tests.py test/{bundle}/{skill}/`
+- Test files >400 lines are modularized by command

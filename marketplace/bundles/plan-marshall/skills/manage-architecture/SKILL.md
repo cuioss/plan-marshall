@@ -549,11 +549,11 @@ python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture i
 ```
 
 Check that:
-- [ ] Every module has non-empty `responsibility`
-- [ ] Every module has valid `purpose`
-- [ ] Every module has 2-4 `key_packages` with descriptions
-- [ ] Every module has `key_dependencies` identified (unless module has no compile-scope deps)
-- [ ] Every module has `skills_by_profile` with at least `implementation` and `unit-testing` profiles
+- Every module has non-empty `responsibility`
+- Every module has valid `purpose`
+- Every module has 2-4 `key_packages` with descriptions
+- Every module has `key_dependencies` identified (unless module has no compile-scope deps)
+- Every module has `skills_by_profile` with at least `implementation` and `unit-testing` profiles
 
 If any module is incomplete → return to Step 6 for that module.
 

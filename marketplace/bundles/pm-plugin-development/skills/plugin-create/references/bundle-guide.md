@@ -493,22 +493,22 @@ Run diagnosis:
 
 Fix any issues found.
 
-## Validation Checklist
+## Validation Rules
 
 Before releasing bundle, verify:
 
-- [ ] Bundle name is kebab-case and descriptive
-- [ ] Display name is human-readable
-- [ ] Description is concise (<100 chars)
-- [ ] Version follows semantic versioning
-- [ ] All three directories exist (agents/, commands/, skills/)
-- [ ] plugin.json is valid JSON
-- [ ] plugin.json has all required fields
-- [ ] Components array is up-to-date
-- [ ] README.md has required sections
-- [ ] Component READMEs exist (if bundle has >3 components per type)
-- [ ] No broken component references
-- [ ] Bundle is self-contained
+- Bundle name is kebab-case and descriptive
+- Display name is human-readable
+- Description is concise (<100 chars)
+- Version follows semantic versioning
+- All three directories exist (agents/, commands/, skills/)
+- plugin.json is valid JSON
+- plugin.json has all required fields
+- Components array is up-to-date
+- README.md has required sections
+- Component READMEs exist (if bundle has >3 components per type)
+- No broken component references
+- Bundle is self-contained
 
 ## Common Pitfalls
 

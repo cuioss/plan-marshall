@@ -431,21 +431,21 @@ Affected requirements: REQ-001, REQ-002, REQ-003, REQ-004, REQ-005
 
 ### Before Committing Changes
 
-- [ ] All requirement IDs preserved (no renumbering)
-- [ ] SMART principles maintained
-- [ ] All specifications updated to match
-- [ ] All cross-references verified
-- [ ] Deprecations properly marked
-- [ ] Commit message includes affected IDs
-- [ ] Changes documented with rationale
+- All requirement IDs preserved (no renumbering)
+- SMART principles maintained
+- All specifications updated to match
+- All cross-references verified
+- Deprecations properly marked
+- Commit message includes affected IDs
+- Changes documented with rationale
 
 ### After Committing Changes
 
-- [ ] Traceability maintained
-- [ ] No broken links
-- [ ] Consistent terminology
-- [ ] Implementation alignment verified
-- [ ] Documentation builds successfully
+- Traceability maintained
+- No broken links
+- Consistent terminology
+- Implementation alignment verified
+- Documentation builds successfully
 
 ## Anti-Patterns to Avoid
 

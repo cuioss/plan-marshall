@@ -108,7 +108,7 @@ Human-targeted content (ASCII diagrams, architecture overviews, motivational tex
 | No progressive disclosure | All references loaded upfront | Refactor to per-workflow loading |
 | Absolute paths | Hardcoded installation paths | Use relative paths |
 
-## Summary Checklist
+## Summary Rules
 
 - SKILL.md exists with valid YAML frontmatter
 - `user-invocable` field present (true or false)

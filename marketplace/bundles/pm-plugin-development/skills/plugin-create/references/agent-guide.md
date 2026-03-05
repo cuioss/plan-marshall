@@ -492,22 +492,22 @@ Format as structured JSON
 - Include execution time in report
 ```
 
-## Validation Checklist
+## Validation Rules
 
 Before creating agent, verify:
 
-- [ ] Agent has single, focused purpose
-- [ ] Name is kebab-case and descriptive
-- [ ] Description is <100 chars
-- [ ] Tools list is comma-separated (not array)
-- [ ] No Task tool included
-- [ ] If Bash tool: Not calling Maven (unless maven-builder)
-- [ ] CONTINUOUS IMPROVEMENT RULE uses manage-lessons skill
-- [ ] Workflow has numbered steps
-- [ ] Tool usage documented
-- [ ] Critical rules specified
-- [ ] Input/output contracts clear
-- [ ] Error handling described
+- Agent has single, focused purpose
+- Name is kebab-case and descriptive
+- Description is <100 chars
+- Tools list is comma-separated (not array)
+- No Task tool included
+- If Bash tool: Not calling Maven (unless maven-builder)
+- CONTINUOUS IMPROVEMENT RULE uses manage-lessons skill
+- Workflow has numbered steps
+- Tool usage documented
+- Critical rules specified
+- Input/output contracts clear
+- Error handling described
 
 ## Common Pitfalls
 

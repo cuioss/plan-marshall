@@ -125,40 +125,40 @@ Step N: [Final transformation] → FAILED
 **Symptom**: `Cannot find bundle 'xyz'`
 
 **Checklist**:
-- [ ] Bundle directory exists in marketplace/bundles/
-- [ ] Bundle has .claude-plugin/plugin.json
-- [ ] Bundle name in plugin.json matches reference
-- [ ] No typos in bundle name
+- Bundle directory exists in marketplace/bundles/
+- Bundle has .claude-plugin/plugin.json
+- Bundle name in plugin.json matches reference
+- No typos in bundle name
 
 ### Issue: Skill Not Found
 
 **Symptom**: `Skill 'xyz' not found in bundle`
 
 **Checklist**:
-- [ ] Skill directory exists in bundle/skills/
-- [ ] SKILL.md file exists in skill directory
-- [ ] Skill registered in bundle's plugin.json
-- [ ] Skill name matches exactly (case-sensitive)
+- Skill directory exists in bundle/skills/
+- SKILL.md file exists in skill directory
+- Skill registered in bundle's plugin.json
+- Skill name matches exactly (case-sensitive)
 
 ### Issue: Script Path Not Found
 
 **Symptom**: `Script not found at expected path`
 
 **Checklist**:
-- [ ] scripts/ directory exists in skill
-- [ ] Script file exists with correct name
-- [ ] Script has .py or .sh extension
-- [ ] No extra path components
+- scripts/ directory exists in skill
+- Script file exists with correct name
+- Script has .py or .sh extension
+- No extra path components
 
 ### Issue: Import Failed
 
 **Symptom**: `ModuleNotFoundError` or similar
 
 **Checklist**:
-- [ ] sys.path includes required directories
-- [ ] Module file exists at expected location
-- [ ] __init__.py present if needed
-- [ ] No circular imports
+- sys.path includes required directories
+- Module file exists at expected location
+- __init__.py present if needed
+- No circular imports
 
 ## Resolution Strategies
 

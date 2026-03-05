@@ -422,7 +422,7 @@ agents/my_agent.md  (underscore instead of hyphen)
 **Fix**:
 Update to semantic versioning format (MAJOR.MINOR.PATCH).
 
-## Metadata Quality Checklist
+## Metadata Quality Rules
 
 **Before marking bundle metadata as "quality approved"**:
 - ✅ plugin.json exists and is valid JSON

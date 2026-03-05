@@ -369,18 +369,18 @@ public Optional<User> findUser(String userId) {
 }
 ```
 
-## Quality Checklist
+## Quality Rules
 
 Before completing JavaDoc documentation:
 
-- [ ] All public/protected APIs documented
-- [ ] All parameters described with validation rules
-- [ ] Return values documented with guarantees
-- [ ] Exceptions documented with conditions
-- [ ] No "stating the obvious" documentation
-- [ ] No outdated documentation
-- [ ] Proper tag order followed
-- [ ] Thread-safety documented where relevant
-- [ ] Null handling documented
-- [ ] Migration paths provided for deprecated APIs
-- [ ] JavaDoc HTML generation succeeds without warnings
+- All public/protected APIs documented
+- All parameters described with validation rules
+- Return values documented with guarantees
+- Exceptions documented with conditions
+- No "stating the obvious" documentation
+- No outdated documentation
+- Proper tag order followed
+- Thread-safety documented where relevant
+- Null handling documented
+- Migration paths provided for deprecated APIs
+- JavaDoc HTML generation succeeds without warnings
