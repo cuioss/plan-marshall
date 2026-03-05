@@ -15,7 +15,7 @@ Cross-cutting reference for evaluating marketplace components for LLM consumptio
 - **Motivational text** — "This is important because..." / "Following best practices ensures..." Flag if removing it loses zero decision-relevant information.
 - **History/changelog** — "We previously used X, but now use Y." Only the current state matters unless migration is ongoing.
 - **Redundant emphasis** — Saying the same rule multiple ways for human readers. Once is enough.
-- **Obvious checklists** — Items the LLM would do without being told (e.g., "verify the file exists before reading it"). Flag checklists where >50% of items are obvious.
+- **Checkbox patterns** — `- [ ]` and `- [x]` are human UI elements (GitHub rendering). LLMs gain no value from checkbox markers. Use plain list items (`- item`) instead. Detected by `checklist-pattern` rule.
 - **Rationale sections** — "Why this standard exists" blocks. Flag only when the rationale doesn't influence the LLM's behavior. Keep when it helps decide edge cases.
 - **Verbose examples** — Multiple examples showing the same pattern with minor variations. One example + the rule is sufficient.
 - **Duplicated content** — Rules defined in multiple places. Each rule should have a single source of truth with cross-references elsewhere.

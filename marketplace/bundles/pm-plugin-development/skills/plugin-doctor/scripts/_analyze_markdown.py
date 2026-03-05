@@ -419,6 +419,31 @@ def check_rule_violations(content: str, frontmatter: str, component_type: str, h
     }
 
 
+def check_checklist_patterns(content: str, file_path: str) -> dict:
+    """Check for checkbox patterns (- [ ] / - [x]) in LLM-consumed markdown.
+
+    Files in /templates/ directories are exempt (rendered by GitHub).
+    """
+    if '/templates/' in file_path:
+        return {'has_checklists': False, 'count': 0, 'sections': []}
+
+    unchecked = re.findall(r'^- \[ \] ', content, re.MULTILINE)
+    checked = re.findall(r'^- \[[xX]\] ', content, re.MULTILINE)
+    count = len(unchecked) + len(checked)
+
+    sections: list[str] = []
+    if count > 0:
+        current_section = None
+        for line in content.splitlines():
+            header_match = re.match(r'^(#{1,4})\s+(.+)', line)
+            if header_match:
+                current_section = header_match.group(2).strip()
+            elif re.match(r'^- \[[ xX]\] ', line) and current_section and current_section not in sections:
+                sections.append(current_section)
+
+    return {'has_checklists': count > 0, 'count': count, 'sections': sections}
+
+
 def check_forbidden_metadata(content: str) -> tuple[bool, str]:
     """Check for forbidden metadata sections."""
     forbidden_pattern = r'^## (Version|Version History|License|Changelog|Change Log|Author|Revision History)$'
@@ -464,6 +489,7 @@ def analyze_markdown_file(file_path: Path, component_type: str) -> dict:
         content, frontmatter, component_type, required_fields['tools']['present'], str(file_path)
     )
     has_forbidden, forbidden_sections = check_forbidden_metadata(content)
+    checklist_patterns = check_checklist_patterns(content, str(file_path))
 
     # Detect reference-mode pattern (skills only)
     is_reference_mode = bool(re.search(r'\*\*REFERENCE MODE\*\*|REFERENCE MODE:', content))
@@ -480,6 +506,7 @@ def analyze_markdown_file(file_path: Path, component_type: str) -> dict:
         'execution_patterns': exec_patterns,
         'rules': rules,
         'quality': {'has_forbidden_metadata': has_forbidden, 'forbidden_sections': forbidden_sections},
+        'checklist_patterns': checklist_patterns,
         'content_mode': {'is_reference': is_reference_mode},
     }
 

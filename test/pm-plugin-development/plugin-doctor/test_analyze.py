@@ -490,5 +490,88 @@ def test_markdown_skill_detects_missing_user_invocable():
 
 
 # =============================================================================
+# Markdown Subcommand Tests - Checklist Pattern Detection
+# =============================================================================
+
+
+def test_checklist_detection_present():
+    """Test checklist detection finds - [ ] patterns."""
+    content = '---\nname: test\ndescription: test\n---\n\n# Test\n\n## Rules\n\n- [ ] First item\n- [ ] Second item\n- [ ] Third item\n'
+    temp_file = create_temp_file(content)
+    try:
+        result = run_script(SCRIPT_PATH, 'markdown', '--file', str(temp_file), '--type', 'skill')
+        assert result.returncode == 0, f'Script returned error: {result.stderr}'
+        data = result.json()
+        checklists = data['checklist_patterns']
+        assert checklists['has_checklists'] is True
+        assert checklists['count'] == 3
+    finally:
+        temp_file.unlink()
+
+
+def test_checklist_detection_absent():
+    """Test checklist detection returns False when no checkboxes."""
+    content = '---\nname: test\ndescription: test\n---\n\n# Test\n\n- First item\n- Second item\n'
+    temp_file = create_temp_file(content)
+    try:
+        result = run_script(SCRIPT_PATH, 'markdown', '--file', str(temp_file), '--type', 'skill')
+        assert result.returncode == 0, f'Script returned error: {result.stderr}'
+        data = result.json()
+        checklists = data['checklist_patterns']
+        assert checklists['has_checklists'] is False
+        assert checklists['count'] == 0
+    finally:
+        temp_file.unlink()
+
+
+def test_checklist_detection_mixed():
+    """Test checklist detection counts both - [ ] and - [x] patterns."""
+    content = '---\nname: test\ndescription: test\n---\n\n# Test\n\n- [ ] Unchecked\n- [x] Checked\n- [X] Also checked\n'
+    temp_file = create_temp_file(content)
+    try:
+        result = run_script(SCRIPT_PATH, 'markdown', '--file', str(temp_file), '--type', 'skill')
+        assert result.returncode == 0, f'Script returned error: {result.stderr}'
+        data = result.json()
+        checklists = data['checklist_patterns']
+        assert checklists['has_checklists'] is True
+        assert checklists['count'] == 3
+    finally:
+        temp_file.unlink()
+
+
+def test_checklist_template_exempt():
+    """Test that files in /templates/ path are exempt from checklist detection."""
+    content = '- [ ] Tests pass\n- [ ] Docs updated\n'
+    import sys
+    script_dir = str(Path(SCRIPT_PATH).parent)
+    if script_dir not in sys.path:
+        sys.path.insert(0, script_dir)
+    from _analyze_markdown import check_checklist_patterns
+    result = check_checklist_patterns(content, '/some/path/templates/pr-template.md')
+    assert result['has_checklists'] is False, 'Templates should be exempt'
+    assert result['count'] == 0
+
+    # Non-template path should detect
+    result2 = check_checklist_patterns(content, '/some/path/skills/test.md')
+    assert result2['has_checklists'] is True, 'Non-templates should detect checklists'
+
+
+def test_checklist_sections_extracted():
+    """Test that section headers containing checklists are identified."""
+    content = '---\nname: test\ndescription: test\n---\n\n# Test\n\n## Quality Rules\n\n- [ ] Item A\n\n## Other Section\n\nNo checklists here.\n\n## Verification\n\n- [x] Item B\n'
+    temp_file = create_temp_file(content)
+    try:
+        result = run_script(SCRIPT_PATH, 'markdown', '--file', str(temp_file), '--type', 'skill')
+        assert result.returncode == 0, f'Script returned error: {result.stderr}'
+        data = result.json()
+        checklists = data['checklist_patterns']
+        assert 'Quality Rules' in checklists['sections']
+        assert 'Verification' in checklists['sections']
+        assert 'Other Section' not in checklists['sections']
+    finally:
+        temp_file.unlink()
+
+
+# =============================================================================
 # Main
 # =============================================================================
