@@ -1,7 +1,7 @@
 ---
 name: workflow-integration-git
 description: Git commit workflow with conventional commits, artifact cleanup, and optional push/PR creation
-user-invokable: false
+user-invocable: false
 ---
 
 # CUI Git Workflow Skill

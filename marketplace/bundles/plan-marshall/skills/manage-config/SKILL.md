@@ -1,7 +1,7 @@
 ---
 name: manage-config
 description: Project-level infrastructure configuration for marshal.json
-user-invokable: false
+user-invocable: false
 ---
 
 # Plan-Marshall Config Skill

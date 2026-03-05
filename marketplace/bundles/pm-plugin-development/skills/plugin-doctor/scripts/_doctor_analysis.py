@@ -98,7 +98,7 @@ def extract_issues_from_markdown_analysis(analysis: dict, file_path: str, compon
 
         # Skill-specific field checks
         if component_type == 'skill':
-            user_inv = required.get('user_invokable', {})
+            user_inv = required.get('user_invocable', {})
             # Check for unsupported allowed-tools field
             tools_info = required.get('tools', {})
             if tools_info.get('present'):
@@ -109,23 +109,23 @@ def extract_issues_from_markdown_analysis(analysis: dict, file_path: str, compon
                     'fixable': True,
                     'description': f'Skill declares unsupported `{tools_info.get("field_type")}` field (not in plugin schema)',
                 })
-            # Check for misspelled user-invocable (should be user-invokable)
+            # Check for misspelled user-invokable (should be user-invocable)
             if user_inv.get('misspelled') and not user_inv.get('present'):
                 issues.append({
-                    'type': 'misspelled-user-invokable',
+                    'type': 'misspelled-user-invocable',
                     'file': file_path,
                     'severity': 'warning',
                     'fixable': True,
-                    'description': 'Skill uses `user-invocable` (misspelled) — should be `user-invokable`',
+                    'description': 'Skill uses `user-invokable` (misspelled) — should be `user-invocable`',
                 })
-            # Check for missing user-invokable entirely
+            # Check for missing user-invocable entirely
             elif not user_inv.get('present') and not user_inv.get('misspelled'):
                 issues.append({
-                    'type': 'missing-user-invokable',
+                    'type': 'missing-user-invocable',
                     'file': file_path,
                     'severity': 'warning',
                     'fixable': True,
-                    'description': 'Skill missing required `user-invokable` field',
+                    'description': 'Skill missing required `user-invocable` field',
                 })
 
             # Check for invokable value vs content-mode mismatch
@@ -136,7 +136,7 @@ def extract_issues_from_markdown_analysis(analysis: dict, file_path: str, compon
                     'file': file_path,
                     'severity': 'warning',
                     'fixable': True,
-                    'description': 'Skill declares REFERENCE MODE but has `user-invokable: true` — reference skills should be `false`',
+                    'description': 'Skill declares REFERENCE MODE but has `user-invocable: true` — reference skills should be `false`',
                 })
 
     # Check rule violations

@@ -1,7 +1,7 @@
 ---
 name: cui-logging
 description: CUI logging standards with CuiLogger, LogRecord patterns, and DSL-style LogMessages classes
-user-invokable: false
+user-invocable: false
 ---
 
 # CUI Logging Skill

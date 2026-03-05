@@ -1,6 +1,6 @@
 ---
 description: This skill is missing the required name field
-user-invokable: true
+user-invocable: true
 ---
 
 # Invalid Skill

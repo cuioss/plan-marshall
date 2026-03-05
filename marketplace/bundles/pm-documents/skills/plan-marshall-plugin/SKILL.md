@@ -1,7 +1,7 @@
 ---
 name: plan-marshall-plugin
 description: Documentation domain manifest for plan-marshall workflow integration
-user-invokable: false
+user-invocable: false
 ---
 
 # Plan Marshall Plugin - Documentation Domain

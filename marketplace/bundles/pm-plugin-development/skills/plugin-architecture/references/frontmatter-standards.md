@@ -165,7 +165,7 @@ color: green
 ---
 name: skill-name
 description: Brief description of skill domain
-user-invokable: true
+user-invocable: true
 ---
 ```
 
@@ -182,26 +182,26 @@ user-invokable: true
 - Should describe the standards domain covered
 - Single-line preferred
 
-**user-invokable** (required):
-- **Field name**: `user-invokable` (note the 'k' spelling)
+**user-invocable** (required):
+- **Field name**: `user-invocable`
 - **Values**: `true` or `false`
 - `true`: Skill appears in slash menu and can be invoked directly by users (e.g., `/plugin-doctor`)
-- `false`: Internal skill, not directly user-invokable (e.g., reference libraries, internal utilities)
+- `false`: Internal skill, not directly user-invocable (e.g., reference libraries, internal utilities)
 - **CRITICAL**: Every skill MUST have this field explicitly set
-- See [User-Invokable Guidelines](#user-invokable-guidelines) for when to use each value
+- See [User-Invokable Guidelines](#user-invocable-guidelines) for when to use each value
 
 ### Optional Fields
 
-Skills do not use `model`, `color`, or `tools`/`allowed-tools` fields. The plugin schema for skills supports only: `name`, `description`, `user-invokable`, `argument-hint`, `compatibility`, `disable-model-invocation`, `license`, `metadata`.
+Skills do not use `model`, `color`, or `tools`/`allowed-tools` fields. The plugin schema for skills supports only: `name`, `description`, `user-invocable`, `argument-hint`, `compatibility`, `disable-model-invocation`, `license`, `metadata`.
 
-### User-Invokable Guidelines
+### User-Invocable Guidelines
 
-**Use `user-invokable: true` when**:
+**Use `user-invocable: true` when**:
 - Skill provides a user-facing workflow (e.g., `/plugin-doctor`, `/verify-workflow`)
 - Skill should appear in slash menu for direct invocation
 - Skill is the primary entry point for a capability
 
-**Use `user-invokable: false` when**:
+**Use `user-invocable: false` when**:
 - Skill is a reference library (Pattern 10) - pure documentation
 - Skill is an internal utility invoked only by other skills/agents
 - Skill is an extension point (e.g., `ext-triage-java`)
@@ -215,12 +215,12 @@ Skills do not use `model`, `color`, or `tools`/`allowed-tools` fields. The plugi
 
 | Category | plugin.json | Example |
 |----------|-------------|---------|
-| **User-invocable** (`user-invokable: true`) | Required | `plugin-doctor`, `phase-3-outline` |
-| **Context-loaded** (`user-invokable: false`, loaded via `Skill:` directive) | Required | `manage-tasks`, `manage-lessons` |
-| **Script-only** (`user-invokable: false`, accessed only via script notation) | Not needed | `manage-files`, `manage-logging` |
+| **User-invocable** (`user-invocable: true`) | Required | `plugin-doctor`, `phase-3-outline` |
+| **Context-loaded** (`user-invocable: false`, loaded via `Skill:` directive) | Required | `manage-tasks`, `manage-lessons` |
+| **Script-only** (`user-invocable: false`, accessed only via script notation) | Not needed | `manage-files`, `manage-logging` |
 
 **How to determine the category:**
-1. If `user-invokable: true` → register in plugin.json
+1. If `user-invocable: true` → register in plugin.json
 2. If any component uses `Skill: bundle:skill-name` to load it as LLM context → register in plugin.json
 3. If all references are 3-part script notations (`bundle:skill:script` with `execute-script.py`) → do NOT register
 
@@ -235,7 +235,7 @@ Skills do not use `model`, `color`, or `tools`/`allowed-tools` fields. The plugi
 ---
 name: plugin-doctor
 description: Diagnose and fix quality issues in marketplace components
-user-invokable: true
+user-invocable: true
 ---
 ```
 
@@ -244,7 +244,7 @@ user-invokable: true
 ---
 name: manage-tasks
 description: Task CRUD operations for planning workflow
-user-invokable: false
+user-invocable: false
 ---
 ```
 
@@ -253,7 +253,7 @@ user-invokable: false
 ---
 name: manage-files
 description: File operations for plan work directories
-user-invokable: false
+user-invocable: false
 ---
 ```
 
@@ -409,7 +409,7 @@ Task:
 
 **Problem**: Skills declare `allowed-tools` or `tools` which are not supported by the plugin schema.
 
-**Why This Fails**: The skill schema only supports: `name`, `description`, `user-invokable`, `argument-hint`, `compatibility`, `disable-model-invocation`, `license`, `metadata`. Any other field is silently ignored.
+**Why This Fails**: The skill schema only supports: `name`, `description`, `user-invocable`, `argument-hint`, `compatibility`, `disable-model-invocation`, `license`, `metadata`. Any other field is silently ignored.
 
 **Fix**: Remove the field entirely. Skills do not have tool declarations.
 
@@ -418,7 +418,7 @@ Task:
 ---
 name: my-skill
 description: My skill
-user-invokable: true
+user-invocable: true
 allowed-tools: Read, Write
 ---
 ```
@@ -428,7 +428,7 @@ allowed-tools: Read, Write
 ---
 name: my-skill
 description: My skill
-user-invokable: true
+user-invocable: true
 ---
 ```
 
@@ -612,8 +612,8 @@ Use this checklist when creating or reviewing frontmatter:
 
 **Skills**:
 - [ ] No `tools`, `allowed-tools`, `model`, or `color` fields (not supported for skills)
-- [ ] **`user-invokable` field present** (either `true` or `false`, note the 'k' spelling)
-- [ ] `user-invokable` value matches skill purpose (true for user-facing, false for internal)
+- [ ] **`user-invocable` field present** (either `true` or `false`)
+- [ ] `user-invocable` value matches skill purpose (true for user-facing, false for internal)
 
 ## Reference
 

@@ -1,7 +1,7 @@
 ---
 name: phase-3-outline
 description: Two-track solution outline creation - Simple Track for localized changes, Complex Track for codebase-wide discovery
-user-invokable: false
+user-invocable: false
 ---
 
 # Phase Outline Skill

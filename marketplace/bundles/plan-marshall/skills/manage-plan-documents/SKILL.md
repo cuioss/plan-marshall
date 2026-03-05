@@ -1,7 +1,7 @@
 ---
 name: manage-plan-documents
 description: Manage request documents within plan directories with schema validation and template-based creation
-user-invokable: false
+user-invocable: false
 ---
 
 # Manage Plan Documents Skill

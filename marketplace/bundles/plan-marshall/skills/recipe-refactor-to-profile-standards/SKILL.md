@@ -1,7 +1,7 @@
 ---
 name: recipe-refactor-to-profile-standards
 description: Domain-invariant recipe for refactoring code to comply with configured profile standards, package by package
-user-invokable: false
+user-invocable: false
 ---
 
 # Recipe: Refactor to Profile Standards

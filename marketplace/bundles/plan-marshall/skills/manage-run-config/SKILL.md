@@ -1,7 +1,7 @@
 ---
 name: manage-run-config
 description: Run configuration handling for persistent command configuration storage
-user-invokable: false
+user-invocable: false
 ---
 
 # Run Config Skill

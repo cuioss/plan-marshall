@@ -163,8 +163,8 @@ def verify_unsupported_tools_field_fix(file_path: Path) -> dict:
     return {'verified': True, 'issue_resolved': True, 'details': 'Unsupported tools field removed'}
 
 
-def verify_misspelled_user_invokable_fix(file_path: Path) -> dict:
-    """Verify misspelled user-invocable was renamed to user-invokable."""
+def verify_misspelled_user_invocable_fix(file_path: Path) -> dict:
+    """Verify misspelled user-invokable was renamed to user-invocable."""
     try:
         content = file_path.read_text(encoding='utf-8', errors='replace')
     except OSError as e:
@@ -175,18 +175,18 @@ def verify_misspelled_user_invokable_fix(file_path: Path) -> dict:
     if not frontmatter_present:
         return {'verified': True, 'issue_resolved': True, 'details': 'No frontmatter to check'}
 
-    if re.search(r'^user-invocable:', frontmatter, re.MULTILINE):
+    if re.search(r'^user-invokable:', frontmatter, re.MULTILINE):
         return {
             'verified': True,
             'issue_resolved': False,
-            'details': 'Still using misspelled user-invocable (should be user-invokable)',
+            'details': 'Still using misspelled user-invokable (should be user-invocable)',
         }
 
-    return {'verified': True, 'issue_resolved': True, 'details': 'Field correctly named user-invokable'}
+    return {'verified': True, 'issue_resolved': True, 'details': 'Field correctly named user-invocable'}
 
 
 def verify_invokable_mismatch_fix(file_path: Path) -> dict:
-    """Verify reference-mode skill has user-invokable: false."""
+    """Verify reference-mode skill has user-invocable: false."""
     try:
         content = file_path.read_text(encoding='utf-8', errors='replace')
     except OSError as e:
@@ -198,13 +198,13 @@ def verify_invokable_mismatch_fix(file_path: Path) -> dict:
         return {'verified': True, 'issue_resolved': True, 'details': 'No frontmatter to check'}
 
     is_reference = bool(re.search(r'\*\*REFERENCE MODE\*\*|REFERENCE MODE:', content))
-    invokable_match = re.search(r'^user-invokable:\s*(\S+)', frontmatter, re.MULTILINE)
+    invokable_match = re.search(r'^user-invocable:\s*(\S+)', frontmatter, re.MULTILINE)
 
     if is_reference and invokable_match and invokable_match.group(1).strip().lower() == 'true':
         return {
             'verified': True,
             'issue_resolved': False,
-            'details': 'Reference-mode skill still has user-invokable: true',
+            'details': 'Reference-mode skill still has user-invocable: true',
         }
 
     return {'verified': True, 'issue_resolved': True, 'details': 'No invokable mismatch'}
@@ -243,8 +243,8 @@ def cmd_verify(args) -> int:
         result = verify_skill_tool_visibility_fix(file_path)
     elif fix_type == 'unsupported-skill-tools-field':
         result = verify_unsupported_tools_field_fix(file_path)
-    elif fix_type == 'misspelled-user-invokable':
-        result = verify_misspelled_user_invokable_fix(file_path)
+    elif fix_type == 'misspelled-user-invocable':
+        result = verify_misspelled_user_invocable_fix(file_path)
     elif fix_type == 'skill-invokable-mismatch':
         result = verify_invokable_mismatch_fix(file_path)
     else:

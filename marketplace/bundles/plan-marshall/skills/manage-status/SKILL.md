@@ -1,7 +1,7 @@
 ---
 name: manage-status
 description: Manage status.json files with phase tracking and metadata
-user-invokable: false
+user-invocable: false
 ---
 
 # Manage Status Skill

@@ -1,7 +1,7 @@
 ---
 name: cross-skill-references-test
 description: Test skill with cross-skill reference notation
-user-invokable: false
+user-invocable: false
 ---
 
 # Cross-Skill References Test Skill

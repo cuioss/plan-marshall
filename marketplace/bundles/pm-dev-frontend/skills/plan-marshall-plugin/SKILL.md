@@ -1,7 +1,7 @@
 ---
 name: plan-marshall-plugin
 description: JavaScript domain extension with npm build operations and workflow integration
-user-invokable: false
+user-invocable: false
 ---
 
 # Plan Marshall Plugin - JavaScript Domain

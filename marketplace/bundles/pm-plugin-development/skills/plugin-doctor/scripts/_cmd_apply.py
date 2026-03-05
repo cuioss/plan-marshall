@@ -98,7 +98,7 @@ def apply_missing_field_fix(file_path: Path, fix: dict, templates: dict) -> dict
     if frontmatter_end == -1:
         return {'success': False, 'error': 'Invalid frontmatter structure'}
 
-    defaults = {'name': file_path.stem, 'description': '[Description needed]', 'tools': 'Read', 'user-invokable': 'false'}
+    defaults = {'name': file_path.stem, 'description': '[Description needed]', 'tools': 'Read', 'user-invocable': 'false'}
     default_value = defaults.get(field_name, '[Value needed]')
 
     new_line = f'{field_name}: {default_value}'
@@ -283,7 +283,7 @@ def apply_rename_frontmatter_field(file_path: Path, fix: dict, templates: dict) 
     field_type = fix.get('type', '')
     # Map issue types to (old, new) field name pairs
     renames = {
-        'misspelled-user-invokable': (r'^user-invocable:', 'user-invokable:'),
+        'misspelled-user-invocable': (r'^user-invokable:', 'user-invocable:'),
     }
     rename = renames.get(field_type)
     if not rename:
@@ -305,20 +305,20 @@ def apply_rename_frontmatter_field(file_path: Path, fix: dict, templates: dict) 
 
 
 def apply_invokable_mismatch_fix(file_path: Path, fix: dict, templates: dict) -> dict:
-    """Change user-invokable: true to false for reference-mode skills."""
+    """Change user-invocable: true to false for reference-mode skills."""
     with open(file_path, encoding='utf-8') as f:
         content = f.read()
 
     new_content, count = re.subn(
-        r'^(user-invokable:\s*)true', r'\1false', content, count=1, flags=re.MULTILINE | re.IGNORECASE
+        r'^(user-invocable:\s*)true', r'\1false', content, count=1, flags=re.MULTILINE | re.IGNORECASE
     )
     if count == 0:
-        return {'success': False, 'error': 'user-invokable: true not found in frontmatter'}
+        return {'success': False, 'error': 'user-invocable: true not found in frontmatter'}
 
     with open(file_path, 'w', encoding='utf-8') as f:
         f.write(new_content)
 
-    return {'success': True, 'changes': ['Changed user-invokable from true to false (reference-mode skill)']}
+    return {'success': True, 'changes': ['Changed user-invocable from true to false (reference-mode skill)']}
 
 
 FIX_HANDLERS = {
@@ -333,8 +333,8 @@ FIX_HANDLERS = {
     'unused-tool-declared': apply_unused_tool_fix,
     'agent-lessons-via-skill': apply_lessons_via_skill_fix,
     'unsupported-skill-tools-field': apply_remove_frontmatter_field,
-    'misspelled-user-invokable': apply_rename_frontmatter_field,
-    'missing-user-invokable': apply_missing_field_fix,
+    'misspelled-user-invocable': apply_rename_frontmatter_field,
+    'missing-user-invocable': apply_missing_field_fix,
     'skill-invokable-mismatch': apply_invokable_mismatch_fix,
 }
 

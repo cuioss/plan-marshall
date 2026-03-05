@@ -421,7 +421,7 @@ python3 .plan/execute-script.py plan-marshall:manage-references:manage-reference
 
 def test_markdown_skill_detects_unsupported_tools_field():
     """Test that skills with allowed-tools are flagged as unsupported."""
-    content = '---\nname: test-skill\ndescription: Test\nallowed-tools: Read\nuser-invokable: true\n---\n\n# Test\n'
+    content = '---\nname: test-skill\ndescription: Test\nallowed-tools: Read\nuser-invocable: true\n---\n\n# Test\n'
     temp_file = create_temp_file(content)
     try:
         result = run_script(SCRIPT_PATH, 'markdown', '--file', str(temp_file), '--type', 'skill')
@@ -439,24 +439,7 @@ def test_markdown_skill_detects_unsupported_tools_field():
 
 
 def test_markdown_skill_detects_misspelled_user_invocable():
-    """Test that skills with user-invocable (misspelled) are flagged."""
-    content = '---\nname: test-skill\ndescription: Test\nuser-invocable: true\n---\n\n# Test\n'
-    temp_file = create_temp_file(content)
-    try:
-        result = run_script(SCRIPT_PATH, 'markdown', '--file', str(temp_file), '--type', 'skill')
-        assert result.returncode == 0, f'Script returned error: {result.stderr}'
-        data = result.json()
-        fm = data.get('frontmatter', {})
-        required = fm.get('required_fields', {})
-        user_inv = required.get('user_invokable', {})
-        assert user_inv.get('misspelled') is True, 'Should detect misspelled user-invocable'
-        assert user_inv.get('present') is False, 'Should not report correct user-invokable as present'
-    finally:
-        temp_file.unlink()
-
-
-def test_markdown_skill_detects_correct_user_invokable():
-    """Test that skills with correct user-invokable are detected."""
+    """Test that skills with user-invokable (misspelled) are flagged."""
     content = '---\nname: test-skill\ndescription: Test\nuser-invokable: true\n---\n\n# Test\n'
     temp_file = create_temp_file(content)
     try:
@@ -465,15 +448,32 @@ def test_markdown_skill_detects_correct_user_invokable():
         data = result.json()
         fm = data.get('frontmatter', {})
         required = fm.get('required_fields', {})
-        user_inv = required.get('user_invokable', {})
-        assert user_inv.get('present') is True, 'Should detect correct user-invokable'
+        user_inv = required.get('user_invocable', {})
+        assert user_inv.get('misspelled') is True, 'Should detect misspelled user-invocable'
+        assert user_inv.get('present') is False, 'Should not report correct user-invocable as present'
+    finally:
+        temp_file.unlink()
+
+
+def test_markdown_skill_detects_correct_user_invocable():
+    """Test that skills with correct user-invocable are detected."""
+    content = '---\nname: test-skill\ndescription: Test\nuser-invocable: true\n---\n\n# Test\n'
+    temp_file = create_temp_file(content)
+    try:
+        result = run_script(SCRIPT_PATH, 'markdown', '--file', str(temp_file), '--type', 'skill')
+        assert result.returncode == 0, f'Script returned error: {result.stderr}'
+        data = result.json()
+        fm = data.get('frontmatter', {})
+        required = fm.get('required_fields', {})
+        user_inv = required.get('user_invocable', {})
+        assert user_inv.get('present') is True, 'Should detect correct user-invocable'
         assert user_inv.get('misspelled') is False, 'Should not flag correct spelling as misspelled'
     finally:
         temp_file.unlink()
 
 
-def test_markdown_skill_detects_missing_user_invokable():
-    """Test that skills without user-invokable are detected."""
+def test_markdown_skill_detects_missing_user_invocable():
+    """Test that skills without user-invocable are detected."""
     content = '---\nname: test-skill\ndescription: Test\n---\n\n# Test\n'
     temp_file = create_temp_file(content)
     try:
@@ -482,8 +482,8 @@ def test_markdown_skill_detects_missing_user_invokable():
         data = result.json()
         fm = data.get('frontmatter', {})
         required = fm.get('required_fields', {})
-        user_inv = required.get('user_invokable', {})
-        assert user_inv.get('present') is False, 'Should not report user-invokable as present'
+        user_inv = required.get('user_invocable', {})
+        assert user_inv.get('present') is False, 'Should not report user-invocable as present'
         assert user_inv.get('misspelled') is False, 'Should not report as misspelled'
     finally:
         temp_file.unlink()

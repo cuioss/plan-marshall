@@ -24,8 +24,8 @@ FIXABLE_ISSUE_TYPES = {
     'agent-skill-tool-visibility',
     'subdoc-forbidden-metadata',
     'unsupported-skill-tools-field',
-    'misspelled-user-invokable',
-    'missing-user-invokable',
+    'misspelled-user-invocable',
+    'missing-user-invocable',
     # Risky fixes (require confirmation)
     'unused-tool-declared',
     'tool-not-declared',
@@ -51,8 +51,8 @@ SAFE_FIX_TYPES = {
     'agent-skill-tool-visibility',
     'subdoc-forbidden-metadata',
     'unsupported-skill-tools-field',
-    'misspelled-user-invokable',
-    'missing-user-invokable',
+    'misspelled-user-invocable',
+    'missing-user-invocable',
 }
 
 # Risky fix types - require user confirmation

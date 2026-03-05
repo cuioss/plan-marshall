@@ -1,7 +1,7 @@
 ---
 name: plugin-plan-implement
 description: Implement plugin tasks from plan with step iteration and progress tracking
-user-invokable: false
+user-invocable: false
 ---
 
 # Plugin Plan Implement Skill

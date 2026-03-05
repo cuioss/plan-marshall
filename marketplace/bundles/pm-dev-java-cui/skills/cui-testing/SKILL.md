@@ -1,7 +1,7 @@
 ---
 name: cui-testing
 description: CUI test library standards for test data generation, value object contracts, and JUL log testing
-user-invokable: false
+user-invocable: false
 ---
 
 # CUI Testing Skill

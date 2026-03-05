@@ -1,7 +1,7 @@
 ---
 name: verification-mode
 description: Verification mode that stops and analyzes on failures, workarounds, or resolution issues
-user-invokable: false
+user-invocable: false
 ---
 
 # Verification Skill

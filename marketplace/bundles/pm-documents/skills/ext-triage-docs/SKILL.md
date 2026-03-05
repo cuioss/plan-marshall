@@ -1,7 +1,7 @@
 ---
 name: ext-triage-docs
 description: Triage extension for documentation findings during plan-finalize phase
-user-invokable: false
+user-invocable: false
 ---
 
 # Documentation Triage Extension

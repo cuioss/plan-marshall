@@ -1,7 +1,7 @@
 ---
 name: junit-core
 description: JUnit 5 core testing patterns with AAA structure, test organization, and coverage standards
-user-invokable: false
+user-invocable: false
 ---
 
 # JUnit Core Skill

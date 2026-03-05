@@ -1,7 +1,7 @@
 ---
 name: manage-memories
 description: Memory layer operations for persistent session storage
-user-invokable: false
+user-invocable: false
 ---
 
 # Claude Memory Skill

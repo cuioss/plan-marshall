@@ -1,7 +1,7 @@
 ---
 name: manage-references
 description: Manage references.json files with field-level access and list management
-user-invokable: false
+user-invocable: false
 ---
 
 # Manage References Skill

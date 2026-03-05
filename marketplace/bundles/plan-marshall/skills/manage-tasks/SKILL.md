@@ -1,7 +1,7 @@
 ---
 name: manage-tasks
 description: Manage implementation tasks with sequential sub-steps within a plan
-user-invokable: false
+user-invocable: false
 ---
 
 # Manage Tasks Skill

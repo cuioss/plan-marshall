@@ -1,7 +1,7 @@
 ---
 name: manage-lessons
 description: Manage lessons learned with global scope
-user-invokable: false
+user-invocable: false
 ---
 
 # Lessons Learned Skill

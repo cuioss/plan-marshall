@@ -24,24 +24,24 @@ def check_frontmatter_fields(frontmatter: str) -> dict:
         has_tools = True
         tools_field_type = 'allowed-tools'
 
-    # Check user-invokable field (skills only, correct spelling)
-    has_user_invokable = bool(re.search(r'^user-invokable:', frontmatter, re.MULTILINE))
-    # Detect misspelled variant
-    has_user_invocable_misspelled = bool(re.search(r'^user-invocable:', frontmatter, re.MULTILINE))
+    # Check user-invocable field (skills only, correct spelling)
+    has_user_invocable = bool(re.search(r'^user-invocable:', frontmatter, re.MULTILINE))
+    # Detect misspelled variant (user-invokable with 'k')
+    has_user_invocable_misspelled = bool(re.search(r'^user-invokable:', frontmatter, re.MULTILINE))
     # Extract the value (true/false)
-    user_invokable_value = None
-    invokable_match = re.search(r'^user-invokable:\s*(\S+)', frontmatter, re.MULTILINE)
-    if invokable_match:
-        user_invokable_value = invokable_match.group(1).strip().lower() == 'true'
+    user_invocable_value = None
+    invocable_match = re.search(r'^user-invocable:\s*(\S+)', frontmatter, re.MULTILINE)
+    if invocable_match:
+        user_invocable_value = invocable_match.group(1).strip().lower() == 'true'
 
     return {
         'name': {'present': has_name},
         'description': {'present': has_desc},
         'tools': {'present': has_tools, 'field_type': tools_field_type},
-        'user_invokable': {
-            'present': has_user_invokable,
+        'user_invocable': {
+            'present': has_user_invocable,
             'misspelled': has_user_invocable_misspelled,
-            'value': user_invokable_value,
+            'value': user_invocable_value,
         },
     }
 
@@ -451,7 +451,7 @@ def analyze_markdown_file(file_path: Path, component_type: str) -> dict:
             'name': {'present': False},
             'description': {'present': False},
             'tools': {'present': False, 'field_type': 'none'},
-            'user_invokable': {'present': False, 'misspelled': False},
+            'user_invocable': {'present': False, 'misspelled': False},
         }
     )
 

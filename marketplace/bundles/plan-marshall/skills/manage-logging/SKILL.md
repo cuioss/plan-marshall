@@ -1,7 +1,7 @@
 ---
 name: manage-logging
 description: Unified logging infrastructure for script execution, work progress, and decision tracking
-user-invokable: false
+user-invocable: false
 ---
 
 # Logging Skill

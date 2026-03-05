@@ -1,7 +1,7 @@
 ---
 name: workflow-integration-ci
 description: PR review response workflow - fetch comments, triage, and respond to review feedback (GitHub and GitLab)
-user-invokable: false
+user-invocable: false
 ---
 
 # PR Workflow Skill (Provider-Agnostic)

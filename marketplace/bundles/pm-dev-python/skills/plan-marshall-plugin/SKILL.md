@@ -1,7 +1,7 @@
 ---
 name: plan-marshall-plugin
 description: Python domain extension with pyprojectx build operations and workflow integration
-user-invokable: false
+user-invocable: false
 ---
 
 # Plan Marshall Plugin - Python Domain

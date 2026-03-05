@@ -1,7 +1,7 @@
 ---
 name: manage-files
 description: Generic file I/O operations for plan directories
-user-invokable: false
+user-invocable: false
 ---
 
 # Manage Files Skill
