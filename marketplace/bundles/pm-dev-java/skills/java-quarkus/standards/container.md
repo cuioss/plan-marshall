@@ -249,45 +249,9 @@ For generic container runtime hardening (capabilities, seccomp, resource limits,
 
 ## Certificate Management
 
-### PEM Certificates (Primary Approach)
+For PEM certificate standards (generation, file permissions, PKCS12 conversion, container mounting), see `Skill: pm-dev-oci:oci-security` → `standards/certificate-management.md`.
 
-#### Security Benefits of PEM
-* **No Password Storage**: Eliminates password management and exposure risks
-* **File System Security**: Relies on proper file permissions (600 for keys, 644 for certificates)
-* **Separation of Concerns**: Private keys and certificates stored separately
-* **Cloud Native**: Better integration with container orchestration
-* **Rotation Friendly**: Easier certificate rotation without password coordination
-
-#### Certificate Generation Script
-
-```bash
-#!/bin/bash
-# Secure certificate generation script
-
-CERT_DIR="./src/main/docker/certificates"
-VALIDITY_DAYS=${1:-1}  # Default 1 day for testing, 365+ for production
-
-# Create certificate directory
-mkdir -p "$CERT_DIR"
-
-# Generate private key (no password required)
-openssl genrsa -out "$CERT_DIR/tls.key" 2048
-
-# Generate self-signed certificate
-openssl req -new -x509 -key "$CERT_DIR/tls.key" \
-    -out "$CERT_DIR/tls.crt" \
-    -days "$VALIDITY_DAYS" \
-    -subj "/CN=localhost/O=CUI/C=US" \
-    -addext "subjectAltName=DNS:localhost,IP:127.0.0.1"
-
-# Set secure file permissions
-chmod 600 "$CERT_DIR/tls.key"   # Private key - restricted
-chmod 644 "$CERT_DIR/tls.crt"   # Certificate - public
-
-echo "Certificates generated in $CERT_DIR with $VALIDITY_DAYS day validity"
-```
-
-#### Quarkus PEM Configuration
+### Quarkus SSL Configuration
 
 ```properties
 # PEM-based SSL configuration
@@ -301,23 +265,6 @@ quarkus.http.insecure-requests=disabled
 # Enhanced TLS Security Settings
 quarkus.http.ssl.cipher-suites=TLS_AES_256_GCM_SHA384,TLS_CHACHA20_POLY1305_SHA256,TLS_AES_128_GCM_SHA256
 quarkus.http.ssl.protocols=TLSv1.3,TLSv1.2
-```
-
-### PKCS12 Certificates (Alternative)
-
-**Alternative format** for environments requiring PKCS12. PEM is recommended for new implementations.
-
-**PKCS12 to PEM Conversion**:
-```bash
-# Extract private key from PKCS12
-openssl pkcs12 -in keystore.p12 -nocerts -out tls.key -nodes
-
-# Extract certificate from PKCS12
-openssl pkcs12 -in keystore.p12 -clcerts -nokeys -out tls.crt
-
-# Set proper permissions
-chmod 600 tls.key
-chmod 644 tls.crt
 ```
 
 ## Performance Targets
@@ -391,19 +338,3 @@ const result = await devui.jsonrpc.CuiJwtDevUI.getConfiguration();
 * **Testing**: Comprehensive integration tests for API interactions
 * **Documentation**: Clear API documentation with correct casing
 
-## Certificate Security Requirements
-
-**Security Implementation**:
-* **Validity**: 2 years production, 1 day testing (script configurable)
-* **Algorithm**: RSA 2048-bit minimum
-* **Security**: External volume mounts only, no embedded certificates
-* **File Permissions**: 600 for private keys, 644 for certificates
-* **Container Security**: Non-root execution with capability dropping
-* **Password-Free**: No password storage required with PEM format
-
-**Security Features**:
-* **Certificate Generation**: Automated script with proper permissions
-* **Container Mounting**: Read-only volume mounts
-* **TLS Configuration**: Enhanced cipher suites and protocols
-* **Health Checks**: Certificate validation integrated
-* **Build Integration**: Full Maven lifecycle compatibility
