@@ -166,6 +166,8 @@ COMPOSE_BAKE=true
 
 ## Health Check Standards
 
+For distroless-specific health probe patterns, see [distroless-health-probes.md](../../../pm-dev-oci/skills/oci-standards/standards/distroless-health-probes.md).
+
 ### Internal Health Check Implementation
 
 **Core Principle**: Use internal health check scripts with built-in system tools only - avoid external dependencies like `curl`, `wget`.
