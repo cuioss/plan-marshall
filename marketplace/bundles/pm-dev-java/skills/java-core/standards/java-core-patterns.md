@@ -9,9 +9,9 @@
 * Keep package cohesion high
 
 ```java
-de.cuioss.portal.authentication     // Authentication feature
-de.cuioss.portal.configuration      // Configuration feature
-de.cuioss.portal.user.management    // User management feature
+com.example.authentication          // Authentication feature
+com.example.configuration           // Configuration feature
+com.example.usermanagement          // User management feature
 ```
 
 ### Class Structure

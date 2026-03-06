@@ -190,30 +190,26 @@ String message = bundle.getString(MessageKeys.Validation.User.EMAIL_INVALID);
 
 ## Logging System Example
 
-For logging systems, the pattern organizes messages by log level:
+For logging systems, the pattern organizes message templates by log level:
 
 ```java
 @UtilityClass
 public final class ModuleLogMessages {
-    public static final String PREFIX = "MODULE";
 
     @UtilityClass
     public static final class INFO {
-        public static final LogMessage USER_LOGIN = LogMessage.builder()
-            .template("User %s logged in successfully")
-            .prefix(PREFIX)
-            .identifier(1)
-            .build();
+        public static final String USER_LOGIN = "User %s logged in successfully";
+        public static final String SESSION_CREATED = "Session created for %s";
     }
 
     @UtilityClass
     public static final class WARN {
-        // Warning messages (identifiers 100-199)
+        public static final String SESSION_EXPIRING = "Session for %s expires in %d minutes";
     }
 
     @UtilityClass
     public static final class ERROR {
-        // Error messages (identifiers 200-299)
+        public static final String AUTH_FAILED = "Authentication failed for %s: %s";
     }
 }
 ```

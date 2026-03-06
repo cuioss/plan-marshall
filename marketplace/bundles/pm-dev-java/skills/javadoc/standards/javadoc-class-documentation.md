@@ -17,14 +17,14 @@ Every package MUST have a package-info.java file with comprehensive documentatio
  *
  * <h2>Key Components</h2>
  * <ul>
- *   <li>{@link de.cuioss.portal.authentication.TokenValidator} - Main token validation interface</li>
- *   <li>{@link de.cuioss.portal.authentication.JwtTokenParser} - JWT token parsing implementation</li>
- *   <li>{@link de.cuioss.portal.authentication.OAuth2TokenValidator} - OAuth2 token validation</li>
+ *   <li>{@link com.example.authentication.TokenValidator} - Main token validation interface</li>
+ *   <li>{@link com.example.authentication.JwtTokenParser} - JWT token parsing implementation</li>
+ *   <li>{@link com.example.authentication.OAuth2TokenValidator} - OAuth2 token validation</li>
  * </ul>
  *
  * <h2>Best Practices</h2>
  * <p>Always validate tokens before accessing protected resources. Use the
- * {@link de.cuioss.portal.authentication.TokenValidator#validate(String)} method
+ * {@link com.example.authentication.TokenValidator#validate(String)} method
  * which provides detailed validation results.</p>
  *
  * <h2>Usage Example</h2>
@@ -37,9 +37,9 @@ Every package MUST have a package-info.java file with comprehensive documentatio
  * </code></pre>
  *
  * @since 1.0.0
- * @author CUI Team
+ * @author Development Team
  */
-package de.cuioss.portal.authentication;
+package com.example.authentication;
 ```
 
 ### Required Sections

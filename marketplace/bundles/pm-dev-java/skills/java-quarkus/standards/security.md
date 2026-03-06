@@ -90,7 +90,7 @@ quarkus.log.console.format=%d{HH:mm:ss} %-5p [%c{2.}] (%t) %s%e%n
 quarkus.log.level=INFO
 
 # Application-specific debug (development only)
-quarkus.log.category."de.cuioss.jwt".level=DEBUG
+quarkus.log.category."com.example.security".level=DEBUG
 
 # SECURITY: Never log sensitive data
 # - No authentication tokens
@@ -246,134 +246,14 @@ class SecurityIntegrationTest extends BaseIntegrationTest {
 * Certificate validation
 * TLS configuration enforcement
 
-## Runtime Security Configuration
+## Runtime and Deployment Security
 
-### OWASP-Compliant Deployment
+For container runtime hardening, OWASP Docker Top 10, certificate management, and pre-deployment checklists, see:
+- `Skill: pm-dev-oci:oci-security` → `standards/runtime-security.md`
+- `Skill: pm-dev-oci:oci-security` → `standards/owasp-container-security.md`
+- `Skill: pm-dev-oci:oci-security` → `standards/certificate-management.md`
 
-For generic container runtime hardening (capabilities, read-only filesystem, resource limits, security contexts), see `Skill: pm-dev-oci:oci-security` → `standards/runtime-security.md`.
-
-For the complete OWASP Docker Top 10 control mapping, see `Skill: pm-dev-oci:oci-security` → `standards/owasp-container-security.md`.
-
-**Quarkus-specific deployment additions**:
-* Mount PEM certificates as read-only: `-v "./certificates:/app/certificates:ro"`
-* Set Quarkus log level: `-e QUARKUS_LOG_LEVEL=INFO`
-* Use `--restart=unless-stopped` for production resilience
-
-## Security Monitoring and Compliance
-
-### Continuous Security Monitoring
-
-#### Required Security Metrics
-
-Monitor these security-related metrics continuously:
-
-* **Authentication Failures**: Track failed authentication attempts
-* **Authorization Denials**: Monitor access control violations
-* **Certificate Expiration**: Alert before certificates expire
-* **Security Configuration Changes**: Audit all security config modifications
-* **Resource Usage Anomalies**: Detect potential DoS attacks
-* **Error Rates**: Monitor security-related errors
-
-### Security Scanning Requirements
-
-**Pre-Deployment Scanning**:
-* **Image Vulnerability Scanning**: Integrate Trivy, Snyk, or similar tools in CI/CD
-* **Dependency Scanning**: Check for known vulnerabilities in dependencies
-* **Static Code Analysis**: Use SonarQube security rules
-* **Secret Detection**: Scan for accidentally committed secrets
-
-**Runtime Security Monitoring**:
-* **Privilege Escalation Detection**: Monitor for privilege escalation attempts
-* **Network Traffic Analysis**: Ensure only HTTPS traffic is allowed
-* **Resource Usage Monitoring**: Detect potential DoS attacks
-* **Compliance Verification**: Regular OWASP Top 10 compliance checks
-
-### Security Validation Procedures
-
-#### Container Security Validation
-
-For the complete pre-deployment verification checklist (non-root user, capabilities, read-only FS, resource limits, image signing, logging), see `Skill: pm-dev-oci:oci-security` → `standards/owasp-container-security.md` § "Container Security Verification".
-
-**Quarkus-specific validation**:
-
-```bash
-# Test application security endpoints
-curl -k https://localhost:8443/q/health/live   # Should return 200
-curl -k https://localhost:8443/q/health/ready  # Should return 200
-
-# Verify TLS configuration
-openssl s_client -connect localhost:8443 -servername localhost
-```
-
-## Enterprise Security Standards
-
-### Security Governance
-
-#### Production Security Requirements
-
-* **Security Reviews**: All container configurations must pass security review
-* **Change Control**: Security configuration changes require approval
-* **Incident Response**: Defined procedures for security incidents
-* **Compliance Auditing**: Regular OWASP and industry standard compliance verification
-* **Security Training**: Team training on container security best practices
-
-#### Security Documentation Requirements
-
-* **Security Configuration**: Maintain security configuration documentation
-* **Incident Runbooks**: Security incident response procedures
-* **Compliance Reports**: Regular security posture reporting
-* **Risk Assessments**: Quarterly security risk assessments
-* **Security Metrics**: Continuous security metrics collection and reporting
-
-### Certificate Security Management
-
-#### Certificate Security Standards
-
-* **External Mounting**: Use read-only certificate mounts (`-v ./certs:/app/certificates:ro`)
-* **Validity Periods**: 2 years maximum for production, 1 day for testing
-* **File Permissions**: 600 for private keys, 644 for certificates
-* **Zero Embedding**: Never include certificates in container images
-* **Automated Validation**: Health checks verify certificate availability and readability
-* **Rotation Policy**: Automated certificate rotation with zero-downtime deployment
-
-#### Certificate Monitoring
-
-```bash
-# Certificate expiration monitoring
-openssl x509 -in /app/certificates/tls.crt -noout -dates
-
-# Certificate validation in health checks
-test -r "/app/certificates/tls.crt" && test -r "/app/certificates/tls.key"
-
-# TLS endpoint validation
-openssl s_client -connect localhost:8443 -verify_return_error
-```
-
-## Security Validation Rules
-
-### Pre-Deployment Security Validation
-
-- Container runs as non-root user
-- Read-only filesystem enabled
-- All capabilities dropped
-- Resource limits configured
-- Certificates externally mounted
-- No sensitive data in environment variables
-- HTTPS-only endpoints configured
-- Security scanning completed
-- Vulnerability assessment passed
-- Penetration testing completed (production)
-
-### Runtime Security Validation
-
-- Authentication mechanisms working correctly
-- Authorization policies enforced
-- Encryption working for sensitive data
-- Audit logging operational
-- Security monitoring active
-- Certificate rotation tested
-- Incident response procedures documented
-- Security metrics collected and analyzed
+For Quarkus container configuration (Dockerfile, Compose, health checks), see [container.md](container.md).
 
 ## Security Anti-Patterns
 

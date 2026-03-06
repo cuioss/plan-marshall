@@ -276,10 +276,10 @@ This checklist ensures systematic verification of standards compliance after ref
   - @Builder.Default for default values
   - Fluent construction for complex objects
 
-- **@Value for Immutable Objects**: Immutable objects use @Value
-  - Simple immutable objects use @Value
-  - Alternative: use records for very simple cases
-  - Include validation in private constructor if needed
+- **Records for Immutable Objects**: Records preferred over @Value
+  - Use Java records for immutable value objects
+  - @Value only if stuck on Java < 16
+  - Use compact constructor for validation
 
 - **@Delegate for Composition**: Composition preferred over inheritance
   - Use @Delegate instead of extends

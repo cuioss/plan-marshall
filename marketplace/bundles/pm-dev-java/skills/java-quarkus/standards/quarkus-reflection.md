@@ -213,7 +213,7 @@ ReflectiveClassBuildItem.builder(RestEasyServletObjectsResolver.class)
     .build();
 
 // Avoid - string-based registration (error-prone)
-ReflectiveClassBuildItem.builder("de.cuioss.jwt.quarkus.servlet.RestEasyServletObjectsResolver")
+ReflectiveClassBuildItem.builder("com.example.quarkus.servlet.RestEasyServletObjectsResolver")
     .methods(true)
     .build();
 ```
@@ -388,7 +388,7 @@ public AdditionalBeanBuildItem additionalBeans() {
 public ReflectiveClassBuildItem registerAvailableClasses() {
     return ReflectiveClassBuildItem.builder(
             // Don't use strings for accessible classes
-            "de.cuioss.jwt.validation.TokenValidator")
+            "com.example.validation.TokenValidator")
             .build();
 }
 

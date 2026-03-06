@@ -229,7 +229,7 @@ Create `src/test/resources/application.properties` with essential Quarkus and Ja
 ```properties
 # Test configuration for Quarkus tests
 quarkus.log.level=INFO
-quarkus.log.category."de.cuioss.jwt".level=DEBUG
+quarkus.log.category."com.example.security".level=DEBUG
 quarkus.log.category."org.jboss.logmanager".level=WARN
 quarkus.jacoco.reuse-data-file=true
 quarkus.log.console.enable=true
@@ -274,7 +274,7 @@ quarkus:
       enable: true
       format: "%d{yyyy-MM-dd HH:mm:ss,SSS} %-5p [%c] (%t) %s%e%n"
     category:
-      "de.cuioss.jwt":
+      "com.example.security":
         level: DEBUG
       "org.jboss.logmanager":
         level: WARN
