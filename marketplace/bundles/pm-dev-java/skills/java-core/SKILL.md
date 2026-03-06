@@ -46,6 +46,13 @@ Read: standards/java-21-features.md
 
 Use when: Using Java 21 features — pattern matching in switch, record patterns, sequenced collections, and virtual threads.
 
+**Java 25 Features** (load for Java 25+ code):
+```
+Read: standards/java-25-features.md
+```
+
+Use when: Using Java 25 features — scoped values, flexible constructor bodies, module imports, compact source files, KDF API, and JVM performance flags (AOT cache, compact headers).
+
 **Performance Patterns** (load for optimization work):
 ```
 Read: standards/java-performance-patterns.md
