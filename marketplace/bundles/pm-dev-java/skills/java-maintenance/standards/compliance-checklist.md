@@ -131,8 +131,8 @@ This checklist ensures systematic verification of standards compliance after ref
 
 ## Null Safety
 
-**Standards Reference**: Null Safety Standards in java-core
-**See**: `pm-dev-java:java-core` skill, `standards/java-null-safety.md`
+**Standards Reference**: Null Safety Standards
+**See**: `pm-dev-java:java-null-safety` skill
 
 ### Verification Items
 
@@ -265,8 +265,8 @@ This checklist ensures systematic verification of standards compliance after ref
 
 ## Lombok Usage
 
-**Standards Reference**: Lombok Patterns in java-core
-**See**: `pm-dev-java:java-core` skill, `standards/java-lombok-patterns.md`
+**Standards Reference**: Lombok Patterns
+**See**: `pm-dev-java:java-lombok` skill
 
 ### Verification Items
 

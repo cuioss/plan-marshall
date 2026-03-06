@@ -94,13 +94,13 @@ This section defines when and how to identify violations of Java coding standard
 
 **Missing @NonNull Annotations**: Public API methods lack null safety documentation
 - **Action Required**: Add annotations per @NonNull Annotations Standards
-- **See**: `pm-dev-java:java-core` skill, `standards/java-null-safety.md`
+- **See**: `pm-dev-java:java-null-safety` skill
 - **Implementation**: Ensure methods guarantee non-null returns per Implementation Requirements
 - **Detection**: Public methods without @NonNull annotations, package-info.java missing @NullMarked
 
 **Inconsistent API Contracts**: Mix of nullable returns and Optional usage
 - **Action Required**: Choose consistent pattern per API Return Type Guidelines
-- **See**: `pm-dev-java:java-core` skill, `standards/java-null-safety.md` section "Optional Usage"
+- **See**: `pm-dev-java:java-null-safety` skill, section "Optional Usage"
 - **Standards**: Use @NonNull for guaranteed results, Optional<T> for potential absence
 - **Detection**: Some methods return null, others return Optional for same scenarios
 
@@ -208,17 +208,17 @@ Do NOT remove when:
 
 **Inheritance Anti-Patterns**: Classes extending when they should delegate
 - **Action Required**: Replace with composition and `@Delegate` per Lombok Standards
-- **See**: `pm-dev-java:java-core` skill, `standards/java-lombok-patterns.md` section "Delegation with @Delegate"
+- **See**: `pm-dev-java:java-lombok` skill, section "Delegation with @Delegate"
 - **Detection**: Deep inheritance hierarchies, classes extending just to reuse utility methods
 
 **Manual Builder Patterns**: Verbose builder implementations detected
 - **Action Required**: Replace with `@Builder` per Lombok Standards
-- **See**: `pm-dev-java:java-core` skill, `standards/java-lombok-patterns.md` section "Builder Pattern with @Builder"
+- **See**: `pm-dev-java:java-lombok` skill, section "Builder Pattern with @Builder"
 - **Detection**: Manual builder classes with fluent APIs, builder classes with many setters
 
 **Boilerplate Immutable Objects**: Manual equals/hashCode/toString implementations
 - **Action Required**: Replace with `@Value` per Lombok Standards
-- **See**: `pm-dev-java:java-core` skill, `standards/java-lombok-patterns.md` section "Immutable Objects with @Value"
+- **See**: `pm-dev-java:java-lombok` skill, section "Immutable Objects with @Value"
 - **Detection**: Classes with manual implementations of equals, hashCode, toString for simple data carriers
 
 ### When to Enforce Documentation Standards
