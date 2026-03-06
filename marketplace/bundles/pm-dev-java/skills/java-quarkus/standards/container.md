@@ -89,15 +89,17 @@ services:
       - "19000:9000"  # Management interface (health/metrics, plain HTTP)
 
     environment:
-      - LOG_FILE_PATH=/logs/quarkus.log
       - QUARKUS_HTTP_SSL_CERTIFICATE_FILES=/app/certificates/localhost.crt
       - QUARKUS_HTTP_SSL_CERTIFICATE_KEY_FILES=/app/certificates/localhost.key
+      # File logging for integration tests only (production uses console logging)
+      - LOG_FILE_PATH=/logs/quarkus.log
 
     depends_on:
       - keycloak  # Service ordering for dependent infrastructure
 
     volumes:
       - ./src/main/docker/certificates:/app/certificates:ro
+      # Writable log mount for integration tests (not for production)
       - ${LOG_TARGET_DIR:-./target}:/logs:rw
 
     # OWASP Security hardening (production-grade)
@@ -143,7 +145,7 @@ networks:
 - **Image pinning**: Pin third-party images with SHA256 digest (e.g., `image@sha256:...`) when Dependabot cannot auto-update
 - **`depends_on`**: Declare service startup ordering for infrastructure dependencies
 - **Management port**: Expose Quarkus management interface (port 9000, plain HTTP) separately from application port
-- **Log volumes**: Mount writable volume for file-based logging (`${LOG_TARGET_DIR:-./target}:/logs:rw`)
+- **Console logging only**: Containers log to stdout/stderr — let the orchestrator handle log collection. File logging is only for local integration tests (mount `./target` as writable volume)
 - **Profiles**: Use compose profiles for optional services (monitoring, benchmarks) — keeps default startup lean
 - **No `platforms` in compose**: Multi-arch builds belong in CI with `docker buildx`, not in compose files
 
