@@ -55,17 +55,10 @@ Apply Step 6 verification checklist from the skill:
 - @Builder used for complex construction
 - @Value used for immutable objects
 - @Delegate used for composition
-- No @Slf4j (use CuiLogger)
-
 **Modern features check:**
 - Records used for simple data carriers
 - Switch expressions used instead of statements
 - Streams used appropriately
-
-**Logging check:**
-- CuiLogger used (not SLF4J/Log4j)
-- LogRecord used for important messages
-- Exception parameter comes first
 
 ### Step 3: Return Compliance Report
 

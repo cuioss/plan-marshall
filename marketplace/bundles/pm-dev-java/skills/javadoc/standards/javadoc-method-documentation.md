@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document defines standards for documenting methods, fields, constructors, and special method patterns in CUI Java projects.
+This document defines standards for documenting methods, fields, constructors, and special method patterns.
 
 ## Method Documentation
 

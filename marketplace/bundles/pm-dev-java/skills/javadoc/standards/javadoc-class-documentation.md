@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document defines standards for documenting packages, classes, interfaces, enums, and annotations in CUI Java projects.
+This document defines standards for documenting packages, classes, interfaces, enums, and annotations.
 
 ## Package Documentation
 
