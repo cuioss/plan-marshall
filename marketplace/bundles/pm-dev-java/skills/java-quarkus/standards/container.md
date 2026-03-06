@@ -50,17 +50,12 @@ WORKDIR /app
 
 # Secure file operations with root ownership to prevent modification
 COPY --chmod=0755 --chown=root:root target/*-runner /app/application
-COPY --chmod=0755 --chown=root:root health-check.sh /app/health-check.sh
 
 # PEM certificate files with root ownership for security
 COPY --chmod=0644 --chown=root:root certificates/tls.crt /app/certificates/tls.crt
 COPY --chmod=0600 --chown=root:root certificates/tls.key /app/certificates/tls.key
 
-EXPOSE 8443
-
-# Internal health check optimized for native startup performance
-HEALTHCHECK --interval=15s --timeout=5s --retries=3 --start-period=10s \
-  CMD ["/app/health-check.sh"]
+EXPOSE 8443 9000
 
 # Non-root execution
 USER nonroot
@@ -164,71 +159,18 @@ COMPOSE_BAKE=true
 * **No Password Variables**: PEM approach eliminates certificate password management
 * **Simplified Configuration**: Direct property assignment preferred over complex YAML anchors
 
-## Health Check Standards
+## Health Checks
 
-For distroless-specific health probe patterns, see [distroless-health-probes.md](../../../pm-dev-oci/skills/oci-standards/standards/distroless-health-probes.md).
+**Do not embed `HEALTHCHECK` in Dockerfiles** for production. Orchestrators (Kubernetes, ECS) manage health probes externally. `HEALTHCHECK` is only useful for standalone Docker Compose testing.
 
-### Internal Health Check Implementation
+For Quarkus native in distroless images, use the **management interface** (port 9000, plain HTTP) — shell-based scripts (`/dev/tcp`, `curl`) do not work in distroless.
 
-**Core Principle**: Use internal health check scripts with built-in system tools only - avoid external dependencies like `curl`, `wget`.
-
-#### Why Avoid External Dependencies?
-* **Image Bloat**: `curl` adds ~2.5MB and increases attack surface
-* **Portability Issues**: Cross-platform compatibility problems
-* **Security Concerns**: External diagnostic endpoints need to be private
-* **Dependency Risk**: Tool availability varies across base images
-
-#### Production Health Check Script
-
-```bash
-#!/bin/bash
-# Internal health check script - no external dependencies
-
-# Port connectivity test using /dev/tcp (Docker best practice)
-if ! echo -n '' > /dev/tcp/127.0.0.1/8443 2>/dev/null; then
-    echo "Application not listening on port 8443"
-    exit 1
-fi
-
-# PEM Certificate validation (match actual file paths)
-if [ ! -f "/app/certificates/tls.crt" ] || [ ! -f "/app/certificates/tls.key" ]; then
-    echo "PEM certificate files missing"
-    exit 1
-fi
-
-# Application executable check
-if [ ! -x "/app/application" ]; then
-    echo "Application executable missing"
-    exit 1
-fi
-
-echo "Health check passed"
-exit 0
+```properties
+# application.properties (build-time)
+quarkus.management.enabled=true
 ```
 
-#### Health Check Benefits
-* **No External Dependencies**: Works in distroless and minimal base images
-* **Security**: Reduced attack surface, no exposed diagnostic endpoints
-* **Performance**: Faster execution than HTTP-based checks
-* **Reliability**: Tests actual application functionality
-
-#### Health Check Timing Guidelines
-
-**Native Quarkus Optimization**: Health check timings must be optimized for native application startup characteristics.
-
-**Recommended Timings**:
-* **start_period**: `10s` (native apps start in 1-2 seconds)
-* **interval**: `15s` (responsive monitoring for integration tests)
-* **timeout**: `5s` (sufficient for internal checks)
-* **retries**: `3` (standard reliability)
-
-**Anti-Pattern**: The original `start_period: 40s` was excessive for containers that start in milliseconds.
-
-**Performance Impact**:
-* Faster container readiness detection
-* More responsive health monitoring
-* Reduced integration test execution time
-* Better feedback during development
+For complete distroless health probe patterns and Docker Compose integration, see [distroless-health-probes.md](../../../pm-dev-oci/skills/oci-standards/standards/distroless-health-probes.md).
 
 ## Security Requirements
 
