@@ -116,10 +116,10 @@ class UserResourceTest {
 ### Native Image Build
 ```bash
 # Build native image
-mvn package -Pnative
+./mvnw package -Pnative
 
 # Run native integration tests
-mvn verify -Pnative -Dquarkus.test.native-image-profile=native
+./mvnw verify -Pnative -Dquarkus.test.native-image-profile=native
 ```
 
 ## Related Skills

@@ -214,10 +214,10 @@ Without `<skipTests>true</skipTests>` in the integration-tests profile, both uni
 
 ```bash
 # Wrong - only compiles and runs surefire (unit tests)
-mvn clean test -Pintegration-tests
+./mvnw clean test -Pintegration-tests
 
 # Correct - runs full lifecycle including failsafe (integration tests)
-mvn clean verify -Pintegration-tests
+./mvnw clean verify -Pintegration-tests
 ```
 
 ### ❌ Missing Failsafe Executions
