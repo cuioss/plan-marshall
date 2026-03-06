@@ -252,31 +252,3 @@ quarkus.log.console.format=%d{HH:mm:ss} %-5p [%c{2.}] (%t) %s%e%n
 quarkus.log.level=INFO
 ```
 
-## DevUI Component Standards
-
-### JavaScript API Integration
-
-**Critical**: DevUI JavaScript components must use correct case-sensitive API calls.
-
-**Correct API Pattern**:
-```javascript
-// CORRECT: Case-sensitive API calls
-const result = await devui.jsonRPC.CuiJwtDevUI.getConfiguration();
-const health = await devui.jsonRPC.CuiJwtDevUI.getHealthInfo();
-const status = await devui.jsonRPC.CuiJwtDevUI.getValidationStatus();
-const jwks = await devui.jsonRPC.CuiJwtDevUI.getJwksStatus();
-const validation = await devui.jsonRPC.CuiJwtDevUI.validateToken(token);
-```
-
-**Anti-Pattern** (Common Error):
-```javascript
-// INCORRECT: Wrong case - will cause runtime failures
-const result = await devui.jsonrpc.CuiJwtDevUI.getConfiguration();
-```
-
-**Error Prevention**:
-* **IDE Configuration**: Configure linters to catch case sensitivity errors
-* **Code Review**: Mandatory review of all DevUI API calls
-* **Testing**: Comprehensive integration tests for API interactions
-* **Documentation**: Clear API documentation with correct casing
-
