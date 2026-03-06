@@ -318,25 +318,28 @@ This checklist ensures systematic verification of standards compliance after ref
 **Standards Reference**: Testing Standards in pm-dev-java:junit-core
 **See**: `pm-dev-java:junit-core` skill, `standards/testing-junit-core.md`
 
+Build commands are resolved via the architecture API — never hardcode build tool invocations.
+
 ### Verification Items
 
 - **Build Passes**: Code compiles without errors
-  - `./mvnw clean verify -DskipTests` succeeds
+  - Resolve via: `architecture resolve --command verify`
   - No compilation warnings (when possible)
   - All dependencies resolve
 
 - **Tests Pass**: All tests execute successfully
-  - `./mvnw clean test` succeeds
+  - Resolve via: `architecture resolve --command module-tests`
   - No flaky tests
   - Tests are deterministic
 
 - **Coverage Sufficient**: Test coverage meets targets
+  - Resolve via: `architecture resolve --command coverage`
   - Minimum 80% line coverage
   - Minimum 80% branch coverage
   - Critical paths have 100% coverage
 
 - **Quality Gates**: Static analysis passes
-  - SonarQube quality gate passes
+  - Resolve via: `architecture resolve --command quality-gate`
   - No critical or blocker issues
   - Technical debt is acceptable
 
@@ -347,7 +350,6 @@ This checklist ensures systematic verification of standards compliance after ref
 ### Module-Specific Checks
 
 - **Module Builds**: Module builds independently
-  - `./mvnw clean verify -pl module-name` succeeds
   - Module tests pass in isolation
   - No inter-module test dependencies
 
@@ -367,19 +369,10 @@ After completing maintenance work:
 
 1. **Run through checklist** for each modified class
 2. **Fix all non-compliant items** noted
-3. **Execute build verification**:
-   ```bash
-   ./mvnw -Ppre-commit clean verify -DskipTests
-   ```
-4. **Execute test suite**:
-   ```bash
-   ./mvnw clean test
-   ```
-5. **Verify coverage**:
-   ```bash
-   ./mvnw clean verify -Pcoverage
-   ```
-6. **Check static analysis** (SonarQube)
+3. **Execute build verification** via `architecture resolve --command verify`
+4. **Execute test suite** via `architecture resolve --command module-tests`
+5. **Verify coverage** via `architecture resolve --command coverage`
+6. **Check static analysis** via `architecture resolve --command quality-gate`
 7. **Document any deviations** with rationale
 8. **Commit changes** following git standards
 
