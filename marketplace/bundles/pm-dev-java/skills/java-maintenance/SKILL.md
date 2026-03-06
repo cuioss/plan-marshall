@@ -83,9 +83,9 @@ Use when: Verifying code meets all Java development standards.
 ### Compliance Verification
 
 Use explicit script calls for all build operations:
-- **Analysis**: `python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --targets "verify -Pcode-analysis"`
-- **Coverage**: `python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --targets "jacoco:report"`
-- **Sonar**: `python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --targets "sonar:sonar"`
+- **Analysis**: `python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture resolve --command quality-gate`
+- **Coverage**: `python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture resolve --command coverage`
+- **Verify**: `python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture resolve --command verify`
 
 ## Related Skills
 

@@ -310,10 +310,8 @@ COMPLIANCE STATUS: {COMPLIANT / ISSUES REMAINING}
 - Execute at Steps 2, 8, and 11
 - Run build verification:
   ```bash
-  python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run \
-      --targets "clean verify" \
-      --module {module if specified} \
-      --mode errors
+  python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
+      resolve --command verify --name {module if specified}
   ```
 - Success criteria: Exit code 0, zero errors, zero test failures
 - On failure: Report details (errors, test failures) and stop execution
