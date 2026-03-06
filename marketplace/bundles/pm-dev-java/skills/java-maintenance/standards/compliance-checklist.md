@@ -1,6 +1,6 @@
 # Standards Compliance Checklist
 
-Comprehensive checklist for verifying Java code compliance with all CUI standards after maintenance work.
+Comprehensive checklist for verifying Java code compliance with all standards after maintenance work.
 
 ## Purpose
 
@@ -167,8 +167,9 @@ This checklist ensures systematic verification of standards compliance after ref
 
 ### Verification Items
 
-- **Specific Exceptions**: Catch specific exception types
+- **Specific Exceptions**: Catch and throw specific exception types
   - No catch(Exception e) or catch(RuntimeException e)
+  - No throw new RuntimeException() or throw new Exception() — use domain-specific types
   - Catch specific exceptions you can handle
   - Let others propagate
 
