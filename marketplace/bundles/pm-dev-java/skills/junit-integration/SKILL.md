@@ -174,6 +174,15 @@ public class TokenKeycloakIT {
 }
 ```
 
+## Step 2: Load Additional Standards (As Needed)
+
+**External Integration Testing** (load for Docker-based IT):
+```
+Read: standards/external-integration-testing.md
+```
+
+Use when: Implementing external API integration tests with Docker containers, REST Assured over HTTPS, script-based lifecycle management, and management interface testing.
+
 ## Common Pitfalls
 
 ### ❌ Incorrect Naming Convention

@@ -34,11 +34,8 @@ This provides foundational rules for:
 ### Step 2: Load Additional Standards (As Needed)
 
 **External Integration Testing** (load for Docker-based IT):
-```
-Read: standards/integration-testing.md
-```
 
-Use when: Configuring external API integration tests with Docker containers. For basic Maven Failsafe setup, see `pm-dev-java:junit-integration`.
+See `pm-dev-java:junit-integration` → `standards/external-integration-testing.md`. For Quarkus-specific paths, use `/q/health` and `/q/metrics` on the management interface.
 
 **Native Image** (load for GraalVM work):
 ```
@@ -126,7 +123,6 @@ class UserResourceTest {
 | Standard | Purpose |
 |----------|---------|
 | quarkus-testing.md | @QuarkusTest, JaCoCo, REST Assured |
-| integration-testing.md | External API testing with Docker (extends junit-integration) |
 | quarkus-native.md | GraalVM native image builds |
 | quarkus-reflection.md | Reflection registration for native |
 | container.md | Docker deployment, health checks, certificate management |

@@ -1,18 +1,18 @@
-# Quarkus External Integration Testing Standards
+# External Integration Testing Standards
 
 ## Purpose
 
-Standards for implementing **external API integration tests** in Quarkus applications that test the complete application stack through published API interfaces using production-like configurations with Docker containers.
+Standards for implementing **external API integration tests** that test the complete application stack through published API interfaces using production-like configurations with Docker containers.
 
-**Prerequisites**: For basic Maven Failsafe configuration and naming conventions, see `pm-dev-java:junit-integration`.
+**Prerequisites**: For basic Maven Failsafe configuration and naming conventions, see `pm-dev-java:junit-integration` SKILL.md.
 
 ## Core Principles
 
 ### API-Only Testing
 
-External integration tests **MUST** test only through published APIs, never through internal CDI injection:
+External integration tests **MUST** test only through published APIs, never through internal injection:
 
-* **No CDI Injection**: Tests must not use `@Inject` for services
+* **No Internal Injection**: Tests must not use framework-specific injection (`@Inject`, `@Autowired`)
 * **External Client Perspective**: Tests simulate real client interactions
 * **Protocol Compliance**: Use actual HTTP/HTTPS protocols
 * **Container Isolation**: Application runs in separate process/container
@@ -22,7 +22,7 @@ External integration tests **MUST** test only through published APIs, never thro
 External integration tests **MUST** use production-equivalent configurations:
 
 * **HTTPS Required**: All API tests use TLS with proper certificates
-* **Management Interface**: Health/metrics via plain HTTP on separate port (9000)
+* **Management Interface**: Health/metrics via plain HTTP on separate port
 * **Real Networking**: Actual TCP/IP communication, not in-memory
 * **Container Runtime**: Application runs in Docker container
 * **Resource Constraints**: Same memory/CPU limits as production
@@ -47,7 +47,7 @@ integration-tests/
 
 ## Maven Configuration
 
-The integration test module does **not** build the application — it only builds Docker images and runs tests. The native build happens in the main application module.
+The integration test module does **not** build the application — it only builds Docker images and runs tests. The application build happens in the main application module.
 
 ### Module Properties
 
@@ -126,7 +126,7 @@ The integration test module does **not** build the application — it only build
 ```
 
 **Key differences from the application module**:
-- No `quarkus-maven-plugin` — the integration module doesn't build the app
+- No framework build plugin (e.g., no `quarkus-maven-plugin`) — the integration module doesn't build the app
 - Explicit Failsafe `<include>` pattern for test discovery
 - System properties pass port configuration to tests
 - Post-integration-test dumps service logs before stopping containers
@@ -191,7 +191,7 @@ class ApiIntegrationIT extends BaseIntegrationTest {
 
 ### Health/Metrics Testing (management port)
 
-Health and metrics endpoints use the management interface (plain HTTP, port 19000):
+Health and metrics endpoints use the management interface (plain HTTP, separate port):
 
 ```java
 @Test
@@ -199,7 +199,7 @@ void shouldProvideOverallHealthStatus() {
     given()
             .baseUri(managementBaseUri())
             .when()
-            .get("/q/health")
+            .get("/health")
             .then()
             .statusCode(200)
             .contentType("application/json")
@@ -207,19 +207,17 @@ void shouldProvideOverallHealthStatus() {
 }
 
 @Test
-void shouldExposePrometheusMetrics() {
+void shouldExposeMetrics() {
     given()
             .baseUri(managementBaseUri())
             .when()
-            .get("/q/metrics")
+            .get("/metrics")
             .then()
-            .statusCode(200)
-            .contentType(containsString("text"))
-            .body(containsString("# HELP"));
+            .statusCode(200);
 }
 ```
 
-## Application Configuration
+**Note**: The health/metrics endpoint paths vary by framework (e.g., `/q/health` for Quarkus, `/actuator/health` for Spring Boot). Adjust paths accordingly.
 
 ### Port Mapping Strategy
 
@@ -227,8 +225,6 @@ void shouldExposePrometheusMetrics() {
 |------|----------|---------|
 | `10443:8443` | HTTPS | API endpoints (external test port) |
 | `19000:9000` | HTTP | Management interface (health, metrics) |
-
-For complete Docker Compose configuration, see [container.md](container.md).
 
 ## Script-Based Lifecycle Management
 
@@ -245,14 +241,14 @@ cd "${PROJECT_DIR}"
 
 docker compose up -d
 
-# 1. Wait for dependent services first (e.g., Keycloak)
-echo "Waiting for Keycloak..."
+# 1. Wait for dependent services first (e.g., identity provider)
+echo "Waiting for identity provider..."
 for i in {1..60}; do
     if curl -s http://localhost:1090/health/ready > /dev/null 2>&1; then
-        echo "Keycloak is ready"
+        echo "Identity provider is ready"
         break
     fi
-    [ $i -eq 60 ] && { echo "Keycloak failed to start"; exit 1; }
+    [ $i -eq 60 ] && { echo "Identity provider failed to start"; exit 1; }
     sleep 1
 done
 
@@ -260,7 +256,7 @@ done
 echo "Waiting for application..."
 START_TIME=$(date +%s)
 for i in {1..30}; do
-    if curl -s http://localhost:19000/q/health/live > /dev/null 2>&1; then
+    if curl -s http://localhost:19000/health/live > /dev/null 2>&1; then
         TOTAL_TIME=$(( $(date +%s) - START_TIME ))
         echo "Application ready in ${TOTAL_TIME}s"
         break
@@ -296,7 +292,7 @@ Dump service logs in `post-integration-test` **before** stopping containers — 
 # scripts/dump-service-logs.sh
 TARGET_DIR="${1:-.}"
 
-docker compose logs keycloak > "${TARGET_DIR}/keycloak.log" 2>&1 || true
+docker compose logs identity-provider > "${TARGET_DIR}/identity-provider.log" 2>&1 || true
 docker compose logs application > "${TARGET_DIR}/application.log" 2>&1 || true
 
 echo "Service logs saved to ${TARGET_DIR}"
@@ -327,12 +323,11 @@ echo "Service logs saved to ${TARGET_DIR}"
 
 ## Anti-Patterns
 
-* **CDI Injection in Tests**: Never use `@Inject` — tests are external clients
-* **@QuarkusTest**: Use for unit tests only, not external integration tests
+* **Internal Injection in Tests**: Never use `@Inject`/`@Autowired` — tests are external clients
 * **HTTP for API tests**: All API integration tests must use HTTPS
-* **Health checks on HTTPS port**: Use management interface (port 9000) for health/metrics
+* **Health checks on HTTPS port**: Use management interface for health/metrics
 * **Hardcoded Ports**: Always use configurable system properties
-* **Quarkus plugin in IT module**: The integration module doesn't build the app
+* **Framework build plugin in IT module**: The integration module doesn't build the app
 * **Missing log dump**: Always dump service logs before stopping containers
 
 ## Troubleshooting
@@ -357,7 +352,7 @@ openssl x509 -in src/main/docker/certificates/localhost.crt -text -noout
 docker compose ps
 
 # Probe management interface from host
-curl -s http://localhost:19000/q/health
+curl -s http://localhost:19000/health
 
 # Probe HTTPS endpoint from host
 curl -k https://localhost:10443/api/health
@@ -376,6 +371,7 @@ openssl verify -CAfile localhost.crt localhost.crt
 
 ## References
 
-* [Quarkus Testing Guide](https://quarkus.io/guides/getting-started-testing)
 * [REST Assured Documentation](https://rest-assured.io/)
 * [Maven Failsafe Plugin](https://maven.apache.org/surefire/maven-failsafe-plugin/)
+* For container configuration and Docker Compose patterns, see `pm-dev-java:java-quarkus` (Quarkus) or your framework's container standard
+* For certificate management, see `pm-dev-oci:oci-security`
