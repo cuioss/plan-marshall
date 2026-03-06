@@ -67,6 +67,13 @@ Read: standards/dsl-constants.md
 
 Use when: Organizing related constants hierarchically using nested static classes with `@UtilityClass`. Covers configuration keys, error codes, resource bundles, logging messages, and best practices.
 
+**Security Patterns** (load for security-sensitive code):
+```
+Read: standards/java-security-patterns.md
+```
+
+Use when: Working with authentication, encryption, secrets, or sensitive data. Covers secure logging rules, startup config validation, anti-patterns (hardcoded secrets, insecure error messages), and security principles.
+
 ## Related Skills
 
 - `pm-dev-java:java-null-safety` - JSpecify null annotations

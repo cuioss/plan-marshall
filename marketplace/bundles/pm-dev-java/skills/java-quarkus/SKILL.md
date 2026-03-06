@@ -61,13 +61,6 @@ Read: standards/container.md
 
 Use when: Configuring container images, Docker Compose, health checks, or certificate management.
 
-**Security Standards** (load for security work):
-```
-Read: standards/security.md
-```
-
-Use when: Implementing OWASP-compliant security, secure logging, or runtime security configuration.
-
 ## Key Rules Summary
 
 ### @QuarkusTest Setup
@@ -137,4 +130,3 @@ class UserResourceTest {
 | quarkus-native.md | GraalVM native image builds |
 | quarkus-reflection.md | Reflection registration for native |
 | container.md | Docker deployment, health checks, certificate management |
-| security.md | OWASP security, secure logging, runtime security |

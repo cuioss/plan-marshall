@@ -144,7 +144,7 @@ networks:
 - **Profiles**: Use compose profiles for optional services (monitoring, benchmarks) — keeps default startup lean
 - **No `platforms` in compose**: Multi-arch builds belong in CI with `docker buildx`, not in compose files
 
-For detailed explanation of OWASP security options (`no-new-privileges`, `cap_drop`, `read_only`), see [security.md](security.md) section "OWASP-Compliant Deployment".
+For container security hardening (`no-new-privileges`, `cap_drop`, `read_only`) and certificate management, see `pm-dev-oci:oci-security`.
 
 ### Environment Configuration (.env)
 
