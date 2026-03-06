@@ -286,48 +286,6 @@ This checklist ensures systematic verification of standards compliance after ref
   - Expose only needed methods
   - Favor composition over inheritance
 
-- **No Lombok Logging**: CuiLogger used, not @Slf4j
-  - No @Slf4j or other logging annotations
-  - Use CuiLogger explicitly
-  - Follow CUI logging patterns
-
-## Logging (CUI Projects)
-
-**Standards Reference**: Logging Standards in pm-dev-java-cui
-**See**: `pm-dev-java-cui:cui-logging` skill
-
-### Verification Items
-
-- **CuiLogger Declaration**: Logger is properly declared
-  - `private static final CuiLogger LOGGER = new CuiLogger(ClassName.class);`
-  - Named LOGGER (uppercase)
-  - Static final field
-
-- **LogRecord Usage**: Important messages use LogRecord
-  - INFO/WARN/ERROR/FATAL use LogRecord
-  - DEBUG/TRACE can use simple strings
-  - LogMessages class defines LogRecords
-
-- **LogMessages Organization**: LogMessages follows DSL pattern
-  - Nested static classes by log level (INFO, WARN, ERROR, FATAL)
-  - @UtilityClass on all classes
-  - Proper identifier ranges (INFO: 1-99, WARN: 100-199, ERROR: 200-299)
-
-- **Exception Logging**: Exceptions logged correctly
-  - Exception is first parameter: `LOGGER.error(exception, ERROR.MESSAGE, args)`
-  - Exception message included in log template
-  - Appropriate log level for exception severity
-
-- **String Substitution**: %s used for all substitutions
-  - Use %s, not {} or %d
-  - Number of %s matches number of arguments
-  - No string concatenation in log calls
-
-- **No System.out/err**: No console output
-  - No System.out.println()
-  - No System.err.println()
-  - No printStackTrace()
-
 ## Documentation
 
 **Standards Reference**: Javadoc Standards in `pm-dev-java:javadoc` skill
