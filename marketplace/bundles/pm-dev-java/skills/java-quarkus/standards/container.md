@@ -75,27 +75,30 @@ ENTRYPOINT ["/app/application"]
 **Critical Principle**: Integration tests must use production-equivalent configuration to detect issues early.
 
 ```yaml
-# Production-Grade Integration Testing Configuration
 services:
-  application-integration-tests:
+  application:
+    image: "my-app:distroless"
     build:
-      context: .
+      context: ../my-app
       dockerfile: src/main/docker/Dockerfile.native
       cache_from:
         - quay.io/quarkus/quarkus-distroless-image:2.0
-      platforms:
-        - linux/amd64
-        - linux/arm64
 
     ports:
       - "10443:8443"  # External test port
-
-    volumes:
-      # PEM certificate mount (production pattern)
-      - ./src/main/docker/certificates:/app/certificates:ro
+      - "19000:9000"  # Management interface (health/metrics, plain HTTP)
 
     environment:
-      - QUARKUS_LOG_LEVEL=INFO
+      - LOG_FILE_PATH=/logs/quarkus.log
+      - QUARKUS_HTTP_SSL_CERTIFICATE_FILES=/app/certificates/localhost.crt
+      - QUARKUS_HTTP_SSL_CERTIFICATE_KEY_FILES=/app/certificates/localhost.key
+
+    depends_on:
+      - keycloak  # Service ordering for dependent infrastructure
+
+    volumes:
+      - ./src/main/docker/certificates:/app/certificates:ro
+      - ${LOG_TARGET_DIR:-./target}:/logs:rw
 
     # OWASP Security hardening (production-grade)
     security_opt:
@@ -105,37 +108,44 @@ services:
     read_only: true
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=100m
-      - /app/tmp:rw,noexec,nosuid,size=50m
 
     # Resource limitations (DoS protection)
     deploy:
       resources:
         limits:
+          memory: 512M
+          cpus: '4.0'
+        reservations:
           memory: 256M
           cpus: '1.0'
-        reservations:
-          memory: 128M
-          cpus: '0.5'
 
-# Health check optimized for native Quarkus startup performance
-    healthcheck:
-      test: ["CMD", "/app/health-check.sh"]
-      interval: 15s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
-
-    # Network isolation
     networks:
-      - integration-test
-
+      - app-network
     restart: unless-stopped
 
+  # Optional services via profiles
+  monitoring:
+    image: prom/prometheus:v3.6.0
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    networks:
+      - app-network
+    profiles:
+      - monitoring
+
 networks:
-  integration-test:
+  app-network:
     driver: bridge
-    internal: false
 ```
+
+### Key Patterns
+
+- **Image pinning**: Pin third-party images with SHA256 digest (e.g., `image@sha256:...`) when Dependabot cannot auto-update
+- **`depends_on`**: Declare service startup ordering for infrastructure dependencies
+- **Management port**: Expose Quarkus management interface (port 9000, plain HTTP) separately from application port
+- **Log volumes**: Mount writable volume for file-based logging (`${LOG_TARGET_DIR:-./target}:/logs:rw`)
+- **Profiles**: Use compose profiles for optional services (monitoring, benchmarks) — keeps default startup lean
+- **No `platforms` in compose**: Multi-arch builds belong in CI with `docker buildx`, not in compose files
 
 For detailed explanation of OWASP security options (`no-new-privileges`, `cap_drop`, `read_only`), see [security.md](security.md) section "OWASP-Compliant Deployment".
 
