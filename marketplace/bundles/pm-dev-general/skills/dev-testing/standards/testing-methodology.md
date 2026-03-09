@@ -38,13 +38,13 @@ test "Should validate input with correct format" {
 
 ## Test Class Organization
 
-### 1:1 Mapping
+### Test Class Mapping
 
 Each production type (class, module, component) requires at least one dedicated test class/file.
 
 * Test naming: `{ProductionName}Test` or `{ProductionName}.test` (follow framework convention)
 * Test files in the same package/directory structure as production code (in test source root)
-* One test file per production file (1:1 mapping)
+* At least one test file per production file — split into multiple when exceeding ~200 lines
 
 ### Splitting Large Test Files
 

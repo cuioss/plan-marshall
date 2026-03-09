@@ -13,6 +13,7 @@ For general testing principles (AAA pattern, test organization, coverage require
 
 ## Test Class Requirements
 
+* At least one test class per production class — split into multiple at ~200 lines
 * Test class naming: `{ClassName}Test.java` for production class `{ClassName}.java`
 * Test classes in same package structure under `src/test/java`
 * **Exceptions:** Enums without custom methods (only constants).

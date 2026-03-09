@@ -22,7 +22,7 @@ Read: standards/testing-methodology.md
 
 This provides foundational rules for:
 - AAA pattern (Arrange-Act-Assert)
-- Test class organization (1:1 mapping, splitting thresholds)
+- Test class organization (at least one per production class, splitting thresholds)
 - Test naming and readability
 - Deterministic test paths (no branching in tests)
 - Test data principles (generated, not hardcoded)
@@ -50,7 +50,7 @@ No phase comments (`// Arrange`, `// Act`, `// Assert`) — whitespace separatio
 
 ### Test Organization
 
-- One test class per production class (1:1 mapping)
+- At least one test class per production class
 - Split test classes at ~200 lines into focused groups
 - Group related tests (3+ tests on same topic) using nesting constructs
 - Separate unit tests from integration tests

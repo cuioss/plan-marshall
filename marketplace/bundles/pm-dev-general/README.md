@@ -22,7 +22,7 @@ pm-dev-general/
 
 **dev-testing** — Testing methodology and coverage
 - AAA pattern (Arrange-Act-Assert)
-- Test organization (1:1 mapping, splitting thresholds)
+- Test organization (at least one per production class, splitting thresholds)
 - Test reliability (no branching, no fixed delays, determinism)
 - Coverage requirements (80% line/branch minimum)
 - Corner case strategies and boundary testing

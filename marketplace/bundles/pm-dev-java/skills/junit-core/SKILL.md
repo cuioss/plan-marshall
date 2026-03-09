@@ -26,7 +26,7 @@ Read: standards/testing-junit-core.md
 ```
 
 This provides foundational rules for:
-- Test class requirements (1:1 mapping, splitting at 200+ lines)
+- Test class requirements (at least one per production class, splitting at 200+ lines)
 - AAA pattern with generated test data (no literals, no phase comments)
 - Full JUnit 5 assertion API (`assertAll`, `assertInstanceOf`, `assertDoesNotThrow`)
 - @Nested for grouping (3+ related tests)
@@ -60,7 +60,7 @@ Use when: Analyzing test coverage or improving coverage metrics.
 
 ### Test Class Requirements
 ```java
-// CORRECT - One test class per production class
+// CORRECT - At least one test class per production class
 // TokenValidator.java → TokenValidatorTest.java
 // UserService.java → UserServiceTest.java
 ```
