@@ -166,15 +166,3 @@ For code with thread-safety implications:
 * Note if returned values may be stale under concurrent access
 * Document any lock ordering requirements
 
-## Quality Checklist
-
-Before completing documentation:
-
-- [ ] All public/exported APIs documented
-- [ ] All parameters described with constraints
-- [ ] Return values documented with guarantees
-- [ ] Exceptions/errors documented with conditions
-- [ ] No "stating the obvious" documentation
-- [ ] No outdated documentation
-- [ ] Documentation matches current implementation
-- [ ] Consistent style and terminology

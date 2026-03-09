@@ -179,18 +179,12 @@ public Optional<User> findUser(String userId) {
 }
 ```
 
-## Quality Rules
+## Java-Specific Quality Rules
 
-Before completing JavaDoc documentation:
+Beyond general documentation requirements (see `pm-dev-general:dev-documentation`):
 
-- All public/protected APIs documented
-- All parameters described with validation rules
-- Return values documented with guarantees
-- Exceptions documented with conditions
-- No "stating the obvious" documentation
-- No outdated documentation
-- Proper tag order followed
+- Proper tag order followed (see Tag Order section above)
 - Thread-safety documented where relevant
-- Null handling documented
-- Migration paths provided for deprecated APIs
+- Null handling documented with `@NonNull`/`@Nullable` annotations
+- Migration paths provided for all `@deprecated` APIs
 - JavaDoc HTML generation succeeds without warnings

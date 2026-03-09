@@ -14,23 +14,11 @@ For general prioritization principles (high/medium/low priority categories, deci
 
 ### Modern Java Adoption
 
-**Characteristics**:
-- Code works but uses outdated patterns
-- Opportunities for simplification
-- Improve code clarity
-- Reduce boilerplate
-
 **Examples**:
 - Legacy switch statements (should use switch expressions)
 - Verbose object creation patterns (should use records)
 - Missing use of records for data carriers
 - Underutilized stream operations
-
-**Why Medium Priority**:
-- Non-breaking improvements
-- Incremental adoption possible
-- Improve readability
-- Reduce maintenance burden
 
 ### Code Cleanup
 

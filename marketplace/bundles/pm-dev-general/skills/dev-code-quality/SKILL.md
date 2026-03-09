@@ -23,7 +23,7 @@ Read: standards/code-organization.md
 This provides foundational rules for:
 - Single Responsibility Principle
 - Command-Query Separation
-- Parameter objects for 3+ parameters
+- Parameter objects when count hurts readability (language-dependent threshold)
 - Package/module structure (feature-based)
 - Immutability preference
 
