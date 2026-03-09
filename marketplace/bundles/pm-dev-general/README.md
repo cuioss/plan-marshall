@@ -50,12 +50,6 @@ implementation:      [pm-dev-general:dev-code-quality, pm-dev-general:dev-docume
 module_testing:      [domain:test-skill, pm-dev-general:dev-testing]
 ```
 
-## Bundle Statistics
-
-- **Skills**: 3 (pure reference, no agents or commands)
-- **Standards documents**: 6
-- **Scripts**: 0
-
 ## Support
 
 - Repository: https://github.com/cuioss/plan-marshall

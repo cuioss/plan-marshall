@@ -44,10 +44,6 @@ pm-dev-oci/
         └── SKILL.md
 ```
 
-## Bundle Statistics
-
-- **Skills**: 3 (domain knowledge references)
-
 ## Dependencies
 
 No external dependencies. Pure reference material.

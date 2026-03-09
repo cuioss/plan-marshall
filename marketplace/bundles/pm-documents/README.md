@@ -87,13 +87,6 @@ pm-documents/
     └── plan-marshall-plugin/     # Extension registration
 ```
 
-## Bundle Statistics
-
-- **Commands**: 1
-- **Skills**: 5 (with 19 total workflows)
-- **Templates**: 5+
-- **Scripts**: 8+
-
 ## Dependencies
 
 ### Inter-Bundle Dependencies
