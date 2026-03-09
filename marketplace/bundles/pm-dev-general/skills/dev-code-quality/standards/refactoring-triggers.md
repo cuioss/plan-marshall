@@ -60,15 +60,15 @@ This document defines WHEN to refactor by identifying violations and triggering 
 
 ### Too Many Parameters
 
-**Trigger**: Methods with 3+ parameters without parameter objects.
+**Trigger**: Functions with an unwieldy number of parameters that hurts readability.
 
 **Detection:**
-* Count method parameters
-* Identify methods with similar parameter groups across the codebase
+* Count function parameters (threshold varies: Java 3+, JavaScript 5+, Python — when groups repeat)
+* Identify functions with similar parameter groups across the codebase
 
-**Action:** Create parameter objects.
+**Action:** Group into parameter objects (Java records, JS config objects, Python dataclasses).
 
-**Exception:** Parameters representing a cohesive concept (e.g., coordinates x, y, z) or simple configuration.
+**Exception:** Parameters representing a cohesive concept (e.g., coordinates x, y, z) or simple configuration. Languages with named/keyword arguments (Python, Kotlin) tolerate more parameters.
 
 ### Command-Query Separation Violations
 

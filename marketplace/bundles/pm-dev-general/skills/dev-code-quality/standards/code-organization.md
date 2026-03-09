@@ -79,7 +79,11 @@ Use the most restrictive access level possible:
 
 ## Parameter Objects
 
-When a method has **3 or more parameters**, introduce a parameter object:
+When a function has too many parameters for comfortable readability, group related parameters into an object. The exact threshold depends on the language:
+
+* **Java** (no named arguments): prefer parameter objects at 3+ parameters. Use records.
+* **JavaScript**: prefer config objects at 5+ parameters. Destructuring in the signature keeps it readable.
+* **Python** (keyword arguments): named args handle many parameters well. Use dataclasses or TypedDicts when parameter groups are reused across multiple functions.
 
 ```
 // BAD — too many loose parameters

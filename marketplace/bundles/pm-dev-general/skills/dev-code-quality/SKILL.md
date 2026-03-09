@@ -49,7 +49,7 @@ Use when: Designing error handling, exception hierarchies, or recovery patterns.
 
 - **Single Responsibility** — each class/module/function does one thing
 - **Command-Query Separation** — methods either modify state (command) or return data (query), not both
-- **Parameter objects** — use objects for 3+ parameters
+- **Parameter objects** — group related parameters into objects when count becomes unwieldy (threshold varies by language)
 - **Composition over inheritance** — prefer delegation
 - **Immutability** — prefer immutable data structures
 
@@ -58,7 +58,7 @@ Use when: Designing error handling, exception hierarchies, or recovery patterns.
 - Method/function length: prefer < 50 lines
 - Cyclomatic complexity: max 15
 - Nesting depth: max 3 levels
-- Parameters: max 3 without parameter objects
+- Parameters: reduce when count hurts readability (language-dependent)
 
 ### Refactoring Triggers
 
