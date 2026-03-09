@@ -38,7 +38,11 @@ class Extension(ExtensionBase):
                         {
                             'skill': 'pm-dev-frontend:cui-javascript',
                             'description': 'Core JavaScript development standards covering ES modules, modern patterns, and code quality',
-                        }
+                        },
+                        {
+                            'skill': 'pm-dev-general:dev-code-quality',
+                            'description': 'Language-agnostic code quality principles (SRP, CQS, complexity, error handling)',
+                        },
                     ],
                     'optionals': [
                         {
@@ -52,7 +56,12 @@ class Extension(ExtensionBase):
                     ],
                 },
                 'implementation': {
-                    'defaults': [],
+                    'defaults': [
+                        {
+                            'skill': 'pm-dev-general:dev-documentation',
+                            'description': 'Language-agnostic documentation principles (what/when/how to document)',
+                        },
+                    ],
                     'optionals': [
                         {
                             'skill': 'pm-dev-frontend:js-enforce-eslint',
@@ -61,7 +70,12 @@ class Extension(ExtensionBase):
                     ],
                 },
                 'module_testing': {
-                    'defaults': [],
+                    'defaults': [
+                        {
+                            'skill': 'pm-dev-general:dev-testing',
+                            'description': 'Language-agnostic testing methodology (AAA, coverage, reliability, determinism)',
+                        },
+                    ],
                     'optionals': [
                         {
                             'skill': 'pm-dev-frontend:cui-cypress',

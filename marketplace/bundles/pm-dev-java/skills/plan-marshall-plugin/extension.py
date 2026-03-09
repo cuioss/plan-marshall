@@ -43,7 +43,11 @@ class Extension(ExtensionBase):
                         {
                             'skill': 'pm-dev-java:java-core',
                             'description': 'Core Java patterns including modern features and performance optimization',
-                        }
+                        },
+                        {
+                            'skill': 'pm-dev-general:dev-code-quality',
+                            'description': 'Language-agnostic code quality principles (SRP, CQS, complexity, error handling)',
+                        },
                     ],
                     'optionals': [
                         {
@@ -57,7 +61,12 @@ class Extension(ExtensionBase):
                     ],
                 },
                 'implementation': {
-                    'defaults': [],
+                    'defaults': [
+                        {
+                            'skill': 'pm-dev-general:dev-documentation',
+                            'description': 'Language-agnostic documentation principles (what/when/how to document)',
+                        },
+                    ],
                     'optionals': [
                         {
                             'skill': 'pm-dev-java:java-cdi',
@@ -74,7 +83,11 @@ class Extension(ExtensionBase):
                         {
                             'skill': 'pm-dev-java:junit-core',
                             'description': 'JUnit 5 testing patterns with AAA structure, coverage analysis, and assertion standards',
-                        }
+                        },
+                        {
+                            'skill': 'pm-dev-general:dev-testing',
+                            'description': 'Language-agnostic testing methodology (AAA, coverage, reliability, determinism)',
+                        },
                     ],
                     'optionals': [
                         {
