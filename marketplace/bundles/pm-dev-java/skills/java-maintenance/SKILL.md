@@ -89,6 +89,7 @@ Use explicit script calls for all build operations:
 
 ## Related Skills
 
+- `pm-dev-general:dev-code-quality` - Language-agnostic refactoring triggers and prioritization
 - `pm-dev-java:java-core` - Core Java patterns
 - `pm-dev-java:junit-core` - Test coverage requirements
 - `pm-dev-java:javadoc` - Documentation standards

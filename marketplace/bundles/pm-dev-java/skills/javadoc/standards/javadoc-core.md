@@ -1,89 +1,14 @@
 # JavaDoc Core Standards
 
-## Purpose
+For general documentation principles (what/when/how to document, clarity, completeness, anti-patterns), see `pm-dev-general:dev-documentation`. This document covers JavaDoc-specific tag syntax, formatting, and Java-specific patterns.
 
-This document defines core JavaDoc documentation standards, ensuring consistency, completeness, and maintainability across the codebase.
+## Java-Specific Documentation Requirements
 
-## Mandatory Documentation Requirements
+In addition to general requirements in `pm-dev-general:dev-documentation`:
 
-### What Must Be Documented
-
-* Every public and protected class/interface
-* Every public and protected method
-* All public and protected fields
-* All enum constants and their purpose
-* Package-level documentation in package-info.java
+* Package-level documentation in `package-info.java`
 * Annotation types and their elements
-
-### What Should NOT Be Documented
-
-* Private methods (unless complex or non-obvious)
-* Trivial fields (e.g., serialVersionUID, LOGGER)
-* Obvious getters/setters without business logic
-* Standard fields that follow common patterns
-* Methods that simply delegate without logic
-
-(See "Documentation Anti-Patterns" section below for examples of what NOT to document)
-
-## Core JavaDoc Principles
-
-### 1. Clarity and Purpose
-
-* Start with a clear purpose statement
-* Explain WHAT the code does and WHY it exists
-* Avoid stating the obvious or repeating the method name
-* Focus on behavior, not implementation details
-
-**Good Example**:
-```java
-/**
- * Validates the JWT token signature and expiration time against the configured
- * issuer and clock skew tolerance.
- *
- * @param token the JWT token to validate
- * @return validation result containing status and any error messages
- * @throws IllegalArgumentException if token is null or empty
- */
-public ValidationResult validate(String token) {
-    // Implementation
-}
-```
-
-**Bad Example (Stating the Obvious)**:
-```java
-/**
- * Validates a token.
- *
- * @param token the token
- * @return the result
- */
-public ValidationResult validate(String token) {
-    // Implementation
-}
-```
-
-### 2. Completeness
-
-* Document all parameters with meaningful descriptions
-* Document return values with what they represent
-* Document all checked exceptions and when they occur
-* Document unchecked exceptions if they represent business rules
-* Include @since tags for public APIs
-* Add @deprecated with migration path for deprecated elements
-
-### 3. Consistency
-
-* Use consistent terminology across the codebase
-* Follow standard tag order (see Tag Order section)
-* Use consistent formatting and structure
-* Apply consistent documentation style
-
-### 4. Maintainability
-
-* Keep documentation synchronized with code
-* Update JavaDoc when changing method signatures or behavior
-* Remove outdated or incorrect documentation
-* Document assumptions and preconditions
+* All enum constants and their purpose
 
 ## Basic Tag Usage
 
@@ -177,24 +102,6 @@ public boolean validateLegacy(String token) {
 }
 ```
 
-## Documentation Maintenance
-
-### When to Update JavaDoc
-
-* When changing method signatures (parameters, return type)
-* When modifying method behavior or semantics
-* When adding new public APIs
-* When deprecating existing APIs
-* When fixing bugs that affect documented behavior
-* During code reviews
-
-### Keeping Documentation Synchronized
-
-* Review JavaDoc during every code change
-* Run JavaDoc generation to catch errors
-* Include JavaDoc updates in the same commit as code changes
-* Check for broken {@link} references
-
 ## Tag Order
 
 Always use this standard tag order:
@@ -224,103 +131,6 @@ Always use this standard tag order:
 public Session authenticate(String username, String password)
         throws AuthenticationException {
     // Implementation
-}
-```
-
-## Documentation Anti-Patterns
-
-### 1. Stating the Obvious
-
-```java
-// ❌ Bad - obvious documentation
-/**
- * Sets the name.
- * @param name the name to set
- */
-public void setName(String name) {
-    this.name = name;
-}
-
-// ✅ Good - document business rules if any
-/**
- * Sets the user's display name. The name is trimmed and validated
- * to ensure it meets minimum length requirements.
- *
- * @param name the display name (minimum 2 characters after trimming)
- * @throws IllegalArgumentException if name is too short
- */
-public void setName(String name) {
-    // Implementation with validation
-}
-```
-
-### 2. Outdated Documentation
-
-```java
-// ❌ Bad - documentation doesn't match implementation
-/**
- * Validates the token format.
- *
- * @param token the token
- * @return true if valid
- */
-public ValidationResult validate(String token) {
-    // Method now returns ValidationResult, not boolean!
-}
-```
-
-### 3. Vague Descriptions
-
-```java
-// ❌ Bad - vague, uninformative
-/**
- * Processes the data.
- *
- * @param data the data
- * @return the result
- */
-public Result process(Data data) {
-    // What kind of processing? What result?
-}
-
-// ✅ Good - specific and informative
-/**
- * Enriches user data by adding geolocation information based on IP address
- * and validating email deliverability.
- *
- * @param userData the user data to enrich
- * @return enriched user data with geolocation and email status
- * @throws EnrichmentException if external services are unavailable
- */
-public EnrichedUserData enrich(UserData userData) throws EnrichmentException {
-    // Implementation
-}
-```
-
-### 4. Documenting Implementation Instead of Contract
-
-```java
-// ❌ Bad - exposes implementation details
-/**
- * Uses a HashMap to store the users and iterates through the entrySet
- * to find the matching user by email.
- *
- * @param email the email
- * @return the user or null
- */
-public User findByEmail(String email) {
-    // Don't document HOW, document WHAT
-}
-
-// ✅ Good - documents the contract
-/**
- * Retrieves the first user with the specified email address.
- *
- * @param email the email address to search for
- * @return the user if found, or Optional.empty() if not found
- */
-public Optional<User> findByEmail(String email) {
-    // Implementation can change without breaking documentation
 }
 ```
 
