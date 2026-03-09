@@ -66,15 +66,32 @@ class Extension(ExtensionBase):
             },
             'profiles': {
                 'core': {
-                    'defaults': ['pm-dev-python:python-best-practices'],
+                    'defaults': [
+                        'pm-dev-python:python-best-practices',
+                        {
+                            'skill': 'pm-dev-general:dev-code-quality',
+                            'description': 'Language-agnostic code quality principles (SRP, CQS, complexity, error handling)',
+                        },
+                    ],
                     'optionals': [],
                 },
                 'implementation': {
-                    'defaults': ['pm-dev-python:python-best-practices'],
+                    'defaults': [
+                        {
+                            'skill': 'pm-dev-general:dev-code-documentation',
+                            'description': 'Language-agnostic documentation principles (what/when/how to document)',
+                        },
+                    ],
                     'optionals': [],
                 },
                 'module_testing': {
-                    'defaults': ['pm-dev-python:python-best-practices'],
+                    'defaults': [
+                        'pm-dev-python:python-best-practices',
+                        {
+                            'skill': 'pm-dev-general:dev-testing',
+                            'description': 'Language-agnostic testing methodology (AAA, coverage, reliability, determinism)',
+                        },
+                    ],
                     'optionals': [],
                 },
                 'quality': {

@@ -22,7 +22,6 @@ EXTENSION_FILE = (
     / 'pm-dev-python'
     / 'skills'
     / 'plan-marshall-plugin'
-    / 'scripts'
     / 'extension.py'
 )
 
