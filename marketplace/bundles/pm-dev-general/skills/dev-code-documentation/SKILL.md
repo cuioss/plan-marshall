@@ -1,5 +1,5 @@
 ---
-name: dev-documentation
+name: dev-code-documentation
 description: Language-agnostic code documentation principles covering what, when, and how to document public APIs
 user-invocable: false
 ---
@@ -43,6 +43,7 @@ Leave documentation cleaner than you found it. When modifying a file, fix existi
 
 ### Documentation Quality
 
+- **Stay focused and crisp** — convey core aspects with minimal text, never be verbose
 - Explain WHAT the code does and WHY it exists
 - Never state the obvious or repeat the function name
 - Document the contract, not the implementation

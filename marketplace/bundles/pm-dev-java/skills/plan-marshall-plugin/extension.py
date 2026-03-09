@@ -63,7 +63,7 @@ class Extension(ExtensionBase):
                 'implementation': {
                     'defaults': [
                         {
-                            'skill': 'pm-dev-general:dev-documentation',
+                            'skill': 'pm-dev-general:dev-code-documentation',
                             'description': 'Language-agnostic documentation principles (what/when/how to document)',
                         },
                     ],

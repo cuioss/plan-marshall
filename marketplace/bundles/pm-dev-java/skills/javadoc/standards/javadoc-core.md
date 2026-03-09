@@ -1,10 +1,10 @@
 # JavaDoc Core Standards
 
-For general documentation principles (what/when/how to document, clarity, completeness, anti-patterns), see `pm-dev-general:dev-documentation`. This document covers JavaDoc-specific tag syntax, formatting, and Java-specific patterns.
+For general documentation principles (what/when/how to document, clarity, completeness, anti-patterns), see `pm-dev-general:dev-code-documentation`. This document covers JavaDoc-specific tag syntax, formatting, and Java-specific patterns.
 
 ## Java-Specific Documentation Requirements
 
-In addition to general requirements in `pm-dev-general:dev-documentation`:
+In addition to general requirements in `pm-dev-general:dev-code-documentation`:
 
 * Package-level documentation in `package-info.java`
 * Annotation types and their elements
@@ -181,7 +181,7 @@ public Optional<User> findUser(String userId) {
 
 ## Java-Specific Quality Rules
 
-Beyond general documentation requirements (see `pm-dev-general:dev-documentation`):
+Beyond general documentation requirements (see `pm-dev-general:dev-code-documentation`):
 
 - Proper tag order followed (see Tag Order section above)
 - Thread-safety documented where relevant

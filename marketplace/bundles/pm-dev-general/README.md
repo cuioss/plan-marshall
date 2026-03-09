@@ -12,7 +12,7 @@ This bundle extracts general development principles that apply across all techno
 pm-dev-general/
 └── skills/                  # 3 reference skills
     ├── dev-testing/         # Testing methodology, AAA, coverage
-    ├── dev-documentation/   # Code documentation principles
+    ├── dev-code-documentation/   # Code documentation principles
     └── dev-code-quality/    # SRP, CQS, complexity, error handling
 ```
 
@@ -27,7 +27,7 @@ pm-dev-general/
 - Coverage requirements (80% line/branch minimum)
 - Corner case strategies and boundary testing
 
-**dev-documentation** — Code documentation principles
+**dev-code-documentation** — Code documentation principles
 - Mandatory documentation requirements
 - Clarity (WHAT and WHY, not implementation)
 - Completeness (parameters, returns, exceptions)
@@ -46,7 +46,7 @@ General skills integrate via the two-tier profile system. Domain extensions add 
 
 ```
 core profile:        [domain:core-skill, pm-dev-general:dev-code-quality]
-implementation:      [pm-dev-general:dev-code-quality, pm-dev-general:dev-documentation]
+implementation:      [pm-dev-general:dev-code-quality, pm-dev-general:dev-code-documentation]
 module_testing:      [domain:test-skill, pm-dev-general:dev-testing]
 ```
 

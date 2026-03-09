@@ -79,6 +79,7 @@ Returns:
 
 ## Writing Style
 
+* **Stay focused and crisp** — convey core aspects with minimal text, never be verbose
 * **Present tense** — "Validates input", not "Will validate"
 * **Active voice** — "Calculates total", not "Total is calculated"
 * **Complete sentences** — proper capitalization and punctuation

@@ -14,7 +14,7 @@
   "commands": [],
   "skills": [
     "./skills/dev-testing",
-    "./skills/dev-documentation",
+    "./skills/dev-code-documentation",
     "./skills/dev-code-quality"
   ]
 }
