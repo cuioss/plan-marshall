@@ -79,7 +79,7 @@ Test names should describe the expected behavior:
 Tests should use generated/random data to prove behavior works for any valid input:
 
 * Use framework-specific generators — examples by language:
-  * **Java**: [cui-test-generator](https://github.com/cuioss/cui-test-generator) for type-safe generators, Instancio for full object population
+  * **Java**: [cui-test-generator](https://github.com/cuioss/cui-test-generator) for type-safe generators
   * **JavaScript**: [@faker-js/faker](https://fakerjs.dev) for realistic fake data (names, emails, dates, etc.)
   * **Python**: [Faker](https://github.com/joke2k/faker) for fake data, [Hypothesis](https://github.com/HypothesisWorks/hypothesis) for property-based test generation
 * Generate values within valid ranges for the domain
