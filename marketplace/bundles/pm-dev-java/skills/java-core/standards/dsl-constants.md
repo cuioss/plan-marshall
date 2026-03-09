@@ -111,27 +111,27 @@ Organizing error codes by module, severity, and subsystem:
 public final class ErrorCodes {
 
     @UtilityClass
-    public static final class AUTHENTICATION {
+    public static final class Authentication {
 
         @UtilityClass
-        public static final class CRITICAL {
+        public static final class Critical {
             public static final String INVALID_CREDENTIALS = "AUTH-C-001";
             public static final String ACCOUNT_LOCKED = "AUTH-C-002";
             public static final String TOKEN_EXPIRED = "AUTH-C-003";
         }
 
         @UtilityClass
-        public static final class WARNING {
+        public static final class Warning {
             public static final String WEAK_PASSWORD = "AUTH-W-001";
             public static final String APPROACHING_LIMIT = "AUTH-W-002";
         }
     }
 
     @UtilityClass
-    public static final class PAYMENT {
+    public static final class Payment {
 
         @UtilityClass
-        public static final class CRITICAL {
+        public static final class Critical {
             public static final String PAYMENT_FAILED = "PAY-C-001";
             public static final String INSUFFICIENT_FUNDS = "PAY-C-002";
         }
@@ -139,7 +139,7 @@ public final class ErrorCodes {
 }
 
 // Usage
-throw new AuthenticationException(ErrorCodes.AUTHENTICATION.CRITICAL.INVALID_CREDENTIALS);
+throw new AuthenticationException(ErrorCodes.Authentication.Critical.INVALID_CREDENTIALS);
 ```
 
 ## Resource Bundle Example
