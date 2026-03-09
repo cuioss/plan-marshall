@@ -45,6 +45,10 @@ Use when: Designing error handling, exception hierarchies, or recovery patterns.
 
 ## Key Rules Summary
 
+### Boy Scout Rule
+
+Leave code cleaner than you found it. When modifying a file, fix existing quality issues you encounter — poor naming, SRP violations, dead code, missing error handling. Never dismiss code smells with "not introduced by current changes" — always fix them. If fixes cascade beyond reasonable scope, stop and ask the user how to proceed.
+
 ### Design Principles
 
 - **Single Responsibility** — each class/module/function does one thing

@@ -29,6 +29,10 @@ This provides foundational rules for:
 
 ## Key Rules Summary
 
+### Boy Scout Rule
+
+Leave documentation cleaner than you found it. When modifying a file, fix existing documentation issues you encounter — outdated descriptions, missing parameter docs, stale cross-references. Never dismiss incorrect documentation with "not introduced by current changes" — always fix it. If fixes cascade beyond reasonable scope, stop and ask the user how to proceed.
+
 ### Mandatory Documentation
 
 - All public/exported APIs (classes, functions, methods)

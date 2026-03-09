@@ -9,6 +9,33 @@ Language-agnostic testing principles for writing reliable, maintainable tests ac
 * **No branching logic in tests**. Tests must never contain `if/else`, `switch`, or ternary operators. Each test exercises exactly one deterministic path. If you need to test multiple scenarios, write separate test methods.
 * **Explicit assertions over implicit checks**. Always assert the expected outcome explicitly. Never rely on "no exception thrown" as the only verification.
 * **Always test corner cases**: null/undefined inputs, empty collections, boundary values, error paths. Group corner cases in dedicated test classes or nested groups.
+* **Boy Scout Rule**. Leave test code cleaner than you found it. When modifying a test file, fix existing issues you encounter — missing assertions, hardcoded data, poor naming, coverage-only tests. Do not defer known test defects. Never dismiss a flaky or invalid test with "not introduced by current changes" — always fix it. If fixes cascade beyond reasonable scope, stop and ask the user how to proceed.
+
+## Test Categories
+
+**Never write tests just for coverage metrics or a green bar.** Tests that execute code without verifying behavior are always a bug — they create false confidence and must be rewritten. If you encounter assertion-free tests or tests that only check "no exception thrown", treat them as defects. Every test must assert a specific contract. If in doubt about what a test should verify, ask the user.
+
+Every unit test targets the **contract** (API/specification) of the method under test, never its internal implementation. Tests that depend on implementation details break on refactoring without catching real bugs.
+
+Organize tests into these categories, in order of priority:
+
+### 1. Happy Path
+
+Tests that exercise the method as intended by its specification. Use generated data within the defined valid ranges to prove the method works for any conforming input, not just hand-picked examples.
+
+### 2. Parameter Variants
+
+Systematic exploration of the valid input space using generators. Vary parameters across their specified types, ranges, and combinations. This is the rigorous form of happy-path testing — if the spec says "accepts strings of 1-255 characters", generate strings across that range.
+
+### 3. Corner Cases
+
+Inputs deliberately **outside** or **at the boundary** of specified constraints: null/undefined values, empty collections, zero-length strings, minimum/maximum boundary values, invalid formats. These verify the method's defensive behavior.
+
+### 4. Error Conditions
+
+Scenarios where **infrastructure assumptions are not met**: dependencies unavailable, services returning errors, resources missing, timeouts occurring. These verify graceful degradation and proper error propagation.
+
+Each category should be grouped in its own test class or nested group (see Test Class Organization below).
 
 ## AAA Pattern (Arrange-Act-Assert)
 
@@ -114,7 +141,10 @@ function createValidUser(overrides = {}) {
 Never use fixed-time waits in tests:
 
 * **Anti-pattern**: `sleep(2000)`, `Thread.sleep(5000)`, `cy.wait(3000)`
-* **Correct**: Use polling/retry mechanisms, event-based waiting, or framework-specific async utilities
+* **Correct**: Use polling/retry mechanisms — examples by language:
+  * **Java**: [Awaitility](https://github.com/awaitility/awaitility) — DSL for polling async conditions with timeout
+  * **JavaScript**: [Testing Library `waitFor`](https://testing-library.com) for DOM assertions, Cypress built-in retry for E2E
+  * **Python**: [tenacity](https://github.com/jd/tenacity) — retry with backoff/stop conditions, or `asyncio.wait_for()` for async code
 
 Fixed delays make tests slow and flaky — they either wait too long (slow CI) or not long enough (intermittent failures).
 
@@ -168,5 +198,6 @@ Test one logical concept per test method. Use grouped assertions (like `assertAl
 | Fixed delays | Slow and flaky | Polling/event-based waiting |
 | Shared mutable state | Order-dependent failures | Isolated test data |
 | Missing assertions | Tests pass but verify nothing | Explicit assertions |
-| Over-mocking | Tests prove mocks work, not code | Mock at boundaries only |
+| Over-mocking | Tests prove mocks work, not code | Mock at boundaries only, prefer real collaborators |
+| Mocking by default | Mock libraries (Mockito, EasyMock, etc.) add complexity and hide bugs | Only use mocks when they save significant setup code; prefer real objects, test doubles, or in-memory implementations |
 | Testing implementation | Brittle tests break on refactoring | Test behavior, not implementation |
