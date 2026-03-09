@@ -1,6 +1,6 @@
 # Standards Compliance Checklist
 
-Comprehensive checklist for verifying Java code compliance with all CUI standards after maintenance work.
+Comprehensive checklist for verifying Java code compliance with all standards after maintenance work.
 
 ## Purpose
 
@@ -131,8 +131,8 @@ This checklist ensures systematic verification of standards compliance after ref
 
 ## Null Safety
 
-**Standards Reference**: Null Safety Standards in java-core
-**See**: `pm-dev-java:java-core` skill, `standards/java-null-safety.md`
+**Standards Reference**: Null Safety Standards
+**See**: `pm-dev-java:java-null-safety` skill
 
 ### Verification Items
 
@@ -167,8 +167,9 @@ This checklist ensures systematic verification of standards compliance after ref
 
 ### Verification Items
 
-- **Specific Exceptions**: Catch specific exception types
+- **Specific Exceptions**: Catch and throw specific exception types
   - No catch(Exception e) or catch(RuntimeException e)
+  - No throw new RuntimeException() or throw new Exception() — use domain-specific types
   - Catch specific exceptions you can handle
   - Let others propagate
 
@@ -265,8 +266,8 @@ This checklist ensures systematic verification of standards compliance after ref
 
 ## Lombok Usage
 
-**Standards Reference**: Lombok Patterns in java-core
-**See**: `pm-dev-java:java-core` skill, `standards/java-lombok-patterns.md`
+**Standards Reference**: Lombok Patterns
+**See**: `pm-dev-java:java-lombok` skill
 
 ### Verification Items
 
@@ -275,57 +276,15 @@ This checklist ensures systematic verification of standards compliance after ref
   - @Builder.Default for default values
   - Fluent construction for complex objects
 
-- **@Value for Immutable Objects**: Immutable objects use @Value
-  - Simple immutable objects use @Value
-  - Alternative: use records for very simple cases
-  - Include validation in private constructor if needed
+- **Records for Immutable Objects**: Records preferred over @Value
+  - Use Java records for immutable value objects
+  - @Value only if stuck on Java < 16
+  - Use compact constructor for validation
 
 - **@Delegate for Composition**: Composition preferred over inheritance
   - Use @Delegate instead of extends
   - Expose only needed methods
   - Favor composition over inheritance
-
-- **No Lombok Logging**: CuiLogger used, not @Slf4j
-  - No @Slf4j or other logging annotations
-  - Use CuiLogger explicitly
-  - Follow CUI logging patterns
-
-## Logging (CUI Projects)
-
-**Standards Reference**: Logging Standards in pm-dev-java-cui
-**See**: `pm-dev-java-cui:cui-logging` skill
-
-### Verification Items
-
-- **CuiLogger Declaration**: Logger is properly declared
-  - `private static final CuiLogger LOGGER = new CuiLogger(ClassName.class);`
-  - Named LOGGER (uppercase)
-  - Static final field
-
-- **LogRecord Usage**: Important messages use LogRecord
-  - INFO/WARN/ERROR/FATAL use LogRecord
-  - DEBUG/TRACE can use simple strings
-  - LogMessages class defines LogRecords
-
-- **LogMessages Organization**: LogMessages follows DSL pattern
-  - Nested static classes by log level (INFO, WARN, ERROR, FATAL)
-  - @UtilityClass on all classes
-  - Proper identifier ranges (INFO: 1-99, WARN: 100-199, ERROR: 200-299)
-
-- **Exception Logging**: Exceptions logged correctly
-  - Exception is first parameter: `LOGGER.error(exception, ERROR.MESSAGE, args)`
-  - Exception message included in log template
-  - Appropriate log level for exception severity
-
-- **String Substitution**: %s used for all substitutions
-  - Use %s, not {} or %d
-  - Number of %s matches number of arguments
-  - No string concatenation in log calls
-
-- **No System.out/err**: No console output
-  - No System.out.println()
-  - No System.err.println()
-  - No printStackTrace()
 
 ## Documentation
 
@@ -359,25 +318,28 @@ This checklist ensures systematic verification of standards compliance after ref
 **Standards Reference**: Testing Standards in pm-dev-java:junit-core
 **See**: `pm-dev-java:junit-core` skill, `standards/testing-junit-core.md`
 
+Build commands are resolved via the architecture API — never hardcode build tool invocations.
+
 ### Verification Items
 
 - **Build Passes**: Code compiles without errors
-  - `./mvnw clean verify -DskipTests` succeeds
+  - Resolve via: `architecture resolve --command verify`
   - No compilation warnings (when possible)
   - All dependencies resolve
 
 - **Tests Pass**: All tests execute successfully
-  - `./mvnw clean test` succeeds
+  - Resolve via: `architecture resolve --command module-tests`
   - No flaky tests
   - Tests are deterministic
 
 - **Coverage Sufficient**: Test coverage meets targets
+  - Resolve via: `architecture resolve --command coverage`
   - Minimum 80% line coverage
   - Minimum 80% branch coverage
   - Critical paths have 100% coverage
 
 - **Quality Gates**: Static analysis passes
-  - SonarQube quality gate passes
+  - Resolve via: `architecture resolve --command quality-gate`
   - No critical or blocker issues
   - Technical debt is acceptable
 
@@ -388,7 +350,6 @@ This checklist ensures systematic verification of standards compliance after ref
 ### Module-Specific Checks
 
 - **Module Builds**: Module builds independently
-  - `./mvnw clean verify -pl module-name` succeeds
   - Module tests pass in isolation
   - No inter-module test dependencies
 
@@ -408,19 +369,10 @@ After completing maintenance work:
 
 1. **Run through checklist** for each modified class
 2. **Fix all non-compliant items** noted
-3. **Execute build verification**:
-   ```bash
-   ./mvnw -Ppre-commit clean verify -DskipTests
-   ```
-4. **Execute test suite**:
-   ```bash
-   ./mvnw clean test
-   ```
-5. **Verify coverage**:
-   ```bash
-   ./mvnw clean verify -Pcoverage
-   ```
-6. **Check static analysis** (SonarQube)
+3. **Execute build verification** via `architecture resolve --command verify`
+4. **Execute test suite** via `architecture resolve --command module-tests`
+5. **Verify coverage** via `architecture resolve --command coverage`
+6. **Check static analysis** via `architecture resolve --command quality-gate`
 7. **Document any deviations** with rationale
 8. **Commit changes** following git standards
 

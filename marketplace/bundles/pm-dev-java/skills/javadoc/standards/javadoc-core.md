@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document defines core JavaDoc documentation standards for CUI projects, ensuring consistency, completeness, and maintainability across the codebase.
+This document defines core JavaDoc documentation standards, ensuring consistency, completeness, and maintainability across the codebase.
 
 ## Mandatory Documentation Requirements
 

@@ -97,10 +97,8 @@ This loads comprehensive logging standards including:
 **2.1 Build Verification:**
 
 ```bash
-python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run \
-    --targets "-Ppre-commit clean verify -DskipTests" \
-    --module {module if specified} \
-    --mode errors
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
+    resolve --command quality-gate --name {module if specified}
 ```
 
 **On build failure:** Present using `AskUserQuestion`:
@@ -311,10 +309,8 @@ AskUserQuestion:
 **6.1 Module Build Verification:**
 
 ```bash
-python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run \
-    --targets "clean test" \
-    --module {module} \
-    --mode structured
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
+    resolve --command module-tests --name {module}
 ```
 
 **On failure:** Analyze cause, apply bug handling protocol if non-logging.
@@ -329,10 +325,8 @@ For each LogRecord in module:
 **6.3 Full Build Verification:**
 
 ```bash
-python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run \
-    --targets "-Ppre-commit clean install" \
-    --module {module} \
-    --mode errors
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
+    resolve --command clean-install --name {module}
 ```
 
 **6.4 Module Commit:**
@@ -364,9 +358,8 @@ Proceed to next module.
 **7.1 Complete Build:**
 
 ```bash
-python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run \
-    --targets "-Ppre-commit clean install" \
-    --mode errors
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
+    resolve --command clean-install
 ```
 
 **7.2 Final plan.md Update:** Update with completion timestamp.

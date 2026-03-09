@@ -46,12 +46,33 @@ Read: standards/java-21-features.md
 
 Use when: Using Java 21 features — pattern matching in switch, record patterns, sequenced collections, and virtual threads.
 
+**Java 25 Features** (load for Java 25+ code):
+```
+Read: standards/java-25-features.md
+```
+
+Use when: Using Java 25 features — scoped values, flexible constructor bodies, module imports, compact source files, KDF API, and JVM performance flags (AOT cache, compact headers).
+
 **Performance Patterns** (load for optimization work):
 ```
 Read: standards/java-performance-patterns.md
 ```
 
 Use when: Optimizing code or designing high-performance components. Covers string handling, autoboxing, collection sizing, thread safety, exception handling, and logging performance.
+
+**DSL-Style Nested Constants** (load for constant organization):
+```
+Read: standards/dsl-constants.md
+```
+
+Use when: Organizing related constants hierarchically using nested static classes with `@UtilityClass`. Covers configuration keys, error codes, resource bundles, logging messages, and best practices.
+
+**Security Patterns** (load for security-sensitive code):
+```
+Read: standards/java-security-patterns.md
+```
+
+Use when: Working with authentication, encryption, secrets, or sensitive data. Covers secure logging rules, startup config validation, anti-patterns (hardcoded secrets, insecure error messages), and security principles.
 
 ## Related Skills
 

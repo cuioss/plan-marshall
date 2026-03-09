@@ -34,11 +34,8 @@ This provides foundational rules for:
 ### Step 2: Load Additional Standards (As Needed)
 
 **External Integration Testing** (load for Docker-based IT):
-```
-Read: standards/integration-testing.md
-```
 
-Use when: Configuring external API integration tests with Docker containers. For basic Maven Failsafe setup, see `pm-dev-java:junit-integration`.
+See `pm-dev-java:junit-integration` → `standards/external-integration-testing.md`. For Quarkus-specific paths, use `/q/health` and `/q/metrics` on the management interface.
 
 **Native Image** (load for GraalVM work):
 ```
@@ -60,13 +57,6 @@ Read: standards/container.md
 ```
 
 Use when: Configuring container images, Docker Compose, health checks, or certificate management.
-
-**Security Standards** (load for security work):
-```
-Read: standards/security.md
-```
-
-Use when: Implementing OWASP-compliant security, secure logging, or runtime security configuration.
 
 ## Key Rules Summary
 
@@ -116,10 +106,10 @@ class UserResourceTest {
 ### Native Image Build
 ```bash
 # Build native image
-mvn package -Pnative
+./mvnw package -Pnative
 
 # Run native integration tests
-mvn verify -Pnative -Dquarkus.test.native-image-profile=native
+./mvnw verify -Pnative -Dquarkus.test.native-image-profile=native
 ```
 
 ## Related Skills
@@ -133,8 +123,6 @@ mvn verify -Pnative -Dquarkus.test.native-image-profile=native
 | Standard | Purpose |
 |----------|---------|
 | quarkus-testing.md | @QuarkusTest, JaCoCo, REST Assured |
-| integration-testing.md | External API testing with Docker (extends junit-integration) |
 | quarkus-native.md | GraalVM native image builds |
 | quarkus-reflection.md | Reflection registration for native |
 | container.md | Docker deployment, health checks, certificate management |
-| security.md | OWASP security, secure logging, runtime security |

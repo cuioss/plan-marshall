@@ -56,7 +56,7 @@ The `package-info.java` file has a **unique syntax** that differs from regular J
  * Use {@code @Nullable} to explicitly mark nullable types.
  */
 @NullMarked
-package de.cuioss.portal.authentication;
+package com.example.authentication;
 
 import org.jspecify.annotations.NullMarked;
 ```

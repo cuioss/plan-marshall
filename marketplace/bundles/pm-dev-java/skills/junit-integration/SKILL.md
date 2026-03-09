@@ -134,36 +134,13 @@ Both goals are required for proper integration test execution:
 * `integration-test`: Runs the integration tests
 * `verify`: Checks the results and fails the build if tests failed
 
-## Maven Commands
+## Build Commands
 
-### Normal Development Build
+Build commands are resolved via the architecture API — never hardcode build tool invocations.
 
-```bash
-# Runs only unit tests, excludes integration tests
-./mvnw clean test
-
-# Full build without integration tests
-./mvnw clean verify
-```
-
-### Integration Test Execution
-
-```bash
-# Run only integration tests (skips unit tests)
-./mvnw clean verify -Pintegration-tests
-
-# Run integration tests for specific modules
-./mvnw clean verify -Pintegration-tests -pl module1
-```
-
-## CI/CD Integration
-
-### GitHub Actions Example
-
-```yaml
-- name: Run Integration Tests
-  run: ./mvnw --no-transfer-progress clean verify -Pintegration-tests -pl module1,module2
-```
+- **Unit tests only**: `architecture resolve --command module-tests`
+- **Full verify**: `architecture resolve --command verify`
+- **Integration tests**: `architecture resolve --command integration-tests`
 
 ### Build Verification
 
@@ -197,6 +174,15 @@ public class TokenKeycloakIT {
 }
 ```
 
+## Step 2: Load Additional Standards (As Needed)
+
+**External Integration Testing** (load for Docker-based IT):
+```
+Read: standards/external-integration-testing.md
+```
+
+Use when: Implementing external API integration tests with Docker containers, REST Assured over HTTPS, script-based lifecycle management, and management interface testing.
+
 ## Common Pitfalls
 
 ### ❌ Incorrect Naming Convention
@@ -212,13 +198,7 @@ Without `<skipTests>true</skipTests>` in the integration-tests profile, both uni
 
 ### ❌ Wrong Maven Goal
 
-```bash
-# Wrong - only compiles and runs surefire (unit tests)
-mvn clean test -Pintegration-tests
-
-# Correct - runs full lifecycle including failsafe (integration tests)
-mvn clean verify -Pintegration-tests
-```
+Integration tests require the `verify` goal (runs failsafe). The `test` goal only runs surefire (unit tests) — it will not execute `*IT.java` files even with the integration-tests profile active.
 
 ### ❌ Missing Failsafe Executions
 
@@ -226,11 +206,10 @@ Without proper `<executions>` configuration, failsafe tests might not run or res
 
 ## Verify
 
-- Normal build (`mvnw clean test`) excludes integration tests
-- Integration profile (`mvnw clean verify -Pintegration-tests`) skips unit tests
-- Integration profile successfully runs integration tests
+- Normal build excludes integration tests
+- Integration profile skips unit tests and only runs integration tests
 - CI/CD workflow includes integration test execution
-- Integration test naming follows Maven conventions
+- Integration test naming follows Maven conventions (`*IT.java`)
 - Both surefire exclusions and failsafe inclusions are properly configured
 
 ## Related Skills

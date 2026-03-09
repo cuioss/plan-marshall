@@ -335,16 +335,8 @@ warning: no main description
 
 After fixing Javadoc errors:
 
-1. **Run local Javadoc check:**
-   ```bash
-   ./mvnw javadoc:javadoc
-   ```
-
-2. **Run pre-commit build:**
-   ```bash
-   ./mvnw -Ppre-commit clean verify -DskipTests
-   ```
-
+1. **Run local Javadoc check** via `architecture resolve --command javadoc`
+2. **Run pre-commit build** via `architecture resolve --command verify`
 3. **Verify all warnings resolved** in build output
 
 4. **Ensure no content changes** - only formatting, references, and tags fixed

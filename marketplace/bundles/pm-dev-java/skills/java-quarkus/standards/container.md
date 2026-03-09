@@ -50,17 +50,12 @@ WORKDIR /app
 
 # Secure file operations with root ownership to prevent modification
 COPY --chmod=0755 --chown=root:root target/*-runner /app/application
-COPY --chmod=0755 --chown=root:root health-check.sh /app/health-check.sh
 
 # PEM certificate files with root ownership for security
 COPY --chmod=0644 --chown=root:root certificates/tls.crt /app/certificates/tls.crt
 COPY --chmod=0600 --chown=root:root certificates/tls.key /app/certificates/tls.key
 
-EXPOSE 8443
-
-# Internal health check optimized for native startup performance
-HEALTHCHECK --interval=15s --timeout=5s --retries=3 --start-period=10s \
-  CMD ["/app/health-check.sh"]
+EXPOSE 8443 9000
 
 # Non-root execution
 USER nonroot
@@ -75,27 +70,32 @@ ENTRYPOINT ["/app/application"]
 **Critical Principle**: Integration tests must use production-equivalent configuration to detect issues early.
 
 ```yaml
-# Production-Grade Integration Testing Configuration
 services:
-  application-integration-tests:
+  application:
+    image: "my-app:distroless"
     build:
-      context: .
+      context: ../my-app
       dockerfile: src/main/docker/Dockerfile.native
       cache_from:
         - quay.io/quarkus/quarkus-distroless-image:2.0
-      platforms:
-        - linux/amd64
-        - linux/arm64
 
     ports:
       - "10443:8443"  # External test port
-
-    volumes:
-      # PEM certificate mount (production pattern)
-      - ./src/main/docker/certificates:/app/certificates:ro
+      - "19000:9000"  # Management interface (health/metrics, plain HTTP)
 
     environment:
-      - QUARKUS_LOG_LEVEL=INFO
+      - QUARKUS_HTTP_SSL_CERTIFICATE_FILES=/app/certificates/localhost.crt
+      - QUARKUS_HTTP_SSL_CERTIFICATE_KEY_FILES=/app/certificates/localhost.key
+      # File logging for integration tests only (production uses console logging)
+      - LOG_FILE_PATH=/logs/quarkus.log
+
+    depends_on:
+      - keycloak  # Service ordering for dependent infrastructure
+
+    volumes:
+      - ./src/main/docker/certificates:/app/certificates:ro
+      # Writable log mount for integration tests (not for production)
+      - ${LOG_TARGET_DIR:-./target}:/logs:rw
 
     # OWASP Security hardening (production-grade)
     security_opt:
@@ -105,39 +105,46 @@ services:
     read_only: true
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=100m
-      - /app/tmp:rw,noexec,nosuid,size=50m
 
     # Resource limitations (DoS protection)
     deploy:
       resources:
         limits:
+          memory: 512M
+          cpus: '4.0'
+        reservations:
           memory: 256M
           cpus: '1.0'
-        reservations:
-          memory: 128M
-          cpus: '0.5'
 
-# Health check optimized for native Quarkus startup performance
-    healthcheck:
-      test: ["CMD", "/app/health-check.sh"]
-      interval: 15s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
-
-    # Network isolation
     networks:
-      - integration-test
-
+      - app-network
     restart: unless-stopped
 
+  # Optional services via profiles
+  monitoring:
+    image: prom/prometheus:v3.6.0
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    networks:
+      - app-network
+    profiles:
+      - monitoring
+
 networks:
-  integration-test:
+  app-network:
     driver: bridge
-    internal: false
 ```
 
-For detailed explanation of OWASP security options (`no-new-privileges`, `cap_drop`, `read_only`), see [security.md](security.md) section "OWASP-Compliant Deployment".
+### Key Patterns
+
+- **Image pinning**: Pin third-party images with SHA256 digest (e.g., `image@sha256:...`) when Dependabot cannot auto-update
+- **`depends_on`**: Declare service startup ordering for infrastructure dependencies
+- **Management port**: Expose Quarkus management interface (port 9000, plain HTTP) separately from application port
+- **Console logging only**: Containers log to stdout/stderr — let the orchestrator handle log collection. File logging is only for local integration tests (mount `./target` as writable volume)
+- **Profiles**: Use compose profiles for optional services (monitoring, benchmarks) — keeps default startup lean
+- **No `platforms` in compose**: Multi-arch builds belong in CI with `docker buildx`, not in compose files
+
+For container security hardening (`no-new-privileges`, `cap_drop`, `read_only`) and certificate management, see `pm-dev-oci:oci-security`.
 
 ### Environment Configuration (.env)
 
@@ -152,69 +159,18 @@ COMPOSE_BAKE=true
 * **No Password Variables**: PEM approach eliminates certificate password management
 * **Simplified Configuration**: Direct property assignment preferred over complex YAML anchors
 
-## Health Check Standards
+## Health Checks
 
-### Internal Health Check Implementation
+**Do not embed `HEALTHCHECK` in Dockerfiles** for production. Orchestrators (Kubernetes, ECS) manage health probes externally. `HEALTHCHECK` is only useful for standalone Docker Compose testing.
 
-**Core Principle**: Use internal health check scripts with built-in system tools only - avoid external dependencies like `curl`, `wget`.
+For Quarkus native in distroless images, use the **management interface** (port 9000, plain HTTP) — shell-based scripts (`/dev/tcp`, `curl`) do not work in distroless.
 
-#### Why Avoid External Dependencies?
-* **Image Bloat**: `curl` adds ~2.5MB and increases attack surface
-* **Portability Issues**: Cross-platform compatibility problems
-* **Security Concerns**: External diagnostic endpoints need to be private
-* **Dependency Risk**: Tool availability varies across base images
-
-#### Production Health Check Script
-
-```bash
-#!/bin/bash
-# Internal health check script - no external dependencies
-
-# Port connectivity test using /dev/tcp (Docker best practice)
-if ! echo -n '' > /dev/tcp/127.0.0.1/8443 2>/dev/null; then
-    echo "Application not listening on port 8443"
-    exit 1
-fi
-
-# PEM Certificate validation (match actual file paths)
-if [ ! -f "/app/certificates/tls.crt" ] || [ ! -f "/app/certificates/tls.key" ]; then
-    echo "PEM certificate files missing"
-    exit 1
-fi
-
-# Application executable check
-if [ ! -x "/app/application" ]; then
-    echo "Application executable missing"
-    exit 1
-fi
-
-echo "Health check passed"
-exit 0
+```properties
+# application.properties (build-time)
+quarkus.management.enabled=true
 ```
 
-#### Health Check Benefits
-* **No External Dependencies**: Works in distroless and minimal base images
-* **Security**: Reduced attack surface, no exposed diagnostic endpoints
-* **Performance**: Faster execution than HTTP-based checks
-* **Reliability**: Tests actual application functionality
-
-#### Health Check Timing Guidelines
-
-**Native Quarkus Optimization**: Health check timings must be optimized for native application startup characteristics.
-
-**Recommended Timings**:
-* **start_period**: `10s` (native apps start in 1-2 seconds)
-* **interval**: `15s` (responsive monitoring for integration tests)
-* **timeout**: `5s` (sufficient for internal checks)
-* **retries**: `3` (standard reliability)
-
-**Anti-Pattern**: The original `start_period: 40s` was excessive for containers that start in milliseconds.
-
-**Performance Impact**:
-* Faster container readiness detection
-* More responsive health monitoring
-* Reduced integration test execution time
-* Better feedback during development
+For complete distroless health probe patterns and Docker Compose integration, see [distroless-health-probes.md](../../../pm-dev-oci/skills/oci-standards/standards/distroless-health-probes.md).
 
 ## Security Requirements
 
@@ -235,45 +191,9 @@ For generic container runtime hardening (capabilities, seccomp, resource limits,
 
 ## Certificate Management
 
-### PEM Certificates (Primary Approach)
+For PEM certificate standards (generation, file permissions, PKCS12 conversion, container mounting), see `Skill: pm-dev-oci:oci-security` → `standards/certificate-management.md`.
 
-#### Security Benefits of PEM
-* **No Password Storage**: Eliminates password management and exposure risks
-* **File System Security**: Relies on proper file permissions (600 for keys, 644 for certificates)
-* **Separation of Concerns**: Private keys and certificates stored separately
-* **Cloud Native**: Better integration with container orchestration
-* **Rotation Friendly**: Easier certificate rotation without password coordination
-
-#### Certificate Generation Script
-
-```bash
-#!/bin/bash
-# Secure certificate generation script
-
-CERT_DIR="./src/main/docker/certificates"
-VALIDITY_DAYS=${1:-1}  # Default 1 day for testing, 365+ for production
-
-# Create certificate directory
-mkdir -p "$CERT_DIR"
-
-# Generate private key (no password required)
-openssl genrsa -out "$CERT_DIR/tls.key" 2048
-
-# Generate self-signed certificate
-openssl req -new -x509 -key "$CERT_DIR/tls.key" \
-    -out "$CERT_DIR/tls.crt" \
-    -days "$VALIDITY_DAYS" \
-    -subj "/CN=localhost/O=CUI/C=US" \
-    -addext "subjectAltName=DNS:localhost,IP:127.0.0.1"
-
-# Set secure file permissions
-chmod 600 "$CERT_DIR/tls.key"   # Private key - restricted
-chmod 644 "$CERT_DIR/tls.crt"   # Certificate - public
-
-echo "Certificates generated in $CERT_DIR with $VALIDITY_DAYS day validity"
-```
-
-#### Quarkus PEM Configuration
+### Quarkus SSL Configuration
 
 ```properties
 # PEM-based SSL configuration
@@ -287,23 +207,6 @@ quarkus.http.insecure-requests=disabled
 # Enhanced TLS Security Settings
 quarkus.http.ssl.cipher-suites=TLS_AES_256_GCM_SHA384,TLS_CHACHA20_POLY1305_SHA256,TLS_AES_128_GCM_SHA256
 quarkus.http.ssl.protocols=TLSv1.3,TLSv1.2
-```
-
-### PKCS12 Certificates (Alternative)
-
-**Alternative format** for environments requiring PKCS12. PEM is recommended for new implementations.
-
-**PKCS12 to PEM Conversion**:
-```bash
-# Extract private key from PKCS12
-openssl pkcs12 -in keystore.p12 -nocerts -out tls.key -nodes
-
-# Extract certificate from PKCS12
-openssl pkcs12 -in keystore.p12 -clcerts -nokeys -out tls.crt
-
-# Set proper permissions
-chmod 600 tls.key
-chmod 644 tls.crt
 ```
 
 ## Performance Targets
@@ -349,47 +252,3 @@ quarkus.log.console.format=%d{HH:mm:ss} %-5p [%c{2.}] (%t) %s%e%n
 quarkus.log.level=INFO
 ```
 
-## DevUI Component Standards
-
-### JavaScript API Integration
-
-**Critical**: DevUI JavaScript components must use correct case-sensitive API calls.
-
-**Correct API Pattern**:
-```javascript
-// CORRECT: Case-sensitive API calls
-const result = await devui.jsonRPC.CuiJwtDevUI.getConfiguration();
-const health = await devui.jsonRPC.CuiJwtDevUI.getHealthInfo();
-const status = await devui.jsonRPC.CuiJwtDevUI.getValidationStatus();
-const jwks = await devui.jsonRPC.CuiJwtDevUI.getJwksStatus();
-const validation = await devui.jsonRPC.CuiJwtDevUI.validateToken(token);
-```
-
-**Anti-Pattern** (Common Error):
-```javascript
-// INCORRECT: Wrong case - will cause runtime failures
-const result = await devui.jsonrpc.CuiJwtDevUI.getConfiguration();
-```
-
-**Error Prevention**:
-* **IDE Configuration**: Configure linters to catch case sensitivity errors
-* **Code Review**: Mandatory review of all DevUI API calls
-* **Testing**: Comprehensive integration tests for API interactions
-* **Documentation**: Clear API documentation with correct casing
-
-## Certificate Security Requirements
-
-**Security Implementation**:
-* **Validity**: 2 years production, 1 day testing (script configurable)
-* **Algorithm**: RSA 2048-bit minimum
-* **Security**: External volume mounts only, no embedded certificates
-* **File Permissions**: 600 for private keys, 644 for certificates
-* **Container Security**: Non-root execution with capability dropping
-* **Password-Free**: No password storage required with PEM format
-
-**Security Features**:
-* **Certificate Generation**: Automated script with proper permissions
-* **Container Mounting**: Read-only volume mounts
-* **TLS Configuration**: Enhanced cipher suites and protocols
-* **Health Checks**: Certificate validation integrated
-* **Build Integration**: Full Maven lifecycle compatibility

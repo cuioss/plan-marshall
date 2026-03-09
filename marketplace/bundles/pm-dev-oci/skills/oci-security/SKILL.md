@@ -90,6 +90,28 @@ Read standards/supply-chain-security.md
 Read standards/owasp-container-security.md
 ```
 
+### 4. Certificate Management
+
+**File**: `standards/certificate-management.md`
+
+**Load When**:
+- Configuring TLS certificates for containers
+- Choosing between PEM and PKCS12 formats
+- Setting up certificate generation or rotation
+- Mounting certificates securely in containers
+
+**Contents**:
+- PEM vs PKCS12 comparison
+- Certificate generation script
+- PKCS12 to PEM conversion
+- Dockerfile and Compose integration patterns
+- File permission and security requirements
+
+**Load Command**:
+```
+Read standards/certificate-management.md
+```
+
 ## Quick Reference
 
 ### Runtime Security Rules
