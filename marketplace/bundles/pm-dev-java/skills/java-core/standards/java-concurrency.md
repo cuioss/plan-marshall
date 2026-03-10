@@ -10,7 +10,7 @@ The safest concurrent code has no shared mutable state. Prefer — in order:
 2. **Confinement** (thread-local or scoped values)
 3. **Higher-level concurrency utilities** (`java.util.concurrent`)
 4. **Explicit locks** (`ReentrantLock`, `StampedLock`)
-5. **`synchronized`** — last resort, avoid in virtual thread code
+5. **`synchronized`** — acceptable for simple cases on Java 24+; avoid in virtual thread code on Java 21-23
 
 ## Do Not Use: `volatile` and Double-Checked Locking
 
@@ -76,11 +76,14 @@ public record HttpResult(int statusCode, String body, Map<String, String> header
 
 | Need | Use | Why |
 |------|-----|-----|
-| Simple mutual exclusion | `ReentrantLock` | Does not pin virtual threads |
-| Read-heavy, write-rare | `StampedLock` (optimistic read) | Lock-free reads in common case |
+| Simple mutual exclusion | `synchronized` (Java 24+) or `ReentrantLock` | `synchronized` is simplest; auto-releases on exception |
+| Trylock, timeout, fairness | `ReentrantLock` | Advanced features not available with `synchronized` |
+| Multiple conditions | `ReentrantLock` + `Condition` | Targeted signaling, avoids thundering herd of `notifyAll()` |
+| Read-heavy, write-rare | `StampedLock` (optimistic read) | Lock-free reads in common case; **not reentrant** |
 | Atomic field updates | `AtomicReference`, `AtomicInteger`, etc. | No lock contention |
 | Bulk atomic operations | `LongAdder`, `LongAccumulator` | Sharded counters, better than `AtomicLong` under contention |
-| Virtual thread code | `ReentrantLock` only | `synchronized` pins the carrier thread |
+| Virtual threads (Java 21-23) | `ReentrantLock` only | `synchronized` pins the carrier thread |
+| Virtual threads (Java 24+) | `synchronized` or `ReentrantLock` | JEP 491 resolved pinning |
 
 ```java
 // StampedLock - optimistic read pattern
@@ -118,10 +121,25 @@ try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
 ```
 
 **Critical rules**:
-- Replace `synchronized` with `ReentrantLock` in any code called from virtual threads
+- **Java 21-23**: Replace `synchronized` with `ReentrantLock` for blocking I/O in virtual threads (pinning). Detect with `-Djdk.tracePinnedThreads=full`
+- **Java 24+**: `synchronized` pinning is resolved (JEP 491). `ReentrantLock` still needed for JNI code, `tryLock()`, timed waits, or multiple conditions
 - Do not pool virtual threads — they are cheap to create
 - Do not use `ThreadLocal` — use `ScopedValue` or pass context explicitly
-- Virtual threads do not benefit CPU-bound work — use platform thread pools for computation
+- Virtual threads provide **scale, not speed** — they do not benefit CPU-bound work
+- Use `Semaphore` to limit access to external resources (databases, APIs) instead of thread pool sizing
+
+```java
+// Limiting concurrent access to external resources
+Semaphore dbPermits = new Semaphore(50); // Match connection pool size
+
+try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+    executor.submit(() -> {
+        dbPermits.acquire();
+        try { return database.query(sql); }
+        finally { dbPermits.release(); }
+    });
+}
+```
 
 ## Scoped Values (Replaces ThreadLocal)
 
@@ -220,15 +238,32 @@ catch (InterruptedException e) {
 }
 ```
 
-### 4. synchronized in Virtual Thread Code
+### 4. synchronized in Virtual Thread Code (Java 21-23)
 
 ```java
-// Bad - pins carrier thread
+// Bad on Java 21-23 - pins carrier thread
 synchronized (lock) { database.query(sql); }
 
-// Good - virtual-thread-safe
+// Good - virtual-thread-safe on all versions
 private final ReentrantLock lock = new ReentrantLock();
 lock.lock();
 try { database.query(sql); }
 finally { lock.unlock(); }
+```
+
+Note: On Java 24+ (JEP 491), `synchronized` no longer pins virtual threads. The `ReentrantLock` pattern remains portable across all versions.
+
+### 5. ThreadLocal Caching with Virtual Threads
+
+```java
+// Bad - creates one instance per virtual thread (potentially millions)
+private static final ThreadLocal<SimpleDateFormat> formatter =
+    ThreadLocal.withInitial(() -> new SimpleDateFormat("yyyy-MM-dd"));
+
+// Good - use immutable, shareable alternative
+private static final DateTimeFormatter formatter = DateTimeFormatter.ISO_LOCAL_DATE;
+
+// Good - shared cache for expensive mutable objects
+private static final ConcurrentHashMap<String, ExpensiveParser> parserCache =
+    new ConcurrentHashMap<>();
 ```
