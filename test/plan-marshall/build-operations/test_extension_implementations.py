@@ -454,6 +454,202 @@ def test_documents_extension_no_outline_skill():
 
 
 # =============================================================================
+# applies_to_module() Tests
+# =============================================================================
+
+
+def _maven_module_data() -> dict:
+    """Sample maven module data."""
+    return {
+        'name': 'core',
+        'build_systems': ['maven'],
+        'paths': {'module': 'core', 'sources': ['src/main/java'], 'tests': ['src/test/java']},
+        'metadata': {},
+        'packages': {},
+        'dependencies': ['jakarta.enterprise.cdi-api:jakarta.enterprise:compile'],
+        'commands': {},
+        'stats': {'source_files': 10, 'test_files': 5},
+    }
+
+
+def _npm_module_data() -> dict:
+    """Sample npm module data."""
+    return {
+        'name': 'frontend',
+        'build_systems': ['npm'],
+        'paths': {'module': 'frontend', 'sources': ['src'], 'tests': ['test']},
+        'metadata': {},
+        'packages': {},
+        'dependencies': ['lit:compile'],
+        'commands': {},
+        'stats': {'source_files': 20, 'test_files': 8},
+    }
+
+
+def _empty_module_data() -> dict:
+    """Sample module with no signals."""
+    return {
+        'name': 'empty',
+        'build_systems': [],
+        'paths': {'module': '.', 'sources': [], 'tests': []},
+        'metadata': {},
+        'packages': {},
+        'dependencies': [],
+        'commands': {},
+        'stats': {},
+    }
+
+
+def _plugin_module_data() -> dict:
+    """Sample marketplace plugin module data."""
+    return {
+        'name': 'pm-dev-java',
+        'build_systems': ['marshall-plugin'],
+        'paths': {'module': 'marketplace/bundles/pm-dev-java', 'sources': [], 'tests': []},
+        'metadata': {},
+        'packages': {},
+        'dependencies': [],
+        'commands': {},
+        'stats': {},
+    }
+
+
+def _python_module_data() -> dict:
+    """Sample python module data."""
+    return {
+        'name': 'python-project',
+        'build_systems': ['python'],
+        'paths': {'module': '.', 'sources': ['src'], 'tests': ['test']},
+        'metadata': {},
+        'packages': {},
+        'dependencies': [],
+        'commands': {},
+        'stats': {'source_files': 15, 'test_files': 10},
+    }
+
+
+def _doc_module_data() -> dict:
+    """Sample documentation module data."""
+    return {
+        'name': 'documentation',
+        'build_systems': ['documentation'],
+        'paths': {'module': 'doc', 'sources': ['doc'], 'tests': []},
+        'metadata': {'description': 'Project documentation'},
+        'packages': {},
+        'dependencies': [],
+        'commands': {},
+        'stats': {},
+    }
+
+
+def test_java_applies_to_maven_module():
+    """Java ext: maven module -> applicable (high)."""
+    ext = load_extension('pm-dev-java')
+    result = ext.applies_to_module(_maven_module_data())
+    assert result['applicable'] is True
+    assert result['confidence'] == 'high'
+    assert result['additive_to'] is None
+    assert len(result['skills_by_profile']) > 0
+
+
+def test_java_not_applicable_to_npm_module():
+    """Java ext: npm module -> not applicable."""
+    ext = load_extension('pm-dev-java')
+    result = ext.applies_to_module(_npm_module_data())
+    assert result['applicable'] is False
+
+
+def test_frontend_applies_to_npm_module():
+    """Frontend ext: npm module -> applicable (high)."""
+    ext = load_extension('pm-dev-frontend')
+    result = ext.applies_to_module(_npm_module_data())
+    assert result['applicable'] is True
+    assert result['confidence'] == 'high'
+
+
+def test_frontend_not_applicable_to_maven_module():
+    """Frontend ext: maven module -> not applicable."""
+    ext = load_extension('pm-dev-frontend')
+    result = ext.applies_to_module(_maven_module_data())
+    assert result['applicable'] is False
+
+
+def test_java_cui_applies_to_maven_with_additive():
+    """Java-CUI ext: maven module -> applicable with additive_to='java'."""
+    ext = load_extension('pm-dev-java-cui')
+    result = ext.applies_to_module(_maven_module_data())
+    assert result['applicable'] is True
+    assert result['additive_to'] == 'java'
+
+
+def test_java_cui_not_applicable_to_npm():
+    """Java-CUI ext: npm module -> not applicable."""
+    ext = load_extension('pm-dev-java-cui')
+    result = ext.applies_to_module(_npm_module_data())
+    assert result['applicable'] is False
+
+
+def test_general_dev_always_applicable():
+    """General-dev ext: ANY module -> always applicable (high)."""
+    ext = load_extension('pm-dev-general')
+
+    assert ext.applies_to_module(_maven_module_data())['applicable'] is True
+    assert ext.applies_to_module(_npm_module_data())['applicable'] is True
+    assert ext.applies_to_module(_empty_module_data())['applicable'] is True
+
+    result = ext.applies_to_module(_maven_module_data())
+    assert result['confidence'] == 'high'
+
+
+def test_plugin_dev_applies_to_marketplace_module():
+    """Plugin-dev ext: marketplace module -> applicable."""
+    ext = load_extension('pm-plugin-development')
+    result = ext.applies_to_module(_plugin_module_data())
+    assert result['applicable'] is True
+
+
+def test_plugin_dev_not_applicable_to_plain_module():
+    """Plugin-dev ext: plain module -> not applicable."""
+    ext = load_extension('pm-plugin-development')
+    result = ext.applies_to_module(_maven_module_data())
+    assert result['applicable'] is False
+
+
+def test_documents_applies_to_doc_module():
+    """Documents ext: module with doc/ -> applicable."""
+    ext = load_extension('pm-documents')
+    result = ext.applies_to_module(_doc_module_data())
+    assert result['applicable'] is True
+
+
+def test_documents_not_applicable_to_maven_module():
+    """Documents ext: plain maven module without doc -> not applicable."""
+    ext = load_extension('pm-documents')
+    result = ext.applies_to_module(_maven_module_data())
+    assert result['applicable'] is False
+
+
+def test_requirements_not_applicable():
+    """Requirements ext: not applicable (default behavior)."""
+    ext = load_extension('pm-requirements')
+    result = ext.applies_to_module(_maven_module_data())
+    assert result['applicable'] is False
+
+
+def test_applies_to_module_result_structure():
+    """All applies_to_module results have required keys."""
+    required_keys = ['applicable', 'confidence', 'signals', 'additive_to', 'skills_by_profile']
+    bundles = ['pm-dev-java', 'pm-dev-frontend', 'pm-dev-java-cui', 'pm-dev-general',
+               'pm-plugin-development', 'pm-documents', 'pm-requirements']
+
+    for bundle in bundles:
+        ext = load_extension(bundle)
+        result = ext.applies_to_module(_maven_module_data())
+        for key in required_keys:
+            assert key in result, f'{bundle}: applies_to_module missing key {key}'
+
+
+# =============================================================================
 # Cross-Bundle Validation Tests
 # =============================================================================
 
@@ -464,6 +660,9 @@ def test_all_extensions_have_unique_domain_keys():
         'pm-dev-java',
         'pm-dev-java-cui',
         'pm-dev-frontend',
+        'pm-dev-general',
+        'pm-dev-python',
+        'pm-dev-oci',
         'pm-plugin-development',
         'pm-requirements',
         'pm-documents',
@@ -483,7 +682,7 @@ def test_all_extensions_have_unique_domain_keys():
         except FileNotFoundError:
             pass  # Skip bundles without extensions
 
-    assert len(domain_keys) == 6, f'Should have 6 unique domain keys, got {len(domain_keys)}'
+    assert len(domain_keys) == 9, f'Should have 9 unique domain keys, got {len(domain_keys)}'
 
 
 def test_all_extensions_have_required_functions():
@@ -492,6 +691,9 @@ def test_all_extensions_have_required_functions():
         'pm-dev-java',
         'pm-dev-java-cui',
         'pm-dev-frontend',
+        'pm-dev-general',
+        'pm-dev-python',
+        'pm-dev-oci',
         'pm-plugin-development',
         'pm-requirements',
         'pm-documents',

@@ -13,6 +13,29 @@ from extension_base import ExtensionBase  # type: ignore[import-not-found]
 class Extension(ExtensionBase):
     """OCI container extension for pm-dev-oci bundle."""
 
+    def applies_to_module(self, module_data: dict) -> dict:
+        """Check if OCI domain applies based on Dockerfile or container config."""
+        paths = module_data.get('paths', {})
+        module_path = paths.get('module', '')
+        sources = paths.get('sources', [])
+
+        signals = []
+        all_paths = [module_path] + sources
+        for p in all_paths:
+            p_lower = str(p).lower()
+            if 'dockerfile' in p_lower or 'containerfile' in p_lower:
+                signals.append(f'Dockerfile in {p}')
+
+        # Check metadata for container indicators
+        metadata = module_data.get('metadata', {})
+        if metadata.get('packaging') == 'docker' or metadata.get('container'):
+            signals.append('container metadata detected')
+
+        if not signals:
+            return {'applicable': False, 'confidence': 'none', 'signals': [], 'additive_to': None, 'skills_by_profile': {}}
+
+        return self._build_applicable_result('high', signals)
+
     def get_skill_domains(self) -> dict:
         """Domain metadata for skill loading."""
         return {

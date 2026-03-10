@@ -14,6 +14,10 @@ from extension_base import ExtensionBase  # type: ignore[import-not-found]
 class Extension(ExtensionBase):
     """General development extension for pm-dev-general bundle."""
 
+    def applies_to_module(self, module_data: dict) -> dict:
+        """Always applicable — cross-cutting domain."""
+        return self._build_applicable_result('high', ['cross-cutting'])
+
     def get_skill_domains(self) -> dict:
         """Domain metadata for skill loading."""
         return {

@@ -108,6 +108,41 @@ class Extension(ExtensionBase):
             },
         }
 
+    def applies_to_module(self, module_data: dict) -> dict:
+        """Check if Java domain applies based on build systems."""
+        build_systems = module_data.get('build_systems', [])
+        if 'maven' not in build_systems and 'gradle' not in build_systems:
+            return {'applicable': False, 'confidence': 'none', 'signals': [], 'additive_to': None, 'skills_by_profile': {}}
+
+        signals = [f'build_systems={",".join(build_systems)}']
+        result = self._build_applicable_result('high', signals)
+
+        # Module-level customization: move CDI/Lombok to optionals based on deps
+        deps = module_data.get('dependencies', [])
+        dep_strings = [d if isinstance(d, str) else '' for d in deps]
+        has_cdi = any('jakarta.enterprise' in d or 'javax.enterprise' in d for d in dep_strings)
+        has_lombok = any('lombok' in d for d in dep_strings)
+
+        for profile in result['skills_by_profile'].values():
+            if not has_cdi:
+                # Move java-cdi from defaults to optionals
+                cdi_entries = [e for e in profile.get('defaults', [])
+                               if isinstance(e, dict) and 'java-cdi' in e.get('skill', '')]
+                for entry in cdi_entries:
+                    profile['defaults'].remove(entry)
+                    if entry not in profile['optionals']:
+                        profile['optionals'].append(entry)
+            if not has_lombok:
+                # Move java-lombok from defaults to optionals
+                lombok_entries = [e for e in profile.get('defaults', [])
+                                  if isinstance(e, dict) and 'java-lombok' in e.get('skill', '')]
+                for entry in lombok_entries:
+                    profile['defaults'].remove(entry)
+                    if entry not in profile['optionals']:
+                        profile['optionals'].append(entry)
+
+        return result
+
     def provides_triage(self) -> str | None:
         """Return triage skill reference."""
         return 'pm-dev-java:ext-triage-java'

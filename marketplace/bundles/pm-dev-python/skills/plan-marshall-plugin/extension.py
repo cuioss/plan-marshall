@@ -101,6 +101,28 @@ class Extension(ExtensionBase):
             },
         }
 
+    def applies_to_module(self, module_data: dict) -> dict:
+        """Check if Python domain applies based on .py files in paths."""
+        paths = module_data.get('paths', {})
+        sources = paths.get('sources', [])
+        tests = paths.get('tests', [])
+        build_systems = module_data.get('build_systems', [])
+
+        signals = []
+        if 'python' in build_systems:
+            signals.append('build_systems=python')
+        # Check for .py in source/test paths
+        all_paths = sources + tests
+        py_paths = [p for p in all_paths if '.py' in str(p) or 'py' in str(p).lower()]
+        if py_paths:
+            signals.append(f'*.py in {",".join(py_paths[:3])}')
+
+        if not signals:
+            return {'applicable': False, 'confidence': 'none', 'signals': [], 'additive_to': None, 'skills_by_profile': {}}
+
+        confidence = 'high' if 'python' in build_systems else 'medium'
+        return self._build_applicable_result(confidence, signals)
+
     def provides_triage(self) -> str | None:
         """Return triage skill reference (future)."""
         return None  # ext-triage-python to be added later

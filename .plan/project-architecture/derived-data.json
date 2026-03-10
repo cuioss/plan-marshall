@@ -25,7 +25,7 @@
       "packages": {},
       "dependencies": [],
       "stats": {
-        "bundle_count": 8
+        "bundle_count": 10
       },
       "commands": {
         "compile": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"compile\"",
@@ -197,11 +197,6 @@
           "type": "skill",
           "description": "CI provider abstraction with unified API for GitHub and GitLab operations (PR, issues, CI status)"
         },
-        "skill:tools-json-ops": {
-          "path": "skills/tools-json-ops",
-          "type": "skill",
-          "description": "Generic JSON file CRUD operations with path notation support"
-        },
         "skill:tools-permission-doctor": {
           "path": "skills/tools-permission-doctor",
           "type": "skill",
@@ -221,11 +216,6 @@
           "path": "skills/tools-permission-web",
           "type": "skill",
           "description": "Analyze and consolidate WebFetch domain permissions across projects with security research and validation"
-        },
-        "skill:tools-planning-inventory": {
-          "path": "skills/tools-planning-inventory",
-          "type": "skill",
-          "description": "Scans and reports all planning-related components across marketplace bundles"
         },
         "skill:tools-script-executor": {
           "path": "skills/tools-script-executor",
@@ -310,7 +300,7 @@
       },
       "dependencies": [],
       "stats": {
-        "skill_count": 37,
+        "skill_count": 35,
         "agent_count": 8,
         "command_count": 2
       },
@@ -380,31 +370,6 @@
           "type": "skill",
           "description": "Fix JSDoc errors and warnings from build/lint with content preservation"
         },
-        "skill:js-generate-coverage": {
-          "path": "skills/js-generate-coverage",
-          "type": "skill",
-          "description": "Self-contained command for coverage generation and analysis"
-        },
-        "skill:js-implement-code": {
-          "path": "skills/js-implement-code",
-          "type": "skill",
-          "description": "Self-contained command for JavaScript code implementation with verification and iteration"
-        },
-        "skill:js-implement-tests": {
-          "path": "skills/js-implement-tests",
-          "type": "skill",
-          "description": "Self-contained command for JavaScript test implementation with verification and iteration"
-        },
-        "skill:js-maintain-tests": {
-          "path": "skills/js-maintain-tests",
-          "type": "skill",
-          "description": "Execute systematic JavaScript test quality improvement with NO production code changes"
-        },
-        "skill:js-refactor-code": {
-          "path": "skills/js-refactor-code",
-          "type": "skill",
-          "description": "Execute systematic JavaScript refactoring with standards compliance verification"
-        },
         "skill:plan-marshall-plugin": {
           "path": "skills/plan-marshall-plugin",
           "type": "skill",
@@ -413,7 +378,7 @@
       },
       "dependencies": [],
       "stats": {
-        "skill_count": 13,
+        "skill_count": 8,
         "agent_count": 0,
         "command_count": 0
       },
@@ -425,6 +390,64 @@
         "verify": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"verify pm-dev-frontend\"",
         "coverage": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"coverage pm-dev-frontend\"",
         "clean": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"clean pm-dev-frontend\""
+      }
+    },
+    "pm-dev-general": {
+      "name": "pm-dev-general",
+      "build_systems": [
+        "marshall-plugin"
+      ],
+      "paths": {
+        "module": "marketplace/bundles/pm-dev-general",
+        "descriptor": "marketplace/bundles/pm-dev-general/.claude-plugin/plugin.json",
+        "sources": [
+          "marketplace/bundles/pm-dev-general/skills"
+        ],
+        "tests": [
+          "test/pm-dev-general"
+        ],
+        "readme": "marketplace/bundles/pm-dev-general/README.md"
+      },
+      "metadata": {
+        "bundle_name": "pm-dev-general",
+        "description": "Cross-cutting development principles covering testing methodology, documentation standards, and code quality patterns"
+      },
+      "packages": {
+        "skill:dev-testing": {
+          "path": "skills/dev-testing",
+          "type": "skill",
+          "description": "Language-agnostic testing methodology covering AAA pattern, test structure, organization, coverage, and determinism"
+        },
+        "skill:dev-code-documentation": {
+          "path": "skills/dev-code-documentation",
+          "type": "skill",
+          "description": "Language-agnostic code documentation principles covering what, when, and how to document public APIs"
+        },
+        "skill:dev-code-quality": {
+          "path": "skills/dev-code-quality",
+          "type": "skill",
+          "description": "Language-agnostic code quality principles covering SRP, CQS, complexity thresholds, refactoring triggers, and error handling"
+        },
+        "skill:plan-marshall-plugin": {
+          "path": "skills/plan-marshall-plugin",
+          "type": "skill",
+          "description": "General development domain manifest for plan-marshall workflow integration"
+        }
+      },
+      "dependencies": [],
+      "stats": {
+        "skill_count": 4,
+        "agent_count": 0,
+        "command_count": 0
+      },
+      "commands": {
+        "compile": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"compile pm-dev-general\"",
+        "test-compile": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"test-compile pm-dev-general\"",
+        "module-tests": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"module-tests pm-dev-general\"",
+        "quality-gate": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"quality-gate pm-dev-general\"",
+        "verify": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"verify pm-dev-general\"",
+        "coverage": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"coverage pm-dev-general\"",
+        "clean": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"clean pm-dev-general\""
       }
     },
     "pm-dev-java": {
@@ -454,11 +477,6 @@
           "type": "skill",
           "description": "Triage extension for Java findings during plan-finalize phase"
         },
-        "skill:java-analyze-all": {
-          "path": "skills/java-analyze-all",
-          "type": "skill",
-          "description": "Run parallel analysis agents for quality, coverage, and standards compliance"
-        },
         "skill:java-cdi": {
           "path": "skills/java-cdi",
           "type": "skill",
@@ -469,25 +487,10 @@
           "type": "skill",
           "description": "Core Java development standards for patterns, modern features, and performance optimization"
         },
-        "skill:java-enforce-logrecords": {
-          "path": "skills/java-enforce-logrecords",
-          "type": "skill",
-          "description": "Enforce CUI logging standards by validating LogRecord usage, testing coverage, and identifier organization"
-        },
-        "skill:java-full-workflow": {
-          "path": "skills/java-full-workflow",
-          "type": "skill",
-          "description": "Execute complete implement-test-verify workflow with coordinated agents"
-        },
         "skill:java-lombok": {
           "path": "skills/java-lombok",
           "type": "skill",
-          "description": "Lombok patterns including @Delegate, @Builder, @Value, @UtilityClass for reducing boilerplate"
-        },
-        "skill:java-maintain-logger": {
-          "path": "skills/java-maintain-logger",
-          "type": "skill",
-          "description": "Execute systematic logging standards maintenance with plan tracking and comprehensive test coverage"
+          "description": "Lombok patterns including @Delegate, @Builder, @UtilityClass for reducing boilerplate"
         },
         "skill:java-maintenance": {
           "path": "skills/java-maintenance",
@@ -519,6 +522,11 @@
           "type": "skill",
           "description": "Maven integration testing with Failsafe plugin, IT naming conventions, and profile configuration"
         },
+        "skill:junit-weld-testing": {
+          "path": "skills/junit-weld-testing",
+          "type": "skill",
+          "description": "Weld Testing standards for CDI unit testing with @EnableAutoWeld, @AddBeanClasses, and auto-discovery patterns"
+        },
         "skill:manage-maven-profiles": {
           "path": "skills/manage-maven-profiles",
           "type": "skill",
@@ -534,41 +542,6 @@
           "type": "agent",
           "description": "Analyze test coverage and identify gaps (read-only)."
         },
-        "agent:java-fix-build-agent": {
-          "path": "agents/java-fix-build-agent.md",
-          "type": "agent",
-          "description": "Fix Java compilation errors autonomously."
-        },
-        "agent:java-fix-javadoc-agent": {
-          "path": "agents/java-fix-javadoc-agent.md",
-          "type": "agent",
-          "description": "Fix JavaDoc errors autonomously with content-preserving fixes."
-        },
-        "agent:java-fix-tests-agent": {
-          "path": "agents/java-fix-tests-agent.md",
-          "type": "agent",
-          "description": "Fix failing unit tests autonomously."
-        },
-        "agent:java-implement-agent": {
-          "path": "agents/java-implement-agent.md",
-          "type": "agent",
-          "description": "Implement Java features autonomously with standards compliance."
-        },
-        "agent:java-implement-tests-agent": {
-          "path": "agents/java-implement-tests-agent.md",
-          "type": "agent",
-          "description": "Implement unit tests with coverage verification."
-        },
-        "agent:java-quality-agent": {
-          "path": "agents/java-quality-agent.md",
-          "type": "agent",
-          "description": "Analyze code quality and standards compliance (read-only)."
-        },
-        "agent:java-refactor-agent": {
-          "path": "agents/java-refactor-agent.md",
-          "type": "agent",
-          "description": "Refactor Java code with standards compliance."
-        },
         "agent:java-verify-agent": {
           "path": "agents/java-verify-agent.md",
           "type": "agent",
@@ -577,8 +550,8 @@
       },
       "dependencies": [],
       "stats": {
-        "skill_count": 16,
-        "agent_count": 9,
+        "skill_count": 13,
+        "agent_count": 2,
         "command_count": 0
       },
       "commands": {
@@ -632,6 +605,16 @@
           "type": "skill",
           "description": "CUI MockWebServer standards for HTTP client testing with JUnit 5 integration"
         },
+        "skill:java-enforce-logrecords": {
+          "path": "skills/java-enforce-logrecords",
+          "type": "skill",
+          "description": "Enforce CUI logging standards by validating LogRecord usage, testing coverage, and identifier organization"
+        },
+        "skill:java-maintain-logger": {
+          "path": "skills/java-maintain-logger",
+          "type": "skill",
+          "description": "Execute systematic logging standards maintenance with plan tracking and comprehensive test coverage"
+        },
         "skill:plan-marshall-plugin": {
           "path": "skills/plan-marshall-plugin",
           "type": "skill",
@@ -640,7 +623,7 @@
       },
       "dependencies": [],
       "stats": {
-        "skill_count": 5,
+        "skill_count": 7,
         "agent_count": 0,
         "command_count": 0
       },
@@ -652,6 +635,59 @@
         "verify": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"verify pm-dev-java-cui\"",
         "coverage": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"coverage pm-dev-java-cui\"",
         "clean": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"clean pm-dev-java-cui\""
+      }
+    },
+    "pm-dev-oci": {
+      "name": "pm-dev-oci",
+      "build_systems": [
+        "marshall-plugin"
+      ],
+      "paths": {
+        "module": "marketplace/bundles/pm-dev-oci",
+        "descriptor": "marketplace/bundles/pm-dev-oci/.claude-plugin/plugin.json",
+        "sources": [
+          "marketplace/bundles/pm-dev-oci/skills"
+        ],
+        "tests": [
+          "test/pm-dev-oci"
+        ],
+        "readme": "marketplace/bundles/pm-dev-oci/README.md"
+      },
+      "metadata": {
+        "bundle_name": "pm-dev-oci",
+        "description": "OCI container standards and security best practices"
+      },
+      "packages": {
+        "skill:oci-standards": {
+          "path": "skills/oci-standards",
+          "type": "skill",
+          "description": "General OCI container standards covering image building, Dockerfile best practices, multi-platform builds, and distroless health probes"
+        },
+        "skill:oci-security": {
+          "path": "skills/oci-security",
+          "type": "skill",
+          "description": "OCI container security best practices covering runtime hardening, supply chain security, and OWASP container controls"
+        },
+        "skill:plan-marshall-plugin": {
+          "path": "skills/plan-marshall-plugin",
+          "type": "skill",
+          "description": "OCI container domain manifest for plan-marshall workflow integration"
+        }
+      },
+      "dependencies": [],
+      "stats": {
+        "skill_count": 3,
+        "agent_count": 0,
+        "command_count": 0
+      },
+      "commands": {
+        "compile": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"compile pm-dev-oci\"",
+        "test-compile": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"test-compile pm-dev-oci\"",
+        "module-tests": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"module-tests pm-dev-oci\"",
+        "quality-gate": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"quality-gate pm-dev-oci\"",
+        "verify": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"verify pm-dev-oci\"",
+        "coverage": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"coverage pm-dev-oci\"",
+        "clean": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"clean pm-dev-oci\""
       }
     },
     "pm-dev-python": {
@@ -724,21 +760,6 @@
         "description": "AsciiDoc and documentation standards enforcement for CUI projects"
       },
       "packages": {
-        "skill:doc-create": {
-          "path": "skills/doc-create",
-          "type": "skill",
-          "description": "Create new documentation from templates"
-        },
-        "skill:doc-doctor": {
-          "path": "skills/doc-doctor",
-          "type": "skill",
-          "description": "Diagnose documentation issues (format, links, content)"
-        },
-        "skill:doc-maintain": {
-          "path": "skills/doc-maintain",
-          "type": "skill",
-          "description": "Maintain documentation (sync, cleanup, update)"
-        },
         "skill:ext-triage-docs": {
           "path": "skills/ext-triage-docs",
           "type": "skill",
@@ -762,7 +783,7 @@
       },
       "dependencies": [],
       "stats": {
-        "skill_count": 6,
+        "skill_count": 3,
         "agent_count": 0,
         "command_count": 1
       },
@@ -928,11 +949,6 @@
         "description": "Requirements engineering and specification standards for CUI projects"
       },
       "packages": {
-        "skill:cui-maintain-requirements": {
-          "path": "skills/cui-maintain-requirements",
-          "type": "skill",
-          "description": "Maintain and synchronize requirements and specifications with comprehensive validation"
-        },
         "skill:ext-triage-reqs": {
           "path": "skills/ext-triage-reqs",
           "type": "skill",
@@ -966,7 +982,7 @@
       },
       "dependencies": [],
       "stats": {
-        "skill_count": 7,
+        "skill_count": 6,
         "agent_count": 0,
         "command_count": 0
       },
