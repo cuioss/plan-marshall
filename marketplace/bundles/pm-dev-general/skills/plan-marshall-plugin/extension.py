@@ -48,7 +48,7 @@ class Extension(ExtensionBase):
                 'module_testing': {
                     'defaults': [
                         {
-                            'skill': 'pm-dev-general:dev-testing',
+                            'skill': 'pm-dev-general:dev-module-testing',
                             'description': 'Language-agnostic testing methodology (AAA, coverage, reliability, determinism)',
                         },
                     ],

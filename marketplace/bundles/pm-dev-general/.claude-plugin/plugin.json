@@ -13,7 +13,7 @@
   "agents": [],
   "commands": [],
   "skills": [
-    "./skills/dev-testing",
+    "./skills/dev-module-testing",
     "./skills/dev-code-documentation",
     "./skills/dev-code-quality",
     "./skills/plan-marshall-plugin"
