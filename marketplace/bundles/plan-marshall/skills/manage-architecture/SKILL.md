@@ -517,6 +517,44 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 
 **Key principle**: `java-cui` is an ADDITIVE domain that extends `java`. Both domains contribute skills to the same profiles. The java-cui domain does NOT provide its own triage - it relies on `pm-dev-java:ext-triage-java`.
 
+**Step 6e.4d: Add General-Dev Cross-Cutting Domain (Always)**
+
+`general-dev` provides language-agnostic development principles that apply to ALL modules regardless of primary domain.
+
+**Detection**: Always applies — no conditional check needed.
+
+1. Get general-dev skills:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  get-skills-by-profile --domain general-dev
+```
+
+2. Merge into the module's `skills_by_profile`:
+   - Add `pm-dev-general:dev-code-quality` and `pm-dev-general:dev-code-documentation` to `implementation`
+   - Add `pm-dev-general:dev-code-quality` and `pm-dev-general:dev-testing` to `module_testing`
+   - Dedup: Skip skills already present from the primary domain
+
+**Step 6e.4e: Add Python Domain (When Python Scripts Detected)**
+
+**Detection**: Check if module has Python files (`*.py`) in skills/scripts or test directories.
+
+```bash
+# Check for Python scripts in module
+ls {module-path}/skills/*/scripts/*.py 2>/dev/null || ls test/{module-name}/**/*.py 2>/dev/null
+```
+
+**If Python files found**:
+
+1. Get python domain skills:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  get-skills-by-profile --domain python
+```
+
+2. Merge `pm-dev-python:python-best-practices` into the module's profiles:
+   - Add to `implementation` and `module_testing`
+   - Dedup: Python domain already includes general-dev skills — skip duplicates from Step 6e.4d
+
 **Step 6e.5: Apply Skills by Profile**
 
 **Include reasoning** about filtering decisions:
