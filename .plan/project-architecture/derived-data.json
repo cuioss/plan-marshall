@@ -413,8 +413,8 @@
         "description": "Cross-cutting development principles covering testing methodology, documentation standards, and code quality patterns"
       },
       "packages": {
-        "skill:dev-testing": {
-          "path": "skills/dev-testing",
+        "skill:dev-module-testing": {
+          "path": "skills/dev-module-testing",
           "type": "skill",
           "description": "Language-agnostic testing methodology covering AAA pattern, test structure, organization, coverage, and determinism"
         },

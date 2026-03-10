@@ -348,7 +348,7 @@ name: phase-5-execute-agent
 description: Execute single task with two-tier skill loading
 tools: Read, Write, Edit, Bash, Skill
 model: sonnet
-skills: plan-marshall:task-implementation, plan-marshall:ref-development-standards
+skills: plan-marshall:task-implementation, pm-dev-general:dev-practices
 ---
 
 # Task Execute Agent
@@ -360,7 +360,7 @@ then loads task.skills array for domain knowledge.
 
 ```
 Skill: plan-marshall:task-implementation
-Skill: plan-marshall:ref-development-standards
+Skill: pm-dev-general:dev-practices
 ```
 
 ## Workflow

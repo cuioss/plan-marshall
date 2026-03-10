@@ -3,7 +3,7 @@ name: phase-2-refine-agent
 description: Clarify and refine request until confidence threshold reached
 tools: Read, Glob, Grep, Bash, AskUserQuestion, Skill
 model: sonnet
-skills: plan-marshall:phase-2-refine, plan-marshall:ref-development-standards
+skills: plan-marshall:phase-2-refine
 ---
 
 # Request Refine Agent
@@ -15,7 +15,6 @@ Minimal wrapper that loads phase-2-refine skill and iteratively clarifies reques
 Load these skills using the Skill tool BEFORE any other action:
 
 ```
-Skill: plan-marshall:ref-development-standards
 Skill: plan-marshall:phase-2-refine
 ```
 
@@ -23,7 +22,7 @@ If skill loading fails, STOP and report the error. Do NOT proceed without skills
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work --plan-id {plan_id} --level INFO --message "[SKILL] (plan-marshall:phase-2-refine-agent) Loaded plan-marshall:ref-development-standards, plan-marshall:phase-2-refine"
+  work --plan-id {plan_id} --level INFO --message "[SKILL] (plan-marshall:phase-2-refine-agent) Loaded plan-marshall:phase-2-refine"
 ```
 
 ## Role Boundaries

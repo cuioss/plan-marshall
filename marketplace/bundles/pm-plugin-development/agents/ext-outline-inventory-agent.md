@@ -14,7 +14,7 @@ Loads marketplace inventory via script with component types and optional content
 Load development standards before any work:
 
 ```
-Skill: plan-marshall:ref-development-standards
+Skill: pm-dev-general:dev-practices
 ```
 
 **CRITICAL - Script Execution Rules:**

@@ -3,7 +3,7 @@ name: phase-4-plan-agent
 description: Transform deliverables into optimized tasks with explicit domain skills
 tools: Read, Bash, Skill
 model: sonnet
-skills: plan-marshall:phase-4-plan, plan-marshall:ref-development-standards
+skills: plan-marshall:phase-4-plan
 ---
 
 # Task Plan Agent
@@ -15,7 +15,6 @@ Minimal wrapper that loads task-plan skill and creates tasks from deliverables.
 Load these skills using the Skill tool BEFORE any other action:
 
 ```
-Skill: plan-marshall:ref-development-standards
 Skill: plan-marshall:phase-4-plan
 ```
 
@@ -24,7 +23,7 @@ If skill loading fails, STOP and report the error. Do NOT proceed without skills
 **Log skill selection**:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work --plan-id {plan_id} --level INFO --message "[SKILL] (plan-marshall:phase-4-plan-agent) Loaded plan-marshall:ref-development-standards, plan-marshall:phase-4-plan"
+  work --plan-id {plan_id} --level INFO --message "[SKILL] (plan-marshall:phase-4-plan-agent) Loaded plan-marshall:phase-4-plan"
 ```
 
 ## Role Boundaries

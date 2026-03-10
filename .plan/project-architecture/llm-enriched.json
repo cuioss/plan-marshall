@@ -34,7 +34,7 @@
           "pm-plugin-development:plugin-script-architecture",
           "plan-marshall:ref-toon-format",
           "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-testing",
+          "pm-dev-general:dev-module-testing",
           "pm-dev-python:python-best-practices"
         ]
       },
@@ -98,7 +98,7 @@
           "pm-plugin-development:plugin-script-architecture",
           "plan-marshall:ref-toon-format",
           "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-testing",
+          "pm-dev-general:dev-module-testing",
           "pm-dev-python:python-best-practices"
         ]
       },
@@ -137,7 +137,7 @@
           "pm-plugin-development:plugin-script-architecture",
           "plan-marshall:ref-toon-format",
           "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-testing",
+          "pm-dev-general:dev-module-testing",
           "pm-dev-python:python-best-practices"
         ]
       },
@@ -148,11 +148,11 @@
     },
     "pm-dev-general": {
       "responsibility": "Cross-cutting development principles covering testing methodology with Boy Scout Rule, code documentation standards, and code quality patterns applicable across all language domains.",
-      "responsibility_reasoning": "From README.md and 4 skill packages (dev-testing, dev-code-documentation, dev-code-quality)",
+      "responsibility_reasoning": "From README.md and 4 skill packages (dev-module-testing, dev-code-documentation, dev-code-quality)",
       "purpose": "domain-standards",
       "purpose_reasoning": "Language-agnostic standards bundle providing shared development principles",
       "key_packages": {
-        "skill:dev-testing": {
+        "skill:dev-module-testing": {
           "description": "Cross-cutting testing methodology with Boy Scout Rule and test quality patterns"
         },
         "skill:dev-code-quality": {
@@ -176,7 +176,7 @@
           "pm-plugin-development:plugin-script-architecture",
           "plan-marshall:ref-toon-format",
           "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-testing",
+          "pm-dev-general:dev-module-testing",
           "pm-dev-python:python-best-practices"
         ]
       },
@@ -218,7 +218,7 @@
           "pm-plugin-development:plugin-script-architecture",
           "plan-marshall:ref-toon-format",
           "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-testing",
+          "pm-dev-general:dev-module-testing",
           "pm-dev-python:python-best-practices"
         ]
       },
@@ -257,7 +257,7 @@
           "pm-plugin-development:plugin-script-architecture",
           "plan-marshall:ref-toon-format",
           "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-testing",
+          "pm-dev-general:dev-module-testing",
           "pm-dev-python:python-best-practices"
         ]
       },
@@ -296,7 +296,7 @@
           "pm-plugin-development:plugin-script-architecture",
           "plan-marshall:ref-toon-format",
           "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-testing",
+          "pm-dev-general:dev-module-testing",
           "pm-dev-python:python-best-practices"
         ]
       },
@@ -332,7 +332,7 @@
           "pm-plugin-development:plugin-script-architecture",
           "plan-marshall:ref-toon-format",
           "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-testing",
+          "pm-dev-general:dev-module-testing",
           "pm-dev-python:python-best-practices"
         ]
       },
@@ -368,7 +368,7 @@
           "pm-plugin-development:plugin-script-architecture",
           "plan-marshall:ref-toon-format",
           "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-testing",
+          "pm-dev-general:dev-module-testing",
           "pm-dev-python:python-best-practices"
         ]
       },
@@ -410,7 +410,7 @@
           "pm-plugin-development:plugin-script-architecture",
           "plan-marshall:ref-toon-format",
           "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-testing",
+          "pm-dev-general:dev-module-testing",
           "pm-dev-python:python-best-practices"
         ]
       },
@@ -449,7 +449,7 @@
           "pm-plugin-development:plugin-script-architecture",
           "plan-marshall:ref-toon-format",
           "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-testing",
+          "pm-dev-general:dev-module-testing",
           "pm-dev-python:python-best-practices"
         ]
       },

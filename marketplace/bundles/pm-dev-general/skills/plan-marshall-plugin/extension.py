@@ -33,6 +33,10 @@ class Extension(ExtensionBase):
                             'skill': 'pm-dev-general:dev-code-quality',
                             'description': 'Language-agnostic code quality principles (SRP, CQS, complexity, error handling)',
                         },
+                        {
+                            'skill': 'pm-dev-general:dev-practices',
+                            'description': 'Foundational development practices (user interaction, tool usage, research, dependency management)',
+                        },
                     ],
                     'optionals': [],
                 },
@@ -48,7 +52,7 @@ class Extension(ExtensionBase):
                 'module_testing': {
                     'defaults': [
                         {
-                            'skill': 'pm-dev-general:dev-testing',
+                            'skill': 'pm-dev-general:dev-module-testing',
                             'description': 'Language-agnostic testing methodology (AAA, coverage, reliability, determinism)',
                         },
                     ],

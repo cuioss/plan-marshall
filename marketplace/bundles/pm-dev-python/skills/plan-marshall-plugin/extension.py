@@ -88,7 +88,7 @@ class Extension(ExtensionBase):
                     'defaults': [
                         'pm-dev-python:python-best-practices',
                         {
-                            'skill': 'pm-dev-general:dev-testing',
+                            'skill': 'pm-dev-general:dev-module-testing',
                             'description': 'Language-agnostic testing methodology (AAA, coverage, reliability, determinism)',
                         },
                     ],

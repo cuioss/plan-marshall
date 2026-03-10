@@ -173,7 +173,7 @@ Skill: bundle-name:skill-name  # For bundled skills
 ✅ Skill: cui-java-core
 ✅ Skill: cui-java-unit-testing
 ✅ Skill: cui-javadoc
-✅ Skill: plan-marshall:ref-development-standards
+✅ Skill: pm-dev-general:dev-practices
 ✅ Skill: pm-plugin-development:plugin-architecture
 ```
 
@@ -327,7 +327,7 @@ allowed-tools: [Read, Bash, Skill]
 
 ## Step 1: Load Prerequisites
 
-Skill: plan-marshall:ref-development-standards  # Pattern 5
+Skill: pm-dev-general:dev-practices  # Pattern 5
 
 ## Step 2: Load Reference Documentation
 

@@ -1,5 +1,5 @@
 ---
-name: dev-testing
+name: dev-module-testing
 description: Language-agnostic testing methodology covering AAA pattern, test structure, organization, coverage, and determinism
 user-invocable: false
 ---

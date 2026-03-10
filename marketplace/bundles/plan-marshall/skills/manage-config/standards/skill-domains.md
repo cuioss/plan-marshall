@@ -30,8 +30,8 @@ The system domain contains workflow skills for the 6 execution phases:
 {
   "skill_domains": {
     "system": {
-      "defaults": ["plan-marshall:ref-development-standards"],
-      "optionals": ["plan-marshall:ref-development-standards"],
+      "defaults": ["pm-dev-general:dev-practices"],
+      "optionals": ["pm-dev-general:dev-practices"],
       "workflow_skills": {
         "1-init": "plan-marshall:phase-1-init",
         "2-refine": "plan-marshall:phase-2-refine",
@@ -117,8 +117,8 @@ Applied to all agents and skills. Contains workflow skills for the 6-phase model
 
 | Field | Content |
 |-------|---------|
-| defaults | `plan-marshall:ref-development-standards` |
-| optionals | `plan-marshall:ref-development-standards` |
+| defaults | `pm-dev-general:dev-practices` |
+| optionals | `pm-dev-general:dev-practices` |
 | workflow_skills | 6 phases: init, refine, outline, plan, execute, finalize |
 
 ## Technical Domains

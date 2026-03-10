@@ -30,7 +30,7 @@ Commands should NOT contain:
 Commands are thin orchestrators — they delegate to skills via `Skill:` invocation.
 
 1. Extract skill invocations from command (e.g., `Skill: pm-plugin-development:plugin-create`)
-2. For each invoked skill, verify it loads foundation skills (plugin-architecture, ref-development-standards)
+2. For each invoked skill, verify it loads foundation skills (plugin-architecture, dev-practices)
 3. Report if invoked skill is missing foundation skills (fix the skill, not the command)
 
 This is NOT a command fix — it's a skill fix. Commands don't load foundation skills directly; their skills do.

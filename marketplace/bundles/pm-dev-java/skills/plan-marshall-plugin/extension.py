@@ -85,7 +85,7 @@ class Extension(ExtensionBase):
                             'description': 'JUnit 5 testing patterns with AAA structure, coverage analysis, and assertion standards',
                         },
                         {
-                            'skill': 'pm-dev-general:dev-testing',
+                            'skill': 'pm-dev-general:dev-module-testing',
                             'description': 'Language-agnostic testing methodology (AAA, coverage, reliability, determinism)',
                         },
                     ],

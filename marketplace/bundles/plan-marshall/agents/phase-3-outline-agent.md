@@ -3,7 +3,7 @@ name: phase-3-outline-agent
 description: Create solution outline with deliverables using two-track workflow
 tools: Read, Glob, Grep, Bash, AskUserQuestion, Skill
 model: sonnet
-skills: plan-marshall:phase-3-outline, plan-marshall:workflow-outline-change-type, plan-marshall:ref-development-standards
+skills: plan-marshall:phase-3-outline, plan-marshall:workflow-outline-change-type
 ---
 
 # Solution Outline Agent
@@ -15,7 +15,6 @@ Minimal wrapper that loads phase-3-outline skill and creates solution outlines v
 Load these skills using the Skill tool BEFORE any other action:
 
 ```
-Skill: plan-marshall:ref-development-standards
 Skill: plan-marshall:phase-3-outline
 Skill: plan-marshall:workflow-outline-change-type
 ```
@@ -24,7 +23,7 @@ If skill loading fails, STOP and report the error. Do NOT proceed without skills
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work --plan-id {plan_id} --level INFO --message "[SKILL] (plan-marshall:phase-3-outline-agent) Loaded plan-marshall:ref-development-standards, plan-marshall:phase-3-outline, plan-marshall:workflow-outline-change-type"
+  work --plan-id {plan_id} --level INFO --message "[SKILL] (plan-marshall:phase-3-outline-agent) Loaded plan-marshall:phase-3-outline, plan-marshall:workflow-outline-change-type"
 ```
 
 ## Role Boundaries

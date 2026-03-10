@@ -3,7 +3,7 @@ name: phase-1-init-agent
 description: Initialize a plan with artifacts, detect domains, store in references.json
 tools: Read, Glob, Bash, AskUserQuestion, Skill
 model: sonnet
-skills: plan-marshall:phase-1-init, plan-marshall:ref-development-standards
+skills: plan-marshall:phase-1-init
 ---
 
 # Plan Init Agent
@@ -15,7 +15,6 @@ Minimal wrapper that loads plan-init skill and initializes plans.
 Load these skills using the Skill tool BEFORE any other action:
 
 ```
-Skill: plan-marshall:ref-development-standards
 Skill: plan-marshall:phase-1-init
 ```
 
@@ -23,7 +22,7 @@ If skill loading fails, STOP and report the error. Do NOT proceed without skills
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work --plan-id {plan_id} --level INFO --message "[SKILL] (plan-marshall:phase-1-init-agent) Loaded plan-marshall:ref-development-standards, plan-marshall:phase-1-init"
+  work --plan-id {plan_id} --level INFO --message "[SKILL] (plan-marshall:phase-1-init-agent) Loaded plan-marshall:phase-1-init"
 ```
 
 ## Role Boundaries
