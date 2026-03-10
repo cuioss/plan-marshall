@@ -246,46 +246,129 @@ def _validate_skills_by_profile_structure(skills_by_profile: dict) -> list[str]:
     return warnings
 
 
-def _validate_skills_for_technology(skills_by_profile: dict, technology: str) -> list[str]:
-    """Validate that skills match the module's technology.
+def enrich_add_domain(
+    module_name: str,
+    domain_key: str,
+    project_dir: str = '.',
+    include_optionals: bool = False,
+    reasoning: str | None = None,
+) -> dict:
+    """Add a domain's skills to a module's skills_by_profile additively.
+
+    Loads the domain's extension, calls applies_to_module() to get resolved
+    skills, then merges them into the module's existing skills_by_profile.
 
     Args:
-        skills_by_profile: Dict mapping profile names to skill lists or structured dicts
-        technology: Module technology (maven, npm, gradle)
+        module_name: Module name
+        domain_key: Domain key (e.g., 'java', 'general-dev')
+        project_dir: Project directory path
+        include_optionals: Whether to include optional skills
+        reasoning: Rationale for adding this domain
 
     Returns:
-        List of warning messages (empty if no issues)
+        Dict with status, module, domain, profiles_updated, and skills_by_profile
+
+    Raises:
+        ModuleNotFoundError: If module not found
+        DataNotFoundError: If data files not found
+        ValueError: If domain is 'system' or not found
     """
-    warnings: list[str] = []
+    if domain_key == 'system':
+        raise ValueError("Cannot add 'system' domain to modules")
 
-    # Technology to expected skill bundle patterns
-    tech_skill_patterns = {
-        'maven': ['pm-dev-java:', 'pm-dev-java-cui:'],
-        'gradle': ['pm-dev-java:', 'pm-dev-java-cui:'],
-        'npm': ['pm-dev-frontend:'],
+    # Validate module exists
+    derived = load_derived_data(project_dir)
+    from _architecture_core import get_module, get_module_names
+
+    modules = get_module_names(derived)
+    if module_name not in modules:
+        raise ModuleNotFoundError(f'Module not found: {module_name}', modules)
+
+    module_data = get_module(derived, module_name)
+
+    # Find extension for this domain
+    from extension_discovery import discover_all_extensions  # type: ignore[import-not-found]
+
+    extensions = discover_all_extensions()
+    target_ext = None
+    for ext_info in extensions:
+        ext_module = ext_info.get('module')
+        if not ext_module:
+            continue
+        try:
+            skill_domains = ext_module.get_skill_domains()
+            if skill_domains.get('domain', {}).get('key') == domain_key:
+                target_ext = ext_module
+                break
+        except Exception:
+            continue
+
+    if target_ext is None:
+        raise ValueError(f"Domain not found: {domain_key}")
+
+    # Get resolved skills from extension
+    result = target_ext.applies_to_module(module_data)
+    skills_by_profile = result.get('skills_by_profile', {})
+
+    # Load current enriched data
+    enriched = load_llm_enriched(project_dir)
+    if 'modules' not in enriched:
+        enriched['modules'] = {}
+    if module_name not in enriched['modules']:
+        enriched['modules'][module_name] = {}
+    if 'skills_by_profile' not in enriched['modules'][module_name]:
+        enriched['modules'][module_name]['skills_by_profile'] = {}
+
+    current = enriched['modules'][module_name]['skills_by_profile']
+    profiles_updated = []
+
+    for profile_name, profile_data in skills_by_profile.items():
+        new_skills: list[str] = []
+        for entry in profile_data.get('defaults', []):
+            skill_name = entry.get('skill', entry) if isinstance(entry, dict) else entry
+            new_skills.append(skill_name)
+
+        if include_optionals:
+            for entry in profile_data.get('optionals', []):
+                skill_name = entry.get('skill', entry) if isinstance(entry, dict) else entry
+                new_skills.append(skill_name)
+
+        if not new_skills:
+            continue
+
+        # Get existing skills for this profile
+        existing = current.get(profile_name, [])
+        existing_names = set(_extract_skill_names_from_profile(existing) if existing else [])
+
+        # Merge: add only new skills (dedup by name)
+        merged = list(existing) if isinstance(existing, list) else []
+        for skill in new_skills:
+            if skill not in existing_names:
+                merged.append(skill)
+                existing_names.add(skill)
+
+        current[profile_name] = merged
+        profiles_updated.append(profile_name)
+
+    enriched['modules'][module_name]['skills_by_profile'] = current
+
+    # Append reasoning
+    if reasoning:
+        existing_reasoning = enriched['modules'][module_name].get('skills_by_profile_reasoning', '')
+        if existing_reasoning:
+            enriched['modules'][module_name]['skills_by_profile_reasoning'] = f'{existing_reasoning}; {reasoning}'
+        else:
+            enriched['modules'][module_name]['skills_by_profile_reasoning'] = reasoning
+
+    save_llm_enriched(enriched, project_dir)
+
+    return {
+        'status': 'success',
+        'module': module_name,
+        'domain': domain_key,
+        'profiles_updated': profiles_updated,
+        'skills_by_profile': current,
     }
-
-    expected_patterns = tech_skill_patterns.get(technology, [])
-    if not expected_patterns:
-        return warnings  # Unknown technology, skip validation
-
-    # Check each skill (handles both flat and structured formats)
-    for _profile_name, profile_data in skills_by_profile.items():
-        skills = _extract_skill_names_from_profile(profile_data)
-        for skill in skills:
-            # Check if skill matches expected patterns
-            matches = any(skill.startswith(pattern) for pattern in expected_patterns)
-            if not matches:
-                # Check if it's from a different technology
-                for other_tech, other_patterns in tech_skill_patterns.items():
-                    if other_tech != technology:
-                        if any(skill.startswith(p) for p in other_patterns):
-                            warnings.append(
-                                f"Skill '{skill}' appears to be for {other_tech}, but module technology is {technology}"
-                            )
-                            break
-
-    return warnings
 
 
 def enrich_skills_by_profile(
@@ -315,21 +398,6 @@ def enrich_skills_by_profile(
 
     # Validate structure
     warnings = _validate_skills_by_profile_structure(skills_by_profile)
-
-    # Get module data to check technology for virtual modules
-    module_data = derived.get('modules', {}).get(module_name, {})
-    virtual_module = module_data.get('virtual_module', {})
-    technology = virtual_module.get('technology') if virtual_module else None
-
-    # If no virtual_module, infer technology from build_systems
-    if not technology:
-        build_systems = module_data.get('build_systems', [])
-        if build_systems:
-            technology = build_systems[0]
-
-    # Validate skills match technology
-    if technology:
-        warnings.extend(_validate_skills_for_technology(skills_by_profile, technology))
 
     enriched = load_llm_enriched(project_dir)
 
@@ -737,6 +805,31 @@ def cmd_enrich_best_practice(args) -> int:
         print('error: Enrichment data not found')
         print(f'expected_file: {get_enriched_path(args.project_dir)}')
         print("resolution: Run 'architecture.py init' first")
+        return 1
+    except Exception as e:
+        print('status\terror', file=sys.stderr)
+        print(f'error\t{e}', file=sys.stderr)
+        return 1
+
+
+def cmd_enrich_add_domain(args) -> int:
+    """CLI handler for enrich add-domain command."""
+    try:
+        include_optionals = getattr(args, 'include_optionals', False)
+        reasoning = getattr(args, 'reasoning', None)
+        result = enrich_add_domain(
+            args.module, args.domain, args.project_dir, include_optionals, reasoning
+        )
+        print(f'status\t{result["status"]}')
+        print(f'module\t{result["module"]}')
+        print(f'domain\t{result["domain"]}')
+        print_toon_list('profiles_updated', result['profiles_updated'])
+        _print_skills_by_profile(result['skills_by_profile'])
+        return 0
+    except ModuleNotFoundError:
+        return _handle_module_not_found(args.module, args.project_dir)
+    except (DataNotFoundError, ValueError) as e:
+        print(f'error\t{e}')
         return 1
     except Exception as e:
         print('status\terror', file=sys.stderr)

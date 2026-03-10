@@ -74,6 +74,29 @@ class Extension(ExtensionBase):
             },
         }
 
+    def applies_to_module(self, module_data: dict) -> dict:
+        """Check if documentation domain applies based on doc directories."""
+        paths = module_data.get('paths', {})
+        module_path = paths.get('module', '')
+        sources = paths.get('sources', [])
+
+        signals = []
+        all_paths = [module_path] + sources
+        for p in all_paths:
+            p_str = str(p)
+            if 'doc' in p_str.lower():
+                signals.append(f'doc directory in {p}')
+
+        # Check build_systems for documentation marker
+        build_systems = module_data.get('build_systems', [])
+        if 'documentation' in build_systems:
+            signals.append('build_systems=documentation')
+
+        if not signals:
+            return {'applicable': False, 'confidence': 'none', 'signals': [], 'additive_to': None, 'skills_by_profile': {}}
+
+        return self._build_applicable_result('high', signals)
+
     def provides_verify_steps(self) -> list[dict]:
         """Return documentation-specific verification steps."""
         return [

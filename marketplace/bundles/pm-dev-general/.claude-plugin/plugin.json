@@ -1,0 +1,21 @@
+{
+  "name": "pm-dev-general",
+  "version": "0.1-BETA",
+  "description": "Cross-cutting development principles covering testing methodology, documentation standards, and code quality patterns",
+  "author": {
+    "name": "https://github.com/cuioss/plan-marshall",
+    "email": "contact@cuioss.de"
+  },
+  "license": "AGPL-3.0-only",
+  "homepage": "https://github.com/cuioss/plan-marshall",
+  "repository": "https://github.com/cuioss/plan-marshall.git",
+  "keywords": ["development", "testing", "documentation", "code-quality", "standards", "principles"],
+  "agents": [],
+  "commands": [],
+  "skills": [
+    "./skills/dev-testing",
+    "./skills/dev-code-documentation",
+    "./skills/dev-code-quality",
+    "./skills/plan-marshall-plugin"
+  ]
+}

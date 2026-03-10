@@ -185,6 +185,94 @@ def test_extension_base_default_recipes():
     assert ext.provides_recipes() == []
 
 
+# =============================================================================
+# Tests for applies_to_module() and _build_applicable_result()
+# =============================================================================
+
+
+def test_extension_base_default_applies_to_module():
+    """Default applies_to_module returns not applicable."""
+    ext = ConcreteExtension()
+    result = ext.applies_to_module({'build_systems': ['maven']})
+    assert result['applicable'] is False
+    assert result['confidence'] == 'none'
+    assert result['signals'] == []
+    assert result['additive_to'] is None
+    assert result['skills_by_profile'] == {}
+
+
+class ExtensionWithProfiles(ExtensionBase):
+    """Extension with profiles for testing _build_applicable_result."""
+
+    def get_skill_domains(self) -> dict:
+        return {
+            'domain': {'key': 'test-profiles'},
+            'profiles': {
+                'core': {
+                    'defaults': [{'skill': 'bundle:core-skill', 'description': 'core'}],
+                    'optionals': [{'skill': 'bundle:core-opt', 'description': 'core optional'}],
+                },
+                'implementation': {
+                    'defaults': [{'skill': 'bundle:impl-skill', 'description': 'impl'}],
+                    'optionals': [],
+                },
+                'module_testing': {
+                    'defaults': [{'skill': 'bundle:test-skill', 'description': 'test'}],
+                    'optionals': [],
+                },
+            },
+        }
+
+
+def test_build_applicable_result_merges_core():
+    """_build_applicable_result merges core into each profile."""
+    ext = ExtensionWithProfiles()
+    result = ext._build_applicable_result('high', ['test signal'])
+
+    assert result['applicable'] is True
+    assert result['confidence'] == 'high'
+    assert result['signals'] == ['test signal']
+    assert result['additive_to'] is None
+
+    sbp = result['skills_by_profile']
+    # implementation should have core defaults + impl defaults
+    impl = sbp['implementation']
+    impl_default_skills = [e['skill'] if isinstance(e, dict) else e for e in impl['defaults']]
+    assert 'bundle:core-skill' in impl_default_skills
+    assert 'bundle:impl-skill' in impl_default_skills
+
+    # implementation optionals should include core optionals
+    impl_opt_skills = [e['skill'] if isinstance(e, dict) else e for e in impl['optionals']]
+    assert 'bundle:core-opt' in impl_opt_skills
+
+
+def test_build_applicable_result_with_additive_to():
+    """_build_applicable_result with additive_to parameter."""
+    ext = ExtensionWithProfiles()
+    result = ext._build_applicable_result('high', ['signal'], additive_to='parent')
+
+    assert result['additive_to'] == 'parent'
+
+
+class ExtensionEmptyProfiles(ExtensionBase):
+    """Extension with empty profiles."""
+
+    def get_skill_domains(self) -> dict:
+        return {
+            'domain': {'key': 'empty'},
+            'profiles': {},
+        }
+
+
+def test_build_applicable_result_empty_profiles():
+    """_build_applicable_result with empty profiles returns empty skills_by_profile."""
+    ext = ExtensionEmptyProfiles()
+    result = ext._build_applicable_result('low', ['minimal'])
+
+    assert result['applicable'] is True
+    assert result['skills_by_profile'] == {}
+
+
 if __name__ == '__main__':
     import traceback
 
@@ -204,6 +292,10 @@ if __name__ == '__main__':
         test_extension_base_default_outline_skill,
         test_extension_base_default_verify_steps,
         test_extension_base_default_recipes,
+        test_extension_base_default_applies_to_module,
+        test_build_applicable_result_merges_core,
+        test_build_applicable_result_with_additive_to,
+        test_build_applicable_result_empty_profiles,
     ]
 
     passed = 0

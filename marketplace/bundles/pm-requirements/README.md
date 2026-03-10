@@ -92,11 +92,6 @@ Integrates with Java development standards:
 - JavaDoc references to specifications
 - Implementation traceability patterns
 
-## Bundle Statistics
-
-- **Skills**: 6 (domain knowledge)
-- **Scripts**: 0
-
 ## Support
 
 - Repository: https://github.com/cuioss/plan-marshall

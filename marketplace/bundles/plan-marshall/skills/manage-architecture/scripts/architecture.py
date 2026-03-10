@@ -72,6 +72,10 @@ def main():
     resolve_parser.add_argument('--command', required=True, dest='resolve_command', help='Command name to resolve')
     resolve_parser.add_argument('--name', help='Module name (default: root module)')
 
+    # suggest-domains - Suggest applicable skill domains for a module
+    suggest_parser = subparsers.add_parser('suggest-domains', help='Suggest applicable skill domains for a module')
+    suggest_parser.add_argument('--module', required=True, help='Module name')
+
     # profiles - Extract unique profiles from modules
     profiles_parser = subparsers.add_parser(
         'profiles', help='Extract unique profile keys from skills_by_profile for modules'
@@ -150,6 +154,17 @@ def main():
     enrich_bp_parser.add_argument('--module', required=True, help='Module name')
     enrich_bp_parser.add_argument('--practice', required=True, help='Established best practice')
 
+    # enrich add-domain
+    enrich_add_domain_parser = enrich_subparsers.add_parser(
+        'add-domain', help='Add a domain\'s skills to a module additively'
+    )
+    enrich_add_domain_parser.add_argument('--module', required=True, help='Module name')
+    enrich_add_domain_parser.add_argument('--domain', required=True, help='Domain key (e.g., java, general-dev)')
+    enrich_add_domain_parser.add_argument(
+        '--include-optionals', dest='include_optionals', action='store_true', help='Include optional skills'
+    )
+    enrich_add_domain_parser.add_argument('--reasoning', help='Rationale for adding this domain')
+
     # =========================================================================
     # Parse and Dispatch
     # =========================================================================
@@ -167,6 +182,7 @@ def main():
         cmd_resolve,
     )
     from _cmd_enrich import (
+        cmd_enrich_add_domain,
         cmd_enrich_best_practice,
         cmd_enrich_dependencies,
         cmd_enrich_insight,
@@ -182,6 +198,7 @@ def main():
         cmd_discover,
         cmd_init,
     )
+    from _cmd_suggest import cmd_suggest_domains
 
     # Dispatch to handlers
     handlers = {
@@ -196,6 +213,7 @@ def main():
         'commands': cmd_commands,
         'resolve': cmd_resolve,
         'profiles': cmd_profiles,
+        'suggest-domains': cmd_suggest_domains,
     }
 
     if args.command == 'enrich':
@@ -208,6 +226,7 @@ def main():
             'tip': cmd_enrich_tip,
             'insight': cmd_enrich_insight,
             'best-practice': cmd_enrich_best_practice,
+            'add-domain': cmd_enrich_add_domain,
         }
         handler = enrich_handlers.get(args.enrich_command)
     else:

@@ -62,11 +62,6 @@ pm-dev-frontend/
             └── npm-output.py
 ```
 
-## Bundle Statistics
-
-- **Skills**: 8 (domain knowledge with integrated workflows)
-- **Scripts**: 3+ (Python automation)
-
 ## Dependencies
 
 ### External Dependencies

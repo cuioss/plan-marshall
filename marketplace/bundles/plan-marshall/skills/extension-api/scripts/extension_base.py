@@ -361,6 +361,86 @@ class ExtensionBase(ABC):
         """
         return []
 
+    def applies_to_module(self, module_data: dict) -> dict:
+        """Check if this domain applies to a specific module and return resolved skills.
+
+        Called during architecture enrichment to determine which skill domains
+        apply to a module and what skills they provide. Each extension decides
+        based on signals in the module's derived data and can customize which
+        skills are defaults vs optionals per module.
+
+        Args:
+            module_data: Module dict from derived-data.json containing:
+                build_systems, paths, dependencies, packages, metadata, stats
+
+        Returns:
+            {
+                'applicable': bool,
+                'confidence': 'high' | 'medium' | 'low' | 'none',
+                'signals': list[str],
+                'additive_to': str | None,  # parent domain key (e.g., 'java')
+                'skills_by_profile': {      # only when applicable
+                    'implementation': {
+                        'defaults': [{'skill': str, 'description': str}],
+                        'optionals': [{'skill': str, 'description': str}]
+                    },
+                    ...
+                }
+            }
+
+        Default returns not applicable. Override in extensions.
+        Implementations typically call self.get_skill_domains() for base profiles,
+        then adjust defaults/optionals based on module_data signals.
+        """
+        return {
+            'applicable': False,
+            'confidence': 'none',
+            'signals': [],
+            'additive_to': None,
+            'skills_by_profile': {},
+        }
+
+    def _build_applicable_result(self, confidence: str, signals: list[str],
+                                  additive_to: str | None = None) -> dict:
+        """Helper: build applicable result from own get_skill_domains() profiles.
+
+        Merges 'core' profile into each non-core profile to produce a flat
+        skills_by_profile dict ready for consumption.
+
+        Args:
+            confidence: 'high', 'medium', or 'low'
+            signals: List of signal strings explaining why applicable
+            additive_to: Parent domain key if this is an additive domain
+
+        Returns:
+            Full applies_to_module result dict with applicable=True
+        """
+        domains = self.get_skill_domains()
+        profiles = domains.get('profiles', {})
+        core = profiles.get('core', {})
+        core_defaults = core.get('defaults', [])
+        core_optionals = core.get('optionals', [])
+
+        skills_by_profile: dict[str, dict] = {}
+        for profile_name in ['implementation', 'module_testing', 'integration_testing',
+                             'quality', 'documentation']:
+            profile = profiles.get(profile_name, {})
+            if profile or core_defaults or core_optionals:
+                merged_defaults = list(core_defaults) + list(profile.get('defaults', []))
+                merged_optionals = list(core_optionals) + list(profile.get('optionals', []))
+                if merged_defaults or merged_optionals:
+                    skills_by_profile[profile_name] = {
+                        'defaults': merged_defaults,
+                        'optionals': merged_optionals,
+                    }
+        return {
+            'applicable': True,
+            'confidence': confidence,
+            'signals': signals,
+            'additive_to': additive_to,
+            'skills_by_profile': skills_by_profile,
+        }
+
     def provides_recipes(self) -> list[dict]:
         """Return domain-specific recipe definitions.
 

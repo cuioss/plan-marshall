@@ -1,43 +1,24 @@
 # JUnit Core Testing Standards
 
+For general testing principles (AAA pattern, test organization, coverage requirements, test reliability), see `pm-dev-general:dev-testing`. This document covers JUnit 5-specific API and patterns.
+
 ## Fundamental Rules
 
 * **Never introduce libraries** without asking the user first. This includes test utilities, assertion libraries, mocking frameworks, and any other dependency.
-* **No zero-benefit comments**. Do not add `// Arrange`, `// Act`, `// Assert` or similar phase markers — whitespace separation makes the structure clear. Comments are only justified when they explain non-obvious setup or business logic.
-* **Use generators for test data** — never hardcoded literals. Use randomized generators (e.g., `Generators.nonEmptyStrings().next()`, `UUID.randomUUID()`) so tests prove behavior works for any valid input, not just `"test"` or `42`. See `pm-dev-java-cui:cui-testing` for CUI generator framework.
+* Use randomized generators (e.g., `Generators.nonEmptyStrings().next()`, `UUID.randomUUID()`) for test data. See `pm-dev-java-cui:cui-testing` for CUI generator framework.
 * **Never use `Thread.sleep`** for waiting in tests. Use Awaitility for all async waiting — it provides readable, timeout-safe polling. See `standards/testing-async-patterns.md` for patterns.
 * **Never use reflection** to access private fields or methods in tests — this is always a bug, not a workaround. If code is hard to test, prefer these alternatives in order:
   1. **Refactor for testability** — extract logic into a testable collaborator or method
   2. **Relax visibility** — change `private` to package-private so the test (same package) can access it directly
-  Neither is perfect, but both are better than reflection hacks or brittle tests that break on internal renames.
-* **Always test corner cases**: null inputs, empty collections, boundary values, error paths. Group corner cases in `@Nested` classes or dedicated test types.
 
 ## Test Class Requirements
 
-Each type (class, interface, enum with behavior) requires at least one dedicated test class.
-
+* At least one test class per production class — split into multiple at ~200 lines
 * Test class naming: `{ClassName}Test.java` for production class `{ClassName}.java`
 * Test classes in same package structure under `src/test/java`
-* One test class per production class (1:1 mapping)
+* **Exceptions:** Enums without custom methods (only constants).
 
-**Splitting large test classes**: When a test class exceeds ~200 lines, split into multiple types:
-* `{ClassName}Test.java` — happy-path and core behavior
-* `{ClassName}EdgeCaseTest.java` — corner cases and error paths
-* `{ClassName}IntegrationTest.java` — integration scenarios
-
-**Exceptions:** Enums without custom methods (only constants).
-
-## Test Coverage
-
-* Minimum 80% line coverage
-* Minimum 80% branch coverage
-* Critical/hot paths: aim for near 100% coverage (security, validation, error handling, core business logic)
-* All public APIs must be tested
-* No coverage regressions allowed
-
-## AAA Pattern (Arrange-Act-Assert)
-
-All tests follow the AAA pattern — separated by blank lines, no phase comments:
+## JUnit 5 AAA Pattern
 
 ```java
 @Test
@@ -52,10 +33,6 @@ void shouldValidateTokenWithCorrectIssuer() {
     assertEquals(issuer, result.getIssuer(), "Issuer should match");
 }
 ```
-
-* One logical assertion per test (use `assertAll` to group related assertions)
-* Descriptive variable names
-* Generated test data, not literals
 
 ## JUnit 5 Assertion Features
 
@@ -155,21 +132,12 @@ class TokenValidatorTest {
 
 ## Test Types
 
-### Unit Tests
-
-* Test a single unit in isolation
-* Mock or stub dependencies
-* Test classes named `*Test.java`
-
-### Integration Tests
-
-* Test interaction between components
-* May use real dependencies or test doubles
-* Test classes named `*IT.java` or `*ITCase.java`
-* See `standards/testing-integration.md` for naming conventions, separation patterns, and nesting
+* Unit test classes named `*Test.java`
+* Integration test classes named `*IT.java` or `*ITCase.java`
 * See `pm-dev-java:junit-integration` skill for Maven Failsafe/Surefire configuration
 
 ## Related Skills
 
+- `pm-dev-general:dev-testing` - Language-agnostic testing principles (AAA, coverage, reliability)
 - `pm-dev-java-cui:cui-testing` - CUI-specific test generators and library restrictions
 - `pm-dev-java:junit-integration` - Maven Failsafe/Surefire configuration

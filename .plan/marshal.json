@@ -33,7 +33,11 @@
       "verification_max_iterations": 5,
       "verification_1_quality_check": true,
       "verification_2_build_verify": true,
-      "verification_domain_steps": {}
+      "verification_domain_steps": {
+        "documentation": {
+          "1_doc_sync": "pm-documents:doc-verify"
+        }
+      }
     },
     "phase-6-finalize": {
       "max_iterations": 3,
@@ -55,7 +59,7 @@
       ],
       "task_executors": {
         "implementation": "plan-marshall:task-implementation",
-        "module_testing": "plan-marshall:task-module_testing",
+        "module_testing": "plan-marshall:task-module-testing",
         "integration_testing": "plan-marshall:task-integration_testing",
         "verification": "plan-marshall:task-verification"
       }
@@ -85,6 +89,12 @@
           "source": "project"
         }
       ]
+    },
+    "python": {
+      "bundle": "pm-dev-python"
+    },
+    "general-dev": {
+      "bundle": "pm-dev-general"
     }
   },
   "system": {

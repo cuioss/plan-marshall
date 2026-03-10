@@ -64,12 +64,6 @@ pm-dev-java/
 - **java-coverage-agent** - Coverage analysis
 - **java-verify-agent** - Standards verification
 
-## Bundle Statistics
-
-- **Agents**: 2 (verification)
-- **Skills**: 12 (domain knowledge, testing, CDI, documentation)
-- **Scripts**: 3+ (Python automation)
-
 ## Dependencies
 
 - **builder-maven** - For Maven build operations

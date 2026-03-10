@@ -1,8 +1,6 @@
 # JSDoc Essentials
 
-## Purpose
-
-Core JSDoc standards for CUI JavaScript projects including required tags, ESLint integration, and documentation requirements.
+For general documentation principles (what/when/how to document, clarity, completeness), see `pm-dev-general:dev-code-documentation`. This document covers JSDoc-specific tag syntax, ESLint integration, and type annotations.
 
 ## ESLint Configuration
 
@@ -31,24 +29,6 @@ module.exports = {
   }
 };
 ```
-
-## Documentation Requirements
-
-### Mandatory Documentation
-
-Must be documented:
-- All public functions and methods
-- All classes and constructors
-- All exported modules
-- Complex algorithms or business logic
-- Configuration objects and constants
-
-### Optional Documentation
-
-May be documented based on complexity:
-- Private methods (when complex)
-- Simple getter/setter methods
-- Utility functions (when purpose isn't clear from name)
 
 ## Comment Structure
 
@@ -167,14 +147,6 @@ May be documented based on complexity:
  * @returns {User} Updated user
  */
 ```
-
-## Writing Style
-
-- **Present tense** - "Calculates total", not "Will calculate"
-- **Active voice** - "Validates input", not "Input is validated"
-- **Complete sentences** - Proper capitalization and punctuation
-- **Clear and specific** - Avoid vague descriptions like "processes data"
-- **No redundancy** - Don't just repeat the function name
 
 ## Build Integration
 

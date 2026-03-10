@@ -116,9 +116,10 @@ This skill provides access to JavaScript development standards through:
 
 ### Related Skills
 For comprehensive frontend development, this skill works with:
+- `pm-dev-general:dev-code-quality` - Language-agnostic code quality principles
+- `pm-dev-general:dev-code-documentation` - Language-agnostic documentation principles
 - CSS standards (cui-css skill)
 - Testing standards (to be provided in separate skill)
-- Web components standards (to be provided in separate skill)
 
 ### Build Integration
 JavaScript standards integrate with:

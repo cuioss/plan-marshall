@@ -12,12 +12,14 @@ AskUserQuestion:
   header: "Maintenance"
   options:
     - label: "1. All"
-      description: "Regenerate executor + cleanup (recommended)"
+      description: "Regenerate executor + architecture + cleanup (recommended)"
     - label: "2. Regenerate Executor"
       description: "Rebuild executor with fresh script mappings"
-    - label: "3. Cleanup"
+    - label: "3. Regenerate Architecture"
+      description: "Re-detect project structure and extensions"
+    - label: "4. Cleanup"
       description: "Clean temp, old logs, archived plans, memory"
-    - label: "4. Back"
+    - label: "5. Back"
       description: "Return to main menu"
   multiSelect: false
 ```
@@ -27,20 +29,22 @@ AskUserQuestion:
 | User Selection | Action | After Completion |
 |----------------|--------|------------------|
 | "1. All" | Execute Operation: All (below) | → Return to Main Menu |
-| "2. Regenerate Executor" | Execute Operation: Regenerate (below) | → Return to Main Menu |
-| "3. Cleanup" | Execute Operation: Cleanup (below) | → Return to Main Menu |
-| "4. Back" | Do nothing | → Return to Main Menu |
+| "2. Regenerate Executor" | Execute Operation: Regenerate Executor (below) | → Return to Main Menu |
+| "3. Regenerate Architecture" | Execute Operation: Regenerate Architecture (below) | → Return to Main Menu |
+| "4. Cleanup" | Execute Operation: Cleanup (below) | → Return to Main Menu |
+| "5. Back" | Do nothing | → Return to Main Menu |
 
 ---
 
-## Operation: All (Regenerate + Cleanup)
+## Operation: All (Regenerate + Architecture + Cleanup)
 
-Execute BOTH operations in sequence:
+Execute ALL operations in sequence:
 
 1. Execute "Operation: Regenerate Executor" (below)
-2. Execute "Operation: Cleanup" (below)
+2. Execute "Operation: Regenerate Architecture" (below)
+3. Execute "Operation: Cleanup" (below)
 
-**Output**: Combined summary of both operations.
+**Output**: Combined summary of all operations.
 
 ---
 
@@ -62,6 +66,40 @@ python3 -m py_compile .plan/execute-script.py && echo "Executor syntax OK"
 status	scripts_discovered	executor_generated	logs_cleaned
 success	47	.plan/execute-script.py	0
 ```
+
+---
+
+## Operation: Regenerate Architecture
+
+Re-detect project structure and extensions, preserving existing enrichment data. Unlike the Configuration path, maintenance mode defaults to keeping enrichment (no user prompt) — it's a quick refresh, not a full reconfiguration.
+
+**Step 1: Check existing enrichment**
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture init --check
+```
+
+**Step 2: Run discovery (always `--force` in maintenance)**
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture discover --force
+```
+
+**Step 3: Re-initialize enrichment (preserving existing by default)**
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture init --force
+```
+
+**Step 4: LLM Architectural Analysis (automatic)**
+
+Invoke the analysis skill to auto-populate enrichment with semantic descriptions:
+
+```
+Skill: plan-marshall:manage-architecture
+```
+
+This regenerates `.plan/project-architecture/derived-data.json` from current build file definitions with updated module data and extensions.
 
 ---
 

@@ -38,7 +38,11 @@ class Extension(ExtensionBase):
                         {
                             'skill': 'pm-dev-frontend:cui-javascript',
                             'description': 'Core JavaScript development standards covering ES modules, modern patterns, and code quality',
-                        }
+                        },
+                        {
+                            'skill': 'pm-dev-general:dev-code-quality',
+                            'description': 'Language-agnostic code quality principles (SRP, CQS, complexity, error handling)',
+                        },
                     ],
                     'optionals': [
                         {
@@ -52,7 +56,12 @@ class Extension(ExtensionBase):
                     ],
                 },
                 'implementation': {
-                    'defaults': [],
+                    'defaults': [
+                        {
+                            'skill': 'pm-dev-general:dev-code-documentation',
+                            'description': 'Language-agnostic documentation principles (what/when/how to document)',
+                        },
+                    ],
                     'optionals': [
                         {
                             'skill': 'pm-dev-frontend:js-enforce-eslint',
@@ -61,7 +70,12 @@ class Extension(ExtensionBase):
                     ],
                 },
                 'module_testing': {
-                    'defaults': [],
+                    'defaults': [
+                        {
+                            'skill': 'pm-dev-general:dev-testing',
+                            'description': 'Language-agnostic testing methodology (AAA, coverage, reliability, determinism)',
+                        },
+                    ],
                     'optionals': [
                         {
                             'skill': 'pm-dev-frontend:cui-cypress',
@@ -72,6 +86,30 @@ class Extension(ExtensionBase):
                 'quality': {'defaults': [], 'optionals': []},
             },
         }
+
+    def applies_to_module(self, module_data: dict) -> dict:
+        """Check if JavaScript domain applies based on build systems."""
+        build_systems = module_data.get('build_systems', [])
+        if 'npm' not in build_systems:
+            return {'applicable': False, 'confidence': 'none', 'signals': [], 'additive_to': None, 'skills_by_profile': {}}
+
+        signals = ['build_systems=npm']
+        result = self._build_applicable_result('high', signals)
+
+        # Move cypress to optionals if no cypress dependency
+        deps = module_data.get('dependencies', [])
+        dep_strings = [d if isinstance(d, str) else '' for d in deps]
+        has_cypress = any('cypress' in d for d in dep_strings)
+        if not has_cypress:
+            for profile in result['skills_by_profile'].values():
+                cypress_entries = [e for e in profile.get('defaults', [])
+                                   if isinstance(e, dict) and 'cypress' in e.get('skill', '')]
+                for entry in cypress_entries:
+                    profile['defaults'].remove(entry)
+                    if entry not in profile['optionals']:
+                        profile['optionals'].append(entry)
+
+        return result
 
     def provides_triage(self) -> str | None:
         """Return triage skill reference."""

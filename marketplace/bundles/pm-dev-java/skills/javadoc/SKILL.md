@@ -118,6 +118,7 @@ public Config parse(String filename) { }
 
 ## Related Skills
 
+- `pm-dev-general:dev-code-documentation` - Language-agnostic documentation principles
 - `pm-dev-java:java-core` - Core Java patterns
 - `pm-dev-java:java-null-safety` - Null annotations in docs
 
