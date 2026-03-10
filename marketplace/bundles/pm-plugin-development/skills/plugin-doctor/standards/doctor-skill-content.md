@@ -24,7 +24,7 @@ This workflow analyzes all markdown files within a skill's subdirectories for pr
 ## Phase 1: Load Prerequisites
 
 ```
-Skill: plan-marshall:ref-development-standards
+Skill: pm-dev-general:dev-practices
 Skill: pm-plugin-development:plugin-architecture
 Read references/content-classification-guide.md
 Read references/content-quality-guide.md

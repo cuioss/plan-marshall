@@ -238,7 +238,7 @@ def test_skill_domains_detect_runs():
     with PlanContext() as ctx:
         # Create minimal marshal.json
         config = {
-            'skill_domains': {'system': {'defaults': ['plan-marshall:ref-development-standards'], 'optionals': []}},
+            'skill_domains': {'system': {'defaults': ['pm-dev-general:dev-practices'], 'optionals': []}},
             'system': {'retention': {}},
             'plan': {
                 'phase-1-init': {'branch_strategy': 'direct'},
@@ -1078,7 +1078,7 @@ def test_configure_preserves_project_skills():
         config = {
             'skill_domains': {
                 'system': {
-                    'defaults': ['plan-marshall:ref-development-standards'],
+                    'defaults': ['pm-dev-general:dev-practices'],
                     'project_skills': ['project:system-skill'],
                     'task_executors': {
                         'implementation': 'plan-marshall:task-implementation',
@@ -1193,7 +1193,7 @@ def test_get_nested_includes_project_skills():
         config = {
             'skill_domains': {
                 'system': {
-                    'defaults': ['plan-marshall:ref-development-standards'],
+                    'defaults': ['pm-dev-general:dev-practices'],
                     'project_skills': ['project:my-tool'],
                     'task_executors': {},
                 },

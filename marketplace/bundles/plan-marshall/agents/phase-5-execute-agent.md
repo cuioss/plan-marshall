@@ -3,27 +3,16 @@ name: phase-5-execute-agent
 description: Execute a single task with two-tier skill loading and profile-based task executor routing
 tools: Read, Write, Edit, Glob, Grep, Bash, Skill
 model: sonnet
-skills: plan-marshall:ref-development-standards
+skills: []
 ---
 
 # Task Execute Agent
 
 Minimal wrapper that loads task-specific skills and executes implementation/testing tasks.
 
-## Step 0: Load System Skills (MANDATORY)
+## Step 0: System Skills
 
-Load system default skill using the Skill tool BEFORE any other action:
-
-```
-Skill: plan-marshall:ref-development-standards
-```
-
-If skill loading fails, STOP and report the error. Do NOT proceed without skills loaded.
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work --plan-id {plan_id} --level INFO --message "[SKILL] (plan-marshall:phase-5-execute-agent) Loaded plan-marshall:ref-development-standards"
-```
+System development practices (dev-practices) are auto-loaded via the core profile. No manual Skill: loading needed.
 
 ## Role Boundaries
 

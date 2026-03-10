@@ -605,7 +605,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config skill-
 ```json
 {
   "system": {
-    "defaults": ["plan-marshall:ref-development-standards"],
+    "defaults": ["pm-dev-general:dev-practices"],
     "optionals": [...],
     "task_executors": {
       "implementation": "plan-marshall:task-implementation",

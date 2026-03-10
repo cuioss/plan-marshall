@@ -303,8 +303,8 @@ The defaults template contains only `system` domain. Technical domains (java, ja
 {
   "skill_domains": {
     "system": {
-      "defaults": ["plan-marshall:ref-development-standards"],
-      "optionals": ["plan-marshall:ref-development-standards"],
+      "defaults": ["pm-dev-general:dev-practices"],
+      "optionals": ["pm-dev-general:dev-practices"],
       "task_executors": {
         "implementation": "plan-marshall:task-implementation",
         "module_testing": "plan-marshall:task-module-testing",
@@ -364,7 +364,7 @@ The `system` domain contains task executors and base skills applied to all tasks
 
 | Field | Purpose |
 |-------|---------|
-| `defaults` | Base skills loaded for all tasks (`plan-marshall:ref-development-standards`) |
+| `defaults` | Base skills loaded for all tasks (`pm-dev-general:dev-practices`) |
 | `optionals` | Optional base skills available for selection |
 | `task_executors` | Maps profiles to task executor skills (convention: profile X -> `plan-marshall:task-X`) |
 

@@ -14,7 +14,7 @@ Semantic analysis of tool usage in a single marketplace component.
 Load development standards before any work:
 
 ```
-Skill: plan-marshall:ref-development-standards
+Skill: pm-dev-general:dev-practices
 ```
 
 This ensures proper tool usage patterns.

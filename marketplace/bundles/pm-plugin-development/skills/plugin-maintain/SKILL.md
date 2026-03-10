@@ -85,7 +85,7 @@ All scripts are stdlib-only with JSON output.
 
 ```
 Skill: pm-plugin-development:plugin-architecture
-Skill: plan-marshall:ref-development-standards
+Skill: pm-dev-general:dev-practices
 ```
 
 These provide architecture principles and non-prompting tool usage patterns.
@@ -156,7 +156,7 @@ Report results including:
 
 ```
 Skill: pm-plugin-development:plugin-architecture
-Skill: plan-marshall:ref-development-standards
+Skill: pm-dev-general:dev-practices
 ```
 
 These provide architecture principles and non-prompting tool usage patterns.
@@ -225,7 +225,7 @@ Add reference based on load_type:
 
 ```
 Skill: pm-plugin-development:plugin-architecture
-Skill: plan-marshall:ref-development-standards
+Skill: pm-dev-general:dev-practices
 ```
 
 These provide architecture principles and non-prompting tool usage patterns.
@@ -285,7 +285,7 @@ Report:
 
 ```
 Skill: pm-plugin-development:plugin-architecture
-Skill: plan-marshall:ref-development-standards
+Skill: pm-dev-general:dev-practices
 ```
 
 These provide architecture principles and non-prompting tool usage patterns.
@@ -345,7 +345,7 @@ Report any issues introduced.
 
 ```
 Skill: pm-plugin-development:plugin-architecture
-Skill: plan-marshall:ref-development-standards
+Skill: pm-dev-general:dev-practices
 ```
 
 These provide architecture principles and non-prompting tool usage patterns.
