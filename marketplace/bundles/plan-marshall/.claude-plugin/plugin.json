@@ -25,6 +25,10 @@
     "./commands/tools-sync-agents-file.md"
   ],
   "skills": [
+    "./skills/build-gradle",
+    "./skills/build-maven",
+    "./skills/build-npm",
+    "./skills/build-python",
     "./skills/extension-api",
     "./skills/manage-architecture",
     "./skills/manage-lessons",

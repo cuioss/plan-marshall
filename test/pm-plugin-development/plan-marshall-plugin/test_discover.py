@@ -100,7 +100,7 @@ class TestBuildCommands(unittest.TestCase):
         self.assertIn('coverage', commands)
         self.assertIn('clean', commands)
         # Commands should use python_build via execute-script
-        self.assertIn('pm-dev-python:plan-marshall-plugin:python_build', commands['module-tests'])
+        self.assertIn('plan-marshall:build-python:python_build', commands['module-tests'])
         self.assertIn('pm-plugin-development', commands['module-tests'])
 
 
@@ -123,7 +123,7 @@ class TestBuildDefaultModule(unittest.TestCase):
         self.assertIn('module-tests', module['commands'])
         self.assertIn('verify', module['commands'])
         # Commands should use python_build via execute-script
-        self.assertIn('pm-dev-python:plan-marshall-plugin:python_build', module['commands']['module-tests'])
+        self.assertIn('plan-marshall:build-python:python_build', module['commands']['module-tests'])
 
 
 class TestDiscoverBundles(unittest.TestCase):

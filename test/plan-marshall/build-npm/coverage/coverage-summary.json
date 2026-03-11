@@ -1,0 +1,32 @@
+{
+  "total": {
+    "lines": { "total": 250, "covered": 175, "skipped": 0, "pct": 70 },
+    "statements": { "total": 280, "covered": 196, "skipped": 0, "pct": 70 },
+    "functions": { "total": 45, "covered": 32, "skipped": 0, "pct": 71.11 },
+    "branches": { "total": 60, "covered": 36, "skipped": 0, "pct": 60 }
+  },
+  "/src/utils/formatter.js": {
+    "lines": { "total": 50, "covered": 40, "skipped": 0, "pct": 80 },
+    "statements": { "total": 55, "covered": 44, "skipped": 0, "pct": 80 },
+    "functions": { "total": 8, "covered": 7, "skipped": 0, "pct": 87.5 },
+    "branches": { "total": 12, "covered": 8, "skipped": 0, "pct": 66.67 }
+  },
+  "/src/utils/validator.js": {
+    "lines": { "total": 40, "covered": 35, "skipped": 0, "pct": 87.5 },
+    "statements": { "total": 45, "covered": 40, "skipped": 0, "pct": 88.89 },
+    "functions": { "total": 6, "covered": 6, "skipped": 0, "pct": 100 },
+    "branches": { "total": 10, "covered": 8, "skipped": 0, "pct": 80 }
+  },
+  "/src/components/Button.js": {
+    "lines": { "total": 60, "covered": 30, "skipped": 0, "pct": 50 },
+    "statements": { "total": 70, "covered": 35, "skipped": 0, "pct": 50 },
+    "functions": { "total": 12, "covered": 6, "skipped": 0, "pct": 50 },
+    "branches": { "total": 18, "covered": 6, "skipped": 0, "pct": 33.33 }
+  },
+  "/src/services/api.js": {
+    "lines": { "total": 100, "covered": 70, "skipped": 0, "pct": 70 },
+    "statements": { "total": 110, "covered": 77, "skipped": 0, "pct": 70 },
+    "functions": { "total": 19, "covered": 13, "skipped": 0, "pct": 68.42 },
+    "branches": { "total": 20, "covered": 14, "skipped": 0, "pct": 70 }
+  }
+}

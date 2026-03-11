@@ -36,7 +36,7 @@ Commands are executed via the extension-api:
 
 ```bash
 # Resolve and execute verify command
-python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run \
+python3 .plan/execute-script.py plan-marshall:build-python:python_build run \
     --command-args "verify"
 ```
 

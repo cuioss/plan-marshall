@@ -10,7 +10,7 @@ Architecture for unified CI operations using static routing pattern.
 
 | Domain | Config Example |
 |--------|----------------|
-| **Build** | `"test": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --targets \"test\""` |
+| **Build** | `"test": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --targets \"test\""` |
 | **CI** | `"pr-create": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr create"` |
 
 **Benefits**:

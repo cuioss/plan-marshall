@@ -44,7 +44,7 @@ Discovers marketplace bundles as modules. Each bundle in `marketplace/bundles/` 
 
 ### Canonical Commands
 
-Each bundle module gets the full set of canonical Python build commands via `pm-dev-python:plan-marshall-plugin:python_build`:
+Each bundle module gets the full set of canonical Python build commands via `plan-marshall:build-python:python_build`:
 
 | Command | Execution |
 |---------|-----------|

@@ -1,19 +1,18 @@
 ---
 name: plan-marshall-plugin
-description: Java domain extension with Maven/Gradle build operations and workflow integration
+description: Java domain extension with skill domains, module applicability, and workflow integration
 user-invocable: false
 ---
 
 # Plan Marshall Plugin - Java Domain
 
-Domain extension providing Java development capabilities to plan-marshall workflows, including Maven and Gradle build execution with output parsing.
+Domain extension providing Java development skill registration to plan-marshall workflows.
 
 ## Purpose
 
-- Domain identity and workflow extensions (outline, triage)
-- Maven and Gradle build execution with parsed output
-- Module detection and profile classification
-- Profile-based skill organization
+- Domain identity and workflow extensions (triage, verification)
+- Profile-based skill organization for Java projects
+- Module applicability detection based on Maven/Gradle build systems
 
 ## Extension API
 
@@ -22,193 +21,26 @@ Configuration in `extension.py` implements the Extension API contract:
 | Function | Purpose |
 |----------|---------|
 | `get_skill_domains()` | Domain metadata with profiles |
+| `applies_to_module()` | Check Java applicability via build systems |
 | `provides_triage()` | Returns `pm-dev-java:ext-triage-java` |
-| `discover_modules(project_root)` | Discover Maven/Gradle modules with metadata, commands |
-
----
-
-## Scripts Overview
-
-| Script | Type | Purpose |
-|--------|------|---------|
-| `extension.py` | Extension | ExtensionBase implementation |
-| `maven.py` | CLI | Maven operations dispatcher |
-| `gradle.py` | CLI | Gradle operations dispatcher |
-| `_maven_execute.py` | Library | Foundation execution, wrapper detection |
-| `_maven_cmd_discover.py` | Library | Module discovery via pom.xml |
-| `_maven_cmd_parse.py` | Library | Log parsing, issue extraction |
-| `_gradle_execute.py` | Library | Foundation execution, wrapper detection |
-| `_gradle_cmd_discover.py` | Library | Module discovery via build.gradle |
-| `_gradle_cmd_parse.py` | Library | Log parsing, issue extraction |
-
----
-
-## Wrapper Detection
-
-Both Maven and Gradle prefer project-local wrappers:
-
-```
-Maven:  ./mvnw > mvn (on PATH)
-Gradle: ./gradlew > gradle (on PATH)
-```
-
-The `detect_wrapper(project_dir)` function checks for wrapper scripts in the project root before falling back to system commands.
-
----
-
-## Timeout Learning
-
-Command durations are recorded for adaptive timeouts:
-
-```python
-# Before execution
-timeout = timeout_get("maven:verify", default=300, project_dir=".")
-# Returns: learned * 1.25 or default
-
-# After execution
-timeout_set("maven:verify", duration=45, project_dir=".")
-# Updates .plan/run-configuration.json
-```
-
-Minimum enforced: 120 seconds (prevents warm JVM timing issues from affecting cold starts).
-
----
+| `provides_verify_steps()` | Java verification agents |
+| `provides_recipes()` | Custom recipe definitions |
 
 ## Build Operations
 
-Scripts for Maven and Gradle build execution.
-
-### Maven run (Primary API)
-
-Unified command that executes build and returns parsed output on failure.
-
-```bash
-python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run \
-    --targets "<goals>" \
-    [--module <module>] \
-    [--profile <profile>] \
-    [--timeout <seconds>] \
-    [--mode <mode>]
-```
-
-**Parameters**:
-- `--targets` - Maven goals to execute (required)
-- `--module` - Target module for multi-module projects
-- `--profile` - Maven profile to activate
-- `--timeout` - Timeout in seconds (default from run-config)
-- `--mode` - Output mode: actionable (default), structured, errors
-
-**Output Format (TOON)** - tab-separated key-value pairs:
-
-Success:
-```
-status	success
-exit_code	0
-duration_seconds	45
-log_file	.plan/temp/build-output/default/maven-2026-01-04-143022.log
-command	./mvnw -l .plan/temp/build-output/... clean test -pl core
-```
-
-Build Failed:
-```
-status	error
-exit_code	1
-duration_seconds	23
-log_file	.plan/temp/build-output/default/maven-2026-01-04-143022.log
-command	./mvnw -l .plan/temp/build-output/... clean test
-error	build_failed
-
-errors[2]{file,line,message,category}:
-src/main/java/Foo.java    42    cannot find symbol       compile
-src/main/java/Bar.java    15    null pointer             test
-
-tests:
-  passed: 40
-  failed: 2
-  skipped: 1
-```
-
-### Gradle run
-
-```bash
-python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:gradle run \
-    --targets "<tasks>" \
-    [--module <module>] \
-    [--format <toon|json>] \
-    [--timeout <seconds>] \
-    [--mode <mode>]
-```
-
-### Low-level Operations
-
-| Command | Purpose |
-|---------|---------|
-| `maven parse` | Parse build output from log file |
-| `maven search-markers` | Search OpenRewrite TODO markers |
-| `maven check-warnings` | Categorize warnings against patterns |
-| `gradle parse` | Parse Gradle build output |
-| `gradle find-project` | Find Gradle subproject |
-| `gradle search-markers` | Search markers in Gradle project |
-| `gradle check-warnings` | Check Gradle warnings |
-
----
-
-## Output Modes
-
-- **actionable** (default) - Errors + warnings NOT in acceptable_warnings
-- **structured** - All errors + all warnings with `[accepted]` markers
-- **errors** - Only errors, compact format
-
-## Error Categories
-
-| Category | Description |
-|----------|-------------|
-| `compilation_error` | Compile-time Java errors |
-| `test_failure` | Test assertion failures |
-| `dependency_error` | Dependency resolution issues |
-| `javadoc_warning` | JavaDoc documentation issues |
-| `deprecation_warning` | Deprecated API usage |
-| `unchecked_warning` | Unchecked type conversions |
-| `openrewrite_info` | OpenRewrite plugin output |
-
-## Error Codes
-
-| Code | Meaning | Recovery |
-|------|---------|----------|
-| `build_failed` | Non-zero exit code | Errors included in response |
-| `timeout` | Exceeded timeout | Increase timeout, check log_file |
-| `execution_failed` | Process couldn't start | Check wrapper exists |
-| `log_file_creation_failed` | Can't create log | Check permissions |
-
----
-
-## Warning Handling
-
-Manage warnings via run-config:
-
-```bash
-# Add accepted warning
-python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config warning add \
-    --category transitive_dependency \
-    --pattern "commons-logging via spring-core"
-
-# List accepted warnings
-python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config warning list
-```
-
----
+Build operations (Maven/Gradle execution, parsing, discovery) are provided by:
+- `plan-marshall:build-maven` - Maven build execution and module discovery
+- `plan-marshall:build-gradle` - Gradle build execution and module discovery
 
 ## Integration
 
 This extension is discovered by:
-- `extension-api` - Build system detection and command generation
+- `extension-api` - Domain registration
 - `skill-domains` - Domain configuration
 - `marshall-steward` - Project setup wizard
 
 ## References
 
 - `plan-marshall:extension-api` - Extension API contract
-- `plan-marshall:extension-api/standards/build-execution-flow.md` - Complete execution lifecycle
-- `standards/maven-impl.md` - Maven execution details
-- `standards/gradle-impl.md` - Gradle execution details
-- `standards/pom-maintenance.md` - POM structure and dependency management standards
+- `plan-marshall:build-maven` - Maven build operations
+- `plan-marshall:build-gradle` - Gradle build operations

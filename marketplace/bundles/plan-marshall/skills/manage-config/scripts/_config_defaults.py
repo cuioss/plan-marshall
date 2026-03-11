@@ -77,9 +77,9 @@ DEFAULT_PLAN_FINALIZE = {
 
 # Build system defaults (detection reference only - commands are in modules)
 BUILD_SYSTEM_DEFAULTS = {
-    'maven': {'skill': 'pm-dev-java:plan-marshall-plugin'},
-    'gradle': {'skill': 'pm-dev-java:plan-marshall-plugin'},
-    'npm': {'skill': 'pm-dev-frontend:plan-marshall-plugin'},
+    'maven': {'skill': 'plan-marshall:plan-marshall-plugin'},
+    'gradle': {'skill': 'plan-marshall:plan-marshall-plugin'},
+    'npm': {'skill': 'plan-marshall:plan-marshall-plugin'},
 }
 
 

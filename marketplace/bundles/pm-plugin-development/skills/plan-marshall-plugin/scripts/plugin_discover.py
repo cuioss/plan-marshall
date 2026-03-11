@@ -51,7 +51,7 @@ BUNDLES_DIR = 'marketplace/bundles'
 BUILD_SYSTEM = 'marshall-plugin'
 """Build system identifier for plugin bundles."""
 
-PYTHON_BUILD_BASE = 'python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run'
+PYTHON_BUILD_BASE = 'python3 .plan/execute-script.py plan-marshall:build-python:python_build run'
 """Base command for Python build execution via pm-dev-python."""
 
 # Marketplace identification

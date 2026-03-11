@@ -107,7 +107,7 @@ python3 .plan/execute-script.py {notation} [subcommand] {args...}
 
 **Examples**:
 - `python3 .plan/execute-script.py planning:manage-files:manage-files add --plan-id my-plan --file task.md`
-- `python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --targets verify`
+- `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --targets verify`
 - `python3 .plan/execute-script.py planning:manage-config:manage-config set --plan-id my-plan --key foo --value bar`
 
 **Executor features**:
