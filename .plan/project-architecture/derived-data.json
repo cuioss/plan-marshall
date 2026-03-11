@@ -28,13 +28,13 @@
         "bundle_count": 10
       },
       "commands": {
-        "compile": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"compile\"",
-        "test-compile": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"test-compile\"",
-        "module-tests": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"module-tests\"",
-        "quality-gate": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"quality-gate\"",
-        "verify": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"verify\"",
-        "coverage": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"coverage\"",
-        "clean": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"clean\""
+        "compile": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"compile\"",
+        "test-compile": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"test-compile\"",
+        "module-tests": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"module-tests\"",
+        "quality-gate": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"quality-gate\"",
+        "verify": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"verify\"",
+        "coverage": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"coverage\"",
+        "clean": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"clean\""
       }
     },
     "documentation": {
@@ -72,6 +72,26 @@
         "description": "Environment setup, permission management, cross-cutting utilities, and solution-based development workflow from task implementation to PR quality verification"
       },
       "packages": {
+        "skill:build-gradle": {
+          "path": "skills/build-gradle",
+          "type": "skill",
+          "description": "Gradle build operations with execution, parsing, and module discovery"
+        },
+        "skill:build-maven": {
+          "path": "skills/build-maven",
+          "type": "skill",
+          "description": "Maven build operations with execution, parsing, and module discovery"
+        },
+        "skill:build-npm": {
+          "path": "skills/build-npm",
+          "type": "skill",
+          "description": "npm/npx build operations with execution, multi-parser architecture, and coverage analysis"
+        },
+        "skill:build-python": {
+          "path": "skills/build-python",
+          "type": "skill",
+          "description": "Python/pyprojectx build operations with execution and output parsing"
+        },
         "skill:extension-api": {
           "path": "skills/extension-api",
           "type": "skill",
@@ -146,11 +166,6 @@
           "path": "skills/recipe-refactor-to-profile-standards",
           "type": "skill",
           "description": "Domain-invariant recipe for refactoring code to comply with configured profile standards, package by package"
-        },
-        "skill:ref-development-standards": {
-          "path": "skills/ref-development-standards",
-          "type": "skill",
-          "description": "Core development principles for Plan-Marshall projects - when to ask users, research best practices, tool usage, and dependency management"
         },
         "skill:ref-toon-format": {
           "path": "skills/ref-toon-format",
@@ -300,18 +315,18 @@
       },
       "dependencies": [],
       "stats": {
-        "skill_count": 35,
+        "skill_count": 38,
         "agent_count": 8,
         "command_count": 2
       },
       "commands": {
-        "compile": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"compile plan-marshall\"",
-        "test-compile": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"test-compile plan-marshall\"",
-        "module-tests": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"module-tests plan-marshall\"",
-        "quality-gate": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"quality-gate plan-marshall\"",
-        "verify": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"verify plan-marshall\"",
-        "coverage": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"coverage plan-marshall\"",
-        "clean": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"clean plan-marshall\""
+        "compile": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"compile plan-marshall\"",
+        "test-compile": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"test-compile plan-marshall\"",
+        "module-tests": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"module-tests plan-marshall\"",
+        "quality-gate": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"quality-gate plan-marshall\"",
+        "verify": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"verify plan-marshall\"",
+        "coverage": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"coverage plan-marshall\"",
+        "clean": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"clean plan-marshall\""
       }
     },
     "pm-dev-frontend": {
@@ -373,7 +388,7 @@
         "skill:plan-marshall-plugin": {
           "path": "skills/plan-marshall-plugin",
           "type": "skill",
-          "description": "JavaScript domain extension with npm build operations and workflow integration"
+          "description": "JavaScript domain extension with skill domains, module applicability, and workflow integration"
         }
       },
       "dependencies": [],
@@ -383,13 +398,13 @@
         "command_count": 0
       },
       "commands": {
-        "compile": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"compile pm-dev-frontend\"",
-        "test-compile": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"test-compile pm-dev-frontend\"",
-        "module-tests": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"module-tests pm-dev-frontend\"",
-        "quality-gate": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"quality-gate pm-dev-frontend\"",
-        "verify": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"verify pm-dev-frontend\"",
-        "coverage": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"coverage pm-dev-frontend\"",
-        "clean": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"clean pm-dev-frontend\""
+        "compile": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"compile pm-dev-frontend\"",
+        "test-compile": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"test-compile pm-dev-frontend\"",
+        "module-tests": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"module-tests pm-dev-frontend\"",
+        "quality-gate": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"quality-gate pm-dev-frontend\"",
+        "verify": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"verify pm-dev-frontend\"",
+        "coverage": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"coverage pm-dev-frontend\"",
+        "clean": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"clean pm-dev-frontend\""
       }
     },
     "pm-dev-general": {
@@ -428,6 +443,11 @@
           "type": "skill",
           "description": "Language-agnostic code quality principles covering SRP, CQS, complexity thresholds, refactoring triggers, and error handling"
         },
+        "skill:dev-practices": {
+          "path": "skills/dev-practices",
+          "type": "skill",
+          "description": "Foundational development practices covering user interaction, tool usage, research, dependency management, and document proliferation"
+        },
         "skill:plan-marshall-plugin": {
           "path": "skills/plan-marshall-plugin",
           "type": "skill",
@@ -436,18 +456,18 @@
       },
       "dependencies": [],
       "stats": {
-        "skill_count": 4,
+        "skill_count": 5,
         "agent_count": 0,
         "command_count": 0
       },
       "commands": {
-        "compile": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"compile pm-dev-general\"",
-        "test-compile": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"test-compile pm-dev-general\"",
-        "module-tests": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"module-tests pm-dev-general\"",
-        "quality-gate": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"quality-gate pm-dev-general\"",
-        "verify": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"verify pm-dev-general\"",
-        "coverage": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"coverage pm-dev-general\"",
-        "clean": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"clean pm-dev-general\""
+        "compile": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"compile pm-dev-general\"",
+        "test-compile": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"test-compile pm-dev-general\"",
+        "module-tests": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"module-tests pm-dev-general\"",
+        "quality-gate": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"quality-gate pm-dev-general\"",
+        "verify": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"verify pm-dev-general\"",
+        "coverage": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"coverage pm-dev-general\"",
+        "clean": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"clean pm-dev-general\""
       }
     },
     "pm-dev-java": {
@@ -535,7 +555,7 @@
         "skill:plan-marshall-plugin": {
           "path": "skills/plan-marshall-plugin",
           "type": "skill",
-          "description": "Java domain extension with Maven/Gradle build operations and workflow integration"
+          "description": "Java domain extension with skill domains, module applicability, and workflow integration"
         },
         "agent:java-coverage-agent": {
           "path": "agents/java-coverage-agent.md",
@@ -555,13 +575,13 @@
         "command_count": 0
       },
       "commands": {
-        "compile": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"compile pm-dev-java\"",
-        "test-compile": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"test-compile pm-dev-java\"",
-        "module-tests": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"module-tests pm-dev-java\"",
-        "quality-gate": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"quality-gate pm-dev-java\"",
-        "verify": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"verify pm-dev-java\"",
-        "coverage": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"coverage pm-dev-java\"",
-        "clean": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"clean pm-dev-java\""
+        "compile": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"compile pm-dev-java\"",
+        "test-compile": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"test-compile pm-dev-java\"",
+        "module-tests": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"module-tests pm-dev-java\"",
+        "quality-gate": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"quality-gate pm-dev-java\"",
+        "verify": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"verify pm-dev-java\"",
+        "coverage": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"coverage pm-dev-java\"",
+        "clean": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"clean pm-dev-java\""
       }
     },
     "pm-dev-java-cui": {
@@ -628,13 +648,13 @@
         "command_count": 0
       },
       "commands": {
-        "compile": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"compile pm-dev-java-cui\"",
-        "test-compile": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"test-compile pm-dev-java-cui\"",
-        "module-tests": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"module-tests pm-dev-java-cui\"",
-        "quality-gate": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"quality-gate pm-dev-java-cui\"",
-        "verify": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"verify pm-dev-java-cui\"",
-        "coverage": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"coverage pm-dev-java-cui\"",
-        "clean": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"clean pm-dev-java-cui\""
+        "compile": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"compile pm-dev-java-cui\"",
+        "test-compile": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"test-compile pm-dev-java-cui\"",
+        "module-tests": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"module-tests pm-dev-java-cui\"",
+        "quality-gate": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"quality-gate pm-dev-java-cui\"",
+        "verify": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"verify pm-dev-java-cui\"",
+        "coverage": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"coverage pm-dev-java-cui\"",
+        "clean": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"clean pm-dev-java-cui\""
       }
     },
     "pm-dev-oci": {
@@ -681,13 +701,13 @@
         "command_count": 0
       },
       "commands": {
-        "compile": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"compile pm-dev-oci\"",
-        "test-compile": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"test-compile pm-dev-oci\"",
-        "module-tests": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"module-tests pm-dev-oci\"",
-        "quality-gate": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"quality-gate pm-dev-oci\"",
-        "verify": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"verify pm-dev-oci\"",
-        "coverage": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"coverage pm-dev-oci\"",
-        "clean": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"clean pm-dev-oci\""
+        "compile": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"compile pm-dev-oci\"",
+        "test-compile": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"test-compile pm-dev-oci\"",
+        "module-tests": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"module-tests pm-dev-oci\"",
+        "quality-gate": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"quality-gate pm-dev-oci\"",
+        "verify": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"verify pm-dev-oci\"",
+        "coverage": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"coverage pm-dev-oci\"",
+        "clean": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"clean pm-dev-oci\""
       }
     },
     "pm-dev-python": {
@@ -714,7 +734,7 @@
         "skill:plan-marshall-plugin": {
           "path": "skills/plan-marshall-plugin",
           "type": "skill",
-          "description": "Python domain extension with pyprojectx build operations and workflow integration"
+          "description": "Python domain extension with skill domains, module applicability, and workflow integration"
         },
         "skill:python-best-practices": {
           "path": "skills/python-best-practices",
@@ -729,13 +749,13 @@
         "command_count": 0
       },
       "commands": {
-        "compile": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"compile pm-dev-python\"",
-        "test-compile": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"test-compile pm-dev-python\"",
-        "module-tests": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"module-tests pm-dev-python\"",
-        "quality-gate": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"quality-gate pm-dev-python\"",
-        "verify": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"verify pm-dev-python\"",
-        "coverage": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"coverage pm-dev-python\"",
-        "clean": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"clean pm-dev-python\""
+        "compile": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"compile pm-dev-python\"",
+        "test-compile": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"test-compile pm-dev-python\"",
+        "module-tests": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"module-tests pm-dev-python\"",
+        "quality-gate": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"quality-gate pm-dev-python\"",
+        "verify": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"verify pm-dev-python\"",
+        "coverage": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"coverage pm-dev-python\"",
+        "clean": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"clean pm-dev-python\""
       }
     },
     "pm-documents": {
@@ -788,13 +808,13 @@
         "command_count": 1
       },
       "commands": {
-        "compile": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"compile pm-documents\"",
-        "test-compile": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"test-compile pm-documents\"",
-        "module-tests": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"module-tests pm-documents\"",
-        "quality-gate": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"quality-gate pm-documents\"",
-        "verify": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"verify pm-documents\"",
-        "coverage": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"coverage pm-documents\"",
-        "clean": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"clean pm-documents\""
+        "compile": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"compile pm-documents\"",
+        "test-compile": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"test-compile pm-documents\"",
+        "module-tests": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"module-tests pm-documents\"",
+        "quality-gate": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"quality-gate pm-documents\"",
+        "verify": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"verify pm-documents\"",
+        "coverage": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"coverage pm-documents\"",
+        "clean": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"clean pm-documents\""
       }
     },
     "pm-plugin-development": {
@@ -918,13 +938,13 @@
         "command_count": 1
       },
       "commands": {
-        "compile": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"compile pm-plugin-development\"",
-        "test-compile": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"test-compile pm-plugin-development\"",
-        "module-tests": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"module-tests pm-plugin-development\"",
-        "quality-gate": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"quality-gate pm-plugin-development\"",
-        "verify": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"verify pm-plugin-development\"",
-        "coverage": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"coverage pm-plugin-development\"",
-        "clean": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"clean pm-plugin-development\""
+        "compile": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"compile pm-plugin-development\"",
+        "test-compile": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"test-compile pm-plugin-development\"",
+        "module-tests": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"module-tests pm-plugin-development\"",
+        "quality-gate": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"quality-gate pm-plugin-development\"",
+        "verify": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"verify pm-plugin-development\"",
+        "coverage": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"coverage pm-plugin-development\"",
+        "clean": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"clean pm-plugin-development\""
       }
     },
     "pm-requirements": {
@@ -987,13 +1007,13 @@
         "command_count": 0
       },
       "commands": {
-        "compile": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"compile pm-requirements\"",
-        "test-compile": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"test-compile pm-requirements\"",
-        "module-tests": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"module-tests pm-requirements\"",
-        "quality-gate": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"quality-gate pm-requirements\"",
-        "verify": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"verify pm-requirements\"",
-        "coverage": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"coverage pm-requirements\"",
-        "clean": "python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run --command-args \"clean pm-requirements\""
+        "compile": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"compile pm-requirements\"",
+        "test-compile": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"test-compile pm-requirements\"",
+        "module-tests": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"module-tests pm-requirements\"",
+        "quality-gate": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"quality-gate pm-requirements\"",
+        "verify": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"verify pm-requirements\"",
+        "coverage": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"coverage pm-requirements\"",
+        "clean": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"clean pm-requirements\""
       }
     }
   },
