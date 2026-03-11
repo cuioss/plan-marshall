@@ -1,170 +1,576 @@
 {
   "project": {
-    "description": "",
-    "description_reasoning": ""
+    "description": "Claude Code Marketplace providing development standards, automation tools, and AI-assisted workflows for CUI Open Source projects. Contains 7 production bundles with skills, agents, and commands that integrate with Claude Code's plugin system.",
+    "description_reasoning": "source: README.adoc and CLAUDE.md"
   },
   "modules": {
     "default": {
-      "responsibility": "",
-      "responsibility_reasoning": "",
-      "purpose": "",
-      "purpose_reasoning": "",
-      "key_packages": {},
+      "responsibility": "Root module for the plan-marshall marketplace. Provides pyprojectx build wrapper, project-level configuration, and CI/CD integration.",
+      "responsibility_reasoning": "source: README",
+      "purpose": "parent",
+      "purpose_reasoning": "Root directory with pyproject.toml",
+      "key_packages": {
+        "pyproject.toml": {
+          "description": "Build config with pyprojectx aliases for compile, test, lint, coverage"
+        },
+        "marketplace": {
+          "description": "Root marketplace directory containing all bundles and marketplace.json"
+        },
+        "test": {
+          "description": "Pytest test suites organized by bundle name"
+        }
+      },
       "internal_dependencies": [],
       "key_dependencies": [],
       "key_dependencies_reasoning": "",
-      "skills_by_profile": {},
-      "skills_by_profile_reasoning": "",
+      "skills_by_profile": {
+        "implementation": [
+          "plan-marshall:dev-general-code-quality",
+          "plan-marshall:dev-general-practices",
+          "plan-marshall:dev-general-code-documentation",
+          "pm-plugin-development:plugin-architecture"
+        ],
+        "module_testing": [
+          "plan-marshall:dev-general-code-quality",
+          "plan-marshall:dev-general-practices",
+          "plan-marshall:dev-general-module-testing",
+          "pm-plugin-development:plugin-architecture"
+        ],
+        "integration_testing": [
+          "plan-marshall:dev-general-code-quality",
+          "plan-marshall:dev-general-practices",
+          "pm-plugin-development:plugin-architecture"
+        ],
+        "quality": [
+          "plan-marshall:dev-general-code-quality",
+          "plan-marshall:dev-general-practices",
+          "plan-marshall:dev-general-code-documentation",
+          "pm-plugin-development:plugin-architecture"
+        ],
+        "documentation": [
+          "plan-marshall:dev-general-code-quality",
+          "plan-marshall:dev-general-practices",
+          "pm-plugin-development:plugin-architecture"
+        ]
+      },
+      "skills_by_profile_reasoning": "general-dev: cross-cutting development standards; plan-marshall-plugin-dev: marketplace bundle",
       "tips": [],
       "insights": [],
       "best_practices": []
     },
     "documentation": {
-      "responsibility": "",
-      "responsibility_reasoning": "",
-      "purpose": "",
-      "purpose_reasoning": "",
-      "key_packages": {},
+      "responsibility": "Project-level documentation including architecture diagrams, build structure docs, and contribution guidelines.",
+      "responsibility_reasoning": "source: README",
+      "purpose": "documentation",
+      "purpose_reasoning": "Contains only documentation files",
+      "key_packages": {
+        "doc": {
+          "description": "Project-level AsciiDoc documentation"
+        }
+      },
       "internal_dependencies": [],
       "key_dependencies": [],
       "key_dependencies_reasoning": "",
-      "skills_by_profile": {},
-      "skills_by_profile_reasoning": "",
+      "skills_by_profile": {
+        "implementation": [
+          "plan-marshall:dev-general-code-quality",
+          "plan-marshall:dev-general-practices",
+          "plan-marshall:dev-general-code-documentation"
+        ],
+        "module_testing": [
+          "plan-marshall:dev-general-code-quality",
+          "plan-marshall:dev-general-practices",
+          "plan-marshall:dev-general-module-testing"
+        ],
+        "integration_testing": [
+          "plan-marshall:dev-general-code-quality",
+          "plan-marshall:dev-general-practices"
+        ],
+        "quality": [
+          "plan-marshall:dev-general-code-quality",
+          "plan-marshall:dev-general-practices",
+          "plan-marshall:dev-general-code-documentation"
+        ],
+        "documentation": [
+          "plan-marshall:dev-general-code-quality",
+          "plan-marshall:dev-general-practices"
+        ]
+      },
+      "skills_by_profile_reasoning": "general-dev: cross-cutting development standards; plan-marshall-plugin-dev: marketplace bundle",
       "tips": [],
       "insights": [],
       "best_practices": []
     },
     "plan-marshall": {
-      "responsibility": "",
-      "responsibility_reasoning": "",
-      "purpose": "",
-      "purpose_reasoning": "",
-      "key_packages": {},
+      "responsibility": "Core infrastructure bundle providing extension API, configuration management, permission handling, build system abstraction, architecture analysis, and development workflow.",
+      "responsibility_reasoning": "source: README",
+      "purpose": "domain-standards",
+      "purpose_reasoning": "Skills agents commands for cross-cutting concerns",
+      "key_packages": {
+        "skill:extension-api": {
+          "description": "Domain bundle discovery, module detection, and canonical command generation API"
+        },
+        "skill:manage-architecture": {
+          "description": "LLM-based architectural analysis transforming raw project data into enriched structure"
+        },
+        "skill:manage-config": {
+          "description": "Project-level marshal.json CRUD for skill domains, build systems, and phase settings"
+        },
+        "skill:plan-marshall": {
+          "description": "Unified plan lifecycle management orchestrating phases 1-6"
+        }
+      },
       "internal_dependencies": [],
       "key_dependencies": [],
       "key_dependencies_reasoning": "",
-      "skills_by_profile": {},
-      "skills_by_profile_reasoning": "",
+      "skills_by_profile": {
+        "implementation": [
+          "plan-marshall:dev-general-code-quality",
+          "plan-marshall:dev-general-practices",
+          "plan-marshall:dev-general-code-documentation",
+          "pm-plugin-development:plugin-architecture"
+        ],
+        "module_testing": [
+          "plan-marshall:dev-general-code-quality",
+          "plan-marshall:dev-general-practices",
+          "plan-marshall:dev-general-module-testing",
+          "pm-plugin-development:plugin-architecture"
+        ],
+        "integration_testing": [
+          "plan-marshall:dev-general-code-quality",
+          "plan-marshall:dev-general-practices",
+          "pm-plugin-development:plugin-architecture"
+        ],
+        "quality": [
+          "plan-marshall:dev-general-code-quality",
+          "plan-marshall:dev-general-practices",
+          "plan-marshall:dev-general-code-documentation",
+          "pm-plugin-development:plugin-architecture"
+        ],
+        "documentation": [
+          "plan-marshall:dev-general-code-quality",
+          "plan-marshall:dev-general-practices",
+          "pm-plugin-development:plugin-architecture"
+        ]
+      },
+      "skills_by_profile_reasoning": "general-dev: cross-cutting development standards; plan-marshall-plugin-dev: marketplace bundle",
       "tips": [],
       "insights": [],
       "best_practices": []
     },
     "pm-dev-frontend": {
-      "responsibility": "",
-      "responsibility_reasoning": "",
-      "purpose": "",
-      "purpose_reasoning": "",
-      "key_packages": {},
+      "responsibility": "Frontend development standards for JavaScript, CSS, Cypress E2E testing, Jest, ESLint/Prettier, and Maven integration for CUI web applications.",
+      "responsibility_reasoning": "source: README",
+      "purpose": "domain-standards",
+      "purpose_reasoning": "Frontend-specific skills",
+      "key_packages": {
+        "skill:cui-javascript": {
+          "description": "Core JavaScript standards for ES modules, modern patterns, and code quality"
+        },
+        "skill:cui-cypress": {
+          "description": "Cypress E2E testing standards"
+        },
+        "skill:cui-css": {
+          "description": "Modern CSS standards covering responsive design and quality tooling"
+        }
+      },
       "internal_dependencies": [],
       "key_dependencies": [],
       "key_dependencies_reasoning": "",
-      "skills_by_profile": {},
-      "skills_by_profile_reasoning": "",
+      "skills_by_profile": {
+        "implementation": [
+          "plan-marshall:dev-general-code-quality",
+          "plan-marshall:dev-general-practices",
+          "plan-marshall:dev-general-code-documentation",
+          "pm-plugin-development:plugin-architecture"
+        ],
+        "module_testing": [
+          "plan-marshall:dev-general-code-quality",
+          "plan-marshall:dev-general-practices",
+          "plan-marshall:dev-general-module-testing",
+          "pm-plugin-development:plugin-architecture"
+        ],
+        "integration_testing": [
+          "plan-marshall:dev-general-code-quality",
+          "plan-marshall:dev-general-practices",
+          "pm-plugin-development:plugin-architecture"
+        ],
+        "quality": [
+          "plan-marshall:dev-general-code-quality",
+          "plan-marshall:dev-general-practices",
+          "plan-marshall:dev-general-code-documentation",
+          "pm-plugin-development:plugin-architecture"
+        ],
+        "documentation": [
+          "plan-marshall:dev-general-code-quality",
+          "plan-marshall:dev-general-practices",
+          "pm-plugin-development:plugin-architecture"
+        ]
+      },
+      "skills_by_profile_reasoning": "general-dev: cross-cutting development standards; plan-marshall-plugin-dev: marketplace bundle",
       "tips": [],
       "insights": [],
       "best_practices": []
     },
     "pm-dev-java": {
-      "responsibility": "",
-      "responsibility_reasoning": "",
-      "purpose": "",
-      "purpose_reasoning": "",
-      "key_packages": {},
+      "responsibility": "Java development expertise covering core patterns, null safety, CDI, Quarkus, JUnit 5, Lombok, JavaDoc, and maintenance with verification agents.",
+      "responsibility_reasoning": "source: README",
+      "purpose": "domain-standards",
+      "purpose_reasoning": "Java-specific skills and agents",
+      "key_packages": {
+        "skill:java-core": {
+          "description": "Core Java patterns, modern features, and performance optimization"
+        },
+        "skill:junit-core": {
+          "description": "JUnit 5 testing with AAA structure and coverage standards"
+        },
+        "skill:java-cdi": {
+          "description": "CDI patterns including constructor injection, scopes, and producers"
+        }
+      },
       "internal_dependencies": [],
       "key_dependencies": [],
       "key_dependencies_reasoning": "",
-      "skills_by_profile": {},
-      "skills_by_profile_reasoning": "",
+      "skills_by_profile": {
+        "implementation": [
+          "plan-marshall:dev-general-code-quality",
+          "plan-marshall:dev-general-practices",
+          "plan-marshall:dev-general-code-documentation",
+          "pm-plugin-development:plugin-architecture"
+        ],
+        "module_testing": [
+          "plan-marshall:dev-general-code-quality",
+          "plan-marshall:dev-general-practices",
+          "plan-marshall:dev-general-module-testing",
+          "pm-plugin-development:plugin-architecture"
+        ],
+        "integration_testing": [
+          "plan-marshall:dev-general-code-quality",
+          "plan-marshall:dev-general-practices",
+          "pm-plugin-development:plugin-architecture"
+        ],
+        "quality": [
+          "plan-marshall:dev-general-code-quality",
+          "plan-marshall:dev-general-practices",
+          "plan-marshall:dev-general-code-documentation",
+          "pm-plugin-development:plugin-architecture"
+        ],
+        "documentation": [
+          "plan-marshall:dev-general-code-quality",
+          "plan-marshall:dev-general-practices",
+          "pm-plugin-development:plugin-architecture"
+        ]
+      },
+      "skills_by_profile_reasoning": "general-dev: cross-cutting development standards; plan-marshall-plugin-dev: marketplace bundle",
       "tips": [],
       "insights": [],
       "best_practices": []
     },
     "pm-dev-java-cui": {
-      "responsibility": "",
-      "responsibility_reasoning": "",
-      "purpose": "",
-      "purpose_reasoning": "",
-      "key_packages": {},
+      "responsibility": "CUI-specific Java standards for CuiLogger, LogRecord, test data generators, value object contracts, HTTP client patterns, and MockWebServer testing.",
+      "responsibility_reasoning": "source: README",
+      "purpose": "domain-standards",
+      "purpose_reasoning": "CUI Java additive domain",
+      "key_packages": {
+        "skill:cui-logging": {
+          "description": "CuiLogger and LogRecord standards for structured logging"
+        },
+        "skill:cui-testing": {
+          "description": "CUI test library standards for test data generation and contracts"
+        },
+        "skill:cui-http": {
+          "description": "CUI HTTP client standards with HttpHandler and HttpResult"
+        }
+      },
       "internal_dependencies": [],
       "key_dependencies": [],
       "key_dependencies_reasoning": "",
-      "skills_by_profile": {},
-      "skills_by_profile_reasoning": "",
+      "skills_by_profile": {
+        "implementation": [
+          "plan-marshall:dev-general-code-quality",
+          "plan-marshall:dev-general-practices",
+          "plan-marshall:dev-general-code-documentation",
+          "pm-plugin-development:plugin-architecture"
+        ],
+        "module_testing": [
+          "plan-marshall:dev-general-code-quality",
+          "plan-marshall:dev-general-practices",
+          "plan-marshall:dev-general-module-testing",
+          "pm-plugin-development:plugin-architecture"
+        ],
+        "integration_testing": [
+          "plan-marshall:dev-general-code-quality",
+          "plan-marshall:dev-general-practices",
+          "pm-plugin-development:plugin-architecture"
+        ],
+        "quality": [
+          "plan-marshall:dev-general-code-quality",
+          "plan-marshall:dev-general-practices",
+          "plan-marshall:dev-general-code-documentation",
+          "pm-plugin-development:plugin-architecture"
+        ],
+        "documentation": [
+          "plan-marshall:dev-general-code-quality",
+          "plan-marshall:dev-general-practices",
+          "pm-plugin-development:plugin-architecture"
+        ]
+      },
+      "skills_by_profile_reasoning": "general-dev: cross-cutting development standards; plan-marshall-plugin-dev: marketplace bundle",
       "tips": [],
       "insights": [],
       "best_practices": []
     },
     "pm-dev-oci": {
-      "responsibility": "",
-      "responsibility_reasoning": "",
-      "purpose": "",
-      "purpose_reasoning": "",
-      "key_packages": {},
+      "responsibility": "OCI container standards for image building, multi-platform builds, distroless probes, runtime hardening, and OWASP container controls.",
+      "responsibility_reasoning": "source: README",
+      "purpose": "domain-standards",
+      "purpose_reasoning": "OCI container skills",
+      "key_packages": {
+        "skill:oci-standards": {
+          "description": "OCI image building and multi-platform builds"
+        },
+        "skill:oci-security": {
+          "description": "Container runtime hardening and OWASP controls"
+        }
+      },
       "internal_dependencies": [],
       "key_dependencies": [],
       "key_dependencies_reasoning": "",
-      "skills_by_profile": {},
-      "skills_by_profile_reasoning": "",
+      "skills_by_profile": {
+        "implementation": [
+          "plan-marshall:dev-general-code-quality",
+          "plan-marshall:dev-general-practices",
+          "plan-marshall:dev-general-code-documentation",
+          "pm-plugin-development:plugin-architecture"
+        ],
+        "module_testing": [
+          "plan-marshall:dev-general-code-quality",
+          "plan-marshall:dev-general-practices",
+          "plan-marshall:dev-general-module-testing",
+          "pm-plugin-development:plugin-architecture"
+        ],
+        "integration_testing": [
+          "plan-marshall:dev-general-code-quality",
+          "plan-marshall:dev-general-practices",
+          "pm-plugin-development:plugin-architecture"
+        ],
+        "quality": [
+          "plan-marshall:dev-general-code-quality",
+          "plan-marshall:dev-general-practices",
+          "plan-marshall:dev-general-code-documentation",
+          "pm-plugin-development:plugin-architecture"
+        ],
+        "documentation": [
+          "plan-marshall:dev-general-code-quality",
+          "plan-marshall:dev-general-practices",
+          "pm-plugin-development:plugin-architecture"
+        ]
+      },
+      "skills_by_profile_reasoning": "general-dev: cross-cutting development standards; plan-marshall-plugin-dev: marketplace bundle",
       "tips": [],
       "insights": [],
       "best_practices": []
     },
     "pm-dev-python": {
-      "responsibility": "",
-      "responsibility_reasoning": "",
-      "purpose": "",
-      "purpose_reasoning": "",
-      "key_packages": {},
+      "responsibility": "Python domain extension with development standards, best practices, and pyprojectx build infrastructure integration.",
+      "responsibility_reasoning": "source: README",
+      "purpose": "domain-standards",
+      "purpose_reasoning": "Python-specific skills",
+      "key_packages": {
+        "skill:python-best-practices": {
+          "description": "Modern Python development patterns"
+        },
+        "skill:plan-marshall-plugin": {
+          "description": "Python domain extension with pyprojectx build operations"
+        }
+      },
       "internal_dependencies": [],
       "key_dependencies": [],
       "key_dependencies_reasoning": "",
-      "skills_by_profile": {},
-      "skills_by_profile_reasoning": "",
+      "skills_by_profile": {
+        "implementation": [
+          "plan-marshall:dev-general-code-quality",
+          "plan-marshall:dev-general-practices",
+          "plan-marshall:dev-general-code-documentation",
+          "pm-plugin-development:plugin-architecture"
+        ],
+        "module_testing": [
+          "plan-marshall:dev-general-code-quality",
+          "plan-marshall:dev-general-practices",
+          "plan-marshall:dev-general-module-testing",
+          "pm-plugin-development:plugin-architecture"
+        ],
+        "integration_testing": [
+          "plan-marshall:dev-general-code-quality",
+          "plan-marshall:dev-general-practices",
+          "pm-plugin-development:plugin-architecture"
+        ],
+        "quality": [
+          "plan-marshall:dev-general-code-quality",
+          "plan-marshall:dev-general-practices",
+          "plan-marshall:dev-general-code-documentation",
+          "pm-plugin-development:plugin-architecture"
+        ],
+        "documentation": [
+          "plan-marshall:dev-general-code-quality",
+          "plan-marshall:dev-general-practices",
+          "pm-plugin-development:plugin-architecture"
+        ]
+      },
+      "skills_by_profile_reasoning": "general-dev: cross-cutting development standards; plan-marshall-plugin-dev: marketplace bundle",
       "tips": [],
       "insights": [],
       "best_practices": []
     },
     "pm-documents": {
-      "responsibility": "",
-      "responsibility_reasoning": "",
-      "purpose": "",
-      "purpose_reasoning": "",
-      "key_packages": {},
+      "responsibility": "Documentation domain with AsciiDoc standards, ADR management, and interface specification tooling with validation and review workflows.",
+      "responsibility_reasoning": "source: README",
+      "purpose": "domain-standards",
+      "purpose_reasoning": "Documentation-specific skills",
+      "key_packages": {
+        "skill:ref-documentation": {
+          "description": "AsciiDoc standards with 9 workflows for validation and review"
+        }
+      },
       "internal_dependencies": [],
       "key_dependencies": [],
       "key_dependencies_reasoning": "",
-      "skills_by_profile": {},
-      "skills_by_profile_reasoning": "",
+      "skills_by_profile": {
+        "implementation": [
+          "plan-marshall:dev-general-code-quality",
+          "plan-marshall:dev-general-practices",
+          "plan-marshall:dev-general-code-documentation",
+          "pm-plugin-development:plugin-architecture"
+        ],
+        "module_testing": [
+          "plan-marshall:dev-general-code-quality",
+          "plan-marshall:dev-general-practices",
+          "plan-marshall:dev-general-module-testing",
+          "pm-plugin-development:plugin-architecture"
+        ],
+        "integration_testing": [
+          "plan-marshall:dev-general-code-quality",
+          "plan-marshall:dev-general-practices",
+          "pm-plugin-development:plugin-architecture"
+        ],
+        "quality": [
+          "plan-marshall:dev-general-code-quality",
+          "plan-marshall:dev-general-practices",
+          "plan-marshall:dev-general-code-documentation",
+          "pm-plugin-development:plugin-architecture"
+        ],
+        "documentation": [
+          "plan-marshall:dev-general-code-quality",
+          "plan-marshall:dev-general-practices",
+          "pm-plugin-development:plugin-architecture"
+        ]
+      },
+      "skills_by_profile_reasoning": "general-dev: cross-cutting development standards; plan-marshall-plugin-dev: marketplace bundle",
       "tips": [],
       "insights": [],
       "best_practices": []
     },
     "pm-plugin-development": {
-      "responsibility": "",
-      "responsibility_reasoning": "",
-      "purpose": "",
-      "purpose_reasoning": "",
-      "key_packages": {},
+      "responsibility": "Complete toolchain for marketplace component lifecycle: creation wizards, quality diagnosis, maintenance workflows, verification, and architecture guidance.",
+      "responsibility_reasoning": "source: README",
+      "purpose": "tooling",
+      "purpose_reasoning": "Development tools for marketplace components",
+      "key_packages": {
+        "skill:plugin-doctor": {
+          "description": "Unified diagnosis and fix workflows"
+        },
+        "skill:plugin-architecture": {
+          "description": "Architecture principles and design guidance for marketplace components"
+        },
+        "skill:plugin-create": {
+          "description": "Creation wizards for new marketplace components"
+        }
+      },
       "internal_dependencies": [],
       "key_dependencies": [],
       "key_dependencies_reasoning": "",
-      "skills_by_profile": {},
-      "skills_by_profile_reasoning": "",
+      "skills_by_profile": {
+        "implementation": [
+          "plan-marshall:dev-general-code-quality",
+          "plan-marshall:dev-general-practices",
+          "plan-marshall:dev-general-code-documentation",
+          "pm-plugin-development:plugin-architecture"
+        ],
+        "module_testing": [
+          "plan-marshall:dev-general-code-quality",
+          "plan-marshall:dev-general-practices",
+          "plan-marshall:dev-general-module-testing",
+          "pm-plugin-development:plugin-architecture"
+        ],
+        "integration_testing": [
+          "plan-marshall:dev-general-code-quality",
+          "plan-marshall:dev-general-practices",
+          "pm-plugin-development:plugin-architecture"
+        ],
+        "quality": [
+          "plan-marshall:dev-general-code-quality",
+          "plan-marshall:dev-general-practices",
+          "plan-marshall:dev-general-code-documentation",
+          "pm-plugin-development:plugin-architecture"
+        ],
+        "documentation": [
+          "plan-marshall:dev-general-code-quality",
+          "plan-marshall:dev-general-practices",
+          "pm-plugin-development:plugin-architecture"
+        ]
+      },
+      "skills_by_profile_reasoning": "general-dev: cross-cutting development standards; plan-marshall-plugin-dev: marketplace bundle",
       "tips": [],
       "insights": [],
       "best_practices": []
     },
     "pm-requirements": {
-      "responsibility": "",
-      "responsibility_reasoning": "",
-      "purpose": "",
-      "purpose_reasoning": "",
-      "key_packages": {},
+      "responsibility": "Requirements engineering standards covering SMART authoring, specifications, project setup, planning, and bidirectional traceability.",
+      "responsibility_reasoning": "source: README",
+      "purpose": "domain-standards",
+      "purpose_reasoning": "Requirements-specific skills",
+      "key_packages": {
+        "skill:requirements-authoring": {
+          "description": "SMART requirements principles and document structure"
+        },
+        "skill:traceability": {
+          "description": "Bidirectional traceability between requirements and implementation"
+        }
+      },
       "internal_dependencies": [],
       "key_dependencies": [],
       "key_dependencies_reasoning": "",
-      "skills_by_profile": {},
-      "skills_by_profile_reasoning": "",
+      "skills_by_profile": {
+        "implementation": [
+          "plan-marshall:dev-general-code-quality",
+          "plan-marshall:dev-general-practices",
+          "plan-marshall:dev-general-code-documentation",
+          "pm-plugin-development:plugin-architecture"
+        ],
+        "module_testing": [
+          "plan-marshall:dev-general-code-quality",
+          "plan-marshall:dev-general-practices",
+          "plan-marshall:dev-general-module-testing",
+          "pm-plugin-development:plugin-architecture"
+        ],
+        "integration_testing": [
+          "plan-marshall:dev-general-code-quality",
+          "plan-marshall:dev-general-practices",
+          "pm-plugin-development:plugin-architecture"
+        ],
+        "quality": [
+          "plan-marshall:dev-general-code-quality",
+          "plan-marshall:dev-general-practices",
+          "plan-marshall:dev-general-code-documentation",
+          "pm-plugin-development:plugin-architecture"
+        ],
+        "documentation": [
+          "plan-marshall:dev-general-code-quality",
+          "plan-marshall:dev-general-practices",
+          "pm-plugin-development:plugin-architecture"
+        ]
+      },
+      "skills_by_profile_reasoning": "general-dev: cross-cutting development standards; plan-marshall-plugin-dev: marketplace bundle",
       "tips": [],
       "insights": [],
       "best_practices": []
