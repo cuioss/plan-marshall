@@ -1,5 +1,5 @@
 ---
-name: dev-code-quality
+name: dev-general-code-quality
 description: Language-agnostic code quality principles covering SRP, CQS, complexity thresholds, refactoring triggers, and error handling
 user-invocable: false
 ---

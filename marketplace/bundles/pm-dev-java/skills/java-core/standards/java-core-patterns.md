@@ -1,6 +1,6 @@
 # Java Core Patterns and Principles
 
-For general code organization principles (SRP, CQS, complexity thresholds, error handling), see `pm-dev-general:dev-code-quality`. This document covers Java-specific patterns, idioms, and conventions.
+For general code organization principles (SRP, CQS, complexity thresholds, error handling), see `plan-marshall:dev-general-code-quality`. This document covers Java-specific patterns, idioms, and conventions.
 
 ## Package Structure
 
@@ -32,7 +32,7 @@ public boolean validate(ValidationRequest request) {
 
 ## Java Exception Handling
 
-Java-specific exception rules beyond the general principles in `pm-dev-general:dev-code-quality`:
+Java-specific exception rules beyond the general principles in `plan-marshall:dev-general-code-quality`:
 
 * Use checked exceptions for recoverable conditions
 * Use unchecked exceptions for programming errors
@@ -103,4 +103,4 @@ public class CachedTokenValidator implements TokenValidator {
 ## Comments
 
 * Use JavaDoc for public APIs (see `pm-dev-java:javadoc` skill)
-* See `pm-dev-general:dev-code-quality` for general comment principles
+* See `plan-marshall:dev-general-code-quality` for general comment principles

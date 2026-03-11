@@ -57,8 +57,8 @@ JSON structure and field definitions for project configuration.
   },
   "skill_domains": {
     "system": {
-      "defaults": ["pm-dev-general:dev-practices"],
-      "optionals": ["pm-dev-general:dev-practices"],
+      "defaults": ["plan-marshall:dev-general-practices"],
+      "optionals": ["plan-marshall:dev-general-practices"],
       "task_executors": {
         "implementation": "plan-marshall:task-implementation",
         "module_testing": "plan-marshall:task-module-testing",

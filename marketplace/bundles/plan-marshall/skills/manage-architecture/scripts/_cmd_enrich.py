@@ -286,7 +286,7 @@ def enrich_add_domain(
 
     module_data = get_module(derived, module_name)
 
-    # Find extension for this domain
+    # Find extension for this domain (supports multi-domain extensions)
     from extension_discovery import discover_all_extensions  # type: ignore[import-not-found]
 
     extensions = discover_all_extensions()
@@ -296,9 +296,17 @@ def enrich_add_domain(
         if not ext_module:
             continue
         try:
-            skill_domains = ext_module.get_skill_domains()
-            if skill_domains.get('domain', {}).get('key') == domain_key:
-                target_ext = ext_module
+            # Check all domains from this extension
+            if hasattr(ext_module, 'get_all_skill_domains'):
+                all_domains = ext_module.get_all_skill_domains()
+            else:
+                sd = ext_module.get_skill_domains()
+                all_domains = [sd] if sd and sd.get('domain') else []
+            for sd in all_domains:
+                if sd.get('domain', {}).get('key') == domain_key:
+                    target_ext = ext_module
+                    break
+            if target_ext:
                 break
         except Exception:
             continue

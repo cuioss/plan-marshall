@@ -1,5 +1,5 @@
 ---
-name: dev-code-documentation
+name: dev-general-code-documentation
 description: Language-agnostic code documentation principles covering what, when, and how to document public APIs
 user-invocable: false
 ---

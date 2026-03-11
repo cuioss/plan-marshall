@@ -101,7 +101,7 @@ def test_add_domain_additive_merge():
 
         # Should have java skills and general-dev skills
         java_skills = [s for s in all_skills if 'pm-dev-java:' in str(s)]
-        general_skills = [s for s in all_skills if 'pm-dev-general:' in str(s)]
+        general_skills = [s for s in all_skills if 'plan-marshall:dev-general-' in str(s)]
         assert len(java_skills) > 0, 'Should have java skills'
         assert len(general_skills) > 0, 'Should have general-dev skills'
 

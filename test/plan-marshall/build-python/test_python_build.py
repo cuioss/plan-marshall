@@ -34,7 +34,7 @@ def _load_python_build():
     spec = importlib.util.spec_from_file_location('python_build', BUILD_SCRIPT)
     module = importlib.util.module_from_spec(spec)
 
-    # Mock the cross-skill imports before loading
+    # Mock the cross-skill imports before loading, then restore originals
     import sys
 
     mock_modules = {
@@ -59,10 +59,21 @@ def _load_python_build():
         'plan_logging': MagicMock(log_entry=MagicMock()),
         'run_config': MagicMock(timeout_get=MagicMock(return_value=300), timeout_set=MagicMock()),
     }
+
+    # Save originals so we can restore after loading
+    saved = {name: sys.modules.get(name) for name in mock_modules}
     for name, mock in mock_modules.items():
         sys.modules[name] = mock
 
     spec.loader.exec_module(module)
+
+    # Restore original modules to avoid polluting sys.modules for other tests
+    for name, original in saved.items():
+        if original is None:
+            sys.modules.pop(name, None)
+        else:
+            sys.modules[name] = original
+
     return module
 
 

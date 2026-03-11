@@ -41,7 +41,7 @@ Your output must be factual, evidence-based, and fully referenced.
 Load development standards before any work:
 
 ```
-Skill: pm-dev-general:dev-practices
+Skill: plan-marshall:dev-general-practices
 ```
 
 This ensures proper tool usage (Read instead of cat, etc.).

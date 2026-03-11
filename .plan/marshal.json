@@ -52,10 +52,10 @@
   "skill_domains": {
     "system": {
       "defaults": [
-        "plan-marshall:ref-development-standards"
+        "plan-marshall:dev-general-practices"
       ],
       "optionals": [
-        "plan-marshall:ref-development-standards"
+        "plan-marshall:dev-general-practices"
       ],
       "task_executors": {
         "implementation": "plan-marshall:task-implementation",
@@ -94,7 +94,7 @@
       "bundle": "pm-dev-python"
     },
     "general-dev": {
-      "bundle": "pm-dev-general"
+      "bundle": "plan-marshall"
     }
   },
   "system": {

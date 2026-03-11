@@ -114,7 +114,7 @@ This skill requires:
 ## Integration with Other Skills
 
 This skill builds upon:
-- `pm-dev-general:dev-module-testing` — Language-agnostic testing principles (AAA, coverage, reliability)
+- `plan-marshall:dev-general-module-testing` — Language-agnostic testing principles (AAA, coverage, reliability)
 - **cui-javascript**: Base JavaScript standards and modern patterns
 - **cui-javascript-linting**: ESLint configuration foundation
 - **cui-javascript-unit-testing**: Shared testing concepts and patterns

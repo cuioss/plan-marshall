@@ -1,5 +1,5 @@
 ---
-name: dev-practices
+name: dev-general-practices
 description: Foundational development practices covering user interaction, tool usage, research, dependency management, and document proliferation
 user-invocable: false
 standards:
@@ -79,9 +79,9 @@ Never add dependencies without user approval. Present recommendations with ratio
 
 ## Related Skills
 
-- `pm-dev-general:dev-code-quality` — Code quality principles (SRP, CQS, complexity)
-- `pm-dev-general:dev-code-documentation` — Documentation principles
-- `pm-dev-general:dev-module-testing` — Testing methodology
+- `plan-marshall:dev-general-code-quality` — Code quality principles (SRP, CQS, complexity)
+- `plan-marshall:dev-general-code-documentation` — Documentation principles
+- `plan-marshall:dev-general-module-testing` — Testing methodology
 
 ## Standards Reference
 

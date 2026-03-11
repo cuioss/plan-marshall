@@ -1,6 +1,6 @@
 # JUnit Core Testing Standards
 
-For general testing principles (AAA pattern, test organization, coverage requirements, test reliability), see `pm-dev-general:dev-module-testing`. This document covers JUnit 5-specific API and patterns.
+For general testing principles (AAA pattern, test organization, coverage requirements, test reliability), see `plan-marshall:dev-general-module-testing`. This document covers JUnit 5-specific API and patterns.
 
 ## Fundamental Rules
 
@@ -138,6 +138,6 @@ class TokenValidatorTest {
 
 ## Related Skills
 
-- `pm-dev-general:dev-module-testing` - Language-agnostic testing principles (AAA, coverage, reliability)
+- `plan-marshall:dev-general-module-testing` - Language-agnostic testing principles (AAA, coverage, reliability)
 - `pm-dev-java-cui:cui-testing` - CUI-specific test generators and library restrictions
 - `pm-dev-java:junit-integration` - Maven Failsafe/Surefire configuration

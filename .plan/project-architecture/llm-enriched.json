@@ -1,811 +1,170 @@
 {
   "project": {
-    "description": "Claude Code marketplace providing development standards, automation tools, and AI-assisted workflows for CUI Open Source projects. Contains 8 production bundles with skills, agents, and commands that integrate with Claude Code's plugin system.",
-    "description_reasoning": "source: README.adoc introduction and CLAUDE.md project overview"
+    "description": "",
+    "description_reasoning": ""
   },
   "modules": {
     "default": {
-      "responsibility": "Root module for the plan-marshall marketplace. Provides the pyprojectx build system (compile, test, lint, verify) and contains all marketplace bundles and test suites.",
-      "responsibility_reasoning": "source: README.adoc, marketplace.json descriptor, build commands",
-      "purpose": "parent",
-      "purpose_reasoning": "Root container with packaging=marketplace, no runtime code",
-      "key_packages": {
-        "marketplace/bundles": {
-          "description": "Contains all 10 marketplace bundles providing skills, agents, and commands for the Claude Code plugin system"
-        },
-        "test": {
-          "description": "Pytest test suites organized by bundle, with shared infrastructure in conftest.py"
-        }
-      },
-      "internal_dependencies": [
-        "plan-marshall",
-        "pm-dev-java",
-        "pm-dev-frontend",
-        "pm-dev-general",
-        "pm-dev-java-cui",
-        "pm-dev-oci",
-        "pm-dev-python",
-        "pm-documents",
-        "pm-plugin-development",
-        "pm-requirements"
-      ],
-      "key_dependencies": [
-        "pyprojectx"
-      ],
-      "key_dependencies_reasoning": "Root module contains all bundles as internal modules, uses pyprojectx for build",
-      "skills_by_profile": {
-        "implementation": [
-          "pm-plugin-development:plugin-architecture",
-          "pm-plugin-development:plugin-script-architecture",
-          "plan-marshall:ref-toon-format",
-          "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-practices",
-          "pm-dev-general:dev-code-documentation"
-        ],
-        "module_testing": [
-          "pm-plugin-development:plugin-architecture",
-          "pm-plugin-development:plugin-script-architecture",
-          "plan-marshall:ref-toon-format",
-          "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-practices",
-          "pm-dev-general:dev-module-testing"
-        ],
-        "integration_testing": [
-          "pm-plugin-development:plugin-architecture",
-          "pm-plugin-development:plugin-script-architecture",
-          "plan-marshall:ref-toon-format",
-          "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-practices"
-        ],
-        "quality": [
-          "pm-plugin-development:plugin-architecture",
-          "pm-plugin-development:plugin-script-architecture",
-          "plan-marshall:ref-toon-format",
-          "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-practices",
-          "pm-dev-general:dev-code-documentation"
-        ],
-        "documentation": [
-          "pm-plugin-development:plugin-architecture",
-          "pm-plugin-development:plugin-script-architecture",
-          "plan-marshall:ref-toon-format",
-          "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-practices"
-        ]
-      },
-      "skills_by_profile_reasoning": "plan-marshall-plugin-dev: build_systems=marshall-plugin; general-dev: cross-cutting development standards",
+      "responsibility": "",
+      "responsibility_reasoning": "",
+      "purpose": "",
+      "purpose_reasoning": "",
+      "key_packages": {},
+      "internal_dependencies": [],
+      "key_dependencies": [],
+      "key_dependencies_reasoning": "",
+      "skills_by_profile": {},
+      "skills_by_profile_reasoning": "",
       "tips": [],
       "insights": [],
       "best_practices": []
     },
     "documentation": {
-      "responsibility": "Project documentation including build structure, architecture diagrams, and development guides.",
-      "responsibility_reasoning": "source: doc directory contains project-level documentation",
-      "purpose": "library",
-      "purpose_reasoning": "Documentation-only module with no executable code",
+      "responsibility": "",
+      "responsibility_reasoning": "",
+      "purpose": "",
+      "purpose_reasoning": "",
       "key_packages": {},
       "internal_dependencies": [],
       "key_dependencies": [],
       "key_dependencies_reasoning": "",
-      "skills_by_profile": {
-        "implementation": [
-          "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-practices",
-          "pm-dev-general:dev-code-documentation",
-          "pm-documents:ref-documentation",
-          "pm-documents:manage-adr",
-          "pm-documents:manage-interface"
-        ],
-        "module_testing": [
-          "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-practices",
-          "pm-dev-general:dev-module-testing",
-          "pm-documents:ref-documentation"
-        ],
-        "integration_testing": [
-          "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-practices",
-          "pm-documents:ref-documentation"
-        ],
-        "quality": [
-          "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-practices",
-          "pm-dev-general:dev-code-documentation",
-          "pm-documents:ref-documentation"
-        ],
-        "documentation": [
-          "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-practices",
-          "pm-documents:ref-documentation",
-          "pm-documents:manage-adr",
-          "pm-documents:manage-interface"
-        ]
-      },
-      "skills_by_profile_reasoning": "plan-marshall-plugin-dev: build_systems=marshall-plugin; general-dev: cross-cutting development standards; documentation: doc directory with project documentation",
+      "skills_by_profile": {},
+      "skills_by_profile_reasoning": "",
       "tips": [],
       "insights": [],
       "best_practices": []
     },
     "plan-marshall": {
-      "responsibility": "Core orchestration bundle providing build system abstraction (Maven, Gradle, npm, Python), development workflow phases (init through finalize), architecture management, permission tools, script execution, and CI/git integration.",
-      "responsibility_reasoning": "source: README.md, 38 skills spanning build, workflow, tools, and integration",
-      "purpose": "runtime",
-      "purpose_reasoning": "Primary runtime bundle with 38 skills, 8 agents, 2 commands",
-      "key_packages": {
-        "skills/extension-api": {
-          "description": "Shared build infrastructure providing ExtensionBase, build_result, build_parse, build_discover, and build_format utilities"
-        },
-        "skills/build-maven": {
-          "description": "Maven build system abstraction with command discovery, log parsing, warning checking, and execution"
-        },
-        "skills/build-gradle": {
-          "description": "Gradle build system abstraction with project discovery, log parsing, and execution"
-        },
-        "skills/build-npm": {
-          "description": "npm build system abstraction with TypeScript, Jest, ESLint, and TAP log parsing plus js-coverage analysis"
-        },
-        "skills/plan-marshall-plugin": {
-          "description": "Consolidated extension point providing discover_modules() for all build systems (Maven, Gradle, npm, Python)"
-        },
-        "skills/manage-architecture": {
-          "description": "LLM-based architectural analysis transforming raw project data into enriched module structure"
-        },
-        "skills/tools-script-executor": {
-          "description": "Universal script execution pattern via execute-script.py proxy with notation-to-path resolution"
-        }
-      },
-      "internal_dependencies": [
-        "none"
-      ],
-      "key_dependencies": [
-        "none"
-      ],
-      "key_dependencies_reasoning": "Core bundle with no external dependencies; provides shared infrastructure consumed by domain bundles",
-      "skills_by_profile": {
-        "implementation": [
-          "pm-plugin-development:plugin-architecture",
-          "pm-plugin-development:plugin-script-architecture",
-          "plan-marshall:ref-toon-format",
-          "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-practices",
-          "pm-dev-general:dev-code-documentation"
-        ],
-        "module_testing": [
-          "pm-plugin-development:plugin-architecture",
-          "pm-plugin-development:plugin-script-architecture",
-          "plan-marshall:ref-toon-format",
-          "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-practices",
-          "pm-dev-general:dev-module-testing"
-        ],
-        "integration_testing": [
-          "pm-plugin-development:plugin-architecture",
-          "pm-plugin-development:plugin-script-architecture",
-          "plan-marshall:ref-toon-format",
-          "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-practices"
-        ],
-        "quality": [
-          "pm-plugin-development:plugin-architecture",
-          "pm-plugin-development:plugin-script-architecture",
-          "plan-marshall:ref-toon-format",
-          "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-practices",
-          "pm-dev-general:dev-code-documentation"
-        ],
-        "documentation": [
-          "pm-plugin-development:plugin-architecture",
-          "pm-plugin-development:plugin-script-architecture",
-          "plan-marshall:ref-toon-format",
-          "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-practices"
-        ]
-      },
-      "skills_by_profile_reasoning": "plan-marshall-plugin-dev: build_systems=marshall-plugin; general-dev: cross-cutting development standards",
+      "responsibility": "",
+      "responsibility_reasoning": "",
+      "purpose": "",
+      "purpose_reasoning": "",
+      "key_packages": {},
+      "internal_dependencies": [],
+      "key_dependencies": [],
+      "key_dependencies_reasoning": "",
+      "skills_by_profile": {},
+      "skills_by_profile_reasoning": "",
       "tips": [],
       "insights": [],
       "best_practices": []
     },
     "pm-dev-frontend": {
-      "responsibility": "JavaScript, CSS, and web component development standards for CUI applications. Covers ES modules, modern patterns, Cypress E2E testing, ESLint enforcement, and JSDoc maintenance.",
-      "responsibility_reasoning": "source: README.md, 8 skills covering JS/CSS/testing domains",
-      "purpose": "library",
-      "purpose_reasoning": "Standards-only bundle providing domain knowledge, no build scripts",
-      "key_packages": {
-        "skills/cui-javascript": {
-          "description": "Core JavaScript development standards covering ES modules, modern patterns, and code quality"
-        },
-        "skills/cui-css": {
-          "description": "Modern CSS standards covering responsive design, quality practices, and tooling"
-        },
-        "skills/cui-cypress": {
-          "description": "Cypress E2E testing standards with framework adaptations and test organization"
-        }
-      },
-      "internal_dependencies": [
-        "plan-marshall"
-      ],
-      "key_dependencies": [
-        "none"
-      ],
-      "key_dependencies_reasoning": "Domain bundle depends on plan-marshall for build system abstraction and workflow phases",
-      "skills_by_profile": {
-        "implementation": [
-          "pm-plugin-development:plugin-architecture",
-          "pm-plugin-development:plugin-script-architecture",
-          "plan-marshall:ref-toon-format",
-          "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-practices",
-          "pm-dev-general:dev-code-documentation"
-        ],
-        "module_testing": [
-          "pm-plugin-development:plugin-architecture",
-          "pm-plugin-development:plugin-script-architecture",
-          "plan-marshall:ref-toon-format",
-          "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-practices",
-          "pm-dev-general:dev-module-testing"
-        ],
-        "integration_testing": [
-          "pm-plugin-development:plugin-architecture",
-          "pm-plugin-development:plugin-script-architecture",
-          "plan-marshall:ref-toon-format",
-          "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-practices"
-        ],
-        "quality": [
-          "pm-plugin-development:plugin-architecture",
-          "pm-plugin-development:plugin-script-architecture",
-          "plan-marshall:ref-toon-format",
-          "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-practices",
-          "pm-dev-general:dev-code-documentation"
-        ],
-        "documentation": [
-          "pm-plugin-development:plugin-architecture",
-          "pm-plugin-development:plugin-script-architecture",
-          "plan-marshall:ref-toon-format",
-          "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-practices"
-        ]
-      },
-      "skills_by_profile_reasoning": "plan-marshall-plugin-dev: build_systems=marshall-plugin; general-dev: cross-cutting development standards",
-      "tips": [],
-      "insights": [],
-      "best_practices": []
-    },
-    "pm-dev-general": {
-      "responsibility": "Cross-cutting development principles covering testing methodology, code documentation, code quality patterns, and general development practices applicable across all languages.",
-      "responsibility_reasoning": "source: README.md, 5 language-agnostic skills",
-      "purpose": "library",
-      "purpose_reasoning": "Standards-only bundle with language-agnostic development principles",
-      "key_packages": {
-        "skills/dev-module-testing": {
-          "description": "Language-agnostic testing methodology covering AAA pattern, test structure, and coverage"
-        },
-        "skills/dev-code-quality": {
-          "description": "Language-agnostic code quality principles covering SRP, CQS, complexity thresholds, and refactoring triggers"
-        }
-      },
-      "internal_dependencies": [
-        "plan-marshall"
-      ],
-      "key_dependencies": [
-        "none"
-      ],
-      "key_dependencies_reasoning": "Domain bundle depends on plan-marshall for workflow integration",
-      "skills_by_profile": {
-        "implementation": [
-          "pm-plugin-development:plugin-architecture",
-          "pm-plugin-development:plugin-script-architecture",
-          "plan-marshall:ref-toon-format",
-          "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-practices",
-          "pm-dev-general:dev-code-documentation"
-        ],
-        "module_testing": [
-          "pm-plugin-development:plugin-architecture",
-          "pm-plugin-development:plugin-script-architecture",
-          "plan-marshall:ref-toon-format",
-          "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-practices",
-          "pm-dev-general:dev-module-testing"
-        ],
-        "integration_testing": [
-          "pm-plugin-development:plugin-architecture",
-          "pm-plugin-development:plugin-script-architecture",
-          "plan-marshall:ref-toon-format",
-          "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-practices"
-        ],
-        "quality": [
-          "pm-plugin-development:plugin-architecture",
-          "pm-plugin-development:plugin-script-architecture",
-          "plan-marshall:ref-toon-format",
-          "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-practices",
-          "pm-dev-general:dev-code-documentation"
-        ],
-        "documentation": [
-          "pm-plugin-development:plugin-architecture",
-          "pm-plugin-development:plugin-script-architecture",
-          "plan-marshall:ref-toon-format",
-          "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-practices"
-        ]
-      },
-      "skills_by_profile_reasoning": "plan-marshall-plugin-dev: build_systems=marshall-plugin; general-dev: cross-cutting development standards",
+      "responsibility": "",
+      "responsibility_reasoning": "",
+      "purpose": "",
+      "purpose_reasoning": "",
+      "key_packages": {},
+      "internal_dependencies": [],
+      "key_dependencies": [],
+      "key_dependencies_reasoning": "",
+      "skills_by_profile": {},
+      "skills_by_profile_reasoning": "",
       "tips": [],
       "insights": [],
       "best_practices": []
     },
     "pm-dev-java": {
-      "responsibility": "Comprehensive Java development expertise covering core patterns, null safety, Lombok, CDI/Quarkus, JUnit 5 testing, JavaDoc, and logging. Includes agents for autonomous code implementation, testing, and coverage analysis.",
-      "responsibility_reasoning": "source: README.md, 13 skills + 2 agents for Java domain",
-      "purpose": "library",
-      "purpose_reasoning": "Domain knowledge bundle with standards and agents, no build scripts",
-      "key_packages": {
-        "skills/java-core": {
-          "description": "Core Java development standards for patterns, modern features, and performance optimization"
-        },
-        "skills/junit-core": {
-          "description": "JUnit 5 core testing patterns with AAA structure, test organization, and coverage standards"
-        },
-        "skills/java-cdi": {
-          "description": "Core CDI patterns including constructor injection, scopes, producers, and container configuration"
-        }
-      },
-      "internal_dependencies": [
-        "plan-marshall",
-        "pm-dev-general"
-      ],
-      "key_dependencies": [
-        "none"
-      ],
-      "key_dependencies_reasoning": "Java domain depends on plan-marshall for build abstraction and pm-dev-general for base standards",
-      "skills_by_profile": {
-        "implementation": [
-          "pm-plugin-development:plugin-architecture",
-          "pm-plugin-development:plugin-script-architecture",
-          "plan-marshall:ref-toon-format",
-          "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-practices",
-          "pm-dev-general:dev-code-documentation"
-        ],
-        "module_testing": [
-          "pm-plugin-development:plugin-architecture",
-          "pm-plugin-development:plugin-script-architecture",
-          "plan-marshall:ref-toon-format",
-          "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-practices",
-          "pm-dev-general:dev-module-testing"
-        ],
-        "integration_testing": [
-          "pm-plugin-development:plugin-architecture",
-          "pm-plugin-development:plugin-script-architecture",
-          "plan-marshall:ref-toon-format",
-          "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-practices"
-        ],
-        "quality": [
-          "pm-plugin-development:plugin-architecture",
-          "pm-plugin-development:plugin-script-architecture",
-          "plan-marshall:ref-toon-format",
-          "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-practices",
-          "pm-dev-general:dev-code-documentation"
-        ],
-        "documentation": [
-          "pm-plugin-development:plugin-architecture",
-          "pm-plugin-development:plugin-script-architecture",
-          "plan-marshall:ref-toon-format",
-          "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-practices"
-        ]
-      },
-      "skills_by_profile_reasoning": "plan-marshall-plugin-dev: build_systems=marshall-plugin; general-dev: cross-cutting development standards",
+      "responsibility": "",
+      "responsibility_reasoning": "",
+      "purpose": "",
+      "purpose_reasoning": "",
+      "key_packages": {},
+      "internal_dependencies": [],
+      "key_dependencies": [],
+      "key_dependencies_reasoning": "",
+      "skills_by_profile": {},
+      "skills_by_profile_reasoning": "",
       "tips": [],
       "insights": [],
       "best_practices": []
     },
     "pm-dev-java-cui": {
-      "responsibility": "CUI-specific Java development standards covering CuiLogger patterns, test generators, value object contracts, HTTP client patterns, and logging enforcement workflows.",
-      "responsibility_reasoning": "source: README.md, 7 skills specific to CUI Java libraries",
-      "purpose": "library",
-      "purpose_reasoning": "CUI-specific standards extension for pm-dev-java",
-      "key_packages": {
-        "skills/cui-logging": {
-          "description": "CUI logging standards with CuiLogger, LogRecord patterns, and DSL-style LogMessages classes"
-        },
-        "skills/cui-testing": {
-          "description": "CUI test library standards for test data generation, value object contracts, and JUL log testing"
-        }
-      },
-      "internal_dependencies": [
-        "plan-marshall",
-        "pm-dev-java"
-      ],
-      "key_dependencies": [
-        "none"
-      ],
-      "key_dependencies_reasoning": "CUI Java extends pm-dev-java with CUI-specific patterns",
-      "skills_by_profile": {
-        "implementation": [
-          "pm-plugin-development:plugin-architecture",
-          "pm-plugin-development:plugin-script-architecture",
-          "plan-marshall:ref-toon-format",
-          "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-practices",
-          "pm-dev-general:dev-code-documentation"
-        ],
-        "module_testing": [
-          "pm-plugin-development:plugin-architecture",
-          "pm-plugin-development:plugin-script-architecture",
-          "plan-marshall:ref-toon-format",
-          "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-practices",
-          "pm-dev-general:dev-module-testing"
-        ],
-        "integration_testing": [
-          "pm-plugin-development:plugin-architecture",
-          "pm-plugin-development:plugin-script-architecture",
-          "plan-marshall:ref-toon-format",
-          "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-practices"
-        ],
-        "quality": [
-          "pm-plugin-development:plugin-architecture",
-          "pm-plugin-development:plugin-script-architecture",
-          "plan-marshall:ref-toon-format",
-          "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-practices",
-          "pm-dev-general:dev-code-documentation"
-        ],
-        "documentation": [
-          "pm-plugin-development:plugin-architecture",
-          "pm-plugin-development:plugin-script-architecture",
-          "plan-marshall:ref-toon-format",
-          "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-practices"
-        ]
-      },
-      "skills_by_profile_reasoning": "plan-marshall-plugin-dev: build_systems=marshall-plugin; general-dev: cross-cutting development standards",
+      "responsibility": "",
+      "responsibility_reasoning": "",
+      "purpose": "",
+      "purpose_reasoning": "",
+      "key_packages": {},
+      "internal_dependencies": [],
+      "key_dependencies": [],
+      "key_dependencies_reasoning": "",
+      "skills_by_profile": {},
+      "skills_by_profile_reasoning": "",
       "tips": [],
       "insights": [],
       "best_practices": []
     },
     "pm-dev-oci": {
-      "responsibility": "OCI container standards covering image building, Dockerfile best practices, multi-platform builds, distroless health probes, and container security hardening.",
-      "responsibility_reasoning": "source: README.md, 3 skills for OCI/container domain",
-      "purpose": "library",
-      "purpose_reasoning": "Standards-only bundle for container/OCI domain",
-      "key_packages": {
-        "skills/oci-standards": {
-          "description": "OCI container standards covering image building, Dockerfile best practices, and multi-platform builds"
-        },
-        "skills/oci-security": {
-          "description": "OCI container security covering runtime hardening, supply chain security, and OWASP container controls"
-        }
-      },
-      "internal_dependencies": [
-        "plan-marshall"
-      ],
-      "key_dependencies": [
-        "none"
-      ],
-      "key_dependencies_reasoning": "OCI domain depends on plan-marshall for workflow integration",
-      "skills_by_profile": {
-        "implementation": [
-          "pm-plugin-development:plugin-architecture",
-          "pm-plugin-development:plugin-script-architecture",
-          "plan-marshall:ref-toon-format",
-          "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-practices",
-          "pm-dev-general:dev-code-documentation"
-        ],
-        "module_testing": [
-          "pm-plugin-development:plugin-architecture",
-          "pm-plugin-development:plugin-script-architecture",
-          "plan-marshall:ref-toon-format",
-          "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-practices",
-          "pm-dev-general:dev-module-testing"
-        ],
-        "integration_testing": [
-          "pm-plugin-development:plugin-architecture",
-          "pm-plugin-development:plugin-script-architecture",
-          "plan-marshall:ref-toon-format",
-          "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-practices"
-        ],
-        "quality": [
-          "pm-plugin-development:plugin-architecture",
-          "pm-plugin-development:plugin-script-architecture",
-          "plan-marshall:ref-toon-format",
-          "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-practices",
-          "pm-dev-general:dev-code-documentation"
-        ],
-        "documentation": [
-          "pm-plugin-development:plugin-architecture",
-          "pm-plugin-development:plugin-script-architecture",
-          "plan-marshall:ref-toon-format",
-          "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-practices"
-        ]
-      },
-      "skills_by_profile_reasoning": "plan-marshall-plugin-dev: build_systems=marshall-plugin; general-dev: cross-cutting development standards",
+      "responsibility": "",
+      "responsibility_reasoning": "",
+      "purpose": "",
+      "purpose_reasoning": "",
+      "key_packages": {},
+      "internal_dependencies": [],
+      "key_dependencies": [],
+      "key_dependencies_reasoning": "",
+      "skills_by_profile": {},
+      "skills_by_profile_reasoning": "",
       "tips": [],
       "insights": [],
       "best_practices": []
     },
     "pm-dev-python": {
-      "responsibility": "Python domain extension providing best practices standards and workflow integration for pyprojectx-based Python projects.",
-      "responsibility_reasoning": "source: README.md, 2 skills (plan-marshall-plugin + python-best-practices)",
-      "purpose": "library",
-      "purpose_reasoning": "Domain knowledge bundle, build scripts moved to plan-marshall",
-      "key_packages": {
-        "skills/python-best-practices": {
-          "description": "Modern Python development patterns and best practices for pyprojectx-based projects"
-        }
-      },
-      "internal_dependencies": [
-        "plan-marshall"
-      ],
-      "key_dependencies": [
-        "none"
-      ],
-      "key_dependencies_reasoning": "Python domain depends on plan-marshall for build abstraction and workflow",
-      "skills_by_profile": {
-        "implementation": [
-          "pm-plugin-development:plugin-architecture",
-          "pm-plugin-development:plugin-script-architecture",
-          "plan-marshall:ref-toon-format",
-          "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-practices",
-          "pm-dev-general:dev-code-documentation",
-          "pm-dev-python:python-best-practices"
-        ],
-        "module_testing": [
-          "pm-plugin-development:plugin-architecture",
-          "pm-plugin-development:plugin-script-architecture",
-          "plan-marshall:ref-toon-format",
-          "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-practices",
-          "pm-dev-general:dev-module-testing",
-          "pm-dev-python:python-best-practices"
-        ],
-        "integration_testing": [
-          "pm-plugin-development:plugin-architecture",
-          "pm-plugin-development:plugin-script-architecture",
-          "plan-marshall:ref-toon-format",
-          "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-practices",
-          "pm-dev-python:python-best-practices"
-        ],
-        "quality": [
-          "pm-plugin-development:plugin-architecture",
-          "pm-plugin-development:plugin-script-architecture",
-          "plan-marshall:ref-toon-format",
-          "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-practices",
-          "pm-dev-general:dev-code-documentation",
-          "pm-dev-python:python-best-practices"
-        ],
-        "documentation": [
-          "pm-plugin-development:plugin-architecture",
-          "pm-plugin-development:plugin-script-architecture",
-          "plan-marshall:ref-toon-format",
-          "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-practices",
-          "pm-dev-python:python-best-practices"
-        ]
-      },
-      "skills_by_profile_reasoning": "plan-marshall-plugin-dev: build_systems=marshall-plugin; general-dev: cross-cutting development standards; python: *.py source files in skills and tests",
+      "responsibility": "",
+      "responsibility_reasoning": "",
+      "purpose": "",
+      "purpose_reasoning": "",
+      "key_packages": {},
+      "internal_dependencies": [],
+      "key_dependencies": [],
+      "key_dependencies_reasoning": "",
+      "skills_by_profile": {},
+      "skills_by_profile_reasoning": "",
       "tips": [],
       "insights": [],
       "best_practices": []
     },
     "pm-documents": {
-      "responsibility": "AsciiDoc and documentation standards enforcement for CUI projects. Provides documentation reference standards, triage extensions, and architecture diagram verification.",
-      "responsibility_reasoning": "source: README.md, 3 skills + 1 command",
-      "purpose": "library",
-      "purpose_reasoning": "Standards bundle for documentation domain",
-      "key_packages": {
-        "skills/ref-documentation": {
-          "description": "General documentation standards for README, AsciiDoc, and technical documentation with validation workflows"
-        }
-      },
-      "internal_dependencies": [
-        "plan-marshall"
-      ],
-      "key_dependencies": [
-        "none"
-      ],
-      "key_dependencies_reasoning": "Documents domain depends on plan-marshall for workflow integration",
-      "skills_by_profile": {
-        "implementation": [
-          "pm-plugin-development:plugin-architecture",
-          "pm-plugin-development:plugin-script-architecture",
-          "plan-marshall:ref-toon-format",
-          "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-practices",
-          "pm-dev-general:dev-code-documentation",
-          "pm-documents:ref-documentation",
-          "pm-documents:manage-adr",
-          "pm-documents:manage-interface"
-        ],
-        "module_testing": [
-          "pm-plugin-development:plugin-architecture",
-          "pm-plugin-development:plugin-script-architecture",
-          "plan-marshall:ref-toon-format",
-          "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-practices",
-          "pm-dev-general:dev-module-testing",
-          "pm-documents:ref-documentation"
-        ],
-        "integration_testing": [
-          "pm-plugin-development:plugin-architecture",
-          "pm-plugin-development:plugin-script-architecture",
-          "plan-marshall:ref-toon-format",
-          "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-practices",
-          "pm-documents:ref-documentation"
-        ],
-        "quality": [
-          "pm-plugin-development:plugin-architecture",
-          "pm-plugin-development:plugin-script-architecture",
-          "plan-marshall:ref-toon-format",
-          "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-practices",
-          "pm-dev-general:dev-code-documentation",
-          "pm-documents:ref-documentation"
-        ],
-        "documentation": [
-          "pm-plugin-development:plugin-architecture",
-          "pm-plugin-development:plugin-script-architecture",
-          "plan-marshall:ref-toon-format",
-          "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-practices",
-          "pm-documents:ref-documentation",
-          "pm-documents:manage-adr",
-          "pm-documents:manage-interface"
-        ]
-      },
-      "skills_by_profile_reasoning": "plan-marshall-plugin-dev: build_systems=marshall-plugin; general-dev: cross-cutting development standards; documentation: doc directories in skills and commands",
+      "responsibility": "",
+      "responsibility_reasoning": "",
+      "purpose": "",
+      "purpose_reasoning": "",
+      "key_packages": {},
+      "internal_dependencies": [],
+      "key_dependencies": [],
+      "key_dependencies_reasoning": "",
+      "skills_by_profile": {},
+      "skills_by_profile_reasoning": "",
       "tips": [],
       "insights": [],
       "best_practices": []
     },
     "pm-plugin-development": {
-      "responsibility": "Complete toolchain for creating, diagnosing, fixing, and maintaining marketplace components. Provides plugin creation wizards, quality diagnosis (plugin-doctor), architecture guidance, script development standards, and marketplace inventory scanning.",
-      "responsibility_reasoning": "source: README.md, 14 skills + 3 agents + 1 command",
-      "purpose": "runtime",
-      "purpose_reasoning": "Active toolchain with agents and commands for plugin lifecycle",
-      "key_packages": {
-        "skills/plugin-doctor": {
-          "description": "Diagnose and fix quality issues in marketplace components with automated safe fixes"
-        },
-        "skills/plugin-architecture": {
-          "description": "Architecture principles, skill patterns, and design guidance for goal-based marketplace components"
-        },
-        "skills/plugin-script-architecture": {
-          "description": "Script development standards covering implementation patterns, testing, and output contracts"
-        }
-      },
-      "internal_dependencies": [
-        "plan-marshall"
-      ],
-      "key_dependencies": [
-        "none"
-      ],
-      "key_dependencies_reasoning": "Plugin development toolchain depends on plan-marshall for build system and workflow",
-      "skills_by_profile": {
-        "implementation": [
-          "pm-plugin-development:plugin-architecture",
-          "pm-plugin-development:plugin-script-architecture",
-          "plan-marshall:ref-toon-format",
-          "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-practices",
-          "pm-dev-general:dev-code-documentation"
-        ],
-        "module_testing": [
-          "pm-plugin-development:plugin-architecture",
-          "pm-plugin-development:plugin-script-architecture",
-          "plan-marshall:ref-toon-format",
-          "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-practices",
-          "pm-dev-general:dev-module-testing"
-        ],
-        "integration_testing": [
-          "pm-plugin-development:plugin-architecture",
-          "pm-plugin-development:plugin-script-architecture",
-          "plan-marshall:ref-toon-format",
-          "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-practices"
-        ],
-        "quality": [
-          "pm-plugin-development:plugin-architecture",
-          "pm-plugin-development:plugin-script-architecture",
-          "plan-marshall:ref-toon-format",
-          "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-practices",
-          "pm-dev-general:dev-code-documentation"
-        ],
-        "documentation": [
-          "pm-plugin-development:plugin-architecture",
-          "pm-plugin-development:plugin-script-architecture",
-          "plan-marshall:ref-toon-format",
-          "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-practices"
-        ]
-      },
-      "skills_by_profile_reasoning": "plan-marshall-plugin-dev: build_systems=marshall-plugin; general-dev: cross-cutting development standards",
+      "responsibility": "",
+      "responsibility_reasoning": "",
+      "purpose": "",
+      "purpose_reasoning": "",
+      "key_packages": {},
+      "internal_dependencies": [],
+      "key_dependencies": [],
+      "key_dependencies_reasoning": "",
+      "skills_by_profile": {},
+      "skills_by_profile_reasoning": "",
       "tips": [],
       "insights": [],
       "best_practices": []
     },
     "pm-requirements": {
-      "responsibility": "Requirements engineering and specification standards covering authoring, planning, traceability, and project initialization for CUI projects.",
-      "responsibility_reasoning": "source: README.md, 6 skills for requirements domain",
-      "purpose": "library",
-      "purpose_reasoning": "Standards-only bundle for requirements engineering",
-      "key_packages": {
-        "skills/requirements-authoring": {
-          "description": "Comprehensive standards for creating requirements with SMART principles, structure, and traceability"
-        },
-        "skills/traceability": {
-          "description": "Standards for bidirectional traceability between specifications and implementation code"
-        }
-      },
-      "internal_dependencies": [
-        "plan-marshall"
-      ],
-      "key_dependencies": [
-        "none"
-      ],
-      "key_dependencies_reasoning": "Requirements domain depends on plan-marshall for workflow integration",
-      "skills_by_profile": {
-        "implementation": [
-          "pm-plugin-development:plugin-architecture",
-          "pm-plugin-development:plugin-script-architecture",
-          "plan-marshall:ref-toon-format",
-          "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-practices",
-          "pm-dev-general:dev-code-documentation"
-        ],
-        "module_testing": [
-          "pm-plugin-development:plugin-architecture",
-          "pm-plugin-development:plugin-script-architecture",
-          "plan-marshall:ref-toon-format",
-          "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-practices",
-          "pm-dev-general:dev-module-testing"
-        ],
-        "integration_testing": [
-          "pm-plugin-development:plugin-architecture",
-          "pm-plugin-development:plugin-script-architecture",
-          "plan-marshall:ref-toon-format",
-          "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-practices"
-        ],
-        "quality": [
-          "pm-plugin-development:plugin-architecture",
-          "pm-plugin-development:plugin-script-architecture",
-          "plan-marshall:ref-toon-format",
-          "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-practices",
-          "pm-dev-general:dev-code-documentation"
-        ],
-        "documentation": [
-          "pm-plugin-development:plugin-architecture",
-          "pm-plugin-development:plugin-script-architecture",
-          "plan-marshall:ref-toon-format",
-          "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-practices"
-        ]
-      },
-      "skills_by_profile_reasoning": "plan-marshall-plugin-dev: build_systems=marshall-plugin; general-dev: cross-cutting development standards",
+      "responsibility": "",
+      "responsibility_reasoning": "",
+      "purpose": "",
+      "purpose_reasoning": "",
+      "key_packages": {},
+      "internal_dependencies": [],
+      "key_dependencies": [],
+      "key_dependencies_reasoning": "",
+      "skills_by_profile": {},
+      "skills_by_profile_reasoning": "",
       "tips": [],
       "insights": [],
       "best_practices": []

@@ -1,6 +1,6 @@
 # Maintenance Prioritization Framework
 
-For general prioritization principles (high/medium/low priority categories, decision tree), see `pm-dev-general:dev-code-quality` refactoring-triggers.md. This document covers Java-specific maintenance priorities.
+For general prioritization principles (high/medium/low priority categories, decision tree), see `plan-marshall:dev-general-code-quality` refactoring-triggers.md. This document covers Java-specific maintenance priorities.
 
 ## Java-Specific High Priority
 
@@ -30,7 +30,7 @@ For general prioritization principles (high/medium/low priority categories, deci
 
 After identifying violations:
 
-1. **Categorize** by violation type (general via `pm-dev-general:dev-code-quality`, Java-specific here)
+1. **Categorize** by violation type (general via `plan-marshall:dev-general-code-quality`, Java-specific here)
 2. **Assign priority** using this framework and general prioritization
 3. **Execute** systematically within each priority band
 4. **Verify** using compliance-checklist.md
@@ -39,4 +39,4 @@ After identifying violations:
 
 - refactoring-triggers.md - Java-specific detection criteria
 - compliance-checklist.md - Verification after fixes applied
-- `pm-dev-general:dev-code-quality` - General prioritization and refactoring triggers
+- `plan-marshall:dev-general-code-quality` - General prioritization and refactoring triggers

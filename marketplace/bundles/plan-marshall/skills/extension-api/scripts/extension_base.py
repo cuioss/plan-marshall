@@ -202,6 +202,18 @@ class ExtensionBase(ABC):
     # Required Methods (must be implemented)
     # =========================================================================
 
+    def get_all_skill_domains(self) -> list[dict]:
+        """Return all domains this extension provides.
+
+        Default wraps get_skill_domains() in a list. Override for multi-domain
+        extensions that provide more than one skill domain.
+
+        Returns:
+            List of domain dicts, each with 'domain' and 'profiles' keys.
+        """
+        result = self.get_skill_domains()
+        return [result] if result and result.get('domain') else []
+
     @abstractmethod
     def get_skill_domains(self) -> dict:
         """Return domain metadata for skill loading.

@@ -25,7 +25,7 @@
       "packages": {},
       "dependencies": [],
       "stats": {
-        "bundle_count": 10
+        "bundle_count": 9
       },
       "commands": {
         "compile": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"compile\"",
@@ -262,6 +262,26 @@
           "type": "skill",
           "description": "Diagnose and fix PR issues (build, reviews, Sonar)"
         },
+        "skill:dev-general-module-testing": {
+          "path": "skills/dev-general-module-testing",
+          "type": "skill",
+          "description": "Language-agnostic testing methodology covering AAA pattern, test structure, organization, coverage, and determinism"
+        },
+        "skill:dev-general-code-documentation": {
+          "path": "skills/dev-general-code-documentation",
+          "type": "skill",
+          "description": "Language-agnostic code documentation principles covering what, when, and how to document public APIs"
+        },
+        "skill:dev-general-code-quality": {
+          "path": "skills/dev-general-code-quality",
+          "type": "skill",
+          "description": "Language-agnostic code quality principles covering SRP, CQS, complexity thresholds, refactoring triggers, and error handling"
+        },
+        "skill:dev-general-practices": {
+          "path": "skills/dev-general-practices",
+          "type": "skill",
+          "description": "Foundational development practices covering user interaction, tool usage, research, dependency management, and document proliferation"
+        },
         "agent:detect-change-type-agent": {
           "path": "agents/detect-change-type-agent.md",
           "type": "agent",
@@ -315,7 +335,7 @@
       },
       "dependencies": [],
       "stats": {
-        "skill_count": 38,
+        "skill_count": 42,
         "agent_count": 8,
         "command_count": 2
       },
@@ -405,69 +425,6 @@
         "verify": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"verify pm-dev-frontend\"",
         "coverage": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"coverage pm-dev-frontend\"",
         "clean": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"clean pm-dev-frontend\""
-      }
-    },
-    "pm-dev-general": {
-      "name": "pm-dev-general",
-      "build_systems": [
-        "marshall-plugin"
-      ],
-      "paths": {
-        "module": "marketplace/bundles/pm-dev-general",
-        "descriptor": "marketplace/bundles/pm-dev-general/.claude-plugin/plugin.json",
-        "sources": [
-          "marketplace/bundles/pm-dev-general/skills"
-        ],
-        "tests": [
-          "test/pm-dev-general"
-        ],
-        "readme": "marketplace/bundles/pm-dev-general/README.md"
-      },
-      "metadata": {
-        "bundle_name": "pm-dev-general",
-        "description": "Cross-cutting development principles covering testing methodology, documentation standards, and code quality patterns"
-      },
-      "packages": {
-        "skill:dev-module-testing": {
-          "path": "skills/dev-module-testing",
-          "type": "skill",
-          "description": "Language-agnostic testing methodology covering AAA pattern, test structure, organization, coverage, and determinism"
-        },
-        "skill:dev-code-documentation": {
-          "path": "skills/dev-code-documentation",
-          "type": "skill",
-          "description": "Language-agnostic code documentation principles covering what, when, and how to document public APIs"
-        },
-        "skill:dev-code-quality": {
-          "path": "skills/dev-code-quality",
-          "type": "skill",
-          "description": "Language-agnostic code quality principles covering SRP, CQS, complexity thresholds, refactoring triggers, and error handling"
-        },
-        "skill:dev-practices": {
-          "path": "skills/dev-practices",
-          "type": "skill",
-          "description": "Foundational development practices covering user interaction, tool usage, research, dependency management, and document proliferation"
-        },
-        "skill:plan-marshall-plugin": {
-          "path": "skills/plan-marshall-plugin",
-          "type": "skill",
-          "description": "General development domain manifest for plan-marshall workflow integration"
-        }
-      },
-      "dependencies": [],
-      "stats": {
-        "skill_count": 5,
-        "agent_count": 0,
-        "command_count": 0
-      },
-      "commands": {
-        "compile": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"compile pm-dev-general\"",
-        "test-compile": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"test-compile pm-dev-general\"",
-        "module-tests": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"module-tests pm-dev-general\"",
-        "quality-gate": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"quality-gate pm-dev-general\"",
-        "verify": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"verify pm-dev-general\"",
-        "coverage": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"coverage pm-dev-general\"",
-        "clean": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"clean pm-dev-general\""
       }
     },
     "pm-dev-java": {

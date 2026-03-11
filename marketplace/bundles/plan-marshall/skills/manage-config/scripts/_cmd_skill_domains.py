@@ -234,13 +234,19 @@ def load_domain_config_from_bundle(domain_key: str) -> dict | None:
             continue
 
         try:
-            domain_info = module.get_skill_domains()
-            if not domain_info:
-                continue
+            # Check all domains (supports multi-domain extensions)
+            if hasattr(module, 'get_all_skill_domains'):
+                all_domains = module.get_all_skill_domains()
+            else:
+                sd = module.get_skill_domains()
+                all_domains = [sd] if sd and sd.get('domain') else []
 
-            domain_data = domain_info.get('domain', {})
-            if isinstance(domain_data, dict) and domain_data.get('key') == domain_key:
-                return convert_extension_to_domain_config(module, domain_info, ext['bundle'])
+            for domain_info in all_domains:
+                if not domain_info:
+                    continue
+                domain_data = domain_info.get('domain', {})
+                if isinstance(domain_data, dict) and domain_data.get('key') == domain_key:
+                    return convert_extension_to_domain_config(module, domain_info, ext['bundle'])
         except Exception:
             continue
 

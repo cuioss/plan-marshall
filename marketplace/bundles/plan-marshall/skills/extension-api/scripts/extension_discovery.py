@@ -219,6 +219,9 @@ def get_build_systems_from_extensions(extensions: list[dict[str, Any]], project_
 def get_skill_domains_from_extensions(extensions: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Get skill domains from extensions.
 
+    Supports multi-domain extensions via get_all_skill_domains().
+    Falls back to get_skill_domains() for backward compatibility.
+
     Args:
         extensions: List of extension info dicts
 
@@ -229,16 +232,28 @@ def get_skill_domains_from_extensions(extensions: list[dict[str, Any]]) -> list[
 
     for ext in extensions:
         module = ext.get('module')
-        if module and hasattr(module, 'get_skill_domains'):
-            try:
+        if not module:
+            continue
+
+        try:
+            # Prefer get_all_skill_domains() for multi-domain support
+            if hasattr(module, 'get_all_skill_domains'):
+                all_domains = module.get_all_skill_domains()
+                for domain_info in all_domains:
+                    if domain_info and domain_info.get('domain'):
+                        # Copy to avoid mutating the extension's data
+                        entry = dict(domain_info)
+                        entry['bundle'] = ext['bundle']
+                        domains.append(entry)
+            elif hasattr(module, 'get_skill_domains'):
                 domain_info = module.get_skill_domains()
                 if domain_info and domain_info.get('domain'):
                     domain_info['bundle'] = ext['bundle']
                     domains.append(domain_info)
-            except Exception as e:
-                log_entry(
-                    'script', 'global', 'WARN', f'[EXTENSION] get_skill_domains() failed for {ext["bundle"]}: {e}'
-                )
+        except Exception as e:
+            log_entry(
+                'script', 'global', 'WARN', f'[EXTENSION] get_skill_domains() failed for {ext["bundle"]}: {e}'
+            )
 
     return domains
 

@@ -30,7 +30,7 @@ class Extension(ExtensionBase):
                             'description': 'Core JavaScript development standards covering ES modules, modern patterns, and code quality',
                         },
                         {
-                            'skill': 'pm-dev-general:dev-code-quality',
+                            'skill': 'plan-marshall:dev-general-code-quality',
                             'description': 'Language-agnostic code quality principles (SRP, CQS, complexity, error handling)',
                         },
                     ],
@@ -48,7 +48,7 @@ class Extension(ExtensionBase):
                 'implementation': {
                     'defaults': [
                         {
-                            'skill': 'pm-dev-general:dev-code-documentation',
+                            'skill': 'plan-marshall:dev-general-code-documentation',
                             'description': 'Language-agnostic documentation principles (what/when/how to document)',
                         },
                     ],
@@ -62,7 +62,7 @@ class Extension(ExtensionBase):
                 'module_testing': {
                     'defaults': [
                         {
-                            'skill': 'pm-dev-general:dev-module-testing',
+                            'skill': 'plan-marshall:dev-general-module-testing',
                             'description': 'Language-agnostic testing methodology (AAA, coverage, reliability, determinism)',
                         },
                     ],

@@ -55,7 +55,7 @@ def _is_plan_marshall_marketplace(project_root: str) -> bool:
 
 
 class Extension(ExtensionBase):
-    """Build system discovery extension for plan-marshall bundle."""
+    """Build system discovery and cross-cutting development extension for plan-marshall bundle."""
 
     def get_skill_domains(self) -> dict:
         """Domain metadata - build domain with no profiles."""
@@ -66,6 +66,90 @@ class Extension(ExtensionBase):
                 'description': 'Maven, Gradle, npm, and Python build detection and execution',
             },
             'profiles': {},
+        }
+
+    def get_all_skill_domains(self) -> list[dict]:
+        """Return both build and general-dev domains."""
+        return [self.get_skill_domains(), self._general_dev_domain()]
+
+    def _general_dev_domain(self) -> dict:
+        """Return general-dev domain metadata for skill loading."""
+        return {
+            'domain': {
+                'key': 'general-dev',
+                'name': 'General Development',
+                'description': 'Cross-cutting code quality, documentation, and testing methodology',
+            },
+            'profiles': {
+                'core': {
+                    'defaults': [
+                        {
+                            'skill': 'plan-marshall:dev-general-code-quality',
+                            'description': 'Language-agnostic code quality principles (SRP, CQS, complexity, error handling)',
+                        },
+                        {
+                            'skill': 'plan-marshall:dev-general-practices',
+                            'description': 'Foundational development practices (user interaction, tool usage, research, dependency management)',
+                        },
+                    ],
+                    'optionals': [],
+                },
+                'implementation': {
+                    'defaults': [
+                        {
+                            'skill': 'plan-marshall:dev-general-code-documentation',
+                            'description': 'Language-agnostic documentation principles (what/when/how to document)',
+                        },
+                    ],
+                    'optionals': [],
+                },
+                'module_testing': {
+                    'defaults': [
+                        {
+                            'skill': 'plan-marshall:dev-general-module-testing',
+                            'description': 'Language-agnostic testing methodology (AAA, coverage, reliability, determinism)',
+                        },
+                    ],
+                    'optionals': [],
+                },
+                'quality': {
+                    'defaults': [
+                        {
+                            'skill': 'plan-marshall:dev-general-code-documentation',
+                            'description': 'Language-agnostic documentation principles (what/when/how to document)',
+                        },
+                    ],
+                    'optionals': [],
+                },
+            },
+        }
+
+    def applies_to_module(self, module_data: dict) -> dict:
+        """Always applicable — cross-cutting general-dev domain."""
+        domains = self._general_dev_domain()
+        profiles = domains.get('profiles', {})
+        core = profiles.get('core', {})
+        core_defaults = core.get('defaults', [])
+        core_optionals = core.get('optionals', [])
+
+        skills_by_profile: dict[str, dict] = {}
+        for profile_name in ['implementation', 'module_testing', 'integration_testing',
+                             'quality', 'documentation']:
+            profile = profiles.get(profile_name, {})
+            if profile or core_defaults or core_optionals:
+                merged_defaults = list(core_defaults) + list(profile.get('defaults', []))
+                merged_optionals = list(core_optionals) + list(profile.get('optionals', []))
+                if merged_defaults or merged_optionals:
+                    skills_by_profile[profile_name] = {
+                        'defaults': merged_defaults,
+                        'optionals': merged_optionals,
+                    }
+        return {
+            'applicable': True,
+            'confidence': 'high',
+            'signals': ['cross-cutting'],
+            'additive_to': None,
+            'skills_by_profile': skills_by_profile,
         }
 
     # =========================================================================

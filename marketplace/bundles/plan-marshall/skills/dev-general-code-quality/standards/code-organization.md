@@ -160,7 +160,7 @@ Prefer immutable data structures:
 
 * Write self-documenting code first
 * Use comments to explain WHY, not WHAT
-* Use documentation comments for public APIs (see `pm-dev-general:dev-code-documentation`)
+* Use documentation comments for public APIs (see `plan-marshall:dev-general-code-documentation`)
 * Remove commented-out code — use version control instead
 
 ```

@@ -590,8 +590,8 @@ def test_java_cui_not_applicable_to_npm():
 
 
 def test_general_dev_always_applicable():
-    """General-dev ext: ANY module -> always applicable (high)."""
-    ext = load_extension('pm-dev-general')
+    """General-dev via plan-marshall ext: ANY module -> always applicable (high)."""
+    ext = load_extension('plan-marshall')
 
     assert ext.applies_to_module(_maven_module_data())['applicable'] is True
     assert ext.applies_to_module(_npm_module_data())['applicable'] is True
@@ -599,6 +599,17 @@ def test_general_dev_always_applicable():
 
     result = ext.applies_to_module(_maven_module_data())
     assert result['confidence'] == 'high'
+
+
+def test_plan_marshall_get_all_skill_domains():
+    """plan-marshall provides both build and general-dev domains."""
+    ext = load_extension('plan-marshall')
+    all_domains = ext.get_all_skill_domains()
+
+    assert len(all_domains) == 2
+    keys = {d['domain']['key'] for d in all_domains}
+    assert 'build' in keys
+    assert 'general-dev' in keys
 
 
 def test_plugin_dev_applies_to_marketplace_module():
@@ -639,7 +650,7 @@ def test_requirements_not_applicable():
 def test_applies_to_module_result_structure():
     """All applies_to_module results have required keys."""
     required_keys = ['applicable', 'confidence', 'signals', 'additive_to', 'skills_by_profile']
-    bundles = ['pm-dev-java', 'pm-dev-frontend', 'pm-dev-java-cui', 'pm-dev-general',
+    bundles = ['pm-dev-java', 'pm-dev-frontend', 'pm-dev-java-cui', 'plan-marshall',
                'pm-plugin-development', 'pm-documents', 'pm-requirements']
 
     for bundle in bundles:
@@ -660,29 +671,33 @@ def test_all_extensions_have_unique_domain_keys():
         'pm-dev-java',
         'pm-dev-java-cui',
         'pm-dev-frontend',
-        'pm-dev-general',
         'pm-dev-python',
         'pm-dev-oci',
         'pm-plugin-development',
         'pm-requirements',
         'pm-documents',
+        'plan-marshall',
     ]
     domain_keys = {}
 
     for bundle in bundles:
         try:
             ext = load_extension(bundle)
-            domains = ext.get_skill_domains()
-            key = domains['domain']['key']
-
-            if key in domain_keys:
-                raise AssertionError(f"Duplicate domain key '{key}' in {bundle} and {domain_keys[key]}")
-
-            domain_keys[key] = bundle
+            # Use get_all_skill_domains for multi-domain support
+            if hasattr(ext, 'get_all_skill_domains'):
+                all_domains = ext.get_all_skill_domains()
+            else:
+                sd = ext.get_skill_domains()
+                all_domains = [sd] if sd and sd.get('domain') else []
+            for domains in all_domains:
+                key = domains['domain']['key']
+                if key in domain_keys:
+                    raise AssertionError(f"Duplicate domain key '{key}' in {bundle} and {domain_keys[key]}")
+                domain_keys[key] = bundle
         except FileNotFoundError:
             pass  # Skip bundles without extensions
 
-    assert len(domain_keys) == 9, f'Should have 9 unique domain keys, got {len(domain_keys)}'
+    assert len(domain_keys) == 10, f'Should have 10 unique domain keys, got {len(domain_keys)}: {sorted(domain_keys.keys())}'
 
 
 def test_all_extensions_have_required_functions():
@@ -691,12 +706,12 @@ def test_all_extensions_have_required_functions():
         'pm-dev-java',
         'pm-dev-java-cui',
         'pm-dev-frontend',
-        'pm-dev-general',
         'pm-dev-python',
         'pm-dev-oci',
         'pm-plugin-development',
         'pm-requirements',
         'pm-documents',
+        'plan-marshall',
     ]
     # Only get_skill_domains is required (abstract method)
     required = ['get_skill_domains']

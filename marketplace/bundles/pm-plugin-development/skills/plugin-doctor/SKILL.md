@@ -89,7 +89,7 @@ All 9 workflows follow the same pattern:
 
    Load these skills before proceeding:
    ```
-   Skill: pm-dev-general:dev-practices
+   Skill: plan-marshall:dev-general-practices
    Skill: pm-plugin-development:plugin-architecture
    Skill: pm-plugin-development:tools-marketplace-inventory
    ```
