@@ -32,28 +32,6 @@ SETTINGS_GRADLE_KTS = 'settings.gradle.kts'
 PACKAGE_JSON = 'package.json'
 PYPROJECT_TOML = 'pyproject.toml'
 
-# Marketplace identification (Python discovery skips plan-marshall itself)
-MARKETPLACE_JSON = 'marketplace/.claude-plugin/marketplace.json'
-PLAN_MARSHALL_NAME = 'plan-marshall'
-
-
-def _is_plan_marshall_marketplace(project_root: str) -> bool:
-    """Check if this is the plan-marshall marketplace by name.
-
-    The plan-marshall marketplace is handled by pm-plugin-development,
-    so Python discovery should skip module discovery for it.
-    """
-    marketplace_json = Path(project_root) / MARKETPLACE_JSON
-    if not marketplace_json.exists():
-        return False
-    try:
-        data = json.loads(marketplace_json.read_text(encoding='utf-8'))
-        name = data.get('name')
-        return isinstance(name, str) and name == PLAN_MARSHALL_NAME
-    except (OSError, json.JSONDecodeError):
-        return False
-
-
 class Extension(ExtensionBase):
     """Build system discovery and cross-cutting development extension for plan-marshall bundle."""
 
@@ -530,9 +508,6 @@ class Extension(ExtensionBase):
 
     def _discover_python(self, project_root: str) -> list:
         """Discover Python modules via runtime inspection."""
-        if _is_plan_marshall_marketplace(project_root):
-            return []
-
         root = Path(project_root)
         pyproject = root / PYPROJECT_TOML
 
@@ -635,7 +610,7 @@ class Extension(ExtensionBase):
                         test_files += 1
 
         return {
-            'name': '.',
+            'name': 'default',
             'build_systems': ['python'],
             'paths': paths,
             'metadata': metadata,

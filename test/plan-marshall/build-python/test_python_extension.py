@@ -148,7 +148,7 @@ verify = "uv run python build.py verify"
         module = modules[0]
 
         # Check module structure
-        assert module['name'] == '.'
+        assert module['name'] == 'default'
         assert module['build_systems'] == ['python']
         assert module['paths']['module'] == '.'
         assert module['paths']['descriptor'] == 'pyproject.toml'
@@ -329,11 +329,12 @@ verify = "echo verify"
 # =============================================================================
 
 
-def test_discover_modules_skips_plan_marshall_marketplace():
-    """discover_modules() returns [] for plan-marshall marketplace.
+def test_discover_modules_works_for_plan_marshall_marketplace():
+    """discover_modules() returns Python module for plan-marshall marketplace.
 
-    The plan-marshall marketplace is handled by pm-plugin-development,
-    so pm-dev-python should skip it to avoid duplicate modules.
+    The plan-marshall marketplace IS a Python project. Python discovery
+    provides the root module (build_systems=['python']), while
+    pm-plugin-development provides bundle modules (build_systems=['marshall-plugin']).
     """
     with BuildContext() as ctx:
         # Create pyproject.toml and wrapper (valid Python project)
@@ -355,8 +356,10 @@ verify = "echo verify"
         ext = Extension()
         modules = ext.discover_modules(str(ctx.temp_dir))
 
-        # Should return empty - handled by pm-plugin-development
-        assert modules == []
+        # Should return Python root module
+        assert len(modules) == 1
+        assert modules[0]['name'] == 'default'
+        assert modules[0]['build_systems'] == ['python']
 
 
 def test_discover_modules_handles_other_marketplaces():
@@ -386,4 +389,4 @@ verify = "echo verify"
 
         # Should return module - NOT plan-marshall
         assert len(modules) == 1
-        assert modules[0]['name'] == '.'
+        assert modules[0]['name'] == 'default'

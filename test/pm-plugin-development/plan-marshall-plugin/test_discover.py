@@ -15,7 +15,6 @@ from plugin_discover import (
     _is_plan_marshall_marketplace,
     build_bundle_module,
     build_commands,
-    build_default_module,
     discover_agents,
     discover_bundles,
     discover_commands,
@@ -102,28 +101,6 @@ class TestBuildCommands(unittest.TestCase):
         # Commands should use python_build via execute-script
         self.assertIn('plan-marshall:build-python:python_build', commands['module-tests'])
         self.assertIn('pm-plugin-development', commands['module-tests'])
-
-
-class TestBuildDefaultModule(unittest.TestCase):
-    """Tests for build_default_module function."""
-
-    def test_default_module_structure(self):
-        """Test default module has required fields."""
-        # Use project root for realistic paths
-        project_root = Path(__file__).parent.parent.parent.parent
-        module = build_default_module(project_root, 8)
-
-        self.assertEqual(module['name'], 'default')
-        self.assertEqual(module['build_systems'], [BUILD_SYSTEM])
-        self.assertEqual(module['paths']['module'], '.')
-        self.assertEqual(module['paths']['descriptor'], 'marketplace/.claude-plugin/marketplace.json')
-        self.assertEqual(module['stats']['bundle_count'], 8)
-        # Default module should have all 7 canonical commands
-        self.assertIn('compile', module['commands'])
-        self.assertIn('module-tests', module['commands'])
-        self.assertIn('verify', module['commands'])
-        # Commands should use python_build via execute-script
-        self.assertIn('plan-marshall:build-python:python_build', module['commands']['module-tests'])
 
 
 class TestDiscoverBundles(unittest.TestCase):
@@ -287,16 +264,14 @@ class TestDiscoverPluginModules(unittest.TestCase):
         project_root = Path(__file__).parent.parent.parent.parent
         modules = discover_plugin_modules(str(project_root))
 
-        # Should have default module plus bundles
-        self.assertGreater(len(modules), 1)
+        # Should have bundle modules (no default root module — that comes from Python discovery)
+        self.assertGreater(len(modules), 0)
 
-        # First module should be default
-        self.assertEqual(modules[0]['name'], 'default')
-
-        # All modules should have required structure
+        # All modules should be bundle modules with marshall-plugin build system
         for module in modules:
             self.assertIn('name', module)
             self.assertIn('build_systems', module)
+            self.assertEqual(module['build_systems'], [BUILD_SYSTEM])
             self.assertIn('paths', module)
             self.assertIn('metadata', module)
             self.assertIn('packages', module)
