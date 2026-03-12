@@ -6,11 +6,11 @@
     "default": {
       "name": "default",
       "build_systems": [
-        "marshall-plugin"
+        "python"
       ],
       "paths": {
         "module": ".",
-        "descriptor": "marketplace/.claude-plugin/marketplace.json",
+        "descriptor": "pyproject.toml",
         "sources": [
           "marketplace/bundles"
         ],
@@ -20,12 +20,14 @@
         "readme": "README.adoc"
       },
       "metadata": {
-        "description": "Plan Marshall marketplace root module"
+        "build_tool": "pyprojectx",
+        "package_manager": "uv"
       },
       "packages": {},
       "dependencies": [],
       "stats": {
-        "bundle_count": 9
+        "source_files": 142,
+        "test_files": 112
       },
       "commands": {
         "compile": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"compile\"",
@@ -33,8 +35,8 @@
         "module-tests": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"module-tests\"",
         "quality-gate": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"quality-gate\"",
         "verify": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"verify\"",
-        "coverage": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"coverage\"",
-        "clean": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"clean\""
+        "clean": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"clean\"",
+        "coverage": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"coverage\""
       }
     },
     "documentation": {
@@ -975,6 +977,7 @@
     }
   },
   "extensions_used": [
+    "plan-marshall",
     "pm-documents",
     "pm-plugin-development"
   ]
