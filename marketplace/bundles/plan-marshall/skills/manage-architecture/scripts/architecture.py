@@ -164,6 +164,8 @@ def main():
         '--include-optionals', dest='include_optionals', action='store_true', help='Include optional skills'
     )
     enrich_add_domain_parser.add_argument('--reasoning', help='Rationale for adding this domain')
+    enrich_add_domain_parser.add_argument(
+        '--profiles', help='Comma-separated profiles to include (overrides config and detection)')
 
     # =========================================================================
     # Parse and Dispatch

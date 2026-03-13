@@ -110,7 +110,8 @@ class Extension(ExtensionBase):
             },
         }
 
-    def applies_to_module(self, module_data: dict) -> dict:
+    def applies_to_module(self, module_data: dict,
+                          active_profiles: set[str] | None = None) -> dict:
         """Always applicable — cross-cutting general-dev domain."""
         domains = self._general_dev_domain()
         profiles = domains.get('profiles', {})
@@ -118,10 +119,15 @@ class Extension(ExtensionBase):
         core_defaults = core.get('defaults', [])
         core_optionals = core.get('optionals', [])
 
+        # Apply profile filtering (config override or no filtering for general-dev)
+        profile_filter = active_profiles
+
         skills_by_profile: dict[str, dict] = {}
         for profile_name in ['implementation', 'module_testing', 'integration_testing',
                              'quality', 'documentation']:
             if profile_name not in profiles:
+                continue
+            if profile_filter is not None and profile_name not in profile_filter:
                 continue
             profile = profiles[profile_name]
             merged_defaults = list(core_defaults) + list(profile.get('defaults', []))

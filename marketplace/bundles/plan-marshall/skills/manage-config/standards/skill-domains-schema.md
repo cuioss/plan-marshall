@@ -11,6 +11,7 @@ The skill domains configuration uses a 6-phase workflow model with profile-based
 ```json
 {
   "skill_domains": {
+    "active_profiles": ["implementation", "module_testing", "quality"],
     "system": {
       "defaults": ["bundle:skill"],
       "optionals": ["bundle:skill"],
@@ -29,6 +30,7 @@ The skill domains configuration uses a 6-phase workflow model with profile-based
       }
     },
     "{domain}": {
+      "active_profiles": ["implementation", "module_testing"],
       "workflow_skill_extensions": {
         "outline": "bundle:extension-skill",
         "triage": "bundle:triage-skill"
@@ -268,6 +270,67 @@ manage-config resolve-domain-skills --domain java --profile implementation
 }
 ```
 
+## Active Profiles (Profile Filtering)
+
+Controls which profiles are emitted during architecture enrichment and skill resolution.
+
+### Three-Layer Resolution
+
+| Layer | Source | Scope | Description |
+|-------|--------|-------|-------------|
+| 1 | Extension signal detection | Per-module | `_detect_applicable_profiles()` inspects module signals |
+| 2 | `skill_domains.active_profiles` | Global | Positive list overrides detection for all modules |
+| 2b | `skill_domains.{domain}.active_profiles` | Per-domain | Overrides global for specific domain |
+| 3 | `--profiles` flag on `enrich add-domain` | Per-module | Explicit per-module override at enrichment time |
+
+**Resolution order**: `--profiles flag` > `per-domain active_profiles` > `global active_profiles` > `signal detection` > `all defined profiles`
+
+### Global Active Profiles
+
+```json
+{
+  "skill_domains": {
+    "active_profiles": ["implementation", "module_testing", "quality"]
+  }
+}
+```
+
+When set, only these profiles are emitted for all domains. Profiles not in the list (e.g., `integration_testing`, `documentation`) are excluded.
+
+### Per-Domain Active Profiles
+
+```json
+{
+  "skill_domains": {
+    "documentation": {
+      "active_profiles": ["documentation"],
+      "bundle": "pm-documents"
+    }
+  }
+}
+```
+
+Per-domain overrides take precedence over the global setting for that domain.
+
+### CLI Management
+
+```bash
+# Show current config
+manage-config skill-domains active-profiles
+
+# Set global default
+manage-config skill-domains active-profiles set --profiles implementation,module_testing,quality
+
+# Set per-domain override
+manage-config skill-domains active-profiles set --domain documentation --profiles documentation
+
+# Remove per-domain override (falls back to global)
+manage-config skill-domains active-profiles remove --domain documentation
+
+# Remove global default (falls back to signal detection)
+manage-config skill-domains active-profiles remove
+```
+
 ## Validation Rules
 
 1. **System domain required**: `skill_domains.system` must exist
@@ -284,6 +347,7 @@ These keys are reserved in domain configuration and cannot be used as profile na
 - `workflow_skills` - System domain only
 - `task_executors` - System domain only
 - `workflow_skill_extensions` - Domain extensions
+- `active_profiles` - Profile filtering (global or per-domain)
 - `core` - Core skills for all profiles
 - `defaults` - Top-level defaults (flat structure compatibility)
 - `optionals` - Top-level optionals (flat structure compatibility)

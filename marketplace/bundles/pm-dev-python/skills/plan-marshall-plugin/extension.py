@@ -59,7 +59,8 @@ class Extension(ExtensionBase):
             },
         }
 
-    def applies_to_module(self, module_data: dict) -> dict:
+    def applies_to_module(self, module_data: dict,
+                          active_profiles: set[str] | None = None) -> dict:
         """Check if Python domain applies based on .py files in paths."""
         paths = module_data.get('paths', {})
         sources = paths.get('sources', [])
@@ -78,7 +79,9 @@ class Extension(ExtensionBase):
             return {'applicable': False, 'confidence': 'none', 'signals': [], 'additive_to': None, 'skills_by_profile': {}}
 
         confidence = 'high' if 'python' in build_systems else 'medium'
-        return self._build_applicable_result(confidence, signals)
+        return self._build_applicable_result(confidence, signals,
+                                              module_data=module_data,
+                                              active_profiles=active_profiles)
 
     def provides_triage(self) -> str | None:
         """Return triage skill reference (future)."""

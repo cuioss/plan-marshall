@@ -52,16 +52,21 @@ class Extension(ExtensionBase):
             },
         }
 
-    def applies_to_module(self, module_data: dict) -> dict:
+    def applies_to_module(self, module_data: dict,
+                          active_profiles: set[str] | None = None) -> dict:
         """Check if plugin development domain applies based on marketplace structure."""
         build_systems = module_data.get('build_systems', [])
         if 'marshall-plugin' in build_systems:
-            return self._build_applicable_result('high', ['build_systems=marshall-plugin'])
+            return self._build_applicable_result('high', ['build_systems=marshall-plugin'],
+                                                  module_data=module_data,
+                                                  active_profiles=active_profiles)
 
         paths = module_data.get('paths', {})
         module_path = str(paths.get('module', ''))
         if 'marketplace' in module_path or 'bundles' in module_path:
-            return self._build_applicable_result('high', ['marketplace structure detected'])
+            return self._build_applicable_result('high', ['marketplace structure detected'],
+                                                  module_data=module_data,
+                                                  active_profiles=active_profiles)
 
         return {'applicable': False, 'confidence': 'none', 'signals': [], 'additive_to': None, 'skills_by_profile': {}}
 

@@ -805,6 +805,52 @@ def cmd_skill_domains(args) -> int:
             'removed': True,
         })
 
+    elif args.verb == 'active-profiles':
+        ap_verb = getattr(args, 'ap_verb', None)
+
+        if ap_verb is None:
+            # Show current active_profiles config
+            ap_result: dict = {}
+            if 'active_profiles' in skill_domains:
+                ap_result['global'] = skill_domains['active_profiles']
+            for dk, dc in skill_domains.items():
+                if isinstance(dc, dict) and 'active_profiles' in dc:
+                    ap_result[dk] = dc['active_profiles']
+            if not ap_result:
+                ap_result['status'] = 'not_configured'
+            return success_exit(ap_result)
+
+        elif ap_verb == 'set':
+            profiles_list = [p.strip() for p in args.profiles.split(',') if p.strip()]
+            domain = getattr(args, 'domain', None)
+            if domain:
+                if domain not in skill_domains:
+                    return error_exit(f'Unknown domain: {domain}')
+                if not isinstance(skill_domains[domain], dict):
+                    return error_exit(f'Domain {domain} is not a dict')
+                skill_domains[domain]['active_profiles'] = profiles_list
+            else:
+                skill_domains['active_profiles'] = profiles_list
+            config['skill_domains'] = skill_domains
+            save_config(config)
+            return success_exit({
+                'scope': domain or 'global',
+                'active_profiles': profiles_list,
+            })
+
+        elif ap_verb == 'remove':
+            domain = getattr(args, 'domain', None)
+            if domain:
+                if domain not in skill_domains:
+                    return error_exit(f'Unknown domain: {domain}')
+                if isinstance(skill_domains[domain], dict):
+                    skill_domains[domain].pop('active_profiles', None)
+            else:
+                skill_domains.pop('active_profiles', None)
+            config['skill_domains'] = skill_domains
+            save_config(config)
+            return success_exit({'scope': domain or 'global', 'removed': True})
+
     return EXIT_ERROR
 
 
@@ -944,11 +990,20 @@ def cmd_get_skills_by_profile(args) -> int:
     core_optionals = _extract_skill_names(core_config.get('optionals', []))
     core_all = core_defaults + core_optionals
 
+    # Resolve active_profiles from config (per-domain or global)
+    active_profiles: set[str] | None = None
+    if isinstance(domain_config, dict) and 'active_profiles' in domain_config:
+        active_profiles = set(domain_config['active_profiles'])
+    elif 'active_profiles' in skill_domains:
+        active_profiles = set(skill_domains['active_profiles'])
+
     # Build skills_by_profile from available profiles in extension
     skills_by_profile: dict[str, list[str]] = {}
 
     for profile_name in ['implementation', 'module_testing', 'integration_testing', 'documentation']:
         if profile_name not in profiles:
+            continue
+        if active_profiles is not None and profile_name not in active_profiles:
             continue
         profile_config = profiles[profile_name]
         profile_defaults = _extract_skill_names(profile_config.get('defaults', []))

@@ -77,14 +77,17 @@ class Extension(ExtensionBase):
             },
         }
 
-    def applies_to_module(self, module_data: dict) -> dict:
+    def applies_to_module(self, module_data: dict,
+                          active_profiles: set[str] | None = None) -> dict:
         """Check if JavaScript domain applies based on build systems."""
         build_systems = module_data.get('build_systems', [])
         if 'npm' not in build_systems:
             return {'applicable': False, 'confidence': 'none', 'signals': [], 'additive_to': None, 'skills_by_profile': {}}
 
         signals = ['build_systems=npm']
-        result = self._build_applicable_result('high', signals)
+        result = self._build_applicable_result('high', signals,
+                                                module_data=module_data,
+                                                active_profiles=active_profiles)
 
         # Move cypress to optionals if no cypress dependency
         deps = module_data.get('dependencies', [])

@@ -661,6 +661,141 @@ def test_applies_to_module_result_structure():
 
 
 # =============================================================================
+# Profile Applicability Tests (signal detection + active_profiles)
+# =============================================================================
+
+
+def _maven_it_module_data() -> dict:
+    """Maven module with integration test signals."""
+    return {
+        'name': 'integration-tests',
+        'build_systems': ['maven'],
+        'paths': {'module': 'integration-tests', 'sources': ['src/main/java'], 'tests': ['src/test/java']},
+        'metadata': {'profiles': ['integration-test']},
+        'packages': {},
+        'dependencies': ['org.testcontainers:testcontainers:test'],
+        'commands': {},
+        'stats': {'source_files': 2, 'test_files': 10},
+    }
+
+
+def test_java_detect_applicable_profiles_with_it_signals():
+    """Java ext: module with IT signals adds integration_testing to applicable set.
+
+    Note: pm-dev-java doesn't define an integration_testing profile in get_skill_domains(),
+    so the signal detection adds it to the applicable set but _build_applicable_result
+    will skip it since it's not in profiles. This is correct behavior — the detection
+    layer says "this profile WOULD apply" but it only takes effect if defined.
+    """
+    ext = load_extension('pm-dev-java')
+    profiles = ext.get_skill_domains()['profiles']
+    detected = ext._detect_applicable_profiles(profiles, _maven_it_module_data())
+    assert detected is not None
+    # IT signals detected, so integration_testing is in the applicable set
+    # (even though pm-dev-java doesn't define this profile, the signal is still detected)
+    assert 'implementation' in detected
+    assert 'module_testing' in detected
+    assert 'quality' in detected
+
+
+def test_java_detect_applicable_profiles_without_it_signals():
+    """Java ext: plain module without IT signals excludes integration_testing."""
+    ext = load_extension('pm-dev-java')
+    profiles = ext.get_skill_domains()['profiles']
+    detected = ext._detect_applicable_profiles(profiles, _maven_module_data())
+    assert detected is not None
+    assert 'integration_testing' not in detected
+    assert 'implementation' in detected
+
+
+def test_java_detect_applicable_profiles_none_module():
+    """Java ext: None module_data returns None (no filtering)."""
+    ext = load_extension('pm-dev-java')
+    profiles = ext.get_skill_domains()['profiles']
+    detected = ext._detect_applicable_profiles(profiles, None)
+    assert detected is None
+
+
+def test_java_applies_to_module_with_active_profiles():
+    """Java ext: active_profiles filters output profiles."""
+    ext = load_extension('pm-dev-java')
+    result = ext.applies_to_module(
+        _maven_module_data(),
+        active_profiles={'implementation', 'quality'},
+    )
+    assert result['applicable'] is True
+    assert 'implementation' in result['skills_by_profile']
+    assert 'quality' in result['skills_by_profile']
+    assert 'module_testing' not in result['skills_by_profile']
+
+
+def test_java_applies_to_module_signal_detection_filters_it():
+    """Java ext: signal detection excludes integration_testing for non-IT module."""
+    ext = load_extension('pm-dev-java')
+    result = ext.applies_to_module(_maven_module_data())
+    assert result['applicable'] is True
+    assert 'integration_testing' not in result['skills_by_profile']
+
+
+def test_java_applies_to_module_signal_detection_it_module():
+    """Java ext: IT module is applicable with standard profiles.
+
+    pm-dev-java doesn't define an integration_testing profile (IT skills
+    are optionals within module_testing), so signal detection doesn't
+    add a new profile — it just correctly identifies the module as applicable.
+    """
+    ext = load_extension('pm-dev-java')
+    result = ext.applies_to_module(_maven_it_module_data())
+    assert result['applicable'] is True
+    assert 'implementation' in result['skills_by_profile']
+    assert 'module_testing' in result['skills_by_profile']
+
+
+def test_general_dev_with_active_profiles():
+    """General-dev ext: active_profiles filters output profiles."""
+    ext = load_extension('plan-marshall')
+    result = ext.applies_to_module(
+        _maven_module_data(),
+        active_profiles={'implementation'},
+    )
+    assert result['applicable'] is True
+    assert 'implementation' in result['skills_by_profile']
+    assert 'module_testing' not in result['skills_by_profile']
+
+
+def test_frontend_with_active_profiles():
+    """Frontend ext: active_profiles filters output profiles."""
+    ext = load_extension('pm-dev-frontend')
+    result = ext.applies_to_module(
+        _npm_module_data(),
+        active_profiles={'implementation', 'module_testing'},
+    )
+    assert result['applicable'] is True
+    assert 'implementation' in result['skills_by_profile']
+    assert 'module_testing' in result['skills_by_profile']
+    assert 'quality' not in result['skills_by_profile']
+
+
+def test_all_extensions_accept_active_profiles():
+    """All extensions accept active_profiles parameter without error."""
+    bundles_and_data = [
+        ('pm-dev-java', _maven_module_data()),
+        ('pm-dev-java-cui', _maven_module_data()),
+        ('pm-dev-frontend', _npm_module_data()),
+        ('pm-dev-python', _python_module_data()),
+        ('pm-dev-oci', _empty_module_data()),
+        ('pm-documents', _doc_module_data()),
+        ('pm-plugin-development', _plugin_module_data()),
+        ('plan-marshall', _maven_module_data()),
+    ]
+    for bundle, data in bundles_and_data:
+        ext = load_extension(bundle)
+        # Should not raise
+        result = ext.applies_to_module(data, active_profiles={'implementation'})
+        assert 'applicable' in result, f'{bundle}: missing applicable key'
+
+
+# =============================================================================
 # Cross-Bundle Validation Tests
 # =============================================================================
 

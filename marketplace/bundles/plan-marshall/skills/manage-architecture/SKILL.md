@@ -235,6 +235,18 @@ python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
   --include-optionals --reasoning "{domain}: all skills apply based on {signals}"
 ```
 
+To override profile filtering for a specific module (e.g., force integration_testing on a module
+that lacks automatic signals), use `--profiles`:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
+  enrich add-domain --module {module-name} --domain {domain-key} \
+  --profiles implementation,module_testing,integration_testing \
+  --reasoning "explicit IT profile for {reason}"
+```
+
+Profile resolution order: `--profiles` flag > `marshal.json active_profiles` > extension signal detection > all defined profiles.
+
 ---
 
 ## Step 6: Verify & Summarize

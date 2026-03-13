@@ -94,14 +94,43 @@ class Extension(ExtensionBase):
             },
         }
 
-    def applies_to_module(self, module_data: dict) -> dict:
+    def _detect_applicable_profiles(self, profiles: dict,
+                                     module_data: dict | None) -> set[str] | None:
+        """Detect applicable profiles based on Maven/Gradle module signals."""
+        if module_data is None:
+            return None
+
+        applicable = {'implementation', 'module_testing', 'quality'}
+
+        # Check for integration test signals
+        metadata = module_data.get('metadata', {})
+        maven_profiles = metadata.get('profiles', [])
+        module_name = module_data.get('name', '')
+        deps = module_data.get('dependencies', [])
+        dep_strings = [d if isinstance(d, str) else '' for d in deps]
+
+        has_it_signals = (
+            any('integration' in p.lower() for p in maven_profiles)
+            or any('failsafe' in d for d in dep_strings)
+            or any('testcontainers' in d for d in dep_strings)
+            or 'integration' in module_name.lower()
+        )
+        if has_it_signals and 'integration_testing' in profiles:
+            applicable.add('integration_testing')
+
+        return applicable
+
+    def applies_to_module(self, module_data: dict,
+                          active_profiles: set[str] | None = None) -> dict:
         """Check if Java domain applies based on build systems."""
         build_systems = module_data.get('build_systems', [])
         if 'maven' not in build_systems and 'gradle' not in build_systems:
             return {'applicable': False, 'confidence': 'none', 'signals': [], 'additive_to': None, 'skills_by_profile': {}}
 
         signals = [f'build_systems={",".join(build_systems)}']
-        result = self._build_applicable_result('high', signals)
+        result = self._build_applicable_result('high', signals,
+                                                module_data=module_data,
+                                                active_profiles=active_profiles)
 
         # Module-level customization: move CDI/Lombok to optionals based on deps
         deps = module_data.get('dependencies', [])
