@@ -13,6 +13,9 @@ from pathlib import Path
 
 from extension_base import ExtensionBase, build_module_base, discover_descriptors  # type: ignore[import-not-found]
 
+# Build systems that indicate code content (vs documentation or plugin metadata)
+_CODE_BUILD_SYSTEMS = {'maven', 'gradle', 'npm', 'python'}
+
 # Add sibling skill script directories to path
 SKILLS_DIR = Path(__file__).parent.parent  # plan-marshall/skills/
 for skill_name in ['build-maven', 'build-gradle', 'build-npm', 'build-python']:
@@ -112,7 +115,14 @@ class Extension(ExtensionBase):
 
     def applies_to_module(self, module_data: dict,
                           active_profiles: set[str] | None = None) -> dict:
-        """Always applicable — cross-cutting general-dev domain."""
+        """Applicable only to modules with code build systems."""
+        build_systems = set(module_data.get('build_systems', []))
+        if not build_systems & _CODE_BUILD_SYSTEMS:
+            return {
+                'applicable': False, 'confidence': 'none',
+                'signals': [], 'additive_to': None, 'skills_by_profile': {},
+            }
+
         domains = self._general_dev_domain()
         profiles = domains.get('profiles', {})
         core = profiles.get('core', {})

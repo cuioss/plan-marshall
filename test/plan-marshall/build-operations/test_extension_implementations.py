@@ -589,16 +589,22 @@ def test_java_cui_not_applicable_to_npm():
     assert result['applicable'] is False
 
 
-def test_general_dev_always_applicable():
-    """General-dev via plan-marshall ext: ANY module -> always applicable (high)."""
+def test_general_dev_applies_to_code_modules():
+    """General-dev: code modules -> applicable."""
     ext = load_extension('plan-marshall')
-
     assert ext.applies_to_module(_maven_module_data())['applicable'] is True
     assert ext.applies_to_module(_npm_module_data())['applicable'] is True
-    assert ext.applies_to_module(_empty_module_data())['applicable'] is True
-
+    assert ext.applies_to_module(_python_module_data())['applicable'] is True
     result = ext.applies_to_module(_maven_module_data())
     assert result['confidence'] == 'high'
+
+
+def test_general_dev_not_applicable_to_non_code_modules():
+    """General-dev: doc/plugin/empty modules -> not applicable."""
+    ext = load_extension('plan-marshall')
+    assert ext.applies_to_module(_doc_module_data())['applicable'] is False
+    assert ext.applies_to_module(_plugin_module_data())['applicable'] is False
+    assert ext.applies_to_module(_empty_module_data())['applicable'] is False
 
 
 def test_plan_marshall_get_all_skill_domains():
@@ -624,6 +630,13 @@ def test_plugin_dev_not_applicable_to_plain_module():
     ext = load_extension('pm-plugin-development')
     result = ext.applies_to_module(_maven_module_data())
     assert result['applicable'] is False
+
+
+def test_documents_only_documentation_profile():
+    """pm-documents should only define core and documentation profiles."""
+    ext = load_extension('pm-documents')
+    domains = ext.get_skill_domains()
+    assert set(domains['profiles'].keys()) == {'core', 'documentation'}
 
 
 def test_documents_applies_to_doc_module():

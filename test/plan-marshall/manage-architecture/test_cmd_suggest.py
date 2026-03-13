@@ -180,7 +180,7 @@ def test_suggest_domains_has_skills_by_profile():
 
 
 def test_suggest_domains_no_matching_signals():
-    """Module with no matching signals gets only general-dev."""
+    """Module with no code build systems gets no domains (general-dev is content-aware)."""
     with tempfile.TemporaryDirectory() as tmpdir:
         modules = {
             'empty': {
@@ -198,8 +198,7 @@ def test_suggest_domains_no_matching_signals():
         result = suggest_domains('empty', tmpdir)
 
         domain_keys = [d['domain'] for d in result['domains']]
-        assert 'general-dev' in domain_keys
-        # Should not have java, javascript, etc.
+        assert 'general-dev' not in domain_keys
         assert 'java' not in domain_keys
         assert 'javascript' not in domain_keys
 

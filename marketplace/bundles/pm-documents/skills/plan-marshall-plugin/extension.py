@@ -38,21 +38,6 @@ class Extension(ExtensionBase):
                     ],
                     'optionals': [],
                 },
-                'implementation': {
-                    'defaults': [],
-                    'optionals': [
-                        {
-                            'skill': 'pm-documents:manage-adr',
-                            'description': 'Manage Architectural Decision Records with CRUD operations and AsciiDoc formatting',
-                        },
-                        {
-                            'skill': 'pm-documents:manage-interface',
-                            'description': 'Manage Interface specifications with CRUD operations and AsciiDoc formatting',
-                        },
-                    ],
-                },
-                'module_testing': {'defaults': [], 'optionals': []},
-                'quality': {'defaults': [], 'optionals': []},
                 'documentation': {
                     'defaults': [
                         {

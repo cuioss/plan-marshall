@@ -65,6 +65,7 @@
     },
     "documentation": {
       "bundle": "pm-documents",
+      "active_profiles": ["documentation"],
       "workflow_skill_extensions": {
         "triage": "pm-documents:ext-triage-docs"
       }
