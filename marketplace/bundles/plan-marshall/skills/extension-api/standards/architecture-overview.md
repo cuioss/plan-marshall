@@ -39,17 +39,18 @@ How modules are discovered, merged, and persisted.
 │                              │                                               │
 │                              ▼                                               │
 │  ┌─────────────────────────────────────────────────────────────────────┐    │
-│  │ 1c. Hybrid Module Merging                                           │    │
+│  │ 1c. Virtual Module Splitting                                        │    │
 │  │                                                                     │    │
-│  │ When multiple extensions discover same module (by path):            │    │
+│  │ When multiple extensions discover same path:                        │    │
 │  │   pom.xml + package.json in same directory                         │    │
-│  │   → Merge into single module with build_systems: [maven, npm]      │    │
+│  │   → Split into separate virtual modules with tech suffixes         │    │
+│  │     e.g., app-maven + app-npm                                      │    │
 │  │                                                                     │    │
-│  │ Merge rules:                                                        │    │
-│  │   - build_systems arrays merged                                     │    │
-│  │   - paths.sources, paths.tests (concatenate)                        │    │
-│  │   - commands (nest by build system for conflicts)                   │    │
-│  │   - dependencies (deduplicate)                                      │    │
+│  │ Each virtual module has:                                            │    │
+│  │   - Single build_systems entry (e.g., ["maven"])                   │    │
+│  │   - String commands (not nested)                                    │    │
+│  │   - virtual_module metadata:                                        │    │
+│  │     {physical_path, technology, sibling_modules}                   │    │
 │  └─────────────────────────────────────────────────────────────────────┘    │
 │                              │                                               │
 │                              ▼                                               │
@@ -62,16 +63,16 @@ How modules are discovered, merged, and persisted.
                                     │
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                    2. PERSISTENCE (project-structure skill)                  │
+│                    2. PERSISTENCE (manage-architecture skill)                │
 │                                                                              │
-│  manage_project_structure.py collect-raw-data                                │
+│  architecture.py discover                                                    │
 │                                                                              │
 │  Thin orchestrator:                                                          │
 │    - Calls discover_project_modules()                                        │
 │    - Adds project_root to result                                             │
-│    - Writes to .plan/raw-project-data.json                                   │
+│    - Writes to .plan/project-architecture/derived-data.json                  │
 │                                                                              │
-│  Output: .plan/raw-project-data.json                                         │
+│  Output: .plan/project-architecture/derived-data.json                        │
 │  {                                                                           │
 │    "project_root": "/path/to/project",                                       │
 │    "modules": { "mod-a": {...}, "mod-b": {...} },                           │
@@ -114,11 +115,11 @@ How modules are discovered, merged, and persisted.
 | 2. Persistence | Merged dict | Write to architecture dir | `.plan/project-architecture/derived-data.json` |
 | 3. Enrichment | derived-data.json | LLM analysis | `.plan/project-architecture/llm-enriched.json` |
 
-## extension.py API
+## extension_discovery.py API
 
 | Function | Purpose | Used By |
 |----------|---------|---------|
-| `discover_project_modules(root)` | **Primary API**: Discover + merge modules | manage-architecture |
+| `discover_project_modules(root)` | **Primary API**: Discover + split virtual modules | manage-architecture |
 | `discover_all_extensions()` | List all bundles with extensions | manage-config |
 | `discover_extensions(root)` | List applicable extensions | manage-config |
 | `get_skill_domains_from_extensions()` | Skill domain metadata | manage-config |
@@ -151,11 +152,14 @@ Commands are resolved at two levels:
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                         EXTENSION-API (plan-marshall)                        │
 │                                                                              │
-│  extension_base.py   │ Abstract base class, canonical commands              │
-│  extension.py        │ Extension discovery, module aggregation, merging     │
-│  build_discover.py   │ Descriptor discovery, path building                  │
-│  build_result.py     │ Log file creation, result construction               │
-│  build_parse.py      │ Issue structures, warning filtering                  │
+│  extension_base.py       │ Abstract base class, canonical commands          │
+│  extension_discovery.py  │ Extension discovery, loading, config defaults    │
+│  _build_discover.py      │ Descriptor discovery, path building              │
+│  _build_result.py        │ Log file creation, result construction           │
+│  _build_parse.py         │ Issue structures, warning filtering              │
+│  _build_format.py        │ TOON and JSON output formatting                  │
+│  _build_wrapper.py       │ Build tool wrapper detection                     │
+│  _module_aggregation.py  │ Virtual module splitting                         │
 └─────────────────────────────────────────────────────────────────────────────┘
                                    │
                                    │ used by
@@ -215,37 +219,36 @@ Each extension returns modules with `build_systems` array:
 }
 ```
 
-### Hybrid Module (After Merge)
+### Virtual Modules (After Splitting)
 
-When `discover_project_modules()` merges modules from multiple extensions:
+When `discover_project_modules()` splits modules from multiple extensions at the same path:
 
 ```json
 {
-  "name": "hybrid-module",
-  "build_systems": ["maven", "npm"],
+  "name": "my-app-maven",
+  "build_systems": ["maven"],
+  "virtual_module": {
+    "physical_path": "my-app",
+    "technology": "maven",
+    "sibling_modules": ["my-app-npm"]
+  },
   "paths": {
-    "module": "relative/path",
-    "descriptors": ["pom.xml", "package.json"],
-    "sources": ["src/main/java", "src/main/js"],
-    "tests": ["src/test/java", "src/test/js"]
+    "module": "my-app",
+    "descriptor": "my-app/pom.xml",
+    "sources": ["my-app/src/main/java"],
+    "tests": ["my-app/src/test/java"]
   },
   "commands": {
-    "module-tests": {
-      "maven": "python3 ... --module hybrid-module",
-      "npm": "python3 ... --package hybrid-module"
-    },
-    "quality-gate": {
-      "maven": "...",
-      "npm": "..."
-    },
-    "lint": "python3 ... --package hybrid-module"
+    "module-tests": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"test -pl my-app\"",
+    "verify": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"verify -pl my-app\""
   }
 }
 ```
 
-**Command merging rules**:
-- Both extensions provide same command → nested object by build system
-- Only one extension provides command → string value
+**Splitting rules**:
+- Each virtual module has a single `build_systems` entry
+- Commands are strings (not nested by build system)
+- `virtual_module` metadata links siblings sharing the same physical path
 
 ## Default Module
 
@@ -259,13 +262,12 @@ For single-module projects, the default module is the only module.
 ## Invocation
 
 ```bash
-# Collect raw data (calls discover_project_modules internally)
-python3 .plan/execute-script.py plan-marshall:project-structure:manage_project_structure \
-  collect-raw-data --project-root /path/to/project
+# Discover modules and persist to derived-data.json
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture discover \
+  --project-dir /path/to/project
 
-# Generate enrichable structure
-python3 .plan/execute-script.py plan-marshall:project-structure:manage_project_structure \
-  generate
+# Output merged structure as TOON
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture info
 ```
 
 ## Related Specifications

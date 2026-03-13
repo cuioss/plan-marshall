@@ -248,7 +248,7 @@ def assert_npm_module_structure(modules: list[dict]) -> list[str]:
         for cmd_name, cmd_value in commands.items():
             if not isinstance(cmd_value, str):
                 errors.append(f"{name}: command '{cmd_name}' should be string")
-            elif 'pm-dev-frontend:plan-marshall-plugin:npm' not in cmd_value:
+            elif 'plan-marshall:build-npm:npm' not in cmd_value:
                 errors.append(f"{name}: command '{cmd_name}' missing npm execute-script pattern")
 
     return errors
@@ -314,7 +314,7 @@ def assert_maven_module_structure(modules: list[dict]) -> list[str]:
         for cmd_name, cmd_value in commands.items():
             if not isinstance(cmd_value, str):
                 errors.append(f"{name}: command '{cmd_name}' should be string")
-            elif 'pm-dev-java:plan-marshall-plugin:maven' not in cmd_value:
+            elif 'plan-marshall:build-maven:maven' not in cmd_value:
                 errors.append(f"{name}: command '{cmd_name}' missing maven execute-script pattern")
 
     return errors
@@ -371,7 +371,7 @@ def assert_gradle_module_structure(modules: list[dict]) -> list[str]:
         for cmd_name, cmd_value in commands.items():
             if not isinstance(cmd_value, str):
                 errors.append(f"{name}: command '{cmd_name}' should be string")
-            elif 'pm-dev-java:plan-marshall-plugin:gradle' not in cmd_value:
+            elif 'plan-marshall:build-gradle:gradle' not in cmd_value:
                 errors.append(f"{name}: command '{cmd_name}' missing gradle execute-script pattern")
 
     return errors

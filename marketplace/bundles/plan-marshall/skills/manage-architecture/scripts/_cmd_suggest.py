@@ -70,36 +70,57 @@ def suggest_domains(module_name: str, project_dir: str = '.') -> dict[str, Any]:
         if not ext_module:
             continue
 
-        # Get domain key to skip 'system'
+        # Get all domain keys from extension (supports multi-domain)
         try:
-            skill_domains = ext_module.get_skill_domains()
-            domain_key = skill_domains.get('domain', {}).get('key', '')
+            if hasattr(ext_module, 'get_all_skill_domains'):
+                all_skill_domains = ext_module.get_all_skill_domains()
+            else:
+                sd = ext_module.get_skill_domains()
+                all_skill_domains = [sd] if sd and sd.get('domain') else []
         except Exception:
             continue
 
-        if domain_key == 'system':
+        domain_keys = [
+            sd.get('domain', {}).get('key', '')
+            for sd in all_skill_domains
+            if sd.get('domain', {}).get('key', '') != 'system'
+        ]
+
+        if not domain_keys:
             continue
 
-        # Call applies_to_module
+        # Call applies_to_module once per extension
         try:
             result = ext_module.applies_to_module(module_data)
         except Exception:
             continue
 
         if result.get('applicable'):
-            applicable_keys.add(domain_key)
+            for dk in domain_keys:
+                applicable_keys.add(dk)
             skill_count = sum(
                 len(p.get('defaults', [])) + len(p.get('optionals', []))
                 for p in result.get('skills_by_profile', {}).values()
             )
-            domains.append({
-                'domain': domain_key,
-                'confidence': result.get('confidence', 'unknown'),
-                'signals': result.get('signals', []),
-                'additive_to': result.get('additive_to'),
-                'skill_count': skill_count,
-                'skills_by_profile': result.get('skills_by_profile', {}),
-            })
+            # Report each non-empty domain separately
+            for dk in domain_keys:
+                # Find the domain's profiles
+                dk_profiles = {}
+                for sd in all_skill_domains:
+                    if sd.get('domain', {}).get('key') == dk:
+                        dk_profiles = sd.get('profiles', {})
+                        break
+                # Skip domains with no profiles (e.g., build domain)
+                if not dk_profiles and len(domain_keys) > 1:
+                    continue
+                domains.append({
+                    'domain': dk,
+                    'confidence': result.get('confidence', 'unknown'),
+                    'signals': result.get('signals', []),
+                    'additive_to': result.get('additive_to'),
+                    'skill_count': skill_count,
+                    'skills_by_profile': result.get('skills_by_profile', {}),
+                })
 
     # Second pass: filter additive domains whose parent is not applicable
     filtered_domains = []

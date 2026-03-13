@@ -56,7 +56,7 @@ def get_skill_domains(self) -> dict:
                     "optionals": list[str]    # On-demand skills
                 },
                 "implementation": {...},
-                "testing": {...},
+                "module_testing": {...},
                 "quality": {...}
             }
         }
@@ -64,7 +64,7 @@ def get_skill_domains(self) -> dict:
     Profile Categories:
         - core: Foundation patterns and standards
         - implementation: Runtime patterns (CDI, frameworks)
-        - testing: Test frameworks and patterns
+        - module_testing: Test frameworks and patterns
         - quality: Documentation, code quality
     """
 ```
@@ -231,7 +231,7 @@ class Extension(ExtensionBase):
                     "defaults": [],
                     "optionals": ["pm-documents:manage-adr"]
                 },
-                "testing": {"defaults": [], "optionals": []},
+                "module_testing": {"defaults": [], "optionals": []},
                 "quality": {"defaults": [], "optionals": []}
             }
         }
@@ -260,7 +260,7 @@ class Extension(ExtensionBase):
             "profiles": {
                 "core": {"defaults": ["pm-dev-java:java-core"], "optionals": []},
                 "implementation": {"defaults": [], "optionals": []},
-                "testing": {"defaults": ["pm-dev-java:junit-core"], "optionals": []},
+                "module_testing": {"defaults": ["pm-dev-java:junit-core"], "optionals": []},
                 "quality": {"defaults": ["pm-dev-java:javadoc"], "optionals": []}
             }
         }
@@ -337,5 +337,5 @@ Some domain bundles are **additive** - they extend a base domain bundle rather t
 - [build-execution.md](build-execution.md) - Build command execution API
 - [build-return.md](build-return.md) - Build return value structure
 - [build-project-structure.md](build-project-structure.md) - Project structure discovery
-- [orchestrator-integration.md](../../manage-architecture/standards/orchestrator-integration.md) - Orchestrator flow and hybrid merging
+- orchestrator-integration.md (manage-architecture skill) - Orchestrator flow and hybrid merging
 - [canonical-commands.md](canonical-commands.md) - Command vocabulary

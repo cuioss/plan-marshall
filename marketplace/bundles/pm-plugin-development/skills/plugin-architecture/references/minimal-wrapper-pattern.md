@@ -301,7 +301,7 @@ Parameters:
 
 Step 3: Verify Build
 ```bash
-python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run \
+python3 .plan/execute-script.py plan-marshall:build-maven:maven run \
     --targets "clean test" \
     --module {module} \
     --mode structured
@@ -467,7 +467,7 @@ Agent reads Maven log, parses errors, categorizes... (100 lines)
 **Solution:**
 ```markdown
 # GOOD: Agent delegates to builder skill via script
-python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven parse \
+python3 .plan/execute-script.py plan-marshall:build-maven:maven parse \
     --log-file {log_file}
 ```
 

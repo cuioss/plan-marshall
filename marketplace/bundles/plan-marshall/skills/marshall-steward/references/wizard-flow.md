@@ -523,7 +523,55 @@ This populates `skill_domains` in marshal.json with:
 - Each selected domain with bundle reference and workflow_skill_extensions (outline, triage)
 - Domain verification steps from `provides_verify_steps()` auto-persisted to `plan.phase-5-execute.verification_domain_steps`
 
-**Step 11e: Configure Task Executors**
+**Step 11e: Configure Active Profiles**
+
+Control which profiles are emitted during architecture enrichment. By default, extensions use signal detection to decide per-module profile applicability. Setting active_profiles provides a global positive list.
+
+```
+AskUserQuestion:
+  question: "Configure active profiles for skill domains?"
+  header: "Active Profiles"
+  options:
+    - label: "Default: implementation, module_testing, quality (Recommended)"
+      description: "Excludes integration_testing and documentation unless signal-detected"
+    - label: "All profiles"
+      description: "Include all defined profiles (integration_testing, documentation)"
+    - label: "Custom"
+      description: "Choose specific profiles to include"
+  multiSelect: false
+```
+
+If "Default" → apply:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  skill-domains active-profiles set --profiles implementation,module_testing,quality
+```
+
+If "All profiles" → skip (no active_profiles config = no filtering).
+
+If "Custom" → ask which profiles:
+```
+AskUserQuestion:
+  question: "Select profiles to include:"
+  header: "Profiles"
+  options:
+    - label: "implementation"
+    - label: "module_testing"
+    - label: "integration_testing"
+    - label: "quality"
+    - label: "documentation"
+  multiSelect: true
+```
+
+Apply selection:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  skill-domains active-profiles set --profiles {comma-separated selection}
+```
+
+---
+
+**Step 11f: Configure Task Executors**
 
 Task executors map profile values to workflow skills that execute tasks of that profile.
 
@@ -551,7 +599,7 @@ This auto-discovers profiles from configured domains and registers default task 
 
 ---
 
-**Step 11f: Discover and Attach Project-Level Skills**
+**Step 11g: Discover and Attach Project-Level Skills**
 
 Scan `.claude/skills/` for project-level skills and let the user assign them to configured domains.
 
@@ -605,7 +653,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config skill-
 ```json
 {
   "system": {
-    "defaults": ["pm-dev-general:dev-practices"],
+    "defaults": ["plan-marshall:dev-general-practices"],
     "optionals": [...],
     "task_executors": {
       "implementation": "plan-marshall:task-implementation",

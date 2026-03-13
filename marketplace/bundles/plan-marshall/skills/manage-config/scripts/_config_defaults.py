@@ -30,8 +30,8 @@ DEFAULT_TASK_EXECUTORS = {
 
 # Default system domain configuration
 DEFAULT_SYSTEM_DOMAIN = {
-    'defaults': ['pm-dev-general:dev-practices'],
-    'optionals': ['pm-dev-general:dev-practices'],
+    'defaults': ['plan-marshall:dev-general-practices'],
+    'optionals': ['plan-marshall:dev-general-practices'],
     'task_executors': DEFAULT_TASK_EXECUTORS,
 }
 
@@ -77,9 +77,9 @@ DEFAULT_PLAN_FINALIZE = {
 
 # Build system defaults (detection reference only - commands are in modules)
 BUILD_SYSTEM_DEFAULTS = {
-    'maven': {'skill': 'pm-dev-java:plan-marshall-plugin'},
-    'gradle': {'skill': 'pm-dev-java:plan-marshall-plugin'},
-    'npm': {'skill': 'pm-dev-frontend:plan-marshall-plugin'},
+    'maven': {'skill': 'plan-marshall:plan-marshall-plugin'},
+    'gradle': {'skill': 'plan-marshall:plan-marshall-plugin'},
+    'npm': {'skill': 'plan-marshall:plan-marshall-plugin'},
 }
 
 

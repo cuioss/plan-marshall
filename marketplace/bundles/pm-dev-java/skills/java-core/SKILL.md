@@ -53,6 +53,13 @@ Read: standards/java-25-features.md
 
 Use when: Using Java 25 features — scoped values, flexible constructor bodies, module imports, compact source files, KDF API, and JVM performance flags (AOT cache, compact headers).
 
+**Concurrency Patterns** (load for multi-threaded code):
+```
+Read: standards/java-concurrency.md
+```
+
+Use when: Writing concurrent or multi-threaded code. Covers why to avoid volatile/double-checked locking, lock selection (ReentrantLock, StampedLock, atomics), virtual thread rules, ScopedValue vs ThreadLocal, concurrent collections, and common pitfalls.
+
 **Performance Patterns** (load for optimization work):
 ```
 Read: standards/java-performance-patterns.md
@@ -76,7 +83,7 @@ Use when: Working with authentication, encryption, secrets, or sensitive data. C
 
 ## Related Skills
 
-- `pm-dev-general:dev-code-quality` - Language-agnostic code quality principles
+- `plan-marshall:dev-general-code-quality` - Language-agnostic code quality principles
 - `pm-dev-java:java-null-safety` - JSpecify null annotations
 - `pm-dev-java:java-lombok` - Lombok patterns
 - `pm-dev-java:junit-core` - JUnit 5 testing patterns

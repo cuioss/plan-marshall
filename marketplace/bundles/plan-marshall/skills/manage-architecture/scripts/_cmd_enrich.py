@@ -6,6 +6,7 @@ These commands write to llm-enriched.json.
 """
 
 import sys
+from pathlib import Path
 from typing import Any
 
 from _architecture_core import (
@@ -246,12 +247,52 @@ def _validate_skills_by_profile_structure(skills_by_profile: dict) -> list[str]:
     return warnings
 
 
+def _resolve_active_profiles(
+    domain_key: str, project_dir: str, explicit: set[str] | None = None
+) -> set[str] | None:
+    """Resolve active profiles from CLI flag or marshal.json config.
+
+    Resolution order:
+    1. explicit (--profiles CLI flag) wins
+    2. marshal.json skill_domains.{domain}.active_profiles (per-domain)
+    3. marshal.json skill_domains.active_profiles (global default)
+    4. None (fall through to signal detection in extension)
+    """
+    if explicit is not None:
+        return explicit
+
+    import json
+
+    marshal_path = Path(project_dir) / '.plan' / 'marshal.json'
+    if not marshal_path.exists():
+        return None
+
+    try:
+        config = json.loads(marshal_path.read_text(encoding='utf-8'))
+    except Exception:
+        return None
+
+    sd = config.get('skill_domains', {})
+
+    # Per-domain override
+    domain_cfg = sd.get(domain_key, {})
+    if isinstance(domain_cfg, dict) and 'active_profiles' in domain_cfg:
+        return set(domain_cfg['active_profiles'])
+
+    # Global default
+    if 'active_profiles' in sd:
+        return set(sd['active_profiles'])
+
+    return None
+
+
 def enrich_add_domain(
     module_name: str,
     domain_key: str,
     project_dir: str = '.',
     include_optionals: bool = False,
     reasoning: str | None = None,
+    profiles: set[str] | None = None,
 ) -> dict:
     """Add a domain's skills to a module's skills_by_profile additively.
 
@@ -264,6 +305,7 @@ def enrich_add_domain(
         project_dir: Project directory path
         include_optionals: Whether to include optional skills
         reasoning: Rationale for adding this domain
+        profiles: Explicit profile set (overrides config and detection)
 
     Returns:
         Dict with status, module, domain, profiles_updated, and skills_by_profile
@@ -286,7 +328,7 @@ def enrich_add_domain(
 
     module_data = get_module(derived, module_name)
 
-    # Find extension for this domain
+    # Find extension for this domain (supports multi-domain extensions)
     from extension_discovery import discover_all_extensions  # type: ignore[import-not-found]
 
     extensions = discover_all_extensions()
@@ -296,9 +338,17 @@ def enrich_add_domain(
         if not ext_module:
             continue
         try:
-            skill_domains = ext_module.get_skill_domains()
-            if skill_domains.get('domain', {}).get('key') == domain_key:
-                target_ext = ext_module
+            # Check all domains from this extension
+            if hasattr(ext_module, 'get_all_skill_domains'):
+                all_domains = ext_module.get_all_skill_domains()
+            else:
+                sd = ext_module.get_skill_domains()
+                all_domains = [sd] if sd and sd.get('domain') else []
+            for sd in all_domains:
+                if sd.get('domain', {}).get('key') == domain_key:
+                    target_ext = ext_module
+                    break
+            if target_ext:
                 break
         except Exception:
             continue
@@ -306,8 +356,11 @@ def enrich_add_domain(
     if target_ext is None:
         raise ValueError(f"Domain not found: {domain_key}")
 
+    # Resolve active profiles (three-layer: CLI > config > signal detection)
+    active = _resolve_active_profiles(domain_key, project_dir, profiles)
+
     # Get resolved skills from extension
-    result = target_ext.applies_to_module(module_data)
+    result = target_ext.applies_to_module(module_data, active_profiles=active)
     skills_by_profile = result.get('skills_by_profile', {})
 
     # Load current enriched data
@@ -817,8 +870,11 @@ def cmd_enrich_add_domain(args) -> int:
     try:
         include_optionals = getattr(args, 'include_optionals', False)
         reasoning = getattr(args, 'reasoning', None)
+        profiles_str = getattr(args, 'profiles', None)
+        profiles = set(profiles_str.split(',')) if profiles_str else None
         result = enrich_add_domain(
-            args.module, args.domain, args.project_dir, include_optionals, reasoning
+            args.module, args.domain, args.project_dir, include_optionals, reasoning,
+            profiles=profiles,
         )
         print(f'status\t{result["status"]}')
         print(f'module\t{result["module"]}')

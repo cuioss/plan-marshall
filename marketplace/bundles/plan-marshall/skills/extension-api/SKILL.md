@@ -32,9 +32,12 @@ extension-api/
 ├── scripts/
 │   ├── extension_base.py           # ExtensionBase ABC, canonical commands
 │   ├── extension_discovery.py      # Extension discovery, loading, aggregation
-│   ├── build_discover.py           # Module discovery, path building
-│   ├── build_result.py             # Log file creation, result construction
-│   └── build_parse.py              # Issue structures, warning filtering
+│   ├── _build_discover.py           # Module discovery, path building
+│   ├── _build_result.py            # Log file creation, result construction
+│   ├── _build_parse.py             # Issue structures, warning filtering
+│   ├── _build_format.py            # TOON and JSON output formatting
+│   ├── _build_wrapper.py           # Build tool wrapper detection
+│   └── _module_aggregation.py      # Virtual module splitting
 └── standards/
     ├── extension-contract.md       # Extension API contract
     ├── skill-domains.md            # Skill domains contract (required method)
@@ -101,7 +104,7 @@ For understanding the complete system architecture, reference these documents:
 | [build-execution.md](standards/build-execution.md) | Execution patterns | Running build commands |
 | [build-return.md](standards/build-return.md) | Return value structure | Formatting command output |
 | [build-project-structure.md](standards/build-project-structure.md) | Module discovery output spec | Understanding `discover_modules()` output format |
-| [orchestrator-integration.md](../manage-architecture/standards/orchestrator-integration.md) | Orchestrator merge logic | Understanding hybrid modules |
+| orchestrator-integration.md (manage-architecture skill) | Orchestrator merge logic | Understanding hybrid modules |
 
 **Note**: These documents define the target architecture. Implementation may be in progress.
 
@@ -113,9 +116,12 @@ For understanding the complete system architecture, reference these documents:
 |--------|------|---------|
 | `extension_base.py` | Library | ExtensionBase ABC, canonical commands, profile patterns |
 | `extension_discovery.py` | Library + CLI | Extension discovery, loading, aggregation, config defaults |
-| `build_discover.py` | Library | Module discovery, path building, README detection |
-| `build_result.py` | Library | Log file creation, result dict construction |
-| `build_parse.py` | Library | Issue structures, warning filtering |
+| `_build_discover.py` | Library | Module discovery, path building, README detection |
+| `_build_result.py` | Library | Log file creation, result dict construction |
+| `_build_parse.py` | Library | Issue structures, warning filtering |
+| `_build_format.py` | Library | TOON and JSON output formatting |
+| `_build_wrapper.py` | Library | Build tool wrapper detection |
+| `_module_aggregation.py` | Library | Virtual module splitting |
 
 ### CLI Commands
 
@@ -149,7 +155,6 @@ sys.path.insert(0, str(extension_api_path))
 from extension_discovery import (
     discover_all_extensions,
     discover_project_modules,
-    get_build_systems_from_extensions,
     get_skill_domains_from_extensions,
     apply_config_defaults,
 )
@@ -243,7 +248,7 @@ class Extension(ExtensionBase):
             "profiles": {
                 "core": {"defaults": [], "optionals": []},
                 "implementation": {"defaults": [], "optionals": []},
-                "testing": {"defaults": [], "optionals": []},
+                "module_testing": {"defaults": [], "optionals": []},
                 "quality": {"defaults": [], "optionals": []}
             }
         }
@@ -279,7 +284,7 @@ class Extension(ExtensionBase):
 
 ## Integration Points
 
-- **project-structure** - Orchestrates extensions, owns `.plan/*.json` files
+- **manage-architecture** - Orchestrates extensions, owns `.plan/project-architecture/*.json` files
 - **manage-config** - Uses `discover_all_extensions()` for domain configuration
 - **Domain bundles** - Implement `extension.py` inheriting from `ExtensionBase`
 

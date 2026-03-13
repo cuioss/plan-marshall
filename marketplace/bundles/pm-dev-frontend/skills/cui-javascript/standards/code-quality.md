@@ -1,10 +1,10 @@
 # Code Quality
 
-For general code quality principles (SRP, CQS, complexity thresholds, refactoring triggers), see `pm-dev-general:dev-code-quality`. This document covers JavaScript-specific complexity limits, ESLint mappings, and JS refactoring patterns.
+For general code quality principles (SRP, CQS, complexity thresholds, refactoring triggers), see `plan-marshall:dev-general-code-quality`. This document covers JavaScript-specific complexity limits, ESLint mappings, and JS refactoring patterns.
 
 ## JavaScript Complexity Limits
 
-Beyond the general thresholds in `pm-dev-general:dev-code-quality`, JavaScript enforces:
+Beyond the general thresholds in `plan-marshall:dev-general-code-quality`, JavaScript enforces:
 
 - **Statement Count**: Maximum 20 statements per function
 - **Parameter Count**: Maximum 5 parameters per function (ESLint `max-params`)
@@ -385,7 +385,7 @@ const processUserData = (rawData) => {
 
 ## See Also
 
-- `pm-dev-general:dev-code-quality` - General code quality principles (SRP, CQS, complexity, error handling)
+- `plan-marshall:dev-general-code-quality` - General code quality principles (SRP, CQS, complexity, error handling)
 - [JavaScript Fundamentals](javascript-fundamentals.md) - Core language patterns
 - [Modern Patterns](modern-patterns.md) - Advanced JavaScript patterns
 - [Async Programming](async-programming.md) - Asynchronous code quality

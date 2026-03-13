@@ -183,23 +183,23 @@ Implementations **must** support content filtering via `--mode` parameter:
 
 ### From Aggregated Output
 
-The orchestrator resolves commands per module in `.plan/raw-project-data.json`. Each command is **complete** with all routing embedded:
+The orchestrator resolves commands per module in `.plan/project-architecture/derived-data.json`. Each command is **complete** with all routing embedded:
 
 ```json
 {
   "modules": {
     "oauth-sheriff-core": {
       "commands": {
-        "module-tests": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"test -pl oauth-sheriff-core\"",
-        "verify": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"verify -pl oauth-sheriff-core\"",
-        "quality-gate": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"verify -Ppre-commit -pl oauth-sheriff-core\""
+        "module-tests": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"test -pl oauth-sheriff-core\"",
+        "verify": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"verify -pl oauth-sheriff-core\"",
+        "quality-gate": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"verify -Ppre-commit -pl oauth-sheriff-core\""
       }
     }
   }
 }
 ```
 
-See [orchestrator-integration.md](../../manage-architecture/standards/orchestrator-integration.md) for command resolution.
+See orchestrator-integration.md (manage-architecture skill) for command resolution.
 
 ### From discover_modules()
 
@@ -207,7 +207,7 @@ Extensions generate complete commands per module during discovery:
 
 ```python
 def _build_commands(module_name: str, profiles: list) -> dict:
-    base = "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run"
+    base = "python3 .plan/execute-script.py plan-marshall:build-maven:maven run"
     pl_arg = f" -pl {module_name}" if module_name != "." else ""
 
     commands = {
@@ -230,27 +230,27 @@ def _build_commands(module_name: str, profiles: list) -> dict:
 
 ```bash
 # Default TOON output for interactive use (actionable mode)
-python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run \
+python3 .plan/execute-script.py plan-marshall:build-maven:maven run \
   --command-args "verify -Ppre-commit -pl core-api"
 
 # JSON output for script integration
-python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run \
+python3 .plan/execute-script.py plan-marshall:build-maven:maven run \
   --command-args "verify" --format json
 
 # Structured mode for full diagnostics (shows all warnings with acceptance status)
-python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run \
+python3 .plan/execute-script.py plan-marshall:build-maven:maven run \
   --command-args "verify" --mode structured
 
 # Errors-only mode for CI pipelines
-python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run \
+python3 .plan/execute-script.py plan-marshall:build-maven:maven run \
   --command-args "verify" --mode errors --format json
 
 # Gradle example with module routing
-python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:gradle run \
+python3 .plan/execute-script.py plan-marshall:build-gradle:gradle run \
   --command-args ":api-genshin-impact:build"
 
 # npm example with workspace routing
-python3 .plan/execute-script.py pm-dev-frontend:plan-marshall-plugin:npm run \
+python3 .plan/execute-script.py plan-marshall:build-npm:npm run \
   --command-args "test --workspace=packages/app"
 ```
 

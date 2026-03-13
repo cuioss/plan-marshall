@@ -238,7 +238,7 @@ def test_skill_domains_detect_runs():
     with PlanContext() as ctx:
         # Create minimal marshal.json
         config = {
-            'skill_domains': {'system': {'defaults': ['pm-dev-general:dev-practices'], 'optionals': []}},
+            'skill_domains': {'system': {'defaults': ['plan-marshall:dev-general-practices'], 'optionals': []}},
             'system': {'retention': {}},
             'plan': {
                 'phase-1-init': {'branch_strategy': 'direct'},
@@ -711,7 +711,8 @@ def test_get_skills_by_profile_java():
         # Should have all profiles
         assert 'implementation' in result.stdout
         assert 'module_testing' in result.stdout
-        assert 'integration_testing' in result.stdout
+        # integration_testing should NOT appear — pm-dev-java doesn't define it
+        assert 'integration_testing' not in result.stdout
 
 
 def test_get_skills_by_profile_includes_core_skills():
@@ -1078,7 +1079,7 @@ def test_configure_preserves_project_skills():
         config = {
             'skill_domains': {
                 'system': {
-                    'defaults': ['pm-dev-general:dev-practices'],
+                    'defaults': ['plan-marshall:dev-general-practices'],
                     'project_skills': ['project:system-skill'],
                     'task_executors': {
                         'implementation': 'plan-marshall:task-implementation',
@@ -1193,7 +1194,7 @@ def test_get_nested_includes_project_skills():
         config = {
             'skill_domains': {
                 'system': {
-                    'defaults': ['pm-dev-general:dev-practices'],
+                    'defaults': ['plan-marshall:dev-general-practices'],
                     'project_skills': ['project:my-tool'],
                     'task_executors': {},
                 },

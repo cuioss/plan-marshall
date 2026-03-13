@@ -14,13 +14,7 @@
       "source": "./bundles/plan-marshall",
       "strict": false
     },
-    {
-      "name": "pm-dev-general",
-      "description": "Cross-cutting development principles for testing, documentation, and code quality",
-      "source": "./bundles/pm-dev-general",
-      "strict": false
-    },
-    {
+{
       "name": "pm-dev-frontend",
       "description": "JavaScript, CSS, and web component standards for applications",
       "source": "./bundles/pm-dev-frontend",

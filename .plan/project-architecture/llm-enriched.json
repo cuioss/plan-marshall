@@ -1,20 +1,20 @@
 {
   "project": {
-    "description": "Claude Code marketplace providing development standards, automation tools, and AI-assisted workflows for CUI Open Source projects, with 10 production bundles covering Java, frontend, documentation, requirements, and plugin development domains.",
-    "description_reasoning": "From README.adoc introduction and module structure"
+    "description": "An orchestration layer for AI coding assistants (currently Claude Code) that enforces consistency, reliability, and more predictable outputs through development standards, automation tools, and AI-assisted workflows organized as 7 production bundles with 95 components.",
+    "description_reasoning": "source: README.adoc introduction + CLAUDE.md repository overview"
   },
   "modules": {
     "default": {
-      "responsibility": "Root marketplace module coordinating 10 production bundles with unified build commands (compile, test, verify, coverage) via Pyprojectx wrapper.",
-      "responsibility_reasoning": "From marketplace.json structure and README.adoc",
-      "purpose": "parent",
-      "purpose_reasoning": "Root module with bundle_count=10, coordinates child bundles",
+      "responsibility": "Root Python project providing the pyprojectx-based build system (mypy, ruff, pytest) for all marketplace bundle scripts and their tests. Contains no application code itself \u2014 sources are the bundle scripts under marketplace/bundles/.",
+      "responsibility_reasoning": "pyproject.toml with pyprojectx aliases, sources=[marketplace/bundles], tests=[test]",
+      "purpose": "tooling",
+      "purpose_reasoning": "Build-time tooling only, no runtime application",
       "key_packages": {
-        "marketplace/bundles": {
-          "description": "Contains all 10 production bundles providing development standards and automation tools"
+        "marketplace.bundles": {
+          "description": "All marketplace bundle source code \u2014 Python scripts for build operations, architecture management, workflow orchestration, and domain-specific tooling"
         },
         "test": {
-          "description": "Pytest test suites mirroring bundle structure for script and integration testing"
+          "description": "Pytest test suites organized by bundle, covering script behavior, extension APIs, and integration tests"
         }
       },
       "internal_dependencies": [],
@@ -22,63 +22,68 @@
       "key_dependencies_reasoning": "",
       "skills_by_profile": {
         "implementation": [
-          "pm-plugin-development:plugin-architecture",
-          "pm-plugin-development:plugin-script-architecture",
-          "plan-marshall:ref-toon-format",
-          "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-code-documentation",
+          "plan-marshall:dev-general-practices",
+          "plan-marshall:dev-general-code-quality",
+          "plan-marshall:dev-general-code-documentation",
           "pm-dev-python:python-best-practices"
         ],
         "module_testing": [
-          "pm-plugin-development:plugin-architecture",
-          "pm-plugin-development:plugin-script-architecture",
-          "plan-marshall:ref-toon-format",
-          "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-module-testing",
+          "plan-marshall:dev-general-practices",
+          "plan-marshall:dev-general-code-quality",
+          "plan-marshall:dev-general-module-testing",
+          "pm-dev-python:python-best-practices"
+        ],
+        "quality": [
+          "plan-marshall:dev-general-practices",
+          "plan-marshall:dev-general-code-quality",
+          "plan-marshall:dev-general-code-documentation",
           "pm-dev-python:python-best-practices"
         ]
       },
-      "skills_by_profile_reasoning": "Merged: plugin-dev base + general-dev cross-cutting (always) + python domain (Python scripts detected in skills/scripts)",
+      "skills_by_profile_reasoning": "general-dev: cross-cutting code quality for Python project; python: build_systems=python",
       "tips": [],
       "insights": [],
       "best_practices": []
     },
     "documentation": {
-      "responsibility": "Project-level documentation including build structure, architecture decisions, and contributor guides.",
-      "responsibility_reasoning": "Inferred from doc/ directory purpose",
-      "purpose": "library",
-      "purpose_reasoning": "Documentation-only module, no runtime code",
-      "key_packages": {},
+      "responsibility": "Project-level AsciiDoc documentation including architecture guides, build structure docs, and user-facing README. Contains no code \u2014 purely documentation artifacts.",
+      "responsibility_reasoning": "build_systems=documentation, doc/ directory with .adoc files",
+      "purpose": "documentation",
+      "purpose_reasoning": "build_systems=documentation, only .adoc/.md files",
+      "key_packages": {
+        "doc": {
+          "description": "Project-level AsciiDoc documentation including architecture guides and build structure documentation"
+        }
+      },
       "internal_dependencies": [],
       "key_dependencies": [],
       "key_dependencies_reasoning": "",
       "skills_by_profile": {
         "documentation": [
-          "pm-documents:ref-documentation"
+          "pm-documents:ref-documentation",
+          "pm-documents:manage-adr",
+          "pm-documents:manage-interface"
         ]
       },
-      "skills_by_profile_reasoning": "Documentation-only module, only documentation profile applies",
+      "skills_by_profile_reasoning": "documentation: build_systems=documentation, doc directory",
       "tips": [],
       "insights": [],
       "best_practices": []
     },
     "plan-marshall": {
-      "responsibility": "Core orchestration bundle providing the 6-phase development workflow (init, refine, outline, plan, execute, finalize), permission management, architecture discovery, CI integration, and cross-cutting utilities like TOON format and script execution.",
-      "responsibility_reasoning": "From README.md and 45 packages spanning workflow phases, tools, and integrations",
-      "purpose": "infrastructure",
-      "purpose_reasoning": "Orchestration infrastructure with 35 skills, 8 agents, 2 commands",
+      "responsibility": "Core infrastructure bundle providing environment setup, permission management, extension API for domain bundle discovery, build system abstraction (Maven/Gradle/npm/Python), cross-cutting general-dev skills, and the complete 7-phase development workflow from task planning to PR finalization.",
+      "responsibility_reasoning": "README.md: foundational infrastructure \u2014 config, permissions, extension API, utilities, workflow",
+      "purpose": "domain-standards",
+      "purpose_reasoning": "marshall-plugin bundle providing skills, agents, and workflow orchestration",
       "key_packages": {
-        "skill:phase-1-init": {
-          "description": "Plan initialization creating directory structure, request.md, references, and status tracking"
+        "skills.plan-marshall-plugin": {
+          "description": "Extension API providing build system discovery (Maven/Gradle/npm/Python) and general-dev cross-cutting domain with content-aware applicability"
         },
-        "skill:manage-architecture": {
-          "description": "LLM-based architectural analysis transforming raw project data into enriched module descriptions and skill mappings"
+        "skills.manage-architecture": {
+          "description": "Project architecture discovery, enrichment, and querying with two-layer persistence (derived-data + llm-enriched)"
         },
-        "skill:marshall-steward": {
-          "description": "Project configuration wizard managing executor generation, health checks, build systems, and skill domains"
-        },
-        "skill:tools-script-executor": {
-          "description": "Universal script execution via execute-script.py proxy with notation-to-path resolution and logging"
+        "skills.phase-5-execute": {
+          "description": "Task execution engine with two-tier skill loading, domain-specific task executors, and verification sub-loop"
         }
       },
       "internal_dependencies": [],
@@ -88,36 +93,35 @@
         "implementation": [
           "pm-plugin-development:plugin-architecture",
           "pm-plugin-development:plugin-script-architecture",
-          "plan-marshall:ref-toon-format",
-          "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-code-documentation",
-          "pm-dev-python:python-best-practices"
+          "plan-marshall:ref-toon-format"
         ],
         "module_testing": [
           "pm-plugin-development:plugin-architecture",
           "pm-plugin-development:plugin-script-architecture",
-          "plan-marshall:ref-toon-format",
-          "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-module-testing",
-          "pm-dev-python:python-best-practices"
+          "plan-marshall:ref-toon-format"
+        ],
+        "quality": [
+          "pm-plugin-development:plugin-architecture",
+          "pm-plugin-development:plugin-script-architecture",
+          "plan-marshall:ref-toon-format"
         ]
       },
-      "skills_by_profile_reasoning": "Merged: plugin-dev base + general-dev cross-cutting (always) + python domain (Python scripts detected in skills/scripts)",
+      "skills_by_profile_reasoning": "plan-marshall-plugin-dev: build_systems=marshall-plugin",
       "tips": [],
       "insights": [],
       "best_practices": []
     },
     "pm-dev-frontend": {
-      "responsibility": "JavaScript, CSS, and web component development standards for CUI applications, covering ES modules, JSDoc, ESLint/Prettier/StyleLint enforcement, Cypress E2E testing, and Maven-integrated frontend builds.",
-      "responsibility_reasoning": "From README.md and 8 skill packages",
+      "responsibility": "Frontend development standards for modern JavaScript (ES modules, async patterns), CSS, web components, project structure, and build tooling (ESLint, Prettier, StyleLint, Jest, Cypress). Includes triage extension for JavaScript findings.",
+      "responsibility_reasoning": "README.md: comprehensive frontend expertise with skills and build integration",
       "purpose": "domain-standards",
-      "purpose_reasoning": "Domain standards bundle with no agents, only skills for JS/CSS development",
+      "purpose_reasoning": "marshall-plugin bundle with JavaScript/CSS domain skills",
       "key_packages": {
-        "skill:cui-javascript": {
-          "description": "Core JavaScript development standards for ES modules, modern patterns, and async programming"
+        "skills.cui-javascript": {
+          "description": "Core JavaScript development standards for ES modules, modern patterns, async programming, and code quality"
         },
-        "skill:cui-cypress": {
-          "description": "Cypress E2E testing standards with framework adaptations and test organization"
+        "skills.plan-marshall-plugin": {
+          "description": "JavaScript domain extension with npm build system detection and signal-based profile applicability"
         }
       },
       "internal_dependencies": [],
@@ -127,78 +131,38 @@
         "implementation": [
           "pm-plugin-development:plugin-architecture",
           "pm-plugin-development:plugin-script-architecture",
-          "plan-marshall:ref-toon-format",
-          "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-code-documentation",
-          "pm-dev-python:python-best-practices"
+          "plan-marshall:ref-toon-format"
         ],
         "module_testing": [
           "pm-plugin-development:plugin-architecture",
           "pm-plugin-development:plugin-script-architecture",
-          "plan-marshall:ref-toon-format",
-          "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-module-testing",
-          "pm-dev-python:python-best-practices"
-        ]
-      },
-      "skills_by_profile_reasoning": "Merged: plugin-dev base + general-dev cross-cutting (always) + python domain (Python scripts detected in skills/scripts)",
-      "tips": [],
-      "insights": [],
-      "best_practices": []
-    },
-    "pm-dev-general": {
-      "responsibility": "Cross-cutting development principles covering testing methodology with Boy Scout Rule, code documentation standards, and code quality patterns applicable across all language domains.",
-      "responsibility_reasoning": "From README.md and 4 skill packages (dev-module-testing, dev-code-documentation, dev-code-quality)",
-      "purpose": "domain-standards",
-      "purpose_reasoning": "Language-agnostic standards bundle providing shared development principles",
-      "key_packages": {
-        "skill:dev-module-testing": {
-          "description": "Cross-cutting testing methodology with Boy Scout Rule and test quality patterns"
-        },
-        "skill:dev-code-quality": {
-          "description": "Language-agnostic code quality patterns and review standards"
-        }
-      },
-      "internal_dependencies": [],
-      "key_dependencies": [],
-      "key_dependencies_reasoning": "",
-      "skills_by_profile": {
-        "implementation": [
-          "pm-plugin-development:plugin-architecture",
-          "pm-plugin-development:plugin-script-architecture",
-          "plan-marshall:ref-toon-format",
-          "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-code-documentation",
-          "pm-dev-python:python-best-practices"
+          "plan-marshall:ref-toon-format"
         ],
-        "module_testing": [
+        "quality": [
           "pm-plugin-development:plugin-architecture",
           "pm-plugin-development:plugin-script-architecture",
-          "plan-marshall:ref-toon-format",
-          "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-module-testing",
-          "pm-dev-python:python-best-practices"
+          "plan-marshall:ref-toon-format"
         ]
       },
-      "skills_by_profile_reasoning": "Merged: plugin-dev base + general-dev cross-cutting (always) + python domain (Python scripts detected in skills/scripts)",
+      "skills_by_profile_reasoning": "plan-marshall-plugin-dev: build_systems=marshall-plugin",
       "tips": [],
       "insights": [],
       "best_practices": []
     },
     "pm-dev-java": {
-      "responsibility": "Comprehensive Java development standards covering core patterns, null safety with JSpecify, Lombok, CDI/Quarkus, JUnit 5 testing, JavaDoc, and Maven profile management. Includes agents for coverage analysis and standards verification.",
-      "responsibility_reasoning": "From README.md and 15 packages including 13 skills and 2 agents",
+      "responsibility": "Comprehensive Java development expertise providing standards for core patterns, null safety, Lombok, CDI/Quarkus, JUnit 5 testing, JavaDoc, and logging. Includes verification agents for coverage analysis and compliance checking.",
+      "responsibility_reasoning": "README.md: Java development knowledge base with skills and verification agents",
       "purpose": "domain-standards",
-      "purpose_reasoning": "Domain standards bundle with agent-first architecture for Java development",
+      "purpose_reasoning": "marshall-plugin bundle with Java domain skills",
       "key_packages": {
-        "skill:java-core": {
-          "description": "Core Java development standards for modern features, patterns, and performance optimization"
+        "skills.java-core": {
+          "description": "Core Java development patterns, modern features, and performance optimization standards"
         },
-        "skill:junit-core": {
+        "skills.junit-core": {
           "description": "JUnit 5 testing patterns with AAA structure, test organization, and coverage standards"
         },
-        "skill:java-null-safety": {
-          "description": "JSpecify null safety annotations with @NullMarked and package-level configuration"
+        "skills.plan-marshall-plugin": {
+          "description": "Java domain extension with signal-based profile detection (IT, CDI, Lombok) and three-layer profile filtering"
         }
       },
       "internal_dependencies": [],
@@ -208,36 +172,35 @@
         "implementation": [
           "pm-plugin-development:plugin-architecture",
           "pm-plugin-development:plugin-script-architecture",
-          "plan-marshall:ref-toon-format",
-          "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-code-documentation",
-          "pm-dev-python:python-best-practices"
+          "plan-marshall:ref-toon-format"
         ],
         "module_testing": [
           "pm-plugin-development:plugin-architecture",
           "pm-plugin-development:plugin-script-architecture",
-          "plan-marshall:ref-toon-format",
-          "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-module-testing",
-          "pm-dev-python:python-best-practices"
+          "plan-marshall:ref-toon-format"
+        ],
+        "quality": [
+          "pm-plugin-development:plugin-architecture",
+          "pm-plugin-development:plugin-script-architecture",
+          "plan-marshall:ref-toon-format"
         ]
       },
-      "skills_by_profile_reasoning": "Merged: plugin-dev base + general-dev cross-cutting (always) + python domain (Python scripts detected in skills/scripts)",
+      "skills_by_profile_reasoning": "plan-marshall-plugin-dev: build_systems=marshall-plugin",
       "tips": [],
       "insights": [],
       "best_practices": []
     },
     "pm-dev-java-cui": {
-      "responsibility": "CUI-specific Java extensions providing CuiLogger patterns, LogRecord management, test data generators for value object contracts, and MockWebServer-based HTTP client testing standards.",
-      "responsibility_reasoning": "From README.md and 7 skill packages",
+      "responsibility": "CUI-specific Java standards complementing pm-dev-java with opinionated patterns for CuiLogger/LogRecord, test data generators, value object contracts, and HTTP client testing via MockWebServer.",
+      "responsibility_reasoning": "README.md: CUI library-specific standards, additive to general Java standards",
       "purpose": "domain-standards",
-      "purpose_reasoning": "Additive domain extension for CUI-specific Java patterns",
+      "purpose_reasoning": "marshall-plugin bundle with CUI Java domain skills, additive_to=java",
       "key_packages": {
-        "skill:cui-logging": {
-          "description": "CUI logging standards with CuiLogger, LogRecord patterns, and DSL-style LogMessages"
+        "skills.cui-logging": {
+          "description": "CuiLogger and LogRecord standards for structured logging in CUI projects"
         },
-        "skill:cui-testing": {
-          "description": "CUI test library standards for test data generation and value object contracts"
+        "skills.cui-testing": {
+          "description": "CUI test library standards for test data generation, value object contracts, and JUL log testing"
         }
       },
       "internal_dependencies": [],
@@ -247,36 +210,35 @@
         "implementation": [
           "pm-plugin-development:plugin-architecture",
           "pm-plugin-development:plugin-script-architecture",
-          "plan-marshall:ref-toon-format",
-          "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-code-documentation",
-          "pm-dev-python:python-best-practices"
+          "plan-marshall:ref-toon-format"
         ],
         "module_testing": [
           "pm-plugin-development:plugin-architecture",
           "pm-plugin-development:plugin-script-architecture",
-          "plan-marshall:ref-toon-format",
-          "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-module-testing",
-          "pm-dev-python:python-best-practices"
+          "plan-marshall:ref-toon-format"
+        ],
+        "quality": [
+          "pm-plugin-development:plugin-architecture",
+          "pm-plugin-development:plugin-script-architecture",
+          "plan-marshall:ref-toon-format"
         ]
       },
-      "skills_by_profile_reasoning": "Merged: plugin-dev base + general-dev cross-cutting (always) + python domain (Python scripts detected in skills/scripts)",
+      "skills_by_profile_reasoning": "plan-marshall-plugin-dev: build_systems=marshall-plugin",
       "tips": [],
       "insights": [],
       "best_practices": []
     },
     "pm-dev-oci": {
-      "responsibility": "OCI container standards and security best practices covering image building, registry management, container security scanning, and deployment patterns.",
-      "responsibility_reasoning": "From README.md and 3 skill packages (oci-standards, oci-security)",
+      "responsibility": "OCI container standards covering image building (minimal bases, multi-stage, pinned versions), multi-platform builds, distroless health probes, runtime hardening, vulnerability scanning, supply chain security, and OWASP container controls.",
+      "responsibility_reasoning": "README.md: comprehensive OCI container expertise through reference skills",
       "purpose": "domain-standards",
-      "purpose_reasoning": "Domain standards bundle for container/OCI development",
+      "purpose_reasoning": "marshall-plugin bundle with OCI container domain skills",
       "key_packages": {
-        "skill:oci-standards": {
-          "description": "OCI container image building and registry management standards"
+        "skills.oci-standards": {
+          "description": "General OCI container practices for image building, multi-platform builds, and distroless health probes"
         },
-        "skill:oci-security": {
-          "description": "Container security scanning and hardening best practices"
+        "skills.oci-security": {
+          "description": "OCI container security covering runtime hardening, supply chain security, and OWASP controls"
         }
       },
       "internal_dependencies": [],
@@ -286,33 +248,35 @@
         "implementation": [
           "pm-plugin-development:plugin-architecture",
           "pm-plugin-development:plugin-script-architecture",
-          "plan-marshall:ref-toon-format",
-          "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-code-documentation",
-          "pm-dev-python:python-best-practices"
+          "plan-marshall:ref-toon-format"
         ],
         "module_testing": [
           "pm-plugin-development:plugin-architecture",
           "pm-plugin-development:plugin-script-architecture",
-          "plan-marshall:ref-toon-format",
-          "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-module-testing",
-          "pm-dev-python:python-best-practices"
+          "plan-marshall:ref-toon-format"
+        ],
+        "quality": [
+          "pm-plugin-development:plugin-architecture",
+          "pm-plugin-development:plugin-script-architecture",
+          "plan-marshall:ref-toon-format"
         ]
       },
-      "skills_by_profile_reasoning": "Merged: plugin-dev base + general-dev cross-cutting (always) + python domain (Python scripts detected in skills/scripts)",
+      "skills_by_profile_reasoning": "plan-marshall-plugin-dev: build_systems=marshall-plugin",
       "tips": [],
       "insights": [],
       "best_practices": []
     },
     "pm-dev-python": {
-      "responsibility": "Python domain extension providing best practices standards and pyprojectx build operations integration for plan-marshall workflow.",
-      "responsibility_reasoning": "From README.md and 2 skill packages",
+      "responsibility": "Python domain extension providing development best practices and build infrastructure integration via pyprojectx (ruff, mypy, pytest). Includes runtime discovery of available build commands.",
+      "responsibility_reasoning": "README.md: Python standards and build execution via pyprojectx",
       "purpose": "domain-standards",
-      "purpose_reasoning": "Domain standards bundle for Python development",
+      "purpose_reasoning": "marshall-plugin bundle with Python domain skills",
       "key_packages": {
-        "skill:python-best-practices": {
-          "description": "Python development best practices and coding standards"
+        "skills.python-best-practices": {
+          "description": "Modern Python development patterns and best practices for plan-marshall scripts"
+        },
+        "skills.plan-marshall-plugin": {
+          "description": "Python domain extension with pyprojectx build system detection and module applicability"
         }
       },
       "internal_dependencies": [],
@@ -323,74 +287,85 @@
           "pm-plugin-development:plugin-architecture",
           "pm-plugin-development:plugin-script-architecture",
           "plan-marshall:ref-toon-format",
-          "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-code-documentation",
-          "pm-dev-python:python-best-practices"
+          "pm-dev-python:python-best-practices",
+          "plan-marshall:dev-general-code-quality",
+          "plan-marshall:dev-general-code-documentation"
         ],
         "module_testing": [
           "pm-plugin-development:plugin-architecture",
           "pm-plugin-development:plugin-script-architecture",
           "plan-marshall:ref-toon-format",
-          "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-module-testing",
-          "pm-dev-python:python-best-practices"
+          "pm-dev-python:python-best-practices",
+          "plan-marshall:dev-general-code-quality",
+          "plan-marshall:dev-general-module-testing"
+        ],
+        "quality": [
+          "pm-plugin-development:plugin-architecture",
+          "pm-plugin-development:plugin-script-architecture",
+          "plan-marshall:ref-toon-format",
+          "pm-dev-python:python-best-practices",
+          "plan-marshall:dev-general-code-quality"
         ]
       },
-      "skills_by_profile_reasoning": "Merged: plugin-dev base + general-dev cross-cutting (always) + python domain (Python scripts detected in skills/scripts)",
+      "skills_by_profile_reasoning": "plan-marshall-plugin-dev: build_systems=marshall-plugin; python: Python scripts in skills and tests",
       "tips": [],
       "insights": [],
       "best_practices": []
     },
     "pm-documents": {
-      "responsibility": "Documentation standards enforcement for AsciiDoc formatting, Architectural Decision Records, and interface specifications with validation, architecture diagram verification, and maintenance workflows.",
-      "responsibility_reasoning": "From README.md and 4 packages including 1 command",
+      "responsibility": "Documentation domain standards for AsciiDoc, Architectural Decision Records (ADRs), and interface specifications. Provides validation, formatting, and maintenance workflows with documentation-specific triage extension.",
+      "responsibility_reasoning": "README.md: documentation domain knowledge with ref-documentation, ADR, and interface skills",
       "purpose": "domain-standards",
-      "purpose_reasoning": "Documentation domain bundle with standards and verification tooling",
+      "purpose_reasoning": "marshall-plugin bundle with documentation domain skills",
       "key_packages": {
-        "skill:ref-documentation": {
-          "description": "General documentation standards for README, AsciiDoc, and technical documentation"
+        "skills.ref-documentation": {
+          "description": "General documentation standards for README, AsciiDoc, and technical documentation with validation workflows"
+        },
+        "skills.plan-marshall-plugin": {
+          "description": "Documentation domain extension with doc directory and build_systems=documentation signal detection"
         }
       },
       "internal_dependencies": [],
       "key_dependencies": [],
       "key_dependencies_reasoning": "",
       "skills_by_profile": {
+        "documentation": [
+          "pm-documents:ref-documentation",
+          "pm-documents:manage-adr",
+          "pm-documents:manage-interface"
+        ],
         "implementation": [
           "pm-plugin-development:plugin-architecture",
           "pm-plugin-development:plugin-script-architecture",
-          "plan-marshall:ref-toon-format",
-          "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-code-documentation",
-          "pm-dev-python:python-best-practices"
+          "plan-marshall:ref-toon-format"
         ],
         "module_testing": [
           "pm-plugin-development:plugin-architecture",
           "pm-plugin-development:plugin-script-architecture",
-          "plan-marshall:ref-toon-format",
-          "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-module-testing",
-          "pm-dev-python:python-best-practices"
+          "plan-marshall:ref-toon-format"
+        ],
+        "quality": [
+          "pm-plugin-development:plugin-architecture",
+          "pm-plugin-development:plugin-script-architecture",
+          "plan-marshall:ref-toon-format"
         ]
       },
-      "skills_by_profile_reasoning": "Merged: plugin-dev base + general-dev cross-cutting (always) + python domain (Python scripts detected in skills/scripts)",
+      "skills_by_profile_reasoning": "documentation: doc directories in bundle; plan-marshall-plugin-dev: build_systems=marshall-plugin",
       "tips": [],
       "insights": [],
       "best_practices": []
     },
     "pm-plugin-development": {
-      "responsibility": "Complete plugin development toolkit providing creation wizards, quality diagnosis (plugin-doctor), marketplace inventory scanning, architecture guidance, component maintenance, script failure analysis, and outline workflow extensions.",
-      "responsibility_reasoning": "From README.md and 18 packages including 14 skills, 3 agents, 1 command",
+      "responsibility": "Complete toolchain for marketplace plugin lifecycle \u2014 creation wizards, quality diagnosis (plugin-doctor), maintenance, inventory scanning, and architecture guidance. Organized by user goals: CREATE, DOCTOR, MAINTAIN, VERIFY.",
+      "responsibility_reasoning": "README.md: goal-based toolchain for plugin development lifecycle",
       "purpose": "tooling",
-      "purpose_reasoning": "Development tooling bundle with agents for plugin lifecycle management",
+      "purpose_reasoning": "marshall-plugin bundle providing plugin development tooling",
       "key_packages": {
-        "skill:plugin-doctor": {
-          "description": "Quality diagnosis and automated fixing for marketplace components"
+        "skills.plugin-doctor": {
+          "description": "Unified diagnosis and fix workflow for marketplace component quality issues"
         },
-        "skill:plugin-architecture": {
-          "description": "Architecture principles, skill patterns, and design guidance for marketplace components"
-        },
-        "skill:plugin-create": {
-          "description": "Creation wizards for new agents, commands, skills, and bundles"
+        "skills.plugin-architecture": {
+          "description": "Architecture principles, skill patterns, and design guidance for building marketplace components"
         }
       },
       "internal_dependencies": [],
@@ -400,36 +375,35 @@
         "implementation": [
           "pm-plugin-development:plugin-architecture",
           "pm-plugin-development:plugin-script-architecture",
-          "plan-marshall:ref-toon-format",
-          "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-code-documentation",
-          "pm-dev-python:python-best-practices"
+          "plan-marshall:ref-toon-format"
         ],
         "module_testing": [
           "pm-plugin-development:plugin-architecture",
           "pm-plugin-development:plugin-script-architecture",
-          "plan-marshall:ref-toon-format",
-          "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-module-testing",
-          "pm-dev-python:python-best-practices"
+          "plan-marshall:ref-toon-format"
+        ],
+        "quality": [
+          "pm-plugin-development:plugin-architecture",
+          "pm-plugin-development:plugin-script-architecture",
+          "plan-marshall:ref-toon-format"
         ]
       },
-      "skills_by_profile_reasoning": "Merged: plugin-dev base + general-dev cross-cutting (always) + python domain (Python scripts detected in skills/scripts)",
+      "skills_by_profile_reasoning": "plan-marshall-plugin-dev: build_systems=marshall-plugin",
       "tips": [],
       "insights": [],
       "best_practices": []
     },
     "pm-requirements": {
-      "responsibility": "Requirements engineering standards covering authoring with SMART principles, project planning with task tracking, specification-to-code traceability, and new project setup with proper directory structure.",
-      "responsibility_reasoning": "From README.md and 6 skill packages",
+      "responsibility": "Requirements engineering standards covering authoring with SMART principles, project setup with documentation structure, planning with task tracking, and bidirectional traceability from specifications to implementation.",
+      "responsibility_reasoning": "README.md: requirements lifecycle from setup through implementation with traceability",
       "purpose": "domain-standards",
-      "purpose_reasoning": "Domain standards bundle for requirements engineering",
+      "purpose_reasoning": "marshall-plugin bundle with requirements domain skills",
       "key_packages": {
-        "skill:requirements-authoring": {
-          "description": "Standards for creating requirements and specifications with SMART principles"
+        "skills.requirements-authoring": {
+          "description": "Standards for creating requirements with SMART principles, proper structure, and traceability"
         },
-        "skill:traceability": {
-          "description": "Bidirectional traceability between specifications and implementation code"
+        "skills.traceability": {
+          "description": "Bidirectional traceability standards linking specifications to implementation code"
         }
       },
       "internal_dependencies": [],
@@ -439,21 +413,20 @@
         "implementation": [
           "pm-plugin-development:plugin-architecture",
           "pm-plugin-development:plugin-script-architecture",
-          "plan-marshall:ref-toon-format",
-          "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-code-documentation",
-          "pm-dev-python:python-best-practices"
+          "plan-marshall:ref-toon-format"
         ],
         "module_testing": [
           "pm-plugin-development:plugin-architecture",
           "pm-plugin-development:plugin-script-architecture",
-          "plan-marshall:ref-toon-format",
-          "pm-dev-general:dev-code-quality",
-          "pm-dev-general:dev-module-testing",
-          "pm-dev-python:python-best-practices"
+          "plan-marshall:ref-toon-format"
+        ],
+        "quality": [
+          "pm-plugin-development:plugin-architecture",
+          "pm-plugin-development:plugin-script-architecture",
+          "plan-marshall:ref-toon-format"
         ]
       },
-      "skills_by_profile_reasoning": "Merged: plugin-dev base + general-dev cross-cutting (always) + python domain (Python scripts detected in skills/scripts)",
+      "skills_by_profile_reasoning": "plan-marshall-plugin-dev: build_systems=marshall-plugin",
       "tips": [],
       "insights": [],
       "best_practices": []

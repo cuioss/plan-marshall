@@ -20,7 +20,7 @@ Follow the contract for: Input parameters, Task steps, Output format, Critical R
 Load development standards before analysis:
 
 ```
-Skill: pm-dev-general:dev-practices
+Skill: plan-marshall:dev-general-practices
 ```
 
 This provides core principles for tool usage and file operations.

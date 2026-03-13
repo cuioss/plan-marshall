@@ -1,33 +1,19 @@
 #!/usr/bin/env python3
 """Extension API for pm-dev-java bundle.
 
-Minimal wrapper providing build system detection, module discovery,
-and command mappings for Maven and Gradle projects.
+Slim domain registration providing skill domains, module applicability,
+triage, verification steps, and recipe definitions for Java projects.
 
-Implementation logic resides in scripts/ directory.
+Build operations (Maven/Gradle) have moved to plan-marshall:build-maven
+and plan-marshall:build-gradle. Module discovery is in
+plan-marshall:plan-marshall-plugin.
 """
-
-import sys
-from pathlib import Path
 
 from extension_base import ExtensionBase
 
-# Add scripts directory to path
-SCRIPTS_DIR = Path(__file__).parent / 'scripts'
-if str(SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS_DIR))
-
-
-# Build file constants
-POM_XML = 'pom.xml'
-BUILD_GRADLE = 'build.gradle'
-BUILD_GRADLE_KTS = 'build.gradle.kts'
-SETTINGS_GRADLE = 'settings.gradle'
-SETTINGS_GRADLE_KTS = 'settings.gradle.kts'
-
 
 class Extension(ExtensionBase):
-    """Java/Maven/Gradle extension for pm-dev-java bundle."""
+    """Java domain extension for pm-dev-java bundle."""
 
     def get_skill_domains(self) -> dict:
         """Domain metadata for skill loading."""
@@ -45,7 +31,7 @@ class Extension(ExtensionBase):
                             'description': 'Core Java patterns including modern features and performance optimization',
                         },
                         {
-                            'skill': 'pm-dev-general:dev-code-quality',
+                            'skill': 'plan-marshall:dev-general-code-quality',
                             'description': 'Language-agnostic code quality principles (SRP, CQS, complexity, error handling)',
                         },
                     ],
@@ -63,7 +49,7 @@ class Extension(ExtensionBase):
                 'implementation': {
                     'defaults': [
                         {
-                            'skill': 'pm-dev-general:dev-code-documentation',
+                            'skill': 'plan-marshall:dev-general-code-documentation',
                             'description': 'Language-agnostic documentation principles (what/when/how to document)',
                         },
                     ],
@@ -85,7 +71,7 @@ class Extension(ExtensionBase):
                             'description': 'JUnit 5 testing patterns with AAA structure, coverage analysis, and assertion standards',
                         },
                         {
-                            'skill': 'pm-dev-general:dev-module-testing',
+                            'skill': 'plan-marshall:dev-general-module-testing',
                             'description': 'Language-agnostic testing methodology (AAA, coverage, reliability, determinism)',
                         },
                     ],
@@ -108,14 +94,43 @@ class Extension(ExtensionBase):
             },
         }
 
-    def applies_to_module(self, module_data: dict) -> dict:
+    def _detect_applicable_profiles(self, profiles: dict,
+                                     module_data: dict | None) -> set[str] | None:
+        """Detect applicable profiles based on Maven/Gradle module signals."""
+        if module_data is None:
+            return None
+
+        applicable = {'implementation', 'module_testing', 'quality'}
+
+        # Check for integration test signals
+        metadata = module_data.get('metadata', {})
+        maven_profiles = metadata.get('profiles', [])
+        module_name = module_data.get('name', '')
+        deps = module_data.get('dependencies', [])
+        dep_strings = [d if isinstance(d, str) else '' for d in deps]
+
+        has_it_signals = (
+            any('integration' in p.lower() for p in maven_profiles)
+            or any('failsafe' in d for d in dep_strings)
+            or any('testcontainers' in d for d in dep_strings)
+            or 'integration' in module_name.lower()
+        )
+        if has_it_signals and 'integration_testing' in profiles:
+            applicable.add('integration_testing')
+
+        return applicable
+
+    def applies_to_module(self, module_data: dict,
+                          active_profiles: set[str] | None = None) -> dict:
         """Check if Java domain applies based on build systems."""
         build_systems = module_data.get('build_systems', [])
         if 'maven' not in build_systems and 'gradle' not in build_systems:
             return {'applicable': False, 'confidence': 'none', 'signals': [], 'additive_to': None, 'skills_by_profile': {}}
 
         signals = [f'build_systems={",".join(build_systems)}']
-        result = self._build_applicable_result('high', signals)
+        result = self._build_applicable_result('high', signals,
+                                                module_data=module_data,
+                                                active_profiles=active_profiles)
 
         # Module-level customization: move CDI/Lombok to optionals based on deps
         deps = module_data.get('dependencies', [])
@@ -125,7 +140,6 @@ class Extension(ExtensionBase):
 
         for profile in result['skills_by_profile'].values():
             if not has_cdi:
-                # Move java-cdi from defaults to optionals
                 cdi_entries = [e for e in profile.get('defaults', [])
                                if isinstance(e, dict) and 'java-cdi' in e.get('skill', '')]
                 for entry in cdi_entries:
@@ -133,7 +147,6 @@ class Extension(ExtensionBase):
                     if entry not in profile['optionals']:
                         profile['optionals'].append(entry)
             if not has_lombok:
-                # Move java-lombok from defaults to optionals
                 lombok_entries = [e for e in profile.get('defaults', [])
                                   if isinstance(e, dict) and 'java-lombok' in e.get('skill', '')]
                 for entry in lombok_entries:
@@ -169,33 +182,3 @@ class Extension(ExtensionBase):
         the standard refactoring use cases. Only return custom recipes here.
         """
         return []
-
-    def discover_modules(self, project_root: str) -> list:
-        """Discover all modules with complete metadata.
-
-        Delegates to maven_cmd_discover.py and gradle_cmd_discover.py.
-        """
-        modules = []
-        root = Path(project_root)
-
-        # Maven modules
-        if (root / POM_XML).exists():
-            from _maven_cmd_discover import discover_maven_modules
-
-            modules.extend(discover_maven_modules(project_root))
-
-        # Gradle modules (only if no Maven at same path)
-        # Note: modules with 'error' key have no paths - include them directly
-        maven_paths = {m['paths']['module'] for m in modules if 'paths' in m}
-        gradle_files = [BUILD_GRADLE_KTS, BUILD_GRADLE, SETTINGS_GRADLE_KTS, SETTINGS_GRADLE]
-        has_gradle = any((root / bf).exists() for bf in gradle_files)
-        if has_gradle:
-            from _gradle_cmd_discover import discover_gradle_modules
-
-            gradle_modules = discover_gradle_modules(project_root)
-            for gm in gradle_modules:
-                # Error-only modules (no paths) are always included
-                if 'error' in gm or gm['paths']['module'] not in maven_paths:
-                    modules.append(gm)
-
-        return modules

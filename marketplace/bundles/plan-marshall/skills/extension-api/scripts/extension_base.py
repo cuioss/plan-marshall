@@ -202,6 +202,18 @@ class ExtensionBase(ABC):
     # Required Methods (must be implemented)
     # =========================================================================
 
+    def get_all_skill_domains(self) -> list[dict]:
+        """Return all domains this extension provides.
+
+        Default wraps get_skill_domains() in a list. Override for multi-domain
+        extensions that provide more than one skill domain.
+
+        Returns:
+            List of domain dicts, each with 'domain' and 'profiles' keys.
+        """
+        result = self.get_skill_domains()
+        return [result] if result and result.get('domain') else []
+
     @abstractmethod
     def get_skill_domains(self) -> dict:
         """Return domain metadata for skill loading.
@@ -361,7 +373,8 @@ class ExtensionBase(ABC):
         """
         return []
 
-    def applies_to_module(self, module_data: dict) -> dict:
+    def applies_to_module(self, module_data: dict,
+                          active_profiles: set[str] | None = None) -> dict:
         """Check if this domain applies to a specific module and return resolved skills.
 
         Called during architecture enrichment to determine which skill domains
@@ -372,6 +385,8 @@ class ExtensionBase(ABC):
         Args:
             module_data: Module dict from derived-data.json containing:
                 build_systems, paths, dependencies, packages, metadata, stats
+            active_profiles: Optional positive list of profiles to include.
+                Overrides signal detection when provided (Layer 2/3).
 
         Returns:
             {
@@ -400,17 +415,43 @@ class ExtensionBase(ABC):
             'skills_by_profile': {},
         }
 
+    def _detect_applicable_profiles(self, profiles: dict,
+                                     module_data: dict | None) -> set[str] | None:
+        """Detect which profiles are applicable based on module signals.
+
+        Returns set of applicable profile names, or None for no filtering
+        (all defined profiles are included). Override in domain extensions
+        for signal-based detection.
+
+        Args:
+            profiles: Dict of profile definitions from get_skill_domains()
+            module_data: Module dict from derived-data.json, or None
+
+        Returns:
+            Set of applicable profile names, or None for no filtering.
+        """
+        return None
+
     def _build_applicable_result(self, confidence: str, signals: list[str],
-                                  additive_to: str | None = None) -> dict:
+                                  additive_to: str | None = None,
+                                  module_data: dict | None = None,
+                                  active_profiles: set[str] | None = None) -> dict:
         """Helper: build applicable result from own get_skill_domains() profiles.
 
         Merges 'core' profile into each non-core profile to produce a flat
         skills_by_profile dict ready for consumption.
 
+        Profile filtering (three-layer resolution):
+        1. active_profiles (explicit override from config or CLI) wins
+        2. _detect_applicable_profiles() (signal-based detection) if no override
+        3. All defined profiles if detection returns None
+
         Args:
             confidence: 'high', 'medium', or 'low'
             signals: List of signal strings explaining why applicable
             additive_to: Parent domain key if this is an additive domain
+            module_data: Module dict for signal-based profile detection
+            active_profiles: Explicit positive list of profiles to include
 
         Returns:
             Full applies_to_module result dict with applicable=True
@@ -421,18 +462,28 @@ class ExtensionBase(ABC):
         core_defaults = core.get('defaults', [])
         core_optionals = core.get('optionals', [])
 
+        # Determine which profiles are active (three-layer resolution)
+        profile_filter: set[str] | None
+        if active_profiles is not None:
+            profile_filter = active_profiles
+        else:
+            profile_filter = self._detect_applicable_profiles(profiles, module_data)
+
         skills_by_profile: dict[str, dict] = {}
         for profile_name in ['implementation', 'module_testing', 'integration_testing',
                              'quality', 'documentation']:
-            profile = profiles.get(profile_name, {})
-            if profile or core_defaults or core_optionals:
-                merged_defaults = list(core_defaults) + list(profile.get('defaults', []))
-                merged_optionals = list(core_optionals) + list(profile.get('optionals', []))
-                if merged_defaults or merged_optionals:
-                    skills_by_profile[profile_name] = {
-                        'defaults': merged_defaults,
-                        'optionals': merged_optionals,
-                    }
+            if profile_name not in profiles:
+                continue
+            if profile_filter is not None and profile_name not in profile_filter:
+                continue
+            profile = profiles[profile_name]
+            merged_defaults = list(core_defaults) + list(profile.get('defaults', []))
+            merged_optionals = list(core_optionals) + list(profile.get('optionals', []))
+            if merged_defaults or merged_optionals:
+                skills_by_profile[profile_name] = {
+                    'defaults': merged_defaults,
+                    'optionals': merged_optionals,
+                }
         return {
             'applicable': True,
             'confidence': confidence,

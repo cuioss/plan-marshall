@@ -48,7 +48,7 @@ def get_skill_domains(self) -> dict:
                     "optionals": list[str]    # On-demand skills
                 },
                 "implementation": {...},
-                "testing": {...},      # or "module_testing"
+                "module_testing": {...},
                 "quality": {...}
             }
         }

@@ -19,7 +19,7 @@ Scripts in marketplace bundles follow a two-tier visibility model:
     │  External Callers (Claude Code, CLI, Tests)             │
     │  ┌───────────────────────────────────────────────────┐  │
     │  │ python3 .plan/execute-script.py                   │  │
-    │  │   pm-dev-java:plan-marshall-plugin:maven run ...  │  │
+    │  │   plan-marshall:build-maven:maven run ...  │  │
     │  └───────────────────────────────────────────────────┘  │
     │                         │                               │
     │                         ▼                               │
@@ -143,8 +143,8 @@ Only CLI entry points are registered in the executor. Internal modules are never
 ```python
 # generate-executor.py mapping (simplified)
 SCRIPT_MAPPING = {
-    "pm-dev-java:plan-marshall-plugin:maven": ".../scripts/maven.py",
-    "pm-dev-java:plan-marshall-plugin:gradle": ".../scripts/gradle.py",
+    "plan-marshall:build-maven:maven": ".../scripts/maven.py",
+    "plan-marshall:build-gradle:gradle": ".../scripts/gradle.py",
     # Internal modules NOT included:
     # NO: "pm-dev-java:plan-marshall-plugin:_maven_execute"
     # NO: "pm-dev-java:plan-marshall-plugin:_maven_cmd_parse"

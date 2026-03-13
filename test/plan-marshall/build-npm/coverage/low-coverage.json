@@ -1,0 +1,20 @@
+{
+  "total": {
+    "lines": { "total": 300, "covered": 90, "skipped": 0, "pct": 30 },
+    "statements": { "total": 350, "covered": 105, "skipped": 0, "pct": 30 },
+    "functions": { "total": 50, "covered": 15, "skipped": 0, "pct": 30 },
+    "branches": { "total": 80, "covered": 16, "skipped": 0, "pct": 20 }
+  },
+  "/src/legacy/oldModule.js": {
+    "lines": { "total": 150, "covered": 30, "skipped": 0, "pct": 20 },
+    "statements": { "total": 175, "covered": 35, "skipped": 0, "pct": 20 },
+    "functions": { "total": 25, "covered": 5, "skipped": 0, "pct": 20 },
+    "branches": { "total": 40, "covered": 4, "skipped": 0, "pct": 10 }
+  },
+  "/src/legacy/deprecatedUtil.js": {
+    "lines": { "total": 150, "covered": 60, "skipped": 0, "pct": 40 },
+    "statements": { "total": 175, "covered": 70, "skipped": 0, "pct": 40 },
+    "functions": { "total": 25, "covered": 10, "skipped": 0, "pct": 40 },
+    "branches": { "total": 40, "covered": 12, "skipped": 0, "pct": 30 }
+  }
+}

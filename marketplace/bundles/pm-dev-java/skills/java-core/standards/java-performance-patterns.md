@@ -92,54 +92,9 @@ Set<DayOfWeek> workDays = EnumSet.of(MONDAY, TUESDAY, WEDNESDAY, THURSDAY, FRIDA
 Map<Status, Handler> handlers = new EnumMap<>(Status.class);
 ```
 
-## Thread Safety Patterns
+## Thread Safety
 
-### Lazy Initialization
-
-```java
-// Bad - synchronized on every access
-public synchronized ExpensiveResource getResource() {
-    if (resource == null) resource = createExpensiveResource();
-    return resource;
-}
-
-// Good - initialization-on-demand holder idiom
-public class ResourceHolder {
-    private static class Holder {
-        static final ExpensiveResource INSTANCE = createExpensiveResource();
-    }
-    public static ExpensiveResource getResource() {
-        return Holder.INSTANCE;  // Lazy, thread-safe, no synchronization
-    }
-}
-```
-
-### ThreadLocal Cleanup
-
-Always clean up ThreadLocal in pooled thread environments. Avoid ThreadLocal with virtual threads (use explicit parameter passing instead):
-
-```java
-// Good for platform threads - always remove in finally
-private static final ThreadLocal<UserContext> context = new ThreadLocal<>();
-
-public void processRequest(Request request) {
-    context.set(createContext(request));
-    try {
-        handleRequest(request);
-    } finally {
-        context.remove();  // Critical for thread pools
-    }
-}
-
-// Better - try-with-resources pattern
-public class ScopedContext implements AutoCloseable {
-    private static final ThreadLocal<UserContext> CONTEXT = new ThreadLocal<>();
-
-    public ScopedContext(UserContext ctx) { CONTEXT.set(ctx); }
-    public static UserContext current() { return CONTEXT.get(); }
-    @Override public void close() { CONTEXT.remove(); }
-}
-```
+For comprehensive concurrency patterns (locks, virtual threads, ScopedValue, concurrent collections), see `standards/java-concurrency.md`.
 
 ## Exception Handling Performance
 

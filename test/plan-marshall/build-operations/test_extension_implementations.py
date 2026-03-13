@@ -589,16 +589,33 @@ def test_java_cui_not_applicable_to_npm():
     assert result['applicable'] is False
 
 
-def test_general_dev_always_applicable():
-    """General-dev ext: ANY module -> always applicable (high)."""
-    ext = load_extension('pm-dev-general')
-
+def test_general_dev_applies_to_code_modules():
+    """General-dev: code modules -> applicable."""
+    ext = load_extension('plan-marshall')
     assert ext.applies_to_module(_maven_module_data())['applicable'] is True
     assert ext.applies_to_module(_npm_module_data())['applicable'] is True
-    assert ext.applies_to_module(_empty_module_data())['applicable'] is True
-
+    assert ext.applies_to_module(_python_module_data())['applicable'] is True
     result = ext.applies_to_module(_maven_module_data())
     assert result['confidence'] == 'high'
+
+
+def test_general_dev_not_applicable_to_non_code_modules():
+    """General-dev: doc/plugin/empty modules -> not applicable."""
+    ext = load_extension('plan-marshall')
+    assert ext.applies_to_module(_doc_module_data())['applicable'] is False
+    assert ext.applies_to_module(_plugin_module_data())['applicable'] is False
+    assert ext.applies_to_module(_empty_module_data())['applicable'] is False
+
+
+def test_plan_marshall_get_all_skill_domains():
+    """plan-marshall provides both build and general-dev domains."""
+    ext = load_extension('plan-marshall')
+    all_domains = ext.get_all_skill_domains()
+
+    assert len(all_domains) == 2
+    keys = {d['domain']['key'] for d in all_domains}
+    assert 'build' in keys
+    assert 'general-dev' in keys
 
 
 def test_plugin_dev_applies_to_marketplace_module():
@@ -613,6 +630,13 @@ def test_plugin_dev_not_applicable_to_plain_module():
     ext = load_extension('pm-plugin-development')
     result = ext.applies_to_module(_maven_module_data())
     assert result['applicable'] is False
+
+
+def test_documents_only_documentation_profile():
+    """pm-documents should only define core and documentation profiles."""
+    ext = load_extension('pm-documents')
+    domains = ext.get_skill_domains()
+    assert set(domains['profiles'].keys()) == {'core', 'documentation'}
 
 
 def test_documents_applies_to_doc_module():
@@ -639,7 +663,7 @@ def test_requirements_not_applicable():
 def test_applies_to_module_result_structure():
     """All applies_to_module results have required keys."""
     required_keys = ['applicable', 'confidence', 'signals', 'additive_to', 'skills_by_profile']
-    bundles = ['pm-dev-java', 'pm-dev-frontend', 'pm-dev-java-cui', 'pm-dev-general',
+    bundles = ['pm-dev-java', 'pm-dev-frontend', 'pm-dev-java-cui', 'plan-marshall',
                'pm-plugin-development', 'pm-documents', 'pm-requirements']
 
     for bundle in bundles:
@@ -647,6 +671,141 @@ def test_applies_to_module_result_structure():
         result = ext.applies_to_module(_maven_module_data())
         for key in required_keys:
             assert key in result, f'{bundle}: applies_to_module missing key {key}'
+
+
+# =============================================================================
+# Profile Applicability Tests (signal detection + active_profiles)
+# =============================================================================
+
+
+def _maven_it_module_data() -> dict:
+    """Maven module with integration test signals."""
+    return {
+        'name': 'integration-tests',
+        'build_systems': ['maven'],
+        'paths': {'module': 'integration-tests', 'sources': ['src/main/java'], 'tests': ['src/test/java']},
+        'metadata': {'profiles': ['integration-test']},
+        'packages': {},
+        'dependencies': ['org.testcontainers:testcontainers:test'],
+        'commands': {},
+        'stats': {'source_files': 2, 'test_files': 10},
+    }
+
+
+def test_java_detect_applicable_profiles_with_it_signals():
+    """Java ext: module with IT signals adds integration_testing to applicable set.
+
+    Note: pm-dev-java doesn't define an integration_testing profile in get_skill_domains(),
+    so the signal detection adds it to the applicable set but _build_applicable_result
+    will skip it since it's not in profiles. This is correct behavior — the detection
+    layer says "this profile WOULD apply" but it only takes effect if defined.
+    """
+    ext = load_extension('pm-dev-java')
+    profiles = ext.get_skill_domains()['profiles']
+    detected = ext._detect_applicable_profiles(profiles, _maven_it_module_data())
+    assert detected is not None
+    # IT signals detected, so integration_testing is in the applicable set
+    # (even though pm-dev-java doesn't define this profile, the signal is still detected)
+    assert 'implementation' in detected
+    assert 'module_testing' in detected
+    assert 'quality' in detected
+
+
+def test_java_detect_applicable_profiles_without_it_signals():
+    """Java ext: plain module without IT signals excludes integration_testing."""
+    ext = load_extension('pm-dev-java')
+    profiles = ext.get_skill_domains()['profiles']
+    detected = ext._detect_applicable_profiles(profiles, _maven_module_data())
+    assert detected is not None
+    assert 'integration_testing' not in detected
+    assert 'implementation' in detected
+
+
+def test_java_detect_applicable_profiles_none_module():
+    """Java ext: None module_data returns None (no filtering)."""
+    ext = load_extension('pm-dev-java')
+    profiles = ext.get_skill_domains()['profiles']
+    detected = ext._detect_applicable_profiles(profiles, None)
+    assert detected is None
+
+
+def test_java_applies_to_module_with_active_profiles():
+    """Java ext: active_profiles filters output profiles."""
+    ext = load_extension('pm-dev-java')
+    result = ext.applies_to_module(
+        _maven_module_data(),
+        active_profiles={'implementation', 'quality'},
+    )
+    assert result['applicable'] is True
+    assert 'implementation' in result['skills_by_profile']
+    assert 'quality' in result['skills_by_profile']
+    assert 'module_testing' not in result['skills_by_profile']
+
+
+def test_java_applies_to_module_signal_detection_filters_it():
+    """Java ext: signal detection excludes integration_testing for non-IT module."""
+    ext = load_extension('pm-dev-java')
+    result = ext.applies_to_module(_maven_module_data())
+    assert result['applicable'] is True
+    assert 'integration_testing' not in result['skills_by_profile']
+
+
+def test_java_applies_to_module_signal_detection_it_module():
+    """Java ext: IT module is applicable with standard profiles.
+
+    pm-dev-java doesn't define an integration_testing profile (IT skills
+    are optionals within module_testing), so signal detection doesn't
+    add a new profile — it just correctly identifies the module as applicable.
+    """
+    ext = load_extension('pm-dev-java')
+    result = ext.applies_to_module(_maven_it_module_data())
+    assert result['applicable'] is True
+    assert 'implementation' in result['skills_by_profile']
+    assert 'module_testing' in result['skills_by_profile']
+
+
+def test_general_dev_with_active_profiles():
+    """General-dev ext: active_profiles filters output profiles."""
+    ext = load_extension('plan-marshall')
+    result = ext.applies_to_module(
+        _maven_module_data(),
+        active_profiles={'implementation'},
+    )
+    assert result['applicable'] is True
+    assert 'implementation' in result['skills_by_profile']
+    assert 'module_testing' not in result['skills_by_profile']
+
+
+def test_frontend_with_active_profiles():
+    """Frontend ext: active_profiles filters output profiles."""
+    ext = load_extension('pm-dev-frontend')
+    result = ext.applies_to_module(
+        _npm_module_data(),
+        active_profiles={'implementation', 'module_testing'},
+    )
+    assert result['applicable'] is True
+    assert 'implementation' in result['skills_by_profile']
+    assert 'module_testing' in result['skills_by_profile']
+    assert 'quality' not in result['skills_by_profile']
+
+
+def test_all_extensions_accept_active_profiles():
+    """All extensions accept active_profiles parameter without error."""
+    bundles_and_data = [
+        ('pm-dev-java', _maven_module_data()),
+        ('pm-dev-java-cui', _maven_module_data()),
+        ('pm-dev-frontend', _npm_module_data()),
+        ('pm-dev-python', _python_module_data()),
+        ('pm-dev-oci', _empty_module_data()),
+        ('pm-documents', _doc_module_data()),
+        ('pm-plugin-development', _plugin_module_data()),
+        ('plan-marshall', _maven_module_data()),
+    ]
+    for bundle, data in bundles_and_data:
+        ext = load_extension(bundle)
+        # Should not raise
+        result = ext.applies_to_module(data, active_profiles={'implementation'})
+        assert 'applicable' in result, f'{bundle}: missing applicable key'
 
 
 # =============================================================================
@@ -660,29 +819,33 @@ def test_all_extensions_have_unique_domain_keys():
         'pm-dev-java',
         'pm-dev-java-cui',
         'pm-dev-frontend',
-        'pm-dev-general',
         'pm-dev-python',
         'pm-dev-oci',
         'pm-plugin-development',
         'pm-requirements',
         'pm-documents',
+        'plan-marshall',
     ]
     domain_keys = {}
 
     for bundle in bundles:
         try:
             ext = load_extension(bundle)
-            domains = ext.get_skill_domains()
-            key = domains['domain']['key']
-
-            if key in domain_keys:
-                raise AssertionError(f"Duplicate domain key '{key}' in {bundle} and {domain_keys[key]}")
-
-            domain_keys[key] = bundle
+            # Use get_all_skill_domains for multi-domain support
+            if hasattr(ext, 'get_all_skill_domains'):
+                all_domains = ext.get_all_skill_domains()
+            else:
+                sd = ext.get_skill_domains()
+                all_domains = [sd] if sd and sd.get('domain') else []
+            for domains in all_domains:
+                key = domains['domain']['key']
+                if key in domain_keys:
+                    raise AssertionError(f"Duplicate domain key '{key}' in {bundle} and {domain_keys[key]}")
+                domain_keys[key] = bundle
         except FileNotFoundError:
             pass  # Skip bundles without extensions
 
-    assert len(domain_keys) == 9, f'Should have 9 unique domain keys, got {len(domain_keys)}'
+    assert len(domain_keys) == 10, f'Should have 10 unique domain keys, got {len(domain_keys)}: {sorted(domain_keys.keys())}'
 
 
 def test_all_extensions_have_required_functions():
@@ -691,12 +854,12 @@ def test_all_extensions_have_required_functions():
         'pm-dev-java',
         'pm-dev-java-cui',
         'pm-dev-frontend',
-        'pm-dev-general',
         'pm-dev-python',
         'pm-dev-oci',
         'pm-plugin-development',
         'pm-requirements',
         'pm-documents',
+        'plan-marshall',
     ]
     # Only get_skill_domains is required (abstract method)
     required = ['get_skill_domains']

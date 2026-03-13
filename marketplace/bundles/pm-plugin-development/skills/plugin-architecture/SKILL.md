@@ -652,8 +652,8 @@ Components using this skill should demonstrate:
 - Claude Code Plugin Documentation: https://docs.claude.com/en/docs/claude-code/plugins
 
 ### Related Skills
-- pm-dev-general:dev-practices - Core development principles
-- pm-dev-general:dev-practices - Tool usage patterns
+- plan-marshall:dev-general-practices - Core development principles
+- plan-marshall:dev-general-practices - Tool usage patterns
 - pm-plugin-development:plugin-script-architecture - Python implementation, testing, output contracts
 
 ### Internal References (Load On-Demand)

@@ -38,21 +38,6 @@ class Extension(ExtensionBase):
                     ],
                     'optionals': [],
                 },
-                'implementation': {
-                    'defaults': [],
-                    'optionals': [
-                        {
-                            'skill': 'pm-documents:manage-adr',
-                            'description': 'Manage Architectural Decision Records with CRUD operations and AsciiDoc formatting',
-                        },
-                        {
-                            'skill': 'pm-documents:manage-interface',
-                            'description': 'Manage Interface specifications with CRUD operations and AsciiDoc formatting',
-                        },
-                    ],
-                },
-                'module_testing': {'defaults': [], 'optionals': []},
-                'quality': {'defaults': [], 'optionals': []},
                 'documentation': {
                     'defaults': [
                         {
@@ -74,7 +59,8 @@ class Extension(ExtensionBase):
             },
         }
 
-    def applies_to_module(self, module_data: dict) -> dict:
+    def applies_to_module(self, module_data: dict,
+                          active_profiles: set[str] | None = None) -> dict:
         """Check if documentation domain applies based on doc directories."""
         paths = module_data.get('paths', {})
         module_path = paths.get('module', '')
@@ -95,7 +81,9 @@ class Extension(ExtensionBase):
         if not signals:
             return {'applicable': False, 'confidence': 'none', 'signals': [], 'additive_to': None, 'skills_by_profile': {}}
 
-        return self._build_applicable_result('high', signals)
+        return self._build_applicable_result('high', signals,
+                                              module_data=module_data,
+                                              active_profiles=active_profiles)
 
     def provides_verify_steps(self) -> list[dict]:
         """Return documentation-specific verification steps."""
@@ -118,6 +106,7 @@ class Extension(ExtensionBase):
         """
         root = Path(project_root)
         has_documentation = False
+        found_doc_dir = 'doc'
 
         # Check for doc/ or docs/ directory with documentation files
         for doc_dir_name in ['doc', 'docs']:
@@ -128,6 +117,7 @@ class Extension(ExtensionBase):
                 md_files = list(doc_dir.glob('*.md'))
                 if adoc_files or md_files:
                     has_documentation = True
+                    found_doc_dir = doc_dir_name
                     break
 
         # Check for README.adoc at root
@@ -140,7 +130,7 @@ class Extension(ExtensionBase):
         return [
             {
                 'name': 'documentation',
-                'paths': {'module': 'doc'},
+                'paths': {'module': found_doc_dir},
                 'build_systems': ['documentation'],
                 'metadata': {
                     'description': 'Project documentation',

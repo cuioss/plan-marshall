@@ -51,7 +51,7 @@ BUNDLES_DIR = 'marketplace/bundles'
 BUILD_SYSTEM = 'marshall-plugin'
 """Build system identifier for plugin bundles."""
 
-PYTHON_BUILD_BASE = 'python3 .plan/execute-script.py pm-dev-python:plan-marshall-plugin:python_build run'
+PYTHON_BUILD_BASE = 'python3 .plan/execute-script.py plan-marshall:build-python:python_build run'
 """Base command for Python build execution via pm-dev-python."""
 
 # Marketplace identification
@@ -444,48 +444,6 @@ def build_bundle_module(plugin_path: Path, project_root: Path, plugin_data: dict
     }
 
 
-def build_default_module(project_root: Path, bundle_count: int) -> dict:
-    """Build default root module for project-wide testing.
-
-    Args:
-        project_root: Project root path.
-        bundle_count: Number of bundles discovered.
-
-    Returns:
-        Default module dict with project-wide test command.
-    """
-    readme_path = find_readme(str(project_root))
-
-    return {
-        'name': 'default',
-        'build_systems': [BUILD_SYSTEM],
-        'paths': {
-            'module': '.',
-            'descriptor': 'marketplace/.claude-plugin/marketplace.json',
-            'sources': ['marketplace/bundles'],
-            'tests': ['test'],
-            'readme': readme_path,
-        },
-        'metadata': {
-            'description': 'Plan Marshall marketplace root module',
-        },
-        'packages': {},
-        'dependencies': [],
-        'stats': {
-            'bundle_count': bundle_count,
-        },
-        'commands': {
-            'compile': f'{PYTHON_BUILD_BASE} --command-args "compile"',
-            'test-compile': f'{PYTHON_BUILD_BASE} --command-args "test-compile"',
-            'module-tests': f'{PYTHON_BUILD_BASE} --command-args "module-tests"',
-            'quality-gate': f'{PYTHON_BUILD_BASE} --command-args "quality-gate"',
-            'verify': f'{PYTHON_BUILD_BASE} --command-args "verify"',
-            'coverage': f'{PYTHON_BUILD_BASE} --command-args "coverage"',
-            'clean': f'{PYTHON_BUILD_BASE} --command-args "clean"',
-        },
-    }
-
-
 # =============================================================================
 # Main Discovery
 # =============================================================================
@@ -495,6 +453,10 @@ def discover_plugin_modules(project_root: str) -> list:
     """Discover all plugin bundle modules with complete metadata.
 
     Implements the discover_modules() contract from ExtensionBase.
+    Each marketplace bundle becomes a module with build_systems=['marshall-plugin'].
+
+    The root Python module (build_systems=['python']) is discovered separately
+    by plan-marshall's _discover_python(), not by this extension.
 
     Note: This extension is specific to plan-marshall marketplace.
     Returns empty list for other Python projects (handled by pm-dev-python).
@@ -504,8 +466,7 @@ def discover_plugin_modules(project_root: str) -> list:
 
     Returns:
         List of module dicts conforming to build-project-structure.md contract.
-        Includes default root module plus one module per bundle.
-        Returns empty list if not the plan-marshall marketplace.
+        One module per bundle. Returns empty list if not the plan-marshall marketplace.
     """
     # Only handle plan-marshall marketplace (other Python projects use pm-dev-python)
     if not _is_plan_marshall_marketplace(project_root):
@@ -522,10 +483,6 @@ def discover_plugin_modules(project_root: str) -> list:
         if plugin_data:
             module = build_bundle_module(plugin_path, root, plugin_data)
             modules.append(module)
-
-    # Add default root module at the beginning
-    default_module = build_default_module(root, len(modules))
-    modules.insert(0, default_module)
 
     return modules
 

@@ -25,6 +25,10 @@
     "./commands/tools-sync-agents-file.md"
   ],
   "skills": [
+    "./skills/build-gradle",
+    "./skills/build-maven",
+    "./skills/build-npm",
+    "./skills/build-python",
     "./skills/extension-api",
     "./skills/manage-architecture",
     "./skills/manage-lessons",
@@ -58,6 +62,10 @@
     "./skills/workflow-integration-git",
     "./skills/workflow-integration-sonar",
     "./skills/workflow-outline-change-type",
-    "./skills/workflow-pr-doctor"
+    "./skills/workflow-pr-doctor",
+    "./skills/dev-general-module-testing",
+    "./skills/dev-general-code-documentation",
+    "./skills/dev-general-code-quality",
+    "./skills/dev-general-practices"
   ]
 }

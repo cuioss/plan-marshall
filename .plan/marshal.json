@@ -2,7 +2,7 @@
   "ci": {
     "provider": "github",
     "repo_url": "https://github.com/cuioss/plan-marshall.git",
-    "detected_at": "2026-02-03T08:00:27Z",
+    "detected_at": "2026-03-13T14:39:44Z",
     "commands": {
       "pr-create": "python3 .plan/execute-script.py tools-integration-ci:github pr create",
       "pr-reviews": "python3 .plan/execute-script.py tools-integration-ci:github pr reviews",
@@ -52,20 +52,20 @@
   "skill_domains": {
     "system": {
       "defaults": [
-        "plan-marshall:ref-development-standards"
+        "plan-marshall:dev-general-practices"
       ],
       "optionals": [
-        "plan-marshall:ref-development-standards"
+        "plan-marshall:dev-general-practices"
       ],
       "task_executors": {
+        "documentation": "plan-marshall:task-documentation",
         "implementation": "plan-marshall:task-implementation",
-        "module_testing": "plan-marshall:task-module-testing",
-        "integration_testing": "plan-marshall:task-integration_testing",
-        "verification": "plan-marshall:task-verification"
+        "module_testing": "plan-marshall:task-module_testing"
       }
     },
     "documentation": {
       "bundle": "pm-documents",
+      "active_profiles": ["documentation"],
       "workflow_skill_extensions": {
         "triage": "pm-documents:ext-triage-docs"
       }
@@ -84,9 +84,9 @@
           "skill": "project:recipe-plugin-compliance",
           "default_change_type": "tech_debt",
           "scope": "codebase_wide",
+          "source": "project",
           "profile": "implementation",
-          "package_source": "packages",
-          "source": "project"
+          "package_source": "packages"
         }
       ]
     },
@@ -94,8 +94,13 @@
       "bundle": "pm-dev-python"
     },
     "general-dev": {
-      "bundle": "pm-dev-general"
-    }
+      "bundle": "plan-marshall"
+    },
+    "active_profiles": [
+      "implementation",
+      "module_testing",
+      "quality"
+    ]
   },
   "system": {
     "retention": {

@@ -41,14 +41,13 @@ TEST_FIXTURE_BASE = PROJECT_ROOT / PLAN_DIR_NAME / 'temp' / 'test-fixture'
 collect_ignore = [
     # Duplicate: test_permission.py exists in tools-permission-doctor and tools-permission-fix
     'plan-marshall/tools-permission-fix/test_permission.py',
-    # Duplicate: test_discover_modules.py exists in multiple bundles
-    'pm-dev-java/plan-marshall-plugin/test_discover_modules.py',
+    # Duplicate: test_discover_modules.py exists in build-maven and build-npm
+    'plan-marshall/build-npm/test_discover_modules.py',
     # Duplicate: test_extension.py exists in extension-api and plugin-doctor
     'pm-plugin-development/plugin-doctor/test_extension.py',
     # Module structure issue: integration directories without proper __init__.py
-    'pm-dev-frontend/integration/discover_modules/test_npm_discover_modules.py',
-    'pm-dev-java/integration/discover_modules/test_gradle_discover_modules.py',
-    'pm-dev-java/integration/discover_modules/test_maven_discover_modules.py',
+    'plan-marshall/integration/discover_modules/test_gradle_discover_modules.py',
+    'plan-marshall/integration/discover_modules/test_maven_discover_modules.py',
     # Import issue: imports from non-existent 'extension' module
     'plan-marshall/integration/module_aggregation/test_hybrid_merge.py',
 ]

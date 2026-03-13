@@ -173,6 +173,7 @@ def discover_extensions(project_root: Path) -> list[dict[str, Any]]:
             try:
                 discovered = module.discover_modules(project_root)
                 if discovered:  # Only include if modules were found
+                    ext['discovered_modules'] = discovered
                     applicable.append(ext)
             except Exception:
                 # Skip extensions that fail during discovery
@@ -181,43 +182,12 @@ def discover_extensions(project_root: Path) -> list[dict[str, Any]]:
     return applicable
 
 
-def get_build_systems_from_extensions(extensions: list[dict[str, Any]], project_root: Path | None = None) -> list[str]:
-    """Get build systems provided by extensions.
-
-    Args:
-        extensions: List of extension info dicts from discover_extensions()
-        project_root: Optional project root for dynamic detection.
-                     If provided, uses get_applicable_build_systems().
-                     If not, uses static provides_build_systems().
-
-    Returns:
-        List of build system names (e.g., ["maven", "gradle", "npm"])
-    """
-    build_systems = set()
-
-    for ext in extensions:
-        module = ext.get('module')
-        if not module:
-            continue
-
-        try:
-            # Prefer dynamic detection if project_root provided and function exists
-            if project_root and hasattr(module, 'get_applicable_build_systems'):
-                systems = module.get_applicable_build_systems(str(project_root))
-            elif hasattr(module, 'provides_build_systems'):
-                systems = module.provides_build_systems()
-            else:
-                continue
-
-            build_systems.update(systems)
-        except Exception as e:
-            log_entry('script', 'global', 'WARN', f'[EXTENSION] Build system detection failed for {ext["bundle"]}: {e}')
-
-    return list(build_systems)
-
 
 def get_skill_domains_from_extensions(extensions: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Get skill domains from extensions.
+
+    Supports multi-domain extensions via get_all_skill_domains().
+    Falls back to get_skill_domains() for backward compatibility.
 
     Args:
         extensions: List of extension info dicts
@@ -229,16 +199,28 @@ def get_skill_domains_from_extensions(extensions: list[dict[str, Any]]) -> list[
 
     for ext in extensions:
         module = ext.get('module')
-        if module and hasattr(module, 'get_skill_domains'):
-            try:
+        if not module:
+            continue
+
+        try:
+            # Prefer get_all_skill_domains() for multi-domain support
+            if hasattr(module, 'get_all_skill_domains'):
+                all_domains = module.get_all_skill_domains()
+                for domain_info in all_domains:
+                    if domain_info and domain_info.get('domain'):
+                        # Copy to avoid mutating the extension's data
+                        entry = dict(domain_info)
+                        entry['bundle'] = ext['bundle']
+                        domains.append(entry)
+            elif hasattr(module, 'get_skill_domains'):
                 domain_info = module.get_skill_domains()
                 if domain_info and domain_info.get('domain'):
                     domain_info['bundle'] = ext['bundle']
                     domains.append(domain_info)
-            except Exception as e:
-                log_entry(
-                    'script', 'global', 'WARN', f'[EXTENSION] get_skill_domains() failed for {ext["bundle"]}: {e}'
-                )
+        except Exception as e:
+            log_entry(
+                'script', 'global', 'WARN', f'[EXTENSION] get_skill_domains() failed for {ext["bundle"]}: {e}'
+            )
 
     return domains
 
@@ -330,13 +312,12 @@ def apply_config_defaults(project_root: Path) -> dict[str, Any]:
 
 
 def discover_project_modules(project_root: Path) -> dict[str, Any]:
-    """Discover all modules and merge hybrid modules.
+    """Discover all modules and split multi-technology paths into virtual modules.
 
     Single entry point for module discovery. Handles:
     - Extension discovery (which bundles apply)
     - Module discovery per extension
-    - Hybrid module merging (same path from multiple extensions)
-    - Command merging (nest by build system for conflicts)
+    - Virtual module splitting (same path from multiple extensions)
 
     Args:
         project_root: Path to project root
@@ -346,14 +327,18 @@ def discover_project_modules(project_root: Path) -> dict[str, Any]:
             "modules": {
                 "module-name": {
                     "name": "...",
-                    "build_systems": ["maven", "npm"],  # list for hybrid
+                    "build_systems": ["maven"],  # single technology
                     "paths": {...},
                     "metadata": {...},
                     "commands": {
-                        "module-tests": {"maven": "...", "npm": "..."},
-                        "lint": "..."  # string if only one provides it
+                        "module-tests": "...",  # string commands
+                        "verify": "..."
                     },
-                    ...
+                    "virtual_module": {  # only for split modules
+                        "physical_path": "...",
+                        "technology": "maven",
+                        "sibling_modules": ["module-name-npm"]
+                    }
                 }
             },
             "extensions_used": ["pm-dev-java", "pm-dev-frontend"]

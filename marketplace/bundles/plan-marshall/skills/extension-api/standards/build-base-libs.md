@@ -126,7 +126,6 @@ def discover_project_modules(project_root: Path) -> dict:
     """Single entry point: discover modules, merge hybrids, return merged structure."""
 
 # Aggregation functions
-def get_build_systems_from_extensions(extensions: list, project_root: Path = None) -> list:
 def get_skill_domains_from_extensions(extensions: list) -> list:
 def get_workflow_extensions_from_extensions(extensions: list) -> dict:
 ```

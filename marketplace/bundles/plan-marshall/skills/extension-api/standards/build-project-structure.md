@@ -69,20 +69,20 @@ Each extension returns modules it discovered with `build_systems` field:
     "test_files": 38
   },
   "commands": {
-    "module-tests": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"test -pl oauth-sheriff-core\"",
-    "quality-gate": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"verify -Ppre-commit -pl oauth-sheriff-core\"",
-    "verify": "python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run --command-args \"verify -pl oauth-sheriff-core\""
+    "module-tests": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"test -pl oauth-sheriff-core\"",
+    "quality-gate": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"verify -Ppre-commit -pl oauth-sheriff-core\"",
+    "verify": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"verify -pl oauth-sheriff-core\""
   }
 }
 ```
 
 ### Output (Aggregated by Orchestrator)
 
-See [orchestrator-integration.md](../../manage-architecture/standards/orchestrator-integration.md) for:
+See orchestrator-integration.md (manage-architecture skill) for:
 - Complete aggregated output structure including `commands`
-- Hybrid module merging algorithm
+- Virtual module splitting algorithm
 - Command resolution flow
-- Output location (`.plan/raw-project-data.json`)
+- Output location (`.plan/project-architecture/derived-data.json`)
 
 **Field types (per-extension)**:
 
@@ -257,12 +257,12 @@ See [build-execution.md](build-execution.md) for `execute_direct` API and [build
 
 ## Orchestrator Integration
 
-The `project-structure` skill orchestrates discovery across all extensions, splits multi-tech directories into virtual modules, and persists results.
+The `manage-architecture` skill orchestrates discovery across all extensions, splits multi-tech directories into virtual modules, and persists results.
 
-See [orchestrator-integration.md](../../manage-architecture/standards/orchestrator-integration.md) for:
+See orchestrator-integration.md (manage-architecture skill) for:
 - Orchestrator flow and extension discovery
 - Virtual module splitting algorithm
-- Output location (`.plan/raw-project-data.json`)
+- Output location (`.plan/project-architecture/derived-data.json`)
 - CLI interface
 
 ## Compliance
@@ -288,7 +288,7 @@ Extensions providing module discovery must:
 
 ## Related Specifications
 
-- [orchestrator-integration.md](../../manage-architecture/standards/orchestrator-integration.md) - Orchestrator flow and merging
+- orchestrator-integration.md (manage-architecture skill) - Orchestrator flow and merging
 - [extension-contract.md](extension-contract.md) - Extension API contract
 - [build-execution.md](build-execution.md) - Build command execution
 - [canonical-commands.md](canonical-commands.md) - Command vocabulary

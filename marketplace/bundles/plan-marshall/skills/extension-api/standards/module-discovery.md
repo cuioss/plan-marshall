@@ -151,4 +151,4 @@ Directories with multiple build systems (e.g., `pom.xml` + `package.json`) are s
 - [build-project-structure.md](build-project-structure.md) — Complete output specification
 - [canonical-commands.md](canonical-commands.md) — Command vocabulary and resolution
 - [build-base-libs.md](build-base-libs.md) — Base library API (`discover_descriptors`, `build_module_base`)
-- [orchestrator-integration.md](../../manage-architecture/standards/orchestrator-integration.md) — Orchestrator flow and hybrid merging
+- orchestrator-integration.md (manage-architecture skill) — Orchestrator flow and hybrid merging

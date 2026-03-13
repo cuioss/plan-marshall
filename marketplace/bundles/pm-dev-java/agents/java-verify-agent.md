@@ -17,7 +17,7 @@ Standards verification for Java code (read-only, no modifications).
 ## Step 0: Load Development Rules
 
 ```
-Skill: pm-dev-general:dev-practices
+Skill: plan-marshall:dev-general-practices
 ```
 
 This ensures proper tool usage (Write instead of cat heredoc, Glob instead of find, etc.).

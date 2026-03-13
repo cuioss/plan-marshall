@@ -102,11 +102,11 @@ Build scripts with `--mode actionable` filter warnings matching patterns in `acc
 
 ```bash
 # Run build with actionable mode (default) - filters accepted warnings
-python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run \
+python3 .plan/execute-script.py plan-marshall:build-maven:maven run \
   --targets "clean verify" --mode actionable
 
 # Run with structured mode - shows all warnings with [accepted] markers
-python3 .plan/execute-script.py pm-dev-java:plan-marshall-plugin:maven run \
+python3 .plan/execute-script.py plan-marshall:build-maven:maven run \
   --targets "clean verify" --mode structured
 ```
 

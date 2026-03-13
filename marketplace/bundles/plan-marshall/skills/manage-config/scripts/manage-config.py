@@ -163,6 +163,17 @@ def main():
     sd_rm_recipe.add_argument('--domain', required=True, help='Domain to remove recipe from')
     sd_rm_recipe.add_argument('--key', required=True, help='Recipe key to remove')
 
+    # active-profiles subcommands
+    sd_ap = sd_sub.add_parser('active-profiles', help='Manage active profile configuration')
+    sd_ap_sub = sd_ap.add_subparsers(dest='ap_verb', help='Active profiles operation')
+
+    sd_ap_set = sd_ap_sub.add_parser('set', help='Set active profiles (global or per-domain)')
+    sd_ap_set.add_argument('--profiles', required=True, help='Comma-separated profile names')
+    sd_ap_set.add_argument('--domain', help='Domain to set profiles for (omit for global)')
+
+    sd_ap_remove = sd_ap_sub.add_parser('remove', help='Remove active profiles config')
+    sd_ap_remove.add_argument('--domain', help='Domain to remove profiles from (omit for global)')
+
     # --- system ---
     p_sys = subparsers.add_parser('system', help='Manage system settings')
     sys_sub = p_sys.add_subparsers(dest='sub_noun', required=True, help='Sub-noun')

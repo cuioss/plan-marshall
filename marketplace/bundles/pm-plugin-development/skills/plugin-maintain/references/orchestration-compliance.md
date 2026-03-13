@@ -221,7 +221,7 @@ At workflow start:
 
 **Required patterns:**
 ```
-Skill: pm-dev-general:dev-practices
+Skill: plan-marshall:dev-general-practices
 ```
 
 **Orchestration compliance:**

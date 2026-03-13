@@ -29,7 +29,7 @@ Activate when:
 
 ```
 Skill: pm-plugin-development:plugin-architecture
-Skill: pm-dev-general:dev-practices
+Skill: plan-marshall:dev-general-practices
 ```
 
 These provide architecture principles and non-prompting tool usage patterns.

@@ -273,6 +273,141 @@ def test_build_applicable_result_empty_profiles():
     assert result['skills_by_profile'] == {}
 
 
+# =============================================================================
+# Tests for active_profiles filtering (three-layer resolution)
+# =============================================================================
+
+
+class ExtensionWithAllProfiles(ExtensionBase):
+    """Extension with all profile types for filtering tests."""
+
+    def get_skill_domains(self) -> dict:
+        return {
+            'domain': {'key': 'test-all'},
+            'profiles': {
+                'core': {
+                    'defaults': [{'skill': 'b:core', 'description': 'core'}],
+                    'optionals': [],
+                },
+                'implementation': {
+                    'defaults': [{'skill': 'b:impl', 'description': 'impl'}],
+                    'optionals': [],
+                },
+                'module_testing': {
+                    'defaults': [{'skill': 'b:mtest', 'description': 'mtest'}],
+                    'optionals': [],
+                },
+                'integration_testing': {
+                    'defaults': [{'skill': 'b:itest', 'description': 'itest'}],
+                    'optionals': [],
+                },
+                'quality': {
+                    'defaults': [{'skill': 'b:quality', 'description': 'quality'}],
+                    'optionals': [],
+                },
+                'documentation': {
+                    'defaults': [{'skill': 'b:doc', 'description': 'doc'}],
+                    'optionals': [],
+                },
+            },
+        }
+
+
+def test_build_applicable_result_active_profiles_filters():
+    """active_profiles positive list filters to only specified profiles."""
+    ext = ExtensionWithAllProfiles()
+    result = ext._build_applicable_result(
+        'high', ['signal'],
+        active_profiles={'implementation', 'module_testing', 'quality'},
+    )
+
+    sbp = result['skills_by_profile']
+    assert 'implementation' in sbp
+    assert 'module_testing' in sbp
+    assert 'quality' in sbp
+    assert 'integration_testing' not in sbp
+    assert 'documentation' not in sbp
+
+
+def test_build_applicable_result_no_filter_includes_all():
+    """Without active_profiles, all defined profiles are included."""
+    ext = ExtensionWithAllProfiles()
+    result = ext._build_applicable_result('high', ['signal'])
+
+    sbp = result['skills_by_profile']
+    assert 'implementation' in sbp
+    assert 'module_testing' in sbp
+    assert 'integration_testing' in sbp
+    assert 'quality' in sbp
+    assert 'documentation' in sbp
+
+
+def test_detect_applicable_profiles_default_returns_none():
+    """Default _detect_applicable_profiles returns None (no filtering)."""
+    ext = ExtensionWithAllProfiles()
+    result = ext._detect_applicable_profiles({}, {})
+    assert result is None
+
+
+class ExtensionWithSignalDetection(ExtensionBase):
+    """Extension that overrides _detect_applicable_profiles."""
+
+    def get_skill_domains(self) -> dict:
+        return {
+            'domain': {'key': 'test-signals'},
+            'profiles': {
+                'core': {'defaults': [{'skill': 'b:core', 'description': 'core'}], 'optionals': []},
+                'implementation': {'defaults': [{'skill': 'b:impl', 'description': 'impl'}], 'optionals': []},
+                'integration_testing': {'defaults': [{'skill': 'b:it', 'description': 'it'}], 'optionals': []},
+            },
+        }
+
+    def _detect_applicable_profiles(self, profiles, module_data):
+        if module_data and 'integration' in module_data.get('name', ''):
+            return {'implementation', 'integration_testing'}
+        return {'implementation'}
+
+
+def test_signal_detection_with_it_module():
+    """Signal detection includes integration_testing for IT module."""
+    ext = ExtensionWithSignalDetection()
+    result = ext._build_applicable_result(
+        'high', ['signal'], module_data={'name': 'integration-tests'},
+    )
+    assert 'integration_testing' in result['skills_by_profile']
+    assert 'implementation' in result['skills_by_profile']
+
+
+def test_signal_detection_without_it_module():
+    """Signal detection excludes integration_testing for non-IT module."""
+    ext = ExtensionWithSignalDetection()
+    result = ext._build_applicable_result(
+        'high', ['signal'], module_data={'name': 'core-lib'},
+    )
+    assert 'integration_testing' not in result['skills_by_profile']
+    assert 'implementation' in result['skills_by_profile']
+
+
+def test_active_profiles_overrides_signal_detection():
+    """active_profiles takes precedence over signal detection."""
+    ext = ExtensionWithSignalDetection()
+    # Module has IT signals, but active_profiles only allows implementation
+    result = ext._build_applicable_result(
+        'high', ['signal'],
+        module_data={'name': 'integration-tests'},
+        active_profiles={'implementation'},
+    )
+    assert 'integration_testing' not in result['skills_by_profile']
+    assert 'implementation' in result['skills_by_profile']
+
+
+def test_applies_to_module_accepts_active_profiles():
+    """Base applies_to_module accepts active_profiles parameter."""
+    ext = ConcreteExtension()
+    result = ext.applies_to_module({'build_systems': []}, active_profiles={'implementation'})
+    assert result['applicable'] is False  # ConcreteExtension always returns not applicable
+
+
 if __name__ == '__main__':
     import traceback
 
@@ -296,6 +431,13 @@ if __name__ == '__main__':
         test_build_applicable_result_merges_core,
         test_build_applicable_result_with_additive_to,
         test_build_applicable_result_empty_profiles,
+        test_build_applicable_result_active_profiles_filters,
+        test_build_applicable_result_no_filter_includes_all,
+        test_detect_applicable_profiles_default_returns_none,
+        test_signal_detection_with_it_module,
+        test_signal_detection_without_it_module,
+        test_active_profiles_overrides_signal_detection,
+        test_applies_to_module_accepts_active_profiles,
     ]
 
     passed = 0

@@ -1,6 +1,6 @@
 # JSDoc Essentials
 
-For general documentation principles (what/when/how to document, clarity, completeness), see `pm-dev-general:dev-code-documentation`. This document covers JSDoc-specific tag syntax, ESLint integration, and type annotations.
+For general documentation principles (what/when/how to document, clarity, completeness), see `plan-marshall:dev-general-code-documentation`. This document covers JSDoc-specific tag syntax, ESLint integration, and type annotations.
 
 ## ESLint Configuration
 

@@ -32,7 +32,8 @@ class Extension(ExtensionBase):
             },
         }
 
-    def applies_to_module(self, module_data: dict) -> dict:
+    def applies_to_module(self, module_data: dict,
+                          active_profiles: set[str] | None = None) -> dict:
         """Check if CUI Java domain applies. Additive to 'java'."""
         build_systems = module_data.get('build_systems', [])
         if 'maven' not in build_systems and 'gradle' not in build_systems:
@@ -47,7 +48,9 @@ class Extension(ExtensionBase):
         if cui_deps:
             signals.append(f'de.cuioss:* deps ({len(cui_deps)} found)')
 
-        return self._build_applicable_result('high', signals, additive_to='java')
+        return self._build_applicable_result('high', signals, additive_to='java',
+                                              module_data=module_data,
+                                              active_profiles=active_profiles)
 
     def config_defaults(self, project_root: str) -> None:
         """Configure CUI-specific Maven defaults.
