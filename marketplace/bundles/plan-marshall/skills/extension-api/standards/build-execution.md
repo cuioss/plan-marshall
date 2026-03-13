@@ -183,7 +183,7 @@ Implementations **must** support content filtering via `--mode` parameter:
 
 ### From Aggregated Output
 
-The orchestrator resolves commands per module in `.plan/raw-project-data.json`. Each command is **complete** with all routing embedded:
+The orchestrator resolves commands per module in `.plan/project-architecture/derived-data.json`. Each command is **complete** with all routing embedded:
 
 ```json
 {
@@ -199,7 +199,7 @@ The orchestrator resolves commands per module in `.plan/raw-project-data.json`. 
 }
 ```
 
-See [orchestrator-integration.md](../../manage-architecture/standards/orchestrator-integration.md) for command resolution.
+See orchestrator-integration.md (manage-architecture skill) for command resolution.
 
 ### From discover_modules()
 

@@ -142,7 +142,8 @@ def discover_project_modules(project_root: Path, discover_extensions_fn) -> dict
             continue
 
         try:
-            ext_modules = ext_module.discover_modules(str(project_root))
+            # Use cached discovery from discover_extensions() to avoid double discovery
+            ext_modules = ext.get('discovered_modules') or ext_module.discover_modules(str(project_root))
             if ext_modules:
                 extensions_used.append(bundle_name)
 
