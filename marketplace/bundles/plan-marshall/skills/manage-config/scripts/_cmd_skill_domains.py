@@ -948,7 +948,9 @@ def cmd_get_skills_by_profile(args) -> int:
     skills_by_profile: dict[str, list[str]] = {}
 
     for profile_name in ['implementation', 'module_testing', 'integration_testing', 'documentation']:
-        profile_config = profiles.get(profile_name, {})
+        if profile_name not in profiles:
+            continue
+        profile_config = profiles[profile_name]
         profile_defaults = _extract_skill_names(profile_config.get('defaults', []))
         profile_optionals = _extract_skill_names(profile_config.get('optionals', []))
 

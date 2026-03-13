@@ -436,15 +436,16 @@ class ExtensionBase(ABC):
         skills_by_profile: dict[str, dict] = {}
         for profile_name in ['implementation', 'module_testing', 'integration_testing',
                              'quality', 'documentation']:
-            profile = profiles.get(profile_name, {})
-            if profile or core_defaults or core_optionals:
-                merged_defaults = list(core_defaults) + list(profile.get('defaults', []))
-                merged_optionals = list(core_optionals) + list(profile.get('optionals', []))
-                if merged_defaults or merged_optionals:
-                    skills_by_profile[profile_name] = {
-                        'defaults': merged_defaults,
-                        'optionals': merged_optionals,
-                    }
+            if profile_name not in profiles:
+                continue
+            profile = profiles[profile_name]
+            merged_defaults = list(core_defaults) + list(profile.get('defaults', []))
+            merged_optionals = list(core_optionals) + list(profile.get('optionals', []))
+            if merged_defaults or merged_optionals:
+                skills_by_profile[profile_name] = {
+                    'defaults': merged_defaults,
+                    'optionals': merged_optionals,
+                }
         return {
             'applicable': True,
             'confidence': confidence,

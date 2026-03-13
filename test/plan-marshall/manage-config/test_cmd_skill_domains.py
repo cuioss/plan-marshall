@@ -711,7 +711,8 @@ def test_get_skills_by_profile_java():
         # Should have all profiles
         assert 'implementation' in result.stdout
         assert 'module_testing' in result.stdout
-        assert 'integration_testing' in result.stdout
+        # integration_testing should NOT appear — pm-dev-java doesn't define it
+        assert 'integration_testing' not in result.stdout
 
 
 def test_get_skills_by_profile_includes_core_skills():
