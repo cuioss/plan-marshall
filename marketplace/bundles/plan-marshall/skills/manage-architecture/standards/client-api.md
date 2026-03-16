@@ -338,6 +338,17 @@ available[5]:
   - install
 ```
 
+## Consumer View
+
+The primary consumer is **solution-outline** during task planning.
+
+| Question | Answer Source |
+|----------|---------------|
+| "Which module handles X?" | `responsibility`, `purpose` |
+| "Where does new code go?" | `key_packages` descriptions + skill domains |
+| "What depends on what?" | `internal_dependencies`, `key_dependencies` |
+| "Which skills apply?" | `skills_by_profile` |
+
 ## Data Source
 
 **Location**: `.plan/project-architecture/`

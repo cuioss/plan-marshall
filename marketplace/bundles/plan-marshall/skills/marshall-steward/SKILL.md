@@ -102,7 +102,7 @@ Determine whether to run wizard or menu based on existing files.
 **BOOTSTRAP**: Since execute-script.py may not exist yet, use DIRECT Python call with glob:
 
 ```bash
-python3 ${PLUGIN_ROOT}/plan-marshall/*/skills/marshall-steward/scripts/determine-mode.py mode
+python3 ${PLUGIN_ROOT}/plan-marshall/skills/marshall-steward/scripts/determine-mode.py mode
 ```
 
 **Output (TOON)**:

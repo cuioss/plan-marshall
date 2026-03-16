@@ -216,141 +216,17 @@ The skill can spawn sub-agents for specific tasks:
 
 For the `provides_outline_skill()` API contract, see `plan-marshall:extension-api/standards/outline-extension.md`.
 
-Domains declare their outline skill in `extension.py`:
-
-```python
-def provides_outline_skill(self) -> str | None:
-    return 'pm-plugin-development:ext-outline-workflow'
-```
-
 ---
 
 ## Triage Extension
 
-### Purpose
+Each domain provides a triage skill that contains **decision-making knowledge** - not workflow control. The finalize workflow skill owns the process; triage extensions provide knowledge for:
 
-Each domain provides a triage skill that contains **decision-making knowledge** - not workflow control. The finalize workflow skill owns the process; triage extensions provide knowledge for making decisions.
+- How to suppress findings in that domain
+- Severity guidelines for fix vs suppress vs accept decisions
+- Situations where accepting a finding is appropriate
 
-### Separation of Concerns
-
-```
-FINALIZE WORKFLOW SKILL (owns the process)
-───────────────────────────────────────────
-- Runs build (canonical command)
-- Collects findings from available sources
-- Waits for CI (if ci.enabled)
-- Iterates on PR feedback
-- Commits and creates PR
-
-TRIAGE EXTENSION (decision-making knowledge)
-─────────────────────────────────────────────
-- Suppression syntax for this domain
-- Severity-to-decision guidelines
-- What's acceptable to accept/defer
-```
-
-### Required Sections
-
-| Section | Purpose | Content |
-|---------|---------|---------|
-| `## Suppression Syntax` | How to suppress findings | Annotation/comment syntax per finding type |
-| `## Severity Guidelines` | When to fix vs suppress vs accept | Decision table by severity |
-| `## Acceptable to Accept` | What can be accepted without fixing | Situations where accepting is appropriate |
-
-### `## Suppression Syntax`
-
-How to suppress different types of findings in this domain.
-
-**Example for Java:**
-```markdown
-## Suppression Syntax
-
-| Finding Type | Suppression | Example |
-|--------------|-------------|---------|
-| Sonar issue | `@SuppressWarnings("{rule}")` | `@SuppressWarnings("java:S1135") // JIRA-123` |
-| Deprecation | `@SuppressWarnings("deprecation")` | On method/class |
-| Unchecked cast | `@SuppressWarnings("unchecked")` | On statement |
-| Null warning | `@SuppressWarnings("null")` | On field/parameter |
-
-**Rules:**
-- Always include justification comment
-- Reference issue tracker if deferring
-- Prefer fixing over suppressing for BLOCKER/CRITICAL
-```
-
-### `## Severity Guidelines`
-
-When to fix, suppress, accept, or defer based on severity and type.
-
-**Example:**
-```markdown
-## Severity Guidelines
-
-| Severity | Type | Default Decision |
-|----------|------|------------------|
-| BLOCKER | any | **fix** (mandatory) |
-| CRITICAL | VULNERABILITY | **fix** (mandatory) |
-| CRITICAL | BUG | **fix** (strongly preferred) |
-| MAJOR | any | fix or suppress with justification |
-| MINOR | any | fix, suppress, or accept |
-| INFO | any | accept (low priority) |
-
-**Context modifiers:**
-- New code: Hold to higher standard (fix MAJOR+)
-- Legacy code: More lenient (suppress with migration plan)
-- Test code: More lenient for style issues
-- Generated code: Accept or exclude from analysis
-```
-
-### `## Acceptable to Accept`
-
-Types of findings that can be accepted without fixing.
-
-**Example:**
-```markdown
-## Acceptable to Accept
-
-| Finding Type | Reason | Example |
-|--------------|--------|---------|
-| Generated code | Not maintainable by hand | `**/generated/**` |
-| Test builders | Intentionally permissive | Test data factory methods |
-| Legacy migration | Tracked separately | Code with `@Deprecated` + migration plan |
-| Framework requirement | Can't change | Framework-mandated patterns |
-| False positive | Tool limitation | Documented false positive patterns |
-```
-
-### Triage Extension Example: Java
-
-```markdown
-# Java Triage
-
-> Decision-making knowledge for Java findings triage.
-
-## Suppression Syntax
-
-| Finding Type | Suppression |
-|--------------|-------------|
-| Sonar | `@SuppressWarnings("{rule}")` |
-| Deprecation | `@SuppressWarnings("deprecation")` |
-| Unchecked | `@SuppressWarnings("unchecked")` |
-| Null | `@SuppressWarnings("null")` or JSpecify annotations |
-
-## Severity Guidelines
-
-| Severity | Decision |
-|----------|----------|
-| BLOCKER | fix (mandatory) |
-| CRITICAL | fix (mandatory for vulnerabilities) |
-| MAJOR | fix or suppress with justification |
-| MINOR/INFO | fix, suppress, or accept |
-
-## Acceptable to Accept
-
-- Generated code (`**/generated/**`)
-- Test data builders
-- Legacy code with documented migration plan
-- Framework-mandated patterns (e.g., Serializable)
-```
+For the full triage contract (required sections, examples, validation rules), see [triage-extension.md](triage-extension.md).
 
 ---
 

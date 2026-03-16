@@ -198,24 +198,51 @@ The orchestrator integrates with the planning workflow at specific points:
 │                       WORKFLOW INTEGRATION POINTS                            │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                              │
-│  PLAN INIT (phase-1)                                                         │
+│  INIT (phase-1)                                                              │
 │    marshall-steward calls: architecture.py discover                          │
 │    Result: derived-data.json populated                                       │
 │                                                                              │
-│  SOLUTION OUTLINE (phase-2)                                                  │
+│  REFINE (phase-2)                                                            │
+│    (no architecture calls)                                                   │
+│                                                                              │
+│  SOLUTION OUTLINE (phase-3)                                                  │
 │    outline agent calls: architecture.py module --name X                      │
 │    Uses: module structure, dependencies for placement decisions              │
 │                                                                              │
-│  TASK PLAN (phase-3)                                                         │
+│  TASK PLAN (phase-4)                                                         │
 │    task planner calls: architecture.py graph                                 │
 │    Uses: topological layers for task ordering                                │
 │                                                                              │
-│  TASK EXECUTE (phase-4)                                                      │
+│  TASK EXECUTE (phase-5)                                                      │
 │    task executor calls: architecture.py resolve --command X --name Y         │
 │    Executes: returned command string                                         │
 │                                                                              │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
+
+## Enrichment Workflow Phases
+
+The manage-architecture skill follows a 5-phase enrichment workflow:
+
+```
+┌───────────┐    ┌───────────┐    ┌───────────┐    ┌───────────┐    ┌───────────┐
+│  DISCOVER │───▶│   LOAD    │───▶│  ANALYZE  │───▶│  PERSIST  │───▶│  CLIENT   │
+│           │    │           │    │           │    │           │    │           │
+│ Extension │    │ derived + │    │ LLM reads │    │ Write to  │    │architecture│
+│ API call  │    │ skills    │    │ docs/code │    │ llm-enrich│    │.py {verb} │
+└───────────┘    └───────────┘    └───────────┘    └───────────┘    └───────────┘
+      │                                                                   │
+      ▼                                                                   ▼
+derived-data.json                                              llm-enriched.json
+```
+
+1. **DISCOVER**: Extension API gathers raw module data (see Discovery Flow above)
+2. **LOAD**: Read derived-data.json, determine domain skills from technologies
+3. **ANALYZE**: LLM reads documentation/code to derive responsibility, purpose, key packages
+4. **PERSIST**: Write enrichments to llm-enriched.json
+5. **CLIENT**: Provide merged read access via `architecture.py {verb}`
+
+See the manage-architecture SKILL.md for step-by-step execution instructions.
 
 ## File Locations
 
@@ -228,7 +255,5 @@ The orchestrator integrates with the planning workflow at specific points:
 
 | Document | Content |
 |----------|---------|
-| [architecture-workflow.md](architecture-workflow.md) | 5-phase enrichment workflow |
 | [architecture-persistence.md](architecture-persistence.md) | Storage format specification |
-| [extension-api:architecture-overview.md](../../extension-api/standards/architecture-overview.md) | Extension discovery and merging |
-| [extension-api:build-execution-flow.md](../../extension-api/standards/build-execution-flow.md) | Build execution lifecycle |
+| [extension-api:build-execution.md](../../extension-api/standards/build-execution.md) | Build execution patterns and lifecycle |

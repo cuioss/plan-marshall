@@ -28,7 +28,7 @@ class Extension(ExtensionBase):
     ...
 ```
 
-The `extension_base` module is automatically injected into `sys.modules` when extensions are loaded.
+The `extension_base` module is available via PYTHONPATH set by the executor.
 
 ---
 
@@ -83,7 +83,7 @@ These methods have default implementations in `ExtensionBase`. Override only whe
 
 ```python
 def config_defaults(self, project_root: str) -> None:
-    """Configure project-specific defaults in run-configuration.json.
+    """Configure project-specific defaults in marshal.json.
 
     Called by marshall-steward during initialization, after extension loading
     but before workflow logic accesses configuration.
@@ -319,9 +319,12 @@ Some domain bundles are **additive** - they extend a base domain bundle rather t
 | pm-dev-java | java | ext-triage-java | - | 2 (impl, test) | Base Java bundle |
 | pm-dev-java-cui | java-cui | - | - | - | Additive to pm-dev-java |
 | pm-dev-frontend | javascript | ext-triage-js | - | - | |
+| pm-dev-python | python | - | - | - | |
+| pm-dev-oci | oci-containers | - | - | - | |
 | pm-documents | documentation | ext-triage-docs | - | 1 (doc_sync) | Uses generic skills |
 | pm-requirements | requirements | ext-triage-reqs | - | 1 (formal_spec) | |
 | pm-plugin-development | plan-marshall-plugin-dev | ext-triage-plugin | ext-outline-workflow | - | |
+| plan-marshall | build, general-dev | - | - | - | Multi-domain (get_all_skill_domains) |
 
 ---
 
@@ -333,7 +336,6 @@ Some domain bundles are **additive** - they extend a base domain bundle rather t
 - [triage-extension.md](triage-extension.md) - Triage extension contract
 - [outline-extension.md](outline-extension.md) - Outline extension contract
 - [verify-steps.md](verify-steps.md) - Verify steps contract
-- [architecture-overview.md](architecture-overview.md) - System flow and data dependencies
 - [build-execution.md](build-execution.md) - Build command execution API
 - [build-return.md](build-return.md) - Build return value structure
 - [build-project-structure.md](build-project-structure.md) - Project structure discovery
