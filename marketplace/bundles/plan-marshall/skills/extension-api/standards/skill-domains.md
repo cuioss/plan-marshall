@@ -203,4 +203,3 @@ This is the only abstract method because every domain must:
 ## Related Specifications
 
 - [extension-contract.md](extension-contract.md) — Extension API contract
-- [architecture-overview.md](architecture-overview.md) — System flow and data dependencies

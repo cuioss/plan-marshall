@@ -42,4 +42,4 @@ python3 .plan/execute-script.py plan-marshall:build-python:python_build run \
 ## References
 
 - `plan-marshall:extension-api` - Extension API contract
-- `plan-marshall:extension-api/standards/build-execution-flow.md` - Complete execution lifecycle
+- `plan-marshall:extension-api/standards/build-execution.md` - Execution patterns and lifecycle

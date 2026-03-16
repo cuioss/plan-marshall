@@ -408,5 +408,5 @@ expected_file	.plan/project-architecture/derived-data.json
 |----------|---------|
 | [client-api.md](client-api.md) | Client/consumer commands (merged data) |
 | [architecture-persistence.md](architecture-persistence.md) | Storage format specification |
-| [architecture-workflow.md](architecture-workflow.md) | Workflow phases |
+| [orchestrator-integration.md](orchestrator-integration.md) | Orchestrator flow and workflow phases |
 | `pm-dev-java:manage-maven-profiles` | Maven profile classification (loaded conditionally) |

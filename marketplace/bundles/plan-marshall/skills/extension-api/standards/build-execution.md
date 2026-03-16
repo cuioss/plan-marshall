@@ -4,8 +4,6 @@ Specification for build command execution in domain extensions.
 
 ## Purpose
 
-For a visual overview of the complete execution lifecycle, see [build-execution-flow.md](build-execution-flow.md).
-
 Domain bundles that provide build capabilities expose a **unified execution API** that:
 - Captures all output to a log file (not stdout/stderr)
 - Provides adaptive timeout learning
@@ -363,6 +361,49 @@ Extensions providing build commands must:
 - Return `log_file` path in all results
 - Parse and return structured issues on build failure
 - Have tests for both output formats and all modes
+
+## Execution Lifecycle Diagram
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         BUILD EXECUTION LIFECYCLE                            │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  1. COMMAND RESOLUTION                                                       │
+│     architecture.py resolve --command verify --name my-module                │
+│     → Complete command string with all routing embedded                      │
+│                              │                                               │
+│                              ▼                                               │
+│  2. EXECUTION (execute_direct)                                               │
+│     a. create_log_file(build_system, scope, project_dir)                    │
+│     b. timeout_get(command_key, default, project_dir)                       │
+│     c. detect_wrapper(project_dir)                                          │
+│     d. subprocess.run(cmd, timeout=timeout, cwd=project_dir)               │
+│     e. timeout_set(command_key, actual_duration, project_dir)               │
+│                              │                                               │
+│              ┌───────────────┼───────────────┐                               │
+│              ▼               ▼               ▼                               │
+│        [exit_code=0]    [exit_code>0]    [TimeoutExpired]                   │
+│                                                                              │
+│  3. RESULT HANDLING                                                          │
+│     success_result()    parse_log() →     timeout_result()                  │
+│                         partition_issues()                                   │
+│                         filter_warnings()                                   │
+│                         error_result()                                      │
+│                              │                                               │
+│  4. OUTPUT FORMATTING                                                        │
+│     format_toon(result)  or  format_json(result)                            │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+## Persistence Points
+
+| File | Owner | Content |
+|------|-------|---------|
+| `.plan/project-architecture/derived-data.json` | manage-architecture | Discovered modules with command strings |
+| `.plan/run-configuration.json` | run-config | Learned timeouts, acceptable warnings |
+| `.plan/temp/build-output/{scope}/{system}-{ts}.log` | build scripts | Raw build output (timestamped) |
 
 ## Related Specifications
 

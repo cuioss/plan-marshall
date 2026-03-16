@@ -314,7 +314,6 @@ During verification or after implementation, capture learnings:
 | [manage-api.md](standards/manage-api.md) | Manage commands (setup, read raw, enrich) |
 | [client-api.md](standards/client-api.md) | Client commands (merged data for consumers) |
 | [architecture-persistence.md](standards/architecture-persistence.md) | Field schemas and formats |
-| [architecture-workflow.md](standards/architecture-workflow.md) | Workflow phase details |
 | [documentation-sources.md](standards/documentation-sources.md) | Reading strategy details |
 | `pm-dev-java:manage-maven-profiles` | Maven profile classification (Step 2) |
 

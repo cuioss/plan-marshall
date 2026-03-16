@@ -334,5 +334,4 @@ The [client-api.md](client-api.md) merges both files for output:
 | Document | Purpose |
 |----------|---------|
 | [build-project-structure.md](../../extension-api/standards/build-project-structure.md) | Raw data field specification |
-| [client-api.md](client-api.md) | API for reading merged data |
-| [client-view.md](client-view.md) | What consumers need |
+| [client-api.md](client-api.md) | API for reading merged data and consumer view |

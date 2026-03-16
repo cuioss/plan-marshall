@@ -181,7 +181,7 @@ Extensions use **build tool commands** (not direct file parsing) to extract meta
 - Gradle: `pm-dev-java/skills/plan-marshall-plugin/scripts/gradle_cmd_discover.py`
 - npm: `pm-dev-frontend/skills/plan-marshall-plugin/extension.py`
 
-See [build-execution.md](build-execution.md) for `execute_direct` API and [build-base-libs.md](build-base-libs.md) for base library details.
+See [build-execution.md](build-execution.md) for `execute_direct` API.
 
 ### Build-System-Specific Discovery
 

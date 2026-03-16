@@ -167,20 +167,15 @@ def enrich_package(
     return result
 
 
-def _extract_skill_names_from_profile(profile_data: dict | list) -> list[str]:
-    """Extract skill names from a profile, handling both flat and structured formats.
+def _extract_skill_names_from_profile(profile_data: dict) -> list[str]:
+    """Extract skill names from a profile's structured format.
 
     Args:
-        profile_data: Either a flat list of skills or a dict with defaults/optionals
+        profile_data: Dict with defaults/optionals sections
 
     Returns:
         List of skill names
     """
-    if isinstance(profile_data, list):
-        # Legacy flat format: ["skill1", "skill2"]
-        return profile_data
-
-    # New structured format: {defaults: [...], optionals: [...]}
     skills = []
     for section in ['defaults', 'optionals']:
         entries = profile_data.get(section, [])
@@ -197,13 +192,11 @@ def _extract_skill_names_from_profile(profile_data: dict | list) -> list[str]:
 def _validate_skills_by_profile_structure(skills_by_profile: dict) -> list[str]:
     """Validate the skills_by_profile structure.
 
-    Supports two formats:
-    1. Flat lists (legacy): {"profile": ["skill1", "skill2"]}
-    2. Defaults/optionals with descriptions (new):
-       {"profile": {"defaults": [{"skill": "...", "description": "..."}], "optionals": [...]}}
+    Expected format:
+    {"profile": {"defaults": [{"skill": "...", "description": "..."}], "optionals": [...]}}
 
     Args:
-        skills_by_profile: Dict mapping profile names to skill lists or structured dicts
+        skills_by_profile: Dict mapping profile names to structured skill dicts
 
     Returns:
         List of warning messages (empty if valid)
@@ -211,12 +204,7 @@ def _validate_skills_by_profile_structure(skills_by_profile: dict) -> list[str]:
     warnings: list[str] = []
 
     for profile_name, profile_data in skills_by_profile.items():
-        if isinstance(profile_data, list):
-            # Legacy flat format - validate skill notation
-            for skill in profile_data:
-                if ':' not in skill:
-                    warnings.append(f"Skill '{skill}' in profile '{profile_name}' missing bundle:skill notation")
-        elif isinstance(profile_data, dict):
+        if isinstance(profile_data, dict):
             # New structured format - validate defaults and optionals
             for section in ['defaults', 'optionals']:
                 entries = profile_data.get(section, [])
@@ -390,14 +378,18 @@ def enrich_add_domain(
             continue
 
         # Get existing skills for this profile
-        existing = current.get(profile_name, [])
+        existing = current.get(profile_name, {})
         existing_names = set(_extract_skill_names_from_profile(existing) if existing else [])
 
-        # Merge: add only new skills (dedup by name)
-        merged = list(existing) if isinstance(existing, list) else []
+        # Merge into structured format: add new skills to defaults
+        if not isinstance(existing, dict):
+            existing = {'defaults': [], 'optionals': []}
+        merged = dict(existing)
+        if 'defaults' not in merged:
+            merged['defaults'] = []
         for skill in new_skills:
             if skill not in existing_names:
-                merged.append(skill)
+                merged['defaults'].append(skill)
                 existing_names.add(skill)
 
         current[profile_name] = merged
@@ -700,19 +692,15 @@ def cmd_enrich_package(args) -> int:
 
 
 def _print_skills_by_profile(skills_by_profile: dict) -> None:
-    """Print skills_by_profile in TOON format, handling both flat and structured formats.
+    """Print skills_by_profile in TOON format.
 
     Args:
-        skills_by_profile: Dict mapping profile names to skill lists or structured dicts
+        skills_by_profile: Dict mapping profile names to structured skill dicts
     """
     print('skills_by_profile:')
     for profile, profile_data in skills_by_profile.items():
         print(f'  {profile}:')
-        if isinstance(profile_data, list):
-            # Legacy flat format
-            for skill in profile_data:
-                print(f'    - {skill}')
-        elif isinstance(profile_data, dict):
+        if isinstance(profile_data, dict):
             # New structured format with defaults/optionals
             defaults = profile_data.get('defaults', [])
             optionals = profile_data.get('optionals', [])

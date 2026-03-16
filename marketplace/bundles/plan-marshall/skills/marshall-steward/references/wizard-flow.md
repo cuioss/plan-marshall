@@ -351,7 +351,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 
 ## Step 8: Apply Extension Defaults
 
-Apply project-specific configuration defaults from domain extensions BEFORE discovery. Each extension's `config_defaults()` callback is invoked to set domain-specific values in `run-configuration.json`.
+Apply project-specific configuration defaults from domain extensions BEFORE discovery. Each extension's `config_defaults()` callback is invoked to set domain-specific values in `marshal.json`.
 
 **Why before discovery**: This sets profile skip lists and mappings that the discovery step uses to filter profiles. Running this first ensures discovered modules contain only relevant profiles.
 
@@ -373,7 +373,7 @@ errors_count	0
 | `extensions_skipped` | Extensions without config_defaults() implementation |
 | `errors_count` | Failures during callback execution |
 
-**Contract**: Extensions use write-once semantics - they only set defaults if keys don't already exist in `run-configuration.json`. User-defined values are never overwritten.
+**Contract**: Extensions use write-once semantics - they only set defaults if keys don't already exist in `marshal.json`. User-defined values are never overwritten.
 
 **Example defaults set by extensions**:
 - Profile skip lists (e.g., `release,sonar,license-cleanup`)

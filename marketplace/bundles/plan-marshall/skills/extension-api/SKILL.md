@@ -48,11 +48,9 @@ extension-api/
     ├── outline-extension.md        # Outline extension contract
     ├── verify-steps.md             # Verify steps contract
     ├── recipe-extension.md         # Recipe extension contract
-    ├── build-base-libs.md          # Base library API reference (optional)
-    ├── build-execution.md          # Execution patterns (optional)
+    ├── build-execution.md          # Execution patterns and lifecycle (optional)
     ├── build-return.md             # Return value structure (optional)
-    ├── build-project-structure.md  # Module discovery output (optional)
-    └── architecture-overview.md    # System architecture (optional)
+    └── build-project-structure.md  # Module discovery output (optional)
 ```
 
 ---
@@ -98,10 +96,7 @@ For understanding the complete system architecture, reference these documents:
 | [outline-extension.md](standards/outline-extension.md) | Outline extension contract | Implementing `provides_outline_skill()` |
 | [verify-steps.md](standards/verify-steps.md) | Verify steps contract | Implementing `provides_verify_steps()` |
 | [recipe-extension.md](standards/recipe-extension.md) | Recipe extension contract | Implementing `provides_recipes()` |
-| [architecture-overview.md](standards/architecture-overview.md) | System flow, data dependencies | Understanding overall data flow |
-| [build-execution-flow.md](standards/build-execution-flow.md) | Complete execution lifecycle diagram | Understanding the end-to-end flow |
-| [build-base-libs.md](standards/build-base-libs.md) | Base library API reference | Implementing extension scripts |
-| [build-execution.md](standards/build-execution.md) | Execution patterns | Running build commands |
+| [build-execution.md](standards/build-execution.md) | Execution patterns and lifecycle | Running build commands |
 | [build-return.md](standards/build-return.md) | Return value structure | Formatting command output |
 | [build-project-structure.md](standards/build-project-structure.md) | Module discovery output spec | Understanding `discover_modules()` output format |
 | orchestrator-integration.md (manage-architecture skill) | Orchestrator merge logic | Understanding hybrid modules |
@@ -301,5 +296,4 @@ class Extension(ExtensionBase):
 - `standards/outline-extension.md` - Outline extension contract (required)
 - `standards/verify-steps.md` - Verify steps contract (required)
 - `standards/recipe-extension.md` - Recipe extension contract (required)
-- `standards/build-base-libs.md` - Base library API reference (optional)
-- `standards/architecture-overview.md` - System architecture (optional)
+- `standards/build-execution.md` - Execution patterns and lifecycle (optional)

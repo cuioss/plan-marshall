@@ -96,6 +96,6 @@ Maven:  ./mvnw > mvn (on PATH)
 ## References
 
 - `plan-marshall:extension-api` - Extension API contract
-- `plan-marshall:extension-api/standards/build-execution-flow.md` - Complete execution lifecycle
+- `plan-marshall:extension-api/standards/build-execution.md` - Execution patterns and lifecycle
 - `standards/maven-impl.md` - Maven execution details
 - `standards/pom-maintenance.md` - POM structure and dependency management standards

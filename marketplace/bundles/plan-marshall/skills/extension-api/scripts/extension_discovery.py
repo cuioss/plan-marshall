@@ -168,8 +168,7 @@ def discover_extensions(project_root: Path) -> list[dict[str, Any]]:
 
     for ext in all_extensions:
         module = ext.get('module')
-        if module and hasattr(module, 'discover_modules'):
-            # Actually call discover_modules to check applicability
+        if module:
             try:
                 discovered = module.discover_modules(project_root)
                 if discovered:  # Only include if modules were found
@@ -212,7 +211,7 @@ def get_skill_domains_from_extensions(extensions: list[dict[str, Any]]) -> list[
                         entry = dict(domain_info)
                         entry['bundle'] = ext['bundle']
                         domains.append(entry)
-            elif hasattr(module, 'get_skill_domains'):
+            else:
                 domain_info = module.get_skill_domains()
                 if domain_info and domain_info.get('domain'):
                     domain_info['bundle'] = ext['bundle']
@@ -243,21 +242,19 @@ def get_workflow_extensions_from_extensions(extensions: list[dict[str, Any]]) ->
 
         ext_info: dict[str, Any] = {}
 
-        if hasattr(module, 'provides_triage'):
-            try:
-                triage = module.provides_triage()
-                if triage:
-                    ext_info['triage'] = triage
-            except Exception:
-                pass
+        try:
+            triage = module.provides_triage()
+            if triage:
+                ext_info['triage'] = triage
+        except Exception:
+            pass
 
-        if hasattr(module, 'provides_outline_skill'):
-            try:
-                outline_skill = module.provides_outline_skill()
-                if outline_skill:
-                    ext_info['outline_skill'] = outline_skill
-            except Exception:
-                pass
+        try:
+            outline_skill = module.provides_outline_skill()
+            if outline_skill:
+                ext_info['outline_skill'] = outline_skill
+        except Exception:
+            pass
 
         if ext_info:
             workflow_extensions[ext['bundle']] = ext_info
@@ -269,7 +266,7 @@ def apply_config_defaults(project_root: Path) -> dict[str, Any]:
     """Apply config_defaults() callback for applicable extensions only.
 
     Called during initialization to let extensions set project-specific
-    defaults in run-configuration.json. Only extensions whose discover_modules()
+    defaults in marshal.json. Only extensions whose discover_modules()
     finds modules in the project are called, preventing non-applicable extensions
     from writing config (e.g., Maven settings in non-Java projects).
 

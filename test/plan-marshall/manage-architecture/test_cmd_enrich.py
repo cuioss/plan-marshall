@@ -482,11 +482,10 @@ def test_enrich_skills_by_profile_empty_optionals():
 
 
 def test_enrich_skills_by_profile_mixed_format_backward_compat():
-    """enrich_skills_by_profile accepts mixed format with backward compatibility."""
+    """enrich_skills_by_profile accepts structured format."""
     with tempfile.TemporaryDirectory() as tmpdir:
         setup_test_project(tmpdir)
 
-        # Some profiles with new structure, some with flat lists (legacy)
         skills_by_profile = {
             'implementation': {
                 'defaults': [
@@ -494,16 +493,20 @@ def test_enrich_skills_by_profile_mixed_format_backward_compat():
                 ],
                 'optionals': [],
             },
-            'module_testing': ['pm-plugin-development:plugin-architecture'],  # Legacy flat format
+            'module_testing': {
+                'defaults': [
+                    {'skill': 'pm-plugin-development:plugin-architecture', 'description': 'Architecture principles'}
+                ],
+                'optionals': [],
+            },
         }
         result = enrich_skills_by_profile('module-a', skills_by_profile, tmpdir)
 
         assert result['status'] == 'success'
         enriched = load_llm_enriched(tmpdir)
         stored = enriched['modules']['module-a']['skills_by_profile']
-        # Both formats should be preserved
         assert isinstance(stored['implementation'], dict)
-        assert isinstance(stored['module_testing'], list)
+        assert isinstance(stored['module_testing'], dict)
 
 
 # =============================================================================
