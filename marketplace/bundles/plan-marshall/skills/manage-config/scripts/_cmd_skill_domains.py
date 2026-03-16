@@ -292,11 +292,13 @@ def convert_extension_to_domain_config(module, domain_info: dict, bundle_name: s
     return config
 
 
-def load_profiles_from_bundle(bundle_name: str) -> dict:
+def load_profiles_from_bundle(bundle_name: str, domain_key: str | None = None) -> dict:
     """Load profiles directly from bundle's extension.py.
 
     Args:
         bundle_name: Bundle name (e.g., 'pm-dev-java')
+        domain_key: Optional domain key to match for multi-domain bundles.
+            If provided, finds the domain with this key. If not, uses first domain.
 
     Returns:
         Dict with 'profiles' containing core, implementation, etc.
@@ -314,8 +316,14 @@ def load_profiles_from_bundle(bundle_name: str) -> dict:
 
         try:
             all_domains = module.get_skill_domains()
-            if all_domains:
-                return {'profiles': all_domains[0].get('profiles', {})}
+            if not all_domains:
+                continue
+            # Match by domain_key if provided (for multi-domain bundles)
+            if domain_key:
+                for d in all_domains:
+                    if d.get('domain', {}).get('key') == domain_key:
+                        return {'profiles': d.get('profiles', {})}
+            return {'profiles': all_domains[0].get('profiles', {})}
         except Exception:
             pass
 
@@ -407,7 +415,7 @@ def cmd_skill_domains(args) -> int:
             # Load profiles from extension.py if bundle is present
             bundle = domain_config.get('bundle')
             if bundle:
-                ext_data = load_profiles_from_bundle(bundle)
+                ext_data = load_profiles_from_bundle(bundle, domain)
                 profiles = ext_data.get('profiles', {})
                 for profile_name in ['core', 'implementation', 'module_testing', 'integration_testing', 'quality']:
                     if profile_name in profiles:
@@ -432,7 +440,7 @@ def cmd_skill_domains(args) -> int:
         if is_nested_domain(domain_config):
             bundle = domain_config.get('bundle')
             if bundle:
-                ext_data = load_profiles_from_bundle(bundle)
+                ext_data = load_profiles_from_bundle(bundle, domain)
                 defaults = ext_data.get('profiles', {}).get('core', {}).get('defaults', [])
             else:
                 defaults = domain_config.get('defaults', [])
@@ -449,7 +457,7 @@ def cmd_skill_domains(args) -> int:
         if is_nested_domain(domain_config):
             bundle = domain_config.get('bundle')
             if bundle:
-                ext_data = load_profiles_from_bundle(bundle)
+                ext_data = load_profiles_from_bundle(bundle, domain)
                 optionals = ext_data.get('profiles', {}).get('core', {}).get('optionals', [])
             else:
                 optionals = domain_config.get('optionals', [])
@@ -528,7 +536,7 @@ def cmd_skill_domains(args) -> int:
             # Load profiles from extension.py
             bundle = domain_config.get('bundle')
             if bundle:
-                ext_data = load_profiles_from_bundle(bundle)
+                ext_data = load_profiles_from_bundle(bundle, domain)
                 profiles = ext_data.get('profiles', {})
 
                 # Collect all defaults and optionals across all profiles
@@ -882,7 +890,7 @@ def cmd_resolve_domain_skills(args) -> int:
         return error_exit(f"Domain '{domain}' has no bundle configured")
 
     # Load profiles from extension.py
-    ext_data = load_profiles_from_bundle(bundle)
+    ext_data = load_profiles_from_bundle(bundle, domain)
     profiles = ext_data.get('profiles', {})
 
     if not profiles:
@@ -977,7 +985,7 @@ def cmd_get_skills_by_profile(args) -> int:
         return error_exit(f"Domain '{domain}' has no bundle configured")
 
     # Load profiles from extension.py
-    ext_data = load_profiles_from_bundle(bundle)
+    ext_data = load_profiles_from_bundle(bundle, domain)
     profiles = ext_data.get('profiles', {})
 
     if not profiles:
@@ -1061,7 +1069,7 @@ def cmd_configure_task_executors(args) -> int:
         # Load profiles from extension.py
         bundle = domain_config.get('bundle')
         if bundle:
-            ext_data = load_profiles_from_bundle(bundle)
+            ext_data = load_profiles_from_bundle(bundle, domain_key)
             profiles = ext_data.get('profiles', {})
             # Collect profile keys (exclude 'core' which is not an executable profile)
             for key in profiles.keys():
