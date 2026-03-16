@@ -204,33 +204,31 @@ def _validate_skills_by_profile_structure(skills_by_profile: dict) -> list[str]:
     warnings: list[str] = []
 
     for profile_name, profile_data in skills_by_profile.items():
-        if isinstance(profile_data, dict):
-            # New structured format - validate defaults and optionals
-            for section in ['defaults', 'optionals']:
-                entries = profile_data.get(section, [])
-                if not isinstance(entries, list):
-                    warnings.append(f"Profile '{profile_name}.{section}' must be a list")
-                    continue
-                for i, entry in enumerate(entries):
-                    if isinstance(entry, dict):
-                        if 'skill' not in entry:
-                            warnings.append(f"Entry {i} in '{profile_name}.{section}' missing 'skill' field")
-                        elif ':' not in entry.get('skill', ''):
-                            warnings.append(
-                                f"Skill '{entry.get('skill')}' in '{profile_name}.{section}' missing bundle:skill notation"
-                            )
-                        if 'description' not in entry:
-                            warnings.append(f"Entry {i} in '{profile_name}.{section}' missing 'description' field")
-                    elif isinstance(entry, str):
-                        # Allow plain strings for backwards compatibility
-                        if ':' not in entry:
-                            warnings.append(
-                                f"Skill '{entry}' in '{profile_name}.{section}' missing bundle:skill notation"
-                            )
-                    else:
-                        warnings.append(f"Entry {i} in '{profile_name}.{section}' must be a dict or string")
-        else:
-            warnings.append(f"Profile '{profile_name}' must be a list or dict, got {type(profile_data).__name__}")
+        if not isinstance(profile_data, dict):
+            warnings.append(f"Profile '{profile_name}' must be a dict, got {type(profile_data).__name__}")
+            continue
+        for section in ['defaults', 'optionals']:
+            entries = profile_data.get(section, [])
+            if not isinstance(entries, list):
+                warnings.append(f"Profile '{profile_name}.{section}' must be a list")
+                continue
+            for i, entry in enumerate(entries):
+                if isinstance(entry, dict):
+                    if 'skill' not in entry:
+                        warnings.append(f"Entry {i} in '{profile_name}.{section}' missing 'skill' field")
+                    elif ':' not in entry.get('skill', ''):
+                        warnings.append(
+                            f"Skill '{entry.get('skill')}' in '{profile_name}.{section}' missing bundle:skill notation"
+                        )
+                    if 'description' not in entry:
+                        warnings.append(f"Entry {i} in '{profile_name}.{section}' missing 'description' field")
+                elif isinstance(entry, str):
+                    if ':' not in entry:
+                        warnings.append(
+                            f"Skill '{entry}' in '{profile_name}.{section}' missing bundle:skill notation"
+                        )
+                else:
+                    warnings.append(f"Entry {i} in '{profile_name}.{section}' must be a dict or string")
 
     return warnings
 
@@ -417,14 +415,11 @@ def enrich_skills_by_profile(
 ) -> dict:
     """Update skills organized by profile.
 
-    Supports two formats:
-    1. Flat lists (legacy): {"implementation": ["skill1", "skill2"]}
-    2. Defaults/optionals with descriptions (new):
-       {"implementation": {"defaults": [{"skill": "...", "description": "..."}], "optionals": [...]}}
+    Format: {"profile": {"defaults": [{"skill": "...", "description": "..."}], "optionals": [...]}}
 
     Args:
         module_name: Module name
-        skills_by_profile: Dict mapping profile names to skill lists or structured dicts
+        skills_by_profile: Dict mapping profile names to structured dicts
         project_dir: Project directory path
         reasoning: Selection rationale
 
@@ -696,28 +691,26 @@ def _print_skills_by_profile(skills_by_profile: dict) -> None:
     print('skills_by_profile:')
     for profile, profile_data in skills_by_profile.items():
         print(f'  {profile}:')
-        if isinstance(profile_data, dict):
-            # New structured format with defaults/optionals
-            defaults = profile_data.get('defaults', [])
-            optionals = profile_data.get('optionals', [])
-            if defaults:
-                print(f'    defaults[{len(defaults)}]{{skill,description}}:')
-                for entry in defaults:
-                    if isinstance(entry, dict):
-                        skill = entry.get('skill', '')
-                        desc = entry.get('description', '')
-                        print(f'      - {skill},"{desc}"')
-                    else:
-                        print(f'      - {entry}')
-            if optionals:
-                print(f'    optionals[{len(optionals)}]{{skill,description}}:')
-                for entry in optionals:
-                    if isinstance(entry, dict):
-                        skill = entry.get('skill', '')
-                        desc = entry.get('description', '')
-                        print(f'      - {skill},"{desc}"')
-                    else:
-                        print(f'      - {entry}')
+        defaults = profile_data.get('defaults', [])
+        optionals = profile_data.get('optionals', [])
+        if defaults:
+            print(f'    defaults[{len(defaults)}]{{skill,description}}:')
+            for entry in defaults:
+                if isinstance(entry, dict):
+                    skill = entry.get('skill', '')
+                    desc = entry.get('description', '')
+                    print(f'      - {skill},"{desc}"')
+                else:
+                    print(f'      - {entry}')
+        if optionals:
+            print(f'    optionals[{len(optionals)}]{{skill,description}}:')
+            for entry in optionals:
+                if isinstance(entry, dict):
+                    skill = entry.get('skill', '')
+                    desc = entry.get('description', '')
+                    print(f'      - {skill},"{desc}"')
+                else:
+                    print(f'      - {entry}')
 
 
 def cmd_enrich_skills_by_profile(args) -> int:
@@ -731,7 +724,7 @@ def cmd_enrich_skills_by_profile(args) -> int:
         result = enrich_skills_by_profile(args.module, skills_by_profile, args.project_dir, reasoning)
         print(f'status\t{result["status"]}')
         print(f'module\t{result["module"]}')
-        # Output skills_by_profile (handles both flat and structured formats)
+        # Output skills_by_profile
         _print_skills_by_profile(result['skills_by_profile'])
         if result.get('warnings'):
             print()

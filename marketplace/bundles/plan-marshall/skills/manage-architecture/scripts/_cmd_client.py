@@ -667,38 +667,32 @@ def cmd_module(args) -> int:
         print_toon_list('internal_dependencies', internal_deps)
         print()
 
-        # Output skills_by_profile (supports both flat and structured formats)
+        # Output skills_by_profile (structured format: {defaults: [...], optionals: [...]})
         skills_by_profile = module.get('skills_by_profile', {})
         if skills_by_profile:
             print('skills_by_profile:')
             for profile, profile_data in skills_by_profile.items():
                 print(f'  {profile}:')
-                if isinstance(profile_data, list):
-                    # Legacy flat format
-                    for skill in profile_data:
-                        print(f'    - {skill}')
-                elif isinstance(profile_data, dict):
-                    # New structured format with defaults/optionals
-                    defaults = profile_data.get('defaults', [])
-                    optionals = profile_data.get('optionals', [])
-                    if defaults:
-                        print(f'    defaults[{len(defaults)}]{{skill,description}}:')
-                        for entry in defaults:
-                            if isinstance(entry, dict):
-                                skill = entry.get('skill', '')
-                                desc = entry.get('description', '')
-                                print(f'      - {skill},"{desc}"')
-                            else:
-                                print(f'      - {entry}')
-                    if optionals:
-                        print(f'    optionals[{len(optionals)}]{{skill,description}}:')
-                        for entry in optionals:
-                            if isinstance(entry, dict):
-                                skill = entry.get('skill', '')
-                                desc = entry.get('description', '')
-                                print(f'      - {skill},"{desc}"')
-                            else:
-                                print(f'      - {entry}')
+                defaults = profile_data.get('defaults', [])
+                optionals = profile_data.get('optionals', [])
+                if defaults:
+                    print(f'    defaults[{len(defaults)}]{{skill,description}}:')
+                    for entry in defaults:
+                        if isinstance(entry, dict):
+                            skill = entry.get('skill', '')
+                            desc = entry.get('description', '')
+                            print(f'      - {skill},"{desc}"')
+                        else:
+                            print(f'      - {entry}')
+                if optionals:
+                    print(f'    optionals[{len(optionals)}]{{skill,description}}:')
+                    for entry in optionals:
+                        if isinstance(entry, dict):
+                            skill = entry.get('skill', '')
+                            desc = entry.get('description', '')
+                            print(f'      - {skill},"{desc}"')
+                        else:
+                            print(f'      - {entry}')
         if args.full and module.get('skills_by_profile_reasoning'):
             print(f'skills_by_profile_reasoning: {module["skills_by_profile_reasoning"]}')
         print()
@@ -780,11 +774,9 @@ def cmd_resolve(args) -> int:
 def _extract_profile_keys(skills_by_profile: dict) -> set[str]:
     """Extract profile keys from skills_by_profile structure.
 
-    Handles both flat format {"profile": [...]} and
-    structured format {"profile": {"defaults": [...], "optionals": [...]}}.
-
     Args:
-        skills_by_profile: Dict mapping profile names to skill lists or structured dicts
+        skills_by_profile: Dict mapping profile names to structured dicts
+            {"profile": {"defaults": [...], "optionals": [...]}}
 
     Returns:
         Set of profile key names
@@ -795,11 +787,13 @@ def _extract_profile_keys(skills_by_profile: dict) -> set[str]:
 def _flatten_skills_by_profile(skills_by_profile: dict, include_optionals: bool = False) -> dict[str, list[str]]:
     """Flatten skills_by_profile to simple profile->skill_list mapping.
 
-    Useful for consumers that need flat lists (defaults only by default).
+    Extracts skill name strings from the structured format. Defaults only
+    unless include_optionals is True.
 
     Args:
-        skills_by_profile: Dict mapping profile names to skill lists or structured dicts
-        include_optionals: Whether to include optional skills (default: False, only defaults)
+        skills_by_profile: Dict mapping profile names to structured dicts
+            {"profile": {"defaults": [...], "optionals": [...]}}
+        include_optionals: Whether to include optional skills (default: False)
 
     Returns:
         Dict mapping profile names to flat skill name lists
@@ -807,29 +801,24 @@ def _flatten_skills_by_profile(skills_by_profile: dict, include_optionals: bool 
     result: dict[str, list[str]] = {}
     for profile_name, profile_data in skills_by_profile.items():
         skills: list[str] = []
-        if isinstance(profile_data, list):
-            # Legacy flat format - all skills are "defaults"
-            skills = profile_data
-        elif isinstance(profile_data, dict):
-            # New structured format
-            defaults = profile_data.get('defaults', [])
-            for entry in defaults:
+        defaults = profile_data.get('defaults', [])
+        for entry in defaults:
+            if isinstance(entry, dict):
+                skill = entry.get('skill', '')
+                if skill:
+                    skills.append(skill)
+            elif isinstance(entry, str):
+                skills.append(entry)
+
+        if include_optionals:
+            optionals = profile_data.get('optionals', [])
+            for entry in optionals:
                 if isinstance(entry, dict):
                     skill = entry.get('skill', '')
                     if skill:
                         skills.append(skill)
                 elif isinstance(entry, str):
                     skills.append(entry)
-
-            if include_optionals:
-                optionals = profile_data.get('optionals', [])
-                for entry in optionals:
-                    if isinstance(entry, dict):
-                        skill = entry.get('skill', '')
-                        if skill:
-                            skills.append(skill)
-                    elif isinstance(entry, str):
-                        skills.append(entry)
         result[profile_name] = skills
     return result
 
@@ -857,7 +846,7 @@ def cmd_profiles(args) -> int:
             # Default: all modules with enrichment data
             module_names = list(enriched_modules.keys())
 
-        # Collect unique profiles (handles both flat and structured formats)
+        # Collect unique profiles from skills_by_profile
         profiles: set[str] = set()
         modules_analyzed = []
 

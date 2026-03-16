@@ -42,7 +42,7 @@ from extension_discovery import (  # type: ignore[import-not-found]
 def _extract_skill_name(entry: str | dict) -> str:
     """Extract skill name from a skill entry.
 
-    Handles both legacy string format and new dict format:
+    Skill entries can be plain strings or dicts with skill+description:
     - String: "pm-dev-java:java-core" -> "pm-dev-java:java-core"
     - Dict: {"skill": "pm-dev-java:java-core", "description": "..."} -> "pm-dev-java:java-core"
 
@@ -910,7 +910,7 @@ def cmd_resolve_domain_skills(args) -> int:
     defaults = core_config.get('defaults', []) + profile_config.get('defaults', [])
     optionals = core_config.get('optionals', []) + profile_config.get('optionals', [])
 
-    # Build output with descriptions (handles both legacy and new formats)
+    # Build output with descriptions
     defaults_with_desc = _build_skill_dict_with_descriptions(defaults)
     optionals_with_desc = _build_skill_dict_with_descriptions(optionals)
 
