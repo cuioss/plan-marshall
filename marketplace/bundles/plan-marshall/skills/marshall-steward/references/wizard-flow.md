@@ -639,6 +639,30 @@ If no project-level skills are found (`count == 0`), skip this step silently.
 
 ---
 
+**Step 11h: Discover and Register Project-Level Recipes**
+
+Scan `.claude/skills/` for `recipe-*` project skills, extract recipe metadata from their SKILL.md, and auto-register them to the appropriate domain.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  skill-domains discover-project-recipes
+```
+
+**Output (TOON)**:
+```toon
+status	success
+discovered	1
+added[1]{key,domain}:
+  plugin-compliance	plan-marshall-plugin-dev
+skipped[0]:
+```
+
+This auto-discovers recipe skills by `recipe-*` name prefix, reads `recipe_domain`, `recipe_profile`, and `recipe_package_source` from the SKILL.md Input Parameters table, and registers them via `add-recipe`. Skips recipes whose target domain is not configured or that already exist.
+
+If no recipe skills are found (`discovered == 0`), skip silently.
+
+---
+
 ## Step 12: Verify Skill Domain Configuration
 
 Skill domains configure which implementation skills are loaded during plan execution:

@@ -143,6 +143,7 @@ def main():
     sd_configure.add_argument('--domains', required=True, help='Comma-separated domain names to enable')
 
     sd_sub.add_parser('discover-project', help='Discover project-level skills from .claude/skills/')
+    sd_sub.add_parser('discover-project-recipes', help='Discover and register recipe-* project skills')
 
     sd_attach = sd_sub.add_parser('attach-project', help='Attach project-level skills to a domain')
     sd_attach.add_argument('--domain', required=True, help='Domain to attach skills to')
