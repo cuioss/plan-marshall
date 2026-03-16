@@ -138,7 +138,7 @@ def discover_project_modules(project_root: Path, discover_extensions_fn) -> dict
         ext_module = ext.get('module')
         bundle_name = ext.get('bundle', 'unknown')
 
-        if not ext_module or not hasattr(ext_module, 'discover_modules'):
+        if not ext_module:
             continue
 
         try:

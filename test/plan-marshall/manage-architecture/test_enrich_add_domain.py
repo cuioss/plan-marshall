@@ -16,6 +16,15 @@ from _cmd_enrich import enrich_add_domain
 # =============================================================================
 
 
+def _extract_skill_names(profile_data: dict) -> list[str]:
+    """Extract skill names from structured profile data."""
+    skills = []
+    for section in ['defaults', 'optionals']:
+        for entry in profile_data.get(section, []):
+            skills.append(entry.get('skill', entry) if isinstance(entry, dict) else entry)
+    return skills
+
+
 def setup_test_project(tmpdir: str, modules: dict | None = None) -> None:
     """Create test derived-data.json and llm-enriched.json."""
     if modules is None:
@@ -92,9 +101,7 @@ def test_add_domain_additive_merge():
         sbp = result2['skills_by_profile']
         all_skills = []
         for profile_data in sbp.values():
-            if isinstance(profile_data, list):
-                all_skills.extend(profile_data)
-            elif isinstance(profile_data, dict):
+            if isinstance(profile_data, dict):
                 for section in ['defaults', 'optionals']:
                     for entry in profile_data.get(section, []):
                         all_skills.append(entry.get('skill', entry) if isinstance(entry, dict) else entry)
@@ -104,12 +111,6 @@ def test_add_domain_additive_merge():
         general_skills = [s for s in all_skills if 'plan-marshall:dev-general-' in str(s)]
         assert len(java_skills) > 0, 'Should have java skills'
         assert len(general_skills) > 0, 'Should have general-dev skills'
-
-        # No duplicates within each profile
-        for profile_name, profile_data in sbp.items():
-            if isinstance(profile_data, list):
-                assert len(profile_data) == len(set(profile_data)), \
-                    f'Duplicate skills in {profile_name}: {profile_data}'
 
 
 def test_add_domain_preserves_existing():
@@ -130,9 +131,11 @@ def test_add_domain_preserves_existing():
         sbp_after_both = enriched2['modules']['module-a']['skills_by_profile']
 
         for profile, skills in sbp_after_java.items():
-            if isinstance(skills, list):
-                for skill in skills:
-                    assert skill in sbp_after_both.get(profile, []), f'{skill} lost from {profile}'
+            if isinstance(skills, dict):
+                existing_names = _extract_skill_names(skills)
+                after_names = _extract_skill_names(sbp_after_both.get(profile, {}))
+                for skill in existing_names:
+                    assert skill in after_names, f'{skill} lost from {profile}'
 
 
 def test_add_domain_include_optionals_true():
@@ -144,8 +147,8 @@ def test_add_domain_include_optionals_true():
         sbp = result['skills_by_profile']
         all_skills = []
         for profile_data in sbp.values():
-            if isinstance(profile_data, list):
-                all_skills.extend(profile_data)
+            if isinstance(profile_data, dict):
+                all_skills.extend(_extract_skill_names(profile_data))
 
         # Java domain has optionals like java-cdi, java-lombok — they should be present
         assert len(all_skills) > 0
@@ -162,8 +165,8 @@ def test_add_domain_include_optionals_false():
         result_all = enrich_add_domain('module-a', 'java', tmpdir, include_optionals=True)
 
     # The optionals-included version should have >= skills
-    count_defaults = sum(len(v) if isinstance(v, list) else 0 for v in result_defaults['skills_by_profile'].values())
-    count_all = sum(len(v) if isinstance(v, list) else 0 for v in result_all['skills_by_profile'].values())
+    count_defaults = sum(len(_extract_skill_names(v)) for v in result_defaults['skills_by_profile'].values() if isinstance(v, dict))
+    count_all = sum(len(_extract_skill_names(v)) for v in result_all['skills_by_profile'].values() if isinstance(v, dict))
     assert count_all >= count_defaults
 
 

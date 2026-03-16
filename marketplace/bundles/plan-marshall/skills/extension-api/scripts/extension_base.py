@@ -286,7 +286,7 @@ class ExtensionBase(ABC):
     # =========================================================================
 
     def config_defaults(self, project_root: str) -> None:  # noqa: B027
-        """Configure project-specific defaults in run-configuration.json.
+        """Configure project-specific defaults in marshal.json.
 
         Called by marshall-steward during initialization, after extension loading
         but before workflow logic accesses configuration. This is the hook for
