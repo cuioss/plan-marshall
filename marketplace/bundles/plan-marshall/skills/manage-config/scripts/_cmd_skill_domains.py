@@ -175,8 +175,10 @@ def discover_available_domains(project_root: Path | None = None) -> dict:
         # Check for domain (has get_skill_domains with domain.key)
         if hasattr(module, 'get_skill_domains'):
             try:
-                domain_info = module.get_skill_domains()
-                if domain_info and isinstance(domain_info.get('domain'), dict):
+                all_domains = module.get_skill_domains()
+                for domain_info in all_domains:
+                    if not domain_info or not isinstance(domain_info.get('domain'), dict):
+                        continue
                     domain_data = domain_info['domain']
                     has_triage = False
 
@@ -235,11 +237,7 @@ def load_domain_config_from_bundle(domain_key: str) -> dict | None:
 
         try:
             # Check all domains (supports multi-domain extensions)
-            if hasattr(module, 'get_all_skill_domains'):
-                all_domains = module.get_all_skill_domains()
-            else:
-                sd = module.get_skill_domains()
-                all_domains = [sd] if sd and sd.get('domain') else []
+            all_domains = module.get_skill_domains()
 
             for domain_info in all_domains:
                 if not domain_info:
@@ -315,9 +313,9 @@ def load_profiles_from_bundle(bundle_name: str) -> dict:
             continue
 
         try:
-            domain_info = module.get_skill_domains()
-            if domain_info:
-                return {'profiles': domain_info.get('profiles', {})}
+            all_domains = module.get_skill_domains()
+            if all_domains:
+                return {'profiles': all_domains[0].get('profiles', {})}
         except Exception:
             pass
 
@@ -341,16 +339,17 @@ def _collect_verify_steps(domain_key: str) -> list:
             continue
 
         try:
-            domain_info = module.get_skill_domains()
-            if not domain_info:
-                continue
+            all_domains = module.get_skill_domains()
+            for domain_info in all_domains:
+                if not domain_info:
+                    continue
 
-            domain_data = domain_info.get('domain', {})
-            if isinstance(domain_data, dict) and domain_data.get('key') == domain_key:
-                if hasattr(module, 'provides_verify_steps'):
-                    steps: list = module.provides_verify_steps()
-                    return steps
-                return []
+                domain_data = domain_info.get('domain', {})
+                if isinstance(domain_data, dict) and domain_data.get('key') == domain_key:
+                    if hasattr(module, 'provides_verify_steps'):
+                        steps: list = module.provides_verify_steps()
+                        return steps
+                    return []
         except Exception:
             continue
 

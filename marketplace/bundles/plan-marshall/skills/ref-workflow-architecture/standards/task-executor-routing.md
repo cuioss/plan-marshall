@@ -151,8 +151,8 @@ The profile system is designed for extension. New profiles can be added without 
 
 1. **Add profile to domain extension.py**:
    ```python
-   def get_skill_domains(self) -> dict:
-       return {
+   def get_skill_domains(self) -> list[dict]:
+       return [{
            "domain": {...},
            "profiles": {
                "core": {...},
@@ -163,7 +163,7 @@ The profile system is designed for extension. New profiles can be added without 
                    "optionals": []
                }
            }
-       }
+       }]
    ```
 
 2. **Create corresponding task executor skill**:
@@ -239,4 +239,4 @@ Skill: pm-dev-java:java-cdi            (domain knowledge)
 - [skill-loading.md](skill-loading.md) - Two-tier skill loading pattern
 - [phases.md](phases.md) - Workflow phase definitions
 - [agents.md](agents.md) - Agent responsibilities including phase-5-execute-agent
-- [profile-mechanism.md](../ref-workflow-extension-api/standards/profiles/profile-mechanism.md) - Profile override mechanism
+- [profile-mechanism.md](../extension-api/standards/profile-mechanism.md) - Profile override mechanism

@@ -70,7 +70,7 @@ user-invocable: false
 | [standards/skill-loading.md](standards/skill-loading.md) | Two-tier loading | System vs domain skills |
 | [standards/artifacts.md](standards/artifacts.md) | Plan file formats | references.json, status.toon, TASK-*.toon |
 | [standards/task-executor-routing.md](standards/task-executor-routing.md) | Task executor routing | Profile→executor mapping, extensibility |
-| `plan-marshall:ref-workflow-extension-api` | Extension mechanism | Domain extensions for outline/triage |
+| `plan-marshall:extension-api` | Extension mechanism | Domain extensions for outline/triage |
 
 ---
 
@@ -170,7 +170,7 @@ user-invocable: false
 | Skill | Purpose |
 |-------|---------|
 | `plan-marshall:plan-marshall` | Unified user-facing entry point for plan lifecycle |
-| `plan-marshall:ref-workflow-extension-api` | Extension points for domain customization |
+| `plan-marshall:extension-api` | Extension points for domain customization |
 | `plan-marshall:phase-1-init` | Init phase implementation |
 | `plan-marshall:phase-2-refine` | Refine phase implementation |
 | `plan-marshall:phase-3-outline` | Outline phase implementation |

@@ -13,9 +13,9 @@ from extension_base import ExtensionBase  # type: ignore[import-not-found]
 class Extension(ExtensionBase):
     """CUI Java extension for pm-dev-java-cui bundle."""
 
-    def get_skill_domains(self) -> dict:
+    def get_skill_domains(self) -> list[dict]:
         """Domain metadata for skill loading."""
-        return {
+        return [{
             'domain': {
                 'key': 'java-cui',
                 'name': 'CUI Java Development',
@@ -30,7 +30,7 @@ class Extension(ExtensionBase):
                 },
                 'quality': {'defaults': [], 'optionals': []},
             },
-        }
+        }]
 
     def applies_to_module(self, module_data: dict,
                           active_profiles: set[str] | None = None) -> dict:

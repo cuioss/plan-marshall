@@ -13,8 +13,8 @@ Usage:
     from extension_base import ExtensionBase, discover_descriptors, build_module_base
 
     class Extension(ExtensionBase):
-        def get_skill_domains(self) -> dict:
-            return {"domain": {...}, "profiles": {...}}
+        def get_skill_domains(self) -> list[dict]:
+            return [{"domain": {...}, "profiles": {...}}]
 
         def discover_modules(self, project_root: str) -> list:
             descriptors = discover_descriptors(project_root, "pom.xml")
@@ -202,24 +202,13 @@ class ExtensionBase(ABC):
     # Required Methods (must be implemented)
     # =========================================================================
 
-    def get_all_skill_domains(self) -> list[dict]:
-        """Return all domains this extension provides.
-
-        Default wraps get_skill_domains() in a list. Override for multi-domain
-        extensions that provide more than one skill domain.
-
-        Returns:
-            List of domain dicts, each with 'domain' and 'profiles' keys.
-        """
-        result = self.get_skill_domains()
-        return [result] if result and result.get('domain') else []
-
     @abstractmethod
-    def get_skill_domains(self) -> dict:
-        """Return domain metadata for skill loading.
+    def get_skill_domains(self) -> list[dict]:
+        """Return all skill domains this extension provides.
 
         Returns:
-            Dict with domain identity and profile-based skill organization:
+            List of domain dicts. Each dict has domain identity and
+            profile-based skill organization:
             {
                 "domain": {
                     "key": str,          # Unique domain identifier
@@ -234,6 +223,10 @@ class ExtensionBase(ABC):
                     "documentation": {"defaults": [...], "optionals": [...]}  # Optional
                 }
             }
+
+        Most extensions return a single-element list. Multi-domain extensions
+        (e.g., plan-marshall providing both 'build' and 'general-dev') return
+        multiple elements.
 
         Standard Profiles:
             - core: Skills loaded for all profiles (foundation skills)
@@ -456,7 +449,8 @@ class ExtensionBase(ABC):
         Returns:
             Full applies_to_module result dict with applicable=True
         """
-        domains = self.get_skill_domains()
+        all_domains = self.get_skill_domains()
+        domains = all_domains[0] if all_domains else {}
         profiles = domains.get('profiles', {})
         core = profiles.get('core', {})
         core_defaults = core.get('defaults', [])

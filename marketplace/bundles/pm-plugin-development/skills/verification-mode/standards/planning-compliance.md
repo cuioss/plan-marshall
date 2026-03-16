@@ -62,7 +62,7 @@ This indicates an agent silently retried after failure. Investigate WHY the firs
 Load the contract skill and verify artifacts for the **completed phase**:
 
 ```
-Skill: plan-marshall:ref-workflow-extension-api
+Skill: plan-marshall:extension-api
 ```
 
 | Completed Phase | Contract to Verify |
@@ -594,7 +594,7 @@ Actively scan execution logs to detect script issues:
 
 ## Workflow Skill API Contract Verification
 
-After each planning phase completes, verify artifacts comply with the workflow skill API contracts. Reference: [plan-marshall:ref-workflow-extension-api](../../../plan-marshall/skills/ref-workflow-extension-api/SKILL.md)
+After each planning phase completes, verify artifacts comply with the workflow skill API contracts. Reference: [plan-marshall:extension-api](../../../plan-marshall/skills/extension-api/SKILL.md)
 
 ### Phase 1: Init Complete
 
@@ -644,7 +644,7 @@ python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-sol
 
 ### Phase 3: User Review (Mandatory)
 
-**Contract Reference**: [ref-workflow-extension-api/standards/protocols/user-review.md](../../../plan-marshall/skills/ref-workflow-extension-api/standards/protocols/user-review.md)
+**Contract Reference**: [extension-api/standards/user-review-protocol.md](../../../plan-marshall/skills/extension-api/standards/user-review-protocol.md)
 
 **Verification**: Check work.log for user approval entry
 

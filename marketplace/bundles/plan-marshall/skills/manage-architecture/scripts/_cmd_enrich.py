@@ -327,11 +327,7 @@ def enrich_add_domain(
             continue
         try:
             # Check all domains from this extension
-            if hasattr(ext_module, 'get_all_skill_domains'):
-                all_domains = ext_module.get_all_skill_domains()
-            else:
-                sd = ext_module.get_skill_domains()
-                all_domains = [sd] if sd and sd.get('domain') else []
+            all_domains = ext_module.get_skill_domains()
             for sd in all_domains:
                 if sd.get('domain', {}).get('key') == domain_key:
                     target_ext = ext_module

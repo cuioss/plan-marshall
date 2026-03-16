@@ -295,4 +295,4 @@ The plan-marshall bundle uses a two-tier skill loading pattern for domain-agnost
 | [phases.md](phases.md) | When each skill type is used |
 | `plan-marshall:manage-architecture` | Source of module.skills_by_profile |
 | `plan-marshall:phase-3-outline` | Where module/skills are selected |
-| `plan-marshall:ref-workflow-extension-api` | Extension points |
+| `plan-marshall:extension-api` | Extension points |

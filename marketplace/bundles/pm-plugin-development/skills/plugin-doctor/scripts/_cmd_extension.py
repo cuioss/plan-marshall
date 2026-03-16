@@ -501,21 +501,22 @@ def validate_extension(extension_path: Path, deep: bool = True) -> dict[str, Any
             # Validate get_skill_domains() structure and skill references
             if hasattr(module, 'get_skill_domains'):
                 try:
-                    domains = module.get_skill_domains()
+                    all_domains = module.get_skill_domains()
 
-                    # Validate structure
-                    structure_issues = validate_skill_domains_structure(domains)
-                    for issue in structure_issues:
-                        if issue.get('severity') != 'warning':
-                            result['valid'] = False
-                    issues.extend(structure_issues)
+                    for domains in all_domains:
+                        # Validate structure
+                        structure_issues = validate_skill_domains_structure(domains)
+                        for issue in structure_issues:
+                            if issue.get('severity') != 'warning':
+                                result['valid'] = False
+                        issues.extend(structure_issues)
 
-                    # Validate skill references
-                    if marketplace_root:
-                        ref_issues = validate_skill_references(domains, marketplace_root)
-                        if ref_issues:
-                            result['valid'] = False
-                        issues.extend(ref_issues)
+                        # Validate skill references
+                        if marketplace_root:
+                            ref_issues = validate_skill_references(domains, marketplace_root)
+                            if ref_issues:
+                                result['valid'] = False
+                            issues.extend(ref_issues)
 
                 except Exception as e:
                     issues.append(

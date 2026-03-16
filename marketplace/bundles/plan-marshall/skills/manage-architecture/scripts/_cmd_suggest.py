@@ -72,11 +72,7 @@ def suggest_domains(module_name: str, project_dir: str = '.') -> dict[str, Any]:
 
         # Get all domain keys from extension (supports multi-domain)
         try:
-            if hasattr(ext_module, 'get_all_skill_domains'):
-                all_skill_domains = ext_module.get_all_skill_domains()
-            else:
-                sd = ext_module.get_skill_domains()
-                all_skill_domains = [sd] if sd and sd.get('domain') else []
+            all_skill_domains = ext_module.get_skill_domains()
         except Exception:
             continue
 

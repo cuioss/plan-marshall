@@ -145,14 +145,14 @@ def test_profile_patterns_benchmark():
 class ConcreteExtension(ExtensionBase):
     """Concrete implementation for testing."""
 
-    def get_skill_domains(self) -> dict:
-        return {'domain': {'key': 'test'}, 'profiles': {}}
+    def get_skill_domains(self) -> list[dict]:
+        return [{'domain': {'key': 'test'}, 'profiles': {}}]
 
 
 def test_extension_base_abstract_methods():
     """ExtensionBase requires get_skill_domains."""
     ext = ConcreteExtension()
-    assert ext.get_skill_domains()['domain']['key'] == 'test'
+    assert ext.get_skill_domains()[0]['domain']['key'] == 'test'
 
 
 def test_extension_base_default_discover_modules():
@@ -204,8 +204,8 @@ def test_extension_base_default_applies_to_module():
 class ExtensionWithProfiles(ExtensionBase):
     """Extension with profiles for testing _build_applicable_result."""
 
-    def get_skill_domains(self) -> dict:
-        return {
+    def get_skill_domains(self) -> list[dict]:
+        return [{
             'domain': {'key': 'test-profiles'},
             'profiles': {
                 'core': {
@@ -221,7 +221,7 @@ class ExtensionWithProfiles(ExtensionBase):
                     'optionals': [],
                 },
             },
-        }
+        }]
 
 
 def test_build_applicable_result_merges_core():
@@ -257,11 +257,11 @@ def test_build_applicable_result_with_additive_to():
 class ExtensionEmptyProfiles(ExtensionBase):
     """Extension with empty profiles."""
 
-    def get_skill_domains(self) -> dict:
-        return {
+    def get_skill_domains(self) -> list[dict]:
+        return [{
             'domain': {'key': 'empty'},
             'profiles': {},
-        }
+        }]
 
 
 def test_build_applicable_result_empty_profiles():
@@ -281,8 +281,8 @@ def test_build_applicable_result_empty_profiles():
 class ExtensionWithAllProfiles(ExtensionBase):
     """Extension with all profile types for filtering tests."""
 
-    def get_skill_domains(self) -> dict:
-        return {
+    def get_skill_domains(self) -> list[dict]:
+        return [{
             'domain': {'key': 'test-all'},
             'profiles': {
                 'core': {
@@ -310,7 +310,7 @@ class ExtensionWithAllProfiles(ExtensionBase):
                     'optionals': [],
                 },
             },
-        }
+        }]
 
 
 def test_build_applicable_result_active_profiles_filters():
@@ -352,15 +352,15 @@ def test_detect_applicable_profiles_default_returns_none():
 class ExtensionWithSignalDetection(ExtensionBase):
     """Extension that overrides _detect_applicable_profiles."""
 
-    def get_skill_domains(self) -> dict:
-        return {
+    def get_skill_domains(self) -> list[dict]:
+        return [{
             'domain': {'key': 'test-signals'},
             'profiles': {
                 'core': {'defaults': [{'skill': 'b:core', 'description': 'core'}], 'optionals': []},
                 'implementation': {'defaults': [{'skill': 'b:impl', 'description': 'impl'}], 'optionals': []},
                 'integration_testing': {'defaults': [{'skill': 'b:it', 'description': 'it'}], 'optionals': []},
             },
-        }
+        }]
 
     def _detect_applicable_profiles(self, profiles, module_data):
         if module_data and 'integration' in module_data.get('name', ''):

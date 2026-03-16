@@ -50,7 +50,12 @@ extension-api/
     ├── recipe-extension.md         # Recipe extension contract
     ├── build-execution.md          # Execution patterns and lifecycle (optional)
     ├── build-return.md             # Return value structure (optional)
-    └── build-project-structure.md  # Module discovery output (optional)
+    ├── build-project-structure.md  # Module discovery output (optional)
+    ├── workflow-overview.md        # 6-phase workflow contract overview
+    ├── profile-mechanism.md        # How profile overrides work
+    ├── profile-implementation.md   # Implementation profile contract
+    ├── profile-module-testing.md   # Module testing profile contract
+    └── user-review-protocol.md     # User review gate protocol
 ```
 
 ---
@@ -63,7 +68,7 @@ All extensions **must** inherit from `ExtensionBase` and implement required meth
 
 | Method | Purpose |
 |--------|---------|
-| `get_skill_domains() -> dict` | Return domain metadata with profiles |
+| `get_skill_domains() -> list[dict]` | Return domain metadata with profiles |
 
 ### Primary Methods
 
@@ -83,6 +88,47 @@ All extensions **must** inherit from `ExtensionBase` and implement required meth
 
 ---
 
+## 4-Layer Workflow Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    WORKFLOW ARCHITECTURE                         │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  LAYER 1: PHASE SKILLS (System only - NO domain override)       │
+│  phase-1-init → phase-2-refine → phase-3-outline → phase-4-plan │
+│    → phase-5-execute → phase-6-finalize                          │
+│                            │                                     │
+│                            │ delegates to                        │
+│                            ▼                                     │
+│  LAYER 2: PROFILE SKILLS (System default, domain CAN override)  │
+│  task-implementation (profile=implementation)                    │
+│  task-module-testing (profile=module_testing)                    │
+│                            │                                     │
+│                            │ loads                               │
+│                            ▼                                     │
+│  LAYER 3: EXTENSIONS (Domain provides, loaded BY system skills) │
+│  outline-ext: Codebase analysis, deliverable patterns            │
+│  triage-ext: Suppression syntax, severity guidelines             │
+│  recipe-ext: Predefined repeatable transformations               │
+│                            │                                     │
+│                            │ loads                               │
+│                            ▼                                     │
+│  LAYER 4: DOMAIN SKILLS (Loaded from task.skills at execution)  │
+│  java-core, java-cdi, junit-core, cui-javascript, etc.           │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+| Layer | Extension Point | Override Model | Contract Location |
+|-------|-----------------|----------------|-------------------|
+| **Phase Skills** | None | System only, no override | Phase SKILL.md files |
+| **Profile Skills** | workflow_skills in marshal.json | Domain can replace default | [profiles/](standards/) |
+| **Extensions** | provides_*() in extension.py | Additive (domain provides) | [extensions](standards/) |
+| **Domain Skills** | skills_by_profile in module analysis | Selected per deliverable | Domain bundle SKILL.md |
+
+---
+
 ## Architecture (Optional)
 
 For understanding the complete system architecture, reference these documents:
@@ -99,6 +145,11 @@ For understanding the complete system architecture, reference these documents:
 | [build-execution.md](standards/build-execution.md) | Execution patterns and lifecycle | Running build commands |
 | [build-return.md](standards/build-return.md) | Return value structure | Formatting command output |
 | [build-project-structure.md](standards/build-project-structure.md) | Module discovery output spec | Understanding `discover_modules()` output format |
+| [workflow-overview.md](standards/workflow-overview.md) | 6-phase workflow contract | Understanding phase transitions and contracts |
+| [profile-mechanism.md](standards/profile-mechanism.md) | Profile override mechanism | Understanding how domains override profile skills |
+| [profile-implementation.md](standards/profile-implementation.md) | Implementation profile contract | Implementing/overriding the implementation profile |
+| [profile-module-testing.md](standards/profile-module-testing.md) | Module testing profile contract | Implementing/overriding the module testing profile |
+| [user-review-protocol.md](standards/user-review-protocol.md) | User review gate protocol | Understanding mandatory user review after outline |
 | orchestrator-integration.md (manage-architecture skill) | Orchestrator merge logic | Understanding hybrid modules |
 
 **Note**: These documents define the target architecture. Implementation may be in progress.
@@ -107,16 +158,25 @@ For understanding the complete system architecture, reference these documents:
 
 ## Scripts
 
+### Extension Framework (Public API)
+
 | Script | Type | Purpose |
 |--------|------|---------|
 | `extension_base.py` | Library | ExtensionBase ABC, canonical commands, profile patterns |
 | `extension_discovery.py` | Library + CLI | Extension discovery, loading, aggregation, config defaults |
 | `_build_discover.py` | Library | Module discovery, path building, README detection |
+| `_module_aggregation.py` | Library | Virtual module splitting |
+
+### Build Execution Utilities (Internal)
+
+These are NOT part of the extension API. They are imported directly by build scripts (`build-maven`, `build-npm`, etc.), not through `extension_base`.
+
+| Script | Type | Purpose |
+|--------|------|---------|
 | `_build_result.py` | Library | Log file creation, result dict construction |
 | `_build_parse.py` | Library | Issue structures, warning filtering |
 | `_build_format.py` | Library | TOON and JSON output formatting |
 | `_build_wrapper.py` | Library | Build tool wrapper detection |
-| `_module_aggregation.py` | Library | Virtual module splitting |
 
 ### CLI Commands
 
@@ -232,9 +292,9 @@ from extension_base import ExtensionBase
 class Extension(ExtensionBase):
     """Extension for {bundle-name} bundle."""
 
-    def get_skill_domains(self) -> dict:
+    def get_skill_domains(self) -> list[dict]:
         """Domain metadata for skill loading."""
-        return {
+        return [{
             "domain": {
                 "key": "domain-key",
                 "name": "Domain Name",
@@ -246,7 +306,7 @@ class Extension(ExtensionBase):
                 "module_testing": {"defaults": [], "optionals": []},
                 "quality": {"defaults": [], "optionals": []}
             }
-        }
+        }]
 
     def discover_modules(self, project_root: str) -> list:
         """Discover modules in the project.

@@ -14,9 +14,9 @@ from extension_base import ExtensionBase
 class Extension(ExtensionBase):
     """Python domain extension for pm-dev-python bundle."""
 
-    def get_skill_domains(self) -> dict:
+    def get_skill_domains(self) -> list[dict]:
         """Domain metadata for skill loading."""
-        return {
+        return [{
             'domain': {
                 'key': 'python',
                 'name': 'Python Development',
@@ -57,7 +57,7 @@ class Extension(ExtensionBase):
                     'optionals': [],
                 },
             },
-        }
+        }]
 
     def applies_to_module(self, module_data: dict,
                           active_profiles: set[str] | None = None) -> dict:

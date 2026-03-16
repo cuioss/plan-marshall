@@ -59,7 +59,91 @@ The referenced triage skill MUST include these sections:
 | `## Severity Guidelines` | When to fix vs suppress vs accept | Decision table by severity |
 | `## Acceptable to Accept` | What can be accepted without fixing | Situations where accepting is appropriate |
 
-For detailed section templates and examples, see the [workflow triage extension contract](../../../../plan-marshall/skills/ref-workflow-extension-api/standards/extensions/triage-extension.md).
+### Suppression Syntax
+
+Document how to suppress findings in this domain:
+
+| Domain | Suppression Methods |
+|--------|---------------------|
+| Java | `@SuppressWarnings`, `// NOSONAR`, `@SuppressWarnings("all")` |
+| JavaScript | `// eslint-disable-next-line`, `// @ts-ignore`, `// @ts-expect-error` |
+| Python | `# noqa`, `# type: ignore`, `# pylint: disable=` |
+
+Required content: inline suppression syntax, block suppression (if applicable), file-level suppression (if applicable), when each method is appropriate.
+
+### Severity Guidelines
+
+| Severity | Default Action | Override Conditions |
+|----------|----------------|---------------------|
+| BLOCKER | Always fix | None — must be fixed |
+| CRITICAL | Fix | Document exception required |
+| MAJOR | Fix if reasonable | Suppress with documented reason |
+| MINOR | Consider | Suppress if noisy or false positive |
+| INFO | Accept | Fix if obvious improvement |
+
+### Acceptable to Accept
+
+Common acceptable situations:
+- Test code with intentional bad patterns (testing error handling)
+- Generated code that will be regenerated
+- Third-party code boundaries
+- Legacy code with explicit tech debt tracking
+- False positives that cannot be suppressed
+
+---
+
+## Triage Decision Flow
+
+The phase-5-execute (verification sub-loop) and plan-finalize skills use triage extensions:
+
+```
+1. Run verification (build, test, lint, Sonar)
+2. Collect findings from output
+3. For each finding:
+   a. Determine domain from file path/extension
+   b. Load triage extension: resolve-workflow-skill-extension --domain {domain} --type triage
+   c. If extension exists: load extension skill, apply severity guidelines, apply suppression rules
+   d. If no extension: use default severity mapping
+   e. Decide: fix | suppress | accept
+4. Apply fixes and suppressions
+5. If changes made, re-run verification (iterate)
+6. When all findings resolved, commit and create PR
+```
+
+---
+
+## Example Triage Extension Structure
+
+```
+pm-dev-java/skills/ext-triage-java/
+├── SKILL.md                    # Extension definition
+└── standards/
+    ├── suppression.md          # Java suppression syntax
+    └── severity.md             # Java severity guidelines
+```
+
+---
+
+## Validation Rules
+
+Triage extensions MUST:
+
+- Include suppression syntax section
+- Include severity guidelines section
+- Include acceptable-to-accept section
+- Be registered in marshal.json under `workflow_skill_extensions.triage`
+- Use `allowed-tools: Read` (reference skill, no writes)
+
+---
+
+## Integration with Lessons Learned
+
+Triage decisions can be informed by lessons learned:
+
+1. Before deciding, query lessons for similar findings
+2. If lesson exists with prior decision, apply learned action
+3. If new situation, make decision and optionally record lesson
+4. Lessons are stored per domain for context-aware decisions
 
 ---
 
@@ -159,5 +243,4 @@ Not all domains need custom triage:
 ## Related Specifications
 
 - [extension-contract.md](extension-contract.md) — Extension API contract
-- [triage-extension.md (workflow)](../../../../plan-marshall/skills/ref-workflow-extension-api/standards/extensions/triage-extension.md) — Workflow integration details, required section templates, triage decision flow
-- [extension-mechanism.md](../../../../plan-marshall/skills/ref-workflow-extension-api/standards/extensions/extension-mechanism.md) — Extension mechanism overview
+- [outline-extension.md](outline-extension.md) — Outline extension contract

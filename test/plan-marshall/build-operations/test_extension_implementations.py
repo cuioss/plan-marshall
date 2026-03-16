@@ -246,7 +246,7 @@ def validate_triage_and_outline_skill(module, bundle_name: str) -> list:
 def test_java_extension_skill_domains_structure():
     """Test pm-dev-java get_skill_domains returns valid structure."""
     ext = load_extension('pm-dev-java')
-    domains = ext.get_skill_domains()
+    domains = ext.get_skill_domains()[0]
 
     issues = validate_skill_domains_structure(domains, 'pm-dev-java')
     assert not issues, f'Structure issues: {issues}'
@@ -258,7 +258,7 @@ def test_java_extension_skill_domains_structure():
 def test_java_extension_skill_references_exist():
     """Test pm-dev-java skill references point to existing skills."""
     ext = load_extension('pm-dev-java')
-    domains = ext.get_skill_domains()
+    domains = ext.get_skill_domains()[0]
 
     issues = validate_skill_references(domains, 'pm-dev-java')
     assert not issues, f'Missing skills: {issues}'
@@ -279,7 +279,7 @@ def test_java_extension_triage_reference():
 def test_frontend_extension_skill_domains_structure():
     """Test pm-dev-frontend get_skill_domains returns valid structure."""
     ext = load_extension('pm-dev-frontend')
-    domains = ext.get_skill_domains()
+    domains = ext.get_skill_domains()[0]
 
     issues = validate_skill_domains_structure(domains, 'pm-dev-frontend')
     assert not issues, f'Structure issues: {issues}'
@@ -291,7 +291,7 @@ def test_frontend_extension_skill_domains_structure():
 def test_frontend_extension_skill_references_exist():
     """Test pm-dev-frontend skill references point to existing skills."""
     ext = load_extension('pm-dev-frontend')
-    domains = ext.get_skill_domains()
+    domains = ext.get_skill_domains()[0]
 
     issues = validate_skill_references(domains, 'pm-dev-frontend')
     assert not issues, f'Missing skills: {issues}'
@@ -312,7 +312,7 @@ def test_frontend_extension_triage_reference():
 def test_plugin_dev_extension_skill_domains_structure():
     """Test pm-plugin-development get_skill_domains returns valid structure."""
     ext = load_extension('pm-plugin-development')
-    domains = ext.get_skill_domains()
+    domains = ext.get_skill_domains()[0]
 
     issues = validate_skill_domains_structure(domains, 'pm-plugin-development')
     assert not issues, f'Structure issues: {issues}'
@@ -324,7 +324,7 @@ def test_plugin_dev_extension_skill_domains_structure():
 def test_plugin_dev_extension_skill_references_exist():
     """Test pm-plugin-development skill references point to existing skills."""
     ext = load_extension('pm-plugin-development')
-    domains = ext.get_skill_domains()
+    domains = ext.get_skill_domains()[0]
 
     issues = validate_skill_references(domains, 'pm-plugin-development')
     assert not issues, f'Missing skills: {issues}'
@@ -345,7 +345,7 @@ def test_plugin_dev_extension_triage_reference():
 def test_requirements_extension_skill_domains_structure():
     """Test pm-requirements get_skill_domains returns valid structure."""
     ext = load_extension('pm-requirements')
-    domains = ext.get_skill_domains()
+    domains = ext.get_skill_domains()[0]
 
     issues = validate_skill_domains_structure(domains, 'pm-requirements')
     assert not issues, f'Structure issues: {issues}'
@@ -357,7 +357,7 @@ def test_requirements_extension_skill_domains_structure():
 def test_requirements_extension_skill_references_exist():
     """Test pm-requirements skill references point to existing skills."""
     ext = load_extension('pm-requirements')
-    domains = ext.get_skill_domains()
+    domains = ext.get_skill_domains()[0]
 
     issues = validate_skill_references(domains, 'pm-requirements')
     assert not issues, f'Missing skills: {issues}'
@@ -371,7 +371,7 @@ def test_requirements_extension_skill_references_exist():
 def test_documents_extension_skill_domains_structure():
     """Test pm-documents get_skill_domains returns valid structure."""
     ext = load_extension('pm-documents')
-    domains = ext.get_skill_domains()
+    domains = ext.get_skill_domains()[0]
 
     issues = validate_skill_domains_structure(domains, 'pm-documents')
     assert not issues, f'Structure issues: {issues}'
@@ -383,7 +383,7 @@ def test_documents_extension_skill_domains_structure():
 def test_documents_extension_skill_references_exist():
     """Test pm-documents skill references point to existing skills."""
     ext = load_extension('pm-documents')
-    domains = ext.get_skill_domains()
+    domains = ext.get_skill_domains()[0]
 
     issues = validate_skill_references(domains, 'pm-documents')
     assert not issues, f'Missing skills: {issues}'
@@ -397,7 +397,7 @@ def test_documents_extension_skill_references_exist():
 def test_java_cui_extension_skill_domains_structure():
     """Test pm-dev-java-cui get_skill_domains returns valid structure."""
     ext = load_extension('pm-dev-java-cui')
-    domains = ext.get_skill_domains()
+    domains = ext.get_skill_domains()[0]
 
     issues = validate_skill_domains_structure(domains, 'pm-dev-java-cui')
     assert not issues, f'Structure issues: {issues}'
@@ -409,7 +409,7 @@ def test_java_cui_extension_skill_domains_structure():
 def test_java_cui_extension_skill_references_exist():
     """Test pm-dev-java-cui skill references point to existing skills."""
     ext = load_extension('pm-dev-java-cui')
-    domains = ext.get_skill_domains()
+    domains = ext.get_skill_domains()[0]
 
     issues = validate_skill_references(domains, 'pm-dev-java-cui')
     assert not issues, f'Missing skills: {issues}'
@@ -607,10 +607,10 @@ def test_general_dev_not_applicable_to_non_code_modules():
     assert ext.applies_to_module(_empty_module_data())['applicable'] is False
 
 
-def test_plan_marshall_get_all_skill_domains():
+def test_plan_marshall_get_skill_domains_multi():
     """plan-marshall provides both build and general-dev domains."""
     ext = load_extension('plan-marshall')
-    all_domains = ext.get_all_skill_domains()
+    all_domains = ext.get_skill_domains()
 
     assert len(all_domains) == 2
     keys = {d['domain']['key'] for d in all_domains}
@@ -635,7 +635,7 @@ def test_plugin_dev_not_applicable_to_plain_module():
 def test_documents_only_documentation_profile():
     """pm-documents should only define core and documentation profiles."""
     ext = load_extension('pm-documents')
-    domains = ext.get_skill_domains()
+    domains = ext.get_skill_domains()[0]
     assert set(domains['profiles'].keys()) == {'core', 'documentation'}
 
 
@@ -701,7 +701,7 @@ def test_java_detect_applicable_profiles_with_it_signals():
     layer says "this profile WOULD apply" but it only takes effect if defined.
     """
     ext = load_extension('pm-dev-java')
-    profiles = ext.get_skill_domains()['profiles']
+    profiles = ext.get_skill_domains()[0]['profiles']
     detected = ext._detect_applicable_profiles(profiles, _maven_it_module_data())
     assert detected is not None
     # IT signals detected, so integration_testing is in the applicable set
@@ -714,7 +714,7 @@ def test_java_detect_applicable_profiles_with_it_signals():
 def test_java_detect_applicable_profiles_without_it_signals():
     """Java ext: plain module without IT signals excludes integration_testing."""
     ext = load_extension('pm-dev-java')
-    profiles = ext.get_skill_domains()['profiles']
+    profiles = ext.get_skill_domains()[0]['profiles']
     detected = ext._detect_applicable_profiles(profiles, _maven_module_data())
     assert detected is not None
     assert 'integration_testing' not in detected
@@ -724,7 +724,7 @@ def test_java_detect_applicable_profiles_without_it_signals():
 def test_java_detect_applicable_profiles_none_module():
     """Java ext: None module_data returns None (no filtering)."""
     ext = load_extension('pm-dev-java')
-    profiles = ext.get_skill_domains()['profiles']
+    profiles = ext.get_skill_domains()[0]['profiles']
     detected = ext._detect_applicable_profiles(profiles, None)
     assert detected is None
 
@@ -831,12 +831,7 @@ def test_all_extensions_have_unique_domain_keys():
     for bundle in bundles:
         try:
             ext = load_extension(bundle)
-            # Use get_all_skill_domains for multi-domain support
-            if hasattr(ext, 'get_all_skill_domains'):
-                all_domains = ext.get_all_skill_domains()
-            else:
-                sd = ext.get_skill_domains()
-                all_domains = [sd] if sd and sd.get('domain') else []
+            all_domains = ext.get_skill_domains()
             for domains in all_domains:
                 key = domains['domain']['key']
                 if key in domain_keys:

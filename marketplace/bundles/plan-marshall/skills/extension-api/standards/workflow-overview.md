@@ -116,10 +116,10 @@ See [extension-api.md](extension-api.md) for complete extension specification.
 All errors MUST return structured TOON:
 
 ```toon
-status: error
-error_type: {skill_error|script_error|timeout|validation}
-error: "Human-readable message"
-recoverable: {true|false}
+status	error
+error_type	{skill_error|script_error|timeout|validation}
+error	"Human-readable message"
+recoverable	{true|false}
 ```
 
 ### Error Types

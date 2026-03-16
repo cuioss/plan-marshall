@@ -35,12 +35,12 @@ class ExtensionBase:
 class Extension(ExtensionBase):
     """Test extension class."""
 
-    def get_skill_domains(self) -> dict:
+    def get_skill_domains(self) -> list[dict]:
         """Return skill domains."""
-        return {
+        return [{
             "domain": {"key": "test", "name": "Test Domain"},
             "profiles": {"core": {"defaults": [], "optionals": []}}
-        }
+        }]
 ''')
 
 

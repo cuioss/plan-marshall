@@ -24,9 +24,9 @@ class Extension(ExtensionBase):
             },
         ]
 
-    def get_skill_domains(self) -> dict:
+    def get_skill_domains(self) -> list[dict]:
         """Domain metadata for skill loading."""
-        return {
+        return [{
             'domain': {
                 'key': 'requirements',
                 'name': 'Requirements Engineering',
@@ -38,4 +38,4 @@ class Extension(ExtensionBase):
                 'module_testing': {'defaults': [], 'optionals': []},
                 'quality': {'defaults': [], 'optionals': []},
             },
-        }
+        }]

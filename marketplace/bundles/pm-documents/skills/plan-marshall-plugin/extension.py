@@ -20,9 +20,9 @@ class Extension(ExtensionBase):
     # Domain-specific skills can be added later if needed by implementing
     # provides_outline_skill() with documentation-specific outline instructions.
 
-    def get_skill_domains(self) -> dict:
+    def get_skill_domains(self) -> list[dict]:
         """Domain metadata for skill loading."""
-        return {
+        return [{
             'domain': {
                 'key': 'documentation',
                 'name': 'Documentation',
@@ -57,7 +57,7 @@ class Extension(ExtensionBase):
                     ],
                 },
             },
-        }
+        }]
 
     def applies_to_module(self, module_data: dict,
                           active_profiles: set[str] | None = None) -> dict:

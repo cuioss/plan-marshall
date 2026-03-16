@@ -150,7 +150,7 @@ If you discover issues or improvements during execution, record them:
 | `plan-marshall:phase-1-init` | Init phase implementation |
 | `plan-marshall:phase-3-outline` | Outline phase implementation |
 | `plan-marshall:phase-6-finalize` | Finalize phase implementation |
-| `plan-marshall:ref-workflow-extension-api` | Extension points for domain customization |
+| `plan-marshall:extension-api` | Extension API and extension points for domain customization |
 
 | Agent | Purpose |
 |-------|---------|

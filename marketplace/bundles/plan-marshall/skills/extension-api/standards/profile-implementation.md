@@ -39,20 +39,20 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 
 Result (domain override exists):
 ```toon
-status: success
-domain: java
-phase: implementation
-workflow_skill: pm-dev-java:java-implementation
-fallback: false
+status	success
+domain	java
+phase	implementation
+workflow_skill	pm-dev-java:java-implementation
+fallback	false
 ```
 
 Result (no domain override, system fallback):
 ```toon
-status: success
-domain: system
-phase: implementation
-workflow_skill: plan-marshall:task-implementation
-fallback: true
+status	success
+domain	system
+phase	implementation
+workflow_skill	plan-marshall:task-implementation
+fallback	true
 ```
 
 ---
@@ -78,14 +78,14 @@ See [ref-workflow-architecture:skill-loading](../../ref-workflow-architecture/st
 ### Example Task with Pre-Resolved Skills
 
 ```toon
-id: TASK-001
-title: Create CacheConfig class
-domain: java
-profile: implementation
+id	TASK-001
+title	Create CacheConfig class
+domain	java
+profile	implementation
 skills:
   - pm-dev-java:java-core
   - pm-dev-java:java-cdi
-deliverable: 1
+deliverable	1
 ...
 ```
 
@@ -279,9 +279,9 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 ### Success Output
 
 ```toon
-status: success
-plan_id: {plan_id}
-task_number: {task_number}
+status	success
+plan_id	{plan_id}
+task_number	{task_number}
 
 execution_summary:
   steps_completed: {N}
@@ -294,15 +294,15 @@ verification:
   passed: true
   command: "{verification command used}"
 
-next_action: task_complete
+next_action	task_complete
 ```
 
 ### Error Output
 
 ```toon
-status: error
-plan_id: {plan_id}
-task_number: {task_number}
+status	error
+plan_id	{plan_id}
+task_number	{task_number}
 
 execution_summary:
   steps_completed: {N}
@@ -314,7 +314,7 @@ failure:
   error: "{error message}"
   recoverable: true|false
 
-next_action: requires_attention
+next_action	requires_attention
 ```
 
 ---
@@ -382,13 +382,13 @@ Skill: plan-marshall:dev-general-practices
 If skills fail to load:
 
 ```toon
-status: error
-error_type: skill_loading_failure
-component: phase-5-execute-agent
-message: Failed to load skill: {skill_name}
+status	error
+error_type	skill_loading_failure
+component	phase-5-execute-agent
+message	Failed to load skill: {skill_name}
 failure:
   recoverable: false
-next_action: requires_attention
+next_action	requires_attention
 ```
 
 ### Step Execution Failure
@@ -438,10 +438,10 @@ If verification fails:
 
 ## Related Documents
 
-- [phase-4-plan SKILL.md](../../../phase-4-plan/SKILL.md) - Previous phase (plan)
-- [phase-5-execute SKILL.md](../../../phase-5-execute/SKILL.md) - Execute phase (includes verification)
-- [phase-6-finalize SKILL.md](../../../phase-6-finalize/SKILL.md) - Finalize phase
-- [module_testing.md](module_testing.md) - Module testing profile contract
+- [phase-4-plan SKILL.md](../../phase-4-plan/SKILL.md) - Previous phase (plan)
+- [phase-5-execute SKILL.md](../../phase-5-execute/SKILL.md) - Execute phase (includes verification)
+- [phase-6-finalize SKILL.md](../../phase-6-finalize/SKILL.md) - Finalize phase
+- [profile-module-testing.md](profile-module-testing.md) - Module testing profile contract
 - [profile-mechanism.md](profile-mechanism.md) - How profile overrides work
-- [task-contract.md](../../../manage-tasks/standards/task-contract.md) - Task structure with domain, profile, skills
-- [references SKILL.md](../../../manage-references/SKILL.md) - References and domain configuration
+- [task-contract.md](../../manage-tasks/standards/task-contract.md) - Task structure with domain, profile, skills
+- [references SKILL.md](../../manage-references/SKILL.md) - References and domain configuration
