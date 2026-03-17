@@ -179,11 +179,6 @@
           "type": "skill",
           "description": "Centralized architecture documentation for the plan-marshall bundle with visual diagrams"
         },
-        "skill:ref-workflow-extension-api": {
-          "path": "skills/ref-workflow-extension-api",
-          "type": "skill",
-          "description": "Defines extension points for domain-specific workflow customization. Covers profile overrides (implementation, module_testing) and extensions (outline, triage)."
-        },
         "skill:task-implementation": {
           "path": "skills/task-implementation",
           "type": "skill",
@@ -337,7 +332,7 @@
       },
       "dependencies": [],
       "stats": {
-        "skill_count": 42,
+        "skill_count": 41,
         "agent_count": 8,
         "command_count": 2
       },
