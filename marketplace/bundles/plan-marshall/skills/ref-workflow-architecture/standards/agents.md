@@ -386,4 +386,4 @@ Each agent follows the same pattern:
 |----------|---------|
 | [skill-loading.md](skill-loading.md) | Two-tier skill loading pattern |
 | [phases.md](phases.md) | 6-phase execution model |
-| `plan-marshall:ref-workflow-extension-api` | Extension points |
+| `plan-marshall:extension-api` | Extension points |

@@ -89,8 +89,8 @@ errors:
 
 **Add missing function**:
 ```python
-def get_skill_domains() -> dict:
-    return {
+def get_skill_domains() -> list[dict]:
+    return [{
         "domain": {
             "key": "my-domain",
             "name": "My Domain"
@@ -98,7 +98,7 @@ def get_skill_domains() -> dict:
         "profiles": {
             "core": {"defaults": [], "optionals": []}
         }
-    }
+    }]
 ```
 
 ### Risky Fixes

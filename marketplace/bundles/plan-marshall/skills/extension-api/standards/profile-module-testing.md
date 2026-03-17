@@ -26,14 +26,14 @@ Testing profile skills:
 Tasks with `profile: module_testing` are routed to module testing profile skills:
 
 ```toon
-id: TASK-002
-title: Add unit tests for UserService
-domain: java
-profile: module_testing
+id	TASK-002
+title	Add unit tests for UserService
+domain	java
+profile	module_testing
 skills:
   - pm-dev-java:junit-core
   - pm-dev-java:cui-testing
-deliverable: 2
+deliverable	2
 ```
 
 ---
@@ -47,16 +47,16 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 
 **Result (domain override exists)**:
 ```toon
-status: success
-workflow_skill: pm-dev-java:java-module-testing
-fallback: false
+status	success
+workflow_skill	pm-dev-java:java-module-testing
+fallback	false
 ```
 
 **Result (no domain override, system fallback)**:
 ```toon
-status: success
-workflow_skill: plan-marshall:task-module-testing
-fallback: true
+status	success
+workflow_skill	plan-marshall:task-module-testing
+fallback	true
 ```
 
 ---
@@ -112,9 +112,9 @@ The testing workflow skill:
 ### Success Output
 
 ```toon
-status: success
-plan_id: {plan_id}
-task_number: {task_number}
+status	success
+plan_id	{plan_id}
+task_number	{task_number}
 
 execution_summary:
   steps_completed: {N}
@@ -128,15 +128,15 @@ verification:
   command: "{test command used}"
   tests_passed: {count}
 
-next_action: task_complete
+next_action	task_complete
 ```
 
 ### Error Output
 
 ```toon
-status: error
-plan_id: {plan_id}
-task_number: {task_number}
+status	error
+plan_id	{plan_id}
+task_number	{task_number}
 
 execution_summary:
   steps_completed: {N}
@@ -148,7 +148,7 @@ failure:
   error: "{error message}"
   recoverable: true|false
 
-next_action: requires_attention
+next_action	requires_attention
 ```
 
 ---
@@ -167,6 +167,6 @@ next_action: requires_attention
 
 ## Related Documents
 
-- [implementation.md](implementation.md) - Implementation profile contract
+- [profile-implementation.md](profile-implementation.md) - Implementation profile contract
 - [profile-mechanism.md](profile-mechanism.md) - How profile overrides work
-- [task-contract.md](../../../manage-tasks/standards/task-contract.md) - Task structure
+- [task-contract.md](../../manage-tasks/standards/task-contract.md) - Task structure

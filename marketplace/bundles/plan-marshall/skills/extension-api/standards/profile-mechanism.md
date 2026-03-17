@@ -100,11 +100,11 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 
 **Output**:
 ```toon
-status: success
-domain: {domain}
-phase: {profile}
-workflow_skill: {resolved skill reference}
-fallback: {true if using system default}
+status	success
+domain	{domain}
+phase	{profile}
+workflow_skill	{resolved skill reference}
+fallback	{true if using system default}
 ```
 
 ---
@@ -165,6 +165,6 @@ Profile skill for implementing Java code.
 
 ## Related Documents
 
-- [implementation.md](implementation.md) - Implementation profile contract
-- [module_testing.md](module_testing.md) - Module testing profile contract
-- [ref-workflow-extension-api SKILL.md](../../SKILL.md) - Extension points overview
+- [profile-implementation.md](profile-implementation.md) - Implementation profile contract
+- [profile-module-testing.md](profile-module-testing.md) - Module testing profile contract
+- [Extension API SKILL.md](../SKILL.md) - Extension points overview

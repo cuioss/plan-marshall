@@ -46,7 +46,6 @@
     "./skills/recipe-refactor-to-profile-standards",
     "./skills/ref-toon-format",
     "./skills/ref-workflow-architecture",
-    "./skills/ref-workflow-extension-api",
     "./skills/task-implementation",
     "./skills/task-module-testing",
     "./skills/task-standalone",

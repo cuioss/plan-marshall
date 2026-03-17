@@ -19,9 +19,9 @@ from extension_base import ExtensionBase  # noqa: E402
 class Extension(ExtensionBase):
     """Plugin development extension for pm-plugin-development bundle."""
 
-    def get_skill_domains(self) -> dict:
+    def get_skill_domains(self) -> list[dict]:
         """Domain metadata for skill loading."""
-        return {
+        return [{
             'domain': {
                 'key': 'plan-marshall-plugin-dev',
                 'name': 'Plugin Development',
@@ -50,7 +50,7 @@ class Extension(ExtensionBase):
                 'module_testing': {'defaults': [], 'optionals': []},
                 'quality': {'defaults': [], 'optionals': []},
             },
-        }
+        }]
 
     def applies_to_module(self, module_data: dict,
                           active_profiles: set[str] | None = None) -> dict:

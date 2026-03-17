@@ -175,8 +175,45 @@ A single skill with `change-{type}.md` sub-files allows:
 
 ---
 
+## Multiple Extensions
+
+When multiple domains are configured (e.g., Java + JavaScript for full-stack):
+
+1. All relevant extensions are loaded
+2. Each extension applies to its domain only
+3. Priority field determines order if conflicts arise
+
+```
+marshal.json domains: [java, javascript]
+
+Extensions loaded:
+  pm-dev-java:java-outline-ext (priority: 10)
+  pm-dev-frontend:js-outline-ext (priority: 20)
+
+At extension point "Codebase Analysis":
+  1. java-outline-ext provides Java-specific analysis
+  2. js-outline-ext provides JS-specific analysis
+
+At extension point "Deliverable Patterns":
+  1. Java deliverables use java-outline-ext patterns
+  2. JavaScript deliverables use js-outline-ext patterns
+```
+
+---
+
+## Benefits Over Override Model
+
+| Aspect | Override Model | Extension Model |
+|--------|----------------|-----------------|
+| Process ownership | Domain skill owns process | System skill owns process |
+| Code duplication | Domain reimplements process | Domain only provides specific behavior |
+| Maintenance | Update multiple skills | Update system skill once |
+| Consistency | Varies by domain | Consistent process, domain variations |
+| API contract | Implicit | Explicit via extension points |
+
+---
+
 ## Related Specifications
 
 - [extension-contract.md](extension-contract.md) — Extension API contract
-- [extension-mechanism.md (workflow)](../../../../plan-marshall/skills/ref-workflow-extension-api/standards/extensions/extension-mechanism.md) — Extension mechanism overview, change-type skill structure, resolution flow
-- [change-types.md](../../../../plan-marshall/skills/ref-workflow-architecture/standards/change-types.md) — Change type vocabulary
+- [change-types.md](../../ref-workflow-architecture/standards/change-types.md) — Change type vocabulary

@@ -72,5 +72,5 @@ Registered in marshal.json under the javascript domain:
 
 ## Related Documents
 
-- [ref-workflow-extension-api:triage-extension](../../../plan-marshall/skills/ref-workflow-extension-api/standards/extensions/triage-extension.md) - Triage extension contract
+- [extension-api:triage-extension](../../../plan-marshall/skills/extension-api/standards/triage-extension.md) - Triage extension contract
 - [pm-dev-frontend:cui-javascript](../cui-javascript/SKILL.md) - Core JavaScript patterns

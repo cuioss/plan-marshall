@@ -538,4 +538,4 @@ Q-Gate is a GENERIC AGENT TOOL that extensions call during Phase 3 (Outline) to 
 | [agents.md](agents.md) | Thin agent pattern details |
 | [skill-loading.md](skill-loading.md) | How skills are resolved |
 | [artifacts.md](artifacts.md) | Plan file formats |
-| `plan-marshall:ref-workflow-extension-api` | Extension points |
+| `plan-marshall:extension-api` | Extension points |

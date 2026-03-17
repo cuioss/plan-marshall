@@ -14,9 +14,9 @@ from extension_base import ExtensionBase
 class Extension(ExtensionBase):
     """JavaScript domain extension for pm-dev-frontend bundle."""
 
-    def get_skill_domains(self) -> dict:
+    def get_skill_domains(self) -> list[dict]:
         """Domain metadata for skill loading."""
-        return {
+        return [{
             'domain': {
                 'key': 'javascript',
                 'name': 'JavaScript Development',
@@ -75,7 +75,7 @@ class Extension(ExtensionBase):
                 },
                 'quality': {'defaults': [], 'optionals': []},
             },
-        }
+        }]
 
     def applies_to_module(self, module_data: dict,
                           active_profiles: set[str] | None = None) -> dict:

@@ -125,14 +125,14 @@ skills:
         """Test extracting implements field."""
         content = """---
 name: ext-outline-plugin
-implements: plan-marshall:ref-workflow-extension-api/standards/extensions/outline-extension.md
+implements: plan-marshall:extension-api/standards/outline-extension.md
 ---
 
 # Content
 """
         frontmatter, _ = extract_frontmatter(content)
         assert (
-            frontmatter['implements'] == 'plan-marshall:ref-workflow-extension-api/standards/extensions/outline-extension.md'
+            frontmatter['implements'] == 'plan-marshall:extension-api/standards/outline-extension.md'
         )
 
     def test_no_frontmatter(self):
@@ -283,13 +283,13 @@ class TestImplementsDetection:
     def test_detect_implements(self):
         """Test detecting implements field."""
         frontmatter = {
-            'implements': 'plan-marshall:ref-workflow-extension-api/standards/extensions/outline-extension.md',
+            'implements': 'plan-marshall:extension-api/standards/outline-extension.md',
         }
         source = ComponentId(bundle='pm-plugin-development', component_type='skill', name='ext-outline-plugin')
         deps = detect_implements(frontmatter, source)
         assert len(deps) == 1
         assert deps[0].target.bundle == 'plan-marshall'
-        assert deps[0].target.name == 'ref-workflow-extension-api'
+        assert deps[0].target.name == 'extension-api'
         assert deps[0].dep_type == DependencyType.IMPLEMENTS
 
     def test_no_implements(self):

@@ -38,20 +38,19 @@ PYPROJECT_TOML = 'pyproject.toml'
 class Extension(ExtensionBase):
     """Build system discovery and cross-cutting development extension for plan-marshall bundle."""
 
-    def get_skill_domains(self) -> dict:
-        """Domain metadata - build domain with no profiles."""
-        return {
-            'domain': {
-                'key': 'build',
-                'name': 'Build Systems',
-                'description': 'Maven, Gradle, npm, and Python build detection and execution',
-            },
-            'profiles': {},
-        }
-
-    def get_all_skill_domains(self) -> list[dict]:
+    def get_skill_domains(self) -> list[dict]:
         """Return both build and general-dev domains."""
-        return [self.get_skill_domains(), self._general_dev_domain()]
+        return [
+            {
+                'domain': {
+                    'key': 'build',
+                    'name': 'Build Systems',
+                    'description': 'Maven, Gradle, npm, and Python build detection and execution',
+                },
+                'profiles': {},
+            },
+            self._general_dev_domain(),
+        ]
 
     def _general_dev_domain(self) -> dict:
         """Return general-dev domain metadata for skill loading."""

@@ -152,7 +152,7 @@ If `commit_strategy` is `per_plan` or `none` → Skip this step entirely.
 
 **3.7b**: If `verify_iteration >= verification_max_iterations` (from phase-5-execute config, default 5) → mark task `blocked`, log, continue to Step 4.
 
-**3.7c**: Load domain triage extension via ref-workflow-extension-api (`provides_triage()`).
+**3.7c**: Load domain triage extension via extension-api (`provides_triage()`).
 
 **3.7d**: Persist findings to Q-Gate:
 ```bash

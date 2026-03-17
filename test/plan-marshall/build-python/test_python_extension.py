@@ -45,9 +45,14 @@ Extension = _load_python_extension()
 def test_get_skill_domains_returns_expected_structure():
     """get_skill_domains() returns domain metadata for build domain."""
     ext = Extension()
-    domains = ext.get_skill_domains()
+    all_domains = ext.get_skill_domains()
 
-    # Check domain key (consolidated build extension)
+    # Returns list of domains (build + general-dev)
+    assert isinstance(all_domains, list)
+    assert len(all_domains) >= 1
+
+    # Check first domain (build)
+    domains = all_domains[0]
     assert 'domain' in domains
     assert domains['domain']['key'] == 'build'
     assert domains['domain']['name'] == 'Build Systems'

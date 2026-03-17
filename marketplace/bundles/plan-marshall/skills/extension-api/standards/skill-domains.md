@@ -31,12 +31,13 @@ The method is invoked by `marshall-steward` during domain configuration:
 ## Method Signature
 
 ```python
-def get_skill_domains(self) -> dict:
-    """Return domain metadata for skill loading.
+def get_skill_domains(self) -> list[dict]:
+    """Return all skill domains this extension provides.
 
     Returns:
-        Dict with domain identity and profile-based skill organization:
-        {
+        List of domain dicts. Each dict has domain identity and
+        profile-based skill organization:
+        [{
             "domain": {
                 "key": str,          # Unique domain identifier
                 "name": str,         # Human-readable name
@@ -51,7 +52,10 @@ def get_skill_domains(self) -> dict:
                 "module_testing": {...},
                 "quality": {...}
             }
-        }
+        }]
+
+    Most extensions return a single-element list. Multi-domain
+    extensions (e.g., plan-marshall) return multiple elements.
 
     This method is abstract — all extensions MUST implement it.
     """
@@ -77,7 +81,8 @@ Each profile contains `defaults` (always loaded) and `optionals` (loaded on dema
 |---------|---------|-------------|
 | `core` | Foundation patterns and standards | Always — base knowledge for the domain |
 | `implementation` | Runtime patterns (CDI, frameworks) | During implementation tasks |
-| `module_testing` | Test frameworks and patterns | During testing tasks |
+| `module_testing` | Test frameworks and patterns | During unit/module testing tasks |
+| `integration_testing` | Integration test patterns | During integration testing tasks |
 | `quality` | Documentation, code quality standards | During quality and verification tasks |
 | `documentation` | Documentation-specific standards (optional) | Domain-specific extra profile |
 
@@ -119,9 +124,9 @@ from extension_base import ExtensionBase
 class Extension(ExtensionBase):
     """Domain extension with skill domains."""
 
-    def get_skill_domains(self) -> dict:
+    def get_skill_domains(self) -> list[dict]:
         """Domain metadata for skill loading."""
-        return {
+        return [{
             "domain": {
                 "key": "java",
                 "name": "Java Development",
@@ -145,7 +150,7 @@ class Extension(ExtensionBase):
                     "optionals": []
                 }
             }
-        }
+        }]
 ```
 
 ---

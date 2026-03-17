@@ -39,9 +39,9 @@ class Extension(ExtensionBase):
                                               module_data=module_data,
                                               active_profiles=active_profiles)
 
-    def get_skill_domains(self) -> dict:
+    def get_skill_domains(self) -> list[dict]:
         """Domain metadata for skill loading."""
-        return {
+        return [{
             'domain': {
                 'key': 'oci-containers',
                 'name': 'OCI Containers',
@@ -66,4 +66,4 @@ class Extension(ExtensionBase):
                 'module_testing': {'defaults': [], 'optionals': []},
                 'quality': {'defaults': [], 'optionals': []},
             },
-        }
+        }]

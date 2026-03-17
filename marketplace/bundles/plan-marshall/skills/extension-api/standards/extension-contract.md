@@ -39,11 +39,12 @@ All extensions must implement these methods - they are abstract in `ExtensionBas
 ### get_skill_domains
 
 ```python
-def get_skill_domains(self) -> dict:
-    """Return domain metadata for skill loading.
+def get_skill_domains(self) -> list[dict]:
+    """Return all skill domains this extension provides.
 
     Returns:
-        Dict with domain identity and profile-based skill organization:
+        List of domain dicts. Each dict has domain identity and
+        profile-based skill organization:
         {
             "domain": {
                 "key": str,          # Unique domain identifier
@@ -60,6 +61,9 @@ def get_skill_domains(self) -> dict:
                 "quality": {...}
             }
         }
+
+    Most extensions return a single-element list. Multi-domain
+    extensions (e.g., plan-marshall) return multiple elements.
 
     Profile Categories:
         - core: Foundation patterns and standards
@@ -191,6 +195,84 @@ def provides_verify_steps(self) -> list[dict]:
 
 See [verify-steps.md](verify-steps.md) for the complete contract including marshal.json storage, enable/disable commands, and runtime consumption.
 
+#### provides_recipes
+
+```python
+def provides_recipes(self) -> list[dict]:
+    """Return domain-specific recipe definitions.
+
+    Recipes are predefined, repeatable transformations that provide their own
+    discovery, analysis, and deliverable patterns.
+
+    Returns:
+        List of recipe dicts, each containing:
+        - key: str           # Unique identifier
+        - name: str          # Human-readable name
+        - description: str   # Brief description for selection UI
+        - skill: str         # Skill reference (e.g., 'pm-dev-java:recipe-null-safety')
+        - default_change_type: str  # Default change_type for deliverables
+        - scope: str         # 'single_module' | 'multi_module' | 'codebase_wide'
+        - profile: str       # (Optional) Execution profile
+        - package_source: str  # (Optional) Package source field name
+
+    Default: []
+    """
+```
+
+See [recipe-extension.md](recipe-extension.md) for the complete contract.
+
+### Primary Methods
+
+#### applies_to_module
+
+```python
+def applies_to_module(self, module_data: dict,
+                      active_profiles: set[str] | None = None) -> dict:
+    """Check if this domain applies to a specific module and return resolved skills.
+
+    Called during architecture enrichment to determine which skill domains
+    apply to a module and what skills they provide.
+
+    Args:
+        module_data: Module dict from derived-data.json
+        active_profiles: Optional positive list of profiles to include
+
+    Returns:
+        {
+            'applicable': bool,
+            'confidence': 'high' | 'medium' | 'low' | 'none',
+            'signals': list[str],
+            'additive_to': str | None,
+            'skills_by_profile': {...}  # only when applicable
+        }
+
+    Default: returns not applicable.
+    """
+```
+
+### Protected Helpers
+
+#### _detect_applicable_profiles
+
+```python
+def _detect_applicable_profiles(self, profiles: dict,
+                                 module_data: dict | None) -> set[str] | None:
+    """Detect which profiles are applicable based on module signals.
+
+    Returns set of applicable profile names, or None for no filtering
+    (all defined profiles are included). Override in domain extensions
+    for signal-based detection.
+
+    Default: None (no filtering)
+    """
+```
+
+---
+
+## Build Execution Utilities (Not Part of Extension API)
+
+The `_build_result.py`, `_build_parse.py`, `_build_format.py`, and `_build_wrapper.py` scripts co-located in the `extension-api/scripts/` directory are **not** part of the extension API. They are internal utilities imported directly by build scripts (e.g., `build-maven`, `build-npm`), not through `ExtensionBase`. Extension implementers do not need to use them.
+
 ---
 
 ## Canonical Constants
@@ -214,9 +296,9 @@ from extension_base import ExtensionBase
 class Extension(ExtensionBase):
     """Documentation extension for pm-documents bundle."""
 
-    def get_skill_domains(self) -> dict:
+    def get_skill_domains(self) -> list[dict]:
         """Domain metadata for skill loading."""
-        return {
+        return [{
             "domain": {
                 "key": "documentation",
                 "name": "Documentation",
@@ -234,7 +316,7 @@ class Extension(ExtensionBase):
                 "module_testing": {"defaults": [], "optionals": []},
                 "quality": {"defaults": [], "optionals": []}
             }
-        }
+        }]
 ```
 
 ### Build Bundle Extension (With Module Discovery)
@@ -250,8 +332,8 @@ from extension_base import ExtensionBase
 class Extension(ExtensionBase):
     """Java/Maven extension for pm-dev-java bundle."""
 
-    def get_skill_domains(self) -> dict:
-        return {
+    def get_skill_domains(self) -> list[dict]:
+        return [{
             "domain": {
                 "key": "java",
                 "name": "Java Development",
@@ -263,7 +345,7 @@ class Extension(ExtensionBase):
                 "module_testing": {"defaults": ["pm-dev-java:junit-core"], "optionals": []},
                 "quality": {"defaults": ["pm-dev-java:javadoc"], "optionals": []}
             }
-        }
+        }]
 
     def provides_triage(self) -> str | None:
         return "pm-dev-java:ext-triage-java"
@@ -324,7 +406,7 @@ Some domain bundles are **additive** - they extend a base domain bundle rather t
 | pm-documents | documentation | ext-triage-docs | - | 1 (doc_sync) | Uses generic skills |
 | pm-requirements | requirements | ext-triage-reqs | - | 1 (formal_spec) | |
 | pm-plugin-development | plan-marshall-plugin-dev | ext-triage-plugin | ext-outline-workflow | - | |
-| plan-marshall | build, general-dev | - | - | - | Multi-domain (get_all_skill_domains) |
+| plan-marshall | build, general-dev | - | - | - | Multi-domain |
 
 ---
 

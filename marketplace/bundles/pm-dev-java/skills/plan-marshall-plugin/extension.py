@@ -15,9 +15,9 @@ from extension_base import ExtensionBase
 class Extension(ExtensionBase):
     """Java domain extension for pm-dev-java bundle."""
 
-    def get_skill_domains(self) -> dict:
+    def get_skill_domains(self) -> list[dict]:
         """Domain metadata for skill loading."""
-        return {
+        return [{
             'domain': {
                 'key': 'java',
                 'name': 'Java Development',
@@ -92,7 +92,7 @@ class Extension(ExtensionBase):
                     'optionals': [],
                 },
             },
-        }
+        }]
 
     def _detect_applicable_profiles(self, profiles: dict,
                                      module_data: dict | None) -> set[str] | None:

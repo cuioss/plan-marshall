@@ -5,8 +5,7 @@ Extension discovery library.
 Single source of truth for discovering and loading extension.py files
 from domain bundles. Used by project-structure and manage-config.
 
-This module is a library - it has no CLI. Persistence goes through
-project-structure, and reading goes through manage-config.
+Extension discovery library with CLI for configuration operations.
 """
 
 import importlib.util
@@ -185,8 +184,8 @@ def discover_extensions(project_root: Path) -> list[dict[str, Any]]:
 def get_skill_domains_from_extensions(extensions: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Get skill domains from extensions.
 
-    Supports multi-domain extensions via get_all_skill_domains().
-    Falls back to get_skill_domains() for backward compatibility.
+    Each extension's get_skill_domains() returns a list of domain dicts,
+    supporting both single-domain and multi-domain extensions.
 
     Args:
         extensions: List of extension info dicts
@@ -202,20 +201,13 @@ def get_skill_domains_from_extensions(extensions: list[dict[str, Any]]) -> list[
             continue
 
         try:
-            # Prefer get_all_skill_domains() for multi-domain support
-            if hasattr(module, 'get_all_skill_domains'):
-                all_domains = module.get_all_skill_domains()
-                for domain_info in all_domains:
-                    if domain_info and domain_info.get('domain'):
-                        # Copy to avoid mutating the extension's data
-                        entry = dict(domain_info)
-                        entry['bundle'] = ext['bundle']
-                        domains.append(entry)
-            else:
-                domain_info = module.get_skill_domains()
+            all_domains = module.get_skill_domains()
+            for domain_info in all_domains:
                 if domain_info and domain_info.get('domain'):
-                    domain_info['bundle'] = ext['bundle']
-                    domains.append(domain_info)
+                    # Copy to avoid mutating the extension's data
+                    entry = dict(domain_info)
+                    entry['bundle'] = ext['bundle']
+                    domains.append(entry)
         except Exception as e:
             log_entry(
                 'script', 'global', 'WARN', f'[EXTENSION] get_skill_domains() failed for {ext["bundle"]}: {e}'
