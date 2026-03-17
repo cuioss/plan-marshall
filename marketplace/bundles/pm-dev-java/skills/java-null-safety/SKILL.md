@@ -192,67 +192,9 @@ public class TokenValidator {
 }
 ```
 
-### Without @NullMarked (Explicit Annotations)
+### Without @NullMarked (Legacy Code)
 
-If not using package-level `@NullMarked`, you must explicitly annotate:
-
-```java
-import org.jspecify.annotations.NonNull;
-import org.jspecify.annotations.Nullable;
-
-public class TokenValidator {
-
-    @NonNull
-    private final TokenConfig config;
-
-    public TokenValidator(@NonNull TokenConfig config) {
-        this.config = config;
-    }
-
-    @NonNull
-    public ValidationResult validate(@NonNull String token) {
-        return new ValidationResult(/*...*/);
-    }
-
-    @NonNull
-    public String processWithDefault(@Nullable String input) {
-        return input != null ? input.toUpperCase() : "DEFAULT";
-    }
-}
-```
-
-## Implementation Requirements
-
-### 1. Package-Level Configuration
-
-* Always prefer `@NullMarked` in `package-info.java`
-* Document the null-safety contract in package documentation
-* Use `@Nullable` only for exceptions to the non-null default
-
-### 2. Default Non-Null
-
-* With `@NullMarked`, all types are non-null by default
-* Only use `@Nullable` for exceptions
-* Never annotate with `@NonNull` when using `@NullMarked` (redundant)
-
-### 3. Implementation Responsibility
-
-* The implementation MUST ensure that non-nullable methods never return null
-* Add defensive null checks at API boundaries
-* Use `Objects.requireNonNull()` for parameter validation
-
-```java
-public ValidationResult validate(String token) {
-    // Defensive programming at API boundary
-    Objects.requireNonNull(token, "token must not be null");
-
-    // Implementation ensures non-null return
-    if (isValid(token)) {
-        return ValidationResult.valid();
-    }
-    return ValidationResult.invalid("Token validation failed");
-}
-```
+For code without package-level `@NullMarked`, use explicit `@NonNull` on every field, parameter, and return type. This is verbose — prefer migrating to `@NullMarked` at the package level.
 
 ## Nullable Parameters
 

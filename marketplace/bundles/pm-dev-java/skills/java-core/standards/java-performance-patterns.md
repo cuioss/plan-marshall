@@ -142,15 +142,11 @@ public boolean isValidNumber(String str) {
 
 ## Logging Performance
 
+Use supplier-based logging for expensive `toString()` calls:
+
 ```java
-// Bad - concatenation even if DEBUG disabled
-log.debug("Processing user " + userId + " with roles " + roles);
-
-// Good - parameterized
-log.debug("Processing user {} with roles {}", userId, roles);
-
-// Good - supplier for expensive toString()
+// Good - supplier only invoked if DEBUG enabled
 log.debug("User details: {}", () -> user.toVerboseString());
 ```
 
-Configure async appenders in logback.xml for high-throughput paths.
+For basic parameterized logging (`log.debug("x {}", value)`), see "String Handling in Hot Paths" above.
