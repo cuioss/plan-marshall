@@ -39,22 +39,14 @@ extension-api/
 │   ├── _build_wrapper.py           # Build tool wrapper detection
 │   └── _module_aggregation.py      # Virtual module splitting
 └── standards/
-    ├── extension-contract.md       # Extension API contract
+    ├── extension-contract.md       # Extension API contract (all methods)
     ├── skill-domains.md            # Skill domains contract (required method)
-    ├── module-discovery.md         # Module discovery contract
+    ├── module-discovery.md         # Module discovery contract + output specification
     ├── canonical-commands.md       # Command vocabulary and resolution
-    ├── config-callback.md          # Project configuration callback
-    ├── triage-extension.md         # Triage extension contract
-    ├── outline-extension.md        # Outline extension contract
-    ├── verify-steps.md             # Verify steps contract
-    ├── build-execution.md          # Execution patterns and lifecycle (optional)
-    ├── build-return.md             # Return value structure (optional)
-    ├── build-project-structure.md  # Module discovery output (optional)
-    ├── workflow-overview.md        # 6-phase workflow contract overview
-    ├── profile-mechanism.md        # How profile overrides work
-    ├── profile-implementation.md   # Implementation profile contract
-    ├── profile-module-testing.md   # Module testing profile contract
-    └── user-review-protocol.md     # User review gate protocol
+    ├── build-execution.md          # Build execution API + return structure
+    ├── workflow-extensions.md      # Config callback, triage, outline, verify steps
+    ├── profiles.md                 # Profile override mechanism + profile contracts
+    └── workflow-overview.md        # 6-phase workflow + user review gate
 ```
 
 ---
@@ -133,22 +125,13 @@ For understanding the complete system architecture, reference these documents:
 | Document | Purpose | When to Read |
 |----------|---------|--------------|
 | [extension-contract.md](standards/extension-contract.md) | Complete extension API contract | Creating a new extension |
-| [canonical-commands.md](standards/canonical-commands.md) | Command vocabulary and resolution | Implementing `discover_modules()` commands |
 | [skill-domains.md](standards/skill-domains.md) | Skill domains contract | Implementing `get_skill_domains()` |
-| [module-discovery.md](standards/module-discovery.md) | Module discovery contract | Implementing `discover_modules()` |
-| [config-callback.md](standards/config-callback.md) | Project configuration callback | Implementing `config_defaults()` |
-| [triage-extension.md](standards/triage-extension.md) | Triage extension contract | Implementing `provides_triage()` |
-| [outline-extension.md](standards/outline-extension.md) | Outline extension contract | Implementing `provides_outline_skill()` |
-| [verify-steps.md](standards/verify-steps.md) | Verify steps contract | Implementing `provides_verify_steps()` |
-| [build-execution.md](standards/build-execution.md) | Execution patterns and lifecycle | Running build commands |
-| [build-return.md](standards/build-return.md) | Return value structure | Formatting command output |
-| [build-project-structure.md](standards/build-project-structure.md) | Module discovery output spec | Understanding `discover_modules()` output format |
-| [workflow-overview.md](standards/workflow-overview.md) | 6-phase workflow contract | Understanding phase transitions and contracts |
-| [profile-mechanism.md](standards/profile-mechanism.md) | Profile override mechanism | Understanding how domains override profile skills |
-| [profile-implementation.md](standards/profile-implementation.md) | Implementation profile contract | Implementing/overriding the implementation profile |
-| [profile-module-testing.md](standards/profile-module-testing.md) | Module testing profile contract | Implementing/overriding the module testing profile |
-| [user-review-protocol.md](standards/user-review-protocol.md) | User review gate protocol | Understanding mandatory user review after outline |
-| [orchestrator-integration.md](../manage-architecture/standards/orchestrator-integration.md) | Orchestrator merge logic | Understanding hybrid modules |
+| [module-discovery.md](standards/module-discovery.md) | Module discovery + output specification | Implementing `discover_modules()` |
+| [canonical-commands.md](standards/canonical-commands.md) | Command vocabulary and resolution | Implementing `discover_modules()` commands |
+| [build-execution.md](standards/build-execution.md) | Build execution API + return structure | Running build commands, formatting output |
+| [workflow-extensions.md](standards/workflow-extensions.md) | Config, triage, outline, verify contracts | Implementing optional extension hooks |
+| [profiles.md](standards/profiles.md) | Profile override mechanism + contracts | Understanding/overriding profile skills |
+| [workflow-overview.md](standards/workflow-overview.md) | 6-phase workflow + user review gate | Understanding phase transitions and contracts |
 
 **Note**: These documents define the target architecture. Implementation may be in progress.
 

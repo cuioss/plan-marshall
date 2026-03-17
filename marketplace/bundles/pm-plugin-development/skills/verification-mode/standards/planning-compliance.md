@@ -644,7 +644,7 @@ python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-sol
 
 ### Phase 3: User Review (Mandatory)
 
-**Contract Reference**: [extension-api/standards/user-review-protocol.md](../../../plan-marshall/skills/extension-api/standards/user-review-protocol.md)
+**Contract Reference**: [extension-api/standards/workflow-overview.md](../../../plan-marshall/skills/extension-api/standards/workflow-overview.md)
 
 **Verification**: Check work.log for user approval entry
 

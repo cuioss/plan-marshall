@@ -3,7 +3,7 @@
 
 Discovers Gradle modules with complete metadata using Gradle commands
 and file system analysis. Implements the discover_modules() contract
-from build-project-structure.md.
+from module-discovery.md.
 
 Data Sources:
     FROM GRADLE (resolved/inherited):
@@ -14,7 +14,7 @@ Data Sources:
         - description: if not available from properties
         - archivesBaseName: for artifact naming override
 
-IMPORTANT: Uses Gradle commands per build-project-structure.md specification:
+IMPORTANT: Uses Gradle commands per module-discovery.md specification:
 - properties for coordinates (group, version, name, description)
 - dependencies for dependency tree
 Both are combined where possible to minimize Gradle daemon startup overhead.
@@ -23,7 +23,7 @@ Usage:
     python3 gradle_cmd_discover.py discover --root /path/to/project [--format json]
 
 Output:
-    JSON array of module objects conforming to build-project-structure.md contract.
+    JSON array of module objects conforming to module-discovery.md contract.
 """
 
 import argparse
@@ -78,7 +78,7 @@ def discover_gradle_modules(project_root: str) -> list:
         project_root: Absolute path to project root.
 
     Returns:
-        List of module dicts conforming to build-project-structure.md contract.
+        List of module dicts conforming to module-discovery.md contract.
     """
     root = Path(project_root).resolve()
     modules = []
@@ -127,7 +127,7 @@ def discover_gradle_modules(project_root: str) -> list:
 def _get_gradle_metadata(module_path: str, project_root: Path) -> dict | None:
     """Get metadata using Gradle properties and dependencies commands.
 
-    Per build-project-structure.md specification, runs Gradle commands
+    Per module-discovery.md specification, runs Gradle commands
     to extract resolved metadata rather than parsing build.gradle directly.
 
     Args:
@@ -318,7 +318,7 @@ def _extract_gradle_module(
         quality_tasks: List of detected quality task names
 
     Returns:
-        Module dict conforming to build-project-structure.md or None
+        Module dict conforming to module-discovery.md or None
     """
     build_file = None
     for bf in [BUILD_GRADLE_KTS, BUILD_GRADLE]:

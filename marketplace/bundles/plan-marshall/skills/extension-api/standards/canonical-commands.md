@@ -203,4 +203,4 @@ Extensions document their additional commands in their own skill documentation.
 
 - [extension-contract.md](extension-contract.md) - Extension API contract
 - [build-execution.md](build-execution.md) - Build command execution
-- [build-project-structure.md](build-project-structure.md) - Module discovery and metadata
+- [module-discovery.md](module-discovery.md) - Module discovery and metadata

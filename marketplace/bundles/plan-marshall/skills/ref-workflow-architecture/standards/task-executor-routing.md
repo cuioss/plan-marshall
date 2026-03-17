@@ -239,4 +239,4 @@ Skill: pm-dev-java:java-cdi            (domain knowledge)
 - [skill-loading.md](skill-loading.md) - Two-tier skill loading pattern
 - [phases.md](phases.md) - Workflow phase definitions
 - [agents.md](agents.md) - Agent responsibilities including phase-5-execute-agent
-- [profile-mechanism.md](../extension-api/standards/profile-mechanism.md) - Profile override mechanism
+- [profiles.md](../extension-api/standards/profiles.md) - Profile override mechanism

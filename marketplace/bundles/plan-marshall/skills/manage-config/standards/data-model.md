@@ -297,7 +297,7 @@ Steps `verification_1_quality_check` and `verification_2_build_verify` are stati
 
 #### Verification Domain Steps
 
-`verification_domain_steps` contains per-domain verification steps with fully-qualified agent references. Each domain bundle declares its verification steps via `provides_verify_steps()` in `extension.py`. See [verify-steps.md](../../extension-api/standards/verify-steps.md) for the complete contract.
+`verification_domain_steps` contains per-domain verification steps with fully-qualified agent references. Each domain bundle declares its verification steps via `provides_verify_steps()` in `extension.py`. See [workflow-extensions.md](../../extension-api/standards/workflow-extensions.md) for the complete contract.
 
 - String value → invoke the agent reference
 - `false` → skip the step

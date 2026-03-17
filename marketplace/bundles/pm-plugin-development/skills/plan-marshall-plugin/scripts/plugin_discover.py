@@ -17,7 +17,7 @@ Usage:
     python3 plugin_discover.py discover --root /path/to/project
 
 Output:
-    JSON array of module objects conforming to build-project-structure.md contract.
+    JSON array of module objects conforming to module-discovery.md contract.
 """
 
 import argparse
@@ -376,7 +376,7 @@ def build_bundle_module(plugin_path: Path, project_root: Path, plugin_data: dict
         plugin_data: Parsed plugin.json data.
 
     Returns:
-        Complete module dict conforming to build-project-structure.md.
+        Complete module dict conforming to module-discovery.md.
     """
     bundle_dir = plugin_path.parent.parent  # .claude-plugin/plugin.json -> bundle root
     bundle_name = bundle_dir.name
@@ -465,7 +465,7 @@ def discover_plugin_modules(project_root: str) -> list:
         project_root: Absolute path to project root.
 
     Returns:
-        List of module dicts conforming to build-project-structure.md contract.
+        List of module dicts conforming to module-discovery.md contract.
         One module per bundle. Returns empty list if not the plan-marshall marketplace.
     """
     # Only handle plan-marshall marketplace (other Python projects use pm-dev-python)

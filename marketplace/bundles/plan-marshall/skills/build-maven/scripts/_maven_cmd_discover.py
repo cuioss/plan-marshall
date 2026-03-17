@@ -3,7 +3,7 @@
 
 Discovers Maven modules with complete metadata using Maven commands
 and file system analysis. Implements the discover_modules() contract
-from build-project-structure.md.
+from module-discovery.md.
 
 Data Sources:
     FROM MAVEN (resolved/inherited):
@@ -14,7 +14,7 @@ Data Sources:
         - description: optional, rarely inherited
         - parent: GAV reference (not available in dependency:tree)
 
-IMPORTANT: Uses Maven commands per build-project-structure.md specification:
+IMPORTANT: Uses Maven commands per module-discovery.md specification:
 - help:all-profiles for profiles (includes inherited from parent POMs)
 - dependency:tree for dependencies AND coordinates (resolved)
 Both are combined in a single Maven call per module to minimize JVM startup overhead.
@@ -23,7 +23,7 @@ Usage:
     python3 maven_cmd_discover.py discover --root /path/to/project [--format json]
 
 Output:
-    JSON array of module objects conforming to build-project-structure.md contract.
+    JSON array of module objects conforming to module-discovery.md contract.
 """
 
 import argparse
@@ -48,7 +48,7 @@ from extension_base import PROFILE_PATTERNS, build_module_base, discover_descrip
 # via the config_defaults callback. Extensions use these to set project-specific
 # defaults that influence profile parsing and command generation.
 #
-# See: plan-marshall:extension-api:standards/config-callback.md
+# See: plan-marshall:extension-api:standards/workflow-extensions.md
 # See: plan-marshall:build-maven:standards/maven-impl.md
 
 # Key: build.maven.profiles.skip
@@ -80,7 +80,7 @@ def discover_maven_modules(project_root: str) -> list:
         project_root: Absolute path to project root.
 
     Returns:
-        List of module dicts conforming to build-project-structure.md contract.
+        List of module dicts conforming to module-discovery.md contract.
     """
     root = Path(project_root).resolve()
 
@@ -122,7 +122,7 @@ def _build_module(base, pom_path: Path, project_root: Path, maven_data: dict) ->
         maven_data: Dict with coordinates, profiles, dependencies from Maven
 
     Returns:
-        Complete module dict conforming to build-project-structure.md
+        Complete module dict conforming to module-discovery.md
     """
     module_path = pom_path.parent
     relative_path = base.paths.module
@@ -274,7 +274,7 @@ def _parse_coordinates_from_maven_output(log_content: str) -> dict:
 def _get_maven_metadata(module_path: Path, project_root: Path) -> dict | None:
     """Get coordinates, profiles and dependencies using Maven commands.
 
-    Per build-project-structure.md specification, runs:
+    Per module-discovery.md specification, runs:
         ./mvnw help:all-profiles dependency:tree -DoutputType=text
 
     This combines both commands in a single JVM startup for efficiency.

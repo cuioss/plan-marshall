@@ -20,7 +20,7 @@ Storage format for project architecture data with separation of raw and derived 
 
 ## derived-data.json
 
-Direct output from `discover_project_modules()`. See [build-project-structure.md](../../extension-api/standards/build-project-structure.md) for full specification.
+Direct output from `discover_project_modules()`. See [module-discovery.md](../../extension-api/standards/module-discovery.md) for full specification.
 
 ### Structure
 
@@ -333,5 +333,5 @@ The [client-api.md](client-api.md) merges both files for output:
 
 | Document | Purpose |
 |----------|---------|
-| [build-project-structure.md](../../extension-api/standards/build-project-structure.md) | Raw data field specification |
+| [module-discovery.md](../../extension-api/standards/module-discovery.md) | Raw data field specification |
 | [client-api.md](client-api.md) | API for reading merged data and consumer view |

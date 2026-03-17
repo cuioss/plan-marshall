@@ -45,8 +45,8 @@ def get_skill_domains(self) -> list[dict]:
             },
             "profiles": {
                 "core": {
-                    "defaults": list[str],    # Always-loaded skills
-                    "optionals": list[str]    # On-demand skills
+                    "defaults": list[dict|str],  # Always-loaded skills
+                    "optionals": list[dict|str]  # On-demand skills
                 },
                 "implementation": {...},
                 "module_testing": {...},
@@ -86,7 +86,11 @@ Each profile contains `defaults` (always loaded) and `optionals` (loaded on dema
 | `quality` | Documentation, code quality standards | During quality and verification tasks |
 | `documentation` | Documentation-specific standards (optional) | Domain-specific extra profile |
 
-**Skill Reference Format**: `bundle:skill` strings pointing to registered skills (e.g., `pm-dev-java:java-core`).
+**Skill Reference Format**: Each skill entry can be either:
+- **Object format** (preferred): `{"skill": "bundle:skill", "description": "What this skill provides"}` — self-documenting, enables validation
+- **String format** (legacy): `"bundle:skill"` — compact but lacks description for downstream consumers
+
+Object format is preferred for new extensions. Both formats are accepted by `_build_applicable_result()` and the enrichment pipeline.
 
 ### Defaults vs Optionals
 
@@ -134,19 +138,27 @@ class Extension(ExtensionBase):
             },
             "profiles": {
                 "core": {
-                    "defaults": ["pm-dev-java:java-core"],
+                    "defaults": [
+                        {"skill": "pm-dev-java:java-core", "description": "Core Java patterns and standards"},
+                    ],
                     "optionals": []
                 },
                 "implementation": {
                     "defaults": [],
-                    "optionals": ["pm-dev-java:java-cdi"]
+                    "optionals": [
+                        {"skill": "pm-dev-java:java-cdi", "description": "CDI dependency injection patterns"},
+                    ]
                 },
                 "module_testing": {
-                    "defaults": ["pm-dev-java:junit-core"],
-                    "optionals": ["pm-dev-java:junit-integration"]
+                    "defaults": [
+                        {"skill": "pm-dev-java:junit-core", "description": "JUnit 5 testing patterns"},
+                    ],
+                    "optionals": []
                 },
                 "quality": {
-                    "defaults": ["pm-dev-java:javadoc"],
+                    "defaults": [
+                        {"skill": "pm-dev-java:javadoc", "description": "JavaDoc documentation standards"},
+                    ],
                     "optionals": []
                 }
             }

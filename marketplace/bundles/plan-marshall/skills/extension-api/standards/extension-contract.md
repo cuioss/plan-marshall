@@ -53,8 +53,8 @@ def get_skill_domains(self) -> list[dict]:
             },
             "profiles": {
                 "core": {
-                    "defaults": list[str],    # Always-loaded skills
-                    "optionals": list[str]    # On-demand skills
+                    "defaults": list[dict|str],  # Always-loaded skills (prefer object format)
+                    "optionals": list[dict|str]  # On-demand skills
                 },
                 "implementation": {...},
                 "module_testing": {...},
@@ -108,7 +108,7 @@ def config_defaults(self, project_root: str) -> None:
     """
 ```
 
-See [config-callback.md](config-callback.md) for implementation patterns and examples.
+See [workflow-extensions.md](workflow-extensions.md) for implementation patterns and examples.
 
 ### Module Discovery Methods
 
@@ -125,7 +125,7 @@ def discover_modules(self, project_root: str) -> list:
         project_root: Absolute path to project root.
 
     Returns:
-        List of module dicts. See build-project-structure.md for complete
+        List of module dicts. See module-discovery.md for complete
         output structure including paths, metadata, packages, dependencies,
         stats, and commands fields.
 
@@ -133,7 +133,7 @@ def discover_modules(self, project_root: str) -> list:
     """
 ```
 
-See [module-discovery.md](module-discovery.md) for the method contract and [build-project-structure.md](build-project-structure.md) for the complete output specification.
+See [module-discovery.md](module-discovery.md) for the method contract and complete output specification.
 
 ### Workflow Extension Methods
 
@@ -151,7 +151,7 @@ def provides_triage(self) -> str | None:
     """
 ```
 
-See [triage-extension.md](triage-extension.md) for the complete contract including required skill sections and resolution.
+See [workflow-extensions.md](workflow-extensions.md) for the complete contract including required skill sections and resolution.
 
 #### provides_outline_skill
 
@@ -172,7 +172,7 @@ def provides_outline_skill(self) -> str | None:
     """
 ```
 
-See [outline-extension.md](outline-extension.md) for the complete contract including skill structure convention and fallback behavior.
+See [workflow-extensions.md](workflow-extensions.md) for the complete contract including skill structure convention and fallback behavior.
 
 #### provides_verify_steps
 
@@ -193,7 +193,7 @@ def provides_verify_steps(self) -> list[dict]:
     """
 ```
 
-See [verify-steps.md](verify-steps.md) for the complete contract including marshal.json storage, enable/disable commands, and runtime consumption.
+See [workflow-extensions.md](workflow-extensions.md) for the complete contract including marshal.json storage, enable/disable commands, and runtime consumption.
 
 ### Optional Methods (Module Applicability)
 
@@ -280,12 +280,16 @@ class Extension(ExtensionBase):
             },
             "profiles": {
                 "core": {
-                    "defaults": ["pm-documents:ref-documentation"],
+                    "defaults": [
+                        {"skill": "pm-documents:ref-documentation", "description": "AsciiDoc and documentation standards"},
+                    ],
                     "optionals": []
                 },
                 "implementation": {
                     "defaults": [],
-                    "optionals": ["pm-documents:manage-adr"]
+                    "optionals": [
+                        {"skill": "pm-documents:manage-adr", "description": "ADR creation and management"},
+                    ]
                 },
                 "module_testing": {"defaults": [], "optionals": []},
                 "quality": {"defaults": [], "optionals": []}
@@ -314,10 +318,25 @@ class Extension(ExtensionBase):
                 "description": "Java code patterns, JUnit testing, Maven builds"
             },
             "profiles": {
-                "core": {"defaults": ["pm-dev-java:java-core"], "optionals": []},
+                "core": {
+                    "defaults": [
+                        {"skill": "pm-dev-java:java-core", "description": "Core Java patterns and standards"},
+                    ],
+                    "optionals": []
+                },
                 "implementation": {"defaults": [], "optionals": []},
-                "module_testing": {"defaults": ["pm-dev-java:junit-core"], "optionals": []},
-                "quality": {"defaults": ["pm-dev-java:javadoc"], "optionals": []}
+                "module_testing": {
+                    "defaults": [
+                        {"skill": "pm-dev-java:junit-core", "description": "JUnit 5 testing patterns"},
+                    ],
+                    "optionals": []
+                },
+                "quality": {
+                    "defaults": [
+                        {"skill": "pm-dev-java:javadoc", "description": "JavaDoc documentation standards"},
+                    ],
+                    "optionals": []
+                }
             }
         }]
 
@@ -387,13 +406,9 @@ Some domain bundles are **additive** - they extend a base domain bundle rather t
 ## Related Specifications
 
 - [skill-domains.md](skill-domains.md) - Skill domains contract (required method)
-- [module-discovery.md](module-discovery.md) - Module discovery contract
-- [config-callback.md](config-callback.md) - Project configuration callback
-- [triage-extension.md](triage-extension.md) - Triage extension contract
-- [outline-extension.md](outline-extension.md) - Outline extension contract
-- [verify-steps.md](verify-steps.md) - Verify steps contract
-- [build-execution.md](build-execution.md) - Build command execution API
-- [build-return.md](build-return.md) - Build return value structure
-- [build-project-structure.md](build-project-structure.md) - Project structure discovery
-- [orchestrator-integration.md](../../manage-architecture/standards/orchestrator-integration.md) - Orchestrator flow and hybrid merging
+- [module-discovery.md](module-discovery.md) - Module discovery contract and output specification
 - [canonical-commands.md](canonical-commands.md) - Command vocabulary
+- [build-execution.md](build-execution.md) - Build command execution API and return structure
+- [workflow-extensions.md](workflow-extensions.md) - Config callback, triage, outline, and verify steps contracts
+- [profiles.md](profiles.md) - Profile override mechanism and profile contracts
+- [workflow-overview.md](workflow-overview.md) - 6-phase workflow and user review gate

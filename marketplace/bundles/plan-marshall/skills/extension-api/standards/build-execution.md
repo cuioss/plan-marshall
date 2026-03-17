@@ -9,6 +9,8 @@ Domain bundles that provide build capabilities expose a **unified execution API*
 - Provides adaptive timeout learning
 - Returns structured results for caller interpretation
 
+Build commands return structured results that callers interpret uniformly. This spec defines the **core fields** all implementations must provide and **optional fields** for build-system-specific context.
+
 ## Execution Contract
 
 ### Input
@@ -40,15 +42,78 @@ Domain bundles that provide build capabilities expose a **unified execution API*
 
 Both formats return the same fields; only the serialization differs.
 
+#### Core Fields (Required)
+
+All build command invocations must return these fields.
+
 | Field | Type | Description |
 |-------|------|-------------|
-| `status` | string | `success`, `error`, or `timeout` |
-| `exit_code` | int | Process exit code (-1 for timeout/execution failure) |
-| `duration_seconds` | int | Actual execution time |
-| `log_file` | string | Path to captured output |
+| `status` | string | Execution outcome: `success`, `error`, or `timeout` |
+| `exit_code` | int | Process exit code (0=success, non-zero=error, -1=timeout/failure) |
+| `duration_seconds` | int | Actual execution time in seconds |
+| `log_file` | string | Path to captured output file |
 | `command` | string | Full command that was executed |
 
-See [build-return.md](build-return.md) for complete field definitions, format examples, and error context structure.
+**Status values**:
+- `success` - Command completed with exit code 0
+- `error` - Command failed (non-zero exit code) or execution failed
+- `timeout` - Command exceeded timeout limit
+
+#### Error Context (Conditional)
+
+Present when `status` is `error` or `timeout`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `error` | string | Error type identifier (e.g., `build_failed`, `timeout`, `execution_failed`) |
+
+#### Parsed Issues (On Build Failure)
+
+When a build fails, implementations **should** parse the log file and include structured issue data. The content varies based on `--mode` parameter.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `errors` | list | Compilation/build errors extracted from log |
+| `warnings` | list | Build warnings (filtered by mode) |
+| `tests` | object | Test execution summary |
+
+**Error entry structure**:
+```
+{file, line, message, category}
+```
+
+**Warning entry structure** (mode-dependent):
+```
+{file, line, message}           # actionable mode
+{file, line, message, accepted} # structured mode
+```
+
+**Test summary structure**:
+```
+{passed, failed, skipped}
+```
+
+#### Output Modes
+
+The `--mode` parameter controls what issues are included in the output.
+
+| Mode | Default | Description |
+|------|---------|-------------|
+| `actionable` | Yes | Filter out accepted warnings, show only actionable items |
+| `structured` | No | Keep all warnings, mark accepted ones with `[accepted]` flag |
+| `errors` | No | Only show errors, no warnings |
+
+**Accepted warnings**: Warnings matching patterns in `.plan/run-configuration.json` under `maven.acceptable_warnings` or equivalent.
+
+#### Execution Metadata (Optional)
+
+Build systems may include additional context for diagnostics.
+
+| Field | Type | Scope | Description |
+|-------|------|-------|-------------|
+| `timeout_used_seconds` | int | All | Timeout that was applied |
+| `wrapper` | string | Maven | Wrapper path used (e.g., `./mvnw`) |
+| `command_type` | string | npm | Execution type: `npm` or `npx` |
 
 ## Requirements
 
@@ -197,8 +262,6 @@ The orchestrator resolves commands per module in `.plan/project-architecture/der
 }
 ```
 
-See orchestrator-integration.md (manage-architecture skill) for command resolution.
-
 ### From discover_modules()
 
 Extensions generate complete commands per module during discovery:
@@ -332,35 +395,124 @@ def execute_direct(...) -> DirectCommandResult:
     ...
 ```
 
-## Error Handling
+## Format Examples
 
-| Status | Exit Code | Meaning |
-|--------|-----------|---------|
-| `success` | 0 | Build completed successfully |
-| `error` | 1+ | Build failed (check log file) |
-| `error` | -1 | Execution failed (wrapper not found, etc.) |
-| `timeout` | -1 | Build exceeded timeout |
-
-## Implementation Location
+### TOON Format (Default)
 
 ```
-{bundle}/skills/plan-marshall-plugin/scripts/
-├── {build-system}.py          # CLI orchestrator
-└── ...                        # Supporting modules
+status	success
+exit_code	0
+duration_seconds	45
+log_file	.plan/temp/build-output/default/maven-2026-01-03-141523.log
+command	./mvnw -l .plan/temp/build-output/... clean verify
 ```
 
-## Compliance
+Error case with parsed issues (`--mode actionable`):
+```
+status	error
+exit_code	1
+duration_seconds	23
+log_file	.plan/temp/build-output/default/maven-2026-01-03-141530.log
+command	./mvnw -l .plan/temp/build-output/... clean verify
+error	build_failed
 
-Extensions providing build commands must:
+errors[2]{file,line,message,category}:
+src/Main.java    15    cannot find symbol: class Foo    compilation
+src/Test.java    42    test failed    test_failure
 
-- Capture output to log file (R1)
-- Prefer project wrappers over system commands (R2)
-- Integrate with timeout learning (R3)
-- Support `--format toon` and `--format json` (R4)
-- Support `--mode actionable`, `structured`, `errors` (R5)
-- Return `log_file` path in all results
-- Parse and return structured issues on build failure
-- Have tests for both output formats and all modes
+warnings[1]{file,line,message}:
+pom.xml    -    deprecated dependency version    deprecation
+
+tests:
+  passed: 10
+  failed: 2
+  skipped: 1
+```
+
+Error case with `--mode structured` (shows accepted flag):
+```
+status	error
+...
+warnings[3]{file,line,message,accepted}:
+pom.xml    -    deprecated dependency version
+src/Util.java    10    unchecked cast    [accepted]
+src/Helper.java    25    raw type usage    [accepted]
+```
+
+### JSON Format
+
+```json
+{
+  "status": "success",
+  "exit_code": 0,
+  "duration_seconds": 45,
+  "log_file": ".plan/temp/build-output/default/maven-2026-01-03-141523.log",
+  "command": "./mvnw -l .plan/temp/build-output/... clean verify"
+}
+```
+
+Error case with parsed issues:
+```json
+{
+  "status": "error",
+  "exit_code": 1,
+  "duration_seconds": 23,
+  "log_file": ".plan/temp/build-output/default/maven-2026-01-03-141530.log",
+  "command": "./mvnw -l .plan/temp/build-output/... clean verify",
+  "error": "build_failed",
+  "errors": [
+    {"file": "src/Main.java", "line": 15, "message": "cannot find symbol: class Foo", "category": "compilation"},
+    {"file": "src/Test.java", "line": 42, "message": "test failed", "category": "test_failure"}
+  ],
+  "warnings": [
+    {"file": "pom.xml", "line": null, "message": "deprecated dependency version"}
+  ],
+  "tests": {
+    "passed": 10,
+    "failed": 2,
+    "skipped": 1
+  }
+}
+```
+
+## Exit Code Semantics
+
+| Exit Code | Status | Meaning |
+|-----------|--------|---------|
+| 0 | `success` | Build completed successfully |
+| 1+ | `error` | Build failed (compilation error, test failure, etc.) |
+| -1 | `error` | Execution failed (wrapper not found, log creation failed) |
+| -1 | `timeout` | Build exceeded timeout |
+
+**Note**: Exit code -1 indicates the build system never ran or was interrupted. Check `status` to distinguish between execution failure and timeout.
+
+## Caller Interpretation
+
+### Basic Success/Failure Check
+
+```python
+result = run_build(...)
+
+if result['status'] == 'success':
+    # Build passed
+    pass
+elif result['status'] == 'timeout':
+    # Consider increasing timeout
+    print(f"Timed out after {result.get('timeout_used_seconds', 'unknown')}s")
+else:
+    # Build failed - check log file for details
+    print(f"See: {result['log_file']}")
+```
+
+### Log File Analysis
+
+On failure, callers should read `log_file` for detailed error analysis:
+
+```python
+if result['status'] == 'error':
+    log_content = Path(result['log_file']).read_text()
+    issues = parse_build_output(log_content)
+```
 
 ## Execution Lifecycle Diagram
 
@@ -405,9 +557,60 @@ Extensions providing build commands must:
 | `.plan/run-configuration.json` | run-config | Learned timeouts, acceptable warnings |
 | `.plan/temp/build-output/{scope}/{system}-{ts}.log` | build scripts | Raw build output (timestamped) |
 
+## Error Handling
+
+| Status | Exit Code | Meaning |
+|--------|-----------|---------|
+| `success` | 0 | Build completed successfully |
+| `error` | 1+ | Build failed (check log file) |
+| `error` | -1 | Execution failed (wrapper not found, etc.) |
+| `timeout` | -1 | Build exceeded timeout |
+
+## Compliance
+
+Extensions providing build commands must:
+
+- Capture output to log file (R1)
+- Prefer project wrappers over system commands (R2)
+- Integrate with timeout learning (R3)
+- Support `--format toon` and `--format json` (R4)
+- Support `--mode actionable`, `structured`, `errors` (R5)
+- Return all 5 core fields on every invocation
+- Return `log_file` path in all results
+- Use `duration_seconds` (not milliseconds)
+- Use `command` (not `command_executed`)
+- Include `error` field when status is not `success`
+- Use TOON tab-separated format: `key\tvalue` (not colon-separated)
+- Parse and return structured `errors`, `warnings`, `tests` on build failure
+- Filter warnings based on mode and acceptable patterns
+- Have tests for both output formats and all modes
+
+## Design Rationale
+
+### Why Seconds Not Milliseconds
+
+Duration uses seconds because:
+- Matches timeout parameter units
+- Human-readable for interactive output
+- Build durations rarely need millisecond precision
+
+### Why Flat Structure Not Nested
+
+Core fields are at the top level (not nested in `data`) because:
+- Simpler parsing in both TOON and JSON formats
+- Status check doesn't require traversing structure
+- TOON format naturally maps to flat key-value pairs
+
+### Why Log File Not stdout/stderr
+
+Output goes to log file (not captured to memory) because:
+- Build output can be megabytes (verbose mode, many modules)
+- Memory capture would bloat conversation context
+- Log files persist for debugging failed builds
+- Consistent location pattern enables automation
+
 ## Related Specifications
 
-- [build-return.md](build-return.md) - Return value structure
-- [build-project-structure.md](build-project-structure.md) - Project structure discovery
 - [extension-contract.md](extension-contract.md) - Extension API contract
 - [canonical-commands.md](canonical-commands.md) - Command vocabulary
+- [module-discovery.md](module-discovery.md) - Project structure discovery
