@@ -48,7 +48,7 @@ from extension_base import PROFILE_PATTERNS, build_module_base, discover_descrip
 # via the config_defaults callback. Extensions use these to set project-specific
 # defaults that influence profile parsing and command generation.
 #
-# See: plan-marshall:extension-api:standards/workflow-extensions.md
+# See: plan-marshall:extension-api:standards/extension-contract.md
 # See: plan-marshall:build-maven:standards/maven-impl.md
 
 # Key: build.maven.profiles.skip

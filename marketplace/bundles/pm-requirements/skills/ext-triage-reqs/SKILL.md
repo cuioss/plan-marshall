@@ -70,5 +70,5 @@ Registered in marshal.json under the requirements domain:
 
 ## Related Documents
 
-- [extension-api:workflow-extensions](../../../plan-marshall/skills/extension-api/standards/workflow-extensions.md) - Triage extension contract
+- [extension-api:extension-contract](../../../plan-marshall/skills/extension-api/standards/extension-contract.md) - Triage extension contract
 - [pm-requirements:requirements-authoring](../requirements-authoring/SKILL.md) - Requirements authoring standards

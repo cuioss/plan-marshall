@@ -71,5 +71,5 @@ Registered in marshal.json under the plugin development domain:
 
 ## Related Documents
 
-- [extension-api:workflow-extensions](../../../plan-marshall/skills/extension-api/standards/workflow-extensions.md) - Triage extension contract
+- [extension-api:extension-contract](../../../plan-marshall/skills/extension-api/standards/extension-contract.md) - Triage extension contract
 - [pm-plugin-development:plugin-architecture](../plugin-architecture/SKILL.md) - Plugin patterns

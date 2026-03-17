@@ -32,19 +32,17 @@ extension-api/
 ├── scripts/
 │   ├── extension_base.py           # ExtensionBase ABC, canonical commands
 │   ├── extension_discovery.py      # Extension discovery, loading, aggregation
-│   ├── _build_discover.py           # Module discovery, path building
-│   ├── _build_result.py            # Log file creation, result construction
-│   ├── _build_parse.py             # Issue structures, warning filtering
-│   ├── _build_format.py            # TOON and JSON output formatting
-│   ├── _build_wrapper.py           # Build tool wrapper detection
+│   ├── _build_discover.py          # Module discovery, path building
+│   ├── _build_result.py            # Log file creation, result construction (co-located build utility)
+│   ├── _build_parse.py             # Issue structures, warning filtering (co-located build utility)
+│   ├── _build_format.py            # TOON and JSON output formatting (co-located build utility)
+│   ├── _build_wrapper.py           # Build tool wrapper detection (co-located build utility)
 │   └── _module_aggregation.py      # Virtual module splitting
 └── standards/
-    ├── extension-contract.md       # Extension API contract (all methods)
-    ├── skill-domains.md            # Skill domains contract (required method)
+    ├── extension-contract.md       # Extension API contract (all methods, hooks, validation)
     ├── module-discovery.md         # Module discovery contract + output specification
     ├── canonical-commands.md       # Command vocabulary and resolution
     ├── build-execution.md          # Build execution API + return structure
-    ├── workflow-extensions.md      # Config callback, triage, outline, verify steps
     ├── profiles.md                 # Profile override mechanism + profile contracts
     └── workflow-overview.md        # 6-phase workflow + user review gate
 ```
@@ -124,12 +122,10 @@ For understanding the complete system architecture, reference these documents:
 
 | Document | Purpose | When to Read |
 |----------|---------|--------------|
-| [extension-contract.md](standards/extension-contract.md) | Complete extension API contract | Creating a new extension |
-| [skill-domains.md](standards/skill-domains.md) | Skill domains contract | Implementing `get_skill_domains()` |
+| [extension-contract.md](standards/extension-contract.md) | Complete extension API contract (all methods, hooks, validation) | Creating or modifying an extension |
 | [module-discovery.md](standards/module-discovery.md) | Module discovery + output specification | Implementing `discover_modules()` |
 | [canonical-commands.md](standards/canonical-commands.md) | Command vocabulary and resolution | Implementing `discover_modules()` commands |
 | [build-execution.md](standards/build-execution.md) | Build execution API + return structure | Running build commands, formatting output |
-| [workflow-extensions.md](standards/workflow-extensions.md) | Config, triage, outline, verify contracts | Implementing optional extension hooks |
 | [profiles.md](standards/profiles.md) | Profile override mechanism + contracts | Understanding/overriding profile skills |
 | [workflow-overview.md](standards/workflow-overview.md) | 6-phase workflow + user review gate | Understanding phase transitions and contracts |
 
@@ -148,9 +144,9 @@ For understanding the complete system architecture, reference these documents:
 | `_build_discover.py` | Library | Module discovery, path building, README detection |
 | `_module_aggregation.py` | Library | Virtual module splitting |
 
-### Build Execution Utilities (Internal)
+### Build Execution Utilities (Co-Located, Not Part of Extension API)
 
-These are NOT part of the extension API. They are imported directly by build scripts (`build-maven`, `build-npm`, etc.), not through `extension_base`.
+These are co-located here for PYTHONPATH convenience but are NOT part of the extension API. They are imported directly by build scripts (`build-maven`, `build-npm`, etc.), not through `extension_base`.
 
 | Script | Type | Purpose |
 |--------|------|---------|
@@ -178,16 +174,20 @@ errors_count	0
 
 ### Python Import Usage
 
-Scripts can import discovery functions directly:
+The executor sets PYTHONPATH to include `extension-api/scripts/`, so imports work directly:
 
 ```python
-import sys
-from pathlib import Path
+# Extension framework (public API via extension_base re-exports)
+from extension_base import (
+    ExtensionBase,
+    discover_descriptors,    # Re-exported from _build_discover
+    build_module_base,       # Re-exported from _build_discover
+    find_readme,             # Re-exported from _build_discover
+    CMD_VERIFY,
+    CMD_MODULE_TESTS,
+)
 
-# Add extension-api scripts to path
-extension_api_path = Path(__file__).parent.parent.parent / "extension-api" / "scripts"
-sys.path.insert(0, str(extension_api_path))
-
+# Discovery functions
 from extension_discovery import (
     discover_all_extensions,
     discover_project_modules,
@@ -195,19 +195,14 @@ from extension_discovery import (
     apply_config_defaults,
 )
 
-from build_discover import (
-    discover_descriptors,
-    build_module_base,
-    find_readme,
-)
-
-from build_result import (
+# Build utilities (co-located, not part of extension API)
+from _build_result import (
     create_log_file,
     success_result,
     error_result,
 )
 
-from build_parse import (
+from _build_parse import (
     Issue,
     filter_warnings,
     partition_issues,

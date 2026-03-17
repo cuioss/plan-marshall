@@ -364,17 +364,15 @@ def enrich_add_domain(
     profiles_updated = []
 
     for profile_name, profile_data in skills_by_profile.items():
-        new_skills: list[str] = []
+        new_entries: list[dict[str, str] | str] = []
         for entry in profile_data.get('defaults', []):
-            skill_name = entry.get('skill', entry) if isinstance(entry, dict) else entry
-            new_skills.append(skill_name)
+            new_entries.append(entry)
 
         if include_optionals:
             for entry in profile_data.get('optionals', []):
-                skill_name = entry.get('skill', entry) if isinstance(entry, dict) else entry
-                new_skills.append(skill_name)
+                new_entries.append(entry)
 
-        if not new_skills:
+        if not new_entries:
             continue
 
         # Get existing skills for this profile
@@ -387,10 +385,11 @@ def enrich_add_domain(
         merged = dict(existing)
         if 'defaults' not in merged:
             merged['defaults'] = []
-        for skill in new_skills:
-            if skill not in existing_names:
-                merged['defaults'].append(skill)
-                existing_names.add(skill)
+        for entry in new_entries:
+            skill_name = entry.get('skill', entry) if isinstance(entry, dict) else entry
+            if skill_name not in existing_names:
+                merged['defaults'].append(entry)
+                existing_names.add(skill_name)
 
         current[profile_name] = merged
         profiles_updated.append(profile_name)

@@ -308,7 +308,7 @@ class ExtensionBase(ABC):
                 # set_default returns True if set, False if key already existed
                 ext_defaults_set_default("my_bundle.skip_profiles", "itest,native", project_root)
 
-        See standards/workflow-extensions.md for complete documentation.
+        See standards/extension-contract.md for complete documentation.
         """
         pass  # Default no-op implementation
 
