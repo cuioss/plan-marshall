@@ -98,4 +98,4 @@ manage-config system retention get
 
 - [data-model.md](data-model.md) - JSON structure and field definitions
 - [api-reference.md](api-reference.md) - Complete API with examples
-- [skill-domains.md](skill-domains.md) - Skill domain management
+- [extension-contract.md](../../extension-api/standards/extension-contract.md) - Extension API contract (skill domains, hooks)

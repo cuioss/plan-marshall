@@ -11,7 +11,7 @@ Configure `.gitignore` for `.plan/` directory with tracked file exceptions.
 **BOOTSTRAP**: Use DIRECT Python call (no executor yet):
 
 ```bash
-python3 ${PLUGIN_ROOT}/plan-marshall/skills/marshall-steward/scripts/gitignore-setup.py
+python3 ${PLUGIN_ROOT}/plan-marshall/*/skills/marshall-steward/scripts/gitignore-setup.py
 ```
 
 **Output (TOON)**:
@@ -42,7 +42,7 @@ Check if project docs need `.plan/temp/` documentation:
 **BOOTSTRAP**: Use DIRECT Python call (executor not yet available):
 
 ```bash
-python3 ${PLUGIN_ROOT}/plan-marshall/skills/marshall-steward/scripts/determine-mode.py check-docs
+python3 ${PLUGIN_ROOT}/plan-marshall/*/skills/marshall-steward/scripts/determine-mode.py check-docs
 ```
 
 **Output (TOON)**:
@@ -72,7 +72,7 @@ Add the executor permission to project-local settings so script execution doesn'
 **BOOTSTRAP**: Use DIRECT Python call (no executor yet):
 
 ```bash
-python3 ${PLUGIN_ROOT}/plan-marshall/skills/tools-permission-fix/scripts/permission-fix.py ensure \
+python3 ${PLUGIN_ROOT}/plan-marshall/*/skills/tools-permission-fix/scripts/permission-fix.py ensure \
   --permissions "Bash(python3 .plan/execute-script.py *)" \
   --target project
 ```
@@ -99,7 +99,7 @@ This ensures script execution works without prompting, independent of global set
 **BOOTSTRAP**: Use DIRECT Python call with glob (executor doesn't exist yet):
 
 ```bash
-python3 ${PLUGIN_ROOT}/plan-marshall/skills/tools-script-executor/scripts/generate-executor.py generate
+python3 ${PLUGIN_ROOT}/plan-marshall/*/skills/tools-script-executor/scripts/generate-executor.py generate
 ```
 
 **Output (TOON)**:
@@ -117,7 +117,7 @@ python3 -m py_compile .plan/execute-script.py && echo "Executor syntax OK"
 
 **Ensure executor permission** (prevents permission prompts when using executor):
 ```bash
-python3 ${PLUGIN_ROOT}/plan-marshall/skills/tools-permission-fix/scripts/permission-fix.py ensure \
+python3 ${PLUGIN_ROOT}/plan-marshall/*/skills/tools-permission-fix/scripts/permission-fix.py ensure \
   --permissions "Bash(python3 .plan/execute-script.py *)" \
   --target project
 ```
@@ -237,7 +237,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 
 ## Step 7: Quality Pipeline Configuration (Optional)
 
-Configure verification (phase 5 sub-loop) and finalize (phase 7) pipeline settings.
+Configure verification (phase 5 sub-loop) and finalize (phase 6-finalize) pipeline settings.
 
 ```
 AskUserQuestion:
@@ -324,7 +324,7 @@ AskUserQuestion:
           description: "Fewer retries, faster completion"
         - label: "10"
           description: "More retries for complex projects"
-    - question: "Max iterations for finalize phase (phase 7)?"
+    - question: "Max iterations for finalize phase (phase 6-finalize)?"
       header: "Finalize Iters"
       multiSelect: false
       options:
@@ -380,7 +380,7 @@ errors_count	0
 - Profile-to-canonical mappings (e.g., `pre-commit:quality-gate`)
 - Build-specific timeout defaults
 
-See `standards/workflow-extensions.md` in `extension-api` skill for the callback contract.
+See `standards/extension-contract.md` in `extension-api` skill for the callback contract.
 
 ---
 
@@ -664,7 +664,6 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config skill-
   "java": {
     "bundle": "pm-dev-java",
     "workflow_skill_extensions": {
-      "outline": "pm-dev-java:ext-outline-java",
       "triage": "pm-dev-java:ext-triage-java"
     }
   }

@@ -248,6 +248,13 @@ def get_workflow_extensions_from_extensions(extensions: list[dict[str, Any]]) ->
         except Exception:
             pass
 
+        try:
+            verify_steps = module.provides_verify_steps()
+            if verify_steps:
+                ext_info['verify_steps'] = verify_steps
+        except Exception:
+            pass
+
         if ext_info:
             workflow_extensions[ext['bundle']] = ext_info
 
@@ -272,7 +279,7 @@ def apply_config_defaults(project_root: Path) -> dict[str, Any]:
             "errors": list[str]
         }
     """
-    extensions = discover_extensions(project_root)
+    extensions = discover_all_extensions()
     results: dict[str, Any] = {'extensions_called': 0, 'extensions_skipped': 0, 'errors': []}
 
     for ext in extensions:
