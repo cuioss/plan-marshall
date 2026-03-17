@@ -195,33 +195,7 @@ def provides_verify_steps(self) -> list[dict]:
 
 See [verify-steps.md](verify-steps.md) for the complete contract including marshal.json storage, enable/disable commands, and runtime consumption.
 
-#### provides_recipes
-
-```python
-def provides_recipes(self) -> list[dict]:
-    """Return domain-specific recipe definitions.
-
-    Recipes are predefined, repeatable transformations that provide their own
-    discovery, analysis, and deliverable patterns.
-
-    Returns:
-        List of recipe dicts, each containing:
-        - key: str           # Unique identifier
-        - name: str          # Human-readable name
-        - description: str   # Brief description for selection UI
-        - skill: str         # Skill reference (e.g., 'pm-dev-java:recipe-null-safety')
-        - default_change_type: str  # Default change_type for deliverables
-        - scope: str         # 'single_module' | 'multi_module' | 'codebase_wide'
-        - profile: str       # (Optional) Execution profile
-        - package_source: str  # (Optional) Package source field name
-
-    Default: []
-    """
-```
-
-See [recipe-extension.md](recipe-extension.md) for the complete contract.
-
-### Primary Methods
+### Optional Methods (Module Applicability)
 
 #### applies_to_module
 
@@ -421,5 +395,5 @@ Some domain bundles are **additive** - they extend a base domain bundle rather t
 - [build-execution.md](build-execution.md) - Build command execution API
 - [build-return.md](build-return.md) - Build return value structure
 - [build-project-structure.md](build-project-structure.md) - Project structure discovery
-- orchestrator-integration.md (manage-architecture skill) - Orchestrator flow and hybrid merging
+- [orchestrator-integration.md](../../manage-architecture/standards/orchestrator-integration.md) - Orchestrator flow and hybrid merging
 - [canonical-commands.md](canonical-commands.md) - Command vocabulary

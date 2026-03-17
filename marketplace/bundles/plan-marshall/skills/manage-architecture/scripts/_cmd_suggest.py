@@ -10,7 +10,7 @@ from typing import Any
 
 from _architecture_core import (
     DataNotFoundError,
-    ModuleNotFoundError,
+    ModuleNotFoundInProjectError,
     get_module,
     load_derived_data,
     print_toon_list,
@@ -50,7 +50,7 @@ def suggest_domains(module_name: str, project_dir: str = '.') -> dict[str, Any]:
         }
 
     Raises:
-        ModuleNotFoundError: If module not found
+        ModuleNotFoundInProjectError: If module not found
         DataNotFoundError: If derived-data.json not found
     """
     derived = load_derived_data(project_dir)
@@ -158,7 +158,7 @@ def cmd_suggest_domains(args) -> int:
 
         print_toon_table('domains', items, ['domain', 'confidence', 'signals', 'additive_to', 'skill_count'])
         return 0
-    except ModuleNotFoundError:
+    except ModuleNotFoundInProjectError:
         from _architecture_core import get_module_names
 
         try:

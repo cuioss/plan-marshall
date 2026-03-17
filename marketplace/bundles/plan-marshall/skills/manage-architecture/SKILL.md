@@ -322,7 +322,7 @@ During verification or after implementation, capture learnings:
 ## Integration
 
 This skill is invoked by:
-- **marshall-steward wizard** Step 6b (after discovery)
+- **marshall-steward wizard** Step 13 (Project Structure Analysis)
 - **Direct activation** when regenerating project structure
 
 Output is consumed by:

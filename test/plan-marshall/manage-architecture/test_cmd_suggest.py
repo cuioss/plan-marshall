@@ -3,7 +3,7 @@
 
 import tempfile
 
-from _architecture_core import ModuleNotFoundError, save_derived_data, save_llm_enriched
+from _architecture_core import ModuleNotFoundInProjectError, save_derived_data, save_llm_enriched
 from _cmd_suggest import suggest_domains
 
 # =============================================================================
@@ -204,11 +204,11 @@ def test_suggest_domains_no_matching_signals():
 
 
 def test_suggest_domains_module_not_found():
-    """Non-existent module raises ModuleNotFoundError."""
+    """Non-existent module raises ModuleNotFoundInProjectError."""
     with tempfile.TemporaryDirectory() as tmpdir:
         setup_test_project(tmpdir)
         try:
             suggest_domains('nonexistent', tmpdir)
-            assert False, 'Should have raised ModuleNotFoundError'
-        except ModuleNotFoundError:
+            assert False, 'Should have raised ModuleNotFoundInProjectError'
+        except ModuleNotFoundInProjectError:
             pass

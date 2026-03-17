@@ -179,12 +179,6 @@ def test_extension_base_default_verify_steps():
     assert ext.provides_verify_steps() == []
 
 
-def test_extension_base_default_recipes():
-    """Default provides_recipes returns empty list."""
-    ext = ConcreteExtension()
-    assert ext.provides_recipes() == []
-
-
 # =============================================================================
 # Tests for applies_to_module() and _build_applicable_result()
 # =============================================================================
@@ -426,7 +420,6 @@ if __name__ == '__main__':
         test_extension_base_default_triage,
         test_extension_base_default_outline_skill,
         test_extension_base_default_verify_steps,
-        test_extension_base_default_recipes,
         test_extension_base_default_applies_to_module,
         test_build_applicable_result_merges_core,
         test_build_applicable_result_with_additive_to,

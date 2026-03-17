@@ -6,11 +6,10 @@ and project recipe-* skills. These tests verify the runtime discovery
 by calling list-recipes and resolve-recipe against live extensions.
 """
 
+# Import shared infrastructure (conftest.py sets up PYTHONPATH)
 from test_helpers import SCRIPT_PATH
 
-# Import shared infrastructure (conftest.py sets up PYTHONPATH)
 from conftest import PlanContext, run_script
-
 
 # =============================================================================
 # list-recipes Tests (runtime discovery)

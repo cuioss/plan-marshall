@@ -8,7 +8,7 @@ from pathlib import Path
 
 from _architecture_core import (
     DataNotFoundError,
-    ModuleNotFoundError,
+    ModuleNotFoundInProjectError,
     save_derived_data,
 )
 
@@ -202,14 +202,14 @@ def test_api_get_derived_module_returns_module():
 
 
 def test_api_get_derived_module_not_found_raises():
-    """api_get_derived_module raises ModuleNotFoundError."""
+    """api_get_derived_module raises ModuleNotFoundInProjectError."""
     with tempfile.TemporaryDirectory() as tmpdir:
         create_test_derived_data(tmpdir)
 
         try:
             api_get_derived_module('nonexistent', tmpdir)
-            assert False, 'Should have raised ModuleNotFoundError'
-        except ModuleNotFoundError:
+            assert False, 'Should have raised ModuleNotFoundInProjectError'
+        except ModuleNotFoundInProjectError:
             pass
 
 

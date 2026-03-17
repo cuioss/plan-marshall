@@ -180,7 +180,7 @@ python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:validate ext
 
 Validation checks:
 - `get_skill_domains()` returns valid structure with `domain.key`, `domain.name`, `profiles`
-- Required profiles exist (`core`, `implementation`, `module_testing` or `testing`, `quality`)
+- Required profiles exist (`core`, `implementation`, `module_testing`, `quality`)
 - Each profile has `defaults` and `optionals` lists
 - Skill references (`bundle:skill`) point to existing registered skills
 
