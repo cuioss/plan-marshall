@@ -143,26 +143,10 @@ def main():
     sd_configure.add_argument('--domains', required=True, help='Comma-separated domain names to enable')
 
     sd_sub.add_parser('discover-project', help='Discover project-level skills from .claude/skills/')
-    sd_sub.add_parser('discover-project-recipes', help='Discover and register recipe-* project skills')
 
     sd_attach = sd_sub.add_parser('attach-project', help='Attach project-level skills to a domain')
     sd_attach.add_argument('--domain', required=True, help='Domain to attach skills to')
     sd_attach.add_argument('--skills', required=True, help='Comma-separated project:skill notations')
-
-    sd_add_recipe = sd_sub.add_parser('add-recipe', help='Add a project-level recipe to a domain')
-    sd_add_recipe.add_argument('--domain', required=True, help='Domain to add recipe to')
-    sd_add_recipe.add_argument('--key', required=True, help='Unique recipe key')
-    sd_add_recipe.add_argument('--skill', required=True, help='Skill reference (project:name or bundle:skill)')
-    sd_add_recipe.add_argument('--name', help='Human-readable name (defaults to key)')
-    sd_add_recipe.add_argument('--description', help='Recipe description')
-    sd_add_recipe.add_argument('--change-type', help='Default change type (default: tech_debt)')
-    sd_add_recipe.add_argument('--scope', help='Scope hint (default: codebase_wide)')
-    sd_add_recipe.add_argument('--profile', help='Optional execution profile')
-    sd_add_recipe.add_argument('--package-source', help='Optional package source field name')
-
-    sd_rm_recipe = sd_sub.add_parser('remove-recipe', help='Remove a project-level recipe from a domain')
-    sd_rm_recipe.add_argument('--domain', required=True, help='Domain to remove recipe from')
-    sd_rm_recipe.add_argument('--key', required=True, help='Recipe key to remove')
 
     # active-profiles subcommands
     sd_ap = sd_sub.add_parser('active-profiles', help='Manage active profile configuration')

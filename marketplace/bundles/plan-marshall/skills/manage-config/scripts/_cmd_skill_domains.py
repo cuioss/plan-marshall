@@ -145,81 +145,6 @@ def discover_project_skills() -> list[dict]:
     return skills
 
 
-def discover_project_recipes() -> list[dict]:
-    """Discover project-level recipe skills from .claude/skills/ directory.
-
-    Identifies skills with 'recipe-' prefix and extracts recipe metadata
-    from SKILL.md Input Parameters table (recipe_domain, recipe_profile,
-    recipe_package_source).
-
-    Returns:
-        List of recipe dicts ready for add-recipe registration.
-    """
-    import re
-
-    claude_skills = Path('.claude/skills')
-    if not claude_skills.is_dir():
-        return []
-
-    recipes: list[dict] = []
-    for skill_dir in sorted(claude_skills.iterdir()):
-        if not skill_dir.is_dir() or not skill_dir.name.startswith('recipe-'):
-            continue
-        skill_md = skill_dir / 'SKILL.md'
-        if not skill_md.exists():
-            continue
-
-        content = skill_md.read_text()
-
-        # Extract frontmatter description
-        description = ''
-        fm_match = re.search(r'^description:\s*(.+)$', content, re.MULTILINE)
-        if fm_match:
-            description = fm_match.group(1).strip()
-
-        # Extract recipe metadata from Input Parameters table
-        domain = ''
-        profile = ''
-        package_source = ''
-        for line in content.split('\n'):
-            if '`recipe_domain`' in line:
-                m = re.search(r'`([^`]+)`\s*\|\s*$', line)
-                if m:
-                    domain = m.group(1)
-                else:
-                    # Try: | `recipe_domain` | `value` |
-                    m = re.search(r'`recipe_domain`.*?`([^`]+)`', line)
-                    if m:
-                        domain = m.group(1)
-            elif '`recipe_profile`' in line:
-                m = re.search(r'`recipe_profile`.*?`([^`]+)`', line)
-                if m:
-                    profile = m.group(1)
-            elif '`recipe_package_source`' in line:
-                m = re.search(r'`recipe_package_source`.*?`([^`]+)`', line)
-                if m:
-                    package_source = m.group(1)
-
-        if not domain:
-            continue  # Not a valid recipe skill without domain
-
-        # Build recipe key from skill name (strip 'recipe-' prefix)
-        key = skill_dir.name.replace('-', '_')  # recipe-plugin-compliance -> recipe_plugin_compliance
-        # Use a more readable key: strip recipe_ prefix for the key
-        readable_key = skill_dir.name[len('recipe-'):].replace('-', '-')  # plugin-compliance
-
-        recipes.append({
-            'key': readable_key,
-            'name': description or skill_dir.name,
-            'description': description,
-            'skill': f'project:{skill_dir.name}',
-            'domain': domain,
-            'profile': profile,
-            'package_source': package_source,
-        })
-
-    return recipes
-
 
 def discover_available_domains(project_root: Path | None = None) -> dict:
     """Discover domains from extension.py files.
@@ -358,12 +283,6 @@ def convert_extension_to_domain_config(module, domain_info: dict, bundle_name: s
                 extensions['triage'] = triage
         if extensions:
             config['workflow_skill_extensions'] = extensions
-
-    # Extract recipes from dedicated function
-    if hasattr(module, 'provides_recipes'):
-        recipes: list = module.provides_recipes()
-        if recipes:
-            config['recipes'] = recipes
 
     return config
 
@@ -691,17 +610,12 @@ def cmd_skill_domains(args) -> int:
     elif args.verb == 'configure':
         selected_domains = [d.strip() for d in args.domains.split(',') if d.strip()]
 
-        # Preserve existing project_skills and project recipes before clearing
+        # Preserve existing project_skills before clearing
         existing_project_skills: dict[str, list] = {}
-        existing_project_recipes: dict[str, list] = {}
         for domain_key, domain_config in skill_domains.items():
             if isinstance(domain_config, dict):
                 if 'project_skills' in domain_config:
                     existing_project_skills[domain_key] = domain_config['project_skills']
-                # Preserve project-sourced recipes (extension recipes get regenerated)
-                project_recipes = [r for r in domain_config.get('recipes', []) if r.get('source') == 'project']
-                if project_recipes:
-                    existing_project_recipes[domain_key] = project_recipes
 
         # Clear existing domains and start fresh with only selected ones
         skill_domains = {}
@@ -732,13 +646,6 @@ def cmd_skill_domains(args) -> int:
         for domain_key, ps in existing_project_skills.items():
             if domain_key in skill_domains:
                 skill_domains[domain_key]['project_skills'] = ps
-
-        # Restore project recipes to domains that still exist
-        for domain_key, pr in existing_project_recipes.items():
-            if domain_key in skill_domains:
-                existing = skill_domains[domain_key].get('recipes', [])
-                existing.extend(pr)
-                skill_domains[domain_key]['recipes'] = existing
 
         config['skill_domains'] = skill_domains
 
@@ -779,47 +686,6 @@ def cmd_skill_domains(args) -> int:
             'count': len(skills),
         })
 
-    elif args.verb == 'discover-project-recipes':
-        recipes = discover_project_recipes()
-        # Auto-register: add each recipe to its target domain if domain is configured
-        added = []
-        skipped = []
-        for recipe in recipes:
-            target_domain = recipe['domain']
-            if target_domain not in skill_domains:
-                skipped.append({'key': recipe['key'], 'reason': f'domain {target_domain} not configured'})
-                continue
-            domain_config = skill_domains[target_domain]
-            existing_recipes = domain_config.get('recipes', [])
-            # Skip duplicates
-            if any(r.get('key') == recipe['key'] for r in existing_recipes):
-                skipped.append({'key': recipe['key'], 'reason': 'already exists'})
-                continue
-            recipe_entry: dict = {
-                'key': recipe['key'],
-                'name': recipe['name'],
-                'description': recipe['description'],
-                'skill': recipe['skill'],
-                'default_change_type': 'tech_debt',
-                'scope': 'codebase_wide',
-                'source': 'project',
-            }
-            if recipe.get('profile'):
-                recipe_entry['profile'] = recipe['profile']
-            if recipe.get('package_source'):
-                recipe_entry['package_source'] = recipe['package_source']
-            existing_recipes.append(recipe_entry)
-            domain_config['recipes'] = existing_recipes
-            added.append({'key': recipe['key'], 'domain': target_domain})
-        if added:
-            config['skill_domains'] = skill_domains
-            save_config(config)
-        return success_exit({
-            'discovered': len(recipes),
-            'added': added,
-            'skipped': skipped,
-        })
-
     elif args.verb == 'attach-project':
         domain = args.domain
         if domain not in skill_domains:
@@ -850,83 +716,6 @@ def cmd_skill_domains(args) -> int:
             'domain': domain,
             'project_skills': merged,
             'added': len(merged) - len(existing),
-        })
-
-    elif args.verb == 'add-recipe':
-        domain = args.domain
-        if domain not in skill_domains:
-            return error_exit(f'Unknown domain: {domain}')
-
-        # Validate required fields
-        key = args.key
-        skill = args.skill
-        name = args.name or key  # default name from key
-
-        # Validate skill notation (must be project:name or bundle:skill)
-        if not skill.startswith('project:') and ':' not in skill:
-            return error_exit(f'Invalid skill notation: {skill}. Must be project:name or bundle:skill')
-
-        domain_config = skill_domains[domain]
-        existing_recipes = domain_config.get('recipes', [])
-
-        # Check for duplicate key
-        for r in existing_recipes:
-            if r.get('key') == key:
-                return error_exit(f'Recipe key already exists: {key}')
-
-        recipe: dict = {
-            'key': key,
-            'name': name,
-            'description': args.description or '',
-            'skill': skill,
-            'default_change_type': args.change_type or 'tech_debt',
-            'scope': args.scope or 'codebase_wide',
-            'source': 'project',
-        }
-        # Optional fields
-        if args.profile:
-            recipe['profile'] = args.profile
-        if args.package_source:
-            recipe['package_source'] = args.package_source
-
-        existing_recipes.append(recipe)
-        domain_config['recipes'] = existing_recipes
-        config['skill_domains'] = skill_domains
-        save_config(config)
-
-        return success_exit({
-            'domain': domain,
-            'recipe_key': key,
-            'added': True,
-        })
-
-    elif args.verb == 'remove-recipe':
-        domain = args.domain
-        if domain not in skill_domains:
-            return error_exit(f'Unknown domain: {domain}')
-
-        key = args.key
-        domain_config = skill_domains[domain]
-        existing_recipes = domain_config.get('recipes', [])
-
-        # Find recipe
-        found: dict | None = next((r for r in existing_recipes if r.get('key') == key), None)
-        if not found:
-            return error_exit(f'Recipe not found: {key}')
-
-        # Only allow removing project-level recipes
-        if found.get('source') != 'project':
-            return error_exit(f'Cannot remove non-project recipe: {key}. Only project-level recipes can be removed.')
-
-        existing_recipes.remove(found)
-        domain_config['recipes'] = existing_recipes
-        config['skill_domains'] = skill_domains
-        save_config(config)
-
-        return success_exit({
-            'domain': domain,
-            'recipe_key': key,
-            'removed': True,
         })
 
     elif args.verb == 'active-profiles':
@@ -1249,62 +1038,126 @@ def cmd_resolve_task_executor(args) -> int:
     return success_exit({'profile': profile, 'task_executor': task_executor})
 
 
-def cmd_list_recipes(args) -> int:
-    """List all available recipes from configured domains.
+def _discover_all_recipes() -> list[dict]:
+    """Discover all recipes at runtime from extensions and project skills.
 
-    Aggregates recipes from all configured domains in marshal.json.
+    Sources (in order):
+    1. Extension provides_recipes() — domain bundle recipes
+    2. Project recipe-* skills in .claude/skills/ — project-level recipes
+
+    Returns:
+        List of recipe dicts with domain assignment.
     """
-    try:
-        require_initialized()
-    except MarshalNotInitializedError as e:
-        return error_exit(str(e))
+    import re
 
-    config = load_config()
-    skill_domains = config.get('skill_domains', {})
+    all_recipes: list[dict] = []
 
-    all_recipes = []
-    for domain_key, domain_config in skill_domains.items():
-        if not isinstance(domain_config, dict):
+    # Source 1: Extension provides_recipes()
+    extensions = discover_all_extensions()
+    for ext in extensions:
+        module = ext.get('module')
+        if not module or not hasattr(module, 'provides_recipes'):
             continue
-        recipes = domain_config.get('recipes', [])
-        for recipe in recipes:
-            entry = dict(recipe)
-            entry['domain'] = domain_key
-            all_recipes.append(entry)
+        try:
+            recipes = module.provides_recipes()
+            if not recipes:
+                continue
+            # Determine domain for these recipes
+            all_domains = module.get_skill_domains()
+            domain_key = all_domains[0].get('domain', {}).get('key', '') if all_domains else ''
+            for recipe in recipes:
+                entry = dict(recipe)
+                entry['domain'] = domain_key
+                entry['source'] = 'extension'
+                all_recipes.append(entry)
+        except Exception:
+            pass
 
+    # Source 2: Project recipe-* skills
+    claude_skills = Path('.claude/skills')
+    if claude_skills.is_dir():
+        for skill_dir in sorted(claude_skills.iterdir()):
+            if not skill_dir.is_dir() or not skill_dir.name.startswith('recipe-'):
+                continue
+            skill_md = skill_dir / 'SKILL.md'
+            if not skill_md.exists():
+                continue
+
+            content = skill_md.read_text()
+
+            # Extract frontmatter description
+            description = ''
+            fm_match = re.search(r'^description:\s*(.+)$', content, re.MULTILINE)
+            if fm_match:
+                description = fm_match.group(1).strip()
+
+            # Extract recipe metadata from Input Parameters table
+            domain = ''
+            profile = ''
+            package_source = ''
+            for line in content.split('\n'):
+                if '`recipe_domain`' in line:
+                    m = re.search(r'`recipe_domain`.*?`([^`]+)`', line)
+                    if m:
+                        domain = m.group(1)
+                elif '`recipe_profile`' in line:
+                    m = re.search(r'`recipe_profile`.*?`([^`]+)`', line)
+                    if m:
+                        profile = m.group(1)
+                elif '`recipe_package_source`' in line:
+                    m = re.search(r'`recipe_package_source`.*?`([^`]+)`', line)
+                    if m:
+                        package_source = m.group(1)
+
+            if not domain:
+                continue
+
+            key = skill_dir.name[len('recipe-'):]  # recipe-plugin-compliance -> plugin-compliance
+            all_recipes.append({
+                'key': key,
+                'name': description or skill_dir.name,
+                'description': description,
+                'skill': f'project:{skill_dir.name}',
+                'default_change_type': 'tech_debt',
+                'scope': 'codebase_wide',
+                'domain': domain,
+                'profile': profile,
+                'package_source': package_source,
+                'source': 'project',
+            })
+
+    return all_recipes
+
+
+def cmd_list_recipes(args) -> int:
+    """List all available recipes discovered at runtime.
+
+    Sources: extension provides_recipes() + project recipe-* skills.
+    """
+    all_recipes = _discover_all_recipes()
     return success_exit({'recipes': all_recipes, 'count': len(all_recipes)})
 
 
 def cmd_resolve_recipe(args) -> int:
     """Resolve a specific recipe by key.
 
-    Searches all configured domains for a recipe matching the given key.
+    Discovers all recipes at runtime and finds the matching key.
     """
-    try:
-        require_initialized()
-    except MarshalNotInitializedError as e:
-        return error_exit(str(e))
-
     recipe_key = args.recipe
-    config = load_config()
-    skill_domains = config.get('skill_domains', {})
+    all_recipes = _discover_all_recipes()
 
-    for domain_key, domain_config in skill_domains.items():
-        if not isinstance(domain_config, dict):
-            continue
-        recipes = domain_config.get('recipes', [])
-        for recipe in recipes:
-            if recipe.get('key') == recipe_key:
-                return success_exit({
-                    'recipe_key': recipe['key'],
-                    'recipe_name': recipe.get('name', ''),
-                    'recipe_skill': recipe.get('skill', ''),
-                    'default_change_type': recipe.get('default_change_type', ''),
-                    'scope': recipe.get('scope', ''),
-                    'domain': domain_key,
-                    'profile': recipe.get('profile', ''),
-                    'package_source': recipe.get('package_source', ''),
-                })
+    for recipe in all_recipes:
+        if recipe.get('key') == recipe_key:
+            return success_exit({
+                'recipe_key': recipe['key'],
+                'recipe_name': recipe.get('name', ''),
+                'recipe_skill': recipe.get('skill', ''),
+                'default_change_type': recipe.get('default_change_type', ''),
+                'scope': recipe.get('scope', ''),
+                'domain': recipe.get('domain', ''),
+                'profile': recipe.get('profile', ''),
+                'package_source': recipe.get('package_source', ''),
+            })
 
     return error_exit(f"Recipe not found: {recipe_key}")
 
