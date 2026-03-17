@@ -11,7 +11,7 @@ from typing import Any
 
 from _architecture_core import (
     DataNotFoundError,
-    ModuleNotFoundError,
+    ModuleNotFoundInProjectError,
     get_enriched_path,
     get_module_names,
     load_derived_data,
@@ -79,7 +79,7 @@ def enrich_module(
     derived = load_derived_data(project_dir)
     modules = get_module_names(derived)
     if module_name not in modules:
-        raise ModuleNotFoundError(f'Module not found: {module_name}', modules)
+        raise ModuleNotFoundInProjectError(f'Module not found: {module_name}', modules)
 
     enriched = load_llm_enriched(project_dir)
 
@@ -130,7 +130,7 @@ def enrich_package(
     derived = load_derived_data(project_dir)
     modules = get_module_names(derived)
     if module_name not in modules:
-        raise ModuleNotFoundError(f'Module not found: {module_name}', modules)
+        raise ModuleNotFoundInProjectError(f'Module not found: {module_name}', modules)
 
     enriched = load_llm_enriched(project_dir)
 
@@ -297,7 +297,7 @@ def enrich_add_domain(
         Dict with status, module, domain, profiles_updated, and skills_by_profile
 
     Raises:
-        ModuleNotFoundError: If module not found
+        ModuleNotFoundInProjectError: If module not found
         DataNotFoundError: If data files not found
         ValueError: If domain is 'system' or not found
     """
@@ -310,7 +310,7 @@ def enrich_add_domain(
 
     modules = get_module_names(derived)
     if module_name not in modules:
-        raise ModuleNotFoundError(f'Module not found: {module_name}', modules)
+        raise ModuleNotFoundInProjectError(f'Module not found: {module_name}', modules)
 
     module_data = get_module(derived, module_name)
 
@@ -430,7 +430,7 @@ def enrich_skills_by_profile(
     derived = load_derived_data(project_dir)
     modules = get_module_names(derived)
     if module_name not in modules:
-        raise ModuleNotFoundError(f'Module not found: {module_name}', modules)
+        raise ModuleNotFoundInProjectError(f'Module not found: {module_name}', modules)
 
     # Validate structure
     warnings = _validate_skills_by_profile_structure(skills_by_profile)
@@ -480,7 +480,7 @@ def enrich_dependencies(
     derived = load_derived_data(project_dir)
     modules = get_module_names(derived)
     if module_name not in modules:
-        raise ModuleNotFoundError(f'Module not found: {module_name}', modules)
+        raise ModuleNotFoundInProjectError(f'Module not found: {module_name}', modules)
 
     enriched = load_llm_enriched(project_dir)
 
@@ -565,7 +565,7 @@ def _append_to_list(module_name: str, field: str, value: str, project_dir: str =
     derived = load_derived_data(project_dir)
     modules = get_module_names(derived)
     if module_name not in modules:
-        raise ModuleNotFoundError(f'Module not found: {module_name}', modules)
+        raise ModuleNotFoundInProjectError(f'Module not found: {module_name}', modules)
 
     enriched = load_llm_enriched(project_dir)
 
@@ -642,7 +642,7 @@ def cmd_enrich_module(args) -> int:
         print(f'module\t{result["module"]}')
         print_toon_list('updated', result['updated'])
         return 0
-    except ModuleNotFoundError:
+    except ModuleNotFoundInProjectError:
         return _handle_module_not_found(args.name, args.project_dir)
     except DataNotFoundError:
         print('error: Enrichment data not found')
@@ -669,7 +669,7 @@ def cmd_enrich_package(args) -> int:
         if 'components' in result:
             print_toon_list('components', result['components'])
         return 0
-    except ModuleNotFoundError:
+    except ModuleNotFoundInProjectError:
         return _handle_module_not_found(args.module, args.project_dir)
     except DataNotFoundError:
         print('error: Enrichment data not found')
@@ -734,7 +734,7 @@ def cmd_enrich_skills_by_profile(args) -> int:
         print('status\terror', file=sys.stderr)
         print(f'error\tInvalid JSON: {e}', file=sys.stderr)
         return 1
-    except ModuleNotFoundError:
+    except ModuleNotFoundInProjectError:
         return _handle_module_not_found(args.module, args.project_dir)
     except DataNotFoundError:
         print('error: Enrichment data not found')
@@ -766,7 +766,7 @@ def cmd_enrich_dependencies(args) -> int:
         if 'internal_dependencies' in result:
             print_toon_list('internal_dependencies', result['internal_dependencies'])
         return 0
-    except ModuleNotFoundError:
+    except ModuleNotFoundInProjectError:
         return _handle_module_not_found(args.module, args.project_dir)
     except DataNotFoundError:
         print('error: Enrichment data not found')
@@ -787,7 +787,7 @@ def cmd_enrich_tip(args) -> int:
         print(f'module\t{result["module"]}')
         print_toon_list('tips', result['tips'])
         return 0
-    except ModuleNotFoundError:
+    except ModuleNotFoundInProjectError:
         return _handle_module_not_found(args.module, args.project_dir)
     except DataNotFoundError:
         print('error: Enrichment data not found')
@@ -808,7 +808,7 @@ def cmd_enrich_insight(args) -> int:
         print(f'module\t{result["module"]}')
         print_toon_list('insights', result['insights'])
         return 0
-    except ModuleNotFoundError:
+    except ModuleNotFoundInProjectError:
         return _handle_module_not_found(args.module, args.project_dir)
     except DataNotFoundError:
         print('error: Enrichment data not found')
@@ -829,7 +829,7 @@ def cmd_enrich_best_practice(args) -> int:
         print(f'module\t{result["module"]}')
         print_toon_list('best_practices', result['best_practices'])
         return 0
-    except ModuleNotFoundError:
+    except ModuleNotFoundInProjectError:
         return _handle_module_not_found(args.module, args.project_dir)
     except DataNotFoundError:
         print('error: Enrichment data not found')
@@ -859,7 +859,7 @@ def cmd_enrich_add_domain(args) -> int:
         print_toon_list('profiles_updated', result['profiles_updated'])
         _print_skills_by_profile(result['skills_by_profile'])
         return 0
-    except ModuleNotFoundError:
+    except ModuleNotFoundInProjectError:
         return _handle_module_not_found(args.module, args.project_dir)
     except (DataNotFoundError, ValueError) as e:
         print(f'error\t{e}')

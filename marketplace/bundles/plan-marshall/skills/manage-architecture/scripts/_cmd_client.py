@@ -10,7 +10,7 @@ from typing import Any
 
 from _architecture_core import (
     DataNotFoundError,
-    ModuleNotFoundError,
+    ModuleNotFoundInProjectError,
     error_command_not_found,
     error_data_not_found,
     error_module_not_found,
@@ -324,7 +324,7 @@ def get_module_info(module_name: str | None = None, full: bool = False, project_
     if not module_name:
         module_name = get_root_module(derived)
         if not module_name:
-            raise ModuleNotFoundError('No modules found', [])
+            raise ModuleNotFoundInProjectError('No modules found', [])
 
     # Merge data
     merged = merge_module_data(derived, enriched, module_name)
@@ -366,7 +366,7 @@ def get_module_commands(module_name: str | None = None, project_dir: str = '.') 
     if not module_name:
         module_name = get_root_module(derived)
         if not module_name:
-            raise ModuleNotFoundError('No modules found', [])
+            raise ModuleNotFoundInProjectError('No modules found', [])
 
     module = get_module(derived, module_name)
     commands = module.get('commands', {})
@@ -404,7 +404,7 @@ def resolve_command(command_name: str, module_name: str | None = None, project_d
     if not module_name:
         module_name = get_root_module(derived)
         if not module_name:
-            raise ModuleNotFoundError('No modules found', [])
+            raise ModuleNotFoundInProjectError('No modules found', [])
 
     module = get_module(derived, module_name)
     commands = module.get('commands', {})
@@ -706,7 +706,7 @@ def cmd_module(args) -> int:
     except DataNotFoundError:
         error_data_not_found(str(get_derived_path(args.project_dir)), "Run 'architecture.py discover' first")
         return 1
-    except ModuleNotFoundError:
+    except ModuleNotFoundInProjectError:
         modules = get_modules_list(args.project_dir)
         error_module_not_found(args.name, modules)
         return 1
@@ -729,7 +729,7 @@ def cmd_commands(args) -> int:
     except DataNotFoundError:
         error_data_not_found(str(get_derived_path(args.project_dir)), "Run 'architecture.py discover' first")
         return 1
-    except ModuleNotFoundError:
+    except ModuleNotFoundInProjectError:
         modules = get_modules_list(args.project_dir)
         error_module_not_found(args.name, modules)
         return 1
@@ -753,7 +753,7 @@ def cmd_resolve(args) -> int:
     except DataNotFoundError:
         error_data_not_found(str(get_derived_path(args.project_dir)), "Run 'architecture.py discover' first")
         return 1
-    except ModuleNotFoundError:
+    except ModuleNotFoundInProjectError:
         modules = get_modules_list(args.project_dir)
         error_module_not_found(args.name, modules)
         return 1
@@ -841,7 +841,7 @@ def cmd_profiles(args) -> int:
             all_modules = get_module_names(derived)
             for name in module_names:
                 if name not in all_modules:
-                    raise ModuleNotFoundError(f'Module not found: {name}', all_modules)
+                    raise ModuleNotFoundInProjectError(f'Module not found: {name}', all_modules)
         else:
             # Default: all modules with enrichment data
             module_names = list(enriched_modules.keys())
@@ -873,7 +873,7 @@ def cmd_profiles(args) -> int:
     except DataNotFoundError:
         error_data_not_found(str(get_derived_path(args.project_dir)), "Run 'architecture.py discover' first")
         return 1
-    except ModuleNotFoundError as e:
+    except ModuleNotFoundInProjectError as e:
         modules = get_module_names(load_derived_data(args.project_dir))
         error_module_not_found(str(e), modules)
         return 1
@@ -904,7 +904,7 @@ def cmd_siblings(args) -> int:
     except DataNotFoundError:
         error_data_not_found(str(get_derived_path(args.project_dir)), "Run 'architecture.py discover' first")
         return 1
-    except ModuleNotFoundError:
+    except ModuleNotFoundInProjectError:
         modules = get_modules_list(args.project_dir)
         error_module_not_found(args.name, modules)
         return 1

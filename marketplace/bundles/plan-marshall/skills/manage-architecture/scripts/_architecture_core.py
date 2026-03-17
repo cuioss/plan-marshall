@@ -38,7 +38,7 @@ class DataNotFoundError(ArchitectureError):
     pass
 
 
-class ModuleNotFoundError(ArchitectureError):
+class ModuleNotFoundInProjectError(ArchitectureError):
     """Raised when a module is not found in the data."""
 
     pass
@@ -217,12 +217,12 @@ def get_module(derived: dict[str, Any], module_name: str) -> dict[str, Any]:
         Module data dict
 
     Raises:
-        ModuleNotFoundError: If module not found
+        ModuleNotFoundInProjectError: If module not found
     """
     modules = derived.get('modules', {})
     if module_name not in modules:
         available = list(modules.keys())
-        raise ModuleNotFoundError(f'Module not found: {module_name}', available)
+        raise ModuleNotFoundInProjectError(f'Module not found: {module_name}', available)
     result: dict[str, Any] = modules[module_name]
     return result
 

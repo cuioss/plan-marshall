@@ -4,7 +4,7 @@
 import tempfile
 
 from _architecture_core import (
-    ModuleNotFoundError,
+    ModuleNotFoundInProjectError,
     load_llm_enriched,
     save_derived_data,
     save_llm_enriched,
@@ -206,11 +206,11 @@ def test_add_domain_nonexistent_domain():
 
 
 def test_add_domain_nonexistent_module():
-    """Non-existent module raises ModuleNotFoundError."""
+    """Non-existent module raises ModuleNotFoundInProjectError."""
     with tempfile.TemporaryDirectory() as tmpdir:
         setup_test_project(tmpdir)
         try:
             enrich_add_domain('nonexistent-module', 'general-dev', tmpdir)
-            assert False, 'Should have raised ModuleNotFoundError'
-        except ModuleNotFoundError:
+            assert False, 'Should have raised ModuleNotFoundInProjectError'
+        except ModuleNotFoundInProjectError:
             pass

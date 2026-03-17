@@ -6,7 +6,7 @@ import tempfile
 
 from _architecture_core import (
     DataNotFoundError,
-    ModuleNotFoundError,
+    ModuleNotFoundInProjectError,
     load_llm_enriched,
     save_derived_data,
     save_llm_enriched,
@@ -163,14 +163,14 @@ def test_enrich_module_updates_purpose():
 
 
 def test_enrich_module_not_found_raises():
-    """enrich_module raises ModuleNotFoundError for invalid module."""
+    """enrich_module raises ModuleNotFoundInProjectError for invalid module."""
     with tempfile.TemporaryDirectory() as tmpdir:
         setup_test_project(tmpdir)
 
         try:
             enrich_module('nonexistent', 'desc', None, tmpdir)
-            assert False, 'Should have raised ModuleNotFoundError'
-        except ModuleNotFoundError:
+            assert False, 'Should have raised ModuleNotFoundInProjectError'
+        except ModuleNotFoundInProjectError:
             pass
 
 
@@ -361,8 +361,8 @@ def test_enrich_skills_by_profile_module_not_found():
 
         try:
             enrich_skills_by_profile('nonexistent', {'implementation': []}, tmpdir)
-            assert False, 'Should have raised ModuleNotFoundError'
-        except ModuleNotFoundError:
+            assert False, 'Should have raised ModuleNotFoundInProjectError'
+        except ModuleNotFoundInProjectError:
             pass
 
 

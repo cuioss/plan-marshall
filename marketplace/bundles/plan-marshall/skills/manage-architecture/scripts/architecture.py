@@ -72,6 +72,10 @@ def main():
     resolve_parser.add_argument('--command', required=True, dest='resolve_command', help='Command name to resolve')
     resolve_parser.add_argument('--name', help='Module name (default: root module)')
 
+    # siblings - Find sibling virtual modules
+    siblings_parser = subparsers.add_parser('siblings', help='Find sibling virtual modules for a given module')
+    siblings_parser.add_argument('--name', required=True, help='Module name')
+
     # suggest-domains - Suggest applicable skill domains for a module
     suggest_parser = subparsers.add_parser('suggest-domains', help='Suggest applicable skill domains for a module')
     suggest_parser.add_argument('--module', required=True, help='Module name')
@@ -182,6 +186,7 @@ def main():
         cmd_modules,
         cmd_profiles,
         cmd_resolve,
+        cmd_siblings,
     )
     from _cmd_enrich import (
         cmd_enrich_add_domain,
@@ -215,6 +220,7 @@ def main():
         'commands': cmd_commands,
         'resolve': cmd_resolve,
         'profiles': cmd_profiles,
+        'siblings': cmd_siblings,
         'suggest-domains': cmd_suggest_domains,
     }
 

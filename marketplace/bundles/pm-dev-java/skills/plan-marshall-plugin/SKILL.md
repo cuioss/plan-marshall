@@ -24,7 +24,6 @@ Configuration in `extension.py` implements the Extension API contract:
 | `applies_to_module()` | Check Java applicability via build systems |
 | `provides_triage()` | Returns `pm-dev-java:ext-triage-java` |
 | `provides_verify_steps()` | Java verification agents |
-| `provides_recipes()` | Custom recipe definitions |
 
 ## Build Operations
 

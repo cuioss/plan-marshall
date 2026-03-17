@@ -47,7 +47,6 @@ extension-api/
     ├── triage-extension.md         # Triage extension contract
     ├── outline-extension.md        # Outline extension contract
     ├── verify-steps.md             # Verify steps contract
-    ├── recipe-extension.md         # Recipe extension contract
     ├── build-execution.md          # Execution patterns and lifecycle (optional)
     ├── build-return.md             # Return value structure (optional)
     ├── build-project-structure.md  # Module discovery output (optional)
@@ -84,7 +83,6 @@ All extensions **must** inherit from `ExtensionBase` and implement required meth
 | `provides_triage() -> str \| None` | `None` | Return triage skill reference |
 | `provides_outline_skill() -> str \| None` | `None` | Return domain-specific outline skill reference |
 | `provides_verify_steps() -> list[dict]` | `[]` | Return domain-specific verification steps |
-| `provides_recipes() -> list[dict]` | `[]` | Return available recipe definitions |
 
 ---
 
@@ -110,7 +108,6 @@ All extensions **must** inherit from `ExtensionBase` and implement required meth
 │  LAYER 3: EXTENSIONS (Domain provides, loaded BY system skills) │
 │  outline-ext: Codebase analysis, deliverable patterns            │
 │  triage-ext: Suppression syntax, severity guidelines             │
-│  recipe-ext: Predefined repeatable transformations               │
 │                            │                                     │
 │                            │ loads                               │
 │                            ▼                                     │
@@ -135,13 +132,14 @@ For understanding the complete system architecture, reference these documents:
 
 | Document | Purpose | When to Read |
 |----------|---------|--------------|
+| [extension-contract.md](standards/extension-contract.md) | Complete extension API contract | Creating a new extension |
+| [canonical-commands.md](standards/canonical-commands.md) | Command vocabulary and resolution | Implementing `discover_modules()` commands |
 | [skill-domains.md](standards/skill-domains.md) | Skill domains contract | Implementing `get_skill_domains()` |
 | [module-discovery.md](standards/module-discovery.md) | Module discovery contract | Implementing `discover_modules()` |
 | [config-callback.md](standards/config-callback.md) | Project configuration callback | Implementing `config_defaults()` |
 | [triage-extension.md](standards/triage-extension.md) | Triage extension contract | Implementing `provides_triage()` |
 | [outline-extension.md](standards/outline-extension.md) | Outline extension contract | Implementing `provides_outline_skill()` |
 | [verify-steps.md](standards/verify-steps.md) | Verify steps contract | Implementing `provides_verify_steps()` |
-| [recipe-extension.md](standards/recipe-extension.md) | Recipe extension contract | Implementing `provides_recipes()` |
 | [build-execution.md](standards/build-execution.md) | Execution patterns and lifecycle | Running build commands |
 | [build-return.md](standards/build-return.md) | Return value structure | Formatting command output |
 | [build-project-structure.md](standards/build-project-structure.md) | Module discovery output spec | Understanding `discover_modules()` output format |
@@ -150,7 +148,7 @@ For understanding the complete system architecture, reference these documents:
 | [profile-implementation.md](standards/profile-implementation.md) | Implementation profile contract | Implementing/overriding the implementation profile |
 | [profile-module-testing.md](standards/profile-module-testing.md) | Module testing profile contract | Implementing/overriding the module testing profile |
 | [user-review-protocol.md](standards/user-review-protocol.md) | User review gate protocol | Understanding mandatory user review after outline |
-| orchestrator-integration.md (manage-architecture skill) | Orchestrator merge logic | Understanding hybrid modules |
+| [orchestrator-integration.md](../manage-architecture/standards/orchestrator-integration.md) | Orchestrator merge logic | Understanding hybrid modules |
 
 **Note**: These documents define the target architecture. Implementation may be in progress.
 
@@ -343,17 +341,3 @@ class Extension(ExtensionBase):
 - **manage-config** - Uses `discover_all_extensions()` for domain configuration
 - **Domain bundles** - Implement `extension.py` inheriting from `ExtensionBase`
 
----
-
-## References
-
-- `standards/extension-contract.md` - Extension API contract (required)
-- `standards/skill-domains.md` - Skill domains contract (required)
-- `standards/module-discovery.md` - Module discovery contract (required)
-- `standards/canonical-commands.md` - Command vocabulary and resolution (required)
-- `standards/config-callback.md` - Project configuration callback (required)
-- `standards/triage-extension.md` - Triage extension contract (required)
-- `standards/outline-extension.md` - Outline extension contract (required)
-- `standards/verify-steps.md` - Verify steps contract (required)
-- `standards/recipe-extension.md` - Recipe extension contract (required)
-- `standards/build-execution.md` - Execution patterns and lifecycle (optional)

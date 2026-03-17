@@ -9,7 +9,7 @@ from pathlib import Path
 
 from _architecture_core import (
     DataNotFoundError,
-    ModuleNotFoundError,
+    ModuleNotFoundInProjectError,
     error_data_not_found,
     error_module_not_found,
     get_derived_path,
@@ -148,7 +148,7 @@ def api_get_derived_module(module_name: str, project_dir: str = '.') -> dict:
         Module data dict
 
     Raises:
-        ModuleNotFoundError: If module not found
+        ModuleNotFoundInProjectError: If module not found
     """
     derived = load_derived_data(project_dir)
     return get_module(derived, module_name)
@@ -345,7 +345,7 @@ def cmd_derived_module(args) -> int:
     except DataNotFoundError:
         error_data_not_found(str(get_derived_path(args.project_dir)), "Run 'architecture.py discover' first")
         return 1
-    except ModuleNotFoundError:
+    except ModuleNotFoundInProjectError:
         modules = get_module_names(load_derived_data(args.project_dir))
         error_module_not_found(args.name, modules)
         return 1

@@ -52,10 +52,10 @@ For visual diagrams of component interactions, see:
 |-------|----------------|---------------|
 | **1-init** | `plan-marshall:phase-1-init` | `plan-marshall:phase-1-init/SKILL.md` |
 | **2-refine** | `plan-marshall:phase-2-refine` | `plan-marshall:phase-2-refine/SKILL.md` |
-| **3-outline** | `plan-marshall:phase-3-outline` | [phase-3-outline-contract.md](phase-3-outline-contract.md) |
-| **4-plan** | `plan-marshall:phase-4-plan` | [phase-4-plan-contract.md](phase-4-plan-contract.md) |
-| **5-execute** | `plan-marshall:phase-5-execute` | `plan-marshall:manage-tasks/standards/task-execution-contract.md` |
-| **6-finalize** | `plan-marshall:phase-6-finalize` | [phase-6-finalize-contract.md](phase-6-finalize-contract.md) |
+| **3-outline** | `plan-marshall:phase-3-outline` | `plan-marshall:phase-3-outline/SKILL.md` |
+| **4-plan** | `plan-marshall:phase-4-plan` | `plan-marshall:phase-4-plan/SKILL.md` |
+| **5-execute** | `plan-marshall:phase-5-execute` | `plan-marshall:phase-5-execute/SKILL.md` |
+| **6-finalize** | `plan-marshall:phase-6-finalize` | `plan-marshall:phase-6-finalize/SKILL.md` |
 
 ---
 
@@ -166,10 +166,10 @@ recoverable	{true|false}
 
 - `plan-marshall:phase-1-init/SKILL.md` - Init phase skill
 - `plan-marshall:phase-2-refine/SKILL.md` - Refine phase skill
-- [phase-3-outline-contract.md](phase-3-outline-contract.md) - Outline phase contract
-- [phase-4-plan-contract.md](phase-4-plan-contract.md) - Plan phase contract
-- `plan-marshall:manage-tasks/standards/task-execution-contract.md` - Task execution contract
-- [phase-6-finalize-contract.md](phase-6-finalize-contract.md) - Finalize phase contract
+- `plan-marshall:phase-3-outline/SKILL.md` - Outline phase skill
+- `plan-marshall:phase-4-plan/SKILL.md` - Plan phase skill
+- `plan-marshall:phase-5-execute/SKILL.md` - Execute phase skill
+- `plan-marshall:phase-6-finalize/SKILL.md` - Finalize phase skill
 - [extension-api.md](extension-api.md) - Extension mechanism
 - [deliverable-contract.md](../../manage-solution-outline/standards/deliverable-contract.md) - Deliverable structure
 - [task-contract.md](../../manage-tasks/standards/task-contract.md) - Task structure

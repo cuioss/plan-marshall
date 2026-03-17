@@ -10,7 +10,7 @@ from pathlib import Path
 from _architecture_core import (
     DATA_DIR,
     DataNotFoundError,
-    ModuleNotFoundError,
+    ModuleNotFoundInProjectError,
     format_toon_value,
     get_data_dir,
     get_derived_path,
@@ -210,12 +210,12 @@ def test_get_module_success():
 
 
 def test_get_module_not_found_raises():
-    """get_module raises ModuleNotFoundError when not found."""
+    """get_module raises ModuleNotFoundInProjectError when not found."""
     derived = {'modules': {'existing': {}}}
     try:
         get_module(derived, 'missing')
-        assert False, 'Should have raised ModuleNotFoundError'
-    except ModuleNotFoundError:
+        assert False, 'Should have raised ModuleNotFoundInProjectError'
+    except ModuleNotFoundInProjectError:
         pass
 
 
