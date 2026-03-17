@@ -8,15 +8,6 @@ user-invocable: false
 
 Lombok standards for reducing boilerplate code while maintaining code quality and testability.
 
-## Prerequisites
-
-```xml
-<dependency>
-    <groupId>org.projectlombok</groupId>
-    <artifactId>lombok</artifactId>
-    <scope>provided</scope>
-</dependency>
-```
 
 ## Core Annotations
 
@@ -166,6 +157,87 @@ Makes class final, constructor private, all methods static.
 
 - **Records + @Builder**: Default choice for immutable types with many parameters. Accept the limitation that defaults require a partial manual builder class.
 - **Classes + @Builder**: Use when you need `@Builder.Default`, `toBuilder`, or Jackson annotations that don't work well on record components.
+
+## Canonical Methods for Regular Classes
+
+When records or `@Value` are not applicable (JPA entities, mutable beans, classes with inheritance), use Lombok annotations for `equals`, `hashCode`, and `toString`.
+
+### @EqualsAndHashCode
+
+```java
+// Entity with business key — exclude surrogate ID
+@Entity
+@EqualsAndHashCode(of = "email")
+public class UserEntity {
+    @Id @GeneratedValue
+    private Long id;
+    private String email;
+    private String displayName;
+}
+
+// Inheritance — use callSuper to include parent fields
+@EqualsAndHashCode(callSuper = true)
+public class AdminUser extends UserEntity {
+    private Set<String> permissions;
+}
+```
+
+**Rules**:
+- **Always specify `of`** (include-list) for entities — never use the surrogate ID
+- Use `callSuper = true` when the superclass has meaningful fields
+- Default (all non-static, non-transient fields) is fine for simple DTOs
+
+### @ToString
+
+```java
+// Exclude sensitive fields
+@ToString(exclude = "passwordHash")
+public class UserCredentials {
+    private String username;
+    private String passwordHash;
+    private Instant lastLogin;
+}
+
+// Include only specific fields for readability
+@ToString(of = {"orderId", "status"})
+public class OrderEntity {
+    private Long id;
+    private String orderId;
+    private OrderStatus status;
+    private List<OrderItem> items;
+}
+
+// Inheritance
+@ToString(callSuper = true)
+public class PremiumOrder extends OrderEntity {
+    private BigDecimal discount;
+}
+```
+
+**Rules**:
+- **Always exclude** sensitive data (passwords, tokens, PII)
+- Use `of` for classes with many fields to keep output readable
+- Use `callSuper = true` with inheritance
+
+### @Getter / @Setter for Mutable Beans
+
+```java
+// JPA entity — minimal Lombok, explicit canonical methods
+@Entity
+@Getter
+@Setter
+@EqualsAndHashCode(of = "email")
+@ToString(exclude = "passwordHash")
+public class UserEntity {
+    @Id @GeneratedValue
+    private Long id;
+    private String email;
+    private String displayName;
+    private String passwordHash;
+}
+```
+
+**Prefer records** for immutable data. Use `@Getter`/`@Setter` + explicit `@EqualsAndHashCode`/`@ToString` only when mutability or JPA proxy requirements prevent using records.
 
 ## Common Pitfalls
 
