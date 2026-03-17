@@ -37,7 +37,7 @@ Java-specific exception rules beyond the general principles in `plan-marshall:de
 * Use checked exceptions for recoverable conditions
 * Use unchecked exceptions for programming errors
 * Never catch `Throwable` or `Error` (SonarQube S1181)
-* Never throw generic `Exception` or `RuntimeException` (SonarQube S112)
+* Never catch or throw generic `Exception` or `RuntimeException` (SonarQube S112)
 * Preserve exception causes with chaining
 
 ```java
