@@ -431,6 +431,10 @@ class ExtensionBase(ABC):
                                   active_profiles: set[str] | None = None) -> dict:
         """Helper: build applicable result from own get_skill_domains() profiles.
 
+        Note: Uses first domain entry only. Designed for single-domain extensions.
+        Multi-domain extensions (e.g., plan-marshall) should implement applies_to_module
+        directly with explicit domain selection.
+
         Merges 'core' profile into each non-core profile to produce a flat
         skills_by_profile dict ready for consumption.
 
