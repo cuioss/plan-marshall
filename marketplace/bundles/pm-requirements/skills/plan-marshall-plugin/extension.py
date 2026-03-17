@@ -33,7 +33,15 @@ class Extension(ExtensionBase):
                 'description': 'User stories, acceptance criteria, specifications',
             },
             'profiles': {
-                'core': {'defaults': ['pm-requirements:requirements-authoring'], 'optionals': []},
+                'core': {
+                    'defaults': [
+                        {
+                            'skill': 'pm-requirements:requirements-authoring',
+                            'description': 'Requirements authoring standards for user stories and acceptance criteria',
+                        },
+                    ],
+                    'optionals': [],
+                },
                 'implementation': {'defaults': [], 'optionals': []},
                 'module_testing': {'defaults': [], 'optionals': []},
                 'quality': {'defaults': [], 'optionals': []},

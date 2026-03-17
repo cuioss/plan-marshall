@@ -2,7 +2,7 @@
 """Build result output formatting utilities.
 
 Shared formatting for build command results across build systems.
-Provides TOON and JSON output formats per build-return.md specification.
+Provides TOON and JSON output formats per build-execution.md specification.
 
 Usage:
     from build_format import format_toon, format_json

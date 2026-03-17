@@ -380,7 +380,7 @@ errors_count	0
 - Profile-to-canonical mappings (e.g., `pre-commit:quality-gate`)
 - Build-specific timeout defaults
 
-See `standards/config-callback.md` in `extension-api` skill for the callback contract.
+See `standards/workflow-extensions.md` in `extension-api` skill for the callback contract.
 
 ---
 

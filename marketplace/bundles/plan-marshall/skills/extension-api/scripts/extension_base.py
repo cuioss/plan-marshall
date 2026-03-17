@@ -228,6 +228,11 @@ class ExtensionBase(ABC):
         (e.g., plan-marshall providing both 'build' and 'general-dev') return
         multiple elements.
 
+        Skill Reference Format:
+            Each skill entry in defaults/optionals can be either:
+            - Object format (preferred): {"skill": "bundle:skill", "description": "..."}
+            - String format (legacy): "bundle:skill"
+
         Standard Profiles:
             - core: Skills loaded for all profiles (foundation skills)
             - implementation: Code implementation skills
@@ -257,7 +262,7 @@ class ExtensionBase(ABC):
             project_root: Absolute path to project root.
 
         Returns:
-            List of module dicts. See build-project-structure.md for complete
+            List of module dicts. See module-discovery.md for complete
             contract including:
             - name, build_systems (array)
             - paths: {module, descriptor, sources, tests, readme}
@@ -303,7 +308,7 @@ class ExtensionBase(ABC):
                 # set_default returns True if set, False if key already existed
                 ext_defaults_set_default("my_bundle.skip_profiles", "itest,native", project_root)
 
-        See standards/config-callback.md for complete documentation.
+        See standards/workflow-extensions.md for complete documentation.
         """
         pass  # Default no-op implementation
 

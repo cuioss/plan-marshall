@@ -25,7 +25,10 @@ class Extension(ExtensionBase):
             'profiles': {
                 'core': {
                     'defaults': [
-                        'pm-dev-python:python-best-practices',
+                        {
+                            'skill': 'pm-dev-python:python-best-practices',
+                            'description': 'Modern Python patterns with pyprojectx, ruff, mypy, pytest',
+                        },
                         {
                             'skill': 'plan-marshall:dev-general-code-quality',
                             'description': 'Language-agnostic code quality principles (SRP, CQS, complexity, error handling)',
@@ -44,7 +47,10 @@ class Extension(ExtensionBase):
                 },
                 'module_testing': {
                     'defaults': [
-                        'pm-dev-python:python-best-practices',
+                        {
+                            'skill': 'pm-dev-python:python-best-practices',
+                            'description': 'Modern Python patterns with pyprojectx, ruff, mypy, pytest',
+                        },
                         {
                             'skill': 'plan-marshall:dev-general-module-testing',
                             'description': 'Language-agnostic testing methodology (AAA, coverage, reliability, determinism)',
@@ -53,7 +59,12 @@ class Extension(ExtensionBase):
                     'optionals': [],
                 },
                 'quality': {
-                    'defaults': ['pm-dev-python:python-best-practices'],
+                    'defaults': [
+                        {
+                            'skill': 'pm-dev-python:python-best-practices',
+                            'description': 'Modern Python patterns with pyprojectx, ruff, mypy, pytest',
+                        },
+                    ],
                     'optionals': [],
                 },
             },
