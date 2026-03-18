@@ -211,18 +211,11 @@ quarkus.http.ssl.protocols=TLSv1.3,TLSv1.2
 
 ## Performance Targets
 
-**Performance Requirements**:
-* **Startup Time**: <0.5s
-* **Memory Usage**: <150MB runtime
-* **Image Size**: <100MB
-* **Build Time**: <2 minutes native
-
-**Implementation Results**:
-* **Unit Testing**: Comprehensive coverage
-* **Integration Testing**: Full deployment validation
-* **Native Compilation**: GraalVM support
-* **Multi-Platform**: linux/amd64 and linux/arm64 support
-* **Certificate Integration**: PEM and PKCS12 support
+**Targets for Quarkus Native**:
+* **Startup Time**: < 0.5s
+* **Memory Usage**: < 150MB runtime
+* **Image Size**: < 100MB
+* **Build Time**: < 2 minutes native
 
 ## Multi-Platform Build Support
 

@@ -2,6 +2,8 @@
 
 How to suppress various types of findings in requirements documents.
 
+> **Note**: The AsciiDoc comment syntax below follows the conventions defined in `pm-documents:ref-asciidoc` → `references/asciidoc-formatting.md`. This document covers requirements-specific suppression patterns only.
+
 ## AsciiDoc Comment Suppression
 
 The primary mechanism for suppressing warnings in AsciiDoc requirements documents.

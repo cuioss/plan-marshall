@@ -79,13 +79,8 @@ export default {
       'stroke': ['/^var\\(--/', 'currentColor', 'inherit', 'initial', 'unset', 'transparent'],
     },
 
-    // Logical property ordering
-    'order/properties-order': [
-      'content', 'display', 'position', 'top', 'right', 'bottom', 'left',
-      'z-index', 'flex', 'flex-grow', 'flex-shrink', 'flex-basis',
-      'width', 'height', 'margin', 'padding', 'border', 'background',
-      'color', 'font', 'text-align', 'opacity', 'transform', 'transition'
-    ],
+    // Logical property ordering (see "Property Ordering" section below for full list)
+    'order/properties-order': [ /* ... */ ],
 
     // CSS Custom Properties patterns
     'custom-property-pattern': '^[a-z][a-z0-9]*(-[a-z0-9]+)*$',

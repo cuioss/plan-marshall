@@ -2,13 +2,13 @@
 
 ## Purpose
 
-This document defines ESLint v9 flat configuration structure, required dependencies, plugin management, and environment setup for consistent JavaScript linting across all CUI projects.
+This document defines ESLint v10 flat configuration structure, required dependencies, plugin management, and environment setup for consistent JavaScript linting across all CUI projects.
 
-## ESLint v9 Flat Configuration
+## ESLint Flat Configuration
 
 ### Configuration File Structure
 
-All projects must use ESLint v9+ with flat configuration format. Create `eslint.config.js` in the project root:
+All projects must use ESLint v10+ with flat configuration format. Create `eslint.config.js` in the project root:
 
 ```javascript
 import js from '@eslint/js';
@@ -94,15 +94,15 @@ export default [
 
 ## Required Dependencies
 
-### Core ESLint v9 Dependencies
+### Core ESLint Dependencies
 
 All projects must include these core dependencies in `package.json`:
 
 ```json
 {
   "devDependencies": {
-    "eslint": "^9.14.0",
-    "@eslint/js": "^9.14.0"
+    "eslint": "^10.0.0",
+    "@eslint/js": "^10.0.0"
   }
 }
 ```
@@ -115,11 +115,11 @@ All projects must include these plugin dependencies:
 {
   "devDependencies": {
     "eslint-plugin-jest": "^28.8.3",
-    "eslint-plugin-jsdoc": "^46.8.0",
-    "eslint-plugin-unicorn": "^48.0.0",
-    "eslint-plugin-security": "^1.7.1",
-    "eslint-plugin-promise": "^6.1.1",
-    "eslint-plugin-sonarjs": "^2.0.3",
+    "eslint-plugin-jsdoc": "^62.8.0",
+    "eslint-plugin-unicorn": "^63.0.0",
+    "eslint-plugin-security": "^3.0.0",
+    "eslint-plugin-promise": "^7.0.0",
+    "eslint-plugin-sonarjs": "^4.0.0",
     "eslint-plugin-prettier": "^5.0.0",
     "prettier": "^3.0.3"
   }
@@ -538,7 +538,7 @@ npm list eslint-plugin-prettier
 
 ## Best Practices
 
-1. **Always use flat config** - ESLint v9 flat configuration is the modern standard
+1. **Always use flat config** - ESLint flat configuration is the modern standard
 2. **Set "type": "module"** - Required for ES module imports in configuration
 3. **Install all required plugins** - JSDoc, Jest, SonarJS, Security, Unicorn, Promise, Prettier
 4. **Use direct imports** - Import plugins directly, not as strings

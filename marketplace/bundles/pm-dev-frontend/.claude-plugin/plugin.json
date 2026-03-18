@@ -1,7 +1,7 @@
 {
   "name": "pm-dev-frontend",
   "version": "0.1-BETA",
-  "description": "JavaScript, CSS, and web component standards for CUI applications",
+  "description": "JavaScript, CSS, and web component standards for applications",
   "author": {
     "name": "https://github.com/cuioss/plan-marshall",
     "email": "contact@cuioss.de"
@@ -13,11 +13,9 @@
   "agents": [],
   "commands": [],
   "skills": [
-    "./skills/cui-css",
-    "./skills/cui-cypress",
-    "./skills/cui-javascript",
-    "./skills/cui-javascript-project",
+    "./skills/css",
     "./skills/ext-triage-js",
+    "./skills/javascript",
     "./skills/js-enforce-eslint",
     "./skills/js-fix-jsdoc",
     "./skills/plan-marshall-plugin"

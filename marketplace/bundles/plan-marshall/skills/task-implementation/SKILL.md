@@ -314,5 +314,5 @@ If changes conflict with existing code:
 
 **Domain Skills Applied** (loaded by agent from task.skills):
 - Java: `pm-dev-java:java-core`, `pm-dev-java:java-cdi`, etc.
-- JavaScript: `pm-dev-frontend:cui-javascript`, etc.
+- JavaScript: `pm-dev-frontend:javascript`, etc.
 - Apply patterns from whatever domain skills are listed in task.skills

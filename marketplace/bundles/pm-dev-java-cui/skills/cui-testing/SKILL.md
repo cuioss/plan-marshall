@@ -98,7 +98,7 @@ class MyServiceTest {
         service.processWithWarning();
 
         // Verify log output
-        LogAsserts.assertLogContains(TestLogLevel.WARN, "expected message");
+        LogAsserts.assertLogMessagePresentContaining(TestLogLevel.WARN, "expected message");
     }
 }
 ```

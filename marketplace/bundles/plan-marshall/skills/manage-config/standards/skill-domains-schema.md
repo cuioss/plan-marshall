@@ -247,20 +247,16 @@ manage-config resolve-domain-skills --domain java --profile implementation
       "outline": "pm-dev-frontend:js-outline-ext"
     },
     "core": {
-      "defaults": ["pm-dev-frontend:cui-javascript"],
-      "optionals": ["pm-dev-frontend:cui-jsdoc", "pm-dev-frontend:cui-javascript-project"]
+      "defaults": ["pm-dev-frontend:javascript"],
+      "optionals": ["pm-dev-frontend:js-fix-jsdoc"]
     },
     "implementation": {
       "defaults": [],
-      "optionals": ["pm-dev-frontend:cui-javascript-linting", "pm-dev-frontend:cui-javascript-maintenance"]
+      "optionals": ["pm-dev-frontend:js-enforce-eslint"]
     },
     "module_testing": {
-      "defaults": ["pm-dev-frontend:cui-javascript-unit-testing"],
-      "optionals": []
-    },
-    "integration_testing": {
       "defaults": [],
-      "optionals": ["pm-dev-frontend:cui-cypress"]
+      "optionals": []
     },
     "quality": {
       "defaults": [],

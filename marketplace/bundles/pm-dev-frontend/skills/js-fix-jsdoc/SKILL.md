@@ -92,9 +92,8 @@ Use this skill when:
 ## Integration
 
 Works with:
-- **cui-javascript** skill - Core JavaScript development
-- **cui-javascript-unit-testing** skill - Test documentation
-- ESLint for automated validation
+- `pm-dev-frontend:javascript` — Core JavaScript development
+- `pm-dev-frontend:js-enforce-eslint` — ESLint JSDoc rules
 - JSDoc CLI for documentation generation
 
 ## Workflows
@@ -109,20 +108,20 @@ Analyzes JavaScript files for JSDoc compliance violations and returns structured
 
 1. **Run violation analysis script**
 
-   Script: `pm-dev-frontend:cui-jsdoc` → `jsdoc.py`
+   Script: `pm-dev-frontend:js-fix-jsdoc` → `jsdoc.py`
 
    ```bash
    # Analyze entire directory
-   python3 .plan/execute-script.py pm-dev-frontend:cui-jsdoc:jsdoc analyze --directory src/
+   python3 .plan/execute-script.py pm-dev-frontend:js-fix-jsdoc:jsdoc analyze --directory src/
 
    # Analyze single file
-   python3 .plan/execute-script.py pm-dev-frontend:cui-jsdoc:jsdoc analyze --file src/utils/formatter.js
+   python3 .plan/execute-script.py pm-dev-frontend:js-fix-jsdoc:jsdoc analyze --file src/utils/formatter.js
 
    # Analyze only for missing JSDoc (skip syntax checks)
-   python3 .plan/execute-script.py pm-dev-frontend:cui-jsdoc:jsdoc analyze --directory src/ --scope missing
+   python3 .plan/execute-script.py pm-dev-frontend:js-fix-jsdoc:jsdoc analyze --directory src/ --scope missing
 
    # Analyze only JSDoc syntax issues
-   python3 .plan/execute-script.py pm-dev-frontend:cui-jsdoc:jsdoc analyze --directory src/ --scope syntax
+   python3 .plan/execute-script.py pm-dev-frontend:js-fix-jsdoc:jsdoc analyze --directory src/ --scope syntax
    ```
 
 2. **Process violation results**

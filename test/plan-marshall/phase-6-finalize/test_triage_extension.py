@@ -92,7 +92,7 @@ def test_resolve_triage_extension_javascript():
                             'outline': 'pm-dev-frontend:js-outline-ext',
                             'triage': 'pm-dev-frontend:ext-triage-js',
                         },
-                        'core': {'defaults': ['pm-dev-frontend:cui-javascript'], 'optionals': []},
+                        'core': {'defaults': ['pm-dev-frontend:javascript'], 'optionals': []},
                     },
                 }
             },
@@ -166,7 +166,7 @@ def test_resolve_triage_extension_null_for_missing():
                             'outline': 'pm-documents:doc-outline-ext'
                             # No triage extension
                         },
-                        'core': {'defaults': ['pm-documents:ref-documentation'], 'optionals': []},
+                        'core': {'defaults': ['pm-documents:ref-asciidoc', 'pm-documents:ref-documentation'], 'optionals': []},
                     },
                 }
             },

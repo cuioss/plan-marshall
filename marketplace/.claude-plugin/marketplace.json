@@ -21,6 +21,12 @@
       "strict": false
     },
     {
+      "name": "pm-dev-frontend-cui",
+      "description": "CUI-specific JavaScript project standards for Maven integration, Quarkus DevUI, and NiFi",
+      "source": "./bundles/pm-dev-frontend-cui",
+      "strict": false
+    },
+    {
       "name": "pm-dev-java",
       "description": "Comprehensive Java development expertise bundle aggregating core Java patterns, CDI/Quarkus, and unit testing standards",
       "source": "./bundles/pm-dev-java",

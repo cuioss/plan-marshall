@@ -20,10 +20,10 @@ EXPECTED_TOON_FILES = [
     'plan-marshall/workflow-integration-sonar/fix-suggestions.toon',
     'plan-marshall/workflow-integration-github/review-comments.toon',
     'plan-marshall/workflow-integration-github/triage-results.toon',
-    'pm-dev-frontend/coverage/coverage-analysis.toon',
+    'pm-dev-frontend-cui/coverage/coverage-analysis.toon',
     'pm-dev-java/coverage/coverage-analysis.toon',
     'pm-dev-builder/maven/build-failure/expected-categorization.toon',
-    'pm-dev-frontend/build/build-analysis.toon',
+    'pm-dev-frontend-cui/build/build-analysis.toon',
 ]
 
 

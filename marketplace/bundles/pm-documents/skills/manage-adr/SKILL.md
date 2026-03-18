@@ -17,7 +17,7 @@ Provide structured management of architectural decisions:
 - **Update** ADR status through lifecycle
 - **Delete** ADRs when necessary
 - **List** all ADRs with optional filtering
-- **Validate** ADR format using ref-documentation
+- **Validate** ADR format using ref-asciidoc
 
 ## Available Workflows
 
@@ -28,7 +28,7 @@ Provide structured management of architectural decisions:
 | **read-adr** | Read ADR content | `manage-adr.py read` |
 | **update-adr** | Update ADR status | `manage-adr.py update` |
 | **delete-adr** | Delete ADR (with confirmation) | `manage-adr.py delete` |
-| **validate-adr** | Validate ADR format | ref-documentation workflows |
+| **validate-adr** | Validate ADR format | ref-asciidoc workflows |
 
 ## Workflow: list-adrs
 
@@ -92,7 +92,7 @@ Read the created file and inform user to fill in content sections.
 **Step 5: Validate Format**
 
 ```
-Skill: pm-documents:ref-documentation
+Skill: pm-documents:ref-asciidoc
 Execute workflow: validate-format
 Parameters:
   target: {created_path}
@@ -178,7 +178,7 @@ Report deletion to user.
 
 ## Workflow: validate-adr
 
-Validate ADR format using ref-documentation skill.
+Validate ADR format using ref-asciidoc skill.
 
 ### Parameters
 
@@ -193,7 +193,7 @@ Use list-adrs workflow to get ADR path by number.
 **Step 2: Validate Format**
 
 ```
-Skill: pm-documents:ref-documentation
+Skill: pm-documents:ref-asciidoc
 Execute workflow: validate-format
 Parameters:
   target: {adr_path}
@@ -203,9 +203,9 @@ Parameters:
 
 Report validation results to user.
 
-## Integration with ref-documentation
+## Integration with ref-asciidoc
 
-This skill integrates with `ref-documentation` for:
+This skill integrates with `ref-asciidoc` for:
 
 - **Format validation**: Ensures AsciiDoc formatting compliance
 - **Link verification**: Validates cross-references
@@ -250,4 +250,4 @@ Examples:
 
 ## References
 
-- [ref-documentation SKILL](../ref-documentation/SKILL.md) - Format validation
+- [ref-asciidoc SKILL](../ref-asciidoc/SKILL.md) - Format validation

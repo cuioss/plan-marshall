@@ -1,0 +1,14 @@
+= Broken Xref Anchor
+:toc: left
+:toclevels: 3
+:toc-title: Table of Contents
+:sectnums:
+:source-highlighter: highlight.js
+
+== Links
+
+Valid file, missing anchor: xref:target-file.adoc#nonexistent[Missing Anchor]
+
+Valid file, valid anchor: xref:target-file.adoc#section-one[Valid Anchor]
+
+Another broken anchor: xref:target-file.adoc#does-not-exist[Broken]

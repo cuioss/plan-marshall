@@ -1,0 +1,12 @@
+= Test Document
+:toc: left
+:toclevels: 3
+:toc-title: Table of Contents
+:sectnums:
+:source-highlighter: highlight.js
+
+== Section One
+Some text directly before list:
+
+* List item 1
+* List item 2

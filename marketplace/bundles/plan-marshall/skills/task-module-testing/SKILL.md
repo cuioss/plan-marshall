@@ -359,5 +359,5 @@ If test requires unavailable dependencies:
 
 **Domain Testing Skills Applied** (loaded by agent from task.skills):
 - Java: `pm-dev-java:java-core`, `pm-dev-java:junit-core`, `pm-dev-java:junit-integration`
-- JavaScript: `pm-dev-frontend:cui-javascript`, `pm-dev-frontend:cui-javascript-unit-testing`, `pm-dev-frontend:cui-cypress`
+- JavaScript: `pm-dev-frontend:javascript`
 - Apply patterns from whatever domain testing skills are listed in task.skills

@@ -304,9 +304,9 @@
             "pm-dev-java:java-cdi-quarkus"
           ],
           "javascript": [
-            "pm-dev-frontend:cui-javascript",
-            "pm-dev-frontend:cui-jsdoc",
-            "pm-dev-frontend:cui-javascript-linting"
+            "pm-dev-frontend:javascript",
+            "pm-dev-frontend:js-fix-jsdoc",
+            "pm-dev-frontend:js-enforce-eslint"
           ]
         },
         "unit-testing": {
@@ -315,8 +315,7 @@
             "pm-dev-java:junit-core"
           ],
           "javascript": [
-            "pm-dev-frontend:cui-javascript",
-            "pm-dev-frontend:cui-javascript-unit-testing"
+            "pm-dev-frontend:javascript"
           ]
         }
       },

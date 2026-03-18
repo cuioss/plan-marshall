@@ -1,0 +1,14 @@
+= Deprecated Syntax
+:toc: left
+:toclevels: 3
+:toc-title: Table of Contents
+:sectnums:
+:source-highlighter: highlight.js
+
+== Old Style Links
+
+This uses deprecated syntax: xref:target-file.adoc#[Link Text]
+
+Another deprecated: xref:../path/file.adoc#[Another Link]
+
+Modern syntax: xref:target-file.adoc[Correct Way]

@@ -144,23 +144,6 @@ This standard provides:
 - All patterns demonstrated in context
 - Key pattern highlights and explanations
 
-## Standards Organization
-
-All planning standards are organized in the `standards/` directory:
-
-- `document-structure.md` - Document location, header, and core sections
-- `task-organization.md` - Hierarchical structure and grouping strategies
-- `status-tracking.md` - Status indicators, notes, and task lifecycle
-- `traceability.md` - Linking to requirements and specifications
-- `maintenance.md` - Keeping planning documents current and high-quality
-- `examples.md` - Complete working example demonstrating all patterns
-
-## Tool Access
-
-This skill requires:
-
-- **Read**: To load standards files
-
 ## Related Skills
 
 ### Related Skills in Bundle

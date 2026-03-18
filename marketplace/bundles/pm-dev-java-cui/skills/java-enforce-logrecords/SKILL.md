@@ -137,7 +137,7 @@ For each LogMessages class, apply coverage analysis patterns from `pm-dev-java-c
 - Test only → USER REVIEW (critical bug)
 - Both → Compliant
 
-See: `standards/logging-enforcement-patterns.md` → Patterns 6-9 (Coverage Analysis)
+See: `standards/logging-maintenance-reference.md` → Patterns 6-9 (Coverage Analysis)
 
 ### Step 6: Generate Execution Plan
 
@@ -207,7 +207,7 @@ Follow batch execution templates from `pm-dev-java-cui:cui-logging` skill (Patte
 - Stop execution and await user guidance
 - Options: Add production code or remove tests
 
-See: `standards/logging-enforcement-patterns.md` → Pattern 11 (Batch Templates)
+See: `standards/logging-maintenance-reference.md` → Pattern 11 (Batch Templates)
 
 ### Step 8: Verify Corrections
 
@@ -229,7 +229,7 @@ For each LogMessages class:
 - INFO: 001-099, WARN: 100-199, ERROR: 200-299, FATAL: 300-399
 
 See: `logging-standards.md` → Message Identifier Ranges
-See: `logging-enforcement-patterns.md` → Patterns 13-14 (Identifier Validation)
+See: `logging-maintenance-reference.md` → Patterns 13-14 (Identifier Validation)
 
 ### Step 10: Update LogMessages Documentation
 
@@ -315,7 +315,7 @@ COMPLIANCE STATUS: {COMPLIANT / ISSUES REMAINING}
   ```
 - Success criteria: Exit code 0, zero errors, zero test failures
 - On failure: Report details (errors, test failures) and stop execution
-- See: `logging-enforcement-patterns.md` → Pattern 15
+- See: `logging-maintenance-reference.md` → Pattern 15
 
 **Configuration Management:**
 - Use `plan-marshall:manage-run-config` skill for all configuration access
@@ -387,7 +387,7 @@ COMPLIANCE STATUS: {COMPLIANT / ISSUES REMAINING}
 - Skill: `pm-dev-java-cui:cui-logging` - Logging standards, enforcement patterns, and workflows
   - Workflow: Analyze Logging Violations - Detect LOGGER usage violations
   - Workflow: Document LogRecord - Generate AsciiDoc documentation
-- Standards: `logging-standards.md`, `logmessages-documentation.md`, `logging-enforcement-patterns.md`
+- Standards: `logging-standards.md`, `logmessages-documentation.md`, `logging-maintenance-reference.md`
 - Command: `/java-implement-code` - Fix production code
 - Command: `/java-implement-tests` - Add tests
 - Skill: `pm-dev-java:plan-marshall-plugin` - Maven standards and build output parsing

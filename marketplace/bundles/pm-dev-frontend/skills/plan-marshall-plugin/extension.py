@@ -26,7 +26,7 @@ class Extension(ExtensionBase):
                 'core': {
                     'defaults': [
                         {
-                            'skill': 'pm-dev-frontend:cui-javascript',
+                            'skill': 'pm-dev-frontend:javascript',
                             'description': 'Core JavaScript development standards covering ES modules, modern patterns, and code quality',
                         },
                         {
@@ -38,10 +38,6 @@ class Extension(ExtensionBase):
                         {
                             'skill': 'pm-dev-frontend:js-fix-jsdoc',
                             'description': 'Fix JSDoc errors and warnings from build/lint with content preservation',
-                        },
-                        {
-                            'skill': 'pm-dev-frontend:cui-javascript-project',
-                            'description': 'JavaScript project structure, package.json configuration, and Maven integration',
                         },
                     ],
                 },
@@ -66,12 +62,7 @@ class Extension(ExtensionBase):
                             'description': 'Language-agnostic testing methodology (AAA, coverage, reliability, determinism)',
                         },
                     ],
-                    'optionals': [
-                        {
-                            'skill': 'pm-dev-frontend:cui-cypress',
-                            'description': 'Cypress E2E testing standards including framework adaptations and best practices',
-                        }
-                    ],
+                    'optionals': [],
                 },
                 'quality': {'defaults': [], 'optionals': []},
             },
@@ -88,19 +79,6 @@ class Extension(ExtensionBase):
         result = self._build_applicable_result('high', signals,
                                                 module_data=module_data,
                                                 active_profiles=active_profiles)
-
-        # Move cypress to optionals if no cypress dependency
-        deps = module_data.get('dependencies', [])
-        dep_strings = [d if isinstance(d, str) else '' for d in deps]
-        has_cypress = any('cypress' in d for d in dep_strings)
-        if not has_cypress:
-            for profile in result['skills_by_profile'].values():
-                cypress_entries = [e for e in profile.get('defaults', [])
-                                   if isinstance(e, dict) and 'cypress' in e.get('skill', '')]
-                for entry in cypress_entries:
-                    profile['defaults'].remove(entry)
-                    if entry not in profile['optionals']:
-                        profile['optionals'].append(entry)
 
         return result
 

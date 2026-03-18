@@ -1,28 +1,33 @@
-# CUI Documentation Standards
+# Documentation Standards
 
-AsciiDoc and documentation standards enforcement for CUI projects. This bundle provides comprehensive tools for creating, validating, and maintaining technical documentation.
+AsciiDoc and documentation standards enforcement for projects. This bundle provides comprehensive tools for creating, validating, and maintaining technical documentation.
 
 ## Purpose
 
-This bundle provides documentation domain knowledge through the core `ref-documentation` skill, plus specialized management skills for ADRs and interface specifications.
+This bundle provides documentation domain knowledge through two core skills (`ref-asciidoc` for formatting/validation and `ref-documentation` for content quality/review), plus specialized management skills for ADRs and interface specifications.
 
 ## Components Included
 
-### Skills (3 skills)
+### Skills (4 skills)
 
-**ref-documentation** - Documentation standards skill (9 workflows):
+**ref-asciidoc** - AsciiDoc formatting and validation skill (5 workflows):
 
 | Workflow | Purpose |
 |----------|---------|
 | **format-document** | Auto-fix formatting issues |
 | **validate-format** | Validate format compliance |
 | **verify-links** | Verify links and xrefs |
+| **create-from-template** | Create document from template |
+| **refresh-metadata** | Update metadata and xrefs |
+
+**ref-documentation** - Content quality and review skill (4 workflows):
+
+| Workflow | Purpose |
+|----------|---------|
 | **review-content** | Review content quality |
 | **comprehensive-review** | Orchestrate all review workflows |
-| **create-from-template** | Create document from template |
 | **sync-with-code** | Sync docs with code changes |
 | **cleanup-stale** | Remove stale documentation |
-| **refresh-metadata** | Update metadata and xrefs |
 
 **manage-adr** - Architectural Decision Records skill (5 workflows, script-only):
 
@@ -69,12 +74,17 @@ pm-documents/
 ├── commands/
 │   └── tools-verify-architecture-diagrams.md
 └── skills/
-    ├── ref-documentation/        # Core documentation skill (9 workflows)
+    ├── ref-asciidoc/             # AsciiDoc formatting skill (5 workflows)
     │   ├── SKILL.md
-    │   ├── references/           # Documentation standards (lookup)
-    │   ├── workflows/            # Operational procedures
+    │   ├── references/           # AsciiDoc format standards (lookup)
+    │   ├── workflows/            # Link verification protocol
     │   ├── templates/            # Document templates
-    │   └── scripts/              # Automation scripts
+    │   └── scripts/              # Format/validate/link scripts
+    ├── ref-documentation/        # Content quality skill (4 workflows)
+    │   ├── SKILL.md
+    │   ├── references/           # Tone, core, organization standards
+    │   ├── workflows/            # Review orchestration, content review
+    │   └── scripts/              # Review/tone analysis scripts
     ├── manage-adr/               # ADR management skill (5 workflows)
     │   ├── SKILL.md
     │   ├── scripts/

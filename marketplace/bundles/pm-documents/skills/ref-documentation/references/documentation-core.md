@@ -2,11 +2,11 @@
 
 ## Purpose
 
-Comprehensive standards for all documentation across CUI projects, including general documentation rules and principles. This document serves as the foundation for all CUI documentation standards.
+Comprehensive standards for all documentation across projects, including general documentation rules and principles. This document serves as the foundation for all documentation standards.
 
 ## Documentation Standards Overview
 
-The CUI documentation standards are organized into focused documents covering specific aspects:
+The documentation standards are organized into focused documents covering specific aspects:
 
 * **[documentation-core.md](documentation-core.md)** (this document) - Core principles, terminology, and code examples
 * **[tone-and-style.md](tone-and-style.md)** - Professional tone, neutral language, prohibited patterns, and writing style

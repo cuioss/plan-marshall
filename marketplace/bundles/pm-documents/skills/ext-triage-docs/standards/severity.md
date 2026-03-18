@@ -152,4 +152,5 @@ Missing sections = **Fix** (no exceptions)
 ## Related Standards
 
 - [suppression.md](suppression.md) - How to suppress findings
-- [pm-documents:ref-documentation](../../ref-documentation/SKILL.md) - Documentation standards
+- [pm-documents:ref-asciidoc](../../ref-asciidoc/SKILL.md) - AsciiDoc formatting and validation
+- [pm-documents:ref-documentation](../../ref-documentation/SKILL.md) - Content quality and review

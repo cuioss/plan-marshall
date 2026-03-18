@@ -53,7 +53,7 @@ Decision criteria for handling JavaScript and TypeScript findings based on sever
 |------------|--------|-------|
 | Prettier violations | Auto-fix | Run `prettier --write` |
 | ESLint auto-fixable | Auto-fix | Run `eslint --fix` |
-| Style preferences | Accept or configure | Configure in .eslintrc |
+| Style preferences | Accept or configure | Configure in `eslint.config.js` |
 
 ## Context Modifiers
 
@@ -187,4 +187,4 @@ npx tsc --declaration
 ## Related Standards
 
 - [suppression.md](suppression.md) - How to suppress findings
-- [pm-dev-frontend:cui-javascript](../../cui-javascript/SKILL.md) - JavaScript coding standards
+- [pm-dev-frontend:javascript](../../javascript/SKILL.md) - JavaScript coding standards

@@ -67,9 +67,9 @@ private static final Logger LOGGER = LoggerFactory.getLogger(MyClass.class);
 ### LogRecord for Structured Messages
 ```java
 // CORRECT - Use LogRecord for INFO and above
-LOGGER.info(INFO.getResolver().formatted("Processing completed"));
-LOGGER.warn(WARN.getResolver().formatted("Resource low: %s", resourceName));
-LOGGER.error(exception, ERROR.getResolver().formatted("Failed to process"));
+LOGGER.info(INFO.USER_LOGIN, username);
+LOGGER.warn(WARN.RATE_LIMIT, resourceName);
+LOGGER.error(exception, ERROR.OPERATION_FAILED);
 
 // DEBUG/TRACE - Direct logging allowed (no LogRecord needed)
 LOGGER.debug("Debug message: %s", value);
@@ -78,10 +78,10 @@ LOGGER.debug("Debug message: %s", value);
 ### Exception Handling
 ```java
 // CORRECT - Exception FIRST
-LOGGER.error(exception, ERROR.getResolver().formatted("Operation failed"));
+LOGGER.error(exception, ERROR.OPERATION_FAILED);
 
 // WRONG - Exception position
-LOGGER.error(ERROR.getResolver().formatted("Operation failed"), exception);
+LOGGER.error(ERROR.OPERATION_FAILED, exception);
 ```
 
 ## Related Skills

@@ -21,19 +21,9 @@ ESLint rules are organized into focused categories:
 
 ### Import/Export Management
 
-Essential module management rules:
+Native ES module support in modern browsers and Node.js handles most import/export validation (unresolved imports, extensions, extraneous dependencies). No `eslint-plugin-import` rules are required in the base configuration.
 
-```javascript
-rules: {
-  'import/no-unresolved': 'off',                    // Allow unresolved imports for mocks
-  'import/extensions': 'off',                       // No file extensions required
-  'import/prefer-default-export': 'off',            // Allow named exports
-  'import/no-extraneous-dependencies': [
-    'error',
-    { devDependencies: true }
-  ],
-}
-```
+If additional import linting is needed, use [`eslint-plugin-import-x`](https://github.com/un-ts/eslint-plugin-import-x) which supports ESLint 9+ flat config natively. The original `eslint-plugin-import` does not support flat config.
 
 ### Core JavaScript Quality
 
@@ -68,30 +58,7 @@ rules: {
 
 ### Prettier Integration Rules
 
-Disable style rules handled by Prettier:
-
-```javascript
-rules: {
-  // Code style rules (disabled in favor of Prettier)
-  'quotes': 'off',                    // Handled by Prettier
-  'semi': 'off',                      // Handled by Prettier
-  'indent': 'off',                    // Handled by Prettier
-  'max-len': [
-    'warn',
-    {
-      code: 120,
-      ignoreComments: true,
-      ignoreUrls: true
-    }
-  ],
-  'comma-dangle': 'off',            // Handled by Prettier
-  'object-curly-spacing': 'off',    // Handled by Prettier
-  'array-bracket-spacing': 'off',   // Handled by Prettier
-
-  // Prettier integration
-  'prettier/prettier': 'error',
-}
-```
+For Prettier integration rules (disabled style rules and `prettier/prettier: 'error'`), see [prettier-configuration.md](prettier-configuration.md) "ESLint Integration".
 
 ## Documentation Rules (JSDoc)
 
@@ -284,7 +251,7 @@ Standards for maintainable code:
 ```javascript
 rules: {
   // Complexity thresholds
-  'complexity': ['warn', { max: 10 }],                 // Cyclomatic complexity
+  'complexity': ['warn', { max: 15 }],                 // Cyclomatic complexity
   'max-statements': ['warn', { max: 20 }],             // Maximum statements per function
   'max-params': ['warn', { max: 5 }],                  // Maximum function parameters
   'max-nested-callbacks': ['error', { max: 4 }],       // Maximum callback nesting

@@ -1,0 +1,26 @@
+= Test Document
+:toc-title: Table of Contents
+:source-highlighter: highlight.js
+:toc: left
+:toclevels: 3
+:sectnums:
+
+== Section One
+
+This is a test document with proper formatting.
+
+* List item 1
+* List item 2
+
+== Section Two
+
+Some content here.
+
+=== Subsection
+
+More content with xref:valid.adoc[cross-reference].
+
+[source,java]
+----
+System.out.println("test");
+----

@@ -102,7 +102,7 @@ All extensions **must** inherit from `ExtensionBase` and implement required meth
 │                            │ loads                               │
 │                            ▼                                     │
 │  LAYER 4: DOMAIN SKILLS (Loaded from task.skills at execution)  │
-│  java-core, java-cdi, junit-core, cui-javascript, etc.           │
+│  java-core, java-cdi, junit-core, javascript, etc.           │
 │                                                                  │
 └─────────────────────────────────────────────────────────────────┘
 ```

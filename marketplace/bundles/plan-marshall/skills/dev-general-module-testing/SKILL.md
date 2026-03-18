@@ -87,7 +87,7 @@ Use when: Analyzing test coverage, defining corner cases, or improving coverage 
 ## Related Skills
 
 - `pm-dev-java:junit-core` — JUnit 5 testing patterns
-- `pm-dev-frontend:cui-cypress` — Cypress E2E testing
+- `pm-dev-frontend:javascript` — JavaScript development standards
 - `pm-dev-java-cui:cui-testing` — CUI test generator framework
 
 ## Standards Reference

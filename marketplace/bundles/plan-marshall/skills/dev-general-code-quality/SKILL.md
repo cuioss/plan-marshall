@@ -82,7 +82,7 @@ Leave code cleaner than you found it. When modifying a file, fix existing qualit
 
 - `pm-dev-java:java-core` — Java-specific patterns and features
 - `pm-dev-java:java-maintenance` — Java maintenance prioritization
-- `pm-dev-frontend:cui-javascript` — JavaScript-specific patterns
+- `pm-dev-frontend:javascript` — JavaScript-specific patterns
 
 ## Standards Reference
 

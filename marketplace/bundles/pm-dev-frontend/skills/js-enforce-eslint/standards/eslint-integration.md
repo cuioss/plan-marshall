@@ -133,7 +133,7 @@ Integrate ESLint into Maven build process using frontend-maven-plugin:
       <goals>
         <goal>install-node-and-npm</goal>
       </goals>
-      <phase>initialize</phase>
+      <phase>validate</phase>
     </execution>
 
     <!-- Install npm dependencies -->
@@ -142,7 +142,7 @@ Integrate ESLint into Maven build process using frontend-maven-plugin:
       <goals>
         <goal>npm</goal>
       </goals>
-      <phase>initialize</phase>
+      <phase>validate</phase>
       <configuration>
         <arguments>install</arguments>
       </configuration>
@@ -154,7 +154,7 @@ Integrate ESLint into Maven build process using frontend-maven-plugin:
       <goals>
         <goal>npm</goal>
       </goals>
-      <phase>verify</phase>
+      <phase>compile</phase>
       <configuration>
         <arguments>run lint:fix</arguments>
       </configuration>
@@ -167,26 +167,20 @@ Integrate ESLint into Maven build process using frontend-maven-plugin:
 
 **initialize phase**: Install Node.js, npm, and dependencies
 
-**verify phase**: Run linting with auto-fix (recommended)
-- Occurs after test phase
-- Allows automatic fixing of linting issues
-- Non-breaking for development workflow
-
-**validate phase**: Run linting without auto-fix (not recommended)
-- Occurs before compilation
-- Breaks build on linting errors
-- Can be disruptive to development workflow
+**compile phase**: Run linting with auto-fix (recommended)
+- Catches lint issues before tests run
+- Aligns with Maven convention for source validation
+- Consistent with format-check phase
 
 ### Maven Build Lifecycle
 
 Typical build lifecycle with linting:
 
-1. **initialize**: Install Node.js and npm
+1. **validate**: Install Node.js and npm dependencies
 2. **generate-resources**: Copy frontend resources
-3. **compile**: Compile Java code
+3. **compile**: format-check, lint:fix
 4. **test**: Run tests
-5. **verify**: Run lint:fix to automatically fix and validate JavaScript
-6. **package**: Package application
+5. **package**: Package application
 
 ## CI/CD Integration
 
@@ -204,10 +198,10 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-node@v3
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '22'
       - run: npm install
       - run: npm run lint:check
 ```

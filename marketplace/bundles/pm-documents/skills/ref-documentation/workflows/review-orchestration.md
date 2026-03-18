@@ -357,7 +357,7 @@ Partial Results:
 [source,bash]
 ----
 # Quick format check only
-python3 .plan/execute-script.py pm-documents:ref-documentation:docs validate-format --file $FILE
+python3 .plan/execute-script.py pm-documents:ref-asciidoc:asciidoc validate --file $FILE
 
 # Exit if format errors
 if [ $? -ne 0 ]; then
@@ -500,4 +500,4 @@ done
 
 * xref:link-verification.md[Link Verification Protocol]
 * xref:content-review.md[Content Review Framework]
-* xref:../README.adoc[CUI Documentation Standards Overview]
+* xref:../README.adoc[Documentation Standards Overview]

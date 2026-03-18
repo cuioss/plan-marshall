@@ -1,7 +1,7 @@
 {
   "name": "pm-documents",
   "version": "0.1-BETA",
-  "description": "AsciiDoc and documentation standards enforcement for CUI projects",
+  "description": "AsciiDoc and documentation standards enforcement for projects",
   "author": {
     "name": "https://github.com/cuioss/plan-marshall",
     "email": "contact@cuioss.de"
@@ -17,6 +17,7 @@
   "skills": [
     "./skills/ext-triage-docs",
     "./skills/plan-marshall-plugin",
+    "./skills/ref-asciidoc",
     "./skills/ref-documentation"
   ]
 }
