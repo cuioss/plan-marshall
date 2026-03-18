@@ -426,10 +426,10 @@ def test_metadata_get_not_found():
         result = run_script(
             SCRIPT_PATH, 'metadata', '--plan-id', 'metadata-notfound-plan', '--get', '--field', 'nonexistent'
         )
-        assert not result.success, 'Expected failure for missing metadata field'
+        assert result.success, 'Missing field should return exit 0 (not_found is a valid query result)'
         data = parse_toon(result.stdout)
-        assert data['status'] == 'error'
-        assert data['error'] == 'field_not_found'
+        assert data['status'] == 'not_found'
+        assert data['field'] == 'nonexistent'
 
 
 def test_metadata_update_existing():
