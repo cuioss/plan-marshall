@@ -388,14 +388,14 @@ def cmd_metadata(args) -> None:
         if value is None:
             output_toon(
                 {
-                    'status': 'error',
+                    'status': 'not_found',
                     'plan_id': args.plan_id,
-                    'error': 'field_not_found',
+                    'field': args.field,
                     'message': f"Metadata field '{args.field}' not found",
                     'available_fields': list(metadata.keys()),
                 }
             )
-            sys.exit(1)
+            return
 
         output_toon(
             {

@@ -283,7 +283,7 @@ Common errors:
 - `file_exists`: status.json exists (use --force)
 - `invalid_phase`: Phase not in phases list
 - `phase_not_found`: Phase doesn't exist
-- `field_not_found`: Metadata field doesn't exist
+- `not_found` (exit 0): Metadata field doesn't exist (valid query result, not an error)
 
 ---
 
