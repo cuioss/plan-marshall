@@ -11,17 +11,14 @@ import de.cuioss.tools.logging.LogRecordModel;
 // Lombok (for LogMessages DSL pattern)
 import lombok.experimental.UtilityClass;
 
-// CUI Test JULi Logger (for testing log output)
-import de.cuioss.test.juli.junit5.EnableTestLogger;
-import de.cuioss.test.juli.LogAsserts;
-import de.cuioss.test.juli.TestLogLevel;
-
 // Static imports for LogMessages usage
 import static com.example.YourLogMessages.INFO;
 import static com.example.YourLogMessages.WARN;
 import static com.example.YourLogMessages.ERROR;
 import static com.example.YourLogMessages.FATAL;
 ```
+
+For test imports (`EnableTestLogger`, `LogAsserts`, `TestLogLevel`), see `pm-dev-java-cui:cui-testing` → `standards/testing-juli-logger.md`.
 
 ## Overview
 
@@ -216,20 +213,7 @@ LOGGER.fatal(exception, FATAL.SYSTEM_FAILURE, "Database unavailable");
 
 ## Testing
 
-For comprehensive testing of logging in unit tests, see: `pm-dev-java-cui:cui-testing` skill → `standards/testing-juli-logger.md`
-
-**Quick example**:
-
-```java
-@EnableTestLogger
-class TokenValidatorTest {
-    @Test
-    void shouldLogValidationSuccess() {
-        validator.validate(validToken);
-        LogAsserts.assertLogMessagePresentContaining(TestLogLevel.INFO, "validated");
-    }
-}
-```
+For testing logging in unit tests, see `pm-dev-java-cui:cui-testing` → `standards/testing-juli-logger.md`.
 
 ## Log Levels
 
@@ -307,67 +291,7 @@ LOGGER.info("User authenticated: %s", username);
 
 ---
 
-## Compliance Verification
-
-Patterns for enforcing CUI logging standards through automated analysis.
-
-### Violation Detection
-
-**Find all logging statements:**
-```
-Grep: pattern="LOGGER\.(info|debug|trace|warn|error|fatal)\("
-      output_mode="content" -n=true
-```
-
-**Determine LogRecord usage:**
-- Pattern `[A-Z_]+\.[A-Z_]+` → LogRecord usage
-- String literal or format string → Direct string usage
-
-**Validation rules:**
-- INFO/WARN/ERROR/FATAL with direct string → MISSING_LOGRECORD violation
-- DEBUG/TRACE with LogRecord → PROHIBITED_LOGRECORD violation
-
-### Coverage Analysis
-
-**Find LogRecord definitions:**
-```
-Grep: pattern="LogRecordModel\.builder\(\)"
-      glob="**/*LogMessages.java"
-```
-
-**Find production usage:**
-```
-Grep: pattern="INFO\.USER_LOGIN|ERROR\.DATABASE_ERROR"
-      glob="src/main/**/*.java"
-```
-
-**Find test coverage (LogAssert):**
-```
-Grep: pattern="LogAssert.*{PREFIX}-{IDENTIFIER}"
-      glob="src/test/**/*.java"
-```
-
-**Coverage status:**
-
-| Production | Test | Status | Action |
-|-----------|------|--------|--------|
-| No | No | UNUSED | Remove LogRecord |
-| Yes | No | UNTESTED | Add LogAssert test |
-| No | Yes | TEST_ONLY | USER REVIEW (critical bug) |
-| Yes | Yes | COMPLIANT | No action |
-
-### Identifier Validation
-
-**Extract identifiers:**
-```
-Grep: pattern="\.identifier\((\d+)\)"
-      path="{LogMessages.java}"
-```
-
-**Check for issues:**
-- Out-of-range: INFO using identifier 150 (WARN range)
-- Gaps: INFO has 1, 2, 5, 6 (missing 3, 4)
-- Out-of-order: INFO has 5, 2, 8, 1
+For compliance verification patterns (violation detection, coverage analysis, identifier validation), see `logging-maintenance-reference.md`.
 
 ---
 
