@@ -55,3 +55,8 @@ For detailed behavior, refer to the JavaDoc of implementing classes.
 - Links to verification tests
 - Remove redundant code examples
 - Keep architectural guidance and standards
+
+**DEPRECATED**:
+- Requirement no longer applicable
+- Mark with `[DEPRECATED]` heading and reason
+- Keep for historical traceability

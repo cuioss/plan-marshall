@@ -90,54 +90,13 @@ Verify documentation remains maintainable over time:
 - Traceability aids troubleshooting
 - Links facilitate code understanding
 
-## Quality Assessment Scoring
+## Verification Checklist
 
-Use this scoring system to evaluate traceability quality:
+- All specifications link to implementation (when it exists)
+- All implementation classes link back to specification
+- All test classes link to specification
+- Status indicators are current (PLANNED/IN PROGRESS/IMPLEMENTED)
+- No broken cross-reference links
+- Bidirectional navigation works (spec ↔ code ↔ tests)
 
-### Scoring Criteria
-
-**Completeness (0-40 points)**:
-- All specs linked to code: 15 points
-- All code linked to specs: 15 points
-- All tests linked to specs: 10 points
-
-**Accuracy (0-30 points)**:
-- No broken links: 15 points
-- Current status indicators: 10 points
-- Accurate coverage metrics: 5 points
-
-**Navigation (0-15 points)**:
-- Bidirectional navigation works: 10 points
-- Clear and logical paths: 5 points
-
-**Maintainability (0-15 points)**:
-- Recent updates (within 90 days): 10 points
-- Consistent template usage: 5 points
-
-### Quality Levels
-
-- **90-100**: Excellent - All standards met, complete traceability
-- **75-89**: Good - Minor gaps, generally complete
-- **60-74**: Acceptable - Some gaps, needs improvement
-- **Below 60**: Poor - Significant gaps, requires immediate attention
-
-## Verify
-
-Use this checklist for quality verification:
-
-### Weekly Verification
-- Check links in recently modified files
-- Verify status indicators for active work
-- Update coverage metrics for completed work
-
-### Monthly Verification
-- Run link validator on all documentation
-- Review status indicators across project
-- Verify bidirectional navigation
-- Check for redundant content
-
-### Quarterly Verification
-- Complete quality assessment scoring
-- Review and update templates if needed
-- Assess maintenance burden
-- Plan improvements based on score
+For general documentation quality standards (clarity, completeness, consistency), see `pm-requirements:requirements-authoring` → `standards/integrity-and-quality-standards.md`.

@@ -44,33 +44,13 @@ Review planning documents:
 
 ## Quality Standards
 
-### Clarity
+Planning documents should be clear, complete, traceable, and maintainable. For detailed quality criteria, see `pm-requirements:requirements-authoring` → `standards/integrity-and-quality-standards.md`.
 
+**Planning-specific quality checks:**
 - Tasks are clear and actionable
-- Status indicators are current and accurate
-- Notes provide helpful context
-- Organization is logical and navigable
-
-### Completeness
-
-- All implementation areas are covered
-- Testing is comprehensively planned
-- Documentation tasks are included
-- Dependencies are identified
-
-### Traceability
-
+- Status indicators are current
 - Every task group links to requirements or specifications
-- Navigation between documents is seamless
-- Related tasks are grouped together
-- Blockers and dependencies are explicit
-
-### Maintainability
-
 - Document is updated as work progresses
-- Completed tasks are marked
-- Structure adapts to project evolution
-- Remains a useful reference throughout project lifecycle
 
 ## Common Anti-Patterns to Avoid
 

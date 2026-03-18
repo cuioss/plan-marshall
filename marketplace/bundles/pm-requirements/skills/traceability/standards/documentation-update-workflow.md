@@ -1,102 +1,34 @@
 # Documentation Update Workflow
 
-Standards for updating documentation through the implementation lifecycle phases.
+Traceability-specific guidance for updating documentation through implementation lifecycle phases.
 
-## Lifecycle Phases
+For the complete lifecycle model (PLANNED → IN PROGRESS → IMPLEMENTED → DEPRECATED), see `pm-requirements:requirements-authoring` → `standards/documentation-lifecycle-management.md`.
 
-Documentation evolves as implementation progresses through three distinct phases.
+## Traceability Updates by Phase
 
-### Pre-Implementation (Status: PLANNED)
+### Pre-Implementation (PLANNED)
+- Write comprehensive specification with design and expected API
+- No implementation links yet — spec defines "what" and "how"
 
-**Specification State**:
-- Contains detailed design and expected API
-- Includes validation flows and examples
-- Focus on "what" and "how" the system should work
-- Status indicator: PLANNED
-
-**Actions**:
-- Write comprehensive specification
-- Define requirements and constraints
-- Design component architecture
-- Document expected interfaces
-
-### During Implementation (Status: IN PROGRESS)
-
-**Specification Updates**:
-- Update status to IN PROGRESS
+### During Implementation (IN PROGRESS)
 - Add implementation links as classes are created
+- Add JavaDoc with specification references (see `code-to-specification-linking.md`)
 - Document implementation decisions and library choices
-- Add notes about design adaptations
+- Update status indicator
 
-**Code Documentation**:
-- Add JavaDoc with specification references
-- Use templates from code-to-specification-linking standards
-- Link back to specification documents
-- Document implementation-specific details
-
-**Actions**:
-- Create implementing classes
-- Add JavaDoc referencing specifications
-- Update specification with implementation links
-- Document key implementation decisions
-
-### Post-Implementation (Status: IMPLEMENTED)
-
-**Specification Cleanup**:
-- Update status to IMPLEMENTED
-- Add complete implementation references
-- Link to all implementing classes
+### Post-Implementation (IMPLEMENTED)
+- Complete all traceability links (spec → code → tests)
 - Add test references in Verification section
 - Remove redundant code examples that duplicate implementation
 - Keep architectural guidance and design rationale
 - Refer readers to JavaDoc for detailed API behavior
 
-**Validation**:
-- Ensure all links are correct
-- Verify test references are complete
-- Check that no redundant content remains
-- Confirm specification still provides value
+## Separation of Concerns
 
-**Actions**:
-- Final specification review
-- Remove implementation details now in code
-- Ensure traceability links are complete
-- Add test coverage information
+| Document | Contains | Does NOT Contain |
+|----------|----------|------------------|
+| Specification | What and why | Implementation details |
+| JavaDoc | How and when | Architecture decisions |
+| Tests | Validation and coverage | Design rationale |
 
-## Workflow Summary
-
-```
-PLANNED → IN PROGRESS → IMPLEMENTED
-
-PLANNED:
-- Detailed specification
-- No implementation
-- Design focus
-
-IN PROGRESS:
-- Add implementation links
-- Document decisions
-- Keep specification updated
-
-IMPLEMENTED:
-- Clean up redundancy
-- Complete all links
-- Maintain architecture guidance
-```
-
-## Best Practices
-
-**Maintain Separation of Concerns**:
-- Specifications: What and why
-- JavaDoc: How and when
-- Tests: Validation and coverage
-
-**Avoid Information Duplication**:
-- Don't duplicate implementation details in specification
-- Don't duplicate architecture in JavaDoc
-- Use cross-references instead
-
-**Keep Documentation Current**:
-- Update status as implementation progresses
-- Add links immediately when classes are created
-- Remove obsolete content promptly
+Use cross-references instead of duplicating information across these layers. Update links immediately when classes are created.

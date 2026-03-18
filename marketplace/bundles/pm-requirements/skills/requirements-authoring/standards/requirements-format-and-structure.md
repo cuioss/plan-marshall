@@ -160,37 +160,7 @@ This requirement has been deprecated in favor of OAuth 2.0 (see API-AUTH-1).
 
 ## Prefix Selection by Domain
 
-### Recommended Prefixes
-
-| Domain | Prefix | Example |
-|--------|--------|---------|
-| Apache NiFi Integration | `NIFI-` | NIFI-PROC-1 |
-| Security | `SEC-` | SEC-AUTH-1 |
-| API Development | `API-` | API-REST-1 |
-| User Interface | `UI-` | UI-COMP-1 |
-| Database | `DB-` | DB-MIGR-1 |
-| Integration | `INT-` | INT-KAFKA-1 |
-| Logging | `LOG-` | LOG-AUDIT-1 |
-| Testing | `TEST-` | TEST-PERF-1 |
-| JWT | `JWT-` | JWT-VALID-1 |
-
-### Multiple Component Prefixes
-
-For complex projects with multiple major components, use hierarchical prefixes:
-
-```asciidoc
-[#SYS-AUTH-1]
-=== SYS-AUTH-1: Authentication System Requirements
-
-[#SYS-AUTH-1.1]
-==== SYS-AUTH-1.1: OAuth Implementation
-
-[#SYS-DB-1]
-=== SYS-DB-1: Database Requirements
-
-[#SYS-DB-1.1]
-==== SYS-DB-1.1: Schema Design
-```
+For the complete prefix table, selection criteria, and hierarchical prefix patterns, see `pm-requirements:setup` → `standards/prefix-selection.md`.
 
 ## Integration with Specifications
 

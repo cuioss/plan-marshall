@@ -92,7 +92,7 @@ Requirements maintenance ensures documentation remains accurate, current, and al
 
 ## Removing Requirements
 
-**CRITICAL RULE**: Never delete requirements
+**CRITICAL RULE**: Never delete requirements before 1.0 release. After 1.0, deletion requires explicit user approval (see Removal Process below). Default action is deprecation, not deletion.
 
 ### Process
 
