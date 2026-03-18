@@ -1,7 +1,7 @@
 # AsciiDoc Formatting Standards
 
 ## Purpose
-Comprehensive AsciiDoc formatting, grammar, and best practice standards for all CUI project documentation.
+Comprehensive AsciiDoc formatting, grammar, and best practice standards for all project documentation.
 
 ## Document Structure Standards
 

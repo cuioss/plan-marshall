@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document defines comprehensive standards for organizing, reviewing, and maintaining documentation structure, including file organization, naming conventions, size limits, and quality review processes for all CUI projects.
+This document defines comprehensive standards for organizing, reviewing, and maintaining documentation structure, including file organization, naming conventions, size limits, and quality review processes for all projects.
 
 ## File Organization Standards
 

@@ -29,7 +29,7 @@ bundle:skill/scripts/name.ext
 ### Bash Scripts
 
 ```
-pm-documents:ref-documentation/scripts/asciidoc-validator.sh
+pm-documents:ref-asciidoc/scripts/asciidoc.py
 pm-plugin-development:plugin-doctor/scripts/analyze-markdown-file.sh
 ```
 

@@ -17,7 +17,7 @@ Provide structured management of interface documentation:
 - **Update** interface specifications
 - **Delete** interfaces when necessary
 - **List** all interfaces with optional filtering
-- **Validate** interface format using ref-documentation
+- **Validate** interface format using ref-asciidoc
 
 ## Available Workflows
 
@@ -28,7 +28,7 @@ Provide structured management of interface documentation:
 | **read-interface** | Read interface content | `manage-interface.py read` |
 | **update-interface** | Update interface content | `manage-interface.py update` |
 | **delete-interface** | Delete interface (with confirmation) | `manage-interface.py delete` |
-| **validate-interface** | Validate interface format | ref-documentation workflows |
+| **validate-interface** | Validate interface format | ref-asciidoc workflows |
 
 ## Workflow: list-interfaces
 
@@ -92,7 +92,7 @@ Read the created file and inform user to fill in content sections.
 **Step 5: Validate Format**
 
 ```
-Skill: pm-documents:ref-documentation
+Skill: pm-documents:ref-asciidoc
 Execute workflow: validate-format
 Parameters:
   target: {created_path}
@@ -179,7 +179,7 @@ Report deletion to user.
 
 ## Workflow: validate-interface
 
-Validate interface format using ref-documentation skill.
+Validate interface format using ref-asciidoc skill.
 
 ### Parameters
 
@@ -194,7 +194,7 @@ Use list-interfaces workflow to get interface path by number.
 **Step 2: Validate Format**
 
 ```
-Skill: pm-documents:ref-documentation
+Skill: pm-documents:ref-asciidoc
 Execute workflow: validate-format
 Parameters:
   target: {interface_path}
@@ -204,9 +204,9 @@ Parameters:
 
 Report validation results to user.
 
-## Integration with ref-documentation
+## Integration with ref-asciidoc
 
-This skill integrates with `ref-documentation` for:
+This skill integrates with `ref-asciidoc` for:
 
 - **Format validation**: Ensures AsciiDoc formatting compliance
 - **Link verification**: Validates cross-references
@@ -252,4 +252,4 @@ Examples:
 
 ## References
 
-- [ref-documentation SKILL](../ref-documentation/SKILL.md) - Format validation
+- [ref-asciidoc SKILL](../ref-asciidoc/SKILL.md) - Format validation

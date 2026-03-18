@@ -1,7 +1,7 @@
 # README Structure Standards
 
 ## Purpose
-Standard structure for module README.adoc files in CUI projects to ensure consistency and completeness.
+Standard structure for module README.adoc files in projects to ensure consistency and completeness.
 
 ## Structure Requirements
 

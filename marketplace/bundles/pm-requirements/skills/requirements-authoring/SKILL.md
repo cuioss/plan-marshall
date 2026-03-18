@@ -6,7 +6,7 @@ user-invocable: false
 
 # Requirements and Specification Authoring Standards
 
-Comprehensive standards for creating, structuring, and maintaining requirements and specification documents in CUI projects following SMART principles, ensuring complete traceability, and maintaining documentation integrity throughout the project lifecycle.
+Comprehensive standards for creating, structuring, and maintaining requirements and specification documents in projects following SMART principles, ensuring complete traceability, and maintaining documentation integrity throughout the project lifecycle.
 
 ## What This Skill Provides
 
@@ -141,7 +141,7 @@ This skill integrates with:
 - **pm-requirements:setup** - Provides initial structure that authoring populates
 - **pm-requirements:planning** - Planning tasks trace to requirements created here
 - **pm-requirements:traceability** - Links authored specs to implementation code
-- **pm-documents:ref-documentation** - General AsciiDoc formatting standards
+- **pm-documents:ref-asciidoc** - AsciiDoc formatting and validation standards
 - **pm-dev-java:javadoc** - JavaDoc standards for referencing requirements
 
 ## Anti-Patterns to Avoid
@@ -189,6 +189,6 @@ Before completing requirements/specification work:
 - traceability - Linking specs to implementation
 
 **External:**
-- pm-documents:ref-documentation - AsciiDoc formatting
+- pm-documents:ref-asciidoc - AsciiDoc formatting
 - pm-dev-java:javadoc - JavaDoc requirement references
 - plan-marshall:workflow-integration-git - Committing requirement changes

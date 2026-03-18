@@ -74,4 +74,5 @@ Registered in marshal.json under the documentation domain:
 ## Related Documents
 
 - [extension-api:extension-contract](../../../plan-marshall/skills/extension-api/standards/extension-contract.md) - Triage extension contract
-- [pm-documents:ref-documentation](../ref-documentation/SKILL.md) - Documentation standards
+- [pm-documents:ref-asciidoc](../ref-asciidoc/SKILL.md) - AsciiDoc formatting and validation
+- [pm-documents:ref-documentation](../ref-documentation/SKILL.md) - Content quality and review

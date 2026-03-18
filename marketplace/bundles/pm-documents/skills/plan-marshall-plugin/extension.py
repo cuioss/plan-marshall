@@ -32,18 +32,26 @@ class Extension(ExtensionBase):
                 'core': {
                     'defaults': [
                         {
+                            'skill': 'pm-documents:ref-asciidoc',
+                            'description': 'AsciiDoc formatting, validation, link verification, and template creation',
+                        },
+                        {
                             'skill': 'pm-documents:ref-documentation',
-                            'description': 'General documentation standards for README, AsciiDoc, and technical documentation',
-                        }
+                            'description': 'Content quality, tone analysis, organization standards, and review orchestration',
+                        },
                     ],
                     'optionals': [],
                 },
                 'documentation': {
                     'defaults': [
                         {
+                            'skill': 'pm-documents:ref-asciidoc',
+                            'description': 'AsciiDoc formatting, validation, link verification, and template creation',
+                        },
+                        {
                             'skill': 'pm-documents:ref-documentation',
-                            'description': 'General documentation standards for README, AsciiDoc, and technical documentation',
-                        }
+                            'description': 'Content quality, tone analysis, organization standards, and review orchestration',
+                        },
                     ],
                     'optionals': [
                         {

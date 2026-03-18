@@ -588,7 +588,8 @@ class Extension(ExtensionBase):
             "profiles": {
                 "core": {
                     "defaults": [
-                        {"skill": "pm-documents:ref-documentation", "description": "AsciiDoc and documentation standards"},
+                        {"skill": "pm-documents:ref-asciidoc", "description": "AsciiDoc formatting and validation"},
+                        {"skill": "pm-documents:ref-documentation", "description": "Content quality and review"},
                     ],
                     "optionals": []
                 },
