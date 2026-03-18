@@ -333,10 +333,74 @@ for await (const items of fetchAllPages('/api/users')) {
 }
 ```
 
+## Promise.withResolvers (ES2024)
+
+Creates a deferred promise without the executor callback pattern:
+
+```javascript
+// ✅ ES2024: Promise.withResolvers()
+const { promise, resolve, reject } = Promise.withResolvers();
+
+// Useful when resolve/reject must be called outside the executor
+element.addEventListener('load', () => resolve(element));
+element.addEventListener('error', () => reject(new Error('Load failed')));
+
+const result = await promise;
+```
+
+## AbortController
+
+Use `AbortController` to cancel fetch requests, clean up event listeners, and manage component lifecycles:
+
+```javascript
+// Cancel a fetch request
+const controller = new AbortController();
+
+const fetchData = async (url) => {
+  const response = await fetch(url, { signal: controller.signal });
+  return response.json();
+};
+
+// Cancel after timeout or user action
+setTimeout(() => controller.abort(), 5000);
+cancelButton.addEventListener('click', () => controller.abort());
+
+// Handle cancellation
+try {
+  const data = await fetchData('/api/data');
+} catch (error) {
+  if (error.name === 'AbortError') {
+    console.log('Request was cancelled');
+  } else {
+    throw error;
+  }
+}
+```
+
+### Component Cleanup Pattern
+
+```javascript
+class DataFetcher {
+  #controller = null;
+
+  async load(url) {
+    // Cancel any in-flight request
+    this.#controller?.abort();
+    this.#controller = new AbortController();
+
+    const response = await fetch(url, { signal: this.#controller.signal });
+    return response.json();
+  }
+
+  destroy() {
+    this.#controller?.abort();
+  }
+}
+```
+
 ## Advanced Concepts
 
 - **AsyncQueue**: A promise-based queue that serializes async operations, ensuring only one runs at a time. Useful for rate-limited APIs or ordered writes.
-- **Cancellable Promises**: Use `AbortController` with `fetch` to cancel in-flight requests. Pass `{ signal: controller.signal }` to fetch and call `controller.abort()` to cancel. Catch `AbortError` to distinguish cancellations from failures.
 
 ## Common Pitfalls
 
@@ -398,4 +462,4 @@ const loadData = async () => {
 - [JavaScript Fundamentals](javascript-fundamentals.md) - Core language features
 - [Code Quality](code-quality.md) - Complexity and error handling
 - [Modern Patterns](modern-patterns.md) - Advanced patterns
-- [Tooling Guide](tooling-guide.md) - ESLint async rules
+- `pm-dev-frontend:js-enforce-eslint` - ESLint async rules

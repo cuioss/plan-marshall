@@ -10,7 +10,7 @@ Modern JavaScript development uses ES2022+ features with a preference for vanill
 
 **Target**: ES2022 (ES13) and later features
 **Browser Support**: Modern browsers with native ES modules
-**Node.js**: Version 20.12.2 LTS or later
+**Node.js**: Version 22 LTS or later
 **Transpilation**: Babel for test environments only
 
 ## Vanilla JavaScript Preference
@@ -273,4 +273,4 @@ const hasProperty = Object.hasOwn(obj, 'property');
 - [Code Quality](code-quality.md) - Complexity limits and refactoring
 - [Modern Patterns](modern-patterns.md) - Advanced JavaScript patterns
 - [Async Programming](async-programming.md) - Promises and async/await
-- [Tooling Guide](tooling-guide.md) - ESLint and development tools
+- `pm-dev-frontend:js-enforce-eslint` - ESLint and development tools

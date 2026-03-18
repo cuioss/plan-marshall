@@ -58,7 +58,7 @@ const apiUrl = `${baseUrl}/api/v${apiVersion}/users/${userId}?include=${includes
 const defaultOptions = { timeout: 5000, retries: 3 };
 const finalOptions = { ...defaultOptions, ...customOptions };
 
-// Array spreading
+// Array spreading (shallow copy only — use structuredClone() for deep copies)
 const mergedItems = [...existingItems, ...newItems];
 const clonedArray = [...originalArray];
 
@@ -116,17 +116,49 @@ const allValidated = users.every(user => user.isValidated);
 // Aggregation with reduce
 const totalValue = items.reduce((sum, item) => sum + item.value, 0);
 
-// Grouping with reduce
-const groupedByCategory = items.reduce((groups, item) => {
-  const key = item.category;
-  groups[key] = groups[key] || [];
-  groups[key].push(item);
-  return groups;
-}, {});
+// Grouping (ES2024 — prefer Object.groupBy over manual reduce)
+const groupedByCategory = Object.groupBy(items, item => item.category);
 
 // Flattening
 const flattened = nested.flat();
 const allTags = posts.flatMap(post => post.tags);
+```
+
+### Immutable Array Methods (ES2023+)
+
+Prefer these over manual spread patterns — they return new arrays without mutating the original:
+
+```javascript
+const items = [3, 1, 4, 1, 5];
+
+// ✅ ES2023: toSorted(), toReversed(), toSpliced(), with()
+const sorted = items.toSorted((a, b) => a - b);    // [1, 1, 3, 4, 5]
+const reversed = items.toReversed();                 // [5, 1, 4, 1, 3]
+const spliced = items.toSpliced(1, 2, 9);           // [3, 9, 1, 5]
+const replaced = items.with(2, 99);                  // [3, 1, 99, 1, 5]
+
+// Original is unchanged
+console.log(items); // [3, 1, 4, 1, 5]
+
+// ❌ Avoid: mutating originals or manual spread patterns
+// items.sort(), items.reverse(), items.splice()
+// [...items.slice(0, index), ...items.slice(index + 1)]
+```
+
+### Set Methods (ES2025)
+
+Native set operations — no manual iteration needed:
+
+```javascript
+const frontend = new Set(['js', 'css', 'html']);
+const backend = new Set(['js', 'python', 'go']);
+
+frontend.union(backend);              // Set {'js', 'css', 'html', 'python', 'go'}
+frontend.intersection(backend);       // Set {'js'}
+frontend.difference(backend);         // Set {'css', 'html'}
+frontend.symmetricDifference(backend); // Set {'css', 'html', 'python', 'go'}
+frontend.isSubsetOf(backend);         // false
+frontend.isSupersetOf(backend);       // false
 ```
 
 ## Class Patterns
@@ -296,7 +328,7 @@ const createCard = createDiv('card');
 
 ### Immutability
 
-Always return new objects/arrays instead of mutating:
+Always return new objects/arrays instead of mutating. Use ES2023+ immutable array methods where available:
 
 ```javascript
 const updateUser = (user, updates) => ({
@@ -305,12 +337,29 @@ const updateUser = (user, updates) => ({
 
 const addItem = (items, newItem) => [...items, newItem];
 
-const removeItem = (items, index) => [
-  ...items.slice(0, index), ...items.slice(index + 1),
-];
+// ✅ ES2023: use toSpliced() and with() instead of manual spread
+const removeItem = (items, index) => items.toSpliced(index, 1);
 
 const updateItem = (items, index, updates) =>
-  items.map((item, i) => (i === index ? { ...item, ...updates } : item));
+  items.with(index, { ...items[index], ...updates });
+```
+
+### Deep Cloning
+
+Use `structuredClone()` for deep copies instead of `JSON.parse(JSON.stringify())` or manual spread:
+
+```javascript
+const original = { name: 'Alice', tags: ['admin'], meta: { created: new Date() } };
+
+// ✅ structuredClone — handles nested objects, Date, Map, Set, ArrayBuffer
+const deep = structuredClone(original);
+deep.tags.push('editor'); // original.tags unchanged
+
+// ❌ Avoid: loses Date objects, fails on circular references
+// const broken = JSON.parse(JSON.stringify(original));
+
+// Spread is fine for shallow copies only
+const shallow = { ...original };
 ```
 
 ## Performance Patterns
@@ -374,4 +423,4 @@ const handleScroll = throttle(() => { /* Update UI */ }, 100);
 - [JavaScript Fundamentals](javascript-fundamentals.md) - Core patterns
 - [Code Quality](code-quality.md) - Refactoring and maintainability
 - [Async Programming](async-programming.md) - Asynchronous patterns
-- [Tooling Guide](tooling-guide.md) - Development tools
+- `pm-dev-frontend:js-enforce-eslint` - ESLint and development tools

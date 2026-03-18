@@ -2,13 +2,13 @@
 
 ## Purpose
 
-This document defines ESLint v9 flat configuration structure, required dependencies, plugin management, and environment setup for consistent JavaScript linting across all CUI projects.
+This document defines ESLint v10 flat configuration structure, required dependencies, plugin management, and environment setup for consistent JavaScript linting across all CUI projects.
 
-## ESLint v9 Flat Configuration
+## ESLint Flat Configuration
 
 ### Configuration File Structure
 
-All projects must use ESLint v9+ with flat configuration format. Create `eslint.config.js` in the project root:
+All projects must use ESLint v10+ with flat configuration format. Create `eslint.config.js` in the project root:
 
 ```javascript
 import js from '@eslint/js';
@@ -94,7 +94,7 @@ export default [
 
 ## Required Dependencies
 
-### Core ESLint v9 Dependencies
+### Core ESLint Dependencies
 
 All projects must include these core dependencies in `package.json`:
 
@@ -538,7 +538,7 @@ npm list eslint-plugin-prettier
 
 ## Best Practices
 
-1. **Always use flat config** - ESLint v9 flat configuration is the modern standard
+1. **Always use flat config** - ESLint flat configuration is the modern standard
 2. **Set "type": "module"** - Required for ES module imports in configuration
 3. **Install all required plugins** - JSDoc, Jest, SonarJS, Security, Unicorn, Promise, Prettier
 4. **Use direct imports** - Import plugins directly, not as strings

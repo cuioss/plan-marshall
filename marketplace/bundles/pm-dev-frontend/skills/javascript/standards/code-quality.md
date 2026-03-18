@@ -389,4 +389,4 @@ const processUserData = (rawData) => {
 - [JavaScript Fundamentals](javascript-fundamentals.md) - Core language patterns
 - [Modern Patterns](modern-patterns.md) - Advanced JavaScript patterns
 - [Async Programming](async-programming.md) - Asynchronous code quality
-- [Tooling Guide](tooling-guide.md) - Linting and quality tools
+- `pm-dev-frontend:js-enforce-eslint` - Linting and quality tools

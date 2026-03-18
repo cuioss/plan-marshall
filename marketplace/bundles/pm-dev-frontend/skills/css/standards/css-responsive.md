@@ -124,6 +124,31 @@ Start with mobile styles, then enhance for larger screens.
 }
 ```
 
+### CSS Subgrid (Baseline 2023)
+
+Subgrid lets nested elements align to the parent grid's tracks:
+
+```css
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+}
+
+.card {
+  display: grid;
+  /* Inherit parent's row tracks for consistent alignment */
+  grid-template-rows: subgrid;
+  grid-row: span 3;  /* Card spans 3 rows: header, body, footer */
+}
+
+.card__header { /* Aligns across all cards */ }
+.card__body { /* Same height row across all cards */ }
+.card__footer { /* Footer always at bottom, aligned */ }
+```
+
+Use subgrid when nested items must align with siblings — particularly card grids where headers, content, and footers should line up across columns.
+
 ### Auto-Fit Pattern
 
 Responsive without media queries:

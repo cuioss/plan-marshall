@@ -38,6 +38,83 @@ Core CSS principles, naming conventions, code organization, and component archit
 - **Flexbox** - Component layouts
 - **Container Queries** - Responsive components
 
+### Native CSS Nesting (Baseline 2023)
+
+Use native CSS nesting with the `&` selector for component-scoped styles:
+
+```css
+.card {
+  padding: 1rem;
+  border: 1px solid var(--border-primary);
+
+  & .card__header {
+    font-weight: 600;
+  }
+
+  & .card__body {
+    padding: 0.5rem 0;
+  }
+
+  &:hover {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  }
+
+  &--highlighted {
+    border-color: var(--primary-color);
+  }
+
+  @media (min-width: 768px) {
+    padding: 2rem;
+  }
+}
+```
+
+**Note**: `postcss-nested` is now a polyfill for native nesting syntax. Projects targeting modern browsers can use native nesting directly.
+
+### Cascade Layers (`@layer`) (Baseline 2022)
+
+Use `@layer` to manage specificity without relying solely on source order or BEM:
+
+```css
+/* Define layer order — later layers win regardless of specificity */
+@layer base, components, utilities;
+
+@layer base {
+  a { color: var(--link-color); }
+}
+
+@layer components {
+  .button { padding: 0.5rem 1rem; }
+  .card { border: 1px solid var(--border-primary); }
+}
+
+@layer utilities {
+  .hidden { display: none; }
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; }
+}
+```
+
+### `:has()` Pseudo-Class (Baseline 2023)
+
+The "parent selector" — style elements based on their children or subsequent siblings:
+
+```css
+/* Style form group when it contains an invalid input */
+.form-group:has(:invalid) {
+  border-color: var(--color-error);
+}
+
+/* Style card differently when it has an image */
+.card:has(img) {
+  grid-template-rows: auto 1fr;
+}
+
+/* Style label when its sibling input is focused */
+label:has(+ input:focus) {
+  color: var(--primary-color);
+}
+```
+
 ### Modern Functions
 
 ```css

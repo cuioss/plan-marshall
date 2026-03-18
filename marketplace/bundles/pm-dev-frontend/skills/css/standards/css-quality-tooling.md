@@ -267,6 +267,70 @@ Minimum 44x44px:
 }
 ```
 
+### `light-dark()` Function (Baseline 2024)
+
+Simplify dark mode with single-declaration color switching:
+
+```css
+:root {
+  color-scheme: light dark;
+}
+
+.page {
+  background: light-dark(white, #121212);
+  color: light-dark(#1c1b1f, #e6e1e5);
+  border-color: light-dark(#e0e0e0, #3d3d3d);
+}
+```
+
+`light-dark()` automatically selects the appropriate value based on the computed `color-scheme`. Use this for simpler cases; use custom properties with `@media (prefers-color-scheme)` when you need more control.
+
+### `color-mix()` (Baseline 2023)
+
+Create dynamic color variations without preprocessors:
+
+```css
+.button--primary {
+  background: var(--primary-color);
+}
+
+.button--primary:hover {
+  /* 20% darker */
+  background: color-mix(in srgb, var(--primary-color), black 20%);
+}
+
+.button--primary:active {
+  /* 30% darker */
+  background: color-mix(in srgb, var(--primary-color), black 30%);
+}
+
+/* Semi-transparent overlay */
+.overlay {
+  background: color-mix(in srgb, var(--primary-color), transparent 50%);
+}
+```
+
+### `@property` — Typed Custom Properties (Baseline 2024)
+
+Define custom property types, enabling transitions and providing defaults:
+
+```css
+@property --gradient-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+
+.gradient-card {
+  background: conic-gradient(from var(--gradient-angle), #1976d2, #9c27b0);
+  transition: --gradient-angle 0.5s;
+}
+
+.gradient-card:hover {
+  --gradient-angle: 180deg;
+}
+```
+
 ### Manual Toggle
 
 ```css
@@ -405,7 +469,7 @@ export default (ctx) => {
 
 **What PostCSS Does:**
 - **postcss-import** - Inlines `@import` statements
-- **postcss-nested** - Sass-like nesting support
+- **postcss-nested** - Nesting support (polyfill for native CSS nesting; can be removed when targeting modern browsers only)
 - **postcss-preset-env** - Modern CSS features with fallbacks
 - **autoprefixer** - Adds vendor prefixes automatically
 - **csso** - Minifies CSS in production
@@ -473,7 +537,7 @@ npm run css:quality    # Both checks
 Create `purgecss.config.js`:
 
 ```javascript
-module.exports = {
+export default {
   content: [
     './src/**/*.html',
     './src/**/*.js'
