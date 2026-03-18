@@ -30,6 +30,7 @@ Reference when:
 | Document | Content |
 |----------|---------|
 | [python-core.md](standards/python-core.md) | Complete patterns reference |
+| [testing-pytest.md](standards/testing-pytest.md) | Pytest standards, fixtures, isolation, mocking |
 
 ## Quick Reference
 
