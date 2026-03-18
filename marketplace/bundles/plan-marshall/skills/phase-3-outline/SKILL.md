@@ -301,7 +301,7 @@ If the agent returned `analysis`, verify this is correct by checking the request
 **IF `change_type == analysis`**: Scan the request (clarified_request + clarifications) for action words: `fix`, `implement`, `improve`, `update`, `create`, `refactor`, `migrate`, `remove`, `restructure`.
 
 **IF any action word is found**: The request uses analysis as discovery, not as the goal. Override:
-- Set `change_type = enhancement` (or `tech_debt` if the action is refactor/migrate/restructure)
+- Set `change_type = enhancement` (or `tech_debt` if the action is refactor/migrate/restructure/remove)
 - Persist the override:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage_status metadata \

@@ -118,7 +118,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 ```toon
 status: success
 plan_id: {plan_id}
-change_type: {feature|enhancement|bug_fix|tech_debt|verification|analysis}
+change_type: {feature|bug_fix|tech_debt|enhancement|verification|analysis}
 confidence: {0-100}
 reasoning: "{which decision tree rule matched and why}"
 ```
