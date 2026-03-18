@@ -10,7 +10,7 @@ Standards and workflows for writing clear, maintainable technical documentation 
 
 **Note**: This skill covers general documentation. For code documentation, use:
 - `pm-dev-java:javadoc` for Java code documentation
-- `cui-frontend-development/jsdoc-standards.md` for JavaScript documentation
+- `pm-dev-frontend:js-fix-jsdoc` for JavaScript documentation
 
 ## Available Workflows
 
