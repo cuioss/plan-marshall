@@ -127,10 +127,11 @@ project-root/
 - Build outputs in `dist/` for npm publishing
 - Standard npm package structure
 - **Vite** (v8+) is the preferred bundler for standalone projects; Webpack remains the standard for NiFi extension WAR packaging
+- Vite v8 ships **Rolldown** (Rust-based unified bundler) replacing esbuild (dev) and Rollup (prod), delivering 10-30x faster builds
 
 **Bundler selection**:
-- **Vite** (`vite ^8.0.0`): Standalone projects, libraries, modern ESM output
-- **Webpack** (`webpack ^5.x`): NiFi extensions (WAR/WebJar packaging), legacy browser support
+- **Vite** (`vite ^8.0.0`): Standalone projects, libraries, modern ESM output. Uses Rolldown as the single unified Rust-based bundler for both development and production builds
+- **Webpack** (`webpack ^5.x`): NiFi extensions (WAR/WebJar packaging), legacy browser support. Consider **Rspack** as a Webpack-compatible Rust-based drop-in replacement for new projects requiring Webpack compatibility
 
 ## File Naming Conventions
 

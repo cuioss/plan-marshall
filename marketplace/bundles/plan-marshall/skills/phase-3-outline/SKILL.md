@@ -294,6 +294,30 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status metada
   --field change_type
 ```
 
+### Post-Check: Override `analysis` When Request Includes Actions
+
+If the agent returned `analysis`, verify this is correct by checking the request text (already loaded in Step 2).
+
+**IF `change_type == analysis`**: Scan the request (clarified_request + clarifications) for action words: `fix`, `implement`, `improve`, `update`, `create`, `refactor`, `migrate`, `remove`, `restructure`.
+
+**IF any action word is found**: The request uses analysis as discovery, not as the goal. Override:
+- Set `change_type = enhancement` (or `tech_debt` if the action is refactor/migrate/restructure)
+- Persist the override:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status metadata \
+  --plan-id {plan_id} \
+  --set \
+  --field change_type \
+  --value {corrected_change_type}
+```
+- Log the override:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-3-outline) Post-check override: analysis → {corrected_change_type} (request contains action word: {word})"
+```
+
+**IF no action word found**: Keep `analysis` as-is.
+
 ### Log Detection
 
 ```bash
