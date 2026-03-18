@@ -97,8 +97,7 @@ class TokenValidatorTest {
 }
 ```
 
-**Diagnostic Support**: When a `LogAsserts` assertion fails, the failure message automatically includes all recorded log messages, making it easy to diagnose what was actually logged versus what was expected. This is implemented in all assertion methods via `testHandler.getRecordsAsString()` (see [LogAsserts.java:91](https://github.com/cuioss/cui-test-juli-logger/blob/main/src/main/java/de/cuioss/test/juli/LogAsserts.java#L91)).
-```
+**Diagnostic Support**: When a `LogAsserts` assertion fails, the failure message automatically includes all recorded log messages, making it easy to diagnose what was actually logged versus what was expected.
 
 ### Testing with LogRecord Identifiers
 

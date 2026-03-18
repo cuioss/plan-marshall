@@ -768,5 +768,5 @@ echo "Generated: $(date)" >> plan.md
 ## Related Standards
 
 - logging-standards.md - Standards for writing NEW logging code
-- logging-enforcement-patterns.md - Automated enforcement patterns for tooling
+- logmessages-documentation.md - LogMessages AsciiDoc documentation standards
 - dsl-constants.md - DSL-Style Constants Pattern for LogMessages structure

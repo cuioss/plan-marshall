@@ -118,7 +118,7 @@ class AllTestsReproducible {
 
 Parameterized tests are **mandatory** when testing at least 3 similar variants of the same behavior.
 
-For complete parameterized test best practices including quality requirements, see [Test Quality Standards - Parameterized Test Guidelines](testing-quality-standards.md#parameterized-test-guidelines).
+For general parameterized test patterns, see `pm-dev-java:junit-core` → `standards/testing-junit-core.md`.
 
 **Annotation Preference Order:**
 
