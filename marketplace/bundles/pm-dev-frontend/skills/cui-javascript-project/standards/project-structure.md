@@ -231,8 +231,8 @@ Every JavaScript project must have a properly configured package.json:
     "quality:fix": "npm run lint:js:fix && npm run format"
   },
   "devDependencies": {
-    "eslint": "^9.14.0",
-    "@eslint/js": "^9.14.0",
+    "eslint": "^10.0.0",
+    "@eslint/js": "^10.0.0",
     "prettier": "^3.0.3",
     "jest": "^29.7.0"
   }
@@ -451,13 +451,13 @@ Thumbs.db
 
 ### Required Versions
 
-**Node.js**: v20.12.2 LTS (exact version)
+**Node.js**: v22.22.1 LTS (exact version)
 - LTS (Long Term Support) for stability
 - Exact version managed by frontend-maven-plugin
 - Consistent across all environments (development, CI/CD, production)
 - Updated periodically following Node.js LTS schedule
 
-**npm**: 10.5.0 or compatible
+**npm**: 11.7.0 or compatible
 - Bundled with Node.js installation
 - Supports modern package.json features
 - Compatible with `"type": "module"`
@@ -480,8 +480,8 @@ Thumbs.db
 ### Development Environment Setup
 
 **Required tools**:
-1. Node.js v20.12.2 LTS (via nvm or direct install)
-2. npm 10.5.0+ (bundled with Node.js)
+1. Node.js v22.22.1 LTS (via nvm or direct install)
+2. npm 11.7.0+ (bundled with Node.js)
 3. Git with proper `.gitignore` configuration
 4. IDE with ESLint/Prettier extensions (VS Code, IntelliJ)
 

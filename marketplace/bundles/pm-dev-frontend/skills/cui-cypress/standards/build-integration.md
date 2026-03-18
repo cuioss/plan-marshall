@@ -69,11 +69,11 @@ Integrate Cypress tests with Maven build lifecycle using frontend-maven-plugin.
     <plugin>
       <groupId>com.github.eirslett</groupId>
       <artifactId>frontend-maven-plugin</artifactId>
-      <version>1.15.0</version>
+      <version>2.0.0</version>
 
       <configuration>
-        <nodeVersion>v20.11.0</nodeVersion>
-        <npmVersion>10.2.4</npmVersion>
+        <nodeVersion>v22.22.1</nodeVersion>
+        <npmVersion>11.7.0</npmVersion>
         <workingDirectory>${project.basedir}/src/main/webapp</workingDirectory>
         <installDirectory>${project.build.directory}</installDirectory>
       </configuration>
@@ -135,8 +135,8 @@ Integrate Cypress tests with Maven build lifecycle using frontend-maven-plugin.
 ```xml
 <properties>
   <!-- Node and NPM versions -->
-  <node.version>v20.11.0</node.version>
-  <npm.version>10.2.4</npm.version>
+  <node.version>v22.22.1</node.version>
+  <npm.version>11.7.0</npm.version>
 
   <!-- Skip E2E tests flag -->
   <skipE2ETests>false</skipE2ETests>
@@ -235,12 +235,12 @@ mvn integration-test -DskipTests=true
 {
   "devDependencies": {
     "cypress": "^13.0.0",
-    "eslint": "^8.0.0",
-    "eslint-plugin-cypress": "^3.0.0",
-    "eslint-plugin-jsdoc": "^48.0.0",
-    "eslint-plugin-sonarjs": "^0.23.0",
-    "eslint-plugin-security": "^2.1.0",
-    "eslint-plugin-unicorn": "^51.0.0"
+    "eslint": "^10.0.0",
+    "eslint-plugin-cypress": "^4.0.0",
+    "eslint-plugin-jsdoc": "^62.8.0",
+    "eslint-plugin-sonarjs": "^4.0.0",
+    "eslint-plugin-security": "^3.0.0",
+    "eslint-plugin-unicorn": "^63.0.0"
   }
 }
 ```
@@ -293,7 +293,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
 
       - name: Install dependencies
@@ -510,7 +510,7 @@ steps:
 - name: Setup Node.js
   uses: actions/setup-node@v4
   with:
-    node-version: '20'
+    node-version: '22'
     cache: 'npm'
 ```
 

@@ -358,7 +358,7 @@ localStorage.setItem('theme', theme);
     "postcss-preset-env": "^9.0.0",
     "postcss-import": "^15.0.0",
     "postcss-nested": "^6.0.0",
-    "stylelint": "^15.0.0",
+    "stylelint": "^17.4.0",
     "stylelint-config-standard": "^34.0.0",
     "stylelint-order": "^6.0.0",
     "prettier": "^3.0.0",
@@ -501,10 +501,10 @@ jobs:
   quality:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-node@v3
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
       - run: npm ci
       - run: npm run css:quality
       - run: npm run css:build

@@ -284,7 +284,7 @@ Standards for maintainable code:
 ```javascript
 rules: {
   // Complexity thresholds
-  'complexity': ['warn', { max: 10 }],                 // Cyclomatic complexity
+  'complexity': ['warn', { max: 15 }],                 // Cyclomatic complexity
   'max-statements': ['warn', { max: 20 }],             // Maximum statements per function
   'max-params': ['warn', { max: 5 }],                  // Maximum function parameters
   'max-nested-callbacks': ['error', { max: 4 }],       // Maximum callback nesting

@@ -101,8 +101,8 @@ All projects must include these core dependencies in `package.json`:
 ```json
 {
   "devDependencies": {
-    "eslint": "^9.14.0",
-    "@eslint/js": "^9.14.0"
+    "eslint": "^10.0.0",
+    "@eslint/js": "^10.0.0"
   }
 }
 ```
@@ -115,11 +115,11 @@ All projects must include these plugin dependencies:
 {
   "devDependencies": {
     "eslint-plugin-jest": "^28.8.3",
-    "eslint-plugin-jsdoc": "^46.8.0",
-    "eslint-plugin-unicorn": "^48.0.0",
-    "eslint-plugin-security": "^1.7.1",
-    "eslint-plugin-promise": "^6.1.1",
-    "eslint-plugin-sonarjs": "^2.0.3",
+    "eslint-plugin-jsdoc": "^62.8.0",
+    "eslint-plugin-unicorn": "^63.0.0",
+    "eslint-plugin-security": "^3.0.0",
+    "eslint-plugin-promise": "^7.0.0",
+    "eslint-plugin-sonarjs": "^4.0.0",
     "eslint-plugin-prettier": "^5.0.0",
     "prettier": "^3.0.3"
   }

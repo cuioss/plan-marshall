@@ -14,10 +14,10 @@ All JavaScript projects must use frontend-maven-plugin to manage Node.js install
 <plugin>
   <groupId>com.github.eirslett</groupId>
   <artifactId>frontend-maven-plugin</artifactId>
-  <version>1.15.1</version>
+  <version>2.0.0</version>
   <configuration>
-    <nodeVersion>v20.12.2</nodeVersion>
-    <npmVersion>10.5.0</npmVersion>
+    <nodeVersion>v22.22.1</nodeVersion>
+    <npmVersion>11.7.0</npmVersion>
     <installDirectory>target</installDirectory>
   </configuration>
   <executions>
@@ -88,12 +88,12 @@ All JavaScript projects must use frontend-maven-plugin to manage Node.js install
 ### Configuration Parameters
 
 **nodeVersion**: Node.js LTS version to install
-- Required: Node.js `v20.12.2` LTS (exact version)
+- Required: Node.js `v22.22.1` LTS (exact version)
 - Ensures consistent Node.js across all environments
 - Downloaded automatically during build
 
 **npmVersion**: npm version to use
-- Always: `10.5.0` or compatible (see project-structure.md for version requirements)
+- Always: `11.7.0` or compatible (see project-structure.md for version requirements)
 - Bundled with Node.js installation
 - Supports modern package.json features
 
@@ -164,13 +164,13 @@ For projects generating bundled or minified JavaScript assets:
 
 ### Standard Versions
 
-**Node.js v20.12.2 LTS**:
+**Node.js v22.22.1 LTS**:
 - Long Term Support release for stability
 - Consistent across all projects and environments
 - Full ES module support
 - Updated annually following Node.js LTS schedule
 
-**npm 10.5.0+**:
+**npm 11.7.0+**:
 - Bundled with Node.js installation
 - Supports `"type": "module"` in package.json
 - Compatible with modern dependency resolution
@@ -477,8 +477,8 @@ Use standard configuration with DevUI-specific paths in package.json:
 ```xml
 <!-- No special Maven configuration needed -->
 <configuration>
-  <nodeVersion>v20.12.2</nodeVersion>
-  <npmVersion>10.5.0</npmVersion>
+  <nodeVersion>v22.22.1</nodeVersion>
+  <npmVersion>11.7.0</npmVersion>
   <installDirectory>target</installDirectory>
 </configuration>
 ```

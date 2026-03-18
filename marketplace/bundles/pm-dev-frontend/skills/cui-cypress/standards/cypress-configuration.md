@@ -157,12 +157,12 @@ For complete login command implementation with modern `cy.session()` caching and
 {
   "devDependencies": {
     "cypress": "^13.0.0",
-    "eslint": "^8.0.0",
-    "eslint-plugin-cypress": "^3.0.0",
-    "eslint-plugin-jsdoc": "^48.0.0",
-    "eslint-plugin-sonarjs": "^0.23.0",
-    "eslint-plugin-security": "^2.1.0",
-    "eslint-plugin-unicorn": "^51.0.0"
+    "eslint": "^10.0.0",
+    "eslint-plugin-cypress": "^4.0.0",
+    "eslint-plugin-jsdoc": "^62.8.0",
+    "eslint-plugin-sonarjs": "^4.0.0",
+    "eslint-plugin-security": "^3.0.0",
+    "eslint-plugin-unicorn": "^63.0.0"
   }
 }
 ```

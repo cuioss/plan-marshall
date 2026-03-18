@@ -14,7 +14,7 @@ Use appropriate version patterns based on dependency type and stability requirem
 ```json
 {
   "devDependencies": {
-    "eslint": "^9.14.0",        // Updates to 9.x.x (not 10.0.0)
+    "eslint": "^10.0.0",        // Updates to 10.x.x (not 11.0.0)
     "webpack": "^5.96.1",       // Updates to 5.x.x (not 6.0.0)
     "jest": "^29.7.0"           // Updates to 29.x.x (not 30.0.0)
   }
@@ -198,7 +198,7 @@ Use overrides for selective dependency resolution:
 ```json
 {
   "overrides": {
-    "eslint": "^9.14.0",
+    "eslint": "^10.0.0",
     "some-package": {
       "problematic-dep": "^2.0.0"
     }
@@ -282,8 +282,8 @@ Essential packages for all JavaScript projects:
 {
   "devDependencies": {
     // Linting and Formatting
-    "eslint": "^9.14.0",
-    "@eslint/js": "^9.14.0",
+    "eslint": "^10.0.0",
+    "@eslint/js": "^10.0.0",
     "prettier": "^3.0.3",
     "eslint-plugin-prettier": "^5.0.0",
 
@@ -316,11 +316,11 @@ ESLint plugins for comprehensive code quality:
 {
   "devDependencies": {
     "eslint-plugin-jest": "^28.8.3",
-    "eslint-plugin-jsdoc": "^46.8.0",
-    "eslint-plugin-unicorn": "^48.0.0",
-    "eslint-plugin-security": "^1.7.1",
-    "eslint-plugin-promise": "^6.1.1",
-    "eslint-plugin-sonarjs": "^2.0.3"
+    "eslint-plugin-jsdoc": "^62.8.0",
+    "eslint-plugin-unicorn": "^63.0.0",
+    "eslint-plugin-security": "^3.0.0",
+    "eslint-plugin-promise": "^7.0.0",
+    "eslint-plugin-sonarjs": "^4.0.0"
   }
 }
 ```
@@ -343,7 +343,7 @@ ESLint plugins for comprehensive code quality:
 ```json
 {
   "devDependencies": {
-    "stylelint": "^16.10.0",
+    "stylelint": "^17.4.0",
     "stylelint-config-standard": "^36.0.1",
     "stylelint-order": "^6.0.3"
   }
