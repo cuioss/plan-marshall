@@ -53,7 +53,7 @@ Decision criteria for handling JavaScript and TypeScript findings based on sever
 |------------|--------|-------|
 | Prettier violations | Auto-fix | Run `prettier --write` |
 | ESLint auto-fixable | Auto-fix | Run `eslint --fix` |
-| Style preferences | Accept or configure | Configure in .eslintrc |
+| Style preferences | Accept or configure | Configure in `eslint.config.js` |
 
 ## Context Modifiers
 

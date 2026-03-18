@@ -17,17 +17,21 @@ For general documentation principles (what/when/how to document, clarity, comple
 ### Configuration
 
 ```javascript
-// .eslintrc.js
-module.exports = {
-  extends: ['plugin:jsdoc/recommended'],
-  plugins: ['jsdoc'],
-  rules: {
-    'jsdoc/require-description': 'error',
-    'jsdoc/require-param-description': 'error',
-    'jsdoc/require-returns-description': 'error',
-    'jsdoc/require-example': 'warn'
-  }
-};
+// eslint.config.js (ESLint v9 flat config)
+import jsdoc from 'eslint-plugin-jsdoc';
+
+export default [
+  jsdoc.configs['flat/recommended'],
+  {
+    plugins: { jsdoc },
+    rules: {
+      'jsdoc/require-description': 'error',
+      'jsdoc/require-param-description': 'error',
+      'jsdoc/require-returns-description': 'error',
+      'jsdoc/require-example': 'warn',
+    },
+  },
+];
 ```
 
 ## Comment Structure

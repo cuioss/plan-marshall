@@ -337,11 +337,11 @@ localStorage.setItem('theme', theme);
  * Complex component requiring explanation
  *
  * This uses a specific technique because...
- * Browser-specific workaround for Safari...
+ * Browser-specific workaround for Safari flex rendering.
  */
 .complex-component {
-  /* Specific fix for IE11 grid bug */
-  display: -ms-grid;
+  /* Safari flex gap fallback */
+  gap: 1rem;
 }
 ```
 
@@ -382,7 +382,7 @@ localStorage.setItem('theme', theme);
 Create `postcss.config.js`:
 
 ```javascript
-module.exports = (ctx) => {
+export default (ctx) => {
   const isDev = ctx.env !== 'production';
 
   return {
@@ -390,15 +390,15 @@ module.exports = (ctx) => {
       'postcss-import': {},
       'postcss-nested': {},
       'postcss-preset-env': {
-        stage: isDev ? 0 : 1
+        stage: isDev ? 0 : 1,
       },
-      'autoprefixer': {
-        grid: 'autoplace'
+      autoprefixer: {
+        grid: 'autoplace',
       },
-      'csso': isDev ? false : {
-        comments: false
-      }
-    }
+      csso: isDev ? false : {
+        comments: false,
+      },
+    },
   };
 };
 ```
@@ -412,61 +412,7 @@ module.exports = (ctx) => {
 
 ### Stylelint Configuration
 
-Create `.stylelintrc.js`:
-
-```javascript
-module.exports = {
-  extends: [
-    'stylelint-config-standard',
-    'stylelint-config-prettier'
-  ],
-  plugins: [
-    'stylelint-order'
-  ],
-  rules: {
-    // Enforce property order
-    'order/properties-order': [
-      'content',
-      'display',
-      'position',
-      'top',
-      'right',
-      'bottom',
-      'left',
-      'z-index',
-      'flex-direction',
-      'justify-content',
-      'align-items',
-      'gap',
-      'width',
-      'height',
-      'margin',
-      'padding',
-      'border',
-      'background',
-      'color',
-      'font-family',
-      'font-size',
-      'line-height',
-      'opacity',
-      'cursor',
-      'transform',
-      'transition'
-    ],
-
-    // Naming
-    'selector-class-pattern': '^[a-z][a-z0-9]*(-[a-z0-9]+)*(__[a-z0-9]+(-[a-z0-9]+)*)?(--[a-z0-9]+(-[a-z0-9]+)*)?$',
-
-    // Best practices
-    'selector-max-id': 0,
-    'selector-max-specificity': '0,4,0',
-    'selector-max-compound-selectors': 3,
-    'max-nesting-depth': 3,
-    'color-named': 'never',
-    'declaration-no-important': true
-  }
-};
-```
+For complete Stylelint configuration including property ordering, BEM naming enforcement, and CSS-in-JS setup, see `pm-dev-frontend:js-enforce-eslint` → `standards/stylelint-setup.md`.
 
 ### Prettier Configuration
 

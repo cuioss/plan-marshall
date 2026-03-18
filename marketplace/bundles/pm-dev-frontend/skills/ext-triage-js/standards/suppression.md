@@ -218,14 +218,17 @@ doSomething(); // This line is also covered unnecessarily
 /* eslint-enable no-console */
 ```
 
-### Use .eslintignore for Directories
+### Use ESLint v9 Ignores for Directories
 
-```
-# .eslintignore
-**/generated/**
-**/dist/**
-**/node_modules/**
-coverage/
+In `eslint.config.js` (flat config):
+
+```javascript
+export default [
+  {
+    ignores: ['**/generated/**', '**/dist/**', '**/node_modules/**', 'coverage/'],
+  },
+  // ... other configs
+];
 ```
 
 ## When NOT to Suppress
