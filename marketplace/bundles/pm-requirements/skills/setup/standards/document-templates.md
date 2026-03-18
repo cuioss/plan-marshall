@@ -1,6 +1,8 @@
 # Document Templates
 
-Standard templates for initial requirements documentation in CUI projects.
+Standard templates for initial requirements documentation.
+
+> **Note**: For general-purpose AsciiDoc templates (standard, readme, guide), use `pm-documents:ref-asciidoc` → `create-from-template` workflow. The templates below are requirements-specific and follow the same AsciiDoc formatting rules defined in `pm-documents:ref-asciidoc` → `references/asciidoc-formatting.md`.
 
 [[requirements-template]]
 ## Requirements.adoc Template
@@ -161,11 +163,11 @@ link:Specification.adoc[Back to Main Specification]
 == Overview
 _See Requirement link:Requirements.adoc#PREFIX-6[PREFIX-6: Logging Requirements]_
 
-This document defines the log messages for [Project Name] following CUI logging standards.
+This document defines the log messages for [Project Name] following logging standards.
 
 == Logging Standards
 
-All log messages must follow the CUI logging standards:
+All log messages must follow the logging standards:
 
 * Use LogRecords pattern for structured logging
 * Include appropriate log levels (ERROR, WARN, INFO, DEBUG, TRACE)
