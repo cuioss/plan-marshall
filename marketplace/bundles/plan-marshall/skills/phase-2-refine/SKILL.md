@@ -344,11 +344,21 @@ DUPLICATION: {PASS|REDUNDANT}
 | Specific scope | "All X" or "some X" is clear |
 | Measurable criteria | Success is objectively determinable |
 | Clear boundaries | Where changes start/stop is explicit |
+| Analysis intent | If request uses "analyze/investigate/review", is the output scope clear (report-only vs. fix)? |
 
 **Finding format**:
 ```
 AMBIGUITY: {PASS|UNCLEAR}
   - {ambiguous element and possible interpretations}
+```
+
+**Analysis intent finding** (when request uses analyze/investigate/review without clear output scope):
+```
+AMBIGUITY: UNCLEAR
+  - Analysis intent: Request uses "{analyze/investigate/review}" but does not specify
+    whether output is findings-only or findings-with-fixes.
+    Interpretation A: Produce analysis report only (no code changes)
+    Interpretation B: Analyze to identify issues, then implement fixes
 ```
 
 ---
@@ -560,6 +570,10 @@ For each issue found in Steps 6-7, formulate a clarification question.
 **From Completeness issues**: "What should happen when {missing scenario}?"
 **From Consistency issues**: "You mentioned both {A} and {B} which conflict. Which takes priority?"
 **From Ambiguity issues**: "When you say {ambiguous term}, do you mean {interpretation A} or {interpretation B}?"
+**From Analysis intent ambiguity**: "Your request uses 'analyze'. What is the expected outcome?"
+  Options:
+    - "Analyze and report only" → "Produce a findings document, no code changes"
+    - "Analyze and implement fixes" → "Use analysis as discovery, then create fix deliverables"
 **From Module Mapping issues**: "Should this change affect {module A}, {module B}, or both?"
 
 ### Ask User
