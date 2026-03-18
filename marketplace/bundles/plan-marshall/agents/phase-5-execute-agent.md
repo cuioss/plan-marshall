@@ -149,6 +149,51 @@ context:
   task_number: {task_number}
 ```
 
+## Script CLI (exact commands — use verbatim)
+
+### Read task
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks get \
+  --plan-id {plan_id} \
+  --number {task_number}
+```
+
+### Mark step complete
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks finalize-step \
+  --plan-id {plan_id} \
+  --task {task_number} \
+  --step {N} \
+  --outcome done
+```
+
+### Update task status
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks update \
+  --plan-id {plan_id} \
+  --number {task_number} \
+  --status done
+```
+
+Valid status values: `pending`, `in_progress`, `done`, `blocked`
+
+### Log work
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  work --plan-id {plan_id} --level INFO --message "[OUTCOME] (plan-marshall:phase-5-execute-agent) {message}"
+```
+
+### Resolve task executor
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config resolve-task-executor \
+  --profile {task.profile} --trace-plan-id {plan_id}
+```
+
 ## CONSTRAINTS (ALWAYS APPLY)
 
 ### MUST NOT - .plan File Access
