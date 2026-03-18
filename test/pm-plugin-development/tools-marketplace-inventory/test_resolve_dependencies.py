@@ -52,11 +52,11 @@ class TestComponentId:
 
     def test_from_notation_agent(self):
         """Test parsing agent notation."""
-        comp = ComponentId.from_notation('plan-marshall:agents:phase-1-init-agent')
+        comp = ComponentId.from_notation('plan-marshall:agents:phase-agent')
         assert comp is not None
         assert comp.bundle == 'plan-marshall'
         assert comp.component_type == 'agent'
-        assert comp.name == 'phase-1-init-agent'
+        assert comp.name == 'phase-agent'
 
     def test_from_notation_command(self):
         """Test parsing command notation."""

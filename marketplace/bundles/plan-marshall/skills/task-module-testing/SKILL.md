@@ -6,7 +6,7 @@ user-invocable: false
 
 # Task Module Testing Skill
 
-**Role**: Domain-agnostic task executor skill for executing module testing tasks (profile=module_testing). Loaded by `plan-marshall:phase-5-execute-agent` when `task.profile` is `module_testing`.
+**Role**: Domain-agnostic task executor skill for executing module testing tasks (profile=module_testing). Loaded by `plan-marshall:phase-5-execute` skill when `task.profile` is `module_testing`.
 
 **Key Pattern**: Agent loads this skill via `resolve-task-executor --profile module_testing`. Skill executes a test-focused workflow: understand context → plan tests → implement tests → verify. Domain-specific testing knowledge comes from `task.skills` (loaded by agent).
 
@@ -349,7 +349,7 @@ If test requires unavailable dependencies:
 
 ## Integration
 
-**Invoked by**: `plan-marshall:phase-5-execute-agent` (when task.profile = module_testing)
+**Invoked by**: `plan-marshall:phase-5-execute` skill (when task.profile = module_testing)
 
 **Skill Loading**: Agent resolves this skill via `resolve-task-executor --profile module_testing`
 

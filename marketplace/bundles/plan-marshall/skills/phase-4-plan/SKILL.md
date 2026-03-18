@@ -6,7 +6,7 @@ user-invocable: false
 
 # Phase Plan Skill
 
-**Role**: Domain-agnostic workflow skill for transforming solution outline deliverables into optimized, executable tasks. Loaded by `plan-marshall:phase-4-plan-agent`.
+**Role**: Domain-agnostic workflow skill for transforming solution outline deliverables into optimized, executable tasks. Loaded by `plan-marshall:phase-agent`.
 
 **Key Pattern**: Reads deliverables with metadata and profiles list from `solution_outline.md`, creates one task per deliverable per profile (1:N mapping), resolves skills from architecture based on `module` + `profile`, creates tasks with explicit skill lists. **No aggregation** - each deliverable maps to exactly one task per profile.
 
@@ -425,7 +425,7 @@ If deliverable metadata incomplete:
 
 ## Integration
 
-**Invoked by**: `plan-marshall:phase-4-plan-agent` (thin agent)
+**Invoked by**: `plan-marshall:phase-agent` (with skill=plan-marshall:phase-4-plan)
 
 **Script Notations** (use EXACTLY as shown):
 - `plan-marshall:manage-solution-outline:manage-solution-outline` - Read deliverables (list-deliverables, read)
@@ -435,4 +435,4 @@ If deliverable metadata incomplete:
 - `plan-marshall:manage-lessons:manage-lesson` - Record lessons on issues (add)
 
 **Consumed By**:
-- `plan-marshall:phase-5-execute-agent` - Reads tasks and executes them
+- `plan-marshall:phase-5-execute` skill - Reads tasks and executes them

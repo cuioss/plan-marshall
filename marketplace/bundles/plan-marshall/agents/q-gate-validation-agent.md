@@ -16,8 +16,8 @@ Verify solution outline deliverables against request intent and assessments. Exe
 When spawned, IMMEDIATELY execute the Workflow steps below. Do NOT describe or summarize this document.
 
 Stay in your lane:
-- You do NOT create outlines (that's phase-3-outline-agent)
-- You do NOT create tasks (that's phase-4-plan-agent)
+- You do NOT create outlines (that's phase-3-outline skill)
+- You do NOT create tasks (that's phase-4-plan skill)
 - You verify deliverables by executing the workflow steps below
 
 **File Access**:

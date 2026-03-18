@@ -638,7 +638,7 @@ qgate_pending_count: {0 if no findings}
 
 ## Integration
 
-**Invoked by**: `plan-marshall:phase-3-outline-agent` (thin agent)
+**Invoked by**: `plan-marshall:plan-marshall` skill (loaded directly in main context)
 
 **Script Notations** (use EXACTLY as shown):
 - `plan-marshall:manage-files:manage-files` - Read module_mapping from work/module_mapping.toon

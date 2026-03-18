@@ -110,9 +110,8 @@ AskUserQuestion:
 Use the selected recipe to create a plan:
 
 ```
-Task: plan-marshall:phase-1-init-agent
-  Input:
-    recipe: {recipe_key}
+Task: plan-marshall:phase-agent
+  Input: skill=plan-marshall:phase-1-init, source=recipe, content={recipe_key}
   Output: plan_id, domains array
 ```
 

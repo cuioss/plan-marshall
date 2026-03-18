@@ -12,12 +12,8 @@
   "keywords": ["environment", "permissions", "utilities", "configuration", "workflow", "task", "pr", "implementation", "quality", "orchestration"],
   "agents": [
     "./agents/detect-change-type-agent.md",
-    "./agents/phase-1-init-agent.md",
-    "./agents/phase-2-refine-agent.md",
-    "./agents/phase-3-outline-agent.md",
+    "./agents/phase-agent.md",
     "./agents/q-gate-validation-agent.md",
-    "./agents/phase-4-plan-agent.md",
-    "./agents/phase-5-execute-agent.md",
     "./agents/research-best-practices-agent.md"
   ],
   "commands": [

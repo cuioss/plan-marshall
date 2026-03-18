@@ -210,7 +210,7 @@ If no domain-specific skill is configured:
 
 | Component | Purpose |
 |-----------|---------|
-| `plan-marshall:workflow-outline-change-type` | Skill loaded by phase-3-outline-agent, executed inline |
+| `plan-marshall:workflow-outline-change-type` | Skill loaded by phase-3-outline skill, executed inline |
 | `plan-marshall:workflow-outline-change-type` | Parent skill with common workflow + conditional routing |
 | `workflow-outline-change-type/standards/change-{type}.md` | Generic sub-skill instructions per change type |
 | `{domain-skill}/standards/change-{type}.md` | Domain-specific sub-skill instructions (override) |

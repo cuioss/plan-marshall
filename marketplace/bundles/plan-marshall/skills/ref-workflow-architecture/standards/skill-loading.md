@@ -122,7 +122,7 @@ The plan-marshall bundle uses a two-tier skill loading pattern for domain-agnost
 │                              ▼                                              │
 │  ┌──────────────────────────────────────────────────────────────────────┐  │
 │  │                                                                      │  │
-│  │  phase-5-execute-agent (EXECUTE phase)                                  │  │
+│  │  phase-5-execute skill (EXECUTE phase)                                  │  │
 │  │  ══════════════════════════════════                                  │  │
 │  │                                                                      │  │
 │  │  Loads skills from task.skills array (no resolution needed)          │  │
@@ -145,7 +145,7 @@ The plan-marshall bundle uses a two-tier skill loading pattern for domain-agnost
 │                                                                             │
 │  ┌──────────────────────────────────────────────────────────────────────┐  │
 │  │                                                                      │  │
-│  │   phase-5-execute-agent                                                 │  │
+│  │   phase-5-execute skill                                                 │  │
 │  │   ═══════════════════                                                │  │
 │  │                                                                      │  │
 │  │   ┌────────────────────────────────────────────────────────────┐    │  │

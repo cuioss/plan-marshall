@@ -113,32 +113,22 @@ Understanding when to use `Skill:` vs `Task:` is critical for proper context man
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                                                                             │
-│                           3 THIN AGENTS (plan-marshall)                       │
+│                      1 GENERIC PHASE AGENT (plan-marshall)                  │
 │                                                                             │
 │  ┌──────────────────────┬────────────────────────────────────────────────┐ │
 │  │ AGENT                │ PURPOSE                                        │ │
 │  ├──────────────────────┼────────────────────────────────────────────────┤ │
 │  │                      │                                                │ │
-│  │ phase-1-init-agent      │ Initialize plan                                │ │
-│  │                      │ • Creates status.toon, request.md, references.json │ │
-│  │                      │ • Detects domain                               │ │
-│  │                      │                                                │ │
-│  ├──────────────────────┼────────────────────────────────────────────────┤ │
-│  │                      │                                                │ │
-│  │ phase-4-plan-agent      │ Create tasks from deliverables                 │ │
-│  │                      │ • Resolves skills for each task                │ │
-│  │                      │ • Aggregates/splits deliverables               │ │
-│  │                      │                                                │ │
-│  ├──────────────────────┼────────────────────────────────────────────────┤ │
-│  │                      │                                                │ │
-│  │ phase-5-execute-agent   │ Execute single task                            │ │
-│  │                      │ • Loads domain skills from task.skills         │ │
-│  │                      │ • Routes by profile (implementation/module_testing) │ │
+│  │ phase-agent          │ Generic thin wrapper                           │ │
+│  │                      │ • Loads caller-specified skill via Skill tool  │ │
+│  │                      │ • Delegates all work to the loaded skill       │ │
+│  │                      │ • Used for phase-1-init and phase-4-plan       │ │
 │  │                      │                                                │ │
 │  └──────────────────────┴────────────────────────────────────────────────┘ │
 │                                                                             │
-│  NOTE: Outline phase (3-outline) uses skill-direct invocation instead      │
-│  of an agent. This allows the skill to spawn analysis agents.              │
+│  NOTE: Phases 2-refine, 3-outline, and 5-execute load skills directly     │
+│  in main context (no agent). This allows user interaction and sub-agent   │
+│  spawning.                                                                 │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```

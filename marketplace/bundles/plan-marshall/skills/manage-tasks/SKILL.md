@@ -278,7 +278,7 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks finalize
 
 ## Integration Points
 
-### With phase-4-plan-agent
+### With phase-agent (phase-4-plan)
 
 Task-plan agents create tasks during plan refinement using heredoc:
 ```bash
