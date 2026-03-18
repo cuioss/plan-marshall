@@ -1,0 +1,12 @@
+> my-project@1.0.0 compile
+> tsc --noEmit
+
+src/services/user.ts(24,12): error TS2304: Cannot find name 'UserRecord'.
+src/services/user.ts(38,5): error TS2339: Property 'email' does not exist on type 'unknown'.
+src/components/Form.tsx(10,3): error TS2345: Argument of type 'string' is not assignable to parameter of type 'number'.
+error TS6053: File 'src/missing.ts' not found.
+
+npm ERR! code ELIFECYCLE
+npm ERR! errno 1
+npm ERR! my-project@1.0.0 compile: `tsc --noEmit`
+npm ERR! Exit status 1

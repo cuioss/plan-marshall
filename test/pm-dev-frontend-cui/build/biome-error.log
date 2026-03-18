@@ -1,0 +1,27 @@
+> my-project@1.0.0 lint
+> biome check --apply-unsafe src/
+
+src/utils/helper.ts:5:10 lint/suspicious/noExplicitAny ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  error[lint/suspicious/noExplicitAny]: Unexpected any. Specify a different type.
+
+  > 5 │ function process(value: any): void {
+      │                         ^^^
+
+src/api/client.ts:18:1 lint/suspicious/noExplicitAny ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  error[lint/suspicious/noExplicitAny]: Unexpected any. Specify a different type.
+
+  > 18 │ const handler: any = (req: Request) => {};
+       │ ^^^^^^^^^^^^^^^^^^^
+
+src/components/Card.tsx:3:1 lint/style/useImportType ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  warn[lint/style/useImportType]: All specifiers are only used as types.
+
+Found 2 errors, 1 warning.
+
+npm ERR! code ELIFECYCLE
+npm ERR! errno 1
+npm ERR! my-project@1.0.0 lint: `biome check src/`
+npm ERR! Exit status 1

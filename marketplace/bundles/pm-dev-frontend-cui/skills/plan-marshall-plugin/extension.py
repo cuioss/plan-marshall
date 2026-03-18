@@ -2,7 +2,7 @@
 """Extension API for pm-dev-frontend-cui bundle.
 
 Provides CUI-specific JavaScript project patterns for Maven integration,
-Quarkus DevUI, NiFi, and SonarQube.
+project structure, and SonarQube.
 
 This is an ADDITIVE bundle - it extends pm-dev-frontend rather than standing alone.
 It intentionally does NOT provide triage; it relies on pm-dev-frontend:ext-triage-js.
@@ -24,8 +24,13 @@ class Extension(ExtensionBase):
             },
             'profiles': {
                 'core': {
-                    'defaults': [],
-                    'optionals': ['pm-dev-frontend-cui:cui-javascript-project'],
+                    'defaults': [
+                        {
+                            'skill': 'pm-dev-frontend-cui:cui-javascript-project',
+                            'description': 'CUI JavaScript project structure, package.json configuration, and Maven integration standards',
+                        },
+                    ],
+                    'optionals': [],
                 },
                 'implementation': {'defaults': [], 'optionals': []},
                 'module_testing': {'defaults': [], 'optionals': []},
@@ -35,7 +40,12 @@ class Extension(ExtensionBase):
 
     def applies_to_module(self, module_data: dict,
                           active_profiles: set[str] | None = None) -> dict:
-        """Check if CUI JavaScript domain applies. Additive to 'javascript'."""
+        """Check if CUI JavaScript domain applies. Additive to 'javascript'.
+
+        CUI JS modules have both npm and maven (dual build system).
+        The frontend-maven-plugin drives npm from Maven, making dual presence
+        the definitive signal for CUI-style frontend modules.
+        """
         build_systems = module_data.get('build_systems', [])
         # CUI JS modules have both npm and maven (dual build system)
         if 'npm' not in build_systems or 'maven' not in build_systems:
@@ -50,6 +60,44 @@ class Extension(ExtensionBase):
         if cui_deps:
             signals.append(f'de.cuioss:* deps ({len(cui_deps)} found)')
 
+        # frontend-maven-plugin is the canonical Maven-managed frontend signal
+        frontend_maven_deps = [d for d in dep_strings if 'frontend-maven-plugin' in d]
+        if frontend_maven_deps:
+            signals.append('frontend-maven-plugin detected')
+
         return self._build_applicable_result('high', signals, additive_to='javascript',
                                               module_data=module_data,
                                               active_profiles=active_profiles)
+
+    def config_defaults(self, project_root: str) -> None:
+        """Configure CUI-specific Maven defaults for frontend modules.
+
+        CUI JavaScript modules are built via frontend-maven-plugin inside Maven,
+        so Maven profile conventions apply identically to Java modules.
+
+        Sets project-specific configuration for CUI Open Source projects:
+        - Profile mappings for standard CUI profiles (pre-commit, coverage)
+        - Skip list for internal/infrastructure profiles
+
+        Uses write-once semantics - only sets values if not already configured.
+
+        See: plan-marshall:build-maven:standards/maven-impl.md
+        """
+        from _config_core import ext_defaults_set_default  # type: ignore[import-not-found]
+        from _maven_cmd_discover import EXT_KEY_PROFILES_MAP, EXT_KEY_PROFILES_SKIP  # type: ignore[import-not-found]
+        from plan_logging import log_entry  # type: ignore[import-not-found]
+
+        log_entry('script', 'global', 'INFO', '[CUI-FRONTEND-EXT] Configuring CUI Maven defaults for frontend module')
+
+        # CUI standard profile mappings for frontend modules
+        # pre-commit → quality-gate, coverage → coverage
+        ext_defaults_set_default(
+            EXT_KEY_PROFILES_MAP, 'pre-commit:quality-gate,coverage:coverage', project_root
+        )
+
+        # Skip internal profiles that shouldn't generate commands
+        ext_defaults_set_default(
+            EXT_KEY_PROFILES_SKIP,
+            'build-plantuml,release,release-snapshot,license-cleanup,sonar,only-eclipse,release-pom',
+            project_root,
+        )

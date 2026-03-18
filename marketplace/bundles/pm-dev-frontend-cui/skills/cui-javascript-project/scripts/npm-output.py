@@ -31,26 +31,47 @@ ERROR_PATTERNS = {
         re.compile(r'SyntaxError:\s*(.+)', re.IGNORECASE),
         re.compile(r'TypeError:\s*(.+)', re.IGNORECASE),
         re.compile(r'ReferenceError:\s*(.+)', re.IGNORECASE),
-        re.compile(r'error TS\d+:\s*(.+)', re.IGNORECASE),  # TypeScript
+        # TypeScript: tsc inline format (error TS2345: ...)
+        re.compile(r'error TS\d+:\s*(.+)', re.IGNORECASE),
+        # TypeScript: tsc file-location format (src/file.ts(10,5): error TS2304: ...)
+        re.compile(r'[^\s]+\.tsx?\(\d+,\d+\):\s*error TS\d+:', re.IGNORECASE),
+        # TypeScript: standalone TS error code at line start
+        re.compile(r'^error TS\d+', re.IGNORECASE | re.MULTILINE),
     ],
     'test_failure': [
-        re.compile(r'✘|✖'),  # Jest/Vitest failure markers
+        re.compile(r'✘|✖|\u2715'),  # Jest/Vitest failure markers (✘ ✖ ×)
         re.compile(r'FAIL\s+(.+)', re.IGNORECASE),
         re.compile(r'Expected.*to.*but.*received', re.IGNORECASE),
         re.compile(r'(\d+)\s+(?:test|tests)\s+failed', re.IGNORECASE),
         re.compile(r'Test\s+Suites?:\s+\d+\s+failed', re.IGNORECASE),
+        # Vitest-specific: failed summary line
+        re.compile(r'Tests\s+\d+\s+failed', re.IGNORECASE),
+        # Vitest: RERUN marker when watch re-runs failing tests
+        re.compile(r'RERUN\s+', re.IGNORECASE),
+        # Vitest: AssertionError with structured diff
+        re.compile(r'AssertionError:\s*(.+)', re.IGNORECASE),
     ],
     'lint_error': [
         re.compile(r'eslint', re.IGNORECASE),
         re.compile(r'stylelint', re.IGNORECASE),
         re.compile(r'prettier', re.IGNORECASE),
         re.compile(r'(\d+):(\d+)\s+(error|warning)\s+(.+?)\s+(\S+)$'),  # ESLint format
+        # Biome linter: ./src/file.ts:12:5 lint/suspicious/noExplicitAny
+        re.compile(r'[^\s]+\.[jt]sx?:\d+:\d+\s+lint/\w+/\w+', re.IGNORECASE),
+        # Biome: error/warning label lines
+        re.compile(r'^\s*(?:error|warn(?:ing)?)\[lint/\w+/\w+\]', re.IGNORECASE | re.MULTILINE),
+        # Biome: formatter/organizeImports violations
+        re.compile(r'^\s*(?:error|warn(?:ing)?)\[format\]', re.IGNORECASE | re.MULTILINE),
+        # Biome: summary line (e.g. "Found 3 errors.")
+        re.compile(r'Found \d+ (?:error|warning)', re.IGNORECASE),
     ],
     'dependency_error': [
         re.compile(r'Cannot find module\s+[\'"]([^\'"]+)[\'"]', re.IGNORECASE),
         re.compile(r'Module not found:\s*(.+)', re.IGNORECASE),
         re.compile(r'npm ERR! 404\s*(.+)', re.IGNORECASE),
         re.compile(r'ERESOLVE\s+(.+)', re.IGNORECASE),
+        # TypeScript: unresolved module reference
+        re.compile(r"Cannot find name\s+'[^']+'\.", re.IGNORECASE),
     ],
     'playwright_error': [
         re.compile(r'playwright', re.IGNORECASE),
@@ -58,6 +79,16 @@ ERROR_PATTERNS = {
         re.compile(r'page\.goto:\s*Timeout', re.IGNORECASE),
         re.compile(r'locator\.\w+:\s*Timeout', re.IGNORECASE),
         re.compile(r'selector.*not found', re.IGNORECASE),
+        # Modern Playwright: expect(locator) assertion timeouts
+        re.compile(r'expect\s*\(.*\)\.\w+.*Timeout', re.IGNORECASE),
+        # Playwright: waitForSelector / waitForLocator timeouts
+        re.compile(r'page\.waitFor(?:Selector|Locator):\s*Timeout', re.IGNORECASE),
+        # Playwright: browser launch failures
+        re.compile(r'browserType\.launch:\s*(.+)', re.IGNORECASE),
+        # Playwright: network errors in browser context
+        re.compile(r'net::ERR_\w+', re.IGNORECASE),
+        # Playwright: test runner summary
+        re.compile(r'\d+\s+failed\s*\[', re.IGNORECASE),
     ],
 }
 
@@ -72,6 +103,8 @@ FILE_LOCATION_PATTERNS = [
     re.compile(r'@\s+([^\s]+\.[jt]sx?)\s+(\d+):(\d+)'),
     re.compile(r'\(([^\s:]+\.[jt]sx?):(\d+):(\d+)\)'),
     re.compile(r'(tests?/[^\s:]+\.[jt]sx?):(\d+):(\d+)'),
+    # TypeScript tsc format: src/file.ts(10,5): error TS2304: ...
+    re.compile(r'([^\s(]+\.[jt]sx?)\((\d+),(\d+)\)'),
 ]
 
 
@@ -116,15 +149,35 @@ def determine_build_status(lines: list, exit_code: int | None = None) -> str:
             return 'FAILURE'
         if re.search(r'Test Suites?:\s+\d+\s+failed', line, re.IGNORECASE):
             return 'FAILURE'
-        if '✘' in line or '✖' in line:
+        # Jest/Vitest/Biome failure unicode markers: ✘ ✖ ×
+        if '✘' in line or '✖' in line or '\u2715' in line:
             return 'FAILURE'
         if re.search(r'FAIL\s+', line):
+            return 'FAILURE'
+        # Vitest summary: "Tests  3 failed"
+        if re.search(r'Tests\s+\d+\s+failed', line, re.IGNORECASE):
+            return 'FAILURE'
+        # Biome: "Found N errors."
+        if re.search(r'Found \d+ error', line, re.IGNORECASE):
+            return 'FAILURE'
+        # TypeScript: tsc file-location errors
+        if re.search(r'error TS\d+:', line, re.IGNORECASE):
             return 'FAILURE'
 
     if exit_code is not None and exit_code != 0:
         return 'FAILURE'
 
     return 'SUCCESS'
+
+
+def _is_biome_line(message: str) -> bool:
+    """Return True if the line appears to be a Biome linter output line."""
+    return bool(re.search(r'lint/\w+/\w+|format\]', message, re.IGNORECASE))
+
+
+def _is_ts_error(message: str) -> bool:
+    r"""Return True if the line is a TypeScript compiler error (TS\d+ code)."""
+    return bool(re.search(r'TS\d+', message, re.IGNORECASE))
 
 
 def parse_npm_output(log_path: str, mode: str) -> dict:
@@ -185,6 +238,12 @@ def parse_npm_output(log_path: str, mode: str) -> dict:
         'total_errors': sum(1 for i in issues if i['severity'] == 'ERROR'),
         'total_warnings': sum(1 for i in issues if i['severity'] == 'WARNING'),
         'total_issues': len(issues),
+        # Extended counters: lint subcategories for tooling analytics
+        'biome_errors': sum(
+            1 for i in issues
+            if i['type'] == 'lint_error' and i['severity'] == 'ERROR' and _is_biome_line(i['message'])
+        ),
+        'typescript_errors': sum(1 for i in issues if i['type'] == 'compilation_error' and _is_ts_error(i['message'])),
     }
 
     if mode == 'structured':

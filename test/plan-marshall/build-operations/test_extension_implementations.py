@@ -416,6 +416,32 @@ def test_java_cui_extension_skill_references_exist():
 
 
 # =============================================================================
+# pm-dev-frontend-cui Extension Tests
+# =============================================================================
+
+
+def test_frontend_cui_extension_skill_domains_structure():
+    """Test pm-dev-frontend-cui get_skill_domains returns valid structure."""
+    ext = load_extension('pm-dev-frontend-cui')
+    domains = ext.get_skill_domains()[0]
+
+    issues = validate_skill_domains_structure(domains, 'pm-dev-frontend-cui')
+    assert not issues, f'Structure issues: {issues}'
+
+    # Verify domain key
+    assert domains['domain']['key'] == 'javascript-cui', "Domain key should be 'javascript-cui'"
+
+
+def test_frontend_cui_extension_skill_references_exist():
+    """Test pm-dev-frontend-cui skill references point to existing skills."""
+    ext = load_extension('pm-dev-frontend-cui')
+    domains = ext.get_skill_domains()[0]
+
+    issues = validate_skill_references(domains, 'pm-dev-frontend-cui')
+    assert not issues, f'Missing skills: {issues}'
+
+
+# =============================================================================
 # Triage/Outline Reference Tests
 # =============================================================================
 
@@ -663,8 +689,8 @@ def test_requirements_not_applicable():
 def test_applies_to_module_result_structure():
     """All applies_to_module results have required keys."""
     required_keys = ['applicable', 'confidence', 'signals', 'additive_to', 'skills_by_profile']
-    bundles = ['pm-dev-java', 'pm-dev-frontend', 'pm-dev-java-cui', 'plan-marshall',
-               'pm-plugin-development', 'pm-documents', 'pm-requirements']
+    bundles = ['pm-dev-java', 'pm-dev-frontend', 'pm-dev-java-cui', 'pm-dev-frontend-cui',
+               'plan-marshall', 'pm-plugin-development', 'pm-documents', 'pm-requirements']
 
     for bundle in bundles:
         ext = load_extension(bundle)
@@ -795,6 +821,7 @@ def test_all_extensions_accept_active_profiles():
         ('pm-dev-java', _maven_module_data()),
         ('pm-dev-java-cui', _maven_module_data()),
         ('pm-dev-frontend', _npm_module_data()),
+        ('pm-dev-frontend-cui', _npm_module_data()),
         ('pm-dev-python', _python_module_data()),
         ('pm-dev-oci', _empty_module_data()),
         ('pm-documents', _doc_module_data()),
@@ -819,6 +846,7 @@ def test_all_extensions_have_unique_domain_keys():
         'pm-dev-java',
         'pm-dev-java-cui',
         'pm-dev-frontend',
+        'pm-dev-frontend-cui',
         'pm-dev-python',
         'pm-dev-oci',
         'pm-plugin-development',
@@ -840,7 +868,7 @@ def test_all_extensions_have_unique_domain_keys():
         except FileNotFoundError:
             pass  # Skip bundles without extensions
 
-    assert len(domain_keys) == 10, f'Should have 10 unique domain keys, got {len(domain_keys)}: {sorted(domain_keys.keys())}'
+    assert len(domain_keys) == 11, f'Should have 11 unique domain keys, got {len(domain_keys)}: {sorted(domain_keys.keys())}'
 
 
 def test_all_extensions_have_required_functions():
@@ -849,6 +877,7 @@ def test_all_extensions_have_required_functions():
         'pm-dev-java',
         'pm-dev-java-cui',
         'pm-dev-frontend',
+        'pm-dev-frontend-cui',
         'pm-dev-python',
         'pm-dev-oci',
         'pm-plugin-development',

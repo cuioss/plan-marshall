@@ -113,6 +113,86 @@ context:
   plan_id: "{plan_id}"
 ```
 
+## Script CLI (exact commands — use verbatim)
+
+### Read deliverables
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-solution-outline \
+  list-deliverables \
+  --plan-id {plan_id}
+```
+
+### Query architecture module
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
+  module --name {deliverable.module} \
+  --trace-plan-id {plan_id}
+```
+
+### Resolve verification commands
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
+  resolve --command quality-gate --name {module} \
+  --trace-plan-id {plan_id}
+```
+
+### Read phase config
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-5-execute get --trace-plan-id {plan_id}
+```
+
+### Create task
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks add \
+  --plan-id {plan_id} <<'EOF'
+title: {task title from deliverable}
+deliverable: {deliverable_number}
+domain: {domain from deliverable}
+profile: {profile from deliverable}
+description: |
+  {combined description}
+
+steps:
+  - {file1}
+  - {file2}
+
+depends_on: TASK-1, TASK-2
+
+skills:
+  - {skill1 from architecture}
+
+verification:
+  commands:
+    - {cmd1}
+  criteria: {criteria}
+EOF
+```
+
+### Log task creation
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  work --plan-id {plan_id} --level INFO --message "[ARTIFACT] (plan-marshall:phase-4-plan) Created TASK-{N}: {title}"
+```
+
+### Record lesson
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lesson add \
+  --component "plan-marshall:phase-4-plan" \
+  --category improvement \
+  --title "{issue summary}" \
+  --detail "{context and resolution approach}"
+```
+
+Valid categories: `bug`, `improvement`, `anti-pattern`
+
 ## CONSTRAINTS (ALWAYS APPLY)
 
 ### MUST NOT - .plan File Access
