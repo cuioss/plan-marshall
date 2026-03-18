@@ -806,7 +806,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 ## Integration
 
-**Invoked by**: `plan-marshall:phase-2-refine-agent` (thin agent wrapper)
+**Invoked by**: `plan-marshall:plan-marshall` skill (loaded directly in main context for user interaction)
 
 **Script Notations** (use EXACTLY as shown):
 - `plan-marshall:manage-architecture:architecture` - Architecture queries

@@ -76,4 +76,4 @@ Possible errors:
 This standard is implemented by:
 - `plan-marshall:manage-files:manage-files delete-plan` - Script command
 - `plan-marshall:phase-1-init` - Skill workflow (Step 3)
-- `plan-marshall:phase-1-init-agent` - Agent implementation
+- `plan-marshall:phase-agent` - Generic phase agent

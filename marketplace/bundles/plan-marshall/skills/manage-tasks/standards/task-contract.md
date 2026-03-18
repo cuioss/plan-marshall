@@ -377,9 +377,9 @@ When calling `manage-tasks add`, use YAML list format:
 
 ```yaml
 steps:
-  - marketplace/bundles/plan-marshall/agents/phase-1-init-agent.md
-  - marketplace/bundles/plan-marshall/agents/phase-3-outline-agent.md
-  - marketplace/bundles/plan-marshall/agents/phase-4-plan-agent.md
+  - marketplace/bundles/plan-marshall/agents/phase-agent.md
+  - marketplace/bundles/plan-marshall/skills/phase-3-outline/SKILL.md
+  - marketplace/bundles/plan-marshall/skills/phase-4-plan/SKILL.md
 ```
 
 ### Stored Format (.json files)
@@ -389,9 +389,9 @@ The script converts input to JSON array format in task files:
 ```json
 {
   "steps": [
-    {"number": 1, "target": "marketplace/bundles/plan-marshall/agents/phase-1-init-agent.md", "status": "pending"},
-    {"number": 2, "target": "marketplace/bundles/plan-marshall/agents/phase-3-outline-agent.md", "status": "pending"},
-    {"number": 3, "target": "marketplace/bundles/plan-marshall/agents/phase-4-plan-agent.md", "status": "pending"}
+    {"number": 1, "target": "marketplace/bundles/plan-marshall/agents/phase-agent.md", "status": "pending"},
+    {"number": 2, "target": "marketplace/bundles/plan-marshall/skills/phase-3-outline/SKILL.md", "status": "pending"},
+    {"number": 3, "target": "marketplace/bundles/plan-marshall/skills/phase-4-plan/SKILL.md", "status": "pending"}
   ]
 }
 ```
@@ -407,9 +407,9 @@ The script converts input to JSON array format in task files:
 
 ```yaml
 steps:
-  - Update phase-1-init-agent to use TOON output
-  - Migrate phase-3-outline-agent output format
-  - Convert all remaining agents
+  - Update phase-agent to use TOON output
+  - Migrate phase-3-outline skill output format
+  - Convert all remaining components
 ```
 
 **Why invalid:**

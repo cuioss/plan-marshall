@@ -154,5 +154,4 @@ If you discover issues or improvements during execution, record them:
 
 | Agent | Purpose |
 |-------|---------|
-| `plan-marshall:phase-1-init-agent` | Init phase: creates plan, detects domains |
-| `plan-marshall:phase-4-plan-agent` | Plan phase: creates tasks from deliverables |
+| `plan-marshall:phase-agent` | Generic phase agent: loads caller-specified skill and delegates |

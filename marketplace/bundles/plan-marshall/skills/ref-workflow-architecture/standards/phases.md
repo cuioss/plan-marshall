@@ -63,7 +63,7 @@ The plan-marshall bundle implements a 6-phase execution model for structured tas
 │  │                                                                     │   │
 │  └─────────────────────────────────────────────────────────────────────┘   │
 │                                                                             │
-│  AGENT: phase-1-init-agent                                                     │
+│  AGENT: phase-agent (skill=plan-marshall:phase-1-init)                        │
 │  SKILL: plan-marshall:phase-1-init                                            │
 │                                                                             │
 │  STEPS:                                                                     │
@@ -105,7 +105,7 @@ The plan-marshall bundle implements a 6-phase execution model for structured tas
 │  │                                                                     │   │
 │  └─────────────────────────────────────────────────────────────────────┘   │
 │                                                                             │
-│  AGENT: phase-2-refine-agent                                                │
+│  INVOCATION: Skill loaded directly in main context                           │
 │  SKILL: plan-marshall:phase-2-refine                                          │
 │                                                                             │
 │  STEPS:                                                                     │
@@ -155,7 +155,7 @@ The plan-marshall bundle implements a 6-phase execution model for structured tas
 │  │                                                                     │   │
 │  └─────────────────────────────────────────────────────────────────────┘   │
 │                                                                             │
-│  AGENT: phase-3-outline-agent                                              │
+│  INVOCATION: Skill loaded directly in main context                           │
 │  SKILL: plan-marshall:phase-3-outline (or domain-specific extension)          │
 │                                                                             │
 │  STEPS:                                                                     │
@@ -214,7 +214,7 @@ The plan-marshall bundle implements a 6-phase execution model for structured tas
 │  │                                                                     │   │
 │  └─────────────────────────────────────────────────────────────────────┘   │
 │                                                                             │
-│  AGENT: phase-4-plan-agent                                                     │
+│  AGENT: phase-agent (skill=plan-marshall:phase-4-plan)                        │
 │  SKILL: plan-marshall:phase-4-plan                                            │
 │                                                                             │
 │  STEPS:                                                                     │
@@ -258,8 +258,8 @@ The plan-marshall bundle implements a 6-phase execution model for structured tas
 │  │                                                                     │   │
 │  └─────────────────────────────────────────────────────────────────────┘   │
 │                                                                             │
-│  AGENT: phase-5-execute-agent                                                  │
-│  SKILL: plan-marshall:task-implementation (or task-module-testing)            │
+│  INVOCATION: Skill loaded directly in main context                             │
+│  SKILL: plan-marshall:phase-5-execute → task-implementation (or task-module-testing) │
 │                                                                             │
 │  EXECUTION LOOP:                                                            │
 │  ───────────────                                                            │

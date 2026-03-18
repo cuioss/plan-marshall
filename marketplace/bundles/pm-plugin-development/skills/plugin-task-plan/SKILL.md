@@ -25,13 +25,13 @@ user-invocable: false
 ```yaml
 # CORRECT - file paths from deliverable
 steps:
-  - marketplace/bundles/plan-marshall/agents/phase-1-init-agent.md
-  - marketplace/bundles/plan-marshall/agents/phase-3-outline-agent.md
+  - marketplace/bundles/plan-marshall/agents/phase-agent.md
+  - marketplace/bundles/plan-marshall/skills/phase-3-outline/SKILL.md
 
 # WRONG - descriptive text (violates contract)
 steps[2]{number,target,status}:
-1,Convert phase-1-init-agent outputs,pending
-2,Convert phase-3-outline-agent outputs,pending
+1,Convert phase-agent outputs,pending
+2,Convert phase-3-outline skill outputs,pending
 ```
 
 The `steps` field lists FILES TO MODIFY, not progress tracking entries.
@@ -165,13 +165,13 @@ deliverable: 2
 domain: plan-marshall-plugin-dev
 phase: 5-execute
 description: |
-  Convert all JSON output blocks to TOON format in plan-marshall agents.
+  Convert all JSON output blocks to TOON format in plan-marshall phase components.
 
 steps:
-  - marketplace/bundles/plan-marshall/agents/phase-1-init-agent.md
-  - marketplace/bundles/plan-marshall/agents/phase-3-outline-agent.md
-  - marketplace/bundles/plan-marshall/agents/phase-4-plan-agent.md
-  - marketplace/bundles/plan-marshall/agents/phase-5-execute-agent.md
+  - marketplace/bundles/plan-marshall/agents/phase-agent.md
+  - marketplace/bundles/plan-marshall/skills/phase-3-outline/SKILL.md
+  - marketplace/bundles/plan-marshall/skills/phase-4-plan/SKILL.md
+  - marketplace/bundles/plan-marshall/skills/phase-5-execute/SKILL.md
 
 depends_on: TASK-1
 
@@ -294,12 +294,12 @@ delegation:
 The `steps` field lists ALL files to migrate (copied from `Affected files`):
 
 ```yaml
-title: Migrate plan-marshall Agents to TOON Format
+title: Migrate plan-marshall Phase Components to TOON Format
 steps:
-  - marketplace/bundles/plan-marshall/agents/phase-1-init-agent.md
-  - marketplace/bundles/plan-marshall/agents/phase-3-outline-agent.md
-  - marketplace/bundles/plan-marshall/agents/phase-4-plan-agent.md
-  - marketplace/bundles/plan-marshall/agents/phase-5-execute-agent.md
+  - marketplace/bundles/plan-marshall/agents/phase-agent.md
+  - marketplace/bundles/plan-marshall/skills/phase-3-outline/SKILL.md
+  - marketplace/bundles/plan-marshall/skills/phase-4-plan/SKILL.md
+  - marketplace/bundles/plan-marshall/skills/phase-5-execute/SKILL.md
 delegation:
   skill: pm-plugin-development:plugin-maintain
   workflow: update-component

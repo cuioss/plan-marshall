@@ -552,17 +552,13 @@ This regenerates `.plan/project-architecture/derived-data.json` from current bui
 
 ## Thin Agent Architecture (7-Phase Model)
 
-The plan-marshall bundle uses thin agents that load phase skills statically:
+The plan-marshall bundle uses one generic phase agent and direct skill loading:
 
-| Agent | Purpose | Phase Skill |
-|-------|---------|-------------|
-| `phase-1-init-agent` | Initialize plan, detect domains | `plan-marshall:phase-1-init` |
-| `phase-2-refine-agent` | Clarify request | `plan-marshall:phase-2-refine` |
-| `phase-3-outline-agent` | Create deliverables | `plan-marshall:phase-3-outline` |
-| `phase-4-plan-agent` | Create tasks from deliverables | `plan-marshall:phase-4-plan` |
-| `phase-5-execute-agent` | Execute single task | `plan-marshall:phase-5-execute` + `task.skills` |
-| `q-gate-validation-agent` | Quality verification | `plan-marshall:phase-5-execute` |
-| `plan-finalize-agent` | Commit, PR | `plan-marshall:phase-6-finalize` |
+| Component | Purpose | Phase Skill |
+|-----------|---------|-------------|
+| `phase-agent` (agent) | Generic wrapper for phase-1-init, phase-4-plan | Caller-specified via `skill` param |
+| Direct skill load | Phases 2-refine, 3-outline, 5-execute | Loaded in main context |
+| `q-gate-validation-agent` (agent) | Quality verification | `plan-marshall:phase-5-execute` |
 
 Phase skills are statically known (not resolved from config). Domain-specific extensions are loaded via `resolve-workflow-skill-extension --domain {domain} --type {outline|triage}`.
 

@@ -76,8 +76,8 @@ Create a new plan and automatically continue to 2-refine/3-outline/4-plan phases
 **1-Init Phase** uses a single agent:
 
 ```
-Task: plan-marshall:phase-1-init-agent
-  Input: description OR issue OR lesson_id
+Task: plan-marshall:phase-agent
+  Input: skill=plan-marshall:phase-1-init, source={source}, content={content}
   Output: plan_id, domains array
 ```
 
@@ -239,15 +239,15 @@ AskUserQuestion:
 Only execute this step AFTER user approves in Step 3.
 
 ```
-Task: plan-marshall:phase-4-plan-agent
-  Input: plan_id={plan_id}
+Task: plan-marshall:phase-agent
+  Input: skill=plan-marshall:phase-4-plan, plan_id={plan_id}
   Output: tasks created with domain, profile, skills
 ```
 
 Log task plan agent invocation:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:plan-marshall) Invoked phase-4-plan-agent"
+  work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:plan-marshall) Invoked phase-agent for phase-4-plan"
 ```
 
 **Step 4b**: Transition phase after tasks created:

@@ -6,7 +6,7 @@ user-invocable: false
 
 # Task Implementation Skill
 
-**Role**: Domain-agnostic workflow skill for executing implementation tasks (profile=implementation). Loaded by `plan-marshall:phase-5-execute-agent` when `task.profile` is `implementation`.
+**Role**: Domain-agnostic workflow skill for executing implementation tasks (profile=implementation). Loaded by `plan-marshall:phase-5-execute` skill when `task.profile` is `implementation`.
 
 **Key Pattern**: Agent loads this skill via `resolve-workflow-skill --domain {domain} --phase implementation`. Skill executes a generic workflow: understand context → plan → implement → verify. Domain-specific knowledge comes from `task.skills` (loaded by agent).
 
@@ -303,7 +303,7 @@ If changes conflict with existing code:
 
 ## Integration
 
-**Invoked by**: `plan-marshall:phase-5-execute-agent` (when task.profile = implementation)
+**Invoked by**: `plan-marshall:phase-5-execute` skill (when task.profile = implementation)
 
 **Skill Loading**: Agent loads this skill via `resolve-task-executor --profile implementation`
 

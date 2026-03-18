@@ -6,7 +6,7 @@ user-invocable: false
 
 # Task Verification Skill
 
-**Role**: Task executor skill for verification-only tasks (profile=verification). Loaded by `plan-marshall:phase-5-execute-agent` when `task.profile` is `verification`.
+**Role**: Task executor skill for verification-only tasks (profile=verification). Loaded by `plan-marshall:phase-5-execute` skill when `task.profile` is `verification`.
 
 **Key Pattern**: No files are modified. Steps contain verification commands to run. Each step is executed and marked done/failed. No domain skills are needed.
 
@@ -138,7 +138,7 @@ The `findings` array is best-effort: parse compiler errors, test failures, or li
 
 ## Integration
 
-**Invoked by**: `plan-marshall:phase-5-execute-agent` (when task.profile = verification)
+**Invoked by**: `plan-marshall:phase-5-execute` skill (when task.profile = verification)
 
 **Skill Loading**: Agent resolves this skill via `resolve-task-executor --profile verification`
 

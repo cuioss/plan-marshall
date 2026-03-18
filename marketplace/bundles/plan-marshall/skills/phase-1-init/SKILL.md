@@ -17,7 +17,7 @@ user-invocable: false
 Activate when:
 - Starting a new plan (no existing plan_id)
 - User provides task via description, lesson_id, or issue URL
-- Called by phase-1-init-agent
+- Called by phase-agent (with skill=plan-marshall:phase-1-init)
 
 ---
 
@@ -366,7 +366,7 @@ recovery: Use --plan-id to specify different ID, or resume existing
 
 ### Agent Integration
 
-This skill is called by `plan-marshall:phase-1-init-agent`. The agent completes the full init phase in a single call.
+This skill is called by `plan-marshall:phase-agent` (with `skill=plan-marshall:phase-1-init`). The agent completes the full init phase in a single call.
 
 ### Command Integration
 

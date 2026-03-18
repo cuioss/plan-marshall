@@ -8,7 +8,7 @@ user-invocable: false
 
 Common workflow for creating solution outlines based on change_type. Routes to domain-specific or generic sub-skill instructions based on the detected change type and domain configuration.
 
-**Loaded by**: `plan-marshall:phase-3-outline-agent` (inline execution, no separate agent spawn)
+**Loaded by**: `plan-marshall:phase-3-outline` skill (inline execution, no separate agent spawn)
 
 ---
 
@@ -248,7 +248,7 @@ domain: {domain or "generic"}
 
 ## Integration
 
-**Invoked by**: `plan-marshall:phase-3-outline-agent` (inline execution during Complex Track)
+**Invoked by**: `plan-marshall:phase-3-outline` skill (inline execution during Complex Track)
 
 **Script Notations** (use EXACTLY as shown):
 - `plan-marshall:manage-plan-documents:manage-plan-documents` - Read request
