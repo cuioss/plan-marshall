@@ -12,8 +12,8 @@ Standards for integrating JavaScript tooling with Maven builds using frontend-ma
   <artifactId>frontend-maven-plugin</artifactId>
   <version>2.0.0</version>
   <configuration>
-    <nodeVersion>v22.22.1</nodeVersion>
-    <npmVersion>11.7.0</npmVersion>
+    <nodeVersion>v24.14.0</nodeVersion>
+    <npmVersion>11.9.0</npmVersion>
     <installDirectory>target</installDirectory>
   </configuration>
   <executions>
@@ -83,8 +83,8 @@ Standards for integrating JavaScript tooling with Maven builds using frontend-ma
 
 ### Node.js and npm Versions
 
-- **Node.js**: `v22.22.1` LTS (exact version, installed automatically)
-- **npm**: `11.7.0+` (see [project-structure.md](project-structure.md) for version requirements)
+- **Node.js**: `v24.14.0` LTS (exact version, installed automatically — current active LTS "Krypton")
+- **npm**: `11.9.0+` (see [project-structure.md](project-structure.md) for version requirements)
 - **installDirectory**: `target/` -- cleaned with `mvn clean`, no global pollution
 
 ## Maven Phase Integration
@@ -163,9 +163,8 @@ Maven executions call these npm scripts from package.json. See **[project-struct
     **/jest.setup*.js
   </sonar.coverage.exclusions>
 
-  <!-- Coverage thresholds -->
-  <sonar.javascript.coverage.overall_condition.branch>80</sonar.javascript.coverage.overall_condition.branch>
-  <sonar.javascript.coverage.new_condition.branch>80</sonar.javascript.coverage.new_condition.branch>
+  <!-- Coverage thresholds are configured via SonarQube Quality Gates, not scanner properties.
+       Remove the legacy sonar.javascript.coverage.overall_condition.branch properties if present. -->
 </properties>
 ```
 

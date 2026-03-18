@@ -1,0 +1,30 @@
+> my-project@1.0.0 test
+> vitest run
+
+ RUN  v1.2.0
+
+ RERUN  src/utils/math.test.ts
+
+ × src/utils/math.test.ts > add > returns correct sum
+   AssertionError: expected 5 to deeply equal 6
+     - Expected
+     + Received
+
+     - 6
+     + 5
+
+     at src/utils/math.test.ts:8:20
+
+ × src/components/Button.test.tsx > Button > renders label
+
+   AssertionError: expected '' to include 'Submit'
+
+     at src/components/Button.test.tsx:15:32
+
+ Tests  2 failed | 10 passed (12)
+ Duration  1.42s
+
+npm ERR! code ELIFECYCLE
+npm ERR! errno 1
+npm ERR! my-project@1.0.0 test: `vitest run`
+npm ERR! Exit status 1

@@ -52,9 +52,10 @@ If clarified_request is empty, fall back to original_input section.
 Analyze the request content against the 6 change types. Consider:
 
 1. **Primary action words** - What verb dominates the request?
-2. **Existence of target** - Does the thing exist (modify/fix) or not (create)?
-3. **Behavioral change** - Is functionality changing or just structure?
-4. **Request goal** - Information gathering vs. code changes vs. verification?
+2. **Compound intent** - Does the request use analysis as discovery for a downstream action? (e.g., "analyze and fix" = enhancement, not analysis)
+3. **Existence of target** - Does the thing exist (modify/fix) or not (create)?
+4. **Behavioral change** - Is functionality changing or just structure?
+5. **Request goal** - Information gathering vs. code changes vs. verification?
 
 ### Step 3: Determine Change Type
 
@@ -64,7 +65,13 @@ Select the SINGLE change type that best matches the request intent.
 
 ```
 IF request asks to understand/investigate something:
-  change_type = "analysis"
+  # Compound intent guard: if the request ALSO asks to fix/implement/improve,
+  # then analysis is the discovery method, not the goal.
+  # Examples: "Analyze X and fix issues" → enhancement, "Analyze X and refactor" → tech_debt
+  IF request also asks to fix/implement/improve/refactor/update/create:
+    # Skip analysis — fall through to match the implementation intent below
+  ELSE:
+    change_type = "analysis"
 
 ELSE IF request describes something that doesn't exist yet:
   change_type = "feature"

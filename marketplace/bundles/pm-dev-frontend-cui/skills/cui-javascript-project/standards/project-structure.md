@@ -108,6 +108,7 @@ project-root/
 ├── package-lock.json
 ├── .prettierrc.js
 ├── eslint.config.js
+├── vite.config.js                # Vite bundler (preferred for standalone)
 ├── src/
 │   ├── main/
 │   │   └── js/                   # Source files
@@ -125,6 +126,11 @@ project-root/
 - Clear separation of source and tests
 - Build outputs in `dist/` for npm publishing
 - Standard npm package structure
+- **Vite** (v8+) is the preferred bundler for standalone projects; Webpack remains the standard for NiFi extension WAR packaging
+
+**Bundler selection**:
+- **Vite** (`vite ^8.0.0`): Standalone projects, libraries, modern ESM output
+- **Webpack** (`webpack ^5.x`): NiFi extensions (WAR/WebJar packaging), legacy browser support
 
 ## File Naming Conventions
 
@@ -196,7 +202,7 @@ data-table.js              // <data-table>
 
 ```
 .prettierrc.js             # Prettier configuration (ES module)
-eslint.config.js           # ESLint v9 flat configuration
+eslint.config.js           # ESLint v10 flat configuration
 .stylelintrc.js            # StyleLint configuration (if using CSS-in-JS)
 jest.config.js             # Jest testing configuration
 webpack.config.js          # Webpack bundling (if applicable)
@@ -233,8 +239,8 @@ Every JavaScript project must have a properly configured package.json:
   "devDependencies": {
     "eslint": "^10.0.0",
     "@eslint/js": "^10.0.0",
-    "prettier": "^3.0.3",
-    "jest": "^29.7.0"
+    "prettier": "^3.8.1",
+    "jest": "^30.0.0"
   }
 }
 ```
@@ -257,7 +263,7 @@ Every JavaScript project must have a properly configured package.json:
 
 **type**: Module system configuration
 - Always `"module"` for ES module support
-- Required for ESLint v9 flat config
+- Required for ESLint v10 flat config
 - Enables modern JavaScript tooling
 
 ### Required npm Scripts
@@ -294,7 +300,7 @@ Every project must implement these scripts:
 
 For projects generating bundled or minified assets:
 
-**Build scripts**:
+**Webpack build scripts** (NiFi extensions, WAR packaging):
 ```json
 "build": "webpack --mode production",
 "build:dev": "webpack --mode development",
@@ -302,9 +308,17 @@ For projects generating bundled or minified assets:
 "clean": "del-cli target/classes/META-INF/resources target/dist"
 ```
 
+**Vite build scripts** (standalone projects, libraries):
+```json
+"build": "vite build",
+"build:dev": "vite build --mode development",
+"build:watch": "vite build --watch",
+"clean": "del-cli dist"
+```
+
 **Development server** (if applicable):
 ```json
-"dev": "webpack serve --mode development --open"
+"dev": "vite --open"
 ```
 
 ### CSS-in-JS Projects
@@ -357,6 +371,7 @@ Choose the structure that matches your project's integration:
 - Use `src/main/js/` structure
 - Output to `dist/` for npm publishing
 - Standard npm package conventions
+- Use Vite for bundling (preferred over Webpack for non-WAR projects)
 
 ### Path Configuration by Project Type
 
@@ -451,14 +466,14 @@ Thumbs.db
 
 ### Required Versions
 
-**Node.js**: v22.22.1 LTS (exact version)
-- LTS (Long Term Support) for stability
+**Node.js**: v24.14.0 LTS (exact version, codename "Krypton")
+- LTS (Long Term Support) for stability — current active LTS as of October 2025
 - Exact version managed by frontend-maven-plugin
 - Consistent across all environments (development, CI/CD, production)
 - Updated periodically following Node.js LTS schedule
 
-**npm**: 11.7.0 or compatible
-- Bundled with Node.js installation
+**npm**: 11.9.0 or compatible
+- Bundled with Node.js v24 installation
 - Supports modern package.json features
 - Compatible with `"type": "module"`
 
@@ -480,8 +495,8 @@ Thumbs.db
 ### Development Environment Setup
 
 **Required tools**:
-1. Node.js v22.22.1 LTS (via nvm or direct install)
-2. npm 11.7.0+ (bundled with Node.js)
+1. Node.js v24.14.0 LTS (via nvm or direct install)
+2. npm 11.9.0+ (bundled with Node.js)
 3. Git with proper `.gitignore` configuration
 4. IDE with ESLint/Prettier extensions (VS Code, IntelliJ)
 

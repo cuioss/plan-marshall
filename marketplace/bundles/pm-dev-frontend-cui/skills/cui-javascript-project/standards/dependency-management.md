@@ -15,8 +15,8 @@ Use appropriate version patterns based on dependency type and stability requirem
 {
   "devDependencies": {
     "eslint": "^10.0.0",        // Updates to 10.x.x (not 11.0.0)
-    "webpack": "^5.96.1",       // Updates to 5.x.x (not 6.0.0)
-    "jest": "^29.7.0"           // Updates to 29.x.x (not 30.0.0)
+    "webpack": "^5.105.4",      // Updates to 5.x.x (not 6.0.0)
+    "jest": "^30.0.0"           // Updates to 30.x.x (not 31.0.0)
   }
 }
 ```
@@ -31,7 +31,7 @@ Use appropriate version patterns based on dependency type and stability requirem
 ```json
 {
   "dependencies": {
-    "lit": "3.2.0",             // Exact version, no auto-updates
+    "lit": "3.3.2",             // Exact version, no auto-updates
     "core-js": "3.39.0"          // Polyfills with breaking changes
   }
 }
@@ -137,13 +137,17 @@ Every project must implement security audit scripts:
 
 | Deprecated Package | Replacement | Reason |
 |-------------------|-------------|---------|
-| `rimraf` < v4 | `del-cli` or `rimraf` >= v5 | Performance, better API |
-| `eslint` < v9 | `eslint` >= v9 | Security, flat config support |
+| `rimraf` < v4 | `del-cli` >= v7 | Performance, better API |
+| `eslint` < v9 | `eslint` >= v10 | Security, flat config required |
 | `abab` | Native `atob()`/`btoa()` | Platform native methods |
 | `osenv` | `process.env` or `os` module | No longer maintained |
 | `inflight` | `lru-cache` or native | Memory leaks, better alternatives |
-| `glob` < v9 | `glob` >= v9 | Security fixes, performance |
-| `airbnb-base` | `@eslint/js` | ESLint v9 compatibility |
+| `glob` < v9 | `glob` >= v11 | Security fixes, performance |
+| `airbnb-base` | `@eslint/js` | ESLint v10 flat config compatibility |
+| `eslint-config-airbnb-base` | `@eslint/js` + custom rules | Flat config, no legacy shareable config |
+| `jest` < v30 | `jest` >= v30 | Performance, better ESM support |
+| `babel-jest` < v30 | `babel-jest` >= v30 | Match Jest major version |
+| `webpack-cli` < v6 | `webpack-cli` >= v7 | Node.js 24 compatibility |
 
 #### Handling Deprecation Warnings
 
@@ -198,7 +202,7 @@ Use overrides for selective dependency resolution:
 ```json
 {
   "overrides": {
-    "eslint": "^10.0.0",
+    "eslint": "^10.0.3",
     "some-package": {
       "problematic-dep": "^2.0.0"
     }
@@ -263,14 +267,58 @@ export default [
 Ensure all tools support ES modules:
 
 **Required versions**:
-- ESLint v9+ with flat configuration
+- ESLint v10+ with flat configuration
 - Prettier v3+ configuration
-- StyleLint v16+ configuration
-- Jest v29+ with ES module support
+- StyleLint v17+ configuration
+- Jest v30+ with ES module support (or Vitest v4+ for Vite-based projects)
 - Babel with ES module support
 
 **Node.js requirements**:
 For complete Node.js version requirements, see **[project-structure.md](project-structure.md#node-js-version-requirements)** section "Node.js Version Requirements".
+
+## Modern Alternatives
+
+### Vitest as a Jest Alternative
+
+**Vitest** (`vitest ^4.x`) is a modern test runner built on Vite with native ES module support. Consider it when:
+
+- Starting a new standalone project using Vite as the bundler
+- The project is not embedded in a Maven build (frontend-maven-plugin)
+- Fast HMR-style test feedback is valuable during development
+
+**Decision guide**:
+
+| Criteria | Use Jest | Use Vitest |
+|----------|----------|-----------|
+| Maven-integrated project | Yes | No |
+| Standalone / library | Optional | Preferred |
+| Existing Jest configuration | Yes | No (migration effort) |
+| Vite bundler already in use | Optional | Yes |
+
+**Vitest package reference**:
+```json
+{
+  "devDependencies": {
+    "vitest": "^4.1.0",
+    "@vitest/coverage-v8": "^4.1.0"
+  }
+}
+```
+
+**Note**: For existing Maven-integrated CUI projects, **Jest remains the standard**. Do not switch unless adopting a full Vite-based build for a standalone project.
+
+### Vite as a Webpack Alternative
+
+**Vite** (`vite ^8.0.0`) is the preferred bundler for standalone JavaScript projects and libraries. See [project-structure.md](project-structure.md) "Standalone JavaScript Project Layout" for when to use Vite vs Webpack.
+
+### Bun and Deno Compatibility
+
+**Bun** and **Deno** are alternative JavaScript runtimes that offer improved performance for scripts and local development:
+
+- **Bun** (`bun.sh`): Drop-in npm/Node.js replacement; `bun install` is faster than `npm install`. CUI projects currently target Node.js via frontend-maven-plugin — Bun is not supported in Maven builds.
+- **Deno** (`deno.land`): Secure-by-default runtime with native TypeScript support. Not applicable to Maven-integrated projects.
+
+**Stance**: CUI projects use **Node.js** (managed by frontend-maven-plugin) for all Maven-integrated builds. Bun/Deno may be used for standalone developer tooling scripts outside the Maven lifecycle.
 
 ## Package Categories
 
@@ -284,26 +332,26 @@ Essential packages for all JavaScript projects:
     // Linting and Formatting
     "eslint": "^10.0.0",
     "@eslint/js": "^10.0.0",
-    "prettier": "^3.0.3",
-    "eslint-plugin-prettier": "^5.0.0",
+    "prettier": "^3.8.1",
+    "eslint-plugin-prettier": "^5.5.5",
 
     // Testing
-    "jest": "^29.7.0",
-    "jest-environment-jsdom": "^29.7.0",
-    "@testing-library/jest-dom": "^6.6.3",
+    "jest": "^30.0.0",
+    "jest-environment-jsdom": "^30.0.0",
+    "@testing-library/jest-dom": "^6.9.1",
 
-    // Build Tools
-    "webpack": "^5.96.1",
-    "webpack-cli": "^5.1.4",
-    "terser": "^5.36.0",
+    // Build Tools (Webpack — NiFi extensions, WAR packaging)
+    "webpack": "^5.105.4",
+    "webpack-cli": "^7.0.2",
+    "terser": "^5.46.1",
 
-    // Babel
-    "@babel/core": "^7.26.0",
-    "@babel/preset-env": "^7.26.0",
-    "babel-jest": "^29.7.0",
+    // Babel (required for Jest 30 ES module transformation)
+    "@babel/core": "^7.29.0",
+    "@babel/preset-env": "^7.29.2",
+    "babel-jest": "^30.0.0",
 
     // Utilities
-    "del-cli": "^6.0.0"
+    "del-cli": "^7.0.0"
   }
 }
 ```
@@ -315,11 +363,11 @@ ESLint plugins for comprehensive code quality:
 ```json
 {
   "devDependencies": {
-    "eslint-plugin-jest": "^28.8.3",
+    "eslint-plugin-jest": "^29.0.0",
     "eslint-plugin-jsdoc": "^62.8.0",
     "eslint-plugin-unicorn": "^63.0.0",
-    "eslint-plugin-security": "^3.0.0",
-    "eslint-plugin-promise": "^7.0.0",
+    "eslint-plugin-security": "^4.0.0",
+    "eslint-plugin-promise": "^7.2.1",
     "eslint-plugin-sonarjs": "^4.0.0"
   }
 }
@@ -331,10 +379,10 @@ ESLint plugins for comprehensive code quality:
 ```json
 {
   "devDependencies": {
-    "lit": "^3.0.0",
-    "eslint-plugin-lit": "^1.11.0",
-    "eslint-plugin-wc": "^2.0.4",
-    "postcss-lit": "^1.0.0"
+    "lit": "^3.3.2",
+    "eslint-plugin-lit": "^2.2.1",
+    "eslint-plugin-wc": "^3.1.0",
+    "postcss-lit": "^1.4.1"
   }
 }
 ```
@@ -344,8 +392,8 @@ ESLint plugins for comprehensive code quality:
 {
   "devDependencies": {
     "stylelint": "^17.4.0",
-    "stylelint-config-standard": "^36.0.1",
-    "stylelint-order": "^6.0.3"
+    "stylelint-config-standard": "^40.0.0",
+    "stylelint-order": "^8.1.1"
   }
 }
 ```
