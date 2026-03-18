@@ -35,52 +35,11 @@ Specification documents bridge the gap between requirements (what must be done) 
 
 ### Main Specification Document
 
-The main `Specification.adoc` serves as the entry point and index:
-
-```asciidoc
-= [Project Name] Specification
-:toc: left
-:toclevels: 3
-:toc-title: Table of Contents
-:sectnums:
-:source-highlighter: highlight.js
-
-== Overview
-_See Requirement link:Requirements.adoc#PREFIX-1[PREFIX-1: Project Overview]_
-
-This document provides the technical specification for implementing [Project Name].
-For functional requirements, see link:Requirements.adoc[Requirements Document].
-
-== Document Structure
-
-This specification is organized into the following documents:
-
-* link:specification/technical-components.adoc[Technical Components] - Core implementation details
-* link:specification/configuration.adoc[Configuration] - Configuration properties and management
-* link:specification/error-handling.adoc[Error Handling] - Error handling strategies
-* link:specification/testing.adoc[Testing] - Testing approach and standards
-* link:specification/security.adoc[Security] - Security considerations and implementation
-```
+The main `Specification.adoc` serves as the entry point and index, linking to individual specification documents. For the full template, see `pm-requirements:setup` → `standards/document-templates.md` (Specification.adoc Template section).
 
 ### Individual Specification Documents
 
-Each individual specification must include:
-
-```asciidoc
-= [Project Name] [Component/Feature]
-:toc: left
-:toclevels: 3
-:toc-title: Table of Contents
-:sectnums:
-:source-highlighter: highlight.js
-
-link:../Specification.adoc[Back to Main Specification]
-
-== [Section Title]
-_See Requirement link:../Requirements.adoc#PREFIX-NUM[PREFIX-NUM: Requirement Title]_
-
-[Content follows with exactly one blank line after backtracking link]
-```
+Each individual specification must include a back-link to the main specification, backtracking links to requirements, and proper AsciiDoc headers. For the full template, see `pm-requirements:setup` → `standards/document-templates.md` (Individual Specification Template section).
 
 ## Backtracking Links Standards
 
@@ -171,34 +130,7 @@ _See Requirements:_
 
 ## Implementation Status Tracking
 
-### Status Indicators
-
-Specification sections should indicate implementation status:
-
-```asciidoc
-== Component Validation
-_See Requirement link:../Requirements.adoc#JWT-1[JWT-1: Token Validation Framework]_
-
-=== Status: IMPLEMENTED
-
-The following classes implement this specification:
-
-* link:../src/main/java/com/example/TokenValidator.java[TokenValidator]
-* link:../src/main/java/com/example/TokenValidatorFactory.java[TokenValidatorFactory]
-
-For detailed behavior, refer to the implementation and associated JavaDoc.
-```
-
-[#status-values]
-### Status Values
-
-**PLANNED**: Specification written, implementation not started
-
-**IN PROGRESS**: Implementation underway
-
-**IMPLEMENTED**: Implementation complete and tested
-
-**DEPRECATED**: No longer applicable, replaced by different approach
+Specification sections should indicate implementation status using status indicators (PLANNED, IN PROGRESS, IMPLEMENTED, DEPRECATED). For detailed lifecycle phase guidance and status transitions, see `documentation-lifecycle-management.md`.
 
 ## Example Specification Structure
 
@@ -330,33 +262,7 @@ link:../Specification.adoc[Back to Main Specification]
 
 ## Quality Standards
 
-### Completeness
-
-- Cover all aspects of each requirement
-- Provide sufficient detail for implementation
-- Include examples and patterns
-- Address edge cases and error scenarios
-
-### Clarity
-
-- Use clear, technical language
-- Define domain-specific terms
-- Provide diagrams for complex flows
-- Include code examples where helpful
-
-### Maintainability
-
-- Keep specifications in sync with implementation
-- Update specifications when implementation changes
-- Remove outdated or redundant content
-- Maintain working cross-references
-
-### Traceability
-
-- Every specification section links to requirements
-- Implemented specifications link to code
-- Tests are referenced for verification
-- Navigation between documents is seamless
+For comprehensive quality criteria (completeness, clarity, maintainability, traceability), see `integrity-and-quality-standards.md`.
 
 ## Common Anti-Patterns
 

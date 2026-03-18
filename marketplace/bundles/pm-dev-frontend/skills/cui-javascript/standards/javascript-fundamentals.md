@@ -32,31 +32,12 @@ const response = await fetch('/api/data');
 const data = await response.json();
 
 // ❌ Avoid: jQuery ajax
-$.ajax({
-  url: '/api/data',
-  success: (data) => { /* ... */ }
-});
+$.ajax({ url: '/api/data', success: (data) => { /* ... */ } });
 
-// ✅ Preferred: Native DOM manipulation
+// ✅ Preferred: Native DOM APIs
 document.querySelector('.button').addEventListener('click', handleClick);
-
-// ❌ Avoid: jQuery DOM manipulation
-$('.button').on('click', handleClick);
-
-// ✅ Preferred: Native element selection
-const elements = document.querySelectorAll('.item');
-const array = Array.from(elements);
-
-// ❌ Avoid: jQuery selection
-const elements = $('.item');
-
-// ✅ Preferred: Native class manipulation
 element.classList.add('active');
-element.classList.remove('hidden');
 element.classList.toggle('expanded');
-
-// ❌ Avoid: jQuery class manipulation
-$(element).addClass('active').removeClass('hidden');
 ```
 
 ## ES Modules

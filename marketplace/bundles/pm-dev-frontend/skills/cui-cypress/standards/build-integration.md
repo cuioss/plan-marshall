@@ -325,64 +325,6 @@ jobs:
         if: success()
 ```
 
-### Jenkins Pipeline Example
-
-```groovy
-// Jenkinsfile
-pipeline {
-    agent any
-
-    tools {
-        nodejs 'NodeJS 20'
-    }
-
-    stages {
-        stage('Install Dependencies') {
-            steps {
-                dir('src/main/webapp') {
-                    sh 'npm ci'
-                }
-            }
-        }
-
-        stage('Build Application') {
-            steps {
-                sh 'mvn clean package -DskipTests'
-            }
-        }
-
-        stage('Start Application') {
-            steps {
-                sh 'java -jar target/application.jar &'
-                sh 'npx wait-on http://localhost:8080 --timeout 60000'
-            }
-        }
-
-        stage('Run E2E Tests') {
-            steps {
-                dir('src/main/webapp') {
-                    sh 'npm run test:e2e:ci'
-                }
-            }
-        }
-    }
-
-    post {
-        always {
-            archiveArtifacts artifacts: 'src/main/webapp/cypress/videos/**/*.mp4', allowEmptyArchive: true
-            archiveArtifacts artifacts: 'src/main/webapp/cypress/screenshots/**/*.png', allowEmptyArchive: true
-        }
-        failure {
-            emailext(
-                subject: "E2E Tests Failed: ${env.JOB_NAME} - ${env.BUILD_NUMBER}",
-                body: "E2E tests failed. Check console output and artifacts.",
-                to: "${env.CHANGE_AUTHOR_EMAIL}"
-            )
-        }
-    }
-}
-```
-
 ## Test Reporting
 
 ### Cypress Dashboard Integration
@@ -461,14 +403,6 @@ export default defineConfig({
 env:
   CYPRESS_BASE_URL: http://localhost:8080
   CYPRESS_API_URL: http://localhost:8080/api
-```
-
-**Jenkins:**
-```groovy
-environment {
-    CYPRESS_BASE_URL = 'http://localhost:8080'
-    CYPRESS_API_URL = 'http://localhost:8080/api'
-}
 ```
 
 ## Performance Optimization

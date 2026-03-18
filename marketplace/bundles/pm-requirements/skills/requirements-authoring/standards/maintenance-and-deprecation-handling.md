@@ -306,40 +306,7 @@ When reorganizing requirements structure:
 
 ## Cross-Reference Maintenance
 
-### When Documents Move
-
-If documents are restructured or moved:
-
-1. **Identify all affected cross-references**
-2. **Update xref/link paths** to new locations
-3. **Update section IDs** if changed
-4. **Test all links** resolve correctly
-5. **Update external documentation** references
-
-### Common Updates
-
-**File path changes**:
-```asciidoc
-// Before
-xref:old/path/Requirements.adoc#req-001[REQ-001]
-
-// After
-xref:new/path/Requirements.adoc#req-001[REQ-001]
-```
-
-**Section ID changes**:
-```asciidoc
-// Before
-xref:Requirements.adoc#old-id[REQ-001]
-
-// After
-xref:Requirements.adoc#new-id[REQ-001]
-```
-
-**Document renames**:
-```asciidoc
-// Update all references to new document name
-```
+For detailed cross-reference maintenance workflows (handling document moves, class refactoring, link validation), see `pm-requirements:traceability` → `standards/cross-reference-maintenance.md`.
 
 ## Commit Guidelines
 
@@ -372,80 +339,9 @@ Affected requirements: REQ-001, REQ-002, REQ-003, REQ-004, REQ-005
 - Unexplained removals
 - Large structural changes without explanation
 
-## Common Maintenance Scenarios
-
-### Scenario 1: New Feature Documentation
-
-**When**: Adding requirements for new functionality
-
-**Process**:
-1. Add requirement with next sequential ID
-2. Follow SMART principles
-3. Create corresponding specification
-4. Add cross-references
-5. Update traceability matrix
-
-### Scenario 2: Refactoring Impact
-
-**When**: Code refactored, need to update documentation
-
-**Process**:
-1. Review changed code structure
-2. Update implementation references in specifications
-3. Verify requirement statements remain accurate
-4. Adjust code examples to match new structure
-5. Maintain requirement IDs unchanged
-
-**Key Principle**: Requirements describe WHAT, not HOW. Refactoring changes HOW (implementation), so requirements usually don't change, only specification implementation references.
-
-### Scenario 3: Requirement Evolution
-
-**When**: Requirement needs significant changes
-
-**For Pre-1.0**:
-- Update requirement directly
-- Update specifications
-- No deprecation needed
-
-**For Post-1.0**:
-- Ask user for deprecation vs. update decision
-- If deprecating: Create new requirement, mark old as deprecated
-- If updating: Modify in place with clear documentation
-
-### Scenario 4: Feature Removal
-
-**When**: Feature being removed from product
-
-**For Pre-1.0**:
-- Remove requirement directly
-- Update specifications
-- Clean up references
-
-**For Post-1.0**:
-- Ask user for approval
-- Mark as DEPRECATED (don't delete)
-- Add migration guidance if applicable
-- Update specifications with deprecation notice
-
 ## Quality Checks for Maintenance
 
-### Before Committing Changes
-
-- All requirement IDs preserved (no renumbering)
-- SMART principles maintained
-- All specifications updated to match
-- All cross-references verified
-- Deprecations properly marked
-- Commit message includes affected IDs
-- Changes documented with rationale
-
-### After Committing Changes
-
-- Traceability maintained
-- No broken links
-- Consistent terminology
-- Implementation alignment verified
-- Documentation builds successfully
+For comprehensive quality verification criteria, see `integrity-and-quality-standards.md`.
 
 ## Anti-Patterns to Avoid
 

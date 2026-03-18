@@ -9,7 +9,7 @@ For general documentation principles (what/when/how to document, clarity, comple
 ```json
 {
   "devDependencies": {
-    "eslint-plugin-jsdoc": "^46.8.0"
+    "eslint-plugin-jsdoc": "^62.8.0"
   }
 }
 ```

@@ -237,107 +237,9 @@ Test: TokenValidatorTest.java
 3. For each code reference, verify element exists
 4. Flag any unverified documentation
 
-## Quality Standards
-
-### Clarity
-
-- Use clear, unambiguous language
-- Avoid implementation details in requirements
-- Focus on what, not how
-- Define domain-specific terms
-
-### Completeness
-
-- Cover all functional areas
-- Include non-functional requirements
-- Address edge cases and error conditions
-- Document constraints and limitations
-
-### Consistency
-
-- Use the same terminology throughout
-- Follow the same format for all requirements
-- Maintain consistent numbering
-- Use the same level of detail across requirements
-
-### Testability
-
-- Each requirement must be verifiable
-- Define clear success criteria
-- Specify measurable outcomes
-- Enable test case derivation
-
 ## Common Quality Issues
 
-### Issue: Ambiguous Requirements
-
-**Problem**:
-```asciidoc
-REQ-001: The system must be secure
-```
-
-**Solution**:
-```asciidoc
-REQ-001: Security Requirements
-
-* The system must validate all input data against defined schemas
-* Authentication must use OAuth 2.0 with PKCE
-* All API endpoints must enforce authorization checks
-* Sensitive data must be encrypted at rest using AES-256
-```
-
-### Issue: Unmeasurable Requirements
-
-**Problem**:
-```asciidoc
-REQ-005: The system should have good performance
-```
-
-**Solution**:
-```asciidoc
-REQ-005: Performance Requirements
-
-* Token validation must complete within 50ms for 95% of requests
-* The system must support 1000 concurrent users
-* API response time must not exceed 200ms for 99% of requests
-```
-
-### Issue: Implementation Details in Requirements
-
-**Problem**:
-```asciidoc
-REQ-010: The system must use HashMap for token storage with capacity 1000
-```
-
-**Solution**:
-```asciidoc
-REQ-010: Token Caching
-
-* The system must cache validated tokens to improve performance
-* Cache must support at least 1000 concurrent tokens
-* Cache entries must expire after configurable duration
-```
-
-### Issue: Duplicate Information
-
-**Problem**:
-```asciidoc
-// In Requirements.adoc
-REQ-001: The system must validate JWT tokens...
-
-// In Specification.adoc
-REQ-001 states that the system must validate JWT tokens...
-(Full requirement text copied)
-```
-
-**Solution**:
-```asciidoc
-// In Specification.adoc
-== Token Validation
-_See Requirement link:Requirements.adoc#REQ-001[REQ-001: Token Validation]_
-
-(Specification details without duplicating requirement text)
-```
+For common anti-patterns in requirements authoring (vague language, implementation details, unmeasurable claims), see `smart-requirements-principles.md` → Common Anti-Patterns section.
 
 ## Verification Workflow
 
@@ -375,15 +277,4 @@ _See Requirement link:Requirements.adoc#REQ-001[REQ-001: Token Validation]_
 
 ## Quality Rules
 
-Before finalizing documentation:
-
-- All requirements follow SMART principles
-- No hallucinated functionality documented
-- No duplicate information across documents
-- All cross-references verified and functional
-- Consistent terminology throughout
-- Clear traceability maintained
-- All code references point to existing elements
-- Implementation status indicators are current
-- Documentation is clear and unambiguous
-- All requirements are testable
+For the consolidated quality checklist, see the SKILL.md Quality Rules section.

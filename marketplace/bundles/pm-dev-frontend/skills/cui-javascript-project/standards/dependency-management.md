@@ -332,7 +332,7 @@ ESLint plugins for comprehensive code quality:
 {
   "devDependencies": {
     "lit": "^3.0.0",
-    "eslint-plugin-lit": "^1.10.1",
+    "eslint-plugin-lit": "^1.11.0",
     "eslint-plugin-wc": "^2.0.4",
     "postcss-lit": "^1.0.0"
   }
@@ -354,200 +354,39 @@ ESLint plugins for comprehensive code quality:
 
 ### Regular Update Schedule
 
-Maintain dependencies with consistent schedule:
-
-**Security updates**: As needed (follow vulnerability timeframes)
-- Monitor security advisories
-- Apply patches immediately
-- Test thoroughly
-
-**Minor updates**: Monthly
-- Review available updates
-- Test compatibility
-- Apply low-risk updates
-
-**Major updates**: Quarterly review
-- Review breaking changes
-- Plan migration
-- Schedule dedicated testing
-
-**Annual audit**: Complete dependency review
-- Remove unused packages
-- Evaluate alternatives
-- Update project dependencies strategy
+- **Security updates**: As needed (follow vulnerability timeframes above)
+- **Minor updates**: Monthly -- review, test, apply low-risk updates
+- **Major updates**: Quarterly review -- plan migration, test thoroughly
+- **Annual audit**: Remove unused packages, evaluate alternatives
 
 ### Update Process
 
-#### 1. Security Audit
-
-Check for vulnerabilities:
-```bash
-npm audit
-npm audit fix
-```
-
-#### 2. Check Available Updates
-
-Review what updates are available:
-```bash
-npx npm-check-updates --format group
-```
-
-**Output interpretation**:
-- **Patch**: Bug fixes only (safe to update)
-- **Minor**: New features, backward compatible (usually safe)
-- **Major**: Breaking changes (review carefully)
-
-#### 3. Apply Minor Updates
-
-Update minor and patch versions:
-```bash
-npx npm-check-updates --target minor --upgrade
-npm install
-npm test
-```
-
-#### 4. Test Updates
-
-Verify application works after updates:
-```bash
-npm run lint
-npm run test
-npm run build
-```
-
-#### 5. Apply Major Updates
-
-Handle major updates individually:
-```bash
-# Update one package at a time
-npm install eslint@latest
-# Review breaking changes
-# Update configuration if needed
-# Test thoroughly
-npm test
-```
+1. Run `npm audit` and `npm audit fix` for security patches
+2. Run `npx npm-check-updates --format group` to review available updates
+3. Apply minor/patch updates: `npx npm-check-updates --target minor --upgrade && npm install && npm test`
+4. Apply major updates one at a time: `npm install <package>@latest`, review breaking changes, test thoroughly
+5. Verify full build: `npm run lint && npm run test && npm run build`
 
 ### Breaking Change Management
 
-For major version updates:
-
-1. **Review changelog**: Understand what changed
-   - Read CHANGELOG.md or release notes
-   - Identify breaking changes
-   - Note new features
-
-2. **Update in isolation**: One major update at a time
-   - Prevents multiple breaking changes at once
-   - Easier to identify issues
-   - Simpler rollback if needed
-
-3. **Update configuration**: Modify config files
-   - ESLint flat config for ESLint v9
-   - Jest configuration for Jest v29
-   - Webpack config for Webpack v5
-
-4. **Test thoroughly**: Run full test suite
-   - Unit tests
-   - Integration tests
-   - Build process
-   - Linting and formatting
-
-5. **Document changes**: Update project docs
-   - README.md
-   - Migration guides
-   - Team communication
+For major version updates: review the changelog, update one package at a time, modify configuration files as needed, run the full test suite, and document changes in commit messages.
 
 ## Troubleshooting
 
 ### npm Install Failures
 
-**Symptom**: npm install fails in development or during Maven build
-
-**Common causes**:
-- Corrupted npm cache
-- Peer dependency conflicts
-- Outdated or corrupted package-lock.json
-- Network timeouts
-
-**Resolution steps**:
-
-1. Clear npm cache and reinstall:
-   ```bash
-   rm -rf node_modules package-lock.json
-   npm cache clean --force
-   npm install
-   ```
-
-2. Use legacy peer deps (if modern dependency resolution fails):
-   ```bash
-   npm install --legacy-peer-deps
-   ```
-
-   For Maven builds, configure in pom.xml:
-   ```xml
-   <configuration>
-     <arguments>install --legacy-peer-deps</arguments>
-   </configuration>
-   ```
-
-3. Regenerate lock file if corrupted:
-   ```bash
-   rm package-lock.json
-   npm install
-   git add package-lock.json
-   git commit -m "chore: regenerate package-lock.json"
-   ```
-
-4. Check for conflicting global packages:
-   ```bash
-   npm list -g --depth=0
-   ```
+Clear cache and reinstall: `rm -rf node_modules package-lock.json && npm cache clean --force && npm install`. If peer dependency conflicts persist, try `npm install --legacy-peer-deps` (document the reason in the project README). For Maven builds, see [maven-integration.md](maven-integration.md) "npm Install Failures".
 
 ### Dependency Conflicts
 
-**Common solutions**:
 1. Update conflicting packages to compatible versions
 2. Use npm overrides to force specific versions
 3. Remove unused dependencies
 4. Check for duplicate installations: `npm ls <package-name>`
 
-### Inconsistent Dependencies Across Environments
-
-**Cause**: Missing or outdated package-lock.json
-
-**Solution**:
-```bash
-# Generate fresh lock file
-rm package-lock.json
-npm install
-# Commit lock file
-git add package-lock.json
-git commit -m "chore: update package-lock.json"
-```
-
-**Important**: Always commit package-lock.json to ensure consistent installs across all environments.
-
 ### Build Performance
 
-**Optimization strategies**:
-
-1. Use .npmrc optimizations:
-   ```
-   prefer-offline=true
-   audit=false
-   fund=false
-   ```
-
-2. Use npm install flags:
-   ```bash
-   npm install --prefer-offline --no-audit
-   ```
-
-3. Regular dependency cleanup:
-   ```bash
-   npm prune
-   ```
+Use `.npmrc` optimizations (`prefer-offline=true`, `audit=false`, `fund=false`) and run `npm prune` regularly to remove unused packages.
 
 ## Best Practices
 
