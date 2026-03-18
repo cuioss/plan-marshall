@@ -171,7 +171,7 @@ Java development with CDI, JUnit, and standard patterns.
 
 ### javascript
 
-JavaScript/Frontend development with Jest and Cypress testing.
+JavaScript/Frontend development with Jest testing.
 
 **workflow_skill_extensions**:
 | Type | Skill |
@@ -182,26 +182,20 @@ JavaScript/Frontend development with Jest and Cypress testing.
 **core**:
 | Field | Skills |
 |-------|--------|
-| defaults | `pm-dev-frontend:cui-javascript` |
-| optionals | `pm-dev-frontend:cui-jsdoc`, `pm-dev-frontend:cui-javascript-project` |
+| defaults | `pm-dev-frontend:javascript` |
+| optionals | `pm-dev-frontend:js-fix-jsdoc` |
 
 **implementation**:
 | Field | Skills |
 |-------|--------|
 | defaults | (none) |
-| optionals | `pm-dev-frontend:cui-javascript-linting`, `pm-dev-frontend:cui-javascript-maintenance` |
+| optionals | `pm-dev-frontend:js-enforce-eslint` |
 
 **module_testing**:
 | Field | Skills |
 |-------|--------|
-| defaults | `pm-dev-frontend:cui-javascript-unit-testing` |
-| optionals | (none) |
-
-**integration_testing**:
-| Field | Skills |
-|-------|--------|
 | defaults | (none) |
-| optionals | `pm-dev-frontend:cui-cypress` |
+| optionals | (none) |
 
 ## Skill Resolution
 

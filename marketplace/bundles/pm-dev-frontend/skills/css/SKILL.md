@@ -1,6 +1,6 @@
 ---
-name: cui-css
-description: Modern CSS standards covering essentials, responsive design, quality practices, and tooling for CUI projects
+name: css
+description: Modern CSS standards covering essentials, responsive design, quality practices, and tooling
 user-invocable: false
 ---
 
@@ -8,7 +8,7 @@ user-invocable: false
 
 **REFERENCE MODE**: This skill provides reference material. Load specific standards on-demand based on current task.
 
-Modern CSS development standards for CUI projects covering fundamentals, responsive design, performance, and accessibility.
+Modern CSS development standards covering fundamentals, responsive design, performance, and accessibility.
 
 ## Standards
 
@@ -23,4 +23,4 @@ For Stylelint configuration details, see also `pm-dev-frontend:js-enforce-eslint
 ## Related Skills
 
 - `pm-dev-frontend:js-enforce-eslint` — Stylelint, Prettier configuration
-- `pm-dev-frontend:cui-javascript` — JavaScript standards
+- `pm-dev-frontend:javascript` — JavaScript standards

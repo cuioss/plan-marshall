@@ -187,4 +187,4 @@ npx tsc --declaration
 ## Related Standards
 
 - [suppression.md](suppression.md) - How to suppress findings
-- [pm-dev-frontend:cui-javascript](../../cui-javascript/SKILL.md) - JavaScript coding standards
+- [pm-dev-frontend:javascript](../../javascript/SKILL.md) - JavaScript coding standards

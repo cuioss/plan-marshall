@@ -10,7 +10,7 @@ from pathlib import Path
 from conftest import get_script_path, run_script
 
 # Script under test
-SCRIPT_PATH = get_script_path('pm-dev-frontend', 'cui-javascript-project', 'npm-output.py')
+SCRIPT_PATH = get_script_path('pm-dev-frontend-cui', 'cui-javascript-project', 'npm-output.py')
 FIXTURES_DIR = Path(__file__).parent / 'build'
 
 

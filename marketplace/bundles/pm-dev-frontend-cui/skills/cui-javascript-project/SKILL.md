@@ -42,7 +42,7 @@ Standards for JavaScript project setup, structure, dependencies, and Maven integ
 
 ## Scripts
 
-Script: `pm-dev-frontend:cui-javascript-project` → `npm-output.py`
+Script: `pm-dev-frontend-cui:cui-javascript-project` → `npm-output.py`
 
 | Subcommand | Description |
 |------------|-------------|
@@ -50,7 +50,6 @@ Script: `pm-dev-frontend:cui-javascript-project` → `npm-output.py`
 
 ## Related Skills
 
-- `pm-dev-frontend:cui-javascript` — Core JavaScript development standards
+- `pm-dev-frontend:javascript` — Core JavaScript development standards
 - `pm-dev-frontend:js-enforce-eslint` — ESLint, Prettier, Stylelint configuration
 - `pm-dev-frontend:js-fix-jsdoc` — JSDoc documentation standards
-- `pm-dev-frontend:cui-cypress` — Cypress E2E testing

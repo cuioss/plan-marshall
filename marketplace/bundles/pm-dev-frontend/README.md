@@ -1,44 +1,36 @@
-# CUI Frontend Expert
+# pm-dev-frontend
 
-Frontend development standards and tools for CUI projects - modern JavaScript, CSS, and web development.
+Frontend development standards and tools - modern JavaScript, CSS, and web development.
 
 ## Purpose
 
-This bundle provides comprehensive frontend development expertise through domain knowledge skills with integrated automation workflows and build system integration.
+This bundle provides general frontend development expertise through domain knowledge skills with integrated automation workflows and build system integration.
 
 ## Components Included
 
-### Skills (8 skills)
+### Skills (6 skills)
 
-1. **cui-javascript** - Core JavaScript development standards
+1. **javascript** - Core JavaScript development standards
    - ES modules and modern patterns
    - Async programming and code quality
-   - Best practices for CUI projects
 
-2. **cui-javascript-project** - Project structure and build standards
-   - Directory layouts, package.json configuration
-   - Dependency management, Maven integration
-   - `npm-output.py` build output parser
-
-3. **cui-css** - CSS development standards
+2. **css** - CSS development standards
    - Responsive design patterns
    - Quality tooling and linting
 
-4. **cui-cypress** - E2E testing with Cypress
-   - Test organization and best practices
-   - Build integration patterns
-
-5. **js-fix-jsdoc** - JSDoc documentation standards
+3. **js-fix-jsdoc** - JSDoc documentation standards
    - Documentation patterns for functions, classes, modules
    - `jsdoc.py` analyzer script
 
-6. **js-enforce-eslint** - ESLint, Prettier, Stylelint configuration
+4. **js-enforce-eslint** - ESLint, Prettier, Stylelint configuration
    - Flat config setup and rule management
    - Build integration standards
 
-7. **ext-triage-js** - Extension point for JavaScript finding triage
+5. **ext-triage-js** - Extension point for JavaScript finding triage
 
-8. **plan-marshall-plugin** - Core infrastructure (npm build system, 6 parsers)
+6. **plan-marshall-plugin** - JavaScript domain registration
+
+> **Companion bundle**: `pm-dev-frontend-cui` provides CUI-specific standards (Maven integration, Quarkus DevUI, NiFi).
 
 > **Planning Integration**: Frontend domain skills are loaded by plan-marshall task executors during plan execution via `task.skills` array.
 
@@ -47,19 +39,14 @@ This bundle provides comprehensive frontend development expertise through domain
 ```
 pm-dev-frontend/
 └── skills/
-    ├── cui-javascript/          # Core JS standards
-    ├── cui-javascript-project/  # Project structure + dependencies
-    ├── cui-css/                 # CSS standards
-    ├── cui-cypress/             # E2E testing
+    ├── javascript/              # Core JS standards
+    ├── css/                     # CSS standards
     ├── js-fix-jsdoc/            # JSDoc + violations workflow
     │   └── scripts/
     │       └── jsdoc.py
     ├── js-enforce-eslint/       # ESLint enforcement
     ├── ext-triage-js/           # Triage extension point
-    └── plan-marshall-plugin/    # npm build system integration
-        └── scripts/
-            ├── npm.py
-            └── npm-output.py
+    └── plan-marshall-plugin/    # JavaScript domain registration
 ```
 
 ## Dependencies

@@ -1,5 +1,5 @@
 ---
-name: cui-javascript
+name: javascript
 description: Core JavaScript development standards covering ES modules, modern patterns, code quality, async programming, and tooling
 user-invocable: false
 ---
@@ -8,7 +8,7 @@ user-invocable: false
 
 **REFERENCE MODE**: This skill provides reference material. Load specific standards on-demand based on current task.
 
-Core JavaScript development standards for CUI projects covering modern JavaScript features (ES2022+), code quality practices, and async programming patterns.
+Core JavaScript development standards covering modern JavaScript features (ES2022+), code quality practices, and async programming patterns.
 
 ## Prerequisites
 
@@ -30,6 +30,5 @@ For ESLint, Prettier, and Stylelint configuration, see `pm-dev-frontend:js-enfor
 
 - `plan-marshall:dev-general-code-quality` — Language-agnostic code quality principles
 - `plan-marshall:dev-general-code-documentation` — Language-agnostic documentation principles
-- `pm-dev-frontend:cui-css` — CSS standards
+- `pm-dev-frontend:css` — CSS standards
 - `pm-dev-frontend:js-enforce-eslint` — ESLint, Prettier, Stylelint configuration
-- `pm-dev-frontend:cui-cypress` — Cypress E2E testing

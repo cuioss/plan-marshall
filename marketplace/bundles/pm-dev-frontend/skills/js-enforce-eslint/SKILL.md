@@ -42,7 +42,7 @@ ESLint v9, Prettier, and Stylelint configuration standards for CUI JavaScript pr
 
 ## Related Skills
 
-- `pm-dev-frontend:cui-javascript` — Core JavaScript standards
-- `pm-dev-frontend:cui-css` — CSS standards (Stylelint)
+- `pm-dev-frontend:javascript` — Core JavaScript standards
+- `pm-dev-frontend:css` — CSS standards (Stylelint)
 - `pm-dev-frontend:js-fix-jsdoc` — JSDoc documentation
-- `pm-dev-frontend:cui-javascript-project` — Project structure and Maven integration
+- `pm-dev-frontend-cui:cui-javascript-project` — Project structure and Maven integration

@@ -92,7 +92,7 @@ def test_resolve_triage_extension_javascript():
                             'outline': 'pm-dev-frontend:js-outline-ext',
                             'triage': 'pm-dev-frontend:ext-triage-js',
                         },
-                        'core': {'defaults': ['pm-dev-frontend:cui-javascript'], 'optionals': []},
+                        'core': {'defaults': ['pm-dev-frontend:javascript'], 'optionals': []},
                     },
                 }
             },

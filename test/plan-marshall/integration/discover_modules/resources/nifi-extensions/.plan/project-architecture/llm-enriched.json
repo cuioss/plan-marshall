@@ -39,13 +39,12 @@
       "key_dependencies_reasoning": "Playwright for E2E testing, axe-playwright for accessibility testing, jwt-decode for token validation in tests",
       "skills_by_profile": {
         "implementation": [
-          "pm-dev-frontend:cui-javascript",
-          "pm-dev-frontend:cui-jsdoc",
-          "pm-dev-frontend:cui-javascript-linting"
+          "pm-dev-frontend:javascript",
+          "pm-dev-frontend:js-fix-jsdoc",
+          "pm-dev-frontend:js-enforce-eslint"
         ],
         "integration-testing": [
-          "pm-dev-frontend:cui-javascript",
-          "pm-dev-frontend:cui-cypress"
+          "pm-dev-frontend:javascript"
         ]
       },
       "skills_by_profile_reasoning": "JavaScript E2E test module, Playwright tests map to integration-testing profile",
@@ -174,15 +173,14 @@
           "pm-dev-java:java-null-safety",
           "pm-dev-java:java-lombok",
           "pm-dev-java:java-maintenance",
-          "pm-dev-frontend:cui-javascript",
-          "pm-dev-frontend:cui-jsdoc",
-          "pm-dev-frontend:cui-javascript-linting"
+          "pm-dev-frontend:javascript",
+          "pm-dev-frontend:js-fix-jsdoc",
+          "pm-dev-frontend:js-enforce-eslint"
         ],
         "unit-testing": [
           "pm-dev-java:java-core",
           "pm-dev-java:junit-core",
-          "pm-dev-frontend:cui-javascript",
-          "pm-dev-frontend:cui-javascript-unit-testing"
+          "pm-dev-frontend:javascript"
         ]
       },
       "skills_by_profile_reasoning": "Hybrid module with Java servlets and JavaScript UI; both domains apply; no CDI",

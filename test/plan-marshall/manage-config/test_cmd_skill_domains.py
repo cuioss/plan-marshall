@@ -367,7 +367,7 @@ def test_resolve_domain_skills_javascript_implementation():
 
         assert result.success, f'Should succeed: {result.stderr}'
         # Should include core defaults (cui-javascript)
-        assert 'pm-dev-frontend:cui-javascript' in result.stdout
+        assert 'pm-dev-frontend:javascript' in result.stdout
         # Should include implementation optionals (renamed from cui-javascript-linting)
         assert 'pm-dev-frontend:js-enforce-eslint' in result.stdout
 
@@ -749,7 +749,7 @@ def test_get_skills_by_profile_javascript():
         assert result.success, f'Should succeed: {result.stderr}'
         assert 'skills_by_profile' in result.stdout
         # Core js skill should be present (from pm-dev-frontend extension.py)
-        assert 'pm-dev-frontend:cui-javascript' in result.stdout
+        assert 'pm-dev-frontend:javascript' in result.stdout
 
 
 def test_get_skills_by_profile_unknown_domain():

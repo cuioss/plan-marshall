@@ -92,7 +92,7 @@ Use this skill when:
 ## Integration
 
 Works with:
-- `pm-dev-frontend:cui-javascript` — Core JavaScript development
+- `pm-dev-frontend:javascript` — Core JavaScript development
 - `pm-dev-frontend:js-enforce-eslint` — ESLint JSDoc rules
 - JSDoc CLI for documentation generation
 

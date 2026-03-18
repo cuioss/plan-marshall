@@ -1,7 +1,7 @@
 {
-  "name": "pm-dev-frontend",
+  "name": "pm-dev-frontend-cui",
   "version": "0.1-BETA",
-  "description": "JavaScript, CSS, and web component standards for applications",
+  "description": "CUI-specific JavaScript project standards covering Maven integration, Quarkus DevUI, NiFi, and SonarQube",
   "author": {
     "name": "https://github.com/cuioss/plan-marshall",
     "email": "contact@cuioss.de"
@@ -9,15 +9,11 @@
   "license": "AGPL-3.0-only",
   "homepage": "https://github.com/cuioss/plan-marshall",
   "repository": "https://github.com/cuioss/plan-marshall.git",
-  "keywords": ["javascript", "css", "frontend", "web-components", "testing", "standards"],
+  "keywords": ["javascript", "cui", "maven", "quarkus", "nifi"],
   "agents": [],
   "commands": [],
   "skills": [
-    "./skills/css",
-    "./skills/ext-triage-js",
-    "./skills/javascript",
-    "./skills/js-enforce-eslint",
-    "./skills/js-fix-jsdoc",
+    "./skills/cui-javascript-project",
     "./skills/plan-marshall-plugin"
   ]
 }

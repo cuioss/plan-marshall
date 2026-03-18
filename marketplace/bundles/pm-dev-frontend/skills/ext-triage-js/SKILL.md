@@ -73,4 +73,4 @@ Registered in marshal.json under the javascript domain:
 ## Related Documents
 
 - [extension-api:extension-contract](../../../plan-marshall/skills/extension-api/standards/extension-contract.md) - Triage extension contract
-- [pm-dev-frontend:cui-javascript](../cui-javascript/SKILL.md) - Core JavaScript patterns
+- [pm-dev-frontend:javascript](../javascript/SKILL.md) - Core JavaScript patterns
