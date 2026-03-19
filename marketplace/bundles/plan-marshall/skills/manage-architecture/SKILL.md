@@ -189,12 +189,19 @@ python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
   --description "{1-2 sentence description}"
 ```
 
-Identify key dependencies:
+Identify key dependencies (both `--key` and `--internal` are optional — omit either when not applicable):
 
 ```bash
+# External + internal dependencies
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
   enrich dependencies --module {module-name} \
   --key "{comma-separated list of groupId:artifactId}" \
+  --internal "{comma-separated list of internal module names}" \
+  --reasoning "{why these are architecturally significant}"
+
+# Internal dependencies only (no external deps)
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
+  enrich dependencies --module {module-name} \
   --internal "{comma-separated list of internal module names}" \
   --reasoning "{why these are architecturally significant}"
 ```
