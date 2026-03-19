@@ -30,8 +30,8 @@ The 6 fixed change types (in priority order):
 | `analysis` | Investigate, research, understand | "analyze", "investigate", "understand", "research", "why is X" |
 | `feature` | New functionality or component | "add", "create", "new", "implement", "build" |
 | `enhancement` | Improve existing functionality | "improve", "enhance", "extend", "update", "upgrade" |
-| `bug_fix` | Fix a defect or issue | "fix", "repair", "correct", "resolve", "bug", "error" |
-| `tech_debt` | Refactoring, cleanup, removal | "refactor", "restructure", "clean up", "remove", "migrate" |
+| `bug_fix` | Fix a defect or issue | "fix" + defect object (bug, error, crash, exception, failure, broken, incorrect, regression) |
+| `tech_debt` | Refactoring, cleanup, removal | "refactor", "restructure", "clean up", "remove", "migrate", "deprecation", "outdated", "modernize", "obsolete", "warnings" — also "fix" + tech_debt object (deprecations, outdated code, warnings) |
 | `verification` | Validate, check, confirm | "verify", "validate", "check", "confirm", "ensure" |
 
 ## Workflow
@@ -58,7 +58,7 @@ If clarified_request is empty, fall back to original_input section.
 Analyze the request content against the 6 change types. Consider:
 
 1. **Primary action words** - What verb dominates the request?
-2. **Compound intent** - Does the request use analysis as discovery for a downstream action? (e.g., "analyze and fix" = enhancement, not analysis)
+2. **Compound intent** - Does the request use analysis as discovery for a downstream action? (e.g., "analyze and fix" = enhancement, not analysis; "analyze and fix deprecations" = tech_debt, not bug_fix)
 3. **Existence of target** - Does the thing exist (modify/fix) or not (create)?
 4. **Behavioral change** - Is functionality changing or just structure?
 5. **Request goal** - Information gathering vs. code changes vs. verification?
@@ -86,7 +86,13 @@ ELSE IF request asks to improve/extend existing functionality:
   change_type = "enhancement"
 
 ELSE IF request describes fixing a bug/error/defect:
-  change_type = "bug_fix"
+  # Object disambiguation: "fix" verb + tech_debt object = tech_debt, not bug_fix
+  # Tech_debt objects: deprecation, outdated, warning, obsolete, legacy, cleanup, modernize
+  # Bug_fix objects: bug, error, crash, exception, failure, broken, incorrect, regression
+  IF object of "fix" is tech_debt (deprecations, outdated code, warnings, obsolete patterns):
+    change_type = "tech_debt"
+  ELSE:
+    change_type = "bug_fix"
 
 ELSE IF request asks to refactor/clean up/restructure:
   change_type = "tech_debt"

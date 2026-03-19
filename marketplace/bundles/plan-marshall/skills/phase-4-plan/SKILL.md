@@ -195,6 +195,8 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 For each deliverable, create tasks using `--content` with `\n`-encoded TOON (one task per profile):
 
+**CRITICAL — Shell Metacharacter Sanitization**: Before interpolating values into the `--content` string, strip all markdown backticks (`` ` ``) from title, description, criteria, and step values. Backticks are shell metacharacters (command substitution) that trigger permission prompts. They are markdown formatting artifacts not needed in TOON task data. Replace `` `foo` `` with `foo` (plain text).
+
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks add \
   --plan-id {plan_id} \
@@ -231,6 +233,8 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 
 After creating per-deliverable tasks, create plan-level verification tasks that depend on ALL previously created tasks.
 
+**Module resolution for holistic tasks**: Holistic tasks are plan-level, not deliverable-level. Omit `--name` from `architecture resolve` to use the root module, which runs commands across all modules. Do NOT try to list or enumerate modules — the root module default handles cross-module verification.
+
 **Read verification config**:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
@@ -238,18 +242,18 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 ```
 
 **1. Quality check task** (if `verification_1_quality_check` is true):
-- Resolve via `architecture resolve --command quality-gate --name {module}`
+- Resolve via `architecture resolve --command quality-gate` (no `--name` — uses root module for cross-module check)
 - Create task with: `profile: verification`, `deliverable: 0`, `origin: holistic`
 - `depends_on: [ALL non-holistic tasks]`
 
 **2. Domain-specific verification tasks** (from `verification_domain_steps` config — see [extension-contract.md](../../../plan-marshall/skills/extension-api/standards/extension-contract.md)):
 - For each enabled domain step in config → create a verification task
-- Steps contain agent references from domain extensions
+- Steps contain agent references from domain extensions (use the step value directly as the step target, do NOT resolve via architecture)
 - `profile: verification`, `deliverable: 0`, `origin: holistic`
 - `depends_on: [ALL non-holistic tasks]`
 
 **3. Full test suite task** (if `verification_2_build_verify` is true):
-- Resolve via `architecture resolve --command module-tests --name {module}`
+- Resolve via `architecture resolve --command module-tests` (no `--name` — uses root module for cross-module check)
 - Create task with: `profile: verification`, `deliverable: 0`, `origin: holistic`
 - `depends_on: [ALL non-holistic tasks]`
 
