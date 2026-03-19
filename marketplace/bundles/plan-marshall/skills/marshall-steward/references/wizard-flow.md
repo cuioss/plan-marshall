@@ -37,7 +37,7 @@ entries_added	3
 
 ## Step 2: Update Project Documentation (BOOTSTRAP)
 
-Check if project docs need `.plan/temp/` documentation:
+Check if project docs need required content:
 
 **BOOTSTRAP**: Use DIRECT Python call (executor not yet available):
 
@@ -48,19 +48,27 @@ python3 ${PLUGIN_ROOT}/plan-marshall/*/skills/marshall-steward/scripts/determine
 **Output (TOON)**:
 ```toon
 status	ok
-files_needing_update	0
+missing_count	0
 ```
 
 Or if updates needed:
 ```toon
 status	needs_update
-files_needing_update	2
-missing	CLAUDE.md,agents.md
+missing_count	2
+plan_temp	CLAUDE.md,agents.md
+file_ops	CLAUDE.md
 ```
 
-If `status` is `needs_update`, add to each listed file's appropriate section:
+If `status` is `needs_update`, add missing content to each listed file:
+
+**For `plan_temp`** — add to each file listed:
 ```
 - Use `.plan/temp/` for ALL temporary files (covered by `Write(.plan/**)` permission - avoids permission prompts)
+```
+
+**For `file_ops`** — add to CLAUDE.md (e.g. in a "Development Notes" or equivalent section):
+```
+- Never use Bash for file operations (find, grep, cat, ls) — use Glob, Read, Grep tools instead
 ```
 
 ---
@@ -419,6 +427,40 @@ Modules discovered: 10
 ```
 
 **Hybrid modules** are detected automatically when both pom.xml and package.json exist.
+
+---
+
+## Step 9b: Document Build Commands in CLAUDE.md
+
+**Purpose**: Add resolved build commands to CLAUDE.md so ALL agents (including built-in Explore agents) know how to invoke builds without hard-coding tool-specific commands.
+
+**Prerequisite**: Step 9 completed (architecture API is available).
+
+**Check if already present**: Look for marker `build-python` or `build-maven` or `build-gradle` or `build-npm` in CLAUDE.md. If found, skip this step.
+
+**Resolve available commands** for the default module:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture resolve --command compile --name default
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture resolve --command quality-gate --name default
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture resolve --command module-tests --name default
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture resolve --command verify --name default
+```
+
+For each successful resolution, collect the `executable` value.
+
+**Add to CLAUDE.md** (in a "Development Notes" or equivalent section):
+
+```
+- Never hard-code build commands (./pw, mvn, npm, gradle) — use these resolved commands instead:
+  - Compile: `{resolved compile executable}`
+  - Quality gate: `{resolved quality-gate executable}`
+  - Tests: `{resolved module-tests executable}`
+  - Full verify: `{resolved verify executable}`
+  Replace `{module}` with specific module name for targeted runs.
+```
+
+**Note**: Only include commands that resolved successfully. Different projects have different available commands.
 
 ---
 

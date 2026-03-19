@@ -19,11 +19,12 @@ Output (TOON format):
 
     check-docs subcommand:
         status	ok
-        files_needing_update	0
+        missing_count	0
 
         status	needs_update
-        files_needing_update	2
-        missing	CLAUDE.md,agents.md
+        missing_count	2
+        plan_temp	CLAUDE.md,agents.md
+        file_ops	CLAUDE.md
 
     check-structure subcommand:
         status	exists
@@ -36,6 +37,21 @@ Output (TOON format):
 import argparse
 import sys
 from pathlib import Path
+
+# Content checks applied to project documentation files.
+# Each check has a key, the files it applies to, and a marker pattern.
+CONTENT_CHECKS: list[dict[str, str | list[str]]] = [
+    {
+        'key': 'plan_temp',
+        'files': ['CLAUDE.md', 'agents.md'],
+        'pattern': '.plan/temp',
+    },
+    {
+        'key': 'file_ops',
+        'files': ['CLAUDE.md'],
+        'pattern': 'use Glob, Read, Grep',
+    },
+]
 
 
 def determine_mode(plan_dir: Path) -> tuple[str, str]:
@@ -81,26 +97,31 @@ def check_structure(plan_dir: Path) -> tuple[str, Path]:
         return 'missing', arch_dir
 
 
-def check_docs(project_root: Path) -> tuple[str, list[str]]:
+def check_docs(project_root: Path) -> tuple[str, list[dict[str, str]]]:
     """
-    Check if project documentation files need .plan/temp documentation.
+    Check if project documentation files contain all required content.
+
+    Checks multiple content patterns across documentation files.
+    Each check has a key, target files, and a marker pattern.
 
     Args:
         project_root: Path to the project root
 
     Returns:
-        Tuple of (status, list of files needing update)
+        Tuple of (status, list of missing check dicts with 'file' and 'check' keys)
     """
-    docs_to_check = ['CLAUDE.md', 'agents.md']
-    pattern = '.plan/temp'
-    missing = []
+    missing: list[dict[str, str]] = []
 
-    for doc_name in docs_to_check:
-        doc_path = project_root / doc_name
-        if doc_path.exists():
-            content = doc_path.read_text()
-            if pattern not in content:
-                missing.append(doc_name)
+    for check in CONTENT_CHECKS:
+        pattern = str(check['pattern'])
+        files = check['files']
+        assert isinstance(files, list)
+        for file_name in files:
+            file_path = project_root / str(file_name)
+            if file_path.exists():
+                content = file_path.read_text()
+                if pattern not in content:
+                    missing.append({'file': str(file_name), 'check': str(check['key'])})
 
     if missing:
         return 'needs_update', missing
@@ -124,9 +145,17 @@ def cmd_check_docs(args: argparse.Namespace) -> int:
     status, missing = check_docs(project_root)
 
     print(f'status\t{status}')
-    print(f'files_needing_update\t{len(missing)}')
+    print(f'missing_count\t{len(missing)}')
     if missing:
-        print(f'missing\t{",".join(missing)}')
+        # Group by check key for easy consumption
+        checks_by_key: dict[str, list[str]] = {}
+        for entry in missing:
+            key = entry['check']
+            if key not in checks_by_key:
+                checks_by_key[key] = []
+            checks_by_key[key].append(entry['file'])
+        for key, files in checks_by_key.items():
+            print(f'{key}\t{",".join(files)}')
     return 0
 
 
