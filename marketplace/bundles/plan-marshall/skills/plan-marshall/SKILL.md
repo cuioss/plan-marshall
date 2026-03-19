@@ -140,7 +140,7 @@ After determining the action and workflow document:
 If you discover issues or improvements during execution, record them:
 
 1. **Activate skill**: `Skill: plan-marshall:manage-lessons`
-2. **Record lesson** with component: `{type: "skill", name: "plan-marshall", bundle: "plan-marshall"}`
+2. **Record lesson** with category `bug`, `improvement`, or `anti-pattern` and component in `{bundle}:{skill}` notation (e.g., `plan-marshall:manage-tasks`)
 
 ## Related
 

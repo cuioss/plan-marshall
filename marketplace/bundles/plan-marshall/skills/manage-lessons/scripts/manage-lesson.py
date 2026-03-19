@@ -15,7 +15,7 @@ import argparse
 import json
 import re
 import sys
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 # Direct imports - PYTHONPATH set by executor
@@ -32,7 +32,7 @@ def get_lessons_dir() -> Path:
 
 def get_next_id() -> str:
     """Generate the next lesson ID."""
-    today = datetime.utcnow().strftime('%Y-%m-%d')
+    today = datetime.now(UTC).strftime('%Y-%m-%d')
     lessons_dir = get_lessons_dir()
 
     if not lessons_dir.exists():
@@ -118,7 +118,7 @@ def cmd_add(args):
         sys.exit(1)
 
     lesson_id = get_next_id()
-    today = datetime.utcnow().strftime('%Y-%m-%d')
+    today = datetime.now(UTC).strftime('%Y-%m-%d')
 
     metadata = {
         'id': lesson_id,
@@ -297,7 +297,7 @@ def cmd_from_error(args):
     solution = context.get('solution', '')
 
     lesson_id = get_next_id()
-    today = datetime.utcnow().strftime('%Y-%m-%d')
+    today = datetime.now(UTC).strftime('%Y-%m-%d')
 
     metadata = {'id': lesson_id, 'component': component, 'category': 'bug', 'applied': 'false', 'created': today}
 
