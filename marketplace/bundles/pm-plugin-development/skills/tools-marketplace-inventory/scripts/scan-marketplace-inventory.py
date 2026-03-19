@@ -42,7 +42,7 @@ import fnmatch
 import os
 import re
 import sys
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -753,7 +753,7 @@ def write_file_output(output: dict, output_dir: Path, custom_output: str = '', f
     else:
         # Use default timestamped path
         output_dir.mkdir(parents=True, exist_ok=True)
-        timestamp = datetime.now().strftime('%Y%m%d-%H%M%S')
+        timestamp = datetime.now(UTC).strftime('%Y%m%d-%H%M%S')
         output_file = output_dir / f'inventory-{timestamp}.toon'
 
     # Write full inventory in TOON format with bundle-block structure

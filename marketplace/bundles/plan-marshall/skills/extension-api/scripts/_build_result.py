@@ -27,7 +27,7 @@ Usage:
 """
 
 import os
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal, TypedDict
 
@@ -178,7 +178,7 @@ def create_log_file(build_system: str, scope: str = 'default', project_dir: str 
     """
     try:
         project_path = Path(project_dir).resolve()
-        timestamp = datetime.now().strftime(TIMESTAMP_FORMAT)
+        timestamp = datetime.now(UTC).strftime(TIMESTAMP_FORMAT)
         log_filename = f'{build_system}-{timestamp}.log'
 
         log_dir = project_path / _get_log_base_dir() / scope

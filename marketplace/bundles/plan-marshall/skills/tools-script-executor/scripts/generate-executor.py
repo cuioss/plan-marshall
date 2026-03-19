@@ -27,7 +27,7 @@ import json
 import os
 import subprocess
 import sys
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 # ============================================================================
@@ -446,7 +446,7 @@ def compute_checksum(mappings: dict[str, str]) -> str:
 
 def update_state(script_count: int, checksum: str, logs_cleaned: int) -> None:
     """Update marshall-state.toon with generation metadata."""
-    timestamp = datetime.now().isoformat()
+    timestamp = datetime.now(UTC).isoformat()
     content = f"""status\tgenerated\tscript_count\tchecksum\tlogs_cleaned
 success\t{timestamp}\t{script_count}\t{checksum}\t{logs_cleaned}
 """

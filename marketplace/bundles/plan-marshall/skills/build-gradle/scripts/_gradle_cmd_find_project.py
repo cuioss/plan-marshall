@@ -2,7 +2,6 @@
 """Find-project subcommand for Gradle project discovery."""
 
 import json
-import os
 import re
 from pathlib import Path
 
@@ -49,8 +48,8 @@ def find_build_files(root: Path) -> list[Path]:
 def project_path_to_gradle_notation(root: Path, project_dir: Path) -> str:
     """Convert file path to Gradle project notation."""
     try:
-        resolved_root = Path(os.path.realpath(root))
-        resolved_dir = Path(os.path.realpath(project_dir))
+        resolved_root = Path(root).resolve()
+        resolved_dir = Path(project_dir).resolve()
         relative = resolved_dir.relative_to(resolved_root)
         parts = relative.parts
         return ':' + ':'.join(parts) if parts else ':'
@@ -60,7 +59,7 @@ def project_path_to_gradle_notation(root: Path, project_dir: Path) -> str:
 
 def cmd_find_project(args):
     """Handle find-project subcommand."""
-    root = Path(os.path.realpath(args.root))
+    root = Path(args.root).resolve()
     if not root.exists():
         print(
             json.dumps(
@@ -91,7 +90,7 @@ def cmd_find_project(args):
         for ext in ['.kts', '']:
             candidate = full_path / f'build.gradle{ext}'
             if candidate.exists():
-                build_file = str(Path(os.path.realpath(candidate)).relative_to(root))
+                build_file = str(candidate.resolve().relative_to(root))
                 break
         if not build_file:
             print(
@@ -194,7 +193,7 @@ def cmd_find_project(args):
     for ext in ['.kts', '']:
         candidate = root / dir_path / f'build.gradle{ext}'
         if candidate.exists():
-            build_file = str(Path(os.path.realpath(candidate)).relative_to(root))
+            build_file = str(candidate.resolve().relative_to(root))
             break
 
     parts = project_path.lstrip(':').split(':')

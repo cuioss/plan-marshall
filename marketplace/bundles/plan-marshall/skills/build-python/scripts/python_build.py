@@ -201,6 +201,9 @@ def execute_direct(
 
     except subprocess.TimeoutExpired:
         duration_seconds = int(time.time() - start_time)
+        # Adaptive learning: double the timeout so next run has enough headroom.
+        # Using timeout_seconds (not weighted) ensures single-retry convergence.
+        timeout_set(command_key, timeout_seconds * 2, project_dir)
         log_entry('script', 'global', 'ERROR', f'[PYTHON] Timeout after {timeout_seconds}s')
         return {
             'status': 'timeout',

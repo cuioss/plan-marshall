@@ -24,7 +24,7 @@ Usage:
 import argparse
 import json
 import sys
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 from _doctor_analysis import analyze_component
@@ -258,7 +258,7 @@ def cmd_report(args) -> int:
     report = generate_report(scan_results, all_analysis)
 
     # Determine output directory and filename
-    timestamp = datetime.now().strftime('%Y%m%d-%H%M%S')
+    timestamp = datetime.now(UTC).strftime('%Y%m%d-%H%M%S')
 
     # Determine scope for filename
     if len(bundles) == 1:

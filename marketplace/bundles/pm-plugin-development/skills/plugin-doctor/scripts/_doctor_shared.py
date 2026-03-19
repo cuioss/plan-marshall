@@ -2,7 +2,7 @@
 """Shared utilities for doctor-marketplace subcommands."""
 
 import os
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 # Import fix categorization from fix modules
@@ -53,7 +53,7 @@ def get_report_filename(timestamp: str | None = None, scope: str | None = None) 
         Filename like "{timestamp}-report.json" or "{timestamp}-{scope}-report.json"
     """
     if timestamp is None:
-        timestamp = datetime.now().strftime('%Y%m%d-%H%M%S')
+        timestamp = datetime.now(UTC).strftime('%Y%m%d-%H%M%S')
     if scope:
         return f'{timestamp}-{scope}-report.json'
     return f'{timestamp}-report.json'

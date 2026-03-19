@@ -2,7 +2,6 @@
 """Search-markers subcommand for OpenRewrite TODO markers."""
 
 import json
-import os
 import re
 from pathlib import Path
 
@@ -33,7 +32,7 @@ def extract_recipe_name(message: str) -> str:
 
 def cmd_search_markers(args):
     """Handle search-markers subcommand."""
-    if not os.path.exists(args.source_dir):
+    if not Path(args.source_dir).exists():
         print(
             json.dumps(
                 {
