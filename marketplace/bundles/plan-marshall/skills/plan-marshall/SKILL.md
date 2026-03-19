@@ -54,6 +54,14 @@ This skill implements its **OWN** plan system. You must:
 
 ## Workflow
 
+### Foundational Skills
+
+Load foundational development practices before any phase work:
+
+```
+Skill: plan-marshall:dev-general-practices
+```
+
 ### Action Routing
 
 Route based on action parameter. Load the appropriate workflow document and follow its instructions:

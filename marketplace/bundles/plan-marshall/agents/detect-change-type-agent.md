@@ -9,6 +9,12 @@ model: haiku
 
 Analyzes a request to detect its change type using LLM reasoning. Persists the detected change type to status.json metadata.
 
+## Step 0: Load Foundational Practices
+
+```
+Skill: plan-marshall:dev-general-practices
+```
+
 ## Input
 
 | Parameter | Type | Required | Description |
@@ -139,7 +145,6 @@ reasoning: "{brief explanation of detection logic}"
 ### MUST NOT
 - Use Read tool for `.plan/` files
 - Make changes to any files (detection only)
-- Load other skills (self-contained agent)
 
 ### MUST DO
 - Access `.plan/` files ONLY via execute-script.py

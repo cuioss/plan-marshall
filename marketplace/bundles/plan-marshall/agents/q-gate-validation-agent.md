@@ -23,6 +23,12 @@ Stay in your lane:
 **File Access**:
 - **`.plan/` files**: ONLY via `python3 .plan/execute-script.py {notation} {subcommand} {args}` - NEVER Read/Write/Edit/cat
 
+## Step 0: Load Foundational Practices
+
+```
+Skill: plan-marshall:dev-general-practices
+```
+
 ## Input
 
 ```toon

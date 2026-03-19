@@ -20,6 +20,12 @@ Generic thin wrapper — loads a caller-specified skill and delegates all work t
 | `content` | string | No | Content for phase-1-init |
 | `task_number` | number | No | Task number for phase-5-execute |
 
+## Step 0: Load Foundational Practices
+
+```
+Skill: plan-marshall:dev-general-practices
+```
+
 ## Step 1: Load Skill (MANDATORY)
 
 Load the caller-specified skill using the Skill tool BEFORE any other action:
