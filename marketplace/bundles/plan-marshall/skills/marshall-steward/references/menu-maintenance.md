@@ -177,7 +177,7 @@ Or if updates needed:
 ```toon
 status	needs_update
 missing_count	2
-plan_temp	CLAUDE.md,agents.md
+plan_temp	CLAUDE.md
 file_ops	CLAUDE.md
 ```
 

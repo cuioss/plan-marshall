@@ -55,7 +55,7 @@ Or if updates needed:
 ```toon
 status	needs_update
 missing_count	2
-plan_temp	CLAUDE.md,agents.md
+plan_temp	CLAUDE.md
 file_ops	CLAUDE.md
 ```
 
@@ -457,7 +457,9 @@ For each successful resolution, collect the `executable` value.
   - Quality gate: `{resolved quality-gate executable}`
   - Tests: `{resolved module-tests executable}`
   - Full verify: `{resolved verify executable}`
-  Replace `{module}` with specific module name for targeted runs.
+  - Omit `{module}` to run against all modules
+  - Always call build commands with a Bash timeout of at least 10 minutes (600000ms)
+  - After each build call, analyze the result TOON: check `status` for success/error/timeout, review `errors[N]{file,line,message,category}` for failures, and consult `log_file` for full output if deeper investigation is needed.
 ```
 
 **Note**: Only include commands that resolved successfully. Different projects have different available commands.
