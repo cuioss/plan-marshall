@@ -119,15 +119,15 @@ git push
 
 If `create-pr` parameter:
 
-1. Write PR body to a temp file using the Write tool:
+1. Write PR body to a uniquely named temp file using the Write tool:
 ```
-Write(.plan/temp/pr-body.md) with the PR body content (markdown with headings, etc.)
+Write(.plan/temp/pr-body-{plan_id}.md) with the PR body content (markdown with headings, etc.)
 ```
 
 2. Create PR using `--body-file` to avoid shell metacharacter issues:
 ```bash
 gh pr create --repo {owner}/{repo} --head {branch} --base {base_branch} \
-  --title "{title}" --body-file .plan/temp/pr-body.md
+  --title "{title}" --body-file .plan/temp/pr-body-{plan_id}.md
 ```
 
 **CRITICAL**: Do NOT pass multi-line markdown as inline `--body` arguments. Markdown headings (`##`) after newlines in quoted strings trigger Claude Code's shell security heuristic. Use `--body-file` with a temp file instead.
