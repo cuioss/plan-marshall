@@ -165,37 +165,28 @@ Draw ASCII diagram showing:
 
 ### Step 4: Write and Validate Document
 
-Write using stdin with validation to handle ASCII box-drawing characters:
+Use the resolve-path → Write → validate pattern:
 
 ```bash
+# 1. Get target path
+python3 .plan/execute-script.py \
+  plan-marshall:manage-solution-outline:manage-solution-outline resolve-path \
+  --plan-id {plan_id}
+# Returns: path: .plan/plans/{plan_id}/solution_outline.md
+
+# 2. Write content directly (Write tool — already permitted via Write(.plan/**))
+Write({resolved_path}) with solution outline content
+
+# 3. Validate
 python3 .plan/execute-script.py \
   plan-marshall:manage-solution-outline:manage-solution-outline write \
-  --plan-id {plan_id} \
-  [--force] <<'EOF'
-# Solution: {title}
-
-## Summary
-...
-
-## Overview
-```
-┌─────────────┐
-│  Component  │
-└─────────────┘
-```
-
-## Deliverables
-...
-EOF
+  --plan-id {plan_id}
 ```
 
 **Parameters**:
 - `--plan-id` (required): Plan identifier
-- `--force`: Overwrite existing solution outline
 
-**Note**: Validation runs automatically on write - checks for required sections (Summary, Overview, Deliverables) and numbered deliverable format (`### N. Title`). If validation fails, the file is NOT written.
-
-**Why heredoc?** Solution outlines contain ASCII diagrams with box-drawing characters (│, ─, ┌, └). Using `<<'EOF'` (quoted) preserves content exactly without variable expansion or escaping issues.
+**Note**: The `write` command validates the file already on disk — it does NOT read from stdin. Checks for required sections (Summary, Overview, Deliverables) and numbered deliverable format (`### N. Title`). Returns error if validation fails.
 
 ---
 
@@ -238,8 +229,9 @@ python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-sol
 
 | Command | Parameters | Description |
 |---------|------------|-------------|
-| `write` | `--plan-id [--force]` | Write solution from stdin (validates automatically) |
-| `update` | `--plan-id` | Update existing solution from stdin (validates automatically) |
+| `resolve-path` | `--plan-id` | Get target file path for direct Write |
+| `write` | `--plan-id` | Validate solution on disk (written via Write tool) |
+| `update` | `--plan-id` | Validate updated solution on disk (written via Write tool) |
 | `validate` | `--plan-id` | Validate structure |
 | `read` | `--plan-id [--raw] [--deliverable-number N]` | Read solution or specific deliverable |
 | `list-deliverables` | `--plan-id` | Extract deliverables list |

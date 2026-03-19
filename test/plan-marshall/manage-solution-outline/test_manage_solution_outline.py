@@ -418,30 +418,54 @@ def test_exists_absent():
 
 
 # =============================================================================
-# Test: Write Command
+# Test: Resolve Path Command
+# =============================================================================
+
+
+def test_resolve_path():
+    """Test resolve-path returns correct path."""
+    with TestContext(plan_id='solution-resolve') as ctx:
+        result = run_script(SCRIPT_PATH, 'resolve-path', '--plan-id', 'solution-resolve')
+        assert result.success, f'Script failed: {result.stderr}'
+        data = parse_toon(result.stdout)
+        assert data['status'] == 'success'
+        assert data['plan_id'] == 'solution-resolve'
+        assert 'solution_outline.md' in data['path']
+        assert data['exists'] is False
+
+        # Write a file and check exists becomes True
+        (ctx.plan_dir / 'solution_outline.md').write_text(VALID_SOLUTION)
+        result = run_script(SCRIPT_PATH, 'resolve-path', '--plan-id', 'solution-resolve')
+        data = parse_toon(result.stdout)
+        assert data['exists'] is True
+
+
+# =============================================================================
+# Test: Write Command (validates file on disk)
 # =============================================================================
 
 
 def test_write_new():
-    """Test writing a new solution outline via stdin (validates automatically)."""
+    """Test validating a new solution outline written to disk."""
     with TestContext(plan_id='solution-write') as ctx:
-        result = run_script(SCRIPT_PATH, 'write', '--plan-id', 'solution-write', input_data=VALID_SOLUTION)
+        # Write content directly (simulates Write tool)
+        (ctx.plan_dir / 'solution_outline.md').write_text(VALID_SOLUTION)
+
+        result = run_script(SCRIPT_PATH, 'write', '--plan-id', 'solution-write')
         assert result.success, f'Script failed: {result.stderr}\nOutput: {result.stdout}'
         data = parse_toon(result.stdout)
         assert data['status'] == 'success'
         assert data['file'] == 'solution_outline.md'
         assert 'validation' in data
         assert data['validation']['deliverable_count'] == 3
-        # Verify file was created
-        assert (ctx.plan_dir / 'solution_outline.md').exists()
-        content = (ctx.plan_dir / 'solution_outline.md').read_text()
-        assert '# Solution: JWT Validation Service' in content
 
 
 def test_write_includes_compatibility():
     """Test that write output includes compatibility when present in header."""
-    with TestContext(plan_id='solution-write-compat'):
-        result = run_script(SCRIPT_PATH, 'write', '--plan-id', 'solution-write-compat', input_data=VALID_SOLUTION)
+    with TestContext(plan_id='solution-write-compat') as ctx:
+        (ctx.plan_dir / 'solution_outline.md').write_text(VALID_SOLUTION)
+
+        result = run_script(SCRIPT_PATH, 'write', '--plan-id', 'solution-write-compat')
         assert result.success, f'Script failed: {result.stderr}\nOutput: {result.stdout}'
         data = parse_toon(result.stdout)
         assert data['status'] == 'success'
@@ -449,65 +473,54 @@ def test_write_includes_compatibility():
         assert 'breaking' in data['validation']['compatibility']
 
 
-def test_write_exists_without_force():
-    """Test that write fails if document exists and --force not specified."""
-    with TestContext(plan_id='solution-exists') as ctx:
-        # Create existing file with valid content
-        (ctx.plan_dir / 'solution_outline.md').write_text(VALID_SOLUTION)
+def test_write_validates_existing_file():
+    """Test that write detects validation errors in file on disk."""
+    with TestContext(plan_id='solution-invalid') as ctx:
+        # Write invalid content (missing required sections)
+        (ctx.plan_dir / 'solution_outline.md').write_text('# Just a title\n\nNo required sections here.')
 
-        result = run_script(SCRIPT_PATH, 'write', '--plan-id', 'solution-exists', input_data=VALID_SOLUTION)
-        assert not result.success, 'Expected failure when file exists without --force'
+        result = run_script(SCRIPT_PATH, 'write', '--plan-id', 'solution-invalid')
+        assert not result.success, 'Expected failure for invalid content'
         data = parse_toon(result.stdout)
-        assert data['error'] == 'file_exists'
+        assert data['error'] == 'validation_failed'
 
 
-def test_write_with_force():
-    """Test that write succeeds with --force when document exists."""
-    with TestContext(plan_id='solution-force') as ctx:
-        # Create existing file with old content
-        (ctx.plan_dir / 'solution_outline.md').write_text('# Old content')
-
-        result = run_script(SCRIPT_PATH, 'write', '--plan-id', 'solution-force', '--force', input_data=VALID_SOLUTION)
-        assert result.success, f'Script failed: {result.stderr}\nOutput: {result.stdout}'
+def test_write_file_not_found():
+    """Test that write fails when file not on disk."""
+    with TestContext(plan_id='solution-missing'):
+        result = run_script(SCRIPT_PATH, 'write', '--plan-id', 'solution-missing')
+        assert not result.success, 'Expected failure when file not on disk'
         data = parse_toon(result.stdout)
-        assert data['status'] == 'success'
-        # Verify content was overwritten
-        content = (ctx.plan_dir / 'solution_outline.md').read_text()
-        assert '# Solution: JWT Validation Service' in content
-        assert '# Old content' not in content
+        assert data['error'] == 'document_not_found'
 
 
 # =============================================================================
-# Test: Update Command
+# Test: Update Command (validates file on disk)
 # =============================================================================
 
 
 def test_update_existing():
-    """Test updating an existing solution outline."""
+    """Test validating an updated solution outline."""
     with TestContext(plan_id='solution-update') as ctx:
-        # Create initial file
-        (ctx.plan_dir / 'solution_outline.md').write_text(VALID_SOLUTION)
-
-        # Update with new content
+        # Write updated content directly
         updated_solution = VALID_SOLUTION.replace(
             'Implement JWT validation service for authentication.',
             'Implement enhanced JWT validation with key rotation support.',
         )
-        result = run_script(SCRIPT_PATH, 'update', '--plan-id', 'solution-update', input_data=updated_solution)
+        (ctx.plan_dir / 'solution_outline.md').write_text(updated_solution)
+
+        result = run_script(SCRIPT_PATH, 'update', '--plan-id', 'solution-update')
         assert result.success, f'Script failed: {result.stderr}\nOutput: {result.stdout}'
         data = parse_toon(result.stdout)
         assert data['status'] == 'success'
         assert data['action'] == 'updated'
         assert data['validation']['deliverable_count'] == 3
-        # Verify content was updated
-        content = (ctx.plan_dir / 'solution_outline.md').read_text()
-        assert 'enhanced JWT validation' in content
 
 
 def test_update_nonexistent():
     """Test that update fails when solution outline does not exist."""
     with TestContext(plan_id='solution-no-update'):
-        result = run_script(SCRIPT_PATH, 'update', '--plan-id', 'solution-no-update', input_data=VALID_SOLUTION)
+        result = run_script(SCRIPT_PATH, 'update', '--plan-id', 'solution-no-update')
         assert not result.success, 'Expected failure when updating non-existent outline'
         data = parse_toon(result.stdout)
         assert data['error'] == 'document_not_found'

@@ -95,7 +95,7 @@ Script: `plan-marshall:manage-tasks:manage-tasks`
 
 | Command | Parameters | Description |
 |---------|------------|-------------|
-| `add` | `--plan-id` + stdin | Add a new task (reads definition from stdin) |
+| `add` | `--plan-id --content` | Add a new task (TOON in --content with \n encoding) |
 | `update` | `--plan-id --number [--title] [--description] [--depends-on] [--status] [--domain] [--profile] [--skills] [--deliverable]` | Update task metadata |
 | `remove` | `--plan-id --number` | Remove a task |
 | `list` | `--plan-id [--status] [--deliverable] [--ready]` | List all tasks |
@@ -108,13 +108,11 @@ Script: `plan-marshall:manage-tasks:manage-tasks`
 | `add-step` | `--plan-id --task --target [--after]` | Add step to task |
 | `remove-step` | `--plan-id --task --step` | Remove step from task |
 
-### Add Command (stdin-based API)
+### Add Command (--content CLI argument)
 
-The `add` command reads the task definition from stdin in TOON format. Only `--plan-id` is passed as a CLI argument.
+The `add` command reads the task definition from the `--content` CLI argument in TOON format. Newlines are encoded as literal `\n` (two characters) which Python decodes at runtime. This keeps the entire command on a single line, matching the `Bash(python3 .plan/execute-script.py *)` permission pattern.
 
-**Why stdin?** Complex task definitions with verification commands containing shell metacharacters (pipes, wildcards, quotes) caused permission issues when passed as CLI arguments. The stdin approach avoids shell interpretation of these characters.
-
-**Stdin format**:
+**Content format**:
 
 ```toon
 title: My Task Title
@@ -173,71 +171,24 @@ verification:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks add \
-  --plan-id my-feature <<'EOF'
-title: Update misc agents to TOON
-deliverable: 1
-domain: java
-description: |
-  Migrate miscellaneous agents from JSON to TOON output format.
-
-steps:
-  - file1.md
-  - file2.md
-  - file3.md
-
-verification:
-  commands:
-    - mvn verify
-  criteria: Build passes
-EOF
+  --plan-id my-feature \
+  --content "title: Update misc agents to TOON\ndeliverable: 1\ndomain: java\ndescription: Migrate miscellaneous agents from JSON to TOON output format.\nsteps:\n  - file1.md\n  - file2.md\n  - file3.md\nverification:\n  commands:\n    - mvn verify\n  criteria: Build passes"
 ```
 
 ### Add a task with dependencies
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks add \
-  --plan-id my-feature <<'EOF'
-title: Write integration tests
-deliverable: 3
-domain: java-testing
-description: Add integration tests for new endpoint
-
-steps:
-  - Create test class
-  - Add test methods
-  - Run tests
-
-depends_on: TASK-1, TASK-2
-
-verification:
-  commands:
-    - mvn verify -Pintegration
-  criteria: All tests pass
-EOF
+  --plan-id my-feature \
+  --content "title: Write integration tests\ndeliverable: 3\ndomain: java-testing\ndescription: Add integration tests for new endpoint\nsteps:\n  - Create test class\n  - Add test methods\n  - Run tests\ndepends_on: TASK-1, TASK-2\nverification:\n  commands:\n    - mvn verify -Pintegration\n  criteria: All tests pass"
 ```
 
-### Add a task with complex verification commands (shell metacharacters)
+### Add a task with complex verification commands
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks add \
-  --plan-id migrate-json-to-toon <<'EOF'
-title: Migrate agent outputs to TOON
-deliverable: 1
-domain: plan-marshall-plugin-dev
-description: |
-  Update agents to use TOON format instead of JSON.
-
-steps:
-  - Update java-verify-agent.md
-  - Update java-coverage-agent.md
-  - Update gradle-builder.md
-
-verification:
-  commands:
-    - grep -l '```json' marketplace/bundles/pm-dev-java/agents/*.md | wc -l
-    - grep -l '```json' marketplace/bundles/pm-dev-builder/agents/*.md | wc -l
-  criteria: All grep commands return 0 (no JSON blocks remain)
-EOF
+  --plan-id migrate-json-to-toon \
+  --content "title: Migrate agent outputs to TOON\ndeliverable: 1\ndomain: plan-marshall-plugin-dev\ndescription: Update agents to use TOON format instead of JSON.\nsteps:\n  - Update java-verify-agent.md\n  - Update java-coverage-agent.md\n  - Update gradle-builder.md\nverification:\n  commands:\n    - grep -l '```json' marketplace/bundles/pm-dev-java/agents/*.md | wc -l\n  criteria: All grep commands return 0 (no JSON blocks remain)"
 ```
 
 ### Get next task/step (respects dependencies)
@@ -280,18 +231,11 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks finalize
 
 ### With phase-agent (phase-4-plan)
 
-Task-plan agents create tasks during plan refinement using heredoc:
+Task-plan agents create tasks during plan refinement using `--content`:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks add \
-  --plan-id {plan_id} <<'EOF'
-title: {task_title}
-deliverable: {deliverable_number}
-domain: {domain}
-steps:
-  - {step1}
-  - {step2}
-...
-EOF
+  --plan-id {plan_id} \
+  --content "title: {task_title}\ndeliverable: {deliverable_number}\ndomain: {domain}\nsteps:\n  - {step1}\n  - {step2}\ndepends_on: none"
 ```
 
 ### With plan-execute

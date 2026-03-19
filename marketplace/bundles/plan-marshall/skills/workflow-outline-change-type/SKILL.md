@@ -155,58 +155,28 @@ python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-sol
 
 If `exists: false`:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-solution-outline write \
-  --plan-id {plan_id} <<'EOF'
-# Solution: {Title}
+# 1. Get target path
+python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-solution-outline \
+  resolve-path --plan-id {plan_id}
 
-plan_id: {plan_id}
-compatibility: {compatibility} — {compatibility_description}
+# 2. Write content directly via Write tool
+Write({resolved_path}) with solution outline content including:
+  - Header with plan_id and compatibility
+  - Summary, Overview, Deliverables sections
+  - Each deliverable with Metadata, Profiles, Affected files, Verification, Success Criteria
 
-## Summary
-
-{2-3 sentence summary}
-
-## Overview
-
-{Concise description. Include ASCII diagram if helpful.}
-
-## Deliverables
-
-### 1. {First deliverable title}
-
-**Metadata:**
-- change_type: {change_type}
-- execution_mode: {automated|manual|mixed}
-- domain: {domain}
-- module: {module}
-- depends: {none|N|N,M}
-
-**Profiles:**
-- implementation
-- {module_testing - only if this deliverable creates/modifies test files}
-
-**Affected files:**
-- `{explicit/path/to/file1.ext}`
-- `{explicit/path/to/file2.ext}`
-
-**Change per file:** {What changes in these files}
-
-**Verification:**
-- Command: `{resolved command from architecture}`
-- Criteria: {success criteria}
-
-**Success Criteria:**
-- {criterion 1}
-- {criterion 2}
-EOF
+# 3. Validate
+python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-solution-outline \
+  write --plan-id {plan_id}
 ```
 
 If `exists: true`:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-solution-outline update \
-  --plan-id {plan_id} <<'EOF'
-{updated solution document}
-EOF
+# 1. Read current content, modify as needed
+# 2. Write updated content via Write tool to the same path
+# 3. Validate
+python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-solution-outline \
+  update --plan-id {plan_id}
 ```
 
 **CRITICAL — Deliverable Heading Format**: Each deliverable MUST use exactly `### N. Title` (e.g., `### 1. Migrate component X`). The validation regex is `^### \d+\. .+$`.

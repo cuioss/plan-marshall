@@ -193,34 +193,12 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 ### Step 5: Create Tasks
 
-For each deliverable, create tasks using heredoc (one task per profile):
+For each deliverable, create tasks using `--content` with `\n`-encoded TOON (one task per profile):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks add \
-  --plan-id {plan_id} <<'EOF'
-title: {task title from deliverable}
-deliverable: {deliverable_number}
-domain: {domain from deliverable}
-profile: {profile from deliverable}
-description: |
-  {combined description}
-
-steps:
-  - {file1}
-  - {file2}
-  - {file3}
-
-depends_on: TASK-1, TASK-2
-
-skills:
-  - {skill1 from architecture}
-  - {skill2 from architecture}
-
-verification:
-  commands:
-    - {cmd1}
-  criteria: {criteria}
-EOF
+  --plan-id {plan_id} \
+  --content "title: {task title}\ndeliverable: {deliverable_number}\ndomain: {domain}\nprofile: {profile}\ndescription: {description}\nsteps:\n  - {file1}\n  - {file2}\ndepends_on: {TASK-N | none}\nskills:\n  - {skill1}\n  - {skill2}\nverification:\n  commands:\n    - {cmd1}\n  criteria: {criteria}"
 ```
 
 **MANDATORY - Log each task creation**:
@@ -430,7 +408,7 @@ If deliverable metadata incomplete:
 **Script Notations** (use EXACTLY as shown):
 - `plan-marshall:manage-solution-outline:manage-solution-outline` - Read deliverables (list-deliverables, read)
 - `plan-marshall:manage-architecture:architecture` - Query module skills (module --name {module}) and resolve commands (resolve --command {cmd} --name {module}). Uses `--trace-plan-id`, NOT `--plan-id`.
-- `plan-marshall:manage-tasks:manage-tasks` - Create tasks (add --plan-id X <<'EOF' ... EOF)
+- `plan-marshall:manage-tasks:manage-tasks` - Create tasks (add --plan-id X --content "...")
 - `plan-marshall:manage-findings:manage-findings` - Q-Gate findings (qgate add/query/resolve)
 - `plan-marshall:manage-lessons:manage-lesson` - Record lessons on issues (add)
 

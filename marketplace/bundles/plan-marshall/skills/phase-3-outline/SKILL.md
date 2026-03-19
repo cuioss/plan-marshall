@@ -547,33 +547,25 @@ python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-sol
 
 If `exists: false` (first entry):
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-solution-outline write \
-  --plan-id {plan_id} <<'EOF'
-# Solution: {title}
+# 1. Get target path
+python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-solution-outline \
+  resolve-path --plan-id {plan_id}
 
-plan_id: {plan_id}
-compatibility: {compatibility} — {compatibility_description}
+# 2. Write content directly via Write tool
+Write({resolved_path}) with solution outline content including title, plan_id,
+compatibility header, Summary, Overview, and Deliverables from Step 6
 
-## Summary
-
-{2-3 sentence summary of the solution}
-
-## Overview
-
-{ASCII diagram showing solution structure}
-
-## Deliverables
-
-{deliverables from Step 6}
-EOF
+# 3. Validate
+python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-solution-outline \
+  write --plan-id {plan_id}
 ```
 
 If `exists: true` (Q-Gate re-entry):
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-solution-outline update \
-  --plan-id {plan_id} <<'EOF'
-{updated solution document}
-EOF
+# 1. Update content via Write tool to the same path
+# 2. Validate
+python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-solution-outline \
+  update --plan-id {plan_id}
 ```
 
 **Note**: Complex Track - skill already wrote solution_outline.md in Step 9.

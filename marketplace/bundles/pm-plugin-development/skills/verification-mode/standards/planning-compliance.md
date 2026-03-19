@@ -216,12 +216,18 @@ Examples:
 | Bash find | `find .plan/plans -name "*.toon"` | Use manage-* list operations via execute-script.py |
 | Bash ls | `ls .plan/plans/{id}/tasks/` | `python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks list --plan-id {id}` |
 
-**No Exceptions**: All .plan file access must go through manage-* scripts. The following scripts provide complete coverage:
+**Allowed Direct Write Pattern**: `Write(.plan/plans/{plan_id}/solution_outline.md)` is permitted when:
+1. The path was obtained via `manage-solution-outline resolve-path --plan-id {id}`
+2. The write is immediately followed by `manage-solution-outline write --plan-id {id}` (or `update`) to validate
+
+This replaces the previous heredoc stdin pattern. All other `.plan` file access must go through manage-* scripts.
+
+The following scripts provide complete coverage:
 
 | File | Read Script | Write Script |
 |------|-------------|--------------|
 | `request.md` | `plan-marshall:manage-plan-documents:manage-plan-documents request read --plan-id {id}` | `plan-marshall:manage-plan-documents:manage-plan-documents request create --plan-id {id} --title ... --source ... --body ...` |
-| `solution_outline.md` | `plan-marshall:manage-solution-outline:manage-solution-outline read --plan-id {id}` | `plan-marshall:manage-solution-outline:manage-solution-outline write --plan-id {id} <<'EOF'` then validate |
+| `solution_outline.md` | `plan-marshall:manage-solution-outline:manage-solution-outline read --plan-id {id}` | `resolve-path` → `Write({path})` → `manage-solution-outline write --plan-id {id}` (validate) |
 | `work.log` | `plan-marshall:manage-logging:manage-log read --plan-id {id} --type work` | `plan-marshall:manage-logging:manage-log work --plan-id {id} --level {level} --message "{message}"` |
 | `lessons-learned/*.md` | `plan-marshall:manage-lessons:manage-lesson get --id {lesson_id}` | `plan-marshall:manage-lessons:manage-lesson add` |
 | Any plan file | `plan-marshall:manage-files:manage-files read --plan-id {id} --file {path}` | `plan-marshall:manage-files:manage-files write --plan-id {id} --file {path}` |
