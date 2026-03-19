@@ -203,12 +203,10 @@ domain: {domain or "generic"}
 ## Constraints
 
 ### MUST NOT
-- Use Read tool for `.plan/` files
 - Skip verification command resolution
 - Skip solution outline writing
 
 ### MUST DO
-- Access `.plan/` files ONLY via execute-script.py
 - Load domain skill when domain provides outline_skill
 - Follow change-type sub-skill instructions exactly
 - Return structured TOON output

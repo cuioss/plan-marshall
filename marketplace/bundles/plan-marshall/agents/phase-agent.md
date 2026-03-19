@@ -3,7 +3,6 @@ name: phase-agent
 description: Generic phase agent that loads a caller-specified skill and delegates execution
 tools: Read, Write, Edit, Glob, Grep, Bash, AskUserQuestion, Skill
 model: sonnet
-skills: []
 ---
 
 # Phase Agent
@@ -56,7 +55,3 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 Follow the loaded skill's workflow with all provided parameters. The skill contains the complete logic — do not add, skip, or modify steps. Return the skill's output verbatim.
 
-## File Access
-
-- **`.plan/` files**: ONLY via `python3 .plan/execute-script.py` — NEVER Read/Write/Edit/cat
-- **Project files**: As directed by the loaded skill

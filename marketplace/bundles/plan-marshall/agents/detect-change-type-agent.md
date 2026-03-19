@@ -2,7 +2,7 @@
 name: detect-change-type-agent
 description: Detect change type from request using LLM analysis
 tools: Bash, Skill
-model: haiku
+model: sonnet
 ---
 
 # Detect Change-Type Agent
@@ -149,11 +149,9 @@ reasoning: "{brief explanation of detection logic}"
 ## CONSTRAINTS
 
 ### MUST NOT
-- Use Read tool for `.plan/` files
 - Make changes to any files (detection only)
 
 ### MUST DO
-- Access `.plan/` files ONLY via execute-script.py
 - Persist detected change_type to status.json
 - Return structured TOON output
 - Provide reasoning for the detection

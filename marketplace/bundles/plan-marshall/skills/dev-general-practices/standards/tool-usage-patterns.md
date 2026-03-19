@@ -226,6 +226,24 @@ Bash(command="source ~/.bashrc && echo $PATH")
 - Container tools (docker, kubectl)
 - Build systems and package managers — but ONLY after resolving the command via `architecture resolve`
 
+### ❌ Never Combine Commands in a Single Bash Call
+
+Each Bash call must contain exactly ONE command. Never combine commands using newlines, `&`, `&&`, or `;` separators. Newline-separated commands trigger Claude Code's security prompt ("Command contains newlines that could separate multiple commands").
+
+```
+# BAD - Triggers security prompt
+Bash(command="python3 script.py --arg value 2>&1 &\ngit branch --show-current 2>&1")
+
+# BAD - Also triggers prompt
+Bash(command="command1 && command2")
+
+# GOOD - Separate Bash calls
+Bash(command="python3 script.py --arg value")
+Bash(command="git branch --show-current")
+```
+
+If two commands are independent, make two parallel Bash tool calls. If sequential, make two separate calls.
+
 **Rule of Thumb**: Use Bash when the operation truly requires shell execution or external tools. Use non-prompting tools (Glob, Read, Grep) for all file system operations. All build/compile/lint/test commands must be resolved via architecture API before execution.
 
 ## Performance Considerations

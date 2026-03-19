@@ -111,12 +111,24 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-2-refine) Recipe plan — skipping quality analysis, setting confidence=100, track=complex"
 ```
 
-4. **Skip Steps 2-12**. Jump directly to persist/return (update phase to 3-outline and return).
+4. **Skip Steps 2-12**. Transition phase and return.
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status set-phase \
+python3 .plan/execute-script.py plan-marshall:manage-lifecycle:manage-lifecycle transition \
   --plan-id {plan_id} \
-  --phase 3-outline
+  --completed 2-refine
+```
+
+Log phase completion:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-2-refine) Recipe plan — refine phase complete (skipped quality analysis)"
+```
+
+Add visual separator:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  separator --plan-id {plan_id} --type work
 ```
 
 Return success. Phase 3 will handle recipe-specific outline creation.

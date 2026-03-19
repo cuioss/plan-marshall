@@ -324,9 +324,17 @@ python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lesson add \
 
 **Valid categories**: `bug`, `improvement`, `anti-pattern`
 
-### Step 9: Return Results
+### Step 9: Transition Phase and Return Results
 
-**Log phase completion** before returning:
+**Transition phase**:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-lifecycle:manage-lifecycle transition \
+  --plan-id {plan_id} \
+  --completed 4-plan
+```
+
+**Log phase completion**:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \

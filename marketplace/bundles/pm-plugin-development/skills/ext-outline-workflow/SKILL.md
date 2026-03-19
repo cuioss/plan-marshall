@@ -8,6 +8,12 @@ user-invocable: false
 
 Shared workflow steps for plugin development outline, loaded by the `workflow-outline-change-type` skill when the domain is `plan-marshall-plugin-dev`. Change-type-specific instructions are in `standards/change-{type}.md`.
 
+## Step 0: Load Foundational Practices
+
+```
+Skill: plan-marshall:dev-general-practices
+```
+
 ## Context Loading
 
 Read request, domains, and compatibility:
@@ -338,7 +344,6 @@ domain: plan-marshall-plugin-dev
 
 ## Shared Constraints
 
-- Access `.plan/` files ONLY via execute-script.py
 - Log assessments to assessments.jsonl for Q-Gate verification
 - Select verification commands using the profile-based priority (see Decision Guide above)
 - Return structured TOON output

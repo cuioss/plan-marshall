@@ -10,6 +10,12 @@ user-invocable: false
 
 **Execution Pattern**: Load task → Load skills → Iterate steps → Apply changes → Verify → Return result
 
+## Step 0: Load Foundational Practices
+
+```
+Skill: plan-marshall:dev-general-practices
+```
+
 ## Scripts
 
 | Script | Purpose |
@@ -207,10 +213,6 @@ If verification fails:
 ---
 
 ## Constraints
-
-### File Access
-- **`.plan/` files**: ONLY via execute-script.py
-- **Marketplace files**: Use Read/Write/Edit as needed
 
 ### Progress Tracking
 - Execute step

@@ -598,6 +598,16 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 ---
 
+### Transition Phase
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-lifecycle:manage-lifecycle transition \
+  --plan-id {plan_id} \
+  --completed 3-outline
+```
+
+---
+
 ### Return Results
 
 Return minimal status - all data is in sinks:

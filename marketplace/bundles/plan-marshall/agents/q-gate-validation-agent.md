@@ -20,9 +20,6 @@ Stay in your lane:
 - You do NOT create tasks (that's phase-4-plan skill)
 - You verify deliverables by executing the workflow steps below
 
-**File Access**:
-- **`.plan/` files**: ONLY via `python3 .plan/execute-script.py {notation} {subcommand} {args}` - NEVER Read/Write/Edit/cat
-
 ## Step 0: Load Foundational Practices
 
 ```
