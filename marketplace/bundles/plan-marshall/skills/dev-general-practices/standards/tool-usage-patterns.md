@@ -204,12 +204,16 @@ Bash(command="git log --oneline -10")
 Bash(command="git diff main...HEAD")
 ```
 
-**Build Commands**:
+**Build Commands** (MUST resolve via architecture API first):
 ```
-Bash(command="./mvnw clean verify")
-Bash(command="npm install")
-Bash(command="docker build -t image:tag .")
+# ALWAYS resolve the command first:
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
+  resolve --command compile --name {module} --trace-plan-id {plan_id}
+
+# Then execute the returned 'executable' value:
+Bash(command="{resolved_executable}")
 ```
+Never hard-code build commands (`./pw`, `./mvnw`, `mvn`, `npm`, `gradle`, etc.). The architecture API is the single source of truth for build commands — different projects use different build systems. This applies to ALL phases including discovery, verification, and testing.
 
 **Shell-Specific Features**:
 ```
@@ -218,13 +222,11 @@ Bash(command="source ~/.bashrc && echo $PATH")
 ```
 
 **When External Tools Required**:
-- Package managers (npm, pip, mvn)
 - Version control systems (git, svn)
-- Build systems (make, gradle, maven)
 - Container tools (docker, kubectl)
-- Language runtime operations (java, node, python)
+- Build systems and package managers — but ONLY after resolving the command via `architecture resolve`
 
-**Rule of Thumb**: Use Bash when the operation truly requires shell execution or external tools. Use non-prompting tools (Glob, Read, Grep) for all file system operations.
+**Rule of Thumb**: Use Bash when the operation truly requires shell execution or external tools. Use non-prompting tools (Glob, Read, Grep) for all file system operations. All build/compile/lint/test commands must be resolved via architecture API before execution.
 
 ## Performance Considerations
 
