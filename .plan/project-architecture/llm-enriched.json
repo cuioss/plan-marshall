@@ -1,359 +1,278 @@
 {
   "project": {
-    "description": "Claude Code marketplace providing development standards, automation tools, and AI-assisted workflows for CUI Open Source projects. Contains 7 production bundles with skills, agents, and commands for Java, JavaScript, Python, documentation, and plugin development.",
-    "description_reasoning": "source: README.adoc and CLAUDE.md introduction"
+    "description": "A Claude Code Marketplace repository providing 7 production bundles with development standards, automation tools, and AI-assisted workflows for CUI Open Source projects. Contains skills, agents, and commands for Java, JavaScript, Python, OCI, documentation, requirements engineering, and plugin development.",
+    "description_reasoning": "source: README.adoc introduction and module descriptions from derived-data"
   },
   "modules": {
     "default": {
-      "responsibility": "Root Python project providing pyprojectx-based build automation with ruff linting, mypy type checking, and pytest testing for all marketplace bundle scripts.",
-      "responsibility_reasoning": "README.md",
+      "responsibility": "Root project module providing Python build infrastructure via pyprojectx. Manages test execution, linting (ruff), type checking (mypy), and coverage for all marketplace bundles.",
+      "responsibility_reasoning": "source: pyproject.toml and CLAUDE.md build commands",
       "purpose": "parent",
-      "purpose_reasoning": "Root pyproject.toml with build aliases, no direct source code",
-      "key_packages": {},
+      "purpose_reasoning": "Root project with pyprojectx wrapper managing child bundle builds",
+      "key_packages": {
+        "marketplace/bundles": {
+          "description": "Root directory containing all 7 production marketplace bundles"
+        },
+        "test": {
+          "description": "Pytest test suites organized by bundle name, mirroring marketplace/bundles structure"
+        }
+      },
       "internal_dependencies": [],
       "key_dependencies": [],
       "key_dependencies_reasoning": "",
-      "skills_by_profile": {
-        "implementation": {
-          "defaults": [
-            "plan-marshall:dev-general-practices",
-            "plan-marshall:dev-general-code-quality",
-            "plan-marshall:dev-general-code-documentation",
-            "pm-dev-python:python-best-practices"
-          ]
-        },
-        "module_testing": {
-          "defaults": [
-            "plan-marshall:dev-general-practices",
-            "plan-marshall:dev-general-code-quality",
-            "plan-marshall:dev-general-module-testing",
-            "pm-dev-python:python-best-practices"
-          ]
-        },
-        "quality": {
-          "defaults": [
-            "plan-marshall:dev-general-practices",
-            "plan-marshall:dev-general-code-quality",
-            "plan-marshall:dev-general-code-documentation",
-            "pm-dev-python:python-best-practices"
-          ]
-        }
-      },
-      "skills_by_profile_reasoning": "cross-cutting; pyproject.toml",
+      "skills_by_profile": {},
+      "skills_by_profile_reasoning": "",
       "tips": [],
       "insights": [],
       "best_practices": []
     },
     "documentation": {
-      "responsibility": "Project-level documentation including architecture decisions, build structure, and contribution guides in AsciiDoc format.",
-      "responsibility_reasoning": "README.md",
-      "purpose": "library",
-      "purpose_reasoning": "Documentation-only module, no executable code",
+      "responsibility": "Project-level documentation including build structure, architecture diagrams, and contributor guides.",
+      "responsibility_reasoning": "source: doc/ directory contains project documentation",
+      "purpose": "parent",
+      "purpose_reasoning": "Documentation-only module with no code artifacts",
       "key_packages": {},
       "internal_dependencies": [],
       "key_dependencies": [],
       "key_dependencies_reasoning": "",
       "skills_by_profile": {},
-      "skills_by_profile_reasoning": "doc/",
+      "skills_by_profile_reasoning": "",
       "tips": [],
       "insights": [],
       "best_practices": []
     },
     "plan-marshall": {
-      "responsibility": "Core orchestration bundle providing the extension API, workflow phases, build system abstraction, project configuration, architecture management, and cross-cutting development standards.",
-      "responsibility_reasoning": "README.md",
+      "responsibility": "Core orchestration bundle providing the complete plan-based development workflow (phases 1-6), build system abstractions for Maven/Gradle/npm/Python, task management, architecture analysis, permission tooling, CI integration, and cross-cutting utilities like script execution, TOON format, and lessons learned.",
+      "responsibility_reasoning": "source: README.md and 47 packages spanning workflow, build, tools, and dev-general skills",
       "purpose": "library",
-      "purpose_reasoning": "Bundle with skills/agents/commands, no standalone runtime",
-      "key_packages": {},
+      "purpose_reasoning": "Bundle providing skills, agents, and commands consumed by other bundles and users",
+      "key_packages": {
+        "skill:plan-marshall": {
+          "description": "Unified plan lifecycle management - the main entry point orchestrating phases 1-6"
+        },
+        "skill:tools-script-executor": {
+          "description": "Universal script execution via execute-script.py with notation-based routing"
+        },
+        "skill:manage-architecture": {
+          "description": "LLM-based architectural analysis transforming raw project data into enriched module metadata"
+        },
+        "skill:task-implementation": {
+          "description": "Domain-agnostic task execution with two-tier skill loading for implementation work"
+        }
+      },
       "internal_dependencies": [],
       "key_dependencies": [],
       "key_dependencies_reasoning": "",
-      "skills_by_profile": {
-        "implementation": {
-          "defaults": [
-            "pm-plugin-development:plugin-architecture",
-            "pm-plugin-development:plugin-script-architecture",
-            "plan-marshall:ref-toon-format"
-          ]
-        },
-        "module_testing": {
-          "defaults": [
-            "pm-plugin-development:plugin-architecture",
-            "pm-plugin-development:plugin-script-architecture",
-            "plan-marshall:ref-toon-format"
-          ]
-        },
-        "quality": {
-          "defaults": [
-            "pm-plugin-development:plugin-architecture",
-            "pm-plugin-development:plugin-script-architecture",
-            "plan-marshall:ref-toon-format"
-          ]
-        }
-      },
-      "skills_by_profile_reasoning": "core bundle",
+      "skills_by_profile": {},
+      "skills_by_profile_reasoning": "",
       "tips": [],
       "insights": [],
       "best_practices": []
     },
     "pm-dev-frontend": {
-      "responsibility": "JavaScript and frontend development standards covering ES modules, CSS, JSDoc, ESLint/Prettier, Cypress E2E testing, and Jest unit testing.",
-      "responsibility_reasoning": "README.md",
+      "responsibility": "Frontend development standards for JavaScript ES modules, modern patterns, CSS responsive design, JSDoc documentation, ESLint enforcement, and build tooling integration.",
+      "responsibility_reasoning": "source: README.md and 6 packages covering JS/CSS skills",
       "purpose": "library",
-      "purpose_reasoning": "Bundle with skills and agents for frontend standards",
-      "key_packages": {},
-      "internal_dependencies": [],
-      "key_dependencies": [],
-      "key_dependencies_reasoning": "",
-      "skills_by_profile": {
-        "implementation": {
-          "defaults": [
-            "pm-plugin-development:plugin-architecture"
-          ]
+      "purpose_reasoning": "Standards bundle providing frontend domain expertise",
+      "key_packages": {
+        "skill:javascript": {
+          "description": "Core JavaScript development standards covering ES modules, modern patterns, and async programming"
         },
-        "module_testing": {
-          "defaults": [
-            "pm-plugin-development:plugin-architecture"
-          ]
-        },
-        "quality": {
-          "defaults": [
-            "pm-plugin-development:plugin-architecture"
-          ]
+        "skill:css": {
+          "description": "Modern CSS standards covering responsive design, quality practices, and tooling"
         }
       },
-      "skills_by_profile_reasoning": "marketplace bundle",
+      "internal_dependencies": [
+        "plan-marshall"
+      ],
+      "key_dependencies": [],
+      "key_dependencies_reasoning": "Frontend bundle uses plan-marshall build and workflow infrastructure",
+      "skills_by_profile": {},
+      "skills_by_profile_reasoning": "",
+      "tips": [],
+      "insights": [],
+      "best_practices": []
+    },
+    "pm-dev-frontend-cui": {
+      "responsibility": "CUI-specific JavaScript project standards extending pm-dev-frontend with Maven integration, Quarkus DevUI patterns, NiFi processor UI, and SonarQube configuration.",
+      "responsibility_reasoning": "source: README.md description and cui-javascript-project skill",
+      "purpose": "library",
+      "purpose_reasoning": "CUI overlay bundle extending base frontend standards",
+      "key_packages": {
+        "skill:cui-javascript-project": {
+          "description": "CUI JavaScript project structure with Maven integration, dependency management, and build standards"
+        }
+      },
+      "internal_dependencies": [
+        "pm-dev-frontend"
+      ],
+      "key_dependencies": [],
+      "key_dependencies_reasoning": "CUI frontend extends base frontend standards via plan-marshall-plugin",
+      "skills_by_profile": {},
+      "skills_by_profile_reasoning": "",
       "tips": [],
       "insights": [],
       "best_practices": []
     },
     "pm-dev-java": {
-      "responsibility": "Comprehensive Java development standards covering core patterns, null safety, Lombok, CDI/Quarkus, JUnit 5 testing, JavaDoc, and logging.",
-      "responsibility_reasoning": "README.md",
+      "responsibility": "Java development standards bundle covering core patterns, null safety (JSpecify), Lombok, CDI/Quarkus, JUnit 5 testing (unit, integration, Weld), JavaDoc, and Maven profile management. Includes agents for coverage analysis and standards verification.",
+      "responsibility_reasoning": "source: README.md and 15 packages covering Java domain skills",
       "purpose": "library",
-      "purpose_reasoning": "Bundle with skills and agents for Java development",
-      "key_packages": {},
-      "internal_dependencies": [],
-      "key_dependencies": [],
-      "key_dependencies_reasoning": "",
-      "skills_by_profile": {
-        "implementation": {
-          "defaults": [
-            "pm-plugin-development:plugin-architecture"
-          ]
+      "purpose_reasoning": "Standards bundle providing Java domain expertise for plan-marshall workflow",
+      "key_packages": {
+        "skill:java-core": {
+          "description": "Core Java development standards for patterns, modern features, and performance optimization"
         },
-        "module_testing": {
-          "defaults": [
-            "pm-plugin-development:plugin-architecture"
-          ]
+        "skill:junit-core": {
+          "description": "JUnit 5 core testing patterns with AAA structure, test organization, and coverage standards"
         },
-        "quality": {
-          "defaults": [
-            "pm-plugin-development:plugin-architecture"
-          ]
+        "skill:java-null-safety": {
+          "description": "JSpecify null safety annotations with @NullMarked, @Nullable, and package-level configuration"
         }
       },
-      "skills_by_profile_reasoning": "marketplace bundle",
+      "internal_dependencies": [
+        "plan-marshall"
+      ],
+      "key_dependencies": [],
+      "key_dependencies_reasoning": "Java bundle uses plan-marshall build and workflow infrastructure",
+      "skills_by_profile": {},
+      "skills_by_profile_reasoning": "",
       "tips": [],
       "insights": [],
       "best_practices": []
     },
     "pm-dev-java-cui": {
-      "responsibility": "CUI-specific Java extensions covering CuiLogger patterns, test generators, value object contracts, and HTTP client testing. Additive to pm-dev-java.",
-      "responsibility_reasoning": "README.md",
-      "purpose": "extension",
-      "purpose_reasoning": "Additive bundle extending pm-dev-java",
-      "key_packages": {},
-      "internal_dependencies": [],
-      "key_dependencies": [],
-      "key_dependencies_reasoning": "",
-      "skills_by_profile": {
-        "implementation": {
-          "defaults": [
-            "pm-plugin-development:plugin-architecture"
-          ]
+      "responsibility": "CUI-specific Java standards extending pm-dev-java with CuiLogger logging patterns, test data generators, value object contracts, HTTP client testing with MockWebServer, and LogRecord enforcement workflows.",
+      "responsibility_reasoning": "source: README.md and 7 packages covering CUI Java patterns",
+      "purpose": "library",
+      "purpose_reasoning": "CUI overlay bundle extending base Java standards",
+      "key_packages": {
+        "skill:cui-logging": {
+          "description": "CUI logging standards with CuiLogger, LogRecord patterns, and DSL-style LogMessages"
         },
-        "module_testing": {
-          "defaults": [
-            "pm-plugin-development:plugin-architecture"
-          ]
-        },
-        "quality": {
-          "defaults": [
-            "pm-plugin-development:plugin-architecture"
-          ]
+        "skill:cui-testing": {
+          "description": "CUI test library standards for test data generation, value object contracts, and JUL testing"
         }
       },
-      "skills_by_profile_reasoning": "marketplace bundle",
+      "internal_dependencies": [
+        "pm-dev-java"
+      ],
+      "key_dependencies": [],
+      "key_dependencies_reasoning": "CUI Java extends base Java standards via plan-marshall-plugin",
+      "skills_by_profile": {},
+      "skills_by_profile_reasoning": "",
       "tips": [],
       "insights": [],
       "best_practices": []
     },
     "pm-dev-oci": {
-      "responsibility": "OCI container standards covering Dockerfile best practices, multi-stage builds, security scanning, and container image optimization.",
-      "responsibility_reasoning": "README.md",
+      "responsibility": "OCI container standards covering Dockerfile best practices, multi-platform builds, distroless images, runtime hardening, supply chain security, and OWASP container controls.",
+      "responsibility_reasoning": "source: README.md and 3 packages for OCI standards and security",
       "purpose": "library",
-      "purpose_reasoning": "Bundle with skills for OCI container standards",
-      "key_packages": {},
+      "purpose_reasoning": "Standards bundle providing container domain expertise",
+      "key_packages": {
+        "skill:oci-standards": {
+          "description": "General OCI container standards for image building, Dockerfiles, and multi-platform builds"
+        },
+        "skill:oci-security": {
+          "description": "OCI container security covering runtime hardening, supply chain security, and OWASP controls"
+        }
+      },
       "internal_dependencies": [],
       "key_dependencies": [],
       "key_dependencies_reasoning": "",
-      "skills_by_profile": {
-        "implementation": {
-          "defaults": [
-            "pm-plugin-development:plugin-architecture"
-          ]
-        },
-        "module_testing": {
-          "defaults": [
-            "pm-plugin-development:plugin-architecture"
-          ]
-        },
-        "quality": {
-          "defaults": [
-            "pm-plugin-development:plugin-architecture"
-          ]
-        }
-      },
-      "skills_by_profile_reasoning": "marketplace bundle",
+      "skills_by_profile": {},
+      "skills_by_profile_reasoning": "",
       "tips": [],
       "insights": [],
       "best_practices": []
     },
     "pm-dev-python": {
-      "responsibility": "Python domain extension providing pyprojectx build operations, ruff linting integration, and Python best practices standards.",
-      "responsibility_reasoning": "README.md",
+      "responsibility": "Python domain extension providing pyprojectx build operations and modern Python development best practices for the plan-marshall workflow.",
+      "responsibility_reasoning": "source: README.md and 2 packages",
       "purpose": "library",
-      "purpose_reasoning": "Bundle with skills for Python development standards",
-      "key_packages": {},
+      "purpose_reasoning": "Standards bundle providing Python domain expertise",
+      "key_packages": {
+        "skill:python-best-practices": {
+          "description": "Modern Python development patterns and best practices"
+        }
+      },
       "internal_dependencies": [],
       "key_dependencies": [],
       "key_dependencies_reasoning": "",
-      "skills_by_profile": {
-        "implementation": {
-          "defaults": [
-            "pm-plugin-development:plugin-architecture",
-            "pm-dev-python:python-best-practices",
-            "plan-marshall:dev-general-code-quality",
-            "plan-marshall:dev-general-code-documentation"
-          ]
-        },
-        "module_testing": {
-          "defaults": [
-            "pm-plugin-development:plugin-architecture",
-            "pm-dev-python:python-best-practices",
-            "plan-marshall:dev-general-code-quality",
-            "plan-marshall:dev-general-module-testing"
-          ]
-        },
-        "quality": {
-          "defaults": [
-            "pm-plugin-development:plugin-architecture",
-            "pm-dev-python:python-best-practices",
-            "plan-marshall:dev-general-code-quality"
-          ]
-        }
-      },
-      "skills_by_profile_reasoning": "marketplace bundle; Python scripts",
+      "skills_by_profile": {},
+      "skills_by_profile_reasoning": "",
       "tips": [],
       "insights": [],
       "best_practices": []
     },
     "pm-documents": {
-      "responsibility": "Documentation standards enforcement for AsciiDoc formatting, ADRs, and interface specifications with CRUD operations.",
-      "responsibility_reasoning": "README.md",
+      "responsibility": "Documentation standards bundle for AsciiDoc formatting, technical documentation quality, PlantUML architecture diagram verification, and content review orchestration.",
+      "responsibility_reasoning": "source: README.md and 5 packages including asciidoc, documentation skills, and diagram commands",
       "purpose": "library",
-      "purpose_reasoning": "Bundle with skills for documentation standards",
-      "key_packages": {},
+      "purpose_reasoning": "Standards bundle providing documentation domain expertise",
+      "key_packages": {
+        "skill:ref-asciidoc": {
+          "description": "AsciiDoc formatting, validation, link verification, and template creation"
+        },
+        "skill:ref-documentation": {
+          "description": "Content quality, tone analysis, and review orchestration for technical documentation"
+        }
+      },
       "internal_dependencies": [],
       "key_dependencies": [],
       "key_dependencies_reasoning": "",
-      "skills_by_profile": {
-        "implementation": {
-          "defaults": [
-            "pm-plugin-development:plugin-architecture"
-          ]
-        },
-        "module_testing": {
-          "defaults": [
-            "pm-plugin-development:plugin-architecture"
-          ]
-        },
-        "quality": {
-          "defaults": [
-            "pm-plugin-development:plugin-architecture"
-          ]
-        }
-      },
-      "skills_by_profile_reasoning": "marketplace bundle; doc standards",
+      "skills_by_profile": {},
+      "skills_by_profile_reasoning": "",
       "tips": [],
       "insights": [],
       "best_practices": []
     },
     "pm-plugin-development": {
-      "responsibility": "Complete plugin development toolkit providing creation wizards, quality diagnosis, marketplace inventory scanning, and component maintenance.",
-      "responsibility_reasoning": "README.md",
+      "responsibility": "Plugin development toolkit providing creation wizards, quality diagnosis (plugin-doctor), marketplace inventory scanning, architecture guidance, component maintenance, script development standards, and lesson management for marketplace components.",
+      "responsibility_reasoning": "source: README.md and 18 packages spanning creation, maintenance, and analysis skills/agents",
       "purpose": "library",
-      "purpose_reasoning": "Bundle with skills, agents, and commands for plugin development",
-      "key_packages": {},
-      "internal_dependencies": [],
-      "key_dependencies": [],
-      "key_dependencies_reasoning": "",
-      "skills_by_profile": {
-        "implementation": {
-          "defaults": [
-            "pm-plugin-development:plugin-architecture",
-            "pm-plugin-development:plugin-script-architecture",
-            "plan-marshall:ref-toon-format"
-          ]
+      "purpose_reasoning": "Tooling bundle for marketplace component lifecycle management",
+      "key_packages": {
+        "skill:plugin-architecture": {
+          "description": "Architecture principles, skill patterns, and design guidance for building marketplace components"
         },
-        "module_testing": {
-          "defaults": [
-            "pm-plugin-development:plugin-architecture",
-            "pm-plugin-development:plugin-script-architecture",
-            "plan-marshall:ref-toon-format"
-          ]
+        "skill:plugin-doctor": {
+          "description": "Quality diagnosis and automated fixes for marketplace components"
         },
-        "quality": {
-          "defaults": [
-            "pm-plugin-development:plugin-architecture",
-            "pm-plugin-development:plugin-script-architecture",
-            "plan-marshall:ref-toon-format"
-          ]
+        "skill:plugin-create": {
+          "description": "Creation wizards for new marketplace components with proper structure and standards"
         }
       },
-      "skills_by_profile_reasoning": "plugin toolkit",
+      "internal_dependencies": [
+        "plan-marshall"
+      ],
+      "key_dependencies": [],
+      "key_dependencies_reasoning": "Plugin development relies on plan-marshall core for script execution and workflow",
+      "skills_by_profile": {},
+      "skills_by_profile_reasoning": "",
       "tips": [],
       "insights": [],
       "best_practices": []
     },
     "pm-requirements": {
-      "responsibility": "Requirements engineering standards covering user story authoring, acceptance criteria, planning, traceability, and project initialization.",
-      "responsibility_reasoning": "README.md",
+      "responsibility": "Requirements engineering standards for authoring SMART specifications, project planning with task tracking, traceability between specifications and implementation, and project initialization with proper directory structure.",
+      "responsibility_reasoning": "source: README.md and 6 packages covering requirements authoring, planning, traceability, and setup",
       "purpose": "library",
-      "purpose_reasoning": "Bundle with skills for requirements engineering",
-      "key_packages": {},
+      "purpose_reasoning": "Standards bundle providing requirements engineering expertise",
+      "key_packages": {
+        "skill:requirements-authoring": {
+          "description": "SMART requirements authoring with proper structure, integrity, and traceability"
+        },
+        "skill:traceability": {
+          "description": "Bidirectional linking between specifications and implementation code"
+        }
+      },
       "internal_dependencies": [],
       "key_dependencies": [],
       "key_dependencies_reasoning": "",
-      "skills_by_profile": {
-        "implementation": {
-          "defaults": [
-            "pm-plugin-development:plugin-architecture"
-          ]
-        },
-        "module_testing": {
-          "defaults": [
-            "pm-plugin-development:plugin-architecture"
-          ]
-        },
-        "quality": {
-          "defaults": [
-            "pm-plugin-development:plugin-architecture"
-          ]
-        }
-      },
-      "skills_by_profile_reasoning": "marketplace bundle",
+      "skills_by_profile": {},
+      "skills_by_profile_reasoning": "",
       "tips": [],
       "insights": [],
       "best_practices": []

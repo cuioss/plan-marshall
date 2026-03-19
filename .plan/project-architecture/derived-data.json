@@ -26,8 +26,8 @@
       "packages": {},
       "dependencies": [],
       "stats": {
-        "source_files": 142,
-        "test_files": 112
+        "source_files": 144,
+        "test_files": 114
       },
       "commands": {
         "compile": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"compile\"",
@@ -284,35 +284,15 @@
           "type": "agent",
           "description": "Detect change type from request using LLM analysis"
         },
-        "agent:phase-1-init-agent": {
-          "path": "agents/phase-1-init-agent.md",
+        "agent:phase-agent": {
+          "path": "agents/phase-agent.md",
           "type": "agent",
-          "description": "Initialize a plan with artifacts, detect domains, store in references.json"
-        },
-        "agent:phase-2-refine-agent": {
-          "path": "agents/phase-2-refine-agent.md",
-          "type": "agent",
-          "description": "Clarify and refine request until confidence threshold reached"
-        },
-        "agent:phase-3-outline-agent": {
-          "path": "agents/phase-3-outline-agent.md",
-          "type": "agent",
-          "description": "Create solution outline with deliverables using two-track workflow"
+          "description": "Generic phase agent that loads a caller-specified skill and delegates execution"
         },
         "agent:q-gate-validation-agent": {
           "path": "agents/q-gate-validation-agent.md",
           "type": "agent",
           "description": "Verify deliverables against request intent and assessments, catching false positives and missing coverage"
-        },
-        "agent:phase-4-plan-agent": {
-          "path": "agents/phase-4-plan-agent.md",
-          "type": "agent",
-          "description": "Transform deliverables into optimized tasks with explicit domain skills"
-        },
-        "agent:phase-5-execute-agent": {
-          "path": "agents/phase-5-execute-agent.md",
-          "type": "agent",
-          "description": "Execute a single task with two-tier skill loading and profile-based task executor routing"
         },
         "agent:research-best-practices-agent": {
           "path": "agents/research-best-practices-agent.md",
@@ -333,7 +313,7 @@
       "dependencies": [],
       "stats": {
         "skill_count": 41,
-        "agent_count": 8,
+        "agent_count": 4,
         "command_count": 2
       },
       "commands": {
@@ -364,33 +344,23 @@
       },
       "metadata": {
         "bundle_name": "pm-dev-frontend",
-        "description": "JavaScript, CSS, and web component standards for CUI applications"
+        "description": "JavaScript, CSS, and web component standards for applications"
       },
       "packages": {
-        "skill:cui-css": {
-          "path": "skills/cui-css",
+        "skill:css": {
+          "path": "skills/css",
           "type": "skill",
-          "description": "Modern CSS standards covering essentials, responsive design, quality practices, and tooling for CUI projects"
-        },
-        "skill:cui-cypress": {
-          "path": "skills/cui-cypress",
-          "type": "skill",
-          "description": "Cypress E2E testing standards including framework adaptations, test organization, and best practices"
-        },
-        "skill:cui-javascript": {
-          "path": "skills/cui-javascript",
-          "type": "skill",
-          "description": "Core JavaScript development standards covering ES modules, modern patterns, code quality, async programming, and tooling"
-        },
-        "skill:cui-javascript-project": {
-          "path": "skills/cui-javascript-project",
-          "type": "skill",
-          "description": "JavaScript project structure, package.json configuration, dependency management, and Maven integration standards for consistent project setup and builds"
+          "description": "Modern CSS standards covering essentials, responsive design, quality practices, and tooling"
         },
         "skill:ext-triage-js": {
           "path": "skills/ext-triage-js",
           "type": "skill",
           "description": "Triage extension for JavaScript/TypeScript findings during plan-finalize phase"
+        },
+        "skill:javascript": {
+          "path": "skills/javascript",
+          "type": "skill",
+          "description": "Core JavaScript development standards covering ES modules, modern patterns, code quality, async programming, and tooling"
         },
         "skill:js-enforce-eslint": {
           "path": "skills/js-enforce-eslint",
@@ -410,7 +380,7 @@
       },
       "dependencies": [],
       "stats": {
-        "skill_count": 8,
+        "skill_count": 6,
         "agent_count": 0,
         "command_count": 0
       },
@@ -422,6 +392,54 @@
         "verify": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"verify pm-dev-frontend\"",
         "coverage": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"coverage pm-dev-frontend\"",
         "clean": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"clean pm-dev-frontend\""
+      }
+    },
+    "pm-dev-frontend-cui": {
+      "name": "pm-dev-frontend-cui",
+      "build_systems": [
+        "marshall-plugin"
+      ],
+      "paths": {
+        "module": "marketplace/bundles/pm-dev-frontend-cui",
+        "descriptor": "marketplace/bundles/pm-dev-frontend-cui/.claude-plugin/plugin.json",
+        "sources": [
+          "marketplace/bundles/pm-dev-frontend-cui/skills"
+        ],
+        "tests": [
+          "test/pm-dev-frontend-cui"
+        ],
+        "readme": "marketplace/bundles/pm-dev-frontend-cui/README.md"
+      },
+      "metadata": {
+        "bundle_name": "pm-dev-frontend-cui",
+        "description": "CUI-specific JavaScript project standards covering Maven integration, Quarkus DevUI, NiFi, and SonarQube"
+      },
+      "packages": {
+        "skill:cui-javascript-project": {
+          "path": "skills/cui-javascript-project",
+          "type": "skill",
+          "description": "JavaScript project structure, package.json configuration, dependency management, and Maven integration standards for consistent project setup and builds"
+        },
+        "skill:plan-marshall-plugin": {
+          "path": "skills/plan-marshall-plugin",
+          "type": "skill",
+          "description": "CUI JavaScript domain manifest for plan-marshall workflow integration"
+        }
+      },
+      "dependencies": [],
+      "stats": {
+        "skill_count": 2,
+        "agent_count": 0,
+        "command_count": 0
+      },
+      "commands": {
+        "compile": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"compile pm-dev-frontend-cui\"",
+        "test-compile": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"test-compile pm-dev-frontend-cui\"",
+        "module-tests": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"module-tests pm-dev-frontend-cui\"",
+        "quality-gate": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"quality-gate pm-dev-frontend-cui\"",
+        "verify": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"verify pm-dev-frontend-cui\"",
+        "coverage": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"coverage pm-dev-frontend-cui\"",
+        "clean": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"clean pm-dev-frontend-cui\""
       }
     },
     "pm-dev-java": {
@@ -454,7 +472,7 @@
         "skill:java-cdi": {
           "path": "skills/java-cdi",
           "type": "skill",
-          "description": "Core CDI patterns including constructor injection, scopes, producers, and container configuration"
+          "description": "Core CDI patterns including constructor injection, scopes, producers, events, observers, and interceptors"
         },
         "skill:java-core": {
           "path": "skills/java-core",
@@ -731,7 +749,7 @@
       },
       "metadata": {
         "bundle_name": "pm-documents",
-        "description": "AsciiDoc and documentation standards enforcement for CUI projects"
+        "description": "AsciiDoc and documentation standards enforcement for projects"
       },
       "packages": {
         "skill:ext-triage-docs": {
@@ -744,10 +762,15 @@
           "type": "skill",
           "description": "Documentation domain manifest for plan-marshall workflow integration"
         },
+        "skill:ref-asciidoc": {
+          "path": "skills/ref-asciidoc",
+          "type": "skill",
+          "description": "AsciiDoc formatting, validation, link verification, and template creation workflows"
+        },
         "skill:ref-documentation": {
           "path": "skills/ref-documentation",
           "type": "skill",
-          "description": "General documentation standards for README, AsciiDoc, and technical documentation with validation, formatting, link verification, and content review workflows"
+          "description": "Content quality, tone analysis, organization standards, and review orchestration for technical documentation"
         },
         "command:tools-verify-architecture-diagrams": {
           "path": "commands/tools-verify-architecture-diagrams.md",
@@ -757,7 +780,7 @@
       },
       "dependencies": [],
       "stats": {
-        "skill_count": 3,
+        "skill_count": 4,
         "agent_count": 0,
         "command_count": 1
       },
