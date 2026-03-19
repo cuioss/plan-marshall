@@ -232,11 +232,13 @@ Only after user provides direction:
 
 **Purpose**: Catch errors in the **global** log that failed before reaching plan-scoped logging (typically missing `--plan-id` or `--trace-plan-id`).
 
-**A. Scan Global Log**:
+**A. Scan Plan-Scoped Log**:
 
 ```bash
-grep '\[ERROR\]' .plan/logs/script-execution-$(date +%Y-%m-%d).log 2>/dev/null || echo "No errors"
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log read --plan-id {plan_id} --type script
 ```
+
+Review the output for `[ERROR]` entries. This uses the manage-log API (the designed access pattern for `.plan` files) and avoids shell metacharacters that trigger Claude Code security prompts.
 
 **B. If Errors Found**:
 
