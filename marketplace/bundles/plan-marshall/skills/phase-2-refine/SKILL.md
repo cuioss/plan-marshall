@@ -114,7 +114,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 4. **Skip Steps 2-12**. Jump directly to persist/return (update phase to 3-outline and return).
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status phase \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status set-phase \
   --plan-id {plan_id} \
   --phase 3-outline
 ```
