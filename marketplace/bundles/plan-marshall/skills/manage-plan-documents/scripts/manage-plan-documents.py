@@ -15,7 +15,6 @@ Note: Solution documents are managed by the manage-solution-outline skill.
 """
 
 import argparse
-import re
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
@@ -23,6 +22,7 @@ from typing import Any, cast
 
 from _plan_parsing import parse_document_sections  # type: ignore[import-not-found]
 from file_ops import atomic_write_file, base_path  # type: ignore[import-not-found]
+from input_validation import is_valid_plan_id  # type: ignore[import-not-found]
 from toon_parser import parse_toon, serialize_toon  # type: ignore[import-not-found]
 
 # Skill directory paths for document definitions and templates
@@ -44,11 +44,6 @@ def get_available_types() -> list[str]:
     if not DOCUMENTS_DIR.exists():
         return []
     return [f.stem for f in DOCUMENTS_DIR.glob('*.toon')]
-
-
-def validate_plan_id(plan_id: str) -> bool:
-    """Validate plan_id is kebab-case with no special characters."""
-    return bool(re.match(r'^[a-z][a-z0-9-]*$', plan_id))
 
 
 def validate_fields(doc_def: dict, provided: dict) -> list[str]:
@@ -204,7 +199,7 @@ def cmd_create(doc_type: str, args) -> int:
         )
         return 1
 
-    if not validate_plan_id(args.plan_id):
+    if not is_valid_plan_id(args.plan_id):
         print(
             serialize_toon(
                 {
@@ -280,7 +275,7 @@ def cmd_read(doc_type: str, args) -> int:
         print(serialize_toon({'status': 'error', 'error': 'unknown_document_type', 'document': doc_type}))
         return 1
 
-    if not validate_plan_id(args.plan_id):
+    if not is_valid_plan_id(args.plan_id):
         print(serialize_toon({'status': 'error', 'error': 'invalid_plan_id', 'plan_id': args.plan_id}))
         return 1
 
@@ -371,7 +366,7 @@ def cmd_update(doc_type: str, args) -> int:
         print(serialize_toon({'status': 'error', 'error': 'unknown_document_type', 'document': doc_type}))
         return 1
 
-    if not validate_plan_id(args.plan_id):
+    if not is_valid_plan_id(args.plan_id):
         print(serialize_toon({'status': 'error', 'error': 'invalid_plan_id', 'plan_id': args.plan_id}))
         return 1
 
@@ -450,7 +445,7 @@ def cmd_clarify(doc_type: str, args) -> int:
         print(serialize_toon({'status': 'error', 'error': 'unknown_document_type', 'document': doc_type}))
         return 1
 
-    if not validate_plan_id(args.plan_id):
+    if not is_valid_plan_id(args.plan_id):
         print(serialize_toon({'status': 'error', 'error': 'invalid_plan_id', 'plan_id': args.plan_id}))
         return 1
 
@@ -538,7 +533,7 @@ def cmd_exists(doc_type: str, args) -> int:
         print(serialize_toon({'status': 'error', 'error': 'unknown_document_type', 'document': doc_type}))
         return 1
 
-    if not validate_plan_id(args.plan_id):
+    if not is_valid_plan_id(args.plan_id):
         print(serialize_toon({'status': 'error', 'error': 'invalid_plan_id', 'plan_id': args.plan_id}))
         return 1
 
@@ -563,7 +558,7 @@ def cmd_remove(doc_type: str, args) -> int:
         print(serialize_toon({'status': 'error', 'error': 'unknown_document_type', 'document': doc_type}))
         return 1
 
-    if not validate_plan_id(args.plan_id):
+    if not is_valid_plan_id(args.plan_id):
         print(serialize_toon({'status': 'error', 'error': 'invalid_plan_id', 'plan_id': args.plan_id}))
         return 1
 

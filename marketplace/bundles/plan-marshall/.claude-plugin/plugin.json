@@ -47,6 +47,7 @@
     "./skills/task-standalone",
     "./skills/task-verification",
     "./skills/tools-file-ops",
+    "./skills/tools-input-validation",
     "./skills/tools-integration-ci",
     "./skills/tools-permission-doctor",
     "./skills/tools-permission-fix",
