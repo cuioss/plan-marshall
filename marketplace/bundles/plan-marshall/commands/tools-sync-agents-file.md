@@ -1,16 +1,7 @@
 ---
 name: tools-sync-agents-file
 description: Create or update project-specific agents.md file following OpenAI specification
-allowed-tools:
-  - Read
-  - Write
-  - Edit
-  - Glob
-  - Grep
-  - Bash
-  - WebFetch
-  - AskUserQuestion
-  - Task
+tools: Read, Write, Edit, Glob, Grep, Bash, WebFetch, AskUserQuestion, Task
 ---
 
 # Create/Update Agents.md

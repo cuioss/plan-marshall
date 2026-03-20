@@ -369,4 +369,4 @@ If deliverable lacks required parameters:
 - `pm-plugin-development:plugin-maintain` - Component updates and refactoring (handles verification internally)
 
 **Contract Reference**:
-- [manage-tasks/standards/task-contract.md](../../plan-marshall/skills/manage-tasks/standards/task-contract.md) - Optimization workflow and decision tables
+- `plan-marshall:manage-tasks/standards/task-contract.md` - Optimization workflow and decision tables
