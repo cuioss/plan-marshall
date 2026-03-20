@@ -16,8 +16,8 @@ Output: JSON to stdout.
 
 Usage:
     python3 doctor-marketplace.py scan [--bundles NAMES]
-    python3 doctor-marketplace.py analyze [--bundles NAMES] [--type TYPE]
-    python3 doctor-marketplace.py fix [--bundles NAMES] [--type TYPE] [--dry-run]
+    python3 doctor-marketplace.py analyze [--bundles NAMES] [--type TYPE] [--name NAME]
+    python3 doctor-marketplace.py fix [--bundles NAMES] [--type TYPE] [--name NAME] [--dry-run]
     python3 doctor-marketplace.py report [--bundles NAMES] [--output FILE]
 """
 
@@ -112,6 +112,10 @@ def cmd_analyze(args) -> int:
     if args.type:
         type_filter = {t.strip() for t in args.type.split(',') if t.strip()}
 
+    name_filter = None
+    if args.name:
+        name_filter = {n.strip() for n in args.name.split(',') if n.strip()}
+
     bundles = find_bundles(marketplace_root, bundle_filter)
 
     all_analysis = []
@@ -128,6 +132,10 @@ def cmd_analyze(args) -> int:
             component_list.extend(components['commands'])
         if not type_filter or 'skill' in type_filter or 'skills' in type_filter:
             component_list.extend(components['skills'])
+
+        # Filter by name if specified
+        if name_filter:
+            component_list = [c for c in component_list if c.get('name') in name_filter]
 
         for component in component_list:
             result = analyze_component(component)
@@ -175,6 +183,10 @@ def cmd_fix(args) -> int:
     if args.type:
         type_filter = {t.strip() for t in args.type.split(',') if t.strip()}
 
+    name_filter = None
+    if args.name:
+        name_filter = {n.strip() for n in args.name.split(',') if n.strip()}
+
     # First analyze to find issues
     all_issues = []
     for bundle_dir in bundles:
@@ -187,7 +199,10 @@ def cmd_fix(args) -> int:
         if not type_filter or 'skill' in type_filter or 'skills' in type_filter:
             comp_types.append('skills')
         for comp_type in comp_types:
-            for component in components[comp_type]:
+            component_list = components[comp_type]
+            if name_filter:
+                component_list = [c for c in component_list if c.get('name') in name_filter]
+            for component in component_list:
                 result = analyze_component(component)
                 all_issues.extend(result.get('issues', []))
 
@@ -330,6 +345,9 @@ Examples:
   # Analyze only agents and commands
   %(prog)s analyze --type agents,commands
 
+  # Analyze a single skill by name
+  %(prog)s analyze --bundles plan-marshall --type skills --name phase-4-plan
+
   # Preview safe fixes (dry run)
   %(prog)s fix --dry-run
 
@@ -352,12 +370,14 @@ Examples:
     p_analyze = subparsers.add_parser('analyze', help='Analyze all components for issues')
     p_analyze.add_argument('--bundles', help='Comma-separated list of bundle names')
     p_analyze.add_argument('--type', help='Component types to analyze (agents,commands,skills)')
+    p_analyze.add_argument('--name', help='Comma-separated component names to filter (e.g., phase-4-plan)')
     p_analyze.set_defaults(func=cmd_analyze)
 
     # fix subcommand
     p_fix = subparsers.add_parser('fix', help='Apply safe fixes across marketplace')
     p_fix.add_argument('--bundles', help='Comma-separated list of bundle names')
     p_fix.add_argument('--type', help='Component types to fix (agents,commands,skills)')
+    p_fix.add_argument('--name', help='Comma-separated component names to filter (e.g., phase-4-plan)')
     p_fix.add_argument('--dry-run', action='store_true', help='Preview fixes without applying')
     p_fix.set_defaults(func=cmd_fix)
 
