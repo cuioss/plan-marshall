@@ -42,6 +42,43 @@ from _doctor_shared import (
 
 SCRIPT_DIR = Path(__file__).parent
 
+
+# =============================================================================
+# Shared helpers
+# =============================================================================
+
+
+def parse_csv_filter(value: str | None) -> set[str] | None:
+    """Parse a comma-separated string into a filter set, or None if empty."""
+    if not value:
+        return None
+    return {v.strip() for v in value.split(',') if v.strip()}
+
+
+def collect_filtered_components(
+    bundles: list[Path],
+    type_filter: set[str] | None,
+    name_filter: set[str] | None,
+) -> list[dict]:
+    """Discover and filter components across bundles by type and name."""
+    result = []
+    for bundle_dir in bundles:
+        components = discover_components(bundle_dir)
+        component_list = []
+        if not type_filter or 'agent' in type_filter or 'agents' in type_filter:
+            component_list.extend(components['agents'])
+        if not type_filter or 'command' in type_filter or 'commands' in type_filter:
+            component_list.extend(components['commands'])
+        if not type_filter or 'skill' in type_filter or 'skills' in type_filter:
+            component_list.extend(components['skills'])
+        if name_filter:
+            component_list = [c for c in component_list if c.get('name') in name_filter]
+        for c in component_list:
+            c['_bundle_name'] = bundle_dir.name
+        result.extend(component_list)
+    return result
+
+
 # =============================================================================
 # Subcommands
 # =============================================================================
@@ -104,44 +141,19 @@ def cmd_analyze(args) -> int:
         print(json.dumps({'error': 'Marketplace directory not found'}), file=sys.stderr)
         return 1
 
-    bundle_filter = None
-    if args.bundles:
-        bundle_filter = {b.strip() for b in args.bundles.split(',') if b.strip()}
-
-    type_filter = None
-    if args.type:
-        type_filter = {t.strip() for t in args.type.split(',') if t.strip()}
-
-    name_filter = None
-    if args.name:
-        name_filter = {n.strip() for n in args.name.split(',') if n.strip()}
-
-    bundles = find_bundles(marketplace_root, bundle_filter)
+    bundles = find_bundles(marketplace_root, parse_csv_filter(args.bundles))
+    component_list = collect_filtered_components(
+        bundles, parse_csv_filter(args.type), parse_csv_filter(args.name)
+    )
 
     all_analysis = []
     total_issues = 0
 
-    for bundle_dir in bundles:
-        components = discover_components(bundle_dir)
-
-        # Filter by type if specified
-        component_list = []
-        if not type_filter or 'agent' in type_filter or 'agents' in type_filter:
-            component_list.extend(components['agents'])
-        if not type_filter or 'command' in type_filter or 'commands' in type_filter:
-            component_list.extend(components['commands'])
-        if not type_filter or 'skill' in type_filter or 'skills' in type_filter:
-            component_list.extend(components['skills'])
-
-        # Filter by name if specified
-        if name_filter:
-            component_list = [c for c in component_list if c.get('name') in name_filter]
-
-        for component in component_list:
-            result = analyze_component(component)
-            result['bundle'] = bundle_dir.name
-            all_analysis.append(result)
-            total_issues += result.get('issue_count', 0)
+    for component in component_list:
+        result = analyze_component(component)
+        result['bundle'] = component['_bundle_name']
+        all_analysis.append(result)
+        total_issues += result.get('issue_count', 0)
 
     # Categorize all issues
     all_issues = []
@@ -173,38 +185,16 @@ def cmd_fix(args) -> int:
         print(json.dumps({'error': 'Marketplace directory not found'}), file=sys.stderr)
         return 1
 
-    bundle_filter = None
-    if args.bundles:
-        bundle_filter = {b.strip() for b in args.bundles.split(',') if b.strip()}
-
-    bundles = find_bundles(marketplace_root, bundle_filter)
-
-    type_filter = None
-    if args.type:
-        type_filter = {t.strip() for t in args.type.split(',') if t.strip()}
-
-    name_filter = None
-    if args.name:
-        name_filter = {n.strip() for n in args.name.split(',') if n.strip()}
+    bundles = find_bundles(marketplace_root, parse_csv_filter(args.bundles))
+    component_list = collect_filtered_components(
+        bundles, parse_csv_filter(args.type), parse_csv_filter(args.name)
+    )
 
     # First analyze to find issues
     all_issues = []
-    for bundle_dir in bundles:
-        components = discover_components(bundle_dir)
-        comp_types = []
-        if not type_filter or 'agent' in type_filter or 'agents' in type_filter:
-            comp_types.append('agents')
-        if not type_filter or 'command' in type_filter or 'commands' in type_filter:
-            comp_types.append('commands')
-        if not type_filter or 'skill' in type_filter or 'skills' in type_filter:
-            comp_types.append('skills')
-        for comp_type in comp_types:
-            component_list = components[comp_type]
-            if name_filter:
-                component_list = [c for c in component_list if c.get('name') in name_filter]
-            for component in component_list:
-                result = analyze_component(component)
-                all_issues.extend(result.get('issues', []))
+    for component in component_list:
+        result = analyze_component(component)
+        all_issues.extend(result.get('issues', []))
 
     # Categorize and get safe fixes only
     categorized = categorize_all_issues(all_issues)
