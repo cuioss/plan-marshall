@@ -231,7 +231,7 @@ All projects must configure ES module support:
 ```
 
 **Why "type": "module" is required**:
-- ESLint v9 flat configuration requires ES modules
+- ESLint v10 uses flat configuration exclusively (eslintrc completely removed — `.eslintrc.*` files are ignored, `/* eslint-env */` comments report errors, config lookup starts from each linted file's directory)
 - Modern configuration files use import/export syntax
 - Enables use of modern JavaScript features
 - Compatible with latest tooling (Prettier, StyleLint, Jest)
@@ -280,11 +280,14 @@ For complete Node.js version requirements, see **[project-structure.md](project-
 
 ### Vitest as a Jest Alternative
 
-**Vitest** (`vitest ^4.x`) is a modern test runner built on Vite with native ES module support. Consider it when:
+**Vitest** (`vitest ^4.x`) is a modern test runner built on Vite with native ES module support. It is the **recommended default for new standalone projects** — it offers native ESM support (Jest ESM remains experimental), 5x+ faster cold starts, and browser mode with visual regression testing.
+
+Consider Vitest when:
 
 - Starting a new standalone project using Vite as the bundler
 - The project is not embedded in a Maven build (frontend-maven-plugin)
 - Fast HMR-style test feedback is valuable during development
+- Native ESM support is required without experimental flags
 
 **Decision guide**:
 
@@ -319,6 +322,12 @@ For complete Node.js version requirements, see **[project-structure.md](project-
 - **Deno** (`deno.land`): Secure-by-default runtime with native TypeScript support. Not applicable to Maven-integrated projects.
 
 **Stance**: CUI projects use **Node.js** (managed by frontend-maven-plugin) for all Maven-integrated builds. Bun/Deno may be used for standalone developer tooling scripts outside the Maven lifecycle.
+
+### TypeScript Awareness
+
+**TypeScript** (`typescript ^7.0`) is the professional standard for JavaScript development. TypeScript 7.0 ships a native Go-based compiler (`tsgo`) delivering 10x faster compilation. While existing CUI JavaScript projects use vanilla JS, new standalone projects should evaluate TypeScript for improved type safety and tooling support.
+
+**CUI project stance**: Existing Maven-integrated JavaScript modules continue with vanilla JS + JSDoc type annotations. New standalone projects may adopt TypeScript if the project scope justifies the tooling setup.
 
 ## Package Categories
 
