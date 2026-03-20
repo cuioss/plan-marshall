@@ -19,13 +19,13 @@ Usage:
 
 import argparse
 import json
-import re
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, NotRequired, TypedDict, cast
 
 from file_ops import atomic_write_file, base_path  # type: ignore[import-not-found]
+from input_validation import is_valid_plan_id  # type: ignore[import-not-found]
 from plan_logging import log_entry  # type: ignore[import-not-found]
 from toon_parser import serialize_toon  # type: ignore[import-not-found]
 
@@ -55,11 +55,6 @@ class StatusData(TypedDict):
 # =============================================================================
 # Core Functions
 # =============================================================================
-
-
-def validate_plan_id(plan_id: str) -> bool:
-    """Validate plan_id is kebab-case with no special characters."""
-    return bool(re.match(r'^[a-z][a-z0-9-]*$', plan_id))
 
 
 def get_status_path(plan_id: str) -> Path:
@@ -101,7 +96,7 @@ def output_toon(data: dict) -> None:
 
 def cmd_create(args) -> None:
     """Create status.json for a new plan."""
-    if not validate_plan_id(args.plan_id):
+    if not is_valid_plan_id(args.plan_id):
         output_toon(
             {
                 'status': 'error',
@@ -169,7 +164,7 @@ def cmd_create(args) -> None:
 
 def cmd_read(args) -> None:
     """Read plan status."""
-    if not validate_plan_id(args.plan_id):
+    if not is_valid_plan_id(args.plan_id):
         output_toon(
             {
                 'status': 'error',
@@ -197,7 +192,7 @@ def cmd_read(args) -> None:
 
 def cmd_set_phase(args) -> None:
     """Set current phase."""
-    if not validate_plan_id(args.plan_id):
+    if not is_valid_plan_id(args.plan_id):
         output_toon(
             {
                 'status': 'error',
@@ -249,7 +244,7 @@ def cmd_set_phase(args) -> None:
 
 def cmd_update_phase(args) -> None:
     """Update a specific phase status."""
-    if not validate_plan_id(args.plan_id):
+    if not is_valid_plan_id(args.plan_id):
         output_toon(
             {
                 'status': 'error',
@@ -297,7 +292,7 @@ def cmd_update_phase(args) -> None:
 
 def cmd_progress(args) -> None:
     """Calculate plan progress."""
-    if not validate_plan_id(args.plan_id):
+    if not is_valid_plan_id(args.plan_id):
         output_toon(
             {
                 'status': 'error',
@@ -341,7 +336,7 @@ def cmd_progress(args) -> None:
 
 def cmd_metadata(args) -> None:
     """Get or set a metadata field in status.json."""
-    if not validate_plan_id(args.plan_id):
+    if not is_valid_plan_id(args.plan_id):
         output_toon(
             {
                 'status': 'error',
@@ -425,7 +420,7 @@ def cmd_metadata(args) -> None:
 
 def cmd_get_context(args) -> None:
     """Get combined status context (phase, progress, metadata)."""
-    if not validate_plan_id(args.plan_id):
+    if not is_valid_plan_id(args.plan_id):
         output_toon(
             {
                 'status': 'error',

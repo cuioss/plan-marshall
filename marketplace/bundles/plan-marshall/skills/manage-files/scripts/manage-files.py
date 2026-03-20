@@ -18,28 +18,14 @@ Usage:
 """
 
 import argparse
-import re
 import sys
 from pathlib import Path
 from typing import cast
 
 from file_ops import atomic_write_file, base_path  # type: ignore[import-not-found]
+from input_validation import is_valid_plan_id, is_valid_relative_path  # type: ignore[import-not-found]
 from plan_logging import log_entry  # type: ignore[import-not-found]
 from toon_parser import serialize_toon  # type: ignore[import-not-found]
-
-
-def validate_plan_id(plan_id: str) -> bool:
-    """Validate plan_id is kebab-case with no special characters."""
-    return bool(re.match(r'^[a-z][a-z0-9-]*$', plan_id))
-
-
-def validate_file_path(file_path: str) -> bool:
-    """Validate file path has no directory traversal or absolute paths."""
-    if file_path.startswith('/'):
-        return False
-    if '..' in file_path:
-        return False
-    return True
 
 
 def get_plan_dir(plan_id: str) -> Path:
@@ -49,11 +35,11 @@ def get_plan_dir(plan_id: str) -> Path:
 
 def cmd_read(args):
     """Read file content from plan directory."""
-    if not validate_plan_id(args.plan_id):
+    if not is_valid_plan_id(args.plan_id):
         print(f'Error: Invalid plan_id format: {args.plan_id}', file=sys.stderr)
         sys.exit(1)
 
-    if not validate_file_path(args.file):
+    if not is_valid_relative_path(args.file):
         print(f'Error: Invalid file path: {args.file}', file=sys.stderr)
         sys.exit(1)
 
@@ -69,11 +55,11 @@ def cmd_read(args):
 
 def cmd_write(args):
     """Write content to file in plan directory."""
-    if not validate_plan_id(args.plan_id):
+    if not is_valid_plan_id(args.plan_id):
         print(f'Error: Invalid plan_id format: {args.plan_id}', file=sys.stderr)
         sys.exit(1)
 
-    if not validate_file_path(args.file):
+    if not is_valid_relative_path(args.file):
         print(f'Error: Invalid file path: {args.file}', file=sys.stderr)
         sys.exit(1)
 
@@ -104,11 +90,11 @@ def cmd_write(args):
 
 def cmd_remove(args):
     """Remove file from plan directory."""
-    if not validate_plan_id(args.plan_id):
+    if not is_valid_plan_id(args.plan_id):
         print(f'Error: Invalid plan_id format: {args.plan_id}', file=sys.stderr)
         sys.exit(1)
 
-    if not validate_file_path(args.file):
+    if not is_valid_relative_path(args.file):
         print(f'Error: Invalid file path: {args.file}', file=sys.stderr)
         sys.exit(1)
 
@@ -126,14 +112,14 @@ def cmd_remove(args):
 
 def cmd_list(args):
     """List files in plan directory."""
-    if not validate_plan_id(args.plan_id):
+    if not is_valid_plan_id(args.plan_id):
         print(f'Error: Invalid plan_id format: {args.plan_id}', file=sys.stderr)
         sys.exit(1)
 
     plan_dir = get_plan_dir(args.plan_id)
 
     if args.dir:
-        if not validate_file_path(args.dir):
+        if not is_valid_relative_path(args.dir):
             print(f'Error: Invalid directory path: {args.dir}', file=sys.stderr)
             sys.exit(1)
         target_dir = plan_dir / args.dir
@@ -158,7 +144,7 @@ def cmd_exists(args):
     Always exits 0 for expected outcomes (exists, not exists, validation errors).
     Only exits non-zero for unexpected runtime errors.
     """
-    if not validate_plan_id(args.plan_id):
+    if not is_valid_plan_id(args.plan_id):
         result = {
             'status': 'error',
             'plan_id': args.plan_id,
@@ -168,7 +154,7 @@ def cmd_exists(args):
         print(serialize_toon(result))
         return
 
-    if not validate_file_path(args.file):
+    if not is_valid_relative_path(args.file):
         result = {
             'status': 'error',
             'plan_id': args.plan_id,
@@ -197,7 +183,7 @@ def cmd_mkdir(args):
 
     Returns TOON output with the created directory path.
     """
-    if not validate_plan_id(args.plan_id):
+    if not is_valid_plan_id(args.plan_id):
         result = {
             'status': 'error',
             'plan_id': args.plan_id,
@@ -207,7 +193,7 @@ def cmd_mkdir(args):
         print(serialize_toon(result))
         sys.exit(1)
 
-    if not validate_file_path(args.dir):
+    if not is_valid_relative_path(args.dir):
         result = {
             'status': 'error',
             'plan_id': args.plan_id,
@@ -239,7 +225,7 @@ def cmd_create_or_reference(args):
     Returns TOON output indicating whether the plan was created or already exists.
     This replaces the two-step list+check pattern in plan-init.
     """
-    if not validate_plan_id(args.plan_id):
+    if not is_valid_plan_id(args.plan_id):
         result = {
             'status': 'error',
             'plan_id': args.plan_id,
@@ -286,7 +272,7 @@ def cmd_delete_plan(args):
     """
     import shutil
 
-    if not validate_plan_id(args.plan_id):
+    if not is_valid_plan_id(args.plan_id):
         result = {
             'status': 'error',
             'plan_id': args.plan_id,

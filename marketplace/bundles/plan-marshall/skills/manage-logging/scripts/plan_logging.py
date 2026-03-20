@@ -24,6 +24,8 @@ import time
 from datetime import UTC, date, datetime
 from pathlib import Path
 
+from input_validation import is_valid_plan_id  # type: ignore[import-not-found]
+
 # =============================================================================
 # CONFIGURATION
 # =============================================================================
@@ -104,11 +106,6 @@ def extract_plan_id(args: list) -> str | None:
             plan_id_value: str = arg.split('=', 1)[1]
             return plan_id_value
     return None
-
-
-def validate_plan_id(plan_id: str) -> bool:
-    """Validate plan_id is kebab-case with no special characters."""
-    return bool(re.match(r'^[a-z][a-z0-9-]*$', plan_id))
 
 
 # =============================================================================
@@ -297,7 +294,7 @@ def log_work(plan_id: str, category: str, message: str, phase: str, detail: str 
     Note:
         For decision logging, use log_decision() instead which writes to decision.log.
     """
-    if not validate_plan_id(plan_id):
+    if not is_valid_plan_id(plan_id):
         return {
             'status': 'error',
             'plan_id': plan_id,
@@ -358,7 +355,7 @@ def read_work_log(plan_id: str, phase: str | None = None) -> dict:
     Returns:
         Result dict with entries
     """
-    if not validate_plan_id(plan_id):
+    if not is_valid_plan_id(plan_id):
         return {
             'status': 'error',
             'plan_id': plan_id,
@@ -449,7 +446,7 @@ def log_decision(plan_id: str, message: str, phase: str, detail: str | None = No
     Returns:
         Result dict with status and entry info
     """
-    if not validate_plan_id(plan_id):
+    if not is_valid_plan_id(plan_id):
         return {
             'status': 'error',
             'plan_id': plan_id,
@@ -499,7 +496,7 @@ def read_decision_log(plan_id: str, phase: str | None = None) -> dict:
     Returns:
         Result dict with entries
     """
-    if not validate_plan_id(plan_id):
+    if not is_valid_plan_id(plan_id):
         return {
             'status': 'error',
             'plan_id': plan_id,

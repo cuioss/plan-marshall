@@ -15,7 +15,6 @@ Usage:
 
 import argparse
 import json
-import re
 import shutil
 import sys
 from datetime import UTC, datetime
@@ -23,6 +22,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from file_ops import base_path  # type: ignore[import-not-found]
+from input_validation import is_valid_plan_id  # type: ignore[import-not-found]
 
 # Import from manage-status for shared functionality
 from manage_status import read_status as read_status_json
@@ -40,9 +40,6 @@ PHASE_ROUTING = {
 }
 
 
-def validate_plan_id(plan_id: str) -> bool:
-    """Validate plan_id is kebab-case with no special characters."""
-    return bool(re.match(r'^[a-z][a-z0-9-]*$', plan_id))
 
 
 def get_plans_dir() -> Path:
@@ -117,7 +114,7 @@ def cmd_list(args) -> None:
 
 def cmd_transition(args) -> None:
     """Transition to next phase."""
-    if not validate_plan_id(args.plan_id):
+    if not is_valid_plan_id(args.plan_id):
         output_toon(
             {
                 'status': 'error',
@@ -180,7 +177,7 @@ def cmd_transition(args) -> None:
 
 def cmd_archive(args) -> None:
     """Archive a completed plan."""
-    if not validate_plan_id(args.plan_id):
+    if not is_valid_plan_id(args.plan_id):
         output_toon(
             {
                 'status': 'error',
@@ -246,7 +243,7 @@ def cmd_route(args) -> None:
 
 def cmd_get_routing_context(args) -> None:
     """Get combined routing context: phase, skill, and progress in one call."""
-    if not validate_plan_id(args.plan_id):
+    if not is_valid_plan_id(args.plan_id):
         output_toon(
             {
                 'status': 'error',

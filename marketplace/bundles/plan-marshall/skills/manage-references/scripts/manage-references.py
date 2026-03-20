@@ -18,12 +18,12 @@ Usage:
 
 import argparse
 import json
-import re
 import sys
 from pathlib import Path
 from typing import Any, TypedDict, cast
 
 from file_ops import atomic_write_file, base_path  # type: ignore[import-not-found]
+from input_validation import is_valid_plan_id  # type: ignore[import-not-found]
 
 
 class ReferencesData(TypedDict, total=False):
@@ -37,11 +37,6 @@ class ReferencesData(TypedDict, total=False):
     domains: list[str]
     affected_files: list[str]
     external_docs: dict[str, Any]
-
-
-def validate_plan_id(plan_id: str) -> bool:
-    """Validate plan_id is kebab-case with no special characters."""
-    return bool(re.match(r'^[a-z][a-z0-9-]*$', plan_id))
 
 
 def get_references_path(plan_id: str) -> Path:
@@ -94,7 +89,7 @@ def output_toon(data: dict) -> None:
 
 def cmd_create(args):
     """Create references.json with basic fields."""
-    if not validate_plan_id(args.plan_id):
+    if not is_valid_plan_id(args.plan_id):
         output_toon(
             {
                 'status': 'error',
@@ -143,7 +138,7 @@ def cmd_create(args):
 
 def cmd_read(args):
     """Read entire references.json."""
-    if not validate_plan_id(args.plan_id):
+    if not is_valid_plan_id(args.plan_id):
         output_toon(
             {
                 'status': 'error',
@@ -179,7 +174,7 @@ def cmd_read(args):
 
 def cmd_get(args):
     """Get a specific field value."""
-    if not validate_plan_id(args.plan_id):
+    if not is_valid_plan_id(args.plan_id):
         output_toon(
             {
                 'status': 'error',
@@ -220,7 +215,7 @@ def cmd_get(args):
 
 def cmd_set(args):
     """Set a specific field value."""
-    if not validate_plan_id(args.plan_id):
+    if not is_valid_plan_id(args.plan_id):
         output_toon(
             {
                 'status': 'error',
@@ -244,7 +239,7 @@ def cmd_set(args):
 
 def cmd_add_file(args):
     """Add a file to modified_files list."""
-    if not validate_plan_id(args.plan_id):
+    if not is_valid_plan_id(args.plan_id):
         output_toon(
             {
                 'status': 'error',
@@ -276,7 +271,7 @@ def cmd_add_file(args):
 
 def cmd_remove_file(args):
     """Remove a file from modified_files list."""
-    if not validate_plan_id(args.plan_id):
+    if not is_valid_plan_id(args.plan_id):
         output_toon(
             {
                 'status': 'error',
@@ -315,7 +310,7 @@ def cmd_remove_file(args):
 
 def cmd_add_list(args):
     """Add multiple values to a list field."""
-    if not validate_plan_id(args.plan_id):
+    if not is_valid_plan_id(args.plan_id):
         output_toon(
             {
                 'status': 'error',
@@ -366,7 +361,7 @@ def cmd_add_list(args):
 
 def cmd_set_list(args):
     """Set a list field to new values (replaces existing list)."""
-    if not validate_plan_id(args.plan_id):
+    if not is_valid_plan_id(args.plan_id):
         output_toon(
             {
                 'status': 'error',
@@ -414,7 +409,7 @@ def cmd_set_list(args):
 
 def cmd_get_context(args):
     """Get all references context in one call."""
-    if not validate_plan_id(args.plan_id):
+    if not is_valid_plan_id(args.plan_id):
         output_toon(
             {
                 'status': 'error',

@@ -21,7 +21,6 @@ Usage:
 """
 
 import argparse
-import re
 import sys
 from pathlib import Path
 from typing import Any, cast
@@ -31,17 +30,13 @@ from _plan_parsing import (  # type: ignore[import-not-found]
     parse_document_sections,
 )
 from file_ops import base_path  # type: ignore[import-not-found]
+from input_validation import is_valid_plan_id  # type: ignore[import-not-found]
 from toon_parser import serialize_toon  # type: ignore[import-not-found]
 
 SOLUTION_FILE = 'solution_outline.md'
 ARCHITECTURE_DIR = 'project-architecture'
 DERIVED_DATA_FILE = 'derived-data.json'
 LLM_ENRICHED_FILE = 'llm-enriched.json'
-
-
-def validate_plan_id(plan_id: str) -> bool:
-    """Validate plan_id is kebab-case with no special characters."""
-    return bool(re.match(r'^[a-z][a-z0-9-]*$', plan_id))
 
 
 def get_solution_path(plan_id: str) -> Path:
@@ -215,7 +210,7 @@ def validate_deliverable_contract(deliverable: dict) -> tuple[list[str], list[st
 
 def cmd_validate(args) -> int:
     """Validate solution outline structure against deliverable contract."""
-    if not validate_plan_id(args.plan_id):
+    if not is_valid_plan_id(args.plan_id):
         print(
             serialize_toon(
                 {
@@ -290,7 +285,7 @@ def cmd_validate(args) -> int:
 
 def cmd_list_deliverables(args) -> int:
     """List deliverables from solution outline."""
-    if not validate_plan_id(args.plan_id):
+    if not is_valid_plan_id(args.plan_id):
         print(serialize_toon({'status': 'error', 'error': 'invalid_plan_id', 'plan_id': args.plan_id}))
         return 1
 
@@ -337,7 +332,7 @@ def cmd_list_deliverables(args) -> int:
 
 def cmd_read(args) -> int:
     """Read solution outline."""
-    if not validate_plan_id(args.plan_id):
+    if not is_valid_plan_id(args.plan_id):
         print(serialize_toon({'status': 'error', 'error': 'invalid_plan_id', 'plan_id': args.plan_id}))
         return 1
 
@@ -420,7 +415,7 @@ def cmd_read(args) -> int:
 
 def cmd_exists(args) -> int:
     """Check if solution outline exists."""
-    if not validate_plan_id(args.plan_id):
+    if not is_valid_plan_id(args.plan_id):
         print(serialize_toon({'status': 'error', 'error': 'invalid_plan_id', 'plan_id': args.plan_id}))
         return 1
 
@@ -498,7 +493,7 @@ def cmd_resolve_path(args) -> int:
 
     Used by LLM to get the path for direct file write via Write tool.
     """
-    if not validate_plan_id(args.plan_id):
+    if not is_valid_plan_id(args.plan_id):
         print(
             serialize_toon(
                 {
@@ -533,7 +528,7 @@ def cmd_write(args) -> int:
     Validates against the deliverable contract. Use --force to allow overwriting
     an existing file (checked before external write via resolve-path exists field).
     """
-    if not validate_plan_id(args.plan_id):
+    if not is_valid_plan_id(args.plan_id):
         print(
             serialize_toon(
                 {
@@ -561,7 +556,7 @@ def cmd_update(args) -> int:
     File must already exist and be updated externally (via Write tool).
     Validates against the deliverable contract.
     """
-    if not validate_plan_id(args.plan_id):
+    if not is_valid_plan_id(args.plan_id):
         print(
             serialize_toon(
                 {

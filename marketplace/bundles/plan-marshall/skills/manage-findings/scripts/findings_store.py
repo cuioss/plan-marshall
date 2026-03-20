@@ -23,6 +23,8 @@ from fnmatch import fnmatch
 from pathlib import Path
 from typing import Any
 
+from input_validation import validate_plan_id  # type: ignore[import-not-found]
+
 # Add toon_parser to path
 _toon_parser_path = (
     Path(__file__).parent.parent.parent.parent.parent / 'plan-marshall' / 'skills' / 'ref-toon-format' / 'scripts'
@@ -119,11 +121,13 @@ def get_plan_root() -> Path:
 
 def get_findings_path(plan_id: str) -> Path:
     """Returns .plan/plans/{plan_id}/artifacts/findings.jsonl"""
+    validate_plan_id(plan_id)
     return get_plan_root() / 'plans' / plan_id / 'artifacts' / 'findings.jsonl'
 
 
 def get_qgate_path(plan_id: str, phase: str) -> Path:
     """Returns .plan/plans/{plan_id}/artifacts/qgate-{phase}.jsonl"""
+    validate_plan_id(plan_id)
     if phase not in QGATE_PHASES:
         raise ValueError(f'Invalid Q-Gate phase: {phase}. Must be one of {QGATE_PHASES}')
     return get_plan_root() / 'plans' / plan_id / 'artifacts' / f'qgate-{phase}.jsonl'
