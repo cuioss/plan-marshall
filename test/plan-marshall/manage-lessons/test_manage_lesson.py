@@ -293,6 +293,84 @@ Body.
         self.assertIn('not_found', result.stdout)
 
 
+class TestManageLessonArchive(ScriptTestCase):
+    """Test manage-lesson.py archive subcommand."""
+
+    bundle = 'plan-marshall'
+    skill = 'manage-lessons'
+    script = 'manage-lesson.py'
+
+    def test_archive_moves_and_marks_applied(self):
+        """Should set applied=true and move to archived-lessons."""
+        lessons_dir = self.temp_dir / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+
+        lesson_content = """id=2025-01-01-001
+component=test-component
+category=bug
+applied=false
+created=2025-01-01
+
+# Test Lesson
+
+Body content.
+"""
+        (lessons_dir / '2025-01-01-001.md').write_text(lesson_content)
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(self.temp_dir)}):
+            result = run_script(SCRIPT_PATH, 'archive', '--id', '2025-01-01-001')
+
+        self.assert_success(result)
+        self.assertIn('status: success', result.stdout)
+
+        # Original should be removed
+        self.assertFalse((lessons_dir / '2025-01-01-001.md').exists())
+
+        # Archived file should exist with applied=true
+        archived = self.temp_dir / 'archived-lessons' / '2025-01-01-001.md'
+        self.assertTrue(archived.exists())
+        archived_content = archived.read_text()
+        self.assertIn('applied=true', archived_content)
+        self.assertIn('# Test Lesson', archived_content)
+
+    def test_archive_with_applied_false(self):
+        """Should archive with applied=false when specified."""
+        lessons_dir = self.temp_dir / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+
+        lesson_content = """id=2025-01-01-001
+component=test-component
+category=bug
+applied=false
+created=2025-01-01
+
+# Test Lesson
+
+Body content.
+"""
+        (lessons_dir / '2025-01-01-001.md').write_text(lesson_content)
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(self.temp_dir)}):
+            result = run_script(SCRIPT_PATH, 'archive', '--id', '2025-01-01-001', '--applied', 'false')
+
+        self.assert_success(result)
+
+        archived = self.temp_dir / 'archived-lessons' / '2025-01-01-001.md'
+        archived_content = archived.read_text()
+        self.assertIn('applied=false', archived_content)
+
+    def test_archive_nonexistent_lesson_fails(self):
+        """Should fail when archiving non-existent lesson."""
+        lessons_dir = self.temp_dir / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(self.temp_dir)}):
+            result = run_script(SCRIPT_PATH, 'archive', '--id', 'nonexistent')
+
+        self.assert_failure(result)
+        self.assertIn('not_found', result.stdout)
+
+
 class TestManageLessonFromError(ScriptTestCase):
     """Test manage-lesson.py from-error subcommand."""
 
