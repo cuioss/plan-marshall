@@ -2,7 +2,6 @@
 name: ext-outline-component-agent
 description: Analyze component files against request using semantic reasoning
 tools: Read, Bash, Skill
-model: sonnet
 ---
 
 # Ext-Outline Component Agent

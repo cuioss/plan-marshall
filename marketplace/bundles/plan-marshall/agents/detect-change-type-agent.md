@@ -2,7 +2,6 @@
 name: detect-change-type-agent
 description: Detect change type from request using LLM analysis
 tools: Bash, Skill
-model: sonnet
 ---
 
 # Detect Change-Type Agent

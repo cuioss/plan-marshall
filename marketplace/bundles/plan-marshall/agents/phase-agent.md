@@ -2,7 +2,6 @@
 name: phase-agent
 description: Generic phase agent that loads a caller-specified skill and delegates execution
 tools: Read, Write, Edit, Glob, Grep, Bash, AskUserQuestion, Skill
-model: sonnet
 ---
 
 # Phase Agent

@@ -7,7 +7,6 @@ description: |
   - Input: target="src/main/java/auth/TokenValidator.java"
   - Output: {compliant: true, checklist: {...}, issues: []}
 tools: Read, Glob, Grep, Skill
-model: haiku
 ---
 
 # Java Verify Agent
