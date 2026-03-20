@@ -8,7 +8,7 @@ Output: TOON format for LLM-optimized consumption.
 Each task references deliverables from solution_outline.md.
 
 Subcommands:
-  add              - Add a new task (reads task definition from stdin)
+  add              - Add a new task (--content with \\n-encoded TOON)
   update           - Update an existing task
   remove           - Remove a task
   list             - List all tasks (summary)
@@ -23,22 +23,9 @@ Subcommands:
 
 Output: TOON format for all operations.
 
-Add command usage (stdin-based API):
-  python3 manage-task.py add --plan-id my-plan <<'EOF'
-  title: My Task Title
-  deliverable: 1
-  domain: plan-marshall-plugin-dev
-  description: |
-    Task description here
-  steps:
-    - First step
-    - Second step
-  depends_on: none
-  verification:
-    commands:
-      - grep -l '```json' *.md | wc -l
-    criteria: All grep commands return 0
-  EOF
+Add command usage (--content with \\n encoding):
+  python3 manage-task.py add --plan-id my-plan \\
+    --content "title: My Task Title\\ndeliverable: 1\\ndomain: java\\nsteps:\\n  - src/main/java/File.java\\ndepends_on: none"
 """
 
 import argparse
@@ -59,9 +46,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     subparsers = parser.add_subparsers(dest='command', required=True)
 
-    # add (stdin-based API)
-    p_add = subparsers.add_parser('add', help='Add a new task (reads definition from stdin)')
+    # add (--content CLI argument)
+    p_add = subparsers.add_parser('add', help='Add a new task (--content with \\n-encoded TOON)')
     p_add.add_argument('--plan-id', required=True, help='Plan identifier')
+    p_add.add_argument('--content', required=True, help='Task definition in TOON format (use \\n for newlines)')
 
     # update
     p_update = subparsers.add_parser('update', help='Update an existing task')

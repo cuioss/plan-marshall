@@ -82,18 +82,18 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-4-plan:qgate) Finding {hash_id} [{source}]: taken_into_account — {resolution_detail}"
 ```
 
-Then continue with normal Steps 2..9 (phase re-runs with corrections applied).
+Then continue with normal Steps 3..11 (phase re-runs with corrections applied).
 
-If no unresolved findings: Continue with normal Steps 2..9 (first entry).
+If no unresolved findings: Continue with normal Steps 3..11 (first entry).
 
-### Step 1.5: Log Phase Start
+### Step 2: Log Phase Start
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-4-plan) Starting plan phase"
 ```
 
-### Step 2: Load All Deliverables
+### Step 3: Load All Deliverables
 
 Read the solution document to get all deliverables with metadata:
 
@@ -112,19 +112,30 @@ For each deliverable, extract:
 - `affected_files`
 - `verification`
 
-### Step 3: Build Dependency Graph
+### Step 4: Build Dependency Graph
 
 Parse `depends` field for each deliverable:
 - Identify independent deliverables (`depends: none`)
 - Identify dependency chains
 - Detect cycles (INVALID - reject with error)
 
-### Step 4: Create Tasks from Profiles (1:N Mapping)
+### Step 5: Create Tasks from Profiles (1:N Mapping)
 
 For each deliverable, create one task per profile in its `profiles` list:
 
+**Verification-Only Guard**: Before iterating profiles, check if the deliverable is verification-only (`change_type: verification` or empty `affected_files`). If so, override `D.profiles` to `[verification]` regardless of what the outline specified. Log a warning if the original profiles differed:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  decision --plan-id {plan_id} --level WARN --message "(plan-marshall:phase-4-plan) Deliverable {N} is verification-only but had profiles [{original_profiles}] — overriding to [verification]"
+```
+
 ```
 For each deliverable D:
+  IF D.change_type == verification OR D.affected_files is empty:
+    IF D.profiles != [verification]:
+      Log warning (see above)
+    D.profiles = [verification]
   1. Query architecture: module --name {D.module}
   For each profile P in D.profiles:
     IF P = verification:
@@ -191,36 +202,16 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   work --plan-id {plan_id} --level INFO --message "[SKILL] (plan-marshall:phase-4-plan) Resolved skills for TASK-{N} from {module}.{profile}: defaults=[{defaults}] optionals_selected=[{optionals}]"
 ```
 
-### Step 5: Create Tasks
+### Step 6: Create Tasks
 
-For each deliverable, create tasks using heredoc (one task per profile):
+For each deliverable, create tasks using `--content` with `\n`-encoded TOON (one task per profile):
+
+**CRITICAL — Shell Metacharacter Sanitization**: Before interpolating values into the `--content` string, strip all markdown backticks (`` ` ``) from title, description, criteria, and step values. Backticks are shell metacharacters (command substitution) that trigger permission prompts. They are markdown formatting artifacts not needed in TOON task data. Replace `` `foo` `` with `foo` (plain text).
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks add \
-  --plan-id {plan_id} <<'EOF'
-title: {task title from deliverable}
-deliverable: {deliverable_number}
-domain: {domain from deliverable}
-profile: {profile from deliverable}
-description: |
-  {combined description}
-
-steps:
-  - {file1}
-  - {file2}
-  - {file3}
-
-depends_on: TASK-1, TASK-2
-
-skills:
-  - {skill1 from architecture}
-  - {skill2 from architecture}
-
-verification:
-  commands:
-    - {cmd1}
-  criteria: {criteria}
-EOF
+  --plan-id {plan_id} \
+  --content "title: {task title}\ndeliverable: {deliverable_number}\ndomain: {domain}\nprofile: {profile}\ndescription: {description}\nsteps:\n  - {file1}\n  - {file2}\ndepends_on: {TASK-N | none}\nskills:\n  - {skill1}\n  - {skill2}\nverification:\n  commands:\n    - {cmd1}\n  criteria: {criteria}"
 ```
 
 **MANDATORY - Log each task creation**:
@@ -240,7 +231,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 - `verification.commands` = deliverable's `Verification: Command` value(s)
 - `verification.criteria` = deliverable's `Verification: Criteria` value
 
-The outline phase is the single source of truth for verification commands — this phase performs ZERO resolution. If a deliverable arrives without a Verification Command, this is an outline defect. Record a Q-Gate finding in Step 7 instead of resolving it here:
+The outline phase is the single source of truth for verification commands — this phase performs ZERO resolution. If a deliverable arrives without a Verification Command, this is an outline defect. Record a Q-Gate finding in Step 9 instead of resolving it here:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
@@ -249,29 +240,31 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
   --detail "Outline must provide Verification Command and Criteria for every deliverable"
 ```
 
-### Step 5.5: Create Holistic Verification Tasks
+### Step 7: Create Holistic Verification Tasks
 
 After creating per-deliverable tasks, create plan-level verification tasks that depend on ALL previously created tasks.
 
-**Read verification config**:
+**Module resolution for holistic tasks**: Holistic tasks are plan-level, not deliverable-level. Omit `--name` from `architecture resolve` to use the root module, which runs commands across all modules. Do NOT try to list or enumerate modules — the root module default handles cross-module verification.
+
+**Read verification config** (NOTE: `manage-config plan` is ONLY for phase configs — for architecture queries use `manage-architecture:architecture`):
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-5-execute get --trace-plan-id {plan_id}
 ```
 
 **1. Quality check task** (if `verification_1_quality_check` is true):
-- Resolve via `architecture resolve --command quality-gate --name {module}`
+- Resolve via `architecture resolve --command quality-gate` (no `--name` — uses root module for cross-module check)
 - Create task with: `profile: verification`, `deliverable: 0`, `origin: holistic`
 - `depends_on: [ALL non-holistic tasks]`
 
 **2. Domain-specific verification tasks** (from `verification_domain_steps` config — see [extension-contract.md](../../../plan-marshall/skills/extension-api/standards/extension-contract.md)):
 - For each enabled domain step in config → create a verification task
-- Steps contain agent references from domain extensions
+- Steps contain agent references from domain extensions (use the step value directly as the step target, do NOT resolve via architecture)
 - `profile: verification`, `deliverable: 0`, `origin: holistic`
 - `depends_on: [ALL non-holistic tasks]`
 
 **3. Full test suite task** (if `verification_2_build_verify` is true):
-- Resolve via `architecture resolve --command module-tests --name {module}`
+- Resolve via `architecture resolve --command module-tests` (no `--name` — uses root module for cross-module check)
 - Create task with: `profile: verification`, `deliverable: 0`, `origin: holistic`
 - `depends_on: [ALL non-holistic tasks]`
 
@@ -281,7 +274,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   work --plan-id {plan_id} --level INFO --message "[ARTIFACT] (plan-marshall:phase-4-plan) Created holistic verification TASK-{N}: {title}"
 ```
 
-### Step 6: Determine Execution Order
+### Step 8: Determine Execution Order
 
 Compute parallel execution groups:
 
@@ -297,7 +290,7 @@ execution_order:
 - Tasks depending on same prior tasks can run in parallel
 - Sequential dependencies remain sequential
 
-### Step 7: Q-Gate Verification Checks
+### Step 9: Q-Gate Verification Checks
 
 **Purpose**: Verify created tasks meet quality standards.
 
@@ -328,7 +321,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-4-plan:qgate) Verification: {passed_count} passed, {flagged_count} flagged"
 ```
 
-### Step 8: Record Issues as Lessons
+### Step 10: Record Issues as Lessons
 
 On ambiguous deliverable or planning issues:
 
@@ -342,9 +335,17 @@ python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lesson add \
 
 **Valid categories**: `bug`, `improvement`, `anti-pattern`
 
-### Step 9: Return Results
+### Step 11: Transition Phase and Return Results
 
-**Log phase completion** before returning:
+**Transition phase**:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-lifecycle:manage-lifecycle transition \
+  --plan-id {plan_id} \
+  --completed 4-plan
+```
+
+**Log phase completion**:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
@@ -430,7 +431,7 @@ If deliverable metadata incomplete:
 **Script Notations** (use EXACTLY as shown):
 - `plan-marshall:manage-solution-outline:manage-solution-outline` - Read deliverables (list-deliverables, read)
 - `plan-marshall:manage-architecture:architecture` - Query module skills (module --name {module}) and resolve commands (resolve --command {cmd} --name {module}). Uses `--trace-plan-id`, NOT `--plan-id`.
-- `plan-marshall:manage-tasks:manage-tasks` - Create tasks (add --plan-id X <<'EOF' ... EOF)
+- `plan-marshall:manage-tasks:manage-tasks` - Create tasks (add --plan-id X --content "...")
 - `plan-marshall:manage-findings:manage-findings` - Q-Gate findings (qgate add/query/resolve)
 - `plan-marshall:manage-lessons:manage-lesson` - Record lessons on issues (add)
 

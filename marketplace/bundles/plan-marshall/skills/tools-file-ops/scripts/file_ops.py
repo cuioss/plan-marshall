@@ -125,7 +125,7 @@ def atomic_write_file(path: str | Path, content: str) -> None:
                 f.write('\n')
         os.replace(temp_path, path)
     except Exception:
-        if os.path.exists(temp_path):
+        if Path(temp_path).exists():
             os.unlink(temp_path)
         raise
 

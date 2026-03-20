@@ -108,7 +108,7 @@ This regenerates `.plan/project-architecture/derived-data.json` from current bui
 Clean all directories based on retention settings from marshal.json:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-run-config:cleanup run
+python3 .plan/execute-script.py plan-marshall:manage-run-config:cleanup clean
 ```
 
 **Output (TOON)**:
@@ -145,14 +145,14 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config system
 ### Cleanup with Custom Retention
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-run-config:cleanup run \
+python3 .plan/execute-script.py plan-marshall:manage-run-config:cleanup clean \
     --logs-days 1 --archived-days 5 --memory-days 5
 ```
 
 ### Dry Run (Preview)
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-run-config:cleanup run --dry-run
+python3 .plan/execute-script.py plan-marshall:manage-run-config:cleanup clean --dry-run
 ```
 
 **NOTE**: The `.plan/temp/` directory is the default temp directory for ALL temporary files. It is covered by the existing `Write(.plan/**)` permission (avoiding permission prompts for `/tmp/`) and cleaned during maintenance.
@@ -170,19 +170,27 @@ python3 .plan/execute-script.py plan-marshall:marshall-steward:determine-mode ch
 **Output (TOON)**:
 ```toon
 status	ok
-files_needing_update	0
+missing_count	0
 ```
 
 Or if updates needed:
 ```toon
 status	needs_update
-files_needing_update	2
-missing	CLAUDE.md,agents.md
+missing_count	2
+plan_temp	CLAUDE.md
+file_ops	CLAUDE.md
 ```
 
-If `status` is `needs_update`, add to each listed file:
+If `status` is `needs_update`, add missing content to each listed file:
+
+**For `plan_temp`** — add to each file listed:
 ```
 - Use `.plan/temp/` for ALL temporary files (covered by `Write(.plan/**)` permission - avoids permission prompts)
+```
+
+**For `file_ops`** — add to CLAUDE.md:
+```
+- Never use Bash for file operations (find, grep, cat, ls) — use Glob, Read, Grep tools instead
 ```
 
 ---

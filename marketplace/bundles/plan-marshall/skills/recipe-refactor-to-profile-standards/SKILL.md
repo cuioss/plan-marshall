@@ -100,24 +100,36 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-
 
 ## Step 4: Outline Writing
 
-Write `solution_outline.md` with all deliverables, grouped by module:
+**4a. Read the deliverable template** to understand the required structure:
 
-```markdown
-# Solution Outline: Refactor to {recipe_profile} Standards
+```
+Read: marketplace/bundles/plan-marshall/skills/manage-solution-outline/templates/deliverable-template.md
+```
 
-## Scope
-{N} packages across {M} modules to refactor for {recipe_profile} profile standards compliance.
+**4b. Read an example** to see the full document skeleton:
 
-## Resolved Skills
-{list of resolved skills from Step 1}
+```
+Read: marketplace/bundles/plan-marshall/skills/manage-solution-outline/examples/refactoring.md
+```
 
-## Module: {module_name}
+**4c. Resolve the target path**:
 
-### Deliverable {n}: {title}
-- **Files**: {count}
-- **Profile**: {recipe_profile}
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-solution-outline \
+  resolve-path --plan-id {plan_id}
+```
 
-...
+**4d. Write the solution outline** using the Write tool to `{resolved_path}`. The document MUST include these sections in order:
+- `# Solution: Refactor to {recipe_profile} Standards` header with `plan_id`, `created`, `compatibility` metadata
+- `## Summary` — scope description ({N} packages across {M} modules)
+- `## Overview` — resolved skills list and module breakdown
+- `## Deliverables` — all deliverables from Step 3, grouped by module, using the template structure from 4a
+
+**4e. Validate** the written outline:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-solution-outline \
+  write --plan-id {plan_id}
 ```
 
 ---

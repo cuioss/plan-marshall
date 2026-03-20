@@ -5,8 +5,6 @@ CRUD command handlers for manage-tasks.py.
 Contains: add, update, remove subcommands.
 """
 
-import sys
-
 from _manage_tasks_shared import (
     find_task_file,
     format_task_file,
@@ -27,16 +25,16 @@ from plan_logging import log_entry  # type: ignore[import-not-found]
 def cmd_add(args) -> int:
     """Handle 'add' subcommand.
 
-    Reads task definition from stdin in TOON format.
-    Only --plan-id is passed as CLI argument.
+    Reads task definition from --content CLI argument in TOON format.
+    Newlines are encoded as literal \\n in the argument value.
     """
-    stdin_content = sys.stdin.read()
-    if not stdin_content.strip():
-        output_error('No task definition provided on stdin')
+    content = args.content.replace('\\n', '\n')
+    if not content.strip():
+        output_error('No task definition provided (--content is empty)')
         return 1
 
     try:
-        parsed = parse_stdin_task(stdin_content)
+        parsed = parse_stdin_task(content)
     except ValueError as e:
         output_error(str(e))
         return 1

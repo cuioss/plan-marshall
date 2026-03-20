@@ -2,7 +2,7 @@
   "ci": {
     "provider": "github",
     "repo_url": "https://github.com/cuioss/plan-marshall.git",
-    "detected_at": "2026-03-17T08:10:25Z",
+    "detected_at": "2026-03-20T11:12:13Z",
     "commands": {
       "pr-create": "python3 .plan/execute-script.py tools-integration-ci:github pr create",
       "pr-reviews": "python3 .plan/execute-script.py tools-integration-ci:github pr reviews",
@@ -13,6 +13,7 @@
       "issue-view": "python3 .plan/execute-script.py tools-integration-ci:github issue view"
     }
   },
+  "extension_defaults": {},
   "plan": {
     "phase-1-init": {
       "branch_strategy": "feature"
@@ -61,12 +62,7 @@
         "documentation": "plan-marshall:task-documentation",
         "implementation": "plan-marshall:task-implementation",
         "module_testing": "plan-marshall:task-module_testing"
-      },
-      "project_skills": [
-        "project:sync-plugin-cache",
-        "project:verify-workflow",
-        "project:recipe-plugin-compliance"
-      ]
+      }
     },
     "build": {
       "bundle": "plan-marshall"
@@ -85,10 +81,10 @@
       "outline_skill": "pm-plugin-development:ext-outline-workflow",
       "workflow_skill_extensions": {
         "triage": "pm-plugin-development:ext-triage-plugin"
-      }
-    },
-    "python": {
-      "bundle": "pm-dev-python"
+      },
+      "project_skills": [
+        "project:recipe-plugin-compliance"
+      ]
     },
     "active_profiles": [
       "implementation",

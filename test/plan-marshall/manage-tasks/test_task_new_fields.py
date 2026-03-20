@@ -82,7 +82,7 @@ def build_task_toon_with_new_fields(
 def add_task_with_fields(plan_id='test-plan', **kwargs):
     """Helper to add a task with new fields."""
     toon = build_task_toon_with_new_fields(**kwargs)
-    return run_script(SCRIPT_PATH, 'add', '--plan-id', plan_id, input_data=toon)
+    return run_script(SCRIPT_PATH, 'add', '--plan-id', plan_id, '--content', toon.replace('\n', '\\n'))
 
 
 # =============================================================================
@@ -188,7 +188,7 @@ skills:
   - pm-dev-java:java-core
 steps:
   - src/main/java/File.java"""
-        result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
+        result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--content', toon.replace('\n', '\\n'))
 
         assert result.returncode == 0
         assert 'profile: architecture' in result.stdout
@@ -209,7 +209,7 @@ skills:
   - pm-dev-java:java-core
 steps:
   - src/main/java/File.java"""
-        result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
+        result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--content', toon.replace('\n', '\\n'))
 
         assert result.returncode == 0
         assert 'profile: planning' in result.stdout
@@ -230,7 +230,7 @@ skills:
   - pm-dev-java:java-core
 steps:
   - src/main/java/File.java"""
-        result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
+        result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--content', toon.replace('\n', '\\n'))
 
         assert result.returncode == 0
         assert 'profile: my-custom-profile' in result.stdout
@@ -251,7 +251,7 @@ skills:
   - invalid-skill-no-colon
 steps:
   - Step 1"""
-        result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
+        result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--content', toon.replace('\n', '\\n'))
 
         assert result.returncode != 0
         assert 'skill' in result.stderr.lower() or 'bundle:skill' in result.stderr.lower()
@@ -738,7 +738,7 @@ skills:
   - pm-requirements:req-core
 steps:
   - docs/requirements.adoc"""
-        result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
+        result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--content', toon.replace('\n', '\\n'))
 
         assert result.returncode == 0, f'Failed: {result.stderr}'
         assert 'domain: requirements' in result.stdout
@@ -759,7 +759,7 @@ skills:
   - pm-dev-java:java-core
 steps:
   - src/main/java/File.java"""
-        result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
+        result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--content', toon.replace('\n', '\\n'))
 
         assert result.returncode == 0, f'Failed: {result.stderr}'
         assert 'domain: my-custom-domain' in result.stdout
@@ -801,7 +801,7 @@ skills:
   - pm-dev-java:java-core
 steps:
   - src/main/java/File.java"""
-        result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
+        result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--content', toon.replace('\n', '\\n'))
 
         assert result.returncode == 0, f'Failed: {result.stderr}'
         assert 'origin: plan' in result.stdout
@@ -823,7 +823,7 @@ skills:
   - pm-dev-java:java-core
 steps:
   - src/main/java/File.java"""
-        result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
+        result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--content', toon.replace('\n', '\\n'))
 
         assert result.returncode == 0, f'Failed: {result.stderr}'
         assert 'origin: fix' in result.stdout
@@ -845,7 +845,7 @@ skills:
   - pm-dev-java:java-core
 steps:
   - src/main/java/File.java"""
-        result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
+        result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--content', toon.replace('\n', '\\n'))
 
         assert result.returncode == 0, f'Failed: {result.stderr}'
         assert 'origin: sonar' in result.stdout
@@ -871,7 +871,7 @@ skills:
   - pm-dev-java:java-core
 steps:
   - src/main/java/File.java"""
-        result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
+        result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--content', toon.replace('\n', '\\n'))
 
         assert result.returncode == 0, f'Failed: {result.stderr}'
         assert 'file: TASK-001.json' in result.stdout
@@ -894,7 +894,7 @@ skills:
   - pm-dev-java:junit-core
 steps:
   - src/test/java/FileTest.java"""
-        result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
+        result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--content', toon.replace('\n', '\\n'))
 
         assert result.returncode == 0, f'Failed: {result.stderr}'
         assert 'file: TASK-001.json' in result.stdout

@@ -10,7 +10,7 @@ This skill provides structure guidelines, examples, and operations for `solution
 
 ## When to Load This Skill
 
-Load this skill in Step 0 when:
+Load this skill in Step 1 when:
 - Creating a solution outline (via `phase-3-outline` skill)
 - Reviewing or updating an existing solution outline
 - Validating solution document structure
@@ -114,7 +114,7 @@ Examples provide starting points for different task categories:
 
 ## Writing the Solution Document
 
-### Step 0: Load Project Architecture
+### Step 1: Load Project Architecture
 
 Load project architecture knowledge via the `plan-marshall:manage-architecture` skill:
 
@@ -141,21 +141,21 @@ Use the returned structure for:
 | `modules.{name}.insights` | Leverage learned knowledge |
 | `internal_dependencies` | Know what depends on what |
 
-### Step 1: Analyze Request
+### Step 2: Analyze Request
 
 Read the request document to understand:
 - What is being requested
 - Scope and constraints
 - Success criteria
 
-### Step 2: Design Architecture
+### Step 3: Design Architecture
 
 Before writing, determine:
 - Components involved
 - Dependencies between components
 - Execution order
 
-### Step 3: Create Diagram
+### Step 4: Create Diagram
 
 Draw ASCII diagram showing:
 - New components (boxed)
@@ -163,39 +163,30 @@ Draw ASCII diagram showing:
 - Dependencies (arrows)
 - Package/file structure
 
-### Step 4: Write and Validate Document
+### Step 5: Write and Validate Document
 
-Write using stdin with validation to handle ASCII box-drawing characters:
+Use the resolve-path → Write → validate pattern:
 
 ```bash
+# 1. Get target path
+python3 .plan/execute-script.py \
+  plan-marshall:manage-solution-outline:manage-solution-outline resolve-path \
+  --plan-id {plan_id}
+# Returns: path: .plan/plans/{plan_id}/solution_outline.md
+
+# 2. Write content directly (Write tool — already permitted via Write(.plan/**))
+Write({resolved_path}) with solution outline content
+
+# 3. Validate
 python3 .plan/execute-script.py \
   plan-marshall:manage-solution-outline:manage-solution-outline write \
-  --plan-id {plan_id} \
-  [--force] <<'EOF'
-# Solution: {title}
-
-## Summary
-...
-
-## Overview
-```
-┌─────────────┐
-│  Component  │
-└─────────────┘
-```
-
-## Deliverables
-...
-EOF
+  --plan-id {plan_id}
 ```
 
 **Parameters**:
 - `--plan-id` (required): Plan identifier
-- `--force`: Overwrite existing solution outline
 
-**Note**: Validation runs automatically on write - checks for required sections (Summary, Overview, Deliverables) and numbered deliverable format (`### N. Title`). If validation fails, the file is NOT written.
-
-**Why heredoc?** Solution outlines contain ASCII diagrams with box-drawing characters (│, ─, ┌, └). Using `<<'EOF'` (quoted) preserves content exactly without variable expansion or escaping issues.
+**Note**: The `write` command validates the file already on disk — it does NOT read from stdin. Checks for required sections (Summary, Overview, Deliverables) and numbered deliverable format (`### N. Title`). Returns error if validation fails.
 
 ---
 
@@ -238,8 +229,9 @@ python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-sol
 
 | Command | Parameters | Description |
 |---------|------------|-------------|
-| `write` | `--plan-id [--force]` | Write solution from stdin (validates automatically) |
-| `update` | `--plan-id` | Update existing solution from stdin (validates automatically) |
+| `resolve-path` | `--plan-id` | Get target file path for direct Write |
+| `write` | `--plan-id` | Validate solution on disk (written via Write tool) |
+| `update` | `--plan-id` | Validate updated solution on disk (written via Write tool) |
 | `validate` | `--plan-id` | Validate structure |
 | `read` | `--plan-id [--raw] [--deliverable-number N]` | Read solution or specific deliverable |
 | `list-deliverables` | `--plan-id` | Extract deliverables list |

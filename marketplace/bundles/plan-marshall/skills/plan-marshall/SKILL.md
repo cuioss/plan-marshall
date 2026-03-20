@@ -54,6 +54,14 @@ This skill implements its **OWN** plan system. You must:
 
 ## Workflow
 
+### Foundational Skills
+
+Load foundational development practices before any phase work:
+
+```
+Skill: plan-marshall:dev-general-practices
+```
+
 ### Action Routing
 
 Route based on action parameter. Load the appropriate workflow document and follow its instructions:
@@ -140,7 +148,7 @@ After determining the action and workflow document:
 If you discover issues or improvements during execution, record them:
 
 1. **Activate skill**: `Skill: plan-marshall:manage-lessons`
-2. **Record lesson** with component: `{type: "skill", name: "plan-marshall", bundle: "plan-marshall"}`
+2. **Record lesson** with category `bug`, `improvement`, or `anti-pattern` and component in `{bundle}:{skill}` notation (e.g., `plan-marshall:manage-tasks`)
 
 ## Related
 

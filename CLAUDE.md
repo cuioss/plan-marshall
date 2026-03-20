@@ -145,38 +145,21 @@ python3 .plan/execute-script.py {notation} [subcommand] {args...}
 
 ### Testing
 
-Tests use pytest via the `pw` (Pyprojectx) wrapper. Only Python 3 is required on the host system.
-
-```bash
-# Canonical commands with optional module filtering (see build.py)
-./pw compile                      # mypy marketplace/bundles/
-./pw compile pm-dev-frontend      # mypy marketplace/bundles/pm-dev-frontend
-./pw test-compile                 # mypy test/
-./pw test-compile plan-marshall     # mypy test/plan-marshall
-./pw module-tests                 # pytest test/
-./pw module-tests pm-dev-frontend # pytest test/pm-dev-frontend
-./pw module-tests -p              # pytest test/ --parallel
-./pw quality-gate                 # ruff check marketplace/bundles/ test/
-./pw quality-gate pm-dev-java     # ruff on single bundle + tests
-./pw coverage                     # pytest with coverage
-./pw coverage plan-marshall         # coverage for single module
-./pw verify                       # Full: compile + quality-gate + module-tests
-./pw verify pm-dev-frontend       # Full verification on single bundle
-./pw clean                        # Remove build artifacts
-```
-
-Additional shortcuts:
-```bash
-./pw lint-fix      # ruff check --fix (all)
-./pw fmt           # ruff format (all)
-```
-
-See `pm-plugin-development:plugin-script-architecture` skill for testing standards and `doc/build-structure.adoc` for build system details.
+Tests use pytest via the `pw` (Pyprojectx) wrapper. Only Python 3 is required on the host system. Use the resolved build commands from the Development Notes section below — never invoke `./pw` directly. See `doc/build-structure.adoc` for build system details.
 
 ### Development Notes
 
 - Use `.plan/temp/` for ALL temporary and generated files (covered by `Write(.plan/**)` permission - avoids permission prompts)
 - Use proper tools (Edit, Read, Write) instead of shell commands (echo, cat)
+- Never use Bash for file operations (find, grep, cat, ls) — use Glob, Read, Grep tools instead
+- Never hard-code build commands (./pw, mvn, npm, gradle) — use these resolved commands instead:
+  - Compile: `python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args "compile {module}"`
+  - Quality gate: `python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args "quality-gate {module}"`
+  - Tests: `python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args "module-tests {module}"`
+  - Full verify: `python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args "verify {module}"`
+  - Omit `{module}` to run against all modules
+  - Always call build commands with a Bash timeout of at least 10 minutes (600000ms)
+  - After each build call, analyze the result TOON: check `status` for success/error/timeout, review `errors[N]{file,line,message,category}` for failures, and consult `log_file` for full output if deeper investigation is needed.
 - Use `gh` tool for GitHub access, not MCP
 
 ### Plugin Cache Sync

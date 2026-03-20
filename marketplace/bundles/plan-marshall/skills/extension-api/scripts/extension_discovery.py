@@ -290,6 +290,17 @@ def apply_config_defaults(project_root: Path) -> dict[str, Any]:
             results['extensions_skipped'] += 1
             continue
 
+        # Only call config_defaults for extensions whose discover_modules finds modules
+        if hasattr(module, 'discover_modules'):
+            try:
+                discovered = module.discover_modules(project_root)
+                if not discovered:
+                    results['extensions_skipped'] += 1
+                    continue
+            except Exception:
+                results['extensions_skipped'] += 1
+                continue
+
         if hasattr(module, 'config_defaults'):
             try:
                 module.config_defaults(str(project_root))

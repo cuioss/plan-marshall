@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for manage-tasks.py script with stdin-based add API."""
+"""Tests for manage-tasks.py script with --content-based add API."""
 
 import os
 import shutil
@@ -96,7 +96,7 @@ def add_basic_task(
 ):
     """Helper to add a task with minimal required params."""
     toon = build_task_toon(title=title, deliverable=deliverable, domain=domain, description=description, steps=steps)
-    return run_script(SCRIPT_PATH, 'add', '--plan-id', plan_id, input_data=toon)
+    return run_script(SCRIPT_PATH, 'add', '--plan-id', plan_id, '--content', toon.replace('\n', '\\n'))
 
 
 # =============================================================================
@@ -115,7 +115,7 @@ def test_add_first_task():
             description='Task description',
             steps=['src/main/java/First.java', 'src/main/java/Second.java'],  # File paths per contract
         )
-        result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
+        result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--content', toon.replace('\n', '\\n'))
 
         assert result.returncode == 0, f'Failed: {result.stderr}'
         assert 'status: success' in result.stdout
@@ -171,7 +171,7 @@ def test_add_rejects_zero_deliverable_for_plan_origin():
             description='Invalid zero deliverable',
             steps=['src/main/java/Test.java'],
         )
-        result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
+        result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--content', toon.replace('\n', '\\n'))
 
         assert result.returncode == 1, f'Should have failed but got: {result.stdout}'
         assert 'deliverable' in result.stderr.lower()
@@ -191,7 +191,7 @@ def test_add_accepts_holistic_with_zero_deliverable():
             steps=['./pw verify plan-marshall'],
             origin='holistic',
         )
-        result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
+        result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--content', toon.replace('\n', '\\n'))
 
         assert result.returncode == 0, f'Holistic task should succeed: {result.stderr}'
         assert 'TASK-001' in result.stdout
@@ -199,11 +199,11 @@ def test_add_accepts_holistic_with_zero_deliverable():
         cleanup(temp_dir)
 
 
-def test_add_fails_without_stdin():
-    """Add fails if no stdin provided."""
+def test_add_fails_without_content():
+    """Add fails if --content is empty."""
     temp_dir = setup_plan_dir()
     try:
-        result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data='')
+        result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--content', '')
 
         assert result.returncode != 0
         assert 'error' in result.stderr.lower()
@@ -220,7 +220,7 @@ domain: java
 description: Desc
 steps:
   - Step 1"""
-        result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
+        result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--content', toon.replace('\n', '\\n'))
 
         assert result.returncode != 0
         assert 'deliverable' in result.stderr.lower()
@@ -239,7 +239,7 @@ def test_add_fails_with_invalid_deliverable():
             description='Desc',
             steps=['src/main/java/Component.java'],
         )
-        result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
+        result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--content', toon.replace('\n', '\\n'))
 
         assert result.returncode == 1
         assert 'error' in result.stderr.lower()
@@ -256,7 +256,7 @@ deliverable: 1
 description: Desc
 steps:
   - Step 1"""
-        result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
+        result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--content', toon.replace('\n', '\\n'))
 
         assert result.returncode != 0
         assert 'domain' in result.stderr.lower()
@@ -275,7 +275,7 @@ def test_add_accepts_arbitrary_domain():
             description='Desc',
             steps=['src/main/python/script.py'],
         )
-        result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
+        result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--content', toon.replace('\n', '\\n'))
 
         assert result.returncode == 0
         assert 'domain: python' in result.stdout
@@ -291,7 +291,7 @@ def test_add_fails_without_steps():
 deliverable: 1
 domain: java
 description: Desc"""
-        result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
+        result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--content', toon.replace('\n', '\\n'))
 
         assert result.returncode != 0
         assert 'steps' in result.stderr.lower()
@@ -315,7 +315,7 @@ def test_add_with_dependencies():
             steps=['src/main/java/Component.java'],
             depends_on='TASK-1',
         )
-        result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
+        result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--content', toon.replace('\n', '\\n'))
 
         assert result.returncode == 0
         assert 'depends_on: [TASK-1]' in result.stdout
@@ -336,7 +336,7 @@ def test_add_with_verification():
             verification_commands=['mvn test', 'mvn verify'],
             verification_criteria='Build passes',
         )
-        result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
+        result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--content', toon.replace('\n', '\\n'))
 
         assert result.returncode == 0
         assert 'status: success' in result.stdout
@@ -357,7 +357,7 @@ def test_add_with_shell_metacharacters_in_verification():
             verification_commands=["grep -l '```json' marketplace/bundles/*.md | wc -l"],
             verification_criteria='All grep commands return 0',
         )
-        result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
+        result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--content', toon.replace('\n', '\\n'))
 
         assert result.returncode == 0, f'Failed: {result.stderr}'
         assert 'status: success' in result.stdout
@@ -388,7 +388,7 @@ def test_get_existing_task():
             description='Test description',
             steps=['src/main/java/One.java', 'src/main/java/Two.java', 'src/main/java/Three.java'],
         )
-        run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
+        run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--content', toon.replace('\n', '\\n'))
 
         result = run_script(SCRIPT_PATH, 'get', '--plan-id', 'test-plan', '--number', '1')
 
@@ -430,7 +430,7 @@ def test_get_returns_verification_block():
             verification_commands=['mvn test'],
             verification_criteria='Tests pass',
         )
-        run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
+        run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--content', toon.replace('\n', '\\n'))
 
         result = run_script(SCRIPT_PATH, 'get', '--plan-id', 'test-plan', '--number', '1')
 
@@ -533,7 +533,7 @@ def test_list_filter_ready():
             steps=['src/main/java/File.java'],
             depends_on='TASK-1',
         )
-        run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
+        run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--content', toon.replace('\n', '\\n'))
 
         result = run_script(SCRIPT_PATH, 'list', '--plan-id', 'test-plan', '--ready')
 
@@ -561,7 +561,7 @@ def test_next_returns_first_pending():
             description='D1',
             steps=['src/main/java/One.java', 'src/main/java/Two.java'],
         )
-        run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
+        run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--content', toon.replace('\n', '\\n'))
 
         result = run_script(SCRIPT_PATH, 'next', '--plan-id', 'test-plan')
 
@@ -640,7 +640,7 @@ def test_next_respects_dependencies():
             steps=['src/main/java/File.java'],
             depends_on='TASK-1',
         )
-        run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
+        run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--content', toon.replace('\n', '\\n'))
 
         result = run_script(SCRIPT_PATH, 'next', '--plan-id', 'test-plan')
 
@@ -665,7 +665,7 @@ def test_next_shows_blocked_tasks():
             steps=['src/main/java/File.java'],
             depends_on='TASK-99',
         )
-        run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
+        run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--content', toon.replace('\n', '\\n'))
 
         result = run_script(SCRIPT_PATH, 'next', '--plan-id', 'test-plan')
 
@@ -690,7 +690,7 @@ def test_next_ignore_deps():
             steps=['src/main/java/File.java'],
             depends_on='TASK-99',
         )
-        run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
+        run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--content', toon.replace('\n', '\\n'))
 
         result = run_script(SCRIPT_PATH, 'next', '--plan-id', 'test-plan', '--ignore-deps')
 
@@ -713,7 +713,7 @@ def test_next_include_context():
             description='Task description',
             steps=['src/main/java/One.java', 'src/main/java/Two.java'],
         )
-        run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
+        run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--content', toon.replace('\n', '\\n'))
 
         result = run_script(SCRIPT_PATH, 'next', '--plan-id', 'test-plan', '--include-context')
 
@@ -1006,7 +1006,7 @@ def test_update_clear_depends_on():
             steps=['src/main/java/File.java'],
             depends_on='TASK-1',
         )
-        run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
+        run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--content', toon.replace('\n', '\\n'))
 
         result = run_script(SCRIPT_PATH, 'update', '--plan-id', 'test-plan', '--number', '1', '--depends-on', 'none')
 
@@ -1111,7 +1111,7 @@ def test_file_contains_new_fields():
             verification_commands=['mvn test'],
             verification_criteria='Tests pass',
         )
-        run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
+        run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--content', toon.replace('\n', '\\n'))
 
         task_dir = Path(os.environ['PLAN_BASE_DIR']) / 'plans' / 'test-plan' / 'tasks'
         files = list(task_dir.glob('TASK-001.json'))
@@ -1147,7 +1147,7 @@ def test_deliverable_is_single_number_not_array():
             description='Test description',
             steps=['src/main/java/File1.java'],
         )
-        run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
+        run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--content', toon.replace('\n', '\\n'))
 
         task_dir = Path(os.environ['PLAN_BASE_DIR']) / 'plans' / 'test-plan' / 'tasks'
         files = list(task_dir.glob('TASK-001.json'))
@@ -1215,7 +1215,7 @@ def test_arbitrary_domains_accepted():
                 description=f'Test {domain}',
                 steps=['src/main/java/File.java'],
             )
-            result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', input_data=toon)
+            result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--content', toon.replace('\n', '\\n'))
             assert result.returncode == 0, f'Domain {domain} failed: {result.stderr}'
     finally:
         cleanup(temp_dir)

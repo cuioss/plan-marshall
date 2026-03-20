@@ -184,7 +184,7 @@ def test_init_includes_phase_1_init():
         config = json.loads(marshal_path.read_text())
         plan = config.get('plan', {})
         assert 'phase-1-init' in plan, 'Should have plan.phase-1-init section'
-        assert plan['phase-1-init']['branch_strategy'] == 'direct'
+        assert plan['phase-1-init']['branch_strategy'] == 'feature'
 
 
 def test_init_no_top_level_verification():

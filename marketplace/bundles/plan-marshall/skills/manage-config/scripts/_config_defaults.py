@@ -40,7 +40,7 @@ DEFAULT_SYSTEM_RETENTION = {'logs_days': 1, 'archived_plans_days': 5, 'memory_da
 
 # Phase-specific plan defaults
 DEFAULT_PLAN_INIT = {
-    'branch_strategy': 'direct',
+    'branch_strategy': 'feature',
 }
 
 DEFAULT_PLAN_REFINE = {

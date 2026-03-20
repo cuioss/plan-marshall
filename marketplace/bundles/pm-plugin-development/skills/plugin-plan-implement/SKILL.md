@@ -10,6 +10,12 @@ user-invocable: false
 
 **Execution Pattern**: Load task → Load skills → Iterate steps → Apply changes → Verify → Return result
 
+## Step 1: Load Foundational Practices
+
+```
+Skill: plan-marshall:dev-general-practices
+```
+
 ## Scripts
 
 | Script | Purpose |
@@ -37,7 +43,7 @@ Contains: How to execute each step type (modify, create, etc.)
 
 ## Workflow
 
-### Step 1: Load Task Details
+### Step 2: Load Task Details
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks get \
@@ -53,7 +59,7 @@ Extract from response:
 - `steps[]`: File paths to process
 - `verification`: Commands and criteria
 
-### Step 2: Load Domain Skills
+### Step 3: Load Domain Skills
 
 #### 2a. Get Domain Defaults
 
@@ -79,14 +85,14 @@ Skill: {delegation.context_skills[0]}
 Skill: {delegation.context_skills[1]}
 ```
 
-### Step 3: Log Task Start
+### Step 4: Log Task Start
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   work --plan-id {plan_id} --level INFO --message "[TASK] (pm-plugin-development:plugin-plan-implement) Starting task {task_number}: {title}"
 ```
 
-### Step 4: Execute Steps
+### Step 5: Execute Steps
 
 For each step WHERE `status == pending`:
 
@@ -125,7 +131,7 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks finalize
   --outcome done
 ```
 
-### Step 5: Run Verification
+### Step 6: Run Verification
 
 After all steps complete:
 
@@ -142,7 +148,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   work --plan-id {plan_id} --level INFO --message "[VERIFY] (pm-plugin-development:plugin-plan-implement) Verification {passed|failed}: {criteria}"
 ```
 
-### Step 6: Return Result
+### Step 7: Return Result
 
 **Success Output**:
 
@@ -207,10 +213,6 @@ If verification fails:
 ---
 
 ## Constraints
-
-### File Access
-- **`.plan/` files**: ONLY via execute-script.py
-- **Marketplace files**: Use Read/Write/Edit as needed
 
 ### Progress Tracking
 - Execute step

@@ -68,7 +68,7 @@ This skill provides 4 workflows, one for each component type. All workflows foll
 
 **Steps**:
 
-#### Step 0: Load Foundation Skills
+#### Step 1: Load Foundation Skills
 
 ```
 Skill: pm-plugin-development:plugin-architecture
@@ -77,7 +77,7 @@ Skill: plan-marshall:dev-general-practices
 
 These provide architecture principles and non-prompting tool usage patterns.
 
-#### Step 1: Load Architecture Standards
+#### Step 2: Load Architecture Standards
 
 ```
 Read references/agent-guide.md
@@ -85,7 +85,7 @@ Read references/agent-guide.md
 
 This provides agent design principles, tool selection guidelines, and architecture rules.
 
-#### Step 2: Interactive Questionnaire
+#### Step 3: Interactive Questionnaire
 
 Ask user for:
 
@@ -148,7 +148,7 @@ AskUserQuestion:
 
 Track `questions_answered` counter.
 
-#### Step 3: Duplication Detection and Architecture Validation
+#### Step 4: Duplication Detection and Architecture Validation
 
 **Check for duplicates:**
 1. Use Glob to find all agents in target bundle
@@ -181,7 +181,7 @@ Track `questions_answered` counter.
 
 Track `validations_performed` counter.
 
-#### Step 4: Generate Agent File
+#### Step 5: Generate Agent File
 
 **Generate frontmatter:**
 ```bash
@@ -233,7 +233,7 @@ Write: {bundle}/agents/{agent-name}.md
 
 Track `files_created` counter.
 
-#### Step 5: Validate Generated Component
+#### Step 6: Validate Generated Component
 
 ```bash
 python3 .plan/execute-script.py pm-plugin-development:plugin-create:component validate --file "{file_path}" --type "agent"
@@ -262,7 +262,7 @@ AskUserQuestion:
 
 Track `validations_performed` counter.
 
-#### Step 6: Display Summary
+#### Step 7: Display Summary
 
 ```
 ╔════════════════════════════════════════════════════════════╗
@@ -286,7 +286,7 @@ Next steps:
 3. Test agent functionality
 ```
 
-#### Step 7: Run Agent Diagnosis
+#### Step 8: Run Agent Diagnosis
 
 ```
 SlashCommand: /pm-plugin-development:plugin-doctor agents agent-name={agent-name}
@@ -302,7 +302,7 @@ If diagnosis fails: Display warning but don't abort (agent already created).
 
 **Steps**:
 
-#### Step 0: Load Foundation Skills
+#### Step 1: Load Foundation Skills
 
 ```
 Skill: pm-plugin-development:plugin-architecture
@@ -311,7 +311,7 @@ Skill: plan-marshall:dev-general-practices
 
 These provide architecture principles and non-prompting tool usage patterns.
 
-#### Step 1: Load Command Standards
+#### Step 2: Load Command Standards
 
 ```
 Read references/command-guide.md
@@ -319,7 +319,7 @@ Read references/command-guide.md
 
 This provides command design principles, quality standards, and orchestration patterns.
 
-#### Step 2: Interactive Questionnaire
+#### Step 3: Interactive Questionnaire
 
 Ask user for:
 
@@ -364,11 +364,11 @@ AskUserQuestion:
 
 Track `questions_answered` counter.
 
-#### Step 3: Duplication Detection
+#### Step 4: Duplication Detection
 
 Same pattern as agent workflow, using Glob/Grep to find similar commands.
 
-#### Step 4: Generate Command File
+#### Step 5: Generate Command File
 
 **Generate frontmatter:**
 ```bash
@@ -410,7 +410,7 @@ Write: {bundle}/commands/{command-name}.md
 
 Track `files_created` counter.
 
-#### Step 5: Validate Generated Component
+#### Step 6: Validate Generated Component
 
 ```bash
 python3 .plan/execute-script.py pm-plugin-development:plugin-create:component validate --file "{file_path}" --type "command"
@@ -421,11 +421,11 @@ Validation checks:
 - All required sections present (WORKFLOW, USAGE EXAMPLES)
 - CONTINUOUS IMPROVEMENT RULE uses manage-lessons skill pattern
 
-#### Step 6: Display Summary
+#### Step 7: Display Summary
 
 Same format as agent workflow.
 
-#### Step 7: Run Command Diagnosis
+#### Step 8: Run Command Diagnosis
 
 ```
 SlashCommand: /pm-plugin-development:plugin-doctor commands command-name={command-name}
@@ -439,7 +439,7 @@ SlashCommand: /pm-plugin-development:plugin-doctor commands command-name={comman
 
 **Steps**:
 
-#### Step 0: Load Foundation Skills
+#### Step 1: Load Foundation Skills
 
 ```
 Skill: pm-plugin-development:plugin-architecture
@@ -448,7 +448,7 @@ Skill: plan-marshall:dev-general-practices
 
 These provide architecture principles and non-prompting tool usage patterns.
 
-#### Step 1: Load Skill Standards
+#### Step 2: Load Skill Standards
 
 ```
 Read references/skill-guide.md
@@ -456,7 +456,7 @@ Read references/skill-guide.md
 
 This provides skill patterns, resource organization, and progressive disclosure guidance.
 
-#### Step 2: Interactive Questionnaire
+#### Step 3: Interactive Questionnaire
 
 Ask user for:
 
@@ -501,11 +501,11 @@ AskUserQuestion:
 
 Track `questions_answered` counter.
 
-#### Step 3: Duplication Detection
+#### Step 4: Duplication Detection
 
 Same pattern, using Glob/Grep to find similar skills.
 
-#### Step 4: Create Skill Structure
+#### Step 5: Create Skill Structure
 
 **Create directories:**
 ```
@@ -573,7 +573,7 @@ With placeholder content:
 
 Track `files_created` and `standards_files_created` counters.
 
-#### Step 5: Validate Generated Component
+#### Step 6: Validate Generated Component
 
 ```bash
 python3 .plan/execute-script.py pm-plugin-development:plugin-create:component validate --file "{skill_path}/SKILL.md" --type "skill"
@@ -584,7 +584,7 @@ Validation checks:
 - SKILL.md structure valid
 - No CONTINUOUS IMPROVEMENT RULE (skills don't have this)
 
-#### Step 6: Display Summary
+#### Step 7: Display Summary
 
 ```
 ╔════════════════════════════════════════════════════════════╗
@@ -610,7 +610,7 @@ Next steps:
 4. Test skill activation
 ```
 
-#### Step 7: Run Skill Diagnosis
+#### Step 8: Run Skill Diagnosis
 
 ```
 SlashCommand: /pm-plugin-development:plugin-doctor skills skill-name={skill-name}
@@ -623,7 +623,7 @@ SlashCommand: /pm-plugin-development:plugin-doctor skills skill-name={skill-name
 
 **Steps**:
 
-#### Step 0: Load Foundation Skills
+#### Step 1: Load Foundation Skills
 
 ```
 Skill: pm-plugin-development:plugin-architecture
@@ -632,7 +632,7 @@ Skill: plan-marshall:dev-general-practices
 
 These provide architecture principles and non-prompting tool usage patterns.
 
-#### Step 1: Load Bundle Standards
+#### Step 2: Load Bundle Standards
 
 ```
 Read references/bundle-guide.md
@@ -640,7 +640,7 @@ Read references/bundle-guide.md
 
 This provides bundle structure requirements, plugin.json configuration, naming conventions, and validation guidelines.
 
-#### Step 2: Interactive Questionnaire
+#### Step 3: Interactive Questionnaire
 
 Ask user for:
 
@@ -681,7 +681,7 @@ AskUserQuestion:
 
 Track `questions_answered` counter.
 
-#### Step 3: Create Bundle Structure
+#### Step 4: Create Bundle Structure
 
 **Load bundle structure template:**
 ```
@@ -738,7 +738,7 @@ Write: {scope}/bundles/{bundle-name}/agents/README.md
 
 Track `files_created` counter.
 
-#### Step 4: Create Initial Components
+#### Step 5: Create Initial Components
 
 For each component type user requested:
 
@@ -760,13 +760,13 @@ For each component type user requested:
 # Pass scope and bundle-name parameters
 ```
 
-#### Step 5: Update plugin.json
+#### Step 6: Update plugin.json
 
 After components created, read plugin.json and update components array with created items.
 
 Track `components_created` counter.
 
-#### Step 6: Display Summary
+#### Step 7: Display Summary
 
 ```
 ╔════════════════════════════════════════════════════════════╗
@@ -793,7 +793,7 @@ Next steps:
 4. Run diagnosis: /plugin-doctor metadata
 ```
 
-#### Step 7: Run Metadata Validation
+#### Step 8: Run Metadata Validation
 
 ```
 SlashCommand: /pm-plugin-development:plugin-doctor metadata

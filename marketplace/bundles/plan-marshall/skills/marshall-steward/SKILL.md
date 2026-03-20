@@ -95,7 +95,7 @@ The plugin root is detected via `bootstrap-plugin.py` and cached in `.plan/marsh
 
 ---
 
-## Step 0: Determine Mode
+## Step 1: Determine Mode
 
 Determine whether to run wizard or menu based on existing files.
 

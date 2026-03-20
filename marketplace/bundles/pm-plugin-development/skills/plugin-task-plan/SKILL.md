@@ -86,7 +86,7 @@ For each deliverable, check for split requirements:
 - Different concerns within → SHOULD split
 - File count > 15 → CONSIDER splitting
 
-### Step 4b: Log Optimization Decisions (REQUIRED)
+### Step 5: Log Optimization Decisions (REQUIRED)
 
 After analyzing each deliverable or deliverable pair, log the decision:
 
@@ -106,39 +106,16 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 This logging is REQUIRED for audit trail and debugging.
 
-### Step 5: Create Optimized Tasks
+### Step 6: Create Optimized Tasks
 
-For aggregated deliverables or single deliverables, create tasks using heredoc.
+For aggregated deliverables or single deliverables, create tasks using `--content` with `\n`-encoded TOON.
 
 **CRITICAL**: The `steps` field MUST contain file paths copied from the deliverable's `Affected files` section.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks add \
-  --plan-id {plan_id} <<'EOF'
-title: {Action Verb} {Target}: {Scope}
-deliverable: {n}
-domain: plan-marshall-plugin-dev
-phase: 5-execute
-description: |
-  {combined description from deliverables}
-
-steps:
-  - marketplace/bundles/{bundle}/agents/{file1}.md
-  - marketplace/bundles/{bundle}/agents/{file2}.md
-  - marketplace/bundles/{bundle}/commands/{file3}.md
-
-depends_on: {TASK-N | none}
-
-delegation:
-  skill: {suggested_skill from deliverable metadata}
-  workflow: {suggested_workflow from deliverable metadata}
-  context_skills: {context_skills from deliverable metadata - MUST include even if empty []}
-
-verification:
-  commands:
-    - {verification.command from deliverable}
-  criteria: {verification.criteria from deliverable}
-EOF
+  --plan-id {plan_id} \
+  --content "title: {Action Verb} {Target}: {Scope}\ndeliverable: {n}\ndomain: plan-marshall-plugin-dev\nphase: 5-execute\ndescription: {combined description}\nsteps:\n  - marketplace/bundles/{bundle}/agents/{file1}.md\n  - marketplace/bundles/{bundle}/agents/{file2}.md\ndepends_on: {TASK-N | none}\ndelegation:\n  skill: {suggested_skill}\n  workflow: {suggested_workflow}\n  context_skills: {context_skills - MUST include even if empty []}\nverification:\n  commands:\n    - {verification.command}\n  criteria: {verification.criteria}"
 ```
 
 **Field mapping from deliverable to task**:
@@ -159,35 +136,11 @@ EOF
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks add \
-  --plan-id migrate-json-to-toon <<'EOF'
-title: Migrate plan-marshall Agents to TOON Format
-deliverable: 2
-domain: plan-marshall-plugin-dev
-phase: 5-execute
-description: |
-  Convert all JSON output blocks to TOON format in plan-marshall phase components.
-
-steps:
-  - marketplace/bundles/plan-marshall/agents/phase-agent.md
-  - marketplace/bundles/plan-marshall/skills/phase-3-outline/SKILL.md
-  - marketplace/bundles/plan-marshall/skills/phase-4-plan/SKILL.md
-  - marketplace/bundles/plan-marshall/skills/phase-5-execute/SKILL.md
-
-depends_on: TASK-1
-
-delegation:
-  skill: pm-plugin-development:plugin-maintain
-  workflow: update-component
-  context_skills: []
-
-verification:
-  commands:
-    - grep -r '```json' marketplace/bundles/plan-marshall/agents/
-  criteria: Returns no matches (exit code 1)
-EOF
+  --plan-id migrate-json-to-toon \
+  --content "title: Migrate plan-marshall Agents to TOON Format\ndeliverable: 2\ndomain: plan-marshall-plugin-dev\nphase: 5-execute\ndescription: Convert all JSON output blocks to TOON format in plan-marshall phase components.\nsteps:\n  - marketplace/bundles/plan-marshall/agents/phase-agent.md\n  - marketplace/bundles/plan-marshall/skills/phase-3-outline/SKILL.md\n  - marketplace/bundles/plan-marshall/skills/phase-4-plan/SKILL.md\n  - marketplace/bundles/plan-marshall/skills/phase-5-execute/SKILL.md\ndepends_on: TASK-1\ndelegation:\n  skill: pm-plugin-development:plugin-maintain\n  workflow: update-component\n  context_skills: []\nverification:\n  commands:\n    - grep -r '```json' marketplace/bundles/plan-marshall/agents/\n  criteria: Returns no matches (exit code 1)"
 ```
 
-### Step 6: Record Issues as Lessons
+### Step 7: Record Issues as Lessons
 
 On ambiguous deliverable or planning issues:
 
@@ -201,7 +154,7 @@ python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lesson add \
 
 **Valid categories**: `bug`, `improvement`, `anti-pattern`
 
-### Step 7: Return Results
+### Step 8: Return Results
 
 **Output**:
 ```toon
@@ -407,7 +360,7 @@ If deliverable lacks required parameters:
 
 **Script Notations** (use EXACTLY as shown):
 - `plan-marshall:manage-solution-outline:manage-solution-outline` - Read solution and list deliverables (list-deliverables, read)
-- `plan-marshall:manage-tasks:manage-tasks` - Create tasks (add --plan-id X <<'EOF' ... EOF)
+- `plan-marshall:manage-tasks:manage-tasks` - Create tasks (add --plan-id X --content "...")
 - `plan-marshall:manage-lessons:manage-lesson` - Record lessons on issues (add)
 - `plan-marshall:manage-logging:manage-log` - Log progress (work)
 
@@ -416,4 +369,4 @@ If deliverable lacks required parameters:
 - `pm-plugin-development:plugin-maintain` - Component updates and refactoring (handles verification internally)
 
 **Contract Reference**:
-- [manage-tasks/standards/task-contract.md](../../plan-marshall/skills/manage-tasks/standards/task-contract.md) - Optimization workflow and decision tables
+- `plan-marshall:manage-tasks/standards/task-contract.md` - Optimization workflow and decision tables

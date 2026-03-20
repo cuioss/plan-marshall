@@ -2,7 +2,6 @@
 """Verify-links subcommand for checking AsciiDoc links."""
 
 import json
-import os
 import re
 import sys
 from dataclasses import dataclass
@@ -137,9 +136,9 @@ def verify_links(files: list[str]) -> tuple[list[Link], list[Issue]]:
                 )
             elif link.link_type == 'xref':
                 target_path = (
-                    os.path.normpath(os.path.join(os.path.dirname(filepath), link.target)) if link.target else filepath
+                    str((Path(filepath).parent / link.target).resolve()) if link.target else filepath
                 )
-                if not os.path.exists(target_path):
+                if not Path(target_path).exists():
                     issues.append(
                         Issue(
                             file=filepath,

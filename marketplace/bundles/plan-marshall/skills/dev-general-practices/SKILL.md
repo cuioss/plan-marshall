@@ -55,6 +55,41 @@ Read: standards/search-operations.md
 
 Use when: Implementing content search, pattern matching, or integration validation.
 
+## Hard Rules (never override)
+
+These rules apply to ALL tool calls. Violations trigger user permission prompts and block execution.
+
+### Bash: One command per call
+
+Each Bash tool call must contain exactly ONE command. NEVER:
+- Combine commands with newlines, `&`, `&&`, or `;`
+- Use `python3 -c "..."` with inline multiline scripts
+- Use `2>&1 &` to background commands
+
+If two commands are independent, make two separate Bash calls.
+
+### Bash: No file operations
+
+NEVER use Bash for file discovery or reading. Use dedicated tools:
+- `find`, `ls` → use **Glob** tool
+- `grep`, `rg` → use **Grep** tool
+- `cat`, `head`, `tail` → use **Read** tool
+
+### `.plan/` access: Scripts only
+
+ALL `.plan/` file access MUST go through `python3 .plan/execute-script.py`. NEVER:
+- Read/Write/Edit any `.plan/**` file directly
+- Use `python3 -c` to parse `.plan/` JSON/TOON files
+- Use Bash to cat/grep `.plan/` files
+
+### Skill workflow: No improvisation
+
+Execute ONLY the commands documented in the loaded skill's workflow. NEVER:
+- Add discovery steps not in the skill
+- Invent script arguments (e.g., `--field all`)
+- Substitute a different command for one documented in the skill
+- Skip steps documented in the skill (including phase transitions)
+
 ## Key Rules Summary
 
 ### Ask When In Doubt
@@ -64,10 +99,6 @@ Never guess or be creative. If uncertain about requirements, ask the user for gu
 ### Research Current Best Practices
 
 Use research-best-practices-agent for finding latest recommendations. Do not rely on outdated knowledge or use unstructured web searches directly.
-
-### Use Proper Tools
-
-Use Read, Write, Edit, Glob, Grep (not cat, tail, find, test via Bash). Bash should only be used for git, build commands, and operations requiring shell execution.
 
 ### Don't Proliferate Documents
 

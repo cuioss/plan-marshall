@@ -25,7 +25,7 @@ Activate when:
 
 ## Workflow: Analyze Script Failures
 
-### Step 0: Load Foundation Skills
+### Step 1: Load Foundation Skills
 
 ```
 Skill: pm-plugin-development:plugin-architecture
@@ -34,7 +34,7 @@ Skill: plan-marshall:dev-general-practices
 
 These provide architecture principles and non-prompting tool usage patterns.
 
-### Step 1: Gather Failure Data
+### Step 2: Gather Failure Data
 
 **A. Description Analysis** (if provided):
 - Parse user's description for specific failure context
@@ -46,7 +46,7 @@ These provide architecture principles and non-prompting tool usage patterns.
 - Extract: Full script command, exit code, error output
 - Note: What command/agent was active when failure occurred
 
-### Step 2: For Each Failure Found
+### Step 3: For Each Failure Found
 
 **A. Extract Failure Details**:
 - Complete script call including all parameters
@@ -79,7 +79,7 @@ Read source component file to find instruction context.
 
 3. **Capture context** (1-5 lines surrounding instruction)
 
-### Step 3: Root Cause Analysis
+### Step 4: Root Cause Analysis
 
 For each failure, categorize the root cause:
 
@@ -92,7 +92,7 @@ For each failure, categorize the root cause:
 | **Script Bug** | Script exists but has bug | Fix script implementation |
 | **Script Not Found** | Notation invalid or script missing | Fix notation or add script |
 
-### Step 4: Generate Analysis Report
+### Step 5: Generate Analysis Report
 
 Display comprehensive analysis:
 
@@ -131,7 +131,7 @@ python3 .plan/execute-script.py {notation} {subcommand} {args}
 **Analysis**: {why this happened - how LLM interpreted instructions}
 ```
 
-### Step 5: Propose Solutions
+### Step 6: Propose Solutions
 
 For each failure, generate appropriate fixes:
 
@@ -197,7 +197,7 @@ A new script API is needed:
 **Reasoning**: This operation is sensible for {context} but no script supports it.
 ```
 
-### Step 6: Interactive Resolution
+### Step 7: Interactive Resolution
 
 For each failure, present resolution options using `AskUserQuestion`:
 
@@ -216,7 +216,7 @@ AskUserQuestion:
       multiSelect: false
 ```
 
-### Step 7: Apply Selected Actions
+### Step 8: Apply Selected Actions
 
 For each selected action:
 
@@ -235,7 +235,7 @@ For each selected action:
     --detail "{detailed analysis and solution}"
   ```
 
-### Step 8: Summary
+### Step 9: Summary
 
 Display actions taken:
 

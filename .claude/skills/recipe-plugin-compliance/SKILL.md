@@ -74,7 +74,32 @@ Focus areas per deliverable:
 
 ### Step 4: Write Solution Outline
 
-Write all deliverables to `solution_outline.md` grouped by module:
+**4a. Read the deliverable template** to understand the required structure:
+
+```
+Read: marketplace/bundles/plan-marshall/skills/manage-solution-outline/templates/deliverable-template.md
+```
+
+**4b. Read an example** to see the full document skeleton:
+
+```
+Read: marketplace/bundles/plan-marshall/skills/manage-solution-outline/examples/refactoring.md
+```
+
+**4c. Resolve the target path**:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-solution-outline \
+  resolve-path --plan-id {plan_id}
+```
+
+**4d. Write the solution outline** using the Write tool to `{resolved_path}`. The document MUST include these sections in order:
+- `# Solution: {title}` header with `plan_id`, `created`, `compatibility` metadata
+- `## Summary` — 2-3 sentences describing approach
+- `## Overview` — ASCII diagram showing scope
+- `## Deliverables` — All deliverables from Step 3, grouped by module, using the template structure
+
+**4e. Validate** the written outline:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-solution-outline \

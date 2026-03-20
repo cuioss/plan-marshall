@@ -232,11 +232,13 @@ Only after user provides direction:
 
 **Purpose**: Catch errors in the **global** log that failed before reaching plan-scoped logging (typically missing `--plan-id` or `--trace-plan-id`).
 
-**A. Scan Global Log**:
+**A. Scan Plan-Scoped Log**:
 
 ```bash
-grep '\[ERROR\]' .plan/logs/script-execution-$(date +%Y-%m-%d).log 2>/dev/null || echo "No errors"
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log read --plan-id {plan_id} --type script
 ```
+
+Review the output for `[ERROR]` entries. This uses the manage-log API (the designed access pattern for `.plan` files) and avoids shell metacharacters that trigger Claude Code security prompts.
 
 **B. If Errors Found**:
 
@@ -295,8 +297,13 @@ python3 .plan/execute-script.py {notation} {subcommand} {args...}
 
 This is the ONLY allowed way to interact with `.plan` files. All other access is a violation.
 
+**Allowed Direct Write Pattern**:
+- `Write(.plan/plans/{plan_id}/solution_outline.md)` is permitted when the path
+  was obtained via `manage-solution-outline resolve-path` and is immediately
+  followed by `manage-solution-outline validate` (or `write`/`update`). This replaces heredoc stdin.
+
 **Prohibited `.plan` Access** (ALL violations):
-- Direct Read/Write/Edit of ANY `.plan/**` file (except via execute-script.py invocation)
+- Direct Read/Write/Edit of ANY `.plan/**` file (except via execute-script.py invocation or the allowed direct write pattern above)
 - Direct Read/Write/Edit of `.plan/plans/*/status.toon`
 - Direct Read/Write/Edit of `.plan/plans/*/references.json`
 - Direct Read/Write/Edit of `.plan/plans/*/work.log`
@@ -394,7 +401,9 @@ When `scope: planning` is specified, apply these additional checks for planning 
 
 ### After Each Phase Completes (MANDATORY)
 
-**CRITICAL**: Execute the **Post-Phase Verification Protocol** after EVERY phase transition (1-init→3-outline, 4-plan→5-execute, 5-execute→6-finalize). This is NOT optional.
+**CRITICAL**: Execute the **Post-Phase Verification Protocol** after EVERY phase transition (1-init→3-outline, 4-plan→5-execute, 5-execute→6-finalize, 6-finalize completion). This is NOT optional.
+
+**6-finalize ORDERING**: For 6-finalize, run the verification protocol **between** the phase transition (Step 9: `manage-lifecycle transition --completed 6-finalize`) and the archive (Step 10: `manage-lifecycle archive`). The archive moves plan files to `.plan/archived-plans/`, making `manage-status read` fail with `file_not_found`. Always verify before archiving.
 
 Load and follow the protocol from `standards/planning-compliance.md`:
 

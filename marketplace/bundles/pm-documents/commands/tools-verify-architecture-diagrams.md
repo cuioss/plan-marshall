@@ -1,14 +1,7 @@
 ---
 name: tools-verify-architecture-diagrams
 description: Analyze and update PlantUML diagrams to reflect current codebase state and regenerate PNG images
-allowed-tools:
-  - Read
-  - Write
-  - Edit
-  - Glob
-  - Grep
-  - Bash
-  - AskUserQuestion
+tools: Read, Write, Edit, Glob, Grep, Bash, AskUserQuestion
 ---
 
 # Verify and Update PlantUML Diagrams

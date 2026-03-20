@@ -118,14 +118,19 @@ git push
 **Step 8: Create PR (Optional)**
 
 If `create-pr` parameter:
-```bash
-python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr create \
-  --title "{title}" \
-  --body "## Summary
-{summary}
 
-🤖 Generated with [Claude Code](https://claude.com/claude-code)"
+1. Write PR body as a plan artifact using the Write tool (NOT via `--content` Bash argument):
 ```
+Write(.plan/plans/{plan_id}/artifacts/pr-body.md) with PR body markdown content
+```
+
+2. Create PR using `--body-file` to avoid shell metacharacter issues:
+```bash
+gh pr create --repo {owner}/{repo} --head {branch} --base {base_branch} \
+  --title "{title}" --body-file .plan/plans/{plan_id}/artifacts/pr-body.md
+```
+
+**CRITICAL**: Do NOT pass multi-line markdown through Bash arguments — neither as `gh pr create --body` nor as `manage-files write --content`. Markdown headings (`##`) after newlines in quoted strings trigger Claude Code's shell security heuristic. Always use the Write tool for the file, then reference it with `--body-file`.
 
 ### Output
 

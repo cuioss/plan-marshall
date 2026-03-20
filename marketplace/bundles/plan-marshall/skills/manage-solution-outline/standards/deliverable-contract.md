@@ -85,6 +85,7 @@ Assign profiles based on what the **deliverable itself** creates or modifies —
 | Markdown components (skills/agents/commands) | `implementation` (plugin-doctor verification) |
 | Scripts only (no test files) | `implementation` (compile verification) |
 | Scripts + test files | `implementation`, `module_testing` |
+| Verification only (no file changes, runs commands) | `verification` |
 
 **Key rule**: `module_testing` is assigned only when the deliverable creates or modifies test files. The existence of test infrastructure in the module is irrelevant — it only matters whether *this deliverable* touches test files.
 

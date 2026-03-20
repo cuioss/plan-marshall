@@ -236,5 +236,5 @@ All subcommands accept `--project-dir {path}` (default: current directory).
 
 | Document | Purpose |
 |----------|---------|
-| [maven-impl.md](../plan-marshall-plugin/standards/maven-impl.md) | Maven profile pipeline implementation |
-| [canonical-commands.md](../../plan-marshall/skills/extension-api/standards/canonical-commands.md) | Command vocabulary |
+| `pm-dev-java:plan-marshall-plugin` → `standards/maven-impl.md` | Maven profile pipeline implementation |
+| `plan-marshall:extension-api` → `standards/canonical-commands.md` | Command vocabulary |

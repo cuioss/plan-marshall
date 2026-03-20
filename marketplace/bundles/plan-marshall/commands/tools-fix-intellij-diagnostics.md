@@ -1,11 +1,7 @@
 ---
 name: tools-fix-intellij-diagnostics
 description: Retrieve and fix IDE diagnostics automatically, suppressing only when no reasonable fix is available
-allowed-tools:
-  - Read
-  - Edit
-  - Task
-  - mcp__ide__getDiagnostics
+tools: Read, Edit, Task, mcp__ide__getDiagnostics
 ---
 
 # Fix IntelliJ Diagnostics Command

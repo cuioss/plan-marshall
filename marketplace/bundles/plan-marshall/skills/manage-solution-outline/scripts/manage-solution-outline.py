@@ -3,12 +3,15 @@
 Manage solution outline documents.
 
 Solution outlines support ASCII diagrams with box-drawing characters.
-Use heredoc with write command to handle special characters properly.
+Content is written externally via Write tool, then validated by this script.
 
 Usage:
-    python3 manage-solution-outline.py write --plan-id my-plan <<'EOF'
-    # Solution content here
-    EOF
+    # Get target path for direct file write
+    python3 manage-solution-outline.py resolve-path --plan-id my-plan
+
+    # Validate existing file on disk
+    python3 manage-solution-outline.py write --plan-id my-plan [--force]
+    python3 manage-solution-outline.py update --plan-id my-plan
 
     python3 manage-solution-outline.py validate --plan-id my-plan
     python3 manage-solution-outline.py list-deliverables --plan-id my-plan
@@ -27,7 +30,7 @@ from _plan_parsing import (  # type: ignore[import-not-found]
     extract_deliverables,
     parse_document_sections,
 )
-from file_ops import atomic_write_file, base_path  # type: ignore[import-not-found]
+from file_ops import base_path  # type: ignore[import-not-found]
 from toon_parser import serialize_toon  # type: ignore[import-not-found]
 
 SOLUTION_FILE = 'solution_outline.md'
@@ -236,7 +239,7 @@ def cmd_validate(args) -> int:
                     'plan_id': args.plan_id,
                     'file': SOLUTION_FILE,
                     'suggestions': [
-                        "Write solution using: manage-solution-outline write --plan-id X <<'EOF'",
+                        'Use resolve-path to get the target path, then Write tool to create the file',
                         'Check plan_id spelling',
                     ],
                 }
@@ -349,7 +352,7 @@ def cmd_read(args) -> int:
                     'plan_id': args.plan_id,
                     'file': SOLUTION_FILE,
                     'suggestions': [
-                        "Write solution using: manage-solution-outline write --plan-id X <<'EOF'",
+                        'Use resolve-path to get the target path, then Write tool to create the file',
                         'Check plan_id spelling',
                     ],
                 }
@@ -429,62 +432,45 @@ def cmd_exists(args) -> int:
     return 0
 
 
-def _read_and_validate_stdin(plan_id: str) -> tuple[str, list[str], list[str], dict[str, Any]] | int:
-    """Read content from stdin and validate. Returns (content, errors, warnings, info) or exit code on failure."""
-    if not validate_plan_id(plan_id):
-        print(
-            serialize_toon(
-                {
-                    'status': 'error',
-                    'error': 'invalid_plan_id',
-                    'plan_id': plan_id,
-                    'message': 'Plan ID must be kebab-case (lowercase, hyphens only)',
-                }
-            )
-        )
-        return 1
+def _validate_file_on_disk(plan_id: str, file_path: Path) -> tuple[int, dict[str, Any]]:
+    """Validate solution outline file already on disk.
 
-    content = sys.stdin.read()
+    Returns (exit_code, result_dict). exit_code 0 means success.
+    Does NOT print - caller is responsible for output.
+    """
+    if not file_path.exists():
+        return 1, {
+            'status': 'error',
+            'error': 'document_not_found',
+            'plan_id': plan_id,
+            'file': SOLUTION_FILE,
+            'suggestions': [
+                'Use resolve-path to get the target path, then Write tool to create the file',
+                'Check plan_id spelling',
+            ],
+        }
+
+    content = file_path.read_text(encoding='utf-8')
 
     if not content.strip():
-        print(
-            serialize_toon(
-                {
-                    'status': 'error',
-                    'error': 'empty_content',
-                    'plan_id': plan_id,
-                    'message': 'Content cannot be empty',
-                }
-            )
-        )
-        return 1
+        return 1, {
+            'status': 'error',
+            'error': 'empty_content',
+            'plan_id': plan_id,
+            'message': 'Content cannot be empty',
+        }
 
     errors, warnings, info = validate_solution_structure(content)
 
     if errors:
-        print(
-            serialize_toon(
-                {
-                    'status': 'error',
-                    'error': 'validation_failed',
-                    'plan_id': plan_id,
-                    'issues': errors,
-                    'warnings': warnings,
-                    'deliverable_count': info['deliverable_count'],
-                }
-            )
-        )
-        return 1
-
-    return content, errors, warnings, info
-
-
-def _write_and_report(
-    plan_id: str, file_path: Path, content: str, warnings: list[str], info: dict[str, Any], action: str
-) -> int:
-    """Write file atomically and print success output."""
-    file_path.parent.mkdir(parents=True, exist_ok=True)
-    atomic_write_file(file_path, content)
+        return 1, {
+            'status': 'error',
+            'error': 'validation_failed',
+            'plan_id': plan_id,
+            'issues': errors,
+            'warnings': warnings,
+            'deliverable_count': info['deliverable_count'],
+        }
 
     validation = {
         'deliverable_count': info['deliverable_count'],
@@ -494,65 +480,99 @@ def _write_and_report(
     if 'compatibility' in info:
         validation['compatibility'] = info['compatibility']
 
-    result = {
+    result: dict[str, Any] = {
         'status': 'success',
         'plan_id': plan_id,
         'file': SOLUTION_FILE,
-        'action': action,
         'validation': validation,
     }
 
     if warnings:
         result['warnings'] = warnings
 
-    print(serialize_toon(result))
-    return 0
+    return 0, result
 
 
-def cmd_write(args) -> int:
-    """Write solution outline from stdin with automatic contract validation.
+def cmd_resolve_path(args) -> int:
+    """Return the target file path for the solution outline.
 
-    Reads content from stdin to support ASCII diagrams with box-drawing characters.
-    ALWAYS validates against the deliverable contract before writing.
-    Returns error if validation fails (file is NOT written).
+    Used by LLM to get the path for direct file write via Write tool.
     """
-    validated = _read_and_validate_stdin(args.plan_id)
-    if isinstance(validated, int):
-        return validated
-    content, _errors, warnings, info = validated
-
-    file_path = get_solution_path(args.plan_id)
-    existed_before = file_path.exists()
-
-    # Check if exists and --force not specified
-    if existed_before and not getattr(args, 'force', False):
+    if not validate_plan_id(args.plan_id):
         print(
             serialize_toon(
                 {
                     'status': 'error',
-                    'error': 'file_exists',
+                    'error': 'invalid_plan_id',
                     'plan_id': args.plan_id,
-                    'file': SOLUTION_FILE,
-                    'message': 'Solution outline already exists. Use --force to overwrite.',
+                    'message': 'Plan ID must be kebab-case (lowercase, hyphens only)',
                 }
             )
         )
         return 1
 
-    action = 'updated' if existed_before else 'created'
-    return _write_and_report(args.plan_id, file_path, content, warnings, info, action)
+    file_path = get_solution_path(args.plan_id)
+
+    print(
+        serialize_toon(
+            {
+                'status': 'success',
+                'plan_id': args.plan_id,
+                'path': str(file_path),
+                'exists': file_path.exists(),
+            }
+        )
+    )
+    return 0
+
+
+def cmd_write(args) -> int:
+    """Validate solution outline already written to disk.
+
+    File must be written externally (via Write tool) before calling this command.
+    Validates against the deliverable contract. Use --force to allow overwriting
+    an existing file (checked before external write via resolve-path exists field).
+    """
+    if not validate_plan_id(args.plan_id):
+        print(
+            serialize_toon(
+                {
+                    'status': 'error',
+                    'error': 'invalid_plan_id',
+                    'plan_id': args.plan_id,
+                    'message': 'Plan ID must be kebab-case (lowercase, hyphens only)',
+                }
+            )
+        )
+        return 1
+
+    file_path = get_solution_path(args.plan_id)
+
+    exit_code, result = _validate_file_on_disk(args.plan_id, file_path)
+    if exit_code == 0:
+        result['action'] = 'created'
+    print(serialize_toon(result))
+    return exit_code
 
 
 def cmd_update(args) -> int:
-    """Update an existing solution outline from stdin with automatic contract validation.
+    """Validate an updated solution outline already written to disk.
 
-    Like write, but requires the file to already exist. Designed for Q-Gate
-    re-entry loops where the outline needs iterative updates.
+    File must already exist and be updated externally (via Write tool).
+    Validates against the deliverable contract.
     """
-    validated = _read_and_validate_stdin(args.plan_id)
-    if isinstance(validated, int):
-        return validated
-    content, _errors, warnings, info = validated
+    if not validate_plan_id(args.plan_id):
+        print(
+            serialize_toon(
+                {
+                    'status': 'error',
+                    'error': 'invalid_plan_id',
+                    'plan_id': args.plan_id,
+                    'message': 'Plan ID must be kebab-case (lowercase, hyphens only)',
+                }
+            )
+        )
+        return 1
 
     file_path = get_solution_path(args.plan_id)
 
@@ -570,7 +590,11 @@ def cmd_update(args) -> int:
         )
         return 1
 
-    return _write_and_report(args.plan_id, file_path, content, warnings, info, 'updated')
+    exit_code, result = _validate_file_on_disk(args.plan_id, file_path)
+    if exit_code == 0:
+        result['action'] = 'updated'
+    print(serialize_toon(result))
+    return exit_code
 
 
 def cmd_get_module_context(args) -> int:
@@ -673,15 +697,20 @@ def main():
     exists_parser.add_argument('--plan-id', required=True, help='Plan identifier')
     exists_parser.set_defaults(func=cmd_exists)
 
+    # resolve-path
+    resolve_parser = subparsers.add_parser('resolve-path', help='Get target file path for direct Write')
+    resolve_parser.add_argument('--plan-id', required=True, help='Plan identifier')
+    resolve_parser.set_defaults(func=cmd_resolve_path)
+
     # write
-    write_parser = subparsers.add_parser('write', help='Write solution outline from stdin (validates automatically)')
+    write_parser = subparsers.add_parser('write', help='Validate solution outline on disk (written via Write tool)')
     write_parser.add_argument('--plan-id', required=True, help='Plan identifier')
-    write_parser.add_argument('--force', action='store_true', help='Overwrite existing file')
+    write_parser.add_argument('--force', action='store_true', help='(legacy, ignored)')
     write_parser.set_defaults(func=cmd_write)
 
     # update
     update_parser = subparsers.add_parser(
-        'update', help='Update existing solution outline from stdin (validates automatically)'
+        'update', help='Validate updated solution outline on disk (written via Write tool)'
     )
     update_parser.add_argument('--plan-id', required=True, help='Plan identifier')
     update_parser.set_defaults(func=cmd_update)

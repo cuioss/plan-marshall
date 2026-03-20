@@ -2,7 +2,6 @@
 name: tool-coverage-agent
 description: Analyze tool declarations vs actual usage in a component file
 tools: Read, Skill
-model: haiku
 ---
 
 # Tool Coverage Analysis Agent

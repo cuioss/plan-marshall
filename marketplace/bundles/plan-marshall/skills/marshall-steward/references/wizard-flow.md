@@ -37,7 +37,7 @@ entries_added	3
 
 ## Step 2: Update Project Documentation (BOOTSTRAP)
 
-Check if project docs need `.plan/temp/` documentation:
+Check if project docs need required content:
 
 **BOOTSTRAP**: Use DIRECT Python call (executor not yet available):
 
@@ -48,19 +48,27 @@ python3 ${PLUGIN_ROOT}/plan-marshall/*/skills/marshall-steward/scripts/determine
 **Output (TOON)**:
 ```toon
 status	ok
-files_needing_update	0
+missing_count	0
 ```
 
 Or if updates needed:
 ```toon
 status	needs_update
-files_needing_update	2
-missing	CLAUDE.md,agents.md
+missing_count	2
+plan_temp	CLAUDE.md
+file_ops	CLAUDE.md
 ```
 
-If `status` is `needs_update`, add to each listed file's appropriate section:
+If `status` is `needs_update`, add missing content to each listed file:
+
+**For `plan_temp`** — add to each file listed:
 ```
 - Use `.plan/temp/` for ALL temporary files (covered by `Write(.plan/**)` permission - avoids permission prompts)
+```
+
+**For `file_ops`** — add to CLAUDE.md (e.g. in a "Development Notes" or equivalent section):
+```
+- Never use Bash for file operations (find, grep, cat, ls) — use Glob, Read, Grep tools instead
 ```
 
 ---
@@ -161,7 +169,7 @@ AskUserQuestion:
   header: "Plan Config"
   options:
     - label: "Use defaults (Recommended)"
-      description: "branch=direct, compatibility=breaking, commits=per_deliverable"
+      description: "branch=feature, compatibility=breaking, commits=per_deliverable"
     - label: "Configure"
       description: "Set branching, compatibility, and commit strategy"
   multiSelect: false
@@ -176,10 +184,10 @@ AskUserQuestion:
   question: "Branch strategy for plan execution?"
   header: "Branching"
   options:
-    - label: "Direct (Recommended)"
-      description: "Work on current branch"
-    - label: "Feature branch"
+    - label: "Feature branch (Recommended)"
       description: "Create feature branch per plan"
+    - label: "Direct"
+      description: "Work on current branch"
   multiSelect: false
 ```
 
@@ -349,6 +357,46 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 
 ---
 
+## Step 7d: Review Gates (Optional)
+
+Configure whether phase transitions pause for user review or auto-continue.
+
+```
+AskUserQuestion:
+  question: "Which phase transitions should auto-continue without pausing for review?"
+  header: "Review Gates"
+  multiSelect: true
+  options:
+    - label: "Plan without asking"
+      description: "Auto-continue from outline (phase 3) to planning (phase 4)"
+    - label: "Execute without asking"
+      description: "Auto-continue from planning (phase 4) to execution (phase 5)"
+    - label: "Finalize without asking"
+      description: "Auto-continue from execution (phase 5) to finalize (phase 6)"
+```
+
+Default: none selected (conservative — all transitions pause for review).
+
+Apply: for each selected gate:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-3-outline set --field plan_without_asking --value true
+```
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-4-plan set --field execute_without_asking --value true
+```
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-5-execute set --field finalize_without_asking --value true
+```
+
+If no gates selected → skip (defaults are already `false`).
+
+---
+
 ## Step 8: Apply Extension Defaults
 
 Apply project-specific configuration defaults from domain extensions BEFORE discovery. Each extension's `config_defaults()` callback is invoked to set domain-specific values in `marshal.json`.
@@ -419,6 +467,42 @@ Modules discovered: 10
 ```
 
 **Hybrid modules** are detected automatically when both pom.xml and package.json exist.
+
+---
+
+## Step 9b: Document Build Commands in CLAUDE.md
+
+**Purpose**: Add resolved build commands to CLAUDE.md so ALL agents (including built-in Explore agents) know how to invoke builds without hard-coding tool-specific commands.
+
+**Prerequisite**: Step 9 completed (architecture API is available).
+
+**Check if already present**: Look for marker `build-python` or `build-maven` or `build-gradle` or `build-npm` in CLAUDE.md. If found, skip this step.
+
+**Resolve available commands** for the default module:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture resolve --command compile --name default
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture resolve --command quality-gate --name default
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture resolve --command module-tests --name default
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture resolve --command verify --name default
+```
+
+For each successful resolution, collect the `executable` value.
+
+**Add to CLAUDE.md** (in a "Development Notes" or equivalent section):
+
+```
+- Never hard-code build commands (./pw, mvn, npm, gradle) — use these resolved commands instead:
+  - Compile: `{resolved compile executable}`
+  - Quality gate: `{resolved quality-gate executable}`
+  - Tests: `{resolved module-tests executable}`
+  - Full verify: `{resolved verify executable}`
+  - Omit `{module}` to run against all modules
+  - Always call build commands with a Bash timeout of at least 10 minutes (600000ms)
+  - After each build call, analyze the result TOON: check `status` for success/error/timeout, review `errors[N]{file,line,message,category}` for failures, and consult `log_file` for full output if deeper investigation is needed.
+```
+
+**Note**: Only include commands that resolved successfully. Different projects have different available commands.
 
 ---
 
