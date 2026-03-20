@@ -9,6 +9,7 @@ Usage:
     python3 manage-lesson.py list --component maven-build
     python3 manage-lesson.py get --id 2025-12-02-001
     python3 manage-lesson.py update --id 2025-12-02-001 --applied true
+    python3 manage-lesson.py archive --id 2025-12-02-001
 """
 
 import argparse
@@ -54,29 +55,31 @@ def get_next_id() -> str:
     return f'{today}-001'
 
 
-def read_lesson(lesson_id: str) -> tuple[dict, str]:
-    """Read a lesson file and return (metadata, content)."""
+def read_lesson(lesson_id: str) -> tuple[dict, str, str]:
+    """Read a lesson file and return (metadata, title, body)."""
     lessons_dir = get_lessons_dir()
     path = lessons_dir / f'{lesson_id}.md'
 
     if not path.exists():
-        return {}, ''
+        return {}, '', ''
 
     content = path.read_text(encoding='utf-8')
     metadata = parse_markdown_metadata(content)
 
     # Extract title and body
     lines = content.split('\n')
+    title = ''
     body_start = 0
 
     for i, line in enumerate(lines):
         if line.startswith('# '):
+            title = line[2:].strip()
             body_start = i + 1
             break
 
     body = '\n'.join(lines[body_start:]).strip()
 
-    return metadata, body
+    return metadata, title, body
 
 
 def write_lesson(lesson_id: str, metadata: dict, title: str, body: str):
@@ -146,7 +149,7 @@ def cmd_add(args):
 
 def cmd_update(args):
     """Update lesson metadata."""
-    metadata, body = read_lesson(args.id)
+    metadata, title, body = read_lesson(args.id)
 
     if not metadata:
         output_toon({'status': 'error', 'id': args.id, 'error': 'not_found', 'message': f'Lesson {args.id} not found'})
@@ -187,17 +190,6 @@ def cmd_update(args):
         output_toon({'status': 'error', 'error': 'no_update', 'message': 'No field to update specified'})
         sys.exit(1)
 
-    # Get title from content
-    lessons_dir = get_lessons_dir()
-    path = lessons_dir / f'{args.id}.md'
-    content = path.read_text(encoding='utf-8')
-
-    title = ''
-    for line in content.split('\n'):
-        if line.startswith('# '):
-            title = line[2:].strip()
-            break
-
     write_lesson(args.id, metadata, title, body)
 
     output_toon({'status': 'success', 'id': args.id, 'field': field, 'value': value, 'previous': previous})
@@ -205,22 +197,11 @@ def cmd_update(args):
 
 def cmd_get(args):
     """Get a single lesson."""
-    metadata, body = read_lesson(args.id)
+    metadata, title, body = read_lesson(args.id)
 
     if not metadata:
         output_toon({'status': 'error', 'id': args.id, 'error': 'not_found', 'message': f'Lesson {args.id} not found'})
         sys.exit(1)
-
-    # Get title from content
-    lessons_dir = get_lessons_dir()
-    path = lessons_dir / f'{args.id}.md'
-    content = path.read_text(encoding='utf-8')
-
-    title = ''
-    for line in content.split('\n'):
-        if line.startswith('# '):
-            title = line[2:].strip()
-            break
 
     result = {
         'status': 'success',
@@ -284,6 +265,54 @@ def cmd_list(args):
     output_toon({'status': 'success', 'total': total, 'filtered': len(lessons), 'lessons': lessons})
 
 
+def get_archived_dir() -> Path:
+    """Get the archived-lessons directory."""
+    return base_path('archived-lessons')
+
+
+def cmd_archive(args):
+    """Archive a lesson: set applied=true and move to archived-lessons."""
+    metadata, title, body = read_lesson(args.id)
+
+    if not metadata:
+        output_toon({'status': 'error', 'id': args.id, 'error': 'not_found', 'message': f'Lesson {args.id} not found'})
+        sys.exit(1)
+
+    lessons_dir = get_lessons_dir()
+    archived_dir = get_archived_dir()
+    archived_dir.mkdir(parents=True, exist_ok=True)
+
+    src = lessons_dir / f'{args.id}.md'
+    dst = archived_dir / f'{args.id}.md'
+
+    # Update applied status
+    metadata['applied'] = 'true' if args.applied else 'false'
+
+    # Write to archived location
+    write_lesson_to(dst, metadata, title, body)
+
+    # Remove original
+    src.unlink()
+
+    output_toon({'status': 'success', 'id': args.id, 'archived_to': str(dst)})
+
+
+def write_lesson_to(path: Path, metadata: dict, title: str, body: str):
+    """Write a lesson file to a specific path."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    lines = []
+    for key, value in metadata.items():
+        lines.append(f'{key}={value}')
+
+    lines.append('')
+    lines.append(f'# {title}')
+    lines.append('')
+    lines.append(body)
+
+    atomic_write_file(path, '\n'.join(lines))
+
+
 def cmd_from_error(args):
     """Create lesson from error context."""
     try:
@@ -345,6 +374,14 @@ def main():
     list_parser.add_argument('--category', choices=['bug', 'improvement', 'anti-pattern'], help='Filter by category')
     list_parser.add_argument('--applied', type=lambda x: x.lower() == 'true', help='Filter by applied status')
     list_parser.set_defaults(func=cmd_list)
+
+    # archive
+    archive_parser = subparsers.add_parser('archive', help='Archive a lesson (set applied status and move)')
+    archive_parser.add_argument('--id', required=True, help='Lesson ID')
+    archive_parser.add_argument(
+        '--applied', type=lambda x: x.lower() == 'true', default=True, help='Set applied status (default: true)'
+    )
+    archive_parser.set_defaults(func=cmd_archive)
 
     # from-error
     from_error_parser = subparsers.add_parser('from-error', help='Create from error context')
