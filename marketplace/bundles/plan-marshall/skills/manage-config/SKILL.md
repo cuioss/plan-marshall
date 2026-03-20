@@ -328,7 +328,7 @@ The defaults template contains only `system` domain. Technical domains (java, ja
   },
   "plan": {
     "phase-1-init": {
-      "branch_strategy": "direct"
+      "branch_strategy": "feature"
     },
     "phase-2-refine": {
       "confidence_threshold": 95,

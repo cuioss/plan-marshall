@@ -18,7 +18,7 @@ JSON structure and field definitions for project configuration.
   },
   "plan": {
     "phase-1-init": {
-      "branch_strategy": "direct"
+      "branch_strategy": "feature"
     },
     "phase-2-refine": {
       "confidence_threshold": 95,
@@ -193,7 +193,7 @@ Phase-specific configuration for the 6-phase workflow model. Each phase with con
 {
   "plan": {
     "phase-1-init": {
-      "branch_strategy": "direct"
+      "branch_strategy": "feature"
     }
   }
 }
@@ -201,7 +201,7 @@ Phase-specific configuration for the 6-phase workflow model. Each phase with con
 
 | Field | Type | Default | Values |
 |-------|------|---------|--------|
-| `branch_strategy` | string | "direct" | direct, feature |
+| `branch_strategy` | string | "feature" | direct, feature |
 
 ### phase-2-refine
 

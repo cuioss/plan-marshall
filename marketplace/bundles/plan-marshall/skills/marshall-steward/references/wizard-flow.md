@@ -169,7 +169,7 @@ AskUserQuestion:
   header: "Plan Config"
   options:
     - label: "Use defaults (Recommended)"
-      description: "branch=direct, compatibility=breaking, commits=per_deliverable"
+      description: "branch=feature, compatibility=breaking, commits=per_deliverable"
     - label: "Configure"
       description: "Set branching, compatibility, and commit strategy"
   multiSelect: false
@@ -184,10 +184,10 @@ AskUserQuestion:
   question: "Branch strategy for plan execution?"
   header: "Branching"
   options:
-    - label: "Direct (Recommended)"
-      description: "Work on current branch"
-    - label: "Feature branch"
+    - label: "Feature branch (Recommended)"
       description: "Create feature branch per plan"
+    - label: "Direct"
+      description: "Work on current branch"
   multiSelect: false
 ```
 
@@ -354,6 +354,46 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-6-finalize set-max-iterations --value {3|1|5}
 ```
+
+---
+
+## Step 7d: Review Gates (Optional)
+
+Configure whether phase transitions pause for user review or auto-continue.
+
+```
+AskUserQuestion:
+  question: "Which phase transitions should auto-continue without pausing for review?"
+  header: "Review Gates"
+  multiSelect: true
+  options:
+    - label: "Plan without asking"
+      description: "Auto-continue from outline (phase 3) to planning (phase 4)"
+    - label: "Execute without asking"
+      description: "Auto-continue from planning (phase 4) to execution (phase 5)"
+    - label: "Finalize without asking"
+      description: "Auto-continue from execution (phase 5) to finalize (phase 6)"
+```
+
+Default: none selected (conservative — all transitions pause for review).
+
+Apply: for each selected gate:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-3-outline set --field plan_without_asking --value true
+```
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-4-plan set --field execute_without_asking --value true
+```
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-5-execute set --field finalize_without_asking --value true
+```
+
+If no gates selected → skip (defaults are already `false`).
 
 ---
 

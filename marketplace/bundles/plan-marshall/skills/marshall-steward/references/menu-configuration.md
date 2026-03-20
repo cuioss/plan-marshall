@@ -22,6 +22,9 @@ AskUserQuestion:
     - label: "Quality Pipelines"
       description: "Verification and finalize step pipelines"
       value: "quality-pipelines"
+    - label: "Review Gates"
+      description: "Auto-continue between phases or pause for review"
+      value: "review-gates"
     - label: "Full Reconfigure"
       description: "Run first-run wizard again"
       value: "wizard"
@@ -34,6 +37,7 @@ AskUserQuestion:
 | skill-domains | Execute "Configuration: Skill Domains" below |
 | plan-phases | Execute "Configuration: Plan Phase Settings" below |
 | quality-pipelines | Execute "Configuration: Quality Pipelines" below |
+| review-gates | Execute "Configuration: Review Gates" below |
 | structure | Execute "Configuration: Project Structure" below |
 | wizard | Load and execute: `Read references/wizard-flow.md` |
 
@@ -72,10 +76,10 @@ AskUserQuestion:
   question: "Branch strategy for plan execution?"
   header: "Branching"
   options:
-    - label: "Direct"
-      description: "Work on current branch"
     - label: "Feature branch"
       description: "Create feature branch per plan"
+    - label: "Direct"
+      description: "Work on current branch"
   multiSelect: false
 ```
 
@@ -164,6 +168,72 @@ Apply:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-5-execute set --field commit_strategy --value {per_deliverable|per_plan|none}
+```
+
+---
+
+## Configuration: Review Gates
+
+Control whether phase transitions pause for user review or auto-continue. Each gate belongs to a different phase config but they form a logical group.
+
+### Step 1: Show Current Values
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-3-outline get
+```
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-4-plan get
+```
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-5-execute get
+```
+
+Display current review gate values:
+- `plan_without_asking` (from phase-3-outline) — skip review of solution outline before planning
+- `execute_without_asking` (from phase-4-plan) — skip review of task plan before execution
+- `finalize_without_asking` (from phase-5-execute) — skip review of execution results before finalize
+
+### Step 2: Select Gates to Toggle
+
+```
+AskUserQuestion:
+  question: "Which phase transitions should auto-continue without pausing for review?"
+  header: "Review Gates"
+  multiSelect: true
+  options:
+    - label: "Plan without asking"
+      description: "Auto-continue from outline (phase 3) to planning (phase 4)"
+    - label: "Execute without asking"
+      description: "Auto-continue from planning (phase 4) to execution (phase 5)"
+    - label: "Finalize without asking"
+      description: "Auto-continue from execution (phase 5) to finalize (phase 6)"
+```
+
+### Step 3: Apply Selected Changes
+
+For each selected gate, set to `true`. For each deselected gate, set to `false`.
+
+**plan_without_asking**:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-3-outline set --field plan_without_asking --value {true|false}
+```
+
+**execute_without_asking**:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-4-plan set --field execute_without_asking --value {true|false}
+```
+
+**finalize_without_asking**:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-5-execute set --field finalize_without_asking --value {true|false}
 ```
 
 ---

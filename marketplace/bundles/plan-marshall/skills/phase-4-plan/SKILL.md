@@ -235,7 +235,7 @@ After creating per-deliverable tasks, create plan-level verification tasks that 
 
 **Module resolution for holistic tasks**: Holistic tasks are plan-level, not deliverable-level. Omit `--name` from `architecture resolve` to use the root module, which runs commands across all modules. Do NOT try to list or enumerate modules — the root module default handles cross-module verification.
 
-**Read verification config**:
+**Read verification config** (NOTE: `manage-config plan` is ONLY for phase configs — for architecture queries use `manage-architecture:architecture`):
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-5-execute get --trace-plan-id {plan_id}
