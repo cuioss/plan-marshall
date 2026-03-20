@@ -401,7 +401,9 @@ When `scope: planning` is specified, apply these additional checks for planning 
 
 ### After Each Phase Completes (MANDATORY)
 
-**CRITICAL**: Execute the **Post-Phase Verification Protocol** after EVERY phase transition (1-init→3-outline, 4-plan→5-execute, 5-execute→6-finalize). This is NOT optional.
+**CRITICAL**: Execute the **Post-Phase Verification Protocol** after EVERY phase transition (1-init→3-outline, 4-plan→5-execute, 5-execute→6-finalize, 6-finalize completion). This is NOT optional.
+
+**6-finalize ORDERING**: For 6-finalize, run the verification protocol **between** the phase transition (Step 9: `manage-lifecycle transition --completed 6-finalize`) and the archive (Step 10: `manage-lifecycle archive`). The archive moves plan files to `.plan/archived-plans/`, making `manage-status read` fail with `file_not_found`. Always verify before archiving.
 
 Load and follow the protocol from `standards/planning-compliance.md`:
 
