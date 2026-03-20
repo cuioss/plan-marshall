@@ -81,7 +81,7 @@ All scripts are stdlib-only with JSON output.
 
 ### Steps
 
-#### Step 0: Load Foundation Skills
+#### Step 1: Load Foundation Skills
 
 ```
 Skill: pm-plugin-development:plugin-architecture
@@ -90,13 +90,13 @@ Skill: plan-marshall:dev-general-practices
 
 These provide architecture principles and non-prompting tool usage patterns.
 
-#### Step 1: Load Reference Guide
+#### Step 2: Load Reference Guide
 
 ```
 Read: references/component-update-guide.md
 ```
 
-#### Step 2: Analyze Current State
+#### Step 3: Analyze Current State
 
 Run component analysis:
 
@@ -110,7 +110,7 @@ Parse JSON output to understand:
 - Section structure
 - Line count
 
-#### Step 3: Validate Improvements
+#### Step 4: Validate Improvements
 
 Check that proposed improvements:
 - Apply to this component's purpose
@@ -118,7 +118,7 @@ Check that proposed improvements:
 - Follow anti-bloat rules (target 0 to -10% line change)
 - Don't duplicate existing content
 
-#### Step 4: Apply Updates
+#### Step 5: Apply Updates
 
 Use `maintain.py update` or Edit tool to apply changes:
 
@@ -128,7 +128,7 @@ python3 .plan/execute-script.py pm-plugin-development:plugin-maintain:maintain u
 
 Or use Edit tool for precise modifications.
 
-#### Step 5: Verify Update
+#### Step 6: Verify Update
 
 If `verify=true`:
 - Re-run analyze-component.py
@@ -152,7 +152,7 @@ Report results including:
 
 ### Steps
 
-#### Step 0: Load Foundation Skills
+#### Step 1: Load Foundation Skills
 
 ```
 Skill: pm-plugin-development:plugin-architecture
@@ -161,24 +161,24 @@ Skill: plan-marshall:dev-general-practices
 
 These provide architecture principles and non-prompting tool usage patterns.
 
-#### Step 1: Load Reference Guide
+#### Step 2: Load Reference Guide
 
 ```
 Read: references/knowledge-management-guide.md
 ```
 
-#### Step 2: Validate Skill
+#### Step 3: Validate Skill
 
 Verify skill directory exists and has:
 - SKILL.md file
 - references/ or standards/ directory (create if missing)
 
-#### Step 3: Fetch Source Content
+#### Step 4: Fetch Source Content
 
 If URL: Use WebFetch to retrieve content
 If file: Read the file
 
-#### Step 4: Check for Duplication
+#### Step 5: Check for Duplication
 
 ```bash
 python3 .plan/execute-script.py pm-plugin-development:plugin-maintain:maintain check-duplication --skill-path {skill_path} --content-file {content_file}
@@ -189,7 +189,7 @@ Parse JSON output:
 - `duplication_percentage`: 0-100
 - `recommendation`: proceed, consolidate, or skip
 
-#### Step 5: Handle Duplication
+#### Step 6: Handle Duplication
 
 If duplication found:
 - Present findings to user
@@ -197,14 +197,14 @@ If duplication found:
 
 Use AskUserQuestion for confirmation.
 
-#### Step 6: Create Knowledge Document
+#### Step 7: Create Knowledge Document
 
 Create reference file in skill/references/:
 - Add source attribution header
 - Convert content to Markdown if needed
 - Preserve all code examples
 
-#### Step 7: Update SKILL.md
+#### Step 8: Update SKILL.md
 
 Add reference based on load_type:
 - on-demand: Add to optional loading section
@@ -221,7 +221,7 @@ Add reference based on load_type:
 
 ### Steps
 
-#### Step 0: Load Foundation Skills
+#### Step 1: Load Foundation Skills
 
 ```
 Skill: pm-plugin-development:plugin-architecture
@@ -230,13 +230,13 @@ Skill: plan-marshall:dev-general-practices
 
 These provide architecture principles and non-prompting tool usage patterns.
 
-#### Step 1: Load Reference Guide
+#### Step 2: Load Reference Guide
 
 ```
 Read: references/readme-maintenance-guide.md
 ```
 
-#### Step 2: Generate README Content
+#### Step 3: Generate README Content
 
 For each bundle:
 
@@ -249,20 +249,20 @@ Parse JSON output for:
 - Commands, agents, skills with descriptions
 - Generated README content
 
-#### Step 3: Compare with Existing
+#### Step 4: Compare with Existing
 
 Read current README.md if exists:
 - Identify manual edits (content not matching generated)
 - Check for outdated component listings
 - Detect missing or obsolete components
 
-#### Step 4: Handle Manual Edits
+#### Step 5: Handle Manual Edits
 
 If manual edits detected and not `force`:
 - Display differences
 - Ask user: Update, Skip, or Force
 
-#### Step 5: Write Updated README
+#### Step 6: Write Updated README
 
 Use Write tool to update README.md.
 
@@ -281,7 +281,7 @@ Report:
 
 ### Steps
 
-#### Step 0: Load Foundation Skills
+#### Step 1: Load Foundation Skills
 
 ```
 Skill: pm-plugin-development:plugin-architecture
@@ -290,13 +290,13 @@ Skill: plan-marshall:dev-general-practices
 
 These provide architecture principles and non-prompting tool usage patterns.
 
-#### Step 1: Load Reference Guide
+#### Step 2: Load Reference Guide
 
 ```
 Read: references/refactoring-strategies-guide.md
 ```
 
-#### Step 2: Analyze Current Structure
+#### Step 3: Analyze Current Structure
 
 For each component in scope:
 
@@ -310,7 +310,7 @@ Identify:
 - Quality issues
 - Duplication across components
 
-#### Step 3: Generate Refactoring Plan
+#### Step 4: Generate Refactoring Plan
 
 Based on strategy:
 - **consolidate**: Merge related components
@@ -318,7 +318,7 @@ Based on strategy:
 - **extract**: Move shared content to skill
 - **reorganize**: Restructure directory layout
 
-#### Step 4: Apply Refactoring
+#### Step 5: Apply Refactoring
 
 Execute refactoring plan:
 - Rename/move files
@@ -326,7 +326,7 @@ Execute refactoring plan:
 - Modify plugin.json entries
 - Run verification
 
-#### Step 5: Verify Results
+#### Step 6: Verify Results
 
 Run plugin-diagnose on affected components.
 Report any issues introduced.
@@ -341,7 +341,7 @@ Report any issues introduced.
 
 ### Steps
 
-#### Step 0: Load Foundation Skills
+#### Step 1: Load Foundation Skills
 
 ```
 Skill: pm-plugin-development:plugin-architecture
@@ -350,7 +350,7 @@ Skill: plan-marshall:dev-general-practices
 
 These provide architecture principles and non-prompting tool usage patterns.
 
-#### Step 1: Load Reference Guide
+#### Step 2: Load Reference Guide
 
 ```
 Read: references/orchestration-compliance.md
@@ -362,13 +362,13 @@ This contains:
 - Anti-skip protections
 - Post-fix verification requirements
 
-#### Step 2: Validate Command
+#### Step 3: Validate Command
 
 Verify command is a diagnose command:
 - Check name contains "diagnose"
 - Verify it processes bundles
 
-#### Step 3: Analyze Current Implementation
+#### Step 4: Analyze Current Implementation
 
 Read command file and check for:
 - Bundle iteration pattern
@@ -376,7 +376,7 @@ Read command file and check for:
 - Stop points
 - Verification gates
 
-#### Step 4: Apply Compliance Patterns
+#### Step 5: Apply Compliance Patterns
 
 Using Edit tool, add or update:
 - Bundle-by-bundle iteration (Step 5)
@@ -384,7 +384,7 @@ Using Edit tool, add or update:
 - Mandatory completion checklist (10 items)
 - Post-fix verification with git status
 
-#### Step 5: Verify Compliance
+#### Step 6: Verify Compliance
 
 If `verify=true`:
 - Check all required patterns present

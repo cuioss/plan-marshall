@@ -133,11 +133,9 @@ python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture m
 
 ---
 
-## Step 5: Enrich Each Module
+## Step 5: Read Documentation & Determine Purpose
 
-**For each module in the list**, execute Steps 5a-5d:
-
-### Step 5a: Read Documentation & Determine Purpose
+**For each module in the list**, execute Steps 5-8:
 
 Get raw discovered data for the module:
 
@@ -165,7 +163,7 @@ Analyze to determine `purpose` value:
 | Only test files | `integration-tests` |
 | JMH benchmarks | `benchmark` |
 
-### Step 5b: Write Responsibility
+## Step 6: Write Responsibility
 
 Write 1-3 sentences describing what the module does, with reasoning:
 
@@ -178,7 +176,7 @@ python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
   --purpose-reasoning "{signal}"
 ```
 
-### Step 5c: Key Packages & Dependencies
+## Step 7: Key Packages & Dependencies
 
 Select 2-4 architecturally significant packages per module:
 
@@ -206,7 +204,7 @@ python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
   --reasoning "{why these are architecturally significant}"
 ```
 
-### Step 5d: Resolve Skill Domains
+## Step 8: Resolve Skill Domains
 
 Get applicable domains for this module:
 
@@ -256,7 +254,7 @@ Profile resolution order: `--profiles` flag > `marshal.json active_profiles` > e
 
 ---
 
-## Step 6: Verify & Summarize
+## Step 9: Verify & Summarize
 
 After all modules are enriched, verify completeness:
 
@@ -271,7 +269,7 @@ Check that:
 - Every module has `key_dependencies` identified (unless no compile-scope deps)
 - Every module has `skills_by_profile` with at least `implementation` and `module_testing`
 
-If any module is incomplete → return to Step 5 for that module.
+If any module is incomplete → return to Steps 5-8 for that module.
 
 Display completion summary:
 

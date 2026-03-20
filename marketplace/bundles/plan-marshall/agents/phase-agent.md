@@ -19,13 +19,13 @@ Generic thin wrapper — loads a caller-specified skill and delegates all work t
 | `content` | string | No | Content for phase-1-init |
 | `task_number` | number | No | Task number for phase-5-execute |
 
-## Step 0: Load Foundational Practices
+## Step 1: Load Foundational Practices
 
 ```
 Skill: plan-marshall:dev-general-practices
 ```
 
-## Step 1: Load Skill (MANDATORY)
+## Step 2: Load Skill (MANDATORY)
 
 Load the caller-specified skill using the Skill tool BEFORE any other action:
 
@@ -51,7 +51,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   work --plan-id {plan_id} --level INFO --message "[SKILL] (plan-marshall:phase-agent) Loaded {skill}"
 ```
 
-## Step 2: Execute
+## Step 3: Execute
 
 Follow the loaded skill's workflow with all provided parameters. The skill contains the complete logic — do not add, skip, or modify steps. Return the skill's output verbatim.
 

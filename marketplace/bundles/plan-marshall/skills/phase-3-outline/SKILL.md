@@ -34,7 +34,7 @@ user-invocable: false
 ## Workflow Overview
 
 ```
-Step 2: Load Inputs → Step 3: Detect Change Type → Step 4: Route by Track → {Simple: Steps 5-7 | Complex: Steps 8-10} → Step 11: Return
+Step 2: Load Inputs → Step 3: Recipe Detection → Step 4: Detect Change Type → Step 5: Route by Track → {Simple: Steps 6-8 | Complex: Steps 9-11} → Step 12: Return
 ```
 
 ---
@@ -91,9 +91,9 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-3-outline:qgate) Finding {hash_id} [{source}]: taken_into_account — {resolution_detail}"
 ```
 
-Then continue with normal Steps 2..13 (phase re-runs with corrections applied).
+Then continue with normal Steps 2..12 (phase re-runs with corrections applied).
 
-If no unresolved findings: Continue with normal Steps 2..13 (first entry).
+If no unresolved findings: Continue with normal Steps 2..12 (first entry).
 
 ---
 
@@ -174,7 +174,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 ---
 
-## Step 2.5: Recipe Detection
+## Step 3: Recipe Detection
 
 **Purpose**: Recipe-sourced plans skip change-type detection and use the recipe skill directly for discovery, analysis, and deliverable creation.
 
@@ -256,13 +256,13 @@ Skill: {recipe_skill}
 
 The recipe skill handles: discovery, deliverable creation, and solution outline writing.
 
-6. **Skip Steps 3-10 and Q-Gate**. Jump directly to **Step 11: Write Solution and Return**. Recipe deliverables are deterministic architecture-to-deliverable mappings — Q-Gate checks (request alignment, assessment coverage, missing coverage) validate artifacts that recipes never create. File existence is verified at execution time.
+6. **Skip Steps 4-11 and Q-Gate**. Jump directly to **Step 12: Write Solution and Return**. Recipe deliverables are deterministic architecture-to-deliverable mappings — Q-Gate checks (request alignment, assessment coverage, missing coverage) validate artifacts that recipes never create. File existence is verified at execution time.
 
-**If `plan_source != recipe` or field not found**: Continue with normal Step 3.
+**If `plan_source != recipe` or field not found**: Continue with normal Step 4.
 
 ---
 
-## Step 3: Detect Change Type
+## Step 4: Detect Change Type
 
 **Purpose**: Determine the change type for agent routing.
 
@@ -303,18 +303,18 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 ---
 
-## Step 4: Route by Track
+## Step 5: Route by Track
 
 Based on `track` from Step 2:
 
-If track == simple → go to Step 5. If track == complex → go to Step 8.
+If track == simple → go to Step 6. If track == complex → go to Step 9.
 
 ---
 
-<!-- ─── Simple Track (Steps 5-7) ─── -->
+<!-- ─── Simple Track (Steps 6-8) ─── -->
 <!-- For localized changes where targets are already known from module_mapping. -->
 
-## Step 5: Validate Targets (Simple Track)
+## Step 6: Validate Targets (Simple Track)
 
 **Purpose**: Verify target files/modules exist and match domain.
 
@@ -338,7 +338,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 ---
 
-## Step 6: Create Deliverables (Simple Track)
+## Step 7: Create Deliverables (Simple Track)
 
 **Purpose**: Direct mapping from module_mapping to deliverables.
 
@@ -401,7 +401,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 ---
 
-## Step 7: Simple Q-Gate
+## Step 8: Simple Q-Gate
 
 **Purpose**: Lightweight verification for simple track.
 
@@ -409,7 +409,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 For each deliverable:
 
-1. **Target exists?** - Already validated in Step 5
+1. **Target exists?** - Already validated in Step 6
 2. **Deliverable aligns with request intent?** - Compare deliverable scope with request
 
 ### Log Q-Gate Result
@@ -419,14 +419,14 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-3-outline:qgate) Simple: Deliverable {N}: pass"
 ```
 
-→ Go to Step 11.
+→ Go to Step 12.
 
 ---
 
-<!-- ─── Complex Track (Steps 8-10) ─── -->
+<!-- ─── Complex Track (Steps 9-11) ─── -->
 <!-- For codebase-wide changes requiring discovery and analysis. -->
 
-## Step 8: Follow Outline-Change-Type Skill (Complex Track)
+## Step 9: Follow Outline-Change-Type Skill (Complex Track)
 
 **Purpose**: Follow the `workflow-outline-change-type` skill workflow inline to handle discovery, analysis, and deliverable creation. The skill routes to domain-specific or generic sub-skill instructions based on change_type and domain.
 
@@ -452,7 +452,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 ---
 
-## Step 9: Skill Workflow Completion (Complex Track)
+## Step 10: Skill Workflow Completion (Complex Track)
 
 **Purpose**: Skill workflow returns minimal status; data is in sinks.
 
@@ -477,7 +477,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 ---
 
-## Step 10: Q-Gate Verification (Complex Track)
+## Step 11: Q-Gate Verification (Complex Track)
 
 **Purpose**: Verify skill output meets quality standards.
 
@@ -525,14 +525,14 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 The Q-Gate agent writes findings to `artifacts/qgate-3-outline.jsonl`. The phase returns `qgate_pending_count` to the orchestrator:
 
-- If `qgate_pending_count == 0`: Continue to Step 11
+- If `qgate_pending_count == 0`: Continue to Step 12
 - If `qgate_pending_count > 0`: Return with `qgate_pending_count` in output. The orchestrator auto-loops (re-enters this phase) until Q-Gate passes clean. No user prompt — Q-Gate findings are objective quality failures that must be self-corrected
 
-→ Go to Step 11.
+→ Go to Step 12.
 
 ---
 
-## Step 11: Write Solution and Return
+## Step 12: Write Solution and Return
 
 ---
 
@@ -568,7 +568,7 @@ python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-sol
   update --plan-id {plan_id}
 ```
 
-**Note**: Complex Track - skill already wrote solution_outline.md in Step 9.
+**Note**: Complex Track - skill already wrote solution_outline.md in Step 10.
 
 ---
 

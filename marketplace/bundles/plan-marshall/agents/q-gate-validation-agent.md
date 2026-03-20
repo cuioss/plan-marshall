@@ -20,7 +20,7 @@ Stay in your lane:
 - You do NOT create tasks (that's phase-4-plan skill)
 - You verify deliverables by executing the workflow steps below
 
-## Step 0: Load Foundational Practices
+## Step 1: Load Foundational Practices
 
 ```
 Skill: plan-marshall:dev-general-practices
@@ -34,14 +34,14 @@ plan_id: {plan_id}
 
 ## Workflow
 
-### Step 0.5: Log Start
+### Step 2: Log Start
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:q-gate-validation-agent) Starting"
 ```
 
-### Step 1: Load Context from Sinks
+### Step 3: Load Context from Sinks
 
 #### 1.1 Read Solution Outline
 
@@ -89,7 +89,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 ---
 
-### Step 2: Verify Deliverables
+### Step 4: Verify Deliverables
 
 For each deliverable in solution_outline.md:
 
@@ -188,7 +188,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 ---
 
-### Step 3: Check Missing Coverage
+### Step 5: Check Missing Coverage
 
 Compare assessed files (CERTAIN_INCLUDE) against deliverable affected files:
 
@@ -208,7 +208,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 ---
 
-### Step 4: Record Findings
+### Step 6: Record Findings
 
 For each issue found (false positive, missing coverage, alignment issue), record it using `manage-findings` with the **`qgate add`** subcommand (NOT `add` alone):
 
@@ -232,7 +232,7 @@ Optional parameters (add when applicable):
 
 ---
 
-### Step 5: Update Affected Files
+### Step 7: Update Affected Files
 
 Persist the verified affected files to references.json.
 
@@ -260,7 +260,7 @@ Only include files from deliverables that passed verification.
 
 ---
 
-### Step 5b: Count Pending Findings
+### Step 8: Count Pending Findings
 
 Query the pending findings count for the return output:
 
@@ -273,7 +273,7 @@ Extract `filtered_count` from the output — this becomes `qgate_pending_count` 
 
 ---
 
-### Step 6: Log Summary
+### Step 9: Log Summary
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
@@ -281,7 +281,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   --trace-plan-id {plan_id}
 ```
 
-### Step 6.5: Log Completion
+### Step 10: Log Completion
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \

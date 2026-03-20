@@ -82,18 +82,18 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-4-plan:qgate) Finding {hash_id} [{source}]: taken_into_account — {resolution_detail}"
 ```
 
-Then continue with normal Steps 2..9 (phase re-runs with corrections applied).
+Then continue with normal Steps 3..11 (phase re-runs with corrections applied).
 
-If no unresolved findings: Continue with normal Steps 2..9 (first entry).
+If no unresolved findings: Continue with normal Steps 3..11 (first entry).
 
-### Step 1.5: Log Phase Start
+### Step 2: Log Phase Start
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-4-plan) Starting plan phase"
 ```
 
-### Step 2: Load All Deliverables
+### Step 3: Load All Deliverables
 
 Read the solution document to get all deliverables with metadata:
 
@@ -112,14 +112,14 @@ For each deliverable, extract:
 - `affected_files`
 - `verification`
 
-### Step 3: Build Dependency Graph
+### Step 4: Build Dependency Graph
 
 Parse `depends` field for each deliverable:
 - Identify independent deliverables (`depends: none`)
 - Identify dependency chains
 - Detect cycles (INVALID - reject with error)
 
-### Step 4: Create Tasks from Profiles (1:N Mapping)
+### Step 5: Create Tasks from Profiles (1:N Mapping)
 
 For each deliverable, create one task per profile in its `profiles` list:
 
@@ -191,7 +191,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   work --plan-id {plan_id} --level INFO --message "[SKILL] (plan-marshall:phase-4-plan) Resolved skills for TASK-{N} from {module}.{profile}: defaults=[{defaults}] optionals_selected=[{optionals}]"
 ```
 
-### Step 5: Create Tasks
+### Step 6: Create Tasks
 
 For each deliverable, create tasks using `--content` with `\n`-encoded TOON (one task per profile):
 
@@ -220,7 +220,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 - `verification.commands` = deliverable's `Verification: Command` value(s)
 - `verification.criteria` = deliverable's `Verification: Criteria` value
 
-The outline phase is the single source of truth for verification commands — this phase performs ZERO resolution. If a deliverable arrives without a Verification Command, this is an outline defect. Record a Q-Gate finding in Step 7 instead of resolving it here:
+The outline phase is the single source of truth for verification commands — this phase performs ZERO resolution. If a deliverable arrives without a Verification Command, this is an outline defect. Record a Q-Gate finding in Step 9 instead of resolving it here:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
@@ -229,7 +229,7 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
   --detail "Outline must provide Verification Command and Criteria for every deliverable"
 ```
 
-### Step 5.5: Create Holistic Verification Tasks
+### Step 7: Create Holistic Verification Tasks
 
 After creating per-deliverable tasks, create plan-level verification tasks that depend on ALL previously created tasks.
 
@@ -263,7 +263,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   work --plan-id {plan_id} --level INFO --message "[ARTIFACT] (plan-marshall:phase-4-plan) Created holistic verification TASK-{N}: {title}"
 ```
 
-### Step 6: Determine Execution Order
+### Step 8: Determine Execution Order
 
 Compute parallel execution groups:
 
@@ -279,7 +279,7 @@ execution_order:
 - Tasks depending on same prior tasks can run in parallel
 - Sequential dependencies remain sequential
 
-### Step 7: Q-Gate Verification Checks
+### Step 9: Q-Gate Verification Checks
 
 **Purpose**: Verify created tasks meet quality standards.
 
@@ -310,7 +310,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-4-plan:qgate) Verification: {passed_count} passed, {flagged_count} flagged"
 ```
 
-### Step 8: Record Issues as Lessons
+### Step 10: Record Issues as Lessons
 
 On ambiguous deliverable or planning issues:
 
@@ -324,7 +324,7 @@ python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lesson add \
 
 **Valid categories**: `bug`, `improvement`, `anti-pattern`
 
-### Step 9: Transition Phase and Return Results
+### Step 11: Transition Phase and Return Results
 
 **Transition phase**:
 

@@ -70,7 +70,7 @@ Extract key fields:
 - `verification`: How to verify success
 - `depends_on`: Dependencies (should be complete)
 
-### Step 1.5: Read Compatibility Strategy
+### Step 2: Read Compatibility Strategy
 
 Read the compatibility approach from marshal.json project configuration:
 
@@ -87,7 +87,7 @@ Extract `compatibility` from the output. Apply throughout all subsequent steps:
 - **deprecation**: Keep old APIs/methods with `@Deprecated` markers. Add new code alongside old. Provide migration notes in commit messages.
 - **smart_and_ask**: For each change that could break consumers, evaluate impact. If uncertain, ask user via AskUserQuestion before proceeding.
 
-### Step 2: Understand Context
+### Step 3: Understand Context
 
 Before implementing, understand the codebase context:
 
@@ -110,7 +110,7 @@ Read {related_file}
 - Understand project conventions
 - Identify dependencies and integration points
 
-### Step 3: Plan Implementation
+### Step 4: Plan Implementation
 
 For each step (file path), determine:
 - What changes are needed
@@ -120,7 +120,7 @@ For each step (file path), determine:
 
 **Note**: Steps are executed sequentially. No explicit "in_progress" marker needed - proceed directly to implementation.
 
-### Step 4: Implement Changes
+### Step 5: Implement Changes
 
 For each step (file path):
 
@@ -144,7 +144,7 @@ Edit {file_path}
 - Add proper logging, error handling
 - Include documentation comments
 
-### Step 5: Mark Step Complete
+### Step 6: Mark Step Complete
 
 After each step:
 ```bash
@@ -155,7 +155,7 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks finalize
   --outcome done
 ```
 
-### Step 6: Run Verification
+### Step 7: Run Verification
 
 After all steps complete, run task verification:
 
@@ -181,7 +181,7 @@ python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
   --trace-plan-id {plan_id}
 ```
 
-### Step 7: Handle Verification Results
+### Step 8: Handle Verification Results
 
 **If verification passes**:
 ```bash
@@ -207,7 +207,7 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks update \
 ```
 Note: Record details in work.log using manage-log.
 
-### Step 8: Record Lessons
+### Step 9: Record Lessons
 
 On issues or unexpected patterns:
 ```bash
@@ -220,7 +220,7 @@ python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lesson add \
 
 **Valid categories**: `bug`, `improvement`, `anti-pattern`
 
-### Step 9: Return Results
+### Step 10: Return Results
 
 ```toon
 status: success

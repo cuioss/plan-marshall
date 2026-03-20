@@ -9,7 +9,7 @@ model: sonnet
 
 Analyzes a request to detect its change type using LLM reasoning. Persists the detected change type to status.json metadata.
 
-## Step 0: Load Foundational Practices
+## Step 1: Load Foundational Practices
 
 ```
 Skill: plan-marshall:dev-general-practices
@@ -36,14 +36,14 @@ The 6 fixed change types (in priority order):
 
 ## Workflow
 
-### Step 0.5: Log Start
+### Step 2: Log Start
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:detect-change-type-agent) Starting"
 ```
 
-### Step 1: Read Request
+### Step 3: Read Request
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-documents request read \
@@ -53,7 +53,7 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-
 
 If clarified_request is empty, fall back to original_input section.
 
-### Step 2: Analyze Request Intent
+### Step 4: Analyze Request Intent
 
 Analyze the request content against the 6 change types. Consider:
 
@@ -63,7 +63,7 @@ Analyze the request content against the 6 change types. Consider:
 4. **Behavioral change** - Is functionality changing or just structure?
 5. **Request goal** - Information gathering vs. code changes vs. verification?
 
-### Step 3: Determine Change Type
+### Step 5: Determine Change Type
 
 Select the SINGLE change type that best matches the request intent.
 
@@ -105,7 +105,7 @@ ELSE:
   change_type = "enhancement"
 ```
 
-### Step 4: Persist to Status
+### Step 6: Persist to Status
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage_status metadata \
@@ -115,14 +115,14 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status metada
   --value {change_type}
 ```
 
-### Step 5: Log Decision
+### Step 7: Log Decision
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:detect-change-type-agent) Detected: {change_type} (confidence: {confidence})"
 ```
 
-### Step 6: Log Completion
+### Step 8: Log Completion
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \

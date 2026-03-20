@@ -34,7 +34,7 @@ Contains: Delegation patterns for builds, quality checks, PR creation
 
 ## Execution Loop
 
-### Step 0: Get Routing Context (Once at start)
+### Step 1: Get Routing Context (Once at start)
 
 Get current phase, skill routing, and progress in a single call:
 
@@ -61,7 +61,7 @@ phases:
 
 Use `current_phase` for logging, `skill` for dynamic routing, and `completed_phases/total_phases` for progress display.
 
-### Step 0.1: Read Commit Strategy (Once at start)
+### Step 2: Read Commit Strategy (Once at start)
 
 Cache the commit strategy for the entire execute loop:
 
@@ -72,7 +72,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 
 Extract `commit_strategy` from output. Valid values: `per_deliverable`, `per_plan`, `none`.
 
-### Step 0.5: Log Phase Start (Once per phase)
+### Step 3: Log Phase Start (Once per phase)
 
 At the start of execute or finalize phase:
 
@@ -83,7 +83,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 For each task in current phase:
 
-### Step 1: Locate Task with Context
+### Step 4: Locate Task with Context
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks next \
@@ -93,14 +93,14 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks next \
 
 Returns next task with status `pending` or `in_progress`, including embedded goal context (title, body) for immediate use without additional script calls.
 
-### Step 2: Execute Steps
+### Step 5: Execute Steps
 
 For each step in task's `steps[]` array:
 1. Parse the step text
 2. Execute the action (delegate if specified)
 3. Mark step complete via `manage-tasks:finalize-step`
 
-### Step 3: Mark Step Complete
+### Step 6: Mark Step Complete
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks finalize-step \
@@ -110,7 +110,7 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks finalize
   --outcome done
 ```
 
-### Step 3.5: Log Task Completion
+### Step 7: Log Task Completion
 
 After each task completes:
 
@@ -119,9 +119,9 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   work --plan-id {plan_id} --level INFO --message "[OUTCOME] (plan-marshall:phase-5-execute) Completed {task_id}: {task_title} ({steps_completed} steps)"
 ```
 
-### Step 3.6: Conditional Per-Deliverable Commit
+### Step 8: Conditional Per-Deliverable Commit
 
-If `commit_strategy == per_deliverable` (cached from Step 0.1):
+If `commit_strategy == per_deliverable` (cached from Step 2):
 
 1. **Check dependency chain**: Does any other pending/in-progress task have `depends_on` pointing to the just-completed task?
    - **YES** → Skip commit (a downstream task still needs to run)
@@ -144,17 +144,17 @@ If `commit_strategy == per_deliverable` (cached from Step 0.1):
 
 If `commit_strategy` is `per_plan` or `none` → Skip this step entirely.
 
-### Step 3.7: Triage Verification Failure (verification tasks only)
+### Step 9: Triage Verification Failure (verification tasks only)
 
 **Only applies** when a `profile=verification` task completes with `verification.passed: false` / `next_action: requires_triage`.
 
-**3.7a**: Read `verify_iteration` counter from task metadata (default: 0).
+**9a**: Read `verify_iteration` counter from task metadata (default: 0).
 
-**3.7b**: If `verify_iteration >= verification_max_iterations` (from phase-5-execute config, default 5) → mark task `blocked`, log, continue to Step 4.
+**9b**: If `verify_iteration >= verification_max_iterations` (from phase-5-execute config, default 5) → mark task `blocked`, log, continue to Step 10.
 
-**3.7c**: Load domain triage extension via extension-api (`provides_triage()`).
+**9c**: Load domain triage extension via extension-api (`provides_triage()`).
 
-**3.7d**: Persist findings to Q-Gate:
+**9d**: Persist findings to Q-Gate:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
   qgate add --plan-id {plan_id} --phase 5-execute \
@@ -162,22 +162,22 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
   --message "{finding_message}" --detail "{file}:{line}"
 ```
 
-**3.7e**: Triage each finding:
+**9e**: Triage each finding:
 - **FIX** → create fix task (`origin: fix`, `profile: implementation`, depends on nothing)
 - **SUPPRESS** → log suppression, resolve finding
 - **ACCEPT** → log as technical debt, resolve finding
 
-**3.7f**: If fix tasks created → increment `verify_iteration` in task metadata, reset verification task to `pending`, continue execution loop (fix tasks will execute before the re-queued verification task via `depends_on`).
+**9f**: If fix tasks created → increment `verify_iteration` in task metadata, reset verification task to `pending`, continue execution loop (fix tasks will execute before the re-queued verification task via `depends_on`).
 
-**3.7g**: If no fix tasks → mark verification task complete (all findings suppressed/accepted), continue to Step 4.
+**9g**: If no fix tasks → mark verification task complete (all findings suppressed/accepted), continue to Step 10.
 
-### Step 4: Next Task or Phase
+### Step 10: Next Task or Phase
 
 - If more tasks in phase → Continue to next task
 - If phase complete → Log phase outcome and auto-transition to next phase
 - If all phases complete → Mark plan complete
 
-### Step 5: Log Phase Completion (When phase completes)
+### Step 11: Log Phase Completion (When phase completes)
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \

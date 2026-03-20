@@ -110,7 +110,7 @@ For each URL in the top 10-15 list:
 - Count irrelevant results
 - Record execution start time (timestamp)
 
-### Step 2.5: Subtopic Deep Dive (Optional)
+### Step 3: Subtopic Deep Dive (Optional)
 
 **Trigger Condition**: If a finding appears in 3+ sources but lacks sufficient detail (missing: code examples, step-by-step implementation guide, specific version/configuration details, or concrete measurements/thresholds)
 
@@ -123,7 +123,7 @@ For each URL in the top 10-15 list:
 
 **Note**: Only perform subtopic deep dives if they add significant value (finding appears in HIGH confidence tier AND lacks actionable details, OR finding is cited by ≥5 sources but implementation unclear).
 
-### Step 3: Aggregate and Analyze Findings
+### Step 4: Aggregate and Analyze Findings
 
 **IMPORTANT**: Use ultrathink at the start of this step for comprehensive analysis.
 
@@ -173,7 +173,7 @@ Use both source count AND quality scores:
 
 **No Interpretation**: Do not synthesize, infer, or create new practices. Only report what sources explicitly state.
 
-### Step 3.5: Cross-Reference Validation
+### Step 5: Cross-Reference Validation
 
 **IMPORTANT**: Check for contradictions and conflicts across sources.
 
@@ -191,7 +191,7 @@ Use both source count AND quality scores:
 - "X improves performance" vs "X degrades performance"
 - "Best practice is A" vs "Best practice is B (opposite of A)"
 
-### Step 4: Structure Research Results
+### Step 6: Structure Research Results
 
 **Timing**: Record execution end time (timestamp) at the start of this step.
 

@@ -57,13 +57,13 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-2-refine:qgate) Finding {hash_id} [{source}]: taken_into_account — {resolution_detail}"
 ```
 
-Then continue with normal Steps 2..12 (phase re-runs with corrections applied).
+Then continue with normal Steps 4..14 (phase re-runs with corrections applied).
 
-If no unresolved findings: Continue with normal Steps 2..12 (first entry).
+If no unresolved findings: Continue with normal Steps 4..14 (first entry).
 
 ---
 
-## Step 1.5: Log Phase Start
+## Step 2: Log Phase Start
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
@@ -72,7 +72,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 ---
 
-## Step 1.6: Recipe Shortcut
+## Step 3: Recipe Shortcut
 
 **Purpose**: Recipe-sourced plans skip quality analysis and iterative refinement. They only need scope selection.
 
@@ -111,7 +111,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-2-refine) Recipe plan — skipping quality analysis, setting confidence=100, track=complex"
 ```
 
-4. **Skip Steps 2-12**. Transition phase and return.
+4. **Skip Steps 4-14**. Transition phase and return.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-lifecycle:manage-lifecycle transition \
@@ -133,11 +133,11 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 Return success. Phase 3 will handle recipe-specific outline creation.
 
-**If `plan_source != recipe` or field not found**: Continue with normal Steps 2..12.
+**If `plan_source != recipe` or field not found**: Continue with normal Steps 4..14.
 
 ---
 
-## Step 2: Load Confidence Threshold
+## Step 4: Load Confidence Threshold
 
 Read the confidence threshold from project configuration.
 
@@ -155,11 +155,11 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   work --plan-id {plan_id} --level INFO --message "[REFINE:2] (plan-marshall:phase-2-refine) Using confidence threshold: {confidence_threshold}%"
 ```
 
-Store as `confidence_threshold` for use in Step 8.
+Store as `confidence_threshold` for use in Step 10.
 
 ---
 
-## Step 3: Load Compatibility Strategy
+## Step 5: Load Compatibility Strategy
 
 Read the compatibility approach from project configuration and persist to references.json in Step 11.
 
@@ -185,11 +185,11 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-2-refine) Config: compatibility={compatibility}"
 ```
 
-Store as `compatibility` and `compatibility_description` (the long description from the table above) for use in Step 11 return output.
+Store as `compatibility` and `compatibility_description` (the long description from the table above) for use in Step 13 return output.
 
 ---
 
-## Step 4: Load Architecture Context
+## Step 6: Load Architecture Context
 
 Query project architecture BEFORE any analysis. Architecture data is pre-computed and compact (~500 tokens).
 
@@ -219,7 +219,7 @@ From the `architecture info` output, extract and store:
 | `module_names` | `modules[].name` | Step 7 Module Mapping |
 | `module_purposes` | `modules[].purpose` | Step 7 Feasibility Check |
 
-**Store as** `arch_context` for use in Steps 6-7.
+**Store as** `arch_context` for use in Steps 8-9.
 
 **Example extraction**:
 ```
@@ -244,7 +244,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 ---
 
-## Step 5: Load Request
+## Step 7: Load Request
 
 Load the request document.
 
@@ -270,13 +270,13 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 ---
 
-## Step 6: Analyze Request Quality
+## Step 8: Analyze Request Quality
 
 Evaluate the request against five quality dimensions.
 
 ### Correctness
 
-**Check**: Are requirements technically valid? **Use `arch_context` from Step 4**.
+**Check**: Are requirements technically valid? **Use `arch_context` from Step 6**.
 
 | Aspect | Check | Architecture Data Used |
 |--------|-------|------------------------|
@@ -375,15 +375,15 @@ AMBIGUITY: UNCLEAR
 
 ---
 
-## Step 7: Analyze Request in Architecture Context
+## Step 9: Analyze Request in Architecture Context
 
-With `arch_context` from Step 4, analyze how the request maps to the codebase.
+With `arch_context` from Step 6, analyze how the request maps to the codebase.
 
 ### Module Mapping
 
 **Question**: Which modules are affected by this request?
 
-**Initial mapping** (use `arch_context.modules` from Step 4):
+**Initial mapping** (use `arch_context.modules` from Step 6):
 
 For each requirement, identify candidate modules:
 - Does the request mention specific modules? → Check against `arch_context.modules[].name`
@@ -533,11 +533,11 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 ---
 
-## Step 8: Evaluate Confidence
+## Step 10: Evaluate Confidence
 
-Aggregate findings from Steps 6-7 into confidence score.
+Aggregate findings from Steps 8-9 into confidence score.
 
-If confidence >= threshold → go to Step 11. Otherwise continue.
+If confidence >= threshold → go to Step 13. Otherwise continue.
 
 ### Confidence Calculation
 
@@ -548,7 +548,7 @@ If confidence >= threshold → go to Step 11. Otherwise continue.
 | Consistency | 20% | 100 if PASS, 0 if CONFLICT |
 | Non-Duplication | 10% | 100 if PASS, 80 if REDUNDANT |
 | Ambiguity | 20% | 100 if PASS, 0 if UNCLEAR |
-| Module Mapping | 10% | Use confidence from Step 7 |
+| Module Mapping | 10% | Use confidence from Step 9 |
 
 **Confidence = weighted sum**
 
@@ -557,11 +557,11 @@ If confidence >= threshold → go to Step 11. Otherwise continue.
 ```
 IF confidence >= confidence_threshold:
   Log: "[REFINE:8] Request refinement complete. Confidence: {confidence}%"
-  CONTINUE to Step 11 (Persist and Return Results)
+  CONTINUE to Step 13 (Persist and Return Results)
 
 ELSE:
   Log: "[REFINE:8] Request needs clarification. Confidence: {confidence}%"
-  CONTINUE to Step 9
+  CONTINUE to Step 11
 ```
 
 **Log**:
@@ -572,9 +572,9 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 ---
 
-## Step 9: Clarify with User
+## Step 11: Clarify with User
 
-For each issue found in Steps 6-7, formulate a clarification question.
+For each issue found in Steps 8-9, formulate a clarification question.
 
 ### Question Formulation
 
@@ -612,7 +612,7 @@ AskUserQuestion:
 
 ---
 
-## Step 10: Update Request
+## Step 12: Update Request
 
 After receiving user answers, update request.md with clarifications.
 
@@ -667,11 +667,11 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   work --plan-id {plan_id} --level INFO --message "[REFINE:10] (plan-marshall:phase-2-refine) Updated request with {N} clarifications. Returning to analysis."
 ```
 
-Go back to Step 6.
+Go back to Step 8.
 
 ---
 
-## Step 11: Persist and Return Results
+## Step 13: Persist and Return Results
 
 When confidence reaches threshold, persist results to sinks and return minimal status.
 
@@ -689,12 +689,12 @@ python3 .plan/execute-script.py plan-marshall:manage-files:manage-files write \
 ```
 
 **Note**: Track, scope, and compatibility are NOT persisted to references.json:
-- **Track/scope**: Already logged to decision.log (Step 7, Step 11)
+- **Track/scope**: Already logged to decision.log (Step 9, Step 13)
 - **Compatibility**: Read directly from marshal.json by consumers
 
 ### Log Decisions (with duplicate guard)
 
-**Note**: Track decision was already logged in Step 7. Only log scope and domains here if this is the first successful completion (iteration_count == 1 or first time reaching Step 11).
+**Note**: Track decision was already logged in Step 9. Only log scope and domains here if this is the first successful completion (iteration_count == 1 or first time reaching Step 13).
 
 **Log to decision.log** (scope decision - only on first completion):
 ```bash
@@ -773,7 +773,7 @@ If `qgate_pending_count > 0`, the orchestrator (planning.md) decides whether to 
 
 ---
 
-## Step 12: Transition Phase
+## Step 14: Transition Phase
 
 The phase transitions from refine → outline after confidence reaches the threshold:
 

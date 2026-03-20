@@ -10,7 +10,7 @@ This skill provides structure guidelines, examples, and operations for `solution
 
 ## When to Load This Skill
 
-Load this skill in Step 0 when:
+Load this skill in Step 1 when:
 - Creating a solution outline (via `phase-3-outline` skill)
 - Reviewing or updating an existing solution outline
 - Validating solution document structure
@@ -114,7 +114,7 @@ Examples provide starting points for different task categories:
 
 ## Writing the Solution Document
 
-### Step 0: Load Project Architecture
+### Step 1: Load Project Architecture
 
 Load project architecture knowledge via the `plan-marshall:manage-architecture` skill:
 
@@ -141,21 +141,21 @@ Use the returned structure for:
 | `modules.{name}.insights` | Leverage learned knowledge |
 | `internal_dependencies` | Know what depends on what |
 
-### Step 1: Analyze Request
+### Step 2: Analyze Request
 
 Read the request document to understand:
 - What is being requested
 - Scope and constraints
 - Success criteria
 
-### Step 2: Design Architecture
+### Step 3: Design Architecture
 
 Before writing, determine:
 - Components involved
 - Dependencies between components
 - Execution order
 
-### Step 3: Create Diagram
+### Step 4: Create Diagram
 
 Draw ASCII diagram showing:
 - New components (boxed)
@@ -163,7 +163,7 @@ Draw ASCII diagram showing:
 - Dependencies (arrows)
 - Package/file structure
 
-### Step 4: Write and Validate Document
+### Step 5: Write and Validate Document
 
 Use the resolve-path → Write → validate pattern:
 

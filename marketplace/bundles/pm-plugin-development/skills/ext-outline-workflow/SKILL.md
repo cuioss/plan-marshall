@@ -8,7 +8,7 @@ user-invocable: false
 
 Shared workflow steps for plugin development outline, loaded by the `workflow-outline-change-type` skill when the domain is `plan-marshall-plugin-dev`. Change-type-specific instructions are in `standards/change-{type}.md`.
 
-## Step 0: Load Foundational Practices
+## Step 1: Load Foundational Practices
 
 ```
 Skill: plan-marshall:dev-general-practices

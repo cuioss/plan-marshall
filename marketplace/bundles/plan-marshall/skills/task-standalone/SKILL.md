@@ -42,11 +42,11 @@ Skill: plan-marshall:manage-memories
 
 ## Workflow
 
-### Step 0: Process Handoff Input
+### Step 1: Process Handoff Input
 
 If `handoff` parameter provided: Parse JSON, extract artifacts/decisions/constraints, load memory refs.
 
-### Step 1: Determine Mode
+### Step 2: Determine Mode
 
 ```
 If task matches /^\d+$/ or "github.com/*/issues/" → FULL mode (Review → Plan → Execute)
@@ -54,7 +54,7 @@ If quick=true → QUICK mode (Execute only)
 Otherwise → PLAN mode (Plan → Execute)
 ```
 
-### Step 2: Check Memory for Pending Workflow
+### Step 3: Check Memory for Pending Workflow
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-memories:manage-memory list --category handoffs
@@ -76,7 +76,7 @@ AskUserQuestion:
       multiSelect: false
 ```
 
-### Step 3: Execute Mode-Specific Workflow
+### Step 4: Execute Mode-Specific Workflow
 
 **FULL**: Load issue (via `tools-integration-ci:issue-view`), Review requirements, Plan implementation, Execute tasks, save progress to memory.
 
@@ -84,19 +84,19 @@ AskUserQuestion:
 
 **QUICK**: Execute task directly.
 
-### Step 4: Verify Implementation
+### Step 5: Verify Implementation
 
 Auto-detect language: `pom.xml` → Java, `package.json` → JavaScript
 
 Run build verification. Iterate up to 3 times if fails.
 
-### Step 5: Commit and Push
+### Step 6: Commit and Push
 
 If verification succeeds: Commit via git workflow.
 
 If push=true: Run `git push`.
 
-### Step 6: Cleanup and Return
+### Step 7: Cleanup and Return
 
 Cleanup memory:
 ```bash
