@@ -123,8 +123,19 @@ Parse `depends` field for each deliverable:
 
 For each deliverable, create one task per profile in its `profiles` list:
 
+**Verification-Only Guard**: Before iterating profiles, check if the deliverable is verification-only (`change_type: verification` or empty `affected_files`). If so, override `D.profiles` to `[verification]` regardless of what the outline specified. Log a warning if the original profiles differed:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  decision --plan-id {plan_id} --level WARN --message "(plan-marshall:phase-4-plan) Deliverable {N} is verification-only but had profiles [{original_profiles}] — overriding to [verification]"
+```
+
 ```
 For each deliverable D:
+  IF D.change_type == verification OR D.affected_files is empty:
+    IF D.profiles != [verification]:
+      Log warning (see above)
+    D.profiles = [verification]
   1. Query architecture: module --name {D.module}
   For each profile P in D.profiles:
     IF P = verification:

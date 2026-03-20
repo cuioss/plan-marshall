@@ -55,29 +55,31 @@ def get_next_id() -> str:
     return f'{today}-001'
 
 
-def read_lesson(lesson_id: str) -> tuple[dict, str]:
-    """Read a lesson file and return (metadata, content)."""
+def read_lesson(lesson_id: str) -> tuple[dict, str, str]:
+    """Read a lesson file and return (metadata, title, body)."""
     lessons_dir = get_lessons_dir()
     path = lessons_dir / f'{lesson_id}.md'
 
     if not path.exists():
-        return {}, ''
+        return {}, '', ''
 
     content = path.read_text(encoding='utf-8')
     metadata = parse_markdown_metadata(content)
 
     # Extract title and body
     lines = content.split('\n')
+    title = ''
     body_start = 0
 
     for i, line in enumerate(lines):
         if line.startswith('# '):
+            title = line[2:].strip()
             body_start = i + 1
             break
 
     body = '\n'.join(lines[body_start:]).strip()
 
-    return metadata, body
+    return metadata, title, body
 
 
 def write_lesson(lesson_id: str, metadata: dict, title: str, body: str):
@@ -147,7 +149,7 @@ def cmd_add(args):
 
 def cmd_update(args):
     """Update lesson metadata."""
-    metadata, body = read_lesson(args.id)
+    metadata, title, body = read_lesson(args.id)
 
     if not metadata:
         output_toon({'status': 'error', 'id': args.id, 'error': 'not_found', 'message': f'Lesson {args.id} not found'})
@@ -188,17 +190,6 @@ def cmd_update(args):
         output_toon({'status': 'error', 'error': 'no_update', 'message': 'No field to update specified'})
         sys.exit(1)
 
-    # Get title from content
-    lessons_dir = get_lessons_dir()
-    path = lessons_dir / f'{args.id}.md'
-    content = path.read_text(encoding='utf-8')
-
-    title = ''
-    for line in content.split('\n'):
-        if line.startswith('# '):
-            title = line[2:].strip()
-            break
-
     write_lesson(args.id, metadata, title, body)
 
     output_toon({'status': 'success', 'id': args.id, 'field': field, 'value': value, 'previous': previous})
@@ -206,22 +197,11 @@ def cmd_update(args):
 
 def cmd_get(args):
     """Get a single lesson."""
-    metadata, body = read_lesson(args.id)
+    metadata, title, body = read_lesson(args.id)
 
     if not metadata:
         output_toon({'status': 'error', 'id': args.id, 'error': 'not_found', 'message': f'Lesson {args.id} not found'})
         sys.exit(1)
-
-    # Get title from content
-    lessons_dir = get_lessons_dir()
-    path = lessons_dir / f'{args.id}.md'
-    content = path.read_text(encoding='utf-8')
-
-    title = ''
-    for line in content.split('\n'):
-        if line.startswith('# '):
-            title = line[2:].strip()
-            break
 
     result = {
         'status': 'success',
@@ -292,7 +272,7 @@ def get_archived_dir() -> Path:
 
 def cmd_archive(args):
     """Archive a lesson: set applied=true and move to archived-lessons."""
-    metadata, body = read_lesson(args.id)
+    metadata, title, body = read_lesson(args.id)
 
     if not metadata:
         output_toon({'status': 'error', 'id': args.id, 'error': 'not_found', 'message': f'Lesson {args.id} not found'})
@@ -304,14 +284,6 @@ def cmd_archive(args):
 
     src = lessons_dir / f'{args.id}.md'
     dst = archived_dir / f'{args.id}.md'
-
-    # Get title from content
-    content = src.read_text(encoding='utf-8')
-    title = ''
-    for line in content.split('\n'):
-        if line.startswith('# '):
-            title = line[2:].strip()
-            break
 
     # Update applied status
     metadata['applied'] = 'true' if args.applied else 'false'
