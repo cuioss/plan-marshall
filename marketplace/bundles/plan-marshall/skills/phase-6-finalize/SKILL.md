@@ -261,10 +261,14 @@ After CI completes, wait for automated review bots (Gemini Code Assist, etc.) to
 Review bots trigger on CI completion but may take several minutes to analyze and post.
 
 ```bash
-REVIEW_BOT_BUFFER=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-6-finalize get --field review_bot_buffer_seconds --trace-plan-id {plan_id} 2>/dev/null \
-  | grep -oP 'value: \K\d+' || echo 300)
-sleep "${REVIEW_BOT_BUFFER}"
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-6-finalize get --field review_bot_buffer_seconds --trace-plan-id {plan_id}
+```
+
+Parse the `value` field from output, then sleep:
+
+```bash
+sleep ${REVIEW_BOT_BUFFER}
 ```
 
 ```bash
