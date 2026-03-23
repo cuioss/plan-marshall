@@ -134,11 +134,11 @@ Write(.plan/plans/{plan_id}/artifacts/pr-body.md) with PR body markdown content
 
 2. Create PR using `--body-file` to avoid shell metacharacter issues:
 ```bash
-gh pr create --repo {owner}/{repo} --head {branch} --base {base_branch} \
-  --title "{title}" --body-file .plan/plans/{plan_id}/artifacts/pr-body.md
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr create \
+  --title "{title}" --body-file .plan/plans/{plan_id}/artifacts/pr-body.md --base {base_branch}
 ```
 
-**CRITICAL**: Do NOT pass multi-line markdown through Bash arguments — neither as `gh pr create --body` nor as `manage-files write --content`. Markdown headings (`##`) after newlines in quoted strings trigger Claude Code's shell security heuristic. Always use the Write tool for the file, then reference it with `--body-file`.
+**CRITICAL**: Do NOT pass multi-line markdown through Bash `--body` arguments. Markdown headings (`##`) after newlines in quoted strings trigger Claude Code's shell security heuristic. Always use the Write tool for the file, then reference it with `--body-file`.
 
 ### Output
 

@@ -287,6 +287,10 @@ Create a pull request using config-stored command.
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr create \
     --title "Add feature X" --body "Description" --base main
+
+# Or use --body-file for multi-line markdown (avoids shell metacharacter issues):
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr create \
+    --title "Add feature X" --body-file path/to/pr-body.md --base main
 ```
 
 ### Step 2: Process Result
