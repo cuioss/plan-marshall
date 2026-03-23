@@ -28,6 +28,10 @@ from pathlib import Path
 # This constant enables consistent path construction across all scripts
 PLAN_DIR_NAME = '{{PLAN_DIR_NAME}}'
 
+# Add shared module directories to sys.path so executor-level imports can find them
+# (e.g., plan_logging imports input_validation at module level)
+{{SHARED_MODULE_DIRS}}
+
 # Import plan logging module from marketplace (named plan_logging to avoid conflict with stdlib)
 sys.path.insert(0, '{{LOGGING_DIR}}')
 from plan_logging import log_script_execution, cleanup_old_script_logs  # type: ignore[import-not-found]

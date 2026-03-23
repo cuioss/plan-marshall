@@ -121,4 +121,4 @@ Is it a style warning?
 ## Related Standards
 
 - [suppression.md](suppression.md) - How to suppress findings
-- [pm-requirements:requirements-authoring](../../requirements-authoring/SKILL.md) - Authoring standards
+- `pm-requirements:requirements-authoring` - Authoring standards

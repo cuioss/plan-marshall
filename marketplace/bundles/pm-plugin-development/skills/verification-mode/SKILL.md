@@ -407,8 +407,8 @@ When `scope: planning` is specified, apply these additional checks for planning 
 
 Load and follow the protocol from `standards/planning-compliance.md`:
 
-```bash
-Read: marketplace/bundles/pm-plugin-development/skills/verification-mode/standards/planning-compliance.md
+```
+Read standards/planning-compliance.md
 ```
 
 The protocol has **4 steps** - ALL are MANDATORY:

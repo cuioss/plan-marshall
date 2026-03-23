@@ -6,6 +6,14 @@ user-invocable: false
 
 # Interface Management Skill
 
+## Enforcement
+
+- Run scripts EXACTLY as documented using `python3 .plan/execute-script.py pm-documents:manage-interface:manage-interface ...`
+- Never skip confirmation steps for delete operations
+- Always validate interface format after creation or update
+
+---
+
 Manage Interface specifications stored in `doc/interfaces/` directory.
 
 ## Purpose
@@ -250,6 +258,6 @@ Examples:
 - `doc/interfaces/002-Event_Bus_Interface.adoc`
 - `doc/interfaces/003-Database_Schema_V2.adoc`
 
-## References
+## Related Skills
 
-- [ref-asciidoc SKILL](../ref-asciidoc/SKILL.md) - Format validation
+- `pm-documents:ref-asciidoc` - Format validation

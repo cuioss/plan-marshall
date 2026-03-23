@@ -6,6 +6,14 @@ user-invocable: false
 
 # Documentation Skill
 
+## Enforcement
+
+- Run scripts EXACTLY as documented using `python3 .plan/execute-script.py pm-documents:ref-documentation:docs ...`
+- Always load tone-and-style standards before executing content review workflows
+- Ask user before applying major content changes
+
+---
+
 Standards and workflows for content quality, tone, organization, and review orchestration of technical documentation.
 
 **Note**: This skill covers content quality and review. For AsciiDoc formatting, validation, and link verification, use `pm-documents:ref-asciidoc`.

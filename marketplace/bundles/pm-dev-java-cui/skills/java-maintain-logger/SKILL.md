@@ -30,7 +30,7 @@ If you discover issues or improvements during execution, record them:
 
 1. **Activate skill**: `Skill: plan-marshall:manage-lessons`
 2. **Record lesson** with:
-   - Component: `{type: "skill", name: "java-maintain-logger", bundle: "pm-dev-java"}`
+   - Component: `{type: "skill", name: "java-maintain-logger", bundle: "pm-dev-java-cui"}`
    - Category: bug | improvement | pattern | anti-pattern
    - Summary and detail of the finding
 
@@ -439,13 +439,13 @@ Orchestrates skill workflows and commands:
 - **Explore agent** - Violation detection and business test location
 - **/java-implement-code command** - Logging code modifications
 - **Bash** - Maven builds for verification
-- **pm-dev-java:plan-marshall-plugin skill** - Build output parsing
+- **pm-dev-java:plan-marshall-plugin skill** - Java domain extension
 - **Bash** - LogRecord discovery script and plan.md updates (scripts from skill)
 
 ## RELATED
 
 - `pm-dev-java-cui:cui-logging` skill - Logging standards and maintenance reference
 - `/java-implement-code` command - Code modifications
-- `pm-dev-java:plan-marshall-plugin` skill - Maven standards and output parsing
+- `pm-dev-java:plan-marshall-plugin` skill - Java domain extension with workflow integration
 - `/java-refactor-code` command - Broader code refactoring
 - `/java-enforce-logrecords` command - Automated logging enforcement

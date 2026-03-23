@@ -169,6 +169,29 @@ def get_logging_scripts_dir(base_path: Path) -> Path:
     return _resolve_plan_marshall_path(base_path, 'skills/manage-logging/scripts')
 
 
+def get_shared_module_dirs(base_path: Path) -> list[Path]:
+    """Get paths to shared module directories that must be on sys.path at executor level.
+
+    Shared modules are skills whose scripts are imported by other scripts (e.g., plan_logging
+    imports input_validation) but have no executable script notation in the SCRIPTS mapping.
+    These directories must be added to sys.path before any executor-level imports.
+
+    Returns:
+        List of resolved paths to shared module script directories
+    """
+    # IMPORTANT: This list of shared module skills must be manually updated.
+    # Add new shared library skill paths here to avoid runtime ModuleNotFoundErrors.
+    shared_skills = [
+        'skills/tools-input-validation/scripts',
+    ]
+    dirs = []
+    for subpath in shared_skills:
+        resolved = _resolve_plan_marshall_path(base_path, subpath)
+        if resolved.is_dir():
+            dirs.append(resolved.resolve())
+    return dirs
+
+
 # ============================================================================
 # SCRIPT DISCOVERY
 # ============================================================================
@@ -423,8 +446,15 @@ def generate_executor(mappings: dict[str, str], base_path: Path, dry_run: bool =
     logging_scripts_dir = get_logging_scripts_dir(base_path)
     logging_dir = str(logging_scripts_dir.resolve())
 
+    # Shared module directories (must be on sys.path before executor-level imports)
+    shared_dirs = get_shared_module_dirs(base_path)
+    shared_module_lines = '\n'.join(
+        f"sys.path.insert(0, '{d}')" for d in shared_dirs
+    ) if shared_dirs else '# (none detected)'
+
     content = template.replace('{{SCRIPT_MAPPINGS}}', mappings_code)
     content = content.replace('{{LOGGING_DIR}}', logging_dir)
+    content = content.replace('{{SHARED_MODULE_DIRS}}', shared_module_lines)
     content = content.replace('{{PLAN_DIR_NAME}}', PLAN_DIR_NAME)
 
     if dry_run:
@@ -536,13 +566,17 @@ print(len(module.SCRIPTS))
         print(f'Error validating executor: {e}', file=sys.stderr)
         return False, 0
 
-    # Verify logging module
+    # Verify logging module (include shared module dirs for transitive imports)
+    shared_dirs = get_shared_module_dirs(base_path)
+    path_inserts = '; '.join(f"sys.path.insert(0, '{d}')" for d in shared_dirs)
+    if path_inserts:
+        path_inserts += '; '
     try:
         result = subprocess.run(
             [
                 'python3',
                 '-c',
-                f"import sys; sys.path.insert(0, '{logging_scripts_dir}'); from plan_logging import log_script_execution; print('OK')",
+                f"import sys; {path_inserts}sys.path.insert(0, '{logging_scripts_dir}'); from plan_logging import log_script_execution; print('OK')",
             ],
             capture_output=True,
             text=True,

@@ -124,16 +124,6 @@ Standards are organized into focused documents:
 - Pre-1.0 vs. post-1.0 deprecation handling
 - Refactoring requirements (maintain IDs, update references)
 
-## Tool Access
-
-This skill requires:
-
-- **Read** - To review existing requirements and specifications
-- **Edit** - To update existing documentation
-- **Write** - To create new requirements and specification files
-- **Grep** - To search for requirement IDs and verify consistency
-- **Glob** - To find all requirements and specification files
-
 ## Integration
 
 This skill integrates with:

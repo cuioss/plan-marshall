@@ -6,6 +6,14 @@ user-invocable: false
 
 # AsciiDoc Skill
 
+## Enforcement
+
+- Run scripts EXACTLY as documented using `python3 .plan/execute-script.py pm-documents:ref-asciidoc:asciidoc ...`
+- Always load documentation standards before executing format or validation workflows
+- Never skip the manual verification step in verify-links workflow
+
+---
+
 Standards and workflows for AsciiDoc formatting, validation, link verification, and document creation from templates.
 
 **Note**: This skill covers AsciiDoc syntax and format. For content quality, tone, and review orchestration, use `pm-documents:ref-documentation`.
