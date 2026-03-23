@@ -27,6 +27,8 @@ def test_pr_subcommand_help():
     result = run_script(SCRIPT_PATH, 'pr', '--help')
     assert result.success, f'pr --help failed: {result.stderr}'
     assert 'create' in result.stdout
+    assert 'view' in result.stdout
+    assert 'reply' in result.stdout
     assert 'reviews' in result.stdout
 
 
@@ -82,6 +84,26 @@ def test_issue_create_missing_required():
     """Test issue create fails without required arguments."""
     result = run_script(SCRIPT_PATH, 'issue', 'create')
     assert not result.success, 'Expected failure without --title'
+
+
+def test_pr_view_help():
+    """Test pr view help works."""
+    result = run_script(SCRIPT_PATH, 'pr', 'view', '--help')
+    assert result.success, f'pr view --help failed: {result.stderr}'
+
+
+def test_pr_reply_help():
+    """Test pr reply help shows required arguments."""
+    result = run_script(SCRIPT_PATH, 'pr', 'reply', '--help')
+    assert result.success, f'pr reply --help failed: {result.stderr}'
+    assert '--pr-number' in result.stdout
+    assert '--body' in result.stdout
+
+
+def test_pr_reply_missing_required():
+    """Test pr reply fails without required arguments."""
+    result = run_script(SCRIPT_PATH, 'pr', 'reply')
+    assert not result.success, 'Expected failure without --pr-number'
 
 
 def test_no_subcommand():

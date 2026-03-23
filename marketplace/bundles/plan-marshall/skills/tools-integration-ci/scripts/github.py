@@ -3,8 +3,10 @@
 
 Subcommands:
     pr create       Create a pull request
+    pr view         View PR for current branch (number, URL, state)
     pr reviews      Get PR reviews
     pr comments     Get PR review comments (inline code comments)
+    pr reply        Reply to a PR with a comment
     ci status       Check CI status for a PR
     ci wait         Wait for CI to complete
     issue create    Create an issue
@@ -12,8 +14,10 @@ Subcommands:
 
 Usage:
     python3 github.py pr create --title "Title" --body "Body" [--base main] [--draft]
+    python3 github.py pr view
     python3 github.py pr reviews --pr-number 123
     python3 github.py pr comments --pr-number 123 [--unresolved-only]
+    python3 github.py pr reply --pr-number 123 --body "Comment text"
     python3 github.py ci status --pr-number 123
     python3 github.py ci wait --pr-number 123 [--timeout 300] [--interval 30]
     python3 github.py issue create --title "Title" --body "Body" [--labels "bug,priority:high"]
@@ -145,6 +149,52 @@ def cmd_pr_create(args: argparse.Namespace) -> int:
     print('operation: pr_create')
     print(f'pr_number: {pr_number}')
     print(f'pr_url: {pr_url}')
+    return 0
+
+
+def cmd_pr_view(args: argparse.Namespace) -> int:
+    """Handle 'pr view' subcommand - get PR for current branch."""
+    is_auth, err = check_auth()
+    if not is_auth:
+        return output_error('pr_view', err)
+
+    returncode, stdout, stderr = run_gh(
+        ['pr', 'view', '--json', 'number,url,state,title,headRefName,baseRefName']
+    )
+    if returncode != 0:
+        return output_error('pr_view', 'No PR found for current branch', stderr.strip())
+
+    try:
+        data = json.loads(stdout)
+    except json.JSONDecodeError:
+        return output_error('pr_view', 'Failed to parse gh output', stdout[:100])
+
+    print('status: success')
+    print('operation: pr_view')
+    print(f'pr_number: {data.get("number", "unknown")}')
+    print(f'pr_url: {data.get("url", "")}')
+    print(f'state: {data.get("state", "unknown").lower()}')
+    print(f'title: {data.get("title", "")}')
+    print(f'head_branch: {data.get("headRefName", "")}')
+    print(f'base_branch: {data.get("baseRefName", "")}')
+    return 0
+
+
+def cmd_pr_reply(args: argparse.Namespace) -> int:
+    """Handle 'pr reply' subcommand - post a comment on a PR."""
+    is_auth, err = check_auth()
+    if not is_auth:
+        return output_error('pr_reply', err)
+
+    returncode, stdout, stderr = run_gh(
+        ['pr', 'comment', str(args.pr_number), '--body', args.body]
+    )
+    if returncode != 0:
+        return output_error('pr_reply', f'Failed to comment on PR {args.pr_number}', stderr.strip())
+
+    print('status: success')
+    print('operation: pr_reply')
+    print(f'pr_number: {args.pr_number}')
     return 0
 
 
@@ -495,6 +545,14 @@ def main() -> int:
     pr_create_parser.add_argument('--base', help='Base branch (default: repo default)')
     pr_create_parser.add_argument('--draft', action='store_true', help='Create as draft PR')
 
+    # pr view
+    pr_subparsers.add_parser('view', help='View PR for current branch')
+
+    # pr reply
+    pr_reply_parser = pr_subparsers.add_parser('reply', help='Reply to a PR with a comment')
+    pr_reply_parser.add_argument('--pr-number', required=True, type=int, help='PR number')
+    pr_reply_parser.add_argument('--body', required=True, help='Comment text')
+
     # pr reviews
     pr_reviews_parser = pr_subparsers.add_parser('reviews', help='Get PR reviews')
     pr_reviews_parser.add_argument('--pr-number', required=True, type=int, help='PR number')
@@ -537,6 +595,10 @@ def main() -> int:
     if args.command == 'pr':
         if args.pr_command == 'create':
             return cmd_pr_create(args)
+        elif args.pr_command == 'view':
+            return cmd_pr_view(args)
+        elif args.pr_command == 'reply':
+            return cmd_pr_reply(args)
         elif args.pr_command == 'reviews':
             return cmd_pr_reviews(args)
         elif args.pr_command == 'comments':

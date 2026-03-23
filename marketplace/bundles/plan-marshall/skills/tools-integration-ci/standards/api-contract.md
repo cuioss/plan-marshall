@@ -122,10 +122,12 @@ ci_config{key,value}:
 provider	github
 repo_url	https://github.com/org/repo
 
-ci_commands[7]{name,command}:
+ci_commands[9]{name,command}:
 pr-create	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr create
+pr-view	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr view
 pr-reviews	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr reviews
 pr-comments	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr comments
+pr-reply	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr reply
 ci-status	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github ci status
 ci-wait	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github ci wait
 issue-create	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github issue create
@@ -171,6 +173,83 @@ status: error
 operation: pr_create
 error: Failed to create PR
 context: gh pr create returned non-zero exit code
+```
+
+---
+
+### pr view
+
+View PR/MR for the current branch.
+
+**Command**:
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr view
+```
+
+**Arguments**: None (uses current branch)
+
+**Success Output**:
+```toon
+status: success
+operation: pr_view
+pr_number: 456
+pr_url: https://github.com/org/repo/pull/456
+state: open
+title: Add feature X
+head_branch: feature/add-x
+base_branch: main
+```
+
+**Error Output**:
+```toon
+status: error
+operation: pr_view
+error: No PR found for current branch
+context: gh pr view returned non-zero exit code
+```
+
+**Field Mapping (GitHub vs GitLab)**:
+| Field | GitHub | GitLab |
+|-------|--------|--------|
+| `pr_number` | `.number` | `.iid` |
+| `pr_url` | `.url` | `.web_url` |
+| `state` | `.state` (lowercase) | `.state` ("opened"→"open") |
+| `title` | `.title` | `.title` |
+| `head_branch` | `.headRefName` | `.source_branch` |
+| `base_branch` | `.baseRefName` | `.target_branch` |
+
+---
+
+### pr reply
+
+Post a comment on a pull request.
+
+**Command**:
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr reply \
+    --pr-number 123 \
+    --body "Fixed as suggested."
+```
+
+**Arguments**:
+| Argument | Required | Description |
+|----------|----------|-------------|
+| `--pr-number` | Yes | PR number |
+| `--body` | Yes | Comment text |
+
+**Success Output**:
+```toon
+status: success
+operation: pr_reply
+pr_number: 123
+```
+
+**Error Output**:
+```toon
+status: error
+operation: pr_reply
+error: Failed to comment on PR 123
+context: gh pr comment returned non-zero exit code
 ```
 
 ---
@@ -452,8 +531,10 @@ After `persist` command, marshal.json contains:
     "detected_at": "2025-01-15T10:00:00Z",
     "commands": {
       "pr-create": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr create",
+      "pr-view": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr view",
       "pr-reviews": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr reviews",
       "pr-comments": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr comments",
+      "pr-reply": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr reply",
       "ci-status": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github ci status",
       "ci-wait": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github ci wait",
       "issue-create": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github issue create",

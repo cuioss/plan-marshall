@@ -147,12 +147,67 @@ ci_config{key,value}:
 provider	github
 repo_url	https://github.com/org/repo
 
-ci_commands[5]{name,command}:
+ci_commands[9]{name,command}:
 pr-create	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr create
+pr-view	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr view
 pr-reviews	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr reviews
+pr-comments	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr comments
+pr-reply	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr reply
 ci-status	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github ci status
 ci-wait	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github ci wait
 issue-create	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github issue create
+issue-view	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github issue view
+```
+
+---
+
+## Workflow: View PR (Current Branch)
+
+**Pattern**: Config-Driven Execution
+
+Get PR/MR details for the current branch.
+
+### Step 1: Resolve and Execute
+
+```bash
+COMMAND=$(jq -r '.ci.commands["pr-view"]' .plan/marshal.json)
+eval "$COMMAND"
+```
+
+### Step 2: Process Result
+
+```toon
+status: success
+operation: pr_view
+pr_number: 456
+pr_url: https://github.com/org/repo/pull/456
+state: open
+title: Add feature X
+head_branch: feature/add-x
+base_branch: main
+```
+
+---
+
+## Workflow: Reply to PR
+
+**Pattern**: Config-Driven Execution
+
+Post a comment on a pull request.
+
+### Step 1: Resolve and Execute
+
+```bash
+COMMAND=$(jq -r '.ci.commands["pr-reply"]' .plan/marshal.json)
+eval "$COMMAND --pr-number 123 --body 'Fixed as suggested.'"
+```
+
+### Step 2: Process Result
+
+```toon
+status: success
+operation: pr_reply
+pr_number: 123
 ```
 
 ---
