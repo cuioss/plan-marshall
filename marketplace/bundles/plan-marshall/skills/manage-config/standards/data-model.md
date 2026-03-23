@@ -52,7 +52,8 @@ JSON structure and field definitions for project configuration.
       "3_automated_review": true,
       "4_sonar_roundtrip": true,
       "5_knowledge_capture": true,
-      "6_lessons_capture": true
+      "6_lessons_capture": true,
+      "review_bot_buffer_seconds": 300
     }
   },
   "skill_domains": {
@@ -320,7 +321,8 @@ Finalize pipeline with numbered boolean steps.
       "3_automated_review": true,
       "4_sonar_roundtrip": true,
       "5_knowledge_capture": true,
-      "6_lessons_capture": true
+      "6_lessons_capture": true,
+      "review_bot_buffer_seconds": 300
     }
   }
 }
@@ -335,6 +337,7 @@ Finalize pipeline with numbered boolean steps.
 | `4_sonar_roundtrip` | bool | true | Sonar analysis roundtrip |
 | `5_knowledge_capture` | bool | true | Capture learnings to memory |
 | `6_lessons_capture` | bool | true | Record lessons learned |
+| `review_bot_buffer_seconds` | int | 45 | Seconds to wait after CI for review bots to post comments |
 
 ## Section: ci
 

@@ -16,6 +16,7 @@ from _config_core import (
     save_config,
     success_exit,
 )
+from _config_defaults import get_default_config
 
 # Valid phase sections
 PHASE_SECTIONS = {
@@ -59,7 +60,9 @@ def cmd_phase(args, phase_section: str) -> int:
 
     config = load_config()
     plan_config = config.get('plan', {})
-    section = plan_config.get(phase_section, {})
+    # Merge defaults for missing fields (supports config evolution without migration)
+    defaults = get_default_config().get('plan', {}).get(phase_section, {})
+    section = {**defaults, **plan_config.get(phase_section, {})}
 
     if args.verb == 'get':
         field = getattr(args, 'field', None)
