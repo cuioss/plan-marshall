@@ -42,7 +42,8 @@ def get_provider() -> str | None:
     try:
         with open(marshal_path) as f:
             config = json.load(f)
-            return config.get('ci', {}).get('provider')
+            provider = config.get('ci', {}).get('provider')
+            return str(provider) if provider else None
     except (OSError, json.JSONDecodeError):
         return None
 
