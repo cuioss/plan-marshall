@@ -122,7 +122,7 @@ ci_config{key,value}:
 provider	github
 repo_url	https://github.com/org/repo
 
-ci_commands[11]{name,command}:
+ci_commands[19]{name,command}:
 pr-create	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr create
 pr-view	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr view
 pr-reviews	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr reviews
@@ -130,10 +130,18 @@ pr-comments	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:g
 pr-reply	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr reply
 pr-resolve-thread	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr resolve-thread
 pr-thread-reply	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr thread-reply
+pr-merge	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr merge
+pr-auto-merge	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr auto-merge
+pr-close	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr close
+pr-ready	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr ready
+pr-edit	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr edit
 ci-status	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github ci status
 ci-wait	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github ci wait
+ci-rerun	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github ci rerun
+ci-logs	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github ci logs
 issue-create	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github issue create
 issue-view	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github issue view
+issue-close	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github issue close
 ```
 
 ---
@@ -200,6 +208,10 @@ state: open
 title: Add feature X
 head_branch: feature/add-x
 base_branch: main
+is_draft: false
+mergeable: MERGEABLE
+merge_state: CLEAN
+review_decision: APPROVED
 ```
 
 **Error Output**:
@@ -219,6 +231,10 @@ context: gh pr view returned non-zero exit code
 | `title` | `.title` | `.title` |
 | `head_branch` | `.headRefName` | `.source_branch` |
 | `base_branch` | `.baseRefName` | `.target_branch` |
+| `is_draft` | `.isDraft` | `.draft` |
+| `mergeable` | `.mergeable` | `.merge_status` |
+| `merge_state` | `.mergeStateStatus` | - |
+| `review_decision` | `.reviewDecision` | `.approved_by` (mapped) |
 
 ---
 
@@ -422,11 +438,12 @@ operation: ci_status
 pr_number: 123
 overall_status: pending|success|failure
 check_count: 3
+elapsed_sec: 45
 
-checks[3]{name,status,conclusion}:
-build	completed	success
-test	in_progress	-
-lint	completed	failure
+checks[3]{name,status,result,elapsed_sec,url,workflow}:
+build	completed	success	120	https://github.com/org/repo/actions/runs/111	CI
+test	in_progress	-	45	https://github.com/org/repo/actions/runs/112	CI
+lint	completed	failure	30	https://github.com/org/repo/actions/runs/113	Lint
 ```
 
 **Overall Status Logic**:
@@ -463,6 +480,12 @@ pr_number: 123
 final_status: success|failure
 duration_sec: 95
 polls: 4
+elapsed_sec: 95
+
+checks[3]{name,status,result,elapsed_sec,url,workflow}:
+build	completed	success	120	https://github.com/org/repo/actions/runs/111	CI
+test	completed	success	90	https://github.com/org/repo/actions/runs/112	CI
+lint	completed	success	30	https://github.com/org/repo/actions/runs/113	Lint
 ```
 
 **Timeout Output**:
@@ -473,6 +496,11 @@ error: Timeout waiting for CI
 pr_number: 123
 duration_sec: 300
 last_status: pending
+
+checks[3]{name,status,result,elapsed_sec,url,workflow}:
+build	completed	success	120	https://github.com/org/repo/actions/runs/111	CI
+test	in_progress	-	300	https://github.com/org/repo/actions/runs/112	CI
+lint	completed	success	30	https://github.com/org/repo/actions/runs/113	Lint
 ```
 
 ---
@@ -558,6 +586,276 @@ assignees[1]:
 
 ---
 
+### pr merge
+
+Merge a pull request.
+
+**Command**:
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr merge \
+    --pr-number 123 \
+    [--strategy merge|squash|rebase] \
+    [--delete-branch]
+```
+
+**Arguments**:
+| Argument | Required | Description |
+|----------|----------|-------------|
+| `--pr-number` | Yes | PR number |
+| `--strategy` | No | Merge strategy: merge, squash, or rebase (default: merge) |
+| `--delete-branch` | No | Delete head branch after merge |
+
+**Success Output**:
+```toon
+status: success
+operation: pr_merge
+pr_number: 123
+strategy: squash
+```
+
+**Error Output**:
+```toon
+status: error
+operation: pr_merge
+error: Failed to merge PR 123
+context: gh pr merge returned non-zero exit code
+```
+
+---
+
+### pr auto-merge
+
+Enable auto-merge on a pull request (merges automatically when all checks pass).
+
+**Command**:
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr auto-merge \
+    --pr-number 123 \
+    [--strategy merge]
+```
+
+**Arguments**:
+| Argument | Required | Description |
+|----------|----------|-------------|
+| `--pr-number` | Yes | PR number |
+| `--strategy` | No | Merge strategy: merge, squash, or rebase (default: merge) |
+
+**Success Output**:
+```toon
+status: success
+operation: pr_auto_merge
+pr_number: 123
+enabled: true
+```
+
+**Error Output**:
+```toon
+status: error
+operation: pr_auto_merge
+error: Failed to enable auto-merge on PR 123
+context: gh pr merge --auto returned non-zero exit code
+```
+
+---
+
+### pr close
+
+Close a pull request without merging.
+
+**Command**:
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr close \
+    --pr-number 123
+```
+
+**Arguments**:
+| Argument | Required | Description |
+|----------|----------|-------------|
+| `--pr-number` | Yes | PR number |
+
+**Success Output**:
+```toon
+status: success
+operation: pr_close
+pr_number: 123
+```
+
+**Error Output**:
+```toon
+status: error
+operation: pr_close
+error: Failed to close PR 123
+context: gh pr close returned non-zero exit code
+```
+
+---
+
+### pr ready
+
+Mark a draft PR as ready for review.
+
+**Command**:
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr ready \
+    --pr-number 123
+```
+
+**Arguments**:
+| Argument | Required | Description |
+|----------|----------|-------------|
+| `--pr-number` | Yes | PR number |
+
+**Success Output**:
+```toon
+status: success
+operation: pr_ready
+pr_number: 123
+```
+
+**Error Output**:
+```toon
+status: error
+operation: pr_ready
+error: Failed to mark PR 123 as ready
+context: gh pr ready returned non-zero exit code
+```
+
+---
+
+### pr edit
+
+Edit a pull request title and/or body.
+
+**Command**:
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr edit \
+    --pr-number 123 \
+    [--title "New title"] \
+    [--body "New body"]
+```
+
+**Arguments**:
+| Argument | Required | Description |
+|----------|----------|-------------|
+| `--pr-number` | Yes | PR number |
+| `--title` | No | New PR title |
+| `--body` | No | New PR body |
+
+**Success Output**:
+```toon
+status: success
+operation: pr_edit
+pr_number: 123
+```
+
+**Error Output**:
+```toon
+status: error
+operation: pr_edit
+error: Failed to edit PR 123
+context: gh pr edit returned non-zero exit code
+```
+
+---
+
+### ci rerun
+
+Rerun a failed CI workflow run.
+
+**Command**:
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github ci rerun \
+    --run-id 12345
+```
+
+**Arguments**:
+| Argument | Required | Description |
+|----------|----------|-------------|
+| `--run-id` | Yes | Workflow run ID |
+
+**Success Output**:
+```toon
+status: success
+operation: ci_rerun
+run_id: 12345
+```
+
+**Error Output**:
+```toon
+status: error
+operation: ci_rerun
+error: Failed to rerun workflow 12345
+context: gh run rerun returned non-zero exit code
+```
+
+---
+
+### ci logs
+
+Get logs from a CI workflow run.
+
+**Command**:
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github ci logs \
+    --run-id 12345
+```
+
+**Arguments**:
+| Argument | Required | Description |
+|----------|----------|-------------|
+| `--run-id` | Yes | Workflow run ID |
+
+**Success Output**:
+```toon
+status: success
+operation: ci_logs
+run_id: 12345
+log_lines: 142
+content: [build log output]
+```
+
+**Error Output**:
+```toon
+status: error
+operation: ci_logs
+error: Failed to get logs for workflow 12345
+context: gh run view --log returned non-zero exit code
+```
+
+---
+
+### issue close
+
+Close an issue.
+
+**Command**:
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github issue close \
+    --issue 123
+```
+
+**Arguments**:
+| Argument | Required | Description |
+|----------|----------|-------------|
+| `--issue` | Yes | Issue number |
+
+**Success Output**:
+```toon
+status: success
+operation: issue_close
+issue_number: 123
+```
+
+**Error Output**:
+```toon
+status: error
+operation: issue_close
+error: Failed to close issue 123
+context: gh issue close returned non-zero exit code
+```
+
+---
+
 ## Exit Codes
 
 | Code | Meaning | Output Stream |
@@ -608,10 +906,18 @@ After `persist` command, marshal.json contains:
       "pr-reply": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr reply",
       "pr-resolve-thread": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr resolve-thread",
       "pr-thread-reply": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr thread-reply",
+      "pr-merge": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr merge",
+      "pr-auto-merge": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr auto-merge",
+      "pr-close": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr close",
+      "pr-ready": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr ready",
+      "pr-edit": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr edit",
       "ci-status": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github ci status",
       "ci-wait": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github ci wait",
+      "ci-rerun": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github ci rerun",
+      "ci-logs": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github ci logs",
       "issue-create": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github issue create",
-      "issue-view": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github issue view"
+      "issue-view": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github issue view",
+      "issue-close": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github issue close"
     }
   }
 }

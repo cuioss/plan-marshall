@@ -284,10 +284,18 @@ def generate_ci_commands(provider: str) -> dict:
         'pr-reply': f'{executor} {script} pr reply',
         'pr-resolve-thread': f'{executor} {script} pr resolve-thread',
         'pr-thread-reply': f'{executor} {script} pr thread-reply',
+        'pr-merge': f'{executor} {script} pr merge',
+        'pr-auto-merge': f'{executor} {script} pr auto-merge',
+        'pr-close': f'{executor} {script} pr close',
+        'pr-ready': f'{executor} {script} pr ready',
+        'pr-edit': f'{executor} {script} pr edit',
         'ci-status': f'{executor} {script} ci status',
         'ci-wait': f'{executor} {script} ci wait',
+        'ci-rerun': f'{executor} {script} ci rerun',
+        'ci-logs': f'{executor} {script} ci logs',
         'issue-create': f'{executor} {script} issue create',
         'issue-view': f'{executor} {script} issue view',
+        'issue-close': f'{executor} {script} issue close',
     }
 
 

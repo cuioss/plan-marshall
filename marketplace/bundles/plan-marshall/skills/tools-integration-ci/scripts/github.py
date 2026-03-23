@@ -9,10 +9,18 @@ Subcommands:
     pr reply        Reply to a PR with a comment
     pr resolve-thread  Resolve a review thread
     pr thread-reply    Reply to a specific review thread
+    pr merge        Merge a pull request
+    pr auto-merge   Enable auto-merge on a pull request
+    pr close        Close a pull request
+    pr ready        Mark a draft PR as ready for review
+    pr edit         Edit PR title and/or body
     ci status       Check CI status for a PR
     ci wait         Wait for CI to complete
+    ci rerun        Rerun a workflow run
+    ci logs         Get failed run logs
     issue create    Create an issue
     issue view      View issue details
+    issue close     Close an issue
 
 Usage:
     python3 github.py pr create --title "Title" --body "Body" [--base main] [--draft]
@@ -22,10 +30,18 @@ Usage:
     python3 github.py pr reply --pr-number 123 --body "Comment text"
     python3 github.py pr resolve-thread --thread-id PRRT_abc123
     python3 github.py pr thread-reply --pr-number 123 --thread-id PRRT_abc123 --body "Fixed"
+    python3 github.py pr merge --pr-number 123 [--strategy squash] [--delete-branch]
+    python3 github.py pr auto-merge --pr-number 123 [--strategy squash]
+    python3 github.py pr close --pr-number 123
+    python3 github.py pr ready --pr-number 123
+    python3 github.py pr edit --pr-number 123 [--title "New Title"] [--body "New Body"]
     python3 github.py ci status --pr-number 123
     python3 github.py ci wait --pr-number 123 [--timeout 300] [--interval 30]
+    python3 github.py ci rerun --run-id 12345
+    python3 github.py ci logs --run-id 12345
     python3 github.py issue create --title "Title" --body "Body" [--labels "bug,priority:high"]
     python3 github.py issue view --issue 123
+    python3 github.py issue close --issue 123
 
 Output: TOON format
 """
@@ -35,9 +51,10 @@ import json
 import subprocess
 import sys
 import time
+from datetime import UTC, datetime
 
 
-def run_gh(args: list[str], capture_json: bool = False) -> tuple[int, str, str]:
+def run_gh(args: list[str], capture_json: bool = False, timeout: int = 60) -> tuple[int, str, str]:
     """Run gh CLI command and return (returncode, stdout, stderr)."""
     cmd = ['gh'] + args
     if capture_json:
@@ -48,7 +65,7 @@ def run_gh(args: list[str], capture_json: bool = False) -> tuple[int, str, str]:
             cmd,
             capture_output=True,
             text=True,
-            timeout=60,
+            timeout=timeout,
         )
         return result.returncode, result.stdout, result.stderr
     except FileNotFoundError:
@@ -163,7 +180,8 @@ def cmd_pr_view(args: argparse.Namespace) -> int:
         return output_error('pr_view', err)
 
     returncode, stdout, stderr = run_gh(
-        ['pr', 'view', '--json', 'number,url,state,title,headRefName,baseRefName']
+        ['pr', 'view', '--json',
+         'number,url,state,title,headRefName,baseRefName,isDraft,mergeable,mergeStateStatus,reviewDecision']
     )
     if returncode != 0:
         return output_error('pr_view', 'No PR found for current branch', stderr.strip())
@@ -181,6 +199,10 @@ def cmd_pr_view(args: argparse.Namespace) -> int:
     print(f'title: {data.get("title", "")}')
     print(f'head_branch: {data.get("headRefName", "")}')
     print(f'base_branch: {data.get("baseRefName", "")}')
+    print(f'is_draft: {str(data.get("isDraft", False)).lower()}')
+    print(f'mergeable: {data.get("mergeable", "unknown").lower() if data.get("mergeable") else "unknown"}')
+    print(f'merge_state: {data.get("mergeStateStatus", "unknown").lower() if data.get("mergeStateStatus") else "unknown"}')
+    print(f'review_decision: {data.get("reviewDecision", "none").lower() if data.get("reviewDecision") else "none"}')
     return 0
 
 
@@ -400,6 +422,151 @@ def cmd_pr_comments(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_pr_merge(args: argparse.Namespace) -> int:
+    """Handle 'pr merge' subcommand - merge a pull request."""
+    is_auth, err = check_auth()
+    if not is_auth:
+        return output_error('pr_merge', err)
+
+    gh_args = ['pr', 'merge', str(args.pr_number), f'--{args.strategy}']
+    if args.delete_branch:
+        gh_args.append('--delete-branch')
+
+    returncode, stdout, stderr = run_gh(gh_args)
+    if returncode != 0:
+        return output_error('pr_merge', f'Failed to merge PR {args.pr_number}', stderr.strip())
+
+    print('status: success')
+    print('operation: pr_merge')
+    print(f'pr_number: {args.pr_number}')
+    print(f'strategy: {args.strategy}')
+    return 0
+
+
+def cmd_pr_auto_merge(args: argparse.Namespace) -> int:
+    """Handle 'pr auto-merge' subcommand - enable auto-merge on a pull request."""
+    is_auth, err = check_auth()
+    if not is_auth:
+        return output_error('pr_auto_merge', err)
+
+    gh_args = ['pr', 'merge', str(args.pr_number), '--auto', f'--{args.strategy}']
+
+    returncode, stdout, stderr = run_gh(gh_args)
+    if returncode != 0:
+        return output_error('pr_auto_merge', f'Failed to enable auto-merge for PR {args.pr_number}', stderr.strip())
+
+    print('status: success')
+    print('operation: pr_auto_merge')
+    print(f'pr_number: {args.pr_number}')
+    print('enabled: true')
+    return 0
+
+
+def cmd_pr_close(args: argparse.Namespace) -> int:
+    """Handle 'pr close' subcommand - close a pull request."""
+    is_auth, err = check_auth()
+    if not is_auth:
+        return output_error('pr_close', err)
+
+    returncode, stdout, stderr = run_gh(['pr', 'close', str(args.pr_number)])
+    if returncode != 0:
+        return output_error('pr_close', f'Failed to close PR {args.pr_number}', stderr.strip())
+
+    print('status: success')
+    print('operation: pr_close')
+    print(f'pr_number: {args.pr_number}')
+    return 0
+
+
+def cmd_pr_ready(args: argparse.Namespace) -> int:
+    """Handle 'pr ready' subcommand - mark a draft PR as ready for review."""
+    is_auth, err = check_auth()
+    if not is_auth:
+        return output_error('pr_ready', err)
+
+    returncode, stdout, stderr = run_gh(['pr', 'ready', str(args.pr_number)])
+    if returncode != 0:
+        return output_error('pr_ready', f'Failed to mark PR {args.pr_number} as ready', stderr.strip())
+
+    print('status: success')
+    print('operation: pr_ready')
+    print(f'pr_number: {args.pr_number}')
+    return 0
+
+
+def cmd_pr_edit(args: argparse.Namespace) -> int:
+    """Handle 'pr edit' subcommand - edit PR title and/or body."""
+    is_auth, err = check_auth()
+    if not is_auth:
+        return output_error('pr_edit', err)
+
+    if not args.title and not args.body:
+        return output_error('pr_edit', 'At least one of --title or --body must be provided')
+
+    gh_args = ['pr', 'edit', str(args.pr_number)]
+    if args.title:
+        gh_args.extend(['--title', args.title])
+    if args.body:
+        gh_args.extend(['--body', args.body])
+
+    returncode, stdout, stderr = run_gh(gh_args)
+    if returncode != 0:
+        return output_error('pr_edit', f'Failed to edit PR {args.pr_number}', stderr.strip())
+
+    print('status: success')
+    print('operation: pr_edit')
+    print(f'pr_number: {args.pr_number}')
+    return 0
+
+
+def format_checks_toon(checks: list[dict]) -> tuple[list[str], int]:
+    """Format checks into TOON table rows and compute overall elapsed.
+
+    Returns (toon_lines, elapsed_sec_total).
+    """
+    now = datetime.now(UTC)
+    earliest_start = None
+    rows: list[str] = []
+
+    for check in checks:
+        name = check.get('name', 'unknown')
+        state = check.get('state', 'unknown')
+        bucket = check.get('bucket') or '-'
+        link = check.get('link') or '-'
+        workflow = check.get('workflow') or '-'
+
+        # Compute elapsed_sec for this check
+        started_at = check.get('startedAt')
+        completed_at = check.get('completedAt')
+        elapsed_sec = 0
+
+        if started_at:
+            try:
+                start_dt = datetime.fromisoformat(started_at)
+                if earliest_start is None or start_dt < earliest_start:
+                    earliest_start = start_dt
+                if completed_at:
+                    end_dt = datetime.fromisoformat(completed_at)
+                    elapsed_sec = int((end_dt - start_dt).total_seconds())
+                else:
+                    elapsed_sec = int((now - start_dt).total_seconds())
+            except (ValueError, TypeError):
+                elapsed_sec = 0
+
+        rows.append(f'{name}\t{state}\t{bucket}\t{elapsed_sec}\t{link}\t{workflow}')
+
+    # Compute total elapsed from earliest start to now
+    total_elapsed = 0
+    if earliest_start:
+        total_elapsed = int((now - earliest_start).total_seconds())
+
+    lines: list[str] = []
+    lines.append(f'checks[{len(checks)}]{{name,status,result,elapsed_sec,url,workflow}}:')
+    lines.extend(rows)
+
+    return lines, total_elapsed
+
+
 def cmd_ci_status(args: argparse.Namespace) -> int:
     """Handle 'ci status' subcommand."""
     # Check auth
@@ -408,7 +575,9 @@ def cmd_ci_status(args: argparse.Namespace) -> int:
         return output_error('ci_status', err)
 
     # Get checks (bucket field contains pass/fail result)
-    returncode, stdout, stderr = run_gh(['pr', 'checks', str(args.pr_number), '--json', 'name,state,bucket'])
+    returncode, stdout, stderr = run_gh(
+        ['pr', 'checks', str(args.pr_number), '--json', 'name,state,bucket,link,startedAt,completedAt,workflow']
+    )
     if returncode != 0:
         return output_error('ci_status', f'Failed to get CI status for PR {args.pr_number}', stderr.strip())
 
@@ -430,19 +599,19 @@ def cmd_ci_status(args: argparse.Namespace) -> int:
     else:
         overall = 'pending'
 
+    # Format checks table
+    toon_lines, total_elapsed = format_checks_toon(checks)
+
     # Output TOON
     print('status: success')
     print('operation: ci_status')
     print(f'pr_number: {args.pr_number}')
     print(f'overall_status: {overall}')
     print(f'check_count: {len(checks)}')
+    print(f'elapsed_sec: {total_elapsed}')
     print()
-    print(f'checks[{len(checks)}]{{name,state,result}}:')
-    for check in checks:
-        name = check.get('name', 'unknown')
-        state = check.get('state', 'unknown')
-        bucket = check.get('bucket') or '-'
-        print(f'{name}\t{state}\t{bucket}')
+    for line in toon_lines:
+        print(line)
     return 0
 
 
@@ -457,6 +626,7 @@ def cmd_ci_wait(args: argparse.Namespace) -> int:
     polls = 0
     timeout = args.timeout
     interval = args.interval
+    last_checks: list[dict] = []
 
     while True:
         polls += 1
@@ -464,16 +634,26 @@ def cmd_ci_wait(args: argparse.Namespace) -> int:
 
         # Check timeout
         if elapsed >= timeout:
+            # Format checks table for timeout output
+            toon_lines, total_elapsed = format_checks_toon(last_checks) if last_checks else ([], 0)
+
             print('status: error', file=sys.stderr)
             print('operation: ci_wait', file=sys.stderr)
             print('error: Timeout waiting for CI', file=sys.stderr)
             print(f'pr_number: {args.pr_number}', file=sys.stderr)
             print(f'duration_sec: {int(elapsed)}', file=sys.stderr)
             print('last_status: pending', file=sys.stderr)
+            if toon_lines:
+                print(f'elapsed_sec: {total_elapsed}', file=sys.stderr)
+                print(file=sys.stderr)
+                for line in toon_lines:
+                    print(line, file=sys.stderr)
             return 1
 
         # Get checks (bucket field contains pass/fail result)
-        returncode, stdout, stderr = run_gh(['pr', 'checks', str(args.pr_number), '--json', 'name,state,bucket'])
+        returncode, stdout, stderr = run_gh(
+            ['pr', 'checks', str(args.pr_number), '--json', 'name,state,bucket,link,startedAt,completedAt,workflow']
+        )
         if returncode != 0:
             return output_error('ci_wait', f'Failed to get CI status for PR {args.pr_number}', stderr.strip())
 
@@ -482,6 +662,8 @@ def cmd_ci_wait(args: argparse.Namespace) -> int:
             checks = json.loads(stdout)
         except json.JSONDecodeError:
             return output_error('ci_wait', 'Failed to parse gh output', stdout[:100])
+
+        last_checks = checks
 
         # Check if all completed (bucket != pending means completed)
         if checks and all(c.get('bucket') != 'pending' for c in checks):
@@ -493,6 +675,9 @@ def cmd_ci_wait(args: argparse.Namespace) -> int:
             else:
                 final_status = 'mixed'
 
+            # Format checks table
+            toon_lines, total_elapsed = format_checks_toon(checks)
+
             # Output TOON
             print('status: success')
             print('operation: ci_wait')
@@ -500,10 +685,55 @@ def cmd_ci_wait(args: argparse.Namespace) -> int:
             print(f'final_status: {final_status}')
             print(f'duration_sec: {int(elapsed)}')
             print(f'polls: {polls}')
+            print(f'elapsed_sec: {total_elapsed}')
+            print()
+            for line in toon_lines:
+                print(line)
             return 0
 
         # Wait before next poll
         time.sleep(interval)
+
+
+def cmd_ci_rerun(args: argparse.Namespace) -> int:
+    """Handle 'ci rerun' subcommand - rerun a workflow run."""
+    is_auth, err = check_auth()
+    if not is_auth:
+        return output_error('ci_rerun', err)
+
+    returncode, stdout, stderr = run_gh(['run', 'rerun', str(args.run_id)])
+    if returncode != 0:
+        return output_error('ci_rerun', f'Failed to rerun workflow {args.run_id}', stderr.strip())
+
+    print('status: success')
+    print('operation: ci_rerun')
+    print(f'run_id: {args.run_id}')
+    return 0
+
+
+def cmd_ci_logs(args: argparse.Namespace) -> int:
+    """Handle 'ci logs' subcommand - get failed run logs."""
+    is_auth, err = check_auth()
+    if not is_auth:
+        return output_error('ci_logs', err)
+
+    returncode, stdout, stderr = run_gh(
+        ['run', 'view', str(args.run_id), '--log-failed'], timeout=120
+    )
+    if returncode != 0:
+        return output_error('ci_logs', f'Failed to get logs for run {args.run_id}', stderr.strip())
+
+    # Truncate to first 200 lines
+    lines = stdout.splitlines()
+    truncated = lines[:200]
+    content = '\n'.join(truncated)
+
+    print('status: success')
+    print('operation: ci_logs')
+    print(f'run_id: {args.run_id}')
+    print(f'log_lines: {len(truncated)}')
+    print(f'content: {content.replace(chr(10), "\\n")}')
+    return 0
 
 
 def cmd_issue_create(args: argparse.Namespace) -> int:
@@ -602,6 +832,22 @@ def cmd_issue_view(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_issue_close(args: argparse.Namespace) -> int:
+    """Handle 'issue close' subcommand - close an issue."""
+    is_auth, err = check_auth()
+    if not is_auth:
+        return output_error('issue_close', err)
+
+    returncode, stdout, stderr = run_gh(['issue', 'close', str(args.issue)])
+    if returncode != 0:
+        return output_error('issue_close', f'Failed to close issue {args.issue}', stderr.strip())
+
+    print('status: success')
+    print('operation: issue_close')
+    print(f'issue_number: {args.issue}')
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description='GitHub operations via gh CLI')
     subparsers = parser.add_subparsers(dest='command', required=True)
@@ -645,6 +891,33 @@ def main() -> int:
     pr_comments_parser.add_argument('--pr-number', required=True, type=int, help='PR number')
     pr_comments_parser.add_argument('--unresolved-only', action='store_true', help='Only show unresolved comments')
 
+    # pr merge
+    pr_merge_parser = pr_subparsers.add_parser('merge', help='Merge a pull request')
+    pr_merge_parser.add_argument('--pr-number', required=True, type=int, help='PR number')
+    pr_merge_parser.add_argument('--strategy', default='merge', choices=['merge', 'squash', 'rebase'],
+                                 help='Merge strategy (default: merge)')
+    pr_merge_parser.add_argument('--delete-branch', action='store_true', help='Delete branch after merge')
+
+    # pr auto-merge
+    pr_auto_merge_parser = pr_subparsers.add_parser('auto-merge', help='Enable auto-merge on a PR')
+    pr_auto_merge_parser.add_argument('--pr-number', required=True, type=int, help='PR number')
+    pr_auto_merge_parser.add_argument('--strategy', default='merge', choices=['merge', 'squash', 'rebase'],
+                                      help='Merge strategy (default: merge)')
+
+    # pr close
+    pr_close_parser = pr_subparsers.add_parser('close', help='Close a pull request')
+    pr_close_parser.add_argument('--pr-number', required=True, type=int, help='PR number')
+
+    # pr ready
+    pr_ready_parser = pr_subparsers.add_parser('ready', help='Mark draft PR as ready for review')
+    pr_ready_parser.add_argument('--pr-number', required=True, type=int, help='PR number')
+
+    # pr edit
+    pr_edit_parser = pr_subparsers.add_parser('edit', help='Edit PR title and/or body')
+    pr_edit_parser.add_argument('--pr-number', required=True, type=int, help='PR number')
+    pr_edit_parser.add_argument('--title', help='New PR title')
+    pr_edit_parser.add_argument('--body', help='New PR body')
+
     # ci subcommand
     ci_parser = subparsers.add_parser('ci', help='CI operations')
     ci_subparsers = ci_parser.add_subparsers(dest='ci_command', required=True)
@@ -659,6 +932,14 @@ def main() -> int:
     ci_wait_parser.add_argument('--timeout', type=int, default=300, help='Max wait time in seconds (default: 300)')
     ci_wait_parser.add_argument('--interval', type=int, default=30, help='Poll interval in seconds (default: 30)')
 
+    # ci rerun
+    ci_rerun_parser = ci_subparsers.add_parser('rerun', help='Rerun a workflow run')
+    ci_rerun_parser.add_argument('--run-id', required=True, help='Workflow run ID')
+
+    # ci logs
+    ci_logs_parser = ci_subparsers.add_parser('logs', help='Get failed run logs')
+    ci_logs_parser.add_argument('--run-id', required=True, help='Workflow run ID')
+
     # issue subcommand
     issue_parser = subparsers.add_parser('issue', help='Issue operations')
     issue_subparsers = issue_parser.add_subparsers(dest='issue_command', required=True)
@@ -672,6 +953,10 @@ def main() -> int:
     # issue view
     issue_view_parser = issue_subparsers.add_parser('view', help='View issue details')
     issue_view_parser.add_argument('--issue', required=True, help='Issue number or URL')
+
+    # issue close
+    issue_close_parser = issue_subparsers.add_parser('close', help='Close an issue')
+    issue_close_parser.add_argument('--issue', required=True, help='Issue number or URL')
 
     args = parser.parse_args()
 
@@ -690,16 +975,32 @@ def main() -> int:
             return cmd_pr_reviews(args)
         elif args.pr_command == 'comments':
             return cmd_pr_comments(args)
+        elif args.pr_command == 'merge':
+            return cmd_pr_merge(args)
+        elif args.pr_command == 'auto-merge':
+            return cmd_pr_auto_merge(args)
+        elif args.pr_command == 'close':
+            return cmd_pr_close(args)
+        elif args.pr_command == 'ready':
+            return cmd_pr_ready(args)
+        elif args.pr_command == 'edit':
+            return cmd_pr_edit(args)
     elif args.command == 'ci':
         if args.ci_command == 'status':
             return cmd_ci_status(args)
         elif args.ci_command == 'wait':
             return cmd_ci_wait(args)
+        elif args.ci_command == 'rerun':
+            return cmd_ci_rerun(args)
+        elif args.ci_command == 'logs':
+            return cmd_ci_logs(args)
     elif args.command == 'issue':
         if args.issue_command == 'create':
             return cmd_issue_create(args)
         elif args.issue_command == 'view':
             return cmd_issue_view(args)
+        elif args.issue_command == 'close':
+            return cmd_issue_close(args)
 
     parser.print_help()
     return 1
