@@ -48,9 +48,8 @@ Handles PR review comment workflows - fetching comments, triaging them, and gene
    Use the `pr-comments` command from marshal.json (provider-agnostic):
 
    ```bash
-   # Resolve command from config
-   COMMAND=$(jq -r '.ci.commands["pr-comments"]' .plan/marshal.json)
-   eval "$COMMAND --pr-number {number} [--unresolved-only]"
+   python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr comments \
+       --pr-number {number} [--unresolved-only]
    ```
 
    Or use the workflow script for additional processing:
@@ -116,10 +115,10 @@ Handles PR review comment workflows - fetching comments, triaging them, and gene
 
    **For explain:**
    - Generate explanation based on code context
-   - Reply to comment using CI abstraction:
+   - Reply to comment via CI router:
      ```bash
-     COMMAND=$(jq -r '.ci.commands["pr-reply"]' .plan/marshal.json)
-     eval "$COMMAND --pr-number {pr} --body '...'"
+     python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr reply \
+         --pr-number {pr} --body "..."
      ```
 
    **For ignore:**
@@ -162,9 +161,8 @@ status: success
    Use `await-until` with config-driven ci-status command:
 
    ```bash
-   CI_STATUS_CMD=$(jq -r '.ci.commands["ci-status"]' .plan/marshal.json)
    python3 .plan/execute-script.py plan-marshall:tools-script-executor:await-until poll \
-     --check-cmd "${CI_STATUS_CMD} --pr-number {pr_number}" \
+     --check-cmd "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci ci status --pr-number {pr_number}" \
      --success-field "overall_status=success" \
      --failure-field "overall_status=failure" \
      --command-key "ci:pr_checks" \
@@ -215,28 +213,28 @@ status: success
      ```
    - Reply acknowledging the finding:
      ```bash
-     THREAD_REPLY_CMD=$(jq -r '.ci.commands["pr-thread-reply"]' .plan/marshal.json)
-     eval "$THREAD_REPLY_CMD --pr-number {pr_number} --thread-id {comment_id} --body 'Acknowledged — creating fix task.'"
+     python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr thread-reply \
+         --pr-number {pr_number} --thread-id {comment_id} --body "Acknowledged — creating fix task."
      ```
 
    **explain** (reply with explanation):
    - Generate explanation based on code context
    - Reply to thread:
      ```bash
-     THREAD_REPLY_CMD=$(jq -r '.ci.commands["pr-thread-reply"]' .plan/marshal.json)
-     eval "$THREAD_REPLY_CMD --pr-number {pr_number} --thread-id {comment_id} --body '{explanation}'"
+     python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr thread-reply \
+         --pr-number {pr_number} --thread-id {comment_id} --body "{explanation}"
      ```
    - Resolve thread:
      ```bash
-     RESOLVE_CMD=$(jq -r '.ci.commands["pr-resolve-thread"]' .plan/marshal.json)
-     eval "$RESOLVE_CMD --pr-number {pr_number} --thread-id {thread_id}"
+     python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr resolve-thread \
+         --pr-number {pr_number} --thread-id {thread_id}
      ```
 
    **ignore** (dismiss):
    - Resolve thread:
      ```bash
-     RESOLVE_CMD=$(jq -r '.ci.commands["pr-resolve-thread"]' .plan/marshal.json)
-     eval "$RESOLVE_CMD --pr-number {pr_number} --thread-id {thread_id}"
+     python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr resolve-thread \
+         --pr-number {pr_number} --thread-id {thread_id}
      ```
 
 6. **Return Summary**

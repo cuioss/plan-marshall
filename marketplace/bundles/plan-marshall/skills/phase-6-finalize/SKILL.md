@@ -201,8 +201,8 @@ If PR was created:
 #### Determine PR Number
 
 ```bash
-PR_VIEW_CMD=$(jq -r '.ci.commands["pr-view"]' .plan/marshal.json)
-PR_NUMBER=$(eval "$PR_VIEW_CMD" | awk -F': ' '/^pr_number:/ {print $2}')
+PR_NUMBER=$(python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr view \
+  | awk -F': ' '/^pr_number:/ {print $2}')
 ```
 
 #### Load and Execute Automated Review Workflow
