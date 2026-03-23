@@ -151,7 +151,7 @@ def cmd_pr_create(args: argparse.Namespace) -> int:
         try:
             with open(args.body_file, 'r') as f:
                 body = f.read()
-        except (OSError, IOError) as e:
+        except OSError as e:
             return output_error('pr_create', f'Failed to read body file: {e}')
 
     # Build command
