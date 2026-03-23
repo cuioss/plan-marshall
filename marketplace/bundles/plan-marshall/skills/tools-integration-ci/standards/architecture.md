@@ -136,20 +136,17 @@ Example wizard step:
 
 ## Command Resolution
 
-Callers resolve commands from config:
+Callers use the provider-agnostic `ci` router script. The router reads `ci.provider` from `marshal.json` and delegates to the correct provider script (`github.py` or `gitlab.py`):
 
 ```bash
-# Step 1: Get command from config
-COMMAND=$(jq -r '.ci.commands["pr-create"]' .plan/marshal.json)
-
-# Step 2: Execute with arguments
-eval "$COMMAND --title 'Feature X' --body 'Description'"
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr create \
+    --title "Feature X" --body "Description"
 ```
 
 This pattern:
-- Works with any provider (command already contains correct script)
-- Allows user customization (edit marshal.json)
-- Provides full transparency (config shows exact command)
+- Works with any provider (router reads config at runtime)
+- No `eval` or `jq` needed in skill instructions
+- Provider determined once during `/marshall-steward`, used transparently thereafter
 
 ---
 

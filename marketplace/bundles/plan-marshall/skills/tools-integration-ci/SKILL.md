@@ -165,15 +165,14 @@ issue-view	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:gi
 
 ## Workflow: View PR (Current Branch)
 
-**Pattern**: Config-Driven Execution
+**Pattern**: Provider-Agnostic Router
 
 Get PR/MR details for the current branch.
 
 ### Step 1: Resolve and Execute
 
 ```bash
-COMMAND=$(jq -r '.ci.commands["pr-view"]' .plan/marshal.json)
-eval "$COMMAND"
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr view
 ```
 
 ### Step 2: Process Result
@@ -193,15 +192,15 @@ base_branch: main
 
 ## Workflow: Reply to PR
 
-**Pattern**: Config-Driven Execution
+**Pattern**: Provider-Agnostic Router
 
 Post a comment on a pull request.
 
 ### Step 1: Resolve and Execute
 
 ```bash
-COMMAND=$(jq -r '.ci.commands["pr-reply"]' .plan/marshal.json)
-eval "$COMMAND --pr-number 123 --body 'Fixed as suggested.'"
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr reply \
+    --pr-number 123 --body "Fixed as suggested."
 ```
 
 ### Step 2: Process Result
@@ -216,15 +215,15 @@ pr_number: 123
 
 ## Workflow: Resolve Review Thread
 
-**Pattern**: Config-Driven Execution
+**Pattern**: Provider-Agnostic Router
 
 Resolve (mark as resolved) a review thread on a PR.
 
 ### Step 1: Resolve and Execute
 
 ```bash
-COMMAND=$(jq -r '.ci.commands["pr-resolve-thread"]' .plan/marshal.json)
-eval "$COMMAND --pr-number 123 --thread-id PRRT_abc123"
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr resolve-thread \
+    --pr-number 123 --thread-id PRRT_abc123
 ```
 
 ### Step 2: Process Result
@@ -239,15 +238,15 @@ thread_id: PRRT_abc123
 
 ## Workflow: Reply to Review Thread
 
-**Pattern**: Config-Driven Execution
+**Pattern**: Provider-Agnostic Router
 
 Reply to a specific review thread (inline code comment), not a top-level PR comment.
 
 ### Step 1: Resolve and Execute
 
 ```bash
-COMMAND=$(jq -r '.ci.commands["pr-thread-reply"]' .plan/marshal.json)
-eval "$COMMAND --pr-number 123 --thread-id PRRT_abc123 --body 'Fixed as suggested.'"
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr thread-reply \
+    --pr-number 123 --thread-id PRRT_abc123 --body "Fixed as suggested."
 ```
 
 ### Step 2: Process Result
@@ -263,32 +262,18 @@ thread_id: PRRT_abc123
 
 ## Workflow: Create PR
 
-**Pattern**: Config-Driven Execution
+**Pattern**: Provider-Agnostic Router
 
 Create a pull request using config-stored command.
 
-### Step 1: Resolve Command from Config
+### Step 1: Execute
 
 ```bash
-COMMAND=$(jq -r '.ci.commands["pr-create"]' .plan/marshal.json)
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr create \
+    --title "Add feature X" --body "Description" --base main
 ```
 
-### Step 2: Execute with Arguments
-
-```bash
-eval "$COMMAND --title 'Add feature X' --body 'Description' --base main"
-```
-
-### Alternative: Direct Script Invocation
-
-```bash
-python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr create \
-    --title "Add feature X" \
-    --body "Description" \
-    --base main
-```
-
-### Step 3: Process Result
+### Step 2: Process Result
 
 ```toon
 status: success
@@ -301,15 +286,15 @@ pr_url: https://github.com/org/repo/pull/456
 
 ## Workflow: Check CI Status
 
-**Pattern**: Config-Driven Execution
+**Pattern**: Provider-Agnostic Router
 
 Check CI status for a pull request.
 
 ### Step 1: Resolve and Execute
 
 ```bash
-COMMAND=$(jq -r '.ci.commands["ci-status"]' .plan/marshal.json)
-eval "$COMMAND --pr-number 123"
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci ci status \
+    --pr-number 123
 ```
 
 ### Step 2: Process Result
@@ -339,9 +324,11 @@ Wait for CI checks to complete with two-layer timeout pattern.
 Use outer shell timeout as safety net:
 
 ```bash
-timeout 600s python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github ci wait \
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci ci wait \
     --pr-number 123
 ```
+
+**Bash tool timeout**: 1800000ms (30-minute safety net). Internal timeout managed by script.
 
 **Claude Bash Tool**: Set `timeout` parameter to `600000` (ms).
 
@@ -359,15 +346,15 @@ duration_sec: 95
 
 ## Workflow: Get PR Reviews
 
-**Pattern**: Config-Driven Execution
+**Pattern**: Provider-Agnostic Router
 
 Get reviews for a pull request.
 
 ### Step 1: Resolve and Execute
 
 ```bash
-COMMAND=$(jq -r '.ci.commands["pr-reviews"]' .plan/marshal.json)
-eval "$COMMAND --pr-number 123"
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr reviews \
+    --pr-number 123
 ```
 
 ### Step 2: Process Result
@@ -386,15 +373,15 @@ bob	CHANGES_REQUESTED	2025-01-15T11:00:00Z
 
 ## Workflow: Create Issue
 
-**Pattern**: Config-Driven Execution
+**Pattern**: Provider-Agnostic Router
 
 Create an issue.
 
 ### Step 1: Resolve and Execute
 
 ```bash
-COMMAND=$(jq -r '.ci.commands["issue-create"]' .plan/marshal.json)
-eval "$COMMAND --title 'Bug: feature X' --body 'Description'"
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci issue create \
+    --title "Bug: feature X" --body "Description"
 ```
 
 ### Step 2: Process Result
@@ -410,7 +397,7 @@ issue_url: https://github.com/org/repo/issues/789
 
 ## Workflow: View Issue
 
-**Pattern**: Config-Driven Execution
+**Pattern**: Provider-Agnostic Router
 
 View issue details.
 
