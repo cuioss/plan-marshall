@@ -33,6 +33,7 @@ def load_executor_module():
 """,
     )
     code = code.replace('{{LOGGING_DIR}}', str(LOGGING_DIR))
+    code = code.replace('{{SHARED_MODULE_DIRS}}', '# (none in test)')
 
     # Add logging dir to path so plan_logging can be imported
     sys.path.insert(0, str(LOGGING_DIR))
