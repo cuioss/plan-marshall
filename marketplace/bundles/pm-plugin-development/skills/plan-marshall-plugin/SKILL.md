@@ -6,6 +6,14 @@ user-invocable: false
 
 # Plan Marshall Plugin - Plugin Development Domain
 
+## Enforcement
+
+- Run scripts EXACTLY as documented using `python3 .plan/execute-script.py pm-plugin-development:plan-marshall-plugin:plugin_discover ...`
+- Never invoke module discovery logic directly outside of the executor pattern
+- All script output follows TOON format contract
+
+---
+
 Domain manifest skill providing plugin development capabilities and module discovery for plan-marshall workflows.
 
 ## Purpose

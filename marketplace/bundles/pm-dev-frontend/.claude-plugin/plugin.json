@@ -13,11 +13,9 @@
   "agents": [],
   "commands": [],
   "skills": [
-    "./skills/css",
     "./skills/ext-triage-js",
     "./skills/javascript",
     "./skills/js-enforce-eslint",
-    "./skills/js-fix-jsdoc",
-    "./skills/plan-marshall-plugin"
+    "./skills/js-fix-jsdoc"
   ]
 }

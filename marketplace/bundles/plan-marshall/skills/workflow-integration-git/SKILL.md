@@ -6,6 +6,14 @@ user-invocable: false
 
 # CUI Git Workflow Skill
 
+## Enforcement
+
+- Run scripts EXACTLY as documented using `python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow ...`
+- Never bypass the workflow for commit operations -- use the script for conventional commit formatting
+- All script output follows TOON format contract
+
+---
+
 Provides git commit workflow following conventional commits specification. Includes artifact cleanup, commit formatting, and optional push/PR creation.
 
 ## What This Skill Provides

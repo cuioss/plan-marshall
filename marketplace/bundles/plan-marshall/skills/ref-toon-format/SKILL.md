@@ -6,6 +6,13 @@ user-invocable: false
 
 # TOON Format Usage Skill
 
+## Enforcement
+
+- Import `toon_parser` module via PYTHONPATH only -- never copy or inline parser logic
+- All TOON parsing must use `parse_toon()` and serialization must use `serialize_toon()`
+
+---
+
 **REFERENCE MODE**: This skill provides TOON format reference material. Load specific references on-demand based on current task.
 
 Pure reference skill providing TOON (Token-Oriented Object Notation) format specification and usage patterns for agent handoffs and memory persistence.

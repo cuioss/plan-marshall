@@ -6,6 +6,14 @@ user-invocable: true
 
 # Permission Fix Skill
 
+## Enforcement
+
+- Run scripts EXACTLY as documented using `python3 .plan/execute-script.py plan-marshall:tools-permission-fix:permission-fix ...`
+- Always use `--dry-run` first before applying changes
+- All script output follows TOON format contract
+
+---
+
 **PURPOSE**: Write operations for fixing and managing Claude Code permissions.
 
 **COMPLEMENTARY SKILL**: Use `plan-marshall:tools-permission-doctor` for read-only analysis before applying fixes.

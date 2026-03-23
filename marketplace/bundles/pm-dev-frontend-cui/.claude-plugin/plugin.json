@@ -13,7 +13,6 @@
   "agents": [],
   "commands": [],
   "skills": [
-    "./skills/cui-javascript-project",
-    "./skills/plan-marshall-plugin"
+    "./skills/cui-javascript-project"
   ]
 }

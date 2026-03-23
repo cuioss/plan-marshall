@@ -6,6 +6,14 @@ user-invocable: false
 
 # Build Maven
 
+## Enforcement
+
+- Run scripts EXACTLY as documented using `python3 .plan/execute-script.py plan-marshall:build-maven:maven ...`
+- Never invoke `mvn` or `./mvnw` directly outside of script internals
+- All script output follows TOON format contract
+
+---
+
 Maven build execution with output parsing, module discovery, and wrapper detection.
 
 ## Scripts Overview

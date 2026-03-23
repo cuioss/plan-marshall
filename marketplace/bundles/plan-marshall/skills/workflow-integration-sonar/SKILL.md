@@ -6,6 +6,14 @@ user-invocable: false
 
 # Sonar Workflow Skill
 
+## Enforcement
+
+- Run scripts EXACTLY as documented using `python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar ...`
+- Never suppress Sonar issues without justification and user approval
+- All script output follows TOON format contract
+
+---
+
 Handles Sonar issue workflows - fetching issues from SonarQube, triaging them, and implementing fixes or suppressions.
 
 ## What This Skill Provides

@@ -6,6 +6,14 @@ user-invocable: false
 
 # Tools Integration CI Skill
 
+## Enforcement
+
+- Run scripts EXACTLY as documented using `python3 .plan/execute-script.py plan-marshall:tools-integration-ci:... ...`
+- Never invoke `gh` or `glab` directly for CI operations -- use the provider abstraction scripts
+- All script output follows TOON format contract
+
+---
+
 Unified CI provider abstraction using **static routing** - one script per provider, config stores full commands.
 
 ## What This Skill Provides

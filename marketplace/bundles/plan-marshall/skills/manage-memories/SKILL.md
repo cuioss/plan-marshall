@@ -6,6 +6,14 @@ user-invocable: false
 
 # Claude Memory Skill
 
+## Enforcement
+
+- Run scripts EXACTLY as documented using `python3 .plan/execute-script.py plan-marshall:manage-memories:manage-memory ...`
+- Never read or write memory files directly
+- All script output follows TOON format contract
+
+---
+
 Memory layer operations for persistent session storage (via `file-operations-base` skill).
 
 ## What This Skill Provides

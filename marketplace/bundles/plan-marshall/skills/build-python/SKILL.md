@@ -6,6 +6,14 @@ user-invocable: false
 
 # Build Python
 
+## Enforcement
+
+- Run scripts EXACTLY as documented using `python3 .plan/execute-script.py plan-marshall:build-python:python_build ...`
+- Never invoke `./pw` directly outside of script internals
+- All script output follows TOON format contract
+
+---
+
 Python build execution via pyprojectx (`./pw` wrapper) with output parsing for mypy, ruff, and pytest.
 
 ## Scripts Overview

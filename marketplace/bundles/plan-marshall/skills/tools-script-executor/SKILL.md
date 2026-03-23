@@ -6,6 +6,14 @@ user-invocable: false
 
 # Script Executor Skill
 
+## Enforcement
+
+- Run executor generation EXACTLY as documented using `python3 .plan/execute-script.py plan-marshall:tools-script-executor:generate-executor ...`
+- Never modify `execute-script.py` manually -- always regenerate via the script
+- All script output follows TOON format contract
+
+---
+
 ## Overview
 
 All marketplace scripts are executed through `.plan/execute-script.py`:

@@ -6,6 +6,14 @@ user-invocable: false
 
 # Extension API Skill
 
+## Enforcement
+
+- Run scripts EXACTLY as documented using `python3 .plan/execute-script.py plan-marshall:extension-api:extension_discovery ...`
+- Never import extension modules directly outside of build scripts
+- All CLI output follows TOON format contract
+
+---
+
 Unified API for domain bundle extensions providing module discovery, build system detection, and command generation. Provides the `ExtensionBase` abstract base class that all domain extensions must inherit from.
 
 ## Purpose

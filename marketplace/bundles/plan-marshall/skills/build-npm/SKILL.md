@@ -6,6 +6,14 @@ user-invocable: false
 
 # Build npm
 
+## Enforcement
+
+- Run scripts EXACTLY as documented using `python3 .plan/execute-script.py plan-marshall:build-npm:npm ...`
+- Never invoke `npm` or `npx` directly outside of script internals
+- All script output follows TOON format contract
+
+---
+
 npm/npx build execution with multi-parser output analysis and JavaScript coverage reporting.
 
 ## Scripts Overview

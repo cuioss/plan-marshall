@@ -6,6 +6,14 @@ user-invocable: false
 
 # Run Config Skill
 
+## Enforcement
+
+- Run scripts EXACTLY as documented using `python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config ...`
+- Never read or write run configuration files directly
+- All script output follows TOON format contract
+
+---
+
 Run configuration handling for persistent command configuration storage.
 
 ## What This Skill Provides

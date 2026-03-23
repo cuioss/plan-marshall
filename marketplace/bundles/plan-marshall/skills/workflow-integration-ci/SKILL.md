@@ -6,6 +6,14 @@ user-invocable: false
 
 # PR Workflow Skill (Provider-Agnostic)
 
+## Enforcement
+
+- Run scripts EXACTLY as documented using `python3 .plan/execute-script.py plan-marshall:workflow-integration-ci:pr ...`
+- Never invoke CI provider CLIs directly for review operations -- use the provider abstraction
+- All script output follows TOON format contract
+
+---
+
 Handles PR review comment workflows - fetching comments, triaging them, and generating appropriate responses. Works with both GitHub and GitLab via the unified `tools-integration-ci` abstraction.
 
 ## What This Skill Provides

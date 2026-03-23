@@ -6,6 +6,13 @@ user-invocable: false
 
 # File Operations Base Skill
 
+## Enforcement
+
+- Import `file_ops` module via PYTHONPATH only -- never copy or inline file operation logic
+- All `.plan/` directory writes must use `atomic_write()` from this module
+
+---
+
 **Role**: Shared Python module providing atomic file operations, metadata parsing, JSON output helpers, and base directory configuration for CUI workflow scripts.
 
 ## What This Skill Provides

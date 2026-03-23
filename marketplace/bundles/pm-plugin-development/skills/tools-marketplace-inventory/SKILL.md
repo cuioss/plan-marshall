@@ -6,6 +6,14 @@ user-invocable: false
 
 # Marketplace Inventory Skill
 
+## Enforcement
+
+- Run scripts EXACTLY as documented using `python3 .plan/execute-script.py pm-plugin-development:tools-marketplace-inventory:... ...`
+- Never scan marketplace directories directly -- use the inventory scripts
+- All script output follows TOON format contract
+
+---
+
 Provides complete marketplace inventory scanning capabilities using the scan-marketplace-inventory.py script.
 
 ## Purpose
