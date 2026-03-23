@@ -2,11 +2,6 @@
 name: dev-general-practices
 description: Foundational development practices covering user interaction, tool usage, research, dependency management, and document proliferation
 user-invocable: false
-standards:
-  - standards/general-development-rules.md
-  - standards/file-operations.md
-  - standards/search-operations.md
-  - standards/tool-usage-patterns.md
 ---
 
 # Development Practices Skill

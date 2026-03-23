@@ -170,7 +170,7 @@ For Quarkus native in distroless images, use the **management interface** (port 
 quarkus.management.enabled=true
 ```
 
-For complete distroless health probe patterns and Docker Compose integration, see [distroless-health-probes.md](../../../pm-dev-oci/skills/oci-standards/standards/distroless-health-probes.md).
+For complete distroless health probe patterns and Docker Compose integration, see the `pm-dev-oci:oci-standards` skill.
 
 ## Security Requirements
 

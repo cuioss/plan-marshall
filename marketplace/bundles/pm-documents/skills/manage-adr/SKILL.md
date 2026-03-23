@@ -6,6 +6,14 @@ user-invocable: false
 
 # ADR Management Skill
 
+## Enforcement
+
+- Run scripts EXACTLY as documented using `python3 .plan/execute-script.py pm-documents:manage-adr:manage-adr ...`
+- Never skip confirmation steps for delete operations
+- Always validate ADR format after creation or update
+
+---
+
 Manage Architectural Decision Records (ADRs) stored in `doc/adr/` directory.
 
 ## Purpose
@@ -248,6 +256,6 @@ Examples:
 - `doc/adr/002-Adopt_Quarkus_Framework.adoc`
 - `doc/adr/003-Implement_CQRS_Pattern.adoc`
 
-## References
+## Related Skills
 
-- [ref-asciidoc SKILL](../ref-asciidoc/SKILL.md) - Format validation
+- `pm-documents:ref-asciidoc` - Format validation

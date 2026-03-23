@@ -14,7 +14,7 @@ If you discover issues or improvements during execution, record them:
 
 1. **Activate skill**: `Skill: plan-marshall:manage-lessons`
 2. **Record lesson** with:
-   - Component: `{type: "command", name: "java-enforce-logrecords", bundle: "pm-dev-java"}`
+   - Component: `{type: "skill", name: "java-enforce-logrecords", bundle: "pm-dev-java-cui"}`
    - Category: bug | improvement | pattern | anti-pattern
    - Summary and detail of the finding
 
@@ -108,12 +108,7 @@ This loads:
 Execute workflow: Analyze Logging Violations
 - target: {module path or project root}
 
-Or run script directly:
-```bash
-scripts/analyze-logging-violations.py --directory {target}
-```
-
-**Script returns structured violations:**
+**Returns structured violations:**
 - File locations and line numbers
 - Violation types (MISSING_LOG_RECORD, INCORRECT_LOG_RECORD_USAGE)
 - Current vs expected usage
@@ -246,13 +241,7 @@ Execute workflow: Document LogRecord
 - holder_class: {path-to-java-file}
 - output_file: {path-to-adoc-file}
 
-Or run script directly:
-```bash
-scripts/document-logrecord.py --holder {holder_class} --output {output_file}
-```
-
 **Verification:**
-- Check script completed successfully
 - Verify AsciiDoc file was updated
 - Ensure all LogRecords are documented
 
@@ -345,7 +334,7 @@ COMPLIANCE STATUS: {COMPLIANT / ISSUES REMAINING}
 **Agent Coordination:**
 - Use /java-implement-code for production code changes
 - Use /java-implement-tests for LogAssert test implementation
-- Use Bash + parse-maven-output.py for all build verifications
+- Use `plan-marshall:manage-architecture:architecture resolve` for all build verifications
 - Execute commands in batches (grouped by change type)
 
 **Identifier Management:**
@@ -390,4 +379,4 @@ COMPLIANCE STATUS: {COMPLIANT / ISSUES REMAINING}
 - Standards: `logging-standards.md`, `logmessages-documentation.md`, `logging-maintenance-reference.md`
 - Command: `/java-implement-code` - Fix production code
 - Command: `/java-implement-tests` - Add tests
-- Skill: `pm-dev-java:plan-marshall-plugin` - Maven standards and build output parsing
+- Skill: `pm-dev-java:plan-marshall-plugin` - Java domain extension with workflow integration

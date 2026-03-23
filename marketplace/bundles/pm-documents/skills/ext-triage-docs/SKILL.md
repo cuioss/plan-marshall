@@ -71,8 +71,8 @@ Registered in marshal.json under the documentation domain:
 - Generated documentation from code
 - Historical ADRs with outdated format
 
-## Related Documents
+## Related Skills
 
-- [extension-api:extension-contract](../../../plan-marshall/skills/extension-api/standards/extension-contract.md) - Triage extension contract
-- [pm-documents:ref-asciidoc](../ref-asciidoc/SKILL.md) - AsciiDoc formatting and validation
-- [pm-documents:ref-documentation](../ref-documentation/SKILL.md) - Content quality and review
+- `plan-marshall:extension-api` - Triage extension contract
+- `pm-documents:ref-asciidoc` - AsciiDoc formatting and validation
+- `pm-documents:ref-documentation` - Content quality and review

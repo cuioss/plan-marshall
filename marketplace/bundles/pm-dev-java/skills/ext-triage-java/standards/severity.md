@@ -158,4 +158,4 @@ Else → ACCEPT and document
 ## Related Standards
 
 - [suppression.md](suppression.md) - How to suppress findings
-- [pm-dev-java:java-core](../../java-core/SKILL.md) - Java coding standards
+- `pm-dev-java:java-core` - Java coding standards

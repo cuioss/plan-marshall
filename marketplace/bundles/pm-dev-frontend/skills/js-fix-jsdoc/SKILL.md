@@ -8,14 +8,20 @@ user-invocable: false
 
 **REFERENCE MODE**: This skill provides reference material. Load specific standards on-demand based on current task.
 
+## Enforcement
+
+- **Execution mode**: Select workflow and execute immediately
+- **Prohibited actions**: Do not invent script arguments not documented below; do not skip analysis before fixing
+- **Constraints**: All script calls use Rule 9 explicit notation (`python3 .plan/execute-script.py pm-dev-frontend:js-fix-jsdoc:jsdoc {subcommand} {args}`)
+
 ## Overview
 
 Provides JSDoc documentation standards for CUI JavaScript projects covering functions, classes, modules, types, and web components.
 
 ## Standards Documents
 
-- **jsdoc-essentials.md** - Core JSDoc syntax, required tags, ESLint setup, writing style
-- **jsdoc-patterns.md** - Documentation patterns for all code element types with examples
+- **`standards/jsdoc-essentials.md`** - Core JSDoc syntax, required tags, ESLint setup, writing style
+- **`standards/jsdoc-patterns.md`** - Documentation patterns for all code element types with examples
 
 ## What This Skill Provides
 
