@@ -36,7 +36,7 @@ else:
     # Fallback for standalone execution without executor PYTHONPATH setup.
     # Intentionally duplicates _serialize_value quoting logic from toon_parser.py
     # to ensure correct round-trip behavior even when the main parser is unreachable.
-    def serialize_toon(data: dict[str, Any], indent: int = 0) -> str:
+    def serialize_toon(data: dict[str, Any], indent: int = 0, table_separator: str = ',') -> str:
         import re as _re
 
         def _quote_if_ambiguous(val: str) -> str:

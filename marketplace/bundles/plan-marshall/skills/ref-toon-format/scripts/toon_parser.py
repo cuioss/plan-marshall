@@ -92,33 +92,40 @@ def _parse_value(value_str: str) -> Any:
 
 
 def _parse_csv_row(row: str, fields: list[str]) -> dict[str, Any]:
-    """Parse a CSV-style row into a dictionary using field headers."""
+    """Parse a CSV/TSV-style row into a dictionary using field headers.
+
+    Auto-detects separator: tabs if present, otherwise commas.
+    """
     result = {}
 
-    # Handle quoted values with commas and escaped quotes
-    values = []
-    current = ''
-    in_quotes = False
-    i = 0
+    # Auto-detect separator: tab-separated if tabs present, else comma-separated
+    if '\t' in row:
+        values = [v.strip() for v in row.split('\t')]
+    else:
+        # Handle quoted values with commas and escaped quotes
+        values = []
+        current = ''
+        in_quotes = False
+        i = 0
 
-    while i < len(row):
-        char = row[i]
-        # Handle escaped quotes within quoted strings
-        if in_quotes and char == '\\' and i + 1 < len(row) and row[i + 1] == '"':
-            current += '\\"'
-            i += 2
-            continue
-        if char == '"':
-            current += char
-            in_quotes = not in_quotes
-        elif char == ',' and not in_quotes:
-            values.append(current.strip())
-            current = ''
-        else:
-            current += char
-        i += 1
+        while i < len(row):
+            char = row[i]
+            # Handle escaped quotes within quoted strings
+            if in_quotes and char == '\\' and i + 1 < len(row) and row[i + 1] == '"':
+                current += '\\"'
+                i += 2
+                continue
+            if char == '"':
+                current += char
+                in_quotes = not in_quotes
+            elif char == ',' and not in_quotes:
+                values.append(current.strip())
+                current = ''
+            else:
+                current += char
+            i += 1
 
-    values.append(current.strip())
+        values.append(current.strip())
 
     # Map values to fields
     for i, field in enumerate(fields):
@@ -372,12 +379,12 @@ def parse_toon(content: str) -> dict[str, Any]:
         ) from e
 
 
-def _serialize_value(value: Any, indent: int = 0) -> str:
+def _serialize_value(value: Any, table_separator: str = ',') -> str:
     """Serialize a Python value to TOON format.
 
     Args:
         value: Value to serialize
-        indent: Current indentation level for nested structures
+        table_separator: Current table separator (values containing it need quoting)
 
     Returns:
         TOON formatted string (may be multi-line for complex types)
@@ -389,14 +396,21 @@ def _serialize_value(value: Any, indent: int = 0) -> str:
     if isinstance(value, (int, float)):
         return str(value)
     if isinstance(value, str):
-        # Quote if contains special characters
-        if ',' in value or ':' in value or '\n' in value:
-            return f'"{value}"'
-        # Quote if _parse_value would misinterpret as non-string type
-        if value in ('true', 'false', 'null', ''):
-            return f'"{value}"'
-        if re.match(r'^-?\d+$', value) or re.match(r'^-?\d+\.\d+$', value) or re.match(r'^\d+%$', value):
-            return f'"{value}"'
+        # Quote if contains separator, special characters, or would be misinterpreted
+        needs_quoting = (
+            table_separator in value
+            or ',' in value
+            or ':' in value
+            or '\n' in value
+            or '"' in value
+            or value in ('true', 'false', 'null', '')
+            or re.match(r'^-?\d+$', value)
+            or re.match(r'^-?\d+\.\d+$', value)
+            or re.match(r'^\d+%$', value)
+        )
+        if needs_quoting:
+            escaped = value.replace('"', '\\"')
+            return f'"{escaped}"'
         return value
     if isinstance(value, dict):
         # Serialize dict as JSON string (wrapped in quotes, internal quotes escaped)
@@ -439,12 +453,13 @@ def _is_uniform_array(arr: list) -> tuple[bool, list[str]]:
     return True, all_keys
 
 
-def serialize_toon(data: dict[str, Any], indent: int = 0) -> str:
+def serialize_toon(data: dict[str, Any], indent: int = 0, table_separator: str = ',') -> str:
     """Serialize a Python dictionary to TOON format.
 
     Args:
         data: Dictionary to serialize
         indent: Current indentation level (internal use)
+        table_separator: Separator for uniform array rows (',' or '\\t')
 
     Returns:
         TOON formatted string
@@ -461,15 +476,15 @@ def serialize_toon(data: dict[str, Any], indent: int = 0) -> str:
     for key, value in data.items():
         if isinstance(value, dict):
             lines.append(f'{prefix}{key}:')
-            lines.append(serialize_toon(value, indent + 1))
+            lines.append(serialize_toon(value, indent + 1, table_separator))
         elif isinstance(value, list):
             is_uniform, fields = _is_uniform_array(value)
             if is_uniform and fields:
                 # Uniform array with headers
                 lines.append(f'{prefix}{key}[{len(value)}]{{{",".join(fields)}}}:')
                 for item in value:
-                    row_values = [_serialize_value(item.get(f, '')) for f in fields]
-                    lines.append(f'{prefix}  {",".join(row_values)}')
+                    row_values = [_serialize_value(item.get(f, ''), table_separator) for f in fields]
+                    lines.append(f'{prefix}  {table_separator.join(row_values)}')
             else:
                 # Simple array
                 lines.append(f'{prefix}{key}[{len(value)}]:')

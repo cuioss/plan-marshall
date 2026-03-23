@@ -34,13 +34,13 @@ if _toon_parser_path.exists():
     from toon_parser import serialize_toon
 else:
     # Fallback: simple dict-to-toon for basic cases
-    def serialize_toon(data: dict[str, Any], indent: int = 0) -> str:
+    def serialize_toon(data: dict[str, Any], indent: int = 0, table_separator: str = ',') -> str:
         lines = []
         prefix = '  ' * indent
         for key, value in data.items():
             if isinstance(value, dict):
                 lines.append(f'{prefix}{key}:')
-                lines.append(serialize_toon(value, indent + 1))
+                lines.append(serialize_toon(value, indent + 1, table_separator))
             elif isinstance(value, list):
                 lines.append(f'{prefix}{key}[{len(value)}]:')
                 for item in value:

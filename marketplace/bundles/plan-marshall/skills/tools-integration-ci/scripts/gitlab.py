@@ -58,6 +58,8 @@ from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import quote
 
+from toon_parser import serialize_toon  # type: ignore[import-not-found]
+
 
 def run_glab(args: list[str]) -> tuple[int, str, str]:
     """Run glab CLI command and return (returncode, stdout, stderr)."""
@@ -163,10 +165,12 @@ def cmd_pr_create(args: argparse.Namespace) -> int:
             pass
 
     # Output TOON (using 'pr' terminology for API consistency)
-    print('status: success')
-    print('operation: pr_create')
-    print(f'pr_number: {mr_number}')
-    print(f'pr_url: {mr_url}')
+    print(serialize_toon({
+        'status': 'success',
+        'operation': 'pr_create',
+        'pr_number': mr_number,
+        'pr_url': mr_url,
+    }, table_separator='\t'))
     return 0
 
 
@@ -207,18 +211,20 @@ def cmd_pr_view(args: argparse.Namespace) -> int:
     else:
         review_decision = 'none'
 
-    print('status: success')
-    print('operation: pr_view')
-    print(f'pr_number: {data.get("iid", "unknown")}')
-    print(f'pr_url: {data.get("web_url", "")}')
-    print(f'state: {state}')
-    print(f'title: {data.get("title", "")}')
-    print(f'head_branch: {data.get("source_branch", "")}')
-    print(f'base_branch: {data.get("target_branch", "")}')
-    print(f'is_draft: {str(data.get("draft", False)).lower()}')
-    print(f'mergeable: {mergeable}')
-    print(f'merge_state: {merge_status}')
-    print(f'review_decision: {review_decision}')
+    print(serialize_toon({
+        'status': 'success',
+        'operation': 'pr_view',
+        'pr_number': data.get('iid', 'unknown'),
+        'pr_url': data.get('web_url', ''),
+        'state': state,
+        'title': data.get('title', ''),
+        'head_branch': data.get('source_branch', ''),
+        'base_branch': data.get('target_branch', ''),
+        'is_draft': str(data.get('draft', False)).lower(),
+        'mergeable': mergeable,
+        'merge_state': merge_status,
+        'review_decision': review_decision,
+    }, table_separator='\t'))
     return 0
 
 
@@ -234,9 +240,11 @@ def cmd_pr_reply(args: argparse.Namespace) -> int:
     if returncode != 0:
         return output_error('pr_reply', f'Failed to comment on MR {args.pr_number}', stderr.strip())
 
-    print('status: success')
-    print('operation: pr_reply')
-    print(f'pr_number: {args.pr_number}')
+    print(serialize_toon({
+        'status': 'success',
+        'operation': 'pr_reply',
+        'pr_number': args.pr_number,
+    }, table_separator='\t'))
     return 0
 
 
@@ -257,9 +265,11 @@ def cmd_pr_resolve_thread(args: argparse.Namespace) -> int:
     if returncode != 0:
         return output_error('pr_resolve_thread', f'Failed to resolve thread: {stderr.strip()}')
 
-    print('status: success')
-    print('operation: pr_resolve_thread')
-    print(f'thread_id: {args.thread_id}')
+    print(serialize_toon({
+        'status': 'success',
+        'operation': 'pr_resolve_thread',
+        'thread_id': args.thread_id,
+    }, table_separator='\t'))
     return 0
 
 
@@ -280,10 +290,12 @@ def cmd_pr_thread_reply(args: argparse.Namespace) -> int:
     if returncode != 0:
         return output_error('pr_thread_reply', f'Failed to reply to thread: {stderr.strip()}')
 
-    print('status: success')
-    print('operation: pr_thread_reply')
-    print(f'pr_number: {args.pr_number}')
-    print(f'thread_id: {args.thread_id}')
+    print(serialize_toon({
+        'status': 'success',
+        'operation': 'pr_thread_reply',
+        'pr_number': args.pr_number,
+        'thread_id': args.thread_id,
+    }, table_separator='\t'))
     return 0
 
 
@@ -307,20 +319,23 @@ def cmd_pr_reviews(args: argparse.Namespace) -> int:
     except json.JSONDecodeError:
         return output_error('pr_reviews', 'Failed to parse glab output', stdout[:100])
 
-    # Output TOON - map GitLab approvals to review format
-    print('status: success')
-    print('operation: pr_reviews')
-    print(f'pr_number: {args.pr_number}')
-    print(f'review_count: {len(approvals)}')
-    print()
-    print(f'reviews[{len(approvals)}]{{user,state,submitted_at}}:')
+    # Build review list for TOON table
+    reviews = []
     for approval in approvals:
-        user = approval.get('username', 'unknown')
-        # GitLab only has APPROVED state in approved_by list
-        state = 'APPROVED'
-        # approved_at may not be available in all GitLab versions
-        submitted = approval.get('approved_at', '-')
-        print(f'{user}\t{state}\t{submitted}')
+        reviews.append({
+            'user': approval.get('username', 'unknown'),
+            'state': 'APPROVED',
+            'submitted_at': approval.get('approved_at', '-'),
+        })
+
+    # Output TOON - map GitLab approvals to review format
+    print(serialize_toon({
+        'status': 'success',
+        'operation': 'pr_reviews',
+        'pr_number': args.pr_number,
+        'review_count': len(approvals),
+        'reviews': reviews,
+    }, table_separator='\t'))
     return 0
 
 
@@ -382,31 +397,42 @@ def cmd_pr_comments(args: argparse.Namespace) -> int:
                 }
             )
 
+    # Escape body text for TOON table rows
+    toon_comments = []
+    for c in comments:
+        body = c['body'].replace('\t', ' ').replace('\n', ' ')[:100]
+        toon_comments.append({
+            'id': c['id'],
+            'author': c['author'],
+            'body': body,
+            'path': c['path'],
+            'line': c['line'],
+            'resolved': c['resolved'],
+            'created_at': c['created_at'],
+        })
+
     # Output TOON
     unresolved_count = sum(1 for c in comments if not c['resolved'])
-    print('status: success')
-    print('operation: pr_comments')
-    print('provider: gitlab')
-    print(f'pr_number: {args.pr_number}')
-    print(f'total: {len(comments)}')
-    print(f'unresolved: {unresolved_count}')
-    print()
-    print(f'comments[{len(comments)}]{{id,author,body,path,line,resolved,created_at}}:')
-    for c in comments:
-        # Escape tabs and newlines in body for TOON format
-        body = c['body'].replace('\t', ' ').replace('\n', ' ')[:100]
-        print(f'{c["id"]}\t{c["author"]}\t{body}\t{c["path"]}\t{c["line"]}\t{c["resolved"]}\t{c["created_at"]}')
+    print(serialize_toon({
+        'status': 'success',
+        'operation': 'pr_comments',
+        'provider': 'gitlab',
+        'pr_number': args.pr_number,
+        'total': len(comments),
+        'unresolved': unresolved_count,
+        'comments': toon_comments,
+    }, table_separator='\t'))
     return 0
 
 
-def format_checks_toon(jobs: list[dict]) -> tuple[list[str], int]:
-    """Format GitLab pipeline jobs into TOON table rows and compute overall elapsed.
+def format_checks_toon(jobs: list[dict]) -> tuple[list[dict], int]:
+    """Format GitLab pipeline jobs into TOON-compatible dicts and compute overall elapsed.
 
-    Returns (toon_lines, elapsed_sec_total).
+    Returns (list_of_job_dicts, elapsed_sec_total).
     """
     now = datetime.now(UTC)
     earliest_start = None
-    rows: list[str] = []
+    rows: list[dict] = []
 
     for job in jobs:
         name = job.get('name', 'unknown')
@@ -447,18 +473,21 @@ def format_checks_toon(jobs: list[dict]) -> tuple[list[str], int]:
             except (ValueError, TypeError):
                 elapsed_sec = 0
 
-        rows.append(f'{name}\t{state}\t{result}\t{elapsed_sec}\t{web_url}\t{stage}')
+        rows.append({
+            'name': name,
+            'status': state,
+            'result': result,
+            'elapsed_sec': elapsed_sec,
+            'url': web_url,
+            'stage': stage,
+        })
 
     # Compute total elapsed from earliest start to now
     total_elapsed = 0
     if earliest_start:
         total_elapsed = int((now - earliest_start).total_seconds())
 
-    lines: list[str] = []
-    lines.append(f'checks[{len(jobs)}]{{name,status,result,elapsed_sec,url,stage}}:')
-    lines.extend(rows)
-
-    return lines, total_elapsed
+    return rows, total_elapsed
 
 
 def cmd_ci_status(args: argparse.Namespace) -> int:
@@ -506,18 +535,18 @@ def cmd_ci_status(args: argparse.Namespace) -> int:
     overall = status_map.get(pipeline_status, 'unknown')
 
     # Format checks table
-    toon_lines, total_elapsed = format_checks_toon(jobs)
+    checks, total_elapsed = format_checks_toon(jobs)
 
     # Output TOON
-    print('status: success')
-    print('operation: ci_status')
-    print(f'pr_number: {args.pr_number}')
-    print(f'overall_status: {overall}')
-    print(f'check_count: {len(jobs)}')
-    print(f'elapsed_sec: {total_elapsed}')
-    print()
-    for line in toon_lines:
-        print(line)
+    print(serialize_toon({
+        'status': 'success',
+        'operation': 'ci_status',
+        'pr_number': args.pr_number,
+        'overall_status': overall,
+        'check_count': len(jobs),
+        'elapsed_sec': total_elapsed,
+        'checks': checks,
+    }, table_separator='\t'))
     return 0
 
 
@@ -540,20 +569,20 @@ def cmd_ci_wait(args: argparse.Namespace) -> int:
 
         # Check timeout
         if elapsed >= timeout:
-            # Format checks table for timeout output
-            toon_lines, total_elapsed = format_checks_toon(last_jobs) if last_jobs else ([], 0)
+            check_dicts, total_elapsed = format_checks_toon(last_jobs) if last_jobs else ([], 0)
 
-            print('status: error', file=sys.stderr)
-            print('operation: ci_wait', file=sys.stderr)
-            print('error: Timeout waiting for CI', file=sys.stderr)
-            print(f'pr_number: {args.pr_number}', file=sys.stderr)
-            print(f'duration_sec: {int(elapsed)}', file=sys.stderr)
-            print('last_status: pending', file=sys.stderr)
-            if toon_lines:
-                print(f'elapsed_sec: {total_elapsed}', file=sys.stderr)
-                print(file=sys.stderr)
-                for line in toon_lines:
-                    print(line, file=sys.stderr)
+            error_data: dict[str, Any] = {
+                'status': 'error',
+                'operation': 'ci_wait',
+                'error': 'Timeout waiting for CI',
+                'pr_number': args.pr_number,
+                'duration_sec': int(elapsed),
+                'last_status': 'pending',
+            }
+            if check_dicts:
+                error_data['elapsed_sec'] = total_elapsed
+                error_data['checks'] = check_dicts
+            print(serialize_toon(error_data, table_separator='\t'), file=sys.stderr)
             return 1
 
         # Get MR pipeline status
@@ -590,19 +619,19 @@ def cmd_ci_wait(args: argparse.Namespace) -> int:
                 final_status = 'failure'
 
             # Format checks table
-            toon_lines, total_elapsed = format_checks_toon(last_jobs)
+            checks, total_elapsed = format_checks_toon(last_jobs)
 
             # Output TOON
-            print('status: success')
-            print('operation: ci_wait')
-            print(f'pr_number: {args.pr_number}')
-            print(f'final_status: {final_status}')
-            print(f'duration_sec: {int(elapsed)}')
-            print(f'polls: {polls}')
-            print(f'elapsed_sec: {total_elapsed}')
-            print()
-            for line in toon_lines:
-                print(line)
+            print(serialize_toon({
+                'status': 'success',
+                'operation': 'ci_wait',
+                'pr_number': args.pr_number,
+                'final_status': final_status,
+                'duration_sec': int(elapsed),
+                'polls': polls,
+                'elapsed_sec': total_elapsed,
+                'checks': checks,
+            }, table_separator='\t'))
             return 0
 
         # Wait before next poll
@@ -640,10 +669,12 @@ def cmd_issue_create(args: argparse.Namespace) -> int:
             pass
 
     # Output TOON
-    print('status: success')
-    print('operation: issue_create')
-    print(f'issue_number: {issue_number}')
-    print(f'issue_url: {issue_url}')
+    print(serialize_toon({
+        'status': 'success',
+        'operation': 'issue_create',
+        'issue_number': issue_number,
+        'issue_url': issue_url,
+    }, table_separator='\t'))
     return 0
 
 
@@ -670,37 +701,37 @@ def cmd_issue_view(args: argparse.Namespace) -> int:
     if state == 'opened':
         state = 'open'
 
-    # Output TOON
-    print('status: success')
-    print('operation: issue_view')
-    print(f'issue_number: {data.get("iid", "unknown")}')
-    print(f'issue_url: {data.get("web_url", "")}')
-    print(f'title: {data.get("title", "")}')
-    print(f'body: {data.get("description", "")}')  # GitLab uses 'description'
-    print(f'author: {data.get("author", {}).get("username", "unknown")}')
-    print(f'state: {state}')
-    print(f'created_at: {data.get("created_at", "")}')
-    print(f'updated_at: {data.get("updated_at", "")}')
+    # Build output dict
+    result: dict[str, Any] = {
+        'status': 'success',
+        'operation': 'issue_view',
+        'issue_number': data.get('iid', 'unknown'),
+        'issue_url': data.get('web_url', ''),
+        'title': data.get('title', ''),
+        'body': data.get('description', ''),  # GitLab uses 'description'
+        'author': data.get('author', {}).get('username', 'unknown'),
+        'state': state,
+        'created_at': data.get('created_at', ''),
+        'updated_at': data.get('updated_at', ''),
+    }
 
     # Labels (GitLab: direct string array)
     labels = data.get('labels', [])
     if labels:
-        print(f'\nlabels[{len(labels)}]:')
-        for label in labels:
-            print(f'- {label}')
+        result['labels'] = labels
 
     # Assignees
     assignees = data.get('assignees', [])
     if assignees:
-        print(f'\nassignees[{len(assignees)}]:')
-        for assignee in assignees:
-            print(f'- {assignee.get("username", "")}')
+        result['assignees'] = [a.get('username', '') for a in assignees]
 
     # Milestone
     milestone = data.get('milestone')
     if milestone:
-        print(f'\nmilestone: {milestone.get("title", "")}')
+        result['milestone'] = milestone.get('title', '')
 
+    # Output TOON
+    print(serialize_toon(result, table_separator='\t'))
     return 0
 
 
@@ -720,10 +751,12 @@ def cmd_pr_merge(args: argparse.Namespace) -> int:
     if returncode != 0:
         return output_error('pr_merge', f'Failed to merge MR {args.pr_number}', stderr.strip())
 
-    print('status: success')
-    print('operation: pr_merge')
-    print(f'pr_number: {args.pr_number}')
-    print(f'strategy: {args.strategy}')
+    print(serialize_toon({
+        'status': 'success',
+        'operation': 'pr_merge',
+        'pr_number': args.pr_number,
+        'strategy': args.strategy,
+    }, table_separator='\t'))
     return 0
 
 
@@ -741,10 +774,12 @@ def cmd_pr_auto_merge(args: argparse.Namespace) -> int:
     if returncode != 0:
         return output_error('pr_auto_merge', f'Failed to enable auto-merge for MR {args.pr_number}', stderr.strip())
 
-    print('status: success')
-    print('operation: pr_auto_merge')
-    print(f'pr_number: {args.pr_number}')
-    print('enabled: true')
+    print(serialize_toon({
+        'status': 'success',
+        'operation': 'pr_auto_merge',
+        'pr_number': args.pr_number,
+        'enabled': True,
+    }, table_separator='\t'))
     return 0
 
 
@@ -758,9 +793,11 @@ def cmd_pr_close(args: argparse.Namespace) -> int:
     if returncode != 0:
         return output_error('pr_close', f'Failed to close MR {args.pr_number}', stderr.strip())
 
-    print('status: success')
-    print('operation: pr_close')
-    print(f'pr_number: {args.pr_number}')
+    print(serialize_toon({
+        'status': 'success',
+        'operation': 'pr_close',
+        'pr_number': args.pr_number,
+    }, table_separator='\t'))
     return 0
 
 
@@ -774,9 +811,11 @@ def cmd_pr_ready(args: argparse.Namespace) -> int:
     if returncode != 0:
         return output_error('pr_ready', f'Failed to mark MR {args.pr_number} as ready', stderr.strip())
 
-    print('status: success')
-    print('operation: pr_ready')
-    print(f'pr_number: {args.pr_number}')
+    print(serialize_toon({
+        'status': 'success',
+        'operation': 'pr_ready',
+        'pr_number': args.pr_number,
+    }, table_separator='\t'))
     return 0
 
 
@@ -799,9 +838,11 @@ def cmd_pr_edit(args: argparse.Namespace) -> int:
     if returncode != 0:
         return output_error('pr_edit', f'Failed to edit MR {args.pr_number}', stderr.strip())
 
-    print('status: success')
-    print('operation: pr_edit')
-    print(f'pr_number: {args.pr_number}')
+    print(serialize_toon({
+        'status': 'success',
+        'operation': 'pr_edit',
+        'pr_number': args.pr_number,
+    }, table_separator='\t'))
     return 0
 
 
@@ -815,9 +856,11 @@ def cmd_ci_rerun(args: argparse.Namespace) -> int:
     if returncode != 0:
         return output_error('ci_rerun', f'Failed to retry pipeline {args.run_id}', stderr.strip())
 
-    print('status: success')
-    print('operation: ci_rerun')
-    print(f'run_id: {args.run_id}')
+    print(serialize_toon({
+        'status': 'success',
+        'operation': 'ci_rerun',
+        'run_id': args.run_id,
+    }, table_separator='\t'))
     return 0
 
 
@@ -854,11 +897,13 @@ def cmd_ci_logs(args: argparse.Namespace) -> int:
     truncated = lines[:200]
     content = '\n'.join(truncated)
 
-    print('status: success')
-    print('operation: ci_logs')
-    print(f'run_id: {args.run_id}')
-    print(f'log_lines: {len(truncated)}')
-    print(f'content: {content.replace(chr(10), "\\n")}')
+    print(serialize_toon({
+        'status': 'success',
+        'operation': 'ci_logs',
+        'run_id': args.run_id,
+        'log_lines': len(truncated),
+        'content': content.replace(chr(10), '\\n'),
+    }, table_separator='\t'))
     return 0
 
 
@@ -872,9 +917,11 @@ def cmd_issue_close(args: argparse.Namespace) -> int:
     if returncode != 0:
         return output_error('issue_close', f'Failed to close issue {args.issue}', stderr.strip())
 
-    print('status: success')
-    print('operation: issue_close')
-    print(f'issue_number: {args.issue}')
+    print(serialize_toon({
+        'status': 'success',
+        'operation': 'issue_close',
+        'issue_number': args.issue,
+    }, table_separator='\t'))
     return 0
 
 
