@@ -3,8 +3,10 @@
 
 Subcommands:
     pr create       Create a merge request (MR)
+    pr view         View MR for current branch (number, URL, state)
     pr reviews      Get MR approvals
     pr comments     Get MR discussion comments (inline code comments)
+    pr reply        Reply to a MR with a comment
     ci status       Check pipeline status for a MR
     ci wait         Wait for pipeline to complete
     issue create    Create an issue
@@ -12,8 +14,10 @@ Subcommands:
 
 Usage:
     python3 gitlab.py pr create --title "Title" --body "Body" [--base main] [--draft]
+    python3 gitlab.py pr view
     python3 gitlab.py pr reviews --pr-number 123
     python3 gitlab.py pr comments --pr-number 123 [--unresolved-only]
+    python3 gitlab.py pr reply --pr-number 123 --body "Comment text"
     python3 gitlab.py ci status --pr-number 123
     python3 gitlab.py ci wait --pr-number 123 [--timeout 300] [--interval 30]
     python3 gitlab.py issue create --title "Title" --body "Body" [--labels "bug,priority::high"]
@@ -141,6 +145,54 @@ def cmd_pr_create(args: argparse.Namespace) -> int:
     print('operation: pr_create')
     print(f'pr_number: {mr_number}')
     print(f'pr_url: {mr_url}')
+    return 0
+
+
+def cmd_pr_view(args: argparse.Namespace) -> int:
+    """Handle 'pr view' subcommand - get MR for current branch."""
+    is_auth, err = check_auth()
+    if not is_auth:
+        return output_error('pr_view', err)
+
+    returncode, stdout, stderr = run_glab(['mr', 'view', '--output', 'json'])
+    if returncode != 0:
+        return output_error('pr_view', 'No MR found for current branch', stderr.strip())
+
+    try:
+        data: dict[str, Any] = json.loads(stdout)
+    except json.JSONDecodeError:
+        return output_error('pr_view', 'Failed to parse glab output', stdout[:100])
+
+    state = data.get('state', 'unknown')
+    if state == 'opened':
+        state = 'open'
+
+    print('status: success')
+    print('operation: pr_view')
+    print(f'pr_number: {data.get("iid", "unknown")}')
+    print(f'pr_url: {data.get("web_url", "")}')
+    print(f'state: {state}')
+    print(f'title: {data.get("title", "")}')
+    print(f'head_branch: {data.get("source_branch", "")}')
+    print(f'base_branch: {data.get("target_branch", "")}')
+    return 0
+
+
+def cmd_pr_reply(args: argparse.Namespace) -> int:
+    """Handle 'pr reply' subcommand - post a comment on an MR."""
+    is_auth, err = check_auth()
+    if not is_auth:
+        return output_error('pr_reply', err)
+
+    returncode, stdout, stderr = run_glab(
+        ['mr', 'note', str(args.pr_number), '--message', args.body]
+    )
+    if returncode != 0:
+        return output_error('pr_reply', f'Failed to comment on MR {args.pr_number}', stderr.strip())
+
+    print('status: success')
+    print('operation: pr_reply')
+    print(f'pr_number: {args.pr_number}')
     return 0
 
 
@@ -500,6 +552,14 @@ def main() -> int:
     pr_create_parser.add_argument('--base', help='Target branch (default: repo default)')
     pr_create_parser.add_argument('--draft', action='store_true', help='Create as draft MR')
 
+    # pr view
+    pr_subparsers.add_parser('view', help='View MR for current branch')
+
+    # pr reply
+    pr_reply_parser = pr_subparsers.add_parser('reply', help='Reply to a MR with a comment')
+    pr_reply_parser.add_argument('--pr-number', required=True, type=int, help='MR number (iid)')
+    pr_reply_parser.add_argument('--body', required=True, help='Comment text')
+
     # pr reviews
     pr_reviews_parser = pr_subparsers.add_parser('reviews', help='Get MR approvals')
     pr_reviews_parser.add_argument('--pr-number', required=True, type=int, help='MR number (iid)')
@@ -542,6 +602,10 @@ def main() -> int:
     if args.command == 'pr':
         if args.pr_command == 'create':
             return cmd_pr_create(args)
+        elif args.pr_command == 'view':
+            return cmd_pr_view(args)
+        elif args.pr_command == 'reply':
+            return cmd_pr_reply(args)
         elif args.pr_command == 'reviews':
             return cmd_pr_reviews(args)
         elif args.pr_command == 'comments':

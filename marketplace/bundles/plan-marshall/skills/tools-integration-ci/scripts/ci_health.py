@@ -278,8 +278,10 @@ def generate_ci_commands(provider: str) -> dict:
 
     return {
         'pr-create': f'{executor} {script} pr create',
+        'pr-view': f'{executor} {script} pr view',
         'pr-reviews': f'{executor} {script} pr reviews',
         'pr-comments': f'{executor} {script} pr comments',
+        'pr-reply': f'{executor} {script} pr reply',
         'ci-status': f'{executor} {script} ci status',
         'ci-wait': f'{executor} {script} ci wait',
         'issue-create': f'{executor} {script} issue create',

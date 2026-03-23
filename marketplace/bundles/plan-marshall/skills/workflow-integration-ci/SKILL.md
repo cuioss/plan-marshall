@@ -111,9 +111,10 @@ Handles PR review comment workflows - fetching comments, triaging them, and gene
 
    **For explain:**
    - Generate explanation based on code context
-   - Reply to comment using gh CLI:
+   - Reply to comment using CI abstraction:
      ```bash
-     gh pr comment {pr} --body "..."
+     COMMAND=$(jq -r '.ci.commands["pr-reply"]' .plan/marshal.json)
+     eval "$COMMAND --pr-number {pr} --body '...'"
      ```
 
    **For ignore:**

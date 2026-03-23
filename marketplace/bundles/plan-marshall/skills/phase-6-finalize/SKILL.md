@@ -200,11 +200,14 @@ If PR was created:
 
 #### Step 5a: Determine PR Number
 
-Extract PR number from the current branch (works for both new PRs and resumability):
+Extract PR number from the current branch using the CI abstraction (works for both new PRs and resumability):
 
 ```bash
-PR_NUMBER=$(gh pr view --json number --jq '.number')
+PR_VIEW_CMD=$(jq -r '.ci.commands["pr-view"]' .plan/marshal.json)
+eval "$PR_VIEW_CMD"
 ```
+
+Parse the `pr_number` field from TOON output and store as `PR_NUMBER`.
 
 #### Step 5b: Wait for CI with Adaptive Timeout
 
@@ -213,8 +216,9 @@ The `await-until` script automatically reads learned timeout via `manage-run-con
 and writes actual duration via `timeout_set` after completion, so timeout converges over time.
 
 ```bash
+CI_STATUS_CMD=$(jq -r '.ci.commands["ci-status"]' .plan/marshal.json)
 python3 .plan/execute-script.py plan-marshall:tools-script-executor:await-until poll \
-  --check-cmd "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github ci status --pr-number ${PR_NUMBER}" \
+  --check-cmd "${CI_STATUS_CMD} --pr-number ${PR_NUMBER}" \
   --success-field "overall_status=success" \
   --failure-field "overall_status=failure" \
   --command-key "ci:pr_checks" \
