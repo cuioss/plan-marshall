@@ -29,6 +29,8 @@ def test_pr_subcommand_help():
     assert 'create' in result.stdout
     assert 'view' in result.stdout
     assert 'reply' in result.stdout
+    assert 'resolve-thread' in result.stdout
+    assert 'thread-reply' in result.stdout
     assert 'reviews' in result.stdout
 
 
@@ -103,6 +105,35 @@ def test_pr_reply_help():
 def test_pr_reply_missing_required():
     """Test pr reply fails without required arguments."""
     result = run_script(SCRIPT_PATH, 'pr', 'reply')
+    assert not result.success, 'Expected failure without --pr-number'
+
+
+def test_pr_resolve_thread_help():
+    """Test pr resolve-thread help shows required arguments."""
+    result = run_script(SCRIPT_PATH, 'pr', 'resolve-thread', '--help')
+    assert result.success, f'pr resolve-thread --help failed: {result.stderr}'
+    assert '--pr-number' in result.stdout
+    assert '--thread-id' in result.stdout
+
+
+def test_pr_resolve_thread_missing_required():
+    """Test pr resolve-thread fails without required arguments."""
+    result = run_script(SCRIPT_PATH, 'pr', 'resolve-thread')
+    assert not result.success, 'Expected failure without --pr-number'
+
+
+def test_pr_thread_reply_help():
+    """Test pr thread-reply help shows required arguments."""
+    result = run_script(SCRIPT_PATH, 'pr', 'thread-reply', '--help')
+    assert result.success, f'pr thread-reply --help failed: {result.stderr}'
+    assert '--pr-number' in result.stdout
+    assert '--thread-id' in result.stdout
+    assert '--body' in result.stdout
+
+
+def test_pr_thread_reply_missing_required():
+    """Test pr thread-reply fails without required arguments."""
+    result = run_script(SCRIPT_PATH, 'pr', 'thread-reply')
     assert not result.success, 'Expected failure without --pr-number'
 
 

@@ -122,12 +122,14 @@ ci_config{key,value}:
 provider	github
 repo_url	https://github.com/org/repo
 
-ci_commands[9]{name,command}:
+ci_commands[11]{name,command}:
 pr-create	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr create
 pr-view	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr view
 pr-reviews	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr reviews
 pr-comments	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr comments
 pr-reply	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr reply
+pr-resolve-thread	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr resolve-thread
+pr-thread-reply	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr thread-reply
 ci-status	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github ci status
 ci-wait	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github ci wait
 issue-create	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github issue create
@@ -251,6 +253,75 @@ operation: pr_reply
 error: Failed to comment on PR 123
 context: gh pr comment returned non-zero exit code
 ```
+
+---
+
+### pr resolve-thread
+
+Resolve a review thread on a pull request.
+
+**Command**:
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr resolve-thread \
+    --pr-number 123 \
+    --thread-id PRRT_abc123
+```
+
+**Arguments**:
+| Argument | Required | Description |
+|----------|----------|-------------|
+| `--pr-number` | GitHub: No, GitLab: Yes | PR number |
+| `--thread-id` | Yes | Review thread ID |
+
+**Success Output**:
+```toon
+status: success
+operation: pr_resolve_thread
+thread_id: PRRT_abc123
+```
+
+**Field Mapping (GitHub vs GitLab)**:
+| Aspect | GitHub | GitLab |
+|--------|--------|--------|
+| API | GraphQL `resolveReviewThread` mutation | REST `PUT discussions/:id` |
+| `--thread-id` | GraphQL node ID (e.g., `PRRT_kwDO...`) | Discussion ID |
+| `--pr-number` | Ignored (thread ID is self-contained) | Required (URL path component) |
+
+---
+
+### pr thread-reply
+
+Reply to a specific review thread (inline code comment thread).
+
+**Command**:
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr thread-reply \
+    --pr-number 123 \
+    --thread-id PRRT_abc123 \
+    --body "Fixed as suggested."
+```
+
+**Arguments**:
+| Argument | Required | Description |
+|----------|----------|-------------|
+| `--pr-number` | Yes | PR number |
+| `--thread-id` | Yes | Comment/thread ID to reply to |
+| `--body` | Yes | Reply text |
+
+**Success Output**:
+```toon
+status: success
+operation: pr_thread_reply
+pr_number: 123
+thread_id: PRRT_abc123
+```
+
+**Field Mapping (GitHub vs GitLab)**:
+| Aspect | GitHub | GitLab |
+|--------|--------|--------|
+| API | GraphQL `addPullRequestReviewComment` with `inReplyTo` | REST `POST discussions/:id/notes` |
+| `--thread-id` | Comment node ID (`inReplyTo` parameter) | Discussion ID |
+| Requires PR node ID | Yes (fetched internally) | No |
 
 ---
 
@@ -535,6 +606,8 @@ After `persist` command, marshal.json contains:
       "pr-reviews": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr reviews",
       "pr-comments": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr comments",
       "pr-reply": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr reply",
+      "pr-resolve-thread": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr resolve-thread",
+      "pr-thread-reply": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr thread-reply",
       "ci-status": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github ci status",
       "ci-wait": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github ci wait",
       "issue-create": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github issue create",

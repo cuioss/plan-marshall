@@ -126,27 +126,28 @@ def run_command(cmd: str, extra_args: list[str] | None = None) -> tuple[str, str
 
 
 def get_current_pr_number() -> int | None:
-    """Get PR number for current branch (tries gh, then glab)."""
-    # Try GitHub first
-    try:
-        result = subprocess.run(
-            ['gh', 'pr', 'view', '--json', 'number', '--jq', '.number'], capture_output=True, text=True, timeout=10
-        )
-        if result.returncode == 0:
-            return int(result.stdout.strip())
-    except (FileNotFoundError, ValueError, subprocess.TimeoutExpired):
-        pass
+    """Get PR number for current branch via config-driven pr-view command."""
+    config = load_marshal_config()
+    if not config:
+        return None
 
-    # Try GitLab
-    try:
-        result = subprocess.run(['glab', 'mr', 'view', '-F', 'json'], capture_output=True, text=True, timeout=10)
-        if result.returncode == 0:
-            mr_data: dict[str, Any] = json.loads(result.stdout)
-            iid = mr_data.get('iid')
-            if isinstance(iid, int):
-                return iid
-    except (FileNotFoundError, ValueError, json.JSONDecodeError, subprocess.TimeoutExpired):
-        pass
+    ci_config: dict[str, Any] = config.get('ci', {})
+    commands: dict[str, str] = ci_config.get('commands', {})
+    pr_view_cmd = commands.get('pr-view')
+    if not pr_view_cmd:
+        return None
+
+    stdout, stderr, returncode = run_command(pr_view_cmd)
+    if returncode != 0:
+        return None
+
+    # Parse pr_number from TOON output
+    for line in stdout.split('\n'):
+        if line.startswith('pr_number:'):
+            try:
+                return int(line.split(':', 1)[1].strip())
+            except ValueError:
+                return None
 
     return None
 
