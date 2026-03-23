@@ -37,9 +37,9 @@ import argparse
 import json
 import subprocess
 import sys
-from urllib.parse import quote
 import time
 from typing import Any
+from urllib.parse import quote
 
 
 def run_glab(args: list[str]) -> tuple[int, str, str]:
