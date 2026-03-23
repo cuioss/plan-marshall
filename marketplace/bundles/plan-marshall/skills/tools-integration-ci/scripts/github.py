@@ -732,7 +732,7 @@ def cmd_ci_logs(args: argparse.Namespace) -> int:
     print('operation: ci_logs')
     print(f'run_id: {args.run_id}')
     print(f'log_lines: {len(truncated)}')
-    print(f'content: {content}')
+    print(f'content: {content.replace(chr(10), "\\n")}')
     return 0
 
 
