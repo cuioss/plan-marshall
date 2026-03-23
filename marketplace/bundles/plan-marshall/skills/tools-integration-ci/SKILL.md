@@ -147,7 +147,7 @@ ci_config{key,value}:
 provider	github
 repo_url	https://github.com/org/repo
 
-ci_commands[11]{name,command}:
+ci_commands[19]{name,command}:
 pr-create	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr create
 pr-view	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr view
 pr-reviews	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr reviews
@@ -155,10 +155,18 @@ pr-comments	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:g
 pr-reply	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr reply
 pr-resolve-thread	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr resolve-thread
 pr-thread-reply	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr thread-reply
+pr-merge	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr merge
+pr-auto-merge	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr auto-merge
+pr-close	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr close
+pr-ready	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr ready
+pr-edit	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr edit
 ci-status	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github ci status
 ci-wait	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github ci wait
+ci-rerun	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github ci rerun
+ci-logs	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github ci logs
 issue-create	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github issue create
 issue-view	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github issue view
+issue-close	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github issue close
 ```
 
 ---
@@ -284,6 +292,194 @@ pr_url: https://github.com/org/repo/pull/456
 
 ---
 
+## Workflow: Merge PR
+
+**Pattern**: Provider-Agnostic Router
+
+Merge a pull request.
+
+### Step 1: Execute
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr merge \
+    --pr-number 123 [--strategy merge|squash|rebase] [--delete-branch]
+```
+
+### Step 2: Process Result
+
+```toon
+status: success
+operation: pr_merge
+pr_number: 123
+strategy: squash
+```
+
+---
+
+## Workflow: Auto-Merge PR
+
+**Pattern**: Provider-Agnostic Router
+
+Enable auto-merge on a pull request (merges automatically when all checks pass).
+
+### Step 1: Execute
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr auto-merge \
+    --pr-number 123 [--strategy merge]
+```
+
+### Step 2: Process Result
+
+```toon
+status: success
+operation: pr_auto_merge
+pr_number: 123
+enabled: true
+```
+
+---
+
+## Workflow: Close PR
+
+**Pattern**: Provider-Agnostic Router
+
+Close a pull request without merging.
+
+### Step 1: Execute
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr close \
+    --pr-number 123
+```
+
+### Step 2: Process Result
+
+```toon
+status: success
+operation: pr_close
+pr_number: 123
+```
+
+---
+
+## Workflow: Mark PR Ready
+
+**Pattern**: Provider-Agnostic Router
+
+Mark a draft PR as ready for review.
+
+### Step 1: Execute
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr ready \
+    --pr-number 123
+```
+
+### Step 2: Process Result
+
+```toon
+status: success
+operation: pr_ready
+pr_number: 123
+```
+
+---
+
+## Workflow: Edit PR
+
+**Pattern**: Provider-Agnostic Router
+
+Edit a pull request title and/or body.
+
+### Step 1: Execute
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr edit \
+    --pr-number 123 [--title "T"] [--body "B"]
+```
+
+### Step 2: Process Result
+
+```toon
+status: success
+operation: pr_edit
+pr_number: 123
+```
+
+---
+
+## Workflow: Rerun CI
+
+**Pattern**: Provider-Agnostic Router
+
+Rerun a failed CI workflow run.
+
+### Step 1: Execute
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci ci rerun \
+    --run-id 12345
+```
+
+### Step 2: Process Result
+
+```toon
+status: success
+operation: ci_rerun
+run_id: 12345
+```
+
+---
+
+## Workflow: Get CI Logs
+
+**Pattern**: Provider-Agnostic Router
+
+Get logs from a CI workflow run.
+
+### Step 1: Execute
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci ci logs \
+    --run-id 12345
+```
+
+### Step 2: Process Result
+
+```toon
+status: success
+operation: ci_logs
+run_id: 12345
+log_lines: 142
+content: [build log output]
+```
+
+---
+
+## Workflow: Close Issue
+
+**Pattern**: Provider-Agnostic Router
+
+Close an issue.
+
+### Step 1: Execute
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci issue close \
+    --issue 123
+```
+
+### Step 2: Process Result
+
+```toon
+status: success
+operation: issue_close
+issue_number: 123
+```
+
+---
+
 ## Workflow: Check CI Status
 
 **Pattern**: Provider-Agnostic Router
@@ -304,11 +500,12 @@ status: success
 operation: ci_status
 pr_number: 123
 overall_status: pending
+elapsed_sec: 45
 
-checks[3]{name,status,conclusion}:
-build	completed	success
-test	in_progress	-
-lint	completed	failure
+checks[3]{name,status,result,elapsed_sec,url,workflow}:
+build	completed	success	120	https://github.com/org/repo/actions/runs/111	CI
+test	in_progress	-	45	https://github.com/org/repo/actions/runs/112	CI
+lint	completed	failure	30	https://github.com/org/repo/actions/runs/113	Lint
 ```
 
 ---
@@ -330,8 +527,6 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci ci wait \
 
 **Bash tool timeout**: 1800000ms (30-minute safety net). Internal timeout managed by script.
 
-**Claude Bash Tool**: Set `timeout` parameter to `600000` (ms).
-
 ### Step 2: Process Result
 
 ```toon
@@ -340,6 +535,12 @@ operation: ci_wait
 pr_number: 123
 final_status: success
 duration_sec: 95
+elapsed_sec: 95
+
+checks[3]{name,status,result,elapsed_sec,url,workflow}:
+build	completed	success	120	https://github.com/org/repo/actions/runs/111	CI
+test	completed	success	90	https://github.com/org/repo/actions/runs/112	CI
+lint	completed	success	30	https://github.com/org/repo/actions/runs/113	Lint
 ```
 
 ---
