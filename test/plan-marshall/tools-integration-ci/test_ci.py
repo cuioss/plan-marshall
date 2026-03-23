@@ -26,9 +26,9 @@ def test_no_args_fails_without_config():
     assert not result.success
 
 
-def test_pr_subcommand_without_config():
-    """Test that pr subcommand without config fails gracefully."""
-    result = run_script(SCRIPT_PATH, 'pr', 'view')
-    # Without marshal.json, should fail with config error
-    assert not result.success
-    assert 'error' in result.stderr.lower() or 'provider' in result.stderr.lower()
+def test_pr_subcommand_help():
+    """Test that pr subcommand help works via router."""
+    result = run_script(SCRIPT_PATH, 'pr', '--help')
+    # Router delegates to provider script, --help should work
+    assert result.success, f'pr --help failed: {result.stderr}'
+    assert 'create' in result.stdout

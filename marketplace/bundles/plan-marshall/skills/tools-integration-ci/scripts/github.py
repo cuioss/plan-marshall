@@ -52,6 +52,7 @@ import subprocess
 import sys
 import time
 from datetime import UTC, datetime
+from typing import Any
 
 from toon_parser import serialize_toon  # type: ignore[import-not-found]
 
@@ -675,19 +676,18 @@ def cmd_ci_wait(args: argparse.Namespace) -> int:
             # Format checks table for timeout output
             check_dicts, total_elapsed = format_checks_toon(last_checks) if last_checks else ([], 0)
 
-            print('status: error', file=sys.stderr)
-            print('operation: ci_wait', file=sys.stderr)
-            print('error: Timeout waiting for CI', file=sys.stderr)
-            print(f'pr_number: {args.pr_number}', file=sys.stderr)
-            print(f'duration_sec: {int(elapsed)}', file=sys.stderr)
-            print('last_status: pending', file=sys.stderr)
+            error_data: dict[str, Any] = {
+                'status': 'error',
+                'operation': 'ci_wait',
+                'error': 'Timeout waiting for CI',
+                'pr_number': args.pr_number,
+                'duration_sec': int(elapsed),
+                'last_status': 'pending',
+            }
             if check_dicts:
-                print(f'elapsed_sec: {total_elapsed}', file=sys.stderr)
-                print(file=sys.stderr)
-                # Format checks table lines for stderr
-                print(f'checks[{len(check_dicts)}]{{name,status,result,elapsed_sec,url,workflow}}:', file=sys.stderr)
-                for cd in check_dicts:
-                    print(f'{cd["name"]}\t{cd["status"]}\t{cd["result"]}\t{cd["elapsed_sec"]}\t{cd["url"]}\t{cd["workflow"]}', file=sys.stderr)
+                error_data['elapsed_sec'] = total_elapsed
+                error_data['checks'] = check_dicts
+            print(serialize_toon(error_data, table_separator='\t'), file=sys.stderr)
             return 1
 
         # Get checks (bucket field contains pass/fail result)

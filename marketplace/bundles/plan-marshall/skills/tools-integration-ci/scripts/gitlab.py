@@ -569,20 +569,20 @@ def cmd_ci_wait(args: argparse.Namespace) -> int:
 
         # Check timeout
         if elapsed >= timeout:
-            # Format checks table for timeout output
-            toon_lines, total_elapsed = format_checks_toon(last_jobs) if last_jobs else ([], 0)
+            check_dicts, total_elapsed = format_checks_toon(last_jobs) if last_jobs else ([], 0)
 
-            print('status: error', file=sys.stderr)
-            print('operation: ci_wait', file=sys.stderr)
-            print('error: Timeout waiting for CI', file=sys.stderr)
-            print(f'pr_number: {args.pr_number}', file=sys.stderr)
-            print(f'duration_sec: {int(elapsed)}', file=sys.stderr)
-            print('last_status: pending', file=sys.stderr)
-            if toon_lines:
-                print(f'elapsed_sec: {total_elapsed}', file=sys.stderr)
-                print(file=sys.stderr)
-                for line in toon_lines:
-                    print(line, file=sys.stderr)
+            error_data: dict[str, Any] = {
+                'status': 'error',
+                'operation': 'ci_wait',
+                'error': 'Timeout waiting for CI',
+                'pr_number': args.pr_number,
+                'duration_sec': int(elapsed),
+                'last_status': 'pending',
+            }
+            if check_dicts:
+                error_data['elapsed_sec'] = total_elapsed
+                error_data['checks'] = check_dicts
+            print(serialize_toon(error_data, table_separator='\t'), file=sys.stderr)
             return 1
 
         # Get MR pipeline status

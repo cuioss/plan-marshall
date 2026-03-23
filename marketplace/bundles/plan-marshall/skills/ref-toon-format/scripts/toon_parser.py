@@ -379,11 +379,12 @@ def parse_toon(content: str) -> dict[str, Any]:
         ) from e
 
 
-def _serialize_value(value: Any) -> str:
+def _serialize_value(value: Any, table_separator: str = ',') -> str:
     """Serialize a Python value to TOON format.
 
     Args:
         value: Value to serialize
+        table_separator: Current table separator (values containing it need quoting)
 
     Returns:
         TOON formatted string (may be multi-line for complex types)
@@ -395,14 +396,21 @@ def _serialize_value(value: Any) -> str:
     if isinstance(value, (int, float)):
         return str(value)
     if isinstance(value, str):
-        # Quote if contains special characters
-        if ',' in value or ':' in value or '\n' in value:
-            return f'"{value}"'
-        # Quote if _parse_value would misinterpret as non-string type
-        if value in ('true', 'false', 'null', ''):
-            return f'"{value}"'
-        if re.match(r'^-?\d+$', value) or re.match(r'^-?\d+\.\d+$', value) or re.match(r'^\d+%$', value):
-            return f'"{value}"'
+        # Quote if contains separator, special characters, or would be misinterpreted
+        needs_quoting = (
+            table_separator in value
+            or ',' in value
+            or ':' in value
+            or '\n' in value
+            or '"' in value
+            or value in ('true', 'false', 'null', '')
+            or re.match(r'^-?\d+$', value)
+            or re.match(r'^-?\d+\.\d+$', value)
+            or re.match(r'^\d+%$', value)
+        )
+        if needs_quoting:
+            escaped = value.replace('"', '\\"')
+            return f'"{escaped}"'
         return value
     if isinstance(value, dict):
         # Serialize dict as JSON string (wrapped in quotes, internal quotes escaped)
@@ -475,7 +483,7 @@ def serialize_toon(data: dict[str, Any], indent: int = 0, table_separator: str =
                 # Uniform array with headers
                 lines.append(f'{prefix}{key}[{len(value)}]{{{",".join(fields)}}}:')
                 for item in value:
-                    row_values = [_serialize_value(item.get(f, '')) for f in fields]
+                    row_values = [_serialize_value(item.get(f, ''), table_separator) for f in fields]
                     lines.append(f'{prefix}  {table_separator.join(row_values)}')
             else:
                 # Simple array
