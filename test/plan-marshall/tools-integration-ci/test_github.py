@@ -31,7 +31,21 @@ def test_pr_subcommand_help():
     assert 'reply' in result.stdout
     assert 'resolve-thread' in result.stdout
     assert 'thread-reply' in result.stdout
+    assert 'merge' in result.stdout
+    assert 'auto-merge' in result.stdout
+    assert 'close' in result.stdout
+    assert 'ready' in result.stdout
+    assert 'edit' in result.stdout
     assert 'reviews' in result.stdout
+
+
+def test_issue_subcommand_help():
+    """Test issue subcommand help."""
+    result = run_script(SCRIPT_PATH, 'issue', '--help')
+    assert result.success, f'issue --help failed: {result.stderr}'
+    assert 'create' in result.stdout
+    assert 'view' in result.stdout
+    assert 'close' in result.stdout
 
 
 def test_ci_subcommand_help():
@@ -40,13 +54,8 @@ def test_ci_subcommand_help():
     assert result.success, f'ci --help failed: {result.stderr}'
     assert 'status' in result.stdout
     assert 'wait' in result.stdout
-
-
-def test_issue_subcommand_help():
-    """Test issue subcommand help."""
-    result = run_script(SCRIPT_PATH, 'issue', '--help')
-    assert result.success, f'issue --help failed: {result.stderr}'
-    assert 'create' in result.stdout
+    assert 'rerun' in result.stdout
+    assert 'logs' in result.stdout
 
 
 def test_pr_create_help():
@@ -134,6 +143,75 @@ def test_pr_thread_reply_missing_required():
     """Test pr thread-reply fails without required arguments."""
     result = run_script(SCRIPT_PATH, 'pr', 'thread-reply')
     assert not result.success, 'Expected failure without --pr-number'
+
+
+def test_pr_merge_help():
+    """Test pr merge help shows required arguments."""
+    result = run_script(SCRIPT_PATH, 'pr', 'merge', '--help')
+    assert result.success, f'pr merge --help failed: {result.stderr}'
+    assert '--pr-number' in result.stdout
+
+
+def test_pr_merge_missing_required():
+    """Test pr merge fails without required arguments."""
+    result = run_script(SCRIPT_PATH, 'pr', 'merge')
+    assert not result.success, 'Expected failure without --pr-number'
+
+
+def test_pr_auto_merge_help():
+    """Test pr auto-merge help shows required arguments."""
+    result = run_script(SCRIPT_PATH, 'pr', 'auto-merge', '--help')
+    assert result.success, f'pr auto-merge --help failed: {result.stderr}'
+    assert '--pr-number' in result.stdout
+
+
+def test_pr_close_help():
+    """Test pr close help shows required arguments."""
+    result = run_script(SCRIPT_PATH, 'pr', 'close', '--help')
+    assert result.success, f'pr close --help failed: {result.stderr}'
+    assert '--pr-number' in result.stdout
+
+
+def test_pr_ready_help():
+    """Test pr ready help shows required arguments."""
+    result = run_script(SCRIPT_PATH, 'pr', 'ready', '--help')
+    assert result.success, f'pr ready --help failed: {result.stderr}'
+    assert '--pr-number' in result.stdout
+
+
+def test_pr_edit_help():
+    """Test pr edit help shows arguments."""
+    result = run_script(SCRIPT_PATH, 'pr', 'edit', '--help')
+    assert result.success, f'pr edit --help failed: {result.stderr}'
+    assert '--pr-number' in result.stdout
+    assert '--title' in result.stdout
+
+
+def test_ci_rerun_help():
+    """Test ci rerun help shows required arguments."""
+    result = run_script(SCRIPT_PATH, 'ci', 'rerun', '--help')
+    assert result.success, f'ci rerun --help failed: {result.stderr}'
+    assert '--run-id' in result.stdout
+
+
+def test_ci_rerun_missing_required():
+    """Test ci rerun fails without required arguments."""
+    result = run_script(SCRIPT_PATH, 'ci', 'rerun')
+    assert not result.success, 'Expected failure without --run-id'
+
+
+def test_ci_logs_help():
+    """Test ci logs help shows required arguments."""
+    result = run_script(SCRIPT_PATH, 'ci', 'logs', '--help')
+    assert result.success, f'ci logs --help failed: {result.stderr}'
+    assert '--run-id' in result.stdout
+
+
+def test_issue_close_help():
+    """Test issue close help shows required arguments."""
+    result = run_script(SCRIPT_PATH, 'issue', 'close', '--help')
+    assert result.success, f'issue close --help failed: {result.stderr}'
+    assert '--issue' in result.stdout
 
 
 def test_no_subcommand():

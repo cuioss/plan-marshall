@@ -51,19 +51,22 @@ If `handoff` parameter provided: Parse JSON, extract artifacts/decisions/constra
 
 Auto-detect if not provided:
 ```bash
-gh pr view --json number,title,state
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr view
 ```
 
-Validate: PR must be numeric or valid GitHub URL.
+Validate: PR must have valid `pr_number` in TOON output.
 
 ### Step 2: Wait for Checks (If Requested)
 
 If wait=true:
 ```bash
-gh pr checks {pr} --json name,status,conclusion
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci ci wait \
+    --pr-number {pr_number}
 ```
 
-Poll every 30 seconds. On timeout after 30 minutes, present using `AskUserQuestion`:
+**Bash tool timeout**: 1800000ms (30-minute safety net).
+
+On timeout, present using `AskUserQuestion`:
 
 ```
 AskUserQuestion:
@@ -84,7 +87,7 @@ AskUserQuestion:
 
 Based on `checks` parameter:
 
-**Build**: `gh pr checks` → BUILD_FAILURE if failed
+**Build**: `ci ci status --pr-number {pr}` → BUILD_FAILURE if `overall_status: failure`
 
 **Reviews**: workflow-integration-ci (Fetch Comments) → REVIEW_COMMENTS ({count})
 
