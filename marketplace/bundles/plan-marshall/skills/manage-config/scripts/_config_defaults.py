@@ -73,7 +73,7 @@ DEFAULT_PLAN_FINALIZE = {
     '4_sonar_roundtrip': True,
     '5_knowledge_capture': True,
     '6_lessons_capture': True,
-    'review_bot_buffer_seconds': 45,
+    'review_bot_buffer_seconds': 300,
 }
 
 # Build system defaults (detection reference only - commands are in modules)

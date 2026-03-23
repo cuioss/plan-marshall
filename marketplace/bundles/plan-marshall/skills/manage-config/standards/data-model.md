@@ -53,7 +53,7 @@ JSON structure and field definitions for project configuration.
       "4_sonar_roundtrip": true,
       "5_knowledge_capture": true,
       "6_lessons_capture": true,
-      "review_bot_buffer_seconds": 45
+      "review_bot_buffer_seconds": 300
     }
   },
   "skill_domains": {
@@ -322,7 +322,7 @@ Finalize pipeline with numbered boolean steps.
       "4_sonar_roundtrip": true,
       "5_knowledge_capture": true,
       "6_lessons_capture": true,
-      "review_bot_buffer_seconds": 45
+      "review_bot_buffer_seconds": 300
     }
   }
 }
