@@ -179,7 +179,8 @@ def get_shared_module_dirs(base_path: Path) -> list[Path]:
     Returns:
         List of resolved paths to shared module script directories
     """
-    # Known shared module skills (library-only, no script notation)
+    # IMPORTANT: This list of shared module skills must be manually updated.
+    # Add new shared library skill paths here to avoid runtime ModuleNotFoundErrors.
     shared_skills = [
         'skills/tools-input-validation/scripts',
     ]
