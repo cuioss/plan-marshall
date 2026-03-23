@@ -37,6 +37,7 @@ import argparse
 import json
 import subprocess
 import sys
+from urllib.parse import quote
 import time
 from typing import Any
 
@@ -210,8 +211,6 @@ def cmd_pr_resolve_thread(args: argparse.Namespace) -> int:
     if not project_path:
         return output_error('pr_resolve_thread', 'Could not determine project path')
 
-    from urllib.parse import quote
-
     encoded_path = quote(project_path, safe='')
     endpoint = f'projects/{encoded_path}/merge_requests/{args.pr_number}/discussions/{args.thread_id}'
 
@@ -234,8 +233,6 @@ def cmd_pr_thread_reply(args: argparse.Namespace) -> int:
     project_path = get_project_path()
     if not project_path:
         return output_error('pr_thread_reply', 'Could not determine project path')
-
-    from urllib.parse import quote
 
     encoded_path = quote(project_path, safe='')
     endpoint = f'projects/{encoded_path}/merge_requests/{args.pr_number}/discussions/{args.thread_id}/notes'
@@ -301,8 +298,6 @@ def cmd_pr_comments(args: argparse.Namespace) -> int:
         return output_error('pr_comments', 'Could not determine project path')
 
     # URL-encode the project path for API
-    from urllib.parse import quote
-
     encoded_path = quote(project_path, safe='')
 
     # Get MR discussions via API
