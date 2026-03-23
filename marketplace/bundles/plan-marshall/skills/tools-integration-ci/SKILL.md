@@ -147,12 +147,14 @@ ci_config{key,value}:
 provider	github
 repo_url	https://github.com/org/repo
 
-ci_commands[9]{name,command}:
+ci_commands[11]{name,command}:
 pr-create	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr create
 pr-view	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr view
 pr-reviews	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr reviews
 pr-comments	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr comments
 pr-reply	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr reply
+pr-resolve-thread	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr resolve-thread
+pr-thread-reply	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr thread-reply
 ci-status	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github ci status
 ci-wait	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github ci wait
 issue-create	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github issue create
@@ -208,6 +210,53 @@ eval "$COMMAND --pr-number 123 --body 'Fixed as suggested.'"
 status: success
 operation: pr_reply
 pr_number: 123
+```
+
+---
+
+## Workflow: Resolve Review Thread
+
+**Pattern**: Config-Driven Execution
+
+Resolve (mark as resolved) a review thread on a PR.
+
+### Step 1: Resolve and Execute
+
+```bash
+COMMAND=$(jq -r '.ci.commands["pr-resolve-thread"]' .plan/marshal.json)
+eval "$COMMAND --pr-number 123 --thread-id PRRT_abc123"
+```
+
+### Step 2: Process Result
+
+```toon
+status: success
+operation: pr_resolve_thread
+thread_id: PRRT_abc123
+```
+
+---
+
+## Workflow: Reply to Review Thread
+
+**Pattern**: Config-Driven Execution
+
+Reply to a specific review thread (inline code comment), not a top-level PR comment.
+
+### Step 1: Resolve and Execute
+
+```bash
+COMMAND=$(jq -r '.ci.commands["pr-thread-reply"]' .plan/marshal.json)
+eval "$COMMAND --pr-number 123 --thread-id PRRT_abc123 --body 'Fixed as suggested.'"
+```
+
+### Step 2: Process Result
+
+```toon
+status: success
+operation: pr_thread_reply
+pr_number: 123
+thread_id: PRRT_abc123
 ```
 
 ---

@@ -21,12 +21,17 @@ Handles PR review comment workflows - fetching comments, triaging them, and gene
    - Implements code changes or generates explanations
    - Replaces: review-comment-triager agent
 
+3. **Automated Review Lifecycle** - Complete CI-wait → fetch → triage → respond → resolve cycle
+   - Used by phase-6-finalize when `3_automated_review == true`
+   - Orchestrates Workflows 1 and 2 with CI wait and thread resolution
+
 ## When to Activate This Skill
 
 - Responding to PR review comments
 - Processing review feedback
 - Implementing reviewer-requested changes
 - Generating explanations for reviewers
+- Running automated review lifecycle during finalize phase
 
 ## Workflows
 
@@ -138,6 +143,121 @@ files_modified[1]:
   - ...
 status: success
 ```
+
+---
+
+### Workflow 3: Automated Review Lifecycle
+
+**Purpose:** Complete automated review cycle for a PR — wait for CI, fetch review comments, triage, respond, and resolve threads. Used by phase-6-finalize when `3_automated_review == true`.
+
+**Input:**
+- `plan_id` — for logging and Q-Gate findings
+- `pr_number` — PR number (from phase-6-finalize Step 4 or pr-view)
+- `review_bot_buffer_seconds` — seconds to wait after CI for review bots (from config)
+
+**Steps:**
+
+1. **Wait for CI**
+
+   Use `await-until` with config-driven ci-status command:
+
+   ```bash
+   CI_STATUS_CMD=$(jq -r '.ci.commands["ci-status"]' .plan/marshal.json)
+   python3 .plan/execute-script.py plan-marshall:tools-script-executor:await-until poll \
+     --check-cmd "${CI_STATUS_CMD} --pr-number {pr_number}" \
+     --success-field "overall_status=success" \
+     --failure-field "overall_status=failure" \
+     --command-key "ci:pr_checks" \
+     --interval 30
+   ```
+
+   **Bash tool timeout**: 600000ms (10-minute safety net).
+
+   - **`success`** → proceed to step 2
+   - **`failure`** → return `{status: ci_failure, details: ...}` for loop-back
+   - **`timeout`** → ask user (continue/skip/abort)
+
+2. **Buffer for Review Bots**
+
+   Wait for automated review bots (Gemini Code Assist, etc.) to post comments:
+
+   ```bash
+   sleep {review_bot_buffer_seconds}
+   ```
+
+3. **Fetch Comments**
+
+   Use Workflow 1 (Fetch Comments) with `--unresolved-only`:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:workflow-integration-ci:pr fetch-comments --pr {pr_number} --unresolved-only
+   ```
+
+4. **Triage Each Comment**
+
+   Use Workflow 2 (Handle Review) triage for each unresolved comment:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:workflow-integration-ci:pr triage --comment '{comment_json}'
+   ```
+
+5. **Process by Action Type**
+
+   For each triaged comment:
+
+   **code_change** (requires implementation):
+   - Persist as Q-Gate finding:
+     ```bash
+     python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
+       qgate add --plan-id {plan_id} --phase 6-finalize --source qgate \
+       --type pr-comment --title "{comment summary}" \
+       --detail "{comment body} at {path}:{line}"
+     ```
+   - Reply acknowledging the finding:
+     ```bash
+     THREAD_REPLY_CMD=$(jq -r '.ci.commands["pr-thread-reply"]' .plan/marshal.json)
+     eval "$THREAD_REPLY_CMD --pr-number {pr_number} --thread-id {comment_id} --body 'Acknowledged — creating fix task.'"
+     ```
+
+   **explain** (reply with explanation):
+   - Generate explanation based on code context
+   - Reply to thread:
+     ```bash
+     THREAD_REPLY_CMD=$(jq -r '.ci.commands["pr-thread-reply"]' .plan/marshal.json)
+     eval "$THREAD_REPLY_CMD --pr-number {pr_number} --thread-id {comment_id} --body '{explanation}'"
+     ```
+   - Resolve thread:
+     ```bash
+     RESOLVE_CMD=$(jq -r '.ci.commands["pr-resolve-thread"]' .plan/marshal.json)
+     eval "$RESOLVE_CMD --pr-number {pr_number} --thread-id {thread_id}"
+     ```
+
+   **ignore** (dismiss):
+   - Resolve thread:
+     ```bash
+     RESOLVE_CMD=$(jq -r '.ci.commands["pr-resolve-thread"]' .plan/marshal.json)
+     eval "$RESOLVE_CMD --pr-number {pr_number} --thread-id {thread_id}"
+     ```
+
+6. **Return Summary**
+
+**Output:**
+```toon
+status: success
+pr_number: {pr_number}
+ci_status: success
+comments_total: {N}
+comments_unresolved: {N}
+processed:
+  code_changes: {N}
+  explanations: {N}
+  ignored: {N}
+threads_resolved: {N}
+loop_back_needed: {true|false}
+findings_created: {N}
+```
+
+If `loop_back_needed == true`, phase-6-finalize creates fix tasks and loops back to phase-5-execute.
 
 ---
 

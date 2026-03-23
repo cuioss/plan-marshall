@@ -7,6 +7,8 @@ Subcommands:
     pr reviews      Get PR reviews
     pr comments     Get PR review comments (inline code comments)
     pr reply        Reply to a PR with a comment
+    pr resolve-thread  Resolve a review thread
+    pr thread-reply    Reply to a specific review thread
     ci status       Check CI status for a PR
     ci wait         Wait for CI to complete
     issue create    Create an issue
@@ -18,6 +20,8 @@ Usage:
     python3 github.py pr reviews --pr-number 123
     python3 github.py pr comments --pr-number 123 [--unresolved-only]
     python3 github.py pr reply --pr-number 123 --body "Comment text"
+    python3 github.py pr resolve-thread --thread-id PRRT_abc123
+    python3 github.py pr thread-reply --pr-number 123 --thread-id PRRT_abc123 --body "Fixed"
     python3 github.py ci status --pr-number 123
     python3 github.py ci wait --pr-number 123 [--timeout 300] [--interval 30]
     python3 github.py issue create --title "Title" --body "Body" [--labels "bug,priority:high"]
@@ -195,6 +199,74 @@ def cmd_pr_reply(args: argparse.Namespace) -> int:
     print('status: success')
     print('operation: pr_reply')
     print(f'pr_number: {args.pr_number}')
+    return 0
+
+
+RESOLVE_THREAD_MUTATION = """
+mutation($threadId: ID!) {
+  resolveReviewThread(input: {threadId: $threadId}) {
+    thread { id isResolved }
+  }
+}
+"""
+
+
+THREAD_REPLY_MUTATION = """
+mutation($prId: ID!, $body: String!, $inReplyTo: ID!) {
+  addPullRequestReviewComment(input: {pullRequestId: $prId, body: $body, inReplyTo: $inReplyTo}) {
+    comment { id }
+  }
+}
+"""
+
+
+def cmd_pr_resolve_thread(args: argparse.Namespace) -> int:
+    """Handle 'pr resolve-thread' subcommand - resolve a review thread."""
+    is_auth, err = check_auth()
+    if not is_auth:
+        return output_error('pr_resolve_thread', err)
+
+    returncode, data, err = run_graphql(RESOLVE_THREAD_MUTATION, {'threadId': args.thread_id})
+    if returncode != 0 or data is None:
+        return output_error('pr_resolve_thread', f'Failed to resolve thread: {err}')
+
+    print('status: success')
+    print('operation: pr_resolve_thread')
+    print(f'thread_id: {args.thread_id}')
+    return 0
+
+
+def cmd_pr_thread_reply(args: argparse.Namespace) -> int:
+    """Handle 'pr thread-reply' subcommand - reply to a specific review thread."""
+    is_auth, err = check_auth()
+    if not is_auth:
+        return output_error('pr_thread_reply', err)
+
+    # Get PR node ID (GraphQL requires it)
+    returncode, stdout, stderr = run_gh(['pr', 'view', str(args.pr_number), '--json', 'id'])
+    if returncode != 0:
+        return output_error('pr_thread_reply', f'Failed to get PR {args.pr_number}', stderr.strip())
+
+    try:
+        pr_data = json.loads(stdout)
+        pr_id = pr_data.get('id', '')
+    except json.JSONDecodeError:
+        return output_error('pr_thread_reply', 'Failed to parse PR data', stdout[:100])
+
+    if not pr_id:
+        return output_error('pr_thread_reply', 'Could not determine PR node ID')
+
+    returncode, data, err = run_graphql(
+        THREAD_REPLY_MUTATION,
+        {'prId': pr_id, 'body': args.body, 'inReplyTo': args.thread_id},
+    )
+    if returncode != 0 or data is None:
+        return output_error('pr_thread_reply', f'Failed to reply to thread: {err}')
+
+    print('status: success')
+    print('operation: pr_thread_reply')
+    print(f'pr_number: {args.pr_number}')
+    print(f'thread_id: {args.thread_id}')
     return 0
 
 
@@ -553,6 +625,17 @@ def main() -> int:
     pr_reply_parser.add_argument('--pr-number', required=True, type=int, help='PR number')
     pr_reply_parser.add_argument('--body', required=True, help='Comment text')
 
+    # pr resolve-thread
+    pr_resolve_parser = pr_subparsers.add_parser('resolve-thread', help='Resolve a review thread')
+    pr_resolve_parser.add_argument('--pr-number', type=int, help='PR number (accepted for API uniformity)')
+    pr_resolve_parser.add_argument('--thread-id', required=True, help='Review thread ID')
+
+    # pr thread-reply
+    pr_thread_reply_parser = pr_subparsers.add_parser('thread-reply', help='Reply to a review thread')
+    pr_thread_reply_parser.add_argument('--pr-number', required=True, type=int, help='PR number')
+    pr_thread_reply_parser.add_argument('--thread-id', required=True, help='Comment ID to reply to')
+    pr_thread_reply_parser.add_argument('--body', required=True, help='Reply text')
+
     # pr reviews
     pr_reviews_parser = pr_subparsers.add_parser('reviews', help='Get PR reviews')
     pr_reviews_parser.add_argument('--pr-number', required=True, type=int, help='PR number')
@@ -599,6 +682,10 @@ def main() -> int:
             return cmd_pr_view(args)
         elif args.pr_command == 'reply':
             return cmd_pr_reply(args)
+        elif args.pr_command == 'resolve-thread':
+            return cmd_pr_resolve_thread(args)
+        elif args.pr_command == 'thread-reply':
+            return cmd_pr_thread_reply(args)
         elif args.pr_command == 'reviews':
             return cmd_pr_reviews(args)
         elif args.pr_command == 'comments':

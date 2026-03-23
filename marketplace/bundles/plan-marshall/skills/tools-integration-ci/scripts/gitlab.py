@@ -7,6 +7,8 @@ Subcommands:
     pr reviews      Get MR approvals
     pr comments     Get MR discussion comments (inline code comments)
     pr reply        Reply to a MR with a comment
+    pr resolve-thread  Resolve a discussion thread
+    pr thread-reply    Reply to a specific discussion thread
     ci status       Check pipeline status for a MR
     ci wait         Wait for pipeline to complete
     issue create    Create an issue
@@ -18,6 +20,8 @@ Usage:
     python3 gitlab.py pr reviews --pr-number 123
     python3 gitlab.py pr comments --pr-number 123 [--unresolved-only]
     python3 gitlab.py pr reply --pr-number 123 --body "Comment text"
+    python3 gitlab.py pr resolve-thread --pr-number 123 --thread-id abc123
+    python3 gitlab.py pr thread-reply --pr-number 123 --thread-id abc123 --body "Fixed"
     python3 gitlab.py ci status --pr-number 123
     python3 gitlab.py ci wait --pr-number 123 [--timeout 300] [--interval 30]
     python3 gitlab.py issue create --title "Title" --body "Body" [--labels "bug,priority::high"]
@@ -193,6 +197,57 @@ def cmd_pr_reply(args: argparse.Namespace) -> int:
     print('status: success')
     print('operation: pr_reply')
     print(f'pr_number: {args.pr_number}')
+    return 0
+
+
+def cmd_pr_resolve_thread(args: argparse.Namespace) -> int:
+    """Handle 'pr resolve-thread' subcommand - resolve a discussion thread."""
+    is_auth, err = check_auth()
+    if not is_auth:
+        return output_error('pr_resolve_thread', err)
+
+    project_path = get_project_path()
+    if not project_path:
+        return output_error('pr_resolve_thread', 'Could not determine project path')
+
+    from urllib.parse import quote
+
+    encoded_path = quote(project_path, safe='')
+    endpoint = f'projects/{encoded_path}/merge_requests/{args.pr_number}/discussions/{args.thread_id}'
+
+    returncode, stdout, stderr = run_glab(['api', '-X', 'PUT', endpoint, '-f', 'resolved=true'])
+    if returncode != 0:
+        return output_error('pr_resolve_thread', f'Failed to resolve thread: {stderr.strip()}')
+
+    print('status: success')
+    print('operation: pr_resolve_thread')
+    print(f'thread_id: {args.thread_id}')
+    return 0
+
+
+def cmd_pr_thread_reply(args: argparse.Namespace) -> int:
+    """Handle 'pr thread-reply' subcommand - reply to a discussion thread."""
+    is_auth, err = check_auth()
+    if not is_auth:
+        return output_error('pr_thread_reply', err)
+
+    project_path = get_project_path()
+    if not project_path:
+        return output_error('pr_thread_reply', 'Could not determine project path')
+
+    from urllib.parse import quote
+
+    encoded_path = quote(project_path, safe='')
+    endpoint = f'projects/{encoded_path}/merge_requests/{args.pr_number}/discussions/{args.thread_id}/notes'
+
+    returncode, stdout, stderr = run_glab(['api', '-X', 'POST', endpoint, '-f', f'body={args.body}'])
+    if returncode != 0:
+        return output_error('pr_thread_reply', f'Failed to reply to thread: {stderr.strip()}')
+
+    print('status: success')
+    print('operation: pr_thread_reply')
+    print(f'pr_number: {args.pr_number}')
+    print(f'thread_id: {args.thread_id}')
     return 0
 
 
@@ -560,6 +615,17 @@ def main() -> int:
     pr_reply_parser.add_argument('--pr-number', required=True, type=int, help='MR number (iid)')
     pr_reply_parser.add_argument('--body', required=True, help='Comment text')
 
+    # pr resolve-thread
+    pr_resolve_parser = pr_subparsers.add_parser('resolve-thread', help='Resolve a discussion thread')
+    pr_resolve_parser.add_argument('--pr-number', required=True, type=int, help='MR number (iid)')
+    pr_resolve_parser.add_argument('--thread-id', required=True, help='Discussion ID')
+
+    # pr thread-reply
+    pr_thread_reply_parser = pr_subparsers.add_parser('thread-reply', help='Reply to a discussion thread')
+    pr_thread_reply_parser.add_argument('--pr-number', required=True, type=int, help='MR number (iid)')
+    pr_thread_reply_parser.add_argument('--thread-id', required=True, help='Discussion ID')
+    pr_thread_reply_parser.add_argument('--body', required=True, help='Reply text')
+
     # pr reviews
     pr_reviews_parser = pr_subparsers.add_parser('reviews', help='Get MR approvals')
     pr_reviews_parser.add_argument('--pr-number', required=True, type=int, help='MR number (iid)')
@@ -606,6 +672,10 @@ def main() -> int:
             return cmd_pr_view(args)
         elif args.pr_command == 'reply':
             return cmd_pr_reply(args)
+        elif args.pr_command == 'resolve-thread':
+            return cmd_pr_resolve_thread(args)
+        elif args.pr_command == 'thread-reply':
+            return cmd_pr_thread_reply(args)
         elif args.pr_command == 'reviews':
             return cmd_pr_reviews(args)
         elif args.pr_command == 'comments':

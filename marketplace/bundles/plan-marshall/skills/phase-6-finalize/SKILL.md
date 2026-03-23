@@ -198,87 +198,14 @@ Proceed directly to Step 6.
 
 If PR was created:
 
-#### Step 5a: Determine PR Number
-
-Extract PR number from the current branch using the CI abstraction (works for both new PRs and resumability):
+#### Determine PR Number
 
 ```bash
 PR_VIEW_CMD=$(jq -r '.ci.commands["pr-view"]' .plan/marshal.json)
 PR_NUMBER=$(eval "$PR_VIEW_CMD" | awk -F': ' '/^pr_number:/ {print $2}')
 ```
 
-#### Step 5b: Wait for CI with Adaptive Timeout
-
-Wait for all CI checks to complete using `await-until` with adaptive timeout learning.
-The `await-until` script automatically reads learned timeout via `manage-run-config timeout_get`
-and writes actual duration via `timeout_set` after completion, so timeout converges over time.
-
-```bash
-CI_STATUS_CMD=$(jq -r '.ci.commands["ci-status"]' .plan/marshal.json)
-python3 .plan/execute-script.py plan-marshall:tools-script-executor:await-until poll \
-  --check-cmd "${CI_STATUS_CMD} --pr-number ${PR_NUMBER}" \
-  --success-field "overall_status=success" \
-  --failure-field "overall_status=failure" \
-  --command-key "ci:pr_checks" \
-  --interval 30
-```
-
-**Bash tool timeout**: 600000ms (10-minute safety net).
-
-Parse TOON output `status` field:
-
-- **`success`** → CI passed, proceed to Step 5c
-- **`failure`** → CI failed permanently, record finding and loop back:
-  ```bash
-  python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
-    qgate add --plan-id {plan_id} --phase 6-finalize --source qgate \
-    --type build-error --title "CI check failure" \
-    --detail "{failure details from ci status output}"
-  ```
-  Then create fix tasks and loop back to phase-5-execute (see loop-back below).
-- **`timeout`** → Ask user:
-  ```
-  AskUserQuestion:
-    questions:
-      - question: "CI checks timed out. How would you like to proceed?"
-        header: "Timeout"
-        options:
-          - label: "Continue waiting"
-            description: "Re-run CI wait with extended timeout"
-          - label: "Skip checks"
-            description: "Proceed to review comments without CI result"
-          - label: "Abort"
-            description: "Stop finalize phase"
-        multiSelect: false
-  ```
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work --plan-id {plan_id} --level INFO --message "[OUTCOME] (plan-marshall:phase-6-finalize) CI completed: status={final_status}, duration={duration_seconds}s"
-```
-
-#### Step 5c: Buffer for Review Bots
-
-After CI completes, wait for automated review bots (Gemini Code Assist, etc.) to post their comments.
-Review bots trigger on CI completion but may take several minutes to analyze and post.
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-6-finalize get --field review_bot_buffer_seconds --trace-plan-id {plan_id}
-```
-
-Parse the `value` field from output, then sleep:
-
-```bash
-sleep ${REVIEW_BOT_BUFFER}
-```
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-6-finalize) Review bot buffer complete, fetching comments"
-```
-
-#### Step 5d: Fetch and Handle Review Comments
+#### Load and Execute Automated Review Workflow
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
@@ -289,23 +216,19 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 Skill: plan-marshall:workflow-integration-ci
 ```
 
-Use Workflow 1 (Fetch Comments) to get all PR review comments, then Workflow 2 (Handle Review) to triage and respond.
+Execute **Workflow 3: Automated Review Lifecycle** with:
+- `plan_id`: from context
+- `pr_number`: from PR view above
+- `review_bot_buffer_seconds`: from phase-6-finalize config (read in Step 2)
 
-**On findings** (review comments requiring code changes):
-1. Persist each finding to Q-Gate:
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
-  qgate add --plan-id {plan_id} --phase 6-finalize --source qgate \
-  --type {pr-comment|build-error} --title "{finding title}" \
-  --detail "{finding details}"
-```
-2. Create fix tasks via manage-tasks
-3. Loop back to phase-5-execute (iteration + 1)
-4. Continue until clean or max iterations (3)
+The workflow handles CI wait, review bot buffer, comment fetching, triage, thread replies, and thread resolution — all via config-driven commands from `marshal.json`.
+
+**On findings** (review comments requiring code changes, `loop_back_needed == true`):
+1. Create fix tasks via manage-tasks
+2. Loop back to phase-5-execute (iteration + 1)
+3. Continue until clean or max iterations (3)
 
 ```bash
-# Check iteration count from status
-# If issues and iteration < max_iterations, loop back to execute
 python3 .plan/execute-script.py plan-marshall:manage-status:manage_status set-phase \
   --plan-id {plan_id} --phase 5-execute
 ```
