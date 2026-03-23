@@ -10,6 +10,21 @@ user-invocable: false
 
 **Key Pattern**: Shipping-focused execution. No verification steps—all quality checks run as verification tasks within phase-5-execute before reaching this phase.
 
+## Enforcement
+
+**Execution mode**: Follow workflow steps sequentially, respecting config gates.
+
+**Required skill load** (before any CI/PR operation):
+```
+Skill: plan-marshall:tools-integration-ci
+```
+
+**Prohibited actions:**
+- Never access `.plan/` files directly — all access must go through `python3 .plan/execute-script.py` manage-* scripts
+- Never skip config gate checks (Steps 3-8 each have an IF gate)
+- Never skip phase transitions — use `manage-lifecycle transition`, never set status directly
+- Never improvise script subcommands — use only those documented in this skill's workflow steps
+
 ## When to Activate This Skill
 
 Activate when:
