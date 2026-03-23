@@ -57,6 +57,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 | phase-6-finalize | `4_sonar_roundtrip` | Whether to run Sonar analysis |
 | phase-6-finalize | `5_knowledge_capture` | Whether to capture learnings |
 | phase-6-finalize | `6_lessons_capture` | Whether to record lessons |
+| phase-6-finalize | `review_bot_buffer_seconds` | Seconds to wait after CI for review bots (default: 45) |
 | phase-6-finalize | `max_iterations` | Maximum finalize-verify loops |
 | phase-5-execute | `commit_strategy` | per_deliverable/per_plan/none |
 | phase-1-init | `branch_strategy` | feature/direct |
@@ -261,7 +262,10 @@ Review bots trigger on CI completion and post within seconds, but a race conditi
 are fetched immediately.
 
 ```bash
-sleep 45
+REVIEW_BOT_BUFFER=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-6-finalize get --field review_bot_buffer_seconds --trace-plan-id {plan_id} 2>/dev/null \
+  | grep -oP 'value: \K\d+' || echo 45)
+sleep "${REVIEW_BOT_BUFFER}"
 ```
 
 ```bash
