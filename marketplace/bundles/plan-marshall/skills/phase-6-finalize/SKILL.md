@@ -204,10 +204,8 @@ Extract PR number from the current branch using the CI abstraction (works for bo
 
 ```bash
 PR_VIEW_CMD=$(jq -r '.ci.commands["pr-view"]' .plan/marshal.json)
-eval "$PR_VIEW_CMD"
+PR_NUMBER=$(eval "$PR_VIEW_CMD" | awk -F': ' '/^pr_number:/ {print $2}')
 ```
-
-Parse the `pr_number` field from TOON output and store as `PR_NUMBER`.
 
 #### Step 5b: Wait for CI with Adaptive Timeout
 
