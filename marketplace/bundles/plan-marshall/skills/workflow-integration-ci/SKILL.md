@@ -166,22 +166,18 @@ status: success
 
 1. **Wait for CI**
 
-   Use `await-until` with config-driven ci-status command:
+   Use the built-in `ci wait` command which handles polling internally:
 
    ```bash
-   python3 .plan/execute-script.py plan-marshall:tools-script-executor:await-until poll \
-     --check-cmd "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci ci status --pr-number {pr_number}" \
-     --success-field "overall_status=success" \
-     --failure-field "overall_status=failure" \
-     --command-key "ci:pr_checks" \
-     --interval 30
+   python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci ci wait \
+     --pr-number {pr_number}
    ```
 
-   **Bash tool timeout**: 600000ms (10-minute safety net).
+   **Bash tool timeout**: 1800000ms (30-minute safety net). Internal timeout managed by script.
 
-   - **`success`** → proceed to step 2
-   - **`failure`** → return `{status: ci_failure, details: ...}` for loop-back
-   - **`timeout`** → ask user (continue/skip/abort)
+   - **`final_status: success`** → proceed to step 2
+   - **`final_status: failure`** → return `{status: ci_failure, details: ...}` for loop-back
+   - **`status: timeout`** → ask user (continue/skip/abort)
 
 2. **Buffer for Review Bots**
 
