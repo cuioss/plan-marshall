@@ -303,7 +303,7 @@ COMPLIANCE STATUS: {COMPLIANT / ISSUES REMAINING}
 ═══════════════════════════════════════════════════════════════
 ```
 
-## Enforcement
+## Execution Rules
 
 **Module Handling:**
 - MUST verify module parameter for multi-module projects

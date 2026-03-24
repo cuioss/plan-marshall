@@ -6,13 +6,6 @@ user-invocable: false
 
 # Input Validation Base Skill
 
-## Enforcement
-
-- Import `input_validation` module via PYTHONPATH only -- never copy or inline validation logic
-- All plan ID and path arguments must be validated through this module before filesystem access
-
----
-
 **Role**: Shared Python module providing input validation functions for plan-marshall scripts. Prevents path traversal, invalid plan IDs, and malformed inputs from reaching filesystem operations.
 
 ## Enforcement

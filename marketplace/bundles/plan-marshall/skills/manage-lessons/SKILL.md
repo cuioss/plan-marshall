@@ -6,14 +6,6 @@ user-invocable: false
 
 # Lessons Learned Skill
 
-## Enforcement
-
-- Run scripts EXACTLY as documented using `python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lesson ...`
-- Never read or write lesson files directly
-- All script output follows TOON format contract
-
----
-
 Manage lessons learned with global scope. Stores lessons as markdown files with key=value metadata headers.
 
 ## Enforcement

@@ -6,14 +6,6 @@ user-invocable: true
 
 # Permission Doctor Skill
 
-## Enforcement
-
-- Run scripts EXACTLY as documented using `python3 .plan/execute-script.py plan-marshall:tools-permission-doctor:permission-doctor ...`
-- Never modify settings files -- this skill is read-only analysis
-- All script output follows TOON format contract
-
----
-
 Read-only permission analysis for Claude Code settings. Detects redundant permissions, security anti-patterns, and validates permission syntax without making changes.
 
 ## Enforcement

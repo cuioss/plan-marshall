@@ -6,14 +6,6 @@ user-invocable: false
 
 # Marketplace Sync Skill
 
-## Enforcement
-
-- Run scripts EXACTLY as documented using `python3 .plan/execute-script.py plan-marshall:tools-permission-sync:marketplace-sync ...`
-- Never modify settings files directly -- use the script operations
-- All script output follows TOON format contract
-
----
-
 **PURPOSE**: Synchronize Claude Code permissions with marketplace bundles and manage the executor permission pattern.
 
 ## Enforcement

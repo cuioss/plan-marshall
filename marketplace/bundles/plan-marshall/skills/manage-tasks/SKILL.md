@@ -6,14 +6,6 @@ user-invocable: false
 
 # Manage Tasks Skill
 
-## Enforcement
-
-- Run scripts EXACTLY as documented using `python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks ...`
-- Never read or write TASK-*.json files directly
-- All script output follows TOON format contract
-
----
-
 Manage implementation tasks with sequential sub-steps within a plan. Each task references deliverables from the solution document and contains ordered steps for execution.
 
 ## Enforcement

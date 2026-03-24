@@ -6,14 +6,6 @@ user-invocable: false
 
 # Build Gradle
 
-## Enforcement
-
-- Run scripts EXACTLY as documented using `python3 .plan/execute-script.py plan-marshall:build-gradle:gradle ...`
-- Never invoke `gradle` or `./gradlew` directly outside of script internals
-- All script output follows TOON format contract
-
----
-
 Gradle build execution with output parsing, module discovery, and wrapper detection.
 
 ## Enforcement

@@ -20,8 +20,6 @@ user-invocable: false
 - Domain identity must match the bundle name convention (requirements)
 - Profile-based skill organization must align with plugin.json registration
 
-Domain manifest skill providing requirements engineering capabilities to plan-marshall workflows.
-
 ## Purpose
 
 Declares the requirements domain configuration including:
