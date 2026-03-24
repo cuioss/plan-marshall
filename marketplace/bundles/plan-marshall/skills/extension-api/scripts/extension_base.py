@@ -354,6 +354,33 @@ class ExtensionBase(ABC):
         """
         return None
 
+    def provides_recipes(self) -> list[dict]:
+        """Return recipe definitions this extension provides.
+
+        Recipes are predefined, repeatable transformations that bypass
+        change-type detection and provide their own discovery, analysis,
+        and deliverable patterns.
+
+        Returns:
+            List of recipe dicts, each containing:
+            - key: str — Unique recipe identifier (e.g., 'refactor-to-profile-standards')
+            - name: str — Human-readable display name
+            - description: str — Description for recipe selection UI
+            - skill: str — Fully-qualified skill reference (e.g., 'bundle:recipe-skill')
+            - default_change_type: str — Change type for outline phase (e.g., 'tech_debt')
+            - scope: str — Scope indicator (e.g., 'codebase_wide', 'module')
+
+            Optional fields (set by user at plan creation time if omitted):
+            - profile: str — Target profile (e.g., 'implementation', 'module_testing')
+            - package_source: str — Package source (e.g., 'packages', 'test_packages')
+
+        Notes:
+            - The domain is auto-assigned from get_skill_domains() first entry
+            - The source is auto-assigned as 'extension'
+            - Default implementation returns empty list (no recipes)
+        """
+        return []
+
     def provides_verify_steps(self) -> list[dict]:
         """Return domain-specific verification steps for phase-5-execute.
 

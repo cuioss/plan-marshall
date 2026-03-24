@@ -62,7 +62,7 @@ If the user selects the built-in "Refactor to Profile Standards" recipe:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  list-domains
+  skill-domains list
 ```
 
 Present domain selection using `AskUserQuestion`:

@@ -250,7 +250,7 @@ Recipes are a **plan source**, not a change-type.
 - Example: "refactor-to-standards" recipe uses change_type=tech_debt
 - Example: "refactor-to-test-standards" recipe uses change_type=tech_debt
 
-See `plan-marshall:extension-api` standards/recipe-extension.md for the recipe contract.
+See `plan-marshall:extension-api` standards/extension-contract.md#provides_recipes for the recipe contract.
 
 ---
 

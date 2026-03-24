@@ -112,6 +112,19 @@ class Extension(ExtensionBase):
             },
         }
 
+    def provides_recipes(self) -> list[dict]:
+        """Return built-in recipes provided by plan-marshall."""
+        return [
+            {
+                'key': 'refactor-to-profile-standards',
+                'name': 'Refactor to Profile Standards',
+                'description': 'Refactor code to comply with configured profile standards, package by package',
+                'skill': 'plan-marshall:recipe-refactor-to-profile-standards',
+                'default_change_type': 'tech_debt',
+                'scope': 'codebase_wide',
+            },
+        ]
+
     def applies_to_module(self, module_data: dict,
                           active_profiles: set[str] | None = None) -> dict:
         """Applicable only to modules with code build systems."""
