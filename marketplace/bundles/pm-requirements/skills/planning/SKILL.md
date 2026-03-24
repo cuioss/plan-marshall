@@ -6,6 +6,22 @@ user-invocable: false
 
 # Planning Documentation Standards
 
+## Enforcement
+
+**Execution mode**: Reference library; load standards on-demand for planning documentation tasks.
+
+**Prohibited actions:**
+- Do not include implementation details or rationale in planning documents; focus on task lists, status, and traceability
+- Do not archive completed tasks; leave them in the planning document with updated status
+- Do not create planning documents without traceability links to requirements
+- Do not load all standards at once; load progressively based on current task
+
+**Constraints:**
+- Planning documents must use AsciiDoc format in target projects
+- Status indicators must follow the defined set (PLANNED, IN PROGRESS, IMPLEMENTED, etc.)
+- Task groups must link to originating requirements or specifications
+- Documents must be kept current as living documentation
+
 Standards for creating, structuring, and maintaining project planning documents that track implementation tasks while maintaining traceability to requirements and specifications.
 
 ## What This Skill Provides

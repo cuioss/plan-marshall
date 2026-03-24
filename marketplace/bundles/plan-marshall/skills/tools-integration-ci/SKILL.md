@@ -8,6 +8,19 @@ user-invocable: false
 
 Unified CI provider abstraction using **static routing** - one script per provider, config stores full commands.
 
+## Enforcement
+
+**Execution mode**: Run scripts exactly as documented; parse TOON output for status and route accordingly.
+
+**Prohibited actions:**
+- Do not call `gh` or `glab` directly; all CI operations go through the script API
+- Do not invent script arguments not listed in the operations table
+- Do not bypass provider detection logic
+
+**Constraints:**
+- All commands use `python3 .plan/execute-script.py plan-marshall:tools-integration-ci:{script} {command} {args}`
+- Provider routing is config-driven; do not hard-code provider names
+
 ## What This Skill Provides
 
 - Provider detection and health verification
@@ -279,6 +292,10 @@ Create a pull request using config-stored command.
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr create \
     --title "Add feature X" --body "Description" --base main
+
+# Or use --body-file for multi-line markdown (avoids shell metacharacter issues):
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr create \
+    --title "Add feature X" --body-file path/to/pr-body.md --base main
 ```
 
 ### Step 2: Process Result

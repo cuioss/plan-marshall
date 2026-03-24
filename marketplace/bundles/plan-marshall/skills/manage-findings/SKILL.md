@@ -8,6 +8,20 @@ user-invocable: false
 
 Unified storage for plan-level findings and phase-scoped Q-Gate findings. Both share the same type taxonomy, resolution model, and severity values.
 
+## Enforcement
+
+**Execution mode**: Run scripts exactly as documented; parse TOON output for status and route accordingly.
+
+**Prohibited actions:**
+- Do not modify findings.jsonl or qgate-*.jsonl files directly; all mutations go through the script API
+- Do not invent script arguments not listed in the CLI Commands section
+- Do not use invalid resolution values (only pending, fixed, suppressed, accepted, taken_into_account)
+
+**Constraints:**
+- All commands use `python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings {command} {args}`
+- Plan findings and Q-Gate findings use different command prefixes (direct vs `qgate`)
+- Q-Gate deduplication is automatic; do not add duplicate findings manually
+
 ## Scope Distinction
 
 | Scope | Storage | Lifecycle |

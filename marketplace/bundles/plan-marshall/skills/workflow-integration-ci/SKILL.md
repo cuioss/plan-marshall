@@ -8,6 +8,20 @@ user-invocable: false
 
 Handles PR review comment workflows - fetching comments, triaging them, and generating appropriate responses. Works with both GitHub and GitLab via the unified `tools-integration-ci` abstraction.
 
+## Enforcement
+
+**Execution mode**: Fetch PR review comments, triage each for action, implement fixes or generate responses, resolve threads.
+
+**Prohibited actions:**
+- Never resolve review comments without addressing the reviewer's concern
+- Never force-push or amend published commits in response to reviews
+- Never dismiss reviews without documented justification
+
+**Constraints:**
+- Each workflow step that invokes a script has an explicit bash code block with the full `python3 .plan/execute-script.py` command
+- Review comment responses must explain the fix or provide rationale for disagreement
+- CI wait timeout must be respected with user prompt on expiry
+
 ## What This Skill Provides
 
 ### Workflows (Absorbs 2 Agents)
@@ -158,22 +172,18 @@ status: success
 
 1. **Wait for CI**
 
-   Use `await-until` with config-driven ci-status command:
+   Use the built-in `ci wait` command which handles polling internally:
 
    ```bash
-   python3 .plan/execute-script.py plan-marshall:tools-script-executor:await-until poll \
-     --check-cmd "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci ci status --pr-number {pr_number}" \
-     --success-field "overall_status=success" \
-     --failure-field "overall_status=failure" \
-     --command-key "ci:pr_checks" \
-     --interval 30
+   python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci ci wait \
+     --pr-number {pr_number}
    ```
 
-   **Bash tool timeout**: 600000ms (10-minute safety net).
+   **Bash tool timeout**: 1800000ms (30-minute safety net). Internal timeout managed by script.
 
-   - **`success`** → proceed to step 2
-   - **`failure`** → return `{status: ci_failure, details: ...}` for loop-back
-   - **`timeout`** → ask user (continue/skip/abort)
+   - **`final_status: success`** → proceed to step 2
+   - **`final_status: failure`** → return `{status: ci_failure, details: ...}` for loop-back
+   - **`status: timeout`** → ask user (continue/skip/abort)
 
 2. **Buffer for Review Bots**
 
@@ -200,6 +210,11 @@ status: success
    ```
 
 5. **Process by Action Type**
+
+   **ID format rules** (from fetch-comments output):
+   - `thread-reply --thread-id`: Use the comment's `id` field (GraphQL node ID, format: `PRRC_kwDO...`). This is the `inReplyTo` target.
+   - `resolve-thread --thread-id`: Use the `thread_id` field (GraphQL node ID, format: `PRRT_kwDO...`).
+   - NEVER use numeric IDs — GitHub GraphQL requires global node IDs.
 
    For each triaged comment:
 

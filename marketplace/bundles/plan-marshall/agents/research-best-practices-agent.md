@@ -1,21 +1,11 @@
 ---
 name: research-best-practices-agent
-description: Performs comprehensive web research to find best practices, recommendations, and information about a specified topic using multiple online sources.
+description: |
+  Performs comprehensive web research to find best practices, recommendations, and information about a specified topic using multiple online sources. Analyzes top 10+ sources and synthesizes findings with confidence levels.
 
-examples:
-- User: "Research on TOPIC"
-  Assistant: Invokes research-best-practices-agent to perform comprehensive web research
-- User: "Best-Practices for TOPIC"
-  Assistant: Invokes research-best-practices-agent to research best practices
-- User: "Do a deep research for TOPIC"
-  Assistant: Invokes research-best-practices-agent for in-depth topic research
-- User: "Find information about TOPIC"
-  Assistant: Invokes research-best-practices-agent to gather information
-- User: "Investigate TOPIC best practices"
-  Assistant: Invokes research-best-practices-agent to investigate best practices
-- User: "What are the recommendations for TOPIC"
-  Assistant: Invokes research-best-practices-agent to find recommendations
-
+  Examples:
+  - Input: topic="JUnit 5 parameterized tests"
+  - Output: Structured research report with findings, confidence levels, and source references
 tools: WebSearch, WebFetch, Read, Skill
 model: opus
 color: blue

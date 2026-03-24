@@ -6,6 +6,22 @@ user-invocable: false
 
 # Script Executor Skill
 
+## Enforcement
+
+**Execution mode**: All marketplace scripts must be executed through the executor proxy.
+
+**Prohibited actions:**
+- Do not execute marketplace scripts directly by path; always use the executor notation
+- Do not modify `.plan/execute-script.py` manually; regenerate via `/marshall-steward`
+- Do not hard-code PYTHONPATH; the executor manages it automatically
+
+**Constraints:**
+- All scripts use `python3 .plan/execute-script.py {notation} {subcommand} {args}`
+- Bootstrap pattern is only for first run when executor does not exist yet
+- Plan-scoped logging requires `--plan-id` or `--trace-plan-id`
+
+---
+
 ## Overview
 
 All marketplace scripts are executed through `.plan/execute-script.py`:
@@ -220,14 +236,14 @@ Read standards/wait-pattern.md
 ```bash
 # Adaptive mode (timeout managed via run-config)
 # Outer shell timeout (600s) prevents Claude from canceling
-timeout 600s python3 .plan/execute-script.py plan-marshall:tools-script-executor:await-until poll \
+timeout 600s python3 .plan/execute-script.py plan-marshall:tools-script-executor:await-until \
   --check-cmd "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github ci status --pr-number 123" \
   --success-field "status=success" \
   --failure-field "status=failure" \
   --command-key "ci:pr_checks"
 
 # Explicit mode (manual timeout)
-timeout 600s python3 .plan/execute-script.py plan-marshall:tools-script-executor:await-until poll \
+timeout 600s python3 .plan/execute-script.py plan-marshall:tools-script-executor:await-until \
   --check-cmd "gh pr checks 123 --json state" \
   --success-field "status=success" \
   --timeout 300 \

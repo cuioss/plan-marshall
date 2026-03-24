@@ -8,6 +8,20 @@ user-invocable: false
 
 Generic file operations for plan directories. Provides basic CRUD operations for any file within a plan directory.
 
+## Enforcement
+
+**Execution mode**: Run scripts exactly as documented; parse output for status and route accordingly.
+
+**Prohibited actions:**
+- Do not modify .plan/ files directly; all mutations go through the script API
+- Do not invent script arguments not listed in the Operations section
+- Do not pass absolute paths or `..` traversals in `--file` arguments
+
+**Constraints:**
+- All commands use `python3 .plan/execute-script.py plan-marshall:manage-files:manage-files {command} {args}`
+- File paths are always relative to the plan directory
+- plan_id must be kebab-case format
+
 ## What This Skill Provides
 
 - Generic file read/write/remove operations

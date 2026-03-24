@@ -46,21 +46,21 @@ Output this banner directly as text at command start (do NOT use Bash echo - out
 
 ---
 
-## Enforcement Rules
+## Enforcement
 
-### Script Execution
-1. Run scripts EXACTLY as documented - no improvisation
-2. Bootstrap scripts use direct Python paths with glob
-3. All other scripts use: `python3 .plan/execute-script.py {notation} ...`
+**Execution mode**: Run scripts exactly as documented; return to Main Menu after each operation.
 
-### Menu Behavior
-1. After ANY operation completes → return to Main Menu
-2. Only exit when user selects "Quit"
+**Prohibited actions:**
+- Do not invent alternative menu structures or options
+- Do not end without returning to menu (unless Quit)
+- Do not summarize what you are about to do instead of doing it
+- Do not improvise script execution; run exactly as documented
 
-### Prohibited Actions
-- Inventing alternative menu structures or options
-- Ending without returning to menu (unless Quit)
-- Summarizing what you're about to do instead of doing it
+**Constraints:**
+- Bootstrap scripts use direct Python paths with glob
+- All other scripts use `python3 .plan/execute-script.py {notation} ...`
+- After any operation completes, return to Main Menu
+- Only exit when user selects "Quit"
 
 ---
 

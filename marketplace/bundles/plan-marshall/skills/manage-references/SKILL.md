@@ -8,6 +8,20 @@ user-invocable: false
 
 Manage references.json files with field-level access and list management. Tracks files, branches, and external references for a plan.
 
+## Enforcement
+
+**Execution mode**: Run scripts exactly as documented; parse TOON output for status and route accordingly.
+
+**Prohibited actions:**
+- Do not modify references.json directly; all mutations go through the script API
+- Do not invent script arguments not listed in the Operations section
+- Do not mix `add-list` and `set-list` without understanding their semantics (append vs replace)
+
+**Constraints:**
+- All commands use `python3 .plan/execute-script.py plan-marshall:manage-references:manage-references {command} {args}`
+- References are plan-scoped; always provide `--plan-id`
+- File paths in modified_files and affected_files are always relative to repository root
+
 ## What This Skill Provides
 
 - Read/write references.json (JSON storage, TOON output)

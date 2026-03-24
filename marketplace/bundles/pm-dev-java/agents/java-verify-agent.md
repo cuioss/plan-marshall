@@ -6,7 +6,11 @@ description: |
   Examples:
   - Input: target="src/main/java/auth/TokenValidator.java"
   - Output: {compliant: true, checklist: {...}, issues: []}
-tools: Read, Glob, Grep, Skill
+tools:
+  - Read
+  - Glob
+  - Grep
+  - Skill
 ---
 
 # Java Verify Agent

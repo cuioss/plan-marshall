@@ -1,12 +1,19 @@
 ---
 name: phase-agent
-description: Generic phase agent that loads a caller-specified skill and delegates execution
+description: |
+  Generic thin wrapper that loads a caller-specified skill and delegates all execution to it. Supports any plan phase (init, refine, outline, plan, execute, finalize).
+
+  Examples:
+  - Input: skill=plan-marshall:phase-1-init, plan_id=my-plan
+  - Output: Skill's own output (varies by phase)
 tools: Read, Write, Edit, Glob, Grep, Bash, AskUserQuestion, Skill
 ---
 
 # Phase Agent
 
 Generic thin wrapper — loads a caller-specified skill and delegates all work to it.
+
+**CRITICAL — Bash Restrictions**: Bash is ONLY for running `python3 .plan/execute-script.py` commands and simple git/build commands. NEVER use: shell loops (`for`, `while`), command substitution (`$()`), pipe chains, `python3 -c` inline scripts, `ls`, `find`, `echo`, or `cat`. For ALL file discovery and content searching, use `Glob` and `Grep` tools. Violations trigger security prompts that block execution.
 
 ## Input
 

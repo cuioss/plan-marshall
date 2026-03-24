@@ -8,6 +8,20 @@ user-invocable: false
 
 Run configuration handling for persistent command configuration storage.
 
+## Enforcement
+
+**Execution mode**: Run scripts exactly as documented; parse JSON/TOON output for status and route accordingly.
+
+**Prohibited actions:**
+- Do not modify run-config.json directly; all mutations go through the script API
+- Do not invent script arguments not listed in the Scripts table
+- Do not bypass initialization (run-config.json must exist before queries)
+
+**Constraints:**
+- All commands use `python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config {command} {args}` or `plan-marshall:manage-run-config:cleanup {args}`
+- Timeout and warning operations use the noun-verb pattern (e.g., `timeout get`, `warning add`)
+- Cleanup uses a separate script notation
+
 ## What This Skill Provides
 
 - Read and update run configuration entries

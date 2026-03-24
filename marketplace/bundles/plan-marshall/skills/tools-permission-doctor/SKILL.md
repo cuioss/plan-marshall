@@ -8,6 +8,20 @@ user-invocable: true
 
 Read-only permission analysis for Claude Code settings. Detects redundant permissions, security anti-patterns, and validates permission syntax without making changes.
 
+## Enforcement
+
+**Execution mode**: Run scripts exactly as documented; present analysis results without modifying files.
+
+**Prohibited actions:**
+- Do not modify any settings files; this skill is strictly read-only
+- Do not invent script arguments not listed in the operations table
+- Do not skip anti-pattern detection when analyzing settings
+
+**Constraints:**
+- All commands use `python3 .plan/execute-script.py plan-marshall:tools-permission-doctor:permission-doctor {command} {args}`
+- Use `tools-permission-fix` for any write operations
+- User-approved permissions must be excluded from suspicious reports
+
 ## What This Skill Provides
 
 ### Permission Validation Standards

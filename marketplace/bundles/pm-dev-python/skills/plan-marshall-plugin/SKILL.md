@@ -8,6 +8,20 @@ user-invocable: false
 
 Domain extension providing Python development skill registration to plan-marshall workflows.
 
+## Enforcement
+
+**Execution mode**: Extension manifest; modify only via Extension API contract.
+
+**Prohibited actions:**
+- Do not modify extension.py without updating this manifest documentation
+- Do not bypass ExtensionBase inheritance for domain registration
+- Do not hardcode skill paths; use bundle notation
+
+**Constraints:**
+- Extension must implement `get_skill_domains()` from `ExtensionBase`
+- Domain identity must match the bundle name convention (python)
+- Profile-based skill organization must align with plugin.json registration
+
 ## Purpose
 
 - Domain identity and workflow extensions

@@ -8,6 +8,20 @@ user-invocable: false
 
 Manage status.json files with phase tracking and metadata. Handles plan status storage (JSON), phase operations, and metadata management.
 
+## Enforcement
+
+**Execution mode**: Run scripts exactly as documented; parse TOON output for status and route accordingly.
+
+**Prohibited actions:**
+- Do not modify status.json directly; all mutations go through the script API
+- Do not invent script arguments not listed in the Operations table
+- Do not set invalid phase status values (only pending, in_progress, done)
+
+**Constraints:**
+- All commands use `python3 .plan/execute-script.py plan-marshall:manage-status:manage_status {command} {args}`
+- Phase transitions must use `set-phase` or `update-phase` commands
+- Metadata operations require explicit `--get` or `--set` flags
+
 ## What This Skill Provides
 
 - Read/write status.json (JSON storage, TOON output)

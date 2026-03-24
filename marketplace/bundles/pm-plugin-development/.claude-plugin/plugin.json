@@ -21,7 +21,6 @@
   "skills": [
     "./skills/ext-outline-workflow",
     "./skills/ext-triage-plugin",
-    "./skills/plan-marshall-plugin",
     "./skills/plugin-apply-lessons-learned",
     "./skills/plugin-architecture",
     "./skills/plugin-create",
