@@ -236,14 +236,14 @@ Read standards/wait-pattern.md
 ```bash
 # Adaptive mode (timeout managed via run-config)
 # Outer shell timeout (600s) prevents Claude from canceling
-timeout 600s python3 .plan/execute-script.py plan-marshall:tools-script-executor:await-until poll \
+timeout 600s python3 .plan/execute-script.py plan-marshall:tools-script-executor:await-until \
   --check-cmd "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github ci status --pr-number 123" \
   --success-field "status=success" \
   --failure-field "status=failure" \
   --command-key "ci:pr_checks"
 
 # Explicit mode (manual timeout)
-timeout 600s python3 .plan/execute-script.py plan-marshall:tools-script-executor:await-until poll \
+timeout 600s python3 .plan/execute-script.py plan-marshall:tools-script-executor:await-until \
   --check-cmd "gh pr checks 123 --json state" \
   --success-field "status=success" \
   --timeout 300 \

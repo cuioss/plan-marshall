@@ -211,6 +211,11 @@ status: success
 
 5. **Process by Action Type**
 
+   **ID format rules** (from fetch-comments output):
+   - `thread-reply --thread-id`: Use the comment's `id` field (GraphQL node ID, format: `PRRC_kwDO...`). This is the `inReplyTo` target.
+   - `resolve-thread --thread-id`: Use the `thread_id` field (GraphQL node ID, format: `PRRT_kwDO...`).
+   - NEVER use numeric IDs — GitHub GraphQL requires global node IDs.
+
    For each triaged comment:
 
    **code_change** (requires implementation):

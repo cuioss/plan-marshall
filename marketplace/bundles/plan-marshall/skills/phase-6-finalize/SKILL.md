@@ -358,6 +358,17 @@ Skill: plan-marshall:manage-memories
 
 Records any significant patterns discovered during implementation. Advisory only—does not block.
 
+**Use exactly this command** to save a memory (do not invent alternative flags):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-memories:manage-memory save \
+  --category context \
+  --identifier "{short-kebab-case-id}" \
+  --content '{"pattern": "{description}", "context": "{when discovered}"}'
+```
+
+Note: `--content` must be valid JSON. Required flags: `--category`, `--identifier`, `--content`.
+
 ### Step 8: Lessons Capture (Advisory)
 
 **IF `6_lessons_capture == false`**: Skip lessons capture.
@@ -379,6 +390,18 @@ Skill: plan-marshall:manage-lessons
 ```
 
 Records lessons learned from the implementation. Advisory only—does not block.
+
+**Use exactly this command** to add a lesson (do not invent alternative flags):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lesson add \
+  --component "{bundle}:{skill}" \
+  --category {bug|improvement|anti-pattern} \
+  --title "{concise summary}" \
+  --detail "{detailed context and resolution}"
+```
+
+Required flags: `--component`, `--category`, `--title`, `--detail`. Do NOT use `--summary` (does not exist).
 
 ### Step 9: Mark Plan Complete
 
