@@ -12,10 +12,12 @@ user-invocable: false
 
 ## Enforcement
 
-**Execution mode**: Follow workflow steps sequentially, respecting config gates.
+**Execution mode**: Follow workflow steps sequentially, respecting config gates. Each config-gated step dispatches to a standards/ document.
 
-**Required skill load** (before any CI/PR operation):
+**Required skill load** (before any operation):
 ```
+Skill: plan-marshall:dev-general-practices
+Skill: plan-marshall:workflow-integration-git
 Skill: plan-marshall:tools-integration-ci
 ```
 
@@ -44,36 +46,30 @@ See [references/workflow-overview.md](references/workflow-overview.md) for the v
 
 ## Configuration Source
 
-Finalize configuration comes from marshal.json phase sections:
+All config is read in Step 2 as a single TOON response:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-6-finalize get --trace-plan-id {plan_id}
 ```
 
-Cross-phase settings (also from marshal.json):
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-5-execute get --trace-plan-id {plan_id}
-```
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-1-init get --trace-plan-id {plan_id}
-```
-
 **Config Fields Used**:
+
+| Field | Type | Gates | Description |
+|-------|------|-------|-------------|
+| `1_commit_push` | boolean | Step 3 | Whether to commit and push |
+| `2_create_pr` | boolean | Step 4 | Whether to create a pull request |
+| `3_automated_review` | boolean | Step 5 | Whether to run CI review |
+| `4_sonar_roundtrip` | boolean | Step 6 | Whether to run Sonar analysis |
+| `5_knowledge_capture` | boolean | Step 7 | Whether to capture learnings |
+| `6_lessons_capture` | boolean | Step 8 | Whether to record lessons |
+| `review_bot_buffer_seconds` | integer | — | Seconds to wait after CI for review bots (default: 300) |
+| `max_iterations` | integer | — | Maximum finalize-verify loops (default: 3) |
+
+Cross-phase settings:
 
 | Source | Field | Description |
 |--------|-------|-------------|
-| phase-6-finalize | `1_commit_push` | Whether to commit and push |
-| phase-6-finalize | `2_create_pr` | Whether to create a pull request |
-| phase-6-finalize | `3_automated_review` | Whether to run CI review |
-| phase-6-finalize | `4_sonar_roundtrip` | Whether to run Sonar analysis |
-| phase-6-finalize | `5_knowledge_capture` | Whether to capture learnings |
-| phase-6-finalize | `6_lessons_capture` | Whether to record lessons |
-| phase-6-finalize | `review_bot_buffer_seconds` | Seconds to wait after CI for review bots (default: 300) |
-| phase-6-finalize | `max_iterations` | Maximum finalize-verify loops |
 | phase-5-execute | `commit_strategy` | per_deliverable/per_plan/none |
 | phase-1-init | `branch_strategy` | feature/direct |
 
@@ -85,14 +81,14 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 
 ### Step 1: Check Q-Gate Findings and Log Start
 
-### Log Phase Start
+#### Log Phase Start
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-6-finalize) Starting finalize phase"
 ```
 
-### Query Unresolved Findings
+#### Query Unresolved Findings
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
@@ -139,8 +135,6 @@ python3 .plan/execute-script.py plan-marshall:manage-references:manage-reference
   --plan-id {plan_id}
 ```
 
-Returns: `branch`, `base_branch`, `issue_url`, `build_system`, and file counts in a single call.
-
 **After reading configuration**, log the finalize strategy decision:
 
 ```bash
@@ -148,264 +142,85 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) Finalize strategy: commit={commit_strategy}, PR={create_pr}, branch={branch_strategy}"
 ```
 
-### Step 3: Conditional Commit and Push
+### Step 3: Commit and Push (if enabled)
 
-**IF `1_commit_push == false`**: Skip the entire commit+push step.
+**Config gate**: `1_commit_push` from phase-6-finalize config
 
+IF `1_commit_push == true`:
+  Read `standards/commit-push.md` and follow all steps.
+
+ELSE:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) Commit+Push skipped: 1_commit_push=false"
 ```
 
-Proceed directly to Step 4.
-
-**If `commit_strategy == none`**: Skip commit entirely.
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) Commit skipped: commit_strategy=none"
-```
-
-Proceed directly to Step 4.
-
-**If `commit_strategy == per_deliverable`**: Only commit if there are uncommitted changes remaining (some changes may already be committed per-deliverable during execute phase).
-
-**If `commit_strategy == per_plan`**: Commit all changes as a single commit (current default behavior).
-
-#### 3a. Check for uncommitted changes
-
-```bash
-git status --porcelain
-```
-
-If output is empty → no changes to commit, skip to Step 4.
-
-#### 3b. Load git-workflow skill for commit and push
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work --plan-id {plan_id} --level INFO --message "[SKILL] (plan-marshall:phase-6-finalize) Loading plan-marshall:workflow-integration-git"
-```
-
-```
-Skill: plan-marshall:workflow-integration-git
-```
-
-Execute the git-workflow skill's **Workflow: Commit Changes** with these parameters:
-- `message`: Generated from request.md summary
-- `push`: true (always push in finalize)
-- `create-pr`: false (PR creation is handled separately in Step 4)
-
-The skill handles: artifact cleanup, commit message generation, stage, commit, and push.
-
 ### Step 4: Create PR (if enabled)
 
-**IF `2_create_pr == false`**: Skip PR creation.
+**Config gate**: `2_create_pr` from phase-6-finalize config
 
+IF `2_create_pr == true`:
+  Read `standards/create-pr.md` and follow all steps.
+
+ELSE:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) PR creation skipped: 2_create_pr=false"
 ```
 
-Proceed directly to Step 5.
+### Step 5: Automated Review (if enabled)
 
-#### 4a. Check if PR already exists for current branch
+**Config gate**: `3_automated_review` from phase-6-finalize config
 
-```bash
-python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr view
-```
+IF `3_automated_review == true` AND a PR exists:
+  Read `standards/automated-review.md` and follow all steps.
 
-If `status: success` and `pr_number` is returned → PR already exists, skip creation. Read `pr_number` from the output for use in Step 5.
-
-If `status: error` → no PR exists, proceed to create one.
-
-#### 4b. Generate PR body
-
-Read the request summary:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-documents request read \
-  --plan-id {plan_id} --section summary
-```
-
-Write PR body using the template. Use the Write tool to create the body file:
-
-```
-Write(.plan/plans/{plan_id}/artifacts/pr-body.md) with PR body markdown content
-```
-
-Use `templates/pr-template.md` as the format. Include issue link from references (`Closes #{issue}` if `issue_url` was set in Step 2).
-
-#### 4c. Create PR via CI abstraction
-
-```bash
-python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr create \
-  --title "{title from request.md}" --body-file .plan/plans/{plan_id}/artifacts/pr-body.md --base {base_branch}
-```
-
-Read `pr_number` and `pr_url` from the TOON output for use in Step 5.
-
-#### 4d. Log PR creation
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work --plan-id {plan_id} --level INFO --message "[ARTIFACT] (plan-marshall:phase-6-finalize) Created PR #{pr_number}: {pr_url}"
-```
-
-### Step 5: Automated Review (if PR created)
-
-**IF `3_automated_review == false`**: Skip automated review.
-
+ELSE:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) Automated review skipped: 3_automated_review=false"
 ```
 
-Proceed directly to Step 6.
+### Step 6: Sonar Roundtrip (if enabled)
 
-**IF no PR exists** (Step 4 was skipped or `2_create_pr == false`): Skip automated review.
+**Config gate**: `4_sonar_roundtrip` from phase-6-finalize config
 
-#### 5a. Get PR number
+IF `4_sonar_roundtrip == true`:
+  Read `standards/sonar-roundtrip.md` and follow all steps.
 
-Use the `pr_number` obtained from Step 4 (either from `ci pr view` or `ci pr create` output). If not available, retrieve it:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr view
-```
-
-Read `pr_number` from the TOON output.
-
-#### 5b. Load and execute automated review workflow
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work --plan-id {plan_id} --level INFO --message "[SKILL] (plan-marshall:phase-6-finalize) Loading plan-marshall:workflow-integration-ci"
-```
-
-```
-Skill: plan-marshall:workflow-integration-ci
-```
-
-Execute **Workflow 3: Automated Review Lifecycle** with:
-- `plan_id`: from context
-- `pr_number`: from Step 5a
-- `review_bot_buffer_seconds`: from phase-6-finalize config (read in Step 2)
-
-The workflow handles CI wait, review bot buffer, comment fetching, triage, thread replies, and thread resolution — all via config-driven commands from `marshal.json`.
-
-#### 5c. Handle findings (loop-back)
-
-**On findings** (review comments requiring code changes, `loop_back_needed == true`):
-
-1. Create fix tasks:
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks add \
-  --plan-id {plan_id} --title "Fix: {comment summary}" --domain {domain} --profile implementation \
-  --deliverable 0
-```
-
-2. Loop back to phase-5-execute (iteration + 1):
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-lifecycle:manage-lifecycle transition \
-  --plan-id {plan_id} --loop-back 5-execute
-```
-
-3. Continue until clean or max iterations (3).
-
-### Step 6: Sonar Roundtrip (if configured)
-
-**IF `4_sonar_roundtrip == false`**: Skip Sonar roundtrip.
-
+ELSE:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) Sonar roundtrip skipped: 4_sonar_roundtrip=false"
 ```
 
-Proceed directly to Step 7.
+### Step 7: Knowledge Capture (if enabled)
 
-If Sonar integration is enabled:
+**Config gate**: `5_knowledge_capture` from phase-6-finalize config
 
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work --plan-id {plan_id} --level INFO --message "[SKILL] (plan-marshall:phase-6-finalize) Loading plan-marshall:workflow-integration-sonar"
-```
+IF `5_knowledge_capture == true`:
+  Read `standards/knowledge-capture.md` and follow all steps.
 
-```
-Skill: plan-marshall:workflow-integration-sonar
-```
-
-Handles Sonar quality gate and issue resolution. On findings, follows same loop-back pattern as Step 5.
-
-### Step 7: Knowledge Capture (Advisory)
-
-**IF `5_knowledge_capture == false`**: Skip knowledge capture.
-
+ELSE:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) Knowledge capture skipped: 5_knowledge_capture=false"
 ```
 
-Proceed directly to Step 8.
+### Step 8: Lessons Capture (if enabled)
 
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work --plan-id {plan_id} --level INFO --message "[SKILL] (plan-marshall:phase-6-finalize) Loading plan-marshall:manage-memories"
-```
+**Config gate**: `6_lessons_capture` from phase-6-finalize config
 
-```
-Skill: plan-marshall:manage-memories
-```
+IF `6_lessons_capture == true`:
+  Read `standards/lessons-capture.md` and follow all steps.
 
-Records any significant patterns discovered during implementation. Advisory only—does not block.
-
-**Use exactly this command** to save a memory (do not invent alternative flags):
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-memories:manage-memory save \
-  --category context \
-  --identifier "{short-kebab-case-id}" \
-  --content '{"pattern": "{description}", "context": "{when discovered}"}'
-```
-
-Note: `--content` must be valid JSON. Required flags: `--category`, `--identifier`, `--content`.
-
-### Step 8: Lessons Capture (Advisory)
-
-**IF `6_lessons_capture == false`**: Skip lessons capture.
-
+ELSE:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) Lessons capture skipped: 6_lessons_capture=false"
 ```
 
-Proceed directly to Step 9.
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work --plan-id {plan_id} --level INFO --message "[SKILL] (plan-marshall:phase-6-finalize) Loading plan-marshall:manage-lessons"
-```
-
-```
-Skill: plan-marshall:manage-lessons
-```
-
-Records lessons learned from the implementation. Advisory only—does not block.
-
-**Use exactly this command** to add a lesson (do not invent alternative flags):
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lesson add \
-  --component "{bundle}:{skill}" \
-  --category {bug|improvement|anti-pattern} \
-  --title "{concise summary}" \
-  --detail "{detailed context and resolution}"
-```
-
-Required flags: `--component`, `--category`, `--title`, `--detail`. Do NOT use `--summary` (does not exist).
-
 ### Step 9: Mark Plan Complete
-
-Transition to complete:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-lifecycle:manage-lifecycle transition \
@@ -426,7 +241,7 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-
   --plan-id {plan_id} --section source
 ```
 
-**IF `source == "lesson"`**: Read `source_id` from the same request and mark the lesson applied:
+**IF `source == "lesson"`**: Read `source_id` and mark applied:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-documents request read \
@@ -447,8 +262,6 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 ### Step 11: Archive Plan
 
-Archive the completed plan from `.plan/plans/` to `.plan/archived-plans/`:
-
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-lifecycle:manage-lifecycle archive \
   --plan-id {plan_id}
@@ -465,8 +278,6 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-6-finalize) Plan completed: commit={commit_hash}, PR={pr_url|skipped}"
 ```
-
-**Add visual separator** after END log:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
@@ -529,112 +340,41 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   work --plan-id {plan_id} --level ERROR --message "[ERROR] (plan-marshall:phase-6-finalize) {step} failed - {error_type}: {error_context}"
 ```
 
-### Git Commit Failure
-
-```toon
-status: error
-step: commit
-message: Nothing to commit or merge conflict
-recovery: Resolve conflicts, then re-run finalize
-```
-
-### Push Failure
-
-```toon
-status: error
-step: push
-message: Remote rejected push
-recovery: Pull changes, resolve conflicts, then re-run finalize
-```
-
-### PR Creation Failure
-
-```toon
-status: error
-step: pr
-message: PR already exists or branch not pushed
-recovery: Check existing PRs or push branch first
-```
-
-### Max Iterations Reached
-
-```toon
-status: error
-step: iteration_limit
-message: Max finalize iterations (3) reached
-recovery: Manual intervention required - review remaining PR issues
-```
+See `standards/validation.md` for specific error scenarios and recovery actions.
 
 ---
 
 ## Resumability
 
-The skill checks config gates first, then current state before each step:
+Config gates (checked first — take priority):
+- `1_commit_push == false` → skip Step 3
+- `2_create_pr == false` → skip Step 4
+- `3_automated_review == false` → skip Step 5
+- `4_sonar_roundtrip == false` → skip Step 6
+- `5_knowledge_capture == false` → skip Step 7
+- `6_lessons_capture == false` → skip Step 8
 
-**Config gates** (checked first — take priority over state checks):
-- `1_commit_push == false` → skip Step 3 (commit+push)
-- `2_create_pr == false` → skip Step 4 (PR creation)
-- `3_automated_review == false` → skip Step 5 (automated review)
-- `4_sonar_roundtrip == false` → skip Step 6 (Sonar roundtrip)
-- `5_knowledge_capture == false` → skip Step 7 (knowledge capture)
-- `6_lessons_capture == false` → skip Step 8 (lessons capture)
+State checks (for enabled steps):
 
-**State checks** (for steps not disabled by config — use these exact commands):
-
-1. **Are there uncommitted changes?** Skip commit if clean.
-   ```bash
-   git status --porcelain
-   ```
-   Empty output → nothing to commit, skip Step 3.
-
-2. **Is branch pushed?** Skip push if remote is current.
-   ```bash
-   git log @{u}..HEAD --oneline
-   ```
-   Empty output → branch is up-to-date, skip push.
-
-3. **Does PR exist?** Skip creation if PR already exists.
-   ```bash
-   python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr view
-   ```
-   `status: success` with `pr_number` → PR exists, skip Step 4. Use the returned `pr_number` for Step 5.
-   `status: error` → no PR, proceed with creation.
-
-4. **Is plan already complete?** Skip if finalize done.
-   ```bash
-   python3 .plan/execute-script.py plan-marshall:manage-status:manage_status read --plan-id {plan_id}
-   ```
-   `current_phase: complete` → skip all remaining steps.
-
----
-
-## Shipping Pipeline
-
-See [references/workflow-overview.md](references/workflow-overview.md) for the visual shipping pipeline diagram.
-
----
-
-## Related Documents
-
-| Document | Purpose |
-|----------|---------|
-| [references/workflow-overview.md](references/workflow-overview.md) | Visual diagrams: 6-Phase Model and Shipping Pipeline flowchart |
+1. **Uncommitted changes?** `git status --porcelain` — empty → skip Step 3
+2. **Branch pushed?** `git log @{u}..HEAD --oneline` — empty → skip push
+3. **PR exists?** `ci pr view` — `status: success` → skip creation, use returned `pr_number`
+4. **Plan complete?** `manage-status read` — `current_phase: complete` → skip all
 
 ---
 
 ## Standards (Load On-Demand)
 
-### Validation
-```
-Read standards/validation.md
-```
-Contains: Configuration requirements, step-by-step validation checklist, output format examples
-
-### Lessons Integration
-```
-Read standards/lessons-integration.md
-```
-Contains: How lessons are captured at plan completion, knowledge extraction patterns
+| Standard | Config Gate | Purpose |
+|----------|------------|---------|
+| `standards/commit-push.md` | `1_commit_push` | Commit strategy, git status, workflow-integration-git delegation |
+| `standards/create-pr.md` | `2_create_pr` | PR existence check, body generation, CI pr create |
+| `standards/automated-review.md` | `3_automated_review` | CI wait, review triage, loop-back on findings |
+| `standards/sonar-roundtrip.md` | `4_sonar_roundtrip` | Sonar quality gate, issue resolution |
+| `standards/knowledge-capture.md` | `5_knowledge_capture` | manage-memories save command |
+| `standards/lessons-capture.md` | `6_lessons_capture` | manage-lesson add command |
+| `standards/validation.md` | — | Configuration requirements, error scenarios |
+| `standards/lessons-integration.md` | — | Conceptual guidance on lesson capture |
 
 ---
 
@@ -646,38 +386,23 @@ Contains: How lessons are captured at plan completion, knowledge extraction patt
 
 ---
 
-## Integration
+## Related Documents
 
-### Phase Routing
+| Document | Purpose |
+|----------|---------|
+| [references/workflow-overview.md](references/workflow-overview.md) | Visual diagrams: 6-Phase Model and Shipping Pipeline |
 
-This skill is invoked when plan is in `6-finalize` phase:
+---
 
-```
-plan-marshall:manage-lifecycle:manage-lifecycle route --phase 6-finalize → plan-marshall:phase-6-finalize
-```
-
-### Loop-Back to Execute
-
-On PR issues (CI failures, review comments, Sonar findings):
-1. Create fix tasks via `plan-marshall:manage-tasks`
-2. Increment `finalize_iteration` counter
-3. Transition to `5-execute` phase
-4. Fix tasks run within `5-execute`, then return to `6-finalize`
-5. Repeat until clean or max iterations (3)
-
-### Command Integration
-
-- **/plan-marshall action=finalize** - Invokes this skill
-- **/workflow-pr-doctor** - Used during automated review step
-
-### Related Skills
+## Related Skills
 
 | Skill | Purpose |
 |-------|---------|
-| `plan-marshall:workflow-integration-git` | Commit, push, PR creation |
+| `plan-marshall:dev-general-practices` | Bash safety rules, tool usage patterns |
+| `plan-marshall:workflow-integration-git` | Commit, push workflow |
+| `plan-marshall:tools-integration-ci` | PR operations, CI status |
 | `plan-marshall:workflow-integration-ci` | CI monitoring, review handling |
 | `plan-marshall:workflow-integration-sonar` | Sonar quality gate |
 | `plan-marshall:phase-5-execute` | Loop-back target for fix task execution |
-| `plan-marshall:plan-marshall` | Phase transitions (manage-lifecycle script) |
 | `plan-marshall:manage-memories` | Knowledge capture |
 | `plan-marshall:manage-lessons` | Lessons capture |
