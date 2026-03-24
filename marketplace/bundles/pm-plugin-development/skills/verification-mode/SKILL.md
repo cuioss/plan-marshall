@@ -12,7 +12,9 @@ Verification mode ensures quality by stopping execution on any failure, workarou
 
 ## CRITICAL: Process vs Data Priority
 
-**In verification mode, the PROCESS takes priority over the TASK.**
+**Verification mode exists to validate and fix the PROCESS — never the data it produces.**
+
+Plans, tasks, outlines, status files — these are all **outputs** of the process. They are symptoms, not causes. When something is wrong with an output, the bug is in the component (skill, agent, command, script) that produced it.
 
 | Aspect | Normal Mode | Verification Mode |
 |--------|-------------|-------------------|
@@ -20,33 +22,88 @@ Verification mode ensures quality by stopping execution on any failure, workarou
 | **On error** | Fix the data/result, continue | Fix the PROCESS (agent/skill/command) |
 | **Success metric** | Task completed | Process works correctly |
 | **Retry behavior** | Acceptable if result correct | STOP - investigate why retry was needed |
+| **Fix target** | Output files (`.plan/plans/**`) | Source components (`marketplace/bundles/**`) |
 
-### Example: Wrong Approach vs Right Approach
+### The Fix-Target Gate (Mandatory)
 
-**Scenario**: Agent produces invalid output, retries, second attempt succeeds.
+Before proposing ANY fix, you MUST pass this gate:
 
-❌ **Wrong (Normal Mode thinking)**:
-> "The retry succeeded, the output is correct now. Continuing..."
+```
+┌─────────────────────────────────────────────────┐
+│  DOES MY PROPOSED FIX MODIFY FILES UNDER:       │
+│                                                  │
+│    .plan/plans/**    → STOP. This is data.       │
+│    .plan/logs/**     → STOP. This is data.       │
+│    .plan/temp/**     → STOP. This is data.       │
+│                                                  │
+│  THE ONLY VALID FIX TARGETS ARE:                 │
+│                                                  │
+│    marketplace/bundles/**/skills/**              │
+│    marketplace/bundles/**/agents/**              │
+│    marketplace/bundles/**/commands/**            │
+│    marketplace/bundles/**/scripts/**             │
+│    .plan/execute-script.py                       │
+│                                                  │
+│  If your fix targets data → trace back to the    │
+│  component that PRODUCED the bad data and fix    │
+│  THAT instead.                                   │
+└─────────────────────────────────────────────────┘
+```
 
-✅ **Right (Verification Mode thinking)**:
-> "STOP. The agent failed on first attempt. WHY? The process is broken.
-> I must fix the AGENT/SKILL that produced the invalid output, not just accept the retry."
+**Apply this gate at every decision point.** If you catch yourself about to edit, recreate, or patch a plan file — stop, trace the data back to its source component, and fix the component.
+
+### Trace-Back Protocol
+
+When bad data is found, trace it to its source:
+
+1. **Identify the bad output** — Which file has wrong content? What's wrong with it?
+2. **Find the producer** — Which script/agent/skill created or last modified this file? Check the script-execution log and work-log.
+3. **Read the producer's source** — Open the SKILL.md, agent.md, or script that produced the output.
+4. **Locate the defect** — Find the instruction, template, logic, or validation that allowed the bad output.
+5. **Fix the producer** — Edit the component source so it produces correct output.
+6. **Re-run the process** — Let the fixed component regenerate the data naturally.
+
+Never shortcut this by editing the output directly — that leaves the broken component in place to produce bad data again on the next run.
+
+### Examples
+
+**Scenario 1**: Solution outline has malformed deliverables.
+
+| | Approach | Fix target |
+|---|---|---|
+| WRONG | Edit `solution_outline.md` to fix the format | `.plan/plans/*/solution_outline.md` (data) |
+| RIGHT | Find which skill/agent wrote the outline, fix its template or instructions | `marketplace/bundles/**/SKILL.md` (process) |
+
+**Scenario 2**: Task file is missing required `delegation.context_skills` field.
+
+| | Approach | Fix target |
+|---|---|---|
+| WRONG | Add the missing field to `TASK-003.toon` | `.plan/plans/*/tasks/TASK-003.toon` (data) |
+| RIGHT | Find the task-creation logic in `manage-tasks` script or the planning skill, fix validation or template | `marketplace/bundles/**/scripts/**` (process) |
+
+**Scenario 3**: Agent produces invalid output, retries, second attempt succeeds.
+
+| | Approach | Fix target |
+|---|---|---|
+| WRONG | "The retry succeeded, continuing..." | Nothing (silent acceptance) |
+| RIGHT | STOP. The agent failed on first attempt. WHY? Fix the agent instructions so it succeeds on first attempt | `marketplace/bundles/**/agents/**` (process) |
+
+**Scenario 4**: Status shows wrong phase after transition.
+
+| | Approach | Fix target |
+|---|---|---|
+| WRONG | Manually update `status.toon` to correct phase | `.plan/plans/*/status.toon` (data) |
+| RIGHT | Find the lifecycle/status script that failed to update, fix the transition logic | `marketplace/bundles/**/scripts/**` (process) |
 
 ### The Core Question
 
-When an error occurs, ask:
+When an error occurs, always ask:
 
-> "Which COMPONENT (agent, skill, command, script) caused this, and how do I fix IT?"
+> "Which COMPONENT (agent, skill, command, script) in `marketplace/bundles/` caused this, and how do I fix IT?"
 
-NOT:
+Never ask:
 
 > "How do I fix the data so I can continue?"
-
-### CRITICAL: Never Propose Data Fixes
-
-Verification mode means fixing **components** (agents, skills, commands, scripts) — not the data they produce. Any proposal to fix files inside `.plan/plans/` is almost certainly wrong. The data is a symptom; the component that produced it is the cause.
-
-If your proposed fix targets `.plan/plans/**` → STOP and reconsider. Find which component generated the bad data and fix that instead.
 
 ## What This Skill Provides
 
@@ -145,6 +202,11 @@ All analyses MUST use this structured format:
 ### Root Cause Analysis
 [Analysis of why this occurred]
 
+### Source Component (Mandatory)
+- **Component**: [Full path to the skill/agent/command/script that caused the issue]
+- **Defect location**: [Specific section, line, or logic in the component]
+- **Fix-Target Gate**: [PASS: fix targets marketplace/bundles/** | FAIL: fix targets .plan/** — if FAIL, redo analysis]
+
 ### Impact Assessment
 | Aspect | Impact |
 |--------|--------|
@@ -153,12 +215,12 @@ All analyses MUST use this structured format:
 | Workaround Available | Yes/No |
 
 ### Options
-1. [Option 1 with consequences]
-2. [Option 2 with consequences]
-3. [Option 3 with consequences]
+1. [Option 1 — must target a process component, not data]
+2. [Option 2 — must target a process component, not data]
+3. [Option 3 — must target a process component, not data]
 
 ### Recommendation
-[Your recommended next step]
+[Your recommended next step — must pass Fix-Target Gate]
 
 ---
 **Verification Mode Active** - Awaiting user decision before proceeding.

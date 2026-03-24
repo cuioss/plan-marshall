@@ -398,7 +398,86 @@ execute-script.py proxy. This bypasses:
 Use executor pattern - this is a design violation
 ```
 
-### Rule 5: Log File Verification and Issue Detection
+### Rule 5: CI/Git Provider Access via Integration Scripts (Mandatory)
+
+All GitHub (`gh`) and GitLab (`glab`) operations MUST use the CI integration scripts via the executor. Direct `Bash(gh ...)` or `Bash(glab ...)` calls are **bugs** — the process MUST stop immediately when detected.
+
+**Required Pattern**:
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci {command} {subcommand} {args...}
+```
+
+**Available Commands and Subcommands**:
+
+| Command | Subcommands | Replaces |
+|---------|-------------|----------|
+| `pr` | `create`, `view`, `reply`, `resolve-thread`, `thread-reply`, `reviews`, `comments`, `merge`, `auto-merge`, `close`, `ready`, `edit` | `gh pr *` |
+| `ci` | `status`, `wait`, `rerun`, `logs` | `gh pr checks`, `gh run *` |
+| `issue` | `create`, `view`, `close` | `gh issue *` |
+
+**Prohibited Operations**:
+
+| Tool | Prohibited Pattern | Correct Alternative |
+|------|-------------------|---------------------|
+| Bash | `gh pr view` | `python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr view` |
+| Bash | `gh pr create ...` | `python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr create ...` |
+| Bash | `gh pr checks --watch` | `python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci ci wait` |
+| Bash | `gh pr merge` | `python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr merge` |
+| Bash | `gh run view` | `python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci ci status` |
+| Bash | `gh run rerun` | `python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci ci rerun` |
+| Bash | `gh issue create` | `python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci issue create ...` |
+| Bash | `gh api repos/.../pulls/.../comments` | `python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr comments` |
+| Bash | `glab mr create` | `python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr create ...` |
+
+**Why This Matters**:
+- **Provider abstraction**: Scripts support both GitHub and GitLab via unified API
+- **Execution logging**: All CI/git operations are logged with timestamps and duration
+- **Error standardization**: Consistent error output format across providers
+- **Audit trail**: Operations are traceable in script-execution logs
+
+**Detection Pattern**:
+
+When you observe direct `gh` or `glab` calls in Bash:
+
+```
+## PLANNING COMPLIANCE Violation Detected — PROCESS STOPPED
+
+### Issue Detected
+Direct gh/glab CLI call bypassing CI integration scripts
+
+### Context
+- **Operation**: Bash
+- **Target**: `gh pr view --json number`
+- **Expected**: `python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr view`
+- **Actual**: Direct gh CLI call used
+
+### Root Cause Analysis
+Calling code is invoking gh/glab directly instead of using the
+CI integration abstraction layer. This bypasses:
+- Provider abstraction (GitHub/GitLab portability)
+- Execution logging
+- Error standardization
+- Audit trail
+
+### Impact Assessment
+| Aspect | Impact |
+|--------|--------|
+| Blocking | **YES — process must stop** |
+| Audit Trail | Broken — no execution log entry |
+| Portability | Lost — tied to specific provider CLI |
+
+### Required Action
+1. **STOP** — Do not continue execution
+2. **Replace** — Use the correct executor notation
+3. **Verify** — Confirm the replacement works before proceeding
+
+### Recommendation
+This is a **blocking violation**. Replace direct CLI call with executor pattern and restart the operation.
+```
+
+**Exception**: There are NO exceptions for this rule. Every `gh` and `glab` operation has a corresponding integration script subcommand. If a needed operation is missing, the correct action is to extend the CI integration scripts, not to bypass them.
+
+### Rule 6: Log File Verification and Issue Detection
 
 Plan-related log files must exist, be properly formatted, remain consistent, and be actively scanned to detect script execution issues.
 
