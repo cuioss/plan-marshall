@@ -270,6 +270,21 @@ Bash(command="python3 script.py --task 3")
 
 For batch operations, emit multiple parallel Bash tool calls rather than shell loops.
 
+### ❌ Never Use Heredocs for Multi-Line Arguments
+
+Heredocs (`<<'EOF'`) with content containing `#`-prefixed lines trigger Claude Code's security prompt ("quoted newline followed by a #-prefixed line"). Use file-based alternatives instead.
+
+```
+# BAD - Triggers security prompt (markdown headings start with #)
+Bash(command="gh pr create --body \"$(cat <<'EOF'\n## Summary\n...\nEOF\n)\"")
+
+# GOOD - Write to temp file, pass via --body-file
+Write(file_path=".plan/temp/pr-body.md", content="## Summary\n...")
+Bash(command="gh pr create --body-file .plan/temp/pr-body.md")
+```
+
+Same pattern applies to any CLI that accepts file input: `--body-file`, `--message-file`, `-F`, etc.
+
 **Rule of Thumb**: Use Bash when the operation truly requires shell execution or external tools. Use non-prompting tools (Glob, Read, Grep) for all file system operations. All build/compile/lint/test commands must be resolved via architecture API before execution.
 
 ## Performance Considerations
