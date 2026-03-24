@@ -8,9 +8,17 @@ user-invocable: false
 
 ## Enforcement
 
+**Execution mode**: Select workflow and execute immediately using documented script commands.
+
+**Prohibited actions:**
+- Do not invoke scripts with arguments other than those documented in workflow steps
+- Do not skip confirmation steps for delete operations
+- Do not create ADRs without automatic numbering via the create workflow
+
+**Constraints:**
 - Run scripts EXACTLY as documented using `python3 .plan/execute-script.py pm-documents:manage-adr:manage-adr ...`
-- Never skip confirmation steps for delete operations
-- Always validate ADR format after creation or update
+- Always validate ADR format after creation or update using ref-asciidoc
+- ADRs must be stored in `doc/adr/` directory
 
 ---
 

@@ -8,6 +8,20 @@ user-invocable: false
 
 Handles Sonar issue workflows - fetching issues from SonarQube, triaging them, and implementing fixes or suppressions.
 
+## Enforcement
+
+**Execution mode**: Fetch Sonar issues, triage each for fix or suppress, implement changes, verify build.
+
+**Prohibited actions:**
+- Never suppress Sonar issues without documented justification
+- Never modify Sonar configuration or quality profiles
+- Never skip build verification after implementing fixes
+
+**Constraints:**
+- Each workflow step that invokes a script has an explicit bash code block with the full `python3 .plan/execute-script.py` command
+- Suppressions require inline comments explaining the rationale
+- Fix-vs-suppress decisions must be logged
+
 ## What This Skill Provides
 
 ### Workflows (Absorbs 2 Agents)

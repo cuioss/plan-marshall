@@ -8,6 +8,19 @@ user-invocable: false
 
 **PURPOSE**: Synchronize Claude Code permissions with marketplace bundles and manage the executor permission pattern.
 
+## Enforcement
+
+**Execution mode**: Run scripts exactly as documented; use `--dry-run` before applying changes.
+
+**Prohibited actions:**
+- Do not modify settings files without dry-run verification first
+- Do not invent script arguments not listed in the operations table
+- Do not bypass the executor permission pattern with individual script permissions
+
+**Constraints:**
+- All commands use `python3 .plan/execute-script.py plan-marshall:tools-permission-sync:marketplace-sync {command} {args}`
+- Always use `--dry-run` first to preview changes before applying
+
 ## Script Reference
 
 | Script | Notation | Purpose |

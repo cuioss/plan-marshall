@@ -8,6 +8,20 @@ user-invocable: false
 
 Memory layer operations for persistent session storage (via `file-operations-base` skill).
 
+## Enforcement
+
+**Execution mode**: Run scripts exactly as documented; parse JSON/TOON output for status and route accordingly.
+
+**Prohibited actions:**
+- Do not modify memory files directly; all mutations go through the script API
+- Do not invent script arguments not listed in the Operations Reference
+- Do not bypass the metadata envelope format for memory files
+
+**Constraints:**
+- All commands use `python3 .plan/execute-script.py plan-marshall:manage-memories:manage-memory {command} {args}`
+- Memory files are global-scoped (stored in `.plan/memories/`)
+- Content for save operations must be valid JSON
+
 ## What This Skill Provides
 
 - CRUD operations for memory storage files

@@ -14,7 +14,6 @@
   "commands": [],
   "skills": [
     "./skills/oci-standards",
-    "./skills/oci-security",
-    "./skills/plan-marshall-plugin"
+    "./skills/oci-security"
   ]
 }

@@ -438,7 +438,7 @@ Orchestrates skill workflows and commands:
 - **`pm-dev-java-cui:cui-logging` skill** - Logging standards and maintenance reference
 - **Explore agent** - Violation detection and business test location
 - **/java-implement-code command** - Logging code modifications
-- **Bash** - Maven builds for verification
+- **Build system** - Build verification via `plan-marshall:build-maven` skill
 - **pm-dev-java:plan-marshall-plugin skill** - Java domain extension
 - **Bash** - LogRecord discovery script and plan.md updates (scripts from skill)
 

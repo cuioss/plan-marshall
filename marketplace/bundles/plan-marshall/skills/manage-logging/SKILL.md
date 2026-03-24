@@ -8,6 +8,20 @@ user-invocable: false
 
 Unified logging infrastructure providing script execution logging, semantic work progress tracking, and decision logging.
 
+## Enforcement
+
+**Execution mode**: Run scripts exactly as documented; log entries are fire-and-forget (no output parsing needed).
+
+**Prohibited actions:**
+- Do not write to log files directly; all mutations go through the script API
+- Do not invent script arguments not listed in the CLI Script Usage section
+- Do not use invalid log levels (only INFO, WARN, ERROR)
+
+**Constraints:**
+- All commands use `python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log {command} {args}`
+- Log type determines the output file (script, work, decision)
+- Work log messages must include `[CATEGORY] (caller)` prefix format
+
 ## Overview
 
 This skill provides a single unified API for three logging concerns:

@@ -8,6 +8,22 @@ user-invocable: false
 
 **REFERENCE MODE**: This skill provides reference material for building OCI-compliant container images. Load specific references on-demand based on current task. Do not load all references at once.
 
+## Enforcement
+
+**Execution mode**: Reference library; load standards on-demand for OCI container image building tasks.
+
+**Prohibited actions:**
+- Do not use `latest` tags for base images; always pin versions or digests
+- Do not use ADD instead of COPY unless extracting archives
+- Do not embed secrets in Dockerfile ENV, ARG, or COPY instructions
+- Do not load all standards at once; load progressively based on current task
+
+**Constraints:**
+- All container images must use minimal base images (distroless, alpine, or slim)
+- Multi-stage builds required to separate build and runtime layers
+- OCI labels (`org.opencontainers.image.*`) must be present
+- Hadolint must pass without errors
+
 ## When to Use This Skill
 
 Activate when:

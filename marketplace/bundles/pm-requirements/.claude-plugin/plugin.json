@@ -14,7 +14,6 @@
   "commands": [],
   "skills": [
     "./skills/ext-triage-reqs",
-    "./skills/plan-marshall-plugin",
     "./skills/planning",
     "./skills/requirements-authoring",
     "./skills/setup",

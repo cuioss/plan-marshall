@@ -1,6 +1,11 @@
 ---
 name: detect-change-type-agent
-description: Detect change type from request using LLM analysis
+description: |
+  Analyzes a plan request to detect its change type (feature, bug_fix, tech_debt, enhancement, verification, analysis) using LLM reasoning. Persists the detected change type to status metadata.
+
+  Examples:
+  - Input: plan_id=my-plan
+  - Output: TOON with status, change_type, confidence, reasoning
 tools: Bash, Skill
 ---
 

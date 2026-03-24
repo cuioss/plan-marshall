@@ -1,6 +1,11 @@
 ---
 name: q-gate-validation-agent
-description: Verify deliverables against request intent and assessments, catching false positives and missing coverage
+description: |
+  Verifies solution outline deliverables against request intent and assessments. Catches false positives, missing coverage, and scope drift.
+
+  Examples:
+  - Input: plan_id=my-plan
+  - Output: TOON with validation results per deliverable (passed/failed, findings)
 tools: Read, Bash, Skill
 ---
 

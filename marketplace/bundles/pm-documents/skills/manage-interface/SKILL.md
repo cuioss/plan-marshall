@@ -8,9 +8,17 @@ user-invocable: false
 
 ## Enforcement
 
+**Execution mode**: Select workflow and execute immediately using documented script commands.
+
+**Prohibited actions:**
+- Do not invoke scripts with arguments other than those documented in workflow steps
+- Do not skip confirmation steps for delete operations
+- Do not create interfaces without automatic numbering via the create workflow
+
+**Constraints:**
 - Run scripts EXACTLY as documented using `python3 .plan/execute-script.py pm-documents:manage-interface:manage-interface ...`
-- Never skip confirmation steps for delete operations
-- Always validate interface format after creation or update
+- Always validate interface format after creation or update using ref-asciidoc
+- Interface specifications must be stored in `doc/interfaces/` directory
 
 ---
 

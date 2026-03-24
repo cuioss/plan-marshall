@@ -145,8 +145,17 @@ def cmd_pr_create(args: argparse.Namespace) -> int:
     if not is_auth:
         return output_error('pr_create', err)
 
+    # Resolve body: --body-file takes precedence over --body
+    body = args.body or ''
+    if args.body_file:
+        try:
+            with open(args.body_file) as f:
+                body = f.read()
+        except OSError as e:
+            return output_error('pr_create', f'Failed to read body file: {e}')
+
     # Build command
-    gh_args = ['pr', 'create', '--title', args.title, '--body', args.body]
+    gh_args = ['pr', 'create', '--title', args.title, '--body', body]
     if args.base:
         gh_args.extend(['--base', args.base])
     if args.draft:
@@ -906,7 +915,8 @@ def main() -> int:
     # pr create
     pr_create_parser = pr_subparsers.add_parser('create', help='Create a pull request')
     pr_create_parser.add_argument('--title', required=True, help='PR title')
-    pr_create_parser.add_argument('--body', required=True, help='PR description')
+    pr_create_parser.add_argument('--body', default='', help='PR description')
+    pr_create_parser.add_argument('--body-file', help='Read PR body from file (takes precedence over --body)')
     pr_create_parser.add_argument('--base', help='Base branch (default: repo default)')
     pr_create_parser.add_argument('--draft', action='store_true', help='Create as draft PR')
 

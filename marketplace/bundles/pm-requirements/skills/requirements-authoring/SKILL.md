@@ -6,6 +6,22 @@ user-invocable: false
 
 # Requirements and Specification Authoring Standards
 
+## Enforcement
+
+**Execution mode**: Reference library; load standards on-demand for requirements authoring and specification tasks.
+
+**Prohibited actions:**
+- Do not create requirements without SMART criteria validation
+- Do not duplicate content across documents; use cross-references
+- Do not document features that do not exist or are not planned (no hallucinations)
+- Do not load all standards at once; load progressively based on current task
+
+**Constraints:**
+- All requirements must use consistent ID format: `[#PREFIX-NUM]`
+- All specifications must include backtracking links to requirements
+- Sequential numbering must be maintained; never reuse IDs
+- Cross-references must be verified and functional before finalizing
+
 Comprehensive standards for creating, structuring, and maintaining requirements and specification documents in projects following SMART principles, ensuring complete traceability, and maintaining documentation integrity throughout the project lifecycle.
 
 ## What This Skill Provides

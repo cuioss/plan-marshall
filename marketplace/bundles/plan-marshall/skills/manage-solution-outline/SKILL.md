@@ -8,6 +8,20 @@ user-invocable: false
 
 This skill provides structure guidelines, examples, and operations for `solution_outline.md` documents. Load this skill when creating or modifying solution outlines.
 
+## Enforcement
+
+**Execution mode**: Run scripts exactly as documented; use Write tool for document content, then validate via script.
+
+**Prohibited actions:**
+- Do not modify solution_outline.md through the script API write path; use Write tool then validate
+- Do not invent script arguments not listed in the Scripts Used table
+- Do not skip validation after writing or updating solution content
+
+**Constraints:**
+- All commands use `python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-solution-outline {command} {args}`
+- Document creation follows the resolve-path, Write, validate pattern
+- Deliverable numbering must be sequential starting from 1
+
 ## When to Load This Skill
 
 Load this skill in Step 1 when:

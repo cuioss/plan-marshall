@@ -8,9 +8,17 @@ user-invocable: false
 
 ## Enforcement
 
+**Execution mode**: Select workflow and execute immediately using documented script commands.
+
+**Prohibited actions:**
+- Do not invoke scripts with arguments other than those documented in workflow steps
+- Do not apply major content changes without asking the user first
+- Do not use this skill for AsciiDoc formatting; use ref-asciidoc instead
+
+**Constraints:**
 - Run scripts EXACTLY as documented using `python3 .plan/execute-script.py pm-documents:ref-documentation:docs ...`
 - Always load tone-and-style standards before executing content review workflows
-- Ask user before applying major content changes
+- Use ref-asciidoc for syntax and formatting concerns; this skill covers content quality only
 
 ---
 

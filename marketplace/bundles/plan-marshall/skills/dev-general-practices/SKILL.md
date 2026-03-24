@@ -77,6 +77,8 @@ ALL `.plan/` file access MUST go through `python3 .plan/execute-script.py`. NEVE
 - Use `python3 -c` to parse `.plan/` JSON/TOON files
 - Use Bash to cat/grep `.plan/` files
 
+**Exception**: When the currently loaded skill's workflow explicitly documents a `Write(...)` or `Read(...)` call targeting a `.plan/` path, follow the skill's instruction. The skill author already determined that direct access is appropriate for that step. Do NOT substitute `manage-files` for an explicitly documented `Write(...)` call.
+
 ### Skill workflow: No improvisation
 
 Execute ONLY the commands documented in the loaded skill's workflow. NEVER:

@@ -8,9 +8,17 @@ user-invocable: false
 
 ## Enforcement
 
+**Execution mode**: Select workflow and execute immediately using documented script commands.
+
+**Prohibited actions:**
+- Do not invoke scripts with arguments other than those documented in workflow steps
+- Do not skip the manual verification step in verify-links workflow
+- Do not modify AsciiDoc files without first running validate-format
+
+**Constraints:**
 - Run scripts EXACTLY as documented using `python3 .plan/execute-script.py pm-documents:ref-asciidoc:asciidoc ...`
 - Always load documentation standards before executing format or validation workflows
-- Never skip the manual verification step in verify-links workflow
+- Use ref-documentation for content quality concerns; this skill covers syntax and format only
 
 ---
 

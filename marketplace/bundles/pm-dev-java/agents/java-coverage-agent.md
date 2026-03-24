@@ -6,7 +6,11 @@ description: |
   Examples:
   - Input: module="auth-service", threshold=80
   - Output: {coverage_status: "below_threshold", line: 72.5, gaps_by_priority: {...}}
-tools: Read, Glob, Grep, Skill
+tools:
+  - Read
+  - Glob
+  - Grep
+  - Skill
 ---
 
 # Java Coverage Agent

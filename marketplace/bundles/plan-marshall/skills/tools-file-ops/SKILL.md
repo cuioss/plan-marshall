@@ -8,6 +8,20 @@ user-invocable: false
 
 **Role**: Shared Python module providing atomic file operations, metadata parsing, JSON output helpers, and base directory configuration for CUI workflow scripts.
 
+## Enforcement
+
+**Execution mode**: Library module; import functions as documented in usage examples.
+
+**Prohibited actions:**
+- Do not access `.plan/` files directly; use `base_path()` for path construction
+- Do not bypass atomic write; always use `atomic_write_file()` for writes
+- Do not construct cross-domain paths manually; use ID-based access pattern
+
+**Constraints:**
+- All path construction goes through `base_path()` or `get_base_dir()`
+- File writes use atomic temp-file-plus-rename pattern
+- Cross-domain access uses IDs, not paths
+
 ## What This Skill Provides
 
 - Workflow base directory configuration (`.plan/` by default)

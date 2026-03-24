@@ -1,7 +1,10 @@
 ---
 name: ext-outline-inventory-agent
 description: Load marketplace inventory and perform initial scope assessment (artifact types, bundle scope)
-tools: Read, Bash, Skill
+tools:
+  - Read
+  - Bash
+  - Skill
 ---
 
 # Ext-Outline Inventory Agent

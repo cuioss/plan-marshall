@@ -13,7 +13,6 @@
   "agents": [],
   "commands": [],
   "skills": [
-    "./skills/plan-marshall-plugin",
     "./skills/python-best-practices"
   ]
 }

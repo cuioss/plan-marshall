@@ -10,6 +10,21 @@ user-invocable: false
 
 CUI-specific logging standards for projects using the CUI logging framework (cui-java-tools). This skill covers CuiLogger usage, LogRecord patterns, and DSL-style LogMessages classes.
 
+## Enforcement
+
+**Execution mode**: Reference library; load standards progressively based on current logging task.
+
+**Prohibited actions:**
+- Do not use SLF4J or Log4j directly; all logging must use CuiLogger
+- Do not use string literals for INFO/WARN/ERROR/FATAL; must use LogRecord constants
+- Do not load all standards at once; load progressively based on current task
+
+**Constraints:**
+- Exception parameter must always come first in logging calls
+- DEBUG/TRACE levels use direct logger (no LogRecord required)
+- INFO and above must use LogRecord from a DSL-style LogMessages class
+- All LogRecord usage must be covered by LogAsserts in tests
+
 ## Prerequisites
 
 This skill requires CUI library dependencies:

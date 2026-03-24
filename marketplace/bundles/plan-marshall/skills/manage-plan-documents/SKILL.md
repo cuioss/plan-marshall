@@ -8,6 +8,20 @@ user-invocable: false
 
 Domain-specific document management for request documents. Provides logical document names, schema validation, and structured read/update operations.
 
+## Enforcement
+
+**Execution mode**: Run scripts exactly as documented; parse TOON output for status and route accordingly.
+
+**Prohibited actions:**
+- Do not modify request.md directly; use the script API for create, update, and clarify operations
+- Do not invent script arguments not listed in the Operations section
+- Do not skip the noun-verb command pattern (`request {verb}`)
+
+**Constraints:**
+- All commands use `python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-documents {command} {args}`
+- Document operations follow the noun-verb pattern (e.g., `request create`, `request read`)
+- For solution outlines, use `plan-marshall:manage-solution-outline` instead
+
 ## What This Skill Provides
 
 - Logical document names (abstract from physical filenames)
