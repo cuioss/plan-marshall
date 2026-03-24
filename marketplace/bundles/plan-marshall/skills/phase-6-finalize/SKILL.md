@@ -390,23 +390,11 @@ python3 .plan/execute-script.py plan-marshall:manage-lifecycle:manage-lifecycle 
   --completed 6-finalize
 ```
 
-### Step 10: Archive Plan
-
-Archive the completed plan from `.plan/plans/` to `.plan/archived-plans/`:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-lifecycle:manage-lifecycle archive \
-  --plan-id {plan_id}
-```
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-6-finalize) Plan archived: {plan_id}"
-```
-
-### Step 11: Mark Lesson Applied (conditional)
+### Step 10: Mark Lesson Applied (conditional)
 
 If the plan originated from a lesson, mark that lesson as applied.
+
+**IMPORTANT**: This step MUST run before archive (Step 11), because archive moves plan files and makes `request read` fail.
 
 Read the request source:
 
@@ -433,6 +421,20 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 ```
 
 **ELSE**: Skip — plan did not originate from a lesson.
+
+### Step 11: Archive Plan
+
+Archive the completed plan from `.plan/plans/` to `.plan/archived-plans/`:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-lifecycle:manage-lifecycle archive \
+  --plan-id {plan_id}
+```
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-6-finalize) Plan archived: {plan_id}"
+```
 
 ### Step 12: Log Completion
 
