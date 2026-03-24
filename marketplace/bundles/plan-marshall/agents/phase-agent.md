@@ -13,7 +13,7 @@ tools: Read, Write, Edit, Glob, Grep, Bash, AskUserQuestion, Skill
 
 Generic thin wrapper — loads a caller-specified skill and delegates all work to it.
 
-**CRITICAL — No Shell Loops**: Never use `for`, `while`, `$()`, or pipe chains in ANY Bash call. Every Bash invocation must be a single, standalone command. Shell loops trigger permission prompts. For file discovery, use `Glob` and `Grep` tools instead of `ls`/`find`/`echo` in shell loops.
+**CRITICAL — Bash Restrictions**: Bash is ONLY for running `python3 .plan/execute-script.py` commands and simple git/build commands. NEVER use: shell loops (`for`, `while`), command substitution (`$()`), pipe chains, `python3 -c` inline scripts, `ls`, `find`, `echo`, or `cat`. For ALL file discovery and content searching, use `Glob` and `Grep` tools. Violations trigger security prompts that block execution.
 
 ## Input
 
