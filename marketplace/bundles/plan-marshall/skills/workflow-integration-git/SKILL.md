@@ -1,12 +1,12 @@
 ---
 name: workflow-integration-git
-description: Git commit workflow with conventional commits, artifact cleanup, and optional push/PR creation
+description: Git commit workflow with conventional commits, artifact cleanup, and optional push
 user-invocable: false
 ---
 
 # CUI Git Workflow Skill
 
-Provides git commit workflow following conventional commits specification. Includes artifact cleanup, commit formatting, and optional push/PR creation.
+Provides git commit workflow following conventional commits specification. Includes artifact cleanup, commit formatting, and optional push.
 
 ## Enforcement
 
@@ -20,17 +20,13 @@ Provides git commit workflow following conventional commits specification. Inclu
 **Constraints:**
 - Each workflow step that invokes a script has an explicit bash code block with the full `python3 .plan/execute-script.py` command
 - Commit messages must follow conventional commits format
-- Push and PR creation only when explicitly requested via parameters
+- Push only when explicitly requested via parameters
 
 ## What This Skill Provides
 
-### Commit Workflow (Absorbs commit-changes Agent)
-
-Complete git commit workflow:
 - Artifact detection and cleanup
 - Commit message generation following conventional commits
 - Optional push to remote
-- Optional PR creation
 
 ### Commit Standards
 
@@ -43,7 +39,6 @@ Complete git commit workflow:
 - Committing changes to repository
 - Generating commit messages from diffs
 - Cleaning build artifacts before commit
-- Creating pull requests after commit
 
 ## Workflow: Commit Changes
 
@@ -52,7 +47,6 @@ Complete git commit workflow:
 **Input Parameters:**
 - **message** (optional): Custom commit message
 - **push** (optional): Push after committing
-- **create-pr** (optional): Create PR after pushing
 
 ### Steps
 
@@ -68,32 +62,15 @@ git status --porcelain
 
 If no changes → Report "No changes to commit"
 
-**Step 3: Analyze Changes for Artifacts**
+**Step 3: Clean Artifacts**
 
-Use Glob to detect artifacts:
 ```
-Glob pattern="**/*.class"
-Glob pattern="**/*.temp"
+Read standards/artifact-cleanup.md
 ```
 
-Artifact patterns to clean:
-- `*.class` files in `src/` directories
-- `*.temp` temporary files
-- Files in `target/` or `build/` accidentally staged
+Follow the detection and cleanup rules. Safe deletions are automatic; uncertain cases require user confirmation.
 
-**Step 4: Clean Artifacts**
-
-**Safe Deletions (automatic):**
-- `*.class` in `src/main/java` or `src/test/java`
-- `*.temp` anywhere
-- Delete using `rm <file>`
-
-**Uncertain Cases (ask user):**
-- Files >1MB
-- Files outside safe list
-- Files in `target/` that are tracked
-
-**Step 5: Generate Commit Message**
+**Step 4: Generate Commit Message**
 
 If custom message provided:
 - Validate format
@@ -109,42 +86,23 @@ If no message:
 
 **Multi-type priority:** fix > feat > perf > refactor > docs > style > test > chore
 
-**Step 6: Stage and Commit**
+**Step 5: Stage and Commit**
 ```bash
-git add .
+git add <specific-files>
 git commit -m "$(cat <<'EOF'
 {commit_message}
-
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
 
 Co-Authored-By: Claude <noreply@anthropic.com>
 EOF
 )"
 ```
 
-**Step 7: Push (Optional)**
+**Step 6: Push (Optional)**
 
 If `push` parameter:
 ```bash
 git push
 ```
-
-**Step 8: Create PR (Optional)**
-
-If `create-pr` parameter:
-
-1. Write PR body as a plan artifact using the Write tool (NOT via `--content` Bash argument):
-```
-Write(.plan/plans/{plan_id}/artifacts/pr-body.md) with PR body markdown content
-```
-
-2. Create PR using `--body-file` to avoid shell metacharacter issues:
-```bash
-python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr create \
-  --title "{title}" --body-file .plan/plans/{plan_id}/artifacts/pr-body.md --base {base_branch}
-```
-
-**CRITICAL**: Do NOT pass multi-line markdown through Bash `--body` arguments. Markdown headings (`##`) after newlines in quoted strings trigger Claude Code's shell security heuristic. Always use the Write tool for the file, then reference it with `--body-file`.
 
 ### Output
 
@@ -155,7 +113,6 @@ commit_message: "feat(http): add retry configuration"
 files_changed: 5
 artifacts_cleaned: 2
 pushed: true
-pr_url: "https://github.com/..."
 ```
 
 ## Scripts
@@ -194,7 +151,7 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workf
 type: feat
 scope: http
 subject: add retry config
-formatted_message: "feat(http): add retry config\n\n🤖 Generated..."
+formatted_message: "feat(http): add retry config"
 validation:
   valid: true
   warnings[0]:
@@ -209,9 +166,6 @@ Analyze diff file to suggest commit message parameters.
 python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow analyze-diff \
   --file changes.diff
 ```
-
-**Parameters**:
-- `--file` (required): Path to diff file to analyze
 
 **Output** (TOON):
 ```toon
@@ -229,44 +183,19 @@ status: success
 
 ## Standards (Load On-Demand)
 
-### Git Commit Standards
-```
-Read standards/git-commit-standards.md
-```
-
-Provides:
-- Conventional commits format specification
-- Commit type definitions and usage
-- Subject, body, and footer guidelines
-- Best practices and anti-patterns
+| Standard | When to Load |
+|----------|-------------|
+| `standards/git-commit-standards.md` | Conventional commits format, type definitions, best practices |
+| `standards/artifact-cleanup.md` | Artifact detection patterns and cleanup rules |
 
 ## Critical Rules
 
 **Artifacts:** NEVER commit `*.class`, `*.temp`, `*.backup*`
-**Permissions:** NEVER push without `push` param, NEVER create PR without `create-pr` param
+**Permissions:** NEVER push without `push` param
 **Standards:** Follow conventional commits format, add Co-Authored-By footer
 **Safety:** Ask user if uncertain about file deletion
-
-## Integration
-
-### Skills Using This Skill
-- **plan-finalize** - Commits and creates PR after plan execution
-- **plan-execute** - May commit after task completion
-
-### Related Skills
-- **manage-lifecycle** - Phase transitions that trigger finalize
-
-## Quality Verification
-
-- Self-contained with relative path pattern
-- Progressive disclosure (standards loaded on-demand)
-- Script outputs TOON for machine processing
-- commit-changes agent functionality absorbed
-- Clear workflow definition
-- Standards documentation maintained
 
 ## References
 
 - Conventional Commits: https://www.conventionalcommits.org/
 - Git Commit Best Practices: https://cbea.ms/git-commit/
-- Angular Commit Guidelines: https://github.com/angular/angular/blob/main/CONTRIBUTING.md#commit
