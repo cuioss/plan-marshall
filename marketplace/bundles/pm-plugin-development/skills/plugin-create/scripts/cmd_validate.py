@@ -144,7 +144,10 @@ def validate_frontmatter_command(frontmatter):
 
 
 def validate_frontmatter_skill(frontmatter):
-    """Validate skill frontmatter fields."""
+    """Validate skill frontmatter fields.
+
+    Skill frontmatter permits only: name, description, user-invocable.
+    """
     errors = []
     warnings = []
 
@@ -158,13 +161,15 @@ def validate_frontmatter_skill(frontmatter):
                 }
             )
 
-    if 'allowed-tools' in frontmatter:
-        if isinstance(frontmatter['allowed-tools'], list):
-            warnings.append(
+    # Flag prohibited fields that must not appear in skill frontmatter
+    prohibited_fields = ['tools', 'allowed-tools', 'model', 'color']
+    for field in prohibited_fields:
+        if field in frontmatter:
+            errors.append(
                 {
-                    'type': 'tools_format',
-                    'field': 'allowed-tools',
-                    'message': 'allowed-tools field uses array syntax - should use comma-separated format',
+                    'type': 'prohibited_field',
+                    'field': field,
+                    'message': f"Skill frontmatter must not contain '{field}' — only name, description, user-invocable are permitted",
                 }
             )
 

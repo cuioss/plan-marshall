@@ -35,19 +35,14 @@ def generate_command_frontmatter(answers):
 
 
 def generate_skill_frontmatter(answers):
-    """Generate frontmatter for skill component."""
+    """Generate frontmatter for skill component.
+
+    Skill frontmatter permits only: name, description, user-invocable.
+    """
     frontmatter = {'name': answers['name'], 'description': answers['description']}
 
-    # Add optional allowed-tools field if present
-    if 'allowed-tools' in answers and answers['allowed-tools']:
-        if isinstance(answers['allowed-tools'], list):
-            frontmatter['allowed-tools'] = ', '.join(answers['allowed-tools'])
-        else:
-            frontmatter['allowed-tools'] = answers['allowed-tools']
-
-    # Add optional requirements field if present
-    if 'requirements' in answers and answers['requirements']:
-        frontmatter['requirements'] = answers['requirements']
+    # user-invocable defaults to false for skills
+    frontmatter['user-invocable'] = answers.get('user-invocable', False)
 
     return frontmatter
 

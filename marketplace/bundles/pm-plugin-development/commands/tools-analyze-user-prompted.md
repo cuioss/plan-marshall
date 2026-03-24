@@ -1,7 +1,10 @@
 ---
 name: tools-analyze-user-prompted
-description: Analyze permission prompts to identify source and provide solutions
-tools: Read
+description: |
+  Analyze permission prompts to identify source and provide solutions.
+  Input: optional screenshot path, optional description text.
+  Output: Permission prompt analysis report with root cause, source component, and fix solutions.
+tools: Read, Edit, Bash, Skill, AskUserQuestion
 ---
 
 # Analyze User Prompted Command

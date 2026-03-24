@@ -679,7 +679,7 @@ Actively scan execution logs to detect script issues:
 
 ## Workflow Skill API Contract Verification
 
-After each planning phase completes, verify artifacts comply with the workflow skill API contracts. Reference: [plan-marshall:extension-api](../../../plan-marshall/skills/extension-api/SKILL.md)
+After each planning phase completes, verify artifacts comply with the workflow skill API contracts. Reference: `plan-marshall:extension-api` (SKILL.md)
 
 ### Phase 1: Init Complete
 
@@ -697,7 +697,7 @@ python3 .plan/execute-script.py plan-marshall:manage-references:manage-reference
 
 ### Phase 2: Solution Outline Complete
 
-**Contract Reference**: [manage-solution-outline/standards/deliverable-contract.md](../../../plan-marshall/skills/manage-solution-outline/standards/deliverable-contract.md)
+**Contract Reference**: `plan-marshall:manage-solution-outline` standards/deliverable-contract.md
 
 **Verification**:
 ```bash
@@ -729,7 +729,7 @@ python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-sol
 
 ### Phase 3: User Review (Mandatory)
 
-**Contract Reference**: [extension-api/standards/workflow-overview.md](../../../plan-marshall/skills/extension-api/standards/workflow-overview.md)
+**Contract Reference**: `plan-marshall:extension-api` standards/workflow-overview.md
 
 **Verification**: Check work.log for user approval entry
 
@@ -741,7 +741,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log read --p
 
 ### Phase 4: Tasks Created
 
-**Contract Reference**: [manage-tasks/standards/task-contract.md](../../../plan-marshall/skills/manage-tasks/standards/task-contract.md)
+**Contract Reference**: `plan-marshall:manage-tasks` standards/task-contract.md
 
 **Verification**:
 ```bash

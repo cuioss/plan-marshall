@@ -55,7 +55,7 @@ Present module list to user for confirmation/filtering. User may exclude modules
 
 ---
 
-## Step 3: Load Packages and Create Deliverables
+## Step 3: Load Packages and Collect Deliverable Data
 
 For each selected module, query full module details:
 
@@ -70,7 +70,9 @@ Use the `{recipe_package_source}` field from the output:
 
 Skip modules where the selected table is empty.
 
-Create one deliverable per package:
+**If a package has `file_count: 0`**: The architecture module did not resolve files for this package. Discover files by scanning the package path using Glob patterns (e.g., `{module_path}/{package_path}/**/*.md`, `{module_path}/{package_path}/**/*.py`). Skip packages that have no files on disk.
+
+Collect one deliverable per package (in-memory, for use in Step 4):
 - **Title**: `Refactor: {module}/{package_name}` (when `recipe_package_source` is `packages`) or `Refactor tests: {module}/{package_name}` (when `recipe_package_source` is `test_packages`)
 - **Description**: `Refactor to comply with {recipe_profile} profile standards`
 - **Metadata**:
@@ -80,21 +82,7 @@ Create one deliverable per package:
   - `module`: `{module_name}`
   - `profile`: `{recipe_profile}`
 - **Skills**: All skills resolved in Step 1 (comma-separated)
-- **Affected files**: All files in the package (from architecture data `files` field)
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-documents \
-  deliverable add \
-  --plan-id {plan_id} \
-  --title "{title}" \
-  --description "Refactor to comply with {recipe_profile} profile standards" \
-  --change-type tech_debt \
-  --domain {recipe_domain} \
-  --module {module} \
-  --profile {recipe_profile} \
-  --skills "{resolved_skills_csv}" \
-  --files "{file_list}"
-```
+- **Affected files**: All files in the package (from architecture data `files` field, or discovered via Glob)
 
 ---
 

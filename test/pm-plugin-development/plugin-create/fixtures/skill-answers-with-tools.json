@@ -1,5 +1,5 @@
 {
   "name": "test-skill",
-  "description": "Test skill with tools",
-  "allowed-tools": ["Read", "Grep"]
+  "description": "Test skill with user-invocable flag",
+  "user-invocable": true
 }

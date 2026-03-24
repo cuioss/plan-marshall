@@ -678,18 +678,4 @@ All references are in `references/` directory:
 
 ---
 
-## Non-Prompting Requirements
-
-This skill is designed to run without user prompts. Required permissions:
-
-**File Operations:**
-- `Read(relative paths/references/**)` - Read reference documentation
-
-**Ensuring Non-Prompting:**
-- All file reads use `relative paths/references/` which resolves to skill's mounted path
-- Pure reference skill with no writes or executions
-- Only the Read tool is used (no prompting scenarios)
-
----
-
 *This is a Pattern 10 (Reference Library) skill - pure documentation with no execution logic. All content is loaded progressively based on current needs.*
