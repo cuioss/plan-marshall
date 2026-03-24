@@ -8,6 +8,22 @@ user-invocable: false
 
 **REFERENCE MODE**: This skill provides reference material for securing OCI containers at runtime and across the supply chain. Load specific references on-demand based on current task. Do not load all references at once.
 
+## Enforcement
+
+**Execution mode**: Reference library; load standards on-demand for container security hardening tasks.
+
+**Prohibited actions:**
+- Do not run containers as root; always use non-root USER instruction
+- Do not mount Docker daemon socket into containers
+- Do not skip vulnerability scanning in CI/CD pipelines
+- Do not load all standards at once; load progressively based on current task
+
+**Constraints:**
+- All containers must drop all capabilities (`--cap-drop=ALL`) and selectively add required ones
+- Read-only filesystems required with tmpfs for write directories
+- Images must be signed and verified before deployment
+- SBOM must be generated and attached to images
+
 For general image building practices (Dockerfiles, base images, multi-platform builds), see `Skill: pm-dev-oci:oci-standards`.
 
 ## When to Use This Skill

@@ -6,39 +6,29 @@ user-invocable: false
 
 # Plan Marshall Plugin - Plugin Development Domain
 
+Domain extension providing plugin development skill registration and module discovery to plan-marshall workflows.
+
 ## Enforcement
 
-- Run scripts EXACTLY as documented using `python3 .plan/execute-script.py pm-plugin-development:plan-marshall-plugin:plugin_discover ...`
-- Never invoke module discovery logic directly outside of the executor pattern
-- All script output follows TOON format contract
+**Execution mode**: Extension manifest; modify only via Extension API contract.
 
----
+**Prohibited actions:**
+- Do not modify extension.py without updating this manifest documentation
+- Do not bypass ExtensionBase inheritance for domain registration
+- Do not hardcode skill paths; use bundle notation
 
-Domain manifest skill providing plugin development capabilities and module discovery for plan-marshall workflows.
+**Constraints:**
+- Extension must implement `get_skill_domains()` from `ExtensionBase`
+- Domain identity must match the bundle name convention (plan-marshall-plugin-dev)
+- Profile-based skill organization must align with plugin.json registration
+- Module discovery must detect marketplace.json to avoid conflicts with pm-dev-python
 
 ## Purpose
 
-Provides two key capabilities:
-
-1. **Domain Configuration** - Declares the plan-marshall-plugin-dev domain with profile-based skill organization
-2. **Module Discovery** - Discovers marketplace bundles for `.plan/project-architecture/derived-data.json` generation
-
-## Mutual Exclusivity
-
-This extension is **mutually exclusive** with `pm-dev-python:plan-marshall-plugin` for module discovery:
-
-| Project Type | Handled By |
-|-------------|------------|
-| plan-marshall marketplace | This extension (`pm-plugin-development`) |
-| Other Python projects | `pm-dev-python` |
-
-Detection uses `marketplace/.claude-plugin/marketplace.json`:
-- If `name` field equals `"plan-marshall"` → this extension provides module discovery
-- Otherwise → skip (pm-dev-python handles it)
-
-This avoids duplicate modules when both extensions are active.
-
----
+- Domain identity and workflow extensions (triage, outline)
+- Profile-based skill organization for plugin development projects
+- Module discovery for marketplace bundles
+- Mutual exclusivity with `pm-dev-python:plan-marshall-plugin` via marketplace.json detection
 
 ## Module Discovery
 
@@ -77,25 +67,27 @@ Components are mapped to packages with type prefixes:
 A "default" root module provides project-wide commands (no bundle filter):
 - All canonical commands without bundle argument run against entire project
 
-## Configuration
+## Extension API
 
-All configuration is in `extension.py` which implements the Extension API:
+Configuration in `extension.py` implements the Extension API contract:
 
-| Method | Purpose |
-|--------|---------|
+| Function | Purpose |
+|----------|---------|
 | `get_skill_domains()` | Domain metadata with profiles |
 | `discover_modules()` | Module discovery for derived-data.json |
-| `provides_triage()` | Triage skill reference |
-| `provides_outline_skill()` | Domain-specific outline skill reference |
-
-## Dependencies
-
-This skill depends on:
-- `pm-dev-python:plan-marshall-plugin` - Python build execution via python_build.py
+| `provides_triage()` | Returns `pm-plugin-development:ext-triage-plugin` |
+| `provides_outline_skill()` | Returns `pm-plugin-development:ext-outline-workflow` |
 
 ## Integration
 
 This extension is discovered by:
-- `plan-marshall:extension-api` - Module discovery aggregation
-- `plan-marshall:manage-architecture` - Architecture analysis
-- `marshall-steward` wizard - Domain selection during project setup
+- `extension-api` - Domain registration and module discovery
+- `manage-architecture` - Architecture analysis
+- `marshall-steward` - Project setup wizard
+
+## References
+
+- `plan-marshall:extension-api` - Extension API contract
+- `pm-dev-python:plan-marshall-plugin` - Python build execution via python_build.py
+- `pm-plugin-development:ext-triage-plugin` - Plugin triage extension
+- `pm-plugin-development:ext-outline-workflow` - Plugin outline workflow

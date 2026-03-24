@@ -1,7 +1,9 @@
 ---
 name: tool-coverage-agent
 description: Analyze tool declarations vs actual usage in a component file
-tools: Read, Skill
+tools:
+  - Read
+  - Skill
 ---
 
 # Tool Coverage Analysis Agent

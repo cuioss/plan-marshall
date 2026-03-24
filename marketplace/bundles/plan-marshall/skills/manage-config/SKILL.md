@@ -8,6 +8,20 @@ user-invocable: false
 
 Manages project-level infrastructure configuration in `.plan/marshal.json`.
 
+## Enforcement
+
+**Execution mode**: Run scripts exactly as documented; parse TOON output for status and route accordingly.
+
+**Prohibited actions:**
+- Do not modify marshal.json directly; all mutations go through the script API
+- Do not invent script arguments not listed in the API Reference
+- Do not bypass initialization (marshal.json must exist before queries)
+
+**Constraints:**
+- All commands use `python3 .plan/execute-script.py plan-marshall:manage-config:manage-config {command} {args}`
+- Domain configuration follows the noun-verb pattern documented in the API Reference
+- Phase configuration uses the `plan {phase} {verb}` pattern
+
 ## What This Skill Provides
 
 - **Skill Domains**: Implementation skill defaults and optionals per domain

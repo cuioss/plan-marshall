@@ -16,6 +16,21 @@ user-invocable: false
 
 Manage implementation tasks with sequential sub-steps within a plan. Each task references deliverables from the solution document and contains ordered steps for execution.
 
+## Enforcement
+
+**Execution mode**: Run scripts exactly as documented; parse TOON output for status and route accordingly.
+
+**Prohibited actions:**
+- Do not modify TASK-*.json files directly; all mutations go through the script API
+- Do not invent script arguments not listed in the Operations table
+- Do not bypass dependency checking unless explicitly using `--ignore-deps`
+
+**Constraints:**
+- All commands use `python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks {command} {args}`
+- Task numbering is sequential and immutable (TASK-001, TASK-002, etc.)
+- The `add` command reads TOON content from `--content` argument with `\n` encoding
+- Step finalization requires explicit `--outcome` (done or skipped)
+
 > **Implementation Details**: See [design-for-manage-tasks.md](/.plan/task-management/design-for-manage-tasks.md) for the complete specification including file format, all commands, parameters, and validation rules.
 
 ## What This Skill Provides

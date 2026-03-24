@@ -8,6 +8,21 @@ user-invocable: false
 
 Comprehensive diagnostic and automation command that enforces CUI logging standards across Java modules. Validates that INFO/WARN/ERROR/FATAL use LogRecord, DEBUG/TRACE use direct logger, all LogRecords are tested with LogAssert, and identifiers are properly organized.
 
+## Enforcement
+
+**Execution mode**: Diagnostic scan followed by automated fixes; execute workflow steps sequentially.
+
+**Prohibited actions:**
+- Do not modify business logic; only logging-related code is in scope
+- Do not skip LogAssert coverage for any LogRecord usage
+- Do not remove or rename existing LogRecord identifiers without user approval
+
+**Constraints:**
+- All INFO/WARN/ERROR/FATAL logging must use LogRecord constants
+- DEBUG/TRACE levels must use direct CuiLogger calls (no LogRecord)
+- Every LogRecord must have a corresponding LogAsserts verification in tests
+- Module parameter must be resolved before scanning begins
+
 ## CONTINUOUS IMPROVEMENT RULE
 
 If you discover issues or improvements during execution, record them:

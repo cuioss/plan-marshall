@@ -14,6 +14,8 @@ user-invocable: false
 
 **CRITICAL**: Use manage-* scripts via Bash for plan file updates (Edit/Write tools trigger permission prompts on `.plan/` directories).
 
+**CRITICAL — No Shell Loops**: Never use `for`, `while`, `$()`, or pipe chains in ANY Bash call. Every Bash invocation must be a single, standalone command. Shell loops trigger permission prompts because `$variable` expansion and command substitution bypass allowed permission patterns. For file discovery, use `Glob` and `Grep` tools instead of `ls`, `find`, or `echo` in loops.
+
 ---
 
 ## Standards (Load On-Demand)

@@ -16,6 +16,20 @@ user-invocable: false
 
 Unified API for domain bundle extensions providing module discovery, build system detection, and command generation. Provides the `ExtensionBase` abstract base class that all domain extensions must inherit from.
 
+## Enforcement
+
+**Execution mode**: Reference library; load on-demand when creating or modifying extensions.
+
+**Prohibited actions:**
+- Do not modify extension_base.py without updating the contract documentation
+- Do not create extensions that bypass ExtensionBase inheritance
+- Do not call extension scripts directly; use the executor notation
+
+**Constraints:**
+- All extensions must inherit from `ExtensionBase`
+- Canonical command constants must be used instead of string literals
+- CLI commands use `python3 .plan/execute-script.py plan-marshall:extension-api:extension_discovery {command} {args}`
+
 ## Purpose
 
 - **ExtensionBase ABC** - Abstract base class with required/optional methods

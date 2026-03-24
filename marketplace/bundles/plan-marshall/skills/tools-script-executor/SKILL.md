@@ -8,9 +8,17 @@ user-invocable: false
 
 ## Enforcement
 
-- Run executor generation EXACTLY as documented using `python3 .plan/execute-script.py plan-marshall:tools-script-executor:generate-executor ...`
-- Never modify `execute-script.py` manually -- always regenerate via the script
-- All script output follows TOON format contract
+**Execution mode**: All marketplace scripts must be executed through the executor proxy.
+
+**Prohibited actions:**
+- Do not execute marketplace scripts directly by path; always use the executor notation
+- Do not modify `.plan/execute-script.py` manually; regenerate via `/marshall-steward`
+- Do not hard-code PYTHONPATH; the executor manages it automatically
+
+**Constraints:**
+- All scripts use `python3 .plan/execute-script.py {notation} {subcommand} {args}`
+- Bootstrap pattern is only for first run when executor does not exist yet
+- Plan-scoped logging requires `--plan-id` or `--trace-plan-id`
 
 ---
 

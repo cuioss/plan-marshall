@@ -17,6 +17,21 @@ user-invocable: false
 
 Pure reference skill providing TOON (Token-Oriented Object Notation) format specification and usage patterns for agent handoffs and memory persistence.
 
+## Enforcement
+
+**Execution mode**: Reference library with parser module; load references on-demand, import parser as documented.
+
+**Prohibited actions:**
+- Do not load all references at once; load progressively based on current task
+- Do not use TOON for external APIs or configuration files
+- Do not bypass `toon_parser.py` with custom parsing logic
+
+**Constraints:**
+- TOON is only for internal plan-marshall marketplace operations
+- Length declarations `[N]` must match actual row counts
+- Field headers `{fields}` must match all rows
+- Import parser via `from toon_parser import parse_toon, serialize_toon`
+
 ## What This Skill Provides
 
 **TOON Specification**: Complete technical reference for TOON format syntax, semantics, and conversion patterns.

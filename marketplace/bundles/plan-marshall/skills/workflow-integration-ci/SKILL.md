@@ -16,6 +16,20 @@ user-invocable: false
 
 Handles PR review comment workflows - fetching comments, triaging them, and generating appropriate responses. Works with both GitHub and GitLab via the unified `tools-integration-ci` abstraction.
 
+## Enforcement
+
+**Execution mode**: Fetch PR review comments, triage each for action, implement fixes or generate responses, resolve threads.
+
+**Prohibited actions:**
+- Never resolve review comments without addressing the reviewer's concern
+- Never force-push or amend published commits in response to reviews
+- Never dismiss reviews without documented justification
+
+**Constraints:**
+- Each workflow step that invokes a script has an explicit bash code block with the full `python3 .plan/execute-script.py` command
+- Review comment responses must explain the fix or provide rationale for disagreement
+- CI wait timeout must be respected with user prompt on expiry
+
 ## What This Skill Provides
 
 ### Workflows (Absorbs 2 Agents)

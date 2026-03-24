@@ -16,6 +16,19 @@ user-invocable: false
 
 Gradle build execution with output parsing, module discovery, and wrapper detection.
 
+## Enforcement
+
+**Execution mode**: Run scripts exactly as documented; parse TOON output for status and route accordingly.
+
+**Prohibited actions:**
+- Do not invoke Gradle directly; all builds go through the script API
+- Do not invent script arguments not listed in the operations table
+- Do not bypass wrapper detection logic
+
+**Constraints:**
+- All commands use `python3 .plan/execute-script.py plan-marshall:build-gradle:gradle {command} {args}`
+- Output format defaults to TOON; use `--format json` only when explicitly required
+
 ## Scripts Overview
 
 | Script | Type | Purpose |

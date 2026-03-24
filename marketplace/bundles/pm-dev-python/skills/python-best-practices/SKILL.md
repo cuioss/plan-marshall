@@ -8,6 +8,22 @@ user-invocable: false
 
 Modern Python development patterns for Python 3.10+ based on PEP 8, Google Python Style Guide, and current community standards.
 
+## Enforcement
+
+**Execution mode**: Reference library; load standards on-demand for Python development tasks.
+
+**Prohibited actions:**
+- Do not use `typing.List`, `typing.Dict`, or other deprecated generic aliases; use built-in generics
+- Do not use bare `except:` or broad `except Exception:` without re-raising
+- Do not use string concatenation for file paths; use `pathlib.Path`
+- Do not load all standards at once; load progressively based on current task
+
+**Constraints:**
+- All code must target Python 3.10+ and use modern union syntax (`X | Y`)
+- Type hints required on all public function signatures
+- Google-style docstrings required on all public functions
+- Context managers required for all resource management
+
 ## Purpose
 
 - Establish consistent, readable Python code

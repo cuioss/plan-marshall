@@ -16,6 +16,20 @@ user-invocable: false
 
 Manage lessons learned with global scope. Stores lessons as markdown files with key=value metadata headers.
 
+## Enforcement
+
+**Execution mode**: Run scripts exactly as documented; parse TOON output for status and route accordingly.
+
+**Prohibited actions:**
+- Do not modify lesson files directly; all mutations go through the script API
+- Do not invent script arguments not listed in the Operations section
+- Do not use invalid category values (only bug, improvement, anti-pattern)
+
+**Constraints:**
+- All commands use `python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lesson {command} {args}`
+- Lessons are global-scoped (not plan-specific); no `--plan-id` parameter
+- The `from-error` command expects JSON context as `--context` argument
+
 ## What This Skill Provides
 
 - Create lessons from errors or discoveries

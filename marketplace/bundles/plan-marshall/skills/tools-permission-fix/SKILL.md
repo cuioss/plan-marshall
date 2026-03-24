@@ -18,6 +18,19 @@ user-invocable: true
 
 **COMPLEMENTARY SKILL**: Use `plan-marshall:tools-permission-doctor` for read-only analysis before applying fixes.
 
+## Enforcement
+
+**Execution mode**: Run scripts exactly as documented; use `--dry-run` before applying changes.
+
+**Prohibited actions:**
+- Do not modify settings files without running analysis first (use `tools-permission-doctor`)
+- Do not invent script arguments not listed in the operations table
+- Do not skip dry-run verification for bulk operations
+
+**Constraints:**
+- All commands use `python3 .plan/execute-script.py plan-marshall:tools-permission-fix:permission-fix {command} {args}`
+- Always use `--dry-run` first to preview changes before applying
+
 ## Script Reference
 
 | Script | Notation | Purpose |

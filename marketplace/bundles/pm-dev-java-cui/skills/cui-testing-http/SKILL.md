@@ -10,6 +10,20 @@ user-invocable: false
 
 CUI-specific HTTP testing standards using `cui-test-mockwebserver-junit5`. Covers MockWebServer configuration, HTTPS testing, and request verification.
 
+## Enforcement
+
+**Execution mode**: Reference library; load standards on-demand for HTTP testing tasks.
+
+**Prohibited actions:**
+- Do not use WireMock or other HTTP mocking libraries in CUI projects; must use CUI MockWebServer
+- Do not configure MockWebServer manually; use `@EnableMockWebServer` annotation
+- Do not load all standards at once; load progressively based on current task
+
+**Constraints:**
+- HTTP client tests must use `@EnableMockWebServer` with `@MockResponseConfig` annotations
+- HTTPS testing must use the built-in SSL support from MockWebServer
+- Request verification must use the MockWebServer assertion API
+
 ## Prerequisites
 
 - `de.cuioss.test:cui-test-mockwebserver-junit5`

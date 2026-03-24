@@ -6,6 +6,22 @@ user-invocable: false
 
 # Project Setup Standards for Requirements Documentation
 
+## Enforcement
+
+**Execution mode**: Reference library; load standards on-demand for project requirements setup tasks.
+
+**Prohibited actions:**
+- Do not create documentation without following the standard directory structure
+- Do not skip prefix selection; every project must have a designated requirement prefix
+- Do not create partial setups; use the quality checklist to verify completeness
+- Do not load all standards at once; load progressively based on current task
+
+**Constraints:**
+- Minimum required files: `doc/Requirements.adoc` and `doc/Specification.adoc`
+- Requirement prefix must be selected before creating any requirements
+- Document templates must be used as the starting point for all initial documents
+- Setup must be verified against the quality checklist before proceeding to authoring
+
 Standards for establishing requirements and specification documentation structure in new CUI projects, including directory layout, initial document creation, and prefix selection.
 
 ## What This Skill Provides

@@ -16,6 +16,20 @@ user-invocable: false
 
 Provides git commit workflow following conventional commits specification. Includes artifact cleanup, commit formatting, and optional push/PR creation.
 
+## Enforcement
+
+**Execution mode**: Execute git commit workflow steps sequentially, delegating to script for artifact cleanup and commit formatting.
+
+**Prohibited actions:**
+- Never force-push or amend published commits without explicit user approval
+- Never commit secrets, credentials, or `.env` files
+- Never skip artifact cleanup step before committing
+
+**Constraints:**
+- Each workflow step that invokes a script has an explicit bash code block with the full `python3 .plan/execute-script.py` command
+- Commit messages must follow conventional commits format
+- Push and PR creation only when explicitly requested via parameters
+
 ## What This Skill Provides
 
 ### Commit Workflow (Absorbs commit-changes Agent)

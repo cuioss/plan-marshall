@@ -1,12 +1,19 @@
 ---
 name: phase-agent
-description: Generic phase agent that loads a caller-specified skill and delegates execution
+description: |
+  Generic thin wrapper that loads a caller-specified skill and delegates all execution to it. Supports any plan phase (init, refine, outline, plan, execute, finalize).
+
+  Examples:
+  - Input: skill=plan-marshall:phase-1-init, plan_id=my-plan
+  - Output: Skill's own output (varies by phase)
 tools: Read, Write, Edit, Glob, Grep, Bash, AskUserQuestion, Skill
 ---
 
 # Phase Agent
 
 Generic thin wrapper — loads a caller-specified skill and delegates all work to it.
+
+**CRITICAL — No Shell Loops**: Never use `for`, `while`, `$()`, or pipe chains in ANY Bash call. Every Bash invocation must be a single, standalone command. Shell loops trigger permission prompts. For file discovery, use `Glob` and `Grep` tools instead of `ls`/`find`/`echo` in shell loops.
 
 ## Input
 

@@ -8,9 +8,17 @@ user-invocable: false
 
 ## Enforcement
 
-- Run scripts EXACTLY as documented using `python3 .plan/execute-script.py pm-plugin-development:tools-marketplace-inventory:... ...`
-- Never scan marketplace directories directly -- use the inventory scripts
-- All script output follows TOON format contract
+**Execution mode**: Select workflow and execute immediately using documented script commands.
+
+**Prohibited actions:**
+- Do not invoke scripts with arguments other than those documented in workflow steps
+- Do not modify marketplace structure; this skill is read-only scanning
+- Do not use `--direct-result` for large unfiltered inventories (use file mode instead)
+
+**Constraints:**
+- Run scripts EXACTLY as documented using `python3 .plan/execute-script.py pm-plugin-development:tools-marketplace-inventory:scan-marketplace-inventory ...`
+- Run dependency scripts EXACTLY as documented using `python3 .plan/execute-script.py pm-plugin-development:tools-marketplace-inventory:resolve-dependencies ...`
+- All output is TOON format by default; use `--format json` only when explicitly needed
 
 ---
 

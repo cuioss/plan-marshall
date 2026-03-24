@@ -16,6 +16,20 @@ user-invocable: false
 
 Maven build execution with output parsing, module discovery, and wrapper detection.
 
+## Enforcement
+
+**Execution mode**: Run scripts exactly as documented; parse TOON output for status and route accordingly.
+
+**Prohibited actions:**
+- Do not invoke Maven directly; all builds go through the script API
+- Do not invent script arguments not listed in the operations table
+- Do not bypass wrapper detection logic
+
+**Constraints:**
+- All commands use `python3 .plan/execute-script.py plan-marshall:build-maven:maven {command} {args}`
+- Output format defaults to TOON; use `--format json` only when explicitly required
+- Always analyze the result TOON: check `status` for success/error/timeout, review `errors` for failures
+
 ## Scripts Overview
 
 | Script | Type | Purpose |

@@ -15,6 +15,20 @@ user-invocable: false
 
 **Role**: Shared Python module providing input validation functions for plan-marshall scripts. Prevents path traversal, invalid plan IDs, and malformed inputs from reaching filesystem operations.
 
+## Enforcement
+
+**Execution mode**: Library module; import validators as documented in usage examples.
+
+**Prohibited actions:**
+- Do not validate plan IDs with custom regex; use `validate_plan_id()`
+- Do not validate file paths without `validate_relative_path()`
+- Do not bypass validation in scripts that accept user/LLM input
+
+**Constraints:**
+- All plan IDs must match `^[a-z][a-z0-9-]*$`
+- Relative paths must reject absolute paths and traversal sequences
+- Use raising validators for fail-fast behavior, bool validators for conditional logic
+
 ## What This Skill Provides
 
 - Plan ID validation (kebab-case format)

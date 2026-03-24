@@ -10,6 +10,21 @@ user-invocable: false
 
 CUI-specific testing standards for projects using CUI test libraries. This skill covers the mandatory test data generator framework, value object contract testing, and JUL log testing utilities.
 
+## Enforcement
+
+**Execution mode**: Reference library; load standards progressively based on current testing task.
+
+**Prohibited actions:**
+- Do not use manual test data, Random, UUID, or Faker; must use CUI Generators framework
+- Do not use Mockito or PowerMock in CUI projects; use EasyMock or CUI test patterns
+- Do not load all standards at once; load progressively based on current task
+
+**Constraints:**
+- All test classes must use `@EnableGeneratorController` annotation
+- Value object tests must implement `ShouldHandleObjectContracts<T>` contract interface
+- Log verification tests must use `@EnableTestLogger` and `LogAsserts`
+- Parameterized tests must use `@GeneratorsSource` with typed generators
+
 ## Prerequisites
 
 This skill requires CUI test library dependencies:

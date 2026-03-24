@@ -16,6 +16,18 @@ user-invocable: false
 
 Python build execution via pyprojectx (`./pw` wrapper) with output parsing for mypy, ruff, and pytest.
 
+## Enforcement
+
+**Execution mode**: Run scripts exactly as documented; parse TOON output for status and route accordingly.
+
+**Prohibited actions:**
+- Do not invoke `./pw` or pytest/mypy/ruff directly; all builds go through the script API
+- Do not invent script arguments not listed in the operations table
+
+**Constraints:**
+- All commands use `python3 .plan/execute-script.py plan-marshall:build-python:python_build {command} {args}`
+- Output format defaults to TOON; use `--format json` only when explicitly required
+
 ## Scripts Overview
 
 | Script | Type | Purpose |

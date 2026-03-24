@@ -16,6 +16,19 @@ user-invocable: false
 
 npm/npx build execution with multi-parser output analysis and JavaScript coverage reporting.
 
+## Enforcement
+
+**Execution mode**: Run scripts exactly as documented; parse TOON output for status and route accordingly.
+
+**Prohibited actions:**
+- Do not invoke npm/npx directly; all builds go through the script API
+- Do not invent script arguments not listed in the operations table
+- Do not bypass the multi-parser detection logic
+
+**Constraints:**
+- All commands use `python3 .plan/execute-script.py plan-marshall:build-npm:npm {command} {args}`
+- npm vs npx routing is automatic; do not force one over the other
+
 ## Scripts Overview
 
 | Script | Type | Purpose |

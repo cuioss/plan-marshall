@@ -6,6 +6,22 @@ user-invocable: false
 
 # Traceability Standards
 
+## Enforcement
+
+**Execution mode**: Reference library; load standards on-demand for traceability tasks.
+
+**Prohibited actions:**
+- Do not create unidirectional links; all traceability must be bidirectional
+- Do not duplicate specification content in code comments; use cross-references
+- Do not skip the quality verification step after applying traceability standards
+- Do not load all standards at once; load progressively based on current task
+
+**Constraints:**
+- Each piece of information must have one authoritative location (single source of truth)
+- All specifications must link to implementation code and vice versa
+- Documentation must evolve through lifecycle phases (pre-implementation, during, post)
+- Link accuracy must be verified whenever referenced files change
+
 Standards for connecting specification documents with implementation code, establishing bidirectional traceability, and maintaining documentation throughout the implementation lifecycle.
 
 ## Core Principles

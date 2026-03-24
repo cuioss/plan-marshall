@@ -8,10 +8,17 @@ user-invocable: false
 
 ## Enforcement
 
-- Run scripts EXACTLY as documented using `python3 .plan/execute-script.py {notation} ...`
-- Complete all steps in sequence; only stop when all modules are enriched
-- Never leave `responsibility` or `key_packages` empty
-- Always provide `--reasoning` parameters (traceability is required)
+**Execution mode**: Execute all steps in sequence; only stop when all modules are enriched.
+
+**Prohibited actions:**
+- Do not leave `responsibility` or `key_packages` empty after enrichment
+- Do not skip `--reasoning` parameters (traceability is required)
+- Do not modify .plan/ files directly; all mutations go through the script API
+
+**Constraints:**
+- All commands use `python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture {command} {args}`
+- Enrichment must cover every discovered module before completion
+- Discovery must run before enrichment (Step 1 before Steps 4-8)
 
 ---
 

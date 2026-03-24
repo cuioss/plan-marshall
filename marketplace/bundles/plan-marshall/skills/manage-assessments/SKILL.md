@@ -8,6 +8,20 @@ user-invocable: false
 
 Component evaluation storage providing structured JSONL persistence for certainty/confidence assessments from analysis agents.
 
+## Enforcement
+
+**Execution mode**: Run scripts exactly as documented; parse TOON output for status and route accordingly.
+
+**Prohibited actions:**
+- Do not modify assessments.jsonl directly; all mutations go through the script API
+- Do not invent script arguments not listed in the CLI Commands section
+- Do not use invalid certainty values (only CERTAIN_INCLUDE, CERTAIN_EXCLUDE, UNCERTAIN)
+
+**Constraints:**
+- All commands use `python3 .plan/execute-script.py plan-marshall:manage-assessments:manage-assessments {command} {args}`
+- Assessments are plan-scoped; always provide `--plan-id`
+- Confidence values must be numeric (0-100)
+
 ## Scope Distinction
 
 | Scope | Storage | Lifecycle |

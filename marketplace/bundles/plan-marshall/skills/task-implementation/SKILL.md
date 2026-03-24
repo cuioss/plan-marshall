@@ -10,6 +10,10 @@ user-invocable: false
 
 **Key Pattern**: Agent loads this skill via `resolve-workflow-skill --domain {domain} --phase implementation`. Skill executes a generic workflow: understand context → plan → implement → verify. Domain-specific knowledge comes from `task.skills` (loaded by agent).
 
+## No Shell Loops Rule
+
+Never use `for`, `while`, `$()`, or pipe chains in ANY Bash call. Every Bash invocation must be a single, standalone command. Shell loops trigger permission prompts because `$variable` expansion and command substitution bypass allowed permission patterns. For file discovery, use `Glob` and `Grep` tools instead of `ls`, `find`, or `echo` in loops.
+
 ## Contract Compliance
 
 **MANDATORY**: Follow the execution contract defined in:
