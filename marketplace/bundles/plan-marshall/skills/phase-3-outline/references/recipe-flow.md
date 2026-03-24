@@ -162,7 +162,7 @@ phase-3-outline Step 2.5
 
 The three `recipe_*` parameters are guaranteed non-empty for the built-in recipe. Custom recipes receive them if the extension declares `profile` and `package_source` on the recipe dict; otherwise they are empty strings and the custom skill must determine these values itself.
 
-Full interface contract: see `plan-marshall:extension-api` [recipe-extension.md](../../extension-api/standards/recipe-extension.md#recipe-skill-interface).
+Full interface contract: see `plan-marshall:extension-api` [extension-contract.md](../../extension-api/standards/extension-contract.md#provides_recipes).
 
 ---
 
@@ -353,5 +353,4 @@ recipe_package_source ───────► recipe_package_source ───�
 - [architecture-diagram.md](architecture-diagram.md) — Change-type routing (normal plans)
 - `plan-marshall:plan-marshall` workflows/recipe.md — Recipe workflow entry point
 - `plan-marshall:recipe-refactor-to-profile-standards` — Built-in recipe skill
-- `plan-marshall:extension-api` recipe-extension.md — Extension API contract
-- `plan-marshall:extension-api` recipe-extension.md — Extension API contract
+- `plan-marshall:extension-api` extension-contract.md#provides_recipes — Recipe extension API contract

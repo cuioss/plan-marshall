@@ -86,6 +86,7 @@ All extensions **must** inherit from `ExtensionBase` and implement required meth
 | `config_defaults(project_root: str) -> None` | no-op | Configure project defaults (called during init) |
 | `provides_triage() -> str \| None` | `None` | Return triage skill reference |
 | `provides_outline_skill() -> str \| None` | `None` | Return domain-specific outline skill reference |
+| `provides_recipes() -> list[dict]` | `[]` | Return recipe definitions for predefined transformations |
 | `provides_verify_steps() -> list[dict]` | `[]` | Return domain-specific verification steps |
 
 ---

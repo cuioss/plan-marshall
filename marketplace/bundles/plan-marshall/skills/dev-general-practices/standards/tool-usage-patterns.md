@@ -244,6 +244,32 @@ Bash(command="git branch --show-current")
 
 If two commands are independent, make two parallel Bash tool calls. If sequential, make two separate calls.
 
+### ❌ Never Use Shell Constructs in Bash Commands
+
+Shell constructs like `$()` command substitution, `for` loops, `while` loops, and subshells trigger Claude Code's security prompt — even when the inner command is in the allow list. This breaks automated execution.
+
+```
+# BAD - Triggers "Command contains $() command substitution" prompt
+Bash(command="for i in $(seq 1 10); do python3 script.py --task $i; done")
+
+# BAD - Also triggers prompt
+Bash(command="result=$(python3 script.py --query status)")
+
+# BAD - Subshell
+Bash(command="(cd /tmp && python3 script.py)")
+```
+
+Instead, make individual Bash calls per iteration:
+
+```
+# GOOD - One call per task, no shell constructs
+Bash(command="python3 script.py --task 1")
+Bash(command="python3 script.py --task 2")
+Bash(command="python3 script.py --task 3")
+```
+
+For batch operations, emit multiple parallel Bash tool calls rather than shell loops.
+
 **Rule of Thumb**: Use Bash when the operation truly requires shell execution or external tools. Use non-prompting tools (Glob, Read, Grep) for all file system operations. All build/compile/lint/test commands must be resolved via architecture API before execution.
 
 ## Performance Considerations

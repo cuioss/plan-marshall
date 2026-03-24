@@ -392,6 +392,115 @@ All other domains return `None` and use the generic `plan-marshall:workflow-outl
 
 ---
 
+### provides_recipes
+
+Declares predefined, repeatable transformations (recipes) that bypass change-type detection and provide their own discovery, analysis, and deliverable patterns. Recipes are presented to users via `/plan-marshall action=recipe`.
+
+**Lifecycle**: Called during `skill-domains configure`. Recipes are discovered at runtime by `list-recipes` and `resolve-recipe` commands.
+
+```
+Extension discovery → get_skill_domains() → ➤ provides_recipes() → discovered at runtime by manage-config list-recipes/resolve-recipe
+```
+
+```python
+def provides_recipes(self) -> list[dict]:
+    """Return recipe definitions this extension provides.
+
+    Each recipe dict contains:
+        - key: str — Unique recipe identifier (e.g., 'refactor-to-profile-standards')
+        - name: str — Human-readable display name
+        - description: str — Description for recipe selection UI
+        - skill: str — Fully-qualified skill reference ('bundle:recipe-skill')
+        - default_change_type: str — Change type for outline phase (e.g., 'tech_debt')
+        - scope: str — Scope indicator ('codebase_wide', 'module')
+
+    Optional fields (set by user at plan creation time if omitted):
+        - profile: str — Target profile ('implementation', 'module_testing')
+        - package_source: str — Package source ('packages', 'test_packages')
+
+    Default: []
+    """
+```
+
+#### Return Structure
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `key` | str | Yes | Unique recipe identifier — used in `resolve-recipe --recipe {key}` |
+| `name` | str | Yes | Human-readable display name for UI |
+| `description` | str | Yes | Description shown during recipe selection |
+| `skill` | str | Yes | Fully-qualified skill reference (`bundle:recipe-skill`) |
+| `default_change_type` | str | Yes | Change type for phase-3-outline (e.g., `tech_debt`, `feature`) |
+| `scope` | str | Yes | Scope indicator (`codebase_wide`, `module`) |
+| `profile` | str | No | Target profile — omit if user selects at plan creation time |
+| `package_source` | str | No | Package source — omit if user selects at plan creation time |
+
+#### Auto-Assigned Fields
+
+The following fields are added automatically by `_discover_all_recipes()` — do **not** include them in the return value:
+
+| Field | Value | Source |
+|-------|-------|--------|
+| `domain` | First domain key from `get_skill_domains()` | Auto-extracted |
+| `source` | `'extension'` | Auto-assigned |
+
+#### Recipe Discovery Sources
+
+Recipes are discovered from two sources (in order):
+
+1. **Extension `provides_recipes()`** — domain bundle recipes (source: `extension`)
+2. **Project `recipe-*` skills in `.claude/skills/`** — project-level recipes (source: `project`)
+
+#### Resolution Commands
+
+```bash
+# List all recipes from all sources
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config list-recipes
+
+# Resolve a specific recipe by key
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  resolve-recipe --recipe refactor-to-profile-standards
+```
+
+#### Recipe Skill Interface
+
+The referenced recipe skill is loaded by phase-3-outline (Step 2.5) with these inputs:
+
+| Parameter | Source |
+|-----------|--------|
+| `plan_id` | Current plan |
+| `recipe_domain` | From status metadata (user-selected or recipe-declared) |
+| `recipe_profile` | From status metadata (user-selected or recipe-declared) |
+| `recipe_package_source` | From status metadata (user-selected or recipe-declared) |
+
+The recipe skill must write `solution_outline.md` with deliverables grouped by module.
+
+#### Implementation Pattern
+
+```python
+class Extension(ExtensionBase):
+    def provides_recipes(self) -> list[dict]:
+        return [
+            {
+                'key': 'refactor-to-profile-standards',
+                'name': 'Refactor to Profile Standards',
+                'description': 'Refactor code to comply with configured profile standards, package by package',
+                'skill': 'plan-marshall:recipe-refactor-to-profile-standards',
+                'default_change_type': 'tech_debt',
+                'scope': 'codebase_wide',
+                # profile and package_source omitted — user selects at plan creation
+            },
+        ]
+```
+
+#### Existing Implementations
+
+| Bundle | Domain | Recipe Key | Recipe Skill |
+|--------|--------|-----------|-------------|
+| plan-marshall | build | `refactor-to-profile-standards` | `plan-marshall:recipe-refactor-to-profile-standards` |
+
+---
+
 ### provides_verify_steps
 
 Declares domain-specific verification agents that run after implementation tasks complete. Steps are user-configurable (enable/disable per step).
@@ -707,17 +816,17 @@ Some domain bundles are **additive** - they extend a base domain bundle rather t
 
 ## Existing Extensions
 
-| Bundle | Domain Key | Triage | Outline Skill | Verify Steps | Notes |
-|--------|------------|--------|---------------|-------------|-------|
-| pm-dev-java | java | ext-triage-java | - | 2 (impl, test) | Base Java bundle |
-| pm-dev-java-cui | java-cui | - | - | - | Additive to pm-dev-java |
-| pm-dev-frontend | javascript | ext-triage-js | - | - | |
-| pm-dev-python | python | - | - | - | |
-| pm-dev-oci | oci-containers | - | - | - | |
-| pm-documents | documentation | ext-triage-docs | - | 1 (doc_sync) | Uses generic skills |
-| pm-requirements | requirements | ext-triage-reqs | - | 1 (formal_spec) | |
-| pm-plugin-development | plan-marshall-plugin-dev | ext-triage-plugin | ext-outline-workflow | - | |
-| plan-marshall | build, general-dev | - | - | - | Multi-domain |
+| Bundle | Domain Key | Triage | Outline Skill | Recipes | Verify Steps | Notes |
+|--------|------------|--------|---------------|---------|-------------|-------|
+| pm-dev-java | java | ext-triage-java | - | - | 2 (impl, test) | Base Java bundle |
+| pm-dev-java-cui | java-cui | - | - | - | - | Additive to pm-dev-java |
+| pm-dev-frontend | javascript | ext-triage-js | - | - | - | |
+| pm-dev-python | python | - | - | - | - | |
+| pm-dev-oci | oci-containers | - | - | - | - | |
+| pm-documents | documentation | ext-triage-docs | - | - | 1 (doc_sync) | Uses generic skills |
+| pm-requirements | requirements | ext-triage-reqs | - | - | 1 (formal_spec) | |
+| pm-plugin-development | plan-marshall-plugin-dev | ext-triage-plugin | ext-outline-workflow | - | - | |
+| plan-marshall | build, general-dev | - | - | 1 (refactor-to-profile-standards) | - | Multi-domain |
 
 ---
 
@@ -738,9 +847,9 @@ This is the only abstract method because every domain must:
 1. **Declare identity** — the domain key is used throughout marshal.json
 2. **Provide skills** — skills are the primary value a domain extension contributes
 
-### Why Four Optional Hooks?
+### Why Five Optional Hooks?
 
-All four hooks (config_defaults, provides_triage, provides_outline_skill, provides_verify_steps) follow the same extension model:
+All five hooks (config_defaults, provides_triage, provides_outline_skill, provides_recipes, provides_verify_steps) follow the same extension model:
 
 1. **Domain ownership** — each domain declares its own capabilities rather than core code hardcoding domain-specific behavior
 2. **Safe defaults** — all hooks return None or empty, so bundles only implement what they need
