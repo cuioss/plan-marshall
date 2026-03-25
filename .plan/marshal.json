@@ -47,7 +47,9 @@
       "3_automated_review": true,
       "4_sonar_roundtrip": true,
       "5_knowledge_capture": true,
-      "6_lessons_capture": true
+      "6_lessons_capture": true,
+      "7_archive": true,
+      "8_branch_cleanup": true
     }
   },
   "skill_domains": {
