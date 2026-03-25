@@ -31,6 +31,35 @@ base_branch: main
 
 ---
 
+## Workflow: List PRs
+
+**Pattern**: Provider-Agnostic Router
+
+List pull requests with optional branch and state filters.
+
+### Step 1: Resolve and Execute
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr list \
+    [--head {branch}] [--state {open|closed|all}]
+```
+
+### Step 2: Process Result
+
+```toon
+status: success
+operation: pr_list
+total: 2
+state_filter: open
+head_filter: feature/my-branch
+
+prs[2]{number,url,title,state,head_branch,base_branch}:
+123	https://github.com/org/repo/pull/123	Add feature X	open	feature/my-branch	main
+456	https://github.com/org/repo/pull/456	Fix bug Y	open	feature/my-branch	develop
+```
+
+---
+
 ## Workflow: Create PR
 
 **Pattern**: Provider-Agnostic Router

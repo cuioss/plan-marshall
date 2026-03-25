@@ -238,6 +238,64 @@ context: gh pr view returned non-zero exit code
 
 ---
 
+### pr list
+
+List pull requests with optional branch and state filters.
+
+**Command**:
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr list \
+    [--head feature/branch] \
+    [--state open|closed|all]
+```
+
+**Arguments**:
+| Argument | Required | Description |
+|----------|----------|-------------|
+| `--head` | No | Filter by head/source branch name |
+| `--state` | No | Filter by state: open, closed, all (default: open) |
+
+**Success Output**:
+```toon
+status: success
+operation: pr_list
+total: 2
+state_filter: open
+head_filter: feature/branch
+
+prs[2]{number,url,title,state,head_branch,base_branch}:
+123	https://github.com/org/repo/pull/123	Add feature X	open	feature/branch	main
+456	https://github.com/org/repo/pull/456	Fix bug Y	open	feature/branch	develop
+```
+
+**Error Output**:
+```toon
+status: error
+operation: pr_list
+error: Failed to list PRs
+context: gh pr list returned non-zero exit code
+```
+
+**Field Mapping (GitHub vs GitLab)**:
+| Field | GitHub | GitLab |
+|-------|--------|--------|
+| `number` | `.number` | `.iid` |
+| `url` | `.url` | `.web_url` |
+| `title` | `.title` | `.title` |
+| `state` | `.state` (lowercase) | `.state` ("opened"→"open") |
+| `head_branch` | `.headRefName` | `.source_branch` |
+| `base_branch` | `.baseRefName` | `.target_branch` |
+
+**CLI Mapping (GitHub vs GitLab)**:
+| Aspect | GitHub (`gh`) | GitLab (`glab`) |
+|--------|---------------|-----------------|
+| Command | `gh pr list` | `glab mr list` |
+| `--head` | `--head {branch}` | `--source-branch {branch}` |
+| `--state` | `--state open\|closed\|all` | `--state opened\|closed\|all` |
+| Output format | `--json number,url,...` | `--output json` |
+
+---
+
 ### pr reply
 
 Post a comment on a pull request.

@@ -32,3 +32,4 @@ def test_pr_subcommand_help():
     # Router delegates to provider script, --help should work
     assert result.success, f'pr --help failed: {result.stderr}'
     assert 'create' in result.stdout
+    assert 'list' in result.stdout

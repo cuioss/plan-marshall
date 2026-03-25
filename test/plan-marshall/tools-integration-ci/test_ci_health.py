@@ -109,8 +109,10 @@ def test_persist_generates_commands():
             assert 'commands' in updated['ci']
             commands = updated['ci']['commands']
             assert 'pr-create' in commands
+            assert 'pr-list' in commands
             assert 'ci-status' in commands
             assert 'tools-integration-ci' in commands['pr-create']
+            assert 'pr list' in commands['pr-list']
 
 
 def test_help_flag():
