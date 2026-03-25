@@ -436,6 +436,7 @@ def cmd_pr_comments(args: argparse.Namespace) -> int:
     comment_list = [
         {
             'id': c['id'],
+            'thread_id': c['thread_id'],
             'author': c['author'],
             'body': c['body'].replace('\t', ' ').replace('\n', ' ')[:100],
             'path': c['path'],

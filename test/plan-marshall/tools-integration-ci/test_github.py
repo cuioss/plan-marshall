@@ -158,6 +158,13 @@ def test_pr_merge_missing_required():
     assert not result.success, 'Expected failure without --pr-number'
 
 
+def test_pr_comments_help():
+    """Test pr comments help shows required arguments."""
+    result = run_script(SCRIPT_PATH, 'pr', 'comments', '--help')
+    assert result.success, f'pr comments --help failed: {result.stderr}'
+    assert '--pr-number' in result.stdout
+
+
 def test_pr_auto_merge_help():
     """Test pr auto-merge help shows required arguments."""
     result = run_script(SCRIPT_PATH, 'pr', 'auto-merge', '--help')

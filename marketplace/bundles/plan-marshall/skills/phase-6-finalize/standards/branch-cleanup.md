@@ -97,7 +97,20 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr merge \
     --pr-number {pr_number} --delete-branch
 ```
 
-If merge fails → log error and abort:
+If merge fails with branch protection error ('base branch policy prohibits the merge'), fall back to auto-merge:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr auto-merge \
+    --pr-number {pr_number}
+```
+
+Log the fallback:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) Branch cleanup: direct merge blocked by branch protection, enabled auto-merge"
+```
+
+If auto-merge also fails → log error and abort:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   work --plan-id {plan_id} --level ERROR --message "[ERROR] (plan-marshall:phase-6-finalize) Branch cleanup: PR merge failed - {error}"

@@ -81,8 +81,8 @@ Handles PR review comment workflows - fetching comments, triaging them, and gene
    total: N
    unresolved: N
 
-   comments[N]{id,author,body,path,line,resolved,created_at}:
-   c1	alice	Fix security issue	src/Auth.java	42	false	2025-01-15T10:30:00Z
+   comments[N]{id,thread_id,author,body,path,line,resolved,created_at}:
+   c1	PRRT_abc	alice	Fix security issue	src/Auth.java	42	false	2025-01-15T10:30:00Z
    ```
 
 2. **Return Comment List**
