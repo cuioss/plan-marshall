@@ -34,6 +34,8 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 gh pr list --head {head_branch} --state open --json number,title,url
 ```
 
+> **Note**: `pr list` is not yet available via the `tools-integration-ci` abstraction layer. This uses `gh` directly as a workaround. When `ci pr list` is added, this should be updated.
+
 Extract count and details of other open PRs (excluding the current PR).
 
 ### User Confirmation Gate
