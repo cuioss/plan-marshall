@@ -489,11 +489,7 @@ Step A — Check Complex Track triggers (hard gates, OR logic):
   [T2] Request contains scope words (see list below)
   [T3] module_mapping uses patterns/globs instead of explicit file paths
   [T4] Domain requires discovery (see list below)
-       ESCAPE HATCH: Skip T4 when ALL of:
-         - module_mapping contains only explicit file paths (not patterns/globs)
-         - scope_estimate is single_file or single_module
-       Rationale: phase-2-refine already performed the discovery that T4
-       would mandate. Explicit paths + narrow scope = discovery complete.
+       (This trigger is skipped if the T4 Escape Hatch conditions are met. See details below.)
 
   → If ANY of T1-T4 is true (after escape hatch) → track = complex (STOP, do not evaluate Simple)
 
