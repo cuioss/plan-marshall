@@ -168,6 +168,95 @@ class TestPRTriage(unittest.TestCase):
         self.assertEqual(result['location'], 'src/File.java:99')
 
 
+class TestParseToonComments(unittest.TestCase):
+    """Test parse_toon_comments function directly."""
+
+    def _import_parse_toon_comments(self):
+        """Import parse_toon_comments from pr.py."""
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location('pr', SCRIPT_PATH)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod.parse_toon_comments
+
+    def test_parses_comments_with_space_indented_rows(self):
+        """Test that space-indented TOON table rows are parsed correctly."""
+        parse_toon_comments = self._import_parse_toon_comments()
+        toon_output = (
+            'status: success\n'
+            'total: 2\n'
+            'unresolved: 1\n'
+            'comments[2]{id,author,body,path,line,resolved,created_at}:\n'
+            '  PRRC_001\treviewer1\tFix this bug\tsrc/Main.java\t42\ttrue\t2026-03-25\n'
+            '  PRRC_002\treviewer2\tAdd tests\tsrc/Test.java\t10\tfalse\t2026-03-25\n'
+        )
+        comments = parse_toon_comments(toon_output)
+        self.assertEqual(len(comments), 2)
+        self.assertEqual(comments[0]['id'], 'PRRC_001')
+        self.assertEqual(comments[0]['author'], 'reviewer1')
+        self.assertEqual(comments[0]['body'], 'Fix this bug')
+        self.assertEqual(comments[0]['path'], 'src/Main.java')
+        self.assertEqual(comments[0]['line'], 42)
+        self.assertTrue(comments[0]['resolved'])
+        self.assertEqual(comments[1]['id'], 'PRRC_002')
+        self.assertFalse(comments[1]['resolved'])
+
+    def test_parses_empty_comments_table(self):
+        """Test parsing a TOON output with no comment rows."""
+        parse_toon_comments = self._import_parse_toon_comments()
+        toon_output = 'status: success\ntotal: 0\ncomments[0]{id,author,body,path,line,resolved,created_at}:\n'
+        comments = parse_toon_comments(toon_output)
+        self.assertEqual(len(comments), 0)
+
+    def test_handles_dash_values_for_path_and_line(self):
+        """Test that dash values are converted to None."""
+        parse_toon_comments = self._import_parse_toon_comments()
+        toon_output = (
+            'comments[1]{id,author,body,path,line,resolved,created_at}:\n'
+            '  PRRC_003\treviewer\tGeneral comment\t-\t-\tfalse\t2026-03-25\n'
+        )
+        comments = parse_toon_comments(toon_output)
+        self.assertEqual(len(comments), 1)
+        self.assertIsNone(comments[0]['path'])
+        self.assertIsNone(comments[0]['line'])
+
+    def test_stops_at_next_toon_section(self):
+        """Test that parser stops when reaching a new key: value section."""
+        parse_toon_comments = self._import_parse_toon_comments()
+        toon_output = (
+            'comments[1]{id,author,body,path,line,resolved,created_at}:\n'
+            '  PRRC_004\treviewer\tComment\tsrc/A.java\t1\ttrue\t2026-03-25\n'
+            'next_section: value\n'
+        )
+        comments = parse_toon_comments(toon_output)
+        self.assertEqual(len(comments), 1)
+
+    def test_parses_thread_id_when_present(self):
+        """Test that thread_id is included when the TOON header declares it."""
+        parse_toon_comments = self._import_parse_toon_comments()
+        toon_output = (
+            'comments[1]{id,thread_id,author,body,path,line,resolved,created_at}:\n'
+            '  PRRC_001\tPRRT_abc123\treviewer1\tFix bug\tsrc/Main.java\t42\ttrue\t2026-03-25\n'
+        )
+        comments = parse_toon_comments(toon_output)
+        self.assertEqual(len(comments), 1)
+        self.assertEqual(comments[0]['id'], 'PRRC_001')
+        self.assertEqual(comments[0]['thread_id'], 'PRRT_abc123')
+        self.assertEqual(comments[0]['author'], 'reviewer1')
+
+    def test_no_thread_id_when_not_in_header(self):
+        """Test that thread_id is absent when the TOON header does not declare it."""
+        parse_toon_comments = self._import_parse_toon_comments()
+        toon_output = (
+            'comments[1]{id,author,body,path,line,resolved,created_at}:\n'
+            '  PRRC_001\treviewer1\tFix bug\tsrc/Main.java\t42\ttrue\t2026-03-25\n'
+        )
+        comments = parse_toon_comments(toon_output)
+        self.assertEqual(len(comments), 1)
+        self.assertNotIn('thread_id', comments[0])
+
+
 class TestPRFetchComments(unittest.TestCase):
     """Test pr.py fetch-comments subcommand.
 

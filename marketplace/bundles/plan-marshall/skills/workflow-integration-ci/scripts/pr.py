@@ -153,39 +153,56 @@ def get_current_pr_number() -> int | None:
 
 
 def parse_toon_comments(toon_output: str) -> list[dict[str, Any]]:
-    """Parse TOON format comment output from tools-integration-ci."""
+    """Parse TOON format comment output from tools-integration-ci.
+
+    Uses the TOON table header to map columns dynamically, so this parser
+    handles any column order and additional fields (e.g. thread_id).
+    """
     comments: list[dict[str, Any]] = []
     lines = toon_output.strip().split('\n')
 
     in_comments_table = False
+    fields: list[str] = []
     for line in lines:
-        # Detect start of comments table
+        # Detect start of comments table: comments[N]{field1,field2,...}:
         if line.startswith('comments['):
             in_comments_table = True
+            # Extract field names from header
+            brace_start = line.find('{')
+            brace_end = line.find('}')
+            if brace_start != -1 and brace_end != -1:
+                fields = line[brace_start + 1 : brace_end].split(',')
             continue
 
         # Skip non-table lines or empty lines
         if not in_comments_table or not line.strip():
             continue
 
-        # Stop at next section (line starting with non-tab char that's not a comment row)
-        if not line.startswith('\t') and not line[0].isalnum():
+        # Strip leading whitespace (TOON table rows are indented with 2 spaces)
+        stripped = line.strip()
+
+        # Stop at next section (non-indented line that looks like a key: value)
+        if not line[0].isspace() and ':' in stripped:
             break
 
-        # Parse tab-separated comment row: id\tauthor\tbody\tpath\tline\tresolved\tcreated_at
-        parts = line.split('\t')
-        if len(parts) >= 6:
-            comments.append(
-                {
-                    'id': parts[0],
-                    'author': parts[1],
-                    'body': parts[2],
-                    'path': parts[3] if parts[3] != '-' else None,
-                    'line': int(parts[4]) if parts[4] != '-' and parts[4].isdigit() else None,
-                    'resolved': parts[5].lower() == 'true',
-                    'created_at': parts[6] if len(parts) > 6 else None,
-                }
-            )
+        # Parse tab-separated comment row using header fields
+        parts = stripped.split('\t')
+        if fields and len(parts) >= len(fields):
+            row = dict(zip(fields, parts, strict=False))
+            # Normalize known fields
+            comment: dict[str, Any] = {
+                'id': row.get('id', ''),
+                'author': row.get('author', ''),
+                'body': row.get('body', ''),
+                'path': row.get('path') if row.get('path') != '-' else None,
+                'line': int(row['line']) if row.get('line', '-') not in ('-', '') and row['line'].isdigit() else None,
+                'resolved': row.get('resolved', 'false').lower() == 'true',
+                'created_at': row.get('created_at'),
+            }
+            # Include thread_id if present
+            if 'thread_id' in row:
+                comment['thread_id'] = row['thread_id']
+            comments.append(comment)
 
     return comments
 
