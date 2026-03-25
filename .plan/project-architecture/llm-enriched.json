@@ -255,8 +255,69 @@
       "internal_dependencies": [],
       "key_dependencies": [],
       "key_dependencies_reasoning": "",
-      "skills_by_profile": {},
-      "skills_by_profile_reasoning": "python: Python scripts in skills",
+      "skills_by_profile": {
+        "implementation": {
+          "defaults": [
+            {
+              "skill": "pm-dev-python:python-best-practices",
+              "description": "Modern Python patterns with pyprojectx, ruff, mypy, pytest"
+            },
+            {
+              "skill": "plan-marshall:dev-general-code-quality",
+              "description": "Language-agnostic code quality principles (SRP, CQS, complexity, error handling)"
+            },
+            {
+              "skill": "plan-marshall:dev-general-code-documentation",
+              "description": "Language-agnostic documentation principles (what/when/how to document)"
+            },
+            {
+              "skill": "pm-plugin-development:plugin-architecture",
+              "description": "Architecture principles, skill patterns, and design guidance for marketplace components"
+            },
+            {
+              "skill": "pm-plugin-development:plugin-script-architecture",
+              "description": "Script development standards covering implementation patterns, testing, and output contracts"
+            }
+          ]
+        },
+        "module_testing": {
+          "defaults": [
+            {
+              "skill": "pm-dev-python:python-best-practices",
+              "description": "Modern Python patterns with pyprojectx, ruff, mypy, pytest"
+            },
+            {
+              "skill": "plan-marshall:dev-general-code-quality",
+              "description": "Language-agnostic code quality principles (SRP, CQS, complexity, error handling)"
+            },
+            {
+              "skill": "plan-marshall:dev-general-module-testing",
+              "description": "Language-agnostic testing methodology (AAA, coverage, reliability, determinism)"
+            },
+            {
+              "skill": "pm-plugin-development:plugin-architecture",
+              "description": "Architecture principles, skill patterns, and design guidance for marketplace components"
+            },
+            {
+              "skill": "pm-plugin-development:plugin-script-architecture",
+              "description": "Script development standards covering implementation patterns, testing, and output contracts"
+            }
+          ]
+        },
+        "quality": {
+          "defaults": [
+            {
+              "skill": "pm-dev-python:python-best-practices",
+              "description": "Modern Python patterns with pyprojectx, ruff, mypy, pytest"
+            },
+            {
+              "skill": "plan-marshall:dev-general-code-quality",
+              "description": "Language-agnostic code quality principles (SRP, CQS, complexity, error handling)"
+            }
+          ]
+        }
+      },
+      "skills_by_profile_reasoning": "Added plugin-architecture to module_testing per Gemini review feedback for consistent coverage",
       "tips": [],
       "insights": [],
       "best_practices": []
