@@ -481,7 +481,7 @@ SCOPE_ESTIMATE: {single_file|single_module|few_files|multi_module|codebase_wide}
 
 **Track Selection Logic**:
 
-**CRITICAL**: Complex Track triggers are hard gates — if ANY trigger fires, the track MUST be complex. Do NOT override with subjective reasoning. Evaluate each trigger mechanically.
+**CRITICAL**: Complex Track triggers are hard gates — if ANY trigger fires, the track MUST be complex. Do NOT override with subjective reasoning. Evaluate each trigger mechanically. T4 has an escape hatch for cases where discovery has already been completed by phase-2-refine.
 
 ```
 Step A — Check Complex Track triggers (hard gates, OR logic):
@@ -489,8 +489,13 @@ Step A — Check Complex Track triggers (hard gates, OR logic):
   [T2] Request contains scope words (see list below)
   [T3] module_mapping uses patterns/globs instead of explicit file paths
   [T4] Domain requires discovery (see list below)
+       ESCAPE HATCH: Skip T4 when ALL of:
+         - module_mapping contains only explicit file paths (not patterns/globs)
+         - scope_estimate is single_file or single_module
+       Rationale: phase-2-refine already performed the discovery that T4
+       would mandate. Explicit paths + narrow scope = discovery complete.
 
-  → If ANY of T1-T4 is true → track = complex (STOP, do not evaluate Simple)
+  → If ANY of T1-T4 is true (after escape hatch) → track = complex (STOP, do not evaluate Simple)
 
 Step B — Only if ALL of T1-T4 are false, check Simple Track:
   [S1] scope_estimate is single_file, single_module, or few_files
@@ -510,6 +515,13 @@ These domains have no standard structure and always need discovery:
 - `documentation` (AsciiDoc, ADR locations vary)
 - `requirements` (specs can be anywhere)
 
+**T4 Escape Hatch**:
+T4 is skipped (does not fire) when BOTH conditions are true:
+1. `module_mapping` contains only explicit file paths (no patterns, globs, or approximate counts)
+2. `scope_estimate` is `single_file` or `single_module`
+
+When the escape hatch applies, phase-2-refine has already identified the exact targets — the codebase discovery that T4 mandates would be redundant. The escape hatch does NOT apply when T1, T2, or T3 have already fired (those are evaluated first).
+
 **Module mapping explicitness [T3]**:
 - Explicit: `affected_files: [path/to/file1.md, path/to/file2.md]` → does NOT trigger T3
 - Broad: `file_pattern: {agents,commands}/*.md` or `agents: ~13 files` → TRIGGERS T3
@@ -521,6 +533,7 @@ TRACK_SELECTION: {simple|complex}
   - [T2] Scope words found: {yes/no - which words}
   - [T3] Module mapping broad/patterns: {yes/no}
   - [T4] Domain requires discovery: {yes/no}
+  - [T4 escape hatch] Explicit paths + narrow scope: {yes/no - skipped T4 if yes}
   - Triggers fired: {T1,T2,T3,T4 or none}
   - Track: {complex if any trigger | simple if none}
 ```
