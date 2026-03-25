@@ -165,6 +165,18 @@ python3 .plan/execute-script.py plan-marshall:manage-lifecycle:manage-lifecycle 
   --plan-id {plan_id} --completed 3-outline
 ```
 
+**Step 2d**: Auto-open solution outline in IDE for user review:
+
+Resolve the solution outline path:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-solution-outline \
+  resolve-path --plan-id {plan_id}
+```
+
+Open in the current IDE using `TERM_PROGRAM` env var detection:
+- If `TERM_PROGRAM=vscode`: `code {resolved_path}`
+- Otherwise: `open {resolved_path}`
+
 ---
 
 ## Step 3: USER REVIEW GATE
