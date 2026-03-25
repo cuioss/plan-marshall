@@ -12,7 +12,7 @@ This is Phase 1 of the hybrid doctor workflow. It handles deterministic
 operations that can be fully automated. Phase 2 (LLM) handles semantic
 analysis and complex fixes.
 
-Output: JSON to stdout.
+Output: TOON to stdout.
 
 Usage:
     python3 doctor-marketplace.py scan [--bundles NAMES]
@@ -39,6 +39,7 @@ from _doctor_shared import (
     get_report_dir,
     get_report_filename,
 )
+from toon_parser import serialize_toon  # type: ignore[import-not-found]
 
 SCRIPT_DIR = Path(__file__).parent
 
@@ -97,14 +98,7 @@ def cmd_scan(args) -> int:
 
     bundles = find_bundles(marketplace_root, bundle_filter)
 
-    results: dict[str, object] = {
-        'marketplace_root': str(marketplace_root),
-        'bundles': [],
-        'total_bundles': 0,
-        'total_components': 0,
-    }
-    bundles_list: list[dict] = []
-
+    bundles_list = []
     total_components = 0
     for bundle_dir in bundles:
         components = discover_components(bundle_dir)
@@ -115,22 +109,23 @@ def cmd_scan(args) -> int:
             {
                 'name': bundle_dir.name,
                 'path': str(bundle_dir),
-                'components': components,
-                'counts': {
-                    'agents': len(components['agents']),
-                    'commands': len(components['commands']),
-                    'skills': len(components['skills']),
-                    'scripts': len(components['scripts']),
-                    'total': bundle_total,
-                },
+                'agents': len(components['agents']),
+                'commands': len(components['commands']),
+                'skills': len(components['skills']),
+                'scripts': len(components['scripts']),
+                'total': bundle_total,
             }
         )
 
-    results['bundles'] = bundles_list
-    results['total_bundles'] = len(bundles)
-    results['total_components'] = total_components
+    output = {
+        'status': 'success',
+        'marketplace_root': str(marketplace_root),
+        'total_bundles': len(bundles),
+        'total_components': total_components,
+        'bundles': bundles_list,
+    }
 
-    print(json.dumps(results, indent=2))
+    print(serialize_toon(output))
     return 0
 
 
@@ -163,18 +158,19 @@ def cmd_analyze(args) -> int:
     categorized = categorize_all_issues(all_issues)
 
     output = {
+        'status': 'success',
+        'total_components': len(all_analysis),
+        'total_issues': total_issues,
+        'safe_fixes': len(categorized['safe']),
+        'risky_fixes': len(categorized['risky']),
+        'unfixable': len(categorized['unfixable']),
         'analysis': all_analysis,
-        'summary': {
-            'total_components': len(all_analysis),
-            'total_issues': total_issues,
-            'safe_fixes': len(categorized['safe']),
-            'risky_fixes': len(categorized['risky']),
-            'unfixable': len(categorized['unfixable']),
-        },
-        'categorized': categorized,
+        'categorized_safe': categorized['safe'],
+        'categorized_risky': categorized['risky'],
+        'categorized_unfixable': categorized['unfixable'],
     }
 
-    print(json.dumps(output, indent=2))
+    print(serialize_toon(output))
     return 0
 
 
@@ -209,7 +205,7 @@ def cmd_fix(args) -> int:
             'risky_issues': len(categorized['risky']),
             'unfixable_issues': len(categorized['unfixable']),
         }
-        print(json.dumps(output, indent=2))
+        print(serialize_toon(output))
         return 0
 
     # Apply safe fixes
@@ -222,11 +218,14 @@ def cmd_fix(args) -> int:
         'applied': len(fix_results['applied']),
         'failed': len(fix_results['failed']),
         'skipped': len(fix_results['skipped']),
-        'details': fix_results,
-        'remaining': {'risky_issues': len(categorized['risky']), 'unfixable_issues': len(categorized['unfixable'])},
+        'details_applied': fix_results['applied'],
+        'details_failed': fix_results['failed'],
+        'details_skipped': fix_results['skipped'],
+        'risky_issues': len(categorized['risky']),
+        'unfixable_issues': len(categorized['unfixable']),
     }
 
-    print(json.dumps(output, indent=2))
+    print(serialize_toon(output))
     return 0 if not fix_results['failed'] else 1
 
 
@@ -295,19 +294,15 @@ def cmd_report(args) -> int:
         f.write(output_json)
 
     # Output success message
-    print(
-        json.dumps(
-            {
-                'status': 'success',
-                'report_dir': str(report_dir),
-                'report_file': str(json_path),
-                'findings_file': str(report_dir / findings_filename),
-                'summary': report['summary'],
-                'next_step': 'LLM should read report_file and create findings.md with analysis',
-            },
-            indent=2,
-        )
-    )
+    output = {
+        'status': 'success',
+        'report_dir': str(report_dir),
+        'report_file': str(json_path),
+        'findings_file': str(report_dir / findings_filename),
+        'summary': report['summary'],
+        'next_step': 'LLM should read report_file and create findings.md with analysis',
+    }
+    print(serialize_toon(output))
 
     return 0
 

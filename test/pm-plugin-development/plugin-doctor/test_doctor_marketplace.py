@@ -6,6 +6,8 @@ Tests the hybrid Phase 1 script that provides automated batch operations:
 - analyze: Batch analyze for issues
 - fix: Apply safe fixes automatically
 - report: Generate comprehensive report
+
+Output format: TOON (parsed via toon_parser).
 """
 
 import json
@@ -15,11 +17,17 @@ from pathlib import Path
 
 # Import shared infrastructure
 from conftest import get_script_path, run_script
+from toon_parser import parse_toon  # type: ignore[import-not-found]
 
 # Script under test
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 SCRIPT_PATH = get_script_path('pm-plugin-development', 'plugin-doctor', 'doctor-marketplace.py')
 MARKETPLACE_ROOT = PROJECT_ROOT / 'marketplace' / 'bundles'
+
+
+def parse_output(result):
+    """Parse TOON output from script result."""
+    return parse_toon(result.stdout)
 
 
 def marketplace_available():
@@ -67,16 +75,16 @@ def test_scan_help():
     assert 'bundles' in combined.lower(), 'Help should mention bundles option'
 
 
-def test_scan_returns_valid_json():
-    """Test scan returns valid JSON structure."""
+def test_scan_returns_valid_toon():
+    """Test scan returns valid TOON structure."""
     if not marketplace_available():
         return  # Skip if marketplace not available
 
     result = run_script(SCRIPT_PATH, 'scan', cwd=str(PROJECT_ROOT))
     assert result.returncode == 0, f'Scan failed: {result.stderr}'
 
-    data = result.json()
-    assert data is not None, 'Should return valid JSON'
+    data = parse_output(result)
+    assert data is not None, 'Should return valid TOON'
     assert 'bundles' in data, 'Should have bundles field'
     assert 'total_bundles' in data, 'Should have total_bundles field'
     assert 'total_components' in data, 'Should have total_components field'
@@ -88,7 +96,7 @@ def test_scan_finds_bundles():
         return  # Skip if marketplace not available
 
     result = run_script(SCRIPT_PATH, 'scan', cwd=str(PROJECT_ROOT))
-    data = result.json()
+    data = parse_output(result)
 
     assert data['total_bundles'] > 0, 'Should find at least one bundle'
     assert len(data['bundles']) == data['total_bundles'], 'Bundle list length should match total_bundles'
@@ -100,19 +108,16 @@ def test_scan_bundle_structure():
         return  # Skip if marketplace not available
 
     result = run_script(SCRIPT_PATH, 'scan', cwd=str(PROJECT_ROOT))
-    data = result.json()
+    data = parse_output(result)
 
     for bundle in data['bundles']:
         assert 'name' in bundle, 'Bundle should have name'
         assert 'path' in bundle, 'Bundle should have path'
-        assert 'components' in bundle, 'Bundle should have components'
-        assert 'counts' in bundle, 'Bundle should have counts'
-
-        components = bundle['components']
-        assert 'agents' in components, 'Components should have agents'
-        assert 'commands' in components, 'Components should have commands'
-        assert 'skills' in components, 'Components should have skills'
-        assert 'scripts' in components, 'Components should have scripts'
+        assert 'agents' in bundle, 'Bundle should have agents count'
+        assert 'commands' in bundle, 'Bundle should have commands count'
+        assert 'skills' in bundle, 'Bundle should have skills count'
+        assert 'scripts' in bundle, 'Bundle should have scripts count'
+        assert 'total' in bundle, 'Bundle should have total count'
 
 
 def test_scan_bundle_filter():
@@ -122,7 +127,7 @@ def test_scan_bundle_filter():
 
     # First get a valid bundle name
     result = run_script(SCRIPT_PATH, 'scan', cwd=str(PROJECT_ROOT))
-    data = result.json()
+    data = parse_output(result)
     if not data['bundles']:
         return  # No bundles to test
 
@@ -130,7 +135,7 @@ def test_scan_bundle_filter():
 
     # Now filter to just that bundle
     result = run_script(SCRIPT_PATH, 'scan', '--bundles', first_bundle, cwd=str(PROJECT_ROOT))
-    filtered = result.json()
+    filtered = parse_output(result)
 
     assert filtered['total_bundles'] == 1, 'Should have exactly one bundle'
     assert filtered['bundles'][0]['name'] == first_bundle, f'Should be {first_bundle}'
@@ -149,14 +154,14 @@ def test_analyze_help():
     assert 'type' in combined.lower(), 'Help should mention type option'
 
 
-def test_analyze_returns_valid_json():
-    """Test analyze returns valid JSON structure."""
+def test_analyze_returns_valid_toon():
+    """Test analyze returns valid TOON structure."""
     if not marketplace_available():
         return  # Skip if marketplace not available
 
     # Analyze just one bundle for speed
     result = run_script(SCRIPT_PATH, 'scan', cwd=str(PROJECT_ROOT))
-    scan_data = result.json()
+    scan_data = parse_output(result)
     if not scan_data['bundles']:
         return
 
@@ -165,55 +170,53 @@ def test_analyze_returns_valid_json():
     result = run_script(SCRIPT_PATH, 'analyze', '--bundles', first_bundle, cwd=str(PROJECT_ROOT))
     assert result.returncode == 0, f'Analyze failed: {result.stderr}'
 
-    data = result.json()
-    assert data is not None, 'Should return valid JSON'
+    data = parse_output(result)
+    assert data is not None, 'Should return valid TOON'
     assert 'analysis' in data, 'Should have analysis field'
-    assert 'summary' in data, 'Should have summary field'
-    assert 'categorized' in data, 'Should have categorized field'
+    assert 'total_components' in data, 'Should have total_components field'
+    assert 'total_issues' in data, 'Should have total_issues field'
 
 
 def test_analyze_summary_structure():
-    """Test analyze summary has correct structure."""
+    """Test analyze has correct summary fields."""
     if not marketplace_available():
         return  # Skip if marketplace not available
 
     result = run_script(SCRIPT_PATH, 'scan', cwd=str(PROJECT_ROOT))
-    scan_data = result.json()
+    scan_data = parse_output(result)
     if not scan_data['bundles']:
         return
 
     first_bundle = scan_data['bundles'][0]['name']
 
     result = run_script(SCRIPT_PATH, 'analyze', '--bundles', first_bundle, cwd=str(PROJECT_ROOT))
-    data = result.json()
+    data = parse_output(result)
 
-    summary = data['summary']
-    assert 'total_components' in summary, 'Summary should have total_components'
-    assert 'total_issues' in summary, 'Summary should have total_issues'
-    assert 'safe_fixes' in summary, 'Summary should have safe_fixes'
-    assert 'risky_fixes' in summary, 'Summary should have risky_fixes'
-    assert 'unfixable' in summary, 'Summary should have unfixable'
+    assert 'total_components' in data, 'Should have total_components'
+    assert 'total_issues' in data, 'Should have total_issues'
+    assert 'safe_fixes' in data, 'Should have safe_fixes'
+    assert 'risky_fixes' in data, 'Should have risky_fixes'
+    assert 'unfixable' in data, 'Should have unfixable'
 
 
 def test_analyze_categorized_structure():
-    """Test analyze categorized has correct structure."""
+    """Test analyze has correct categorized fields."""
     if not marketplace_available():
         return  # Skip if marketplace not available
 
     result = run_script(SCRIPT_PATH, 'scan', cwd=str(PROJECT_ROOT))
-    scan_data = result.json()
+    scan_data = parse_output(result)
     if not scan_data['bundles']:
         return
 
     first_bundle = scan_data['bundles'][0]['name']
 
     result = run_script(SCRIPT_PATH, 'analyze', '--bundles', first_bundle, cwd=str(PROJECT_ROOT))
-    data = result.json()
+    data = parse_output(result)
 
-    categorized = data['categorized']
-    assert 'safe' in categorized, 'Categorized should have safe'
-    assert 'risky' in categorized, 'Categorized should have risky'
-    assert 'unfixable' in categorized, 'Categorized should have unfixable'
+    assert 'categorized_safe' in data, 'Should have categorized_safe'
+    assert 'categorized_risky' in data, 'Should have categorized_risky'
+    assert 'categorized_unfixable' in data, 'Should have categorized_unfixable'
 
 
 def test_analyze_type_filter():
@@ -222,18 +225,22 @@ def test_analyze_type_filter():
         return  # Skip if marketplace not available
 
     result = run_script(SCRIPT_PATH, 'scan', cwd=str(PROJECT_ROOT))
-    scan_data = result.json()
+    scan_data = parse_output(result)
     if not scan_data['bundles']:
         return
 
     first_bundle = scan_data['bundles'][0]['name']
 
     result = run_script(SCRIPT_PATH, 'analyze', '--bundles', first_bundle, '--type', 'agents', cwd=str(PROJECT_ROOT))
-    data = result.json()
+    data = parse_output(result)
 
-    # All analyzed components should be agents
+    # All analyzed components should be agents — check via analysis table rows
     for item in data['analysis']:
-        comp_type = item.get('component', {}).get('type')
+        # In TOON table format, nested dicts are serialized as JSON strings
+        component = item.get('component', {})
+        if isinstance(component, str):
+            component = json.loads(component)
+        comp_type = component.get('type')
         assert comp_type == 'agent', f'Expected agent, got {comp_type}'
 
 
@@ -250,13 +257,13 @@ def test_fix_help():
     assert 'dry-run' in combined.lower(), 'Help should mention dry-run option'
 
 
-def test_fix_dry_run_returns_valid_json():
-    """Test fix --dry-run returns valid JSON."""
+def test_fix_dry_run_returns_valid_toon():
+    """Test fix --dry-run returns valid TOON."""
     if not marketplace_available():
         return  # Skip if marketplace not available
 
     result = run_script(SCRIPT_PATH, 'scan', cwd=str(PROJECT_ROOT))
-    scan_data = result.json()
+    scan_data = parse_output(result)
     if not scan_data['bundles']:
         return
 
@@ -266,8 +273,8 @@ def test_fix_dry_run_returns_valid_json():
     # Should succeed even if no fixes needed
     assert result.returncode == 0, f'Fix dry-run failed: {result.stderr}'
 
-    data = result.json()
-    assert data is not None, 'Should return valid JSON'
+    data = parse_output(result)
+    assert data is not None, 'Should return valid TOON'
     assert 'status' in data, 'Should have status field'
     assert 'dry_run' in data, 'Should have dry_run field'
     assert data['dry_run'] is True, 'dry_run should be True'
@@ -280,7 +287,7 @@ def test_fix_dry_run_no_changes():
 
     # Get a snapshot of file modification times
     result = run_script(SCRIPT_PATH, 'scan', cwd=str(PROJECT_ROOT))
-    scan_data = result.json()
+    scan_data = parse_output(result)
     if not scan_data['bundles']:
         return
 
@@ -316,13 +323,13 @@ def test_report_help():
     assert 'output' in combined.lower(), 'Help should mention output option'
 
 
-def test_report_returns_valid_json():
-    """Test report returns valid JSON structure with directory path."""
+def test_report_returns_valid_toon():
+    """Test report returns valid TOON structure with directory path."""
     if not marketplace_available():
         return  # Skip if marketplace not available
 
     result = run_script(SCRIPT_PATH, 'scan', cwd=str(PROJECT_ROOT))
-    scan_data = result.json()
+    scan_data = parse_output(result)
     if not scan_data['bundles']:
         return
 
@@ -331,15 +338,15 @@ def test_report_returns_valid_json():
     result = run_script(SCRIPT_PATH, 'report', '--bundles', first_bundle, cwd=str(PROJECT_ROOT))
     assert result.returncode == 0, f'Report failed: {result.stderr}'
 
-    data = result.json()
-    assert data is not None, 'Should return valid JSON'
+    data = parse_output(result)
+    assert data is not None, 'Should return valid TOON'
     assert 'status' in data, 'Should have status field'
     assert data['status'] == 'success', 'Status should be success'
     assert 'report_dir' in data, 'Should have report_dir field'
     assert 'report_file' in data, 'Should have report_file field'
     assert 'findings_file' in data, 'Should have findings_file field'
     assert 'summary' in data, 'Should have summary field'
-    assert data['report_dir'].endswith('.plan/temp/plugin-doctor-report'), (
+    assert str(data['report_dir']).endswith('.plan/temp/plugin-doctor-report'), (
         f'Report dir should end with .plan/temp/plugin-doctor-report, got {data["report_dir"]}'
     )
 
@@ -350,16 +357,16 @@ def test_report_summary_structure():
         return  # Skip if marketplace not available
 
     result = run_script(SCRIPT_PATH, 'scan', cwd=str(PROJECT_ROOT))
-    scan_data = result.json()
+    scan_data = parse_output(result)
     if not scan_data['bundles']:
         return
 
     first_bundle = scan_data['bundles'][0]['name']
 
     result = run_script(SCRIPT_PATH, 'report', '--bundles', first_bundle, cwd=str(PROJECT_ROOT))
-    data = result.json()
+    data = parse_output(result)
 
-    # Summary is included in stdout response
+    # Summary is a nested dict in TOON output (not a JSON string)
     summary = data['summary']
     assert 'total_bundles' in summary, 'Summary should have total_bundles'
     assert 'total_components' in summary, 'Summary should have total_components'
@@ -374,16 +381,16 @@ def test_report_has_llm_review_items():
         return  # Skip if marketplace not available
 
     result = run_script(SCRIPT_PATH, 'scan', cwd=str(PROJECT_ROOT))
-    scan_data = result.json()
+    scan_data = parse_output(result)
     if not scan_data['bundles']:
         return
 
     first_bundle = scan_data['bundles'][0]['name']
 
     result = run_script(SCRIPT_PATH, 'report', '--bundles', first_bundle, cwd=str(PROJECT_ROOT))
-    response = result.json()
+    response = parse_output(result)
 
-    # Read the actual report file
+    # Read the actual report file (still JSON on disk)
     report_path = Path(PROJECT_ROOT) / response['report_file']
     assert report_path.exists(), f'Report file should exist: {report_path}'
 
@@ -400,7 +407,7 @@ def test_report_to_custom_dir():
         return  # Skip if marketplace not available
 
     result = run_script(SCRIPT_PATH, 'scan', cwd=str(PROJECT_ROOT))
-    scan_data = result.json()
+    scan_data = parse_output(result)
     if not scan_data['bundles']:
         return
 
@@ -507,7 +514,7 @@ def test_fixture_scan():
         result = run_script(SCRIPT_PATH, 'scan', cwd=str(temp_dir))
         assert result.returncode == 0, f'Scan failed: {result.stderr}'
 
-        data = result.json()
+        data = parse_output(result)
         assert data['total_bundles'] == 1, 'Should find one bundle'
         assert data['bundles'][0]['name'] == 'test-bundle', 'Should be test-bundle'
     finally:
@@ -523,9 +530,9 @@ def test_fixture_analyze_finds_issues():
         result = run_script(SCRIPT_PATH, 'analyze', cwd=str(temp_dir))
         assert result.returncode == 0, f'Analyze failed: {result.stderr}'
 
-        data = result.json()
+        data = parse_output(result)
         # Should find at least one issue (Rule 6 - Task in agent)
-        assert data['summary']['total_issues'] > 0, 'Should find issues in test fixture'
+        assert data['total_issues'] > 0, 'Should find issues in test fixture'
     finally:
         fixture.cleanup()
 
@@ -539,7 +546,7 @@ def test_fixture_fix_dry_run():
         result = run_script(SCRIPT_PATH, 'fix', '--dry-run', cwd=str(temp_dir))
         assert result.returncode == 0, f'Fix dry-run failed: {result.stderr}'
 
-        data = result.json()
+        data = parse_output(result)
         assert data['dry_run'] is True, 'Should be dry run'
     finally:
         fixture.cleanup()
@@ -554,14 +561,17 @@ def test_fixture_report():
         result = run_script(SCRIPT_PATH, 'report', cwd=str(temp_dir))
         assert result.returncode == 0, f'Report failed: {result.stderr}'
 
-        response = result.json()
+        response = parse_output(result)
         assert response['status'] == 'success', 'Status should be success'
-        assert response['summary']['total_bundles'] == 1, 'Should have one bundle'
+
+        summary = response['summary']
+        assert summary['total_bundles'] == 1, 'Should have one bundle'
+
         assert 'report_dir' in response, 'Should have report_dir'
         assert 'report_file' in response, 'Should have report_file'
         assert 'findings_file' in response, 'Should have findings_file'
 
-        # Read and verify report file
+        # Read and verify report file (still JSON on disk)
         report_path = temp_dir / response['report_file']
         assert report_path.exists(), f'Report file should exist: {report_path}'
 
@@ -608,19 +618,23 @@ Read `references/guide.md` for standards.
         result = run_script(SCRIPT_PATH, 'analyze', '--type', 'skills', cwd=str(temp_dir))
         assert result.returncode == 0, f'Analyze failed: {result.stderr}'
 
-        data = result.json()
-        # Find the test-skill analysis
+        data = parse_output(result)
+        # Find the test-skill analysis — in TOON table, nested values are JSON strings
         skill_analysis = None
         for item in data['analysis']:
-            if item.get('component', {}).get('name') == 'test-skill':
+            component = item.get('component', {})
+            if isinstance(component, str):
+                component = json.loads(component)
+            if component.get('name') == 'test-skill':
                 skill_analysis = item
                 break
 
         assert skill_analysis is not None, 'Should find test-skill in analysis'
-        assert 'subdocuments' in skill_analysis.get('analysis', {}), (
-            'Skill analysis should include subdocuments key'
-        )
-        subdocs = skill_analysis['analysis']['subdocuments']
+        analysis = skill_analysis.get('analysis', {})
+        if isinstance(analysis, str):
+            analysis = json.loads(analysis)
+        assert 'subdocuments' in analysis, 'Skill analysis should include subdocuments key'
+        subdocs = analysis['subdocuments']
         assert len(subdocs) >= 1, f'Should have at least 1 sub-document, got {len(subdocs)}'
         assert subdocs[0]['relative_path'] == 'references/guide.md', (
             f'Expected references/guide.md, got {subdocs[0]["relative_path"]}'
@@ -657,11 +671,9 @@ Read `references/bloated-guide.md` for standards.
         result = run_script(SCRIPT_PATH, 'analyze', '--type', 'skills', cwd=str(temp_dir))
         assert result.returncode == 0, f'Analyze failed: {result.stderr}'
 
-        data = result.json()
-        # Find subdoc-bloat issues
-        all_issues = []
-        for item in data['analysis']:
-            all_issues.extend(item.get('issues', []))
+        data = parse_output(result)
+        # Collect all issues from analysis items
+        all_issues = _collect_issues(data)
 
         bloat_issues = [i for i in all_issues if i['type'] == 'subdoc-bloat']
         assert len(bloat_issues) >= 1, (
@@ -688,10 +700,8 @@ def test_fixture_analyze_no_subdoc_for_normal_files():
         result = run_script(SCRIPT_PATH, 'analyze', '--type', 'skills', cwd=str(temp_dir))
         assert result.returncode == 0, f'Analyze failed: {result.stderr}'
 
-        data = result.json()
-        all_issues = []
-        for item in data['analysis']:
-            all_issues.extend(item.get('issues', []))
+        data = parse_output(result)
+        all_issues = _collect_issues(data)
 
         bloat_issues = [i for i in all_issues if i['type'] == 'subdoc-bloat']
         assert len(bloat_issues) == 0, f'Should NOT flag normal sub-documents, found {len(bloat_issues)}'
@@ -720,10 +730,8 @@ def test_fixture_analyze_detects_subdoc_hardcoded_path():
         result = run_script(SCRIPT_PATH, 'analyze', '--type', 'skills', cwd=str(temp_dir))
         assert result.returncode == 0, f'Analyze failed: {result.stderr}'
 
-        data = result.json()
-        all_issues = []
-        for item in data['analysis']:
-            all_issues.extend(item.get('issues', []))
+        data = parse_output(result)
+        all_issues = _collect_issues(data)
 
         path_issues = [i for i in all_issues if i['type'] == 'subdoc-hardcoded-script-path']
         assert len(path_issues) >= 1, f'Should detect hardcoded path in subdoc, found {len(path_issues)}'
@@ -751,11 +759,8 @@ def test_fixture_analyze_detects_rule_11():
         result = run_script(SCRIPT_PATH, 'analyze', cwd=str(temp_dir))
         assert result.returncode == 0, f'Analyze failed: {result.stderr}'
 
-        data = result.json()
-        # Find agent-skill-tool-visibility in all issues
-        all_issues = []
-        for item in data['analysis']:
-            all_issues.extend(item.get('issues', []))
+        data = parse_output(result)
+        all_issues = _collect_issues(data)
 
         rule_11_issues = [i for i in all_issues if i['type'] == 'agent-skill-tool-visibility']
         assert len(rule_11_issues) >= 1, (
@@ -782,11 +787,8 @@ def test_fixture_analyze_no_rule_11_with_skill():
         result = run_script(SCRIPT_PATH, 'analyze', cwd=str(temp_dir))
         assert result.returncode == 0, f'Analyze failed: {result.stderr}'
 
-        data = result.json()
-        all_issues = []
-        for item in data['analysis']:
-            if 'has-skill-agent' in item.get('component', {}).get('path', ''):
-                all_issues.extend(item.get('issues', []))
+        data = parse_output(result)
+        all_issues = _collect_issues(data, path_filter='has-skill-agent')
 
         rule_11_issues = [i for i in all_issues if i['type'] == 'agent-skill-tool-visibility']
         assert len(rule_11_issues) == 0, 'Should NOT detect agent-skill-tool-visibility when Skill is present'
@@ -809,11 +811,8 @@ def test_fixture_analyze_no_rule_11_without_tools():
         result = run_script(SCRIPT_PATH, 'analyze', cwd=str(temp_dir))
         assert result.returncode == 0, f'Analyze failed: {result.stderr}'
 
-        data = result.json()
-        all_issues = []
-        for item in data['analysis']:
-            if 'no-tools-agent' in item.get('component', {}).get('path', ''):
-                all_issues.extend(item.get('issues', []))
+        data = parse_output(result)
+        all_issues = _collect_issues(data, path_filter='no-tools-agent')
 
         rule_11_issues = [i for i in all_issues if i['type'] == 'agent-skill-tool-visibility']
         assert len(rule_11_issues) == 0, 'Should NOT detect agent-skill-tool-visibility when no tools field'
@@ -848,16 +847,21 @@ This skill provides testing capabilities.
         result = run_script(SCRIPT_PATH, 'analyze', '--type', 'skills', cwd=str(temp_dir))
         assert result.returncode == 0, f'Analyze failed: {result.stderr}'
 
-        data = result.json()
+        data = parse_output(result)
         # Find the test-skill analysis
         skill_analysis = None
         for item in data['analysis']:
-            if item.get('component', {}).get('name') == 'test-skill':
+            component = item.get('component', {})
+            if isinstance(component, str):
+                component = json.loads(component)
+            if component.get('name') == 'test-skill':
                 skill_analysis = item
                 break
 
         assert skill_analysis is not None, 'Should find test-skill in analysis'
         analysis = skill_analysis.get('analysis', {})
+        if isinstance(analysis, str):
+            analysis = json.loads(analysis)
         assert 'coverage' in analysis, f'Skill analysis should include coverage key, got keys: {list(analysis.keys())}'
 
         coverage = analysis['coverage']
@@ -867,6 +871,33 @@ This skill provides testing capabilities.
         assert declared == [], f'Skills should have no declared tools, got {declared}'
     finally:
         fixture.cleanup()
+
+
+# =============================================================================
+# Helpers
+# =============================================================================
+
+
+def _collect_issues(data, path_filter=None):
+    """Collect all issues from TOON analysis output.
+
+    Args:
+        data: Parsed TOON output dict
+        path_filter: Optional substring to filter by component path
+    """
+    all_issues = []
+    for item in data.get('analysis', []):
+        if path_filter:
+            component = item.get('component', {})
+            if isinstance(component, str):
+                component = json.loads(component)
+            if path_filter not in component.get('path', ''):
+                continue
+        issues = item.get('issues', [])
+        if isinstance(issues, str):
+            issues = json.loads(issues)
+        all_issues.extend(issues)
+    return all_issues
 
 
 # =============================================================================
