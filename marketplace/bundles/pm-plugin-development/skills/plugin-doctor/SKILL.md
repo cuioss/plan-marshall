@@ -109,10 +109,12 @@ All 9 workflows follow the same pattern:
 
    ```bash
    python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marketplace analyze \
-     --bundles {bundle} --type {component_type}
+     --bundles {bundle} --type {component_type} [--name {name}]
    ```
 
-   This performs markdown analysis, coverage extraction, and reference validation for all matching components. For skills, it also analyzes sub-documents (`references/*.md`, `standards/*.md`, `workflows/*.md`, `templates/*.md`) for bloat, forbidden metadata, and hardcoded script paths. The output includes per-component analysis results in JSON format with a `subdocuments` key for skills.
+   Use `--name` to filter by component name (e.g., `--name phase-4-plan`) instead of fetching all components and filtering manually.
+
+   This performs markdown analysis, coverage extraction, and reference validation for all matching components. For skills, it also analyzes sub-documents (`references/*.md`, `standards/*.md`, `workflows/*.md`, `templates/*.md`) for bloat, forbidden metadata, and hardcoded script paths. The output includes per-component analysis results in TOON format with a `subdocuments` key for skills.
 
 ### Phase 1.5: LLM Optimization Check
 
@@ -182,7 +184,7 @@ Load `references/llm-optimization-guide.md` and review the analyzed components f
 
    ```bash
    python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marketplace analyze \
-     --bundles {bundle} --type {component_type}
+     --bundles {bundle} --type {component_type} [--name {name}]
    ```
 
    Compare issue counts before and after to verify resolution.
@@ -262,8 +264,8 @@ Only `doctor-marketplace.py` is registered in the executor. The other scripts (`
 | Script | Subcommand | Mode | Purpose |
 |--------|------------|------|---------|
 | `doctor-marketplace.py` | `scan` | **EXECUTE** | Batch discovery of all marketplace components |
-| `doctor-marketplace.py` | `analyze` | **EXECUTE** | Batch analysis of all components for issues |
-| `doctor-marketplace.py` | `fix` | **EXECUTE** | Auto-apply safe fixes across marketplace |
+| `doctor-marketplace.py` | `analyze` | **EXECUTE** | Batch analysis of all components for issues (`--bundles`, `--type`, `--name`) |
+| `doctor-marketplace.py` | `fix` | **EXECUTE** | Auto-apply safe fixes across marketplace (`--bundles`, `--type`, `--name`, `--dry-run`) |
 | `doctor-marketplace.py` | `report` | **EXECUTE** | Generate comprehensive report for LLM review |
 
 **Notation**: `pm-plugin-development:plugin-doctor:doctor-marketplace {subcommand}`
