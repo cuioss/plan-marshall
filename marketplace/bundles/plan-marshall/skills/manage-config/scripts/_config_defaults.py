@@ -73,6 +73,8 @@ DEFAULT_PLAN_FINALIZE = {
     '4_sonar_roundtrip': True,
     '5_knowledge_capture': True,
     '6_lessons_capture': True,
+    '7_archive': True,
+    '8_branch_cleanup': True,
     'review_bot_buffer_seconds': 300,
 }
 
