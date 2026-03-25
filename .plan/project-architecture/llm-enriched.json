@@ -295,6 +295,10 @@
               "description": "Language-agnostic testing methodology (AAA, coverage, reliability, determinism)"
             },
             {
+              "skill": "pm-plugin-development:plugin-architecture",
+              "description": "Architecture principles, skill patterns, and design guidance for marketplace components"
+            },
+            {
               "skill": "pm-plugin-development:plugin-script-architecture",
               "description": "Script development standards covering implementation patterns, testing, and output contracts"
             }
@@ -313,7 +317,7 @@
           ]
         }
       },
-      "skills_by_profile_reasoning": "Follows default module pattern plus domain-specific plugin development skills",
+      "skills_by_profile_reasoning": "Added plugin-architecture to module_testing per Gemini review feedback for consistent coverage",
       "tips": [],
       "insights": [],
       "best_practices": []
