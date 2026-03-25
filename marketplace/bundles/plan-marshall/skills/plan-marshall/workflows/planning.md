@@ -173,9 +173,10 @@ python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-sol
   resolve-path --plan-id {plan_id}
 ```
 
-Open in the current IDE using `TERM_PROGRAM` env var detection:
+Extract `{resolved_path}` from the `path` field in the command output. Open in the current IDE using `TERM_PROGRAM` env var detection:
 - If `TERM_PROGRAM=vscode`: `code {resolved_path}`
-- Otherwise: `open {resolved_path}`
+- On macOS: `open {resolved_path}`
+- On Linux: `xdg-open {resolved_path}`
 
 ---
 
