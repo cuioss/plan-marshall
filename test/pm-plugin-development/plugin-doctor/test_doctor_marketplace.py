@@ -366,10 +366,8 @@ def test_report_summary_structure():
     result = run_script(SCRIPT_PATH, 'report', '--bundles', first_bundle, cwd=str(PROJECT_ROOT))
     data = parse_output(result)
 
-    # Summary is a nested dict in TOON output
+    # Summary is a nested dict in TOON output (not a JSON string)
     summary = data['summary']
-    if isinstance(summary, str):
-        summary = json.loads(summary)
     assert 'total_bundles' in summary, 'Summary should have total_bundles'
     assert 'total_components' in summary, 'Summary should have total_components'
     assert 'total_issues' in summary, 'Summary should have total_issues'
@@ -567,8 +565,6 @@ def test_fixture_report():
         assert response['status'] == 'success', 'Status should be success'
 
         summary = response['summary']
-        if isinstance(summary, str):
-            summary = json.loads(summary)
         assert summary['total_bundles'] == 1, 'Should have one bundle'
 
         assert 'report_dir' in response, 'Should have report_dir'
