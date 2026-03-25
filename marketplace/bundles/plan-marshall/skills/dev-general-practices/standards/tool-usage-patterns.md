@@ -226,6 +226,29 @@ Bash(command="source ~/.bashrc && echo $PATH")
 - Container tools (docker, kubectl)
 - Build systems and package managers — but ONLY after resolving the command via `architecture resolve`
 
+### ❌ Never Use `gh` or `glab` Directly
+
+All CI/Git provider operations (PRs, issues, CI status, reviews) MUST go through the CI integration abstraction layer. Direct `gh` or `glab` calls bypass provider abstraction, execution logging, and audit trail.
+
+```
+# BAD - Direct gh calls
+Bash(command="gh pr create --title ...")
+Bash(command="gh pr checks 71 --watch")
+Bash(command="gh api repos/.../pulls/71/comments")
+
+# GOOD - CI integration scripts
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr create --title ...
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci ci wait
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr comments
+```
+
+For the full automated review lifecycle (CI wait + review bot buffer + comment triage + thread resolution), load:
+```
+Skill: plan-marshall:workflow-integration-ci
+```
+
+**No exceptions.** If a needed operation is missing from the CI abstraction, extend the scripts — do not bypass them. See `plan-marshall:tools-integration-ci` for the complete API.
+
 ### ❌ Never Combine Commands in a Single Bash Call
 
 Each Bash call must contain exactly ONE command. Never combine commands using newlines, `&`, `&&`, or `;` separators. Newline-separated commands trigger Claude Code's security prompt ("Command contains newlines that could separate multiple commands").
@@ -276,14 +299,16 @@ Heredocs (`<<'EOF'`) with content containing `#`-prefixed lines trigger Claude C
 
 ```
 # BAD - Triggers security prompt (markdown headings start with #)
-Bash(command="gh pr create --body \"$(cat <<'EOF'\n## Summary\n...\nEOF\n)\"")
+Bash(command="some-cli --body \"$(cat <<'EOF'\n## Summary\n...\nEOF\n)\"")
 
 # GOOD - Write to temp file, pass via --body-file
 Write(file_path=".plan/temp/pr-body.md", content="## Summary\n...")
-Bash(command="gh pr create --body-file .plan/temp/pr-body.md")
+Bash(command="some-cli --body-file .plan/temp/pr-body.md")
 ```
 
 Same pattern applies to any CLI that accepts file input: `--body-file`, `--message-file`, `-F`, etc.
+
+**Note**: For CI/Git operations specifically (`gh`, `glab`), do NOT use Bash directly — see the CI Operations section below.
 
 **Rule of Thumb**: Use Bash when the operation truly requires shell execution or external tools. Use non-prompting tools (Glob, Read, Grep) for all file system operations. All build/compile/lint/test commands must be resolved via architecture API before execution.
 

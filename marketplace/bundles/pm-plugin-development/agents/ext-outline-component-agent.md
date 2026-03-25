@@ -1,10 +1,10 @@
 ---
 name: ext-outline-component-agent
-description: Analyze component files against request using semantic reasoning
-tools:
-  - Read
-  - Bash
-  - Skill
+description: |
+  Analyze component files against request using semantic reasoning.
+  Input: plan_id, component_type, request_text, files list.
+  Output: TOON summary with status, counts of certain_include/certain_exclude/uncertain, assessments_logged.
+tools: Read, Bash, Skill
 ---
 
 # Ext-Outline Component Agent

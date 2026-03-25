@@ -100,8 +100,8 @@ def test_generate_command_no_tools():
 # =============================================================================
 
 
-def test_generate_skill_with_tools():
-    """Test generate skill with allowed-tools."""
+def test_generate_skill_with_user_invocable():
+    """Test generate skill includes user-invocable field."""
     fixture = FIXTURES_DIR / 'skill-answers-with-tools.json'
     if not fixture.exists():
         return  # Skip if fixture not available
@@ -109,11 +109,13 @@ def test_generate_skill_with_tools():
     input_json = fixture.read_text().strip()
     result = run_script(SCRIPT_PATH, 'generate', '--type', 'skill', '--config', input_json)
 
-    assert 'allowed-tools: Read, Grep' in result.stdout, 'Skill should have allowed-tools'
+    assert 'user-invocable: True' in result.stdout, 'Skill should have user-invocable field'
+    assert 'allowed-tools' not in result.stdout, 'Skill must not contain allowed-tools'
+    assert 'tools:' not in result.stdout, 'Skill must not contain tools field'
 
 
 def test_generate_skill_without_tools():
-    """Test generate skill without tools omits allowed-tools."""
+    """Test generate skill omits prohibited fields."""
     fixture = FIXTURES_DIR / 'skill-answers-no-tools.json'
     if not fixture.exists():
         return  # Skip if fixture not available
@@ -122,7 +124,8 @@ def test_generate_skill_without_tools():
     result = run_script(SCRIPT_PATH, 'generate', '--type', 'skill', '--config', input_json)
 
     assert 'name: test-skill' in result.stdout, 'Skill frontmatter should include name'
-    assert 'allowed-tools:' not in result.stdout, 'Skill without tools should omit allowed-tools'
+    assert 'allowed-tools:' not in result.stdout, 'Skill must not contain allowed-tools'
+    assert 'user-invocable: False' in result.stdout, 'Skill should default user-invocable to False'
 
 
 # =============================================================================

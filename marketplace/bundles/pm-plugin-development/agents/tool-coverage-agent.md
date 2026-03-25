@@ -1,9 +1,10 @@
 ---
 name: tool-coverage-agent
-description: Analyze tool declarations vs actual usage in a component file
-tools:
-  - Read
-  - Skill
+description: |
+  Analyze tool declarations vs actual usage in a component file.
+  Input: file_path, declared_tools list, component_type.
+  Output: JSON with declared_tools, used_tools, analysis (missing/unused/false_positives), confidence.
+tools: Read, Skill
 ---
 
 # Tool Coverage Analysis Agent
