@@ -23,7 +23,7 @@ Skill: plan-marshall:tools-integration-ci
 
 **Prohibited actions:**
 - Never access `.plan/` files directly — all access must go through `python3 .plan/execute-script.py` manage-* scripts
-- Never skip config gate checks (Steps 3-8 each have an IF gate)
+- Never skip config gate checks (Steps 3-10 each have an IF gate)
 - Never skip phase transitions — use `manage-lifecycle transition`, never set status directly
 - Never improvise script subcommands — use only those documented in this skill's workflow steps
 
@@ -63,6 +63,8 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 | `4_sonar_roundtrip` | boolean | Step 6 | Whether to run Sonar analysis |
 | `5_knowledge_capture` | boolean | Step 7 | Whether to capture learnings |
 | `6_lessons_capture` | boolean | Step 8 | Whether to record lessons |
+| `7_archive` | boolean | Step 9 | Whether to archive the plan |
+| `8_branch_cleanup` | boolean | Step 10 | Whether to merge PR, switch to main, and delete feature branch |
 | `review_bot_buffer_seconds` | integer | — | Seconds to wait after CI for review bots (default: 300) |
 | `max_iterations` | integer | — | Maximum finalize-verify loops (default: 3) |
 
@@ -220,19 +222,15 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) Lessons capture skipped: 6_lessons_capture=false"
 ```
 
-### Step 9: Mark Plan Complete
+### Step 9: Archive Plan (if enabled)
 
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-lifecycle:manage-lifecycle transition \
-  --plan-id {plan_id} \
-  --completed 6-finalize
-```
+**Config gate**: `7_archive` from phase-6-finalize config
 
-### Step 10: Mark Lesson Applied (conditional)
+IF `7_archive == true`:
 
-If the plan originated from a lesson, mark that lesson as applied.
+**IMPORTANT**: Mark lesson applied BEFORE archive, because archive moves plan files and makes `request read` fail.
 
-**IMPORTANT**: This step MUST run before archive (Step 11), because archive moves plan files and makes `request read` fail.
+#### Mark Lesson Applied (conditional)
 
 Read the request source:
 
@@ -260,7 +258,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 **ELSE**: Skip — plan did not originate from a lesson.
 
-### Step 11: Archive Plan
+#### Archive
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-lifecycle:manage-lifecycle archive \
@@ -272,11 +270,38 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-6-finalize) Plan archived: {plan_id}"
 ```
 
+ELSE:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) Archive skipped: 7_archive=false"
+```
+
+### Step 10: Branch Cleanup (if enabled)
+
+**Config gate**: `8_branch_cleanup` from phase-6-finalize config
+
+IF `8_branch_cleanup == true`:
+  Read `standards/branch-cleanup.md` and follow all steps.
+
+ELSE:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) Branch cleanup skipped: 8_branch_cleanup=false"
+```
+
+### Step 11: Mark Plan Complete
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-lifecycle:manage-lifecycle transition \
+  --plan-id {plan_id} \
+  --completed 6-finalize
+```
+
 ### Step 12: Log Completion
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-6-finalize) Plan completed: commit={commit_hash}, PR={pr_url|skipped}"
+  work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-6-finalize) Plan completed: commit={commit_hash}, PR={pr_url|skipped}, archive={done|skipped}, branch_cleanup={done|skipped}"
 ```
 
 ```bash
@@ -300,10 +325,11 @@ actions:
   pr: {created #{number}|skipped}
   automated_review: {completed|skipped|loop_back}
   sonar: {passed|skipped|loop_back}
-  knowledge_capture: done
-  lessons_capture: done
-  archive: done
+  knowledge_capture: {done|skipped}
+  lessons_capture: {done|skipped}
+  archive: {done|skipped}
   lesson_applied: {done|skipped}
+  branch_cleanup: {done|skipped|declined}
 
 next_state: complete
 ```
@@ -353,6 +379,8 @@ Config gates (checked first — take priority):
 - `4_sonar_roundtrip == false` → skip Step 6
 - `5_knowledge_capture == false` → skip Step 7
 - `6_lessons_capture == false` → skip Step 8
+- `7_archive == false` → skip Step 9
+- `8_branch_cleanup == false` → skip Step 10
 
 State checks (for enabled steps):
 
@@ -373,6 +401,7 @@ State checks (for enabled steps):
 | `standards/sonar-roundtrip.md` | `4_sonar_roundtrip` | Sonar quality gate, issue resolution |
 | `standards/knowledge-capture.md` | `5_knowledge_capture` | manage-memories save command |
 | `standards/lessons-capture.md` | `6_lessons_capture` | manage-lesson add command |
+| `standards/branch-cleanup.md` | `8_branch_cleanup` | Merge PR, switch to main, delete branch with user confirmation |
 | `standards/validation.md` | — | Configuration requirements, error scenarios |
 | `standards/lessons-integration.md` | — | Conceptual guidance on lesson capture |
 

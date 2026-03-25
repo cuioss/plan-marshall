@@ -35,11 +35,29 @@
 - Capture significant patterns via manage-memories (advisory, non-blocking)
 - Capture lessons learned via manage-lessons (advisory, non-blocking)
 
+## Archive (if 7_archive == true)
+
+- Mark lesson applied BEFORE archive (if plan originated from a lesson)
+- Archive plan via manage-lifecycle archive
+- Handle archive failures (missing plan directory, permissions)
+
+## Branch Cleanup (if 8_branch_cleanup == true)
+
+- Gather PR state, branch name, and other open PRs for context
+- Present user confirmation dialog with PR link, state, branch, other PRs, and planned actions
+- Only proceed with explicit user approval (skip gracefully if declined)
+- Abort if other open PRs use this branch as head
+- Merge PR if not yet merged (via CI abstraction, not direct `gh`)
+- Wait for post-merge CI with 30-minute timeout
+- Switch to base branch and pull latest
+- Delete local feature branch using safe delete (`git branch -d`)
+- Handle merge failures, checkout failures, and already-deleted branches
+
 ## Completion
 
 - Mark plan complete via manage-lifecycle transition
 - Write final work-log entry
-- Return completion status with commit hash, PR URL (if created)
+- Return completion status with commit hash, PR URL (if created), archive and branch cleanup status
 
 ## Error Handling
 
@@ -74,8 +92,11 @@ actions:
   pr: {created #{number}|skipped}
   automated_review: {completed|skipped|loop_back}
   sonar: {passed|skipped|loop_back}
-  knowledge_capture: done
-  lessons_capture: done
+  knowledge_capture: {done|skipped}
+  lessons_capture: {done|skipped}
+  archive: {done|skipped}
+  lesson_applied: {done|skipped}
+  branch_cleanup: {done|skipped|declined}
 
 next_state: complete
 ```
