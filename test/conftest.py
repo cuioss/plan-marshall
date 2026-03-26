@@ -602,12 +602,12 @@ MARSHAL_SCHEMA_DEFAULT: dict[str, Any] = {
         },
         'phase-6-finalize': {
             'max_iterations': 3,
-            '1_commit_push': True,
-            '2_create_pr': True,
-            '3_automated_review': True,
-            '4_sonar_roundtrip': True,
-            '5_knowledge_capture': True,
-            '6_lessons_capture': True,
+            'review_bot_buffer_seconds': 300,
+            'steps': [
+                'commit_push', 'create_pr', 'automated_review',
+                'sonar_roundtrip', 'knowledge_capture', 'lessons_capture',
+                'branch_cleanup', 'archive',
+            ],
         },
     },
 }

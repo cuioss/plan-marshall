@@ -170,8 +170,11 @@ def test_init_includes_phase_6_finalize():
         assert 'phase-6-finalize' in plan, 'Should have plan.phase-6-finalize section'
         finalize = plan['phase-6-finalize']
         assert finalize['max_iterations'] == 3
-        assert finalize['1_commit_push'] is True
-        assert finalize['2_create_pr'] is True
+        assert 'steps' in finalize, 'Should have steps list'
+        assert isinstance(finalize['steps'], list)
+        assert 'commit_push' in finalize['steps']
+        assert 'archive' in finalize['steps']
+        assert '1_commit_push' not in finalize, 'Old boolean keys should not exist'
 
 
 def test_init_includes_phase_1_init():

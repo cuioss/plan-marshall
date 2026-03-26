@@ -138,7 +138,7 @@ def test_execute_verify_set_domain_step_disable():
                         }
                     },
                 },
-                'phase-6-finalize': {'max_iterations': 3, '1_commit_push': True},
+                'phase-6-finalize': {'max_iterations': 3, 'steps': ['commit_push', 'create_pr']},
             },
         }
         create_marshal_json(ctx.fixture_dir, config)
@@ -190,7 +190,7 @@ def test_execute_verify_set_domain_step_unknown_domain():
 
 
 def test_finalize_get():
-    """Test plan phase-6-finalize get returns pipeline config."""
+    """Test plan phase-6-finalize get returns steps list config."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
 
@@ -198,34 +198,115 @@ def test_finalize_get():
 
         assert result.success, f'Should succeed: {result.stderr}'
         assert 'max_iterations' in result.stdout
-        assert '1_commit_push' in result.stdout
+        assert 'steps' in result.stdout
+        assert 'commit_push' in result.stdout
 
 
-def test_finalize_set_step_disable():
-    """Test plan phase-6-finalize set-step to disable a boolean step."""
+def test_finalize_set_steps():
+    """Test plan phase-6-finalize set-steps replaces entire steps list."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
 
         result = run_script(
-            SCRIPT_PATH, 'plan', 'phase-6-finalize', 'set-step', '--step', '2_create_pr', '--enabled', 'false'
+            SCRIPT_PATH, 'plan', 'phase-6-finalize', 'set-steps',
+            '--steps', 'commit_push,create_pr,archive'
         )
 
         assert result.success, f'Should succeed: {result.stderr}'
 
-        # Verify saved
         config = json.loads((ctx.fixture_dir / 'marshal.json').read_text())
-        assert config['plan']['phase-6-finalize']['2_create_pr'] is False
+        steps = config['plan']['phase-6-finalize']['steps']
+        assert steps == ['commit_push', 'create_pr', 'archive']
 
 
-def test_finalize_set_step_unknown():
-    """Test plan phase-6-finalize set-step with unknown step returns error."""
+def test_finalize_set_steps_empty_error():
+    """Test plan phase-6-finalize set-steps with empty list returns error."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
 
-        result = run_script(SCRIPT_PATH, 'plan', 'phase-6-finalize', 'set-step', '--step', 'bogus', '--enabled', 'true')
+        result = run_script(
+            SCRIPT_PATH, 'plan', 'phase-6-finalize', 'set-steps', '--steps', ''
+        )
 
-        assert 'error' in result.stdout.lower(), 'Should report error for unknown step'
-        assert 'bogus' in result.stdout
+        assert 'error' in result.stdout.lower(), 'Should report error for empty steps'
+
+
+def test_finalize_add_step():
+    """Test plan phase-6-finalize add-step appends a new step."""
+    with PlanContext() as ctx:
+        create_marshal_json(ctx.fixture_dir)
+
+        result = run_script(
+            SCRIPT_PATH, 'plan', 'phase-6-finalize', 'add-step',
+            '--step', 'pm-dev-java:java-post-pr'
+        )
+
+        assert result.success, f'Should succeed: {result.stderr}'
+
+        config = json.loads((ctx.fixture_dir / 'marshal.json').read_text())
+        steps = config['plan']['phase-6-finalize']['steps']
+        assert 'pm-dev-java:java-post-pr' in steps
+        assert steps[-1] == 'pm-dev-java:java-post-pr'
+
+
+def test_finalize_add_step_with_position():
+    """Test plan phase-6-finalize add-step with position inserts at index."""
+    with PlanContext() as ctx:
+        create_marshal_json(ctx.fixture_dir)
+
+        result = run_script(
+            SCRIPT_PATH, 'plan', 'phase-6-finalize', 'add-step',
+            '--step', 'project:finalize-step-custom', '--position', '0'
+        )
+
+        assert result.success, f'Should succeed: {result.stderr}'
+
+        config = json.loads((ctx.fixture_dir / 'marshal.json').read_text())
+        steps = config['plan']['phase-6-finalize']['steps']
+        assert steps[0] == 'project:finalize-step-custom'
+
+
+def test_finalize_add_step_duplicate_error():
+    """Test plan phase-6-finalize add-step with duplicate returns error."""
+    with PlanContext() as ctx:
+        create_marshal_json(ctx.fixture_dir)
+
+        result = run_script(
+            SCRIPT_PATH, 'plan', 'phase-6-finalize', 'add-step',
+            '--step', 'commit_push'
+        )
+
+        assert 'error' in result.stdout.lower(), 'Should report error for duplicate step'
+
+
+def test_finalize_remove_step():
+    """Test plan phase-6-finalize remove-step removes a step."""
+    with PlanContext() as ctx:
+        create_marshal_json(ctx.fixture_dir)
+
+        result = run_script(
+            SCRIPT_PATH, 'plan', 'phase-6-finalize', 'remove-step',
+            '--step', 'sonar_roundtrip'
+        )
+
+        assert result.success, f'Should succeed: {result.stderr}'
+
+        config = json.loads((ctx.fixture_dir / 'marshal.json').read_text())
+        steps = config['plan']['phase-6-finalize']['steps']
+        assert 'sonar_roundtrip' not in steps
+
+
+def test_finalize_remove_step_not_found_error():
+    """Test plan phase-6-finalize remove-step with missing step returns error."""
+    with PlanContext() as ctx:
+        create_marshal_json(ctx.fixture_dir)
+
+        result = run_script(
+            SCRIPT_PATH, 'plan', 'phase-6-finalize', 'remove-step',
+            '--step', 'bogus'
+        )
+
+        assert 'error' in result.stdout.lower(), 'Should report error for missing step'
 
 
 def test_finalize_set_max_iterations():

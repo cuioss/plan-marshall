@@ -65,17 +65,34 @@ DEFAULT_PLAN_EXECUTE = {
     'verification_domain_steps': {},
 }
 
+# Built-in finalize step names (dispatch table in phase-6-finalize SKILL.md)
+BUILT_IN_FINALIZE_STEPS = [
+    'commit_push',
+    'create_pr',
+    'automated_review',
+    'sonar_roundtrip',
+    'knowledge_capture',
+    'lessons_capture',
+    'branch_cleanup',
+    'archive',
+]
+
+# Human-readable descriptions for built-in finalize steps
+BUILT_IN_FINALIZE_STEP_DESCRIPTIONS = {
+    'commit_push': 'Commit and push changes',
+    'create_pr': 'Create pull request',
+    'automated_review': 'CI automated review',
+    'sonar_roundtrip': 'Sonar analysis roundtrip',
+    'knowledge_capture': 'Capture learnings to memory',
+    'lessons_capture': 'Record lessons learned',
+    'branch_cleanup': 'Merge PR (with --delete-branch) and pull latest',
+    'archive': 'Archive the completed plan',
+}
+
 DEFAULT_PLAN_FINALIZE = {
     'max_iterations': 3,
-    '1_commit_push': True,
-    '2_create_pr': True,
-    '3_automated_review': True,
-    '4_sonar_roundtrip': True,
-    '5_knowledge_capture': True,
-    '6_lessons_capture': True,
-    '7_archive': True,
-    '8_branch_cleanup': True,
     'review_bot_buffer_seconds': 300,
+    'steps': list(BUILT_IN_FINALIZE_STEPS),
 }
 
 # Build system defaults (detection reference only - commands are in modules)

@@ -23,6 +23,7 @@ from _cmd_init import cmd_init
 from _cmd_skill_domains import (
     cmd_configure_task_executors,
     cmd_get_skills_by_profile,
+    cmd_list_finalize_steps,
     cmd_list_recipes,
     cmd_resolve_domain_skills,
     cmd_resolve_outline_skill,
@@ -45,6 +46,7 @@ def _add_phase_subparser(
     has_pipeline: bool = False,
     has_scalar: bool = False,
     has_domain_steps: bool = False,
+    has_list_steps: bool = False,
 ):
     """Add a phase sub-parser under the plan noun.
 
@@ -52,9 +54,10 @@ def _add_phase_subparser(
         plan_sub: Plan subparsers object
         phase_name: Phase key (e.g., 'phase-1-init')
         help_text: Help text for the phase
-        has_pipeline: If True, adds set-max-iterations and set-step verbs
+        has_pipeline: If True, adds set-max-iterations and set-step (boolean) verbs
         has_scalar: If True, adds set verb with --field/--value
         has_domain_steps: If True, adds set-domain-step and set-domain-step-agent verbs
+        has_list_steps: If True, adds set-steps, add-step, remove-step verbs (ordered list)
     """
     p_phase = plan_sub.add_parser(phase_name, help=help_text)
     phase_sub = p_phase.add_subparsers(dest='verb', required=True, help='Operation')
@@ -75,6 +78,20 @@ def _add_phase_subparser(
         phase_set_step = phase_sub.add_parser('set-step', help='Set generic boolean step')
         phase_set_step.add_argument('--step', required=True, help='Step key (e.g., 1_quality_check)')
         phase_set_step.add_argument('--enabled', required=True, help='true or false')
+
+    if has_list_steps:
+        phase_set_iter = phase_sub.add_parser('set-max-iterations', help='Set max iterations')
+        phase_set_iter.add_argument('--value', required=True, type=int, help='Max iterations value')
+
+        phase_set_steps = phase_sub.add_parser('set-steps', help='Replace entire steps list')
+        phase_set_steps.add_argument('--steps', required=True, help='Comma-separated step list')
+
+        phase_add_step = phase_sub.add_parser('add-step', help='Add step to list')
+        phase_add_step.add_argument('--step', required=True, help='Step reference')
+        phase_add_step.add_argument('--position', help='Insert position (0-based, default: append)')
+
+        phase_rm_step = phase_sub.add_parser('remove-step', help='Remove step from list')
+        phase_rm_step.add_argument('--step', required=True, help='Step reference to remove')
 
     if has_domain_steps:
         phase_set_ds = phase_sub.add_parser('set-domain-step', help='Enable/disable domain verification step')
@@ -181,7 +198,7 @@ def main():
     _add_phase_subparser(plan_sub, 'phase-3-outline', 'Outline phase settings', has_scalar=True)
     _add_phase_subparser(plan_sub, 'phase-4-plan', 'Plan phase settings', has_scalar=True)
     _add_phase_subparser(plan_sub, 'phase-5-execute', 'Execute phase settings', has_scalar=True, has_pipeline=True, has_domain_steps=True)
-    _add_phase_subparser(plan_sub, 'phase-6-finalize', 'Finalize phase settings', has_pipeline=True)
+    _add_phase_subparser(plan_sub, 'phase-6-finalize', 'Finalize phase settings', has_list_steps=True)
 
     # --- ci ---
     p_ci = subparsers.add_parser('ci', help='Manage CI provider configuration')
@@ -270,6 +287,9 @@ def main():
     )
     p_ros.add_argument('--domain', required=True, help='Domain key (e.g., plan-marshall-plugin-dev, java)')
 
+    # --- list-finalize-steps ---
+    subparsers.add_parser('list-finalize-steps', help='List all available finalize steps')
+
     args = parser.parse_args()
 
     if args.noun is None:
@@ -320,6 +340,8 @@ def main():
         return cmd_resolve_recipe(args)
     elif args.noun == 'resolve-outline-skill':
         return cmd_resolve_outline_skill(args)
+    elif args.noun == 'list-finalize-steps':
+        return cmd_list_finalize_steps(args)
     else:
         parser.print_help()
         return EXIT_ERROR

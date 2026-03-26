@@ -290,6 +290,20 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 
 ### Step 7b: Select Finalize Steps
 
+Discover available finalize steps from three sources:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  list-finalize-steps
+```
+
+This returns all discoverable steps from:
+1. **Built-in steps**: Hard-coded in `_config_defaults.BUILT_IN_FINALIZE_STEPS` with descriptions
+2. **Project steps**: Discovered from `.claude/skills/finalize-step-*` directories
+3. **Extension steps**: Discovered via `provides_finalize_steps()` on domain extensions
+
+Present the merged list as a multi-select. If total steps exceed 4, use paging (4 options per page with "More..." option).
+
 ```
 AskUserQuestion:
   questions:
@@ -297,24 +311,33 @@ AskUserQuestion:
       header: "Finalize Steps"
       multiSelect: true
       options:
-        - label: "1_commit_push (Recommended)"
+        # Built-in steps (from list-finalize-steps output):
+        - label: "commit_push (Recommended)"
           description: "Commit and push changes"
-        - label: "2_create_pr"
+        - label: "create_pr"
           description: "Create pull request"
-        - label: "3_automated_review"
+        - label: "automated_review"
           description: "CI automated review"
-        - label: "4_sonar_roundtrip"
+        - label: "sonar_roundtrip"
           description: "Sonar analysis roundtrip"
-        - label: "5_knowledge_capture (Recommended)"
+        # Page 2 (if paging needed):
+        - label: "knowledge_capture (Recommended)"
           description: "Capture learnings to memory"
-        - label: "6_lessons_capture (Recommended)"
+        - label: "lessons_capture (Recommended)"
           description: "Record lessons learned"
+        - label: "branch_cleanup"
+          description: "Merge PR (with --delete-branch) and pull latest"
+        - label: "archive"
+          description: "Archive the completed plan"
+        # Extension/project steps (dynamic, from list-finalize-steps):
+        # - label: "{step_name}"
+        #   description: "{step_description}"
 ```
 
-Apply: for each deselected step:
+Apply: write the selected steps as an ordered list:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-6-finalize set-step --step {step_name} --enabled false
+  plan phase-6-finalize set-steps --steps {comma_separated_selected_steps}
 ```
 
 ### Step 7c: Max Iterations

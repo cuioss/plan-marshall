@@ -357,12 +357,12 @@ The defaults template contains only `system` domain. Technical domains (java, ja
     },
     "phase-6-finalize": {
       "max_iterations": 3,
-      "1_commit_push": true,
-      "2_create_pr": true,
-      "3_automated_review": true,
-      "4_sonar_roundtrip": true,
-      "5_knowledge_capture": true,
-      "6_lessons_capture": true
+      "review_bot_buffer_seconds": 300,
+      "steps": [
+        "commit_push", "create_pr", "automated_review",
+        "sonar_roundtrip", "knowledge_capture", "lessons_capture",
+        "branch_cleanup", "archive"
+      ]
     }
   }
 }

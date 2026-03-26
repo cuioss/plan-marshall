@@ -252,12 +252,12 @@ def test_skill_domains_detect_runs():
                 },
                 'phase-6-finalize': {
                     'max_iterations': 3,
-                    '1_commit_push': True,
-                    '2_create_pr': True,
-                    '3_automated_review': True,
-                    '4_sonar_roundtrip': True,
-                    '5_knowledge_capture': True,
-                    '6_lessons_capture': True,
+                    'review_bot_buffer_seconds': 300,
+                    'steps': [
+                        'commit_push', 'create_pr', 'automated_review',
+                        'sonar_roundtrip', 'knowledge_capture', 'lessons_capture',
+                        'branch_cleanup', 'archive',
+                    ],
                 },
             },
         }
@@ -296,12 +296,12 @@ def test_skill_domains_detect_no_overwrite():
                 },
                 'phase-6-finalize': {
                     'max_iterations': 3,
-                    '1_commit_push': True,
-                    '2_create_pr': True,
-                    '3_automated_review': True,
-                    '4_sonar_roundtrip': True,
-                    '5_knowledge_capture': True,
-                    '6_lessons_capture': True,
+                    'review_bot_buffer_seconds': 300,
+                    'steps': [
+                        'commit_push', 'create_pr', 'automated_review',
+                        'sonar_roundtrip', 'knowledge_capture', 'lessons_capture',
+                        'branch_cleanup', 'archive',
+                    ],
                 },
             },
         }
@@ -565,12 +565,12 @@ def test_get_available_uses_discovery():
                 },
                 'phase-6-finalize': {
                     'max_iterations': 3,
-                    '1_commit_push': True,
-                    '2_create_pr': True,
-                    '3_automated_review': True,
-                    '4_sonar_roundtrip': True,
-                    '5_knowledge_capture': True,
-                    '6_lessons_capture': True,
+                    'review_bot_buffer_seconds': 300,
+                    'steps': [
+                        'commit_push', 'create_pr', 'automated_review',
+                        'sonar_roundtrip', 'knowledge_capture', 'lessons_capture',
+                        'branch_cleanup', 'archive',
+                    ],
                 },
             },
         }
@@ -602,12 +602,12 @@ def test_configure_domains():
                 },
                 'phase-6-finalize': {
                     'max_iterations': 3,
-                    '1_commit_push': True,
-                    '2_create_pr': True,
-                    '3_automated_review': True,
-                    '4_sonar_roundtrip': True,
-                    '5_knowledge_capture': True,
-                    '6_lessons_capture': True,
+                    'review_bot_buffer_seconds': 300,
+                    'steps': [
+                        'commit_push', 'create_pr', 'automated_review',
+                        'sonar_roundtrip', 'knowledge_capture', 'lessons_capture',
+                        'branch_cleanup', 'archive',
+                    ],
                 },
             },
         }
@@ -646,12 +646,12 @@ def test_configure_always_adds_system():
                 },
                 'phase-6-finalize': {
                     'max_iterations': 3,
-                    '1_commit_push': True,
-                    '2_create_pr': True,
-                    '3_automated_review': True,
-                    '4_sonar_roundtrip': True,
-                    '5_knowledge_capture': True,
-                    '6_lessons_capture': True,
+                    'review_bot_buffer_seconds': 300,
+                    'steps': [
+                        'commit_push', 'create_pr', 'automated_review',
+                        'sonar_roundtrip', 'knowledge_capture', 'lessons_capture',
+                        'branch_cleanup', 'archive',
+                    ],
                 },
             },
         }
@@ -802,12 +802,12 @@ def test_get_available_works_without_skill_domains():
                 },
                 'phase-6-finalize': {
                     'max_iterations': 3,
-                    '1_commit_push': True,
-                    '2_create_pr': True,
-                    '3_automated_review': True,
-                    '4_sonar_roundtrip': True,
-                    '5_knowledge_capture': True,
-                    '6_lessons_capture': True,
+                    'review_bot_buffer_seconds': 300,
+                    'steps': [
+                        'commit_push', 'create_pr', 'automated_review',
+                        'sonar_roundtrip', 'knowledge_capture', 'lessons_capture',
+                        'branch_cleanup', 'archive',
+                    ],
                 },
             },
             # NOTE: No skill_domains key!
@@ -843,12 +843,12 @@ def test_configure_works_without_skill_domains():
                 },
                 'phase-6-finalize': {
                     'max_iterations': 3,
-                    '1_commit_push': True,
-                    '2_create_pr': True,
-                    '3_automated_review': True,
-                    '4_sonar_roundtrip': True,
-                    '5_knowledge_capture': True,
-                    '6_lessons_capture': True,
+                    'review_bot_buffer_seconds': 300,
+                    'steps': [
+                        'commit_push', 'create_pr', 'automated_review',
+                        'sonar_roundtrip', 'knowledge_capture', 'lessons_capture',
+                        'branch_cleanup', 'archive',
+                    ],
                 },
             },
             # NOTE: No skill_domains key!
@@ -891,12 +891,12 @@ def test_list_requires_skill_domains():
                 },
                 'phase-6-finalize': {
                     'max_iterations': 3,
-                    '1_commit_push': True,
-                    '2_create_pr': True,
-                    '3_automated_review': True,
-                    '4_sonar_roundtrip': True,
-                    '5_knowledge_capture': True,
-                    '6_lessons_capture': True,
+                    'review_bot_buffer_seconds': 300,
+                    'steps': [
+                        'commit_push', 'create_pr', 'automated_review',
+                        'sonar_roundtrip', 'knowledge_capture', 'lessons_capture',
+                        'branch_cleanup', 'archive',
+                    ],
                 },
             },
             # NOTE: No skill_domains key!
@@ -1104,12 +1104,12 @@ def test_configure_preserves_project_skills():
                 },
                 'phase-6-finalize': {
                     'max_iterations': 3,
-                    '1_commit_push': True,
-                    '2_create_pr': True,
-                    '3_automated_review': True,
-                    '4_sonar_roundtrip': True,
-                    '5_knowledge_capture': True,
-                    '6_lessons_capture': True,
+                    'review_bot_buffer_seconds': 300,
+                    'steps': [
+                        'commit_push', 'create_pr', 'automated_review',
+                        'sonar_roundtrip', 'knowledge_capture', 'lessons_capture',
+                        'branch_cleanup', 'archive',
+                    ],
                 },
             },
         }
@@ -1162,12 +1162,12 @@ def test_configure_drops_project_skills_for_removed_domains():
                 },
                 'phase-6-finalize': {
                     'max_iterations': 3,
-                    '1_commit_push': True,
-                    '2_create_pr': True,
-                    '3_automated_review': True,
-                    '4_sonar_roundtrip': True,
-                    '5_knowledge_capture': True,
-                    '6_lessons_capture': True,
+                    'review_bot_buffer_seconds': 300,
+                    'steps': [
+                        'commit_push', 'create_pr', 'automated_review',
+                        'sonar_roundtrip', 'knowledge_capture', 'lessons_capture',
+                        'branch_cleanup', 'archive',
+                    ],
                 },
             },
         }
@@ -1212,12 +1212,12 @@ def test_get_nested_includes_project_skills():
                 },
                 'phase-6-finalize': {
                     'max_iterations': 3,
-                    '1_commit_push': True,
-                    '2_create_pr': True,
-                    '3_automated_review': True,
-                    '4_sonar_roundtrip': True,
-                    '5_knowledge_capture': True,
-                    '6_lessons_capture': True,
+                    'review_bot_buffer_seconds': 300,
+                    'steps': [
+                        'commit_push', 'create_pr', 'automated_review',
+                        'sonar_roundtrip', 'knowledge_capture', 'lessons_capture',
+                        'branch_cleanup', 'archive',
+                    ],
                 },
             },
         }
@@ -1229,6 +1229,38 @@ def test_get_nested_includes_project_skills():
         assert result.success, f'Should succeed: {result.stderr}'
         assert 'project_skills' in result.stdout
         assert 'project:my-tool' in result.stdout
+
+
+# =============================================================================
+# list-finalize-steps Tests
+# =============================================================================
+
+
+def test_list_finalize_steps_returns_built_in():
+    """Test list-finalize-steps returns built-in steps."""
+    with PlanContext() as ctx:
+        create_marshal_json(ctx.fixture_dir)
+
+        result = run_script(SCRIPT_PATH, 'list-finalize-steps')
+
+        assert result.success, f'Should succeed: {result.stderr}'
+        assert 'commit_push' in result.stdout
+        assert 'create_pr' in result.stdout
+        assert 'archive' in result.stdout
+        assert 'branch_cleanup' in result.stdout
+        assert 'built-in' in result.stdout
+
+
+def test_list_finalize_steps_count():
+    """Test list-finalize-steps returns correct count for built-in steps."""
+    with PlanContext() as ctx:
+        create_marshal_json(ctx.fixture_dir)
+
+        result = run_script(SCRIPT_PATH, 'list-finalize-steps')
+
+        assert result.success, f'Should succeed: {result.stderr}'
+        # Should have at least 8 built-in steps
+        assert 'count' in result.stdout
 
 
 # =============================================================================

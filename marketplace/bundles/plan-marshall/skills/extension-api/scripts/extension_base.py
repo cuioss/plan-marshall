@@ -398,6 +398,26 @@ class ExtensionBase(ABC):
         """
         return []
 
+    def provides_finalize_steps(self) -> list[dict]:
+        """Return domain-specific finalize steps for phase-6-finalize.
+
+        Each step declares a skill that executes during the finalize pipeline.
+        Steps are discovered by marshall-steward and added to the user's
+        selected steps in marshal.json under plan.phase-6-finalize.steps.
+
+        Returns:
+            List of step dicts, each containing:
+            - name: str — Step identifier used in the steps list
+              (fully-qualified skill notation, e.g., 'pm-dev-java:java-post-pr')
+            - skill: str — Same as name (the fully-qualified skill reference)
+            - description: str — Human-readable description for wizard presentation
+
+        The step's skill receives --plan-id and --iteration as arguments.
+
+        Default implementation returns empty list (no domain-specific finalize steps).
+        """
+        return []
+
     def applies_to_module(self, module_data: dict,
                           active_profiles: set[str] | None = None) -> dict:
         """Check if this domain applies to a specific module and return resolved skills.

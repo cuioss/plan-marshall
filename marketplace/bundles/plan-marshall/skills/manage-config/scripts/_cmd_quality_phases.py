@@ -28,8 +28,14 @@ PHASE_SECTIONS = {
     'phase-6-finalize',
 }
 
-# Phases that have max_iterations and boolean steps
+# Phases that have max_iterations and pipeline behavior
 PIPELINE_PHASES = {'phase-5-execute', 'phase-6-finalize'}
+
+# Phases that use boolean step keys (set-step toggles boolean)
+BOOLEAN_STEP_PHASES = {'phase-5-execute'}
+
+# Phases that use ordered steps list (set-steps replaces list)
+LIST_STEP_PHASES = {'phase-6-finalize'}
 
 # Phases with simple scalar fields only
 SCALAR_PHASES = {'phase-1-init', 'phase-2-refine', 'phase-3-outline', 'phase-4-plan'}
@@ -90,11 +96,11 @@ def cmd_phase(args, phase_section: str) -> int:
         save_config(config)
         return success_exit({'phase': phase_section, key: value})
 
-    elif args.verb == 'set-step' and phase_section in PIPELINE_PHASES:
+    elif args.verb == 'set-step' and phase_section in BOOLEAN_STEP_PHASES:
         step = args.step
         enabled = args.enabled.lower() == 'true'
 
-        # Validate step exists as a numbered boolean key
+        # Validate step exists as a boolean key (phase-5-execute only)
         if step not in section:
             return error_exit(f"Unknown step '{step}' in {phase_section}")
 
@@ -103,6 +109,50 @@ def cmd_phase(args, phase_section: str) -> int:
         config['plan'] = plan_config
         save_config(config)
         return success_exit({'phase': phase_section, 'step': step, 'enabled': enabled})
+
+    elif args.verb == 'set-steps' and phase_section in LIST_STEP_PHASES:
+        steps_str = args.steps  # comma-separated
+        steps = [s.strip() for s in steps_str.split(',') if s.strip()]
+        if not steps:
+            return error_exit('Steps list cannot be empty')
+
+        section['steps'] = steps
+        plan_config[phase_section] = section
+        config['plan'] = plan_config
+        save_config(config)
+        return success_exit({'phase': phase_section, 'steps': steps, 'count': len(steps)})
+
+    elif args.verb == 'add-step' and phase_section in LIST_STEP_PHASES:
+        step = args.step
+        steps = list(section.get('steps', []))
+        if step in steps:
+            return error_exit(f"Step '{step}' already exists in {phase_section}")
+
+        position = getattr(args, 'position', None)
+        if position is not None:
+            pos = int(position)
+            steps.insert(pos, step)
+        else:
+            steps.append(step)
+
+        section['steps'] = steps
+        plan_config[phase_section] = section
+        config['plan'] = plan_config
+        save_config(config)
+        return success_exit({'phase': phase_section, 'step': step, 'steps': steps, 'count': len(steps)})
+
+    elif args.verb == 'remove-step' and phase_section in LIST_STEP_PHASES:
+        step = args.step
+        steps = list(section.get('steps', []))
+        if step not in steps:
+            return error_exit(f"Step '{step}' not found in {phase_section}")
+
+        steps.remove(step)
+        section['steps'] = steps
+        plan_config[phase_section] = section
+        config['plan'] = plan_config
+        save_config(config)
+        return success_exit({'phase': phase_section, 'step': step, 'steps': steps, 'count': len(steps)})
 
     elif args.verb == 'set-domain-step' and phase_section == 'phase-5-execute':
         domain = args.domain
