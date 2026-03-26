@@ -280,7 +280,14 @@ compatibility: {compatibility} — {compatibility_description}
 
 ## Overview
 
-{Concise description. Include ASCII diagram if helpful.}
+{Concise description of the change approach and architecture.}
+
+**ASCII Diagram** (required for multi-deliverable outlines, optional for single-deliverable):
+Include a text-based diagram that visually communicates the change architecture. Appropriate diagram types:
+- **Flow diagram**: Show the sequence of changes or data flow
+- **Before/after comparison**: Show structural changes side-by-side
+- **Dependency graph**: Show how components relate after the change
+- **Component diagram**: Show which modules/files are affected and how they connect
 
 ## Deliverables
 
