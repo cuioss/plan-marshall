@@ -49,8 +49,9 @@
 - Abort if other open PRs use this branch as head
 - Merge PR if not yet merged (via CI abstraction with `--delete-branch`)
 - Wait for post-merge CI with 30-minute timeout
-- Pull latest to fetch merge commit
-- Handle merge failures and pull failures
+- If merged with `--delete-branch`: pull latest (branch cleanup already done)
+- If already merged: switch to base branch, pull latest, delete local branch
+- Handle merge failures, checkout failures, and pull failures
 
 ## Completion
 

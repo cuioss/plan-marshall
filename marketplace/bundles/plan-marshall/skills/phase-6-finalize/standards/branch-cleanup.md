@@ -42,7 +42,7 @@ Extract count and details of other open PRs (excluding the current PR).
 
 Determine planned actions based on PR state:
 - **If `state == open`**: Actions = merge PR (with --delete-branch), wait for CI, pull latest
-- **If `state == merged`**: Actions = pull latest
+- **If `state == merged`**: Actions = switch to base branch, pull latest, delete local branch
 
 ```
 AskUserQuestion:
@@ -57,7 +57,9 @@ AskUserQuestion:
         **Actions**:
         {- Merge PR #{pr_number} with --delete-branch (if state == open)}
         {- Wait for CI checks to complete (if merging)}
+        {- Switch to {base_branch} (if state == merged)}
         - Pull latest
+        {- Delete local branch {head_branch} (if state == merged)}
       options:
         - label: "Yes, proceed"
           description: "Execute branch cleanup"
@@ -129,18 +131,44 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   work --plan-id {plan_id} --level WARN --message "[WARN] (plan-marshall:phase-6-finalize) Branch cleanup: post-merge CI failed — continuing with branch cleanup"
 ```
 
-### Pull Latest
+### Switch to Base Branch and Pull (state-dependent)
 
-The `--delete-branch` flag on merge already deletes the remote branch, deletes the local branch, and switches to the base branch. Only `git pull` is needed to fetch the merge commit.
+**If `state == open`** (we just merged with `--delete-branch`):
+
+The `--delete-branch` flag already deletes the remote branch, deletes the local branch, and switches to the base branch. Only `git pull` is needed to fetch the merge commit.
 
 ```bash
 git pull
 ```
 
-If pull fails → log error and abort:
+**If `state == merged`** (PR was already merged without `--delete-branch`):
+
+We may still be on the feature branch and the local branch may still exist. Explicitly switch to base branch, pull, and clean up.
+
+```bash
+git checkout {base_branch}
+```
+
+```bash
+git pull
+```
+
+```bash
+git branch -d {head_branch}
+```
+
+If `git branch -d` fails → log warning (branch may not exist locally):
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work --plan-id {plan_id} --level ERROR --message "[ERROR] (plan-marshall:phase-6-finalize) Branch cleanup: git pull failed - {error}"
+  work --plan-id {plan_id} --level WARN --message "[WARN] (plan-marshall:phase-6-finalize) Branch cleanup: local branch delete failed - {error} (may not exist)"
+```
+
+**Error handling** (both paths):
+
+If checkout or pull fails → log error and abort:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  work --plan-id {plan_id} --level ERROR --message "[ERROR] (plan-marshall:phase-6-finalize) Branch cleanup: {checkout|pull} failed - {error}"
 ```
 
 ### Log Completion
