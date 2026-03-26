@@ -147,7 +147,6 @@ For each deliverable D:
          IF skills_by_profile is empty/missing OR skills_by_profile.{P} is empty/missing:
            - Log WARN: "(plan-marshall:phase-4-plan) Module {D.module} has empty skills_by_profile.{P} — task will have no domain skills. Run architecture enrichment to populate."
            - Set task.skills = [] (continue with empty skills rather than erroring)
-           - CONTINUE to step 3 (do NOT skip task creation)
          ELSE:
            - Load all `defaults` directly into task.skills
            - For each `optional`, evaluate its `description` against deliverable context
