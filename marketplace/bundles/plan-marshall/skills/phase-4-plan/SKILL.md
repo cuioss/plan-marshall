@@ -144,9 +144,14 @@ For each deliverable D:
       4v. Add depends on all other tasks from this deliverable
     ELSE:
       2. Extract skills: module.skills_by_profile.{P}
-         - Load all `defaults` directly into task.skills
-         - For each `optional`, evaluate its `description` against deliverable context
-         - Include optionals whose descriptions match the task requirements
+         IF skills_by_profile is empty/missing OR skills_by_profile.{P} is empty/missing:
+           - Log WARN: "(plan-marshall:phase-4-plan) Module {D.module} has empty skills_by_profile.{P} — task will have no domain skills. Run architecture enrichment to populate."
+           - Set task.skills = [] (continue with empty skills rather than erroring)
+           - CONTINUE to step 3 (do NOT skip task creation)
+         ELSE:
+           - Load all `defaults` directly into task.skills
+           - For each `optional`, evaluate its `description` against deliverable context
+           - Include optionals whose descriptions match the task requirements
       3. Create task with profile P and resolved skills
       4. If P = module_testing, add depends on implementation task
 ```
