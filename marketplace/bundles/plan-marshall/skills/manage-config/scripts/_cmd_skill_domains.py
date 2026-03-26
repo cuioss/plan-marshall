@@ -1,7 +1,7 @@
 """
 Skill domains command handlers for manage-config.
 
-Handles: skill-domains, resolve-domain-skills, list-recipes, resolve-recipe
+Handles: skill-domains, resolve-domain-skills, list-recipes, resolve-recipe, list-finalize-steps
 
 Domain discovery uses extension.py files in each bundle's plan-marshall-plugin skill.
 Extension API functions:
@@ -10,6 +10,7 @@ Extension API functions:
 - provides_outline_skill() -> outline skill reference or None
 - provides_verify_steps() -> list of verification step dicts
 - provides_recipes() -> list of recipe definition dicts
+- provides_finalize_steps() -> list of finalize step dicts
 """
 
 import copy
@@ -1160,6 +1161,88 @@ def cmd_resolve_recipe(args) -> int:
             })
 
     return error_exit(f"Recipe not found: {recipe_key}")
+
+
+def _discover_all_finalize_steps() -> list[dict]:
+    """Discover all finalize steps from built-in, project, and extension sources.
+
+    Sources (in order):
+    1. Built-in steps from _config_defaults.BUILT_IN_FINALIZE_STEPS
+    2. Project finalize-step-* skills in .claude/skills/
+    3. Extension provides_finalize_steps()
+
+    Returns:
+        List of step dicts with name, description, type, source.
+    """
+    import re
+
+    from _config_defaults import BUILT_IN_FINALIZE_STEP_DESCRIPTIONS, BUILT_IN_FINALIZE_STEPS
+
+    all_steps: list[dict] = []
+
+    # Source 1: Built-in steps
+    for step_name in BUILT_IN_FINALIZE_STEPS:
+        all_steps.append({
+            'name': step_name,
+            'description': BUILT_IN_FINALIZE_STEP_DESCRIPTIONS.get(step_name, step_name),
+            'type': 'built-in',
+            'source': 'built-in',
+        })
+
+    # Source 2: Project finalize-step-* skills
+    claude_skills = Path('.claude/skills')
+    if claude_skills.is_dir():
+        for skill_dir in sorted(claude_skills.iterdir()):
+            if not skill_dir.is_dir() or not skill_dir.name.startswith('finalize-step-'):
+                continue
+            skill_md = skill_dir / 'SKILL.md'
+            if not skill_md.exists():
+                continue
+
+            content = skill_md.read_text()
+            description = ''
+            fm_match = re.search(r'^description:\s*(.+)$', content, re.MULTILINE)
+            if fm_match:
+                description = fm_match.group(1).strip()
+
+            step_ref = f'project:{skill_dir.name}'
+            all_steps.append({
+                'name': step_ref,
+                'description': description or skill_dir.name,
+                'type': 'project',
+                'source': 'project',
+            })
+
+    # Source 3: Extension provides_finalize_steps()
+    extensions = discover_all_extensions()
+    for ext in extensions:
+        module = ext.get('module')
+        if not module or not hasattr(module, 'provides_finalize_steps'):
+            continue
+        try:
+            steps = module.provides_finalize_steps()
+            if not steps:
+                continue
+            for step in steps:
+                all_steps.append({
+                    'name': step.get('name', step.get('skill', '')),
+                    'description': step.get('description', ''),
+                    'type': 'skill',
+                    'source': 'extension',
+                })
+        except Exception:
+            pass
+
+    return all_steps
+
+
+def cmd_list_finalize_steps(args) -> int:
+    """List all available finalize steps discovered at runtime.
+
+    Sources: built-in + project finalize-step-* skills + extension provides_finalize_steps().
+    """
+    all_steps = _discover_all_finalize_steps()
+    return success_exit({'steps': all_steps, 'count': len(all_steps)})
 
 
 def cmd_resolve_outline_skill(args) -> int:

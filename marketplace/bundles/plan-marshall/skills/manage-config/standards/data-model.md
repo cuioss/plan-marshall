@@ -47,13 +47,12 @@ JSON structure and field definitions for project configuration.
     },
     "phase-6-finalize": {
       "max_iterations": 3,
-      "1_commit_push": true,
-      "2_create_pr": true,
-      "3_automated_review": true,
-      "4_sonar_roundtrip": true,
-      "5_knowledge_capture": true,
-      "6_lessons_capture": true,
-      "review_bot_buffer_seconds": 300
+      "review_bot_buffer_seconds": 300,
+      "steps": [
+        "commit_push", "create_pr", "automated_review",
+        "sonar_roundtrip", "knowledge_capture", "lessons_capture",
+        "branch_cleanup", "archive"
+      ]
     }
   },
   "skill_domains": {
@@ -316,13 +315,12 @@ Finalize pipeline with numbered boolean steps.
   "plan": {
     "phase-6-finalize": {
       "max_iterations": 3,
-      "1_commit_push": true,
-      "2_create_pr": true,
-      "3_automated_review": true,
-      "4_sonar_roundtrip": true,
-      "5_knowledge_capture": true,
-      "6_lessons_capture": true,
-      "review_bot_buffer_seconds": 300
+      "review_bot_buffer_seconds": 300,
+      "steps": [
+        "commit_push", "create_pr", "automated_review",
+        "sonar_roundtrip", "knowledge_capture", "lessons_capture",
+        "branch_cleanup", "archive"
+      ]
     }
   }
 }
@@ -331,13 +329,10 @@ Finalize pipeline with numbered boolean steps.
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `max_iterations` | int | 3 | Maximum finalize-verify-finalize loops |
-| `1_commit_push` | bool | true | Commit and push changes |
-| `2_create_pr` | bool | true | Create pull request |
-| `3_automated_review` | bool | true | CI automated review |
-| `4_sonar_roundtrip` | bool | true | Sonar analysis roundtrip |
-| `5_knowledge_capture` | bool | true | Capture learnings to memory |
-| `6_lessons_capture` | bool | true | Record lessons learned |
-| `review_bot_buffer_seconds` | int | 45 | Seconds to wait after CI for review bots to post comments |
+| `review_bot_buffer_seconds` | int | 300 | Seconds to wait after CI for review bots to post comments |
+| `steps` | list | (see below) | Ordered list of step references to execute |
+
+Default steps: `commit_push`, `create_pr`, `automated_review`, `sonar_roundtrip`, `knowledge_capture`, `lessons_capture`, `branch_cleanup`, `archive`. Step types: built-in (plain name), project (`project:` prefix), skill (fully-qualified `bundle:skill`).
 
 ## Section: ci
 

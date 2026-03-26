@@ -607,6 +607,90 @@ Bundles without verification steps (returns `[]`): pm-dev-frontend, pm-dev-java-
 
 ---
 
+### provides_finalize_steps
+
+Declares domain-specific finalize steps that execute during the phase-6-finalize pipeline. Steps are discovered by marshall-steward and presented to the user for selection.
+
+**Lifecycle**: Called during step discovery (marshall-steward wizard/menu). Selected steps are added to the `steps` list in `marshal.json` under `plan.phase-6-finalize.steps`.
+
+```
+Extension discovery → ➤ provides_finalize_steps() → marshall-steward multi-select → stored in marshal.json steps list → phase-6-finalize dispatches via Skill:
+```
+
+```python
+def provides_finalize_steps(self) -> list[dict]:
+    """Return domain-specific finalize steps.
+
+    Each step dict contains:
+        - name: str — Fully-qualified skill notation (used as step reference in steps list)
+        - skill: str — Same as name (fully-qualified skill reference)
+        - description: str — Human-readable description for wizard presentation
+
+    Default: []
+    """
+```
+
+#### Return Structure
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | str | Fully-qualified skill notation — used as step reference in `steps` list |
+| `skill` | str | Same as `name` (the skill to invoke) |
+| `description` | str | Human-readable description for `/marshall-steward` wizard |
+
+#### Storage in marshal.json
+
+Extension-contributed steps are added to the ordered `steps` list:
+
+```json
+{
+  "plan": {
+    "phase-6-finalize": {
+      "steps": [
+        "commit_push",
+        "create_pr",
+        "pm-dev-java:java-post-pr",
+        "branch_cleanup",
+        "archive"
+      ]
+    }
+  }
+}
+```
+
+The step reference is the fully-qualified skill notation. The position in the list determines execution order.
+
+#### Interface Contract
+
+Each finalize step skill receives:
+
+| Parameter | Description |
+|-----------|-------------|
+| `--plan-id` | The plan being finalized |
+| `--iteration` | Current finalize iteration (1-based) |
+
+The step skill can access plan context via manage-* scripts.
+
+#### Implementation Pattern
+
+```python
+class Extension(ExtensionBase):
+    def provides_finalize_steps(self) -> list[dict]:
+        return [
+            {
+                'name': 'pm-dev-java:java-post-pr',
+                'skill': 'pm-dev-java:java-post-pr',
+                'description': 'Java post-PR validation and artifact publishing',
+            },
+        ]
+```
+
+#### Existing Implementations
+
+No bundles currently provide finalize steps. This is a new extension point.
+
+---
+
 ### applies_to_module
 
 ```python
@@ -849,7 +933,7 @@ This is the only abstract method because every domain must:
 
 ### Why Five Optional Hooks?
 
-All five hooks (config_defaults, provides_triage, provides_outline_skill, provides_recipes, provides_verify_steps) follow the same extension model:
+All six hooks (config_defaults, provides_triage, provides_outline_skill, provides_recipes, provides_verify_steps, provides_finalize_steps) follow the same extension model:
 
 1. **Domain ownership** — each domain declares its own capabilities rather than core code hardcoding domain-specific behavior
 2. **Safe defaults** — all hooks return None or empty, so bundles only implement what they need

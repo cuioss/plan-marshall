@@ -302,30 +302,45 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 
 ### Step 3b: Configure Finalize Steps
 
+Discover available finalize steps from all sources:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  list-finalize-steps
+```
+
+Present the merged list (built-in + project + extension steps) as a multi-select. Use paging if total exceeds 4 options.
+
 ```
 AskUserQuestion:
   question: "Which finalize steps to include?"
   header: "Finalize Steps"
   multiSelect: true
   options:
-    - label: "1_commit_push"
+    # Dynamic from list-finalize-steps output:
+    - label: "commit_push"
       description: "Commit and push changes"
-    - label: "2_create_pr"
+    - label: "create_pr"
       description: "Create pull request"
-    - label: "3_automated_review"
+    - label: "automated_review"
       description: "CI automated review"
-    - label: "4_sonar_roundtrip"
+    - label: "sonar_roundtrip"
       description: "Sonar analysis roundtrip"
-    - label: "5_knowledge_capture"
+    - label: "knowledge_capture"
       description: "Capture learnings to memory"
-    - label: "6_lessons_capture"
+    - label: "lessons_capture"
       description: "Record lessons learned"
+    - label: "branch_cleanup"
+      description: "Merge PR (with --delete-branch) and pull latest"
+    - label: "archive"
+      description: "Archive the completed plan"
+    # Plus any project/extension steps from discovery
 ```
 
-Apply: for each deselected step:
+Apply: write the selected steps as an ordered list:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-6-finalize set-step --step {step_name} --enabled false
+  plan phase-6-finalize set-steps --steps {comma_separated_selected_steps}
 ```
 
 ### Step 3c: Set Max Iterations

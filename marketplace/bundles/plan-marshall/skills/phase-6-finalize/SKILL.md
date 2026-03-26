@@ -56,18 +56,13 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 
 **Config Fields Used**:
 
-| Field | Type | Gates | Description |
-|-------|------|-------|-------------|
-| `1_commit_push` | boolean | Step 3 | Whether to commit and push |
-| `2_create_pr` | boolean | Step 4 | Whether to create a pull request |
-| `3_automated_review` | boolean | Step 5 | Whether to run CI review |
-| `4_sonar_roundtrip` | boolean | Step 6 | Whether to run Sonar analysis |
-| `5_knowledge_capture` | boolean | Step 7 | Whether to capture learnings |
-| `6_lessons_capture` | boolean | Step 8 | Whether to record lessons |
-| `7_archive` | boolean | Step 9 | Whether to archive the plan |
-| `8_branch_cleanup` | boolean | Step 10 | Whether to merge PR (with --delete-branch) and pull latest |
-| `review_bot_buffer_seconds` | integer | — | Seconds to wait after CI for review bots (default: 300) |
-| `max_iterations` | integer | — | Maximum finalize-verify loops (default: 3) |
+| Field | Type | Description |
+|-------|------|-------------|
+| `steps` | list | Ordered list of step references to execute |
+| `review_bot_buffer_seconds` | integer | Seconds to wait after CI for review bots (default: 300) |
+| `max_iterations` | integer | Maximum finalize-verify loops (default: 3) |
+
+A step is active if it appears in the `steps` list. Absent steps are skipped. The order of steps in the list is the execution order.
 
 Cross-phase settings:
 
@@ -75,6 +70,47 @@ Cross-phase settings:
 |--------|-------|-------------|
 | phase-5-execute | `commit_strategy` | per_deliverable/per_plan/none |
 | phase-1-init | `branch_strategy` | feature/direct |
+
+---
+
+## Step Types
+
+Three step types are supported, distinguished by notation:
+
+| Type | Notation | Resolution |
+|------|----------|------------|
+| **built-in** | plain name (e.g., `commit_push`) | Read `standards/{name}.md` (using dispatch table below) and follow all steps |
+| **project** | `project:` prefix (e.g., `project:finalize-step-foo`) | `Skill: {notation}` with interface contract parameters |
+| **skill** | fully-qualified `bundle:skill` (e.g., `pm-dev-java:java-post-pr`) | `Skill: {notation}` with interface contract parameters |
+
+**Type detection logic**:
+- Contains `project:` prefix -> project type
+- Contains `:` (but not `project:`) -> fully-qualified skill type
+- Otherwise -> built-in type (validated against dispatch table)
+
+### Built-in Step Dispatch Table
+
+| Step Name | Standards Document | Description |
+|-----------|-------------------|-------------|
+| `commit_push` | `standards/commit-push.md` | Commit and push changes |
+| `create_pr` | `standards/create-pr.md` | Create pull request |
+| `automated_review` | `standards/automated-review.md` | CI automated review |
+| `sonar_roundtrip` | `standards/sonar-roundtrip.md` | Sonar analysis roundtrip |
+| `knowledge_capture` | `standards/knowledge-capture.md` | Capture learnings to memory |
+| `lessons_capture` | `standards/lessons-capture.md` | Record lessons learned |
+| `branch_cleanup` | `standards/branch-cleanup.md` | Merge PR (with --delete-branch) and pull latest |
+| `archive` | `standards/archive.md` | Archive the completed plan |
+
+### Interface Contract for External Steps
+
+Project and skill steps receive these parameters:
+
+```
+Skill: {step_reference}
+  Arguments: --plan-id {plan_id} --iteration {iteration}
+```
+
+The step skill can access the plan's context via manage-* scripts (references, status, config).
 
 ---
 
@@ -138,107 +174,47 @@ python3 .plan/execute-script.py plan-marshall:manage-references:manage-reference
   --plan-id {plan_id}
 ```
 
+Extract the `steps` list from phase-6-finalize config. This is the ordered list of step references to execute.
+
 **After reading configuration**, log the finalize strategy decision:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) Finalize strategy: commit={commit_strategy}, PR={create_pr}, branch={branch_strategy}"
+  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) Finalize strategy: commit={commit_strategy}, steps={steps_count}, branch={branch_strategy}"
 ```
 
-### Step 3: Commit and Push (if enabled)
+### Step 3: Execute Step Pipeline
 
-**Config gate**: `1_commit_push` from phase-6-finalize config
+Iterate over the `steps` list from config. For each step reference:
 
-IF `1_commit_push == true`:
-  Read `standards/commit-push.md` and follow all steps.
+```
+FOR each step_ref in steps:
+  1. Log step start:
+     python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+       work --plan-id {plan_id} --level INFO --message "[STEP] (plan-marshall:phase-6-finalize) Executing step: {step_ref}"
 
-ELSE:
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) Commit+Push skipped: 1_commit_push=false"
+  2. Determine step type:
+     - IF step_ref starts with "project:" -> PROJECT type
+     - ELSE IF step_ref contains ":" -> SKILL type
+     - ELSE -> BUILT-IN type
+
+  3. Dispatch:
+     - BUILT-IN: Read the standards document from dispatch table and follow all steps
+     - PROJECT/SKILL: Load the skill with interface contract:
+       Skill: {step_ref}
+         Arguments: --plan-id {plan_id} --iteration {iteration}
+
+  4. Log step completion:
+     python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+       work --plan-id {plan_id} --level INFO --message "[STEP] (plan-marshall:phase-6-finalize) Completed step: {step_ref}"
+END FOR
 ```
 
-### Step 4: Create PR (if enabled)
+**Built-in step notes**:
+- `branch_cleanup`: Do NOT preemptively skip based on PR state. The `standards/branch-cleanup.md` standard has its own `AskUserQuestion` confirmation gate.
+- `archive`: This step MUST be last in the default order because it moves plan files (including status.json), which breaks manage-* scripts. All plan operations must complete before archive.
 
-**Config gate**: `2_create_pr` from phase-6-finalize config
-
-IF `2_create_pr == true`:
-  Read `standards/create-pr.md` and follow all steps.
-
-ELSE:
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) PR creation skipped: 2_create_pr=false"
-```
-
-### Step 5: Automated Review (if enabled)
-
-**Config gate**: `3_automated_review` from phase-6-finalize config
-
-IF `3_automated_review == true` AND a PR exists:
-  Read `standards/automated-review.md` and follow all steps.
-
-ELSE:
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) Automated review skipped: 3_automated_review=false"
-```
-
-### Step 6: Sonar Roundtrip (if enabled)
-
-**Config gate**: `4_sonar_roundtrip` from phase-6-finalize config
-
-IF `4_sonar_roundtrip == true`:
-  Read `standards/sonar-roundtrip.md` and follow all steps.
-
-ELSE:
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) Sonar roundtrip skipped: 4_sonar_roundtrip=false"
-```
-
-### Step 7: Knowledge Capture (if enabled)
-
-**Config gate**: `5_knowledge_capture` from phase-6-finalize config
-
-IF `5_knowledge_capture == true`:
-  Read `standards/knowledge-capture.md` and follow all steps.
-
-ELSE:
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) Knowledge capture skipped: 5_knowledge_capture=false"
-```
-
-### Step 8: Lessons Capture (if enabled)
-
-**Config gate**: `6_lessons_capture` from phase-6-finalize config
-
-IF `6_lessons_capture == true`:
-  Read `standards/lessons-capture.md` and follow all steps.
-
-ELSE:
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) Lessons capture skipped: 6_lessons_capture=false"
-```
-
-### Step 9: Branch Cleanup (if enabled)
-
-**Config gate**: `8_branch_cleanup` from phase-6-finalize config
-
-**IMPORTANT**: The config gate is the ONLY condition for skipping this step. Do NOT preemptively skip based on PR state (not merged, not approved, checks pending, etc.). The `standards/branch-cleanup.md` standard has its own `AskUserQuestion` confirmation gate that handles both open and merged PRs, presenting the user with context and planned actions before proceeding.
-
-IF `8_branch_cleanup == true`:
-  Read `standards/branch-cleanup.md` and follow all steps.
-
-ELSE:
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) Branch cleanup skipped: 8_branch_cleanup=false"
-```
-
-### Step 10: Mark Plan Complete
+### Step 4: Mark Plan Complete
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-lifecycle:manage-lifecycle transition \
@@ -246,72 +222,16 @@ python3 .plan/execute-script.py plan-marshall:manage-lifecycle:manage-lifecycle 
   --completed 6-finalize
 ```
 
-### Step 11: Log Completion
+### Step 5: Log Completion
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-6-finalize) Plan completed: commit={commit_hash}, PR={pr_url|skipped}, archive={done|skipped}, branch_cleanup={done|skipped}"
+  work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-6-finalize) Plan completed: {steps_count} steps executed"
 ```
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   separator --plan-id {plan_id} --type work
-```
-
-### Step 12: Archive Plan (if enabled)
-
-**Config gate**: `7_archive` from phase-6-finalize config
-
-**CRITICAL**: Archive is the LAST step because it moves plan files (including status.json), which breaks `manage-lifecycle transition` and other manage-* scripts. All plan operations must complete before archive.
-
-IF `7_archive == true`:
-
-#### Mark Lesson Applied (conditional)
-
-**IMPORTANT**: Mark lesson applied BEFORE archive, because archive moves plan files and makes `request read` fail.
-
-Read the request source:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-documents request read \
-  --plan-id {plan_id} --section source
-```
-
-**IF `source == "lesson"`**: Read `source_id` and mark applied:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-documents request read \
-  --plan-id {plan_id} --section source_id
-```
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lesson update \
-  --id {source_id} --applied true
-```
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-6-finalize) Lesson {source_id} marked as applied"
-```
-
-**ELSE**: Skip — plan did not originate from a lesson.
-
-#### Archive
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-lifecycle:manage-lifecycle archive \
-  --plan-id {plan_id}
-```
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-6-finalize) Plan archived: {plan_id}"
-```
-
-ELSE:
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) Archive skipped: 7_archive=false"
 ```
 
 ---
@@ -377,19 +297,11 @@ See `standards/validation.md` for specific error scenarios and recovery actions.
 
 ## Resumability
 
-Config gates (checked first — take priority):
-- `1_commit_push == false` → skip Step 3
-- `2_create_pr == false` → skip Step 4
-- `3_automated_review == false` → skip Step 5
-- `4_sonar_roundtrip == false` → skip Step 6
-- `5_knowledge_capture == false` → skip Step 7
-- `6_lessons_capture == false` → skip Step 8
-- `8_branch_cleanup == false` → skip Step 9
-- `7_archive == false` → skip Step 12
+Step activation is determined by presence in the `steps` list — absent steps are not executed.
 
-State checks (for enabled steps):
+State checks (for present steps):
 
-1. **Uncommitted changes?** `git status --porcelain` — empty → skip Step 3
+1. **Uncommitted changes?** `git status --porcelain` — empty → skip commit_push
 2. **Branch pushed?** `git log @{u}..HEAD --oneline` — empty → skip push
 3. **PR exists?** `ci pr view` — `status: success` → skip creation, use returned `pr_number`
 4. **Plan complete?** `manage-status read` — `current_phase: complete` → skip all
