@@ -121,27 +121,6 @@ persisted_to: marshal.json
 ci_config{key,value}:
 provider	github
 repo_url	https://github.com/org/repo
-
-ci_commands[19]{name,command}:
-pr-create	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr create
-pr-view	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr view
-pr-reviews	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr reviews
-pr-comments	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr comments
-pr-reply	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr reply
-pr-resolve-thread	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr resolve-thread
-pr-thread-reply	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr thread-reply
-pr-merge	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr merge
-pr-auto-merge	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr auto-merge
-pr-close	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr close
-pr-ready	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr ready
-pr-edit	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr edit
-ci-status	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github ci status
-ci-wait	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github ci wait
-ci-rerun	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github ci rerun
-ci-logs	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github ci logs
-issue-create	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github issue create
-issue-view	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github issue view
-issue-close	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github issue close
 ```
 
 ---
@@ -154,7 +133,7 @@ Create a pull request.
 
 **Command**:
 ```bash
-python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr create \
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr create \
     --title "Add feature X" \
     --body "Description" \
     --base main \
@@ -193,7 +172,7 @@ View PR/MR for the current branch.
 
 **Command**:
 ```bash
-python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr view
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr view
 ```
 
 **Arguments**: None (uses current branch)
@@ -244,7 +223,7 @@ List pull requests with optional branch and state filters.
 
 **Command**:
 ```bash
-python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr list \
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr list \
     [--head feature/branch] \
     [--state open|closed|all]
 ```
@@ -302,7 +281,7 @@ Post a comment on a pull request.
 
 **Command**:
 ```bash
-python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr reply \
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr reply \
     --pr-number 123 \
     --body "Fixed as suggested."
 ```
@@ -336,7 +315,7 @@ Resolve a review thread on a pull request.
 
 **Command**:
 ```bash
-python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr resolve-thread \
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr resolve-thread \
     --pr-number 123 \
     --thread-id PRRT_abc123
 ```
@@ -369,7 +348,7 @@ Reply to a specific review thread (inline code comment thread).
 
 **Command**:
 ```bash
-python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr thread-reply \
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr thread-reply \
     --pr-number 123 \
     --thread-id PRRT_abc123 \
     --body "Fixed as suggested."
@@ -405,7 +384,7 @@ Get reviews for a pull request.
 
 **Command**:
 ```bash
-python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr reviews \
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr reviews \
     --pr-number 123
 ```
 
@@ -434,7 +413,7 @@ Get inline code review comments (review threads) for a pull request.
 
 **Command**:
 ```bash
-python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr comments \
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr comments \
     --pr-number 123 \
     [--unresolved-only]
 ```
@@ -480,7 +459,7 @@ Check CI status for a pull request.
 
 **Command**:
 ```bash
-python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github ci status \
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci ci status \
     --pr-number 123
 ```
 
@@ -517,7 +496,7 @@ Wait for CI checks to complete.
 
 **Command**:
 ```bash
-timeout 600s python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github ci wait \
+timeout 600s python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci ci wait \
     --pr-number 123 \
     [--timeout 300] \
     [--interval 30]
@@ -571,7 +550,7 @@ Create an issue.
 
 **Command**:
 ```bash
-python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github issue create \
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci issue create \
     --title "Bug: feature X not working" \
     --body "Description of the issue" \
     [--labels "bug,priority:high"]
@@ -600,7 +579,7 @@ View issue details.
 
 **Command**:
 ```bash
-python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github issue view \
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci issue view \
     --issue 123
 ```
 
@@ -650,7 +629,7 @@ Merge a pull request.
 
 **Command**:
 ```bash
-python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr merge \
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr merge \
     --pr-number 123 \
     [--strategy merge|squash|rebase] \
     [--delete-branch]
@@ -687,7 +666,7 @@ Enable auto-merge on a pull request (merges automatically when all checks pass).
 
 **Command**:
 ```bash
-python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr auto-merge \
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr auto-merge \
     --pr-number 123 \
     [--strategy merge]
 ```
@@ -722,7 +701,7 @@ Close a pull request without merging.
 
 **Command**:
 ```bash
-python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr close \
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr close \
     --pr-number 123
 ```
 
@@ -754,7 +733,7 @@ Mark a draft PR as ready for review.
 
 **Command**:
 ```bash
-python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr ready \
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr ready \
     --pr-number 123
 ```
 
@@ -786,7 +765,7 @@ Edit a pull request title and/or body.
 
 **Command**:
 ```bash
-python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr edit \
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr edit \
     --pr-number 123 \
     [--title "New title"] \
     [--body "New body"]
@@ -822,7 +801,7 @@ Rerun a failed CI workflow run.
 
 **Command**:
 ```bash
-python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github ci rerun \
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci ci rerun \
     --run-id 12345
 ```
 
@@ -854,7 +833,7 @@ Get logs from a CI workflow run.
 
 **Command**:
 ```bash
-python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github ci logs \
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci ci logs \
     --run-id 12345
 ```
 
@@ -888,7 +867,7 @@ Close an issue.
 
 **Command**:
 ```bash
-python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github issue close \
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci issue close \
     --issue 123
 ```
 
@@ -955,28 +934,7 @@ After `persist` command, marshal.json contains:
   "ci": {
     "provider": "github",
     "repo_url": "https://github.com/org/repo",
-    "detected_at": "2025-01-15T10:00:00Z",
-    "commands": {
-      "pr-create": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr create",
-      "pr-view": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr view",
-      "pr-reviews": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr reviews",
-      "pr-comments": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr comments",
-      "pr-reply": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr reply",
-      "pr-resolve-thread": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr resolve-thread",
-      "pr-thread-reply": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr thread-reply",
-      "pr-merge": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr merge",
-      "pr-auto-merge": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr auto-merge",
-      "pr-close": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr close",
-      "pr-ready": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr ready",
-      "pr-edit": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr edit",
-      "ci-status": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github ci status",
-      "ci-wait": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github ci wait",
-      "ci-rerun": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github ci rerun",
-      "ci-logs": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github ci logs",
-      "issue-create": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github issue create",
-      "issue-view": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github issue view",
-      "issue-close": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github issue close"
-    }
+    "detected_at": "2025-01-15T10:00:00Z"
   }
 }
 ```

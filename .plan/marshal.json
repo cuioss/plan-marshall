@@ -2,29 +2,7 @@
   "ci": {
     "provider": "github",
     "repo_url": "https://github.com/cuioss/plan-marshall.git",
-    "detected_at": "2026-03-26T14:49:35Z",
-    "commands": {
-      "pr-create": "python3 .plan/execute-script.py tools-integration-ci:github pr create",
-      "pr-view": "python3 .plan/execute-script.py tools-integration-ci:github pr view",
-      "pr-list": "python3 .plan/execute-script.py tools-integration-ci:github pr list",
-      "pr-reviews": "python3 .plan/execute-script.py tools-integration-ci:github pr reviews",
-      "pr-comments": "python3 .plan/execute-script.py tools-integration-ci:github pr comments",
-      "pr-reply": "python3 .plan/execute-script.py tools-integration-ci:github pr reply",
-      "pr-resolve-thread": "python3 .plan/execute-script.py tools-integration-ci:github pr resolve-thread",
-      "pr-thread-reply": "python3 .plan/execute-script.py tools-integration-ci:github pr thread-reply",
-      "pr-merge": "python3 .plan/execute-script.py tools-integration-ci:github pr merge",
-      "pr-auto-merge": "python3 .plan/execute-script.py tools-integration-ci:github pr auto-merge",
-      "pr-close": "python3 .plan/execute-script.py tools-integration-ci:github pr close",
-      "pr-ready": "python3 .plan/execute-script.py tools-integration-ci:github pr ready",
-      "pr-edit": "python3 .plan/execute-script.py tools-integration-ci:github pr edit",
-      "ci-status": "python3 .plan/execute-script.py tools-integration-ci:github ci status",
-      "ci-wait": "python3 .plan/execute-script.py tools-integration-ci:github ci wait",
-      "ci-rerun": "python3 .plan/execute-script.py tools-integration-ci:github ci rerun",
-      "ci-logs": "python3 .plan/execute-script.py tools-integration-ci:github ci logs",
-      "issue-create": "python3 .plan/execute-script.py tools-integration-ci:github issue create",
-      "issue-view": "python3 .plan/execute-script.py tools-integration-ci:github issue view",
-      "issue-close": "python3 .plan/execute-script.py tools-integration-ci:github issue close"
-    }
+    "detected_at": "2026-03-26T16:18:42Z"
   },
   "plan": {
     "phase-1-init": {

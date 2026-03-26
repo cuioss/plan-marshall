@@ -8,7 +8,6 @@ Storage split:
 - run-configuration.json (local): authenticated_tools, verified_at
 """
 
-import json
 from datetime import UTC, datetime
 
 from _config_core import (
@@ -74,35 +73,14 @@ def _handle_get_tools() -> int:
     return success_exit({'authenticated_tools': run_ci.get('authenticated_tools', [])})
 
 
-def _handle_get_command(args, ci_config: dict) -> int:
-    """Handle 'get-command' verb - get single CI command by name."""
-    commands = ci_config.get('commands', {})
-    command_name = args.name
-
-    if command_name not in commands:
-        available = ', '.join(sorted(commands.keys()))
-        return error_exit(f'Unknown command: {command_name}. Available: {available}')
-
-    print('status: success')
-    print(f'name: {command_name}')
-    print(f'command: {commands[command_name]}')
-    return 0
-
-
 def _handle_persist(args, config: dict, ci_config: dict) -> int:
     """Handle 'persist' verb - full CI config persistence."""
     ci_config['provider'] = args.provider
     ci_config['repo_url'] = args.repo_url
     ci_config['detected_at'] = _get_timestamp()
 
-    # Parse commands JSON if provided
-    if args.commands:
-        try:
-            ci_config['commands'] = json.loads(args.commands)
-        except json.JSONDecodeError as e:
-            return error_exit(f'Invalid JSON for --commands: {e}')
-    else:
-        ci_config['commands'] = {}
+    # Remove legacy ci.commands if present (commands are resolved by ci.py router)
+    ci_config.pop('commands', None)
 
     config['ci'] = ci_config
     save_config(config)
@@ -120,7 +98,7 @@ def _handle_persist(args, config: dict, ci_config: dict) -> int:
         save_run_config(run_config)
 
     return success_exit(
-        {'provider': args.provider, 'repo_url': args.repo_url, 'commands_count': len(ci_config.get('commands', {}))}
+        {'provider': args.provider, 'repo_url': args.repo_url}
     )
 
 
@@ -144,8 +122,6 @@ def cmd_ci(args) -> int:
         return _handle_set_tools(args)
     elif args.verb == 'get-tools':
         return _handle_get_tools()
-    elif args.verb == 'get-command':
-        return _handle_get_command(args, ci_config)
     elif args.verb == 'persist':
         return _handle_persist(args, config, ci_config)
 

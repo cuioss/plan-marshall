@@ -90,11 +90,12 @@ def test_persist_with_marshal_json():
         updated = json.loads(marshal_path.read_text())
         assert 'ci' in updated
         assert 'provider' in updated['ci']
-        assert 'commands' in updated['ci']
+        # ci.commands should NOT be stored — the ci.py router resolves at runtime
+        assert 'commands' not in updated['ci']
 
 
-def test_persist_generates_commands():
-    """Test persist generates ci.commands for known providers."""
+def test_persist_stores_provider_only():
+    """Test persist stores provider and repo_url, not commands."""
     with PlanContext(plan_id='test-commands') as ctx:
         # Create minimal marshal.json
         marshal_path = ctx.fixture_dir / 'marshal.json'
@@ -104,15 +105,11 @@ def test_persist_generates_commands():
         assert result.success, f'Script failed: {result.stderr}'
 
         updated = json.loads(marshal_path.read_text())
-        # If provider is known (github/gitlab), commands should be generated
-        if updated['ci']['provider'] in ('github', 'gitlab'):
-            assert 'commands' in updated['ci']
-            commands = updated['ci']['commands']
-            assert 'pr-create' in commands
-            assert 'pr-list' in commands
-            assert 'ci-status' in commands
-            assert 'tools-integration-ci' in commands['pr-create']
-            assert 'pr list' in commands['pr-list']
+        assert 'ci' in updated
+        assert 'provider' in updated['ci']
+        assert 'detected_at' in updated['ci']
+        # No commands stored — router handles resolution
+        assert 'commands' not in updated['ci']
 
 
 def test_help_flag():
