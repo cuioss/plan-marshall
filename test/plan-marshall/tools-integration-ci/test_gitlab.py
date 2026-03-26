@@ -37,6 +37,7 @@ def test_pr_subcommand_help():
     assert 'ready' in result.stdout
     assert 'edit' in result.stdout
     assert 'reviews' in result.stdout
+    assert 'list' in result.stdout
 
 
 def test_ci_subcommand_help():
@@ -201,6 +202,21 @@ def test_issue_close_help():
     result = run_script(SCRIPT_PATH, 'issue', 'close', '--help')
     assert result.success, f'issue close --help failed: {result.stderr}'
     assert '--issue' in result.stdout
+
+
+def test_pr_list_help():
+    """Test pr list help shows optional arguments."""
+    result = run_script(SCRIPT_PATH, 'pr', 'list', '--help')
+    assert result.success, f'pr list --help failed: {result.stderr}'
+    assert '--head' in result.stdout
+    assert '--state' in result.stdout
+
+
+def test_pr_list_state_choices():
+    """Test pr list accepts valid state choices."""
+    result = run_script(SCRIPT_PATH, 'pr', 'list', '--help')
+    assert result.success
+    assert 'open' in result.stdout
 
 
 def test_no_subcommand():

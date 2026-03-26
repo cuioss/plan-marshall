@@ -4,6 +4,7 @@
 Subcommands:
     pr create       Create a pull request
     pr view         View PR for current branch (number, URL, state)
+    pr list         List pull requests with optional filters
     pr reviews      Get PR reviews
     pr comments     Get PR review comments (inline code comments)
     pr reply        Reply to a PR with a comment
@@ -25,6 +26,7 @@ Subcommands:
 Usage:
     python3 github.py pr create --title "Title" --body "Body" [--base main] [--draft]
     python3 github.py pr view
+    python3 github.py pr list [--head feature/branch] [--state open|closed|all]
     python3 github.py pr reviews --pr-number 123
     python3 github.py pr comments --pr-number 123 [--unresolved-only]
     python3 github.py pr reply --pr-number 123 --body "Comment text"
@@ -218,6 +220,51 @@ def cmd_pr_view(args: argparse.Namespace) -> int:
         'mergeable': data.get('mergeable', 'unknown').lower() if data.get('mergeable') else 'unknown',
         'merge_state': data.get('mergeStateStatus', 'unknown').lower() if data.get('mergeStateStatus') else 'unknown',
         'review_decision': data.get('reviewDecision', 'none').lower() if data.get('reviewDecision') else 'none',
+    }, table_separator='\t'))
+    return 0
+
+
+def cmd_pr_list(args: argparse.Namespace) -> int:
+    """Handle 'pr list' subcommand - list pull requests with optional filters."""
+    is_auth, err = check_auth()
+    if not is_auth:
+        return output_error('pr_list', err)
+
+    gh_args = [
+        'pr', 'list',
+        '--json', 'number,url,title,state,headRefName,baseRefName',
+        '--state', args.state,
+    ]
+    if args.head:
+        gh_args.extend(['--head', args.head])
+
+    returncode, stdout, stderr = run_gh(gh_args)
+    if returncode != 0:
+        return output_error('pr_list', 'Failed to list PRs', stderr.strip())
+
+    try:
+        prs = json.loads(stdout)
+    except json.JSONDecodeError:
+        return output_error('pr_list', 'Failed to parse gh output', stdout[:100])
+
+    pr_list = [
+        {
+            'number': pr.get('number', 0),
+            'url': pr.get('url', ''),
+            'title': pr.get('title', ''),
+            'state': pr.get('state', 'unknown').lower(),
+            'head_branch': pr.get('headRefName', ''),
+            'base_branch': pr.get('baseRefName', ''),
+        }
+        for pr in prs
+    ]
+    print(serialize_toon({
+        'status': 'success',
+        'operation': 'pr_list',
+        'total': len(prs),
+        'state_filter': args.state,
+        'head_filter': args.head or '',
+        'prs': pr_list,
     }, table_separator='\t'))
     return 0
 
@@ -924,6 +971,12 @@ def main() -> int:
     # pr view
     pr_subparsers.add_parser('view', help='View PR for current branch')
 
+    # pr list
+    pr_list_parser = pr_subparsers.add_parser('list', help='List pull requests')
+    pr_list_parser.add_argument('--head', help='Filter by head branch name')
+    pr_list_parser.add_argument('--state', default='open', choices=['open', 'closed', 'all'],
+                                help='Filter by state (default: open)')
+
     # pr reply
     pr_reply_parser = pr_subparsers.add_parser('reply', help='Reply to a PR with a comment')
     pr_reply_parser.add_argument('--pr-number', required=True, type=int, help='PR number')
@@ -1023,6 +1076,8 @@ def main() -> int:
             return cmd_pr_create(args)
         elif args.pr_command == 'view':
             return cmd_pr_view(args)
+        elif args.pr_command == 'list':
+            return cmd_pr_list(args)
         elif args.pr_command == 'reply':
             return cmd_pr_reply(args)
         elif args.pr_command == 'resolve-thread':

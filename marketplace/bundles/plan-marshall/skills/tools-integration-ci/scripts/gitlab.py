@@ -4,6 +4,7 @@
 Subcommands:
     pr create       Create a merge request (MR)
     pr view         View MR for current branch (number, URL, state)
+    pr list         List merge requests with optional filters
     pr reviews      Get MR approvals
     pr comments     Get MR discussion comments (inline code comments)
     pr reply        Reply to a MR with a comment
@@ -25,6 +26,7 @@ Subcommands:
 Usage:
     python3 gitlab.py pr create --title "Title" --body "Body" [--base main] [--draft]
     python3 gitlab.py pr view
+    python3 gitlab.py pr list [--head feature/branch] [--state open|closed|all]
     python3 gitlab.py pr reviews --pr-number 123
     python3 gitlab.py pr comments --pr-number 123 [--unresolved-only]
     python3 gitlab.py pr reply --pr-number 123 --body "Comment text"
@@ -224,6 +226,51 @@ def cmd_pr_view(args: argparse.Namespace) -> int:
         'mergeable': mergeable,
         'merge_state': merge_status,
         'review_decision': review_decision,
+    }, table_separator='\t'))
+    return 0
+
+
+def cmd_pr_list(args: argparse.Namespace) -> int:
+    """Handle 'pr list' subcommand - list merge requests with optional filters."""
+    is_auth, err = check_auth()
+    if not is_auth:
+        return output_error('pr_list', err)
+
+    # Map state for glab: open→opened, closed→closed, all→all
+    state_map = {'open': 'opened', 'closed': 'closed', 'all': 'all'}
+    glab_state = state_map.get(args.state, 'opened')
+
+    glab_args = ['mr', 'list', '--output', 'json', '--state', glab_state]
+    if args.head:
+        glab_args.extend(['--source-branch', args.head])
+
+    returncode, stdout, stderr = run_glab(glab_args)
+    if returncode != 0:
+        return output_error('pr_list', 'Failed to list MRs', stderr.strip())
+
+    try:
+        mrs: list[dict[str, Any]] = json.loads(stdout)
+    except json.JSONDecodeError:
+        return output_error('pr_list', 'Failed to parse glab output', stdout[:100])
+
+    pr_list = [
+        {
+            'number': mr.get('iid', 0),
+            'url': mr.get('web_url', ''),
+            'title': mr.get('title', ''),
+            'state': 'open' if mr.get('state') == 'opened' else mr.get('state', 'unknown'),
+            'head_branch': mr.get('source_branch', ''),
+            'base_branch': mr.get('target_branch', ''),
+        }
+        for mr in mrs
+    ]
+    print(serialize_toon({
+        'status': 'success',
+        'operation': 'pr_list',
+        'total': len(mrs),
+        'state_filter': args.state,
+        'head_filter': args.head or '',
+        'prs': pr_list,
     }, table_separator='\t'))
     return 0
 
@@ -943,6 +990,12 @@ def main() -> int:
     # pr view
     pr_subparsers.add_parser('view', help='View MR for current branch')
 
+    # pr list
+    pr_list_parser = pr_subparsers.add_parser('list', help='List merge requests')
+    pr_list_parser.add_argument('--head', help='Filter by source branch name')
+    pr_list_parser.add_argument('--state', default='open', choices=['open', 'closed', 'all'],
+                                help='Filter by state (default: open)')
+
     # pr reply
     pr_reply_parser = pr_subparsers.add_parser('reply', help='Reply to a MR with a comment')
     pr_reply_parser.add_argument('--pr-number', required=True, type=int, help='MR number (iid)')
@@ -1042,6 +1095,8 @@ def main() -> int:
             return cmd_pr_create(args)
         elif args.pr_command == 'view':
             return cmd_pr_view(args)
+        elif args.pr_command == 'list':
+            return cmd_pr_list(args)
         elif args.pr_command == 'reply':
             return cmd_pr_reply(args)
         elif args.pr_command == 'resolve-thread':

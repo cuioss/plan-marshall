@@ -222,15 +222,50 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) Lessons capture skipped: 6_lessons_capture=false"
 ```
 
-### Step 9: Archive Plan (if enabled)
+### Step 9: Branch Cleanup (if enabled)
+
+**Config gate**: `8_branch_cleanup` from phase-6-finalize config
+
+IF `8_branch_cleanup == true`:
+  Read `standards/branch-cleanup.md` and follow all steps.
+
+ELSE:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) Branch cleanup skipped: 8_branch_cleanup=false"
+```
+
+### Step 10: Mark Plan Complete
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-lifecycle:manage-lifecycle transition \
+  --plan-id {plan_id} \
+  --completed 6-finalize
+```
+
+### Step 11: Log Completion
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-6-finalize) Plan completed: commit={commit_hash}, PR={pr_url|skipped}, archive={done|skipped}, branch_cleanup={done|skipped}"
+```
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  separator --plan-id {plan_id} --type work
+```
+
+### Step 12: Archive Plan (if enabled)
 
 **Config gate**: `7_archive` from phase-6-finalize config
 
+**CRITICAL**: Archive is the LAST step because it moves plan files (including status.json), which breaks `manage-lifecycle transition` and other manage-* scripts. All plan operations must complete before archive.
+
 IF `7_archive == true`:
 
-**IMPORTANT**: Mark lesson applied BEFORE archive, because archive moves plan files and makes `request read` fail.
-
 #### Mark Lesson Applied (conditional)
+
+**IMPORTANT**: Mark lesson applied BEFORE archive, because archive moves plan files and makes `request read` fail.
 
 Read the request source:
 
@@ -274,39 +309,6 @@ ELSE:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) Archive skipped: 7_archive=false"
-```
-
-### Step 10: Branch Cleanup (if enabled)
-
-**Config gate**: `8_branch_cleanup` from phase-6-finalize config
-
-IF `8_branch_cleanup == true`:
-  Read `standards/branch-cleanup.md` and follow all steps.
-
-ELSE:
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) Branch cleanup skipped: 8_branch_cleanup=false"
-```
-
-### Step 11: Mark Plan Complete
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-lifecycle:manage-lifecycle transition \
-  --plan-id {plan_id} \
-  --completed 6-finalize
-```
-
-### Step 12: Log Completion
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-6-finalize) Plan completed: commit={commit_hash}, PR={pr_url|skipped}, archive={done|skipped}, branch_cleanup={done|skipped}"
-```
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  separator --plan-id {plan_id} --type work
 ```
 
 ---
@@ -379,8 +381,8 @@ Config gates (checked first — take priority):
 - `4_sonar_roundtrip == false` → skip Step 6
 - `5_knowledge_capture == false` → skip Step 7
 - `6_lessons_capture == false` → skip Step 8
-- `7_archive == false` → skip Step 9
-- `8_branch_cleanup == false` → skip Step 10
+- `8_branch_cleanup == false` → skip Step 9
+- `7_archive == false` → skip Step 12
 
 State checks (for enabled steps):
 
