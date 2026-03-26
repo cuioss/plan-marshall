@@ -121,27 +121,6 @@ persisted_to: marshal.json
 ci_config{key,value}:
 provider	github
 repo_url	https://github.com/org/repo
-
-ci_commands[19]{name,command}:
-pr-create	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr create
-pr-view	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr view
-pr-reviews	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr reviews
-pr-comments	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr comments
-pr-reply	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr reply
-pr-resolve-thread	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr resolve-thread
-pr-thread-reply	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr thread-reply
-pr-merge	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr merge
-pr-auto-merge	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr auto-merge
-pr-close	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr close
-pr-ready	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr ready
-pr-edit	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr edit
-ci-status	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci ci status
-ci-wait	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci ci wait
-ci-rerun	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci ci rerun
-ci-logs	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci ci logs
-issue-create	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci issue create
-issue-view	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci issue view
-issue-close	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci issue close
 ```
 
 ---
@@ -955,28 +934,7 @@ After `persist` command, marshal.json contains:
   "ci": {
     "provider": "github",
     "repo_url": "https://github.com/org/repo",
-    "detected_at": "2025-01-15T10:00:00Z",
-    "commands": {
-      "pr-create": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr create",
-      "pr-view": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr view",
-      "pr-reviews": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr reviews",
-      "pr-comments": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr comments",
-      "pr-reply": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr reply",
-      "pr-resolve-thread": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr resolve-thread",
-      "pr-thread-reply": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr thread-reply",
-      "pr-merge": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr merge",
-      "pr-auto-merge": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr auto-merge",
-      "pr-close": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr close",
-      "pr-ready": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr ready",
-      "pr-edit": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr edit",
-      "ci-status": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci ci status",
-      "ci-wait": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci ci wait",
-      "ci-rerun": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci ci rerun",
-      "ci-logs": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci ci logs",
-      "issue-create": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci issue create",
-      "issue-view": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci issue view",
-      "issue-close": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci issue close"
-    }
+    "detected_at": "2025-01-15T10:00:00Z"
   }
 }
 ```
