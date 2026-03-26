@@ -26,6 +26,7 @@ Skill: plan-marshall:tools-integration-ci
 - Never skip config gate checks (Steps 3-10 each have an IF gate)
 - Never skip phase transitions — use `manage-lifecycle transition`, never set status directly
 - Never improvise script subcommands — use only those documented in this skill's workflow steps
+- Never skip config-gated steps based on PR state (approval, merge status, or CI status). The ONLY valid skip condition for each step is its config gate being `false`. Standards documents have their own user confirmation gates that handle runtime state decisions.
 
 ## When to Activate This Skill
 
@@ -225,6 +226,8 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 ### Step 9: Branch Cleanup (if enabled)
 
 **Config gate**: `8_branch_cleanup` from phase-6-finalize config
+
+**IMPORTANT**: The config gate is the ONLY condition for skipping this step. Do NOT preemptively skip based on PR state (not merged, not approved, checks pending, etc.). The `standards/branch-cleanup.md` standard has its own `AskUserQuestion` confirmation gate that handles both open and merged PRs, presenting the user with context and planned actions before proceeding.
 
 IF `8_branch_cleanup == true`:
   Read `standards/branch-cleanup.md` and follow all steps.
