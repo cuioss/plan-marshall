@@ -1,6 +1,6 @@
 # Branch Cleanup
 
-Merge PR, wait for CI, switch to main, pull, and delete the feature branch.
+Merge PR (with `--delete-branch`), wait for CI, and pull latest.
 
 ## Prerequisites
 
@@ -41,8 +41,8 @@ Extract count and details of other open PRs (excluding the current PR).
 **MANDATORY**: Present all context and ask user before any destructive action.
 
 Determine planned actions based on PR state:
-- **If `state == open`**: Actions = merge PR, wait for CI, switch to main, pull, delete branch
-- **If `state == merged`**: Actions = switch to main, pull, delete branch
+- **If `state == open`**: Actions = merge PR (with --delete-branch), wait for CI, pull latest
+- **If `state == merged`**: Actions = pull latest
 
 ```
 AskUserQuestion:
@@ -55,11 +55,9 @@ AskUserQuestion:
         **Other open PRs for this branch**: {count} {details if any}
 
         **Actions**:
-        {- Merge PR #{pr_number} (if state == open)}
+        {- Merge PR #{pr_number} with --delete-branch (if state == open)}
         {- Wait for CI checks to complete (if merging)}
-        - Switch to {base_branch}
         - Pull latest
-        - Delete local branch {head_branch}
       options:
         - label: "Yes, proceed"
           description: "Execute branch cleanup"
@@ -131,39 +129,23 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   work --plan-id {plan_id} --level WARN --message "[WARN] (plan-marshall:phase-6-finalize) Branch cleanup: post-merge CI failed — continuing with branch cleanup"
 ```
 
-### Switch to Main and Pull
+### Pull Latest
 
-```bash
-git checkout {base_branch}
-```
+The `--delete-branch` flag on merge already deletes the remote branch, deletes the local branch, and switches to the base branch. Only `git pull` is needed to fetch the merge commit.
 
 ```bash
 git pull
 ```
 
-If checkout or pull fails → log error and abort:
+If pull fails → log error and abort:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work --plan-id {plan_id} --level ERROR --message "[ERROR] (plan-marshall:phase-6-finalize) Branch cleanup: {checkout|pull} failed - {error}"
-```
-
-### Delete Local Branch
-
-Use safe delete (fails if branch has unmerged commits):
-
-```bash
-git branch -d {head_branch}
-```
-
-If delete fails → log warning (branch may have already been deleted by `--delete-branch` on merge):
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work --plan-id {plan_id} --level WARN --message "[WARN] (plan-marshall:phase-6-finalize) Branch cleanup: local branch delete failed - {error} (may already be deleted)"
+  work --plan-id {plan_id} --level ERROR --message "[ERROR] (plan-marshall:phase-6-finalize) Branch cleanup: git pull failed - {error}"
 ```
 
 ### Log Completion
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-6-finalize) Branch cleanup complete: merged PR #{pr_number}, switched to {base_branch}, deleted {head_branch}"
+  work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-6-finalize) Branch cleanup complete: merged PR #{pr_number}, pulled latest on {base_branch}"
 ```

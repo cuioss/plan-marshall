@@ -47,11 +47,10 @@
 - Present user confirmation dialog with PR link, state, branch, other PRs, and planned actions
 - Only proceed with explicit user approval (skip gracefully if declined)
 - Abort if other open PRs use this branch as head
-- Merge PR if not yet merged (via CI abstraction, not direct `gh`)
+- Merge PR if not yet merged (via CI abstraction with `--delete-branch`)
 - Wait for post-merge CI with 30-minute timeout
-- Switch to base branch and pull latest
-- Delete local feature branch using safe delete (`git branch -d`)
-- Handle merge failures, checkout failures, and already-deleted branches
+- Pull latest to fetch merge commit
+- Handle merge failures and pull failures
 
 ## Completion
 
