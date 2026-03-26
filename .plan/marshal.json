@@ -2,18 +2,30 @@
   "ci": {
     "provider": "github",
     "repo_url": "https://github.com/cuioss/plan-marshall.git",
-    "detected_at": "2026-03-20T11:12:13Z",
+    "detected_at": "2026-03-26T14:49:35Z",
     "commands": {
       "pr-create": "python3 .plan/execute-script.py tools-integration-ci:github pr create",
+      "pr-view": "python3 .plan/execute-script.py tools-integration-ci:github pr view",
+      "pr-list": "python3 .plan/execute-script.py tools-integration-ci:github pr list",
       "pr-reviews": "python3 .plan/execute-script.py tools-integration-ci:github pr reviews",
       "pr-comments": "python3 .plan/execute-script.py tools-integration-ci:github pr comments",
+      "pr-reply": "python3 .plan/execute-script.py tools-integration-ci:github pr reply",
+      "pr-resolve-thread": "python3 .plan/execute-script.py tools-integration-ci:github pr resolve-thread",
+      "pr-thread-reply": "python3 .plan/execute-script.py tools-integration-ci:github pr thread-reply",
+      "pr-merge": "python3 .plan/execute-script.py tools-integration-ci:github pr merge",
+      "pr-auto-merge": "python3 .plan/execute-script.py tools-integration-ci:github pr auto-merge",
+      "pr-close": "python3 .plan/execute-script.py tools-integration-ci:github pr close",
+      "pr-ready": "python3 .plan/execute-script.py tools-integration-ci:github pr ready",
+      "pr-edit": "python3 .plan/execute-script.py tools-integration-ci:github pr edit",
       "ci-status": "python3 .plan/execute-script.py tools-integration-ci:github ci status",
       "ci-wait": "python3 .plan/execute-script.py tools-integration-ci:github ci wait",
+      "ci-rerun": "python3 .plan/execute-script.py tools-integration-ci:github ci rerun",
+      "ci-logs": "python3 .plan/execute-script.py tools-integration-ci:github ci logs",
       "issue-create": "python3 .plan/execute-script.py tools-integration-ci:github issue create",
-      "issue-view": "python3 .plan/execute-script.py tools-integration-ci:github issue view"
+      "issue-view": "python3 .plan/execute-script.py tools-integration-ci:github issue view",
+      "issue-close": "python3 .plan/execute-script.py tools-integration-ci:github issue close"
     }
   },
-  "extension_defaults": {},
   "plan": {
     "phase-1-init": {
       "branch_strategy": "feature"
@@ -23,14 +35,14 @@
       "compatibility": "breaking"
     },
     "phase-3-outline": {
-      "plan_without_asking": true
+      "plan_without_asking": false
     },
     "phase-4-plan": {
-      "execute_without_asking": true
+      "execute_without_asking": false
     },
     "phase-5-execute": {
-      "commit_strategy": "per_plan",
-      "finalize_without_asking": true,
+      "commit_strategy": "per_deliverable",
+      "finalize_without_asking": false,
       "verification_max_iterations": 5,
       "verification_1_quality_check": true,
       "verification_2_build_verify": true,
@@ -42,14 +54,17 @@
     },
     "phase-6-finalize": {
       "max_iterations": 3,
-      "1_commit_push": true,
-      "2_create_pr": true,
-      "3_automated_review": true,
-      "4_sonar_roundtrip": true,
-      "5_knowledge_capture": true,
-      "6_lessons_capture": true,
-      "7_archive": true,
-      "8_branch_cleanup": true
+      "review_bot_buffer_seconds": 300,
+      "steps": [
+        "commit_push",
+        "create_pr",
+        "automated_review",
+        "sonar_roundtrip",
+        "knowledge_capture",
+        "lessons_capture",
+        "branch_cleanup",
+        "archive"
+      ]
     }
   },
   "skill_domains": {
@@ -64,7 +79,11 @@
         "documentation": "plan-marshall:task-documentation",
         "implementation": "plan-marshall:task-implementation",
         "module_testing": "plan-marshall:task-module_testing"
-      }
+      },
+      "project_skills": [
+        "project:sync-plugin-cache",
+        "project:verify-workflow"
+      ]
     },
     "build": {
       "bundle": "plan-marshall"
