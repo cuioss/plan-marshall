@@ -64,7 +64,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 | `5_knowledge_capture` | boolean | Step 7 | Whether to capture learnings |
 | `6_lessons_capture` | boolean | Step 8 | Whether to record lessons |
 | `7_archive` | boolean | Step 9 | Whether to archive the plan |
-| `8_branch_cleanup` | boolean | Step 10 | Whether to merge PR, switch to main, and delete feature branch |
+| `8_branch_cleanup` | boolean | Step 10 | Whether to merge PR (with --delete-branch) and pull latest |
 | `review_bot_buffer_seconds` | integer | — | Seconds to wait after CI for review bots (default: 300) |
 | `max_iterations` | integer | — | Maximum finalize-verify loops (default: 3) |
 
@@ -403,7 +403,7 @@ State checks (for enabled steps):
 | `standards/sonar-roundtrip.md` | `4_sonar_roundtrip` | Sonar quality gate, issue resolution |
 | `standards/knowledge-capture.md` | `5_knowledge_capture` | manage-memories save command |
 | `standards/lessons-capture.md` | `6_lessons_capture` | manage-lesson add command |
-| `standards/branch-cleanup.md` | `8_branch_cleanup` | Merge PR, switch to main, delete branch with user confirmation |
+| `standards/branch-cleanup.md` | `8_branch_cleanup` | Merge PR (with --delete-branch), pull latest, with user confirmation |
 | `standards/validation.md` | — | Configuration requirements, error scenarios |
 | `standards/lessons-integration.md` | — | Conceptual guidance on lesson capture |
 
