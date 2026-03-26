@@ -255,7 +255,7 @@ Phase-specific configuration for the 6-phase workflow model. Each phase with con
 
 ### phase-5-execute
 
-Execute phase with integrated verification pipeline. Contains commit strategy and verification settings (generic boolean steps + domain-contributed agent steps).
+Execute phase with integrated verification pipeline. Contains commit strategy, iteration limits, and a flat ordered `steps` list for verification.
 
 ```json
 {
@@ -264,17 +264,13 @@ Execute phase with integrated verification pipeline. Contains commit strategy an
       "commit_strategy": "per_deliverable",
       "finalize_without_asking": false,
       "verification_max_iterations": 5,
-      "verification_1_quality_check": true,
-      "verification_2_build_verify": true,
-      "verification_domain_steps": {
-        "java": {
-          "1_technical_impl": "pm-dev-java:java-verify-agent",
-          "2_technical_test": "pm-dev-java:java-coverage-agent"
-        },
-        "documentation": {
-          "1_doc_sync": "pm-documents:doc-verify"
-        }
-      }
+      "steps": [
+        "quality_check",
+        "build_verify",
+        "pm-dev-java:java-verify-agent",
+        "pm-dev-java:java-coverage-agent",
+        "pm-documents:doc-verify"
+      ]
     }
   }
 }
@@ -284,27 +280,21 @@ Execute phase with integrated verification pipeline. Contains commit strategy an
 |-------|------|---------|--------|
 | `commit_strategy` | string | "per_deliverable" | per_deliverable, per_plan, none |
 | `finalize_without_asking` | bool | false | Auto-continue to finalize phase after execute completes |
+| `verification_max_iterations` | int | 5 | Maximum verify-execute-verify loops |
 
 #### Verification Steps
 
-Steps `verification_1_quality_check` and `verification_2_build_verify` are static booleans. They run canonical commands from `manage-architecture`.
+The `steps` list contains an ordered sequence of verification step references. Two types:
 
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `verification_max_iterations` | int | 5 | Maximum verify-execute-verify loops |
-| `verification_1_quality_check` | bool | true | Run build quality gate |
-| `verification_2_build_verify` | bool | true | Run build verification |
+- **Built-in steps** (no colon): `quality_check` (run quality-gate), `build_verify` (run full test suite)
+- **Extension steps** (colon notation): Fully-qualified agent references from domain bundles (e.g., `pm-dev-java:java-verify-agent`)
 
-#### Verification Domain Steps
+Built-in steps are always first in the default list. Extension steps are appended by `skill-domains configure` from `provides_verify_steps()` in each domain's `extension.py`. See [extension-contract.md](../../extension-api/standards/extension-contract.md) for the complete contract.
 
-`verification_domain_steps` contains per-domain verification steps with fully-qualified agent references. Each domain bundle declares its verification steps via `provides_verify_steps()` in `extension.py`. See [extension-contract.md](../../extension-api/standards/extension-contract.md) for the complete contract.
-
-- String value → invoke the agent reference
-- `false` → skip the step
-
-Domain steps are auto-populated by `skill-domains configure` and can be toggled via:
-- `plan phase-5-execute set-domain-step --domain X --step Y --enabled false`
-- `plan phase-5-execute set-domain-step-agent --domain X --step Y --agent bundle:agent`
+Managed via:
+- `plan phase-5-execute set-steps --steps quality_check,build_verify`
+- `plan phase-5-execute add-step --step pm-dev-java:java-verify-agent`
+- `plan phase-5-execute remove-step --step quality_check`
 
 ### phase-6-finalize
 

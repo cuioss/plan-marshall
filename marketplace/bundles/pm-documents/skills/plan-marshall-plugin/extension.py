@@ -97,8 +97,8 @@ class Extension(ExtensionBase):
         """Return documentation-specific verification steps."""
         return [
             {
-                'name': 'doc_sync',
-                'agent': 'pm-documents:doc-verify',
+                'name': 'pm-documents:doc-verify',
+                'skill': 'pm-documents:doc-verify',
                 'description': 'Verify documentation is synchronized',
             },
         ]

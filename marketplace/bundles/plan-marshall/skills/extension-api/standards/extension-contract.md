@@ -503,12 +503,12 @@ class Extension(ExtensionBase):
 
 ### provides_verify_steps
 
-Declares domain-specific verification agents that run after implementation tasks complete. Steps are user-configurable (enable/disable per step).
+Declares domain-specific verification agents that run after implementation tasks complete. Steps are appended to the flat `steps` list in `plan.phase-5-execute.steps`.
 
-**Lifecycle**: Called during `skill-domains configure`. Steps stored in `marshal.json` and consumed by phase-4-plan to create holistic verification tasks.
+**Lifecycle**: Called during `skill-domains configure`. Steps appended to `marshal.json` steps list and consumed by phase-4-plan to create holistic verification tasks.
 
 ```
-Extension discovery → get_skill_domains() → ➤ provides_verify_steps() → stored in marshal.json → phase-4-plan creates tasks → phase-5-execute runs agents
+Extension discovery → get_skill_domains() → ➤ provides_verify_steps() → appended to steps list → phase-4-plan creates tasks → phase-5-execute runs agents
 ```
 
 ```python
@@ -516,8 +516,8 @@ def provides_verify_steps(self) -> list[dict]:
     """Return domain-specific verification steps.
 
     Each step dict contains:
-        - name: Step identifier (e.g., 'technical_impl')
-        - agent: Fully-qualified agent reference ('bundle:agent')
+        - name: Fully-qualified agent reference (e.g., 'pm-dev-java:java-verify-agent')
+        - skill: Same as name (the fully-qualified agent reference)
         - description: Human-readable description for wizard presentation
 
     Default: []
@@ -528,53 +528,59 @@ def provides_verify_steps(self) -> list[dict]:
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `name` | str | Step identifier — used as key suffix in marshal.json |
-| `agent` | str | Fully-qualified agent reference (`bundle:agent`) |
+| `name` | str | Fully-qualified agent reference (`bundle:agent`) — used directly in steps list |
+| `skill` | str | Same as name (the fully-qualified agent reference) |
 | `description` | str | Human-readable description for `/marshall-steward` wizard |
 
 #### Storage in marshal.json
 
-Stored under `plan.phase-5-execute.verification_domain_steps.{domain_key}` with numbered keys:
+Extension steps are appended to the flat `plan.phase-5-execute.steps` list after built-in steps:
 
 ```json
 {
   "plan": {
     "phase-5-execute": {
-      "verification_domain_steps": {
-        "java": {
-          "1_technical_impl": "pm-dev-java:java-verify-agent",
-          "2_technical_test": "pm-dev-java:java-coverage-agent"
-        },
-        "documentation": {
-          "1_doc_sync": "pm-documents:doc-verify"
-        }
-      }
+      "steps": [
+        "quality_check",
+        "build_verify",
+        "pm-dev-java:java-verify-agent",
+        "pm-dev-java:java-coverage-agent",
+        "pm-documents:doc-verify"
+      ]
     }
   }
 }
 ```
 
-Key format: `{number}_{step_name}`. Value: agent reference string, or `false` to disable.
+Built-in steps (`quality_check`, `build_verify`) are always first. Extension steps follow in discovery order.
 
-#### Enable/Disable Commands
+#### Manage Commands
 
 ```bash
-# Disable a step
+# Add a verify step
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-5-execute set-domain-step --domain java --step 1_technical_impl --enabled false
+  plan phase-5-execute add-step --step pm-dev-java:java-verify-agent
 
-# Change the agent for a step
+# Remove a verify step
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-5-execute set-domain-step-agent --domain java --step 1_technical_impl --agent pm-dev-java:java-verify-agent
+  plan phase-5-execute remove-step --step pm-dev-java:java-verify-agent
+
+# Replace entire steps list
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-5-execute set-steps --steps quality_check,build_verify
+
+# List all available verify steps (built-in + extensions)
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config list-verify-steps
 ```
 
 #### Runtime Consumption
 
-Phase-4-plan reads the stored configuration and creates holistic verification tasks:
+Phase-4-plan reads the steps list and creates holistic verification tasks:
 
-1. Read config: `plan phase-5-execute get --trace-plan-id {plan_id}`
-2. For each enabled domain step: create a verification task with `profile: verification`, `deliverable: 0`, `origin: holistic`, `depends_on: [ALL non-holistic tasks]`
-3. Tasks invoke the declared agent during phase-5-execute
+1. Read config: `plan phase-5-execute get --field steps --trace-plan-id {plan_id}`
+2. For each step: create a verification task with `profile: verification`, `deliverable: 0`, `origin: holistic`, `depends_on: [ALL non-holistic tasks]`
+3. Built-in steps (`quality_check`, `build_verify`) resolve via architecture commands
+4. Extension steps (colon notation) use the step name directly as the agent reference
 
 #### Implementation Pattern
 
@@ -583,13 +589,13 @@ class Extension(ExtensionBase):
     def provides_verify_steps(self) -> list[dict]:
         return [
             {
-                'name': 'technical_impl',
-                'agent': 'pm-dev-java:java-verify-agent',
+                'name': 'pm-dev-java:java-verify-agent',
+                'skill': 'pm-dev-java:java-verify-agent',
                 'description': 'Verify implementation standards compliance',
             },
             {
-                'name': 'technical_test',
-                'agent': 'pm-dev-java:java-coverage-agent',
+                'name': 'pm-dev-java:java-coverage-agent',
+                'skill': 'pm-dev-java:java-coverage-agent',
                 'description': 'Verify test coverage meets thresholds',
             },
         ]
@@ -599,9 +605,9 @@ class Extension(ExtensionBase):
 
 | Bundle | Domain | Steps | Details |
 |--------|--------|-------|---------|
-| pm-dev-java | java | 2 | `technical_impl` (java-verify-agent), `technical_test` (java-coverage-agent) |
-| pm-documents | documentation | 1 | `doc_sync` (doc-verify) |
-| pm-requirements | requirements | 1 | `formal_spec` (spec-verify) |
+| pm-dev-java | java | 2 | `pm-dev-java:java-verify-agent`, `pm-dev-java:java-coverage-agent` |
+| pm-documents | documentation | 1 | `pm-documents:doc-verify` |
+| pm-requirements | requirements | 1 | `pm-requirements:spec-verify` |
 
 Bundles without verification steps (returns `[]`): pm-dev-frontend, pm-dev-java-cui, pm-plugin-development.
 

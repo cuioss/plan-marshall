@@ -275,29 +275,33 @@ AskUserQuestion:
 Generic boolean steps:
 
 ```
+Discover available verify steps from all sources:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  list-verify-steps
+```
+
+Present the merged list (built-in + extension steps) as a multi-select:
+
+```
 AskUserQuestion:
-  question: "Which generic verification steps to include?"
+  question: "Which verification steps to include?"
   header: "Verify Steps"
   multiSelect: true
   options:
-    - label: "1_quality_check"
-      description: "Build quality gate using canonical commands"
-    - label: "2_build_verify"
-      description: "Build verification using canonical commands"
+    # Dynamic from list-verify-steps output:
+    - label: "quality_check"
+      description: "Run quality-gate build command"
+    - label: "build_verify"
+      description: "Run full test suite"
+    # Plus any extension steps from discovery
 ```
 
-Apply: for each deselected step:
+Apply: write the selected steps as an ordered list:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-5-execute set-step --step {step_name} --enabled false
-```
-
-Domain steps (auto-populated from extensions via `provides_verify_steps()`):
-
-```bash
-# Toggle a domain step off
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-5-execute set-domain-step --domain java --step 1_technical_impl --enabled false
+  plan phase-5-execute set-steps --steps {comma_separated_selected_steps}
 ```
 
 ### Step 3b: Configure Finalize Steps
@@ -448,7 +452,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 This configures:
 - `system` domain (always) with task_executors
 - Each selected domain with bundle reference and workflow_skill_extensions
-- Auto-persists verify steps from domain extensions to `verification_domain_steps`
+- Auto-appends extension verify steps to `plan.phase-5-execute.steps`
 
 **Note**: The `configure` command replaces all existing domains with the selected ones.
 
