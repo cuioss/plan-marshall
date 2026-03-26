@@ -59,7 +59,7 @@ confidence: high
 
 **Pattern**: Command Chain Execution
 
-Detect provider and persist to marshal.json with static commands.
+Detect provider and persist to marshal.json.
 
 ### Step 1: Run Persist
 
@@ -76,11 +76,6 @@ persisted_to: marshal.json
 ci_config{key,value}:
 provider	github
 repo_url	https://github.com/org/repo
-
-ci_commands[19]{name,command}:
-pr-create	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr create
-pr-view	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr view
-...
 ```
 
 ---
@@ -91,8 +86,10 @@ pr-view	python3 .plan/execute-script.py plan-marshall:tools-integration-ci:githu
 
 | File | Content | Shared |
 |------|---------|--------|
-| `.plan/marshal.json` | `ci.provider`, `ci.repo_url`, `ci.commands` | Yes (git) |
+| `.plan/marshal.json` | `ci.provider`, `ci.repo_url`, `ci.detected_at` | Yes (git) |
 | `.plan/run-configuration.json` | `ci.authenticated_tools`, command timeouts | No (local) |
+
+CI operations are resolved at runtime by the `ci.py` router which reads `ci.provider` from marshal.json and delegates to the correct provider script.
 
 ---
 

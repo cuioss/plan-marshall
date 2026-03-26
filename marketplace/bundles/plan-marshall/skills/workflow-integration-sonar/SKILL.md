@@ -58,7 +58,7 @@ Handles Sonar issue workflows - fetching issues from SonarQube, triaging them, a
 
 1. **Determine Context**
    ```bash
-   gh pr view --json number
+   python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr view
    ```
 
 2. **Fetch Issues**

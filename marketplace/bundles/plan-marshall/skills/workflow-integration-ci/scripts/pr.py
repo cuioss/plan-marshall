@@ -2,7 +2,7 @@
 """
 PR workflow operations - fetch comments and triage them (provider-agnostic).
 
-Uses tools-integration-ci via marshal.json for provider abstraction.
+Uses tools-integration-ci ci router for provider abstraction.
 
 Usage:
     pr.py fetch-comments [--pr <number>] [--unresolved-only]
@@ -10,7 +10,7 @@ Usage:
     pr.py --help
 
 Subcommands:
-    fetch-comments    Fetch PR review comments (GitHub or GitLab via marshal.json)
+    fetch-comments    Fetch PR review comments (GitHub or GitLab via ci router)
     triage           Triage a single PR review comment
 
 Examples:
@@ -29,7 +29,6 @@ import json
 import re
 import subprocess
 import sys
-from pathlib import Path
 from typing import Any
 
 from toon_parser import serialize_toon  # type: ignore[import-not-found]
@@ -70,44 +69,12 @@ PATTERNS: dict[str, Any] = {
 
 
 # ============================================================================
-# FETCH-COMMENTS SUBCOMMAND (Provider-Agnostic via marshal.json)
+# FETCH-COMMENTS SUBCOMMAND (Provider-Agnostic via ci router)
 # ============================================================================
 
-
-def find_plan_dir() -> Path | None:
-    """Find .plan directory by walking up from current directory."""
-    current = Path.cwd()
-    for parent in [current, *current.parents]:
-        plan_dir = parent / '.plan'
-        if plan_dir.is_dir() and (plan_dir / 'marshal.json').exists():
-            return plan_dir
-    return None
-
-
-def load_marshal_config() -> dict[str, Any] | None:
-    """Load marshal.json configuration."""
-    plan_dir = find_plan_dir()
-    if not plan_dir:
-        return None
-
-    marshal_path = plan_dir / 'marshal.json'
-    try:
-        with open(marshal_path) as f:
-            data: dict[str, Any] = json.load(f)
-            return data
-    except (OSError, json.JSONDecodeError):
-        return None
-
-
-def get_pr_comments_command() -> str | None:
-    """Get pr-comments command from marshal.json CI configuration."""
-    config = load_marshal_config()
-    if not config:
-        return None
-
-    ci_config: dict[str, Any] = config.get('ci', {})
-    commands: dict[str, str] = ci_config.get('commands', {})
-    return commands.get('pr-comments')
+# CI router command prefix — the ci.py router reads ci.provider from marshal.json
+# and delegates to the correct provider script (github.py or gitlab.py)
+CI_ROUTER = 'python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci'
 
 
 def run_command(cmd: str, extra_args: list[str] | None = None) -> tuple[str, str, int]:
@@ -126,18 +93,8 @@ def run_command(cmd: str, extra_args: list[str] | None = None) -> tuple[str, str
 
 
 def get_current_pr_number() -> int | None:
-    """Get PR number for current branch via config-driven pr-view command."""
-    config = load_marshal_config()
-    if not config:
-        return None
-
-    ci_config: dict[str, Any] = config.get('ci', {})
-    commands: dict[str, str] = ci_config.get('commands', {})
-    pr_view_cmd = commands.get('pr-view')
-    if not pr_view_cmd:
-        return None
-
-    stdout, stderr, returncode = run_command(pr_view_cmd)
+    """Get PR number for current branch via ci router."""
+    stdout, stderr, returncode = run_command(f'{CI_ROUTER} pr view')
     if returncode != 0:
         return None
 
@@ -208,15 +165,8 @@ def parse_toon_comments(toon_output: str) -> list[dict[str, Any]]:
 
 
 def fetch_comments(pr_number: int, unresolved_only: bool = False) -> dict[str, Any]:
-    """Fetch review comments for a PR using tools-integration-ci via marshal.json."""
-    # Get command from marshal.json
-    pr_comments_cmd = get_pr_comments_command()
-
-    if not pr_comments_cmd:
-        return {
-            'error': 'CI not configured. Run /marshall-steward to set up CI integration.',
-            'status': 'failure',
-        }
+    """Fetch review comments for a PR using tools-integration-ci ci router."""
+    pr_comments_cmd = f'{CI_ROUTER} pr comments'
 
     # Build command with arguments
     extra_args = ['--pr-number', str(pr_number)]

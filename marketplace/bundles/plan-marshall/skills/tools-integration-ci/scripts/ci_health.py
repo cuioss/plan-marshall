@@ -265,41 +265,6 @@ def cmd_status(args: argparse.Namespace) -> int:
     return 0
 
 
-def generate_ci_commands(provider: str) -> dict:
-    """Generate static CI commands for the detected provider.
-
-    Returns dict of command_name -> full command string.
-    """
-    if provider not in ('github', 'gitlab'):
-        return {}
-
-    executor = 'python3 .plan/execute-script.py'
-    script = f'tools-integration-ci:{provider}'  # Notation: {skill}:{script}
-
-    return {
-        'pr-create': f'{executor} {script} pr create',
-        'pr-view': f'{executor} {script} pr view',
-        'pr-list': f'{executor} {script} pr list',
-        'pr-reviews': f'{executor} {script} pr reviews',
-        'pr-comments': f'{executor} {script} pr comments',
-        'pr-reply': f'{executor} {script} pr reply',
-        'pr-resolve-thread': f'{executor} {script} pr resolve-thread',
-        'pr-thread-reply': f'{executor} {script} pr thread-reply',
-        'pr-merge': f'{executor} {script} pr merge',
-        'pr-auto-merge': f'{executor} {script} pr auto-merge',
-        'pr-close': f'{executor} {script} pr close',
-        'pr-ready': f'{executor} {script} pr ready',
-        'pr-edit': f'{executor} {script} pr edit',
-        'ci-status': f'{executor} {script} ci status',
-        'ci-wait': f'{executor} {script} ci wait',
-        'ci-rerun': f'{executor} {script} ci rerun',
-        'ci-logs': f'{executor} {script} ci logs',
-        'issue-create': f'{executor} {script} issue create',
-        'issue-view': f'{executor} {script} issue view',
-        'issue-close': f'{executor} {script} issue close',
-    }
-
-
 def cmd_persist(args: argparse.Namespace) -> int:
     """Handle the 'persist' subcommand.
 
@@ -324,9 +289,6 @@ def cmd_persist(args: argparse.Namespace) -> int:
         if tool == 'git' and tool_status['installed']:
             git_present = True
 
-    # Generate static commands for provider
-    ci_commands = generate_ci_commands(provider_result['provider'])
-
     # Direct import of ci persist logic (PYTHONPATH set by executor)
     # Set PLAN_BASE_DIR before importing to ensure correct path resolution
     import os
@@ -339,17 +301,15 @@ def cmd_persist(args: argparse.Namespace) -> int:
 
     # Create args-like object for _handle_persist
     class PersistArgs:
-        def __init__(self, provider, repo_url, commands_json, tools, git_present_str):
+        def __init__(self, provider, repo_url, tools, git_present_str):
             self.provider = provider
             self.repo_url = repo_url
-            self.commands = commands_json
             self.tools = tools
             self.git_present = git_present_str
 
     persist_args = PersistArgs(
         provider=provider_result['provider'],
         repo_url=provider_result['repo_url'] or '',
-        commands_json=json.dumps(ci_commands),
         tools=','.join(authenticated_tools) if authenticated_tools else None,
         git_present_str=str(git_present).lower() if authenticated_tools else None,
     )
@@ -367,13 +327,6 @@ def cmd_persist(args: argparse.Namespace) -> int:
     print('ci_config{key,value}:')
     print(f'provider\t{provider_result["provider"]}')
     print(f'repo_url\t{provider_result["repo_url"] or "none"}')
-    print()
-    if ci_commands:
-        print(f'ci_commands[{len(ci_commands)}]{{name,command}}:')
-        for name, command in ci_commands.items():
-            print(f'{name}\t{command}')
-    else:
-        print('ci_commands[0]{name,command}:')
 
     return 0
 

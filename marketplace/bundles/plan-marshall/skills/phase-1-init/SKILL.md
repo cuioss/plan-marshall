@@ -109,7 +109,7 @@ Extract: title, category, component, detail, related
 **From Issue**:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github issue view \
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci issue view \
   --issue {issue}
 ```
 

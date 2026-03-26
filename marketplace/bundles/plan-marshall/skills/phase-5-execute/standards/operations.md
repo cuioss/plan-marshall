@@ -65,7 +65,7 @@ push: true
 **Trigger**: "create PR", "pull request"
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr create \
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr create \
   --title "{task-title}" \
   --body "## Summary
 {description}

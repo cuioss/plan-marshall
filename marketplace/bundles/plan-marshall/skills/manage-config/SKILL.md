@@ -138,42 +138,23 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 
 ---
 
-## Workflow: CI Command Lookup
+## Workflow: CI Operations
 
-**Pattern**: Lookup and Execute
+CI operations use the provider-agnostic `ci` router. The router reads `ci.provider` from marshal.json and delegates to the correct provider script (github.py or gitlab.py).
 
-Get a CI command by name, then execute with arguments.
-
-### Get CI Command
+### Example: View Issue
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  ci get-command --name issue-view
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci issue view --issue 123
 ```
 
-**Output**:
-```toon
-status: success
-name: issue-view
-command: python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github issue view
-```
+### Available CI Operations
 
-### Execute the Command
-
-Parse the `command` field from output, then execute with arguments:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github issue view --issue 123
-```
-
-**Available CI commands** (registered via `ci_health persist`):
-- `pr-create` - Create pull request
-- `pr-reviews` - Get PR reviews
-- `pr-comments` - Get PR comments
-- `ci-status` - Check CI status
-- `ci-wait` - Wait for CI completion
-- `issue-create` - Create issue
-- `issue-view` - View issue details
+- `pr create` / `pr view` / `pr list` / `pr merge` / `pr close` / `pr ready` / `pr edit`
+- `pr reviews` / `pr comments` / `pr reply` / `pr resolve-thread` / `pr thread-reply`
+- `pr auto-merge`
+- `ci status` / `ci wait` / `ci rerun` / `ci logs`
+- `issue create` / `issue view` / `issue close`
 
 ---
 

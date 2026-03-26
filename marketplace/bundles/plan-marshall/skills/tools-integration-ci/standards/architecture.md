@@ -1,24 +1,30 @@
 # CI Operations Architecture
 
-Architecture for unified CI operations using static routing pattern.
+Architecture for CI operations using a provider-agnostic router pattern.
 
 ---
 
-## Design Decision: Unified Static Routing
+## Design Decision: Router Pattern for CI
 
-**All domains use static routing** - config stores full commands, wizard generates provider-specific paths.
+CI operations use a **router pattern**: the `ci.py` router reads `ci.provider` from marshal.json and delegates to the correct provider script (`github.py` or `gitlab.py`). Unlike build commands, CI has no per-module variation — one provider per repo, fixed operation set.
 
-| Domain | Config Example |
-|--------|----------------|
-| **Build** | `"test": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --targets \"test\""` |
-| **CI** | `"pr-create": "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:github pr create"` |
+| Aspect | Build | CI |
+|--------|-------|-----|
+| **Per-module variation** | Yes (paths, profiles, goals) | No (project-global) |
+| **Config stores** | Full command strings per module | Provider name only |
+| **Resolution** | `architecture resolve --command X` | `ci.py` router reads `ci.provider` |
+| **Scripts** | `maven`, `gradle`, `npm` | `github`, `gitlab` |
+
+**Caller pattern** (all skills use this):
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci {domain} {operation} [args]
+```
 
 **Benefits**:
-- Single mental model across all domains
-- Config shows exactly what runs
-- Maximum transparency
-- Full command customization possible
-- No runtime routing logic needed
+- Provider-agnostic — same notation works for GitHub and GitLab
+- No `eval` or `jq` needed in skill instructions
+- Provider determined once during `/marshall-steward`, used transparently thereafter
+- Minimal config — only `ci.provider` and `ci.repo_url` stored
 
 ---
 
@@ -29,9 +35,9 @@ Architecture for unified CI operations using static routing pattern.
 | Responsibility | Description |
 |----------------|-------------|
 | Provider abstraction | Unified API across GitHub/GitLab |
-| PR operations | Create, reviews |
-| CI operations | Status, wait |
-| Issue operations | Create |
+| PR operations | Create, view, merge, reviews, comments |
+| CI operations | Status, wait, rerun, logs |
+| Issue operations | Create, view, close |
 | Provider detection | Detect from git remote |
 | Tool verification | Check CLI tools installed and authenticated |
 
@@ -47,40 +53,33 @@ Architecture for unified CI operations using static routing pattern.
 
 ---
 
-## Static Routing Architecture
+## Router Architecture
 
 ```
-                    UNIFIED STATIC ROUTING
+                    CI ROUTER PATTERN
 
     ┌─────────────────────────────────────────────────────────────┐
     │                      marshal.json                           │
     │  ┌─────────────────────────────────────────────────────┐    │
     │  │  "ci": {                                            │    │
     │  │    "provider": "github",                            │    │
-    │  │    "repo_url": "https://github.com/org/repo",       │    │
-    │  │    "commands": {                                    │    │
-    │  │      "pr-create": "...tools-integration-ci:github pr create",│    │
-    │  │      "ci-status": "...tools-integration-ci:github ci status" │    │
-    │  │    }                                                │    │
+    │  │    "repo_url": "https://github.com/org/repo"        │    │
     │  │  }                                                  │    │
     │  └─────────────────────────────────────────────────────┘    │
     └─────────────────────────────────────────────────────────────┘
                               │
                     ┌─────────┴─────────┐
-                    │  Config stores    │
-                    │  full commands    │
+                    │  ci.py reads      │
+                    │  ci.provider      │
                     └─────────┬─────────┘
                               │
               ┌───────────────┴───────────────┐
               │                               │
               ▼                               ▼
-    ┌─────────────────────────────────────────────────────────────┐
-    │                     tools-integration-ci                           │
-    │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐          │
-    │  │  ci_health  │  │   github    │  │   gitlab    │          │
-    │  │ (detection) │  │ (gh CLI)    │  │ (glab CLI)  │          │
-    │  └─────────────┘  └─────────────┘  └─────────────┘          │
-    └─────────────────────────────────────────────────────────────┘
+    ┌─────────────────┐             ┌─────────────────┐
+    │   github.py     │             │   gitlab.py     │
+    │   (gh CLI)      │             │   (glab CLI)    │
+    └─────────────────┘             └─────────────────┘
 ```
 
 ---
@@ -89,6 +88,7 @@ Architecture for unified CI operations using static routing pattern.
 
 | Script | CLI Tool | Purpose |
 |--------|----------|---------|
+| `ci.py` | — | Provider-agnostic router |
 | `ci_health.py` | git | Provider detection, tool verification |
 | `github.py` | gh | GitHub operations |
 | `gitlab.py` | glab | GitLab operations |
@@ -100,7 +100,7 @@ Architecture for unified CI operations using static routing pattern.
 | **Independence** | Each script handles one provider |
 | **Maintainability** | Provider-specific logic isolated |
 | **Testing** | Test each provider independently |
-| **No runtime routing** | Config determines which script runs |
+| **Router simplicity** | Just reads config and imports |
 
 ---
 
@@ -121,44 +121,31 @@ All CI operations share:
 The steward wizard:
 
 1. **Detects provider** via `ci_health detect`
-2. **Generates full commands** with correct script paths
-3. **Stores in marshal.json** under `ci.commands`
+2. **Persists provider** to marshal.json via `ci_health persist`
 
 Example wizard step:
 ```markdown
 1. Call: `plan-marshall:tools-integration-ci:ci_health detect`
 2. Present detected provider to user
 3. Call: `plan-marshall:tools-integration-ci:ci_health persist`
-   (generates ci.commands for detected provider)
+   (stores ci.provider and ci.repo_url)
 ```
 
 ---
 
 ## Command Resolution
 
-Callers use the provider-agnostic `ci` router script. The router reads `ci.provider` from `marshal.json` and delegates to the correct provider script (`github.py` or `gitlab.py`):
+Callers use the provider-agnostic `ci` router script:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr create \
     --title "Feature X" --body "Description"
 ```
 
-This pattern:
-- Works with any provider (router reads config at runtime)
-- No `eval` or `jq` needed in skill instructions
-- Provider determined once during `/marshall-steward`, used transparently thereafter
-
----
-
-## Comparison with Build Handling
-
-Both CI and Build use the same static routing pattern:
-
-| Aspect | Build | CI |
-|--------|-------|-----|
-| **Config stores** | Full command strings | Full command strings |
-| **Scripts** | `maven`, `gradle`, `npm` | `github`, `gitlab` |
-| **Flexibility** | Profiles, flags, goals | Provider-specific options |
+The router:
+1. Reads `ci.provider` from marshal.json
+2. Imports the correct provider module (`github.py` or `gitlab.py`)
+3. Passes all arguments through transparently
 
 ---
 
@@ -166,7 +153,7 @@ Both CI and Build use the same static routing pattern:
 
 ### With marshall-steward
 
-- Steward wizard calls `ci_health persist` to generate commands
+- Steward wizard calls `ci_health persist` to store provider
 - Steward health check calls `ci_health status`
 - Steward does NOT contain CI detection logic
 
@@ -177,8 +164,8 @@ Both CI and Build use the same static routing pattern:
 
 ### With plan-finalize
 
-- Uses config commands for CI operations during finalization
-- Resolves `ci.commands["pr-create"]` for PR creation
+- Uses `ci` router for all CI operations during finalization
+- Example: `plan-marshall:tools-integration-ci:ci pr create`
 
 ---
 

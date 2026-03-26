@@ -208,9 +208,6 @@ def main():
     ci_sub.add_parser('get-provider', help='Get CI provider')
     ci_sub.add_parser('get-tools', help='Get authenticated tools')
 
-    ci_get_cmd = ci_sub.add_parser('get-command', help='Get CI command by name')
-    ci_get_cmd.add_argument('--name', required=True, help='Command name (e.g., issue-view, pr-create)')
-
     ci_set_prov = ci_sub.add_parser('set-provider', help='Set CI provider')
     ci_set_prov.add_argument('--provider', required=True, help='Provider name (github, gitlab, unknown)')
     ci_set_prov.add_argument('--repo-url', required=True, help='Repository URL')
@@ -218,10 +215,9 @@ def main():
     ci_set_tools = ci_sub.add_parser('set-tools', help='Set authenticated tools')
     ci_set_tools.add_argument('--tools', required=True, help='Comma-separated tool names')
 
-    ci_persist = ci_sub.add_parser('persist', help='Persist full CI config (provider, commands, tools)')
+    ci_persist = ci_sub.add_parser('persist', help='Persist CI config (provider, tools)')
     ci_persist.add_argument('--provider', required=True, help='Provider name (github, gitlab, unknown)')
     ci_persist.add_argument('--repo-url', required=True, help='Repository URL')
-    ci_persist.add_argument('--commands', help='JSON object of command name to command string')
     ci_persist.add_argument('--tools', help='Comma-separated authenticated tool names')
     ci_persist.add_argument('--git-present', help='Whether git is present (true/false)')
 
