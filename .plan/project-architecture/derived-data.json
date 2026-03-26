@@ -26,8 +26,8 @@
       "packages": {},
       "dependencies": [],
       "stats": {
-        "source_files": 144,
-        "test_files": 114
+        "source_files": 146,
+        "test_files": 116
       },
       "commands": {
         "compile": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"compile\"",
@@ -74,26 +74,6 @@
         "description": "Environment setup, permission management, cross-cutting utilities, and solution-based development workflow from task implementation to PR quality verification"
       },
       "packages": {
-        "skill:build-gradle": {
-          "path": "skills/build-gradle",
-          "type": "skill",
-          "description": "Gradle build operations with execution, parsing, and module discovery"
-        },
-        "skill:build-maven": {
-          "path": "skills/build-maven",
-          "type": "skill",
-          "description": "Maven build operations with execution, parsing, and module discovery"
-        },
-        "skill:build-npm": {
-          "path": "skills/build-npm",
-          "type": "skill",
-          "description": "npm/npx build operations with execution, multi-parser architecture, and coverage analysis"
-        },
-        "skill:build-python": {
-          "path": "skills/build-python",
-          "type": "skill",
-          "description": "Python/pyprojectx build operations with execution and output parsing"
-        },
         "skill:extension-api": {
           "path": "skills/extension-api",
           "type": "skill",
@@ -199,16 +179,6 @@
           "type": "skill",
           "description": "Verification-only task execution \u2014 runs commands without modifying files"
         },
-        "skill:tools-file-ops": {
-          "path": "skills/tools-file-ops",
-          "type": "skill",
-          "description": "Base module providing reusable file operations patterns for CUI workflow scripts"
-        },
-        "skill:tools-integration-ci": {
-          "path": "skills/tools-integration-ci",
-          "type": "skill",
-          "description": "CI provider abstraction with unified API for GitHub and GitLab operations (PR, issues, CI status)"
-        },
         "skill:tools-permission-doctor": {
           "path": "skills/tools-permission-doctor",
           "type": "skill",
@@ -219,20 +189,10 @@
           "type": "skill",
           "description": "Write operations for fixing and managing Claude Code permissions - add, remove, consolidate, ensure, apply-fixes."
         },
-        "skill:tools-permission-sync": {
-          "path": "skills/tools-permission-sync",
-          "type": "skill",
-          "description": "Synchronize marketplace permissions - generate wildcards, manage executor permissions, and migrate to executor pattern."
-        },
         "skill:tools-permission-web": {
           "path": "skills/tools-permission-web",
           "type": "skill",
           "description": "Analyze and consolidate WebFetch domain permissions across projects with security research and validation"
-        },
-        "skill:tools-script-executor": {
-          "path": "skills/tools-script-executor",
-          "type": "skill",
-          "description": "Universal script execution pattern via execute-script.py proxy"
         },
         "skill:workflow-integration-ci": {
           "path": "skills/workflow-integration-ci",
@@ -242,7 +202,7 @@
         "skill:workflow-integration-git": {
           "path": "skills/workflow-integration-git",
           "type": "skill",
-          "description": "Git commit workflow with conventional commits, artifact cleanup, and optional push/PR creation"
+          "description": "Git commit workflow with conventional commits, artifact cleanup, and optional push"
         },
         "skill:workflow-integration-sonar": {
           "path": "skills/workflow-integration-sonar",
@@ -282,22 +242,22 @@
         "agent:detect-change-type-agent": {
           "path": "agents/detect-change-type-agent.md",
           "type": "agent",
-          "description": "Detect change type from request using LLM analysis"
+          "description": "Analyzes a plan request to detect its change type (feature, bug_fix, tech_debt, enhancement, verification, analysis) using LLM reasoning. Persists the detected change type to status metadata."
         },
         "agent:phase-agent": {
           "path": "agents/phase-agent.md",
           "type": "agent",
-          "description": "Generic phase agent that loads a caller-specified skill and delegates execution"
+          "description": "Generic thin wrapper that loads a caller-specified skill and delegates all execution to it. Supports any plan phase (init, refine, outline, plan, execute, finalize)."
         },
         "agent:q-gate-validation-agent": {
           "path": "agents/q-gate-validation-agent.md",
           "type": "agent",
-          "description": "Verify deliverables against request intent and assessments, catching false positives and missing coverage"
+          "description": "Verifies solution outline deliverables against request intent and assessments. Catches false positives, missing coverage, and scope drift."
         },
         "agent:research-best-practices-agent": {
           "path": "agents/research-best-practices-agent.md",
           "type": "agent",
-          "description": "Performs comprehensive web research to find best practices, recommendations, and information about a specified topic using multiple online sources."
+          "description": "Performs comprehensive web research to find best practices, recommendations, and information about a specified topic using multiple online sources. Analyzes top 10+ sources and synthesizes findings with confidence levels."
         },
         "command:tools-fix-intellij-diagnostics": {
           "path": "commands/tools-fix-intellij-diagnostics.md",
@@ -312,7 +272,7 @@
       },
       "dependencies": [],
       "stats": {
-        "skill_count": 41,
+        "skill_count": 33,
         "agent_count": 4,
         "command_count": 2
       },
@@ -347,11 +307,6 @@
         "description": "JavaScript, CSS, and web component standards for applications"
       },
       "packages": {
-        "skill:css": {
-          "path": "skills/css",
-          "type": "skill",
-          "description": "Modern CSS standards covering essentials, responsive design, quality practices, and tooling"
-        },
         "skill:ext-triage-js": {
           "path": "skills/ext-triage-js",
           "type": "skill",
@@ -371,16 +326,11 @@
           "path": "skills/js-fix-jsdoc",
           "type": "skill",
           "description": "Fix JSDoc errors and warnings from build/lint with content preservation"
-        },
-        "skill:plan-marshall-plugin": {
-          "path": "skills/plan-marshall-plugin",
-          "type": "skill",
-          "description": "JavaScript domain extension with skill domains, module applicability, and workflow integration"
         }
       },
       "dependencies": [],
       "stats": {
-        "skill_count": 6,
+        "skill_count": 4,
         "agent_count": 0,
         "command_count": 0
       },
@@ -419,16 +369,11 @@
           "path": "skills/cui-javascript-project",
           "type": "skill",
           "description": "JavaScript project structure, package.json configuration, dependency management, and Maven integration standards for consistent project setup and builds"
-        },
-        "skill:plan-marshall-plugin": {
-          "path": "skills/plan-marshall-plugin",
-          "type": "skill",
-          "description": "CUI JavaScript domain manifest for plan-marshall workflow integration"
         }
       },
       "dependencies": [],
       "stats": {
-        "skill_count": 2,
+        "skill_count": 1,
         "agent_count": 0,
         "command_count": 0
       },
@@ -524,11 +469,6 @@
           "type": "skill",
           "description": "Maven build profile classification and user workflow for unmatched profiles"
         },
-        "skill:plan-marshall-plugin": {
-          "path": "skills/plan-marshall-plugin",
-          "type": "skill",
-          "description": "Java domain extension with skill domains, module applicability, and workflow integration"
-        },
         "agent:java-coverage-agent": {
           "path": "agents/java-coverage-agent.md",
           "type": "agent",
@@ -542,7 +482,7 @@
       },
       "dependencies": [],
       "stats": {
-        "skill_count": 13,
+        "skill_count": 12,
         "agent_count": 2,
         "command_count": 0
       },
@@ -606,16 +546,11 @@
           "path": "skills/java-maintain-logger",
           "type": "skill",
           "description": "Execute systematic logging standards maintenance with plan tracking and comprehensive test coverage"
-        },
-        "skill:plan-marshall-plugin": {
-          "path": "skills/plan-marshall-plugin",
-          "type": "skill",
-          "description": "CUI Java domain manifest for plan-marshall workflow integration"
         }
       },
       "dependencies": [],
       "stats": {
-        "skill_count": 7,
+        "skill_count": 6,
         "agent_count": 0,
         "command_count": 0
       },
@@ -659,16 +594,11 @@
           "path": "skills/oci-security",
           "type": "skill",
           "description": "OCI container security best practices covering runtime hardening, supply chain security, and OWASP container controls"
-        },
-        "skill:plan-marshall-plugin": {
-          "path": "skills/plan-marshall-plugin",
-          "type": "skill",
-          "description": "OCI container domain manifest for plan-marshall workflow integration"
         }
       },
       "dependencies": [],
       "stats": {
-        "skill_count": 3,
+        "skill_count": 2,
         "agent_count": 0,
         "command_count": 0
       },
@@ -703,11 +633,6 @@
         "description": "Python domain extension with pyprojectx build operations"
       },
       "packages": {
-        "skill:plan-marshall-plugin": {
-          "path": "skills/plan-marshall-plugin",
-          "type": "skill",
-          "description": "Python domain extension with skill domains, module applicability, and workflow integration"
-        },
         "skill:python-best-practices": {
           "path": "skills/python-best-practices",
           "type": "skill",
@@ -716,7 +641,7 @@
       },
       "dependencies": [],
       "stats": {
-        "skill_count": 2,
+        "skill_count": 1,
         "agent_count": 0,
         "command_count": 0
       },
@@ -757,11 +682,6 @@
           "type": "skill",
           "description": "Triage extension for documentation findings during plan-finalize phase"
         },
-        "skill:plan-marshall-plugin": {
-          "path": "skills/plan-marshall-plugin",
-          "type": "skill",
-          "description": "Documentation domain manifest for plan-marshall workflow integration"
-        },
         "skill:ref-asciidoc": {
           "path": "skills/ref-asciidoc",
           "type": "skill",
@@ -780,7 +700,7 @@
       },
       "dependencies": [],
       "stats": {
-        "skill_count": 4,
+        "skill_count": 3,
         "agent_count": 0,
         "command_count": 1
       },
@@ -826,11 +746,6 @@
           "path": "skills/ext-triage-plugin",
           "type": "skill",
           "description": "Triage extension for marketplace plugin findings during plan-finalize phase"
-        },
-        "skill:plan-marshall-plugin": {
-          "path": "skills/plan-marshall-plugin",
-          "type": "skill",
-          "description": "Plugin development domain manifest with module discovery for plan-marshall workflow integration"
         },
         "skill:plugin-apply-lessons-learned": {
           "path": "skills/plugin-apply-lessons-learned",
@@ -890,27 +805,27 @@
         "agent:ext-outline-component-agent": {
           "path": "agents/ext-outline-component-agent.md",
           "type": "agent",
-          "description": "Analyze component files against request using semantic reasoning"
+          "description": "Analyze component files against request using semantic reasoning. Input: plan_id, component_type, request_text, files list. Output: TOON summary with status, counts of certain_include/certain_exclude/uncertain, assessments_logged."
         },
         "agent:ext-outline-inventory-agent": {
           "path": "agents/ext-outline-inventory-agent.md",
           "type": "agent",
-          "description": "Load marketplace inventory and perform initial scope assessment (artifact types, bundle scope)"
+          "description": "Load marketplace inventory and perform initial scope assessment (artifact types, bundle scope). Input: plan_id, component_types, content_pattern, bundle_scope, include_tests, include_project_skills. Output: TOON summary with status, inventory_file path, scope, and counts per component type."
         },
         "agent:tool-coverage-agent": {
           "path": "agents/tool-coverage-agent.md",
           "type": "agent",
-          "description": "Analyze tool declarations vs actual usage in a component file"
+          "description": "Analyze tool declarations vs actual usage in a component file. Input: file_path, declared_tools list, component_type. Output: JSON with declared_tools, used_tools, analysis (missing/unused/false_positives), confidence."
         },
         "command:tools-analyze-user-prompted": {
           "path": "commands/tools-analyze-user-prompted.md",
           "type": "command",
-          "description": "Analyze permission prompts to identify source and provide solutions"
+          "description": "Analyze permission prompts to identify source and provide solutions. Input: optional screenshot path, optional description text. Output: Permission prompt analysis report with root cause, source component, and fix solutions."
         }
       },
       "dependencies": [],
       "stats": {
-        "skill_count": 14,
+        "skill_count": 13,
         "agent_count": 3,
         "command_count": 1
       },
@@ -951,11 +866,6 @@
           "type": "skill",
           "description": "Triage extension for requirements findings during plan-finalize phase"
         },
-        "skill:plan-marshall-plugin": {
-          "path": "skills/plan-marshall-plugin",
-          "type": "skill",
-          "description": "Requirements domain manifest for plan-marshall workflow integration"
-        },
         "skill:planning": {
           "path": "skills/planning",
           "type": "skill",
@@ -979,7 +889,7 @@
       },
       "dependencies": [],
       "stats": {
-        "skill_count": 6,
+        "skill_count": 5,
         "agent_count": 0,
         "command_count": 0
       },
