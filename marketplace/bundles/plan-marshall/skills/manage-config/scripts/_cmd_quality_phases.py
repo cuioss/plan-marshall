@@ -130,8 +130,7 @@ def cmd_phase(args, phase_section: str) -> int:
 
         position = getattr(args, 'position', None)
         if position is not None:
-            pos = int(position)
-            steps.insert(pos, step)
+            steps.insert(position, step)
         else:
             steps.append(step)
 
