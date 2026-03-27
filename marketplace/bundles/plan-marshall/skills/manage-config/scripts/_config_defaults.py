@@ -53,7 +53,7 @@ DEFAULT_PLAN_OUTLINE = {
 }
 
 DEFAULT_PLAN_PLAN = {
-    'execute_without_asking': False,
+    'execute_without_asking': True,
 }
 
 # Built-in verify step names (dispatch table in phase-5-execute SKILL.md)
@@ -66,8 +66,8 @@ BUILT_IN_VERIFY_STEP_DESCRIPTIONS = {
 }
 
 DEFAULT_PLAN_EXECUTE = {
-    'commit_strategy': 'per_deliverable',
-    'finalize_without_asking': False,
+    'commit_strategy': 'per_plan',
+    'finalize_without_asking': True,
     'verification_max_iterations': 5,
     'steps': list(BUILT_IN_VERIFY_STEPS),
 }
