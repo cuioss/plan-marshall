@@ -18,7 +18,7 @@ from conftest import PlanContext, run_script
 
 
 def test_execute_verify_get():
-    """Test plan phase-5-execute get returns verification pipeline config."""
+    """Test plan phase-5-execute get returns steps list config."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
 
@@ -26,7 +26,8 @@ def test_execute_verify_get():
 
         assert result.success, f'Should succeed: {result.stderr}'
         assert 'verification_max_iterations' in result.stdout
-        assert 'verification_1_quality_check' in result.stdout
+        assert 'steps' in result.stdout
+        assert 'quality_check' in result.stdout
 
 
 def test_execute_verify_set_max_iterations():
@@ -43,8 +44,8 @@ def test_execute_verify_set_max_iterations():
         assert config['plan']['phase-5-execute']['verification_max_iterations'] == 10
 
 
-def test_execute_verify_set_step_disable():
-    """Test plan phase-5-execute set-step to disable a verification boolean step."""
+def test_execute_set_steps():
+    """Test plan phase-5-execute set-steps replaces entire steps list."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
 
@@ -52,31 +53,63 @@ def test_execute_verify_set_step_disable():
             SCRIPT_PATH,
             'plan',
             'phase-5-execute',
-            'set-step',
-            '--step',
-            'verification_1_quality_check',
-            '--enabled',
-            'false',
+            'set-steps',
+            '--steps',
+            'quality_check,build_verify,pm-dev-java:java-verify-agent',
         )
 
         assert result.success, f'Should succeed: {result.stderr}'
 
-        # Verify saved
         config = json.loads((ctx.fixture_dir / 'marshal.json').read_text())
-        assert config['plan']['phase-5-execute']['verification_1_quality_check'] is False
+        assert config['plan']['phase-5-execute']['steps'] == [
+            'quality_check',
+            'build_verify',
+            'pm-dev-java:java-verify-agent',
+        ]
 
 
-def test_execute_verify_set_step_unknown():
-    """Test plan phase-5-execute set-step with unknown step returns error."""
+def test_execute_add_step():
+    """Test plan phase-5-execute add-step appends to steps list."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
 
         result = run_script(
-            SCRIPT_PATH, 'plan', 'phase-5-execute', 'set-step', '--step', 'nonexistent', '--enabled', 'true'
+            SCRIPT_PATH,
+            'plan',
+            'phase-5-execute',
+            'add-step',
+            '--step',
+            'pm-dev-java:java-verify-agent',
         )
 
-        assert 'error' in result.stdout.lower(), 'Should report error for unknown step'
-        assert 'nonexistent' in result.stdout
+        assert result.success, f'Should succeed: {result.stderr}'
+
+        config = json.loads((ctx.fixture_dir / 'marshal.json').read_text())
+        steps = config['plan']['phase-5-execute']['steps']
+        assert 'pm-dev-java:java-verify-agent' in steps
+        assert steps[-1] == 'pm-dev-java:java-verify-agent'
+
+
+def test_execute_remove_step():
+    """Test plan phase-5-execute remove-step removes from steps list."""
+    with PlanContext() as ctx:
+        create_marshal_json(ctx.fixture_dir)
+
+        result = run_script(
+            SCRIPT_PATH,
+            'plan',
+            'phase-5-execute',
+            'remove-step',
+            '--step',
+            'quality_check',
+        )
+
+        assert result.success, f'Should succeed: {result.stderr}'
+
+        config = json.loads((ctx.fixture_dir / 'marshal.json').read_text())
+        steps = config['plan']['phase-5-execute']['steps']
+        assert 'quality_check' not in steps
+        assert 'build_verify' in steps
 
 
 def test_execute_verify_get_field():
@@ -92,8 +125,8 @@ def test_execute_verify_get_field():
         assert '5' in result.stdout
 
 
-def test_execute_verify_set_domain_step_agent():
-    """Test plan phase-5-execute set-domain-step-agent to set a domain step."""
+def test_execute_add_step_duplicate():
+    """Test plan phase-5-execute add-step with existing step returns error."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
 
@@ -101,70 +134,17 @@ def test_execute_verify_set_domain_step_agent():
             SCRIPT_PATH,
             'plan',
             'phase-5-execute',
-            'set-domain-step-agent',
-            '--domain',
-            'java',
+            'add-step',
             '--step',
-            '1_technical_impl',
-            '--agent',
-            'pm-dev-java:java-verify-agent',
+            'quality_check',
         )
 
-        assert result.success, f'Should succeed: {result.stderr}'
-
-        # Verify saved
-        config = json.loads((ctx.fixture_dir / 'marshal.json').read_text())
-        domain_steps = config['plan']['phase-5-execute']['verification_domain_steps']
-        assert 'java' in domain_steps
-        assert domain_steps['java']['1_technical_impl'] == 'pm-dev-java:java-verify-agent'
+        assert 'error' in result.stdout.lower(), 'Should report error for duplicate step'
+        assert 'quality_check' in result.stdout
 
 
-def test_execute_verify_set_domain_step_disable():
-    """Test plan phase-5-execute set-domain-step to disable a domain step."""
-    with PlanContext() as ctx:
-        # Create config with a domain step already set
-        config = {
-            'skill_domains': {'system': {}},
-            'system': {'retention': {}},
-            'plan': {
-                'phase-5-execute': {
-                    'commit_strategy': 'per_deliverable',
-                    'verification_max_iterations': 5,
-                    'verification_1_quality_check': True,
-                    'verification_2_build_verify': True,
-                    'verification_domain_steps': {
-                        'java': {
-                            '1_technical_impl': 'pm-dev-java:java-verify-agent',
-                        }
-                    },
-                },
-                'phase-6-finalize': {'max_iterations': 3, 'steps': ['commit_push', 'create_pr']},
-            },
-        }
-        create_marshal_json(ctx.fixture_dir, config)
-
-        result = run_script(
-            SCRIPT_PATH,
-            'plan',
-            'phase-5-execute',
-            'set-domain-step',
-            '--domain',
-            'java',
-            '--step',
-            '1_technical_impl',
-            '--enabled',
-            'false',
-        )
-
-        assert result.success, f'Should succeed: {result.stderr}'
-
-        # Verify saved as false
-        saved = json.loads((ctx.fixture_dir / 'marshal.json').read_text())
-        assert saved['plan']['phase-5-execute']['verification_domain_steps']['java']['1_technical_impl'] is False
-
-
-def test_execute_verify_set_domain_step_unknown_domain():
-    """Test plan phase-5-execute set-domain-step with unknown domain returns error."""
+def test_execute_remove_step_not_found():
+    """Test plan phase-5-execute remove-step with missing step returns error."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
 
@@ -172,16 +152,13 @@ def test_execute_verify_set_domain_step_unknown_domain():
             SCRIPT_PATH,
             'plan',
             'phase-5-execute',
-            'set-domain-step',
-            '--domain',
+            'remove-step',
+            '--step',
             'nonexistent',
-            '--step',
-            '1_foo',
-            '--enabled',
-            'false',
         )
 
-        assert 'error' in result.stdout.lower(), 'Should report error for unknown domain'
+        assert 'error' in result.stdout.lower(), 'Should report error for missing step'
+        assert 'nonexistent' in result.stdout
 
 
 # =============================================================================

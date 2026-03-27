@@ -18,8 +18,8 @@ class Extension(ExtensionBase):
         """Return requirements-specific verification steps."""
         return [
             {
-                'name': 'formal_spec',
-                'agent': 'pm-requirements:spec-verify',
+                'name': 'pm-requirements:spec-verify',
+                'skill': 'pm-requirements:spec-verify',
                 'description': 'Verify formal specification compliance',
             },
         ]

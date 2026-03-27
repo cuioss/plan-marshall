@@ -246,9 +246,7 @@ def test_skill_domains_detect_runs():
                 'phase-5-execute': {
                     'commit_strategy': 'per_deliverable',
                     'verification_max_iterations': 5,
-                    'verification_1_quality_check': True,
-                    'verification_2_build_verify': True,
-                    'verification_domain_steps': {},
+                    'steps': ['quality_check', 'build_verify'],
                 },
                 'phase-6-finalize': {
                     'max_iterations': 3,
@@ -290,9 +288,7 @@ def test_skill_domains_detect_no_overwrite():
                 'phase-5-execute': {
                     'commit_strategy': 'per_deliverable',
                     'verification_max_iterations': 5,
-                    'verification_1_quality_check': True,
-                    'verification_2_build_verify': True,
-                    'verification_domain_steps': {},
+                    'steps': ['quality_check', 'build_verify'],
                 },
                 'phase-6-finalize': {
                     'max_iterations': 3,
@@ -559,9 +555,7 @@ def test_get_available_uses_discovery():
                 'phase-5-execute': {
                     'commit_strategy': 'per_deliverable',
                     'verification_max_iterations': 5,
-                    'verification_1_quality_check': True,
-                    'verification_2_build_verify': True,
-                    'verification_domain_steps': {},
+                    'steps': ['quality_check', 'build_verify'],
                 },
                 'phase-6-finalize': {
                     'max_iterations': 3,
@@ -596,9 +590,7 @@ def test_configure_domains():
                 'phase-5-execute': {
                     'commit_strategy': 'per_deliverable',
                     'verification_max_iterations': 5,
-                    'verification_1_quality_check': True,
-                    'verification_2_build_verify': True,
-                    'verification_domain_steps': {},
+                    'steps': ['quality_check', 'build_verify'],
                 },
                 'phase-6-finalize': {
                     'max_iterations': 3,
@@ -640,9 +632,7 @@ def test_configure_always_adds_system():
                 'phase-5-execute': {
                     'commit_strategy': 'per_deliverable',
                     'verification_max_iterations': 5,
-                    'verification_1_quality_check': True,
-                    'verification_2_build_verify': True,
-                    'verification_domain_steps': {},
+                    'steps': ['quality_check', 'build_verify'],
                 },
                 'phase-6-finalize': {
                     'max_iterations': 3,
@@ -796,9 +786,7 @@ def test_get_available_works_without_skill_domains():
                 'phase-5-execute': {
                     'commit_strategy': 'per_deliverable',
                     'verification_max_iterations': 5,
-                    'verification_1_quality_check': True,
-                    'verification_2_build_verify': True,
-                    'verification_domain_steps': {},
+                    'steps': ['quality_check', 'build_verify'],
                 },
                 'phase-6-finalize': {
                     'max_iterations': 3,
@@ -837,9 +825,7 @@ def test_configure_works_without_skill_domains():
                 'phase-5-execute': {
                     'commit_strategy': 'per_deliverable',
                     'verification_max_iterations': 5,
-                    'verification_1_quality_check': True,
-                    'verification_2_build_verify': True,
-                    'verification_domain_steps': {},
+                    'steps': ['quality_check', 'build_verify'],
                 },
                 'phase-6-finalize': {
                     'max_iterations': 3,
@@ -885,9 +871,7 @@ def test_list_requires_skill_domains():
                 'phase-5-execute': {
                     'commit_strategy': 'per_deliverable',
                     'verification_max_iterations': 5,
-                    'verification_1_quality_check': True,
-                    'verification_2_build_verify': True,
-                    'verification_domain_steps': {},
+                    'steps': ['quality_check', 'build_verify'],
                 },
                 'phase-6-finalize': {
                     'max_iterations': 3,
@@ -1098,9 +1082,7 @@ def test_configure_preserves_project_skills():
                 'phase-5-execute': {
                     'commit_strategy': 'per_deliverable',
                     'verification_max_iterations': 5,
-                    'verification_1_quality_check': True,
-                    'verification_2_build_verify': True,
-                    'verification_domain_steps': {},
+                    'steps': ['quality_check', 'build_verify'],
                 },
                 'phase-6-finalize': {
                     'max_iterations': 3,
@@ -1156,9 +1138,7 @@ def test_configure_drops_project_skills_for_removed_domains():
                 'phase-5-execute': {
                     'commit_strategy': 'per_deliverable',
                     'verification_max_iterations': 5,
-                    'verification_1_quality_check': True,
-                    'verification_2_build_verify': True,
-                    'verification_domain_steps': {},
+                    'steps': ['quality_check', 'build_verify'],
                 },
                 'phase-6-finalize': {
                     'max_iterations': 3,
@@ -1206,9 +1186,7 @@ def test_get_nested_includes_project_skills():
                 'phase-5-execute': {
                     'commit_strategy': 'per_deliverable',
                     'verification_max_iterations': 5,
-                    'verification_1_quality_check': True,
-                    'verification_2_build_verify': True,
-                    'verification_domain_steps': {},
+                    'steps': ['quality_check', 'build_verify'],
                 },
                 'phase-6-finalize': {
                     'max_iterations': 3,

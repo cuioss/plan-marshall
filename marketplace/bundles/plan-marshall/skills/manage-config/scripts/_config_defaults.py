@@ -56,13 +56,20 @@ DEFAULT_PLAN_PLAN = {
     'execute_without_asking': False,
 }
 
+# Built-in verify step names (dispatch table in phase-5-execute SKILL.md)
+BUILT_IN_VERIFY_STEPS = ['quality_check', 'build_verify']
+
+# Human-readable descriptions for built-in verify steps
+BUILT_IN_VERIFY_STEP_DESCRIPTIONS = {
+    'quality_check': 'Run quality-gate build command',
+    'build_verify': 'Run full test suite',
+}
+
 DEFAULT_PLAN_EXECUTE = {
     'commit_strategy': 'per_deliverable',
     'finalize_without_asking': False,
     'verification_max_iterations': 5,
-    'verification_1_quality_check': True,
-    'verification_2_build_verify': True,
-    'verification_domain_steps': {},
+    'steps': list(BUILT_IN_VERIFY_STEPS),
 }
 
 # Built-in finalize step names (dispatch table in phase-6-finalize SKILL.md)
@@ -111,7 +118,7 @@ def get_default_config() -> dict:
     NOTE:
     - build_systems is NOT included - determined at runtime via extension discovery
     - Module facts come from derived-data.json (see plan-marshall:manage-architecture)
-    - verification_domain_steps in phase-5-execute is auto-populated by skill-domains configure
+    - Extension verify steps in phase-5-execute.steps are appended by skill-domains configure
     """
     import copy
 

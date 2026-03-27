@@ -25,6 +25,7 @@ from _cmd_skill_domains import (
     cmd_get_skills_by_profile,
     cmd_list_finalize_steps,
     cmd_list_recipes,
+    cmd_list_verify_steps,
     cmd_resolve_domain_skills,
     cmd_resolve_outline_skill,
     cmd_resolve_recipe,
@@ -197,7 +198,7 @@ def main():
     _add_phase_subparser(plan_sub, 'phase-2-refine', 'Refine phase settings', has_scalar=True)
     _add_phase_subparser(plan_sub, 'phase-3-outline', 'Outline phase settings', has_scalar=True)
     _add_phase_subparser(plan_sub, 'phase-4-plan', 'Plan phase settings', has_scalar=True)
-    _add_phase_subparser(plan_sub, 'phase-5-execute', 'Execute phase settings', has_scalar=True, has_pipeline=True, has_domain_steps=True)
+    _add_phase_subparser(plan_sub, 'phase-5-execute', 'Execute phase settings', has_scalar=True, has_list_steps=True)
     _add_phase_subparser(plan_sub, 'phase-6-finalize', 'Finalize phase settings', has_list_steps=True)
 
     # --- ci ---
@@ -286,6 +287,9 @@ def main():
     # --- list-finalize-steps ---
     subparsers.add_parser('list-finalize-steps', help='List all available finalize steps')
 
+    # --- list-verify-steps ---
+    subparsers.add_parser('list-verify-steps', help='List all available verify steps')
+
     args = parser.parse_args()
 
     if args.noun is None:
@@ -338,6 +342,8 @@ def main():
         return cmd_resolve_outline_skill(args)
     elif args.noun == 'list-finalize-steps':
         return cmd_list_finalize_steps(args)
+    elif args.noun == 'list-verify-steps':
+        return cmd_list_verify_steps(args)
     else:
         parser.print_help()
         return EXIT_ERROR

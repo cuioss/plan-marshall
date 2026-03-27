@@ -252,13 +252,16 @@ Phase-specific configuration using `plan {phase} {verb}` pattern.
 | `phase-1-init set` | `--field --value` | Set init phase field (branch_strategy) |
 | `phase-2-refine get` | `[--field]` | Get refine phase configuration |
 | `phase-2-refine set` | `--field --value` | Set refine phase field (confidence_threshold, compatibility) |
-| `phase-5-execute get` | `[--field]` | Get execute phase configuration (includes verification settings) |
+| `phase-5-execute get` | `[--field]` | Get execute phase configuration (includes verification steps) |
 | `phase-5-execute set` | `--field --value` | Set execute phase field (commit_strategy) |
-| `phase-5-execute set-step` | `--step --enabled` | Toggle generic verify step |
-| `phase-5-execute set-domain-step` | `--domain --step --enabled` | Toggle domain verify step |
+| `phase-5-execute set-steps` | `--steps` | Replace entire verify steps list (comma-separated) |
+| `phase-5-execute add-step` | `--step [--position]` | Add step to verify list |
+| `phase-5-execute remove-step` | `--step` | Remove step from verify list |
 | `phase-5-execute set-max-iterations` | `--value` | Set verification max iterations |
 | `phase-6-finalize get` | (none) | Get finalize phase configuration |
-| `phase-6-finalize set-step` | `--step --enabled` | Toggle finalize step |
+| `phase-6-finalize set-steps` | `--steps` | Replace entire finalize steps list (comma-separated) |
+| `phase-6-finalize add-step` | `--step [--position]` | Add step to finalize list |
+| `phase-6-finalize remove-step` | `--step` | Remove step from finalize list |
 | `phase-6-finalize set-max-iterations` | `--value` | Set finalize max iterations |
 
 ### Noun: ci
@@ -332,9 +335,7 @@ The defaults template contains only `system` domain. Technical domains (java, ja
     "phase-5-execute": {
       "commit_strategy": "per_deliverable",
       "verification_max_iterations": 5,
-      "verification_1_quality_check": true,
-      "verification_2_build_verify": true,
-      "verification_domain_steps": {}
+      "steps": ["quality_check", "build_verify"]
     },
     "phase-6-finalize": {
       "max_iterations": 3,

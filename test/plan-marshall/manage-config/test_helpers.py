@@ -62,9 +62,7 @@ def create_marshal_json(fixture_dir: Path, config: dict | None = None) -> Path:
                 'phase-5-execute': {
                     'commit_strategy': 'per_deliverable',
                     'verification_max_iterations': 5,
-                    'verification_1_quality_check': True,
-                    'verification_2_build_verify': True,
-                    'verification_domain_steps': {},
+                    'steps': ['quality_check', 'build_verify'],
                 },
                 'phase-6-finalize': {
                     'max_iterations': 3,
@@ -152,9 +150,7 @@ def create_nested_marshal_json(fixture_dir: Path) -> Path:
                 'compatibility': 'breaking',
                 'commit_strategy': 'per_deliverable',
                 'verification_max_iterations': 5,
-                'verification_1_quality_check': True,
-                'verification_2_build_verify': True,
-                'verification_domain_steps': {},
+                'steps': ['quality_check', 'build_verify'],
             },
             'phase-6-finalize': {
                 'max_iterations': 3,

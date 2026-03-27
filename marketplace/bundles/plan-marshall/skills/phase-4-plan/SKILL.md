@@ -250,27 +250,22 @@ After creating per-deliverable tasks, create plan-level verification tasks that 
 
 **Module resolution for holistic tasks**: Holistic tasks are plan-level, not deliverable-level. Omit `--name` from `architecture resolve` to use the root module, which runs commands across all modules. Do NOT try to list or enumerate modules — the root module default handles cross-module verification.
 
-**Read verification config** (NOTE: `manage-config plan` is ONLY for phase configs — for architecture queries use `manage-architecture:architecture`):
+**Read verification steps** (NOTE: `manage-config plan` is ONLY for phase configs — for architecture queries use `manage-architecture:architecture`):
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-5-execute get --trace-plan-id {plan_id}
+  plan phase-5-execute get --field steps --trace-plan-id {plan_id}
 ```
 
-**1. Quality check task** (if `verification_1_quality_check` is true):
-- Resolve via `architecture resolve --command quality-gate` (no `--name` — uses root module for cross-module check)
-- Create task with: `profile: verification`, `deliverable: 0`, `origin: holistic`
-- `depends_on: [ALL non-holistic tasks]`
+Iterate over the `steps` list. For each step, create a holistic verification task based on the step type:
 
-**2. Domain-specific verification tasks** (from `verification_domain_steps` config — see [extension-contract.md](../../../plan-marshall/skills/extension-api/standards/extension-contract.md)):
-- For each enabled domain step in config → create a verification task
-- Steps contain agent references from domain extensions (use the step value directly as the step target, do NOT resolve via architecture)
-- `profile: verification`, `deliverable: 0`, `origin: holistic`
-- `depends_on: [ALL non-holistic tasks]`
+**Built-in steps** (no colon in name):
+- `quality_check` → Resolve via `architecture resolve --command quality-gate` (no `--name` — uses root module for cross-module check)
+- `build_verify` → Resolve via `architecture resolve --command module-tests` (no `--name` — uses root module for cross-module check)
 
-**3. Full test suite task** (if `verification_2_build_verify` is true):
-- Resolve via `architecture resolve --command module-tests` (no `--name` — uses root module for cross-module check)
-- Create task with: `profile: verification`, `deliverable: 0`, `origin: holistic`
-- `depends_on: [ALL non-holistic tasks]`
+**Extension steps** (contain colon, e.g., `pm-dev-java:java-verify-agent`):
+- Use the step name directly as the step target (do NOT resolve via architecture)
+
+All holistic verification tasks share: `profile: verification`, `deliverable: 0`, `origin: holistic`, `depends_on: [ALL non-holistic tasks]`
 
 **Log each holistic task creation**:
 ```bash

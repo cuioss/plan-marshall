@@ -360,6 +360,61 @@ def _collect_verify_steps(domain_key: str) -> list:
     return []
 
 
+def _discover_all_verify_steps() -> list[dict]:
+    """Discover all verify steps from built-in and extension sources.
+
+    Sources (in order):
+    1. Built-in steps from _config_defaults.BUILT_IN_VERIFY_STEPS
+    2. Extension provides_verify_steps()
+
+    Returns:
+        List of step dicts with name, description, type, source.
+    """
+    from _config_defaults import BUILT_IN_VERIFY_STEP_DESCRIPTIONS, BUILT_IN_VERIFY_STEPS
+
+    all_steps: list[dict] = []
+
+    # Source 1: Built-in steps
+    for step_name in BUILT_IN_VERIFY_STEPS:
+        all_steps.append({
+            'name': step_name,
+            'description': BUILT_IN_VERIFY_STEP_DESCRIPTIONS.get(step_name, step_name),
+            'type': 'built-in',
+            'source': 'built-in',
+        })
+
+    # Source 2: Extension provides_verify_steps()
+    extensions = discover_all_extensions()
+    for ext in extensions:
+        module = ext.get('module')
+        if not module or not hasattr(module, 'provides_verify_steps'):
+            continue
+        try:
+            steps = module.provides_verify_steps()
+            if not steps:
+                continue
+            for step in steps:
+                all_steps.append({
+                    'name': step.get('name', ''),
+                    'description': step.get('description', ''),
+                    'type': 'skill',
+                    'source': 'extension',
+                })
+        except Exception:
+            pass
+
+    return all_steps
+
+
+def cmd_list_verify_steps(args) -> int:
+    """List all available verify steps discovered at runtime.
+
+    Sources: built-in + extension provides_verify_steps().
+    """
+    all_steps = _discover_all_verify_steps()
+    return success_exit({'steps': all_steps, 'count': len(all_steps)})
+
+
 def cmd_skill_domains(args) -> int:
     """Handle skill-domains noun."""
     try:
@@ -627,7 +682,7 @@ def cmd_skill_domains(args) -> int:
         # Apply domain config for each selected domain from bundle extension.py
         domains_configured = []
         domains_not_found = []
-        verify_steps_by_domain: dict = {}
+        extension_verify_steps: list = []
 
         for domain_key in selected_domains:
             # Load from bundle extension.py (returns converted config directly)
@@ -636,10 +691,12 @@ def cmd_skill_domains(args) -> int:
                 skill_domains[domain_key] = domain_config
                 domains_configured.append(domain_key)
 
-                # Collect verify steps from extension
+                # Collect verify steps from extension as flat references
                 steps = _collect_verify_steps(domain_key)
-                if steps:
-                    verify_steps_by_domain[domain_key] = steps
+                for step in steps:
+                    step_ref = step.get('name', '')
+                    if step_ref and step_ref not in extension_verify_steps:
+                        extension_verify_steps.append(step_ref)
             else:
                 domains_not_found.append(domain_key)
 
@@ -650,19 +707,13 @@ def cmd_skill_domains(args) -> int:
 
         config['skill_domains'] = skill_domains
 
-        # Persist verify steps to plan.phase-5-execute.verification_domain_steps
-        # Replace entirely (configure replaces all domains, so stale entries must go)
+        # Persist verify steps to plan.phase-5-execute.steps
+        # Build flat list: built-in steps + extension steps
+        from _config_defaults import BUILT_IN_VERIFY_STEPS
+
         plan_config = config.get('plan', {})
         execute_section = plan_config.get('phase-5-execute', {})
-        domain_steps: dict = {}
-
-        for domain_key, steps in verify_steps_by_domain.items():
-            domain_steps[domain_key] = {
-                f'{i + 1}_{step["name"]}': step['agent']
-                for i, step in enumerate(steps)
-            }
-
-        execute_section['verification_domain_steps'] = domain_steps
+        execute_section['steps'] = list(BUILT_IN_VERIFY_STEPS) + extension_verify_steps
         plan_config['phase-5-execute'] = execute_section
         config['plan'] = plan_config
 
@@ -675,8 +726,8 @@ def cmd_skill_domains(args) -> int:
         }
         if domains_not_found:
             result['domains_not_found'] = ','.join(domains_not_found)
-        if verify_steps_by_domain:
-            result['verify_steps'] = verify_steps_by_domain
+        if extension_verify_steps:
+            result['verify_steps'] = extension_verify_steps
 
         return success_exit(result)
 
