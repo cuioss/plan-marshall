@@ -23,7 +23,7 @@ def cmd_list(args) -> int:
     all_tasks = get_all_tasks(task_dir)
 
     # Build set of done task numbers for dependency checking
-    done_tasks = {f'TASK-{t["number"]}' for _, t in all_tasks if t.get('status') == 'done'}
+    done_tasks = {f'TASK-{t["number"]:03d}' for _, t in all_tasks if t.get('status') == 'done'}
 
     # Filter by deliverable if specified
     if args.deliverable:
@@ -121,7 +121,7 @@ def cmd_next(args) -> int:
     all_tasks = get_all_tasks(task_dir)
 
     # Build set of done task numbers for dependency checking
-    done_tasks = {f'TASK-{t["number"]}' for _, t in all_tasks if t.get('status') == 'done'}
+    done_tasks = {f'TASK-{t["number"]:03d}' for _, t in all_tasks if t.get('status') == 'done'}
 
     filtered_tasks = all_tasks
 
@@ -367,7 +367,7 @@ def cmd_next_tasks(args) -> int:
     all_tasks = get_all_tasks(task_dir)
 
     # Build set of done task numbers for dependency checking
-    done_tasks = {f'TASK-{t["number"]}' for _, t in all_tasks if t.get('status') == 'done'}
+    done_tasks = {f'TASK-{t["number"]:03d}' for _, t in all_tasks if t.get('status') == 'done'}
 
     # Find all pending tasks with satisfied dependencies
     ready_tasks = []
