@@ -75,31 +75,31 @@ Cross-phase settings:
 
 ## Step Types
 
-Three step types are supported, distinguished by notation:
+Three step types are supported, distinguished by prefix notation:
 
 | Type | Notation | Resolution |
 |------|----------|------------|
-| **built-in** | plain name (e.g., `commit_push`) | Read `standards/{name}.md` (using dispatch table below) and follow all steps |
+| **built-in** | `default:` prefix (e.g., `default:commit_push`) | Strip prefix, read `standards/{name}.md` (using dispatch table below) and follow all steps |
 | **project** | `project:` prefix (e.g., `project:finalize-step-foo`) | `Skill: {notation}` with interface contract parameters |
 | **skill** | fully-qualified `bundle:skill` (e.g., `pm-dev-java:java-post-pr`) | `Skill: {notation}` with interface contract parameters |
 
 **Type detection logic**:
-- Contains `project:` prefix -> project type
-- Contains `:` (but not `project:`) -> fully-qualified skill type
-- Otherwise -> built-in type (validated against dispatch table)
+- Starts with `default:` -> built-in type (strip prefix, validate against dispatch table)
+- Starts with `project:` -> project type
+- Contains `:` (other) -> fully-qualified skill type
 
 ### Built-in Step Dispatch Table
 
 | Step Name | Standards Document | Description |
 |-----------|-------------------|-------------|
-| `commit_push` | `standards/commit-push.md` | Commit and push changes |
-| `create_pr` | `standards/create-pr.md` | Create pull request |
-| `automated_review` | `standards/automated-review.md` | CI automated review |
-| `sonar_roundtrip` | `standards/sonar-roundtrip.md` | Sonar analysis roundtrip |
-| `knowledge_capture` | `standards/knowledge-capture.md` | Capture learnings to memory |
-| `lessons_capture` | `standards/lessons-capture.md` | Record lessons learned |
-| `branch_cleanup` | `standards/branch-cleanup.md` | Merge PR (with --delete-branch) and pull latest |
-| `archive` | `standards/archive.md` | Archive the completed plan |
+| `default:commit_push` | `standards/commit-push.md` | Commit and push changes |
+| `default:create_pr` | `standards/create-pr.md` | Create pull request |
+| `default:automated_review` | `standards/automated-review.md` | CI automated review |
+| `default:sonar_roundtrip` | `standards/sonar-roundtrip.md` | Sonar analysis roundtrip |
+| `default:knowledge_capture` | `standards/knowledge-capture.md` | Capture learnings to memory |
+| `default:lessons_capture` | `standards/lessons-capture.md` | Record lessons learned |
+| `default:branch_cleanup` | `standards/branch-cleanup.md` | Merge PR (with --delete-branch) and pull latest |
+| `default:archive` | `standards/archive.md` | Archive the completed plan |
 
 ### Interface Contract for External Steps
 
@@ -194,12 +194,12 @@ FOR each step_ref in steps:
        work --plan-id {plan_id} --level INFO --message "[STEP] (plan-marshall:phase-6-finalize) Executing step: {step_ref}"
 
   2. Determine step type:
-     - IF step_ref starts with "project:" -> PROJECT type
+     - IF step_ref starts with "default:" -> BUILT-IN type (strip prefix for dispatch table lookup)
+     - ELSE IF step_ref starts with "project:" -> PROJECT type
      - ELSE IF step_ref contains ":" -> SKILL type
-     - ELSE -> BUILT-IN type
 
   3. Dispatch:
-     - BUILT-IN: Read the standards document from dispatch table and follow all steps
+     - BUILT-IN: Strip `default:` prefix, read the standards document from dispatch table and follow all steps
      - PROJECT/SKILL: Load the skill with interface contract:
        Skill: {step_ref}
          Arguments: --plan-id {plan_id} --iteration {iteration}
@@ -211,8 +211,8 @@ END FOR
 ```
 
 **Built-in step notes**:
-- `branch_cleanup`: Do NOT preemptively skip based on PR state. The `standards/branch-cleanup.md` standard has its own `AskUserQuestion` confirmation gate.
-- `archive`: This step MUST be last in the default order because it moves plan files (including status.json), which breaks manage-* scripts. All plan operations must complete before archive.
+- `default:branch_cleanup`: Do NOT preemptively skip based on PR state. The `standards/branch-cleanup.md` standard has its own `AskUserQuestion` confirmation gate.
+- `default:archive`: This step MUST be last in the default order because it moves plan files (including status.json), which breaks manage-* scripts. All plan operations must complete before archive.
 
 ### Step 4: Mark Plan Complete
 

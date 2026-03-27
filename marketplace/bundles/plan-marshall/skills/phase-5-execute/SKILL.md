@@ -72,6 +72,61 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 
 Extract `commit_strategy` from output. Valid values: `per_deliverable`, `per_plan`, `none`.
 
+Also extract the `steps` list — these are the verification steps to execute as verification tasks. See **Verification Step Types** below for dispatch rules.
+
+---
+
+## Verification Step Types
+
+The `steps` list in phase-5-execute config contains verification step references. Three step types are supported, distinguished by prefix notation (same model as phase-6-finalize):
+
+| Type | Notation | Resolution |
+|------|----------|------------|
+| **built-in** | `default:` prefix (e.g., `default:quality_check`) | Execute built-in verification command (see dispatch table) |
+| **project** | `project:` prefix (e.g., `project:verify-step-lint`) | `Skill: {notation}` with interface contract |
+| **skill** | fully-qualified `bundle:skill` (e.g., `pm-documents:doc-verify`) | `Skill: {notation}` with interface contract |
+
+**Type detection logic**:
+- Starts with `default:` -> built-in type (strip prefix, execute built-in command)
+- Starts with `project:` -> project type
+- Contains `:` (other) -> fully-qualified skill type
+
+### Built-in Step Dispatch Table
+
+| Step Name | Action | Description |
+|-----------|--------|-------------|
+| `default:quality_check` | Run quality-gate build command | Code quality checks |
+| `default:build_verify` | Run full test suite | Build verification |
+
+### Interface Contract for External Steps
+
+Project and skill steps receive these parameters:
+
+```
+Skill: {step_reference}
+  Arguments: --plan-id {plan_id}
+```
+
+Input contract: `--plan-id` only. Retry logic is managed by the task runner (Step 9 triage loop with `verification_max_iterations`), not by the step itself.
+
+**Return Contract** (required TOON output from external steps):
+
+```toon
+status: passed|failed
+message: "Human-readable summary"
+
+# Optional — only when status: failed
+findings[N]{file,line,message,severity}:
+src/Foo.java,42,Unused import,warning
+src/Bar.java,10,Missing null check,error
+```
+
+- `status: passed` → step complete, continue to next step
+- `status: failed` + `findings[]` → findings fed into Step 9 triage (fix task creation, suppress, or accept)
+- `status: failed` without `findings[]` → treated as single unstructured failure, triaged as one finding
+
+---
+
 ### Step 3: Log Phase Start (Once per phase)
 
 At the start of execute or finalize phase:

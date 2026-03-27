@@ -27,7 +27,7 @@ def test_execute_verify_get():
         assert result.success, f'Should succeed: {result.stderr}'
         assert 'verification_max_iterations' in result.stdout
         assert 'steps' in result.stdout
-        assert 'quality_check' in result.stdout
+        assert 'default:quality_check' in result.stdout
 
 
 def test_execute_verify_set_max_iterations():
@@ -55,15 +55,15 @@ def test_execute_set_steps():
             'phase-5-execute',
             'set-steps',
             '--steps',
-            'quality_check,build_verify,pm-dev-java:java-verify-agent',
+            'default:quality_check,default:build_verify,pm-dev-java:java-verify-agent',
         )
 
         assert result.success, f'Should succeed: {result.stderr}'
 
         config = json.loads((ctx.fixture_dir / 'marshal.json').read_text())
         assert config['plan']['phase-5-execute']['steps'] == [
-            'quality_check',
-            'build_verify',
+            'default:quality_check',
+            'default:build_verify',
             'pm-dev-java:java-verify-agent',
         ]
 
@@ -101,15 +101,15 @@ def test_execute_remove_step():
             'phase-5-execute',
             'remove-step',
             '--step',
-            'quality_check',
+            'default:quality_check',
         )
 
         assert result.success, f'Should succeed: {result.stderr}'
 
         config = json.loads((ctx.fixture_dir / 'marshal.json').read_text())
         steps = config['plan']['phase-5-execute']['steps']
-        assert 'quality_check' not in steps
-        assert 'build_verify' in steps
+        assert 'default:quality_check' not in steps
+        assert 'default:build_verify' in steps
 
 
 def test_execute_verify_get_field():
@@ -136,11 +136,11 @@ def test_execute_add_step_duplicate():
             'phase-5-execute',
             'add-step',
             '--step',
-            'quality_check',
+            'default:quality_check',
         )
 
         assert 'error' in result.stdout.lower(), 'Should report error for duplicate step'
-        assert 'quality_check' in result.stdout
+        assert 'default:quality_check' in result.stdout
 
 
 def test_execute_remove_step_not_found():
@@ -176,7 +176,7 @@ def test_finalize_get():
         assert result.success, f'Should succeed: {result.stderr}'
         assert 'max_iterations' in result.stdout
         assert 'steps' in result.stdout
-        assert 'commit_push' in result.stdout
+        assert 'default:commit_push' in result.stdout
 
 
 def test_finalize_set_steps():
@@ -186,14 +186,14 @@ def test_finalize_set_steps():
 
         result = run_script(
             SCRIPT_PATH, 'plan', 'phase-6-finalize', 'set-steps',
-            '--steps', 'commit_push,create_pr,archive'
+            '--steps', 'default:commit_push,default:create_pr,default:archive'
         )
 
         assert result.success, f'Should succeed: {result.stderr}'
 
         config = json.loads((ctx.fixture_dir / 'marshal.json').read_text())
         steps = config['plan']['phase-6-finalize']['steps']
-        assert steps == ['commit_push', 'create_pr', 'archive']
+        assert steps == ['default:commit_push', 'default:create_pr', 'default:archive']
 
 
 def test_finalize_set_steps_empty_error():
@@ -250,7 +250,7 @@ def test_finalize_add_step_duplicate_error():
 
         result = run_script(
             SCRIPT_PATH, 'plan', 'phase-6-finalize', 'add-step',
-            '--step', 'commit_push'
+            '--step', 'default:commit_push'
         )
 
         assert 'error' in result.stdout.lower(), 'Should report error for duplicate step'
@@ -263,14 +263,14 @@ def test_finalize_remove_step():
 
         result = run_script(
             SCRIPT_PATH, 'plan', 'phase-6-finalize', 'remove-step',
-            '--step', 'sonar_roundtrip'
+            '--step', 'default:sonar_roundtrip'
         )
 
         assert result.success, f'Should succeed: {result.stderr}'
 
         config = json.loads((ctx.fixture_dir / 'marshal.json').read_text())
         steps = config['plan']['phase-6-finalize']['steps']
-        assert 'sonar_roundtrip' not in steps
+        assert 'default:sonar_roundtrip' not in steps
 
 
 def test_finalize_remove_step_not_found_error():

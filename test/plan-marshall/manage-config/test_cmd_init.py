@@ -153,7 +153,7 @@ def test_init_includes_verification_in_phase_5_execute():
         assert 'phase-6-verify' not in plan, 'Should NOT have plan.phase-6-verify section'
         execute = plan['phase-5-execute']
         assert execute['verification_max_iterations'] == 5
-        assert execute['steps'] == ['quality_check', 'build_verify']
+        assert execute['steps'] == ['default:quality_check', 'default:build_verify']
 
 
 def test_init_includes_phase_6_finalize():
@@ -170,8 +170,8 @@ def test_init_includes_phase_6_finalize():
         assert finalize['max_iterations'] == 3
         assert 'steps' in finalize, 'Should have steps list'
         assert isinstance(finalize['steps'], list)
-        assert 'commit_push' in finalize['steps']
-        assert 'archive' in finalize['steps']
+        assert 'default:commit_push' in finalize['steps']
+        assert 'default:archive' in finalize['steps']
         assert '1_commit_push' not in finalize, 'Old boolean keys should not exist'
 
 
