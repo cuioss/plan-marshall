@@ -57,12 +57,13 @@ DEFAULT_PLAN_PLAN = {
 }
 
 # Built-in verify step names (dispatch table in phase-5-execute SKILL.md)
-BUILT_IN_VERIFY_STEPS = ['quality_check', 'build_verify']
+# Prefixed with 'default:' to distinguish from project: and fully-qualified skill steps
+BUILT_IN_VERIFY_STEPS = ['default:quality_check', 'default:build_verify']
 
 # Human-readable descriptions for built-in verify steps
 BUILT_IN_VERIFY_STEP_DESCRIPTIONS = {
-    'quality_check': 'Run quality-gate build command',
-    'build_verify': 'Run full test suite',
+    'default:quality_check': 'Run quality-gate build command',
+    'default:build_verify': 'Run full test suite',
 }
 
 DEFAULT_PLAN_EXECUTE = {
@@ -73,27 +74,28 @@ DEFAULT_PLAN_EXECUTE = {
 }
 
 # Built-in finalize step names (dispatch table in phase-6-finalize SKILL.md)
+# Prefixed with 'default:' to distinguish from project: and fully-qualified skill steps
 BUILT_IN_FINALIZE_STEPS = [
-    'commit_push',
-    'create_pr',
-    'automated_review',
-    'sonar_roundtrip',
-    'knowledge_capture',
-    'lessons_capture',
-    'branch_cleanup',
-    'archive',
+    'default:commit_push',
+    'default:create_pr',
+    'default:automated_review',
+    'default:sonar_roundtrip',
+    'default:knowledge_capture',
+    'default:lessons_capture',
+    'default:branch_cleanup',
+    'default:archive',
 ]
 
 # Human-readable descriptions for built-in finalize steps
 BUILT_IN_FINALIZE_STEP_DESCRIPTIONS = {
-    'commit_push': 'Commit and push changes',
-    'create_pr': 'Create pull request',
-    'automated_review': 'CI automated review',
-    'sonar_roundtrip': 'Sonar analysis roundtrip',
-    'knowledge_capture': 'Capture learnings to memory',
-    'lessons_capture': 'Record lessons learned',
-    'branch_cleanup': 'Merge PR (with --delete-branch) and pull latest',
-    'archive': 'Archive the completed plan',
+    'default:commit_push': 'Commit and push changes',
+    'default:create_pr': 'Create pull request',
+    'default:automated_review': 'CI automated review',
+    'default:sonar_roundtrip': 'Sonar analysis roundtrip',
+    'default:knowledge_capture': 'Capture learnings to memory',
+    'default:lessons_capture': 'Record lessons learned',
+    'default:branch_cleanup': 'Merge PR (with --delete-branch) and pull latest',
+    'default:archive': 'Archive the completed plan',
 }
 
 DEFAULT_PLAN_FINALIZE = {

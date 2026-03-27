@@ -2,7 +2,7 @@
   "ci": {
     "provider": "github",
     "repo_url": "https://github.com/cuioss/plan-marshall.git",
-    "detected_at": "2026-03-27T07:51:25Z"
+    "detected_at": "2026-03-27T10:13:11Z"
   },
   "plan": {
     "phase-1-init": {
@@ -23,8 +23,8 @@
       "finalize_without_asking": true,
       "verification_max_iterations": 5,
       "steps": [
-        "quality_check",
-        "build_verify",
+        "default:quality_check",
+        "default:build_verify",
         "pm-documents:doc-verify"
       ]
     },
@@ -32,14 +32,14 @@
       "max_iterations": 3,
       "review_bot_buffer_seconds": 300,
       "steps": [
-        "commit_push",
-        "create_pr",
-        "automated_review",
-        "sonar_roundtrip",
-        "knowledge_capture",
-        "lessons_capture",
-        "branch_cleanup",
-        "archive"
+        "default:commit_push",
+        "default:create_pr",
+        "default:automated_review",
+        "default:sonar_roundtrip",
+        "default:knowledge_capture",
+        "default:lessons_capture",
+        "default:branch_cleanup",
+        "default:archive"
       ]
     }
   },
@@ -61,12 +61,6 @@
         "project:sync-plugin-cache",
         "project:verify-workflow"
       ]
-    },
-    "build": {
-      "bundle": "plan-marshall"
-    },
-    "general-dev": {
-      "bundle": "plan-marshall"
     },
     "documentation": {
       "bundle": "pm-documents",
