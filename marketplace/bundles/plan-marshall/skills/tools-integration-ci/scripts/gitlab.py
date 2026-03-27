@@ -447,7 +447,7 @@ def cmd_pr_comments(args: argparse.Namespace) -> int:
     # Escape body text for TOON table rows
     toon_comments = []
     for c in comments:
-        body = c['body'].replace('\t', ' ').replace('\n', ' ')[:100]
+        body = c['body'].replace('\t', ' ').replace('\n', ' ')
         toon_comments.append({
             'id': c['id'],
             'author': c['author'],
