@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with th
 
 ## Repository Overview
 
-This is a **Claude Code Marketplace** repository providing development standards, automation tools, and AI-assisted workflows for CUI (Common User Interface) Open Source projects. It contains 7 production bundles with 95 components (skills, agents, and commands) that integrate with Claude Code's plugin system.
+This is a **Claude Code Marketplace** repository providing development standards, automation tools, and AI-assisted workflows for CUI (Common User Interface) Open Source projects. It contains 10 production bundles with 94 components (skills, agents, and commands) that integrate with Claude Code's plugin system.
 
 ## Architecture
 
@@ -16,12 +16,15 @@ plan-marshall/
 │   ├── .claude-plugin/
 │   │   └── marketplace.json        # Master marketplace configuration
 │   ├── adapters/                   # Multi-assistant export adapters
-│   └── bundles/                    # 7 production bundles
-│       ├── pm-dev-java/            # Java development standards + agents
-│       ├── pm-dev-frontend/        # JavaScript/CSS standards + agents
-│       ├── pm-dev-builder/         # Maven/Gradle/npm build automation
-│       ├── pm-documents/           # AsciiDoc, ADRs, interfaces
+│   └── bundles/                    # 10 production bundles
 │       ├── plan-marshall/          # Utilities, workflow, and orchestration
+│       ├── pm-dev-frontend/        # JavaScript/CSS standards
+│       ├── pm-dev-frontend-cui/    # CUI-specific JavaScript standards
+│       ├── pm-dev-java/            # Java development standards + agents
+│       ├── pm-dev-java-cui/        # CUI-specific Java standards
+│       ├── pm-dev-oci/             # OCI container standards + security
+│       ├── pm-dev-python/          # Python standards + build operations
+│       ├── pm-documents/           # AsciiDoc, ADRs, interfaces
 │       ├── pm-plugin-development/  # Plugin creation toolkit
 │       └── pm-requirements/        # Requirements engineering
 ├── test/                           # Python pytest tests for scripts
@@ -35,9 +38,9 @@ The marketplace uses a three-tier component hierarchy:
 
 | Component | Count | Purpose |
 |-----------|-------|---------|
-| **Skills** | 28 | Domain knowledge, standards, and reference documentation |
-| **Agents** | 28 | Autonomous task executors with focused responsibilities |
-| **Commands** | 39 | User-invokable slash commands that orchestrate workflows |
+| **Skills** | 80 | Domain knowledge, standards, and reference documentation |
+| **Agents** | 10 | Autonomous task executors with focused responsibilities |
+| **Commands** | 4 | User-invokable slash commands that orchestrate workflows |
 
 ### Bundle Structure
 
@@ -58,22 +61,31 @@ bundle-name/
 └── README.md               # Bundle documentation
 ```
 
-## The 7 Production Bundles
-
-### pm-dev-java
-Java development standards covering core patterns, null safety, Lombok, CDI/Quarkus, unit testing with JUnit 5, JavaDoc, and logging. Includes agents for implementation, testing, refactoring, and build fixing.
-
-### pm-dev-frontend
-JavaScript and frontend standards for ES modules, modern patterns, CSS, JSDoc, project structure, Maven integration, ESLint/Prettier/StyleLint configuration, Cypress E2E testing, and Jest unit testing.
-
-### builder
-Unified build automation supporting Maven, Gradle, and npm. Features environment detection, build output parsing, error routing, and auto-fixing workflows.
-
-### pm-documents
-Documentation standards for AsciiDoc, Architectural Decision Records (ADRs), and interface specifications. Includes validation, formatting, and maintenance workflows.
+## The 10 Production Bundles
 
 ### plan-marshall
-Utility commands for script execution, permission management, file operations, memory management, lessons learned tracking, and project configuration. Also includes the complete development workflow from task implementation to PR quality verification, with task planning, implementation phases, plan refinement, finalization, git workflows, PR management, and Sonar integration.
+Core infrastructure with script execution, permission management, memory, lessons learned, and project configuration. Includes the complete 5-phase development workflow (init, refine, outline, plan, execute, finalize), task planning, git workflows, PR management, Sonar integration, and build automation for Maven/Gradle/npm.
+
+### pm-dev-java
+Java development standards covering core patterns, null safety, Lombok, CDI/Quarkus, unit testing with JUnit 5, JavaDoc, and logging. Includes agents for verification and coverage analysis.
+
+### pm-dev-java-cui
+CUI-specific Java standards covering CuiLogger, test generators, value object contracts, HTTP client patterns, and MockWebServer testing.
+
+### pm-dev-frontend
+JavaScript and frontend standards for ES modules, modern patterns, JSDoc, ESLint enforcement, and project structure.
+
+### pm-dev-frontend-cui
+CUI-specific JavaScript project standards covering Maven integration, Quarkus DevUI, NiFi, and SonarQube configuration.
+
+### pm-dev-oci
+OCI container standards covering image building, Dockerfile best practices, multi-platform builds, runtime security, and supply chain controls.
+
+### pm-dev-python
+Python development standards and pyprojectx build operations.
+
+### pm-documents
+Documentation standards for AsciiDoc, Architectural Decision Records (ADRs), and interface specifications. Includes validation, formatting, verification, and maintenance workflows.
 
 ### pm-plugin-development
 Plugin development toolkit with creation wizards, quality diagnosis, marketplace inventory scanning, architecture guidance, and component maintenance workflows.

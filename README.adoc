@@ -137,6 +137,18 @@ After setup, Plan Marshall creates:
 |`pm-dev-frontend`
 |JavaScript/CSS standards and tooling
 
+|`pm-dev-frontend-cui`
+|CUI-specific JavaScript project standards covering Maven integration, Quarkus DevUI, NiFi, and SonarQube
+
+|`pm-dev-java-cui`
+|CUI-specific Java development standards covering CuiLogger, test generators, value object contracts, and HTTP client patterns
+
+|`pm-dev-oci`
+|OCI container standards and security best practices
+
+|`pm-dev-python`
+|Python domain extension with pyprojectx build operations
+
 |`pm-documents`
 |AsciiDoc documentation standards
 
