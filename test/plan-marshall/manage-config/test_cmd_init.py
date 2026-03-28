@@ -170,7 +170,7 @@ def test_init_includes_phase_6_finalize():
         assert finalize['max_iterations'] == 3
         assert 'steps' in finalize, 'Should have steps list'
         assert isinstance(finalize['steps'], list)
-        assert 'default:commit_push' in finalize['steps']
+        assert 'default:commit-push' in finalize['steps']
         assert 'default:archive' in finalize['steps']
         assert '1_commit_push' not in finalize, 'Old boolean keys should not exist'
 

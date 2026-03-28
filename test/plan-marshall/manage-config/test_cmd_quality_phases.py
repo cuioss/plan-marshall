@@ -176,7 +176,7 @@ def test_finalize_get():
         assert result.success, f'Should succeed: {result.stderr}'
         assert 'max_iterations' in result.stdout
         assert 'steps' in result.stdout
-        assert 'default:commit_push' in result.stdout
+        assert 'default:commit-push' in result.stdout
 
 
 def test_finalize_set_steps():
@@ -186,14 +186,14 @@ def test_finalize_set_steps():
 
         result = run_script(
             SCRIPT_PATH, 'plan', 'phase-6-finalize', 'set-steps',
-            '--steps', 'default:commit_push,default:create_pr,default:archive'
+            '--steps', 'default:commit-push,default:create-pr,default:archive'
         )
 
         assert result.success, f'Should succeed: {result.stderr}'
 
         config = json.loads((ctx.fixture_dir / 'marshal.json').read_text())
         steps = config['plan']['phase-6-finalize']['steps']
-        assert steps == ['default:commit_push', 'default:create_pr', 'default:archive']
+        assert steps == ['default:commit-push', 'default:create-pr', 'default:archive']
 
 
 def test_finalize_set_steps_empty_error():
@@ -250,7 +250,7 @@ def test_finalize_add_step_duplicate_error():
 
         result = run_script(
             SCRIPT_PATH, 'plan', 'phase-6-finalize', 'add-step',
-            '--step', 'default:commit_push'
+            '--step', 'default:commit-push'
         )
 
         assert 'error' in result.stdout.lower(), 'Should report error for duplicate step'
@@ -263,14 +263,14 @@ def test_finalize_remove_step():
 
         result = run_script(
             SCRIPT_PATH, 'plan', 'phase-6-finalize', 'remove-step',
-            '--step', 'default:sonar_roundtrip'
+            '--step', 'default:sonar-roundtrip'
         )
 
         assert result.success, f'Should succeed: {result.stderr}'
 
         config = json.loads((ctx.fixture_dir / 'marshal.json').read_text())
         steps = config['plan']['phase-6-finalize']['steps']
-        assert 'default:sonar_roundtrip' not in steps
+        assert 'default:sonar-roundtrip' not in steps
 
 
 def test_finalize_remove_step_not_found_error():

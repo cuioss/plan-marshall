@@ -76,25 +76,25 @@ DEFAULT_PLAN_EXECUTE = {
 # Built-in finalize step names (dispatch table in phase-6-finalize SKILL.md)
 # Prefixed with 'default:' to distinguish from project: and fully-qualified skill steps
 BUILT_IN_FINALIZE_STEPS = [
-    'default:commit_push',
-    'default:create_pr',
-    'default:automated_review',
-    'default:sonar_roundtrip',
-    'default:knowledge_capture',
-    'default:lessons_capture',
-    'default:branch_cleanup',
+    'default:commit-push',
+    'default:create-pr',
+    'default:automated-review',
+    'default:sonar-roundtrip',
+    'default:knowledge-capture',
+    'default:lessons-capture',
+    'default:branch-cleanup',
     'default:archive',
 ]
 
 # Human-readable descriptions for built-in finalize steps
 BUILT_IN_FINALIZE_STEP_DESCRIPTIONS = {
-    'default:commit_push': 'Commit and push changes',
-    'default:create_pr': 'Create pull request',
-    'default:automated_review': 'CI automated review',
-    'default:sonar_roundtrip': 'Sonar analysis roundtrip',
-    'default:knowledge_capture': 'Capture learnings to memory',
-    'default:lessons_capture': 'Record lessons learned',
-    'default:branch_cleanup': 'Merge PR (with --delete-branch) and pull latest',
+    'default:commit-push': 'Commit and push changes',
+    'default:create-pr': 'Create pull request',
+    'default:automated-review': 'CI automated review',
+    'default:sonar-roundtrip': 'Sonar analysis roundtrip',
+    'default:knowledge-capture': 'Capture learnings to memory',
+    'default:lessons-capture': 'Record lessons learned',
+    'default:branch-cleanup': 'Merge PR (with --delete-branch) and pull latest',
     'default:archive': 'Archive the completed plan',
 }
 
