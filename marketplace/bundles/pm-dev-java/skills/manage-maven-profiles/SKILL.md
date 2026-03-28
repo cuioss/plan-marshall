@@ -41,10 +41,7 @@ Maven profiles enable optional build features. Extension API classifies profiles
 | Canonical (e.g., `coverage`) | Generates build command |
 | `NO-MATCH-FOUND` | No command generated |
 
-**Key Insight**: Most NO-MATCH-FOUND profiles are **correctly unmatched**:
-- `apache-release` → Release process, not a build command
-- `skip-unit-tests` → Test skipping, not a positive command
-- `use-apache-snapshots` → Repository config, not a command
+For canonical classification types, storage format, and common NO-MATCH-FOUND examples, see `standards/profile-classification.md`.
 
 ---
 
@@ -149,48 +146,9 @@ python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture d
 
 ---
 
-## Canonical Classifications
+## Standards
 
-| Canonical | Description | Example Profile IDs |
-|-----------|-------------|---------------------|
-| `integration-tests` | Integration/E2E tests | `it`, `e2e`, `local-integration-tests` |
-| `coverage` | Code coverage | `jacoco`, `istanbul` |
-| `benchmark` | Benchmarks | `jmh`, `perf`, `stress` |
-| `quality-gate` | Quality checks | `pre-commit`, `lint`, `checkstyle` |
-| `skip` | Exclude from command generation | Internal profiles |
-
----
-
-## Multiple Profiles to One Canonical
-
-When multiple profiles map to the same canonical:
-
-- Only ONE command is generated
-- First discovered profile becomes primary
-- All profiles listed in `all_profiles`
-
-**User override**: Add unwanted profiles to skip list.
-
----
-
-## Storage
-
-Configuration stored in `marshal.json` under `extension_defaults`:
-
-```json
-{
-  "extension_defaults": {
-    "build.maven.profiles.skip": "itest,native",
-    "build.maven.profiles.map.canonical": "local-integration-tests:integration-tests,perf:benchmark"
-  }
-}
-```
-
-**Key Formats**:
-- `build.maven.profiles.skip` - Comma-separated profile IDs to exclude
-- `build.maven.profiles.map.canonical` - Comma-separated `profile:canonical` pairs
-
-Skip list and profile mappings are read during architecture discovery to classify profiles.
+- `standards/profile-classification.md` — Canonical classifications, multi-profile handling, storage format
 
 ---
 
@@ -236,5 +194,5 @@ All subcommands accept `--project-dir {path}` (default: current directory).
 
 | Document | Purpose |
 |----------|---------|
-| `pm-dev-java:plan-marshall-plugin` → `standards/maven-impl.md` | Maven profile pipeline implementation |
+| `plan-marshall:build-maven` → `standards/maven-impl.md` | Maven profile pipeline implementation |
 | `plan-marshall:extension-api` → `standards/canonical-commands.md` | Command vocabulary |
