@@ -338,7 +338,7 @@ def cmd_enrich(args: argparse.Namespace) -> None:
             if transcript_path:
                 break
 
-    if not transcript_path:
+    if not transcript_path and projects_dir.exists():
         # Try direct session file pattern
         for project_dir in projects_dir.iterdir():
             if project_dir.is_dir():
