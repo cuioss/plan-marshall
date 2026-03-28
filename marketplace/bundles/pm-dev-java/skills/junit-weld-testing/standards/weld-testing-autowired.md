@@ -154,6 +154,164 @@ class ManualConfigTest {
 | `AmbiguousResolutionException` | Multiple implementations | Use `@ExcludeBeanClasses` to narrow |
 | Test passes alone, fails in suite | Shared static state | Ensure beans are `@Dependent` or properly scoped |
 
+## Advanced Patterns
+
+### Testing with Producers
+
+When a bean depends on a produced value (e.g., configuration), register the producer explicitly:
+
+```java
+@EnableAutoWeld
+@AddBeanClasses(AppConfigProducer.class)
+class ConfigDependentServiceTest {
+
+    @Inject
+    ConfigDependentService underTest;
+
+    @Test
+    void shouldUseProducedConfig() {
+        // AppConfigProducer provides @Produces AppConfig
+        assertNotNull(underTest.getConfig());
+        assertEquals("expected-value", underTest.getConfig().getSetting());
+    }
+}
+```
+
+### Testing with Alternatives and Qualifiers
+
+Use `@AddBeanClasses` with `@Alternative` beans to override production implementations:
+
+```java
+@Alternative
+@Priority(1)
+class StubNotificationService implements NotificationService {
+    private final List<String> sentMessages = new ArrayList<>();
+
+    @Override
+    public void send(String message) {
+        sentMessages.add(message);
+    }
+
+    public List<String> getSentMessages() {
+        return sentMessages;
+    }
+}
+
+@EnableAutoWeld
+@AddBeanClasses(StubNotificationService.class)
+class OrderServiceTest {
+
+    @Inject
+    OrderService underTest;
+
+    @Inject
+    StubNotificationService notifications;
+
+    @Test
+    void shouldNotifyOnOrderCompletion() {
+        underTest.completeOrder("order-123");
+        assertEquals(1, notifications.getSentMessages().size());
+    }
+}
+```
+
+### Testing Event Observers
+
+Verify CDI events by registering a test observer:
+
+```java
+@ApplicationScoped
+class TestEventCollector {
+    private final List<OrderEvent> events = new ArrayList<>();
+
+    void onOrder(@Observes OrderEvent event) {
+        events.add(event);
+    }
+
+    public List<OrderEvent> getEvents() {
+        return events;
+    }
+}
+
+@EnableAutoWeld
+@ActivateScopes(RequestScoped.class)
+@AddBeanClasses(TestEventCollector.class)
+class EventFiringServiceTest {
+
+    @Inject
+    EventFiringService underTest;
+
+    @Inject
+    TestEventCollector collector;
+
+    @Test
+    void shouldFireOrderEvent() {
+        underTest.processOrder("order-456");
+        assertEquals(1, collector.getEvents().size());
+        assertEquals("order-456", collector.getEvents().get(0).getOrderId());
+    }
+}
+```
+
+### Nested Test Classes
+
+Use `@Nested` with Weld annotations on the outer class — inner classes inherit the container:
+
+```java
+@EnableAutoWeld
+@AddBeanClasses(ConfigProducer.class)
+class UserServiceTest {
+
+    @Inject
+    UserService underTest;
+
+    @Nested
+    class WhenUserExists {
+        @Test
+        void shouldReturnUser() {
+            var user = underTest.findById("known-id");
+            assertTrue(user.isPresent());
+        }
+    }
+
+    @Nested
+    class WhenUserDoesNotExist {
+        @Test
+        void shouldReturnEmpty() {
+            var user = underTest.findById("unknown-id");
+            assertTrue(user.isEmpty());
+        }
+    }
+}
+```
+
+### Combining with Mockito
+
+For dependencies that are hard to instantiate in tests, combine Weld with Mockito:
+
+```java
+@EnableAutoWeld
+@ExcludeBeanClasses(ExternalApiClient.class)
+class ServiceWithExternalDependencyTest {
+
+    @Produces
+    @Default
+    ExternalApiClient mockClient = Mockito.mock(ExternalApiClient.class);
+
+    @Inject
+    MyService underTest;
+
+    @Test
+    void shouldHandleExternalFailure() {
+        when(mockClient.fetchData()).thenThrow(new RuntimeException("timeout"));
+        var result = underTest.processWithFallback();
+        assertEquals("fallback-value", result);
+    }
+}
+```
+
+The `@Produces` annotation makes the mock available to the CDI container. `@ExcludeBeanClasses` prevents the real implementation from conflicting.
+
 ## References
 
 - [weld-testing GitHub](https://github.com/weld/weld-testing)

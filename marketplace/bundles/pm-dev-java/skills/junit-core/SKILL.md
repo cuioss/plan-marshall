@@ -110,6 +110,15 @@ void shouldParseAllTokenClaims() {
 - `pm-dev-java-cui:cui-testing` - CUI test generator framework
 - `pm-dev-java:java-core` - Core Java patterns
 
+## Templates
+
+**Unit test class** — starting point for new test classes:
+```
+Read: templates/unit-test-class.java.tmpl
+```
+
+Replace `${PACKAGE}`, `${CLASS_UNDER_TEST}`, `${METHOD_1}`, and placeholder comments with actual values.
+
 ## Standards Reference
 
 | Standard | Purpose |
