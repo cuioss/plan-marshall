@@ -135,11 +135,11 @@ This uses the `pm-dev-java-cui:cui-logging` skill workflow for structured loggin
 
 **Analyze LogRecord coverage:**
 
-For each LogMessages class, apply coverage analysis patterns from `pm-dev-java-cui:cui-logging` skill:
-- Extract all LogRecord definitions (Pattern 6)
-- Find production usage with Grep (Pattern 7)
-- Find test coverage with LogAssert (Pattern 8)
-- Determine coverage status (Pattern 9)
+For each LogMessages class, apply coverage analysis:
+- Extract all LogRecord definitions from LogMessages classes
+- Find production usage with Grep (search for `.format()` calls and static imports)
+- Find test coverage with LogAssert (search for `LogAsserts` and `resolveIdentifierString`)
+- Determine coverage status
 
 **Coverage Actions:**
 - No references → Remove (unused)
@@ -147,7 +147,7 @@ For each LogMessages class, apply coverage analysis patterns from `pm-dev-java-c
 - Test only → USER REVIEW (critical bug)
 - Both → Compliant
 
-See: `standards/logging-maintenance-reference.md` → Patterns 6-9 (Coverage Analysis)
+See: `standards/logging-maintenance-reference.md` → "Test Coverage Verification" section
 
 ### Step 6: Generate Execution Plan
 
@@ -163,9 +163,9 @@ See: `standards/logging-maintenance-reference.md` → Patterns 6-9 (Coverage Ana
    - Test-only LogRecords (critical bugs)
 
 3. **Create batched work plan:**
-   - Batch 1: Fix logging statement violations (/java-implement-code)
-   - Batch 2: Remove unused LogRecords (/java-implement-code)
-   - Batch 3: Add missing LogAsserts (/java-implement-tests)
+   - Batch 1: Fix logging statement violations (production code changes)
+   - Batch 2: Remove unused LogRecords (production code changes)
+   - Batch 3: Add missing LogAsserts (test code changes)
    - Batch 4: User review for test-only LogRecords
 
 **Plan format:**
@@ -179,15 +179,12 @@ Total LogRecord Issues: {count}
 Batch 1: Fix Logging Statements
 - {count} missing LogRecord conversions
 - {count} prohibited LogRecord removals
-- Command: /java-implement-code
 
 Batch 2: Remove Unused LogRecords
 - {count} unused LogRecord definitions
-- Command: /java-implement-code
 
 Batch 3: Add Test Coverage
 - {count} untested LogRecords
-- Command: /java-implement-tests
 
 Batch 4: User Review Required
 - {count} test-only LogRecords (critical)
@@ -195,20 +192,20 @@ Batch 4: User Review Required
 
 ### Step 7: Execute Corrections
 
-**Execute batches using agent coordination patterns:**
+**Execute batches sequentially:**
 
-Follow batch execution templates from `pm-dev-java-cui:cui-logging` skill (Pattern 11).
-
-**Batch 1:** Fix logging violations using /java-implement-code
+**Batch 1:** Fix logging violations
+- Apply migration patterns from `pm-dev-java-cui:cui-logging` skill (`standards/logging-maintenance-reference.md` → "Migration Patterns")
 - Pass violations list with file locations and required corrections
 - Verify compilation
 
-**Batch 2:** Remove unused LogRecords using /java-implement-code
-- Pass list of unused LogRecords with locations
+**Batch 2:** Remove unused LogRecords
+- Remove LogRecord definitions with no production references
 - Verify compilation
 
-**Batch 3:** Add LogAssert tests using /java-implement-tests
-- Pass untested LogRecords with production usage locations
+**Batch 3:** Add LogAssert tests
+- Add LogAsserts to existing business logic tests (never standalone coverage tests)
+- Follow patterns from `pm-dev-java-cui:cui-logging` skill (`standards/logging-maintenance-reference.md` → "Test Coverage Verification")
 - Use @EnableTestLogger and LogAsserts
 - Verify tests pass
 
@@ -216,8 +213,6 @@ Follow batch execution templates from `pm-dev-java-cui:cui-logging` skill (Patte
 - Report test-only LogRecords as critical bugs
 - Stop execution and await user guidance
 - Options: Add production code or remove tests
-
-See: `standards/logging-maintenance-reference.md` → Pattern 11 (Batch Templates)
 
 ### Step 8: Verify Corrections
 
@@ -238,8 +233,7 @@ For each LogMessages class:
 **Standard ranges** (from logging-standards.md):
 - INFO: 001-099, WARN: 100-199, ERROR: 200-299, FATAL: 300-399
 
-See: `logging-standards.md` → Message Identifier Ranges
-See: `logging-maintenance-reference.md` → Patterns 13-14 (Identifier Validation)
+See: `logging-standards.md` → "Message Identifier Ranges" section
 
 ### Step 10: Update LogMessages Documentation
 
@@ -329,9 +323,9 @@ COMPLIANCE STATUS: {COMPLIANT / ISSUES REMAINING}
 - Update configuration for future executions
 
 **Violation Detection:**
-- Use `pm-dev-java-cui:cui-logging` skill workflow: Analyze Logging Violations
-- Script handles: finding statements, determining LogRecord usage, applying rules
-- Receive structured violations with file locations and types
+- Use detection patterns from `pm-dev-java-cui:cui-logging` skill (`standards/logging-maintenance-reference.md` → "Detection Patterns")
+- Find violations by scanning for direct string logging at INFO/WARN/ERROR/FATAL levels
+- Find prohibited LogRecord usage at DEBUG/TRACE levels
 - Process violation data for batched fixes
 
 **LogRecord Validation Rules:**
@@ -346,11 +340,11 @@ COMPLIANCE STATUS: {COMPLIANT / ISSUES REMAINING}
 - Test only → USER REVIEW REQUIRED (critical bug)
 - Both references → Compliant
 
-**Agent Coordination:**
-- Use /java-implement-code for production code changes
-- Use /java-implement-tests for LogAssert test implementation
+**Batch Execution:**
+- Apply production code changes directly (logging statement fixes, unused LogRecord removal)
+- Add LogAsserts to existing business logic tests (never standalone coverage tests)
 - Use `plan-marshall:manage-architecture:architecture resolve` for all build verifications
-- Execute commands in batches (grouped by change type)
+- Execute changes in batches (grouped by change type)
 
 **Identifier Management:**
 - Standard ranges (from logging-standards.md): INFO 001-099, WARN 100-199, ERROR 200-299, FATAL 300-399
@@ -388,10 +382,9 @@ COMPLIANCE STATUS: {COMPLIANT / ISSUES REMAINING}
 
 ## RELATED
 
-- Skill: `pm-dev-java-cui:cui-logging` - Logging standards, enforcement patterns, and workflows
-  - Workflow: Analyze Logging Violations - Detect LOGGER usage violations
-  - Workflow: Document LogRecord - Generate AsciiDoc documentation
-- Standards: `logging-standards.md`, `logmessages-documentation.md`, `logging-maintenance-reference.md`
-- Command: `/java-implement-code` - Fix production code
-- Command: `/java-implement-tests` - Add tests
+- Skill: `pm-dev-java-cui:cui-logging` - Logging standards and maintenance reference
+  - `standards/logging-standards.md` - Core rules, LogMessages structure, identifier ranges
+  - `standards/logging-maintenance-reference.md` - Detection patterns, migration, test coverage
+  - `standards/logmessages-documentation.md` - AsciiDoc documentation requirements
+- Skill: `pm-dev-java-cui:java-maintain-logger` - Systematic module-by-module migration (use for large-scale logger migration; use this skill for targeted enforcement scans)
 - Skill: `pm-dev-java:plan-marshall-plugin` - Java domain extension with workflow integration

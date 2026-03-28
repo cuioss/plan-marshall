@@ -158,8 +158,9 @@ Task:
   description: Audit logger configuration
   prompt: |
     Identify logging configuration violations in module {module}.
-    Apply detection criteria from `pm-dev-java-cui:cui-logging` skill:
-    logging-maintenance-reference.md#standards-violation-detection
+    Apply detection patterns from `pm-dev-java-cui:cui-logging` skill:
+    logging-maintenance-reference.md → "Detection Patterns" section.
+    Search for: LoggerFactory.getLogger, Logger.getLogger, @Slf4j, System.out/err.
 
     Return structured list of violations with locations.
 ```
@@ -174,7 +175,9 @@ Task:
   prompt: |
     Check LogRecord usage compliance in module {module}.
     Apply rules from `pm-dev-java-cui:cui-logging` skill:
-    logging-maintenance-reference.md#logrecord-implementation-issues
+    logging-standards.md → "LogRecord Usage" section.
+    Find: LOGGER.info(" or LOGGER.warn(" etc. (direct strings at production levels),
+    and LOGGER.debug(DEBUG. etc. (LogRecord at debug/trace levels).
 
     Return structured findings.
 ```
@@ -189,7 +192,8 @@ Task:
   prompt: |
     Review LogMessages class structure in module {module}.
     Apply patterns from `pm-dev-java-cui:cui-logging` skill:
-    logging-maintenance-reference.md#logmessages-structure-issues
+    logging-standards.md → "LogMessages Class Structure" section.
+    Check: DSL-style organization, identifier ranges, @UtilityClass usage.
 
     Return findings with specific violations.
 ```
@@ -207,8 +211,8 @@ Task:
   description: Detect duplicate log messages
   prompt: |
     Identify duplicate logging patterns in module {module}.
-    Apply detection patterns from `pm-dev-java-cui:cui-logging` skill:
-    logging-maintenance-reference.md#duplicate-detection-patterns
+    Search for duplicate .identifier(N) values within LogMessages classes.
+    Search for identical or near-identical log message templates.
 
     Suggest consolidation opportunities.
 ```
@@ -236,34 +240,27 @@ Apply fixes using /java-implement-code command with patterns from `pm-dev-java-c
 
 **5.1 Logger Migration:**
 
-```
-SlashCommand: /pm-dev-java:java-implement-code task="Migrate logger to CuiLogger in {file}.
-Replace logger with CuiLogger.
-Apply migration pattern from `pm-dev-java-cui:cui-logging` skill: logging-maintenance-reference.md#logger-migration
-
-CRITICAL: Only modify logging code, no other changes."
-```
+Migrate logger to CuiLogger in each file:
+- Replace `LoggerFactory.getLogger` / `Logger.getLogger` / `@Slf4j` with `CuiLogger`
+- Apply migration pattern from `pm-dev-java-cui:cui-logging` skill: `standards/logging-maintenance-reference.md` → "Logger Migration"
+- CRITICAL: Only modify logging code, no other changes
 
 **5.2 LogRecord Implementation:**
 
-```
-SlashCommand: /pm-dev-java:java-implement-code task="Add LogRecord usage in {file}.
-Convert direct logging to LogRecord.
-Apply implementation pattern from `pm-dev-java-cui:cui-logging` skill: logging-maintenance-reference.md#logrecord-implementation
-
-CRITICAL: Only modify logging code."
-```
+Convert direct logging to LogRecord in each file:
+- Replace direct string logging at INFO/WARN/ERROR/FATAL with LogRecord usage
+- Convert `{}` placeholders to `%s`
+- Apply pattern from `pm-dev-java-cui:cui-logging` skill: `standards/logging-maintenance-reference.md` → "LogRecord Migration"
+- CRITICAL: Only modify logging code
 
 **If non-logging bug discovered:** Apply bug handling protocol (stop, document, ask user, wait).
 
 **5.3 LogMessages Creation/Update:**
 
-```
-SlashCommand: /pm-dev-java:java-implement-code task="Create/update LogMessages class for module {module}.
-Use template from `pm-dev-java-cui:cui-logging` skill: logging-maintenance-reference.md#logmessages-structure
-
-CRITICAL: Only create/modify LogMessages, no other changes."
-```
+Create or update LogMessages class for the module:
+- Follow DSL-style structure from `pm-dev-java-cui:cui-logging` skill: `standards/logging-standards.md` → "LogMessages Class Structure"
+- Use standard identifier ranges: INFO 001-099, WARN 100-199, ERROR 200-299, FATAL 300-399
+- CRITICAL: Only create/modify LogMessages, no other changes
 
 **5.4 Documentation Update:**
 
@@ -279,13 +276,13 @@ Task:
   prompt: |
     Find the appropriate business logic test for LogRecord {logrecord_name}.
     Follow troubleshooting guide from `pm-dev-java-cui:cui-logging` skill:
-    logging-maintenance-reference.md#finding-the-right-business-logic-test
+    logging-maintenance-reference.md → "Finding the Right Business Logic Test" section.
 
     Return: test file, test method, line number for LogAsserts.
     CRITICAL: Must be EXISTING business logic test, not new coverage test.
 ```
 
-Then add LogAsserts to existing test (see `pm-dev-java-cui:cui-logging` skill for LogAsserts patterns).
+Then add LogAsserts to existing test (see `pm-dev-java-cui:cui-logging` skill → `standards/logging-maintenance-reference.md` → "Test Coverage Verification").
 
 **If no business logic test exists:** Present using `AskUserQuestion`:
 
@@ -343,8 +340,6 @@ Logging improvements:
 - Documentation: doc/LogMessages.adoc updated
 
 plan.md status: {tested}/{total} LogRecords tested
-
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
 
 Co-Authored-By: Claude <noreply@anthropic.com>
 EOF
@@ -434,18 +429,15 @@ Display all statistics in final summary.
 
 ## ARCHITECTURE
 
-Orchestrates skill workflows and commands:
+Orchestrates skill workflows and direct code edits:
 - **`pm-dev-java-cui:cui-logging` skill** - Logging standards and maintenance reference
 - **Explore agent** - Violation detection and business test location
-- **/java-implement-code command** - Logging code modifications
-- **Build system** - Build verification via `plan-marshall:build-maven` skill
+- **Direct code edits** - Logger migration, LogRecord implementation, LogAssert addition
+- **Build system** - Build verification via `plan-marshall:manage-architecture:architecture resolve`
 - **pm-dev-java:plan-marshall-plugin skill** - Java domain extension
-- **Bash** - LogRecord discovery script and plan.md updates (scripts from skill)
 
 ## RELATED
 
 - `pm-dev-java-cui:cui-logging` skill - Logging standards and maintenance reference
-- `/java-implement-code` command - Code modifications
+- `pm-dev-java-cui:java-enforce-logrecords` skill - Targeted enforcement scan (use for quick validation; use this skill for full migration)
 - `pm-dev-java:plan-marshall-plugin` skill - Java domain extension with workflow integration
-- `/java-refactor-code` command - Broader code refactoring
-- `/java-enforce-logrecords` command - Automated logging enforcement

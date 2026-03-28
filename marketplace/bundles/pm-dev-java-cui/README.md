@@ -67,6 +67,16 @@ Systematic logging standards maintenance with plan tracking and comprehensive te
 - Add LogRecord usage where missing
 - Create/update LogMessages classes
 
+### When to Use enforce vs maintain
+
+| Scenario | Skill |
+|----------|-------|
+| Quick compliance scan of an already-CuiLogger module | `java-enforce-logrecords` |
+| Fix specific LogRecord gaps (missing tests, unused records) | `java-enforce-logrecords` |
+| Migrate a module from SLF4J/Log4j to CuiLogger | `java-maintain-logger` |
+| Full module-by-module logging overhaul with plan tracking | `java-maintain-logger` |
+| Renumber identifiers and sync documentation | `java-enforce-logrecords` |
+
 ## Usage
 
 Load skills based on project needs:
