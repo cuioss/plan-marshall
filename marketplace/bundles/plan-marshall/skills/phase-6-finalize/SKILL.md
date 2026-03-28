@@ -99,7 +99,7 @@ Three step types are supported, distinguished by prefix notation:
 | `default:knowledge-capture` | `standards/knowledge-capture.md` | Capture learnings to memory |
 | `default:lessons-capture` | `standards/lessons-capture.md` | Record lessons learned |
 | `default:branch-cleanup` | `standards/branch-cleanup.md` | Merge PR (with --delete-branch) and pull latest |
-| `default:archive` | `standards/archive.md` | Archive the completed plan |
+| `default:archive-plan` | `standards/archive-plan.md` | Archive the completed plan |
 
 ### Interface Contract for External Steps
 
@@ -212,7 +212,7 @@ END FOR
 
 **Built-in step notes**:
 - `default:branch-cleanup`: Do NOT preemptively skip based on PR state. The `standards/branch-cleanup.md` standard has its own `AskUserQuestion` confirmation gate.
-- `default:archive`: This step MUST be last in the default order because it moves plan files (including status.json), which breaks manage-* scripts. All plan operations must complete before archive.
+- `default:archive-plan`: This step MUST be last in the default order because it moves plan files (including status.json), which breaks manage-* scripts. All plan operations must complete before archive.
 
 ### Step 4: Mark Plan Complete
 
@@ -348,7 +348,7 @@ State checks (for present steps):
 | `standards/knowledge-capture.md` | `default:knowledge-capture` | manage-memories save command |
 | `standards/lessons-capture.md` | `default:lessons-capture` | manage-lesson add command |
 | `standards/branch-cleanup.md` | `default:branch-cleanup` | Merge PR (with --delete-branch), pull latest, with user confirmation |
-| `standards/archive.md` | `default:archive` | Archive the completed plan |
+| `standards/archive-plan.md` | `default:archive-plan` | Archive the completed plan |
 | `standards/validation.md` | — | Configuration requirements, error scenarios |
 | `standards/lessons-integration.md` | — | Conceptual guidance on lesson capture |
 

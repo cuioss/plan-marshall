@@ -186,14 +186,14 @@ def test_finalize_set_steps():
 
         result = run_script(
             SCRIPT_PATH, 'plan', 'phase-6-finalize', 'set-steps',
-            '--steps', 'default:commit-push,default:create-pr,default:archive'
+            '--steps', 'default:commit-push,default:create-pr,default:archive-plan'
         )
 
         assert result.success, f'Should succeed: {result.stderr}'
 
         config = json.loads((ctx.fixture_dir / 'marshal.json').read_text())
         steps = config['plan']['phase-6-finalize']['steps']
-        assert steps == ['default:commit-push', 'default:create-pr', 'default:archive']
+        assert steps == ['default:commit-push', 'default:create-pr', 'default:archive-plan']
 
 
 def test_finalize_set_steps_empty_error():

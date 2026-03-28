@@ -254,7 +254,7 @@ def test_skill_domains_detect_runs():
                     'steps': [
                         'default:commit-push', 'default:create-pr', 'default:automated-review',
                         'default:sonar-roundtrip', 'default:knowledge-capture', 'default:lessons-capture',
-                        'default:branch-cleanup', 'default:archive',
+                        'default:branch-cleanup', 'default:archive-plan',
                     ],
                 },
             },
@@ -296,7 +296,7 @@ def test_skill_domains_detect_no_overwrite():
                     'steps': [
                         'default:commit-push', 'default:create-pr', 'default:automated-review',
                         'default:sonar-roundtrip', 'default:knowledge-capture', 'default:lessons-capture',
-                        'default:branch-cleanup', 'default:archive',
+                        'default:branch-cleanup', 'default:archive-plan',
                     ],
                 },
             },
@@ -563,7 +563,7 @@ def test_get_available_uses_discovery():
                     'steps': [
                         'default:commit-push', 'default:create-pr', 'default:automated-review',
                         'default:sonar-roundtrip', 'default:knowledge-capture', 'default:lessons-capture',
-                        'default:branch-cleanup', 'default:archive',
+                        'default:branch-cleanup', 'default:archive-plan',
                     ],
                 },
             },
@@ -598,7 +598,7 @@ def test_configure_domains():
                     'steps': [
                         'default:commit-push', 'default:create-pr', 'default:automated-review',
                         'default:sonar-roundtrip', 'default:knowledge-capture', 'default:lessons-capture',
-                        'default:branch-cleanup', 'default:archive',
+                        'default:branch-cleanup', 'default:archive-plan',
                     ],
                 },
             },
@@ -640,7 +640,7 @@ def test_configure_always_adds_system():
                     'steps': [
                         'default:commit-push', 'default:create-pr', 'default:automated-review',
                         'default:sonar-roundtrip', 'default:knowledge-capture', 'default:lessons-capture',
-                        'default:branch-cleanup', 'default:archive',
+                        'default:branch-cleanup', 'default:archive-plan',
                     ],
                 },
             },
@@ -794,7 +794,7 @@ def test_get_available_works_without_skill_domains():
                     'steps': [
                         'default:commit-push', 'default:create-pr', 'default:automated-review',
                         'default:sonar-roundtrip', 'default:knowledge-capture', 'default:lessons-capture',
-                        'default:branch-cleanup', 'default:archive',
+                        'default:branch-cleanup', 'default:archive-plan',
                     ],
                 },
             },
@@ -833,7 +833,7 @@ def test_configure_works_without_skill_domains():
                     'steps': [
                         'default:commit-push', 'default:create-pr', 'default:automated-review',
                         'default:sonar-roundtrip', 'default:knowledge-capture', 'default:lessons-capture',
-                        'default:branch-cleanup', 'default:archive',
+                        'default:branch-cleanup', 'default:archive-plan',
                     ],
                 },
             },
@@ -879,7 +879,7 @@ def test_list_requires_skill_domains():
                     'steps': [
                         'default:commit-push', 'default:create-pr', 'default:automated-review',
                         'default:sonar-roundtrip', 'default:knowledge-capture', 'default:lessons-capture',
-                        'default:branch-cleanup', 'default:archive',
+                        'default:branch-cleanup', 'default:archive-plan',
                     ],
                 },
             },
@@ -1090,7 +1090,7 @@ def test_configure_preserves_project_skills():
                     'steps': [
                         'default:commit-push', 'default:create-pr', 'default:automated-review',
                         'default:sonar-roundtrip', 'default:knowledge-capture', 'default:lessons-capture',
-                        'default:branch-cleanup', 'default:archive',
+                        'default:branch-cleanup', 'default:archive-plan',
                     ],
                 },
             },
@@ -1146,7 +1146,7 @@ def test_configure_drops_project_skills_for_removed_domains():
                     'steps': [
                         'default:commit-push', 'default:create-pr', 'default:automated-review',
                         'default:sonar-roundtrip', 'default:knowledge-capture', 'default:lessons-capture',
-                        'default:branch-cleanup', 'default:archive',
+                        'default:branch-cleanup', 'default:archive-plan',
                     ],
                 },
             },
@@ -1194,7 +1194,7 @@ def test_get_nested_includes_project_skills():
                     'steps': [
                         'default:commit-push', 'default:create-pr', 'default:automated-review',
                         'default:sonar-roundtrip', 'default:knowledge-capture', 'default:lessons-capture',
-                        'default:branch-cleanup', 'default:archive',
+                        'default:branch-cleanup', 'default:archive-plan',
                     ],
                 },
             },
@@ -1224,7 +1224,7 @@ def test_list_finalize_steps_returns_built_in():
         assert result.success, f'Should succeed: {result.stderr}'
         assert 'default:commit-push' in result.stdout
         assert 'default:create-pr' in result.stdout
-        assert 'default:archive' in result.stdout
+        assert 'default:archive-plan' in result.stdout
         assert 'default:branch-cleanup' in result.stdout
         assert 'built-in' in result.stdout
 

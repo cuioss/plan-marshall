@@ -171,7 +171,7 @@ def test_init_includes_phase_6_finalize():
         assert 'steps' in finalize, 'Should have steps list'
         assert isinstance(finalize['steps'], list)
         assert 'default:commit-push' in finalize['steps']
-        assert 'default:archive' in finalize['steps']
+        assert 'default:archive-plan' in finalize['steps']
         assert '1_commit_push' not in finalize, 'Old boolean keys should not exist'
 
 

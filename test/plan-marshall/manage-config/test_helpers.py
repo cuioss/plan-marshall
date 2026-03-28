@@ -70,7 +70,7 @@ def create_marshal_json(fixture_dir: Path, config: dict | None = None) -> Path:
                     'steps': [
                         'default:commit-push', 'default:create-pr', 'default:automated-review',
                         'default:sonar-roundtrip', 'default:knowledge-capture', 'default:lessons-capture',
-                        'default:branch-cleanup', 'default:archive',
+                        'default:branch-cleanup', 'default:archive-plan',
                     ],
                 },
             },
@@ -158,7 +158,7 @@ def create_nested_marshal_json(fixture_dir: Path) -> Path:
                 'steps': [
                     'default:commit-push', 'default:create-pr', 'default:automated-review',
                     'default:sonar-roundtrip', 'default:knowledge-capture', 'default:lessons-capture',
-                    'default:branch-cleanup', 'default:archive',
+                    'default:branch-cleanup', 'default:archive-plan',
                 ],
             },
         },
