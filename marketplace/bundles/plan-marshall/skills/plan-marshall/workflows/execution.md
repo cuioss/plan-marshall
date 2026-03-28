@@ -126,18 +126,20 @@ Handles:
 - Archive plan (move to `.plan/archived-plans/`)
 - Mark lesson applied (if plan originated from a lesson)
 
-**Metrics**: After finalize completes, record phase end and generate final report. Optionally enrich from JSONL transcript:
+**Metrics**: After finalize completes, record phase end, optionally enrich, then generate the final report once:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics end-phase \
   --plan-id {plan_id} --phase 6-finalize
-python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics generate \
-  --plan-id {plan_id}
 ```
 
 **Optional JSONL enrichment** (if session ID is available from environment):
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics enrich \
   --plan-id {plan_id} --session-id {session_id}
+```
+
+**Generate final report** (single call after all data updates):
+```bash
 python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics generate \
   --plan-id {plan_id}
 ```
