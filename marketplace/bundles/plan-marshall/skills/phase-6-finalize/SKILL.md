@@ -222,7 +222,31 @@ python3 .plan/execute-script.py plan-marshall:manage-lifecycle:manage-lifecycle 
   --completed 6-finalize
 ```
 
-### Step 5: Log Completion
+### Step 5: Generate Final Metrics Report
+
+Generate the final metrics.md and read the summary for the completion output.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics generate \
+  --plan-id {plan_id}
+```
+
+Read the metrics summary from the generate output. Extract `total_duration_seconds` and `total_tokens` for the completion message. The `metrics.md` file will be included when the plan is archived to `.plan/archived-plans/{date}-{plan_id}/metrics.md`.
+
+### Step 6: Log Completion with Metrics
+
+Display the plan completion summary including core metrics:
+
+```
+## Plan Complete: {plan_id}
+
+| Metric | Value |
+|--------|-------|
+| Total Duration | {formatted total_duration from metrics} |
+| Total Tokens | {total_tokens from metrics} |
+| PR | #{pr_number} |
+| Metrics | .plan/archived-plans/{date}-{plan_id}/metrics.md |
+```
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
@@ -255,6 +279,11 @@ actions:
   archive: {done|skipped}
   lesson_applied: {done|skipped}
   branch_cleanup: {done|skipped|declined}
+
+metrics:
+  total_duration_seconds: {total from metrics generate}
+  total_tokens: {total from metrics generate}
+  metrics_file: .plan/archived-plans/{date}-{plan_id}/metrics.md
 
 next_state: complete
 ```
