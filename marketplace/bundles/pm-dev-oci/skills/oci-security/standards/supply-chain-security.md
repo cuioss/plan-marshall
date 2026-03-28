@@ -1,12 +1,14 @@
-# Supply Chain Security
+# Supply Chain Security Quick Reference
 
-Vulnerability scanning, image signing, SBOMs, and provenance attestation for securing the container supply chain.
+Concise supply chain security checklist. For detailed threat descriptions, implementation examples, and CI/CD integration, see the OWASP Container Security reference (`standards/owasp-container-security.md`, controls D02, D08).
+
+## Pipeline Workflow
+
+```
+Build image → Scan (fail on CRITICAL/HIGH) → Sign → Generate SBOM → Push to registry
+```
 
 ## Vulnerability Scanning
-
-### Scan in CI/CD Pipeline
-
-Integrate image scanning into every build. Fail the pipeline on critical/high vulnerabilities.
 
 | Tool | Type | Integration |
 |------|------|-------------|
@@ -15,40 +17,39 @@ Integrate image scanning into every build. Fail the pipeline on critical/high vu
 | Snyk Container | Commercial | GitHub, GitLab, CLI |
 | Docker Scout | Docker native | Docker Desktop, CI/CD |
 
-### Scan Workflow
-
+```bash
+# Trivy scan with severity gate
+trivy image --severity CRITICAL,HIGH --exit-code 1 myapp:v1.0
 ```
-Build image → Scan → Fail on CRITICAL/HIGH → Push to registry (if clean)
-```
 
-### Rebuild Regularly
-
-Base images receive security patches. Rebuild images on a regular schedule (weekly minimum) even without application changes.
-
-## Image Signing
-
-Use Cosign or Docker Content Trust to sign images and verify signatures before deployment.
+## Image Signing (Cosign)
 
 ```bash
-# Sign with Cosign
+# Sign image
 cosign sign --key cosign.key registry.example.com/myapp:v1.0
 
-# Verify before pull
+# Verify before deployment
 cosign verify --key cosign.pub registry.example.com/myapp:v1.0
 ```
 
-## SBOMs
-
-Create Software Bills of Materials for every image to track components and vulnerabilities.
+## SBOM Generation (Syft)
 
 ```bash
-# Generate SBOM with Syft
+# Generate SBOM
 syft registry.example.com/myapp:v1.0 -o spdx-json > sbom.json
 
-# Attach SBOM to image with Cosign
+# Attach SBOM to image
 cosign attach sbom --sbom sbom.json registry.example.com/myapp:v1.0
 ```
 
-## SLSA Provenance
+## Checklist
 
-Implement SLSA (Supply-chain Levels for Software Artifacts) provenance to attest build origin and integrity.
+| Control | Rule | OWASP |
+|---------|------|-------|
+| Vulnerability scan in CI/CD | Fail pipeline on CRITICAL/HIGH | D02 |
+| Regular rebuilds | Weekly minimum, even without app changes | D02 |
+| Image signing | Cosign or Docker Content Trust | D08 |
+| Signature verification | Admission controller (Kyverno/OPA) in Kubernetes | D08 |
+| SBOM generation | Attach SBOM to every released image | D08 |
+| SLSA provenance | Attest build origin and integrity | D08 |
+| Private registry | Access-controlled, no public pulls in production | D08 |

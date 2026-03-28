@@ -39,6 +39,10 @@ class Extension(ExtensionBase):
                                               module_data=module_data,
                                               active_profiles=active_profiles)
 
+    def provides_triage(self) -> str | None:
+        """Return triage skill reference."""
+        return 'pm-dev-oci:ext-triage-oci'
+
     def get_skill_domains(self) -> list[dict]:
         """Domain metadata for skill loading."""
         return [{

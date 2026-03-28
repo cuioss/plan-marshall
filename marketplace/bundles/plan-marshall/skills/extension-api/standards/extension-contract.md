@@ -303,6 +303,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 |--------|--------|-------------|
 | pm-dev-java | java | `pm-dev-java:ext-triage-java` |
 | pm-dev-frontend | javascript | `pm-dev-frontend:ext-triage-js` |
+| pm-dev-oci | oci-containers | `pm-dev-oci:ext-triage-oci` |
 | pm-documents | documentation | `pm-documents:ext-triage-docs` |
 | pm-requirements | requirements | `pm-requirements:ext-triage-reqs` |
 | pm-plugin-development | plan-marshall-plugin-dev | `pm-plugin-development:ext-triage-plugin` |
@@ -912,7 +913,7 @@ Some domain bundles are **additive** - they extend a base domain bundle rather t
 | pm-dev-java-cui | java-cui | - | - | - | - | Additive to pm-dev-java |
 | pm-dev-frontend | javascript | ext-triage-js | - | - | - | |
 | pm-dev-python | python | - | - | - | - | |
-| pm-dev-oci | oci-containers | - | - | - | - | |
+| pm-dev-oci | oci-containers | ext-triage-oci | - | - | - | |
 | pm-documents | documentation | ext-triage-docs | - | - | 1 (doc_sync) | Uses generic skills |
 | pm-requirements | requirements | ext-triage-reqs | - | - | 1 (formal_spec) | |
 | pm-plugin-development | plan-marshall-plugin-dev | ext-triage-plugin | ext-outline-workflow | - | - | |
