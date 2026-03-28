@@ -79,7 +79,7 @@ Three step types are supported, distinguished by prefix notation:
 
 | Type | Notation | Resolution |
 |------|----------|------------|
-| **built-in** | `default:` prefix (e.g., `default:commit_push`) | Strip prefix, read `standards/{name}.md` (using dispatch table below) and follow all steps |
+| **built-in** | `default:` prefix (e.g., `default:commit-push`) | Strip prefix, read `standards/{name}.md` and follow all steps |
 | **project** | `project:` prefix (e.g., `project:finalize-step-foo`) | `Skill: {notation}` with interface contract parameters |
 | **skill** | fully-qualified `bundle:skill` (e.g., `pm-dev-java:java-post-pr`) | `Skill: {notation}` with interface contract parameters |
 
@@ -92,14 +92,14 @@ Three step types are supported, distinguished by prefix notation:
 
 | Step Name | Standards Document | Description |
 |-----------|-------------------|-------------|
-| `default:commit_push` | `standards/commit-push.md` | Commit and push changes |
-| `default:create_pr` | `standards/create-pr.md` | Create pull request |
-| `default:automated_review` | `standards/automated-review.md` | CI automated review |
-| `default:sonar_roundtrip` | `standards/sonar-roundtrip.md` | Sonar analysis roundtrip |
-| `default:knowledge_capture` | `standards/knowledge-capture.md` | Capture learnings to memory |
-| `default:lessons_capture` | `standards/lessons-capture.md` | Record lessons learned |
-| `default:branch_cleanup` | `standards/branch-cleanup.md` | Merge PR (with --delete-branch) and pull latest |
-| `default:archive` | `standards/archive.md` | Archive the completed plan |
+| `default:commit-push` | `standards/commit-push.md` | Commit and push changes |
+| `default:create-pr` | `standards/create-pr.md` | Create pull request |
+| `default:automated-review` | `standards/automated-review.md` | CI automated review |
+| `default:sonar-roundtrip` | `standards/sonar-roundtrip.md` | Sonar analysis roundtrip |
+| `default:knowledge-capture` | `standards/knowledge-capture.md` | Capture learnings to memory |
+| `default:lessons-capture` | `standards/lessons-capture.md` | Record lessons learned |
+| `default:branch-cleanup` | `standards/branch-cleanup.md` | Merge PR (with --delete-branch) and pull latest |
+| `default:archive-plan` | `standards/archive-plan.md` | Archive the completed plan |
 
 ### Interface Contract for External Steps
 
@@ -211,8 +211,8 @@ END FOR
 ```
 
 **Built-in step notes**:
-- `default:branch_cleanup`: Do NOT preemptively skip based on PR state. The `standards/branch-cleanup.md` standard has its own `AskUserQuestion` confirmation gate.
-- `default:archive`: This step MUST be last in the default order because it moves plan files (including status.json), which breaks manage-* scripts. All plan operations must complete before archive.
+- `default:branch-cleanup`: Do NOT preemptively skip based on PR state. The `standards/branch-cleanup.md` standard has its own `AskUserQuestion` confirmation gate.
+- `default:archive-plan`: This step MUST be last in the default order because it moves plan files (including status.json), which breaks manage-* scripts. All plan operations must complete before archive.
 
 ### Step 4: Mark Plan Complete
 
@@ -222,7 +222,31 @@ python3 .plan/execute-script.py plan-marshall:manage-lifecycle:manage-lifecycle 
   --completed 6-finalize
 ```
 
-### Step 5: Log Completion
+### Step 5: Generate Final Metrics Report
+
+Generate the final metrics.md and read the summary for the completion output.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics generate \
+  --plan-id {plan_id}
+```
+
+Read the metrics summary from the generate output. Extract `total_duration_seconds` and `total_tokens` for the completion message. The `metrics.md` file will be included when the plan is archived to `.plan/archived-plans/{date}-{plan_id}/metrics.md`.
+
+### Step 6: Log Completion with Metrics
+
+Display the plan completion summary including core metrics:
+
+```
+## Plan Complete: {plan_id}
+
+| Metric | Value |
+|--------|-------|
+| Total Duration | {formatted total_duration from metrics} |
+| Total Tokens | {total_tokens from metrics} |
+| PR | #{pr_number} |
+| Metrics | .plan/archived-plans/{date}-{plan_id}/metrics.md |
+```
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
@@ -255,6 +279,11 @@ actions:
   archive: {done|skipped}
   lesson_applied: {done|skipped}
   branch_cleanup: {done|skipped|declined}
+
+metrics:
+  total_duration_seconds: {total from metrics generate}
+  total_tokens: {total from metrics generate}
+  metrics_file: .plan/archived-plans/{date}-{plan_id}/metrics.md
 
 next_state: complete
 ```
@@ -310,15 +339,16 @@ State checks (for present steps):
 
 ## Standards (Load On-Demand)
 
-| Standard | Config Gate | Purpose |
-|----------|------------|---------|
-| `standards/commit-push.md` | `1_commit_push` | Commit strategy, git status, workflow-integration-git delegation |
-| `standards/create-pr.md` | `2_create_pr` | PR existence check, body generation, CI pr create |
-| `standards/automated-review.md` | `3_automated_review` | CI wait, review triage, loop-back on findings |
-| `standards/sonar-roundtrip.md` | `4_sonar_roundtrip` | Sonar quality gate, issue resolution |
-| `standards/knowledge-capture.md` | `5_knowledge_capture` | manage-memories save command |
-| `standards/lessons-capture.md` | `6_lessons_capture` | manage-lesson add command |
-| `standards/branch-cleanup.md` | `8_branch_cleanup` | Merge PR (with --delete-branch), pull latest, with user confirmation |
+| Standard | Step Name | Purpose |
+|----------|-----------|---------|
+| `standards/commit-push.md` | `default:commit-push` | Commit strategy, git status, workflow-integration-git delegation |
+| `standards/create-pr.md` | `default:create-pr` | PR existence check, body generation, CI pr create |
+| `standards/automated-review.md` | `default:automated-review` | CI wait, review triage, loop-back on findings |
+| `standards/sonar-roundtrip.md` | `default:sonar-roundtrip` | Sonar quality gate, issue resolution |
+| `standards/knowledge-capture.md` | `default:knowledge-capture` | manage-memories save command |
+| `standards/lessons-capture.md` | `default:lessons-capture` | manage-lesson add command |
+| `standards/branch-cleanup.md` | `default:branch-cleanup` | Merge PR (with --delete-branch), pull latest, with user confirmation |
+| `standards/archive-plan.md` | `default:archive-plan` | Archive the completed plan |
 | `standards/validation.md` | — | Configuration requirements, error scenarios |
 | `standards/lessons-integration.md` | — | Conceptual guidance on lesson capture |
 

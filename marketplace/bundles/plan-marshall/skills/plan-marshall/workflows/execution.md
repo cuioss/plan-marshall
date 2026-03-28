@@ -40,6 +40,12 @@ Use /plan-marshall to complete 1-init through 4-plan phases first.
 
 ## Execute Phase (DUMB LOOP Pattern)
 
+**Metrics**: Record phase start at the beginning of execute:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics start-phase \
+  --plan-id {plan_id} --phase 5-execute
+```
+
 The execute phase iterates through tasks using a simple loop:
 
 ```bash
@@ -59,6 +65,14 @@ For each task:
 ### Execute Phase Completion
 
 After all tasks complete, transition and check auto-continue:
+
+**Metrics**: Record phase end (aggregate token data from task agents executed during this phase):
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics end-phase \
+  --plan-id {plan_id} --phase 5-execute
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics generate \
+  --plan-id {plan_id}
+```
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-lifecycle:manage-lifecycle transition \
@@ -84,6 +98,12 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 
 ## Finalize Phase
 
+**Metrics**: Record phase start:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics start-phase \
+  --plan-id {plan_id} --phase 6-finalize
+```
+
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   work --plan-id {plan_id} --level INFO --message "[SKILL] (plan-marshall:plan-marshall) Loading plan-marshall:phase-6-finalize"
@@ -105,6 +125,24 @@ Handles:
 - Mark plan complete
 - Archive plan (move to `.plan/archived-plans/`)
 - Mark lesson applied (if plan originated from a lesson)
+
+**Metrics**: After finalize completes, record phase end, optionally enrich, then generate the final report once:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics end-phase \
+  --plan-id {plan_id} --phase 6-finalize
+```
+
+**Optional JSONL enrichment** (if session ID is available from environment):
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics enrich \
+  --plan-id {plan_id} --session-id {session_id}
+```
+
+**Generate final report** (single call after all data updates):
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics generate \
+  --plan-id {plan_id}
+```
 
 ### Finalize Validation
 

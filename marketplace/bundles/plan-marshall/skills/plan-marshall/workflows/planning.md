@@ -75,10 +75,27 @@ Create a new plan and automatically continue to 2-refine/3-outline/4-plan phases
 
 **1-Init Phase** uses a single agent:
 
+**Metrics**: Record phase start before agent invocation:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics start-phase \
+  --plan-id {plan_id} --phase 1-init
+```
+
 ```
 Task: plan-marshall:phase-agent
   Input: skill=plan-marshall:phase-1-init, source={source}, content={content}
   Output: plan_id, domains array
+```
+
+**Metrics**: After agent completes, record phase end with token data from `<usage>` tag:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics end-phase \
+  --plan-id {plan_id} --phase 1-init \
+  --total-tokens {total_tokens from <usage>} \
+  --duration-ms {duration_ms from <usage>} \
+  --tool-uses {tool_uses from <usage>}
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics generate \
+  --plan-id {plan_id}
 ```
 
 **Automatic Continuation**:
@@ -87,6 +104,12 @@ Task: plan-marshall:phase-agent
 3. If false (default): Continue through 2-refine, 3-outline, and 4-plan phases with the new plan_id
 
 **2-Refine Phase**: Load refine phase skill directly (maintains main context for user interaction)
+
+**Metrics**: Record phase start:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics start-phase \
+  --plan-id {plan_id} --phase 2-refine
+```
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
@@ -99,6 +122,14 @@ Skill: plan-marshall:phase-2-refine
 ```
 
 The skill runs in main conversation context so `AskUserQuestion` works directly with the user. Do NOT run this as a Task agent — the 12-step workflow requires too many tool calls for a subagent turn budget, and Step 9 (user clarification) needs direct user access.
+
+**Metrics**: After refine completes, record phase end (no token data — main context):
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics end-phase \
+  --plan-id {plan_id} --phase 2-refine
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics generate \
+  --plan-id {plan_id}
+```
 
 Then continue to **Action: outline** with the same plan_id.
 
@@ -119,6 +150,12 @@ python3 .plan/execute-script.py plan-marshall:manage-references:manage-reference
 ---
 
 **Step 2**: Load outline phase skill directly (maintains main context)
+
+**Metrics**: Record phase start:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics start-phase \
+  --plan-id {plan_id} --phase 3-outline
+```
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
@@ -163,6 +200,14 @@ This loop runs automatically — do NOT prompt the user for Q-Gate findings unle
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-lifecycle:manage-lifecycle transition \
   --plan-id {plan_id} --completed 3-outline
+```
+
+**Metrics**: After outline completes, record phase end (no token data — main context):
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics end-phase \
+  --plan-id {plan_id} --phase 3-outline
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics generate \
+  --plan-id {plan_id}
 ```
 
 **Step 2d**: Auto-open solution outline in IDE for user review:
@@ -251,10 +296,27 @@ AskUserQuestion:
 
 Only execute this step AFTER user approves in Step 3.
 
+**Metrics**: Record phase start before agent invocation:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics start-phase \
+  --plan-id {plan_id} --phase 4-plan
+```
+
 ```
 Task: plan-marshall:phase-agent
   Input: skill=plan-marshall:phase-4-plan, plan_id={plan_id}
   Output: tasks created with domain, profile, skills
+```
+
+**Metrics**: After agent completes, record phase end with token data from `<usage>` tag:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics end-phase \
+  --plan-id {plan_id} --phase 4-plan \
+  --total-tokens {total_tokens from <usage>} \
+  --duration-ms {duration_ms from <usage>} \
+  --tool-uses {tool_uses from <usage>}
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics generate \
+  --plan-id {plan_id}
 ```
 
 Log task plan agent invocation:
