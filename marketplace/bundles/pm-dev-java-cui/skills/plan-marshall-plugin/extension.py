@@ -78,6 +78,6 @@ class Extension(ExtensionBase):
         # Skip internal profiles that shouldn't generate commands
         ext_defaults_set_default(
             EXT_KEY_PROFILES_SKIP,
-            'build-plantuml,rewrite-maven-clean, release, release-snapshot, license-cleanup, sonar, only-eclipse,release-pom',
+            'build-plantuml,rewrite-maven-clean,release,release-snapshot,license-cleanup,sonar,only-eclipse,release-pom',
             project_root,
         )
