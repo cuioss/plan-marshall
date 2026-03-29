@@ -8,18 +8,18 @@ user-invocable: false
 
 **REFERENCE MODE**: This skill provides reference material. Load specific standards on-demand based on current task.
 
-ESLint v9, Prettier, and Stylelint configuration standards for JavaScript projects.
+ESLint v10, Prettier, and Stylelint configuration standards for JavaScript projects.
 
 ## Prerequisites
 
-- ESLint v9+ with flat config (`eslint.config.js`)
+- ESLint v10+ with flat config (`eslint.config.js`)
 - `"type": "module"` in package.json
 
 ## Standards
 
 | Standard | Purpose |
 |----------|---------|
-| `standards/eslint-configuration.md` | ESLint v9 flat config, dependencies, plugins |
+| `standards/eslint-configuration.md` | ESLint v10 flat config, dependencies, plugins |
 | `standards/eslint-rules.md` | Rule definitions: JSDoc, security, SonarJS, framework overrides |
 | `standards/eslint-integration.md` | Build pipeline, Maven phases, npm scripts, CI/CD |
 | `standards/prettier-configuration.md` | Prettier setup, editor integration, pre-commit hooks |

@@ -17,7 +17,7 @@ For general documentation principles (what/when/how to document, clarity, comple
 ### Configuration
 
 ```javascript
-// eslint.config.js (ESLint v9 flat config)
+// eslint.config.js (ESLint v10 flat config)
 import jsdoc from 'eslint-plugin-jsdoc';
 
 export default [

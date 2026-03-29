@@ -498,7 +498,7 @@ Solution:
 
 ## Integration Rules
 
-- ESLint v9 installed with all required plugins
+- ESLint v10 installed with all required plugins
 - package.json includes lint:js and lint:fix scripts
 - Maven pom.xml includes frontend-maven-plugin configuration
 - Lint execution configured in verify phase

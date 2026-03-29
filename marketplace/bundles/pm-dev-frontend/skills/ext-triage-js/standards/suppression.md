@@ -218,7 +218,7 @@ doSomething(); // This line is also covered unnecessarily
 /* eslint-enable no-console */
 ```
 
-### Use ESLint v9 Ignores for Directories
+### Use ESLint v10 Ignores for Directories
 
 In `eslint.config.js` (flat config):
 

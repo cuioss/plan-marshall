@@ -23,7 +23,7 @@ ESLint rules are organized into focused categories:
 
 Native ES module support in modern browsers and Node.js handles most import/export validation (unresolved imports, extensions, extraneous dependencies). No `eslint-plugin-import` rules are required in the base configuration.
 
-If additional import linting is needed, use [`eslint-plugin-import-x`](https://github.com/un-ts/eslint-plugin-import-x) which supports ESLint 9+ flat config natively. The original `eslint-plugin-import` does not support flat config.
+If additional import linting is needed, use [`eslint-plugin-import-x`](https://github.com/un-ts/eslint-plugin-import-x) which supports ESLint 10+ flat config natively. The original `eslint-plugin-import` does not support flat config.
 
 ### Core JavaScript Quality
 

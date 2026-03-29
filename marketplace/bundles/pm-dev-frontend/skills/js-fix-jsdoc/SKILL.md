@@ -160,7 +160,6 @@ metrics:
   suggestions: 3
   total_violations: 20
 ```
-```
 
 **Violation types detected**:
 - `missing_jsdoc` - Function/class entirely missing JSDoc
