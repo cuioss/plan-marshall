@@ -8,17 +8,9 @@ user-invocable: false
 
 ## Enforcement
 
-**Execution mode**: Reference skill with script automation. Load standards on-demand based on current task; invoke scripts via executor only.
-
-**Prohibited actions:**
-- Do not invent script notations -- use only the documented `pm-dev-frontend-cui:cui-javascript-project:npm-output` notation
-- Do not import external dependencies in scripts -- stdlib-only
-
-**Constraints:**
-- Every script invocation uses the full `python3 .plan/execute-script.py` command with 3-part notation (Rule 9)
-- Use `pm-dev-frontend-cui:cui-javascript-project:npm-output` notation for npm output parsing
-
 **REFERENCE MODE**: This skill provides reference material. Load specific standards on-demand based on current task.
+
+**Build output parsing**: Use `plan-marshall:build-npm` for npm/npx output analysis — this skill does not provide its own parser.
 
 Standards for JavaScript project setup, structure, dependencies, and Maven integration in CUI projects.
 
@@ -52,22 +44,9 @@ Standards for JavaScript project setup, structure, dependencies, and Maven integ
 - Always commit `package-lock.json`, never commit `node_modules/`
 - Node.js LTS version managed by frontend-maven-plugin
 
-## Scripts
-
-**npm-output.py**: Parse npm/npx build output logs and categorize issues
-
-| Subcommand | Description |
-|------------|-------------|
-| `parse` | Parse npm/npx build output logs and categorize issues |
-
-**Usage**:
-```bash
-python3 .plan/execute-script.py pm-dev-frontend-cui:cui-javascript-project:npm-output parse --log {log_path}
-python3 .plan/execute-script.py pm-dev-frontend-cui:cui-javascript-project:npm-output parse --log {log_path} --mode structured
-```
-
 ## Related Skills
 
 - `pm-dev-frontend:javascript` — Core JavaScript development standards
 - `pm-dev-frontend:js-enforce-eslint` — ESLint, Prettier, Stylelint configuration
 - `pm-dev-frontend:js-fix-jsdoc` — JSDoc documentation standards
+- `plan-marshall:build-npm` — npm/npx build execution with multi-parser output analysis
