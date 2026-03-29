@@ -448,9 +448,9 @@ Action: Complete section or remove marker
 
 == Integration with Workflows
 
-=== analyze-content-tone.py Script
+=== docs analyze-tone Script
 
-The analyze-content-tone.py script implements automated detection of:
+The docs analyze-tone subcommand implements automated detection of:
 
 * Promotional language patterns
 * Missing source citations
@@ -470,7 +470,7 @@ parameters:
   - apply_fixes (default: false)
 
 steps:
-  1. Run analyze-content-tone.py (automated detection)
+  1. Run docs analyze-tone (automated detection)
   2. Apply ULTRATHINK analysis (Claude)
   3. Generate findings report
   4. If apply_fixes: Suggest improvements

@@ -62,7 +62,7 @@ List all interfaces with optional type filtering.
 python3 .plan/execute-script.py pm-documents:manage-interface:manage-interface list [--type {type}]
 ```
 
-**Step 3: Parse Output**
+**Step 2: Parse Output**
 
 Parse JSON output containing interface list with metadata.
 
@@ -97,15 +97,15 @@ Create a new interface specification with automatic numbering.
 python3 .plan/execute-script.py pm-documents:manage-interface:manage-interface create --title "{title}" --type "{type}"
 ```
 
-**Step 3: Parse Output**
+**Step 2: Parse Output**
 
 Extract created file path from JSON output.
 
-**Step 4: Open for Editing**
+**Step 3: Open for Editing**
 
 Read the created file and inform user to fill in content sections.
 
-**Step 5: Validate Format**
+**Step 4: Validate Format**
 
 ```
 Skill: pm-documents:ref-asciidoc
@@ -146,7 +146,7 @@ Read interface content by number.
 python3 .plan/execute-script.py pm-documents:manage-interface:manage-interface read --number {number}
 ```
 
-**Step 3: Display Content**
+**Step 2: Display Content**
 
 Show interface metadata and content to user.
 
@@ -168,7 +168,7 @@ Update interface field content.
 python3 .plan/execute-script.py pm-documents:manage-interface:manage-interface update --number {number} --field {field} --value "{value}"
 ```
 
-**Step 3: Confirm Update**
+**Step 2: Confirm Update**
 
 Report updated field to user.
 
@@ -189,7 +189,7 @@ Delete interface with confirmation.
 python3 .plan/execute-script.py pm-documents:manage-interface:manage-interface delete --number {number} --force
 ```
 
-**Step 3: Confirm Deletion**
+**Step 2: Confirm Deletion**
 
 Report deletion to user.
 

@@ -305,8 +305,6 @@ If the `push` parameter is provided:
    - Removed N orphaned diagrams
    - Updated documentation references in A files
 
-   🤖 Generated with [Claude Code](https://claude.com/claude-code)
-
    Co-Authored-By: Claude <noreply@anthropic.com>
    ```
 5. Push the commit to the remote repository

@@ -393,7 +393,7 @@ done
 
 == Script Contracts
 
-=== validate-format.py
+=== asciidoc validate
 
 **Input:** File path or directory
 
@@ -405,19 +405,19 @@ done
 * 1: Format errors found
 * 2: Script error
 
-=== verify-links-false-positives.py
+=== asciidoc classify-links
 
-**Input:** Broken links JSON from verify-adoc-links.py
+**Input:** Broken links JSON from asciidoc verify-links
 
 **Output:** JSON with categorized links (false-positive, must-verify, definitely-broken)
 
 **Usage in orchestration:**
 
-1. Run verify-adoc-links.py
-2. Classify with verify-links-false-positives.py
+1. Run `python3 .plan/execute-script.py pm-documents:ref-asciidoc:asciidoc verify-links`
+2. Classify with `python3 .plan/execute-script.py pm-documents:ref-asciidoc:asciidoc classify-links`
 3. Present categorized results to user
 
-=== analyze-content-tone.py
+=== docs analyze-tone
 
 **Input:** File path or directory
 
@@ -425,7 +425,7 @@ done
 
 **Usage in orchestration:**
 
-1. Run analyze-content-tone.py
+1. Run `python3 .plan/execute-script.py pm-documents:ref-documentation:docs analyze-tone`
 2. Apply ULTRATHINK analysis to flagged sections
 3. Generate content review findings
 
@@ -491,7 +491,7 @@ done
 
 **Process:**
 
-1. Use verify-links-false-positives.py for link classification
+1. Use asciidoc classify-links for link classification
 2. Manual verification with Read tool
 3. Document false positives in report
 4. Consider updating script patterns

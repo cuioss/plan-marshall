@@ -62,7 +62,7 @@ List all ADRs with optional status filtering.
 python3 .plan/execute-script.py pm-documents:manage-adr:manage-adr list [--status {status}]
 ```
 
-**Step 3: Parse Output**
+**Step 2: Parse Output**
 
 Parse JSON output containing ADR list with metadata.
 
@@ -97,15 +97,15 @@ Create a new ADR with automatic numbering.
 python3 .plan/execute-script.py pm-documents:manage-adr:manage-adr create --title "{title}" [--status "{status}"]
 ```
 
-**Step 3: Parse Output**
+**Step 2: Parse Output**
 
 Extract created file path from JSON output.
 
-**Step 4: Open for Editing**
+**Step 3: Open for Editing**
 
 Read the created file and inform user to fill in content sections.
 
-**Step 5: Validate Format**
+**Step 4: Validate Format**
 
 ```
 Skill: pm-documents:ref-asciidoc
@@ -146,7 +146,7 @@ Read ADR content by number.
 python3 .plan/execute-script.py pm-documents:manage-adr:manage-adr read --number {number}
 ```
 
-**Step 3: Display Content**
+**Step 2: Display Content**
 
 Show ADR metadata and content to user.
 
@@ -167,7 +167,7 @@ Update ADR status through lifecycle.
 python3 .plan/execute-script.py pm-documents:manage-adr:manage-adr update --number {number} --status {status}
 ```
 
-**Step 3: Confirm Update**
+**Step 2: Confirm Update**
 
 Report updated status to user.
 
@@ -188,7 +188,7 @@ Delete ADR with confirmation.
 python3 .plan/execute-script.py pm-documents:manage-adr:manage-adr delete --number {number} --force
 ```
 
-**Step 3: Confirm Deletion**
+**Step 2: Confirm Deletion**
 
 Report deletion to user.
 
