@@ -16,7 +16,7 @@ user-invocable: false
 
 ## Overview
 
-Provides JSDoc documentation standards for CUI JavaScript projects covering functions, classes, modules, types, and web components.
+Provides JSDoc documentation standards covering functions, classes, modules, types, and web components.
 
 ## Standards Documents
 

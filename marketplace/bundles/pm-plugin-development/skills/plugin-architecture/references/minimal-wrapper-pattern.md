@@ -757,7 +757,7 @@ Format and return comprehensive summary
 
 **Skill: cui-java-core (600 lines):**
 ```markdown
-# CUI Java Core Skill
+# Java Core Skill
 
 ## Standards (200 lines)
 - Java coding standards

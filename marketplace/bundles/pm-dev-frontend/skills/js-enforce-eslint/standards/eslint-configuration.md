@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document defines ESLint v10 flat configuration structure, required dependencies, plugin management, and environment setup for consistent JavaScript linting across all CUI projects.
+This document defines ESLint v10 flat configuration structure, required dependencies, plugin management, and environment setup for consistent JavaScript linting.
 
 ## ESLint Flat Configuration
 

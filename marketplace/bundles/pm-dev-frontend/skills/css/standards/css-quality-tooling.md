@@ -1,6 +1,6 @@
 # CSS Quality & Tooling
 
-Performance optimization, accessibility standards, dark mode implementation, and development tools setup for CUI projects.
+Performance optimization, accessibility standards, dark mode implementation, and development tools setup.
 
 ## Performance
 

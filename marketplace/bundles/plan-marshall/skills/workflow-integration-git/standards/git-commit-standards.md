@@ -1,6 +1,6 @@
 # Git Commit Standards
 
-Standardized git commit format for all CUI LLM projects following conventional commits.
+Standardized git commit format following conventional commits.
 
 ## Commit Message Format
 

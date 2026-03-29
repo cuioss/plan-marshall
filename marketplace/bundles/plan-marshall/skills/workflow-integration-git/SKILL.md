@@ -4,7 +4,7 @@ description: Git commit workflow with conventional commits, artifact cleanup, an
 user-invocable: false
 ---
 
-# CUI Git Workflow Skill
+# Git Workflow Skill
 
 Provides git commit workflow following conventional commits specification. Includes artifact cleanup, commit formatting, and optional push.
 

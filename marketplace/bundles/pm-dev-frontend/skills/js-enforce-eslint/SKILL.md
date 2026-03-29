@@ -8,7 +8,7 @@ user-invocable: false
 
 **REFERENCE MODE**: This skill provides reference material. Load specific standards on-demand based on current task.
 
-ESLint v9, Prettier, and Stylelint configuration standards for CUI JavaScript projects.
+ESLint v9, Prettier, and Stylelint configuration standards for JavaScript projects.
 
 ## Prerequisites
 

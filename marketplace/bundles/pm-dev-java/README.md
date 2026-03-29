@@ -1,4 +1,4 @@
-# CUI Java Expert
+# Java Expert
 
 Comprehensive Java development expertise bundle providing domain knowledge skills for standards-compliant implementation, testing, and verification.
 
@@ -54,7 +54,7 @@ pm-dev-java/
 - **manage-maven-profiles** - Maven build profile classification
 - **plan-marshall-plugin** - Core build system integration (Maven/Gradle)
 
-> **Note**: CUI library-specific patterns (CuiLogger, LogRecord, test generators) are in the separate `pm-dev-java-cui` bundle.
+> **Note**: Library-specific patterns (CuiLogger, LogRecord, test generators) are in the separate `pm-dev-java-cui` bundle.
 >
 > **Planning Integration**: Java domain skills are loaded by plan-marshall task executors during plan execution via `task.skills` array.
 

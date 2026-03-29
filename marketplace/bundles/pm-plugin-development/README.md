@@ -1,4 +1,4 @@
-# CUI Plugin Development Tools
+# Plugin Development Tools
 
 ## Purpose
 

@@ -382,7 +382,7 @@ Don't repeat component documentation. Link to component files:
 or
 
 - Bundle name: `plan-marshall`
-- Display name: "CUI Utilities"
+- Display name: "Project Utilities"
 
 ## Component Organization
 
@@ -699,7 +699,7 @@ all-tools-bundle/
 ```json
 {
   "name": "pm-plugin-development",
-  "display_name": "CUI Plugin Development Tools",
+  "display_name": "Plugin Development Tools",
   "description": "Tools and standards for creating marketplace components",
   "version": "2.0.0",
   "author": "Marketplace Team",

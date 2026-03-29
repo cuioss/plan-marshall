@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Prettier configuration standards, editor integration, and build automation for consistent code formatting across CUI JavaScript projects.
+Prettier configuration standards, editor integration, and build automation for consistent code formatting.
 
 ## Required Dependencies
 

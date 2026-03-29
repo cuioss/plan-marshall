@@ -12,7 +12,7 @@ Core Java development standards for general Java projects. This skill covers fun
 
 ## Prerequisites
 
-This skill applies to Java 21+ projects with no CUI-specific dependencies.
+This skill applies to Java 21+ projects. For projects using CuiLogger, LogRecord, or other libraries from the `pm-dev-java-cui` bundle, load that bundle's skills additionally.
 
 ## Workflow
 

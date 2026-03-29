@@ -30,7 +30,7 @@ This bundle provides general frontend development expertise through domain knowl
 
 6. **plan-marshall-plugin** - JavaScript domain registration
 
-> **Companion bundle**: `pm-dev-frontend-cui` provides CUI-specific standards (Maven integration, Quarkus DevUI, NiFi).
+> **Companion bundle**: `pm-dev-frontend-cui` provides additional standards (Maven integration, Quarkus DevUI, NiFi).
 
 > **Planning Integration**: Frontend domain skills are loaded by plan-marshall task executors during plan execution via `task.skills` array.
 

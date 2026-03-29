@@ -1,6 +1,6 @@
 # CSS Responsive Design
 
-Mobile-first approach, layout patterns, container queries, and responsive techniques for CUI projects.
+Mobile-first approach, layout patterns, container queries, and responsive techniques.
 
 ## Mobile-First Principle
 

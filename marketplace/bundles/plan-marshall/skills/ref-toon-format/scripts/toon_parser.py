@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-TOON (Token-Oriented Object Notation) parser for CUI workflow scripts.
+TOON (Token-Oriented Object Notation) parser for workflow scripts.
 
 Provides parsing and serialization of TOON format - a compact, human-readable
 encoding optimized for LLM token efficiency.

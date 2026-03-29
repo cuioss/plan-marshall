@@ -1,6 +1,6 @@
 # General Development Rules
 
-Core principles that guide all development work in CUI projects.
+Core principles that guide all development work.
 
 ## Overview
 
@@ -131,7 +131,7 @@ Agent thinks: "User didn't specify test coverage, I'll aim for 50%"
 **CORRECT (Asking):**
 ```
 Agent asks: "What test coverage threshold should I target?
-CUI projects typically use 80% line/branch coverage."
+Projects typically use 80% line/branch coverage."
 ```
 
 ### Principle 4: Use Proper Tools for File Operations

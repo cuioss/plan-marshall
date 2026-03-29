@@ -1,6 +1,6 @@
 # CSS Essentials
 
-Core CSS principles, naming conventions, code organization, and component architecture for CUI projects.
+Core CSS principles, naming conventions, code organization, and component architecture.
 
 ## Modern CSS Features
 

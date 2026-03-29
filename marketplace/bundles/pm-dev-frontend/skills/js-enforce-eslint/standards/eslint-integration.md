@@ -2,13 +2,13 @@
 
 ## Purpose
 
-This document defines integration requirements for ESLint in build pipelines, CI/CD processes, Maven configuration, and development workflows for consistent code quality enforcement across CUI projects.
+This document defines integration requirements for ESLint in build pipelines, CI/CD processes, Maven configuration, and development workflows for consistent code quality enforcement.
 
 ## NPM Scripts Integration
 
 ### Complete Package.json Scripts Reference
 
-All CUI JavaScript projects must include comprehensive linting and formatting scripts. This section consolidates all required npm scripts for ESLint, Prettier, and StyleLint integration.
+All JavaScript projects must include comprehensive linting and formatting scripts. This section consolidates all required npm scripts for ESLint, Prettier, and StyleLint integration.
 
 ### Core ESLint Scripts
 

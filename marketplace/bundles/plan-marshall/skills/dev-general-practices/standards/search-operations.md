@@ -76,7 +76,7 @@ matches = Grep(
     output_mode="files_with_matches"
 )
 
-print(f"Found {len(matches)} agents using CUI skills")
+print(f"Found {len(matches)} agents using marketplace skills")
 ```
 
 ### Pattern: Extract Specific Information

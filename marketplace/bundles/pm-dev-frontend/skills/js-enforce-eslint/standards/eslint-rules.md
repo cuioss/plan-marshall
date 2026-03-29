@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document defines comprehensive ESLint rule configurations including documentation standards, security controls, code quality rules, modern JavaScript patterns, and environment-specific overrides for CUI projects.
+This document defines comprehensive ESLint rule configurations including documentation standards, security controls, code quality rules, modern JavaScript patterns, and environment-specific overrides.
 
 ## Rule Configuration Overview
 

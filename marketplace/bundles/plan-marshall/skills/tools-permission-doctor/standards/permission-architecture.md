@@ -32,7 +32,7 @@ Claude Code uses a three-level settings hierarchy:
 **Global Permissions** (`~/.claude/settings.json`):
 - Apply to ALL projects universally
 - `Read(//~/git/**)` - Universal read access to all git repositories
-- All CUI marketplace skills
+- All marketplace skills
 - `WebFetch(domain:<specific-domain>)` - Trusted domains for web access
 - All common Bash commands (git, mvn, grep, find, etc.)
 
@@ -54,7 +54,7 @@ Claude Code uses a three-level settings hierarchy:
 
 As of 2025-10-27:
 - `Read(//~/git/**)` provides universal git access (covers all repos)
-- All CUI skills available globally (marketplace skills)
+- All skills available globally (marketplace skills)
 - WebFetch requires explicit domain permissions (see web-security-standards skill)
 - No duplication needed in local settings
 

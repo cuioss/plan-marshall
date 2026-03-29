@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Container standards for CUI Quarkus applications ensuring consistent, secure, and efficient containerized deployments.
+Container standards for Quarkus applications ensuring consistent, secure, and efficient containerized deployments.
 
 ## References
 
@@ -44,7 +44,7 @@ FROM quay.io/quarkus/quarkus-distroless-image:2.0
 # Security metadata for compliance tracking
 LABEL security.scan.required="true"
 LABEL security.distroless="true"
-LABEL org.opencontainers.image.vendor="CUI"
+LABEL org.opencontainers.image.vendor="YourOrganization"
 
 WORKDIR /app
 

@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document defines StyleLint configuration standards for CSS-in-JS patterns in web components, particularly for Lit components, ensuring consistent CSS styling and quality across CUI projects.
+This document defines StyleLint configuration standards for CSS-in-JS patterns in web components, particularly for Lit components, ensuring consistent CSS styling and quality.
 
 ## When to Use StyleLint
 

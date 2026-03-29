@@ -265,7 +265,7 @@ domain: java
 profile: implementation
 
 defaults:
-  pm-dev-java:java-core: Java patterns, CUI conventions, CuiLogger, null-safety
+  pm-dev-java:java-core: Java patterns, conventions, null-safety
 
 optionals:
   pm-dev-java:java-null-safety: JSpecify annotations (@NullMarked, @Nullable)
