@@ -154,5 +154,5 @@ This example demonstrates:
 - [Document Structure Standards](document-structure.md) - Header format and core sections
 - [Task Organization Standards](task-organization.md) - Hierarchical structure and grouping
 - [Status Tracking Standards](status-tracking.md) - Status indicators and notes
-- [Traceability Standards](traceability.md) - Linking to requirements
+- [Requirement Linking Standards](requirement-linking.md) - Linking to requirements
 - [Maintenance Standards](maintenance.md) - Keeping documents current

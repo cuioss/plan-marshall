@@ -44,4 +44,4 @@ Planning documents do NOT include:
 
 - [Task Organization Standards](task-organization.md) - Hierarchical structure and grouping strategies
 - [Status Tracking Standards](status-tracking.md) - Status indicators and task lifecycle
-- [Traceability Standards](traceability.md) - Linking to requirements and specifications
+- [Requirement Linking Standards](requirement-linking.md) - Linking to requirements and specifications

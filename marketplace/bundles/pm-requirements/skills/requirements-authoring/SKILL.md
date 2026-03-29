@@ -27,7 +27,14 @@ Comprehensive standards for creating, structuring, and maintaining requirements 
 
 ## Scope Boundary
 
-This skill covers **creating and maintaining content** in requirements and specification documents: structure, SMART principles, ID schemes, lifecycle management, and quality. For **linking documents to implementation code** (bidirectional traceability, API documentation references, test coverage documentation), see `pm-requirements:traceability`. The two skills share some concepts (backtracking links, status indicators) but from different perspectives: authoring focuses on document content, traceability focuses on cross-system navigation.
+This skill covers **creating and maintaining content** in requirements and specification documents: structure, SMART principles, ID schemes, lifecycle management, and quality.
+
+For **linking documents to implementation code** (bidirectional traceability, API documentation references, test coverage documentation), see `pm-requirements:traceability`.
+
+**Shared concepts, different ownership:**
+- **Backtracking links**: This skill defines the *format and placement* within documents. Traceability defines *when and how to maintain* them as code evolves.
+- **Status indicators** (PLANNED/IN PROGRESS/IMPLEMENTED): This skill defines the *allowed values and meaning*. Traceability defines *when to transition* them during implementation.
+- **Lifecycle phases**: This skill owns the *complete lifecycle model* (`documentation-lifecycle-management.md`). Traceability provides a *traceability-focused subset* for link updates during phase transitions.
 
 ## What This Skill Provides
 
@@ -141,15 +148,10 @@ Standards are organized into focused documents:
 **requirements-maintenance.md**
 - Adding new requirements (numbering, format, linking)
 - Modifying existing requirements (preserve IDs, update content)
-- Removing requirements (never delete, deprecate instead)
+- Removing requirements (pre-1.0 vs. post-1.0 deprecation handling)
+- Deprecation process with migration guidance, removal process when user approves
 - Refactoring requirements (maintain IDs, update references)
 - Commit guidelines for requirement changes
-
-**deprecation-handling.md**
-- Pre-1.0 vs. post-1.0 deprecation handling
-- Deprecation process with migration guidance
-- Removal process when user approves deletion
-- Historical record maintenance
 
 ## Integration
 

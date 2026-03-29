@@ -117,4 +117,4 @@ _See Requirement USR-1: User Management in link:Requirements.adoc[Requirements]_
 
 - [Document Structure Standards](document-structure.md) - Planning document structure
 - [Status Tracking Standards](status-tracking.md) - Task lifecycle management
-- [Traceability Standards](traceability.md) - Linking to requirements
+- [Requirement Linking Standards](requirement-linking.md) - Linking to requirements

@@ -1,6 +1,6 @@
-# Traceability Standards
+# Requirement Linking Standards
 
-Standards for linking planning tasks to requirements, specifications, and maintaining traceability throughout the project.
+Standards for linking planning tasks to requirements and specifications, ensuring every task traces back to its source.
 
 ## Linking to Requirements
 

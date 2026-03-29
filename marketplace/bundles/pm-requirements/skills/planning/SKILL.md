@@ -114,12 +114,12 @@ This standard covers:
 - Implementation note patterns
 - Task lifecycle (adding, completing, refactoring)
 
-### Step 4: Load Traceability Standards
+### Step 4: Load Requirement Linking Standards
 
 When linking tasks to requirements:
 
 ```
-Read: standards/traceability.md
+Read: standards/requirement-linking.md
 ```
 
 This standard covers:
