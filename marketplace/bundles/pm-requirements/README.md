@@ -51,7 +51,7 @@ This bundle provides Claude Code with expert knowledge in creating, structuring,
 ### Implementation Linkage Standards
 
 - Bidirectional traceability between specifications and code
-- JavaDoc standards for referencing specifications
+- API documentation standards for referencing specifications (JavaDoc, docstrings, JSDoc)
 - Specification updates during and after implementation
 - Maintaining holistic system view across documentation levels
 
@@ -86,10 +86,10 @@ Works closely with general documentation standards:
 - Follows AsciiDoc formatting standards
 - Uses standard document structure conventions
 
-### CUI Java Expert Bundle
+### Language-Specific Development Bundles
 
-Integrates with Java development standards:
-- JavaDoc references to specifications
+Integrates with language development standards:
+- API documentation references to specifications (JavaDoc, docstrings, JSDoc)
 - Implementation traceability patterns
 
 ## Support

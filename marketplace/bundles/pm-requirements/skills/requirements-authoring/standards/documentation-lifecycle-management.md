@@ -34,19 +34,16 @@ Documentation evolves through three distinct phases:
 ```asciidoc
 === Expected API
 
-[source,java]
-----
-public interface TokenValidator {
-    ValidationResult validate(String token);
-    ValidationResult validate(String token, ValidationOptions options);
-}
+The token validator exposes a validation interface:
 
-public class ValidationResult {
-    public boolean isValid();
-    public Optional<TokenClaims> getClaims();
-    public List<ValidationError> getErrors();
-}
-----
+* `validate(token)` - Validate a token and return a result
+* `validate(token, options)` - Validate with custom options
+
+The validation result provides:
+
+* `isValid()` - Whether the token passed validation
+* `getClaims()` - Extracted claims (if valid)
+* `getErrors()` - Validation errors (if invalid)
 ```
 
 **Validation flows and algorithms**:
@@ -92,7 +89,7 @@ Pre-implementation specifications include: Status: PLANNED, Design Overview, Exp
 
 Currently implementing in:
 
-* link:../src/main/java/com/example/jwt/TokenValidator.java[TokenValidator] (in progress)
+* link:../path/to/TokenValidator[TokenValidator] (in progress)
 ```
 
 **Implementation decisions**:
@@ -134,7 +131,7 @@ During-implementation specifications include: Status: IN PROGRESS, Implementatio
 
 **Content focus**: Links to implementation with architectural context
 
-**Level of detail**: Medium - enough context to understand design without duplicating JavaDoc
+**Level of detail**: Medium - enough context to understand design without duplicating API documentation
 
 ### What to Update
 
@@ -147,10 +144,10 @@ During-implementation specifications include: Status: IN PROGRESS, Implementatio
 ```asciidoc
 This specification is implemented in:
 
-* link:../src/main/java/com/example/jwt/TokenValidator.java[TokenValidator]
-* link:../src/main/java/com/example/jwt/TokenValidatorFactory.java[TokenValidatorFactory]
+* link:../path/to/TokenValidator[TokenValidator]
+* link:../path/to/TokenValidatorFactory[TokenValidatorFactory]
 
-For detailed behavior, refer to the implementation and associated JavaDoc.
+For detailed behavior, refer to the implementation and associated API documentation.
 ```
 
 **3. Add test references**:
@@ -159,13 +156,13 @@ For detailed behavior, refer to the implementation and associated JavaDoc.
 
 Test coverage is provided by:
 
-* link:../src/test/java/com/example/jwt/TokenValidatorTest.java[TokenValidatorTest]
-* link:../src/test/java/com/example/jwt/integration/ValidationIntegrationTest.java[ValidationIntegrationTest]
+* link:../path/to/TokenValidatorTest[TokenValidatorTest]
+* link:../path/to/ValidationIntegrationTest[ValidationIntegrationTest]
 ```
 
 **4. Remove redundant content**:
 - Remove code examples that duplicate actual implementation
-- Remove detailed API descriptions covered in JavaDoc
+- Remove detailed API descriptions covered in API documentation
 - Keep architectural guidance and design rationale
 - Keep standards and constraints
 
@@ -178,27 +175,27 @@ _See Requirement link:../Requirements.adoc#JWT-1[JWT-1: Token Validation Framewo
 
 Implementation:
 
-* link:../src/main/java/com/example/jwt/TokenValidator.java[TokenValidator]
-* link:../src/main/java/com/example/jwt/SignatureValidator.java[SignatureValidator]
-* link:../src/main/java/com/example/jwt/ClaimValidator.java[ClaimValidator]
+* link:../path/to/TokenValidator[TokenValidator]
+* link:../path/to/SignatureValidator[SignatureValidator]
+* link:../path/to/ClaimValidator[ClaimValidator]
 
-The implementation follows RFC 7519 standards and uses the jose4j library for cryptographic operations. Configuration is provided through CDI with sensible defaults.
+The implementation follows RFC 7519 standards and uses a cryptographic library for token operations. Configuration is provided with sensible defaults.
 
-For detailed implementation behavior and API usage, refer to the JavaDoc of the implementing classes.
+For detailed implementation behavior and API usage, refer to the API documentation of the implementing classes/modules.
 
 === Verification
 
 Test coverage:
 
-* link:../src/test/java/com/example/jwt/TokenValidatorTest.java[TokenValidatorTest]
-* link:../src/test/java/com/example/jwt/integration/ValidationIntegrationTest.java[ValidationIntegrationTest]
+* link:../path/to/TokenValidatorTest[TokenValidatorTest]
+* link:../path/to/ValidationIntegrationTest[ValidationIntegrationTest]
 
 Test coverage: 92% line coverage, 88% branch coverage.
 ```
 
 ### Example Structure
 
-Post-implementation specifications include: Status: IMPLEMENTED, Implementation section (with links to all implementing classes), brief architectural context, reference to JavaDoc for detailed behavior, and Verification section (with test links and coverage metrics). See **[specification-structure-and-backtracking.md](specification-structure-and-backtracking.md#post-implementation-specification)** for detailed format examples.
+Post-implementation specifications include: Status: IMPLEMENTED, Implementation section (with links to all implementing classes), brief architectural context, reference to API documentation for detailed behavior, and Verification section (with test links and coverage metrics). See **[specification-structure-and-backtracking.md](specification-structure-and-backtracking.md#post-implementation-specification)** for detailed format examples.
 
 ## Transition Guidelines
 
@@ -221,7 +218,7 @@ Post-implementation specifications include: Status: IMPLEMENTED, Implementation 
 
 **Remove after implementation**:
 - Detailed code examples that duplicate actual implementation
-- Expected API definitions covered in JavaDoc
+- Expected API definitions covered in API documentation
 - Speculative implementation guidance once actual implementation exists
 
 ## Information Distribution
@@ -234,7 +231,7 @@ Post-implementation specifications include: Status: IMPLEMENTED, Implementation 
 - Integration points and boundaries
 - Links to implementation and tests
 
-### JavaDoc Focuses On
+### API documentation Focuses On
 
 - Detailed API documentation
 - Method-level behavior
@@ -268,7 +265,7 @@ Post-implementation specifications include: Status: IMPLEMENTED, Implementation 
 
 **Remove duplication**:
 - Eliminate redundant code examples
-- Reference JavaDoc instead of repeating details
+- Reference API documentation instead of repeating details
 - Keep only architectural context in specs
 
 ### Quality Checks
@@ -280,7 +277,7 @@ Before marking a specification as IMPLEMENTED:
 - All tests linked
 - Redundant code examples removed
 - Backtracking links verified
-- JavaDoc references added
+- API documentation references added
 - Architecture and rationale preserved
 
 ## Common Lifecycle Issues
@@ -297,11 +294,11 @@ Before marking a specification as IMPLEMENTED:
 
 **Solution**: Always add implementation and test links before changing status
 
-### Issue: Duplicating JavaDoc
+### Issue: Duplicating API documentation
 
 **Problem**: Repeating detailed method behavior in specifications
 
-**Solution**: Link to JavaDoc, keep only architectural context
+**Solution**: Link to API documentation, keep only architectural context
 
 ### Issue: Losing Design Rationale
 

@@ -107,15 +107,15 @@ _See Requirements:_
 - Integration patterns
 
 **Implementation references** (post-implementation):
-- Links to actual implementation classes
+- Links to actual implementation source files
 - Links to test implementations
-- References to JavaDoc for details
+- References to API documentation (JavaDoc, docstrings, JSDoc) for details
 
 ### What to Exclude
 
-**Implementation details that belong in JavaDoc**:
-- Internal class mechanics
-- Method-level algorithms
+**Implementation details that belong in API documentation**:
+- Internal class/module mechanics
+- Method/function-level algorithms
 - Detailed code logic
 
 **Transitional information**:
@@ -125,7 +125,7 @@ _See Requirements:_
 
 **Duplicate information**:
 - Content already in requirements
-- Content fully covered in JavaDoc
+- Content fully covered in API documentation
 - Redundant examples once implementation exists
 
 ## Implementation Status Tracking
@@ -164,19 +164,16 @@ The validation architecture consists of:
 
 === Expected API
 
-[source,java]
-----
-public interface TokenValidator {
-    ValidationResult validate(String token);
-    ValidationResult validate(String token, ValidationOptions options);
-}
+The token validator exposes a validation interface:
 
-public class ValidationResult {
-    public boolean isValid();
-    public Optional<TokenClaims> getClaims();
-    public List<ValidationError> getErrors();
-}
-----
+* `validate(token)` - Validate a token and return a result
+* `validate(token, options)` - Validate with custom options
+
+The validation result provides:
+
+* `isValid()` - Whether the token passed validation
+* `getClaims()` - Extracted claims (if valid)
+* `getErrors()` - Validation errors (if invalid)
 
 === Validation Flow
 
@@ -208,23 +205,23 @@ The token validation architecture provides comprehensive JWT validation accordin
 
 === Implementation
 
-The following classes implement this specification:
+The following source files implement this specification:
 
-* link:../src/main/java/com/example/jwt/TokenValidator.java[TokenValidator] - Main validation orchestration
-* link:../src/main/java/com/example/jwt/SignatureValidator.java[SignatureValidator] - Signature verification
-* link:../src/main/java/com/example/jwt/ClaimValidator.java[ClaimValidator] - Claim validation
+* link:../path/to/TokenValidator[TokenValidator] - Main validation orchestration
+* link:../path/to/SignatureValidator[SignatureValidator] - Signature verification
+* link:../path/to/ClaimValidator[ClaimValidator] - Claim validation
 
-The implementation uses the jose4j library for cryptographic operations and provides a fluent API for configuration.
+The implementation uses a cryptographic library for token operations and provides a configurable API.
 
-For detailed behavior and API usage, refer to the JavaDoc of these classes.
+For detailed behavior and API usage, refer to the API documentation of these classes/modules.
 
 === Verification
 
 Test coverage is provided by:
 
-* link:../src/test/java/com/example/jwt/TokenValidatorTest.java[TokenValidatorTest]
-* link:../src/test/java/com/example/jwt/SignatureValidatorTest.java[SignatureValidatorTest]
-* link:../src/test/java/com/example/jwt/ClaimValidatorTest.java[ClaimValidatorTest]
+* link:../path/to/TokenValidatorTest[TokenValidatorTest]
+* link:../path/to/SignatureValidatorTest[SignatureValidatorTest]
+* link:../path/to/ClaimValidatorTest[ClaimValidatorTest]
 
 Test coverage: 92% line coverage, 88% branch coverage.
 ```
@@ -249,7 +246,7 @@ Implemented specifications must link to code:
 
 This specification is implemented in:
 
-* link:../src/main/java/com/example/Component.java[Component]
+* link:../path/to/Component[Component]
 ```
 
 ### Back to Main Specification
@@ -266,11 +263,11 @@ For comprehensive quality criteria (completeness, clarity, maintainability, trac
 
 ## Common Anti-Patterns
 
-### Duplicating JavaDoc
+### Duplicating API Documentation
 
 **Bad**: Repeating detailed implementation behavior in specification
 
-**Good**: Referencing implementation with links to JavaDoc
+**Good**: Referencing implementation with links to API documentation
 
 ### Leaving Stale Content
 

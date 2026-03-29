@@ -45,7 +45,7 @@ Planning documents do NOT include:
 
 - **How to implement** (belongs in specifications)
 - **Why it's needed** (belongs in requirements)
-- **Implementation details** (belongs in code and JavaDoc)
+- **Implementation details** (belongs in code and API documentation)
 
 ## See Also
 

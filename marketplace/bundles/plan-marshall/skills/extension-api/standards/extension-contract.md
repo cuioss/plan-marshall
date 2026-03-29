@@ -609,7 +609,7 @@ class Extension(ExtensionBase):
 |--------|--------|-------|---------|
 | pm-dev-java | java | 2 | `pm-dev-java:java-verify-agent`, `pm-dev-java:java-coverage-agent` |
 | pm-documents | documentation | 1 | `pm-documents:doc-verify` |
-| pm-requirements | requirements | 1 | `pm-requirements:spec-verify` |
+| pm-requirements | requirements | 0 | - |
 
 Bundles without verification steps (returns `[]`): pm-dev-frontend, pm-dev-java-cui, pm-plugin-development.
 
@@ -916,7 +916,7 @@ Some domain bundles are **additive** - they extend a base domain bundle rather t
 | pm-dev-python | python | - | - | - | - | |
 | pm-dev-oci | oci-containers | ext-triage-oci | - | - | - | |
 | pm-documents | documentation | ext-triage-docs | - | - | 1 (doc_sync) | Uses generic skills |
-| pm-requirements | requirements | ext-triage-reqs | - | - | 1 (formal_spec) | |
+| pm-requirements | requirements | ext-triage-reqs | - | - | - | |
 | pm-plugin-development | plan-marshall-plugin-dev | ext-triage-plugin | ext-outline-workflow | - | - | |
 | plan-marshall | build, general-dev | - | - | 1 (refactor-to-profile-standards) | - | Multi-domain |
 

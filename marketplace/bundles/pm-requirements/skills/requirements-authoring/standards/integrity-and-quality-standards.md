@@ -153,9 +153,9 @@ with support for multiple identity providers...
 xref:Requirements.adoc#req-001[REQ-001]
 link:Requirements.adoc#req-001[REQ-001]
 
-// Code reference
-Implementation: `de.cuioss.portal.authentication.TokenValidator`
-link:../src/main/java/de/cuioss/portal/authentication/TokenValidator.java[TokenValidator]
+// Code reference (adapt path to project language/structure)
+Implementation: `TokenValidator`
+link:../path/to/TokenValidator[TokenValidator]
 
 // External reference
 OAuth2 Specification: https://oauth.net/2/
@@ -218,9 +218,9 @@ Requirement REQ-001
     ↓ (specified by)
 Specification SPEC-001
     ↓ (implemented by)
-Code: TokenValidator.java
+Code: TokenValidator (source file)
     ↓ (tested by)
-Test: TokenValidatorTest.java
+Test: TokenValidatorTest (test file)
 ```
 
 ### No Hallucinated Functionality

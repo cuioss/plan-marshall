@@ -42,7 +42,7 @@ Each piece of information should have one authoritative location:
 
 - **Specifications**: Architectural decisions, standards, constraints
 - **Implementation code**: Detailed behavior, algorithms, edge cases
-- **JavaDoc**: Usage guidance, API contracts, implementation notes
+- **API documentation**: Usage guidance, API contracts, implementation notes
 
 ### Documentation Lifecycle
 
@@ -62,7 +62,7 @@ Documentation evolves through implementation:
    ```
    Read: standards/information-distribution.md
    ```
-   Defines what belongs in specifications vs JavaDoc.
+   Defines what belongs in specifications vs API documentation.
 
 2. **Load standards based on task context**:
 
@@ -71,7 +71,7 @@ Documentation evolves through implementation:
      Read: standards/specification-to-code-linking.md
      ```
 
-   - If linking from code to specifications (JavaDoc):
+   - If linking from code to specifications (API documentation):
      ```
      Read: standards/code-to-specification-linking.md
      ```
@@ -101,7 +101,7 @@ Documentation evolves through implementation:
 Apply the loaded standards to your specific task:
 
 **For New Implementation**:
-1. Add JavaDoc specification references using code-to-specification-linking templates
+1. Add API documentation specification references using code-to-specification-linking templates
 2. Update specification with implementation links using specification-to-code-linking templates
 3. Follow documentation-update-workflow for lifecycle phase
 
@@ -141,5 +141,5 @@ Use quality-standards checklists to verify:
 
 ### External Standards
 
-- JavaDoc standards (for implementation documentation)
+- Language-specific API documentation standards (JavaDoc, docstrings, JSDoc)
 - Testing standards (for test documentation)

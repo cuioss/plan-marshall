@@ -114,7 +114,7 @@ _See link:specification/testing.adoc#_unit_testing[Unit Testing Specification]_
 
 == Documentation
 
-* [ ] Complete JavaDoc for all public APIs with code examples
+* [ ] Complete API documentation for all public APIs with code examples
 * [ ] Document security considerations and configuration options
 * [ ] Create user guide with configuration examples and troubleshooting
 * [x] Update specifications with implementation links

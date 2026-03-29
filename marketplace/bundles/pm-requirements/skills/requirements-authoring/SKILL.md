@@ -148,7 +148,7 @@ This skill integrates with:
 - **pm-requirements:planning** - Planning tasks trace to requirements created here
 - **pm-requirements:traceability** - Links authored specs to implementation code
 - **pm-documents:ref-asciidoc** - AsciiDoc formatting and validation standards
-- **pm-dev-java:javadoc** - JavaDoc standards for referencing requirements
+- **pm-dev-java:javadoc** - JavaDoc standards for referencing requirements (Java projects)
 
 ## Anti-Patterns to Avoid
 
@@ -196,5 +196,5 @@ Before completing requirements/specification work:
 
 **External:**
 - pm-documents:ref-asciidoc - AsciiDoc formatting
-- pm-dev-java:javadoc - JavaDoc requirement references
+- pm-dev-java:javadoc - JavaDoc requirement references (Java projects)
 - plan-marshall:workflow-integration-git - Committing requirement changes

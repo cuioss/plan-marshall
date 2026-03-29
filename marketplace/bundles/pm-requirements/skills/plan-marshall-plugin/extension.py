@@ -14,16 +14,6 @@ class Extension(ExtensionBase):
         """Return triage skill reference."""
         return 'pm-requirements:ext-triage-reqs'
 
-    def provides_verify_steps(self) -> list[dict]:
-        """Return requirements-specific verification steps."""
-        return [
-            {
-                'name': 'pm-requirements:spec-verify',
-                'skill': 'pm-requirements:spec-verify',
-                'description': 'Verify formal specification compliance',
-            },
-        ]
-
     def get_skill_domains(self) -> list[dict]:
         """Domain metadata for skill loading."""
         return [{
