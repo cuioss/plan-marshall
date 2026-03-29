@@ -20,7 +20,7 @@ Decision criteria for handling requirements findings based on severity, type, an
 | Invalid requirement ID | Fix | Breaks references |
 | Missing acceptance criteria | Fix | Requirements must be testable |
 | Broken cross-reference | Fix | Documentation integrity |
-| Malformed AsciiDoc | Fix | Rendering failures |
+| Malformed document markup | Fix | Rendering failures |
 
 ### Traceability Issues
 
@@ -84,7 +84,7 @@ Decision criteria for handling requirements findings based on severity, type, an
 | Duplicate requirement IDs | Breaks traceability |
 | Missing acceptance criteria | Requirements must be testable |
 | Broken internal references | Document corruption |
-| Unparseable AsciiDoc | Rendering failure |
+| Unparseable document markup | Rendering failure |
 
 ## Iteration Limits
 

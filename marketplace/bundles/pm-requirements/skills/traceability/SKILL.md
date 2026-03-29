@@ -21,8 +21,13 @@ user-invocable: false
 - All specifications must link to implementation code and vice versa
 - Documentation must evolve through lifecycle phases (pre-implementation, during, post)
 - Link accuracy must be verified whenever referenced files change
+- For document markup syntax (link format, cross-references), see `pm-documents:ref-asciidoc`
 
 Standards for connecting specification documents with implementation code, establishing bidirectional traceability, and maintaining documentation throughout the implementation lifecycle.
+
+## Scope Boundary
+
+This skill covers **linking between documents and code**: bidirectional navigation, API documentation references, test coverage documentation, and link maintenance. For **creating and maintaining document content** (structure, SMART principles, ID schemes, lifecycle management), see `pm-requirements:requirements-authoring`. The two skills share some concepts (status indicators, backtracking links) but from different perspectives: traceability focuses on cross-system navigation, authoring focuses on document content.
 
 ## Core Principles
 

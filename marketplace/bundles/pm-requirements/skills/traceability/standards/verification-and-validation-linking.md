@@ -2,6 +2,8 @@
 
 Standards for linking specifications to test code and documenting test coverage.
 
+> **Format note**: Specification-side examples use AsciiDoc syntax. For AsciiDoc link syntax, see `pm-documents:ref-asciidoc`. The linking concepts apply regardless of document format.
+
 ## Test References in Specifications
 
 Include test verification sections in specifications to show how requirements are validated.
@@ -132,6 +134,25 @@ class TestAuthenticationFlow:
         - AUTH-201: User Login
         - AUTH-202: Session Management
     """
+```
+
+### JavaScript/TypeScript Example
+
+```javascript
+/**
+ * Integration tests for the complete authentication flow.
+ *
+ * Validates end-to-end behavior specified in
+ * doc/specification/authentication.adoc.
+ *
+ * Requirements validated:
+ * - AUTH-201: User Login
+ * - AUTH-202: Session Management
+ */
+describe('Authentication Flow', () => {
+  it('should complete user login', () => { });
+  it('should manage sessions', () => { });
+});
 ```
 
 ## Best Practices

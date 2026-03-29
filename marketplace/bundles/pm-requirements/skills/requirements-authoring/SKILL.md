@@ -21,8 +21,13 @@ user-invocable: false
 - All specifications must include backtracking links to requirements
 - Sequential numbering must be maintained; never reuse IDs
 - Cross-references must be verified and functional before finalizing
+- For document markup syntax, see `pm-documents:ref-asciidoc`
 
 Comprehensive standards for creating, structuring, and maintaining requirements and specification documents in projects following SMART principles, ensuring complete traceability, and maintaining documentation integrity throughout the project lifecycle.
+
+## Scope Boundary
+
+This skill covers **creating and maintaining content** in requirements and specification documents: structure, SMART principles, ID schemes, lifecycle management, and quality. For **linking documents to implementation code** (bidirectional traceability, API documentation references, test coverage documentation), see `pm-requirements:traceability`. The two skills share some concepts (backtracking links, status indicators) but from different perspectives: authoring focuses on document content, traceability focuses on cross-system navigation.
 
 ## What This Skill Provides
 
@@ -153,8 +158,9 @@ This skill integrates with:
 - **pm-requirements:setup** - Provides initial structure that authoring populates
 - **pm-requirements:planning** - Planning tasks trace to requirements created here
 - **pm-requirements:traceability** - Links authored specs to implementation code
-- **pm-documents:ref-asciidoc** - AsciiDoc formatting and validation standards
-- **pm-dev-java:javadoc** - JavaDoc standards for referencing requirements (Java projects)
+- **pm-documents:ref-asciidoc** - Document formatting and validation (AsciiDoc syntax, templates, link verification)
+
+Language-specific API documentation standards for referencing requirements from code are covered in `pm-requirements:traceability` → `standards/code-to-specification-linking.md`.
 
 ## Anti-Patterns to Avoid
 

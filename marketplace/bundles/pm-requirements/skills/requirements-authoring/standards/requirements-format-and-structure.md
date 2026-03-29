@@ -2,24 +2,17 @@
 
 Standards for formatting and structuring requirements documents with proper ID schemes, headings, and content organization.
 
+> **Format note**: Examples use AsciiDoc (`.adoc`) syntax. For AsciiDoc syntax, header attributes, and formatting rules, see `pm-documents:ref-asciidoc`. This document covers requirements-specific structure and conventions, not markup syntax.
+
 ## Document Structure
 
 ### Location and Naming
 
 **Required location**: `doc/Requirements.adoc`
 
-**Format**: AsciiDoc with proper structure and formatting
-
 ### Document Header
 
-```asciidoc
-= [Project Name] Requirements
-:toc: left
-:toclevels: 3
-:toc-title: Table of Contents
-:sectnums:
-:source-highlighter: highlight.js
-```
+Use the standard document header for requirements documents. See `pm-requirements:setup` → `standards/document-templates.md` (Requirements Template section) for the full template, and `pm-documents:ref-asciidoc` → `references/asciidoc-formatting.md` for header attribute details.
 
 ### Content Organization
 
@@ -62,11 +55,7 @@ Each requirement anchor must be placed immediately before the heading:
 
 ### Major Requirements
 
-Use Level 3 headings (`===`) for major requirements:
-
-```asciidoc
-=== PREFIX-NUM: Descriptive Title
-```
+Major requirements use the heading pattern `PREFIX-NUM: Descriptive Title` at the third heading level in the document hierarchy:
 
 **Example**:
 ```asciidoc
@@ -76,11 +65,7 @@ Use Level 3 headings (`===`) for major requirements:
 
 ### Sub-requirements
 
-Use Level 4 headings (`====`) for sub-requirements:
-
-```asciidoc
-==== PREFIX-NUM.1: Sub-requirement Title
-```
+Sub-requirements use decimal notation at the fourth heading level:
 
 **Example**:
 ```asciidoc

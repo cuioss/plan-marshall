@@ -70,7 +70,7 @@ _See link:specification/error-handling.adoc[Error Handling Specification]_
 * [ ] Create InvalidClaimException and MalformedTokenException
 * [ ] Add structured error details to exceptions
 * [ ] Ensure sensitive data is not logged
-* _Important: Must follow CUI logging standards_
+* _Important: Must follow project logging standards_
 
 === Security
 

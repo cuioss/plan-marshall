@@ -1,6 +1,6 @@
 # Code-to-Specification Linking Standards
 
-Standards for linking from implementation code back to specification documents via API documentation comments.
+Standards for linking from implementation code back to specification documents via API documentation comments. Examples cover Java (JavaDoc), Python (docstrings), and JavaScript/TypeScript (JSDoc) with equal depth.
 
 ## Language-Specific Templates
 
@@ -107,4 +107,33 @@ def validate_token(token: str) -> ValidationResult:
  *   <li>{@code SEC-105: Password Security}</li>
  * </ul>
  */
+```
+
+**Multiple requirements (Python)**:
+```python
+class AuthenticationService:
+    """User authentication service.
+
+    Implements requirements:
+        - AUTH-201: User Login
+        - AUTH-202: Session Management
+        - SEC-105: Password Security
+
+    See: doc/specification/authentication.adoc
+    """
+```
+
+**Multiple requirements (JavaScript/TypeScript)**:
+```javascript
+/**
+ * User authentication service.
+ *
+ * Implements requirements:
+ * - AUTH-201: User Login
+ * - AUTH-202: Session Management
+ * - SEC-105: Password Security
+ *
+ * @see {@link doc/specification/authentication.adoc} for detailed specifications.
+ */
+export class AuthenticationService { }
 ```

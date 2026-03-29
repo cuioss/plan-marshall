@@ -1,6 +1,8 @@
 # Directory Structure Standards
 
-Standards for establishing requirements documentation directory structure in CUI projects.
+Standards for establishing requirements documentation directory structure.
+
+> **Format note**: Examples use AsciiDoc (`.adoc`) file extensions. For AsciiDoc formatting rules, see `pm-documents:ref-asciidoc`. The directory structure and organizational principles below apply regardless of document format.
 
 ## Required Directory Layout
 

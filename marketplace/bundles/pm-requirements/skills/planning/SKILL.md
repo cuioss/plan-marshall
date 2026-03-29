@@ -17,7 +17,7 @@ user-invocable: false
 - Do not load all standards at once; load progressively based on current task
 
 **Constraints:**
-- Planning documents must use AsciiDoc format in target projects
+- Planning documents follow the project's documentation format (see `pm-documents:ref-asciidoc` for AsciiDoc format rules)
 - Status indicators must follow the defined set (PLANNED, IN PROGRESS, IMPLEMENTED, etc.)
 - Task groups must link to originating requirements or specifications
 - Documents must be kept current as living documentation
@@ -28,12 +28,7 @@ Standards for creating, structuring, and maintaining project planning documents 
 
 ### Format Note
 
-**Important**: This skill's standards files are in **Markdown** (`.md`) format as required for marketplace bundles. However, the standards themselves describe how to create **AsciiDoc** (`.adoc`) planning documents in target projects.
-
-- **Transport format** (marketplace): Markdown (`.md`) - these standards files
-- **Target format** (projects): AsciiDoc (`.adoc`) - TODO.adoc, ROADMAP.adoc, etc.
-
-Code examples within the standards show AsciiDoc syntax because they demonstrate what users should write in their project's planning documents.
+This skill's standards files are in Markdown (`.md`) format as required for marketplace bundles. The standards describe planning document structure and conventions that are format-agnostic. Code examples use AsciiDoc syntax; for AsciiDoc formatting rules, see `pm-documents:ref-asciidoc`.
 
 ### Comprehensive Planning Standards
 

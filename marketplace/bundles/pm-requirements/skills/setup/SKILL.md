@@ -1,6 +1,6 @@
 ---
 name: setup
-description: Standards for setting up requirements and specification documentation in new CUI projects with proper directory structure and initial documents
+description: Standards for setting up requirements and specification documentation in new projects with proper directory structure and initial documents
 user-invocable: false
 ---
 
@@ -17,12 +17,12 @@ user-invocable: false
 - Do not load all standards at once; load progressively based on current task
 
 **Constraints:**
-- Minimum required files: `doc/Requirements.adoc` and `doc/Specification.adoc`
+- Minimum required files: `doc/Requirements.adoc` and `doc/Specification.adoc` (see `pm-documents:ref-asciidoc` for AsciiDoc format rules)
 - Requirement prefix must be selected before creating any requirements
 - Document templates must be used as the starting point for all initial documents
 - Setup must be verified against the quality checklist before proceeding to authoring
 
-Standards for establishing requirements and specification documentation structure in new CUI projects, including directory layout, initial document creation, and prefix selection.
+Standards for establishing requirements and specification documentation structure in new projects, including directory layout, initial document creation, and prefix selection.
 
 ## What This Skill Provides
 
@@ -39,10 +39,10 @@ This skill provides comprehensive standards for:
 
 Use this skill when:
 
-- Starting a new CUI project that needs requirements documentation
+- Starting a new project that needs requirements documentation
 - Setting up documentation structure before implementation
 - Standardizing documentation across multiple projects
-- Onboarding teams to CUI documentation practices
+- Onboarding teams to documentation practices
 - Establishing traceability from project inception
 
 ## Workflow
@@ -166,6 +166,6 @@ This skill works with other pm-requirements bundle skills:
 
 ## Related Documentation
 
-- **CUI Documentation Standards**: General AsciiDoc formatting and structure
+- **Documentation Standards**: See `pm-documents:ref-asciidoc` for AsciiDoc formatting and structure
 - **Logging Standards**: LogMessages.adoc content requirements
 - **Git Standards**: Committing documentation files

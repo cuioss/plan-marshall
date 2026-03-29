@@ -1,7 +1,7 @@
 {
   "name": "pm-requirements",
   "version": "0.1-BETA",
-  "description": "Requirements engineering and specification standards for CUI projects",
+  "description": "Requirements engineering and specification standards",
   "author": {
     "name": "https://github.com/cuioss/plan-marshall",
     "email": "contact@cuioss.de"

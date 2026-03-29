@@ -2,6 +2,8 @@
 
 Standards for creating specification documents with proper structure, backtracking links to requirements, and complete traceability.
 
+> **Format note**: Examples use AsciiDoc (`.adoc`) syntax. For AsciiDoc syntax and formatting rules, see `pm-documents:ref-asciidoc`. This document covers specification structure and backtracking link concepts.
+
 ## Specification Purpose
 
 Specification documents bridge the gap between requirements (what must be done) and implementation (how it's done). They provide:
@@ -39,7 +41,7 @@ The main `Specification.adoc` serves as the entry point and index, linking to in
 
 ### Individual Specification Documents
 
-Each individual specification must include a back-link to the main specification, backtracking links to requirements, and proper AsciiDoc headers. For the full template, see `pm-requirements:setup` → `standards/document-templates.md` (Individual Specification Template section).
+Each individual specification must include a back-link to the main specification and backtracking links to requirements. For the full template, see `pm-requirements:setup` → `standards/document-templates.md` (Individual Specification Template section). For document header formatting, see `pm-documents:ref-asciidoc` → `references/asciidoc-formatting.md`.
 
 ## Backtracking Links Standards
 
@@ -52,11 +54,13 @@ Backtracking links connect specifications to their source requirements:
 _See Requirement link:../Requirements.adoc#PREFIX-NUM[PREFIX-NUM: Requirement Title]_
 ```
 
-**Critical formatting rules**:
-1. Must be in italics (wrapped in `_..._`)
+**Critical rules**:
+1. Must be visually distinct from surrounding content (italics in AsciiDoc: `_..._`)
 2. Must start with "See Requirement"
 3. Link must include both anchor and display text
-4. Must be followed by **exactly one blank line** before content begins
+4. Must be followed by a blank line before content begins
+
+For AsciiDoc link syntax details, see `pm-documents:ref-asciidoc` → `references/asciidoc-formatting.md`.
 
 ### Path Variations
 

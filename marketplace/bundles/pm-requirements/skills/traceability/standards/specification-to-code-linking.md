@@ -2,6 +2,8 @@
 
 Standards for linking from specification documents to implementation code, providing bidirectional navigation.
 
+> **Format note**: Link syntax examples below use AsciiDoc. For AsciiDoc link and cross-reference syntax, see `pm-documents:ref-asciidoc` → `references/asciidoc-formatting.md`. The linking concepts (status tracking, bidirectional navigation) apply regardless of document format.
+
 ## Linking Format
 
 **Source file references**:
