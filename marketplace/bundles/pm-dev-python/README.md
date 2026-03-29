@@ -13,7 +13,7 @@ Python domain extension providing development standards and build infrastructure
 
 | Skill | Purpose |
 |-------|---------|
-| `cui-python` | Core Python development patterns |
+| `python-best-practices` | Core Python development patterns |
 | `plan-marshall-plugin` | Build infrastructure integration |
 
 ## Build Commands

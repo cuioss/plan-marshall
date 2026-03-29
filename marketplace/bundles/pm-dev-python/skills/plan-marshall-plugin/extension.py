@@ -82,7 +82,7 @@ class Extension(ExtensionBase):
         if 'python' in build_systems:
             signals.append('build_systems=python')
         all_paths = sources + tests
-        py_paths = [p for p in all_paths if '.py' in str(p) or 'py' in str(p).lower()]
+        py_paths = [p for p in all_paths if str(p).endswith('.py') or '/py/' in str(p) or str(p).endswith('/py')]
         if py_paths:
             signals.append(f'*.py in {",".join(py_paths[:3])}')
 
@@ -95,5 +95,5 @@ class Extension(ExtensionBase):
                                               active_profiles=active_profiles)
 
     def provides_triage(self) -> str | None:
-        """Return triage skill reference (future)."""
-        return None  # ext-triage-python to be added later
+        """Return triage skill reference."""
+        return 'pm-dev-python:ext-triage-python'

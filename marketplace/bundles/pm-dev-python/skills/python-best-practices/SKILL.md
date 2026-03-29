@@ -50,145 +50,17 @@ Reference when:
 
 ## Quick Reference
 
-### Modern Type Hints (Python 3.10+)
+For full patterns and examples, see the standards documents above. Key rules at a glance:
 
-```python
-# Use built-in generics (not typing.List, typing.Dict)
-def process(items: list[str], config: dict[str, int]) -> bool:
-    ...
-
-# Use union syntax with |
-def fetch(url: str) -> dict | None:
-    ...
-
-# Use collections.abc for abstract types in parameters
-from collections.abc import Mapping, Sequence, Iterable
-
-def transform(data: Mapping[str, int]) -> list[str]:
-    ...
-```
-
-### Data Structures
-
-| Use Case | Choice |
-|----------|--------|
-| Simple data container | `dataclass` |
-| Performance-critical, custom validation | `attrs` |
-| API boundaries, JSON serialization | `pydantic` |
-
-```python
-from dataclasses import dataclass
-
-@dataclass(slots=True, frozen=True)
-class Config:
-    host: str
-    port: int = 8080
-```
-
-### Error Handling
-
-```python
-# Specific exceptions, minimal try scope
-try:
-    result = parse_config(path)
-except FileNotFoundError:
-    result = default_config()
-except ValueError as e:
-    raise ConfigError(f"Invalid config: {e}") from e
-
-# Never bare except or catch Exception broadly
-# Bad: except:
-# Bad: except Exception:
-```
-
-### Resource Management
-
-```python
-# Always use context managers
-from pathlib import Path
-
-# File operations
-content = Path("data.txt").read_text(encoding="utf-8")
-Path("output.txt").write_text(result, encoding="utf-8")
-
-# For handles that need cleanup
-with open(path, "r", encoding="utf-8") as f:
-    for line in f:
-        process(line)
-```
-
-### Path Handling
-
-```python
-from pathlib import Path
-
-# Use Path objects, not string concatenation
-config_path = Path("data") / "config" / "settings.json"
-
-# Cross-platform by default
-if config_path.exists():
-    data = config_path.read_text()
-
-# Extract components
-name = config_path.stem      # "settings"
-ext = config_path.suffix     # ".json"
-parent = config_path.parent  # Path("data/config")
-```
-
-### Async Patterns
-
-```python
-import asyncio
-
-# Entry point
-async def main():
-    results = await asyncio.gather(
-        fetch_data("url1"),
-        fetch_data("url2"),
-    )
-    return results
-
-asyncio.run(main())
-
-# Controlled concurrency with semaphore
-async def fetch_all(urls: list[str], limit: int = 10):
-    semaphore = asyncio.Semaphore(limit)
-
-    async def fetch_one(url: str):
-        async with semaphore:
-            return await fetch_data(url)
-
-    return await asyncio.gather(*[fetch_one(u) for u in urls])
-```
-
-### Naming Conventions
-
-| Type | Convention | Example |
-|------|------------|---------|
-| Module | `lower_with_under` | `user_service.py` |
-| Class | `CapWords` | `UserService` |
-| Function/Method | `lower_with_under` | `get_user()` |
-| Constant | `CAPS_WITH_UNDER` | `MAX_RETRIES` |
-| Internal | `_leading_under` | `_internal_helper()` |
-
-### Docstrings (Google Style)
-
-```python
-def execute_command(args: str, timeout: int = 300) -> dict:
-    """Execute a build command with timeout.
-
-    Args:
-        args: Command arguments to execute.
-        timeout: Maximum execution time in seconds.
-
-    Returns:
-        Dictionary with status, exit_code, and output.
-
-    Raises:
-        TimeoutError: If command exceeds timeout.
-        ValueError: If args is empty.
-    """
-```
+| Topic | Rule |
+|-------|------|
+| Type hints | Built-in generics (`list[str]`), union syntax (`X \| None`), `collections.abc` for parameters |
+| Data structures | `dataclass` (default), `attrs` (performance), `pydantic` (API boundaries) |
+| Error handling | Specific exceptions only, minimal try scope, chain with `from` |
+| Resources | Always context managers; `pathlib.Path` for all file/path operations |
+| Async | `asyncio.run()` entry point, `gather()` for concurrency, `Semaphore` for rate limiting |
+| Naming | `lower_with_under` (functions/modules), `CapWords` (classes), `CAPS_WITH_UNDER` (constants) |
+| Docstrings | Google style with Args/Returns/Raises sections |
 
 ## Key Principles
 
