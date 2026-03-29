@@ -133,12 +133,18 @@ Standards are organized into focused documents:
 - Clarity and completeness standards
 - Maintainability principles
 
-**maintenance-and-deprecation-handling.md**
+**requirements-maintenance.md**
 - Adding new requirements (numbering, format, linking)
 - Modifying existing requirements (preserve IDs, update content)
 - Removing requirements (never delete, deprecate instead)
-- Pre-1.0 vs. post-1.0 deprecation handling
 - Refactoring requirements (maintain IDs, update references)
+- Commit guidelines for requirement changes
+
+**deprecation-handling.md**
+- Pre-1.0 vs. post-1.0 deprecation handling
+- Deprecation process with migration guidance
+- Removal process when user approves deletion
+- Historical record maintenance
 
 ## Integration
 
