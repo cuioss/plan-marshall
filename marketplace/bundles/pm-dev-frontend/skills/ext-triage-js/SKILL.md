@@ -33,14 +33,11 @@ Loaded via `resolve-workflow-skill-extension --domain javascript --type triage` 
 
 ## Extension Registration
 
-Registered in marshal.json under the javascript domain:
+Registered via `plan-marshall-plugin/extension.py` in the `provides_triage()` method:
 
-```json
-"javascript": {
-  "workflow_skill_extensions": {
-    "triage": "pm-dev-frontend:ext-triage-js"
-  }
-}
+```python
+def provides_triage(self) -> str | None:
+    return 'pm-dev-frontend:ext-triage-js'
 ```
 
 ## Quick Reference

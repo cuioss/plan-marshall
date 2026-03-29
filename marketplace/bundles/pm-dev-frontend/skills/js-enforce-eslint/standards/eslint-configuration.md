@@ -2,13 +2,13 @@
 
 ## Purpose
 
-This document defines ESLint v10 flat configuration structure, required dependencies, plugin management, and environment setup for consistent JavaScript linting.
+This document defines ESLint v9 flat configuration structure, required dependencies, plugin management, and environment setup for consistent JavaScript linting.
 
 ## ESLint Flat Configuration
 
 ### Configuration File Structure
 
-All projects must use ESLint v10+ with flat configuration format. Create `eslint.config.js` in the project root:
+All projects must use ESLint v9+ with flat configuration format. Create `eslint.config.js` in the project root:
 
 ```javascript
 import js from '@eslint/js';

@@ -142,33 +142,24 @@ Analyzes JavaScript files for JSDoc compliance violations and returns structured
    - Address WARNING violations next
    - SUGGESTION items are optional improvements
 
-**JSON Output Contract**:
-```json
-{
-  "status": "violations_found",
-  "data": {
-    "violations": [
-      {
-        "file": "src/utils/validator.js",
-        "line": 45,
-        "type": "missing_jsdoc",
-        "severity": "CRITICAL",
-        "target": "function validateEmail",
-        "message": "Exported function missing JSDoc documentation",
-        "fix_suggestion": "Add JSDoc block with @param and @returns tags"
-      }
-    ],
-    "files_analyzed": ["src/utils/validator.js", "..."]
-  },
-  "metrics": {
-    "total_files": 15,
-    "files_with_violations": 6,
-    "critical": 5,
-    "warnings": 12,
-    "suggestions": 3,
-    "total_violations": 20
-  }
-}
+**TOON Output Contract**:
+```toon
+status: violations_found
+
+data:
+  violations[1]{file,line,type,severity,target,message,fix_suggestion}:
+  src/utils/validator.js,45,missing_jsdoc,CRITICAL,function validateEmail,Exported function missing JSDoc documentation,Add JSDoc block with @param and @returns tags
+  files_analyzed[1]:
+  - src/utils/validator.js
+
+metrics:
+  total_files: 15
+  files_with_violations: 6
+  critical: 5
+  warnings: 12
+  suggestions: 3
+  total_violations: 20
+```
 ```
 
 **Violation types detected**:

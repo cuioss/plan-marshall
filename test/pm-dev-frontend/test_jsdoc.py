@@ -8,6 +8,7 @@ from pathlib import Path
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
 from conftest import get_script_path, run_script
+from toon_parser import parse_toon  # type: ignore[import-not-found]
 
 # Script under test
 SCRIPT_PATH = get_script_path('pm-dev-frontend', 'js-fix-jsdoc', 'jsdoc.py')
@@ -46,14 +47,14 @@ def test_analyze_help():
 def test_analyze_valid_jsdoc():
     """Test analyzing file with valid JSDoc."""
     result = run_script(SCRIPT_PATH, 'analyze', '--file', str(FIXTURES_DIR / 'valid-jsdoc.js'))
-    data = result.json()
+    data = parse_toon(result.stdout)
     assert data['status'] in ['clean', 'violations_found'], 'Analyzed valid JSDoc file'
 
 
 def test_analyze_missing_jsdoc():
     """Test analyzing file with missing JSDoc."""
     result = run_script(SCRIPT_PATH, 'analyze', '--file', str(FIXTURES_DIR / 'missing-jsdoc.js'))
-    data = result.json()
+    data = parse_toon(result.stdout)
     violations = data.get('data', {}).get('violations', [])
     assert len(violations) > 0, 'Detected missing JSDoc'
 
@@ -61,21 +62,21 @@ def test_analyze_missing_jsdoc():
 def test_analyze_partial_jsdoc():
     """Test analyzing file with partial JSDoc."""
     result = run_script(SCRIPT_PATH, 'analyze', '--file', str(FIXTURES_DIR / 'partial-jsdoc.js'))
-    data = result.json()
+    data = parse_toon(result.stdout)
     assert data['status'] in ['clean', 'violations_found'], 'Analyzed partial JSDoc file'
 
 
 def test_analyze_web_component():
     """Test analyzing web component file."""
     result = run_script(SCRIPT_PATH, 'analyze', '--file', str(FIXTURES_DIR / 'web-component.js'))
-    data = result.json()
+    data = parse_toon(result.stdout)
     assert data['status'] in ['clean', 'violations_found'], 'Analyzed web component'
 
 
 def test_analyze_directory():
     """Test analyzing directory of files."""
     result = run_script(SCRIPT_PATH, 'analyze', '--directory', str(FIXTURES_DIR))
-    data = result.json()
+    data = parse_toon(result.stdout)
     metrics = data.get('metrics', {})
     assert metrics.get('total_files', 0) > 0, 'Analyzed multiple files'
 
@@ -83,35 +84,35 @@ def test_analyze_directory():
 def test_analyze_scope_missing():
     """Test missing scope filter."""
     result = run_script(SCRIPT_PATH, 'analyze', '--file', str(FIXTURES_DIR / 'missing-jsdoc.js'), '--scope', 'missing')
-    data = result.json()
+    data = parse_toon(result.stdout)
     assert data['status'] in ['clean', 'violations_found'], 'Missing scope filter works'
 
 
 def test_analyze_scope_syntax():
     """Test syntax scope filter."""
     result = run_script(SCRIPT_PATH, 'analyze', '--file', str(FIXTURES_DIR / 'partial-jsdoc.js'), '--scope', 'syntax')
-    data = result.json()
+    data = parse_toon(result.stdout)
     assert data['status'] in ['clean', 'violations_found'], 'Syntax scope filter works'
 
 
 def test_analyze_missing_file_error():
     """Test error handling for missing file."""
     result = run_script(SCRIPT_PATH, 'analyze', '--file', 'nonexistent.js')
-    data = result.json()
+    data = parse_toon(result.stdout)
     assert data['status'] == 'error', 'Returns error for missing file'
 
 
 def test_analyze_missing_directory_error():
     """Test error handling for missing directory."""
     result = run_script(SCRIPT_PATH, 'analyze', '--directory', '/nonexistent/path')
-    data = result.json()
+    data = parse_toon(result.stdout)
     assert data['status'] == 'error', 'Returns error for missing directory'
 
 
 def test_analyze_metrics_present():
     """Test metrics are present in output."""
     result = run_script(SCRIPT_PATH, 'analyze', '--file', str(FIXTURES_DIR / 'missing-jsdoc.js'))
-    data = result.json()
+    data = parse_toon(result.stdout)
     metrics = data.get('metrics', {})
     assert 'total_violations' in metrics, 'Metrics include total_violations'
     assert 'critical' in metrics, 'Metrics include critical count'
@@ -120,7 +121,7 @@ def test_analyze_metrics_present():
 def test_analyze_violation_has_file_field():
     """Test violations have file field."""
     result = run_script(SCRIPT_PATH, 'analyze', '--file', str(FIXTURES_DIR / 'missing-jsdoc.js'))
-    data = result.json()
+    data = parse_toon(result.stdout)
     violations = data.get('data', {}).get('violations', [])
     if violations:
         assert 'file' in violations[0], 'Violation has file field'
@@ -129,7 +130,7 @@ def test_analyze_violation_has_file_field():
 def test_analyze_violation_has_line_field():
     """Test violations have line field."""
     result = run_script(SCRIPT_PATH, 'analyze', '--file', str(FIXTURES_DIR / 'missing-jsdoc.js'))
-    data = result.json()
+    data = parse_toon(result.stdout)
     violations = data.get('data', {}).get('violations', [])
     if violations:
         assert 'line' in violations[0], 'Violation has line field'

@@ -53,6 +53,10 @@ class Extension(ExtensionBase):
                             'skill': 'pm-dev-frontend:js-enforce-eslint',
                             'description': 'ESLint, Prettier, and Stylelint configuration and enforcement with systematic fixing',
                         },
+                        {
+                            'skill': 'pm-dev-frontend:css',
+                            'description': 'Modern CSS standards covering essentials, responsive design, quality practices, and tooling',
+                        },
                     ],
                 },
                 'module_testing': {
