@@ -221,14 +221,11 @@ test/
 
 ```bash
 # Run all tests
-./pw module-tests
+python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args "module-tests"
 
 # Run specific module
-./pw module-tests pm-dev-python
-
-# Run with parallel execution
-./pw module-tests -p
+python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args "module-tests pm-dev-python"
 
 # Run with coverage
-./pw coverage
+python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args "coverage"
 ```

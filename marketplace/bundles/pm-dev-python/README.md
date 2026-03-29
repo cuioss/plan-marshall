@@ -14,6 +14,7 @@ Python domain extension providing development standards and build infrastructure
 | Skill | Purpose |
 |-------|---------|
 | `python-best-practices` | Core Python development patterns |
+| `ext-triage-python` | Triage extension for Python findings during plan-finalize phase |
 | `plan-marshall-plugin` | Build infrastructure integration |
 
 ## Build Commands

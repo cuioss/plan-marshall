@@ -303,6 +303,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 |--------|--------|-------------|
 | pm-dev-java | java | `pm-dev-java:ext-triage-java` |
 | pm-dev-frontend | javascript | `pm-dev-frontend:ext-triage-js` |
+| pm-dev-python | python | `pm-dev-python:ext-triage-python` |
 | pm-dev-oci | oci-containers | `pm-dev-oci:ext-triage-oci` |
 | pm-documents | documentation | `pm-documents:ext-triage-docs` |
 | pm-requirements | requirements | `pm-requirements:ext-triage-reqs` |
