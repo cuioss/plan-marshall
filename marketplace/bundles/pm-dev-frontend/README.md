@@ -25,7 +25,7 @@ This bundle provides general frontend development expertise through domain knowl
 
 4. **ext-triage-js** - Extension point for JavaScript finding triage
 
-5. **plan-marshall-plugin** - JavaScript domain registration
+5. **plan-marshall-plugin** - JavaScript domain registration (internal extension, not registered in plugin.json)
 
 > **Companion bundle**: `pm-dev-frontend-cui` provides additional standards (Maven integration, Quarkus DevUI, NiFi).
 

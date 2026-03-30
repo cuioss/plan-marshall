@@ -1,12 +1,16 @@
 ---
 name: js-enforce-eslint
-description: ESLint v10, Prettier, and Stylelint configuration and rule standards for JavaScript projects
+description: ESLint v10 flat config, Prettier v3, and Stylelint v17 configuration, rule customization, and build integration standards for JavaScript projects
 user-invocable: false
 ---
 
 # JavaScript Linting and Formatting Standards
 
-**REFERENCE MODE**: This skill provides reference material. Load specific standards on-demand based on current task.
+## Enforcement
+
+- **Execution mode**: Reference — load specific standards on-demand based on current task
+- **Prohibited actions**: Do not generate legacy ESLint config (`.eslintrc.*`); always use flat config (`eslint.config.js`)
+- **Constraints**: All configurations require `"type": "module"` in package.json; ESLint v10+ only
 
 ESLint v10, Prettier, and Stylelint configuration standards for JavaScript projects.
 

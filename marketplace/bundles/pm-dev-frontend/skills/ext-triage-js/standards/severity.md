@@ -1,6 +1,6 @@
-# JavaScript/TypeScript Severity Guidelines
+# JavaScript Severity Guidelines
 
-Decision criteria for handling JavaScript and TypeScript findings based on severity, type, and context.
+Decision criteria for handling JavaScript findings based on severity, type, and context.
 
 ## ESLint Severity Mapping
 
@@ -9,15 +9,6 @@ Decision criteria for handling JavaScript and TypeScript findings based on sever
 | **error** | Fix (mandatory) | Blocks build/CI |
 | **warn** | Fix preferred | Suppress with justification if legacy |
 | **off** | N/A | Rule is disabled |
-
-## TypeScript Error Handling
-
-| Error Category | Action | Notes |
-|----------------|--------|-------|
-| Type errors | Fix | Core TypeScript benefit |
-| Strict null checks | Fix | Prevents runtime errors |
-| Implicit any | Fix in new code | Suppress in legacy migrations |
-| Property access | Fix | Type safety critical |
 
 ## Decision by Finding Type
 
@@ -28,15 +19,6 @@ Decision criteria for handling JavaScript and TypeScript findings based on sever
 | `no-eval`, `no-implied-eval` | **Fix immediately** | Security vulnerability |
 | `no-new-Function` | **Fix immediately** | Code injection risk |
 | XSS-related (jsx-a11y) | **Fix** | Security best practice |
-
-### Type Safety
-
-| Issue Type | Action | Context |
-|------------|--------|---------|
-| Strict type errors | Fix | New TypeScript code |
-| `any` usage | Fix or type properly | Avoid `any` escape hatch |
-| Missing return types | Fix in public APIs | Internal can be inferred |
-| Implicit any | Fix | Add explicit types |
 
 ### Code Quality
 
@@ -61,19 +43,16 @@ Decision criteria for handling JavaScript and TypeScript findings based on sever
 
 | Context | Guidance |
 |---------|----------|
-| **New TypeScript** | Strict typing, no `any`, fix all errors |
-| **New JavaScript** | Consider migrating to TypeScript |
-| **Legacy TypeScript** | Gradual strictness increase |
-| **Legacy JavaScript** | Add `// @ts-check` incrementally |
+| **New JavaScript** | Full ESLint compliance, no suppressions |
+| **Legacy JavaScript** | Fix errors, suppress warnings with justification |
 
 ### Test Code vs Production Code
 
 | Context | Guidance |
 |---------|----------|
-| **Production code** | Standard rules, strict typing |
+| **Production code** | Standard rules, strict linting |
 | **Test code** | More lenient for mocking, setup |
-| **Test utilities** | Can use `any` for flexible mocks |
-| **E2E tests** | Focus on functionality over types |
+| **E2E tests** | Focus on functionality |
 
 ### Generated Code
 
@@ -98,9 +77,8 @@ Decision criteria for handling JavaScript and TypeScript findings based on sever
 
 | Finding Type | Condition |
 |--------------|-----------|
-| Legacy JS files | Tracked migration plan to TypeScript |
-| Loose typing in tests | Test mocks require flexibility |
-| `any` in type definitions | When typing third-party is impractical |
+| Legacy JS files | Tracked plan to address |
+| Loose patterns in tests | Test mocks require flexibility |
 
 ### Never Acceptable
 
@@ -108,7 +86,6 @@ Decision criteria for handling JavaScript and TypeScript findings based on sever
 |--------------|--------|
 | Security rules (eval, XSS) | Unacceptable risk |
 | `error` level ESLint in CI | Blocks deployment |
-| TypeScript errors in strict mode | Type safety compromise |
 
 ## Framework-Specific Guidelines
 
@@ -117,14 +94,12 @@ Decision criteria for handling JavaScript and TypeScript findings based on sever
 | Issue Type | Action |
 |------------|--------|
 | `react-hooks/exhaustive-deps` | Fix (usually) or document exception |
-| `react/prop-types` | Use TypeScript types instead |
 | Accessibility (jsx-a11y) | Fix for compliance |
 
 ### Node.js
 
 | Issue Type | Action |
 |------------|--------|
-| `@typescript-eslint/no-require-imports` | Use ES modules |
 | Callback error handling | Fix - handle errors properly |
 | Async/await patterns | Follow conventions |
 
@@ -136,10 +111,6 @@ Is it ESLint error level?
 
 Is it a security rule?
   → Yes → FIX (no exceptions)
-
-Is it TypeScript type error?
-  → Yes, in new code → FIX
-  → Yes, in legacy → SUPPRESS with migration plan
 
 Is it auto-fixable?
   → Yes → RUN AUTO-FIX
@@ -164,7 +135,7 @@ During finalize phase:
 | Iteration | Focus |
 |-----------|-------|
 | 1 | Fix all errors, run auto-fix |
-| 2 | Fix warnings, type issues |
+| 2 | Fix warnings |
 | 3 | Review remaining, suppress with justification |
 | MAX (5) | Accept remaining, document for future |
 
@@ -179,9 +150,6 @@ npx prettier --write .
 
 # Fix both
 npm run lint:fix  # If configured
-
-# TypeScript - no auto-fix, but can generate types
-npx tsc --declaration
 ```
 
 ## Related Standards

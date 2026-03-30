@@ -1,6 +1,6 @@
-# JavaScript/TypeScript Suppression Syntax
+# JavaScript Suppression Syntax
 
-How to suppress various types of findings in JavaScript and TypeScript code.
+How to suppress various types of findings in JavaScript code.
 
 ## ESLint Suppressions
 
@@ -42,49 +42,6 @@ console.log('Second');
 ```javascript
 // eslint-disable-next-line no-console -- Required for debugging production issues
 console.log('Critical diagnostic:', data);
-```
-
-## TypeScript Suppressions
-
-### @ts-ignore
-
-Ignores TypeScript error on next line. **Use sparingly**.
-
-```typescript
-// @ts-ignore - Legacy API returns untyped data
-const result = legacyApi.getData();
-```
-
-### @ts-expect-error (Preferred)
-
-Same as `@ts-ignore` but fails if there's no error. **Preferred** because it fails when fix makes it unnecessary.
-
-```typescript
-// @ts-expect-error - Testing error handling with invalid input
-processData(null);
-```
-
-### @ts-nocheck
-
-Disables TypeScript checking for entire file. **Use only for legacy JS files**.
-
-```typescript
-// @ts-nocheck
-// Legacy JavaScript file pending migration
-```
-
-### Type Assertions
-
-For type-related issues, prefer proper typing over suppression:
-
-```typescript
-// Instead of @ts-ignore, use assertion
-const element = document.getElementById('app') as HTMLDivElement;
-
-// Or type guard
-if (element instanceof HTMLDivElement) {
-  element.style.display = 'none';
-}
 ```
 
 ## Stylelint Suppressions
@@ -145,36 +102,15 @@ export default [
 ];
 ```
 
-### TypeScript Config (tsconfig.json)
-
-```json
-{
-  "compilerOptions": {
-    "skipLibCheck": true
-  },
-  "exclude": ["**/generated/**"]
-}
-```
-
 ## Jest/Vitest Test Suppressions
 
 ### Expected Errors in Tests
 
-```typescript
+```javascript
 // Test that function throws
 expect(() => {
-  // @ts-expect-error - Testing with invalid input type
   processData('invalid');
 }).toThrow();
-```
-
-### Mocking Types
-
-```typescript
-// When mock doesn't match full interface
-const mockService = {
-  getData: jest.fn(),
-} as unknown as DataService; // Type assertion for partial mock
 ```
 
 ## Best Practices
@@ -189,18 +125,6 @@ console.log(diagnosticData);
 // Bad - no explanation
 // eslint-disable-next-line no-console
 console.log(diagnosticData);
-```
-
-### Prefer @ts-expect-error Over @ts-ignore
-
-```typescript
-// Good - will fail when error is fixed
-// @ts-expect-error - Legacy API returns untyped data
-const result = oldApi.fetch();
-
-// Avoid - stays silent even when unnecessary
-// @ts-ignore
-const result = oldApi.fetch();
 ```
 
 ### Scope Minimally
@@ -234,7 +158,6 @@ export default [
 ## When NOT to Suppress
 
 - Security-related rules (no-eval, no-implied-eval)
-- Type safety rules in new TypeScript code
 - Accessibility rules (jsx-a11y rules)
 - Issues that can be fixed with minimal effort
 - Issues in new code (only suppress in legacy)
