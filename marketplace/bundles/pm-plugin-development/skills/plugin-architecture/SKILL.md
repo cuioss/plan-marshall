@@ -280,17 +280,15 @@ Read references/frontmatter-standards.md
 
 **Load When**:
 - Documenting scripts in SKILL.md
-- Understanding script quality requirements
-- Common issues and fixes
+- Shell script patterns and pitfalls
+- Architectural rule enforcement in scripts
 
 **Contents**:
-- Script location (`{skill-dir}/scripts/`)
-- Documentation requirements in SKILL.md
-- Script quality checklist
-- Common issues and fixes
+- SKILL.md documentation requirements for scripts
+- Shell/Bash script standards and common pitfalls
+- Architectural rule enforcement (Rule 6, Rule 7, Pattern 22)
 
-**Related Skill**:
-For Python implementation patterns, testing standards, and output contracts:
+**For Python implementation patterns, testing, and output contracts**:
 ```
 Skill: pm-plugin-development:plugin-script-architecture
 ```

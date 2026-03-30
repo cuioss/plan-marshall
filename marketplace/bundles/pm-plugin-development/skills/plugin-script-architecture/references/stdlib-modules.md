@@ -60,17 +60,4 @@ Scripts must work on any system with Python 3 installed, without requiring packa
 
 ## PyYAML Replacement
 
-For simple YAML frontmatter parsing, use custom parser:
-
-```python
-def parse_simple_yaml(content: str) -> dict:
-    """Parse simple YAML frontmatter (key:value pairs only)."""
-    result = {}
-    for line in content.strip().split('\n'):
-        if ':' in line:
-            key, value = line.split(':', 1)
-            result[key.strip()] = value.strip()
-    return result
-```
-
-See `standards/python-implementation.md` for complete pattern.
+Do NOT use PyYAML — use custom parsing for simple frontmatter. See `standards/python-implementation.md` for the complete `parse_simple_yaml()` pattern with quote handling.

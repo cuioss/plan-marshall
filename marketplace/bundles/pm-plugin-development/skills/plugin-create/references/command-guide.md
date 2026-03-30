@@ -133,18 +133,22 @@ Every command must have:
 
 ## Frontmatter Format
 
+See `plugin-architecture:frontmatter-standards` for the complete specification.
+
 ### Basic Command
 
 ```yaml
 ---
 name: command-name
 description: One sentence description (<100 chars)
+tools: Read, Bash, Skill
 ---
 ```
 
 ### Notes
 
-- **NO tools field** in command frontmatter (tools specified in workflow, not frontmatter)
+- **tools** field lists tools the command needs (comma-separated, NOT array syntax)
+- Commands CAN include `Task` tool for agent orchestration
 - Name must be kebab-case
 - Description must be concise (<100 chars)
 
@@ -637,7 +641,7 @@ Before creating command, verify:
 
 - Name is kebab-case with verb (create-agent, run-tests, diagnose-code)
 - Description is <100 chars
-- Frontmatter has only name and description (no tools)
+- Frontmatter has name, description, and tools (comma-separated)
 - CONTINUOUS IMPROVEMENT RULE uses manage-lessons skill
 - All required sections present
 - Workflow is numbered steps
@@ -675,14 +679,14 @@ Before creating command, verify:
 
 ✅ **Correct**: "Show error and exit" - trust AI
 
-### Pitfall 5: Tools in Frontmatter
+### Pitfall 5: Array Syntax for Tools
 
 ❌ **Wrong**:
 ```yaml
 ---
 name: my-command
 description: Does stuff
-tools: Read, Write  # Commands don't have tools in frontmatter
+tools: [Read, Write]  # Array syntax not supported
 ---
 ```
 
@@ -691,6 +695,7 @@ tools: Read, Write  # Commands don't have tools in frontmatter
 ---
 name: my-command
 description: Does stuff
+tools: Read, Write  # Comma-separated
 ---
 ```
 

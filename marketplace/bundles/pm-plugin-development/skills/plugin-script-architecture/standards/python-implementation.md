@@ -491,46 +491,7 @@ scripts/
 
 **Rule**: When script A needs functionality from script B, and both are Python, use direct imports instead of subprocess calls.
 
-> **See also**: `standards/cross-skill-integration.md` for complete executor integration patterns including PYTHONPATH setup, standard APIs, and type ignore conventions.
-
-### Anti-pattern: Subprocess to Python Script
-
-```python
-# BAD: Subprocess call to Python script
-result = subprocess.run([
-    "python3", ".plan/execute-script.py",
-    "plan-marshall:manage-run-config:run_config",
-    "timeout", "get", "--command-key", command_key
-], capture_output=True, text=True)
-# Then parse JSON output...
-timeout = json.loads(result.stdout)["timeout_seconds"]
-```
-
-### Correct Pattern: Direct Import
-
-```python
-# GOOD: Direct import and function call
-from run_config import timeout_get
-
-timeout = timeout_get(command_key, default=300)
-```
-
-### When to Use Each Approach
-
-| Scenario | Use |
-|----------|-----|
-| Calling another Python script in marketplace | Direct import |
-| Calling external commands (git, gh, mvn) | Subprocess |
-| Calling system utilities (ls, cat, grep) | Subprocess |
-| Cross-language calls (Python to Bash) | Subprocess |
-
-### Benefits of Direct Import
-
-- **No parsing**: Return native Python types, not JSON strings
-- **Type safety**: Function signatures with type hints
-- **Performance**: No subprocess overhead
-- **Testability**: Can mock functions in unit tests
-- **Error handling**: Catch exceptions directly
+See `standards/cross-skill-integration.md` for complete details including PYTHONPATH setup, standard APIs, type ignore conventions, and when to use each approach.
 
 ## Environment Variables for Path Configuration
 

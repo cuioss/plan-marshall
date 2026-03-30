@@ -235,48 +235,24 @@ model: opus    # Maximum capability for complex reasoning
 
 ## Frontmatter Format
 
-### Required Fields
+See `plugin-architecture:frontmatter-standards` for the complete specification.
+
+### Quick Reference
 
 ```yaml
 ---
 name: agent-name          # kebab-case, descriptive
 description: One sentence  # <100 chars, clear purpose
 tools: Read, Write, Edit   # Comma-separated (NOT array)
----
-```
-
-### Optional Fields
-
-```yaml
----
-name: agent-name
-description: One sentence
 model: sonnet              # Optional: haiku, sonnet, opus
-tools: Read, Grep, Bash
 ---
 ```
 
-### Common Mistakes
+### Key Rules
 
-❌ **Array Syntax**:
-```yaml
-tools: [Read, Write, Edit]  # WRONG - don't use array syntax
-```
-
-✅ **Comma-Separated**:
-```yaml
-tools: Read, Write, Edit    # CORRECT - comma-separated string
-```
-
-❌ **Including Task**:
-```yaml
-tools: Read, Task           # WRONG - agents can't use Task
-```
-
-❌ **Including SlashCommand**:
-```yaml
-tools: SlashCommand         # WRONG - unavailable at runtime
-```
+- **tools**: Comma-separated (NOT array syntax `[Read, Write]`)
+- **No Task tool** — agents can't delegate (see Rule 6 below)
+- **No SlashCommand** — unavailable at runtime
 
 ## Agent Structure Template
 
