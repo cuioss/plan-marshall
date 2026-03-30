@@ -34,12 +34,7 @@ class Extension(ExtensionBase):
                             'description': 'Language-agnostic code quality principles (SRP, CQS, complexity, error handling)',
                         },
                     ],
-                    'optionals': [
-                        {
-                            'skill': 'pm-dev-frontend:js-fix-jsdoc',
-                            'description': 'Fix JSDoc errors and warnings from build/lint with content preservation',
-                        },
-                    ],
+                    'optionals': [],
                 },
                 'implementation': {
                     'defaults': [

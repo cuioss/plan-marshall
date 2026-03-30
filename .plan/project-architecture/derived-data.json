@@ -320,17 +320,12 @@
         "skill:js-enforce-eslint": {
           "path": "skills/js-enforce-eslint",
           "type": "skill",
-          "description": "Enforce ESLint standards by fixing violations systematically"
+          "description": "ESLint v10, Prettier, and Stylelint configuration and rule standards for JavaScript projects"
         },
-        "skill:js-fix-jsdoc": {
-          "path": "skills/js-fix-jsdoc",
-          "type": "skill",
-          "description": "Fix JSDoc errors and warnings from build/lint with content preservation"
-        }
       },
       "dependencies": [],
       "stats": {
-        "skill_count": 4,
+        "skill_count": 3,
         "agent_count": 0,
         "command_count": 0
       },

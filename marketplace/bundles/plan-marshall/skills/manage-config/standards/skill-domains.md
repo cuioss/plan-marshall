@@ -183,7 +183,7 @@ JavaScript/Frontend development with Jest testing.
 | Field | Skills |
 |-------|--------|
 | defaults | `pm-dev-frontend:javascript` |
-| optionals | `pm-dev-frontend:js-fix-jsdoc` |
+| optionals | (none) |
 
 **implementation**:
 | Field | Skills |

@@ -248,7 +248,7 @@ manage-config resolve-domain-skills --domain java --profile implementation
     },
     "core": {
       "defaults": ["pm-dev-frontend:javascript"],
-      "optionals": ["pm-dev-frontend:js-fix-jsdoc"]
+      "optionals": []
     },
     "implementation": {
       "defaults": [],

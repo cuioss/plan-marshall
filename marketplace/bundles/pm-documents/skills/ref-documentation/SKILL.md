@@ -28,7 +28,7 @@ Standards and workflows for content quality, tone, organization, and review orch
 
 For code documentation, use:
 - `pm-dev-java:javadoc` for Java code documentation
-- `pm-dev-frontend:js-fix-jsdoc` for JavaScript documentation
+- `pm-dev-frontend:javascript` for JavaScript documentation
 
 ## Available Workflows
 

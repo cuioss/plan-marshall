@@ -1,6 +1,6 @@
 ---
 name: js-enforce-eslint
-description: Enforce ESLint standards by fixing violations systematically
+description: ESLint v10, Prettier, and Stylelint configuration and rule standards for JavaScript projects
 user-invocable: false
 ---
 
@@ -15,15 +15,47 @@ ESLint v10, Prettier, and Stylelint configuration standards for JavaScript proje
 - ESLint v10+ with flat config (`eslint.config.js`)
 - `"type": "module"` in package.json
 
-## Standards
+## Workflow
 
-| Standard | Purpose |
-|----------|---------|
-| `standards/eslint-configuration.md` | ESLint v10 flat config, dependencies, plugins |
-| `standards/eslint-rules.md` | Rule definitions: JSDoc, security, SonarJS, framework overrides |
-| `standards/eslint-integration.md` | Build pipeline, Maven phases, npm scripts, CI/CD |
-| `standards/prettier-configuration.md` | Prettier setup, editor integration, pre-commit hooks |
-| `standards/stylelint-setup.md` | Stylelint for CSS-in-JS / Lit components |
+### Step 1: Load ESLint Configuration
+
+Load this standard when setting up or modifying ESLint configuration.
+
+```
+Read: standards/eslint-configuration.md
+```
+
+Covers ESLint v10 flat config, dependencies, and plugin setup.
+
+### Step 2: Load Additional Standards (As Needed)
+
+**ESLint Rules** (load for rule customization):
+```
+Read: standards/eslint-rules.md
+```
+
+Use when: Adding or modifying ESLint rules, configuring JSDoc rules, security rules, SonarJS, or framework-specific overrides.
+
+**ESLint Integration** (load for build pipeline work):
+```
+Read: standards/eslint-integration.md
+```
+
+Use when: Configuring npm scripts, Maven phases, CI/CD integration, or performance optimization for linting.
+
+**Prettier Configuration** (load for formatting setup):
+```
+Read: standards/prettier-configuration.md
+```
+
+Use when: Setting up Prettier, editor integration, pre-commit hooks, or resolving ESLint/Prettier conflicts.
+
+**Stylelint Setup** (load for CSS-in-JS linting):
+```
+Read: standards/stylelint-setup.md
+```
+
+Use when: Configuring Stylelint for CSS-in-JS or Lit components, setting up CSS linting rules, or integrating with build pipelines.
 
 ## Required npm Scripts
 
@@ -42,7 +74,6 @@ ESLint v10, Prettier, and Stylelint configuration standards for JavaScript proje
 
 ## Related Skills
 
-- `pm-dev-frontend:javascript` — Core JavaScript standards
+- `pm-dev-frontend:javascript` — JavaScript standards including JSDoc
 - `pm-dev-frontend:css` — CSS standards (Stylelint)
-- `pm-dev-frontend:js-fix-jsdoc` — JSDoc documentation
 - `pm-dev-frontend-cui:cui-javascript-project` — Project structure and Maven integration

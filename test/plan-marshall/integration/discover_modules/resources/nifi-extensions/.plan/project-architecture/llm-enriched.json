@@ -40,7 +40,6 @@
       "skills_by_profile": {
         "implementation": [
           "pm-dev-frontend:javascript",
-          "pm-dev-frontend:js-fix-jsdoc",
           "pm-dev-frontend:js-enforce-eslint"
         ],
         "integration-testing": [
@@ -174,7 +173,6 @@
           "pm-dev-java:java-lombok",
           "pm-dev-java:java-maintenance",
           "pm-dev-frontend:javascript",
-          "pm-dev-frontend:js-fix-jsdoc",
           "pm-dev-frontend:js-enforce-eslint"
         ],
         "unit-testing": [

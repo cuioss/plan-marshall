@@ -59,7 +59,7 @@ Leave documentation cleaner than you found it. When modifying a file, fix existi
 ## Related Skills
 
 - `pm-dev-java:javadoc` — JavaDoc tag syntax and Java-specific patterns
-- `pm-dev-frontend:js-fix-jsdoc` — JSDoc tags and ESLint integration
+- `pm-dev-frontend:javascript` — JavaScript standards including JSDoc
 
 ## Standards Reference
 

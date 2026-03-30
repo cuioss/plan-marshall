@@ -11,7 +11,7 @@ from conftest import get_script_path, run_script
 from toon_parser import parse_toon  # type: ignore[import-not-found]
 
 # Script under test
-SCRIPT_PATH = get_script_path('pm-dev-frontend', 'js-fix-jsdoc', 'jsdoc.py')
+SCRIPT_PATH = get_script_path('pm-dev-frontend', 'javascript', 'jsdoc.py')
 FIXTURES_DIR = Path(__file__).parent / 'jsdoc'
 
 

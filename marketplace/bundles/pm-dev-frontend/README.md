@@ -8,27 +8,24 @@ This bundle provides general frontend development expertise through domain knowl
 
 ## Components Included
 
-### Skills (6 skills)
+### Skills (5 skills)
 
 1. **javascript** - Core JavaScript development standards
-   - ES modules and modern patterns
-   - Async programming and code quality
+   - ES modules, modern patterns, async programming, code quality
+   - JSDoc documentation standards and patterns
+   - `jsdoc.py` analyzer script for violation detection
 
 2. **css** - CSS development standards
    - Responsive design patterns
    - Quality tooling and linting
 
-3. **js-fix-jsdoc** - JSDoc documentation standards
-   - Documentation patterns for functions, classes, modules
-   - `jsdoc.py` analyzer script
-
-4. **js-enforce-eslint** - ESLint, Prettier, Stylelint configuration
+3. **js-enforce-eslint** - ESLint, Prettier, Stylelint configuration
    - Flat config setup and rule management
    - Build integration standards
 
-5. **ext-triage-js** - Extension point for JavaScript finding triage
+4. **ext-triage-js** - Extension point for JavaScript finding triage
 
-6. **plan-marshall-plugin** - JavaScript domain registration
+5. **plan-marshall-plugin** - JavaScript domain registration
 
 > **Companion bundle**: `pm-dev-frontend-cui` provides additional standards (Maven integration, Quarkus DevUI, NiFi).
 
@@ -39,12 +36,11 @@ This bundle provides general frontend development expertise through domain knowl
 ```
 pm-dev-frontend/
 └── skills/
-    ├── javascript/              # Core JS standards
-    ├── css/                     # CSS standards
-    ├── js-fix-jsdoc/            # JSDoc + violations workflow
+    ├── javascript/              # Core JS standards + JSDoc
     │   └── scripts/
     │       └── jsdoc.py
-    ├── js-enforce-eslint/       # ESLint enforcement
+    ├── css/                     # CSS standards
+    ├── js-enforce-eslint/       # ESLint, Prettier, Stylelint
     ├── ext-triage-js/           # Triage extension point
     └── plan-marshall-plugin/    # JavaScript domain registration
 ```

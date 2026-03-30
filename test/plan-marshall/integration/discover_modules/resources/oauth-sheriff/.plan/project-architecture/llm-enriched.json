@@ -305,7 +305,6 @@
           ],
           "javascript": [
             "pm-dev-frontend:javascript",
-            "pm-dev-frontend:js-fix-jsdoc",
             "pm-dev-frontend:js-enforce-eslint"
           ]
         },

@@ -82,7 +82,7 @@ Tasks are stored as JSON and output as TOON (LLM-optimized):
   "steps": [
     {"number": 1, "title": "pm-plugin-development/agents/tool-coverage-agent.md", "status": "pending"},
     {"number": 2, "title": "pm-dev-builder/agents/gradle-builder.md", "status": "pending"},
-    {"number": 3, "title": "pm-dev-frontend/skills/js-fix-jsdoc/SKILL.md", "status": "pending"}
+    {"number": 3, "title": "pm-dev-frontend/skills/javascript/SKILL.md", "status": "pending"}
   ],
   "verification": {
     "commands": ["grep -L '```json' {files} | wc -l"],

@@ -369,7 +369,7 @@ description: |
 steps[3]{number,target,status}:
 1,pm-plugin-development/agents/tool-coverage-agent.md,pending
 2,pm-dev-builder/agents/gradle-builder.md,pending
-3,pm-dev-frontend/skills/js-fix-jsdoc/SKILL.md,pending
+3,pm-dev-frontend/skills/javascript/SKILL.md,pending
 
 verification:
   commands[1]:

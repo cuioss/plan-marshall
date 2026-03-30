@@ -46,7 +46,6 @@ Standards for JavaScript project setup, structure, dependencies, and Maven integ
 
 ## Related Skills
 
-- `pm-dev-frontend:javascript` — Core JavaScript development standards
+- `pm-dev-frontend:javascript` — JavaScript standards including JSDoc
 - `pm-dev-frontend:js-enforce-eslint` — ESLint, Prettier, Stylelint configuration
-- `pm-dev-frontend:js-fix-jsdoc` — JSDoc documentation standards
 - `plan-marshall:build-npm` — npm/npx build execution with multi-parser output analysis
