@@ -247,41 +247,7 @@ Temporary states use `.is-*` or `.has-*` prefix:
 
 ## Property Organization
 
-Order properties logically:
-
-```css
-.component {
-  /* Display & Position */
-  display: flex;
-  position: relative;
-  z-index: 10;
-
-  /* Flexbox/Grid */
-  flex-direction: column;
-  justify-content: center;
-  gap: 1rem;
-
-  /* Box Model */
-  width: 100%;
-  margin: 1rem;
-  padding: 1rem;
-  border: 1px solid gray;
-
-  /* Visual */
-  background: white;
-  border-radius: 0.25rem;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-
-  /* Typography */
-  color: #333;
-  font-size: 1rem;
-  line-height: 1.5;
-
-  /* Interaction */
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-```
+Order properties logically by category: **Display & Position** → **Flexbox/Grid** → **Box Model** (width, margin, padding, border) → **Visual** (background, border-radius, box-shadow) → **Typography** → **Interaction** (cursor, transition).
 
 ## File Structure
 
@@ -334,70 +300,11 @@ src/css/
 
 ## Component Architecture
 
-### Component File Pattern
-
-```css
-/* ==========================================================================
-   Component Name
-   ========================================================================== */
-
-/**
- * Component Description
- *
- * Variants: .component--variant
- * States: :hover, :focus, .is-active
- * Custom Properties: --component-var
- */
-
-/* Base Component */
-.component {
-  /* Base styles */
-}
-
-/* Component Elements */
-.component__element {
-  /* Element styles */
-}
-
-/* Component Modifiers */
-.component--modifier {
-  /* Modifier styles */
-}
-
-/* Component States */
-.component:hover { }
-.component.is-active { }
-```
+Each component file follows: **base component** → **elements** (`__element`) → **modifiers** (`--modifier`) → **states** (`:hover`, `.is-active`). Include a file header comment documenting variants, states, and custom properties.
 
 ## Utility Classes
 
-Small, single-purpose classes for common patterns:
-
-```css
-/* Display */
-.flex { display: flex; }
-.grid { display: grid; }
-.hidden { display: none; }
-
-/* Flexbox */
-.flex-col { flex-direction: column; }
-.items-center { align-items: center; }
-.justify-between { justify-content: space-between; }
-
-/* Spacing (scale: 0-8) */
-.p-0 { padding: 0; }
-.p-2 { padding: 0.5rem; }
-.p-4 { padding: 1rem; }
-.m-2 { margin: 0.5rem; }
-.mx-auto { margin-left: auto; margin-right: auto; }
-
-/* Typography */
-.text-sm { font-size: 0.875rem; }
-.text-lg { font-size: 1.125rem; }
-.font-bold { font-weight: 700; }
-```
-
-Use utilities for quick layout adjustments and spacing. When the same utility combination repeats, extract a component class instead.
+Small, single-purpose classes (`.flex`, `.hidden`, `.p-4`, `.text-sm`) for layout adjustments and spacing. When the same utility combination repeats, extract a component class instead.
 
 ## Theming
 

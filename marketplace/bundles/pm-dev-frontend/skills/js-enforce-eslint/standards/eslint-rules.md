@@ -120,26 +120,7 @@ export default [
 ];
 ```
 
-### SonarJS Default Rules
-
-The recommended configuration enables these rules with error severity:
-
-**Complexity and Maintainability**:
-- `sonarjs/cognitive-complexity` - Limits cognitive complexity (default: 15)
-- `sonarjs/no-identical-functions` - Detects duplicate functions
-- `sonarjs/no-duplicate-string` - Detects duplicate string literals
-
-**Code Simplification**:
-- `sonarjs/no-collapsible-if` - Simplifies conditional logic
-- `sonarjs/prefer-immediate-return` - Simplifies return statements
-- `sonarjs/prefer-object-literal` - Enforces object literals
-- `sonarjs/prefer-single-boolean-return` - Simplifies boolean returns
-- `sonarjs/no-small-switch` - Warns about small switch statements
-- `sonarjs/no-redundant-boolean` - Removes redundant booleans
-
-**Dead Code Detection**:
-- `sonarjs/no-unused-collection` - Detects unused collections
-- `sonarjs/no-useless-catch` - Removes useless catch blocks
+The `sonarjs.configs.recommended` preset enables rules for cognitive complexity (default: 15), code simplification, duplicate detection, and dead code. Override only when necessary:
 
 ### SonarJS Customization
 
@@ -319,113 +300,35 @@ rules: {
 
 ### Test File Overrides
 
-Relaxed rules for test files:
+Relaxed rules for test files (`**/*.test.js`, `**/test/**/*.js`, `src/test/js/**/*.js`):
 
-```javascript
-{
-  files: ['**/*.test.js', '**/test/**/*.js', 'src/test/js/**/*.js'],
-  rules: {
-    // Disable JSDoc requirements
-    'jsdoc/require-jsdoc': 'off',
-    'jsdoc/require-description': 'off',
-    'jsdoc/require-param-description': 'off',
-    'jsdoc/require-returns-description': 'off',
-    'jsdoc/require-param-type': 'off',
-    'jsdoc/require-returns': 'off',
-
-    // Relax complexity rules
-    'sonarjs/cognitive-complexity': 'off',
-    'sonarjs/no-duplicate-string': 'off',
-    'complexity': 'off',
-    'max-statements': 'off',
-    'max-params': 'off',
-    'max-lines-per-function': 'off',
-
-    // Relax code quality rules
-    'no-magic-numbers': 'off',
-    'require-await': 'off',
-    'no-unused-expressions': 'off',
-    'no-unused-vars': 'warn',
-    'no-undef': 'off',    // Jest globals handled by environment
-
-    // Relax security and promise rules
-    'security/detect-object-injection': 'off',
-    'promise/prefer-await-to-then': 'off',
-    'promise/always-return': 'off',
-    'no-promise-executor-return': 'off',
-
-    // Relax framework rules
-    'unicorn/consistent-function-scoping': 'off',
-    'lit/no-legacy-template-syntax': 'off',
-
-    // Jest-specific rules
-    'jest/expect-expect': [
-      'error',
-      {
-        assertFunctionNames: ['expect', 'assert*', 'should*'],
-      },
-    ],
-    'jest/no-disabled-tests': 'warn',
-    'jest/no-focused-tests': 'error',
-    'jest/prefer-to-have-length': 'error',
-    'jest/valid-expect': 'error',
-  },
-}
-```
+- **Disable**: All JSDoc requirements, complexity rules, magic numbers, security rules, framework rules
+- **Relax**: `no-unused-vars` to `warn`, `no-undef` to `off` (Jest globals)
+- **Add**: Jest-specific rules (`jest/expect-expect`, `jest/no-focused-tests: 'error'`, `jest/valid-expect`)
 
 ### Production Component Overrides
 
-Stricter rules for production code:
+Stricter rules for `src/main/resources/components/**/*.js`:
 
-```javascript
-{
-  files: ['src/main/resources/components/**/*.js'],
-  rules: {
-    // Enforce documentation
-    'jsdoc/require-jsdoc': 'error',           // Require JSDoc for public components
-    'jsdoc/require-description': 'error',     // Require descriptions
-
-    // Enforce quality standards
-    'max-len': ['warn', { code: 120 }],       // Line length limit
-    'complexity': ['warn', { max: 15 }],      // Cyclomatic complexity
-    'max-depth': ['error', { max: 4 }],       // Maximum nesting depth
-    'max-lines-per-function': ['warn', { max: 100 }], // Function length limit
-  },
-}
-```
+- **Enforce**: `jsdoc/require-jsdoc: 'error'`, `jsdoc/require-description: 'error'`
+- **Quality**: `max-len: 120`, `complexity: 15`, `max-depth: 4`, `max-lines-per-function: 100`
 
 ### Mock File Overrides
 
-Maximum flexibility for mock files:
+Maximum flexibility for mock files — disable documentation, complexity, quality, and security rules:
 
 ```javascript
 {
   files: ['src/test/js/mocks/**/*.js'],
   rules: {
-    // Disable all documentation requirements
     'jsdoc/require-jsdoc': 'off',
-
-    // Disable all complexity rules
     'sonarjs/no-identical-functions': 'off',
     'sonarjs/cognitive-complexity': 'off',
     'complexity': 'off',
     'max-statements': 'off',
     'max-lines-per-function': 'off',
-
-    // Disable code quality rules
-    'unicorn/consistent-function-scoping': 'off',
-    'unicorn/no-array-reduce': 'off',
-    'unicorn/prefer-logical-operator-over-ternary': 'off',
-    'no-restricted-syntax': 'off',
-    'no-plusplus': 'off',
-    'class-methods-use-this': 'off',
     'no-unused-vars': 'off',
-
-    // Disable security rules
     'security/detect-object-injection': 'off',
-    'promise/prefer-await-to-then': 'off',
-    'promise/always-return': 'off',
-    'no-promise-executor-return': 'off',
   },
 }
 ```

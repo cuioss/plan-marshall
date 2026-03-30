@@ -6,13 +6,6 @@ Mobile-first approach, layout patterns, container queries, and responsive techni
 
 Start with mobile styles, then enhance for larger screens.
 
-### Why Mobile-First?
-
-- Most users browse on mobile
-- Forces focus on essential content
-- Better performance (load less initially)
-- Progressive enhancement philosophy
-
 ### Basic Pattern
 
 ```css
@@ -57,52 +50,7 @@ Start with mobile styles, then enhance for larger screens.
 
 ## CSS Grid Layouts
 
-### Dashboard Layout
-
-```css
-.dashboard {
-  display: grid;
-  grid-template-areas:
-    "header"
-    "main"
-    "footer";
-  grid-template-rows: auto 1fr auto;
-  min-height: 100vh;
-  gap: 1rem;
-}
-
-.dashboard__header { grid-area: header; }
-.dashboard__main { grid-area: main; }
-.dashboard__footer { grid-area: footer; }
-
-/* Tablet: Add sidebar */
-@media (min-width: 768px) {
-  .dashboard {
-    grid-template-areas:
-      "header header"
-      "sidebar main"
-      "footer footer";
-    grid-template-columns: 250px 1fr;
-  }
-
-  .dashboard__sidebar { grid-area: sidebar; }
-}
-
-/* Desktop: Add right column */
-@media (min-width: 1024px) {
-  .dashboard {
-    grid-template-areas:
-      "header header header"
-      "sidebar main aside"
-      "footer footer footer";
-    grid-template-columns: 250px 1fr 300px;
-  }
-
-  .dashboard__aside { grid-area: aside; }
-}
-```
-
-### Content Grid
+### Responsive Grid
 
 ```css
 .content-grid {
@@ -380,38 +328,6 @@ td::before {
 ## Touch-Friendly Design
 
 See **css-quality-tooling.md** Accessibility section for touch target requirements (minimum 44x44px) and implementation patterns.
-
-## Print Styles
-
-```css
-@media print {
-  /* Hide non-essential elements */
-  .navigation,
-  .sidebar {
-    display: none;
-  }
-
-  /* Optimize for printing */
-  body {
-    color: black;
-    background: white;
-  }
-
-  /* Show URLs */
-  a::after {
-    content: " (" attr(href) ")";
-  }
-
-  /* Page breaks */
-  .section {
-    page-break-inside: avoid;
-  }
-
-  h1, h2, h3 {
-    page-break-after: avoid;
-  }
-}
-```
 
 ## See Also
 

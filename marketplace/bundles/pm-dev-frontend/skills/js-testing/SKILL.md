@@ -10,7 +10,7 @@ Unit testing standards for JavaScript projects using Jest or Vitest, covering te
 
 ## Enforcement
 
-- **Execution mode**: Reference -- load specific standards on-demand based on current task
+- **Execution mode**: Reference — load specific standards on-demand based on current task
 - **Prohibited actions**: Do not generate tests that depend on implementation internals; do not use arbitrary `setTimeout` waits in tests
 - **Constraints**: Tests must follow AAA (Arrange-Act-Assert) pattern; each test verifies one behavior
 
@@ -50,6 +50,6 @@ Use when: Mocking modules or APIs, working with fetch mocks, testing async/await
 
 ## Related Skills
 
-- `plan-marshall:dev-general-module-testing` -- Language-agnostic testing methodology (AAA, coverage, reliability)
-- `pm-dev-frontend:javascript` -- Core JavaScript development standards
-- `pm-dev-frontend:js-enforce-eslint` -- ESLint configuration including Jest/Vitest plugins
+- `plan-marshall:dev-general-module-testing` — Language-agnostic testing methodology (AAA, coverage, reliability)
+- `pm-dev-frontend:javascript` — Core JavaScript development standards
+- `pm-dev-frontend:js-enforce-eslint` — ESLint configuration including Jest/Vitest plugins

@@ -253,42 +253,9 @@ const createApiClient = (baseUrl, options = {}) => {
 };
 ```
 
-### Module Pattern
-
-```javascript
-const CacheManager = (() => {
-  const cache = new Map();
-  const isExpired = (entry) => Date.now() > entry.expiresAt;
-
-  return {
-    set(key, value, ttl = 60000) {
-      cache.set(key, { value, expiresAt: Date.now() + ttl });
-    },
-    get(key) {
-      const entry = cache.get(key);
-      if (!entry || isExpired(entry)) { cache.delete(key); return null; }
-      return entry.value;
-    },
-    clear() { cache.clear(); },
-  };
-})();
-```
-
 ## Functional Programming
 
-### Pure Functions
-
-Write pure functions whenever possible - same input always produces same output, no side effects:
-
-```javascript
-const calculateTax = (amount, rate) => amount * rate;
-
-const formatCurrency = (amount, currency = 'USD') =>
-  new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(amount);
-
-const normalizeText = (text) =>
-  text.trim().toLowerCase().replace(/\s+/g, ' ');
-```
+Favor pure functions (same input → same output, no side effects) wherever possible.
 
 ### Higher-Order Functions and Currying
 
@@ -363,34 +330,6 @@ const shallow = { ...original };
 ```
 
 ## Performance Patterns
-
-### Memoization
-
-```javascript
-const memoize = (fn) => {
-  const cache = new Map();
-  return (...args) => {
-    const key = JSON.stringify(args);
-    if (cache.has(key)) return cache.get(key);
-    const result = fn(...args);
-    cache.set(key, result);
-    return result;
-  };
-};
-```
-
-### Lazy Evaluation with Generators
-
-```javascript
-function* lazyRange(start, end) {
-  for (let i = start; i <= end; i++) yield i;
-}
-
-const numbers = lazyRange(1, 1000000);
-for (const num of numbers) {
-  if (num > 10) break; // Only generates 10 numbers
-}
-```
 
 ### Debouncing and Throttling
 

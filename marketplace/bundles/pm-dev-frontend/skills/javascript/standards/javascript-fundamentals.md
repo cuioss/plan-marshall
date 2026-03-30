@@ -230,7 +230,7 @@ const calculator = {
 
 ### Function Parameters
 
-For comprehensive coverage of function parameter patterns including destructuring, default parameters, and rest parameters, see [modern-patterns.md](modern-patterns.md) section "Destructuring Patterns".
+For comprehensive coverage of function parameter patterns including destructuring, default parameters, and rest parameters, see [modern-patterns.md](modern-patterns.md) "Destructuring" section.
 
 ## Common Patterns
 

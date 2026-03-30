@@ -64,20 +64,7 @@ export default defineConfig({
 
 ### Setup Files
 
-**Global setup** (runs before test framework loads):
-
-```javascript
-// jest.setup.js / vitest.setup.js
-// Provide fetch mock (jsdom does not include fetch)
-globalThis.fetch = jest.fn(() =>
-  Promise.resolve({
-    ok: true,
-    status: 200,
-    json: () => Promise.resolve({}),
-    text: () => Promise.resolve(''),
-  })
-);
-```
+**Global setup** (runs before test framework loads): Provide a `globalThis.fetch` mock since jsdom does not include fetch. See [mocking-async.md](mocking-async.md#fetch-mocking) for the full fetch mock setup and response helpers.
 
 **DOM setup** (runs after framework, has access to matchers):
 
@@ -209,7 +196,7 @@ test('renders form and validates input', () => {
 
 ## Parameterized Tests
 
-Use `test.each` for input/output variations. Keep it for straightforward mappings -- prefer individual tests for complex scenarios:
+Use `test.each` for input/output variations with straightforward mappings. Prefer individual tests when arrange/act steps differ between cases or when failure messages need distinct context:
 
 ```javascript
 test.each([

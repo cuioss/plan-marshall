@@ -209,7 +209,7 @@ Minimum 44x44px:
 
 ### `light-dark()` Function
 
-Simplify dark mode with single-declaration color switching (supported in Chrome 123+, Firefox 120+, Safari 17.5+):
+Simplify dark mode with single-declaration color switching (Baseline 2024):
 
 ```css
 :root {
