@@ -328,7 +328,7 @@ Execute refactoring plan:
 
 #### Step 6: Verify Results
 
-Run plugin-diagnose on affected components.
+Run plugin-doctor on affected components.
 Report any issues introduced.
 
 ## Workflow 5: apply-orchestration

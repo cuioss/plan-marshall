@@ -922,8 +922,7 @@ If workflow = "validate-component":
 **Pattern Usage in Marketplace**:
 - plugin-architecture: Pattern 10 (Reference Library)
 - plugin-create: Pattern 5 + Pattern 6 + Pattern 9 (Wizard + Template + Validation)
-- plugin-diagnose: Pattern 3 + Pattern 7 (Search-Analyze + Iterative)
-- plugin-fix: Pattern 2 + Pattern 1 (Read-Process-Write + Script Automation)
+- plugin-doctor: Pattern 3 + Pattern 7 + Pattern 2 + Pattern 1 (Search-Analyze + Iterative + Read-Process-Write + Script Automation)
 - plugin-maintain: Pattern 8 + Pattern 9 (Context Aggregation + Validation)
 
 **References**:

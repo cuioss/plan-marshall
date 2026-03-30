@@ -13,7 +13,7 @@ Skill: analyze-everything
   - Analyzes agents, commands, skills, metadata, scripts all in one workflow
 
 # ✅ GOOD: Workflow-based skill
-Skill: plugin-diagnose
+Skill: plugin-doctor
   - Workflow 1: analyze-component (single component)
   - Workflow 2: analyze-all-of-type (all components of one type)
   - Workflow 3: validate-marketplace (complete marketplace)
@@ -62,13 +62,13 @@ Step 3: Write formatted output
 **Structure**:
 ```markdown
 ---
-name: plugin-diagnose
+name: plugin-doctor
 description: Find and understand quality issues in marketplace components
 user-invocable: true
 allowed-tools: Read, Bash, Glob, Grep, Skill
 ---
 
-# Plugin Diagnose Skill
+# Plugin Doctor Skill
 
 ## Workflows
 
@@ -150,7 +150,7 @@ If neither provided:
 
 ```markdown
 # Command specifies workflow explicitly
-Skill: plugin-diagnose
+Skill: plugin-doctor
 Workflow: analyze-component
 Parameters: {component_path: "...", component_type: "agent"}
 ```
@@ -442,13 +442,13 @@ Never load all references at once. Load only what's needed for current task.
 
 ```markdown
 ---
-name: plugin-diagnose
+name: plugin-doctor
 description: Find and understand quality issues in marketplace components
 user-invocable: true
 allowed-tools: Read, Bash, Glob, Grep, Skill
 ---
 
-# Plugin Diagnose Skill
+# Plugin Doctor Skill
 
 ## Workflows
 

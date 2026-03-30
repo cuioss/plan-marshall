@@ -274,7 +274,6 @@ At workflow end:
 
 ## Related Resources
 
-- **plugin-diagnose skill** - Uses these patterns
-- **plugin-fix skill** - Fix application patterns
+- **plugin-doctor skill** - Uses these patterns
 - **component-update-guide.md** - Component updates
 

@@ -259,7 +259,7 @@ pm-plugin-development/
 │   └── plugin-create/          (templates + scripts)
 ├── commands/
 │   ├── plugin-create-agent.md  (tools)
-│   └── plugin-diagnose-*.md
+│   └── plugin-doctor.md
 └── agents/
     └── analysis-agents.md
 ```
@@ -488,7 +488,7 @@ After creating each component, add to components array.
 
 Run diagnosis:
 ```
-/plugin-diagnose-metadata
+/plugin-doctor
 ```
 
 Fix any issues found.
@@ -721,8 +721,8 @@ all-tools-bundle/
     },
     {
       "type": "command",
-      "name": "plugin-diagnose-agents",
-      "path": "commands/plugin-diagnose-agents.md"
+      "name": "plugin-doctor",
+      "path": "commands/plugin-doctor.md"
     },
     {
       "type": "agent",

@@ -37,27 +37,15 @@ bash scripts/analyzer.sh
 Read references/detailed-guide.md
 ```
 
-## Current Structure Analysis: Component-Centric (Wrong)
+## Anti-Pattern: Component-Centric Organization
 
-### Current Organization (By Component Type)
-```
-Current structure organized by WHAT it operates on:
-├── diagnose-agent.md           (operates on agents)
-├── diagnose-command.md         (operates on commands)
-├── diagnose-skill.md           (operates on skills)
-├── analyze-plugin-references.md (operates on references)
-├── analyze-standards-file.md    (operates on standards)
-└── ...
-```
+Organizing by component type (e.g., separate `diagnose-agent.md`, `diagnose-command.md`, `diagnose-skill.md`) leads to:
+1. **Not goal-focused**: Users think "diagnose my marketplace", not "run diagnose-agent then diagnose-command"
+2. **No progressive disclosure**: All files loaded even when not needed
+3. **Fragmentation**: Many files for related functionality
+4. **Unclear entry points**: Which file for which task?
 
-**Problems**:
-1. **Component-focused, not goal-focused**: User thinks "I want to diagnose my marketplace" not "I want to run diagnose-agent then diagnose-command then diagnose-skill"
-2. **No progressive disclosure**: All agent files loaded even when not needed
-3. **Fragmentation**: 8 agents + 14 commands + 6 skills = 28 files for related functionality
-4. **Unclear entry points**: Which file do I use for what task?
-5. **Violation of narrow focus**: Each agent tries to do complete analysis instead of specific capability
-
-## Target Structure: Goal-Centric (Correct)
+## Goal-Centric Structure
 
 ### User Goals (Task-Based Thinking)
 
@@ -66,81 +54,29 @@ Current structure organized by WHAT it operates on:
 - Subtasks: Create agent, command, skill, bundle
 - User mental model: "Create something new"
 
-**Goal 2: DIAGNOSE**
-"I want to find and understand issues in my marketplace"
-- Subtasks: Analyze specific component, analyze all components, get health report
-- User mental model: "What's wrong?"
+**Goal 2: DOCTOR (Diagnose + Fix)**
+"I want to find and fix issues in my marketplace"
+- Subtasks: Analyze specific component, analyze all components, get health report, apply safe fixes, apply risky fixes with confirmation, verify fixes
+- User mental model: "What's wrong? Make it better."
 
-**Goal 3: FIX**
-"I want to fix identified issues"
-- Subtasks: Apply safe fixes, apply risky fixes with confirmation, verify fixes
-- User mental model: "Make it better"
-
-**Goal 4: MAINTAIN**
+**Goal 3: MAINTAIN**
 "I want to keep the marketplace healthy"
 - Subtasks: Update docs, add knowledge, refactor components
 - User mental model: "Keep it clean"
 
-**Goal 5: LEARN**
+**Goal 4: LEARN**
 "I want to understand marketplace architecture"
 - Subtasks: Read patterns, understand rules, see examples
 - User mental model: "How does this work?"
 
-## Capability Mapping: Current → Goal-Based
+## Goal-to-Skill Mapping
 
-### Current Commands → Goal Categories
-
-**CREATE Goal** (4 commands):
-- plugin-create-agent → plugin-create workflow
-- plugin-create-command → plugin-create workflow
-- plugin-create-skill → plugin-create workflow
-- plugin-create-bundle → plugin-create workflow
-
-**DIAGNOSE Goal** (5 commands):
-- plugin-diagnose-agents → plugin-diagnose workflow
-- plugin-diagnose-commands → plugin-diagnose workflow
-- plugin-diagnose-skills → plugin-diagnose workflow
-- plugin-diagnose-metadata → plugin-diagnose workflow
-- plugin-diagnose-scripts → plugin-diagnose workflow
-
-**FIX Goal** (implied in diagnose commands):
-- Auto-fix logic embedded in diagnose commands → plugin-fix workflow
-
-**MAINTAIN Goal** (4 commands):
-- plugin-update-agent → plugin-maintain workflow
-- plugin-update-command → plugin-maintain workflow
-- plugin-add-skill-knowledge → plugin-maintain workflow
-- plugin-maintain-readme → plugin-maintain workflow
-- plugin-verify-marketplace → plugin-maintain workflow
-
-**LEARN Goal** (0 commands currently):
-- No explicit commands, just reference skills
-
-### Current Agents → Workflows in Skills
-
-**Analysis Agents** (8 agents) → **plugin-diagnose skill workflows**:
-- diagnose-agent → workflow: analyze-component (type=agent)
-- diagnose-command → workflow: analyze-component (type=command)
-- diagnose-skill → workflow: analyze-component (type=skill)
-- analyze-plugin-references → workflow: validate-references
-- analyze-standards-file → workflow: validate-standards
-- analyze-integrated-standards → workflow: validate-integration
-- analyze-cross-skill-duplication → workflow: detect-duplication
-- architectural-validator → workflow: validate-architecture
-
-**Key Insight**: All 8 agents are really just different workflows of the same goal: **diagnose quality issues**
-
-### Current Skills → Reorganized
-
-**Architecture Skills** (2 skills) → **plugin-architecture skill** (reference only):
-- cui-marketplace-architecture → references/architecture-rules.md
-- cui-marketplace-orchestration-patterns → references/orchestration-patterns.md
-
-**Execution Skills** → **Absorb into goal-based skills**:
-- marketplace-inventory → plugin-diagnose (internal utility)
-- cui-fix-workflow → plugin-fix (main skill)
-- bundle-orchestration-compliance → plugin-maintain (reference)
-- diagnose-reporting-templates → plugin-diagnose/references/reporting-templates.md (DONE)
+| Goal | Skill | Workflows |
+|------|-------|-----------|
+| **CREATE** | plugin-create | create-agent, create-command, create-skill, create-bundle |
+| **DOCTOR** | plugin-doctor | analyze-component, analyze-all-of-type, validate-marketplace, validate-references, detect-duplication |
+| **MAINTAIN** | plugin-maintain | update-component, add-knowledge, update-readme, refactor-structure, apply-orchestration |
+| **LEARN** | plugin-architecture | Reference-only skill (no workflows) |
 
 ## Target Goal-Based Structure
 
@@ -151,8 +87,7 @@ marketplace/bundles/pm-plugin-development/
 ├── README.md
 ├── commands/                    (User entry points - task-based)
 │   ├── create.md               (Create new component - any type)
-│   ├── diagnose.md             (Find issues - any scope)
-│   ├── fix.md                  (Fix issues - guided workflow)
+│   ├── doctor.md               (Diagnose and fix issues - any scope)
 │   ├── maintain.md             (Maintain health - various tasks)
 │   └── verify.md               (Verify marketplace - full check)
 └── skills/                      (Goal-based capabilities)
@@ -167,28 +102,23 @@ marketplace/bundles/pm-plugin-development/
     │   └── assets/
     │       └── frontmatter-examples.yaml
     │
-    ├── plugin-diagnose/         (GOAL: Find and understand issues)
-    │   ├── SKILL.md            (Workflows for analysis)
+    ├── plugin-doctor/           (GOAL: Diagnose and fix issues)
+    │   ├── SKILL.md            (Workflows for diagnosis and fixing)
     │   ├── scripts/
     │   │   ├── analyze-structure.sh
     │   │   ├── analyze-tools.sh
     │   │   ├── scan-inventory.py       # Conceptual - actual: scan-marketplace-inventory.py
-    │   │   └── validate-references.sh
+    │   │   ├── validate-references.sh
+    │   │   └── apply-fixes.sh
     │   ├── references/
     │   │   ├── quality-standards.md
     │   │   ├── analysis-patterns.md
-    │   │   └── issue-catalog.md
+    │   │   ├── issue-catalog.md
+    │   │   ├── fix-patterns.md
+    │   │   ├── safe-fixes.md
+    │   │   └── risky-fixes.md
     │   └── assets/
     │       └── report-templates.json
-    │
-    ├── plugin-fix/              (GOAL: Fix identified issues)
-    │   ├── SKILL.md            (Workflows for fixing)
-    │   ├── scripts/
-    │   │   └── apply-fixes.sh
-    │   └── references/
-    │       ├── fix-patterns.md
-    │       ├── safe-fixes.md
-    │       └── risky-fixes.md
     │
     ├── plugin-maintain/         (GOAL: Keep marketplace healthy)
     │   ├── SKILL.md            (Workflows for maintenance)
@@ -211,71 +141,51 @@ marketplace/bundles/pm-plugin-development/
                 └── good-skill-example.md
 ```
 
-## Command Simplification
+## Goal-Based Commands
 
-### Before: 14 Component-Specific Commands
 ```
-plugin-create-agent
-plugin-create-command
-plugin-create-skill
-plugin-create-bundle
-plugin-diagnose-agents
-plugin-diagnose-commands
-plugin-diagnose-skills
-plugin-diagnose-metadata
-plugin-diagnose-scripts
-plugin-update-agent
-plugin-update-command
-plugin-add-skill-knowledge
-plugin-maintain-readme
-plugin-verify-marketplace
+plugin-create       Create new components (agent, command, skill, bundle)
+plugin-doctor       Diagnose and fix quality issues
+plugin-maintain     Update, refactor, and manage components
+plugin-verify       Marketplace health check
 ```
 
-### After: 5 Goal-Based Commands
-```
-plugin-create       (replaces 4 create-* commands)
-plugin-diagnose     (replaces 5 diagnose-* commands)
-plugin-fix          (new - extracted from diagnose commands)
-plugin-maintain     (replaces 4 update/maintain commands)
-plugin-verify       (marketplace health check)
-```
-
-### Command Design Example: diagnose.md
+### Command Design Example: doctor.md
 
 ```markdown
 ---
-name: plugin-diagnose
-description: Find and understand quality issues in marketplace components
+name: plugin-doctor
+description: Diagnose and fix quality issues in marketplace components
 ---
 
-# Diagnose Marketplace Issues
+# Plugin Doctor
 
-Interactive command to analyze marketplace components and identify issues.
+Interactive command to analyze marketplace components and fix issues.
 
 ## Usage
 
 **Diagnose specific component**:
 ```
-/plugin-diagnose agent=my-agent
-/plugin-diagnose command=my-command
-/plugin-diagnose skill=my-skill
+/plugin-doctor agent=my-agent
+/plugin-doctor command=my-command
+/plugin-doctor skill=my-skill
 ```
 
 **Diagnose all components of a type**:
 ```
-/plugin-diagnose agents
-/plugin-diagnose commands
-/plugin-diagnose skills
+/plugin-doctor agents
+/plugin-doctor commands
+/plugin-doctor skills
 ```
 
 **Diagnose entire marketplace**:
 ```
-/plugin-diagnose marketplace
+/plugin-doctor marketplace
 ```
 
 **Diagnose with auto-fix**:
 ```
-/plugin-diagnose marketplace --fix
+/plugin-doctor marketplace --fix
 ```
 
 ## Workflow
@@ -283,9 +193,9 @@ Interactive command to analyze marketplace components and identify issues.
 ### Step 1: Determine Scope
 Parse parameters to determine what to analyze.
 
-### Step 2: Invoke Diagnostic Skill
+### Step 2: Invoke Doctor Skill
 ```
-Skill: pm-plugin-development:plugin-diagnose
+Skill: pm-plugin-development:plugin-doctor
 Workflow: {appropriate workflow based on scope}
 Parameters: {parsed from command}
 ```
@@ -298,7 +208,7 @@ Ask user if they want to apply fixes.
 
 ### Step 5: Apply Fixes (if confirmed)
 ```
-Skill: pm-plugin-development:plugin-fix
+Skill: pm-plugin-development:plugin-doctor
 Workflow: apply-fixes
 Parameters: {issues from diagnosis}
 ```
@@ -306,18 +216,18 @@ Parameters: {issues from diagnosis}
 
 ## Skill Design Pattern: Goal-Based with Workflows
 
-### Example: plugin-diagnose/SKILL.md
+### Example: plugin-doctor/SKILL.md
 
 ```markdown
 ---
-name: plugin-diagnose
-description: Find and understand quality issues in marketplace components (agents, commands, skills, metadata, scripts)
+name: plugin-doctor
+description: Diagnose and fix quality issues in marketplace components (agents, commands, skills, metadata, scripts)
 allowed-tools: [Read, Bash, Glob, Grep, Skill]
 ---
 
-# Plugin Diagnose Skill
+# Plugin Doctor Skill
 
-Comprehensive diagnostic workflows for marketplace component quality analysis.
+Comprehensive diagnostic and fix workflows for marketplace component quality analysis.
 
 ## When to Use This Skill
 
@@ -327,6 +237,7 @@ Invoke when you need to:
 - Generate marketplace health report
 - Validate references and standards
 - Detect duplication across components
+- Apply safe or risky fixes to identified issues
 
 ## Workflows
 
@@ -502,33 +413,25 @@ All scripts return JSON for structured parsing.
 ## Benefits of Goal-Based Structure
 
 ### 1. User-Centric Organization
-- **Before**: "Which diagnose command do I use? diagnose-agents or diagnose-commands?"
-- **After**: "I want to diagnose → Use /plugin-diagnose command with appropriate parameters"
+Users think in goals: "I want to diagnose" → `/plugin-doctor` with appropriate parameters.
 
-### 2. Massive Simplification
-- **Before**: 8 agents + 14 commands + 6 skills = 28 files
-- **After**: 0 agents + 5 commands + 5 skills = 10 files
-- **Reduction**: 64% fewer files
+### 2. Simplification
+4 commands + 4 skills cover the full lifecycle. Each skill uses workflows internally to handle different scopes.
 
 ### 3. Progressive Disclosure
-- **Before**: All agent files potentially loaded
-- **After**: Only relevant workflow in skill loaded, references on-demand
+Only the relevant workflow in a skill is loaded; references load on-demand.
 
 ### 4. Composition Over Duplication
-- **Before**: Each diagnose-* agent duplicates structure analysis logic
-- **After**: Single analyze-component workflow used with different parameters
+A single `plugin-doctor:analyze-component` workflow handles any component type via parameters.
 
 ### 5. Clear Mental Model
-- **Before**: Component types (agent/command/skill) as primary organization
-- **After**: User goals (create/diagnose/fix/maintain/learn) as primary organization
+User goals (create/doctor/maintain/learn) as primary organization, not component types.
 
 ### 6. Better Reusability
-- **Before**: diagnose-agent can only diagnose agents
-- **After**: plugin-diagnose:analyze-component works for any component type
+`plugin-doctor:analyze-component` works for any component type — agents, commands, skills.
 
 ### 7. Simpler Discovery
-- **Before**: Browse through 14 commands to find what you need
-- **After**: 5 commands named after user goals
+4 goal-named commands. Each command routes to one skill.
 
 ## Progressive Disclosure in Action
 
@@ -536,7 +439,7 @@ All scripts return JSON for structured parsing.
 
 **Step 1: Command invocation** (minimal context)
 ```
-/plugin-diagnose agent=my-agent
+/plugin-doctor agent=my-agent
 ```
 
 **Step 2: Command loads** (~100 lines)
@@ -546,8 +449,8 @@ Command parses parameters, determines scope
 
 **Step 3: Skill frontmatter loaded** (~5 lines)
 ```yaml
-name: plugin-diagnose
-description: Find and understand quality issues...
+name: plugin-doctor
+description: Diagnose and fix quality issues...
 allowed-tools: [Read, Bash, Glob, Grep, Skill]
 ```
 
@@ -570,7 +473,7 @@ Read references/quality-standards.md
 
 ### 1. Skills = Capabilities, Not Components
 **Wrong**: skill-for-agents, skill-for-commands, skill-for-skills
-**Right**: skill-for-creation, skill-for-diagnosis, skill-for-fixing
+**Right**: skill-for-creation, skill-for-doctor (diagnosis + fixing)
 
 ### 2. Workflows = Variants of Capability
 **Wrong**: Separate skills for each variant

@@ -130,7 +130,7 @@ Commands use the same field specifications as agents with these differences:
 **name** (required):
 - Same rules as agents
 - Will be invoked as `/command-name` by users
-- Examples: `java-fix-javadoc`, `plugin-diagnose-skills`
+- Examples: `java-fix-javadoc`, `plugin-doctor`
 
 **description** (required):
 - Can be briefer than agents (30+ characters acceptable)

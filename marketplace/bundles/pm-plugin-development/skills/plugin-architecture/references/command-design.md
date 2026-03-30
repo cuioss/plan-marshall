@@ -28,8 +28,7 @@ Commands organized by user goals, not component types:
 # ✅ GOOD: Goal-based with bundle prefix
 commands/
 ├── plugin-create.md     # CREATE any component type
-├── plugin-diagnose.md   # DIAGNOSE any scope
-├── plugin-fix.md        # FIX identified issues
+├── plugin-doctor.md     # DIAGNOSE and FIX quality issues
 ├── plugin-maintain.md   # MAINTAIN marketplace health
 └── plugin-verify.md     # VERIFY complete marketplace
 
@@ -79,7 +78,7 @@ Ask user for next action or additional input
 ```markdown
 # Simple, single-value parameter
 /plugin-create agent
-/plugin-diagnose marketplace
+/plugin-doctor marketplace
 ```
 
 **Pattern**:
@@ -95,8 +94,8 @@ Step 1: Parse Command Parameter
 
 ```markdown
 # Key-value pairs
-/plugin-diagnose agent=my-agent
-/plugin-diagnose agents
+/plugin-doctor agent=my-agent
+/plugin-doctor agents
 /plugin-maintain update component=my-agent
 ```
 
@@ -112,7 +111,7 @@ Step 1: Parse Parameters
 
 ```markdown
 # Boolean flags
-/plugin-diagnose marketplace --fix
+/plugin-doctor marketplace --fix
 /plugin-verify --verbose
 ```
 
@@ -142,35 +141,31 @@ Based on parameters:
 ## Step 2: Determine and Invoke Workflow
 
 If component_path provided:
-  Skill: plugin-diagnose
+  Skill: plugin-doctor
   Workflow: analyze-component
   Parameters: {component_path, component_type}
 
 Else if component_type provided:
-  Skill: plugin-diagnose
+  Skill: plugin-doctor
   Workflow: analyze-all-of-type
   Parameters: {component_type}
 
 Else:
-  Skill: plugin-diagnose
+  Skill: plugin-doctor
   Workflow: validate-marketplace
 ```
 
 ### Chained Routing
 
 ```markdown
-## Step 2: Diagnose
+## Step 2: Diagnose and Fix
 
-Skill: plugin-diagnose
+Skill: plugin-doctor
 Workflow: appropriate-workflow
-Parameters: {parsed parameters}
-
-## Step 3: Fix (if --fix flag present)
+Parameters: {parsed parameters, auto_fix flag}
 
 If auto_fix = true:
-  Skill: plugin-fix
-  Workflow: apply-fixes
-  Parameters: {issues from Step 2}
+  plugin-doctor applies fixes automatically after diagnosis
 ```
 
 ## User Interaction Patterns
@@ -301,23 +296,23 @@ Workflow: create-{component_type}
 Show created file path and next steps
 ```
 
-### Example 2: plugin-diagnose Command
+### Example 2: plugin-doctor Command
 
 ```markdown
 ---
-name: plugin-diagnose
-description: Find and understand quality issues in marketplace components
+name: plugin-doctor
+description: Diagnose and fix quality issues in marketplace components
 ---
 
-# Diagnose Marketplace Issues
+# Diagnose and Fix Marketplace Issues
 
 ## Usage
 
 ```
-/plugin-diagnose agent=my-agent
-/plugin-diagnose agents
-/plugin-diagnose marketplace
-/plugin-diagnose marketplace --fix
+/plugin-doctor agent=my-agent
+/plugin-doctor agents
+/plugin-doctor marketplace
+/plugin-doctor marketplace --fix
 ```
 
 ## Workflow
@@ -331,26 +326,21 @@ Determine scope:
 
 Check for --fix flag
 
-### Step 2: Invoke Diagnostic Workflow
+### Step 2: Invoke Doctor Workflow
 
-Skill: plugin-diagnose
+Skill: plugin-doctor
 Workflow: [based on scope]
-Parameters: {parsed from Step 1}
+Parameters: {parsed from Step 1, fix flag}
 
 ### Step 3: Display Results
 
 Show issues categorized by severity
 
-### Step 4: Offer Fix Option
+### Step 4: Apply Fixes (if --fix or confirmed)
 
 If --fix not provided and issues found:
   Ask: "Apply automatic fixes?"
-
-### Step 5: Apply Fixes (if confirmed)
-
-Skill: plugin-fix
-Workflow: apply-fixes
-Parameters: {issues from Step 2}
+plugin-doctor handles both diagnosis and fixes in a single workflow
 ```
 
 ## Command Quality Standards

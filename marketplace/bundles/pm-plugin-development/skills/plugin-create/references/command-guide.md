@@ -98,7 +98,7 @@ When you invoke this command, I will:
 **Good Delegation** (with handoff):
 ```markdown
 ### Step 1: Load Diagnostic Skill
-Skill: pm-plugin-development:plugin-diagnose
+Skill: pm-plugin-development:plugin-doctor
 
 **CRITICAL HANDOFF**: Execute skill workflow immediately. Do not explain.
 
@@ -185,7 +185,7 @@ If you discover issues or improvements during execution, record them:
 **options** - Additional options (optional)
 ```
 
-Usage: `/plugin-diagnose my-agent --fix`
+Usage: `/plugin-doctor my-agent --fix`
 
 ### Pattern 2: Named Parameters
 
@@ -197,7 +197,7 @@ Usage: `/plugin-diagnose my-agent --fix`
 **verbose** - Show detailed output (true/false, default: false)
 ```
 
-Usage: `/plugin-diagnose name=my-agent scope=agent verbose=true`
+Usage: `/plugin-doctor name=my-agent scope=agent verbose=true`
 
 ### Pattern 3: Flag Parameters
 
@@ -208,7 +208,7 @@ Usage: `/plugin-diagnose name=my-agent scope=agent verbose=true`
 **--fix** - Automatically fix issues (flag, default: true)
 ```
 
-Usage: `/plugin-fix my-agent`
+Usage: `/plugin-doctor my-agent`
 
 ### Pattern 4: No Parameters
 
@@ -228,7 +228,7 @@ Usage: `/plugin-verify`
 ## WORKFLOW
 
 ### Step 1: Load Skill
-Skill: pm-plugin-development:plugin-diagnose
+Skill: pm-plugin-development:plugin-doctor
 
 ### Step 2: Execute Workflow
 Execute diagnose-agent workflow with parameters
@@ -247,11 +247,11 @@ Determine scope from parameters
 
 ### Step 2: Route Based on Scope
 If scope=agent:
-  Load plugin-diagnose skill, execute analyze-agent workflow
+  Load plugin-doctor skill, execute analyze-agent workflow
 If scope=command:
-  Load plugin-diagnose skill, execute analyze-command workflow
+  Load plugin-doctor skill, execute analyze-command workflow
 If scope=skill:
-  Load plugin-diagnose skill, execute analyze-skill workflow
+  Load plugin-doctor skill, execute analyze-skill workflow
 
 ### Step 3: Display Results
 ```
@@ -262,7 +262,7 @@ If scope=skill:
 ## WORKFLOW
 
 ### Step 1: Diagnose
-Load plugin-diagnose skill, find issues
+Load plugin-doctor skill, find issues
 
 ### Step 2: Confirm Fix
 If issues found:
@@ -271,7 +271,7 @@ If issues found:
   If no: Exit
 
 ### Step 3: Apply Fixes
-Load plugin-fix skill, apply fixes
+Load plugin-doctor skill, apply fixes
 
 ### Step 4: Verify
 Re-run diagnosis to confirm fixes applied
@@ -397,7 +397,7 @@ Example: `/plugin-create agent` → plugin-create skill, create-agent workflow
 Command → Parse Parameters → Route to Different Workflows → Display
 ```
 
-Example: `/plugin-diagnose scope=X` → plugin-diagnose skill, different workflow per scope
+Example: `/plugin-doctor scope=X` → plugin-doctor skill, different workflow per scope
 
 ### Pattern 3: Sequential Orchestration
 
@@ -439,7 +439,7 @@ Execute diagnosis workflow
 If diagnosis fails:
   Show warning: "⚠️ Diagnosis failed: {error}"
   Note: "Component created but not validated"
-  Suggest: "Run /plugin-diagnose {name} manually"
+  Suggest: "Run /plugin-doctor {name} manually"
   Continue (don't abort entire command)
 ```
 
@@ -510,7 +510,7 @@ Orchestrates complete marketplace verification.
 ## WORKFLOW
 
 ### Step 1: Load Skills
-Skill: plugin-diagnose
+Skill: plugin-doctor
 Skill: plugin-architecture
 
 ### Step 2: Run All Diagnostics
@@ -552,7 +552,7 @@ Analyzes components and reports findings.
 Determine what to analyze from parameters
 
 ### Step 2: Execute Analysis
-Load plugin-diagnose skill
+Load plugin-doctor skill
 Execute appropriate workflow based on scope
 
 ### Step 3: Display Findings
@@ -620,14 +620,14 @@ Applies automated fixes to component issues.
 ## WORKFLOW
 
 ### Step 1: Diagnose
-Load plugin-diagnose skill
+Load plugin-doctor skill
 Find issues in target component
 
 ### Step 2: Categorize Issues
 Separate auto-fixable vs manual issues
 
 ### Step 3: Apply Fixes
-Load plugin-fix skill
+Load plugin-doctor skill
 Apply automated fixes
 
 ### Step 4: Verify

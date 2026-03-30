@@ -250,8 +250,7 @@ Components must be organized by user goals, not technical component types.
 
 **User Goals**:
 - **CREATE** - Create new marketplace components
-- **DIAGNOSE** - Find and understand issues
-- **FIX** - Fix identified issues
+- **DIAGNOSE + FIX** - Find, understand, and fix issues
 - **MAINTAIN** - Keep marketplace healthy
 - **LEARN** - Understand architecture and patterns
 
@@ -273,17 +272,17 @@ plugin-create/           # CREATE goal
       - create-skill
       - create-bundle
 
-plugin-diagnose/         # DIAGNOSE goal
+plugin-doctor/           # DIAGNOSE + FIX goal
   ├── SKILL.md
   └── workflows:
       - analyze-component
       - analyze-all-of-type
       - validate-marketplace
+      - fix-violations
 
 commands/
   ├── create.md          # Routes to plugin-create skill
-  ├── diagnose.md        # Routes to plugin-diagnose skill
-  └── fix.md             # Routes to plugin-fix skill
+  └── doctor.md          # Routes to plugin-doctor skill
 ```
 
 ❌ INCORRECT (component-centric):
@@ -291,8 +290,7 @@ commands/
 commands/
   ├── plugin-create-agent.md        # Component-specific
   ├── plugin-create-command.md      # Component-specific
-  ├── plugin-diagnose-agents.md     # Component-specific
-  └── plugin-diagnose-commands.md   # Component-specific
+  └── plugin-doctor-all.md           # Component-specific
 ```
 
 **Benefits**:

@@ -4,7 +4,7 @@ Comprehensive catalog of all fixable issue types, their categorization, and fix 
 
 ## Fixable Issue Types Overview
 
-This catalog documents all issues that can be fixed by the plugin-fix skill, organized by category.
+This catalog documents all issues that can be fixed by the plugin-doctor skill, organized by category.
 
 ## Safe Fix Types
 
