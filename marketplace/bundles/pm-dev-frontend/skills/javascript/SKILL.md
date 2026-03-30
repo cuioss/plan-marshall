@@ -68,8 +68,6 @@ Read: standards/jsdoc-patterns.md
 
 Use when: Documenting functions, classes, modules, types, or web components (Lit). Provides patterns with examples for each code element type.
 
-## Workflows
-
 ### Workflow: Analyze JSDoc Violations
 
 Analyzes JavaScript files for JSDoc compliance violations and returns structured results.
