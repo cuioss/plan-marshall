@@ -133,69 +133,18 @@ python3 .plan/execute-script.py {notation} {subcommand} {args}
 
 ### Step 6: Propose Solutions
 
-For each failure, generate appropriate fixes:
+For each failure, generate a fix proposal based on root cause category:
 
-**If Missing Script Instruction**:
-```markdown
-## Proposed Fix: Add Script Instruction
+| Category | Fix Approach |
+|----------|-------------|
+| Missing Script Instruction | Add explicit script call to the component's workflow |
+| Wrong Script Parameters | Correct the parameters in the component instruction |
+| LLM Invented Script | Add the missing workflow step with proper script call |
+| Missing API | Propose a new script with notation, subcommand, and purpose |
+| Script Bug | Fix the script implementation directly |
+| Script Not Found | Fix notation or register the missing script |
 
-Add to {component_file}:
-
-### Script: {notation}
-
-```bash
-python3 .plan/execute-script.py {notation} {subcommand} {params}
-```
-
-**Reasoning**: Component uses this script but lacks explicit instruction.
-```
-
-**If Wrong Script Parameters**:
-```markdown
-## Proposed Fix: Correct Parameters
-
-Update {component_file} at line {n}:
-
-FROM:
-```bash
-{incorrect_call}
-```
-
-TO:
-```bash
-{correct_call}
-```
-
-**Reasoning**: {explanation of parameter error}
-```
-
-**If LLM Invented Script**:
-```markdown
-## Proposed Fix: Add Workflow Step
-
-The LLM invented this script call because the workflow is missing a step.
-
-Add to {component_file}:
-
-### Step {n}: {step_name}
-
-{workflow step with proper script call}
-
-**Reasoning**: LLM tried to accomplish {goal} but no instruction existed.
-```
-
-**If Missing API**:
-```markdown
-## Proposed Fix: Create New Script
-
-A new script API is needed:
-
-**Script**: {notation}
-**Subcommand**: {subcommand}
-**Purpose**: {what operation is needed}
-
-**Reasoning**: This operation is sensible for {context} but no script supports it.
-```
+Each proposal must include: the target component file, the specific change, and reasoning.
 
 ### Step 7: Interactive Resolution
 

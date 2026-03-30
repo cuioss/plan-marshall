@@ -83,7 +83,27 @@ Parse the JSON output to get:
 
    **Why TOON?** Uniform arrays of analysis results achieve ~50% token reduction vs JSON.
 
-4. **Create findings.md** with:
+4. **Cross-Bundle Reference Validation**:
+
+   Validate that all `Skill:` directives across components resolve to existing skills:
+
+   a. Use Grep to find all `Skill:` directives across `marketplace/bundles/`:
+      ```
+      Grep: pattern="Skill:\\s+[\\w-]+:[\\w-]+" path="marketplace/bundles" output_mode="content"
+      ```
+
+   b. Extract each referenced skill notation (e.g., `plan-marshall:manage-lessons`)
+
+   c. For each reference, verify the target skill directory exists:
+      ```
+      Glob: pattern="marketplace/bundles/{bundle}/skills/{skill}/SKILL.md"
+      ```
+
+   d. Report broken references (renamed, removed, or misspelled skills) as **Needs Review** findings
+
+   This catches cross-bundle breakage that per-component analysis misses — e.g., when a skill is renamed in bundle A but bundle B still references the old name.
+
+5. **Create findings.md** with:
    - Executive summary with statistics
    - Bundle-by-bundle analysis
    - Issue categorization:

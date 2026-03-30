@@ -11,7 +11,8 @@ Tests plugin maintenance capabilities including:
 import tempfile
 from pathlib import Path
 
-# Import shared infrastructure
+from toon_parser import parse_toon  # type: ignore[import-not-found]
+
 from conftest import get_script_path, run_script
 
 # Script under test
@@ -64,8 +65,8 @@ def test_update_with_updates_arg():
 
         updates = '{"updates": [{"type": "frontmatter", "field": "version", "value": "1.0"}]}'
         result = run_script(SCRIPT_PATH, 'update', '--component', f.name, '--updates', updates)
-        data = result.json()
-        assert data is not None, 'Should return valid JSON'
+        data = parse_toon(result.stdout)
+        assert data is not None, 'Should return valid TOON'
 
         # Clean up backup if created
         backup = Path(f.name + '.maintain-backup')
@@ -102,8 +103,8 @@ def test_checkdup_nonexistent_skill():
         result = run_script(
             SCRIPT_PATH, 'check-duplication', '--skill-path', '/nonexistent/skill', '--content-file', f.name
         )
-        data = result.json()
-        assert data is not None, 'Should return valid JSON'
+        data = parse_toon(result.stdout)
+        assert data is not None, 'Should return valid TOON'
         assert 'error' in data, 'Should have error for nonexistent skill'
 
         Path(f.name).unlink()
@@ -129,8 +130,8 @@ def test_analyze_missing_component():
 def test_analyze_nonexistent_file():
     """Test analyze handles nonexistent file."""
     result = run_script(SCRIPT_PATH, 'analyze', '--component', '/nonexistent/file.md')
-    data = result.json()
-    assert data is not None, 'Should return valid JSON'
+    data = parse_toon(result.stdout)
+    assert data is not None, 'Should return valid TOON'
     assert 'error' in data, 'Should have error for nonexistent file'
 
 
@@ -146,8 +147,8 @@ def test_analyze_valid_agent():
         )
 
         result = run_script(SCRIPT_PATH, 'analyze', '--component', str(agent_file))
-        data = result.json()
-        assert data is not None, 'Should return valid JSON'
+        data = parse_toon(result.stdout)
+        assert data is not None, 'Should return valid TOON'
         assert 'quality_score' in data, 'Should have quality_score'
 
         agent_file.unlink()
@@ -163,8 +164,8 @@ def test_analyze_real_agent():
         return  # Skip if not found
 
     result = run_script(SCRIPT_PATH, 'analyze', '--component', str(agent_file))
-    data = result.json()
-    assert data is not None, 'Should return valid JSON'
+    data = parse_toon(result.stdout)
+    assert data is not None, 'Should return valid TOON'
     assert 'quality_score' in data, 'Should have quality_score'
     assert data['quality_score'] >= 0, 'Quality score should be non-negative'
 
@@ -189,8 +190,8 @@ def test_readme_missing_path():
 def test_readme_nonexistent_path():
     """Test readme handles nonexistent path."""
     result = run_script(SCRIPT_PATH, 'readme', '--bundle-path', '/nonexistent/bundle')
-    data = result.json()
-    assert data is not None, 'Should return valid JSON'
+    data = parse_toon(result.stdout)
+    assert data is not None, 'Should return valid TOON'
     assert 'error' in data, 'Should have error for nonexistent path'
 
 
@@ -201,8 +202,8 @@ def test_readme_real_bundle():
         return  # Skip if not found
 
     result = run_script(SCRIPT_PATH, 'readme', '--bundle-path', str(bundle_path))
-    data = result.json()
-    assert data is not None, 'Should return valid JSON'
+    data = parse_toon(result.stdout)
+    assert data is not None, 'Should return valid TOON'
     assert 'readme_generated' in data, 'Should have readme_generated field'
     assert data['readme_generated'] is True, 'Should successfully generate README'
     assert 'readme_content' in data, 'Should have readme_content'

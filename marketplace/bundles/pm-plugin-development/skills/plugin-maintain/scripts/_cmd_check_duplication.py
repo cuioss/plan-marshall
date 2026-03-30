@@ -5,7 +5,7 @@ import re
 from difflib import SequenceMatcher
 from pathlib import Path
 
-from _maintain_shared import EXIT_ERROR, EXIT_SUCCESS, output_json
+from _maintain_shared import EXIT_ERROR, EXIT_SUCCESS, output_toon
 
 
 def normalize_text(text: str) -> str:
@@ -163,5 +163,5 @@ def check_duplication(skill_path: str, content_file: str) -> dict:
 def cmd_check_duplication(args) -> int:
     """Handle check-duplication subcommand."""
     result = check_duplication(args.skill_path, args.content_file)
-    output_json(result)
+    output_toon(result)
     return EXIT_SUCCESS if 'error' not in result else EXIT_ERROR

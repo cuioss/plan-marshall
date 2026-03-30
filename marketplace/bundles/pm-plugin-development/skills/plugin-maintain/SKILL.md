@@ -62,7 +62,7 @@ Script: `pm-plugin-development:plugin-maintain` → `maintain.py`
 | `update` | Apply updates to a component file |
 | `readme` | Generate README content from bundle inventory |
 
-All scripts are stdlib-only with JSON output.
+All scripts are stdlib-only with TOON output.
 
 ## Assets Available
 
@@ -390,38 +390,6 @@ If `verify=true`:
 - Check all required patterns present
 - Validate checklist completeness
 - Test command with sample bundle
-
-## Rule Definitions
-
-Rules applied during maintenance operations. See Enforcement block for this skill's own constraints.
-
-### Anti-Bloat
-
-- Target 0 to -10% line change when updating components
-- Prefer consolidation over addition
-- Prefer skill references over duplicating content
-- Extract to skill if content appears in 3+ components
-
-### Quality Verification
-
-- Analyze before and after updates
-- Verify quality score does not decrease significantly
-- Run diagnosis after structural changes
-- Check for new issues introduced by changes
-
-### Backup and Safety
-
-- Scripts create backups before modifications automatically
-- Scripts handle rollback on failure
-- Git provides version control — no manual backup files needed
-- Prompt user for risky changes (duplication found, manual edits detected)
-
-### Knowledge Management
-
-- Check duplication before adding knowledge
-- Consolidate when overlap detected (>40%)
-- Skip when high duplication (>70%)
-- Reference existing content instead of duplicating
 
 ## Error Handling
 

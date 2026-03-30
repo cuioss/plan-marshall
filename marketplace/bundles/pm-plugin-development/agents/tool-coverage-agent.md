@@ -4,7 +4,7 @@ description: |
   Analyze tool declarations vs actual usage in a component file.
   Input: file_path, declared_tools list, component_type.
   Output: JSON with declared_tools, used_tools, analysis (missing/unused/false_positives), confidence.
-tools: Read, Skill
+tools: Read, Grep, Skill
 ---
 
 # Tool Coverage Analysis Agent
@@ -30,7 +30,7 @@ You will receive:
 
 ## Task
 
-1. **Read the component file** using Read tool
+1. **Read the component file** using Read tool. For skills with sub-documents (references/, standards/), use Grep to search for tool invocation patterns across the skill directory.
 
 2. **Identify actual tool invocations** - Look for patterns that indicate REAL tool usage:
 

@@ -10,6 +10,8 @@ import json
 import tempfile
 from pathlib import Path
 
+from toon_parser import parse_toon  # type: ignore[import-not-found]
+
 from conftest import get_script_path, run_script
 
 SCRIPT_PATH = get_script_path('pm-plugin-development', 'plugin-maintain', 'maintain.py')
@@ -25,7 +27,7 @@ def test_analyze_perfect_agent():
     """Analyze a well-structured agent gives high quality score."""
     fixture = FIXTURES_DIR / 'components' / 'perfect-agent.md'
     result = run_script(SCRIPT_PATH, 'analyze', '--component', str(fixture))
-    data = result.json()
+    data = parse_toon(result.stdout)
     assert data['quality_score'] >= 80, f'Perfect agent should score high, got {data["quality_score"]}'
     assert data['component_type'] == 'unknown'  # path has no /agents/ segment
     assert data['stats']['total_lines'] > 0
@@ -36,7 +38,7 @@ def test_analyze_no_frontmatter():
     """Analyze component without frontmatter reports missing-frontmatter issue."""
     fixture = FIXTURES_DIR / 'components' / 'no-frontmatter.md'
     result = run_script(SCRIPT_PATH, 'analyze', '--component', str(fixture))
-    data = result.json()
+    data = parse_toon(result.stdout)
     assert any(i['type'] == 'missing-frontmatter' for i in data['issues'])
     assert data['quality_score'] < 80
 
@@ -45,7 +47,7 @@ def test_analyze_tool_compliance_violation():
     """Analyze agent with Task tool reports compliance issue."""
     fixture = FIXTURES_DIR / 'components' / 'tool-compliance-violation.md'
     result = run_script(SCRIPT_PATH, 'analyze', '--component', str(fixture))
-    data = result.json()
+    data = parse_toon(result.stdout)
     assert any(i['type'] == 'agent-task-tool-prohibited' for i in data['issues'])
     assert data['quality_score'] < 100
 
@@ -54,7 +56,7 @@ def test_analyze_missing_sections_agent():
     """Analyze agent with missing sections reports missing sections."""
     fixture = FIXTURES_DIR / 'components' / 'missing-sections-agent.md'
     result = run_script(SCRIPT_PATH, 'analyze', '--component', str(fixture))
-    data = result.json()
+    data = parse_toon(result.stdout)
     # Should have sections_found but also missing sections in suggestions
     assert 'suggestions' in data
     assert data['stats']['sections'] >= 1
@@ -63,7 +65,7 @@ def test_analyze_missing_sections_agent():
 def test_analyze_nonexistent_file_returns_error():
     """Analyze on nonexistent path returns error dict."""
     result = run_script(SCRIPT_PATH, 'analyze', '--component', '/nonexistent/component.md')
-    data = result.json()
+    data = parse_toon(result.stdout)
     assert 'error' in data
     assert result.returncode != 0
 
@@ -72,7 +74,7 @@ def test_analyze_empty_component():
     """Analyze empty component file."""
     fixture = FIXTURES_DIR / 'components' / 'empty-component.md'
     result = run_script(SCRIPT_PATH, 'analyze', '--component', str(fixture))
-    data = result.json()
+    data = parse_toon(result.stdout)
     assert 'quality_score' in data
 
 
@@ -80,7 +82,7 @@ def test_analyze_returns_stats():
     """Analyze output includes stats with expected keys."""
     fixture = FIXTURES_DIR / 'components' / 'perfect-agent.md'
     result = run_script(SCRIPT_PATH, 'analyze', '--component', str(fixture))
-    data = result.json()
+    data = parse_toon(result.stdout)
     stats = data['stats']
     assert 'total_lines' in stats
     assert 'frontmatter_lines' in stats
@@ -103,7 +105,7 @@ def test_checkdup_high_duplicate():
         '--skill-path', str(skill_path),
         '--content-file', str(content_file),
     )
-    data = result.json()
+    data = parse_toon(result.stdout)
     assert 'error' not in data
     assert result.returncode == 0
     # Result has all expected keys
@@ -148,7 +150,7 @@ def test_checkdup_exact_duplicate_detected():
             '--skill-path', str(skill_dir),
             '--content-file', str(new_file),
         )
-        data = result.json()
+        data = parse_toon(result.stdout)
         assert 'error' not in data
         assert data['duplication_detected'] is True
         assert data['duplication_percentage'] > 60
@@ -164,7 +166,7 @@ def test_checkdup_unique_content():
         '--skill-path', str(skill_path),
         '--content-file', str(content_file),
     )
-    data = result.json()
+    data = parse_toon(result.stdout)
     assert 'error' not in data
     assert data['recommendation'] == 'proceed'
 
@@ -178,7 +180,7 @@ def test_checkdup_empty_content():
         '--skill-path', str(skill_path),
         '--content-file', str(content_file),
     )
-    data = result.json()
+    data = parse_toon(result.stdout)
     assert 'error' not in data
     assert data['duplication_detected'] is False
     assert data['recommendation'] == 'proceed'
@@ -193,7 +195,7 @@ def test_checkdup_no_references_dir():
         '--skill-path', str(skill_path),
         '--content-file', str(content_file),
     )
-    data = result.json()
+    data = parse_toon(result.stdout)
     assert 'error' not in data
     assert data['duplication_detected'] is False
     assert data['recommendation'] == 'proceed'
@@ -207,7 +209,7 @@ def test_checkdup_nonexistent_content_file():
         '--skill-path', str(skill_path),
         '--content-file', '/nonexistent/file.md',
     )
-    data = result.json()
+    data = parse_toon(result.stdout)
     assert 'error' in data
 
 
@@ -220,7 +222,7 @@ def test_checkdup_result_has_expected_keys():
         '--skill-path', str(skill_path),
         '--content-file', str(content_file),
     )
-    data = result.json()
+    data = parse_toon(result.stdout)
     for key in ['skill_path', 'new_content_file', 'duplication_detected',
                 'duplication_percentage', 'duplicate_files', 'recommendation']:
         assert key in data, f'Missing key: {key}'
@@ -238,7 +240,7 @@ def test_update_frontmatter_field():
         f.flush()
         updates = json.dumps({'updates': [{'type': 'frontmatter', 'field': 'version', 'value': '2.0'}]})
         result = run_script(SCRIPT_PATH, 'update', '--component', f.name, '--updates', updates)
-        data = result.json()
+        data = parse_toon(result.stdout)
         assert data['success'] is True
         assert data['updates_applied'] == 1
         # Verify the file was actually modified
@@ -258,7 +260,7 @@ def test_update_existing_frontmatter_field():
         f.flush()
         updates = json.dumps({'updates': [{'type': 'frontmatter', 'field': 'description', 'value': 'Updated'}]})
         result = run_script(SCRIPT_PATH, 'update', '--component', f.name, '--updates', updates)
-        data = result.json()
+        data = parse_toon(result.stdout)
         assert data['success'] is True
         content = Path(f.name).read_text()
         assert 'description: Updated' in content
@@ -275,7 +277,7 @@ def test_update_replace_text():
         f.flush()
         updates = json.dumps({'updates': [{'type': 'replace', 'old': 'Old text here.', 'new': 'New text here.'}]})
         result = run_script(SCRIPT_PATH, 'update', '--component', f.name, '--updates', updates)
-        data = result.json()
+        data = parse_toon(result.stdout)
         assert data['success'] is True
         assert data['updates_applied'] == 1
         content = Path(f.name).read_text()
@@ -294,7 +296,7 @@ def test_update_append_text():
         f.flush()
         updates = json.dumps({'updates': [{'type': 'append', 'text': '## New Section\n\nNew content.'}]})
         result = run_script(SCRIPT_PATH, 'update', '--component', f.name, '--updates', updates)
-        data = result.json()
+        data = parse_toon(result.stdout)
         assert data['success'] is True
         content = Path(f.name).read_text()
         assert '## New Section' in content
@@ -314,7 +316,7 @@ def test_update_multiple_updates():
             {'type': 'append', 'text': '## Footer\n\nEnd.'},
         ]})
         result = run_script(SCRIPT_PATH, 'update', '--component', f.name, '--updates', updates)
-        data = result.json()
+        data = parse_toon(result.stdout)
         assert data['success'] is True
         assert data['updates_applied'] == 2
         assert len(data['changes']) == 2
@@ -328,7 +330,7 @@ def test_update_nonexistent_file():
     """Update on nonexistent file returns error."""
     updates = json.dumps({'updates': [{'type': 'frontmatter', 'field': 'v', 'value': '1'}]})
     result = run_script(SCRIPT_PATH, 'update', '--component', '/nonexistent/file.md', '--updates', updates)
-    data = result.json()
+    data = parse_toon(result.stdout)
     assert data['success'] is False
     assert 'error' in data
 
@@ -339,7 +341,7 @@ def test_update_invalid_json():
         f.write('---\nname: test\n---\n\n# Test\n')
         f.flush()
         result = run_script(SCRIPT_PATH, 'update', '--component', f.name, '--updates', 'not-json')
-        data = result.json()
+        data = parse_toon(result.stdout)
         assert 'error' in data
         assert result.returncode != 0
         Path(f.name).unlink()
@@ -352,7 +354,7 @@ def test_update_empty_updates_list():
         f.flush()
         updates = json.dumps({'updates': []})
         result = run_script(SCRIPT_PATH, 'update', '--component', f.name, '--updates', updates)
-        data = result.json()
+        data = parse_toon(result.stdout)
         assert data['success'] is True
         assert data['updates_applied'] == 0
         backup = Path(f.name + '.maintain-backup')
@@ -368,7 +370,7 @@ def test_update_creates_backup():
         f.flush()
         updates = json.dumps({'updates': [{'type': 'frontmatter', 'field': 'v', 'value': '1'}]})
         result = run_script(SCRIPT_PATH, 'update', '--component', f.name, '--updates', updates)
-        data = result.json()
+        data = parse_toon(result.stdout)
         assert data['success'] is True
         backup = Path(f.name + '.maintain-backup')
         assert backup.exists(), 'Backup file should exist'
@@ -383,7 +385,7 @@ def test_update_frontmatter_on_file_without_frontmatter():
         f.flush()
         updates = json.dumps({'updates': [{'type': 'frontmatter', 'field': 'name', 'value': 'new-name'}]})
         result = run_script(SCRIPT_PATH, 'update', '--component', f.name, '--updates', updates)
-        data = result.json()
+        data = parse_toon(result.stdout)
         assert data['success'] is True
         content = Path(f.name).read_text()
         assert content.startswith('---')
@@ -403,35 +405,36 @@ def test_readme_complete_bundle():
     """Readme for complete bundle discovers all component types."""
     bundle_path = FIXTURES_DIR / 'readmes' / 'bundle-complete'
     result = run_script(SCRIPT_PATH, 'readme', '--bundle-path', str(bundle_path))
-    data = result.json()
+    data = parse_toon(result.stdout)
     assert data['readme_generated'] is True
     assert data['bundle_name'] == 'test-bundle'
     assert data['components']['commands'] >= 1
     assert data['components']['agents'] >= 1
     assert data['components']['skills'] >= 1
-    assert '## Commands' in data['readme_content']
-    assert '## Agents' in data['readme_content']
-    assert '## Skills' in data['readme_content']
+    # Multiline readme_content checked via stdout (TOON multiline limitation)
+    assert '## Commands' in result.stdout
+    assert '## Agents' in result.stdout
+    assert '## Skills' in result.stdout
 
 
 def test_readme_commands_only_bundle():
     """Readme for bundle with only commands omits agents/skills sections."""
     bundle_path = FIXTURES_DIR / 'readmes' / 'bundle-commands-only'
     result = run_script(SCRIPT_PATH, 'readme', '--bundle-path', str(bundle_path))
-    data = result.json()
+    data = parse_toon(result.stdout)
     assert data['readme_generated'] is True
     assert data['components']['commands'] >= 1
     assert data['components']['agents'] == 0
     assert data['components']['skills'] == 0
-    assert '## Commands' in data['readme_content']
-    assert '## Agents' not in data['readme_content']
+    assert '## Commands' in result.stdout
+    assert '## Agents' not in result.stdout
 
 
 def test_readme_empty_bundle():
     """Readme for empty bundle succeeds with zero components."""
     bundle_path = FIXTURES_DIR / 'readmes' / 'bundle-empty'
     result = run_script(SCRIPT_PATH, 'readme', '--bundle-path', str(bundle_path))
-    data = result.json()
+    data = parse_toon(result.stdout)
     assert data['readme_generated'] is True
     assert data['components']['commands'] == 0
     assert data['components']['agents'] == 0
@@ -441,7 +444,7 @@ def test_readme_empty_bundle():
 def test_readme_nonexistent_bundle():
     """Readme for nonexistent path returns error."""
     result = run_script(SCRIPT_PATH, 'readme', '--bundle-path', '/nonexistent/bundle')
-    data = result.json()
+    data = parse_toon(result.stdout)
     assert 'error' in data
     assert result.returncode != 0
 
@@ -450,7 +453,7 @@ def test_readme_directory_without_plugin_json():
     """Readme for directory without plugin.json returns error."""
     with tempfile.TemporaryDirectory() as tmpdir:
         result = run_script(SCRIPT_PATH, 'readme', '--bundle-path', tmpdir)
-        data = result.json()
+        data = parse_toon(result.stdout)
         assert 'error' in data
         assert 'plugin.json' in data['error']
 
@@ -459,15 +462,14 @@ def test_readme_includes_installation_section():
     """Readme output includes Installation section."""
     bundle_path = FIXTURES_DIR / 'readmes' / 'bundle-complete'
     result = run_script(SCRIPT_PATH, 'readme', '--bundle-path', str(bundle_path))
-    data = result.json()
-    assert '## Installation' in data['readme_content']
+    assert '## Installation' in result.stdout
 
 
 def test_readme_result_has_component_lists():
     """Readme result includes lists of commands, agents, skills."""
     bundle_path = FIXTURES_DIR / 'readmes' / 'bundle-complete'
     result = run_script(SCRIPT_PATH, 'readme', '--bundle-path', str(bundle_path))
-    data = result.json()
+    data = parse_toon(result.stdout)
     assert 'commands' in data
     assert 'agents' in data
     assert 'skills' in data

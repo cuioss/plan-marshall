@@ -48,11 +48,14 @@ Select workflow based on input and execute immediately.
 ### If scope = "scripts" or script-name specified
 → **EXECUTE** Workflow 5: doctor-scripts (jump to that section)
 
+### If scope = "skill-content" or skill-path specified with content analysis
+→ **EXECUTE** Workflow 6: doctor-skill-content (jump to that section)
+
 ### If scope = "marketplace" (full marketplace health check)
 → **EXECUTE** Workflow 7: doctor-marketplace (jump to that section)
 
-### If scope = "skill-content" or skill-path specified with content analysis
-→ **EXECUTE** Workflow 6: doctor-skill-content (jump to that section)
+### If scope = "plan-marshall"
+→ **EXECUTE** Workflow 8: doctor-plan-marshall (jump to that section)
 
 ### If scope = "skill-knowledge" or skill-path specified with knowledge review
 → **EXECUTE** Workflow 9: doctor-skill-knowledge (jump to that section)
@@ -118,51 +121,15 @@ All 9 workflows follow the same pattern:
 
 ### Phase 1.5: LLM Optimization Check
 
-Load `references/llm-optimization-guide.md` and review the analyzed components for low-value patterns. For skills, review both SKILL.md and sub-documents from the `subdocuments` key.
-
-**For each section in the component, apply these checks:**
-
-| Check | Action |
-|-------|--------|
-| Checklist/summary section (e.g., "Best Practices", "Quality Checklist", "Quick Reference") | Evaluate each item: would an LLM do this without being told? Flag if >50% are obvious. |
-| Motivational text ("This is important because...", "Following best practices ensures...") | Flag if removing it loses zero decision-relevant information. |
-| Redundant emphasis (same rule stated multiple ways) | Flag — once is enough. |
-| Verbose examples (multiple examples of the same pattern) | Flag — one example + the rule is sufficient. |
-| Rationale sections ("Why this standard exists") | Keep only if it influences edge-case decisions. |
-| Duplicated content (rule defined in multiple places) | Flag — use cross-references instead. |
+Load `references/llm-optimization-guide.md` and review analyzed components for low-value patterns (checklists of obvious rules, motivational text, redundant emphasis, duplicated content). For skills, review both SKILL.md and sub-documents from the `subdocuments` key.
 
 ### Phase 2: Categorize Issues
 
-**Safe Fixes** (auto-apply):
-- Missing frontmatter fields
-- Invalid YAML syntax
-- Unused tools in frontmatter
-- Trailing whitespace
-- Missing blank lines
-- Missing foundation skill loading (plugin-architecture, diagnostic-patterns)
-- Incorrect section header case (e.g., `## Workflow` → `## WORKFLOW`)
-- Missing CONTINUOUS IMPROVEMENT RULE section (commands only)
-- Legacy CONTINUOUS IMPROVEMENT RULE (uses /plugin-update-* or /plugin-maintain instead of manage-lessons)
-
-**Risky Fixes** (require confirmation):
-- agent-task-tool-prohibited (Task tool in agents)
-- agent-maven-restricted (Direct Maven usage - should use builder-maven skill)
-- workflow-hardcoded-script-path (Hardcoded script paths - should use executor notation)
-- workflow-explicit-script-calls (Missing explicit script calls in workflows)
-- agent-lessons-via-skill (self-invocation instead of manage-lessons)
-- Structural changes
-- Content removal
+Categorize each issue as safe or risky per `references/fix-catalog.md`. Safe fixes are auto-applied; risky fixes require user confirmation.
 
 ### Phase 3: Apply Fixes
 
-1. **Auto-Apply Safe Fixes (no prompt)**
-
-   Safe fixes are applied automatically without user confirmation.
-   Do not use AskUserQuestion for safe fixes.
-
-   - Apply each safe fix immediately using Edit tool
-   - Track success/failure
-   - Log: "Fixed: {description}"
+1. **Auto-Apply Safe Fixes** — Apply immediately using Edit tool without AskUserQuestion. Track success/failure.
 
 2. **Prompt for Risky Fixes ONLY**
    ```
@@ -173,8 +140,6 @@ Load `references/llm-optimization-guide.md` and review the analyzed components f
        - label: "No" description: "Skip this fix"
        - label: "Skip All" description: "Skip remaining risky fixes"
    ```
-
-   **Only risky fixes prompt** - safe fixes never prompt.
 
 ### Phase 4: Verify and Report
 

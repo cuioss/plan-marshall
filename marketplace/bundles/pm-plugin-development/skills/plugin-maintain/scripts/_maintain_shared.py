@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Shared utilities for maintain subcommands."""
 
-import json
 from typing import Any
+
+from toon_parser import serialize_toon  # type: ignore[import-not-found]
 
 EXIT_SUCCESS = 0
 EXIT_ERROR = 1
@@ -44,6 +45,6 @@ def parse_frontmatter(content: str) -> tuple[dict | None, str]:
     return frontmatter, body
 
 
-def output_json(data: dict) -> None:
-    """Output JSON result to stdout."""
-    print(json.dumps(data, indent=2))
+def output_toon(data: dict) -> None:
+    """Output TOON result to stdout."""
+    print(serialize_toon(data))
