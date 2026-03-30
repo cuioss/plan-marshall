@@ -114,25 +114,6 @@ Inline above-the-fold styles:
 }
 ```
 
-**Skip to Content Link:**
-
-```css
-.skip-to-content {
-  position: absolute;
-  left: -9999px;
-}
-
-.skip-to-content:focus {
-  position: fixed;
-  top: 1rem;
-  left: 1rem;
-  background: var(--color-primary);
-  color: white;
-  padding: 1rem;
-  z-index: 999;
-}
-```
-
 ### Color Contrast
 
 **WCAG AA Standards:**
@@ -182,50 +163,9 @@ Respect user preferences:
 }
 ```
 
-### Screen Reader Considerations
+### Screen Reader Support
 
-**Visually Hidden:**
-
-```css
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
-}
-```
-
-**Interactive States:**
-
-```css
-/* Ensure disabled elements are clear */
-.button:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-/* Loading states */
-.button[aria-busy="true"] {
-  position: relative;
-  color: transparent;
-}
-
-.button[aria-busy="true"]::after {
-  content: '';
-  position: absolute;
-  width: 1rem;
-  height: 1rem;
-  border: 2px solid currentColor;
-  border-right-color: transparent;
-  border-radius: 50%;
-  animation: spin 0.6s linear infinite;
-}
-```
+Use `.sr-only` (position: absolute, 1px clip) for visually hidden but accessible content. Ensure disabled elements have `opacity: 0.6; cursor: not-allowed`.
 
 ### Touch Targets
 
@@ -351,64 +291,6 @@ document.documentElement.setAttribute('data-theme', theme);
 localStorage.setItem('theme', theme);
 ```
 
-## Maintainability
-
-### DRY Principle
-
-```css
-/* ❌ Repetitive */
-.button-primary {
-  padding: 0.5rem 1rem;
-  border-radius: 0.25rem;
-  font-weight: 500;
-}
-
-.button-secondary {
-  padding: 0.5rem 1rem;
-  border-radius: 0.25rem;
-  font-weight: 500;
-}
-
-/* ✅ Use shared class + modifier */
-.button {
-  padding: 0.5rem 1rem;
-  border-radius: 0.25rem;
-  font-weight: 500;
-}
-
-.button--primary { /* variant styles */ }
-.button--secondary { /* variant styles */ }
-```
-
-### Avoid Magic Numbers
-
-```css
-/* ❌ What is 23px? */
-.element {
-  margin-top: 23px;
-}
-
-/* ✅ Use variables with semantic names */
-.element {
-  margin-top: var(--spacing-md);
-}
-```
-
-### Documentation
-
-```css
-/**
- * Complex component requiring explanation
- *
- * This uses a specific technique because...
- * Browser-specific workaround for Safari flex rendering.
- */
-.complex-component {
-  /* Safari flex gap fallback */
-  gap: 1rem;
-}
-```
-
 ## Development Tools
 
 ### Package.json Setup
@@ -478,135 +360,29 @@ export default (ctx) => {
 
 For complete Stylelint configuration including property ordering, BEM naming enforcement, and CSS-in-JS setup, see `pm-dev-frontend:js-enforce-eslint` → `standards/stylelint-setup.md`.
 
-### Prettier Configuration
+For Prettier and IDE integration, see `pm-dev-frontend:js-enforce-eslint` → `standards/prettier-configuration.md`.
 
-Create `.prettierrc`:
+### PurgeCSS
 
-```json
-{
-  "printWidth": 100,
-  "tabWidth": 2,
-  "useTabs": false,
-  "semi": true,
-  "singleQuote": true,
-  "trailingComma": "es5",
-  "bracketSpacing": true
-}
-```
-
-### IDE Integration
-
-**VS Code** - `.vscode/settings.json`:
-
-```json
-{
-  "editor.defaultFormatter": "esbenp.prettier-vscode",
-  "editor.formatOnSave": true,
-  "css.validate": false,
-  "stylelint.validate": ["css"],
-  "[css]": {
-    "editor.codeActionsOnSave": {
-      "source.fixAll.stylelint": true
-    }
-  }
-}
-```
-
-### Build Pipeline
-
-**Development:**
-```bash
-npm run css:dev  # Watch and rebuild
-```
-
-**Production:**
-```bash
-npm run css:build  # Minify and optimize
-npm run css:purge  # Remove unused CSS
-```
-
-**Quality Checks:**
-```bash
-npm run css:lint       # Check linting
-npm run css:format:check  # Check formatting
-npm run css:quality    # Both checks
-```
-
-### PurgeCSS Setup
-
-Create `purgecss.config.js`:
+Remove unused CSS in production builds. Configure `safelist` for dynamic classes (state classes, ARIA selectors):
 
 ```javascript
 export default {
-  content: [
-    './src/**/*.html',
-    './src/**/*.js'
-  ],
+  content: ['./src/**/*.html', './src/**/*.js'],
   css: ['./dist/css/**/*.css'],
-  output: './dist/css',
   safelist: {
     standard: ['is-active', 'is-open', 'is-loading'],
     deep: [/^data-/, /^aria-/],
-    greedy: [/^modal-/, /^dropdown-/]
-  }
+  },
 };
 ```
 
-## CI/CD Integration
+## Performance Targets
 
-### GitHub Actions Example
-
-```yaml
-name: CSS Quality
-
-on: [push, pull_request]
-
-jobs:
-  quality:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - run: npm ci
-      - run: npm run css:quality
-      - run: npm run css:build
-```
-
-## Performance Metrics
-
-### Target Metrics
-
-- CSS Bundle Size: < 50KB gzipped
+- CSS bundle: < 50KB gzipped
 - First Paint: < 1s
-- Layout Shifts (CLS): < 0.1
-- No unused CSS: > 90% used
-
-### Monitoring
-
-```bash
-# Check bundle size
-ls -lh dist/styles.css
-
-# Analyze with DevTools
-- Coverage tab for unused CSS
-- Performance tab for paint times
-- Lighthouse for overall score
-```
-
-## Best Practices
-
-1. **Write efficient selectors** - Use single classes
-2. **Keep specificity low** - Max 0,4,0
-3. **Use containment** - Isolate layout calculations
-4. **Inline critical CSS** - Above-the-fold styles
-5. **Ensure focus visibility** - Use :focus-visible
-6. **Meet contrast ratios** - 4.5:1 for text
-7. **Respect motion preferences** - Use prefers-reduced-motion
-8. **Support dark mode** - Use custom properties
-9. **Remove unused CSS** - PurgeCSS in builds
-10. **Run quality checks** - Lint and format before committing
+- CLS: < 0.1
+- Use DevTools Coverage tab to identify unused CSS
 
 ## See Also
 

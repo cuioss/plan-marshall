@@ -82,20 +82,6 @@ rules: {
 }
 ```
 
-### JSDoc Best Practices
-
-**When to document**:
-- All public functions and methods
-- All classes and constructors
-- All exported modules
-- Complex algorithms or business logic
-
-**Required tags**:
-- `@param` for all parameters
-- `@returns` for non-void returns
-- `@throws` for error conditions
-- `@example` for public APIs
-
 ## Security Rules
 
 ### Required Security Controls
@@ -112,15 +98,6 @@ rules: {
   'security/detect-child-process': 'error',            // Prevent child process injection
 }
 ```
-
-### Security Best Practices
-
-**Critical security rules**:
-- Never use `eval()` or `Function()` constructor
-- Validate all user input before use
-- Avoid dynamic object property access with user input
-- Use safe regex patterns to prevent ReDoS attacks
-- Sanitize data before insertion into DOM
 
 ## Code Quality Rules (SonarJS)
 
@@ -455,38 +432,9 @@ Maximum flexibility for mock files:
 
 ## Rule Severity Levels
 
-### Severity Definitions
-
-**error**: Build-breaking issues that must be fixed immediately
-- Security vulnerabilities
-- Syntax errors
-- Clear violations of standards
-- High-risk patterns
-
-**warn**: Issues that should be addressed but don't break builds
-- Complexity warnings
-- Documentation suggestions
-- Performance considerations
-- Maintainability concerns
-
-**off**: Rules that are explicitly disabled
-- Conflicts with Prettier
-- Framework-specific exceptions
-- Test environment relaxations
-- False positive patterns
-
-## Best Practices
-
-1. **Start with recommended configs** - Use plugin recommended settings as baseline
-2. **Override sparingly** - Only customize rules when necessary for project needs
-3. **Document exceptions** - Comment why rules are disabled or customized
-4. **Use environment overrides** - Relax rules for tests, strict for production
-5. **Enable security rules** - Always keep security rules at error severity
-6. **Balance quality and productivity** - Avoid overly restrictive rules
-7. **Review regularly** - Periodically review rule configuration for relevance
-8. **Test configuration** - Verify rules work as expected on sample code
-9. **Consider team feedback** - Adjust rules based on team experience
-10. **Keep plugins updated** - Update plugins to get latest rule improvements
+- **error**: Build-breaking (security vulnerabilities, syntax errors, high-risk patterns)
+- **warn**: Should fix (complexity, documentation, performance, maintainability)
+- **off**: Explicitly disabled (Prettier conflicts, framework exceptions, test relaxations)
 
 ## See Also
 

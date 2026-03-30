@@ -313,26 +313,6 @@ h2 { font-size: var(--font-3xl); }
 body { font-size: var(--font-base); }
 ```
 
-### Traditional Approach
-
-```css
-body {
-  font-size: 0.875rem;  /* Mobile */
-}
-
-@media (min-width: 768px) {
-  body {
-    font-size: 1rem;    /* Tablet */
-  }
-}
-
-@media (min-width: 1024px) {
-  body {
-    font-size: 1.125rem; /* Desktop */
-  }
-}
-```
-
 ## Responsive Images
 
 ### Flexible Images
@@ -355,28 +335,6 @@ img {
 </picture>
 ```
 
-### Responsive Background Images
-
-```css
-.hero {
-  background-image: url('hero-small.jpg');
-  background-size: cover;
-  background-position: center;
-}
-
-@media (min-width: 768px) {
-  .hero {
-    background-image: url('hero-medium.jpg');
-  }
-}
-
-@media (min-width: 1024px) {
-  .hero {
-    background-image: url('hero-large.jpg');
-  }
-}
-```
-
 ## Responsive Spacing
 
 ### Fluid Spacing
@@ -393,73 +351,7 @@ img {
 }
 ```
 
-### Traditional Approach
-
-```css
-.section {
-  padding: 1rem;
-}
-
-@media (min-width: 768px) {
-  .section {
-    padding: 2rem;
-  }
-}
-
-@media (min-width: 1024px) {
-  .section {
-    padding: 3rem;
-  }
-}
-```
-
 ## Common Responsive Patterns
-
-### Hide/Show at Breakpoints
-
-```css
-/* Show on mobile only */
-.mobile-only {
-  display: block;
-}
-
-@media (min-width: 768px) {
-  .mobile-only {
-    display: none;
-  }
-}
-
-/* Show on tablet and up */
-.tablet-up {
-  display: none;
-}
-
-@media (min-width: 768px) {
-  .tablet-up {
-    display: block;
-  }
-}
-```
-
-### Responsive Columns
-
-```css
-.columns {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-@media (min-width: 768px) {
-  .columns {
-    flex-direction: row;
-  }
-
-  .columns > * {
-    flex: 1;
-  }
-}
-```
 
 ### Responsive Tables
 
@@ -520,32 +412,6 @@ See **css-quality-tooling.md** Accessibility section for touch target requiremen
   }
 }
 ```
-
-## Testing Responsive Design
-
-### Browser DevTools
-
-Test at all breakpoints:
-- 320px (small mobile)
-- 375px (mobile)
-- 768px (tablet)
-- 1024px (desktop)
-- 1440px (large desktop)
-
-Test features:
-- Touch interactions
-- Throttled network
-- High DPI displays
-
-## Best Practices
-
-1. **Start mobile-first** - Always
-2. **Use container queries** - For truly reusable components
-3. **Fluid typography** - Use clamp() for automatic scaling
-4. **Auto-fit grid** - For flexible layouts without media queries
-5. **Test at breakpoints** - Use real devices when possible
-6. **44px touch targets** - Ensure mobile usability
-7. **Flexible images** - Always use `max-width: 100%`
 
 ## See Also
 

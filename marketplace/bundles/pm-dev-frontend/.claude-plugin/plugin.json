@@ -16,6 +16,7 @@
     "./skills/ext-triage-js",
     "./skills/javascript",
     "./skills/js-enforce-eslint",
-    "./skills/css"
+    "./skills/css",
+    "./skills/js-testing"
   ]
 }

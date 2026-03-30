@@ -175,200 +175,40 @@ Enforce logical CSS property order for consistency and readability:
 
 ### Color Enforcement
 
-Enforce CSS custom properties for color values using two built-in rules:
+Use `color-named: never` and `declaration-property-value-allowed-list` (shown in config above) to enforce `var(--*)` custom properties for all color properties. Hardcoded hex values or named colors are rejected.
 
-```javascript
-'color-named': 'never',
-'declaration-property-value-allowed-list': {
-  'color': ['/^var\\(--/', 'currentColor', 'inherit', 'initial', 'unset', 'transparent'],
-  'background-color': ['/^var\\(--/', 'currentColor', 'inherit', 'initial', 'unset', 'transparent'],
-  'border-color': ['/^var\\(--/', 'currentColor', 'inherit', 'initial', 'unset', 'transparent'],
-  'fill': ['/^var\\(--/', 'currentColor', 'inherit', 'initial', 'unset', 'transparent'],
-  'stroke': ['/^var\\(--/', 'currentColor', 'inherit', 'initial', 'unset', 'transparent'],
-}
-```
-
-- `color-named: never` prevents named colors like `red`, `blue`, `green`
-- `declaration-property-value-allowed-list` restricts color properties to `var(--*)` custom properties and standard CSS keywords
-
-**Example**:
-```javascript
-// Correct - using CSS custom property
-static styles = css`
-  .button {
-    background-color: var(--primary-color);
-    color: var(--text-color);
-  }
-`;
-
-// Incorrect - hardcoded color values
-static styles = css`
-  .button {
-    background-color: #007bff;  // Error: must use var(--)
-    color: red;                  // Error: named colors not allowed
-  }
-`;
-```
 ### Custom Property Naming
 
-Enforce kebab-case naming for CSS custom properties:
-
-```javascript
-'custom-property-pattern': '^[a-z][a-z0-9]*(-[a-z0-9]+)*$'
-```
-
-**Examples**:
-```css
-/* Correct */
---primary-color: #007bff;
---text-size-large: 1.5rem;
---spacing-unit: 8px;
-
-/* Incorrect */
---primaryColor: #007bff;      /* camelCase not allowed */
---PRIMARY_COLOR: #007bff;     /* UPPER_CASE not allowed */
---text--size: 1rem;           /* double dash not allowed */
-```
+Pattern `^[a-z][a-z0-9]*(-[a-z0-9]+)*$` enforces kebab-case: `--primary-color` (correct), `--primaryColor` (rejected).
 
 ### Web Component Pseudo-classes
 
-Allow web component-specific pseudo-classes:
+The `ignorePseudoClasses: ['host', 'host-context', 'focus-visible']` config allows `:host`, `:host-context()`, and `:focus-visible` selectors.
 
-```javascript
-'selector-pseudo-class-no-unknown': [
-  true,
-  {
-    ignorePseudoClasses: ['host', 'host-context', 'focus-visible'],
-  },
-]
-```
-
-**Example**:
-```javascript
-static styles = css`
-  :host {
-    display: block;
-    padding: 1rem;
-  }
-
-  :host-context(.dark-mode) {
-    background-color: var(--dark-background);
-  }
-
-  button:focus-visible {
-    outline: 2px solid var(--focus-color);
-  }
-`;
-```
-
-### Complexity Limits
-
-Enforce maintainability through complexity limits:
-
-```javascript
-'max-nesting-depth': 3,                    // Maximum nesting levels
-'selector-max-id': 0,                      // No ID selectors
-'selector-max-universal': 1,               // Limit universal selectors
-'selector-max-compound-selectors': 4,      // Limit compound selectors
-```
-
-## NPM Scripts Integration
-
-### Required Scripts
-
-Add StyleLint scripts to package.json:
+## NPM Scripts
 
 ```json
 {
   "scripts": {
     "lint:style": "stylelint src/**/*.js",
-    "lint:style:fix": "stylelint --fix src/**/*.js",
-    "validate:css": "npm run lint:style && npm run format:check"
+    "lint:style:fix": "stylelint --fix src/**/*.js"
   }
 }
 ```
 
-### Combined Linting Scripts
-
-Integrate with ESLint for comprehensive linting:
-
-```json
-{
-  "scripts": {
-    "lint:js": "eslint src/**/*.js",
-    "lint:js:fix": "eslint --fix src/**/*.js",
-    "lint:style": "stylelint src/**/*.js",
-    "lint:style:fix": "stylelint --fix src/**/*.js",
-    "lint": "npm run lint:js && npm run lint:style",
-    "lint:fix": "npm run lint:js:fix && npm run lint:style:fix"
-  }
-}
-```
+Integrate with ESLint via combined `lint` / `lint:fix` scripts (see [eslint-integration.md](eslint-integration.md)).
 
 ## Maven Integration
 
-### Frontend Maven Plugin Configuration
-
-Integrate StyleLint into Maven build process:
+Add StyleLint in the **verify** phase via frontend-maven-plugin:
 
 ```xml
 <execution>
   <id>npm-css-validate</id>
-  <goals>
-    <goal>npm</goal>
-  </goals>
+  <goals><goal>npm</goal></goals>
   <phase>verify</phase>
-  <configuration>
-    <arguments>run validate:css</arguments>
-  </configuration>
+  <configuration><arguments>run lint:style</arguments></configuration>
 </execution>
-```
-
-### Build Order
-
-Recommended Maven execution order:
-
-1. **install-node-and-npm** (initialize phase)
-2. **npm-install** (initialize phase)
-3. **npm-lint-fix** (verify phase) - ESLint with auto-fix
-4. **npm-css-validate** (verify phase) - StyleLint validation
-
-## Environment-Specific Configuration
-
-### Production Component Overrides
-
-Stricter rules for production code:
-
-```javascript
-overrides: [
-  {
-    files: ['src/main/resources/components/**/*.js'],
-    rules: {
-      'max-nesting-depth': 3,                      // Enforce shallow nesting
-      'selector-max-compound-selectors': 4,        // Limit selector complexity
-      'selector-max-specificity': '0,4,0',         // Limit specificity
-      'declaration-block-no-redundant-longhand-properties': true,
-    },
-  },
-]
-```
-
-### Test File Overrides
-
-Relaxed rules for test files:
-
-```javascript
-overrides: [
-  {
-    files: ['src/test/js/**/*.js', '**/*.test.js'],
-    rules: {
-      'selector-class-pattern': null,              // Allow any class names
-      'custom-property-pattern': null,             // Allow any custom property names
-      'max-nesting-depth': null,                   // No nesting limits
-      'selector-max-compound-selectors': null,     // No selector complexity limits
-    },
-  },
-]
 ```
 
 ## Common Configuration Issues
@@ -394,137 +234,10 @@ rules: {
 }
 ```
 
-### Issue: Framework-Specific Theme Variables
-
-**Problem**: Configuration includes unnecessary framework-specific patterns
-
-**Solution**: Use generic patterns unless specific framework integration required
-
-```javascript
-// Generic (preferred)
-'custom-property-pattern': '^[a-z][a-z0-9]*(-[a-z0-9]+)*$'
-
-// Framework-specific (only when needed)
-'custom-property-pattern': '^(lumo|vaadin)-[a-z0-9]+(-[a-z0-9]+)*$'
-```
-
 ### Issue: ES Module Import Errors
 
-**Problem**: `Cannot use import statement outside a module`
-
-**Solution**: Use `export default` syntax when `"type": "module"` is set in package.json
-
-```javascript
-// Correct - ES module
-export default {
-  extends: ['stylelint-config-standard'],
-  // ... configuration
-};
-
-// Incorrect - CommonJS (not supported with "type": "module")
-module.exports = {
-  extends: ['stylelint-config-standard'],
-  // ... configuration
-};
-```
+Use `export default` syntax when `"type": "module"` is set. CommonJS `module.exports` is not supported.
 
 ### Issue: postcss-lit Parser Errors
 
-**Problem**: StyleLint fails to parse CSS in template literals
-
-**Solution**: Ensure postcss-lit is configured as customSyntax
-
-```javascript
-export default {
-  customSyntax: 'postcss-lit',  // Required for Lit components
-  // ... rest of configuration
-};
-```
-
-## Best Practices
-
-1. **Use CSS custom properties** - Use `var()` for colors and theming by convention; enforce with `color-named: never`
-2. **Order properties logically** - Group related properties together
-3. **Limit nesting depth** - Keep CSS flat and maintainable (max 3 levels)
-4. **Avoid ID selectors** - Use classes for component styling
-5. **Follow kebab-case naming** - Consistent custom property naming
-6. **Integrate with build** - Run StyleLint in Maven verify phase
-7. **Relax for tests** - Less strict rules for test files
-8. **Enable auto-fix** - Use lint:style:fix to automatically correct issues
-9. **Document exceptions** - Comment any rule overrides or disabled rules
-10. **Keep updated** - Regularly update StyleLint and plugins
-
-## Validation Rules
-
-- StyleLint 17+ installed with stylelint-order and postcss-lit plugins
-- .stylelintrc.js configured with ES module syntax
-- postcss-lit configured as customSyntax
-- CSS custom property pattern defined
-- Property ordering configured
-- Web component pseudo-classes allowed
-- package.json includes lint:style scripts
-- Maven pom.xml includes CSS validation execution
-- Environment-specific overrides configured
-- Documentation updated with StyleLint procedures
-
-## Example Lit Component with StyleLint
-
-```javascript
-import { LitElement, html, css } from 'lit';
-
-export class ExampleButton extends LitElement {
-  static styles = css`
-    /* Properties in logical order */
-    :host {
-      display: inline-block;
-    }
-
-    .button {
-      /* Layout */
-      display: flex;
-      position: relative;
-
-      /* Flexbox */
-      justify-content: center;
-      align-items: center;
-
-      /* Box Model */
-      padding: 0.5rem 1rem;
-      margin: 0.25rem;
-
-      /* Border */
-      border: 1px solid var(--border-color);
-      border-radius: 4px;
-
-      /* Background and colors using custom properties */
-      background-color: var(--button-background);
-      color: var(--button-text);
-
-      /* Typography */
-      font-family: var(--font-family);
-      font-size: 1rem;
-
-      /* Effects */
-      transition: background-color 0.2s ease;
-    }
-
-    .button:hover {
-      background-color: var(--button-background-hover);
-    }
-
-    /* Web component specific pseudo-class */
-    :host([disabled]) .button {
-      opacity: 0.5;
-      background-color: var(--button-disabled);
-    }
-  `;
-
-  render() {
-    return html`
-      <button class="button">
-        <slot></slot>
-      </button>
-    `;
-  }
-}
-```
+Ensure `customSyntax: 'postcss-lit'` is set in the config. This is required for Lit template literal parsing.

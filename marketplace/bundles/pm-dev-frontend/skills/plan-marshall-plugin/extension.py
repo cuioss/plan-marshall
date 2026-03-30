@@ -60,6 +60,10 @@ class Extension(ExtensionBase):
                             'skill': 'plan-marshall:dev-general-module-testing',
                             'description': 'Language-agnostic testing methodology (AAA, coverage, reliability, determinism)',
                         },
+                        {
+                            'skill': 'pm-dev-frontend:js-testing',
+                            'description': 'JavaScript unit testing with Jest/Vitest, DOM testing, mocking, async patterns',
+                        },
                     ],
                     'optionals': [],
                 },

@@ -8,7 +8,7 @@ This bundle provides general frontend development expertise through domain knowl
 
 ## Components Included
 
-### Skills (5 skills)
+### Skills (6 skills, 5 registered + 1 internal)
 
 1. **javascript** - Core JavaScript development standards
    - ES modules, modern patterns, async programming, code quality
@@ -23,9 +23,14 @@ This bundle provides general frontend development expertise through domain knowl
    - Flat config setup and rule management
    - Build integration standards
 
-4. **ext-triage-js** - Extension point for JavaScript finding triage
+4. **js-testing** - JavaScript unit testing standards
+   - Jest/Vitest framework setup and configuration
+   - DOM and web component testing patterns
+   - Mocking, async testing, and coverage
 
-5. **plan-marshall-plugin** - JavaScript domain registration (internal extension, not registered in plugin.json)
+5. **ext-triage-js** - Extension point for JavaScript finding triage
+
+6. **plan-marshall-plugin** - JavaScript domain registration (internal extension, not registered in plugin.json)
 
 > **Companion bundle**: `pm-dev-frontend-cui` provides additional standards (Maven integration, Quarkus DevUI, NiFi).
 
@@ -41,6 +46,7 @@ pm-dev-frontend/
     │       └── jsdoc.py
     ├── css/                     # CSS standards
     ├── js-enforce-eslint/       # ESLint, Prettier, Stylelint
+    ├── js-testing/              # Jest/Vitest testing standards
     ├── ext-triage-js/           # Triage extension point
     └── plan-marshall-plugin/    # JavaScript domain registration
 ```

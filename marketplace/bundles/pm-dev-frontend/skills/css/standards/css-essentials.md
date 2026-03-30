@@ -369,68 +369,6 @@ src/css/
 .component.is-active { }
 ```
 
-### Button Component Example
-
-```css
-/**
- * Button Component
- *
- * @example
- * <button class="button button--primary">Click me</button>
- */
-
-.button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 2.5rem;
-  padding: 0.5rem 1rem;
-
-  background: var(--button-bg, var(--color-neutral-100));
-  border: 1px solid var(--button-border, var(--color-neutral-300));
-  border-radius: var(--border-radius-md);
-
-  font-family: inherit;
-  font-size: 1rem;
-  font-weight: 500;
-  color: var(--button-color, var(--color-neutral-900));
-
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.button__icon {
-  margin-right: 0.5rem;
-}
-
-.button--primary {
-  --button-bg: var(--color-primary-600);
-  --button-color: white;
-}
-
-.button--large {
-  min-height: 3rem;
-  padding: 0.75rem 1.5rem;
-  font-size: 1.125rem;
-}
-
-.button:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
-}
-
-.button:focus-visible {
-  outline: 2px solid var(--color-primary-500);
-  outline-offset: 2px;
-}
-
-.button:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-  pointer-events: none;
-}
-```
-
 ## Utility Classes
 
 Small, single-purpose classes for common patterns:
@@ -459,143 +397,15 @@ Small, single-purpose classes for common patterns:
 .font-bold { font-weight: 700; }
 ```
 
-### When to Use Utilities
+Use utilities for quick layout adjustments and spacing. When the same utility combination repeats, extract a component class instead.
 
-**Use utilities for:**
-- Quick layout adjustments
-- Common spacing patterns
-- One-off styling needs
+## Theming
 
-**Don't use utilities for:**
-- Complex components (create proper component class)
-- Styles that always appear together (create a component)
-
-```html
-<!-- ✅ Good: Utilities for layout, component for semantics -->
-<div class="flex items-center gap-4">
-  <button class="button button--primary">Save</button>
-</div>
-
-<!-- ❌ Bad: Too many utilities, should be a component -->
-<div class="inline-flex items-center px-4 py-2 bg-blue text-white rounded">
-  Button
-</div>
-```
-
-## Architecture Patterns
-
-### Component-Based (Recommended)
-
-Organize CSS around reusable components:
-
-```text
-✅ Advantages:
-- Easy to find related styles
-- Components are portable
-- Scales well
-
-✅ Use when:
-- Building component library
-- Large applications
-- Team collaboration
-```
-
-### Hybrid Approach (Recommended)
-
-Components + utilities:
-
-```css
-/* Components for reusable patterns */
-.card { }
-.button { }
-
-/* Utilities for layout and spacing */
-.flex { }
-.gap-4 { }
-```
-
-## Comments and Documentation
-
-### Component Documentation
-
-```css
-/**
- * Button Component
- *
- * Primary interactive element for user actions.
- *
- * Variants:
- * - .button--primary: Main call-to-action
- * - .button--secondary: Alternative action
- * - .button--large: Increased size
- *
- * Custom Properties:
- * - --button-bg: Background color
- * - --button-color: Text color
- */
-.button {
-  /* Implementation */
-}
-```
-
-### Inline Comments
-
-```css
-.element {
-  /* Prevent FOUC on page load */
-  opacity: 0;
-
-  /* Create new stacking context */
-  transform: translateZ(0);
-}
-```
-
-## Theming with Custom Properties
-
-Use CSS custom properties for theming to enable easy color scheme switching:
-
-```css
-:root {
-  --bg-primary: white;
-  --text-primary: #1c1b1f;
-}
-
-/* Components use custom properties */
-.page {
-  background: var(--bg-primary);
-  color: var(--text-primary);
-}
-```
-
-For complete dark mode implementation including system preference detection and manual toggle, see [CSS Quality & Tooling](css-quality-tooling.md#dark-mode).
+Use custom properties for theming. For dark mode with system preference detection, see [CSS Quality & Tooling](css-quality-tooling.md#dark-mode).
 
 ## Browser Compatibility
 
-Target modern browsers (latest 2 versions):
-- Chrome, Firefox, Safari, Edge
-
-**Vendor Prefixes:**
-- Use Autoprefixer - don't write manually
-- Configure via browserslist in package.json
-
-```json
-{
-  "browserslist": [
-    "last 2 Chrome versions",
-    "last 2 Firefox versions",
-    "last 2 Safari versions",
-    "last 2 Edge versions"
-  ]
-}
-```
-
-## Maintenance Guidelines
-
-- Remove unused CSS regularly (PurgeCSS)
-- Check for duplicate patterns
-- Follow BEM strictly
-- Document complex logic
-- Keep variable naming consistent
+Target modern browsers (latest 2 versions). Use Autoprefixer via browserslist in package.json -- never write vendor prefixes manually.
 
 ## See Also
 
