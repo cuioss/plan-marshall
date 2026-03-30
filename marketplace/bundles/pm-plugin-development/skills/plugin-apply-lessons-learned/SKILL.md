@@ -156,8 +156,15 @@ Add to warnings or "avoid" sections:
 - Lessons skipped: 0
 ```
 
+## Dependencies
+
+**Cross-bundle dependency**: This skill relies on `plan-marshall:manage-lessons` for lesson storage, retrieval, and the `query-lessons.py` script used in Step 3. The manage-lessons skill must be available and its script registered in the executor.
+
+```
+Skill: plan-marshall:manage-lessons
+```
+
 ## Related
 
-- `plan-marshall:manage-lessons` - Skill for lesson storage/retrieval
 - `/plugin-maintain` - General component maintenance
 - `/plugin-doctor` - Diagnose component issues

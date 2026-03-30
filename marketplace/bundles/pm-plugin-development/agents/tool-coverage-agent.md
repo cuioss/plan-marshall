@@ -83,6 +83,6 @@ Return JSON:
 ## Critical Rules
 
 - **Semantic understanding required**: Don't pattern match - UNDERSTAND context
-- **Rule 6 enforcement**: Never suggest Task for agents
+- **Rule 6 enforcement**: Agents cannot use the Task tool (unavailable at runtime). Never suggest Task as missing for agents. Canonical definition: `pm-plugin-development:plugin-create/references/agent-guide.md` § "Rule 6: Agents CANNOT Use Task Tool"
 - **Conservative on missing**: Only flag as missing if clearly invoked
 - **Document false positives**: Explain why something looks like usage but isn't
