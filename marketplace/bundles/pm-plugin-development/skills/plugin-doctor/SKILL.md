@@ -61,7 +61,7 @@ Select workflow based on input and execute immediately.
 
 ## Progressive Disclosure Strategy
 
-**Load ONE reference guide per workflow** (not all 10):
+**Load only the reference guide(s) needed per workflow** (not all at once):
 
 | Workflow | Diagnosis Reference | Fix Reference |
 |----------|---------------------|---------------|

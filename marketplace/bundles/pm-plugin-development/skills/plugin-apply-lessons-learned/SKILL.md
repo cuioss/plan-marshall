@@ -41,10 +41,16 @@ Skill: plan-marshall:manage-lessons
 
 ### Step 3: Query Unapplied Lessons
 
-- Use `query-lessons.py` script to filter lesson files
-- For specific component: Filter by `component.name`
-- For --all: Filter all where `applied: false`
-- For --list: Display lessons without applying
+Query unapplied lessons using the manage-lessons script:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lesson query \
+  --applied false [--component-name {name}]
+```
+
+- For specific component: Add `--component-name {name}`
+- For --all: Query all where `applied: false`
+- For --list: Display results without applying
 
 ### Step 4: For Each Unapplied Lesson
 

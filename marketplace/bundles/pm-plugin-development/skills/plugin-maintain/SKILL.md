@@ -433,7 +433,6 @@ Each workflow handles errors:
 
 ## Related Resources
 
-- **plugin-diagnose skill** - Diagnose issues in components
-- **plugin-fix skill** - Apply fixes to diagnosed issues
+- **plugin-doctor skill** - Diagnose and fix quality issues in components
 - **plugin-create skill** - Create new components
 

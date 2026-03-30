@@ -60,24 +60,31 @@ You will receive:
 
 ## Output
 
-Return JSON:
+Return TOON format (see `plan-marshall:ref-toon-format` for specification):
 
-```json
-{
-  "file_path": "{path}",
-  "component_type": "{type}",
-  "declared_tools": ["Read", "Write"],
-  "used_tools": ["Read"],
-  "analysis": {
-    "missing_tools": ["Skill"],
-    "unused_tools": ["Write"],
-    "false_positives": [
-      {"tool": "Task", "reason": "Mentioned in Rule 6 documentation, not actual usage"}
-    ]
-  },
-  "confidence": "high|medium|low",
-  "notes": "Optional clarification"
-}
+```toon
+status: success
+file_path: "{path}"
+component_type: "{type}"
+
+declared_tools[N]:
+  - Read
+  - Write
+
+used_tools[N]:
+  - Read
+
+analysis:
+  missing_tools[N]:
+    - Skill
+  unused_tools[N]:
+    - Write
+  false_positives[N]{tool,reason}:
+    Task,"Mentioned in Rule 6 documentation, not actual usage"
+
+confidence: "high|medium|low"
+notes: "Optional clarification"
+```
 ```
 
 ## Critical Rules

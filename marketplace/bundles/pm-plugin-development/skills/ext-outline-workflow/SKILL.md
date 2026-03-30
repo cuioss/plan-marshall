@@ -144,7 +144,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 |---------|-------|
 | `**Metadata:**` with change_type, execution_mode, domain, module, depends | Present and valid. `execution_mode` must be one of: `automated`, `manual`, `mixed` (NOTE: `verification` is a valid change_type but NOT a valid execution_mode) |
 | `**Profiles:**` | At least one profile listed |
-| `**Affected files:**` | Explicit paths, no wildcards, no glob patterns. **Every path MUST exist on disk** (verify with `ls`). Use paths from inventory scan — do NOT guess or construct paths from component names. |
+| `**Affected files:**` | Explicit paths, no wildcards, no glob patterns. **Every path MUST exist on disk** (verify with Glob tool). Use paths from inventory scan — do NOT guess or construct paths from component names. |
 | `**Change per file:**` | Entry for each affected file |
 | `**Verification:**` | Both Command and Criteria present |
 | `**Success Criteria:**` | At least one criterion |

@@ -108,14 +108,33 @@ This logging is REQUIRED for audit trail and debugging.
 
 ### Step 6: Create Optimized Tasks
 
-For aggregated deliverables or single deliverables, create tasks using `--content` with `\n`-encoded TOON.
+For aggregated deliverables or single deliverables, create tasks using `--content` with `\n`-encoded TOON or heredoc stdin.
 
 **CRITICAL**: The `steps` field MUST contain file paths copied from the deliverable's `Affected files` section.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks add \
   --plan-id {plan_id} \
-  --content "title: {Action Verb} {Target}: {Scope}\ndeliverable: {n}\ndomain: plan-marshall-plugin-dev\nphase: 5-execute\ndescription: {combined description}\nsteps:\n  - marketplace/bundles/{bundle}/agents/{file1}.md\n  - marketplace/bundles/{bundle}/agents/{file2}.md\ndepends_on: {TASK-N | none}\ndelegation:\n  skill: {suggested_skill}\n  workflow: {suggested_workflow}\n  context_skills: {context_skills - MUST include even if empty []}\nverification:\n  commands:\n    - {verification.command}\n  criteria: {verification.criteria}"
+  --content "$(cat <<'EOF'
+title: {Action Verb} {Target}: {Scope}
+deliverable: {n}
+domain: plan-marshall-plugin-dev
+phase: 5-execute
+description: {combined description}
+steps:
+  - marketplace/bundles/{bundle}/agents/{file1}.md
+  - marketplace/bundles/{bundle}/agents/{file2}.md
+depends_on: {TASK-N | none}
+delegation:
+  skill: {suggested_skill}
+  workflow: {suggested_workflow}
+  context_skills: {context_skills - MUST include even if empty []}
+verification:
+  commands:
+    - {verification.command}
+  criteria: {verification.criteria}
+EOF
+)"
 ```
 
 **Field mapping from deliverable to task**:

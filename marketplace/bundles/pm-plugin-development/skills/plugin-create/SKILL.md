@@ -150,36 +150,4 @@ This skill uses the following templates in assets/templates/:
 
 ## Rule Definitions
 
-Rules applied during component creation. See Enforcement block for this skill's own constraints.
-
-**Frontmatter Format**:
-- Use comma-separated format for tools: `tools: Read, Write, Edit`
-- Do not use array syntax: `tools: [Read, Write, Edit]`
-
-**Tool Prohibitions**:
-- Agents cannot use Task tool (Rule 6) — unavailable at runtime
-- Only maven-builder agent can execute Maven (Rule 7)
-
-**Continuous Improvement Rule**:
-- Agents: Use manage-lessons skill to record lessons (report to caller)
-- Commands: Use manage-lessons skill to record lessons
-- Skills: No Continuous Improvement Rule section
-
-**Validation**:
-- All questionnaire responses are validated
-- Clear error messages with retry prompts
-- Check for duplicates before creating
-
-**Progressive Disclosure**:
-- Load reference guides on-demand (not all at once)
-- Use relative paths for all resources
-
-## Quality Standards
-
-Following these ensures:
-- Consistent component structure across marketplace
-- Proper frontmatter formatting
-- Architecture compliance
-- No duplicate components
-- Validated creation with post-diagnosis
-- Statistics tracking for transparency
+See Enforcement block above for all rules applied during component creation.
