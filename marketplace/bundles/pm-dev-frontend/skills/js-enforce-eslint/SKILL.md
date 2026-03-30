@@ -57,21 +57,6 @@ Read: standards/stylelint-setup.md
 
 Use when: Configuring Stylelint for CSS-in-JS or Lit components, setting up CSS linting rules, or integrating with build pipelines.
 
-## Required npm Scripts
-
-```json
-{
-  "scripts": {
-    "lint:js": "eslint src/**/*.js",
-    "lint:js:fix": "eslint --fix src/**/*.js",
-    "format": "prettier --write \"src/**/*.js\"",
-    "format:check": "prettier --check \"src/**/*.js\"",
-    "quality": "npm run lint && npm run format:check",
-    "quality:fix": "npm run lint:fix && npm run format"
-  }
-}
-```
-
 ## Related Skills
 
 - `pm-dev-frontend:javascript` — JavaScript standards including JSDoc

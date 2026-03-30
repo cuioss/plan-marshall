@@ -31,10 +31,6 @@ Loaded via `resolve-workflow-skill-extension --domain javascript --type triage` 
 | [suppression.md](standards/suppression.md) | JavaScript suppression syntax (eslint-disable, ts-ignore) |
 | [severity.md](standards/severity.md) | JavaScript-specific severity guidelines and decision criteria |
 
-## Extension Registration
-
-Registered via the bundle's `plan-marshall-plugin` extension (`provides_triage()` method).
-
 ## Quick Reference
 
 ### Suppression Methods

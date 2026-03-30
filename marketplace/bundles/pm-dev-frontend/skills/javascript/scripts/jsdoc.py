@@ -3,12 +3,14 @@
 JSDoc documentation analysis tool.
 
 Subcommands:
-    analyze  - Analyze JavaScript files for JSDoc compliance violations
+    analyze  - Analyze JavaScript/TypeScript files for JSDoc compliance violations
 
 Usage:
     jsdoc.py analyze --directory src/
     jsdoc.py analyze --file src/utils/formatter.js
     jsdoc.py analyze --directory src/ --scope missing
+
+Supported file types: .js, .mjs, .ts, .tsx
 """
 
 import argparse
@@ -301,7 +303,7 @@ def analyze_file(file_path: str, scope: str) -> list[dict]:
 
 
 def find_js_files(directory: str) -> list[str]:
-    """Find all JavaScript files in directory."""
+    """Find all JavaScript and TypeScript files in directory."""
     js_files = []
 
     for root, _, files in os.walk(directory):
@@ -309,7 +311,7 @@ def find_js_files(directory: str) -> list[str]:
             continue
 
         for file in files:
-            if file.endswith('.js') or file.endswith('.mjs'):
+            if file.endswith(('.js', '.mjs', '.ts', '.tsx')):
                 js_files.append(os.path.join(root, file))
 
     return js_files
