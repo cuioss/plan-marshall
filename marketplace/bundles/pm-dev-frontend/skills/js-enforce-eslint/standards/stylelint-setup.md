@@ -2,17 +2,16 @@
 
 ## Purpose
 
-This document defines StyleLint configuration standards for CSS-in-JS patterns in web components, particularly for Lit components, ensuring consistent CSS styling and quality.
+StyleLint configuration standards for **CSS-in-JS patterns in web components** (Lit). This document does not cover pure CSS file linting — for standalone `.css` files, use Stylelint with `stylelint-config-standard` directly (see [CSS Quality & Tooling](../../css/standards/css-quality-tooling.md) for tooling setup).
 
 ## When to Use StyleLint
 
-StyleLint should be configured for projects that:
+Configure StyleLint with `postcss-lit` for projects that:
 
-- Use Lit components with CSS-in-JS template literals
-- Implement custom elements with inline styles
+- Use Lit components with CSS-in-JS template literals (`css\`...\``)
+- Implement custom elements with inline styles in JavaScript
 - Have CSS defined within JavaScript files
-- Require CSS property validation and ordering
-- Need CSS custom property (CSS variables) validation
+- Need CSS custom property validation within components
 
 ## Required Dependencies
 

@@ -173,41 +173,6 @@ yarn.lock
 coverage/
 ```
 
-## Pre-commit Hooks
-
-### Dependencies
-
-```json
-{
-  "devDependencies": {
-    "husky": "^8.0.0",
-    "lint-staged": "^13.0.0"
-  }
-}
-```
-
-### Lint-Staged (in package.json)
-
-```json
-{
-  "lint-staged": {
-    "*.js": [
-      "eslint --fix",
-      "prettier --write"
-    ]
-  }
-}
-```
-
-### Hook (`.husky/pre-commit`)
-
-```bash
-#!/bin/sh
-. "$(dirname "$0")/_/husky.sh"
-
-npx lint-staged
-```
-
 ## Troubleshooting
 
 **"No parser could be inferred for file"** -- Ensure `.js`/`.mjs` extension, or add an explicit `parser: 'babel'` override.

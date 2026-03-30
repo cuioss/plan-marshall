@@ -1,6 +1,6 @@
 ---
 name: js-enforce-eslint
-description: ESLint v10 flat config, Prettier v3, and Stylelint v17 configuration, rule customization, and build integration standards for JavaScript projects
+description: ESLint flat config, Prettier, and Stylelint configuration, rule customization, and build integration standards for JavaScript projects
 user-invocable: false
 ---
 
@@ -10,13 +10,13 @@ user-invocable: false
 
 - **Execution mode**: Reference — load specific standards on-demand based on current task
 - **Prohibited actions**: Do not generate legacy ESLint config (`.eslintrc.*`); always use flat config (`eslint.config.js`)
-- **Constraints**: All configurations require `"type": "module"` in package.json; ESLint v10+ only
+- **Constraints**: All configurations require `"type": "module"` in package.json; flat config only
 
-ESLint v10, Prettier, and Stylelint configuration standards for JavaScript projects.
+ESLint, Prettier, and Stylelint configuration standards for JavaScript projects.
 
 ## Prerequisites
 
-- ESLint v10+ with flat config (`eslint.config.js`)
+- ESLint with flat config (`eslint.config.js`)
 - `"type": "module"` in package.json
 
 ## Workflow
@@ -29,7 +29,7 @@ Load this standard when setting up or modifying ESLint configuration.
 Read: standards/eslint-configuration.md
 ```
 
-Covers ESLint v10 flat config, dependencies, and plugin setup.
+Covers ESLint flat config, dependencies, and plugin setup.
 
 ### Step 2: Load Additional Standards (As Needed)
 

@@ -1,6 +1,6 @@
 # JSDoc Essentials
 
-For general documentation principles (what/when/how to document, clarity, completeness), see `plan-marshall:dev-general-code-documentation`. This document covers JSDoc-specific tag syntax, ESLint integration, and type annotations.
+For general documentation principles (what/when/how to document, clarity, completeness), see `plan-marshall:dev-general-code-documentation`. This document covers JSDoc-specific tag syntax, ESLint integration, type annotations, and build setup. For complete documented code examples (functions, classes, modules, web components), see [JSDoc Patterns](jsdoc-patterns.md).
 
 ## ESLint Configuration
 
@@ -17,7 +17,7 @@ For general documentation principles (what/when/how to document, clarity, comple
 ### Configuration
 
 ```javascript
-// eslint.config.js (ESLint v10 flat config)
+// eslint.config.js (flat config)
 import jsdoc from 'eslint-plugin-jsdoc';
 
 export default [

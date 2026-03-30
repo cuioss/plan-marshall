@@ -487,3 +487,9 @@ Maximum flexibility for mock files:
 8. **Test configuration** - Verify rules work as expected on sample code
 9. **Consider team feedback** - Adjust rules based on team experience
 10. **Keep plugins updated** - Update plugins to get latest rule improvements
+
+## See Also
+
+- [ESLint Configuration](eslint-configuration.md) - Flat config structure and plugin setup
+- [ESLint Integration](eslint-integration.md) - Build pipeline and CI/CD integration
+- `pm-dev-frontend:javascript` → [Code Quality](../../javascript/standards/code-quality.md) - JavaScript complexity limits that align with ESLint rule thresholds

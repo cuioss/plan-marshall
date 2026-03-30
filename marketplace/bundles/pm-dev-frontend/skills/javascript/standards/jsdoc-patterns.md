@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Quick reference patterns for documenting functions, classes, modules, types, and web components.
+Complete documented code examples for functions, classes, modules, types, and web components. For tag syntax reference, ESLint integration, and type annotations, see [JSDoc Essentials](jsdoc-essentials.md).
 
 ## Function Patterns
 
