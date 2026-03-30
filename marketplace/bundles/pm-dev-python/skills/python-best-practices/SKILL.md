@@ -62,6 +62,10 @@ For full patterns and examples, see the standards documents above. Key rules at 
 | Naming | `lower_with_under` (functions/modules), `CapWords` (classes), `CAPS_WITH_UNDER` (constants) |
 | Docstrings | Google style with Args/Returns/Raises sections |
 
+## Related Skills
+
+- `pm-plugin-development:plugin-script-architecture` - Standards for marketplace plugin scripts (stdlib-only, argparse subcommands, TOON output, cross-skill imports via executor). For scripts inside `marketplace/bundles/`, load that skill instead
+
 ## Key Principles
 
 1. **Readability counts** - Code is read more often than written

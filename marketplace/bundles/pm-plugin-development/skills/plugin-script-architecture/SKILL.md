@@ -45,3 +45,4 @@ Load: `standards/cross-skill-integration.md`
 ## Related Skills
 
 - `plan-marshall:tools-script-executor` - Script execution, notation resolution, plan-marshall command
+- `pm-dev-python:python-best-practices` - General Python patterns (type hints, docstrings, async, data structures). This skill covers marketplace-specific script constraints (stdlib-only, executor integration, TOON output); for broader Python development standards, load that skill instead
