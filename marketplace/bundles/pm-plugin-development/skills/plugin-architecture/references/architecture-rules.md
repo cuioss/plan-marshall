@@ -246,13 +246,13 @@ description: |
 
 Components must be organized by user goals, not technical component types.
 
-**Rationale**: Users think in terms of goals (CREATE, DIAGNOSE, FIX) not component types (agent, command, skill). Goal-based organization aligns with user mental models.
+**Rationale**: Users think in terms of goals (CREATE, DOCTOR, MAINTAIN, ANALYZE) not component types (agent, command, skill). Goal-based organization aligns with user mental models.
 
 **User Goals**:
 - **CREATE** - Create new marketplace components
-- **DIAGNOSE + FIX** - Find, understand, and fix issues
+- **DOCTOR** - Diagnose and fix quality issues (unified workflow)
 - **MAINTAIN** - Keep marketplace healthy
-- **LEARN** - Understand architecture and patterns
+- **ANALYZE** - Investigate failures and permission prompts
 
 **Requirements**:
 - Skills organized by capability, not component type
@@ -272,7 +272,7 @@ plugin-create/           # CREATE goal
       - create-skill
       - create-bundle
 
-plugin-doctor/           # DIAGNOSE + FIX goal
+plugin-doctor/           # DOCTOR goal
   ├── SKILL.md
   └── workflows:
       - analyze-component

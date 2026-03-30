@@ -28,7 +28,7 @@ Commands organized by user goals, not component types:
 # ✅ GOOD: Goal-based with bundle prefix
 commands/
 ├── plugin-create.md     # CREATE any component type
-├── plugin-doctor.md     # DIAGNOSE and FIX quality issues
+├── plugin-doctor.md     # DOCTOR - diagnose and fix quality issues
 ├── plugin-maintain.md   # MAINTAIN marketplace health
 └── plugin-verify.md     # VERIFY complete marketplace
 

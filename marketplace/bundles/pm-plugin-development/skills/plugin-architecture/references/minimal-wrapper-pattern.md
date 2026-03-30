@@ -571,7 +571,7 @@ Skill: cui-java-core (600 lines)
 Minimal wrapper pattern complements goal-based organization:
 
 **Goal-Based Structure:**
-- Organize agents/commands by user goals (CREATE, DIAGNOSE, FIX, REFACTOR, VERIFY)
+- Organize agents/commands by user goals (CREATE, DOCTOR, MAINTAIN, ANALYZE)
 - Each goal has specialized wrappers
 - All wrappers delegate to same skill set
 

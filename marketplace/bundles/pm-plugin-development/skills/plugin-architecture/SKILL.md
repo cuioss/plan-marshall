@@ -38,10 +38,9 @@ Activate when:
 
 **User Goals**:
 - **CREATE** - Create new marketplace components
-- **DIAGNOSE** - Find and understand issues
-- **FIX** - Fix identified issues
+- **DOCTOR** - Diagnose and fix quality issues (unified workflow)
 - **MAINTAIN** - Keep marketplace healthy
-- **LEARN** - Understand architecture and patterns
+- **ANALYZE** - Investigate failures and permission prompts
 
 ### Progressive Disclosure
 

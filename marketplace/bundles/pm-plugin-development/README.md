@@ -56,7 +56,7 @@ These skills are not directly invocable. They are loaded automatically by other 
 
 ## Dependencies
 
-- **Inter-Bundle Dependencies**: None - self-contained
+- **Inter-Bundle Dependencies**: `plan-marshall` — workflow skills use manage-tasks, manage-lessons, manage-logging, manage-config, and dev-general-practices
 - **External Dependencies**: None - works with filesystem access only
 
 ## Standards Enforced

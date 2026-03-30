@@ -375,7 +375,7 @@ If deliverable lacks required parameters:
 
 ## Integration
 
-**Caller**: `pm-plugin-development:plugin-task-plan-agent`
+**Caller**: `plan-marshall:phase-agent` (generic phase agent, via skill delegation)
 
 **Script Notations** (use EXACTLY as shown):
 - `plan-marshall:manage-solution-outline:manage-solution-outline` - Read solution and list deliverables (list-deliverables, read)

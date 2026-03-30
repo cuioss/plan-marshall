@@ -419,7 +419,7 @@ All scripts return JSON for structured parsing:
 
 ## Key Patterns Demonstrated
 
-1. **Goal-Based Organization**: Skill serves DIAGNOSE + FIX goal with multiple workflows
+1. **Goal-Based Organization**: Skill serves DOCTOR goal with multiple workflows
 2. **Progressive Disclosure**: References loaded on-demand based on workflow
 3. **Relative Path Pattern**: All resource use relative paths
 4. **Script Automation (Pattern 1)**: Deterministic logic in scripts, Claude interprets
