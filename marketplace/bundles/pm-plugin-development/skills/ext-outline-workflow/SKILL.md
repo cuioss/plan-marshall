@@ -1,12 +1,12 @@
 ---
 name: ext-outline-workflow
-description: Shared workflow steps and verification knowledge for plugin development outline, loaded by workflow-outline-change-type skill
+description: Shared workflow steps and verification knowledge for plugin development outline, loaded by phase-3-outline skill
 user-invocable: false
 ---
 
 # Plugin Development Outline Workflow
 
-Shared workflow steps for plugin development outline, loaded by the `workflow-outline-change-type` skill when the domain is `plan-marshall-plugin-dev`. Change-type-specific instructions are in `standards/change-{type}.md`.
+Shared workflow steps for plugin development outline, loaded by the `phase-3-outline` skill when the domain is `plan-marshall-plugin-dev`. Change-type-specific instructions are in `standards/change-{type}.md`.
 
 ## Step 1: Load Foundational Practices
 

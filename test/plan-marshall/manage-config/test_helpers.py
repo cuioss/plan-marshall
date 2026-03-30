@@ -131,7 +131,7 @@ def create_nested_marshal_json(fixture_dir: Path) -> Path:
             'plan-marshall-plugin-dev': {
                 'bundle': 'pm-plugin-development',
                 'workflow_skill_extensions': {
-                    'outline': 'pm-plugin-development:ext-outline-plugin',
+                    'outline': 'pm-plugin-development:ext-outline-workflow',
                     'triage': 'pm-plugin-development:ext-triage-plugin',
                 },
             },

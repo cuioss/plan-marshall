@@ -48,7 +48,6 @@
     "./skills/workflow-integration-ci",
     "./skills/workflow-integration-git",
     "./skills/workflow-integration-sonar",
-    "./skills/workflow-outline-change-type",
     "./skills/workflow-pr-doctor",
     "./skills/dev-general-module-testing",
     "./skills/dev-general-code-documentation",

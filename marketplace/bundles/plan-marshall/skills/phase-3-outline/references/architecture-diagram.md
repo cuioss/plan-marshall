@@ -11,8 +11,8 @@ Visual overview of the change-type routing architecture for human readers.
                           └────────────┬────────────────────┘
                                        │
                     1. Detect change_type (spawn detect agent)
-                    2. Follow workflow-outline-change-type skill inline
-                    3. Skill resolves domain or generic sub-skill
+                    2. Resolve domain or generic change-type instructions
+                    3. Execute discovery, analysis, deliverable creation
                                        │
                                        ▼
               ┌────────────────────────┴────────────────────────┐
@@ -21,7 +21,7 @@ Visual overview of the change-type routing architecture for human readers.
    │   Generic Sub-Skills │                         │  Domain-Specific      │
    │   (plan-marshall)      │                         │  Skills (configured   │
    │                      │                         │  in marshal.json)     │
-   │  workflow-outline-change-type │                         │                       │
+   │  phase-3-outline      │                         │                       │
    │  /standards/         │ ◄── fallback when ──── │  ext-outline-workflow  │
    │    change-analysis   │     not configured     │  (shared workflow for  │
    │    change-feature    │                         │   all change types)   │
@@ -84,12 +84,12 @@ Visual overview of the change-type routing architecture for human readers.
 
 | Change Type | Priority | Sub-Skill Instructions | Purpose |
 |-------------|----------|----------------------|---------|
-| `analysis` | 1 | `workflow-outline-change-type/standards/change-analysis.md` | Investigation, research |
-| `feature` | 2 | `workflow-outline-change-type/standards/change-feature.md` | New functionality |
-| `enhancement` | 3 | `workflow-outline-change-type/standards/change-enhancement.md` | Improve existing |
-| `bug_fix` | 4 | `workflow-outline-change-type/standards/change-bug_fix.md` | Fix defects |
-| `tech_debt` | 5 | `workflow-outline-change-type/standards/change-tech_debt.md` | Refactoring, cleanup |
-| `verification` | 6 | `workflow-outline-change-type/standards/change-verification.md` | Validation |
+| `analysis` | 1 | `phase-3-outline/standards/change-analysis.md` | Investigation, research |
+| `feature` | 2 | `phase-3-outline/standards/change-feature.md` | New functionality |
+| `enhancement` | 3 | `phase-3-outline/standards/change-enhancement.md` | Improve existing |
+| `bug_fix` | 4 | `phase-3-outline/standards/change-bug_fix.md` | Fix defects |
+| `tech_debt` | 5 | `phase-3-outline/standards/change-tech_debt.md` | Refactoring, cleanup |
+| `verification` | 6 | `phase-3-outline/standards/change-verification.md` | Validation |
 
 ## Domain Override Pattern
 
@@ -104,6 +104,6 @@ Domains can provide a domain-specific outline skill via `outline_skill` in marsh
 }
 ```
 
-When no domain-specific skill is configured, the generic sub-skill instructions from `plan-marshall:workflow-outline-change-type/standards/change-{type}.md` are used as fallback.
+When no domain-specific skill is configured, the generic sub-skill instructions from `plan-marshall:phase-3-outline/standards/change-{type}.md` are used as fallback.
 
 **Note**: Recipe-sourced plans bypass this entire change-type routing. See [recipe-flow.md](recipe-flow.md) for the recipe path through phase-3-outline.

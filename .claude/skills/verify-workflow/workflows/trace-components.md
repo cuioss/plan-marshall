@@ -83,7 +83,7 @@ Parse log entries for the pattern `({bundle}:{skill})` to identify components:
 
 Example extractions:
 - `(plan-marshall:phase-1-init)` → skill: phase-1-init
-- `(pm-plugin-development:ext-outline-plugin)` → skill: ext-outline-plugin
+- `(pm-plugin-development:ext-outline-workflow)` → skill: ext-outline-workflow
 - `(plan-marshall:phase-4-plan)` → skill: phase-4-plan
 
 **Build invocation hierarchy:**
@@ -141,7 +141,7 @@ For each script invocation found:
 | C2 | agent | plan-init-agent | plan-marshall:plan-init-agent | C1 |
 | C3 | skill | phase-1-init | plan-marshall:phase-1-init | C2 |
 | C4 | agent | solution-outline-agent | plan-marshall:solution-outline-agent | C1 |
-| C5 | skill | ext-outline-plugin | pm-plugin-development:ext-outline-plugin | C4 |
+| C5 | skill | ext-outline-workflow | pm-plugin-development:ext-outline-workflow | C4 |
 | C6 | agent | task-plan-agent | plan-marshall:task-plan-agent | C1 |
 | C7 | skill | phase-4-plan | plan-marshall:phase-4-plan | C6 |
 ```
@@ -205,7 +205,7 @@ Plan ID: migrate-outputs-to-toon
 | C2 | agent | plan-init-agent | plan-marshall:plan-init-agent | C1 |
 | C3 | skill | phase-1-init | plan-marshall:phase-1-init | C2 |
 | C4 | agent | solution-outline-agent | plan-marshall:solution-outline-agent | C1 |
-| C5 | skill | ext-outline-plugin | pm-plugin-development:ext-outline-plugin | C4 |
+| C5 | skill | ext-outline-workflow | pm-plugin-development:ext-outline-workflow | C4 |
 | C6 | agent | task-plan-agent | plan-marshall:task-plan-agent | C1 |
 | C7 | skill | phase-4-plan | plan-marshall:phase-4-plan | C6 |
 
@@ -236,7 +236,7 @@ Use these IDs to reference specific components in test criteria:
 - C2: Plan initialization agent (plan-init-agent)
 - C3: Plan initialization skill (phase-1-init)
 - C4: Solution outline agent (solution-outline-agent)
-- C5: Plugin outline extension (ext-outline-plugin) ← internal skill loaded by C4
+- C5: Plugin outline extension (ext-outline-workflow) ← internal skill loaded by C4
 - C6: Task planning agent (task-plan-agent)
 - C7: Task planning skill (phase-4-plan)
 ```

@@ -60,7 +60,7 @@ For codebase-wide changes requiring discovery and analysis via domain skills.
 │                                                                  │
 │  Step 6: Resolve Domain Skill                                    │
 │          → extension-api resolve --domain X --type outline       │
-│          → Returns skill notation (e.g., ext-outline-plugin)     │
+│          → Returns skill notation (e.g., ext-outline-workflow)     │
 │                                                                  │
 │  Step 7: Load Domain Skill                                       │
 │          → Skill: {resolved_skill_notation}                      │

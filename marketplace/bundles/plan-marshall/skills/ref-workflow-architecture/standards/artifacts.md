@@ -586,7 +586,7 @@ Decision entries do NOT include a `[DECISION]` prefix since the file itself indi
 [2025-12-11T11:14:48Z] [INFO] (plan-marshall:phase-1-init) Detected domain: java - pom.xml found
   phase: 1-init
 
-[2025-12-11T11:20:15Z] [INFO] (pm-plugin-development:ext-outline-plugin) Scope: bundles=all
+[2025-12-11T11:20:15Z] [INFO] (pm-plugin-development:ext-outline-workflow) Scope: bundles=all
   phase: 3-outline
   detail: marketplace/bundles structure detected
 ```

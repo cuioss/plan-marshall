@@ -175,7 +175,7 @@ def test_derived_plugin_has_plan_components():
     assert plugin_bundle is not None, 'Should find pm-plugin-development in derived'
 
     # Should have plugin-task-plan, plugin-plan-implement skills
-    # Note: ext-outline-plugin exists but isn't matched by inventory patterns (*-solution-outline)
+    # Note: ext-outline-workflow exists but isn't matched by inventory patterns (*-solution-outline)
     skill_names = [s['name'] for s in plugin_bundle.get('skills', [])]
 
     assert 'plugin-task-plan' in skill_names, 'Should have plugin-task-plan skill'

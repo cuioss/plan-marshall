@@ -4,7 +4,7 @@ Domain-specific instructions for `enhancement` change type in the plugin develop
 
 ## Additional Skills Required
 
-The parent skill (workflow-outline-change-type) loads `pm-plugin-development:ext-outline-workflow`. Additionally load:
+The parent skill (phase-3-outline) loads `pm-plugin-development:ext-outline-workflow`. Additionally load:
 
 ```
 Skill: pm-plugin-development:plugin-architecture

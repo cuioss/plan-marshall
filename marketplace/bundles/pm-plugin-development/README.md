@@ -45,7 +45,7 @@ These skills are not directly invocable. They are loaded automatically by other 
 
 | Skill | Description |
 |-------|-------------|
-| `ext-outline-workflow` | Shared workflow steps for plugin development outline, loaded by `workflow-outline-change-type` |
+| `ext-outline-workflow` | Shared workflow steps for plugin development outline, loaded by `phase-3-outline` |
 | `ext-triage-plugin` | Triage extension for marketplace plugin findings during plan-finalize phase |
 | `plugin-architecture` | Architecture principles, skill patterns, and design guidance for marketplace components |
 | `plugin-plan-implement` | Implement plugin tasks from plan with step iteration and progress tracking |
@@ -53,6 +53,14 @@ These skills are not directly invocable. They are loaded automatically by other 
 | `plugin-task-plan` | Create implementation tasks from deliverables using skill delegation |
 | `tools-marketplace-inventory` | Scan and report complete marketplace inventory (bundles, agents, commands, skills, scripts) |
 | `verification-mode` | Verification mode that stops and analyzes on failures, workarounds, or resolution issues |
+
+### Extension (1)
+
+Not registered in plugin.json (script-only extension discovered by the Extension API).
+
+| Component | Description |
+|-----------|-------------|
+| `plan-marshall-plugin` | Domain manifest with module discovery for plan-marshall workflow integration |
 
 ## Dependencies
 

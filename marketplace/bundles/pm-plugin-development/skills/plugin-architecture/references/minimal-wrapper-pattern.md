@@ -80,7 +80,7 @@ Reintroduce agents and commands as **thin orchestration wrappers** that:
 │  • Integration with other skills                            │
 │                                                              │
 │  Skills can call other skills:                             │
-│    Skill(pm-dev-java:plan-marshall-plugin)                        │
+│    Skill(pm-documents:plan-marshall-plugin)                        │
 │    Skill(plan-marshall:script-runner)                      │
 │                                                              │
 └─────────────────────────────────────────────────────────────┘
@@ -507,9 +507,9 @@ Step 3: Format and Return (20 lines)
 
 Agent: java-create-agent (120 lines)
   ├─→ Skill: cui-java-core (600 lines)
-  │   └─→ Skill: pm-dev-java:plan-marshall-plugin (400 lines)
+  │   └─→ Skill: pm-documents:plan-marshall-plugin (400 lines)
   └─→ Skill: cui-java-unit-testing (500 lines)
-      └─→ Skill: pm-dev-java:plan-marshall-plugin (400 lines)
+      └─→ Skill: pm-documents:plan-marshall-plugin (400 lines)
 ```
 
 **Why Good:**
@@ -548,12 +548,12 @@ Skill (business logic - 600 lines):
 
 Skill: cui-java-core (600 lines)
   Step 3: Verify Build
-    Skill: pm-dev-java:plan-marshall-plugin
-    Workflow: Execute Maven Build
+    Skill: pm-documents:plan-marshall-plugin
+    Workflow: Execute Build
 
   Step 7: Run Tests
-    Skill: pm-dev-java:plan-marshall-plugin
-    Workflow: Execute Maven Build
+    Skill: pm-documents:plan-marshall-plugin
+    Workflow: Execute Build
 
   Step 9: Analyze Coverage
     Skill: cui-java-unit-testing

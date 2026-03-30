@@ -320,14 +320,14 @@ Declares a domain-specific outline skill with change-type routing for solution o
 **Lifecycle**: Called during `skill-domains configure`. Stored in `marshal.json` and resolved at runtime by phase-3-outline.
 
 ```
-Extension discovery → get_skill_domains() → ➤ provides_outline_skill() → stored in marshal.json → resolved by workflow-outline-change-type
+Extension discovery → get_skill_domains() → ➤ provides_outline_skill() → stored in marshal.json → resolved by phase-3-outline
 ```
 
 ```python
 def provides_outline_skill(self) -> str | None:
     """Return domain-specific outline skill reference as 'bundle:skill', or None.
 
-    Fallback: If None, generic plan-marshall:workflow-outline-change-type
+    Fallback: If None, generic plan-marshall:phase-3-outline
     standards are used.
 
     Default: None
@@ -355,7 +355,7 @@ def provides_outline_skill(self) -> str | None:
 | `analysis` | Investigate, research, understand |
 | `verification` | Validate, check, confirm |
 
-Not all change types need coverage — unsupported types fall back to `plan-marshall:workflow-outline-change-type/standards/change-{type}.md`.
+Not all change types need coverage — unsupported types fall back to `plan-marshall:phase-3-outline/standards/change-{type}.md`.
 
 #### Storage in marshal.json
 
@@ -390,7 +390,7 @@ Returns `source: domain_specific` when a custom skill exists, or `source: generi
 |--------|--------|--------------|
 | pm-plugin-development | plan-marshall-plugin-dev | `pm-plugin-development:ext-outline-workflow` |
 
-All other domains return `None` and use the generic `plan-marshall:workflow-outline-change-type` standards.
+All other domains return `None` and use the generic `plan-marshall:phase-3-outline` standards.
 
 ---
 

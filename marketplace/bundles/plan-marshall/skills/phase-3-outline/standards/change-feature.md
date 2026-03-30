@@ -21,7 +21,7 @@ Log findings:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:workflow-outline-change-type) Feature: {component_type} in {target_location}"
+  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-3-outline) Feature: {component_type} in {target_location}"
 ```
 
 ## Analysis

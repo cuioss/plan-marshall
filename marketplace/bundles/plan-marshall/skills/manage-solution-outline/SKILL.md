@@ -230,7 +230,7 @@ python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-sol
 
 **Loaded by**:
 - `plan-marshall:phase-3-outline` skill (loads domain skills from references.json)
-- Domain skills: `pm-plugin-development:ext-outline-plugin`, etc.
+- Domain skills: `pm-plugin-development:ext-outline-workflow`, etc.
 
 **Data Sources** (via skills):
 - `plan-marshall:manage-architecture` - Project architecture knowledge (modules, responsibilities, packages)

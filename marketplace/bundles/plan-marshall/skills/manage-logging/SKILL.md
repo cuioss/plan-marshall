@@ -148,7 +148,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
   decision --plan-id my-plan --level INFO --message "(plan-marshall:phase-1-init) Detected domain: java - pom.xml found"
 
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision --plan-id my-plan --level INFO --message "(pm-plugin-development:ext-outline-plugin) Scope: bundles=all"
+  decision --plan-id my-plan --level INFO --message "(pm-plugin-development:ext-outline-workflow) Scope: bundles=all"
 
 # Read: All work log entries
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
@@ -200,7 +200,7 @@ Every log entry automatically includes a 6-character hash computed from the mess
 **decision.log**:
 ```
 [2025-12-11T11:14:48Z] [INFO] [d2e8f1] (plan-marshall:phase-1-init) Detected domain: java - pom.xml found
-[2025-12-11T11:20:15Z] [INFO] [a4b6c8] (pm-plugin-development:ext-outline-plugin) Scope: bundles=all
+[2025-12-11T11:20:15Z] [INFO] [a4b6c8] (pm-plugin-development:ext-outline-workflow) Scope: bundles=all
 ```
 
 Note: Decision entries do NOT include a `[DECISION]` prefix - the file itself indicates the entry type. The hash ID (e.g., `[d2e8f1]`) is automatically generated from the message content.

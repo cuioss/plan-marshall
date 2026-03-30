@@ -21,7 +21,7 @@ Log findings:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:workflow-outline-change-type) Enhancement: {N} files affected in {module}"
+  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-3-outline) Enhancement: {N} files affected in {module}"
 ```
 
 ## Analysis

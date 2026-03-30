@@ -83,7 +83,7 @@ Understanding when to use `Skill:` vs `Task:` is critical for proper context man
 │  │                                                                      │  │
 │  │  Main Conversation                                                   │  │
 │  │    → Skill: phase-3-outline      ← STAYS in main context             │  │
-│  │      → Skill: ext-outline-plugin ← STAYS in main context             │  │
+│  │      → Skill: ext-outline-workflow ← STAYS in main context             │  │
 │  │        → Task: analysis-agent    ← CAN spawn (from main context) ✓   │  │
 │  │                                                                      │  │
 │  │  Main Conversation                                                   │  │
@@ -170,7 +170,7 @@ Understanding when to use `Skill:` vs `Task:` is critical for proper context man
 │  │                      │                                                │ │
 │  └──────────────────────┴────────────────────────────────────────────────┘ │
 │                                                                             │
-│  These agents are spawned by ext-outline-plugin during path-multi          │
+│  These agents are spawned by ext-outline-workflow during path-multi          │
 │  workflow. They run in PARALLEL for efficient cross-cutting analysis.      │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
@@ -199,7 +199,7 @@ The outline phase uses skill-direct invocation to enable parallel agent spawning
 │  │  │  • Determines workflow path (simple/complex)                   │ │  │
 │  │  │                                                                │ │  │
 │  │  │    ┌────────────────────────────────────────────────────────┐ │ │  │
-│  │  │    │ Skill: ext-outline-plugin  ← DIRECT (stays in main)    │ │ │  │
+│  │  │    │ Skill: ext-outline-workflow  ← DIRECT (stays in main)    │ │ │  │
 │  │  │    │                                                        │ │ │  │
 │  │  │    │  • For complex workflow (path-multi):                  │ │ │  │
 │  │  │    │                                                        │ │ │  │

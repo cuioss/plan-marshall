@@ -25,8 +25,8 @@ This is the EXPECTED correct assessment that the outline phase should produce.
 
 **Scope Decision** (in decision.log):
 ```
-(pm-plugin-development:ext-outline-plugin) Component scope: [skills, agents, commands, scripts, tests]
-(pm-plugin-development:ext-outline-plugin) Context loaded: domains=[plan-marshall-plugin-dev], bundle=plan-marshall
+(pm-plugin-development:ext-outline-workflow) Component scope: [skills, agents, commands, scripts, tests]
+(pm-plugin-development:ext-outline-workflow) Context loaded: domains=[plan-marshall-plugin-dev], bundle=plan-marshall
 ```
 
 ---
@@ -173,10 +173,10 @@ affected_files[9]:
 
 ```
 (plan-marshall:phase-2-refine) Track: complex - migration pattern requires discovery
-(pm-plugin-development:ext-outline-plugin) Component scope: [skills, agents, commands, scripts, tests]
-(pm-plugin-development:ext-outline-plugin) Context loaded: domains=[plan-marshall-plugin-dev], bundle=plan-marshall
-(pm-plugin-development:ext-outline-plugin) Change type: migrate
-(pm-plugin-development:ext-outline-plugin) Complete: 3 deliverables, 6 affected files, 3 test files
+(pm-plugin-development:ext-outline-workflow) Component scope: [skills, agents, commands, scripts, tests]
+(pm-plugin-development:ext-outline-workflow) Context loaded: domains=[plan-marshall-plugin-dev], bundle=plan-marshall
+(pm-plugin-development:ext-outline-workflow) Change type: migrate
+(pm-plugin-development:ext-outline-workflow) Complete: 3 deliverables, 6 affected files, 3 test files
 ```
 
 ### work.log Entries
@@ -185,6 +185,6 @@ affected_files[9]:
 [REFINE:6] (plan-marshall:phase-2-refine) Confidence: 64%. Threshold: 95%. Issues: Completeness, Ambiguity
 [REFINE:8] (plan-marshall:phase-2-refine) Updated request with 3 clarifications
 [REFINE:6] (plan-marshall:phase-2-refine) Confidence: 100%. Threshold: 95%. All issues resolved.
-[PROGRESS] (pm-plugin-development:ext-outline-plugin) Inventory: 3-4 skills with JSON code blocks in plan-marshall
-[ARTIFACT] (pm-plugin-development:ext-outline-plugin) Created solution_outline.md - 3 deliverables
+[PROGRESS] (pm-plugin-development:ext-outline-workflow) Inventory: 3-4 skills with JSON code blocks in plan-marshall
+[ARTIFACT] (pm-plugin-development:ext-outline-workflow) Created solution_outline.md - 3 deliverables
 ```

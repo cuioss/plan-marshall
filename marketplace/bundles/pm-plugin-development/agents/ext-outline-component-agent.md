@@ -13,7 +13,7 @@ Analyzes marketplace component files (skills, agents, commands) using semantic r
 
 ## Contract
 
-**Implements**: `pm-plugin-development:ext-outline-plugin/standards/component-analysis-contract.md`
+**Implements**: `plan-marshall:phase-3-outline/standards/component-analysis-contract.md`
 
 Follow the contract for: Input parameters, Task steps, Output format, Critical Rules.
 

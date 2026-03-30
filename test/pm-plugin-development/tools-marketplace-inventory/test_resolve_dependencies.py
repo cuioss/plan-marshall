@@ -124,7 +124,7 @@ skills:
     def test_extract_implements(self):
         """Test extracting implements field."""
         content = """---
-name: ext-outline-plugin
+name: ext-outline-workflow
 implements: plan-marshall:extension-api/standards/outline-extension.md
 ---
 
@@ -285,7 +285,7 @@ class TestImplementsDetection:
         frontmatter = {
             'implements': 'plan-marshall:extension-api/standards/outline-extension.md',
         }
-        source = ComponentId(bundle='pm-plugin-development', component_type='skill', name='ext-outline-plugin')
+        source = ComponentId(bundle='pm-plugin-development', component_type='skill', name='ext-outline-workflow')
         deps = detect_implements(frontmatter, source)
         assert len(deps) == 1
         assert deps[0].target.bundle == 'plan-marshall'

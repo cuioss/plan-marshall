@@ -484,7 +484,7 @@ def test_resolve_workflow_skill_extension_plugin_dev():
         )
 
         assert result.success, f'Should succeed: {result.stderr}'
-        assert 'pm-plugin-development:ext-outline-plugin' in result.stdout
+        assert 'pm-plugin-development:ext-outline-workflow' in result.stdout
 
 
 # =============================================================================
