@@ -31,7 +31,7 @@ Scan the conversation history for failures since the phase started:
 
 **If errors found** → **STOP**. Do not proceed. Analyze the error using:
 ```
-Skill: pm-plugin-development:analyze-script-failures
+Skill: pm-plugin-development:tools-analyze-script-failures
 ```
 
 ### Step 2: Script Execution Log Check

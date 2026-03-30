@@ -455,7 +455,7 @@ To run without verification:
 For post-hoc analysis of script failures with origin tracing and fix proposals:
 
 ```
-Skill: pm-plugin-development:analyze-script-failures
+Skill: pm-plugin-development:tools-analyze-script-failures
 ```
 
 Or invoke via command:
