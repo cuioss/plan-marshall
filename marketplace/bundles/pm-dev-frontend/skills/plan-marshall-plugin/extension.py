@@ -67,7 +67,6 @@ class Extension(ExtensionBase):
                     ],
                     'optionals': [],
                 },
-                'quality': {'defaults': [], 'optionals': []},
             },
         }]
 

@@ -293,3 +293,11 @@ Key rules:
 - `no-focused-tests`: Prevents committed `.only()` calls
 - `expect-expect`: Ensures every test has assertions
 - `no-identical-title`: Unique test names within describe blocks
+
+For Vitest projects, use `eslint-plugin-vitest` with equivalent rules.
+
+## See Also
+
+- [DOM and Component Testing](dom-component-testing.md) - DOM manipulation, web components, Testing Library
+- [Mocking and Async Patterns](mocking-async.md) - Module mocking, fetch mocks, timers, test isolation
+- `pm-dev-frontend:js-enforce-eslint` - ESLint test file overrides

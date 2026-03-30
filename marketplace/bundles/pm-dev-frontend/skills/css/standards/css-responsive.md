@@ -53,7 +53,7 @@ Start with mobile styles, then enhance for larger screens.
 @media (min-width: 1440px) { }
 ```
 
-**Note**: CSS custom properties cannot be used in `@media` queries. Use the literal values above directly. For shared breakpoint values across build tools, define them in PostCSS or a preprocessor.
+**Note**: Use literal breakpoint values in `@media` queries for clarity. For shared breakpoint values across build tools, define them in PostCSS or a preprocessor.
 
 ## CSS Grid Layouts
 

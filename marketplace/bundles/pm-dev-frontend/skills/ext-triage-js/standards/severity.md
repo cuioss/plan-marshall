@@ -152,7 +152,8 @@ npx prettier --write .
 npm run lint:fix  # If configured
 ```
 
-## Related Standards
+## See Also
 
-- [suppression.md](suppression.md) - How to suppress findings
-- [pm-dev-frontend:javascript](../../javascript/SKILL.md) - JavaScript coding standards
+- [Suppression Syntax](suppression.md) - ESLint, Stylelint, and Prettier suppression methods
+- `pm-dev-frontend:javascript` - JavaScript coding standards
+- `pm-dev-frontend:js-enforce-eslint` - ESLint rule configuration

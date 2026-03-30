@@ -127,15 +127,6 @@ Establish quality gates for successful builds:
 3. **Security rules pass**: All security rules must pass
 4. **Complexity thresholds**: Functions meet complexity limits
 
-### Pre-commit Hooks
-
-For complete pre-commit hook setup using Husky and lint-staged, see **prettier-configuration.md** section "Pre-commit Hooks".
-
-Pre-commit hooks automatically run linting and formatting before each commit:
-- Prevents committing unformatted code
-- Automatic fixing before commit
-- Consistent style across team
-
 ## Performance Optimization
 
 ### Caching

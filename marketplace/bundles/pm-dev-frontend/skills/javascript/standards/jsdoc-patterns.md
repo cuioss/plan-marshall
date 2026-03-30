@@ -330,3 +330,8 @@ class QwcJwtConfig extends LitElement {
  * @property {boolean} detail.valid - Whether config is valid
  */
 ```
+
+## See Also
+
+- [JSDoc Essentials](jsdoc-essentials.md) - Tag syntax, type annotations, ESLint integration
+- [JavaScript Fundamentals](javascript-fundamentals.md) - Core language features and conventions

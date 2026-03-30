@@ -207,9 +207,9 @@ Minimum 44x44px:
 }
 ```
 
-### `light-dark()` Function (Baseline 2024)
+### `light-dark()` Function
 
-Simplify dark mode with single-declaration color switching:
+Simplify dark mode with single-declaration color switching (supported in Chrome 123+, Firefox 120+, Safari 17.5+):
 
 ```css
 :root {
@@ -303,7 +303,6 @@ localStorage.setItem('theme', theme);
     "autoprefixer": "^10.4.0",
     "postcss-preset-env": "^9.0.0",
     "postcss-import": "^15.0.0",
-    "postcss-nested": "^6.0.0",
     "stylelint": "^17.4.0",
     "stylelint-config-standard": "^34.0.0",
     "stylelint-order": "^6.0.0",
@@ -334,7 +333,6 @@ export default (ctx) => {
   return {
     plugins: {
       'postcss-import': {},
-      'postcss-nested': {},
       'postcss-preset-env': {
         stage: isDev ? 0 : 1,
       },
@@ -351,7 +349,6 @@ export default (ctx) => {
 
 **What PostCSS Does:**
 - **postcss-import** - Inlines `@import` statements
-- **postcss-nested** - Nesting support (polyfill for native CSS nesting; can be removed when targeting modern browsers only)
 - **postcss-preset-env** - Modern CSS features with fallbacks
 - **autoprefixer** - Adds vendor prefixes automatically
 - **csso** - Minifies CSS in production

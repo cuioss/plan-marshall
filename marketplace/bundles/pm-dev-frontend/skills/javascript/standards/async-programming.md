@@ -241,33 +241,16 @@ const validateAndSaveResult = async (data) => {
 
 ```javascript
 const retryOperation = async (operation, maxRetries = 3, delay = 1000) => {
-  let lastError;
-
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       return await operation();
     } catch (error) {
-      lastError = error;
-
-      if (attempt === maxRetries) {
-        throw error;
-      }
-
-      console.warn(`Attempt ${attempt} failed, retrying in ${delay}ms:`, error.message);
+      if (attempt === maxRetries) throw error;
       await new Promise(resolve => setTimeout(resolve, delay));
       delay *= 2;
     }
   }
-
-  throw lastError;
 };
-
-// Usage
-const data = await retryOperation(
-  () => fetch('/api/data').then(r => r.json()),
-  3,
-  1000
-);
 ```
 
 ### Batch Processing with Concurrency Limit
@@ -282,27 +265,14 @@ const parallelLimit = async (items, limit, asyncFn) => {
       executing.splice(executing.indexOf(promise), 1);
       return result;
     });
-
     results.push(promise);
     executing.push(promise);
 
-    if (executing.length >= limit) {
-      await Promise.race(executing);
-    }
+    if (executing.length >= limit) await Promise.race(executing);
   }
 
   return Promise.all(results);
 };
-
-// Usage - limit to 5 concurrent requests
-const data = await parallelLimit(
-  urls,
-  5,
-  async (url) => {
-    const response = await fetch(url);
-    return response.json();
-  }
-);
 ```
 
 ## Async Iteration
@@ -400,7 +370,26 @@ class DataFetcher {
 
 ## Advanced Concepts
 
-- **AsyncQueue**: A promise-based queue that serializes async operations, ensuring only one runs at a time. Useful for rate-limited APIs or ordered writes.
+### AsyncQueue
+
+A promise-based queue that serializes async operations, ensuring only one runs at a time. Useful for rate-limited APIs or ordered writes:
+
+```javascript
+class AsyncQueue {
+  #queue = Promise.resolve();
+
+  enqueue(asyncFn) {
+    const task = this.#queue.then(() => asyncFn());
+    this.#queue = task.catch(() => {}); // prevent chain rejection
+    return task;
+  }
+}
+
+// Usage — operations execute in order, one at a time
+const queue = new AsyncQueue();
+queue.enqueue(() => saveRecord(record1));
+queue.enqueue(() => saveRecord(record2));
+```
 
 ## Common Pitfalls
 

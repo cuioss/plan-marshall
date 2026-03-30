@@ -69,7 +69,7 @@ Use native CSS nesting with the `&` selector for component-scoped styles:
 }
 ```
 
-**Note**: `postcss-nested` is now a polyfill for native nesting syntax. Projects targeting modern browsers can use native nesting directly.
+**Note**: Native CSS nesting is baseline across modern browsers. Use it directly without preprocessors or polyfills.
 
 ### Cascade Layers (`@layer`) (Baseline 2022)
 

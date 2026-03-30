@@ -52,7 +52,7 @@ Use when: Configuring npm scripts, Maven phases, CI/CD integration, or performan
 Read: standards/prettier-configuration.md
 ```
 
-Use when: Setting up Prettier, editor integration, pre-commit hooks, or resolving ESLint/Prettier conflicts.
+Use when: Setting up Prettier, editor integration, or resolving ESLint/Prettier conflicts.
 
 **Stylelint Setup** (load for CSS-in-JS linting):
 ```

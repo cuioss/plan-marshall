@@ -163,28 +163,29 @@ function setupQuerySelectorMock(component, elements) {
 }
 ```
 
-### Lit Component Mocking
+### Lit Component Testing
 
-For Lit components tested in jsdom, mock the Lit library:
+For Lit components, use `@open-wc/testing` which provides test fixtures and helpers:
+
+```javascript
+import { fixture, html, expect } from '@open-wc/testing';
+import '../src/my-component.js';
+
+test('renders with default values', async () => {
+  const el = await fixture(html`<my-component></my-component>`);
+  expect(el.shadowRoot.querySelector('h1')).to.exist;
+});
+
+test('reflects attribute changes', async () => {
+  const el = await fixture(html`<my-component name="World"></my-component>`);
+  expect(el.shadowRoot.textContent).to.include('World');
+});
+```
+
+For jsdom-only environments where `@open-wc/testing` is unavailable, mock Lit's template tags:
 
 ```javascript
 // mocks/lit.js (mapped via moduleNameMapper)
-export class LitElement {
-  constructor() {
-    this.shadowRoot = document.createElement('div');
-    this._lastRenderedResult = null;
-  }
-
-  connectedCallback() {}
-  disconnectedCallback() {}
-
-  render() {
-    const result = this._doRender?.();
-    if (result) this._lastRenderedResult = result.toString();
-    return result;
-  }
-}
-
 export function html(strings, ...values) {
   return strings.reduce((acc, str, i) => acc + str + (values[i] ?? ''), '');
 }
@@ -327,3 +328,8 @@ export const mockScenarios = {
   },
 };
 ```
+
+## See Also
+
+- [Test Fundamentals](test-fundamentals.md) - Framework setup, AAA pattern, coverage configuration
+- [Mocking and Async Patterns](mocking-async.md) - Module mocking, fetch mocks, timers

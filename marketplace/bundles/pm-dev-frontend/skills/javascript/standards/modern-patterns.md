@@ -145,9 +145,9 @@ console.log(items); // [3, 1, 4, 1, 5]
 // [...items.slice(0, index), ...items.slice(index + 1)]
 ```
 
-### Set Methods (ES2025)
+### Set Methods
 
-Native set operations — no manual iteration needed:
+Native set operations (finalized in ES2025, supported in all modern browsers):
 
 ```javascript
 const frontend = new Set(['js', 'css', 'html']);

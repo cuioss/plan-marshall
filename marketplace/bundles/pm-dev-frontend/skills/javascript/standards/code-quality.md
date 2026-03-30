@@ -13,79 +13,19 @@ Beyond the general thresholds in `plan-marshall:dev-general-code-quality`, JavaS
 
 ### Strategy 1: Extract Methods
 
-Break down large functions into focused, single-purpose functions.
-
-#### Before
+Break down large functions into focused, single-purpose functions. Move state checks, rendering logic, or data transformations into named helper methods.
 
 ```javascript
-// ❌ Complex monolithic function (20+ statements)
+// ❌ Monolithic function with 20+ statements
 _doRender() {
-  if (this._loading && !this._configuration) {
-    return html`<div class="loading">Loading...</div>`;
-  }
-  if (this._error) {
-    return html`<div class="error">${this._error}</div>`;
-  }
-  if (!this._configuration) {
-    return html`<div class="loading">No data available</div>`;
-  }
-
-  const config = this._configuration;
-  return html`
-    <div class="container">
-      <section class="general">
-        <h2>General</h2>
-        ${this._renderGeneralFields(config)}
-      </section>
-      <section class="parser">
-        <h2>Parser</h2>
-        ${this._renderParserFields(config)}
-      </section>
-      <section class="health">
-        <h2>Health</h2>
-        ${this._renderHealthStatus(config)}
-      </section>
-    </div>
-  `;
+  if (this._loading) return html`<div class="loading">Loading...</div>`;
+  if (this._error) return html`<div class="error">${this._error}</div>`;
+  // ... many more lines of rendering logic
 }
-```
 
-#### After
-
-```javascript
-// ✅ Refactored with helper methods
+// ✅ Decomposed into helpers
 _doRender() {
-  const loadingOrErrorContent = this._renderLoadingOrError();
-  if (loadingOrErrorContent) {
-    return loadingOrErrorContent;
-  }
-
-  if (!this._configuration) {
-    return html`<div class="loading">No data available</div>`;
-  }
-
-  return this._renderConfiguration();
-}
-
-_renderLoadingOrError() {
-  if (this._loading && !this._configuration) {
-    return html`<div class="loading">Loading...</div>`;
-  }
-  if (this._error) {
-    return html`<div class="error">${this._error}</div>`;
-  }
-  return null;
-}
-
-_renderConfiguration() {
-  const config = this._configuration;
-  return html`
-    <div class="container">
-      ${this._renderGeneralSection(config)}
-      ${this._renderParserSection(config)}
-      ${this._renderHealthSection(config)}
-    </div>
-  `;
+  return this._renderLoadingOrError() ?? this._renderConfiguration();
 }
 ```
 
@@ -178,51 +118,16 @@ if (isActiveAdmin(user)) {
 
 ### Strategy 4: Extract Configuration Objects
 
-Replace multiple parameters with configuration objects.
-
-#### Before
+Replace multiple parameters with a single options object when a function exceeds the 5-parameter limit.
 
 ```javascript
-// ❌ Too many parameters (6 parameters)
-function createUser(name, email, role, department, manager, startDate) {
-  return {
-    id: generateId(),
-    name,
-    email,
-    role,
-    department,
-    manager,
-    startDate,
-  };
+// ❌ Too many parameters
+function createUser(name, email, role, department, manager, startDate) { ... }
+
+// ✅ Configuration object with destructuring
+function createUser({ name, email, role, department, manager, startDate }) {
+  return { id: generateId(), name, email, role, department, manager, startDate };
 }
-```
-
-#### After
-
-```javascript
-// ✅ Configuration object (1 parameter)
-function createUser(config) {
-  const { name, email, role, department, manager, startDate } = config;
-  return {
-    id: generateId(),
-    name,
-    email,
-    role,
-    department,
-    manager,
-    startDate,
-  };
-}
-
-// Usage
-const user = createUser({
-  name: 'John Doe',
-  email: 'john@example.com',
-  role: 'developer',
-  department: 'Engineering',
-  manager: 'Jane Smith',
-  startDate: new Date(),
-});
 ```
 
 ## Common Refactoring Patterns
