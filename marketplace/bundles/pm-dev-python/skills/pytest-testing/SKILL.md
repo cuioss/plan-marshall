@@ -6,7 +6,7 @@ user-invocable: false
 
 # Pytest Testing Standards
 
-Standards for writing reliable, isolated pytest tests in Python projects.
+**REFERENCE MODE**: This skill provides reference material for writing pytest tests. Load standards on-demand based on current task.
 
 ## Enforcement
 
@@ -23,11 +23,41 @@ Standards for writing reliable, isolated pytest tests in Python projects.
 - Fixtures must use appropriate scope (function/module/session)
 - Working directory changes must be restored after each test
 
-## Standards Documents
+## When to Use This Skill
 
-| Document | Content |
-|----------|---------|
-| [testing-pytest.md](standards/testing-pytest.md) | Complete pytest reference — naming, AAA pattern, isolation, fixtures, parametrization, mocking, assertions, conftest, running tests |
+Activate when:
+- **Writing new pytest tests** — test structure, naming, AAA pattern
+- **Debugging test failures** — isolation issues, fixture scoping, state leaks
+- **Adding fixtures** — shared setup, parametrization, conftest organization
+- **Mocking dependencies** — `monkeypatch`, `unittest.mock.patch`, state patching
+- **Reviewing test code** — checking isolation, assertion quality, coverage gaps
+- **Configuring test infrastructure** — conftest.py, markers, coverage settings
+
+## Available References
+
+**File**: `standards/testing-pytest.md` (231 lines)
+
+**Load When**:
+- Writing or reviewing pytest test code
+- Setting up test infrastructure (conftest, fixtures)
+- Debugging isolation or mocking issues
+- Organizing test file structure
+
+**Contents**:
+- Test naming conventions (files and functions)
+- AAA pattern with examples
+- Isolation patterns (`tmp_path`, `monkeypatch`, `_restore_cwd`)
+- Script path discovery (dual-path pattern)
+- Fixture scope and autouse
+- Parametrization
+- Mocking (module state, functions)
+- Assertions (basic, exceptions, approximate)
+- Test organization (conftest, file structure)
+
+**Load Command**:
+```
+Read standards/testing-pytest.md
+```
 
 ## Quick Reference
 

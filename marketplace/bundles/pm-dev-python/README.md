@@ -1,13 +1,13 @@
 # pm-dev-python
 
-Python domain extension providing development standards and build infrastructure integration for plan-marshall workflows.
+Python domain extension providing development standards for plan-marshall workflows.
 
 ## Purpose
 
-- Python development standards and best practices
-- Build execution via pyprojectx (`./pw` wrapper)
-- Integration with ruff, mypy, and pytest
-- Runtime discovery of available build commands
+- Python 3.10+ development standards and best practices
+- Pytest testing patterns with isolation, fixtures, and coverage
+- Integration with ruff, mypy, and pytest toolchains
+- Triage extension for Python findings during plan-finalize phase
 
 ## Skills (4 skills, 3 registered + 1 internal)
 
@@ -23,10 +23,10 @@ Python domain extension providing development standards and build infrastructure
 ```
 pm-dev-python/
 └── skills/
-    ├── python-core/             # Core Python standards
+    ├── python-core/             # Core Python standards (reference)
     │   └── standards/
     │       └── python-core.md
-    ├── pytest-testing/          # Pytest testing standards
+    ├── pytest-testing/          # Pytest testing standards (reference)
     │   └── standards/
     │       └── testing-pytest.md
     ├── ext-triage-python/       # Triage extension point
@@ -34,40 +34,26 @@ pm-dev-python/
     │       ├── severity.md
     │       └── suppression.md
     └── plan-marshall-plugin/    # Domain extension (not registered)
+        ├── SKILL.md
+        └── extension.py
 ```
 
-## Build Commands
+## Build Operations
 
-The extension discovers commands from `[tool.pyprojectx.aliases]` in `pyproject.toml`:
-
-| Canonical | Tool |
-|-----------|------|
-| `compile` | mypy on production sources |
-| `test-compile` | mypy on test sources |
-| `module-tests` | pytest |
-| `quality-gate` | ruff check |
-| `verify` | Full verification (compile + quality-gate + module-tests) |
-| `coverage` | pytest with coverage |
-| `clean` | Remove build artifacts |
-
-## Usage
-
-Commands are executed via the extension-api:
-
-```bash
-# Resolve and execute verify command
-python3 .plan/execute-script.py plan-marshall:build-python:python_build run \
-    --command-args "verify"
-```
+Build operations (pyprojectx execution, parsing, discovery) are provided by `plan-marshall:build-python`, not this bundle. See `plan-marshall:extension-api/standards/build-execution.md` for execution patterns.
 
 ## Integration
 
 This extension is discovered by:
-- `extension-api` - Build system detection
+- `extension-api` - Domain registration and build system detection
 - `manage-architecture` - Module discovery
 - `marshall-steward` - Project setup wizard
 
-## References
+## Dependencies
 
-- `plan-marshall:extension-api` - Extension API contract
-- `plan-marshall:extension-api/standards/build-execution.md` - Execution patterns and lifecycle
+No external dependencies. Pure reference material.
+
+## Support
+
+- Repository: https://github.com/cuioss/plan-marshall
+- Bundle: marketplace/bundles/pm-dev-python/

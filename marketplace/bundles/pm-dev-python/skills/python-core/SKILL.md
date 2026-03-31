@@ -6,7 +6,7 @@ user-invocable: false
 
 # Python Core Standards
 
-Core Python development patterns for Python 3.10+ based on PEP 8, Google Python Style Guide, and modern community standards.
+**REFERENCE MODE**: This skill provides reference material for Python 3.10+ development. Load standards on-demand based on current task. Do not load all sections at once.
 
 ## Enforcement
 
@@ -23,11 +23,41 @@ Core Python development patterns for Python 3.10+ based on PEP 8, Google Python 
 - Google-style docstrings required on all public functions
 - Context managers required for all resource management
 
-## Standards Documents
+## When to Use This Skill
 
-| Document | Content |
-|----------|---------|
-| [python-core.md](standards/python-core.md) | Complete patterns reference — types, data structures, error handling, resources, paths, async, functions, classes, naming, imports, docstrings, comprehensions, strings |
+Activate when:
+- **Writing Python production code** — type annotations, data structures, class and function design
+- **Reviewing Python code** — checking adherence to PEP 8 and modern Python patterns
+- **Refactoring Python code** — modernizing type hints, improving error handling, adopting pathlib
+- **Handling resources** — file I/O, context managers, pathlib operations
+- **Writing async code** — asyncio patterns, concurrency, rate limiting
+- **Naming decisions** — module, class, function, variable, and constant naming conventions
+
+## Available References
+
+**File**: `standards/python-core.md` (651 lines)
+
+Load progressively by section based on current task. **Never load the entire file at once.**
+
+| Section | Load When |
+|---------|-----------|
+| Type Annotations | Writing or reviewing type hints, choosing between built-in generics and `collections.abc` |
+| Data Structures | Choosing between `dataclass`, `attrs`, `pydantic`, `NamedTuple` |
+| Error Handling | Writing try/except blocks, custom exceptions, validation patterns |
+| Resource Management | File I/O, context managers, custom resource cleanup |
+| Path Handling | File path operations, `pathlib.Path` usage, path security |
+| Async Programming | `asyncio` patterns, concurrency with `gather()`, rate limiting |
+| Functions and Classes | Function design, class composition, mutable defaults |
+| Naming Conventions | Module/class/function/variable naming styles |
+| Imports | Import organization, grouping, and rules |
+| Docstrings | Google-style format for functions, classes, and modules |
+| Comprehensions and Generators | List/dict comprehensions, generator expressions |
+| String Handling | F-strings, multi-line strings, string building |
+
+**Load Command**:
+```
+Read standards/python-core.md
+```
 
 ## Quick Reference
 
