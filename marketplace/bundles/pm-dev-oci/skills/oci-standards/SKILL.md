@@ -1,6 +1,6 @@
 ---
 name: oci-standards
-description: General OCI container standards covering image building, Dockerfile best practices, multi-platform builds, and distroless health probes
+description: General OCI container standards covering image building, Dockerfile best practices, multi-platform builds, certificate management, and Quarkus distroless health probes
 user-invocable: false
 ---
 
@@ -25,7 +25,8 @@ Activate when:
 - **Building container images** - Dockerfile best practices, base image selection, layer optimization
 - **Multi-platform builds** - Building for amd64/arm64, manifest lists, buildx configuration
 - **OCI image metadata** - Standard labels, annotations, image specification compliance
-- **Health probes for distroless** - Management interface, Kubernetes probes, Prometheus scraping without TLS
+- **Health probes for distroless** - Quarkus management interface, Kubernetes probes, Prometheus scraping without TLS
+- **Certificate management** - PEM format, generation, container integration, rotation
 - **Reviewing Dockerfiles** - Linting, hygiene, .dockerignore, secrets handling
 
 ## Available References
@@ -61,16 +62,16 @@ Load references progressively based on current task. **Never load all references
 Read standards/image-building.md
 ```
 
-### 2. Distroless Health Probes
+### 2. Quarkus Distroless Health Probes
 
-**File**: `standards/distroless-health-probes.md`
+**File**: `standards/quarkus-distroless-health-probes.md`
 
 **Load When**:
-- Adding health checks to distroless container images
+- Adding health checks to Quarkus distroless container images
 - Configuring Quarkus management interface for health/metrics separation
 - Setting up Prometheus scraping without TLS complexity
-- Debugging missing health endpoints after native image builds
-- Writing Kubernetes liveness/readiness probes for distroless containers
+- Debugging missing health endpoints after Quarkus native image builds
+- Writing Kubernetes liveness/readiness probes for Quarkus distroless containers
 
 **Contents**:
 - Why standard HEALTHCHECK fails in distroless (no shell, no curl)
@@ -83,7 +84,29 @@ Read standards/image-building.md
 
 **Load Command**:
 ```
-Read standards/distroless-health-probes.md
+Read standards/quarkus-distroless-health-probes.md
+```
+
+### 3. Certificate Management
+
+**File**: `standards/certificate-management.md`
+
+**Load When**:
+- Configuring TLS certificates for containers
+- Choosing between PEM and PKCS12 formats
+- Setting up certificate generation or rotation
+- Mounting certificates securely in containers
+
+**Contents**:
+- PEM vs PKCS12 comparison
+- Certificate generation script
+- PKCS12 to PEM conversion
+- Dockerfile and Compose integration patterns
+- File permission and security requirements
+
+**Load Command**:
+```
+Read standards/certificate-management.md
 ```
 
 ## Quick Reference
@@ -100,4 +123,4 @@ Read standards/distroless-health-probes.md
 - BuildKit secrets for build-time credentials
 - OCI labels (`org.opencontainers.image.*`) present
 - Hadolint passes without errors
-- Health probe strategy for distroless (management interface or orchestrator-native probes)
+- Quarkus health probe strategy for distroless (management interface or orchestrator-native probes)

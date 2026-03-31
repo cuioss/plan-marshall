@@ -22,10 +22,12 @@ class Extension(ExtensionBase):
 
         signals = []
         all_paths = [module_path] + sources
+        container_filenames = ('dockerfile', 'containerfile', 'docker-compose',
+                               'compose.yml', 'compose.yaml', '.dockerignore')
         for p in all_paths:
             p_lower = str(p).lower()
-            if 'dockerfile' in p_lower or 'containerfile' in p_lower:
-                signals.append(f'Dockerfile in {p}')
+            if any(name in p_lower for name in container_filenames):
+                signals.append(f'Container config: {p}')
 
         # Check metadata for container indicators
         metadata = module_data.get('metadata', {})
@@ -59,15 +61,18 @@ class Extension(ExtensionBase):
                             'description': 'OCI container standards and Dockerfile best practices',
                         },
                     ],
-                    'optionals': [
+                    'optionals': [],
+                },
+                'implementation': {'defaults': [], 'optionals': []},
+                'module_testing': {'defaults': [], 'optionals': []},
+                'quality': {
+                    'defaults': [
                         {
                             'skill': 'pm-dev-oci:oci-security',
                             'description': 'Container security standards and OWASP best practices',
                         },
                     ],
+                    'optionals': [],
                 },
-                'implementation': {'defaults': [], 'optionals': []},
-                'module_testing': {'defaults': [], 'optionals': []},
-                'quality': {'defaults': [], 'optionals': []},
             },
         }]
