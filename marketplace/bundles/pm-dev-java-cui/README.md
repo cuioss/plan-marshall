@@ -45,11 +45,17 @@ CUI HTTP client patterns for HTTP operations.
 **Library**: `de.cuioss.http.client.*`
 
 ### cui-http-testing
-CUI MockWebServer wrapper for HTTP testing.
+CUI MockWebServer standards for HTTP client testing with JUnit 5 integration.
 
 **Key patterns:**
-- CUI MockWebServer usage
-- HTTP test patterns
+- `@EnableMockWebServer` annotation for automatic server lifecycle
+- `@MockResponseConfig` for declarative response mocking (repeatable, method/class level)
+- `@ModuleDispatcher` with `ModuleDispatcherElement` for complex routing
+- HTTPS testing with automatic certificate generation (`useHttps = true`)
+- Request verification via `MockWebServer` parameter injection
+- `URIBuilder` for constructing test URIs
+
+**Library**: `de.cuioss.test:cui-test-mockwebserver-junit5`
 
 ### cui-logging-enforce
 Enforce and maintain CUI logging standards with two operational modes.
