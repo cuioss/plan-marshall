@@ -1,6 +1,6 @@
 ---
 name: python-core
-description: Core Python development standards covering type annotations, data structures, error handling, resource management, async patterns, naming conventions, and imports for Python 3.10+
+description: "Use when writing, reviewing, or refactoring Python 3.10+ code — covers type annotations, data structures, error handling, resource management, async patterns, naming conventions, and imports. Activate for any Python production code task."
 user-invocable: false
 ---
 

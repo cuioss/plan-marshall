@@ -79,4 +79,4 @@ Registered in marshal.json under the python domain:
 ## Related Documents
 
 - `plan-marshall:extension-api` - Triage extension contract
-- `pm-dev-python:python-best-practices` - Python development standards
+- `pm-dev-python:python-core` - Core Python development standards

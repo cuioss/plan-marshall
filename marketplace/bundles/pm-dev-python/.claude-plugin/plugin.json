@@ -13,7 +13,6 @@
   "agents": [],
   "commands": [],
   "skills": [
-    "./skills/python-best-practices",
     "./skills/python-core",
     "./skills/pytest-testing",
     "./skills/ext-triage-python"
