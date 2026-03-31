@@ -31,6 +31,7 @@ Modern Python development patterns for Python 3.10+ based on PEP 8, Google Pytho
 - Use appropriate patterns for data structures
 - Handle errors and resources properly
 - Write maintainable async code
+- Write reliable, isolated tests with pytest
 
 ## When to Reference This Skill
 
@@ -40,17 +41,18 @@ Reference when:
 - Choosing between data structure approaches
 - Implementing error handling or resource management
 - Working with async/await patterns
+- Writing or reviewing pytest tests
 
-## Standards Documents
+## Focused Skills
 
-| Document | Content |
-|----------|---------|
-| [python-core.md](standards/python-core.md) | Complete patterns reference |
-| [testing-pytest.md](standards/testing-pytest.md) | Pytest standards, fixtures, isolation, mocking |
+This skill serves as entry point. Load the focused skill matching your current task:
+
+| Skill | When to Load |
+|-------|-------------|
+| `pm-dev-python:python-core` | Writing production code — types, data structures, error handling, naming, imports |
+| `pm-dev-python:pytest-testing` | Writing or reviewing tests — fixtures, isolation, mocking, assertions |
 
 ## Quick Reference
-
-For full patterns and examples, see the standards documents above. Key rules at a glance:
 
 | Topic | Rule |
 |-------|------|
@@ -61,6 +63,7 @@ For full patterns and examples, see the standards documents above. Key rules at 
 | Async | `asyncio.run()` entry point, `gather()` for concurrency, `Semaphore` for rate limiting |
 | Naming | `lower_with_under` (functions/modules), `CapWords` (classes), `CAPS_WITH_UNDER` (constants) |
 | Docstrings | Google style with Args/Returns/Raises sections |
+| Testing | AAA pattern, `tmp_path` isolation, `monkeypatch` for state, `conftest.py` for shared fixtures |
 
 ## Related Skills
 

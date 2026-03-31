@@ -9,13 +9,34 @@ Python domain extension providing development standards and build infrastructure
 - Integration with ruff, mypy, and pytest
 - Runtime discovery of available build commands
 
-## Skills
+## Skills (5 skills, 4 registered + 1 internal)
 
 | Skill | Purpose |
 |-------|---------|
-| `python-best-practices` | Core Python development patterns |
+| `python-best-practices` | Entry point — loads focused skills based on current task |
+| `python-core` | Core Python patterns — types, data structures, error handling, naming, imports |
+| `pytest-testing` | Pytest standards — fixtures, isolation, mocking, assertions, coverage |
 | `ext-triage-python` | Triage extension for Python findings during plan-finalize phase |
-| `plan-marshall-plugin` | Build infrastructure integration |
+| `plan-marshall-plugin` | Python domain registration (internal extension, not registered in plugin.json) |
+
+## Architecture
+
+```
+pm-dev-python/
+└── skills/
+    ├── python-best-practices/   # Entry point skill
+    ├── python-core/             # Core Python standards
+    │   └── standards/
+    │       └── python-core.md
+    ├── pytest-testing/          # Pytest testing standards
+    │   └── standards/
+    │       └── testing-pytest.md
+    ├── ext-triage-python/       # Triage extension point
+    │   └── standards/
+    │       ├── severity.md
+    │       └── suppression.md
+    └── plan-marshall-plugin/    # Domain extension (not registered)
+```
 
 ## Build Commands
 

@@ -26,8 +26,8 @@ class Extension(ExtensionBase):
                 'core': {
                     'defaults': [
                         {
-                            'skill': 'pm-dev-python:python-best-practices',
-                            'description': 'Modern Python patterns with pyprojectx, ruff, mypy, pytest',
+                            'skill': 'pm-dev-python:python-core',
+                            'description': 'Core Python patterns — types, data structures, error handling, naming',
                         },
                         {
                             'skill': 'plan-marshall:dev-general-code-quality',
@@ -39,6 +39,10 @@ class Extension(ExtensionBase):
                 'implementation': {
                     'defaults': [
                         {
+                            'skill': 'pm-dev-python:python-core',
+                            'description': 'Core Python patterns — types, data structures, error handling, naming',
+                        },
+                        {
                             'skill': 'plan-marshall:dev-general-code-documentation',
                             'description': 'Language-agnostic documentation principles (what/when/how to document)',
                         },
@@ -48,8 +52,8 @@ class Extension(ExtensionBase):
                 'module_testing': {
                     'defaults': [
                         {
-                            'skill': 'pm-dev-python:python-best-practices',
-                            'description': 'Modern Python patterns with pyprojectx, ruff, mypy, pytest',
+                            'skill': 'pm-dev-python:pytest-testing',
+                            'description': 'Pytest standards — fixtures, isolation, mocking, assertions, coverage',
                         },
                         {
                             'skill': 'plan-marshall:dev-general-module-testing',
@@ -61,8 +65,8 @@ class Extension(ExtensionBase):
                 'quality': {
                     'defaults': [
                         {
-                            'skill': 'pm-dev-python:python-best-practices',
-                            'description': 'Modern Python patterns with pyprojectx, ruff, mypy, pytest',
+                            'skill': 'pm-dev-python:python-core',
+                            'description': 'Core Python patterns — types, data structures, error handling, naming',
                         },
                     ],
                     'optionals': [],
