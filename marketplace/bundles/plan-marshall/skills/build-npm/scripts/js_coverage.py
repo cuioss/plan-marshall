@@ -6,9 +6,9 @@ Subcommands:
     analyze  - Analyze JavaScript test coverage reports (Jest/Istanbul JSON or LCOV)
 
 Usage:
-    js-coverage.py analyze --report coverage/coverage-summary.json
-    js-coverage.py analyze --report coverage/lcov.info --format lcov
-    js-coverage.py analyze --report coverage/coverage-summary.json --threshold 80
+    js_coverage.py analyze --report coverage/coverage-summary.json
+    js_coverage.py analyze --report coverage/lcov.info --format lcov
+    js_coverage.py analyze --report coverage/coverage-summary.json --threshold 80
 """
 
 import argparse

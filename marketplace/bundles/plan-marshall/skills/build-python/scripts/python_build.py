@@ -491,6 +491,15 @@ def main() -> int:
     )
     run_parser.set_defaults(func=cmd_run)
 
+    # coverage-report subcommand
+    from _python_cmd_coverage_report import cmd_coverage_report
+
+    cov_parser = subparsers.add_parser('coverage-report', help='Parse coverage.py XML report')
+    cov_parser.add_argument('--project-path', dest='project_path', help='Project directory path')
+    cov_parser.add_argument('--report-path', dest='report_path', help='Override coverage XML report path')
+    cov_parser.add_argument('--threshold', type=int, default=80, help='Coverage threshold percent (default: 80)')
+    cov_parser.set_defaults(func=cmd_coverage_report)
+
     args = parser.parse_args()
     result: int = args.func(args)
     return result
