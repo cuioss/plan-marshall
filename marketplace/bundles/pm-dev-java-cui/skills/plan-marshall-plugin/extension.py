@@ -60,8 +60,6 @@ class Extension(ExtensionBase):
         - Skip list for internal/infrastructure profiles
 
         Uses write-once semantics - only sets values if not already configured.
-
-        See: pm-dev-java:plan-marshall-plugin:standards/maven-impl.md
         """
         from _config_core import ext_defaults_set_default  # type: ignore[import-not-found]
         from _maven_cmd_discover import EXT_KEY_PROFILES_MAP, EXT_KEY_PROFILES_SKIP  # type: ignore[import-not-found]

@@ -434,10 +434,8 @@ Orchestrates skill workflows and direct code edits:
 - **Explore agent** - Violation detection and business test location
 - **Direct code edits** - Logger migration, LogRecord implementation, LogAssert addition
 - **Build system** - Build verification via `plan-marshall:manage-architecture:architecture resolve`
-- **pm-dev-java:plan-marshall-plugin skill** - Java domain extension
 
 ## RELATED
 
 - `pm-dev-java-cui:cui-logging` skill - Logging standards and maintenance reference
 - `pm-dev-java-cui:java-enforce-logrecords` skill - Targeted enforcement scan (use for quick validation; use this skill for full migration)
-- `pm-dev-java:plan-marshall-plugin` skill - Java domain extension with workflow integration

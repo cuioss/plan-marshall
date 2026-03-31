@@ -227,7 +227,7 @@ If verification fails, report details and stop execution.
 For each LogMessages class:
 1. Extract all identifiers with levels
 2. Check for gaps, ordering issues, and range compliance
-3. Apply renumbering if needed using /java-implement-code
+3. Apply renumbering if needed
 4. Verify no DEBUG/TRACE LogRecords exist
 
 **Standard ranges** (from logging-standards.md):
@@ -387,4 +387,3 @@ COMPLIANCE STATUS: {COMPLIANT / ISSUES REMAINING}
   - `standards/logging-maintenance-reference.md` - Detection patterns, migration, test coverage
   - `standards/logmessages-documentation.md` - AsciiDoc documentation requirements
 - Skill: `pm-dev-java-cui:java-maintain-logger` - Systematic module-by-module migration (use for large-scale logger migration; use this skill for targeted enforcement scans)
-- Skill: `pm-dev-java:plan-marshall-plugin` - Java domain extension with workflow integration

@@ -216,7 +216,6 @@ Without proper `<executions>` configuration, failsafe tests might not run or res
 
 - `pm-dev-java:junit-core` - JUnit 5 core patterns
 - `pm-dev-java:java-cdi` - CDI patterns and container configuration
-- `pm-dev-java:plan-marshall-plugin` - Maven build standards
 
 ## Additional Resources
 
