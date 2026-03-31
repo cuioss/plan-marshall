@@ -8,37 +8,31 @@ Concise supply chain security checklist. For detailed threat descriptions, imple
 Build image → Scan (fail on CRITICAL/HIGH) → Sign → Generate SBOM → Push to registry
 ```
 
-## Vulnerability Scanning
+## Tool Reference
 
-| Tool | Type | Integration |
-|------|------|-------------|
-| Trivy | Open source | GitHub Actions, GitLab CI |
-| Grype | Open source | CLI, CI/CD plugins |
-| Snyk Container | Commercial | GitHub, GitLab, CLI |
-| Docker Scout | Docker native | Docker Desktop, CI/CD |
+| Tool | Type | Purpose |
+|------|------|---------|
+| Trivy | Open source | Vulnerability scanning |
+| Grype | Open source | Vulnerability scanning |
+| Snyk Container | Commercial | Vulnerability scanning |
+| Docker Scout | Docker native | Vulnerability scanning |
+| Cosign (Sigstore) | Open source | Image signing and verification |
+| Syft | Open source | SBOM generation |
+
+## Quick Commands
 
 ```bash
-# Trivy scan with severity gate
+# Vulnerability scan with severity gate
 trivy image --severity CRITICAL,HIGH --exit-code 1 myapp:v1.0
-```
 
-## Image Signing (Cosign)
-
-```bash
-# Sign image
-cosign sign --key cosign.key registry.example.com/myapp:v1.0
+# Sign image (Cosign keyless via Fulcio/Rekor)
+cosign sign registry.example.com/myapp:v1.0
 
 # Verify before deployment
-cosign verify --key cosign.pub registry.example.com/myapp:v1.0
-```
+cosign verify registry.example.com/myapp:v1.0
 
-## SBOM Generation (Syft)
-
-```bash
-# Generate SBOM
+# Generate and attach SBOM
 syft registry.example.com/myapp:v1.0 -o spdx-json > sbom.json
-
-# Attach SBOM to image
 cosign attach sbom --sbom sbom.json registry.example.com/myapp:v1.0
 ```
 

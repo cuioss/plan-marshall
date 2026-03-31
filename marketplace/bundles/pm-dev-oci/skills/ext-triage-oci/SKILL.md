@@ -33,15 +33,7 @@ Loaded via `resolve-workflow-skill-extension --domain oci-containers --type tria
 
 ## Extension Registration
 
-Registered in marshal.json under the oci-containers domain:
-
-```json
-"oci-containers": {
-  "workflow_skill_extensions": {
-    "triage": "pm-dev-oci:ext-triage-oci"
-  }
-}
-```
+Registered via the `plan-marshall-plugin/extension.py` in this bundle. The `provides_triage()` method returns `pm-dev-oci:ext-triage-oci`, which the plan-marshall workflow discovers at runtime for the `oci-containers` domain.
 
 ## Quick Reference
 

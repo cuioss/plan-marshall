@@ -31,6 +31,18 @@ services:
           cpus: '0.25'
 ```
 
+Podman equivalent (rootless by default):
+
+```bash
+podman run \
+  --user 1001:1001 \
+  --read-only --tmpfs /tmp --tmpfs /var/cache \
+  --security-opt no-new-privileges:true \
+  --cap-drop ALL --cap-add NET_BIND_SERVICE \
+  --memory 512m --cpus 0.5 --pids-limit 100 \
+  myapp:v1.0
+```
+
 ## Checklist
 
 | Control | Rule | OWASP |

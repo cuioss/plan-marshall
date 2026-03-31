@@ -1,6 +1,6 @@
 ---
 name: oci-standards
-description: General OCI container standards covering image building, Dockerfile best practices, multi-platform builds, certificate management, and Quarkus distroless health probes
+description: "Use when writing, reviewing, or debugging Dockerfiles and Containerfiles — covers base image selection, multi-stage builds, version pinning, .dockerignore, multi-platform builds, OCI labels, certificate management, and Quarkus distroless health probes. Activate for any container image building task."
 user-invocable: false
 ---
 
