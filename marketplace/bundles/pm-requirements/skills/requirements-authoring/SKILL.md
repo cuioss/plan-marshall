@@ -167,24 +167,24 @@ Language-specific API documentation standards for referencing requirements from 
 ## Anti-Patterns to Avoid
 
 **Over-specification in requirements:**
-- ❌ "The system must use a HashMap to store tokens"
-- ✅ "The system must cache validated tokens for performance"
+- Avoid: "The system must use a HashMap to store tokens"
+- Preferred: "The system must cache validated tokens for performance"
 
 **Vague requirements:**
-- ❌ "The system should be fast and secure"
-- ✅ "Token validation must complete within 50ms for 95% of requests"
+- Avoid: "The system should be fast and secure"
+- Preferred: "Token validation must complete within 50ms for 95% of requests"
 
 **Implementation details in requirements:**
-- ❌ "The TokenValidator class must use jose4j library"
-- ✅ "The system must validate JWT signatures according to RFC 7519"
+- Avoid: "The TokenValidator class must use jose4j library"
+- Preferred: "The system must validate JWT signatures according to RFC 7519"
 
 **Duplicating content across documents:**
-- ❌ Copying requirement text into specifications
-- ✅ Using backtracking links to reference requirements
+- Avoid: Copying requirement text into specifications
+- Preferred: Using backtracking links to reference requirements
 
 **Hallucinated functionality:**
-- ❌ Documenting features that don't exist or aren't planned
-- ✅ Verifying all documented features against code or approved plans
+- Avoid: Documenting features that don't exist or aren't planned
+- Preferred: Verifying all documented features against code or approved plans
 
 ## Quality Rules
 

@@ -128,10 +128,10 @@ updated: 2025-12-02T14:30:00Z
 ┌───────────┬─────────────┐
 │   Phase   │   Status    │
 ├───────────┼─────────────┤
-│ init      │ done        │ ✓
-│ refine    │ done        │ ✓
-│ outline   │ done        │ ✓
-│ plan      │ done        │ ✓
+│ init      │ done        │ PASS
+│ refine    │ done        │ PASS
+│ outline   │ done        │ PASS
+│ plan      │ done        │ PASS
 │ execute   │ in_progress │ ◄── current
 │ finalize  │ pending     │
 └───────────┴─────────────┘

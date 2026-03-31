@@ -474,9 +474,9 @@ For consistency and future-proofing, prefer underscores for all Python files:
 
 ```
 scripts/
-  run_config.py       # ✓ Can be imported
-  config_core.py      # ✓ Can be imported
-  cmd_timeout.py      # ✓ Can be imported
+  run_config.py       # PASS Can be imported
+  config_core.py      # PASS Can be imported
+  cmd_timeout.py      # PASS Can be imported
 ```
 
 ### Anti-pattern

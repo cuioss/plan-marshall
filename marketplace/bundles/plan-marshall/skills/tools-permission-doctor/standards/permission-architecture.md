@@ -163,7 +163,7 @@ Do NOT combine in global settings - keeps permissions scoped appropriately.
 
 ## Anti-Patterns to Avoid
 
-### ❌ Duplicating Read Permissions Locally
+### FAIL Duplicating Read Permissions Locally
 
 ```json
 {
@@ -175,7 +175,7 @@ Do NOT combine in global settings - keeps permissions scoped appropriately.
 }
 ```
 
-### ❌ Adding Edit/Write Permissions Globally
+### FAIL Adding Edit/Write Permissions Globally
 
 ```json
 {
@@ -187,7 +187,7 @@ Do NOT combine in global settings - keeps permissions scoped appropriately.
 }
 ```
 
-### ❌ Using Wildcards in WebFetch Domains
+### FAIL Using Wildcards in WebFetch Domains
 
 ```json
 {
@@ -201,7 +201,7 @@ Do NOT combine in global settings - keeps permissions scoped appropriately.
 
 ## Permission Scope Examples
 
-### ✅ Correct Global Settings
+### PASS Correct Global Settings
 
 ```json
 {
@@ -236,7 +236,7 @@ Do NOT combine in global settings - keeps permissions scoped appropriately.
 }
 ```
 
-### ✅ Correct Local Settings
+### PASS Correct Local Settings
 
 ```json
 {

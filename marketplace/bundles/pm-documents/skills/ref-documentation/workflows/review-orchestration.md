@@ -229,7 +229,7 @@ Partial Results:
 
 **Target:** {file_path | directory_path}
 **Date:** {ISO timestamp}
-**Status:** ✅ PASS | ⚠️ WARNINGS | ❌ FAILURES
+**Status:** PASS | WARNINGS | FAILURES
 
 ## Executive Summary
 
@@ -241,9 +241,9 @@ Partial Results:
 
 | Phase | Status | Issues |
 |-------|--------|--------|
-| Format Validation | {✅ PASS / ⚠️ WARN / ❌ FAIL} | {count} |
-| Link Verification | {✅ PASS / ⚠️ WARN / ❌ FAIL} | {count} |
-| Content Review | {✅ PASS / ⚠️ WARN / ❌ FAIL} | {count} |
+| Format Validation | {PASS / WARN / FAIL} | {count} |
+| Link Verification | {PASS / WARN / FAIL} | {count} |
+| Content Review | {PASS / WARN / FAIL} | {count} |
 
 ## Phase 1: Format Validation
 
@@ -301,18 +301,18 @@ Partial Results:
 
 === Status Determination
 
-**✅ PASS:**
+**PASS:**
 
 * Zero errors in all phases
 * Zero warnings (or only informational)
 
-**⚠️ WARNINGS:**
+**WARNINGS:**
 
 * Non-critical issues found
 * Broken links (if verified as false positives)
 * Minor tone/style suggestions
 
-**❌ FAILURES:**
+**FAILURES:**
 
 * Format errors (Phase 1)
 * Confirmed broken links requiring fixes

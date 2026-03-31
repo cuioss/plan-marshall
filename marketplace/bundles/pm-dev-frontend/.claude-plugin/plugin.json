@@ -17,6 +17,6 @@
     "./skills/javascript",
     "./skills/js-enforce-eslint",
     "./skills/css",
-    "./skills/js-testing"
+    "./skills/jest-testing"
   ]
 }

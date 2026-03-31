@@ -49,13 +49,13 @@ plugin-architecture/
 
 All resource paths use relative paths for portability.
 
-❌ **Wrong** (hardcoded):
+FAIL **Wrong** (hardcoded):
 ```markdown
 Read: ~/.claude/skills/my-skill/references/guide.md
 bash ./scripts/analyzer.py
 ```
 
-✅ **Correct** (relative paths):
+PASS **Correct** (relative paths):
 ```markdown
 Read references/guide.md
 bash scripts/analyzer.py
@@ -295,12 +295,12 @@ Keep SKILL.md concise:
 - **Purpose**: Overview and loading guidance
 - **Not**: Embedded standards content
 
-❌ **Wrong** (bloated):
+FAIL **Wrong** (bloated):
 ```markdown
 SKILL.md: 3000 lines with all standards embedded
 ```
 
-✅ **Correct** (progressive):
+PASS **Correct** (progressive):
 ```markdown
 SKILL.md: 500 lines with references catalog
 references/: 5 files × 400 lines = 2000 lines (loaded on-demand)
@@ -379,7 +379,7 @@ Cost: ~200-600 lines each (loaded individually)
 
 ### Anti-Pattern: Load All
 
-❌ **Wrong**:
+FAIL **Wrong**:
 ```markdown
 ## Workflow
 
@@ -395,7 +395,7 @@ Read standards/integration.md
 [Loaded 3500 lines before knowing what's needed]
 ```
 
-✅ **Correct**:
+PASS **Correct**:
 ```markdown
 ## Workflow
 
@@ -470,14 +470,14 @@ skill-name/
 
 Skills are knowledge repositories, not executors.
 
-❌ **Wrong**:
+FAIL **Wrong**:
 ```markdown
 ## CONTINUOUS IMPROVEMENT RULE
 
 **YOU MUST update this skill**...
 ```
 
-✅ **Correct**:
+PASS **Correct**:
 ```markdown
 # Skill Name
 
@@ -509,10 +509,10 @@ Brief description of what this standard covers.
 
 **Examples**:
 
-✅ **Good**:
+PASS **Good**:
 [Code example]
 
-❌ **Bad**:
+FAIL **Bad**:
 [Counter-example]
 
 ### Standard 2: {Name}
@@ -590,45 +590,45 @@ Before creating skill, verify:
 
 ### Pitfall 1: Bloated SKILL.md
 
-❌ **Wrong**: 3000-line SKILL.md with embedded content
+FAIL **Wrong**: 3000-line SKILL.md with embedded content
 
-✅ **Correct**: 500-line SKILL.md with references catalog
+PASS **Correct**: 500-line SKILL.md with references catalog
 
 ### Pitfall 2: Improper Path Reference
 
-❌ **Wrong**: `Read: standards/file.md`
+FAIL **Wrong**: `Read: standards/file.md`
 
-✅ **Correct**: `Read standards/file.md`
+PASS **Correct**: `Read standards/file.md`
 
 ### Pitfall 3: Loading All References
 
-❌ **Wrong**: Load all 10 reference files upfront
+FAIL **Wrong**: Load all 10 reference files upfront
 
-✅ **Correct**: Load specific reference based on task
+PASS **Correct**: Load specific reference based on task
 
 ### Pitfall 4: Unfocused Standards Files
 
-❌ **Wrong**: Single 2000-line "everything" file
+FAIL **Wrong**: Single 2000-line "everything" file
 
-✅ **Correct**: Multiple 300-500 line focused files
+PASS **Correct**: Multiple 300-500 line focused files
 
 ### Pitfall 5: Wrong Pattern Choice
 
-❌ **Wrong**: Using Pattern 5 (Wizard) for standards
+FAIL **Wrong**: Using Pattern 5 (Wizard) for standards
 
-✅ **Correct**: Using Pattern 10 (Reference Library)
+PASS **Correct**: Using Pattern 10 (Reference Library)
 
 ### Pitfall 6: Including Continuous Improvement Rule
 
-❌ **Wrong**: Skill has CONTINUOUS IMPROVEMENT RULE
+FAIL **Wrong**: Skill has CONTINUOUS IMPROVEMENT RULE
 
-✅ **Correct**: Skills don't have this (only agents/commands)
+PASS **Correct**: Skills don't have this (only agents/commands)
 
 ### Pitfall 7: Missing Execution Directive
 
-❌ **Wrong**: Skill loaded by command, Claude explains it instead of executing
+FAIL **Wrong**: Skill loaded by command, Claude explains it instead of executing
 
-✅ **Correct**: Skill has EXECUTION MODE directive that forces action:
+PASS **Correct**: Skill has EXECUTION MODE directive that forces action:
 ```markdown
 # Skill Name
 

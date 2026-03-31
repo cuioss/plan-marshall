@@ -142,7 +142,7 @@ This prevents ambiguity about whether to "run" or "read" a resource.
 ```yaml
 ---
 name: my-agent
-tools: Read, Write, Task  # ❌ WRONG - will fail at runtime
+tools: Read, Write, Task  # FAIL WRONG - will fail at runtime
 ---
 ```
 
@@ -170,13 +170,13 @@ name: java-tester
 tools: Read, Bash  # Bash used for: ./mvnw test
 ---
 ```
-❌ WRONG - This agent will call Maven, violating Rule 7
+FAIL WRONG - This agent will call Maven, violating Rule 7
 
 **Correct Pattern**:
 ```yaml
 ---
 name: maven-builder
-tools: Read, Bash  # ✅ ONLY this agent may call Maven
+tools: Read, Bash  # PASS ONLY this agent may call Maven
 ---
 ```
 
@@ -195,7 +195,7 @@ tools: Read, Bash  # ✅ ONLY this agent may call Maven
 
 **YOU MUST immediately update this file** using `/plugin-update-agent`
 ```
-❌ WRONG - Agent can't invoke commands
+FAIL WRONG - Agent can't invoke commands
 
 **Correct Pattern**:
 ```markdown
@@ -209,7 +209,7 @@ If you discover issues or improvements during execution, record them:
    - Category: bug | improvement | pattern | anti-pattern
    - Summary and detail of the finding
 ```
-✅ CORRECT - Agent records lesson only when there's something to record
+PASS CORRECT - Agent records lesson only when there's something to record
 
 ## Model Selection Guidelines
 
@@ -489,43 +489,43 @@ Before creating agent, verify:
 
 ### Pitfall 1: Creating Orchestrators as Agents
 
-❌ **Wrong**:
+FAIL **Wrong**:
 ```yaml
 name: project-builder
 tools: Task  # Agent trying to orchestrate
 ```
 
-✅ **Correct**: Create Command instead
+PASS **Correct**: Create Command instead
 
 ### Pitfall 2: Including User Interaction
 
-❌ **Wrong**:
+FAIL **Wrong**:
 ```yaml
 name: config-wizard
 tools: AskUserQuestion  # Agent asking questions
 ```
 
-✅ **Correct**: Create Command with wizard pattern
+PASS **Correct**: Create Command with wizard pattern
 
 ### Pitfall 3: Over-Tooling
 
-❌ **Wrong**:
+FAIL **Wrong**:
 ```yaml
 tools: Read, Write, Edit, Glob, Grep, Bash, WebFetch, WebSearch
 # Agent probably doesn't need all these
 ```
 
-✅ **Correct**: Only list tools actually used
+PASS **Correct**: Only list tools actually used
 
 ### Pitfall 4: Legacy Self-Update Pattern
 
-❌ **Wrong**:
+FAIL **Wrong**:
 ```markdown
 ## CONTINUOUS IMPROVEMENT RULE
 **YOU MUST invoke `/plugin-update-agent`**
 ```
 
-✅ **Correct**:
+PASS **Correct**:
 ```markdown
 ## CONTINUOUS IMPROVEMENT RULE
 If you discover issues or improvements during execution, record them:

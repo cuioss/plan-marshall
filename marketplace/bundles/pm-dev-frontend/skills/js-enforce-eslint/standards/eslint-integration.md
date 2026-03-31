@@ -184,3 +184,9 @@ export default [
 | Configuration file not found | Wrong filename | Rename to `eslint.config.js` in project root |
 | Plugin not found | Not installed | `npm install --save-dev eslint-plugin-{name}` |
 | Maven fails with lint errors | ESLint errors | Run `npm run lint:fix` locally first |
+
+## See Also
+
+- [ESLint Configuration](eslint-configuration.md) - Flat config setup and dependencies
+- [ESLint Rules](eslint-rules.md) - Rule categories and customization
+- [Prettier Configuration](prettier-configuration.md) - Formatting setup and IDE integration

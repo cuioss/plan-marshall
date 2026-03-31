@@ -263,17 +263,17 @@ user-invocable: false
 
 **CRITICAL**: Official Claude Code documentation specifies **comma-separated format**.
 
-✅ **CORRECT**:
+PASS **CORRECT**:
 ```yaml
 tools: Read, Write, Edit, Bash, Grep, Glob
 ```
 
-❌ **INCORRECT** (array syntax):
+FAIL **INCORRECT** (array syntax):
 ```yaml
 tools: [Read, Write, Edit, Bash, Grep, Glob]
 ```
 
-❌ **INCORRECT** (newlines):
+FAIL **INCORRECT** (newlines):
 ```yaml
 tools:
   - Read
@@ -285,17 +285,17 @@ tools:
 
 When using Bash with specific permissions:
 
-✅ **CORRECT**:
+PASS **CORRECT**:
 ```yaml
 tools: Read, Bash(git:*), Bash(npm:*)
 ```
 
-✅ **CORRECT** (script paths):
+PASS **CORRECT** (script paths):
 ```yaml
 tools: Read, Glob, Bash(./.claude/skills/cui-marketplace-architecture/scripts/analyze-skill-structure.sh:*)
 ```
 
-❌ **INCORRECT** (array syntax even for Bash):
+FAIL **INCORRECT** (array syntax even for Bash):
 ```yaml
 tools: [Read, Bash(git:*)]
 ```
@@ -330,7 +330,7 @@ This improves readability but has no functional impact.
 
 **Workaround**: Grep can still be used in workflow instructions without frontmatter declaration.
 
-✅ **CORRECT** (no Grep in frontmatter):
+PASS **CORRECT** (no Grep in frontmatter):
 ```yaml
 tools: Read, Glob, Bash(./.claude/skills/script.sh:*)
 ```
@@ -345,7 +345,7 @@ Grep: pattern="LOGGER\\.error" files="src/**/*.java"
 ```
 ```
 
-❌ **INCORRECT** (Grep breaks Bash):
+FAIL **INCORRECT** (Grep breaks Bash):
 ```yaml
 tools: Read, Glob, Grep, Bash(./.claude/skills/script.sh:*)
 ```
@@ -382,7 +382,7 @@ tools: Read, Write, Edit, Bash, Grep, Glob
 
 **Fix**: Remove Task from agent frontmatter. If orchestration needed, use a command instead.
 
-❌ **INCORRECT** (Task in agent):
+FAIL **INCORRECT** (Task in agent):
 ```yaml
 ---
 name: my-agent
@@ -390,7 +390,7 @@ tools: Read, Task
 ---
 ```
 
-✅ **CORRECT** (use command for orchestration):
+PASS **CORRECT** (use command for orchestration):
 ```yaml
 ---
 name: my-command
@@ -413,7 +413,7 @@ Task:
 
 **Fix**: Remove the field entirely. Skills do not have tool declarations.
 
-❌ **INCORRECT**:
+FAIL **INCORRECT**:
 ```yaml
 ---
 name: my-skill
@@ -423,7 +423,7 @@ allowed-tools: Read, Write
 ---
 ```
 
-✅ **CORRECT**:
+PASS **CORRECT**:
 ```yaml
 ---
 name: my-skill
@@ -448,14 +448,14 @@ user-invocable: true
 
 **Case Sensitive**: Tool names are case-sensitive. Use exact capitalization.
 
-❌ **INCORRECT**:
+FAIL **INCORRECT**:
 ```yaml
 tools: read, write, bash  # lowercase
 tools: READ, WRITE, BASH  # uppercase
 tools: File, Search       # wrong names
 ```
 
-✅ **CORRECT**:
+PASS **CORRECT**:
 ```yaml
 tools: Read, Write, Bash
 ```
@@ -508,17 +508,17 @@ marketplace/bundles/pm-plugin-development/skills/cui-marketplace-architecture/sc
 
 When using Bash tool to execute scripts located in skills:
 
-✅ **CORRECT frontmatter declaration**:
+PASS **CORRECT frontmatter declaration**:
 ```yaml
 tools: Read, Glob, Bash(./.claude/skills/cui-marketplace-architecture/scripts/analyze-skill-structure.sh:*)
 ```
 
-❌ **INCORRECT** (physical path):
+FAIL **INCORRECT** (physical path):
 ```yaml
 tools: Read, Bash(./marketplace/bundles/pm-plugin-development/skills/cui-marketplace-architecture/scripts/analyze-skill-structure.sh:*)
 ```
 
-❌ **INCORRECT** (absolute path):
+FAIL **INCORRECT** (absolute path):
 ```yaml
 tools: Read, Bash(/Users/oliver/git/plan-marshall/marketplace/bundles/.../scripts/analyze-skill-structure.sh:*)
 ```
@@ -569,7 +569,7 @@ All three formats are needed to ensure scripts work in all contexts.
 
 For general bash commands (not scripts):
 
-✅ **CORRECT**:
+PASS **CORRECT**:
 ```yaml
 tools: Bash(git:*), Bash(npm:*), Bash(mvn:*)
 ```

@@ -102,7 +102,7 @@ export default [
 ];
 ```
 
-## Jest/Vitest Test Suppressions
+## Jest Test Suppressions
 
 ### Expected Errors in Tests
 
@@ -118,11 +118,11 @@ expect(() => {
 ### Always Include Justification
 
 ```javascript
-// Good - explains why suppression is appropriate
+// Preferred: Explains why suppression is appropriate
 // eslint-disable-next-line no-console -- Temporary debug for JIRA-123
 console.log(diagnosticData);
 
-// Bad - no explanation
+// Avoid: No explanation
 // eslint-disable-next-line no-console
 console.log(diagnosticData);
 ```
@@ -130,12 +130,12 @@ console.log(diagnosticData);
 ### Scope Minimally
 
 ```javascript
-// Good - suppresses only the specific line
+// Preferred: Suppresses only the specific line
 // eslint-disable-next-line no-console
 console.log('Debug');
 doSomething();
 
-// Avoid - suppresses entire block
+// Avoid: Suppresses entire block
 /* eslint-disable no-console */
 console.log('Debug');
 doSomething(); // This line is also covered unnecessarily
@@ -161,3 +161,7 @@ export default [
 - Accessibility rules (jsx-a11y rules)
 - Issues that can be fixed with minimal effort
 - Issues in new code (only suppress in legacy)
+
+## See Also
+
+- [Severity Guidelines](severity.md) - Decision criteria for handling findings by severity and context

@@ -83,11 +83,11 @@ All scripts MUST be documented in SKILL.md.
 **Counting with `set -euo pipefail`**:
 
 ```bash
-# ❌ WRONG (causes duplicate output or failures):
+# FAIL WRONG (causes duplicate output or failures):
 set -euo pipefail
 COUNT=$(grep -c "pattern" file || echo "0")  # Fallback runs even on success
 
-# ✅ CORRECT:
+# PASS CORRECT:
 set -euo pipefail
 if [ -z "$VAR" ]; then
     COUNT=0
@@ -99,20 +99,20 @@ fi
 **Variable Construction — Newlines**:
 
 ```bash
-# ❌ WRONG (literal string, not newline):
+# FAIL WRONG (literal string, not newline):
 ITEMS="item1\nitem2"
 
-# ✅ CORRECT (actual newline):
+# PASS CORRECT (actual newline):
 ITEMS="item1"$'\n'"item2"
 ```
 
 **JSON Building with Pipes**:
 
 ```bash
-# ❌ WRONG (trailing newline breaks JSON):
+# FAIL WRONG (trailing newline breaks JSON):
 echo "$VAR" | jq -Rs .
 
-# ✅ CORRECT (no trailing newline):
+# PASS CORRECT (no trailing newline):
 printf "%s" "$VAR" | jq -Rs .
 ```
 

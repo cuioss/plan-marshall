@@ -159,18 +159,18 @@ label:has(+ input:focus) {
 - Block names describe *what it is*, not what it looks like
 - Elements use double underscore `__`
 - Modifiers use double dash `--`
-- Avoid nested elements: `.card__body__title` ❌ Use `.card__title` ✓
+- Avoid nested elements: `.card__body__title` (avoid) — use `.card__title` instead
 
 ### Custom Properties Naming
 
 ```css
-/* ✅ Semantic names */
+/* Preferred: Semantic names */
 --primary-color
 --text-base
 --spacing-md
 --border-radius-sm
 
-/* ❌ Presentational names */
+/* Avoid: Presentational names */
 --blue
 --size-16
 ```
@@ -191,11 +191,11 @@ Temporary states use `.is-*` or `.has-*` prefix:
 ### Keep Specificity Low
 
 ```css
-/* ✅ Low specificity (0,1,0) */
+/* Preferred: Low specificity (0,1,0) */
 .button { }
 .button--primary { }
 
-/* ❌ High specificity (1,3,1) */
+/* Avoid: High specificity (1,3,1) */
 #sidebar .nav ul li a.active { }
 ```
 
@@ -204,20 +204,20 @@ Temporary states use `.is-*` or `.has-*` prefix:
 ### Avoid IDs for Styling
 
 ```css
-/* ✅ Use classes */
+/* Preferred: Use classes */
 .header { }
 
-/* ❌ Don't use IDs */
+/* Avoid: Don't use IDs */
 #header { }
 ```
 
 ### Nesting Limit: 3 Levels
 
 ```css
-/* ✅ Good - 2 levels */
+/* Preferred: Good - 2 levels */
 .card__header-title { }
 
-/* ❌ Too nested - 4 levels */
+/* Avoid: Too nested - 4 levels */
 .card .inner .header .title { }
 ```
 
@@ -240,8 +240,8 @@ Temporary states use `.is-*` or `.has-*` prefix:
 **Line Height: Unitless**
 ```css
 .text {
-  line-height: 1.5;  /* ✅ Scales */
-  line-height: 24px; /* ❌ Fixed */
+  line-height: 1.5;  /* Preferred: Scales */
+  line-height: 24px; /* Avoid: Fixed */
 }
 ```
 

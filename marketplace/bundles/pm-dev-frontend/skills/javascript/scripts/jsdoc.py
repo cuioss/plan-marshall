@@ -33,7 +33,7 @@ EXIT_ERROR = 1
 FUNCTION_PATTERN = re.compile(r'^(?:export\s+)?(?:async\s+)?function\s+(\w+)\s*\(([^)]*)\)', re.MULTILINE)
 
 ARROW_FUNCTION_PATTERN = re.compile(
-    r'^(?:export\s+)?(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s+)?\([^)]*\)\s*=>', re.MULTILINE
+    r'^(?:export\s+)?(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s+)?\(([^)]*)\)\s*=>', re.MULTILINE
 )
 
 CLASS_PATTERN = re.compile(r'^(?:export\s+)?class\s+(\w+)', re.MULTILINE)
@@ -239,6 +239,7 @@ def analyze_file(file_path: str, scope: str) -> list[dict]:
     # Find all arrow functions
     for match in ARROW_FUNCTION_PATTERN.finditer(content):
         func_name = match.group(1)
+        params_str = match.group(2)
         line_num = get_line_number(content, match.start())
         is_exported = 'export' in content[max(0, match.start() - 20) : match.start()]
 
@@ -257,6 +258,38 @@ def analyze_file(file_path: str, scope: str) -> list[dict]:
                     'fix_suggestion': 'Add JSDoc block with @param and @returns tags',
                 }
             )
+
+        if scope in ('all', 'syntax') and jsdoc:
+            params = extract_function_params(params_str)
+            # Check for return statement in arrow function body
+            arrow_pos = content.find('=>', match.end() - 10)
+            has_return = False
+            if arrow_pos != -1:
+                after_arrow = content[arrow_pos + 2 :].lstrip()
+                if after_arrow and after_arrow[0] == '{':
+                    # Block body — scan for return
+                    brace_start = content.index('{', arrow_pos)
+                    brace_count = 1
+                    pos = brace_start + 1
+                    while pos < len(content) and brace_count > 0:
+                        if content[pos] == '{':
+                            brace_count += 1
+                        elif content[pos] == '}':
+                            brace_count -= 1
+                        elif content[pos : pos + 6] == 'return' and brace_count == 1:
+                            if pos == 0 or not content[pos - 1].isalnum():
+                                has_return = True
+                        pos += 1
+                else:
+                    # Expression body — implicit return
+                    has_return = True
+
+            func_violations = check_function_jsdoc(jsdoc, params, has_return)
+            for v in func_violations:
+                v['file'] = file_path
+                v['line'] = line_num
+                v['target'] = f'arrow function {func_name}'
+                violations.append(v)
 
     # Find all classes
     for match in CLASS_PATTERN.finditer(content):

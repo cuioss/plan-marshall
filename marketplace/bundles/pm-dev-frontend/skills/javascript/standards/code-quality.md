@@ -16,14 +16,14 @@ Beyond the general thresholds in `plan-marshall:dev-general-code-quality`, JavaS
 Break down large functions into focused, single-purpose functions. Move state checks, rendering logic, or data transformations into named helper methods.
 
 ```javascript
-// ❌ Monolithic function with 20+ statements
+// Avoid: Monolithic function with 20+ statements
 _doRender() {
   if (this._loading) return html`<div class="loading">Loading...</div>`;
   if (this._error) return html`<div class="error">${this._error}</div>`;
   // ... many more lines of rendering logic
 }
 
-// ✅ Decomposed into helpers
+// Preferred: Decomposed into helpers
 _doRender() {
   return this._renderLoadingOrError() ?? this._renderConfiguration();
 }
@@ -36,7 +36,7 @@ Reduce nesting with guard clauses and early returns.
 #### Before
 
 ```javascript
-// ❌ Deep nesting (complexity: 8)
+// Avoid: Deep nesting (complexity: 8)
 function processData(data) {
   if (data) {
     if (data.isValid) {
@@ -61,7 +61,7 @@ function processData(data) {
 #### After
 
 ```javascript
-// ✅ Early returns with guard clauses (complexity: 4)
+// Preferred: Early returns with guard clauses (complexity: 4)
 function processData(data) {
   if (!data) {
     throw new Error('No data provided');
@@ -87,7 +87,7 @@ Simplify complex conditionals by extracting boolean expressions into well-named 
 #### Before
 
 ```javascript
-// ❌ Complex inline conditional
+// Avoid: Complex inline conditional
 if (user && user.isActive && user.permissions.includes('admin') &&
     user.lastLogin && (Date.now() - user.lastLogin) < 86400000) {
   // Handle active admin
@@ -97,7 +97,7 @@ if (user && user.isActive && user.permissions.includes('admin') &&
 #### After
 
 ```javascript
-// ✅ Extracted boolean methods
+// Preferred: Extracted boolean methods
 function isActiveAdmin(user) {
   return user &&
          user.isActive &&
@@ -121,10 +121,10 @@ if (isActiveAdmin(user)) {
 Replace multiple parameters with a single options object when a function exceeds the 5-parameter limit.
 
 ```javascript
-// ❌ Too many parameters
+// Avoid: Too many parameters
 function createUser(name, email, role, department, manager, startDate) { ... }
 
-// ✅ Configuration object with destructuring
+// Preferred: Configuration object with destructuring
 function createUser({ name, email, role, department, manager, startDate }) {
   return { id: generateId(), name, email, role, department, manager, startDate };
 }
@@ -135,7 +135,7 @@ function createUser({ name, email, role, department, manager, startDate }) {
 ### Replace Switch with Object Lookup
 
 ```javascript
-// ❌ Switch statement
+// Avoid: Switch statement
 function getStatusMessage(status) {
   switch (status) {
     case 'pending':
@@ -151,7 +151,7 @@ function getStatusMessage(status) {
   }
 }
 
-// ✅ Object lookup
+// Preferred: Object lookup
 const STATUS_MESSAGES = {
   pending: 'Processing...',
   success: 'Completed successfully',
@@ -167,7 +167,7 @@ function getStatusMessage(status) {
 ### Replace Nested Ternaries with If-Else
 
 ```javascript
-// ❌ Nested ternary
+// Avoid: Nested ternary
 const message = user
   ? user.isActive
     ? user.isPremium
@@ -176,7 +176,7 @@ const message = user
     : 'Inactive user'
   : 'No user';
 
-// ✅ Clear if-else
+// Preferred: Clear if-else
 function getUserMessage(user) {
   if (!user) return 'No user';
   if (!user.isActive) return 'Inactive user';
@@ -190,7 +190,7 @@ const message = getUserMessage(user);
 ### Split Large Functions into Pipelines
 
 ```javascript
-// ❌ Large processing function
+// Avoid: Large processing function
 function processUserData(rawData) {
   // 20+ statements of validation, transformation, enrichment
   const validated = validateData(rawData);
@@ -200,7 +200,7 @@ function processUserData(rawData) {
   return formatted;
 }
 
-// ✅ Pipeline of focused functions
+// Preferred: Pipeline of focused functions
 const processUserData = (rawData) => {
   return [
     validateData,

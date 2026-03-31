@@ -16,12 +16,12 @@ Standards for maintaining documentation integrity, preventing hallucinations, el
 
 **Example**:
 ```
-✅ CORRECT - Consistent terminology
+PASS CORRECT - Consistent terminology
 Requirement REQ-001: The system shall authenticate users via OAuth2
 Specification SPEC-001: OAuth2 authentication implementation
 Test TEST-001: Verify OAuth2 authentication flow
 
-❌ WRONG - Inconsistent terminology
+FAIL WRONG - Inconsistent terminology
 Requirement REQ-001: The system shall authenticate users via OAuth2
 Specification SPEC-001: User login implementation
 Test TEST-001: Verify authentication
@@ -56,10 +56,10 @@ Test TEST-001: Verify authentication
 
 **Example**:
 ```
-❌ WRONG - Ambiguous
+FAIL WRONG - Ambiguous
 REQ-001: The system shall provide fast authentication
 
-✅ CORRECT - Clear and measurable
+PASS CORRECT - Clear and measurable
 REQ-001: The system shall complete user authentication within 2 seconds
 for 95% of requests under normal load conditions (≤1000 concurrent users)
 ```
@@ -95,11 +95,11 @@ for 95% of requests under normal load conditions (≤1000 concurrent users)
 
 **Example Violations**:
 ```
-❌ HALLUCINATION - Feature doesn't exist
+FAIL HALLUCINATION - Feature doesn't exist
 REQ-042: The system shall support automatic backup to cloud storage
 (When no such feature is implemented or planned)
 
-✅ CORRECT - Document only what exists
+PASS CORRECT - Document only what exists
 REQ-042: [FUTURE] Cloud backup integration (planned for v2.0)
 (Clearly marked as future functionality)
 ```
@@ -116,11 +116,11 @@ REQ-042: [FUTURE] Cloud backup integration (planned for v2.0)
 
 **Cross-Reference Pattern**:
 ```asciidoc
-// ✅ CORRECT - Cross-reference
+// Preferred: CORRECT - Cross-reference
 See xref:Requirements.adoc#req-001[REQ-001: User Authentication] for
 complete authentication requirements.
 
-// ❌ WRONG - Duplication
+// Avoid: WRONG - Duplication
 REQ-001 requires that the system shall authenticate users via OAuth2
 with support for multiple identity providers...
 (Copying entire requirement text)

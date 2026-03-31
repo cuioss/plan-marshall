@@ -19,14 +19,14 @@ After migrating business logic from agents to skills, several context issues eme
 - No isolation between different tasks
 
 **What Doesn't Work:**
-- ❌ Agent-to-agent calls (architectural limitation in Claude Code)
-- ❌ Pure skill delegation without wrappers (context pollution)
-- ❌ Fat agents with embedded business logic (maintenance nightmare)
+- Avoid: Agent-to-agent calls (architectural limitation in Claude Code)
+- Avoid: Pure skill delegation without wrappers (context pollution)
+- Avoid: Fat agents with embedded business logic (maintenance nightmare)
 
 **What Does Work:**
-- ✅ Agents calling skills (context isolation achieved)
-- ✅ Commands calling skills (self-contained execution)
-- ✅ Skills calling other skills (composition within isolated context)
+- Preferred: Agents calling skills (context isolation achieved)
+- Preferred: Commands calling skills (self-contained execution)
+- Preferred: Skills calling other skills (composition within isolated context)
 
 ## Solution: Minimal Wrapper Pattern
 
@@ -115,7 +115,7 @@ Reintroduce agents and commands as **thin orchestration wrappers** that:
 - Verification
 - Quality checklists
 
-### Communication Pattern ✅
+### Communication Pattern PASS
 
 ```
 User → Agent (thin wrapper) → Skill (business logic) → Result
@@ -127,7 +127,7 @@ This pattern works because:
 3. Skill knowledge doesn't pollute main conversation
 4. Agent returns result and context is released
 
-### What We Avoid ❌
+### What We Avoid FAIL
 
 ```
 User → Agent A → Agent B → Agent C  (doesn't work - no agent-to-agent calls)
@@ -356,36 +356,36 @@ python3 .plan/execute-script.py plan-marshall:build-maven:maven run \
 ## Benefits of Minimal Wrapper Pattern
 
 ### For Context Management
-- ✅ Each agent spawns with isolated context
-- ✅ Skills loaded only when needed
-- ✅ No cross-contamination between tasks
-- ✅ Scalable to many specialized agents
-- ✅ Predictable memory usage
+- Preferred: Each agent spawns with isolated context
+- Preferred: Skills loaded only when needed
+- Preferred: No cross-contamination between tasks
+- Preferred: Scalable to many specialized agents
+- Preferred: Predictable memory usage
 
 ### For Maintainability
-- ✅ Business logic centralized in skills
-- ✅ Wrappers are simple and easy to understand
-- ✅ Standards updates happen in one place (skills)
-- ✅ Clear separation of concerns
-- ✅ Easy to test independently
+- Preferred: Business logic centralized in skills
+- Preferred: Wrappers are simple and easy to understand
+- Preferred: Standards updates happen in one place (skills)
+- Preferred: Clear separation of concerns
+- Preferred: Easy to test independently
 
 ### For User Experience
-- ✅ Goal-based commands match user intent
-- ✅ Specialized agents for specific tasks
-- ✅ Consistent structured output
-- ✅ Clear delegation model
-- ✅ Predictable behavior
+- Preferred: Goal-based commands match user intent
+- Preferred: Specialized agents for specific tasks
+- Preferred: Consistent structured output
+- Preferred: Clear delegation model
+- Preferred: Predictable behavior
 
 ### For Development
-- ✅ Easy to add new agents (copy pattern)
-- ✅ Easy to test (thin wrappers)
-- ✅ Easy to debug (clear delegation)
-- ✅ Skills reusable across agents
-- ✅ Parallel development possible
+- Preferred: Easy to add new agents (copy pattern)
+- Preferred: Easy to test (thin wrappers)
+- Preferred: Easy to debug (clear delegation)
+- Preferred: Skills reusable across agents
+- Preferred: Parallel development possible
 
 ## Anti-Patterns to Avoid
 
-### ❌ Fat Wrappers (> 150 lines)
+### FAIL Fat Wrappers (> 150 lines)
 
 **Problem:**
 ```markdown
@@ -407,7 +407,7 @@ python3 .plan/execute-script.py plan-marshall:build-maven:maven run \
 # GOOD: Wrapper orchestrates only
 ```
 
-### ❌ Agent-to-Agent Calls
+### FAIL Agent-to-Agent Calls
 
 **Problem:**
 ```markdown
@@ -430,7 +430,7 @@ Agent: java-create-agent
   └─→ Skill: cui-java-unit-testing
 ```
 
-### ❌ Duplicate Logic
+### FAIL Duplicate Logic
 
 **Problem:**
 ```markdown
@@ -451,7 +451,7 @@ Agent: checks if verification needed
 Skill: performs actual verification
 ```
 
-### ❌ Direct Tool Usage for Business Logic
+### FAIL Direct Tool Usage for Business Logic
 
 **Problem:**
 ```markdown
@@ -473,7 +473,7 @@ python3 .plan/execute-script.py plan-marshall:build-maven:maven parse \
 
 ## Correct Patterns (Best Practices)
 
-### ✅ Thin Orchestration
+### PASS Thin Orchestration
 
 ```markdown
 # GOOD: Agent validates, delegates, returns (< 150 lines)
@@ -500,7 +500,7 @@ Step 3: Format and Return (20 lines)
 - Easy to test (thin wrapper)
 - Context efficient (< 150 lines)
 
-### ✅ Agent-to-Skill Delegation
+### PASS Agent-to-Skill Delegation
 
 ```markdown
 # GOOD: Agent uses skills for work
@@ -518,7 +518,7 @@ Agent: java-create-agent (120 lines)
 - Reusable across agents
 - Clean delegation hierarchy
 
-### ✅ Single Source of Truth
+### PASS Single Source of Truth
 
 ```markdown
 # GOOD: Standards only in skills
@@ -541,7 +541,7 @@ Skill (business logic - 600 lines):
 - Consistent behavior
 - Easy maintenance
 
-### ✅ Skill-to-Skill Composition
+### PASS Skill-to-Skill Composition
 
 ```markdown
 # GOOD: Skills coordinate other skills
@@ -787,12 +787,12 @@ User Goal → Minimal Wrapper (< 150 lines) → Specialized Skill (standards + l
 ```
 
 **Success Criteria:**
-- ✅ Wrappers < 150 lines
-- ✅ No business logic in wrappers
-- ✅ All standards in skills
-- ✅ Context isolation working
-- ✅ Skills reusable across wrappers
-- ✅ Easy to maintain and test
+- Preferred: Wrappers < 150 lines
+- Preferred: No business logic in wrappers
+- Preferred: All standards in skills
+- Preferred: Context isolation working
+- Preferred: Skills reusable across wrappers
+- Preferred: Easy to maintain and test
 
 **Integration Points:**
 - Complements goal-based organization (xref:goal-based-organization.md[Goal-Based Organization])

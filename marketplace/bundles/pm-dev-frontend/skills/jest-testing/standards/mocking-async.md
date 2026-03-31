@@ -23,16 +23,9 @@ beforeEach(() => {
 Mock specific exports while keeping others real:
 
 ```javascript
-// Jest
 jest.mock('./config', () => ({
   ...jest.requireActual('./config'),
   getApiUrl: jest.fn(() => 'https://test-api.example.com'),
-}));
-
-// Vitest
-vi.mock('./config', async () => ({
-  ...(await vi.importActual('./config')),
-  getApiUrl: vi.fn(() => 'https://test-api.example.com'),
 }));
 ```
 
@@ -129,11 +122,11 @@ test('sends POST with token in body', async () => {
 Mock boundaries (APIs, file system, third-party services). Internal logic should run as-is:
 
 ```javascript
-// Good -- mocks external API boundary
+// Preferred: Mocks external API boundary
 jest.mock('./api');
 api.fetchUser.mockResolvedValue({ name: 'Alice' });
 
-// Bad -- mocks internal helper the function calls
+// Avoid: Mocks internal helper the function calls
 jest.mock('./utils', () => ({ parseResponse: jest.fn() }));
 ```
 

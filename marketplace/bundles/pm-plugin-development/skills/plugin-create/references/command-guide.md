@@ -304,7 +304,7 @@ Commands should be concise. If exceeding 400 lines:
 
 ### No Embedded Templates
 
-❌ **Wrong**:
+FAIL **Wrong**:
 ```markdown
 ### Step 3: Generate Report
 
@@ -314,7 +314,7 @@ Create report with this structure:
 ╚═══════════════════════════════════════╝
 ```
 
-✅ **Correct**:
+PASS **Correct**:
 ```markdown
 ### Step 3: Generate Report
 
@@ -327,7 +327,7 @@ Fill template with findings
 
 Don't over-specify. Let AI infer reasonable behavior.
 
-❌ **Wrong** (Over-specified):
+FAIL **Wrong** (Over-specified):
 ```markdown
 ### Step 1: Validate Name
 
@@ -346,7 +346,7 @@ If name starts with number:
 [...20 more validation rules...]
 ```
 
-✅ **Correct** (Trust AI):
+PASS **Correct** (Trust AI):
 ```markdown
 ### Step 1: Validate Name
 
@@ -356,7 +356,7 @@ If invalid: Show error and exit.
 
 ### Reference Skills for Details
 
-❌ **Wrong** (Duplication):
+FAIL **Wrong** (Duplication):
 ```markdown
 ### Step 2: Check Architecture Rules
 
@@ -371,7 +371,7 @@ Rule 2: Progressive disclosure
   [... 50 more lines of rules ...]
 ```
 
-✅ **Correct** (Reference):
+PASS **Correct** (Reference):
 ```markdown
 ### Step 2: Check Architecture Rules
 
@@ -437,7 +437,7 @@ If validation fails: Show error and exit
 
 Execute diagnosis workflow
 If diagnosis fails:
-  Show warning: "⚠️ Diagnosis failed: {error}"
+  Show warning: "WARN Diagnosis failed: {error}"
   Note: "Component created but not validated"
   Suggest: "Run /plugin-doctor {name} manually"
   Continue (don't abort entire command)
@@ -657,31 +657,31 @@ Before creating command, verify:
 
 ### Pitfall 1: Fat Commands
 
-❌ **Wrong**: Command contains 800 lines of embedded logic
+FAIL **Wrong**: Command contains 800 lines of embedded logic
 
-✅ **Correct**: Command is 150 lines, delegates to skill with logic
+PASS **Correct**: Command is 150 lines, delegates to skill with logic
 
 ### Pitfall 2: Missing CONTINUOUS IMPROVEMENT RULE
 
-❌ **Wrong**: No continuous improvement section
+FAIL **Wrong**: No continuous improvement section
 
-✅ **Correct**: Includes CONTINUOUS IMPROVEMENT RULE with manage-lessons skill
+PASS **Correct**: Includes CONTINUOUS IMPROVEMENT RULE with manage-lessons skill
 
 ### Pitfall 3: No Parameter Validation
 
-❌ **Wrong**: Assumes parameters are valid
+FAIL **Wrong**: Assumes parameters are valid
 
-✅ **Correct**: Validates parameters in Step 1, fails early
+PASS **Correct**: Validates parameters in Step 1, fails early
 
 ### Pitfall 4: Over-Specification
 
-❌ **Wrong**: 50 lines describing exact error message format
+FAIL **Wrong**: 50 lines describing exact error message format
 
-✅ **Correct**: "Show error and exit" - trust AI
+PASS **Correct**: "Show error and exit" - trust AI
 
 ### Pitfall 5: Array Syntax for Tools
 
-❌ **Wrong**:
+FAIL **Wrong**:
 ```yaml
 ---
 name: my-command
@@ -690,7 +690,7 @@ tools: [Read, Write]  # Array syntax not supported
 ---
 ```
 
-✅ **Correct**:
+PASS **Correct**:
 ```yaml
 ---
 name: my-command

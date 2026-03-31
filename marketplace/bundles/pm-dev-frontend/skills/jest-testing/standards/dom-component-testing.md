@@ -245,22 +245,7 @@ describe('component lifecycle', () => {
 
 ### Browser-Based Testing (When jsdom Is Insufficient)
 
-For full Shadow DOM fidelity, use Web Test Runner or Vitest with a browser provider:
-
-```javascript
-// vitest.config.js -- browser mode
-export default defineConfig({
-  test: {
-    browser: {
-      enabled: true,
-      provider: 'playwright',
-      instances: [{ browser: 'chromium' }],
-    },
-  },
-});
-```
-
-This is recommended by the Lit team for production web component testing. Use jsdom for unit tests where Shadow DOM behavior is not critical.
+For full Shadow DOM fidelity, use Web Test Runner with a browser provider. This is recommended by the Lit team for production web component testing. Use jsdom for unit tests where Shadow DOM behavior is not critical.
 
 ## Test Helper Patterns
 

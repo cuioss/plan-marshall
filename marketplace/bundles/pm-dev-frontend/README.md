@@ -1,6 +1,10 @@
 # pm-dev-frontend
 
-Frontend development standards and tools - modern JavaScript, CSS, and web development.
+Frontend development standards and tools - modern JavaScript (ES2022+), CSS, and web development.
+
+## Scope
+
+This bundle covers **vanilla JavaScript** (.js, .mjs) and **CSS**. TypeScript (.ts), JSX (.jsx/.tsx), and framework-specific tooling (React, Angular, Vue) are out of scope.
 
 ## Purpose
 
@@ -23,8 +27,8 @@ This bundle provides general frontend development expertise through domain knowl
    - Flat config setup and rule management
    - Build integration standards
 
-4. **js-testing** - JavaScript unit testing standards
-   - Jest/Vitest framework setup and configuration
+4. **jest-testing** - JavaScript unit testing standards
+   - Jest framework setup and configuration
    - DOM and web component testing patterns
    - Mocking, async testing, and coverage
 
@@ -46,7 +50,7 @@ pm-dev-frontend/
     │       └── jsdoc.py
     ├── css/                     # CSS standards
     ├── js-enforce-eslint/       # ESLint, Prettier, Stylelint
-    ├── js-testing/              # Jest/Vitest testing standards
+    ├── jest-testing/            # Jest testing standards
     ├── ext-triage-js/           # Triage extension point
     └── plan-marshall-plugin/    # JavaScript domain registration
 ```

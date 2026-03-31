@@ -25,14 +25,14 @@ Design principles for goal-based commands that act as thin orchestrators routing
 Commands organized by user goals, not component types:
 
 ```markdown
-# ✅ GOOD: Goal-based with bundle prefix
+# PASS GOOD: Goal-based with bundle prefix
 commands/
 ├── plugin-create.md     # CREATE any component type
 ├── plugin-doctor.md     # DOCTOR - diagnose and fix quality issues
 ├── plugin-maintain.md   # MAINTAIN marketplace health
 └── plugin-verify.md     # VERIFY complete marketplace
 
-# ❌ BAD: Component-centric
+# FAIL BAD: Component-centric
 commands/
 ├── create-agent.md    # Component-specific
 ├── create-command.md  # Component-specific
@@ -220,7 +220,7 @@ Step 3: Display Results
 
 Show results in clear, structured format:
 
-✅ CREATED: my-agent.md
+PASS CREATED: my-agent.md
 📁 Location: marketplace/bundles/my-bundle/agents/
 🎯 Pattern: Script Automation (Pattern 1)
 📋 Next Steps:
@@ -253,9 +253,9 @@ Step 2: Process Components
 
 For each component (with progress):
   Processing [3/25]: my-agent.md
-  ✅ Format: Valid
-  ✅ Links: All valid
-  ⚠️  Content: 2 suggestions
+  PASS Format: Valid
+  PASS Links: All valid
+  WARN  Content: 2 suggestions
 ```
 
 ## Command Examples

@@ -285,6 +285,8 @@ img {
 
 ## Responsive Spacing
 
+For custom property fundamentals and naming conventions, see [CSS Essentials](css-essentials.md#css-custom-properties).
+
 ### Fluid Spacing
 
 ```css

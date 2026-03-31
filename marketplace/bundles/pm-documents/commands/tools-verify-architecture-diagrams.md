@@ -240,14 +240,14 @@ Continue with the next diagram until all have been processed.
 ## Quality Criteria
 
 All diagrams must meet these standards:
-- ✅ Accurately reflect current codebase implementation
-- ✅ PNG images are visually clear and readable
-- ✅ No PlantUML syntax errors visible in images
-- ✅ No broken links, missing connections, or layout issues
-- ✅ Proper layout without overlapping elements
-- ✅ All components/classes/methods shown actually exist in the codebase
-- ✅ Relationships and flows are correct
-- ✅ Referenced in documentation (or explicitly approved as orphaned)
+- Preferred: Accurately reflect current codebase implementation
+- Preferred: PNG images are visually clear and readable
+- Preferred: No PlantUML syntax errors visible in images
+- Preferred: No broken links, missing connections, or layout issues
+- Preferred: Proper layout without overlapping elements
+- Preferred: All components/classes/methods shown actually exist in the codebase
+- Preferred: Relationships and flows are correct
+- Preferred: Referenced in documentation (or explicitly approved as orphaned)
 
 ## Cleanup and Output
 

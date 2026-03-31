@@ -143,10 +143,10 @@ Format and show diagnostic results to user.
 ```
 ANALYSIS: my-agent.md
 
-✅ Structure: Valid
-✅ Frontmatter: Complete
-⚠️  References: 2 issues found
-❌ Tool Coverage: Missing Skill tool in frontmatter
+PASS Structure: Valid
+PASS Frontmatter: Complete
+WARN  References: 2 issues found
+FAIL Tool Coverage: Missing Skill tool in frontmatter
 
 ## Issues Found (3)
 
@@ -202,7 +202,7 @@ Overall Type Health: 75/100
 ```
 MARKETPLACE HEALTH REPORT
 
-## Overall Status: 85/100 ✅
+## Overall Status: 85/100 PASS
 
 ### Statistics
 - Total Bundles: 5
@@ -214,7 +214,7 @@ MARKETPLACE HEALTH REPORT
 - Issues: 26 (33%)
 
 ### Severity Breakdown
-- Critical: 3 ⚠️
+- Critical: 3 WARN
 - High: 8
 - Medium: 22
 - Low: 15
@@ -225,11 +225,11 @@ MARKETPLACE HEALTH REPORT
 3. Missing progressive disclosure (6 occurrences)
 
 ### Bundle Health Scores
-1. pm-dev-java: 92/100 ✅
-2. pm-dev-frontend: 88/100 ✅
-3. pm-plugin-development: 82/100 ✅
-4. plan-marshall: 78/100 ⚠️
-5. plan-marshall: 95/100 ✅
+1. pm-dev-java: 92/100 PASS
+2. pm-dev-frontend: 88/100 PASS
+3. pm-plugin-development: 82/100 PASS
+4. plan-marshall: 78/100 WARN
+5. plan-marshall: 95/100 PASS
 
 ### Recommendations
 1. Fix critical issues first (3 components affected)
@@ -273,14 +273,14 @@ Display fix results:
 FIXES APPLIED
 
 ## Safe Fixes (12 applied automatically)
-✅ Fixed 12 path references
-✅ Fixed 5 YAML frontmatter issues
-✅ Corrected 3 reference patterns
+PASS Fixed 12 path references
+PASS Fixed 5 YAML frontmatter issues
+PASS Corrected 3 reference patterns
 
 ## Risky Fixes (3 require confirmation)
-⚠️  Structural change in my-agent.md - Review needed
-⚠️  Logic modification in other-command.md - Review needed
-⚠️  Deletion of deprecated section - Review needed
+WARN  Structural change in my-agent.md - Review needed
+WARN  Logic modification in other-command.md - Review needed
+WARN  Deletion of deprecated section - Review needed
 
 Would you like to review and apply risky fixes?
 ```
@@ -307,12 +307,12 @@ If confirmed:
 ### 1. Thin Orchestration
 
 Command contains NO complex logic:
-- ✅ Parameter parsing (simple if/else)
-- ✅ Skill invocation (delegation)
-- ✅ Result display (formatting)
-- ❌ NO analysis algorithms
-- ❌ NO quality standards
-- ❌ NO fix implementation
+- Preferred: Parameter parsing (simple if/else)
+- Preferred: Skill invocation (delegation)
+- Preferred: Result display (formatting)
+- Avoid: NO analysis algorithms
+- Avoid: NO quality standards
+- Avoid: NO fix implementation
 
 All complex logic in skills.
 
@@ -353,7 +353,7 @@ Each step uses skill workflows.
 
 Results formatted for readability:
 - Clear structure with sections
-- Visual indicators (✅ ⚠️ ❌)
+- Visual indicators (PASS WARN FAIL)
 - Actionable recommendations
 - Severity categorization
 - Summary + details

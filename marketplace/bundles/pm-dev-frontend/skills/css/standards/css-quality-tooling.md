@@ -7,27 +7,27 @@ Performance optimization, accessibility standards, dark mode implementation, and
 ### Efficient Selectors
 
 ```css
-/* ✅ Fast - single class */
+/* Preferred: Fast - single class */
 .button { }
 .card__header { }
 
-/* ❌ Slow - deep nesting */
+/* Avoid: Slow - deep nesting */
 .header .nav ul li a span { }
 
-/* ❌ Slow - attribute without tag */
+/* Avoid: Slow - attribute without tag */
 [type="text"] { }
 
-/* ✅ Better */
+/* Preferred: Better */
 input[type="text"] { }
 ```
 
 ### Minimize Specificity
 
 ```css
-/* ❌ High specificity (1,3,1) */
+/* Avoid: High specificity (1,3,1) */
 #sidebar .widget .title span { }
 
-/* ✅ Low specificity (0,1,0) */
+/* Preferred: Low specificity (0,1,0) */
 .widget-title { }
 ```
 
@@ -38,7 +38,7 @@ Low specificity is easier to override and prevents specificity wars.
 Use sparingly: `box-shadow`, `border-radius`, `filter`, `transform`, `opacity`
 
 ```css
-/* ✅ Apply on state change only */
+/* Preferred: Apply on state change only */
 .button {
   transition: transform 0.2s;
 }
@@ -47,7 +47,7 @@ Use sparingly: `box-shadow`, `border-radius`, `filter`, `transform`, `opacity`
   transform: translateY(-2px);
 }
 
-/* ❌ Animated constantly */
+/* Avoid: Animated constantly */
 .element {
   animation: pulse 1s infinite;
 }
@@ -96,12 +96,12 @@ Inline above-the-fold styles:
 ### Focus Management
 
 ```css
-/* ❌ Never remove outlines globally */
+/* Avoid: Never remove outlines globally */
 * {
   outline: none;
 }
 
-/* ✅ Use :focus-visible for keyboard-only focus */
+/* Preferred: Use :focus-visible for keyboard-only focus */
 *:focus-visible {
   outline: 2px solid var(--color-primary);
   outline-offset: 2px;
@@ -122,13 +122,13 @@ Inline above-the-fold styles:
 - UI components: 3:1
 
 ```css
-/* ✅ Good contrast */
+/* Preferred: Good contrast */
 .button {
   background: #1976d2;  /* Blue */
   color: #ffffff;       /* White - 4.54:1 */
 }
 
-/* ❌ Poor contrast */
+/* Avoid: Poor contrast */
 .button {
   background: #64b5f6;  /* Light blue */
   color: #ffffff;       /* White - 2.46:1 - FAIL */
@@ -181,6 +181,8 @@ Minimum 44x44px:
 ```
 
 ## Dark Mode
+
+Dark mode relies on CSS custom properties for theming. For custom property fundamentals and naming conventions, see [CSS Essentials](css-essentials.md#css-custom-properties).
 
 ### System Preference
 

@@ -35,16 +35,16 @@ Read references/subdirectory/filename.md
 
 **Examples**:
 ```markdown
-✅ Read references/quality-standards.md
-✅ Read references/testing/junit-patterns.md
-✅ Read references/cdi/cdi-aspects.md
-✅ Read references/examples/good-example.md
+PASS Read references/quality-standards.md
+PASS Read references/testing/junit-patterns.md
+PASS Read references/cdi/cdi-aspects.md
+PASS Read references/examples/good-example.md
 ```
 
 **Prohibited**:
 ```markdown
-❌ Read: ../../../../other-skill/file.md       # Escape sequences
-❌ Read: ~/git/plan-marshall/standards/file.md # Absolute path
+FAIL Read: ../../../../other-skill/file.md       # Escape sequences
+FAIL Read: ~/git/plan-marshall/standards/file.md # Absolute path
 ```
 
 **Validation**:
@@ -74,15 +74,15 @@ python3 .plan/execute-script.py {bundle}:{skill}:{subcommand} {args}
 
 **Examples**:
 ```markdown
-✅ python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:analyze {input_file}
-✅ python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:validate {component_path}
-✅ python3 .plan/execute-script.py plan-marshall:manage-files:manage-files add --plan-id {id} --file {file}
+PASS python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:analyze {input_file}
+PASS python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:validate {component_path}
+PASS python3 .plan/execute-script.py plan-marshall:manage-files:manage-files add --plan-id {id} --file {file}
 ```
 
 **Prohibited**:
 ```markdown
-❌ python ~/project/scripts/analyzer.py        # Absolute path
-❌ python3 scripts/analyzer.py                 # Direct script path (bypasses executor)
+FAIL python ~/project/scripts/analyzer.py        # Absolute path
+FAIL python3 scripts/analyzer.py                 # Direct script path (bypasses executor)
 ```
 
 **Script Output**:
@@ -108,16 +108,16 @@ Read assets/config-example.json
 
 **Examples**:
 ```markdown
-✅ Load template: assets/template.html
-✅ Read assets/config-example.json
-✅ Use template: assets/templates/basic.txt
-✅ Load image: assets/diagram.png
+PASS Load template: assets/template.html
+PASS Read assets/config-example.json
+PASS Use template: assets/templates/basic.txt
+PASS Load image: assets/diagram.png
 ```
 
 **Prohibited**:
 ```markdown
-❌ Use: ~/git/project/assets/template.html    # Absolute path
-❌ Load: ../other-skill/assets/template.html  # Cross-skill access
+FAIL Use: ~/git/project/assets/template.html    # Absolute path
+FAIL Load: ../other-skill/assets/template.html  # Cross-skill access
 ```
 
 ## Pattern 4: External URLs
@@ -139,11 +139,11 @@ Read assets/config-example.json
 
 **Examples**:
 ```markdown
-✅ * Java Spec: https://docs.oracle.com/javase/specs/
-✅ * Maven Guide: https://maven.apache.org/guides/
-✅ * CDI Spec: https://jakarta.ee/specifications/cdi/
-✅ * Quarkus Guide: https://quarkus.io/guides/cdi
-✅ * Claude Skills Deep Dive: https://leehanchung.github.io/blogs/2025/10/26/claude-skills-deep-dive/
+PASS * Java Spec: https://docs.oracle.com/javase/specs/
+PASS * Maven Guide: https://maven.apache.org/guides/
+PASS * CDI Spec: https://jakarta.ee/specifications/cdi/
+PASS * Quarkus Guide: https://quarkus.io/guides/cdi
+PASS * Claude Skills Deep Dive: https://leehanchung.github.io/blogs/2025/10/26/claude-skills-deep-dive/
 ```
 
 **Purpose**:
@@ -170,11 +170,11 @@ Skill: bundle-name:skill-name  # For bundled skills
 
 **Examples**:
 ```markdown
-✅ Skill: cui-java-core
-✅ Skill: cui-java-unit-testing
-✅ Skill: cui-javadoc
-✅ Skill: plan-marshall:dev-general-practices
-✅ Skill: pm-plugin-development:plugin-architecture
+PASS Skill: cui-java-core
+PASS Skill: cui-java-unit-testing
+PASS Skill: cui-javadoc
+PASS Skill: plan-marshall:dev-general-practices
+PASS Skill: pm-plugin-development:plugin-architecture
 ```
 
 **Usage Contexts**:
@@ -204,19 +204,19 @@ Follow architecture rules from loaded skill
 
 **Prohibited**:
 ```markdown
-❌ Read ../other-skill/SKILL.md     # Direct file access
-❌ bash ../other-skill/scripts/*.sh # Cross-skill script
+FAIL Read ../other-skill/SKILL.md     # Direct file access
+FAIL bash ../other-skill/scripts/*.sh # Cross-skill script
 ```
 
 ## Prohibited Patterns
 
-### ❌ Escape Sequences
+### FAIL Escape Sequences
 **Problem**: Breaks portability, assumes specific directory structure.
 
 ```markdown
-❌ Read: ../../../../standards/java/java-core.adoc
-❌ bash ../../scripts/analyzer.sh
-❌ * Guide: ../../../standards/requirements/guide.adoc
+FAIL Read: ../../../../standards/java/java-core.adoc
+FAIL bash ../../scripts/analyzer.sh
+FAIL * Guide: ../../../standards/requirements/guide.adoc
 ```
 
 **Why Wrong**:
@@ -226,13 +226,13 @@ Follow architecture rules from loaded skill
 
 **Fix**: Use appropriate pattern (Skill: for other skills, relative paths for own resources).
 
-### ❌ Absolute Paths
+### FAIL Absolute Paths
 **Problem**: Machine-specific, user-specific, not portable.
 
 ```markdown
-❌ Read: ~/git/plan-marshall/standards/java-core.adoc
-❌ bash /Users/oliver/scripts/analyzer.sh
-❌ Source: /opt/project/standards/logging.adoc
+FAIL Read: ~/git/plan-marshall/standards/java-core.adoc
+FAIL bash /Users/oliver/scripts/analyzer.sh
+FAIL Source: /opt/project/standards/logging.adoc
 ```
 
 **Why Wrong**:
@@ -242,12 +242,12 @@ Follow architecture rules from loaded skill
 
 **Fix**: Use relative paths or Skill: invocation.
 
-### ❌ Cross-Skill File Access
+### FAIL Cross-Skill File Access
 **Problem**: Breaks skill encapsulation, couples skills together.
 
 ```markdown
-❌ Read ../cui-other-skill/references/file.md
-❌ bash ../other-skill/scripts/script.sh
+FAIL Read ../cui-other-skill/references/file.md
+FAIL bash ../other-skill/scripts/script.sh
 ```
 
 **Why Wrong**:

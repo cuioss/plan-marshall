@@ -131,9 +131,9 @@ For each bundle in marketplace/bundles/:
 
 ```
 [UPDATE] bundle-name/README.md
-  ✓ Added 2 missing components
-  ✓ Removed 1 obsolete component
-  ✓ Updated 3 descriptions
+  PASS Added 2 missing components
+  PASS Removed 1 obsolete component
+  PASS Updated 3 descriptions
 ```
 
 ## Project Root README
@@ -240,7 +240,7 @@ Documentation Status: UP-TO-DATE
 README Maintenance Summary
 ==========================
 ...
-⚠️ Failed Updates:
+WARN Failed Updates:
   - bundle-name: Edit failed - no match found
 
 Next Steps:

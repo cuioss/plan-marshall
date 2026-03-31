@@ -32,7 +32,7 @@ No circumvention. No silent failures. Fail hard and loud.
 
 ## Tool Selection Guide
 
-| Operation | ❌ Don't Use (Prompts) | ✅ Use (No Prompts) | Pattern Reference |
+| Operation | FAIL Don't Use (Prompts) | PASS Use (No Prompts) | Pattern Reference |
 |-----------|----------------------|-------------------|------------------|
 | Find files | `find`, `ls` | `Glob` | Pattern 1 |
 | Check file exists | `test -f`, `cat` | `Read` + try/except | Pattern 2 |
@@ -159,7 +159,7 @@ for agent_path in agents:
 
 ## Common Pitfalls to Avoid
 
-### ❌ Don't Use Bash for File Operations
+### FAIL Don't Use Bash for File Operations
 
 ```
 # BAD - Triggers prompts
@@ -169,21 +169,21 @@ Bash(command="ls -la /path")
 Bash(command="grep pattern /path/file")
 ```
 
-### ❌ Don't Chain Bash Commands
+### FAIL Don't Chain Bash Commands
 
 ```
 # BAD - Triggers multiple prompts
 Bash(command="find /path -name '*.md' | wc -l")
 ```
 
-### ❌ Don't Use Bash for Conditional Checks
+### FAIL Don't Use Bash for Conditional Checks
 
 ```
 # BAD - Triggers prompts
 Bash(command="test -d /path && echo 'exists' || echo 'missing'")
 ```
 
-### ✅ Use Non-Prompting Tools
+### PASS Use Non-Prompting Tools
 
 ```
 # GOOD - No prompts
@@ -195,7 +195,7 @@ file_count = len(files)
 
 While this skill focuses on non-prompting tools, Bash is still necessary for certain operations:
 
-### ✅ Legitimate Bash Use Cases
+### PASS Legitimate Bash Use Cases
 
 **Git Operations**:
 ```
@@ -226,7 +226,7 @@ Bash(command="source ~/.bashrc && echo $PATH")
 - Container tools (docker, kubectl)
 - Build systems and package managers — but ONLY after resolving the command via `architecture resolve`
 
-### ❌ Never Use `gh` or `glab` Directly
+### FAIL Never Use `gh` or `glab` Directly
 
 All CI/Git provider operations (PRs, issues, CI status, reviews) MUST go through the CI integration abstraction layer. Direct `gh` or `glab` calls bypass provider abstraction, execution logging, and audit trail.
 
@@ -249,7 +249,7 @@ Skill: plan-marshall:workflow-integration-ci
 
 **No exceptions.** If a needed operation is missing from the CI abstraction, extend the scripts — do not bypass them. See `plan-marshall:tools-integration-ci` for the complete API.
 
-### ❌ Never Combine Commands in a Single Bash Call
+### FAIL Never Combine Commands in a Single Bash Call
 
 Each Bash call must contain exactly ONE command. Never combine commands using newlines, `&`, `&&`, or `;` separators. Newline-separated commands trigger Claude Code's security prompt ("Command contains newlines that could separate multiple commands").
 
@@ -267,7 +267,7 @@ Bash(command="git branch --show-current")
 
 If two commands are independent, make two parallel Bash tool calls. If sequential, make two separate calls.
 
-### ❌ Never Use Shell Constructs in Bash Commands
+### FAIL Never Use Shell Constructs in Bash Commands
 
 Shell constructs like `$()` command substitution, `for` loops, `while` loops, and subshells trigger Claude Code's security prompt — even when the inner command is in the allow list. This breaks automated execution.
 
@@ -293,7 +293,7 @@ Bash(command="python3 script.py --task 3")
 
 For batch operations, emit multiple parallel Bash tool calls rather than shell loops.
 
-### ❌ Never Use Heredocs for Multi-Line Arguments
+### FAIL Never Use Heredocs for Multi-Line Arguments
 
 Heredocs (`<<'EOF'`) with content containing `#`-prefixed lines trigger Claude Code's security prompt ("quoted newline followed by a #-prefixed line"). Use file-based alternatives instead.
 

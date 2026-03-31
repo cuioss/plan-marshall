@@ -131,7 +131,7 @@ Prefer these over manual spread patterns — they return new arrays without muta
 ```javascript
 const items = [3, 1, 4, 1, 5];
 
-// ✅ ES2023: toSorted(), toReversed(), toSpliced(), with()
+// Preferred: ES2023: toSorted(), toReversed(), toSpliced(), with()
 const sorted = items.toSorted((a, b) => a - b);    // [1, 1, 3, 4, 5]
 const reversed = items.toReversed();                 // [5, 1, 4, 1, 3]
 const spliced = items.toSpliced(1, 2, 9);           // [3, 9, 1, 5]
@@ -140,7 +140,7 @@ const replaced = items.with(2, 99);                  // [3, 1, 99, 1, 5]
 // Original is unchanged
 console.log(items); // [3, 1, 4, 1, 5]
 
-// ❌ Avoid: mutating originals or manual spread patterns
+// Avoid: mutating originals or manual spread patterns
 // items.sort(), items.reverse(), items.splice()
 // [...items.slice(0, index), ...items.slice(index + 1)]
 ```
@@ -304,7 +304,7 @@ const updateUser = (user, updates) => ({
 
 const addItem = (items, newItem) => [...items, newItem];
 
-// ✅ ES2023: use toSpliced() and with() instead of manual spread
+// Preferred: ES2023: use toSpliced() and with() instead of manual spread
 const removeItem = (items, index) => items.toSpliced(index, 1);
 
 const updateItem = (items, index, updates) =>
@@ -318,11 +318,11 @@ Use `structuredClone()` for deep copies instead of `JSON.parse(JSON.stringify())
 ```javascript
 const original = { name: 'Alice', tags: ['admin'], meta: { created: new Date() } };
 
-// ✅ structuredClone — handles nested objects, Date, Map, Set, ArrayBuffer
+// Preferred: structuredClone — handles nested objects, Date, Map, Set, ArrayBuffer
 const deep = structuredClone(original);
 deep.tags.push('editor'); // original.tags unchanged
 
-// ❌ Avoid: loses Date objects, fails on circular references
+// Avoid: loses Date objects, fails on circular references
 // const broken = JSON.parse(JSON.stringify(original));
 
 // Spread is fine for shallow copies only

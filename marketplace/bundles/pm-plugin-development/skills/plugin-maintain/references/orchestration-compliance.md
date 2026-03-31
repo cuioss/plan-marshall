@@ -61,7 +61,7 @@ Before proceeding to next bundle:
 
 When tempted to skip, display:
 ```
-⚠️ ANTI-SKIP WARNING
+WARN ANTI-SKIP WARNING
 Step {X} is mandatory for bundle integrity.
 Skipping will result in incomplete/invalid results.
 Continue with step? [Y/abort]
@@ -208,7 +208,7 @@ Completion Checklist for {bundle_name}:
 [ ] Risky fixes handled  ← NOT COMPLETE
 [x] Verification done
 
-⚠️ Cannot proceed: Not all items checked
+WARN Cannot proceed: Not all items checked
 ```
 
 ## Integration Pattern

@@ -30,9 +30,9 @@ Container standards for Quarkus applications ensuring consistent, secure, and ef
 * **Initial development**: Building and testing locally before production hardening
 
 **When to Use Which**:
-* ✅ **Use distroless** for: CI/CD pipelines, integration tests, pre-production environments, production deployments
-* ✅ **Use UBI minimal** for: Interactive debugging sessions where you need `docker exec -it <container> /bin/sh` to investigate issues
-* ❌ **Never use UBI minimal** in: Production deployments, automated CI/CD pipelines, or any environment where shell access is not actively needed
+* Preferred: **Use distroless** for: CI/CD pipelines, integration tests, pre-production environments, production deployments
+* Preferred: **Use UBI minimal** for: Interactive debugging sessions where you need `docker exec -it <container> /bin/sh` to investigate issues
+* Avoid: **Never use UBI minimal** in: Production deployments, automated CI/CD pipelines, or any environment where shell access is not actively needed
 
 **Important**: Use distroless for all automated testing (CI/CD, integration tests). Only use UBI minimal when you specifically need shell access for debugging. Never use in production.
 

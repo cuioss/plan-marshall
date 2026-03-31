@@ -54,14 +54,14 @@ public class TokenValidator {
 * Directly instantiate loggers in multiple places
 
 ```java
-// ❌ WRONG
+// Avoid: WRONG
 @Slf4j
 public class MyClass {
     System.out.println("Debug: " + message);
     log.info("[DEBUG_LOG] Processing...");
 }
 
-// ✅ CORRECT
+// Preferred: CORRECT
 public class MyClass {
     private static final CuiLogger LOGGER = new CuiLogger(MyClass.class);
 
@@ -245,47 +245,47 @@ LOGGER.fatal(FATAL.SYSTEM_FAILURE, "database unreachable");
 ### 1. Use LogRecord for Production Levels Only
 
 ```java
-// ✅ Good - LogRecord for INFO/WARN/ERROR/FATAL
+// Preferred: Good - LogRecord for INFO/WARN/ERROR/FATAL
 LOGGER.info(INFO.USER_LOGIN, username);
 LOGGER.warn(WARN.RATE_LIMIT, userId);
 
-// ✅ Good - simple strings for DEBUG/TRACE
+// Preferred: Good - simple strings for DEBUG/TRACE
 LOGGER.debug("Validating token signature");
 
-// ❌ Bad - simple string for production levels
+// Avoid: Bad - simple string for production levels
 LOGGER.info("User " + username + " logged in");  // MUST use LogRecord
 
-// ❌ Bad - LogRecord for debug/trace
+// Avoid: Bad - LogRecord for debug/trace
 LOGGER.debug(DEBUG.TOKEN_DETAILS, token);  // PROHIBITED
 ```
 
 ### 2. Exception Parameter First
 
 ```java
-// ✅ Good
+// Preferred: Good
 LOGGER.error(exception, ERROR.VALIDATION_FAILED, tokenId);
 
-// ❌ Bad
+// Avoid: Bad
 LOGGER.error(ERROR.VALIDATION_FAILED, tokenId, exception);  // Won't work
 ```
 
 ### 3. Use %s for All Substitutions
 
 ```java
-// ✅ Good
+// Preferred: Good
 LOGGER.info("Processing %s records in %s ms", count, duration);
 
-// ❌ Bad
+// Avoid: Bad
 LOGGER.info("Processing %d records", count);  // Use %s
 ```
 
 ### 4. Don't Log Sensitive Information
 
 ```java
-// ❌ Bad
+// Avoid: Bad
 LOGGER.info("User password: %s", password);
 
-// ✅ Good
+// Preferred: Good
 LOGGER.info("User authenticated: %s", username);
 ```
 

@@ -495,7 +495,7 @@ final_result.conclusion	success
     │  │    Poll 1 (0s):   "pending" - CI queued           │  │
     │  │    Poll 2 (30s):  "pending" - CI running          │  │
     │  │    Poll 3 (60s):  "pending" - CI running          │  │
-    │  │    Poll 4 (90s):  "success" - CI passed! ✓        │  │
+    │  │    Poll 4 (90s):  "success" - CI passed! PASS        │  │
     │  │                                                   │  │
     │  │    → Returns immediately at 90s                   │  │
     │  └───────────────────────────────────────────────────┘  │

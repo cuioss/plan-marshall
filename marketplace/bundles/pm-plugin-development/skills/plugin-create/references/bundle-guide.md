@@ -34,14 +34,14 @@ bundle-name/
 
 **Examples**:
 
-✅ **New Bundle** (distinct domain):
+PASS **New Bundle** (distinct domain):
 ```
 pm-dev-java         (Java development)
 pm-dev-frontend     (Frontend development)
 pm-documents (Documentation)
 ```
 
-✅ **Add to Existing** (related):
+PASS **Add to Existing** (related):
 ```
 pm-dev-java/
 ├── skills/
@@ -405,7 +405,7 @@ bundle/
 
 **Don't** organize by feature:
 ```
-❌ bundle/
+FAIL bundle/
     ├── feature-a/
     │   ├── agent.md
     │   ├── command.md
@@ -514,7 +514,7 @@ Before releasing bundle, verify:
 
 ### Pitfall 1: Invalid plugin.json
 
-❌ **Wrong**: Malformed JSON
+FAIL **Wrong**: Malformed JSON
 ```json
 {
   "name": "bundle-name",
@@ -523,7 +523,7 @@ Before releasing bundle, verify:
 }
 ```
 
-✅ **Correct**: Valid JSON
+PASS **Correct**: Valid JSON
 ```json
 {
   "name": "bundle-name",
@@ -534,20 +534,20 @@ Before releasing bundle, verify:
 
 ### Pitfall 2: Outdated Components Array
 
-❌ **Wrong**: Created 5 components but plugin.json lists 2
+FAIL **Wrong**: Created 5 components but plugin.json lists 2
 
-✅ **Correct**: Update plugin.json after each component creation
+PASS **Correct**: Update plugin.json after each component creation
 
 ### Pitfall 3: Missing Directories
 
-❌ **Wrong**:
+FAIL **Wrong**:
 ```
 bundle/
 ├── plugin.json
 └── skills/  // Missing agents/ and commands/
 ```
 
-✅ **Correct**:
+PASS **Correct**:
 ```
 bundle/
 ├── plugin.json
@@ -558,25 +558,25 @@ bundle/
 
 ### Pitfall 4: Inconsistent Naming
 
-❌ **Wrong**:
+FAIL **Wrong**:
 - Bundle name: `java-tools`
 - Display name: "JavaScript Utilities"  // Mismatch!
 
-✅ **Correct**:
+PASS **Correct**:
 - Bundle name: `java-tools`
 - Display name: "Java Development Tools"  // Consistent
 
 ### Pitfall 5: Massive README
 
-❌ **Wrong**: 500-line README with component documentation duplicated
+FAIL **Wrong**: 500-line README with component documentation duplicated
 
-✅ **Correct**: Concise README linking to component files
+PASS **Correct**: Concise README linking to component files
 
 ## Bundle Scope Guidelines
 
 ### Good Scope (Focused)
 
-✅ **java-development-standards**:
+PASS **java-development-standards**:
 - Java coding standards
 - Java testing patterns
 - Java documentation
@@ -586,7 +586,7 @@ bundle/
 
 ### Bad Scope (Unfocused)
 
-❌ **development-standards**:
+FAIL **development-standards**:
 - Java standards
 - JavaScript standards
 - Python standards
@@ -605,7 +605,7 @@ plan-marshall/
 ├── 3 commands
 └── 2 skills
 ```
-✅ Good - focused bundle
+PASS Good - focused bundle
 
 **Medium Bundle** (10-20 components):
 ```
@@ -614,7 +614,7 @@ pm-dev-java/
 ├── 7 commands
 └── 8 skills
 ```
-✅ Good - comprehensive domain coverage
+PASS Good - comprehensive domain coverage
 
 **Large Bundle** (20-40 components):
 ```
@@ -623,7 +623,7 @@ pm-plugin-development/
 ├── 15 commands
 └── 8 skills
 ```
-✅ Acceptable - complex domain with many tools
+PASS Acceptable - complex domain with many tools
 
 **Too Large** (40+ components):
 ```
@@ -632,7 +632,7 @@ all-tools-bundle/
 ├── 30 commands
 └── 20 skills
 ```
-❌ Too large - split into focused bundles
+FAIL Too large - split into focused bundles
 
 ## Examples
 

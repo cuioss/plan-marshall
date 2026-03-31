@@ -104,9 +104,9 @@ The single underscore prefix follows Python community conventions (PEP 8):
     │  from package import *                                  │
     │  ┌───────────────────────────────────────────────────┐  │
     │  │ Imports:                                          │  │
-    │  │   ✓ maven.py         (public)                     │  │
-    │  │   ✓ gradle.py        (public)                     │  │
-    │  │   ✓ npm.py           (public)                     │  │
+    │  │   PASS maven.py         (public)                     │  │
+    │  │   PASS gradle.py        (public)                     │  │
+    │  │   PASS npm.py           (public)                     │  │
     │  │                                                   │  │
     │  │ Skips:                                            │  │
     │  │   ✗ _maven_execute.py      (internal)             │  │

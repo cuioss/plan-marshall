@@ -40,12 +40,12 @@ Integration tests must follow Maven's standard naming conventions:
 * `**/*ITCase.java` - Alternative integration test naming
 
 ```java
-// ✅ Correct naming
+// Preferred: Correct naming
 public class TokenKeycloakIT extends KeycloakITBase {
     // Integration test implementation
 }
 
-// ❌ Incorrect naming (would be treated as unit test)
+// Avoid: Incorrect naming (would be treated as unit test)
 public class TokenKeycloakITTest extends KeycloakITBase {
     // This follows unit test naming convention
 }
@@ -185,22 +185,22 @@ Use when: Implementing external API integration tests with Docker containers, RE
 
 ## Common Pitfalls
 
-### ❌ Incorrect Naming Convention
+### FAIL Incorrect Naming Convention
 
 ```java
 // Wrong - will be treated as unit test
 public class TokenKeycloakITTest { }
 ```
 
-### ❌ Missing Surefire Skip Configuration
+### FAIL Missing Surefire Skip Configuration
 
 Without `<skipTests>true</skipTests>` in the integration-tests profile, both unit and integration tests will run.
 
-### ❌ Wrong Maven Goal
+### FAIL Wrong Maven Goal
 
 Integration tests require the `verify` goal (runs failsafe). The `test` goal only runs surefire (unit tests) — it will not execute `*IT.java` files even with the integration-tests profile active.
 
-### ❌ Missing Failsafe Executions
+### FAIL Missing Failsafe Executions
 
 Without proper `<executions>` configuration, failsafe tests might not run or results might not be verified.
 

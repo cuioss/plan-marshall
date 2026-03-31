@@ -301,18 +301,18 @@ For non-marketplace use cases, external implementations exist:
 ## Best Practices
 
 ### DO Use TOON For:
-✅ Uniform arrays (database results, log entries)
-✅ LLM prompts with structured data
-✅ Agent tool outputs with repeated structure
-✅ Cost-sensitive API calls
-✅ Semi-structured data (mix of tabular + nested)
+PASS Uniform arrays (database results, log entries)
+PASS LLM prompts with structured data
+PASS Agent tool outputs with repeated structure
+PASS Cost-sensitive API calls
+PASS Semi-structured data (mix of tabular + nested)
 
 ### DON'T Use TOON For:
-❌ API interchange (use JSON)
-❌ Configuration files (use YAML/JSON)
-❌ Deeply nested structures (>3 levels)
-❌ Non-uniform object shapes
-❌ Pure flat tables (use CSV instead)
+FAIL API interchange (use JSON)
+FAIL Configuration files (use YAML/JSON)
+FAIL Deeply nested structures (>3 levels)
+FAIL Non-uniform object shapes
+FAIL Pure flat tables (use CSV instead)
 
 ### Optimization Tips
 
@@ -367,13 +367,13 @@ For non-marketplace use cases, external implementations exist:
 |--------|------|------|-----|------|
 | **Token Efficiency** | Baseline | -40% | -70% | -15% |
 | **LLM Accuracy** | 52.3% | 73.9% | 44.3% | 54.7% |
-| **Nesting Support** | ✅ Full | ✅ Full | ❌ None | ✅ Full |
-| **Uniform Arrays** | ⚠️ Verbose | ✅ Optimal | ✅ Compact | ⚠️ Verbose |
-| **Non-uniform Data** | ✅ Good | ⚠️ OK | ❌ Poor | ✅ Good |
-| **Tooling Support** | ✅ Universal | ⚠️ Growing | ✅ Universal | ✅ Wide |
-| **API Compatibility** | ✅ Standard | ❌ Needs conversion | ❌ Limited | ⚠️ Some |
-| **Human Readable** | ⚠️ OK | ✅ Good | ⚠️ OK | ✅ Excellent |
-| **Schema Clarity** | ❌ Implicit | ✅ Explicit | ❌ None | ❌ Implicit |
+| **Nesting Support** | PASS Full | PASS Full | FAIL None | PASS Full |
+| **Uniform Arrays** | WARN Verbose | PASS Optimal | PASS Compact | WARN Verbose |
+| **Non-uniform Data** | PASS Good | WARN OK | FAIL Poor | PASS Good |
+| **Tooling Support** | PASS Universal | WARN Growing | PASS Universal | PASS Wide |
+| **API Compatibility** | PASS Standard | FAIL Needs conversion | FAIL Limited | WARN Some |
+| **Human Readable** | WARN OK | PASS Good | WARN OK | PASS Excellent |
+| **Schema Clarity** | FAIL Implicit | PASS Explicit | FAIL None | FAIL Implicit |
 
 ## Adoption Rules
 

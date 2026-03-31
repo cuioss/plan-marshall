@@ -61,8 +61,8 @@ class Extension(ExtensionBase):
                             'description': 'Language-agnostic testing methodology (AAA, coverage, reliability, determinism)',
                         },
                         {
-                            'skill': 'pm-dev-frontend:js-testing',
-                            'description': 'JavaScript unit testing with Jest/Vitest, DOM testing, mocking, async patterns',
+                            'skill': 'pm-dev-frontend:jest-testing',
+                            'description': 'JavaScript unit testing with Jest, DOM testing, mocking, async patterns',
                         },
                     ],
                     'optionals': [],

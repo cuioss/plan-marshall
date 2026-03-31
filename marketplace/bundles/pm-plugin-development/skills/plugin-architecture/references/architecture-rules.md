@@ -17,7 +17,7 @@ All skills must contain ALL content within their own directory structure using t
 
 **Examples**:
 
-✅ CORRECT (relative path pattern):
+PASS CORRECT (relative path pattern):
 ```markdown
 Read references/java-core-patterns.md
 bash scripts/analyzer.py {input_file}
@@ -25,7 +25,7 @@ Load template: assets/template.html
 Skill: cui-java-unit-testing
 ```
 
-❌ INCORRECT (hardcoded paths):
+FAIL INCORRECT (hardcoded paths):
 ```markdown
 Read: ../../../../standards/java/java-core.adoc
 Read: ~/git/plan-marshall/standards/logging.adoc
@@ -58,7 +58,7 @@ Commands and workflows requiring standards must invoke Skills via the Skill tool
 
 **Examples**:
 
-✅ CORRECT (skill invocation):
+PASS CORRECT (skill invocation):
 ```yaml
 ---
 name: code-reviewer
@@ -73,7 +73,7 @@ Step 2: Review Code
 Apply standards loaded from skills
 ```
 
-❌ INCORRECT (direct file access):
+FAIL INCORRECT (direct file access):
 ```markdown
 Step 1: Load Standards
 Read: ~/git/plan-marshall/standards/java-core.adoc
@@ -108,9 +108,9 @@ Load: assets/template.html
 
 **Examples**:
 ```markdown
-✅ Read references/quality-standards.md
-✅ bash scripts/validate.sh {input}
-✅ Load template: assets/report-template.json
+PASS Read references/quality-standards.md
+PASS bash scripts/validate.sh {input}
+PASS Load template: assets/report-template.json
 ```
 
 ### 2. External URLs (all components)
@@ -127,9 +127,9 @@ Load: assets/template.html
 
 **Examples**:
 ```markdown
-✅ * Java Spec: https://docs.oracle.com/javase/specs/
-✅ * Maven Guide: https://maven.apache.org/guides/
-✅ * Quarkus Guide: https://quarkus.io/guides/cdi
+PASS * Java Spec: https://docs.oracle.com/javase/specs/
+PASS * Maven Guide: https://maven.apache.org/guides/
+PASS * Quarkus Guide: https://quarkus.io/guides/cdi
 ```
 
 ### 3. Skill Dependencies (all components)
@@ -145,21 +145,21 @@ Skill: cui-skill-name
 
 **Examples**:
 ```markdown
-✅ Skill: cui-java-core
-✅ Skill: cui-java-unit-testing
-✅ Skill: cui-javadoc
+PASS Skill: cui-java-core
+PASS Skill: cui-java-unit-testing
+PASS Skill: cui-javadoc
 ```
 
 **Prohibited References**:
 
-❌ **Escape sequences**:
+FAIL **Escape sequences**:
 ```markdown
 Read: ../../../../standards/java/java-core.adoc
 ```
 - Breaks portability
 - Assumes specific directory structure
 
-❌ **Absolute paths**:
+FAIL **Absolute paths**:
 ```markdown
 Read: ~/git/plan-marshall/standards/java-core.adoc
 ```
@@ -167,7 +167,7 @@ Read: ~/git/plan-marshall/standards/java-core.adoc
 - User-specific
 - Not portable
 
-❌ **Improper Path Reference**:
+FAIL **Improper Path Reference**:
 ```markdown
 bash ./scripts/analyzer.py  # Should use scripts/analyzer.py
 ```
@@ -212,7 +212,7 @@ Read references/quality-standards.md
 
 **Examples**:
 
-✅ CORRECT (progressive loading):
+PASS CORRECT (progressive loading):
 ```markdown
 ## Step 1: Load Core Principles
 
@@ -226,7 +226,7 @@ If using Pattern 1:
 # Each reference loads only when needed
 ```
 
-❌ INCORRECT (eager loading):
+FAIL INCORRECT (eager loading):
 ```yaml
 ---
 name: my-skill
@@ -262,7 +262,7 @@ Components must be organized by user goals, not technical component types.
 
 **Examples**:
 
-✅ CORRECT (goal-based):
+PASS CORRECT (goal-based):
 ```
 plugin-create/           # CREATE goal
   ├── SKILL.md
@@ -285,7 +285,7 @@ commands/
   └── doctor.md          # Routes to plugin-doctor skill
 ```
 
-❌ INCORRECT (component-centric):
+FAIL INCORRECT (component-centric):
 ```
 commands/
   ├── plugin-create-agent.md        # Component-specific

@@ -186,9 +186,9 @@ existing_cmd_names = ["/cui-" + f.split("/")[-1].replace(".md", "").replace("cui
 broken_refs = referenced_commands - set(existing_cmd_names)
 
 if len(broken_refs) == 0:
-    print("✅ All command references valid")
+    print("PASS All command references valid")
 else:
-    print(f"❌ Found {len(broken_refs)} broken command references:")
+    print(f"FAIL Found {len(broken_refs)} broken command references:")
     for cmd in broken_refs:
         print(f"  - {cmd}")
 ```
@@ -231,7 +231,7 @@ external_skills = referenced_skills - set(bundle_skill_names)
 print(f"Skill Usage:")
 print(f"  Internal skills: {len(internal_skills)}")
 for skill in internal_skills:
-    print(f"    ✅ {skill} (exists in bundle)")
+    print(f"    PASS {skill} (exists in bundle)")
 
 print(f"  External skills: {len(external_skills)}")
 for skill in external_skills:
@@ -297,9 +297,9 @@ def check_tool_coverage(agent_path):
 # Use
 result = check_tool_coverage("/bundle/path/agents/my-agent.md")
 if result["coverage"] == 100:
-    print(f"✅ Tool coverage: 100%")
+    print(f"PASS Tool coverage: 100%")
 else:
-    print(f"⚠️  Tool coverage: {result['coverage']:.0f}%")
+    print(f"WARN  Tool coverage: {result['coverage']:.0f}%")
     if result["missing"]:
         print(f"  Missing from tools list: {', '.join(result['missing'])}")
     if result["unused"]:

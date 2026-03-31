@@ -1,12 +1,12 @@
 ---
-name: js-testing
-description: JavaScript unit testing standards covering Jest and Vitest frameworks, DOM and web component testing, mocking patterns, async testing, and coverage configuration
+name: jest-testing
+description: JavaScript unit testing standards covering Jest framework, DOM and web component testing, mocking patterns, async testing, and coverage configuration
 user-invocable: false
 ---
 
 # JavaScript Testing Standards
 
-Unit testing standards for JavaScript projects using Jest or Vitest, covering test structure, DOM interaction, web component testing, mocking, async patterns, and coverage.
+Unit testing standards for JavaScript projects using Jest, covering test structure, DOM interaction, web component testing, mocking, async patterns, and coverage.
 
 ## Enforcement
 
@@ -16,7 +16,7 @@ Unit testing standards for JavaScript projects using Jest or Vitest, covering te
 
 ## Prerequisites
 
-- Jest 29+ or Vitest 1+
+- Jest 29+
 - jsdom test environment (for DOM/component testing)
 - @testing-library/jest-dom (recommended for DOM assertions)
 
@@ -30,7 +30,7 @@ Load this standard for any JavaScript test work.
 Read: standards/test-fundamentals.md
 ```
 
-Covers framework setup (Jest/Vitest), test structure, naming, AAA pattern, parameterized tests, coverage configuration, and ESLint integration for tests.
+Covers framework setup, test structure, naming, AAA pattern, parameterized tests, coverage configuration, and ESLint integration for tests.
 
 ### Step 2: Load Additional Standards (As Needed)
 
@@ -52,4 +52,4 @@ Use when: Mocking modules or APIs, working with fetch mocks, testing async/await
 
 - `plan-marshall:dev-general-module-testing` — Language-agnostic testing methodology (AAA, coverage, reliability)
 - `pm-dev-frontend:javascript` — Core JavaScript development standards
-- `pm-dev-frontend:js-enforce-eslint` — ESLint configuration including Jest/Vitest plugins
+- `pm-dev-frontend:js-enforce-eslint` — ESLint configuration including Jest plugin

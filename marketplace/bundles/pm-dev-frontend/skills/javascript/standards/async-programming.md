@@ -38,7 +38,7 @@ try {
 Let errors bubble up by default. Only catch to add meaningful context or transform errors:
 
 ```javascript
-// ✅ Catch to add context
+// Preferred: Catch to add context
 const fetchUserWithContext = async (userId) => {
   try {
     const response = await fetch(`/api/users/${userId}`);
@@ -219,7 +219,7 @@ const parallelLimit = async (items, limit, asyncFn) => {
 Creates a deferred promise without the executor callback pattern:
 
 ```javascript
-// ✅ ES2024: Promise.withResolvers()
+// Preferred: ES2024: Promise.withResolvers()
 const { promise, resolve, reject } = Promise.withResolvers();
 
 // Useful when resolve/reject must be called outside the executor

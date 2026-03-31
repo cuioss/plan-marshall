@@ -282,11 +282,11 @@ LOGRECORD MAINTENANCE:
 - Identifiers renumbered: {count}
 
 IDENTIFIER VERIFICATION:
-✓ INFO level (001-099): {count} messages, consecutive ordering
-✓ WARN level (100-199): {count} messages, consecutive ordering
-✓ ERROR level (200-299): {count} messages, consecutive ordering
-✓ FATAL level (300-399): {count} messages, consecutive ordering
-✓ No DEBUG/TRACE LogRecords found
+PASS INFO level (001-099): {count} messages, consecutive ordering
+PASS WARN level (100-199): {count} messages, consecutive ordering
+PASS ERROR level (200-299): {count} messages, consecutive ordering
+PASS FATAL level (300-399): {count} messages, consecutive ordering
+PASS No DEBUG/TRACE LogRecords found
 
 BUILD STATUS: {SUCCESS/FAILURE}
 

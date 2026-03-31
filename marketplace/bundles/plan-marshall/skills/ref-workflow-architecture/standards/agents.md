@@ -84,7 +84,7 @@ Understanding when to use `Skill:` vs `Task:` is critical for proper context man
 │  │  Main Conversation                                                   │  │
 │  │    → Skill: phase-3-outline      ← STAYS in main context             │  │
 │  │      → Skill: ext-outline-workflow ← STAYS in main context             │  │
-│  │        → Task: analysis-agent    ← CAN spawn (from main context) ✓   │  │
+│  │        → Task: analysis-agent    ← CAN spawn (from main context) PASS   │  │
 │  │                                                                      │  │
 │  │  Main Conversation                                                   │  │
 │  │    → Task: some-agent            ← Creates SUBAGENT context          │  │
@@ -287,12 +287,12 @@ Each agent follows the same pattern:
 │  │  AGENT DOES:                          AGENT DOES NOT:                │  │
 │  │  ══════════                           ══════════════                 │  │
 │  │                                                                      │  │
-│  │  ✓ Load system skills                 ✗ Spawn other agents           │  │
-│  │  ✓ Resolve workflow skill             ✗ Cross scope boundaries       │  │
-│  │  ✓ Load resolved skill                ✗ Invoke commands              │  │
-│  │  ✓ Delegate to skill                  ✗ Make high-level decisions    │  │
-│  │  ✓ Return structured result           ✗ Access files outside scope   │  │
-│  │  ✓ Provide context isolation                                         │  │
+│  │  PASS Load system skills                 ✗ Spawn other agents           │  │
+│  │  PASS Resolve workflow skill             ✗ Cross scope boundaries       │  │
+│  │  PASS Load resolved skill                ✗ Invoke commands              │  │
+│  │  PASS Delegate to skill                  ✗ Make high-level decisions    │  │
+│  │  PASS Return structured result           ✗ Access files outside scope   │  │
+│  │  PASS Provide context isolation                                         │  │
 │  │                                                                      │  │
 │  └──────────────────────────────────────────────────────────────────────┘  │
 │                                                                             │
@@ -301,13 +301,13 @@ Each agent follows the same pattern:
 │  │  PHASE SKILL DOES:                    PHASE SKILL DOES NOT:          │  │
 │  │  ════════════════                     ═════════════════              │  │
 │  │                                                                      │  │
-│  │  ✓ Contains workflow logic            ✗ Handle phase transitions     │  │
-│  │  ✓ Calls manage-* scripts             ✗ Invoke commands directly     │  │
-│  │  ✓ Makes decisions                    ✗ Access files outside scope   │  │
-│  │  ✓ Spawns analysis agents (when in    ✗ Duplicate agent logic        │  │
+│  │  PASS Contains workflow logic            ✗ Handle phase transitions     │  │
+│  │  PASS Calls manage-* scripts             ✗ Invoke commands directly     │  │
+│  │  PASS Makes decisions                    ✗ Access files outside scope   │  │
+│  │  PASS Spawns analysis agents (when in    ✗ Duplicate agent logic        │  │
 │  │    main context)                                                     │  │
-│  │  ✓ Returns structured result                                         │  │
-│  │  ✓ Records lessons learned                                           │  │
+│  │  PASS Returns structured result                                         │  │
+│  │  PASS Records lessons learned                                           │  │
 │  │                                                                      │  │
 │  └──────────────────────────────────────────────────────────────────────┘  │
 │                                                                             │
@@ -349,17 +349,17 @@ Each agent follows the same pattern:
 │  │                                                                      │  │
 │  │  ┌────────────────────────────────────────────────────────────────┐ │  │
 │  │  │                                                                │ │  │
-│  │  │  ✓ Access .plan/ files ONLY via execute-script.py              │ │  │
+│  │  │  PASS Access .plan/ files ONLY via execute-script.py              │ │  │
 │  │  │                                                                │ │  │
-│  │  │  ✓ Load system skills (Step 0) before any action               │ │  │
+│  │  │  PASS Load system skills (Step 0) before any action               │ │  │
 │  │  │                                                                │ │  │
-│  │  │  ✓ Resolve workflow skill from marshal.json                    │ │  │
+│  │  │  PASS Resolve workflow skill from marshal.json                    │ │  │
 │  │  │                                                                │ │  │
-│  │  │  ✓ Delegate to skill for actual work                           │ │  │
+│  │  │  PASS Delegate to skill for actual work                           │ │  │
 │  │  │                                                                │ │  │
-│  │  │  ✓ Return structured TOON output                               │ │  │
+│  │  │  PASS Return structured TOON output                               │ │  │
 │  │  │                                                                │ │  │
-│  │  │  ✓ Log skill loading decisions                                 │ │  │
+│  │  │  PASS Log skill loading decisions                                 │ │  │
 │  │  │                                                                │ │  │
 │  │  └────────────────────────────────────────────────────────────────┘ │  │
 │  │                                                                      │  │

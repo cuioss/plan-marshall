@@ -115,17 +115,17 @@ Both `@RegisterForReflection` and `ReflectiveClassBuildItem` have identical runt
 ## Anti-Patterns
 
 ```java
-// ❌ Redundant — CDI beans don't need reflection registration
+// Avoid: Redundant — CDI beans don't need reflection registration
 @ApplicationScoped
 @RegisterForReflection
 public class MyService { }
 
-// ❌ Double registration — annotation + BuildStep for same class
+// Avoid: Double registration — annotation + BuildStep for same class
 @RegisterForReflection
 public class MyClass { }
 // plus ReflectiveClassBuildItem for MyClass in a @BuildStep
 
-// ❌ CDI bean registered via both AdditionalBeanBuildItem and @RegisterForReflection
+// Avoid: CDI bean registered via both AdditionalBeanBuildItem and @RegisterForReflection
 @ApplicationScoped
 @RegisterForReflection
 public class TokenProducer { }  // Remove @RegisterForReflection

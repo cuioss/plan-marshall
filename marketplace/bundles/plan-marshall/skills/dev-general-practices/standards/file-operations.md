@@ -20,9 +20,9 @@ except Exception:
 
 # Report
 if file_exists:
-    print("✅ file exists")
+    print("PASS file exists")
 else:
-    print("❌ Missing: file (CRITICAL)")
+    print("FAIL Missing: file (CRITICAL)")
 ```
 
 **When to use**: Required files that will be read and validated.
@@ -34,9 +34,9 @@ file_exists = len(result) > 0
 
 # Report
 if file_exists:
-    print("✅ filename exists")
+    print("PASS filename exists")
 else:
-    print("❌ Missing: filename")
+    print("FAIL Missing: filename")
 ```
 
 **When to use**: Quick existence check without needing content.
@@ -59,13 +59,13 @@ for file_path, severity in required_files.items():
     try:
         Read(file_path=full_path)
         existing_files.append(file_path)
-        print(f"✅ {file_path} exists")
+        print(f"PASS {file_path} exists")
     except Exception:
         missing_files.append((file_path, severity))
         if severity == "CRITICAL":
-            print(f"❌ Missing: {file_path} (CRITICAL)")
+            print(f"FAIL Missing: {file_path} (CRITICAL)")
         else:
-            print(f"⚠️  Missing: {file_path} ({severity})")
+            print(f"WARN  Missing: {file_path} ({severity})")
 
 # Summary
 total_files = len(required_files)
@@ -87,9 +87,9 @@ directory_exists = len(result) > 0
 
 # Report
 if directory_exists:
-    print(f"✅ {directory_name}/ exists")
+    print(f"PASS {directory_name}/ exists")
 else:
-    print(f"❌ Missing: {directory_name}/ directory")
+    print(f"FAIL Missing: {directory_name}/ directory")
 ```
 
 **Alternative: Check by trying to list contents**
@@ -104,11 +104,11 @@ except Exception:
 
 if directory_exists:
     is_empty = len(contents) == 0
-    print(f"✅ {directory_name}/ exists ({len(contents)} items)")
+    print(f"PASS {directory_name}/ exists ({len(contents)} items)")
     if is_empty:
-        print(f"   ⚠️  Directory is empty")
+        print(f"   WARN  Directory is empty")
 else:
-    print(f"❌ Missing: {directory_name}/")
+    print(f"FAIL Missing: {directory_name}/")
 ```
 
 ### Pattern: Check Required Directory Structure
@@ -130,13 +130,13 @@ for item_name, config in required_structure.items():
     exists = len(result) > 0
 
     if exists:
-        print(f"✅ {item_name}/ exists")
+        print(f"PASS {item_name}/ exists")
     else:
         if config["critical"]:
-            print(f"❌ Missing: {item_name}/ (CRITICAL)")
+            print(f"FAIL Missing: {item_name}/ (CRITICAL)")
             structure_issues += 1
         else:
-            print(f"⚠️  Missing: {item_name}/ (optional but recommended)")
+            print(f"WARN  Missing: {item_name}/ (optional but recommended)")
 
 print(f"\nStructure Score: {100 - (structure_issues * 25)}/100")
 ```
@@ -254,9 +254,9 @@ file_path = "/bundle/agents/my-agent.md"
 is_valid, message = validate_frontmatter(file_path)
 
 if is_valid:
-    print(f"✅ {file_path}: {message}")
+    print(f"PASS {file_path}: {message}")
 else:
-    print(f"❌ {file_path}: {message}")
+    print(f"FAIL {file_path}: {message}")
 ```
 
 ### Pattern: Batch Validate Components
@@ -277,10 +277,10 @@ for agent_path in agents:
 
     if is_valid:
         valid_agents.append(agent_name)
-        print(f"✅ {agent_name}: valid")
+        print(f"PASS {agent_name}: valid")
     else:
         invalid_agents.append((agent_name, message))
-        print(f"❌ {agent_name}: {message}")
+        print(f"FAIL {agent_name}: {message}")
 
 # Summary
 total = len(agents)
@@ -342,9 +342,9 @@ for item in all_items + hidden_items:
 
 # Report
 if len(unexpected) == 0:
-    print("✅ No unexpected files found")
+    print("PASS No unexpected files found")
 else:
-    print("⚠️  Unexpected files found:")
+    print("WARN  Unexpected files found:")
     for item_name, reason in unexpected:
         print(f"  - {item_name} ({reason})")
 ```
@@ -382,9 +382,9 @@ def compare_lists(listed, actual, component_type):
     actual_count = len(actual)
 
     if listed_count == actual_count:
-        print(f"✅ {component_type}: manifest lists {listed_count}, found {actual_count} (matches)")
+        print(f"PASS {component_type}: manifest lists {listed_count}, found {actual_count} (matches)")
     else:
-        print(f"⚠️  {component_type}: manifest lists {listed_count}, found {actual_count} (mismatch)")
+        print(f"WARN  {component_type}: manifest lists {listed_count}, found {actual_count} (mismatch)")
 
         # Find missing (in manifest but not found)
         missing = set(listed) - set(actual)
@@ -473,13 +473,13 @@ def validate_bundle_structure(bundle_path):
 # Use
 validation = validate_bundle_structure("/path/to/bundle")
 if validation["valid"]:
-    print("✅ Bundle structure valid")
+    print("PASS Bundle structure valid")
     if validation["warnings"]:
-        print("⚠️  Warnings:")
+        print("WARN  Warnings:")
         for warning in validation["warnings"]:
             print(f"  - {warning}")
 else:
-    print("❌ Bundle structure invalid")
+    print("FAIL Bundle structure invalid")
     for issue in validation["issues"]:
         print(f"  - {issue}")
 ```

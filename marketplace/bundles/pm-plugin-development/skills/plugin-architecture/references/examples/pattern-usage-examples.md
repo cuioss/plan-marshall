@@ -208,8 +208,8 @@ Read references/dependency-resolution.md
 
 ## Final Report
 
-All stages passed: ✅ Bundle verified
-Any stage failed: ❌ Bundle has issues (with specific error details)
+All stages passed: PASS Bundle verified
+Any stage failed: FAIL Bundle has issues (with specific error details)
 ```
 
 **Key Benefit**: Sequential validation with clear failure points and recovery guidance.
@@ -277,7 +277,7 @@ If confirmed:
   Create component files
 
 Show:
-  ✅ Created {component_name}
+  PASS Created {component_name}
   📁 Location: {bundle}/agents/{component_name}.md
   📋 Next steps: [...]
 ```
@@ -529,7 +529,7 @@ Validates:
 - YAML parseable
 - Required fields present
 
-❌ If syntax errors: STOP (cannot proceed with invalid YAML)
+FAIL If syntax errors: STOP (cannot proceed with invalid YAML)
 
 ## Validation Stage 2: Frontmatter Standards
 
@@ -543,7 +543,7 @@ Checks:
 - No prohibited tools (Task in agents)
 - Valid tool names
 
-⚠️  If violations: Record for final report (continue checking)
+WARN  If violations: Record for final report (continue checking)
 
 ## Validation Stage 3: Reference Compliance
 
@@ -554,7 +554,7 @@ Validates:
 - No prohibited escape sequences
 - No absolute paths
 
-⚠️  If violations: Record for final report (continue checking)
+WARN  If violations: Record for final report (continue checking)
 
 ## Validation Stage 4: Link Verification
 
@@ -565,21 +565,21 @@ Checks:
 - All skill references exist
 - All cross-references valid
 
-⚠️  If broken links: Record for final report (continue checking)
+WARN  If broken links: Record for final report (continue checking)
 
 ## Final Gate Decision
 
 Aggregate all validation results:
 
 If any stage 1 (critical) failures:
-  ❌ REJECT COMMIT - Fix critical errors first
+  FAIL REJECT COMMIT - Fix critical errors first
 
 If only stages 2-4 (warnings):
-  ⚠️  WARN - {N} issues found, recommend fixing before commit
+  WARN  WARN - {N} issues found, recommend fixing before commit
   Allow commit with warnings
 
 If all stages pass:
-  ✅ APPROVE COMMIT - Component meets quality standards
+  PASS APPROVE COMMIT - Component meets quality standards
 ```
 
 **Key Benefit**: Multi-aspect validation with clear pass/fail criteria.
@@ -642,7 +642,7 @@ Read references/core-principles.md
 
 ## Progressive Disclosure
 
-⚠️  NEVER load all references at once (9 files × 500 lines = 4500+ lines)
+WARN  NEVER load all references at once (9 files × 500 lines = 4500+ lines)
 
 Load strategically:
 - Creating skill? → skill-design.md + skill-patterns.md
@@ -879,16 +879,16 @@ If workflow = "validate-component":
 ### Quick Pattern Selector
 
 **Your Task**:
-- ✅ Run shell/Python scripts → **Pattern 1** (Script Automation)
-- ✅ Transform file content → **Pattern 2** (Read-Process-Write)
-- ✅ Search codebase → **Pattern 3** (Search-Analyze-Report)
-- ✅ Multi-stage pipeline → **Pattern 4** (Command Chain)
-- ✅ Guide user through complex process → **Pattern 5** (Wizard-Style)
-- ✅ Generate from templates → **Pattern 6** (Template-Based)
-- ✅ Analyze large codebase → **Pattern 7** (Iterative Refinement)
-- ✅ Combine multiple data sources → **Pattern 8** (Context Aggregation)
-- ✅ Validate quality/compliance → **Pattern 9** (Validation Pipeline)
-- ✅ Provide reference documentation → **Pattern 10** (Reference Library)
+- Preferred: Run shell/Python scripts → **Pattern 1** (Script Automation)
+- Preferred: Transform file content → **Pattern 2** (Read-Process-Write)
+- Preferred: Search codebase → **Pattern 3** (Search-Analyze-Report)
+- Preferred: Multi-stage pipeline → **Pattern 4** (Command Chain)
+- Preferred: Guide user through complex process → **Pattern 5** (Wizard-Style)
+- Preferred: Generate from templates → **Pattern 6** (Template-Based)
+- Preferred: Analyze large codebase → **Pattern 7** (Iterative Refinement)
+- Preferred: Combine multiple data sources → **Pattern 8** (Context Aggregation)
+- Preferred: Validate quality/compliance → **Pattern 9** (Validation Pipeline)
+- Preferred: Provide reference documentation → **Pattern 10** (Reference Library)
 
 ### Complexity Assessment
 

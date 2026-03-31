@@ -43,7 +43,7 @@ class TestRunner:
         try:
             test_func()
             self.tests_passed += 1
-            print(f'  ✓ {name}')
+            print(f'  PASS {name}')
         except AssertionError as e:
             self.tests_failed += 1
             self.failures.append((name, str(e)))

@@ -1,14 +1,5 @@
 # JavaScript Test Fundamentals
 
-## Framework Selection
-
-| Choose | When |
-|--------|------|
-| **Jest** | React Native (mandatory), legacy Webpack/Babel projects, CommonJS-heavy codebases, established Jest infrastructure |
-| **Vitest** | Vite-based projects, new projects, TypeScript-first codebases, native ESM needed |
-
-Vitest's API is 95% Jest-compatible. Migration is straightforward -- mainly config changes, not test rewrites.
-
 ## Project Setup
 
 ### Jest Configuration (package.json)
@@ -37,31 +28,6 @@ Vitest's API is 95% Jest-compatible. Migration is straightforward -- mainly conf
 }
 ```
 
-### Vitest Configuration (vitest.config.js)
-
-```javascript
-import { defineConfig } from 'vitest/config';
-
-export default defineConfig({
-  test: {
-    environment: 'jsdom',
-    include: ['src/test/js/**/*.test.js'],
-    restoreMocks: true,
-    coverage: {
-      provider: 'v8',
-      reporter: ['text', 'html', 'lcov'],
-      reportsDirectory: 'target/coverage',
-      thresholds: {
-        branches: 75,
-        functions: 80,
-        lines: 80,
-        statements: 80,
-      },
-    },
-  },
-});
-```
-
 ### Setup Files
 
 **Global setup** (runs before test framework loads): Provide a `globalThis.fetch` mock since jsdom does not include fetch. See [mocking-async.md](mocking-async.md#fetch-mocking) for the full fetch mock setup and response helpers.
@@ -69,7 +35,7 @@ export default defineConfig({
 **DOM setup** (runs after framework, has access to matchers):
 
 ```javascript
-// jest.setup-dom.js / vitest.setup-dom.js
+// jest.setup-dom.js
 import '@testing-library/jest-dom';
 
 // Optional: global helper to wait for async component updates
@@ -162,11 +128,11 @@ describe('validateUrl', () => {
 Test names should read as behavior descriptions. The reader should understand the test without reading the body:
 
 ```javascript
-// Good -- describes behavior and expected outcome
+// Preferred: Describes behavior and expected outcome
 test('returns 404 when user not found', async () => { ... });
 test('disables submit button while form is validating', () => { ... });
 
-// Bad -- vague, describes implementation
+// Avoid: Vague, describes implementation
 test('test1', () => { ... });
 test('works', () => { ... });
 test('calls the API', () => { ... });
@@ -177,7 +143,7 @@ test('calls the API', () => { ... });
 Each test verifies one behavior. Multiple `expect` calls are fine when they assert the same logical concept:
 
 ```javascript
-// Good -- one logical assertion (form renders correctly)
+// Preferred: One logical assertion (form renders correctly)
 test('renders login form with required fields', () => {
   init(container);
   expect(container.querySelector('#username')).not.toBeNull();
@@ -185,7 +151,7 @@ test('renders login form with required fields', () => {
   expect(container.querySelector('[type="submit"]')).not.toBeNull();
 });
 
-// Bad -- tests two unrelated behaviors
+// Avoid: Tests two unrelated behaviors
 test('renders form and validates input', () => {
   init(container);
   expect(container.querySelector('#username')).not.toBeNull();
@@ -257,7 +223,7 @@ Coverage is guidance, not a goal. Focus on critical business logic rather than c
 
 ## ESLint Integration
 
-Use `eslint-plugin-jest` or `eslint-plugin-vitest` for test-specific rules:
+Use `eslint-plugin-jest` for test-specific rules:
 
 ```javascript
 // In eslint.config.js -- test file overrides
@@ -280,8 +246,6 @@ Key rules:
 - `no-focused-tests`: Prevents committed `.only()` calls
 - `expect-expect`: Ensures every test has assertions
 - `no-identical-title`: Unique test names within describe blocks
-
-For Vitest projects, use `eslint-plugin-vitest` with equivalent rules.
 
 ## See Also
 

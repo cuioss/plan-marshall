@@ -194,3 +194,8 @@ Common validation errors:
 - Missing parameter descriptions
 - Invalid type annotations
 - Parameter name mismatches
+
+## See Also
+
+- [JSDoc Patterns](jsdoc-patterns.md) - Complete documented code examples for functions, classes, modules, web components
+- `plan-marshall:dev-general-code-documentation` - Language-agnostic documentation principles
