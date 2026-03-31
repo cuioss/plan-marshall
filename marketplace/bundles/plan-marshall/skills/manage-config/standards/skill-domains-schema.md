@@ -252,7 +252,7 @@ manage-config resolve-domain-skills --domain java --profile implementation
     },
     "implementation": {
       "defaults": [],
-      "optionals": ["pm-dev-frontend:js-enforce-eslint"]
+      "optionals": ["pm-dev-frontend:lint-config"]
     },
     "module_testing": {
       "defaults": [],

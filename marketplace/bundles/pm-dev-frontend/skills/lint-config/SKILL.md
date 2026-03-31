@@ -1,5 +1,5 @@
 ---
-name: js-enforce-eslint
+name: lint-config
 description: ESLint flat config, Prettier, and Stylelint configuration, rule customization, and build integration standards for JavaScript projects
 user-invocable: false
 ---

@@ -189,7 +189,7 @@ JavaScript/Frontend development with Jest testing.
 | Field | Skills |
 |-------|--------|
 | defaults | (none) |
-| optionals | `pm-dev-frontend:js-enforce-eslint` |
+| optionals | `pm-dev-frontend:lint-config` |
 
 **module_testing**:
 | Field | Skills |

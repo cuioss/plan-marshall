@@ -293,4 +293,4 @@ class DataFetcher {
 - [JavaScript Fundamentals](javascript-fundamentals.md) - Core language features
 - [Code Quality](code-quality.md) - Complexity and error handling
 - [Modern Patterns](modern-patterns.md) - Advanced patterns
-- `pm-dev-frontend:js-enforce-eslint` - ESLint async rules
+- `pm-dev-frontend:lint-config` - ESLint async rules

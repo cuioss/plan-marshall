@@ -273,4 +273,4 @@ const hasProperty = Object.hasOwn(obj, 'property');
 - [Code Quality](code-quality.md) - Complexity limits and refactoring
 - [Modern Patterns](modern-patterns.md) - Advanced JavaScript patterns
 - [Async Programming](async-programming.md) - Promises and async/await
-- `pm-dev-frontend:js-enforce-eslint` - ESLint and development tools
+- `pm-dev-frontend:lint-config` - ESLint and development tools

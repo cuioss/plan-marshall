@@ -156,4 +156,4 @@ npm run lint:fix  # If configured
 
 - [Suppression Syntax](suppression.md) - ESLint, Stylelint, and Prettier suppression methods
 - `pm-dev-frontend:javascript` - JavaScript coding standards
-- `pm-dev-frontend:js-enforce-eslint` - ESLint rule configuration
+- `pm-dev-frontend:lint-config` - ESLint rule configuration

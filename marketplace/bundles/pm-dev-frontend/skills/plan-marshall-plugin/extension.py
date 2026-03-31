@@ -45,7 +45,7 @@ class Extension(ExtensionBase):
                     ],
                     'optionals': [
                         {
-                            'skill': 'pm-dev-frontend:js-enforce-eslint',
+                            'skill': 'pm-dev-frontend:lint-config',
                             'description': 'ESLint, Prettier, and Stylelint configuration and enforcement with systematic fixing',
                         },
                         {

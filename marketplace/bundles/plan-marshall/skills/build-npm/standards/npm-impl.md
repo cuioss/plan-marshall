@@ -262,6 +262,6 @@ The `npm.py` script exposes these internal functions for use by `extension.py`:
 |------------|----------------|
 | compilation_error | Fix via task executor |
 | test_failure | Fix via task executor |
-| lint_error | `/js-enforce-eslint` |
+| lint_error | `/lint-config` |
 | dependency_error | Manual fix |
 | playwright_error | Fix via task executor |

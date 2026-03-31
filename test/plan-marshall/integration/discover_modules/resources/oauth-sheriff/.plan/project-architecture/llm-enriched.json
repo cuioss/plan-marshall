@@ -305,7 +305,7 @@
           ],
           "javascript": [
             "pm-dev-frontend:javascript",
-            "pm-dev-frontend:js-enforce-eslint"
+            "pm-dev-frontend:lint-config"
           ]
         },
         "unit-testing": {

@@ -29,7 +29,7 @@ Load skills based on project needs:
 skills:
   # General (from pm-dev-frontend)
   - pm-dev-frontend:javascript
-  - pm-dev-frontend:js-enforce-eslint
+  - pm-dev-frontend:lint-config
   # CUI-specific (from this bundle)
   - pm-dev-frontend-cui:cui-javascript-project
 ```

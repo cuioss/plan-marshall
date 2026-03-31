@@ -362,4 +362,4 @@ const handleScroll = throttle(() => { /* Update UI */ }, 100);
 - [JavaScript Fundamentals](javascript-fundamentals.md) - Core patterns
 - [Code Quality](code-quality.md) - Refactoring and maintainability
 - [Async Programming](async-programming.md) - Asynchronous patterns
-- `pm-dev-frontend:js-enforce-eslint` - ESLint and development tools
+- `pm-dev-frontend:lint-config` - ESLint and development tools

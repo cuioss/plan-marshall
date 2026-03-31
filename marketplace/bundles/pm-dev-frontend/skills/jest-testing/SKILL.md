@@ -52,4 +52,4 @@ Use when: Mocking modules or APIs, working with fetch mocks, testing async/await
 
 - `plan-marshall:dev-general-module-testing` — Language-agnostic testing methodology (AAA, coverage, reliability)
 - `pm-dev-frontend:javascript` — Core JavaScript development standards
-- `pm-dev-frontend:js-enforce-eslint` — ESLint configuration including Jest plugin
+- `pm-dev-frontend:lint-config` — ESLint configuration including Jest plugin

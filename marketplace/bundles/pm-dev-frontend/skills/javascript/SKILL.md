@@ -118,4 +118,4 @@ Fix CRITICAL violations first (exported functions/classes), then WARNING, then S
 - `plan-marshall:dev-general-code-quality` - Language-agnostic code quality principles
 - `plan-marshall:dev-general-code-documentation` - Language-agnostic documentation principles
 - `pm-dev-frontend:css` - CSS standards
-- `pm-dev-frontend:js-enforce-eslint` - ESLint, Prettier, Stylelint configuration
+- `pm-dev-frontend:lint-config` - ESLint, Prettier, Stylelint configuration

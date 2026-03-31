@@ -23,7 +23,7 @@ This bundle provides general frontend development expertise through domain knowl
    - Responsive design patterns
    - Quality tooling and linting
 
-3. **js-enforce-eslint** - ESLint, Prettier, Stylelint configuration
+3. **lint-config** - ESLint, Prettier, Stylelint configuration
    - Flat config setup and rule management
    - Build integration standards
 
@@ -49,7 +49,7 @@ pm-dev-frontend/
     │   └── scripts/
     │       └── jsdoc.py
     ├── css/                     # CSS standards
-    ├── js-enforce-eslint/       # ESLint, Prettier, Stylelint
+    ├── lint-config/       # ESLint, Prettier, Stylelint
     ├── jest-testing/            # Jest testing standards
     ├── ext-triage-js/           # Triage extension point
     └── plan-marshall-plugin/    # JavaScript domain registration

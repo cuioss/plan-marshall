@@ -18,7 +18,7 @@ Modern CSS development standards covering fundamentals, responsive design, perfo
 
 - Modern browser support (CSS Grid, Custom Properties, Container Queries)
 - CSS preprocessor or PostCSS toolchain (optional)
-- Stylelint for linting (see `pm-dev-frontend:js-enforce-eslint` for setup)
+- Stylelint for linting (see `pm-dev-frontend:lint-config` for setup)
 
 ## Workflow
 
@@ -50,5 +50,5 @@ Use when: Optimizing CSS performance, implementing dark mode, improving accessib
 
 ## Related Skills
 
-- `pm-dev-frontend:js-enforce-eslint` — Stylelint, Prettier configuration
+- `pm-dev-frontend:lint-config` — Stylelint, Prettier configuration
 - `pm-dev-frontend:javascript` — JavaScript standards

@@ -251,4 +251,4 @@ Key rules:
 
 - [DOM and Component Testing](dom-component-testing.md) - DOM manipulation, web components, Testing Library
 - [Mocking and Async Patterns](mocking-async.md) - Module mocking, fetch mocks, timers, test isolation
-- `pm-dev-frontend:js-enforce-eslint` - ESLint test file overrides
+- `pm-dev-frontend:lint-config` - ESLint test file overrides

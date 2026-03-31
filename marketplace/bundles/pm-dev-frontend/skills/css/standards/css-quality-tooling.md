@@ -357,9 +357,9 @@ export default (ctx) => {
 
 ### Stylelint Configuration
 
-For complete Stylelint configuration including property ordering, BEM naming enforcement, and CSS-in-JS setup, see `pm-dev-frontend:js-enforce-eslint` → `standards/stylelint-setup.md`.
+For complete Stylelint configuration including property ordering, BEM naming enforcement, and CSS-in-JS setup, see `pm-dev-frontend:lint-config` → `standards/stylelint-setup.md`.
 
-For Prettier and IDE integration, see `pm-dev-frontend:js-enforce-eslint` → `standards/prettier-configuration.md`.
+For Prettier and IDE integration, see `pm-dev-frontend:lint-config` → `standards/prettier-configuration.md`.
 
 ### PurgeCSS
 
