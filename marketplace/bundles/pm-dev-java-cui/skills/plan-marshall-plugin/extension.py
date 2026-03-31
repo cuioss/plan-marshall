@@ -52,6 +52,19 @@ class Extension(ExtensionBase):
                                               module_data=module_data,
                                               active_profiles=active_profiles)
 
+    def provides_recipes(self) -> list[dict]:
+        """Return CUI-specific recipes."""
+        return [
+            {
+                'key': 'cui-logging-enforce',
+                'name': 'Enforce CUI Logging Standards',
+                'description': 'Enforce CUI logging standards across all modules — migrate loggers, implement LogRecords, add test coverage',
+                'skill': 'pm-dev-java-cui:recipe-cui-logging-enforce',
+                'default_change_type': 'tech_debt',
+                'scope': 'codebase_wide',
+            },
+        ]
+
     def config_defaults(self, project_root: str) -> None:
         """Configure CUI-specific Maven defaults.
 

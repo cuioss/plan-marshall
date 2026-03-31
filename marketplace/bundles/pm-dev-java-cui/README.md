@@ -58,18 +58,19 @@ CUI MockWebServer standards for HTTP client testing with JUnit 5 integration.
 **Library**: `de.cuioss.test:cui-test-mockwebserver-junit5`
 
 ### cui-logging-enforce
-Enforce and maintain CUI logging standards with two operational modes.
+Execution reference for enforcing CUI logging standards. Provides the batch sequence, validation rules, and production code protection constraints used during task execution.
 
-**Modes:**
-- **scan** (default): Quick compliance check — find violations, batch fix, verify
-- **maintain**: Full migration from SLF4J/Log4j to CuiLogger with plan tracking and per-module commits
+**Key enforcement steps:**
+- Logger migration (SLF4J/Log4j → CuiLogger)
+- LogRecord implementation for INFO/WARN/ERROR/FATAL
+- Unused LogRecord removal
+- LogAssert test coverage in business logic tests
+- Identifier renumbering and documentation update
 
-**Key workflows:**
-- Validate LogRecord patterns across modules
-- Enforce LogMessages class conventions and identifier ranges
-- Verify and add test coverage for logging paths
-- Migrate legacy loggers to CuiLogger (maintain mode)
-- Create/update LogMessages classes and documentation
+### recipe-cui-logging-enforce
+Recipe for enforcing CUI logging standards across all modules. Discovers modules, creates one deliverable per module, and flows through the plan phase system (outline → plan → execute → finalize).
+
+**Invoked via:** `/plan-marshall action=recipe` → select "Enforce CUI Logging Standards"
 
 ## Usage
 
