@@ -128,7 +128,7 @@ class MyServiceTest {
 When encountering Mockito in existing CUI code:
 - Replace `when().thenReturn()` with EasyMock equivalents or dependency injection
 - Use `cui-test-mockwebserver-junit5` for HTTP client testing
-- See `pm-dev-java-cui:cui-testing-http` for MockWebServer patterns
+- See `pm-dev-java-cui:cui-http-testing` for MockWebServer patterns
 
 ## Related Skills
 

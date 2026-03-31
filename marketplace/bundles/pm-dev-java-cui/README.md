@@ -44,7 +44,7 @@ CUI HTTP client patterns for HTTP operations.
 
 **Library**: `de.cuioss.http.client.*`
 
-### cui-testing-http
+### cui-http-testing
 CUI MockWebServer wrapper for HTTP testing.
 
 **Key patterns:**

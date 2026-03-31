@@ -26,7 +26,7 @@ class Extension(ExtensionBase):
                 'implementation': {'defaults': [], 'optionals': ['pm-dev-java-cui:cui-http']},
                 'module_testing': {
                     'defaults': [],
-                    'optionals': ['pm-dev-java-cui:cui-testing', 'pm-dev-java-cui:cui-testing-http'],
+                    'optionals': ['pm-dev-java-cui:cui-testing', 'pm-dev-java-cui:cui-http-testing'],
                 },
                 'quality': {'defaults': [], 'optionals': []},
             },

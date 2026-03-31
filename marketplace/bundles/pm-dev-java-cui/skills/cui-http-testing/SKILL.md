@@ -1,5 +1,5 @@
 ---
-name: cui-testing-http
+name: cui-http-testing
 description: CUI MockWebServer standards for HTTP client testing with JUnit 5 integration
 user-invocable: false
 ---

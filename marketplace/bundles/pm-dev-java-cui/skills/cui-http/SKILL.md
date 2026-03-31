@@ -37,4 +37,4 @@ CUI-specific HTTP client standards for projects using `de.cuioss:cui-http`. Cove
 ## Related Skills
 
 - `pm-dev-java:java-core` — General Java patterns
-- `pm-dev-java-cui:cui-testing-http` — HTTP testing with CUI MockWebServer
+- `pm-dev-java-cui:cui-http-testing` — HTTP testing with CUI MockWebServer
