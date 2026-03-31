@@ -6,7 +6,7 @@ user-invocable: false
 
 # Recipe: Enforce CUI Logging Standards
 
-Custom recipe for enforcing CUI logging standards across Java modules. Discovers modules, creates one deliverable per module. The task executor loads `cui-logging` standards and `cui-logging-enforce` execution reference, then handles analysis and fixing in a single pass per module.
+Custom recipe for enforcing CUI logging standards across Java modules. Discovers modules, creates one deliverable per module. The task executor loads `cui-logging` standards and handles analysis and fixing in a single pass per module.
 
 ## Input
 
@@ -36,9 +36,6 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 ```
 
 Combine all resolved skills. The deliverables will always include both profiles (`implementation` and `module_testing`) since enforcement modifies both production code (logger migration, LogRecord implementation) and test code (LogAsserts).
-
-Additionally, each deliverable must reference the execution guidance skill:
-- `pm-dev-java-cui:cui-logging-enforce` — enforcement workflow and batch sequence
 
 ---
 
@@ -75,16 +72,15 @@ Skip modules with no Java source files.
 
 **3c. Collect one deliverable per module** (in-memory, for Step 4):
 - **Title**: `Enforce logging standards: {module}`
-- **Description**: `Migrate loggers, implement LogRecords, add LogAssert test coverage`
 - **Metadata**:
   - `change_type`: `tech_debt`
   - `execution_mode`: `automated`
   - `domain`: `java-cui`
   - `module`: `{module_name}`
 - **Profiles**: `implementation`, `module_testing`
-- **Skills**: All skills from Step 1 + `pm-dev-java-cui:cui-logging-enforce`
+- **Skills**: All skills from Step 1
 - **Affected files**: All files discovered in 3b (explicit paths, no wildcards)
-- **Change per file**: Enforce CUI logging standards — migrate SLF4J/Log4j to CuiLogger, replace direct string logging with LogRecord constants, add LogAssert coverage for all LogRecords
+- **Change per file**: Enforce CUI logging standards per enforcement workflow below
 - **Verification**: Resolved `module-tests` command for the module
 - **Success Criteria**:
   - All loggers use CuiLogger (no SLF4J/Log4j)
@@ -139,10 +135,60 @@ python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-sol
 
 ---
 
+## Enforcement Workflow
+
+This section defines how the task executor enforces logging standards within each module. The `cui-logging` skill provides the underlying standards — this workflow defines the enforcement sequence.
+
+### Constraints
+
+**Production code protection:**
+- Modify ONLY logging-related code
+- Preserve all existing functionality
+- Do not alter business logic behavior or change method signatures
+
+**Bug handling protocol:** When non-logging production bugs discovered:
+1. STOP immediately
+2. DOCUMENT bug (location, description, impact)
+3. ASK USER for approval to fix
+4. SEPARATE COMMIT for bug fix if approved
+5. RESUME logging enforcement after commit
+
+### Analysis Phase
+
+**Find violations** using `pm-dev-java-cui:cui-logging` skill workflow:
+- Missing LogRecord (INFO/WARN/ERROR/FATAL using direct string)
+- Prohibited LogRecord (DEBUG/TRACE using LogRecord)
+- Non-CUI loggers (SLF4J `LoggerFactory.getLogger`, Log4j, `@Slf4j`, `System.out/err`)
+
+**Verify LogRecord coverage** for each LogMessages class:
+- Extract all LogRecord definitions
+- Find production usage with Grep (`.format()` calls, static imports)
+- Find test coverage (LogAsserts, `resolveIdentifierString`)
+- Classify: No references → Remove | Production only → Add tests | Test only → USER REVIEW (critical) | Both → Compliant
+
+### Fix Sequence
+
+Execute in this order:
+
+1. **Logger migration** — Replace `LoggerFactory.getLogger` / `Logger.getLogger` / `@Slf4j` with `CuiLogger`. Apply patterns from `standards/logging-maintenance-reference.md` → "Logger Migration"
+2. **LogRecord implementation** — Replace direct string logging at INFO/WARN/ERROR/FATAL with LogRecord usage. Convert `{}` placeholders to `%s`. Follow DSL-style structure from `standards/logging-standards.md` → "LogMessages Class Structure"
+3. **Remove unused LogRecords** — Remove definitions with no production references. Verify compilation.
+4. **Add LogAssert tests** — Add LogAsserts to existing business logic tests (never standalone coverage tests). Use `@EnableTestLogger` and LogAsserts. If no business logic test exists: ask user.
+5. **Test-only LogRecords** — Report as critical bugs, stop and await user guidance.
+
+### Finalize
+
+**Renumber identifiers** for each LogMessages class:
+- Standard ranges: INFO 001-099, WARN 100-199, ERROR 200-299, FATAL 300-399
+- Fix gaps, ordering issues, and range violations
+
+**Update documentation** for each modified LogMessages class — update corresponding `doc/LogMessages.adoc` via `pm-dev-java-cui:cui-logging` skill.
+
+---
+
 ## Related
 
 - `pm-dev-java-cui:cui-logging` — Core logging standards and maintenance reference
-- `pm-dev-java-cui:cui-logging-enforce` — Enforcement execution reference (loaded during task execution)
 - `pm-dev-java-cui:cui-testing` — Test standards including LogAsserts
 - `plan-marshall:recipe-refactor-to-profile-standards` — Built-in recipe (same 4-step pattern)
 - `plan-marshall:phase-3-outline` Step 2.5 — Loads this skill with input parameters

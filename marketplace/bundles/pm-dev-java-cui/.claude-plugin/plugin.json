@@ -17,7 +17,6 @@
     "./skills/cui-logging",
     "./skills/cui-testing",
     "./skills/cui-http-testing",
-    "./skills/cui-logging-enforce",
     "./skills/recipe-cui-logging-enforce"
   ]
 }
