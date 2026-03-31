@@ -686,7 +686,7 @@ Use this checklist to verify minimal wrapper compliance:
 
 ```markdown
 ---
-name: java-verify-agent
+name: example-fat-agent
 description: Implement Java features
 allowed-tools: [Read, Write, Edit, Bash, Glob, Grep]
 ---

@@ -10,9 +10,8 @@ This bundle provides a complete Java development knowledge base. Skills contain 
 
 ```
 pm-dev-java/
-├── agents/                  # 2 verification agents
-│   ├── java-coverage-agent.md       # Analyze coverage (read-only)
-│   └── java-verify-agent.md         # Verify compliance (read-only)
+├── agents/                  # 1 verification agent
+│   └── java-coverage-agent.md       # Analyze coverage (read-only)
 └── skills/                  # 12 domain knowledge skills
     ├── java-core/           # Core Java patterns, modern features
     ├── java-null-safety/    # JSpecify null annotations
@@ -58,11 +57,10 @@ pm-dev-java/
 >
 > **Planning Integration**: Java domain skills are loaded by plan-marshall task executors during plan execution via `task.skills` array.
 
-### Agents (2 verification agents)
+### Agents (1 verification agent)
 
-**Analysis Agents** (read-only, used by `extension.py:provides_verify_steps()`):
-- **java-coverage-agent** - Coverage analysis
-- **java-verify-agent** - Standards verification
+**Analysis Agent** (read-only, used by `extension.py:provides_verify_steps()`):
+- **java-coverage-agent** - Coverage analysis and gap identification
 
 ## Dependencies
 

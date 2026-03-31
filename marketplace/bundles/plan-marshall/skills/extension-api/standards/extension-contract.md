@@ -518,7 +518,7 @@ def provides_verify_steps(self) -> list[dict]:
     """Return domain-specific verification steps.
 
     Each step dict contains:
-        - name: Fully-qualified agent reference (e.g., 'pm-dev-java:java-verify-agent')
+        - name: Fully-qualified agent reference (e.g., 'pm-dev-java:java-coverage-agent')
         - skill: Same as name (the fully-qualified agent reference)
         - description: Human-readable description for wizard presentation
 
@@ -545,7 +545,6 @@ Extension steps are appended to the flat `plan.phase-5-execute.steps` list after
       "steps": [
         "quality_check",
         "build_verify",
-        "pm-dev-java:java-verify-agent",
         "pm-dev-java:java-coverage-agent",
         "pm-documents:doc-verify"
       ]
@@ -561,11 +560,11 @@ Built-in steps (`quality_check`, `build_verify`) are always first. Extension ste
 ```bash
 # Add a verify step
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-5-execute add-step --step pm-dev-java:java-verify-agent
+  plan phase-5-execute add-step --step pm-dev-java:java-coverage-agent
 
 # Remove a verify step
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-5-execute remove-step --step pm-dev-java:java-verify-agent
+  plan phase-5-execute remove-step --step pm-dev-java:java-coverage-agent
 
 # Replace entire steps list
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
@@ -591,11 +590,6 @@ class Extension(ExtensionBase):
     def provides_verify_steps(self) -> list[dict]:
         return [
             {
-                'name': 'pm-dev-java:java-verify-agent',
-                'skill': 'pm-dev-java:java-verify-agent',
-                'description': 'Verify implementation standards compliance',
-            },
-            {
                 'name': 'pm-dev-java:java-coverage-agent',
                 'skill': 'pm-dev-java:java-coverage-agent',
                 'description': 'Verify test coverage meets thresholds',
@@ -607,7 +601,7 @@ class Extension(ExtensionBase):
 
 | Bundle | Domain | Steps | Details |
 |--------|--------|-------|---------|
-| pm-dev-java | java | 2 | `pm-dev-java:java-verify-agent`, `pm-dev-java:java-coverage-agent` |
+| pm-dev-java | java | 1 | `pm-dev-java:java-coverage-agent` |
 | pm-documents | documentation | 1 | `pm-documents:doc-verify` |
 | pm-requirements | requirements | 0 | - |
 
@@ -854,9 +848,9 @@ class Extension(ExtensionBase):
     def provides_verify_steps(self) -> list[dict]:
         return [
             {
-                'name': 'technical_impl',
-                'agent': 'pm-dev-java:java-verify-agent',
-                'description': 'Verify implementation standards compliance',
+                'name': 'pm-dev-java:java-coverage-agent',
+                'skill': 'pm-dev-java:java-coverage-agent',
+                'description': 'Verify test coverage meets thresholds',
             },
         ]
 

@@ -164,11 +164,6 @@ class Extension(ExtensionBase):
         """Return Java-specific verification steps."""
         return [
             {
-                'name': 'pm-dev-java:java-verify-agent',
-                'skill': 'pm-dev-java:java-verify-agent',
-                'description': 'Verify implementation standards compliance',
-            },
-            {
                 'name': 'pm-dev-java:java-coverage-agent',
                 'skill': 'pm-dev-java:java-coverage-agent',
                 'description': 'Verify test coverage meets thresholds',

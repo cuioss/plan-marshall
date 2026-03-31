@@ -80,9 +80,8 @@ plan-marshall:
 
 pm-dev-java:
   path: marketplace/bundles/pm-dev-java
-  agents[2]:
+  agents[1]:
     - java-coverage-agent
-    - java-verify-agent
   skills[12]:
     - java-core
     - java-cdi

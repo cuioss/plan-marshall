@@ -390,7 +390,7 @@ class ExtensionBase(ABC):
         Returns:
             List of step dicts, each containing:
             - name: str — Fully-qualified agent reference used in the steps list
-              (e.g., 'pm-dev-java:java-verify-agent')
+              (e.g., 'pm-dev-java:java-coverage-agent')
             - skill: str — Same as name (the fully-qualified agent reference)
             - description: str — Human-readable description for wizard presentation
 
