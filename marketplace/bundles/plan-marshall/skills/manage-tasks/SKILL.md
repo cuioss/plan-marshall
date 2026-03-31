@@ -203,7 +203,7 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks add \
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks add \
   --plan-id migrate-json-to-toon \
-  --content "title: Migrate agent outputs to TOON\ndeliverable: 1\ndomain: plan-marshall-plugin-dev\ndescription: Update agents to use TOON format instead of JSON.\nsteps:\n  - Update java-coverage-agent.md\n  - Update doc-verify.md\nverification:\n  commands:\n    - grep -l '```json' marketplace/bundles/pm-dev-java/agents/*.md | wc -l\n  criteria: All grep commands return 0 (no JSON blocks remain)"
+  --content "title: Migrate agent outputs to TOON\ndeliverable: 1\ndomain: plan-marshall-plugin-dev\ndescription: Update agents to use TOON format instead of JSON.\nsteps:\n  - Update doc-verify.md\nverification:\n  commands:\n    - grep -l '```json' marketplace/bundles/pm-documents/agents/*.md | wc -l\n  criteria: All grep commands return 0 (no JSON blocks remain)"
 ```
 
 ### Get next task/step (respects dependencies)

@@ -22,6 +22,7 @@ import argparse
 import sys
 
 from _gradle_cmd_check_warnings import cmd_check_warnings
+from _gradle_cmd_coverage_report import cmd_coverage_report
 from _gradle_cmd_find_project import cmd_find_project
 from _gradle_cmd_parse import cmd_parse
 from _gradle_cmd_search_markers import cmd_search_markers
@@ -69,6 +70,13 @@ def main():
     find_group.add_argument('--project-path', help='Explicit project path to validate')
     find_parser.add_argument('--root', default='.', help='Project root directory')
     find_parser.set_defaults(func=cmd_find_project)
+
+    # coverage-report subcommand
+    cov_parser = subparsers.add_parser('coverage-report', help='Parse JaCoCo coverage report')
+    cov_parser.add_argument('--module-path', dest='module_path', help='Module directory path')
+    cov_parser.add_argument('--report-path', dest='report_path', help='Override JaCoCo XML report path')
+    cov_parser.add_argument('--threshold', type=int, default=80, help='Coverage threshold percent (default: 80)')
+    cov_parser.set_defaults(func=cmd_coverage_report)
 
     # search-markers subcommand
     markers_parser = subparsers.add_parser('search-markers', help='Search for OpenRewrite TODO markers')

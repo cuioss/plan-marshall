@@ -58,12 +58,13 @@ DEFAULT_PLAN_PLAN = {
 
 # Built-in verify step names (dispatch table in phase-5-execute SKILL.md)
 # Prefixed with 'default:' to distinguish from project: and fully-qualified skill steps
-BUILT_IN_VERIFY_STEPS = ['default:quality_check', 'default:build_verify']
+BUILT_IN_VERIFY_STEPS = ['default:quality_check', 'default:build_verify', 'default:coverage_check']
 
 # Human-readable descriptions for built-in verify steps
 BUILT_IN_VERIFY_STEP_DESCRIPTIONS = {
     'default:quality_check': 'Run quality-gate build command',
     'default:build_verify': 'Run full test suite',
+    'default:coverage_check': 'Run coverage build and verify threshold',
 }
 
 DEFAULT_PLAN_EXECUTE = {

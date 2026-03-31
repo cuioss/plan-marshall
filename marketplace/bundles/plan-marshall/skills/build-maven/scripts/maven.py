@@ -20,6 +20,7 @@ import argparse
 import sys
 
 from _maven_cmd_check_warnings import cmd_check_warnings
+from _maven_cmd_coverage_report import cmd_coverage_report
 from _maven_cmd_parse import cmd_parse
 from _maven_cmd_search_markers import cmd_search_markers
 
@@ -66,6 +67,13 @@ def main():
     markers_parser.add_argument('--source-dir', default='src', help='Directory to search')
     markers_parser.add_argument('--extensions', default='.java', help='Comma-separated extensions')
     markers_parser.set_defaults(func=cmd_search_markers)
+
+    # coverage-report subcommand
+    cov_parser = subparsers.add_parser('coverage-report', help='Parse JaCoCo coverage report')
+    cov_parser.add_argument('--module-path', dest='module_path', help='Module directory path')
+    cov_parser.add_argument('--report-path', dest='report_path', help='Override JaCoCo XML report path')
+    cov_parser.add_argument('--threshold', type=int, default=80, help='Coverage threshold percent (default: 80)')
+    cov_parser.set_defaults(func=cmd_coverage_report)
 
     # check-warnings subcommand
     warn_parser = subparsers.add_parser('check-warnings', help='Categorize build warnings')

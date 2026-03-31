@@ -160,13 +160,4 @@ class Extension(ExtensionBase):
         """Return triage skill reference."""
         return 'pm-dev-java:ext-triage-java'
 
-    def provides_verify_steps(self) -> list[dict]:
-        """Return Java-specific verification steps."""
-        return [
-            {
-                'name': 'pm-dev-java:java-coverage-agent',
-                'skill': 'pm-dev-java:java-coverage-agent',
-                'description': 'Verify test coverage meets thresholds',
-            },
-        ]
 

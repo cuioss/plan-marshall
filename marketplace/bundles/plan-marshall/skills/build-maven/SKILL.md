@@ -81,6 +81,38 @@ tests:
   skipped: 1
 ```
 
+### Coverage Report
+
+```bash
+python3 .plan/execute-script.py plan-marshall:build-maven:maven coverage-report \
+    [--module-path <path>] \
+    [--report-path <path>] \
+    [--threshold <percent>]
+```
+
+**Parameters**:
+- `--module-path` - Module directory path (for multi-module projects)
+- `--report-path` - Override JaCoCo XML report path (default: auto-detect in target/)
+- `--threshold` - Coverage threshold percent (default: 80)
+
+**Output Format (TOON)**:
+
+```
+status	success
+passed	true
+threshold	80
+message	"Coverage meets threshold: 82.4% line, 75.0% branch"
+
+overall:
+  line	82.35
+  branch	75.0
+  instruction	79.69
+  method	83.33
+
+low_coverage[1]{class,line_pct,missed_methods}:
+  de.cuioss.portal.sample.UserService,66.67,deleteUser
+```
+
 ### Low-level Operations
 
 | Command | Purpose |
@@ -88,6 +120,7 @@ tests:
 | `maven parse` | Parse build output from log file |
 | `maven search-markers` | Search OpenRewrite TODO markers |
 | `maven check-warnings` | Categorize warnings against patterns |
+| `maven coverage-report` | Parse JaCoCo coverage report |
 
 ## Wrapper Detection
 

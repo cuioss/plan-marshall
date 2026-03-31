@@ -518,7 +518,7 @@ def provides_verify_steps(self) -> list[dict]:
     """Return domain-specific verification steps.
 
     Each step dict contains:
-        - name: Fully-qualified agent reference (e.g., 'pm-dev-java:java-coverage-agent')
+        - name: Fully-qualified agent reference (e.g., 'pm-documents:doc-verify')
         - skill: Same as name (the fully-qualified agent reference)
         - description: Human-readable description for wizard presentation
 
@@ -545,7 +545,7 @@ Extension steps are appended to the flat `plan.phase-5-execute.steps` list after
       "steps": [
         "quality_check",
         "build_verify",
-        "pm-dev-java:java-coverage-agent",
+        "coverage_check",
         "pm-documents:doc-verify"
       ]
     }
@@ -560,11 +560,11 @@ Built-in steps (`quality_check`, `build_verify`) are always first. Extension ste
 ```bash
 # Add a verify step
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-5-execute add-step --step pm-dev-java:java-coverage-agent
+  plan phase-5-execute add-step --step pm-documents:doc-verify
 
 # Remove a verify step
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-5-execute remove-step --step pm-dev-java:java-coverage-agent
+  plan phase-5-execute remove-step --step pm-documents:doc-verify
 
 # Replace entire steps list
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
@@ -590,9 +590,9 @@ class Extension(ExtensionBase):
     def provides_verify_steps(self) -> list[dict]:
         return [
             {
-                'name': 'pm-dev-java:java-coverage-agent',
-                'skill': 'pm-dev-java:java-coverage-agent',
-                'description': 'Verify test coverage meets thresholds',
+                'name': 'pm-documents:doc-verify',
+                'skill': 'pm-documents:doc-verify',
+                'description': 'Verify documentation quality and synchronization',
             },
         ]
 ```
@@ -601,11 +601,11 @@ class Extension(ExtensionBase):
 
 | Bundle | Domain | Steps | Details |
 |--------|--------|-------|---------|
-| pm-dev-java | java | 1 | `pm-dev-java:java-coverage-agent` |
 | pm-documents | documentation | 1 | `pm-documents:doc-verify` |
-| pm-requirements | requirements | 0 | - |
 
-Bundles without verification steps (returns `[]`): pm-dev-frontend, pm-dev-java-cui, pm-plugin-development.
+Bundles without verification steps (returns `[]`): pm-dev-java, pm-dev-frontend, pm-dev-java-cui, pm-plugin-development, pm-requirements.
+
+> **Note**: Coverage verification is handled by the built-in `default:coverage_check` step, not by an extension agent. See the dispatch table in `phase-5-execute`.
 
 ---
 
@@ -846,13 +846,7 @@ class Extension(ExtensionBase):
         return "pm-dev-java:ext-triage-java"
 
     def provides_verify_steps(self) -> list[dict]:
-        return [
-            {
-                'name': 'pm-dev-java:java-coverage-agent',
-                'skill': 'pm-dev-java:java-coverage-agent',
-                'description': 'Verify test coverage meets thresholds',
-            },
-        ]
+        return []  # Coverage is now a built-in verify step (default:coverage_check)
 
     def discover_modules(self, project_root: str) -> list:
         # Delegate to script in scripts/ directory

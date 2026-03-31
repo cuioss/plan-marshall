@@ -36,9 +36,6 @@ JSON structure and field definitions for project configuration.
       "verification_1_quality_check": true,
       "verification_2_build_verify": true,
       "verification_domain_steps": {
-        "java": {
-          "1_technical_test": "pm-dev-java:java-coverage-agent"
-        },
         "documentation": {
           "1_doc_sync": "pm-documents:doc-verify"
         }
@@ -266,7 +263,7 @@ Execute phase with integrated verification pipeline. Contains commit strategy, i
       "steps": [
         "quality_check",
         "build_verify",
-        "pm-dev-java:java-coverage-agent",
+        "coverage_check",
         "pm-documents:doc-verify"
       ]
     }
@@ -285,13 +282,13 @@ Execute phase with integrated verification pipeline. Contains commit strategy, i
 The `steps` list contains an ordered sequence of verification step references. Two types:
 
 - **Built-in steps** (no colon): `quality_check` (run quality-gate), `build_verify` (run full test suite)
-- **Extension steps** (colon notation): Fully-qualified agent references from domain bundles (e.g., `pm-dev-java:java-coverage-agent`)
+- **Extension steps** (colon notation): Fully-qualified agent references from domain bundles (e.g., `pm-documents:doc-verify`)
 
 Built-in steps are always first in the default list. Extension steps are appended by `skill-domains configure` from `provides_verify_steps()` in each domain's `extension.py`. See [extension-contract.md](../../extension-api/standards/extension-contract.md) for the complete contract.
 
 Managed via:
 - `plan phase-5-execute set-steps --steps quality_check,build_verify`
-- `plan phase-5-execute add-step --step pm-dev-java:java-coverage-agent`
+- `plan phase-5-execute add-step --step pm-documents:doc-verify`
 - `plan phase-5-execute remove-step --step quality_check`
 
 ### phase-6-finalize

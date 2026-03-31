@@ -10,9 +10,7 @@
   "homepage": "https://github.com/cuioss/plan-marshall",
   "repository": "https://github.com/cuioss/plan-marshall.git",
   "keywords": ["java", "cdi", "quarkus", "testing", "standards", "patterns", "agents"],
-  "agents": [
-    "./agents/java-coverage-agent.md"
-  ],
+  "agents": [],
   "commands": [],
   "skills": [
     "./skills/ext-triage-java",
