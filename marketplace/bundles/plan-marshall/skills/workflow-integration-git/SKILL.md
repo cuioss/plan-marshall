@@ -42,14 +42,9 @@ Provides git commit workflow following conventional commits specification. Inclu
 | `message` | optional | Custom commit message (auto-generated from diff if omitted) |
 | `push` | optional | Push to remote after committing (default: false) |
 
-### Commit Standards (Quick Reference)
+### Commit Standards
 
-- **Format:** `<type>(<scope>): <subject>`
-- **Types:** feat, fix, docs, style, refactor, perf, test, chore, ci
-- **Subject:** imperative mood, lowercase, no period, max 50 chars (72 absolute max)
-- **Body:** explain "why" not "what", wrap at 72 chars
-- **Footer:** `BREAKING CHANGE:`, `Fixes #123`, `Co-Authored-By:`
-- **Atomic:** one logical change per commit, code compiles and tests pass
+Format: `<type>(<scope>): <subject>` — see `standards/git-commit-standards.md` for types, rules, and examples.
 
 ## When to Activate This Skill
 
@@ -204,14 +199,16 @@ status: success
 ### detect-artifacts
 
 Scan a directory for build artifacts and temporary files that should not be committed.
+Files already covered by `.gitignore` are excluded by default since they cannot be accidentally committed.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow detect-artifacts \
-  [--root /path/to/repo]
+  [--root /path/to/repo] [--no-gitignore]
 ```
 
 **Parameters**:
 - `--root`: Root directory to scan (default: current working directory)
+- `--no-gitignore`: Include gitignored files in results (default: respect .gitignore)
 
 **Output** (TOON):
 ```toon

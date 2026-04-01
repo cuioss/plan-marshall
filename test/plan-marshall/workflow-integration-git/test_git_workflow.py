@@ -425,6 +425,52 @@ class TestDetectArtifacts(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn('detect-artifacts', stdout)
 
+    def test_respects_gitignore_by_default(self):
+        """Test that gitignored files are excluded from results by default."""
+        import subprocess as sp
+
+        # Set up a git repo with .gitignore
+        sp.run(['git', 'init'], cwd=self.tmpdir, capture_output=True)
+        sp.run(['git', 'config', 'user.email', 'test@test.com'], cwd=self.tmpdir, capture_output=True)
+        sp.run(['git', 'config', 'user.name', 'Test'], cwd=self.tmpdir, capture_output=True)
+
+        # Create .gitignore that ignores *.class
+        (Path(self.tmpdir) / '.gitignore').write_text('*.class\n')
+        sp.run(['git', 'add', '.gitignore'], cwd=self.tmpdir, capture_output=True)
+        sp.run(['git', 'commit', '-m', 'init'], cwd=self.tmpdir, capture_output=True)
+
+        # Create artifacts — .class is gitignored, .temp is not
+        self._create_file('src/Example.class')
+        self._create_file('scratch.temp')
+
+        stdout, _, code = run_git_script(['detect-artifacts', '--root', self.tmpdir])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        safe_files = result['safe']
+        # .class should be excluded (gitignored), .temp should remain
+        self.assertFalse(any('.class' in f for f in safe_files), f'.class should be excluded: {safe_files}')
+        self.assertTrue(any('.temp' in f for f in safe_files), f'.temp should be present: {safe_files}')
+
+    def test_no_gitignore_flag_includes_all(self):
+        """Test that --no-gitignore includes gitignored files."""
+        import subprocess as sp
+
+        sp.run(['git', 'init'], cwd=self.tmpdir, capture_output=True)
+        sp.run(['git', 'config', 'user.email', 'test@test.com'], cwd=self.tmpdir, capture_output=True)
+        sp.run(['git', 'config', 'user.name', 'Test'], cwd=self.tmpdir, capture_output=True)
+
+        (Path(self.tmpdir) / '.gitignore').write_text('*.class\n')
+        sp.run(['git', 'add', '.gitignore'], cwd=self.tmpdir, capture_output=True)
+        sp.run(['git', 'commit', '-m', 'init'], cwd=self.tmpdir, capture_output=True)
+
+        self._create_file('src/Example.class')
+
+        stdout, _, code = run_git_script(['detect-artifacts', '--root', self.tmpdir, '--no-gitignore'])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        safe_files = result['safe']
+        self.assertTrue(any('.class' in f for f in safe_files), f'.class should be present with --no-gitignore: {safe_files}')
+
 
 class TestMain(unittest.TestCase):
     """Test git-workflow.py main entry point."""

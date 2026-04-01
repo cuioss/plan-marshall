@@ -26,6 +26,7 @@ Examples:
 
 import argparse
 import re
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -381,25 +382,49 @@ UNCERTAIN_ARTIFACT_PATTERNS = [
 ]
 
 
-def scan_artifacts(root: Path) -> dict:
+def get_gitignored_files(root: Path) -> set[str]:
+    """Return set of relative paths that are gitignored under root.
+
+    Uses `git check-ignore` to respect .gitignore rules. Returns empty set
+    if not inside a git repo or git is unavailable.
+    """
+    try:
+        result = subprocess.run(
+            ['git', 'ls-files', '--others', '--ignored', '--exclude-standard'],
+            capture_output=True, text=True, timeout=30, cwd=str(root),
+        )
+        if result.returncode != 0:
+            return set()
+        return {line.strip() for line in result.stdout.splitlines() if line.strip()}
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        return set()
+
+
+def scan_artifacts(root: Path, respect_gitignore: bool = True) -> dict:
     """Scan directory for committable artifacts.
 
     Returns dict with 'safe' (auto-deletable) and 'uncertain' (needs confirmation) lists.
+    Files already covered by .gitignore are excluded by default since they
+    cannot be accidentally committed.
     """
+    ignored = get_gitignored_files(root) if respect_gitignore else set()
+
     safe: list[str] = []
     uncertain: list[str] = []
 
     for pattern in SAFE_ARTIFACT_PATTERNS:
         for match in root.glob(pattern):
             if match.is_file():
-                safe.append(str(match.relative_to(root)))
+                rel = str(match.relative_to(root))
+                if rel not in ignored:
+                    safe.append(rel)
 
     for pattern in UNCERTAIN_ARTIFACT_PATTERNS:
         for match in root.glob(pattern):
             if match.is_file():
                 rel = str(match.relative_to(root))
-                # Skip if already captured by safe patterns
-                if rel not in safe:
+                # Skip if already captured by safe patterns or gitignored
+                if rel not in safe and rel not in ignored:
                     uncertain.append(rel)
 
     return {
@@ -417,7 +442,7 @@ def cmd_detect_artifacts(args):
         print(serialize_toon({'error': f'Directory not found: {root}', 'status': 'failure'}))
         return 1
 
-    result = scan_artifacts(root)
+    result = scan_artifacts(root, respect_gitignore=not args.no_gitignore)
     result['root'] = str(root)
     result['status'] = 'success'
     print(serialize_toon(result))
@@ -462,6 +487,7 @@ Examples:
     # detect-artifacts subcommand
     artifacts_parser = subparsers.add_parser('detect-artifacts', help='Scan for committable artifacts')
     artifacts_parser.add_argument('--root', help='Root directory to scan (default: cwd)')
+    artifacts_parser.add_argument('--no-gitignore', action='store_true', help='Include gitignored files in results')
     artifacts_parser.set_defaults(func=cmd_detect_artifacts)
 
     args = parser.parse_args()
