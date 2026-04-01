@@ -5,7 +5,7 @@ Language-agnostic testing principles for writing reliable, maintainable tests ac
 ## Fundamental Principles
 
 * **No zero-benefit comments**. Do not add `// Arrange`, `// Act`, `// Assert` or similar phase markers — whitespace separation makes the structure clear. Comments are only justified when they explain non-obvious setup or business logic.
-* **Use generated test data** — never hardcoded literals. Use randomized generators or factory methods so tests prove behavior works for any valid input, not just `"test"` or `42`. Consult your technology-specific skill for generator APIs.
+* **Prefer generated test data** over hardcoded literals. Use randomized generators or factory methods so tests prove behavior works for any valid input, not just `"test"` or `42`. Consult your technology-specific skill for generator APIs. **Exceptions:** specific values are appropriate when testing format-specific parsing (e.g., date patterns, protocol constants), known boundary values from a specification, or exact error messages.
 * **No branching logic in tests**. Tests must never contain `if/else`, `switch`, or ternary operators. Each test exercises exactly one deterministic path. If you need to test multiple scenarios, write separate test methods.
 * **Explicit assertions over implicit checks**. Always assert the expected outcome explicitly. Never rely on "no exception thrown" as the only verification.
 * **Always test corner cases**: null/undefined inputs, empty collections, boundary values, error paths. Group corner cases in dedicated test classes or nested groups.
@@ -110,8 +110,7 @@ Tests should use generated/random data to prove behavior works for any valid inp
 
 ### Forbidden Patterns
 
-* Hardcoded string literals like `"test"`, `"hello"`, `"John"`
-* Magic numbers like `42`, `100`, `999`
+* Arbitrary hardcoded literals like `"test"`, `"hello"`, `"John"` or magic numbers like `42`, `100` when the test would work equally well with any valid input (use generators instead)
 * Shared mutable test state between tests
 * Test order dependencies
 
@@ -249,7 +248,7 @@ Test doubles substitute real dependencies in unit tests. Choose the simplest dou
 
 | Anti-Pattern | Problem | Solution |
 |-------------|---------|----------|
-| Hardcoded test data | Tests prove nothing about general behavior | Use generated data |
+| Arbitrary hardcoded data | Tests prove nothing about general behavior | Use generated data (except for format-specific, boundary, or spec-defined values) |
 | Branching in tests | Non-deterministic coverage | One path per test |
 | Fixed delays | Slow and flaky | Polling/event-based waiting |
 | Shared mutable state | Order-dependent failures | Isolated test data |

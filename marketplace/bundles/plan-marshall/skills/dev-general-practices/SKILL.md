@@ -24,26 +24,12 @@ Covers Boy Scout Rule, decision tree for when to ask users, research patterns, t
 
 ### Step 2: Load Tool Usage Standards (As Needed)
 
-**Tool usage patterns** (load for diagnostic/automation work):
+**Tool usage patterns** (load for file operations, content search, or automation work):
 ```
 Read: standards/tool-usage-patterns.md
 ```
 
-Covers tool selection guide, Bash safety rules (one command per call, no shell constructs, no heredocs), build command resolution via architecture API.
-
-**File operations** (load for file system work):
-```
-Read: standards/file-operations.md
-```
-
-Covers file discovery, existence checks, content validation using Glob/Read.
-
-**Search operations** (load for content analysis):
-```
-Read: standards/search-operations.md
-```
-
-Covers content search, pattern matching, reference validation using Grep.
+Covers tool selection guide, file operations (discovery, existence checks, validation), content search patterns (Grep modes, filtering), Bash safety rules (one command per call, no shell constructs, no heredocs), and build command resolution via architecture API.
 
 ## Hard Rules (never override)
 
@@ -73,6 +59,4 @@ Execute ONLY the commands documented in the loaded skill's workflow. Never add d
 | Standard | Purpose |
 |----------|---------|
 | general-development-rules.md | Boy Scout Rule, ask users, research, tool usage, dependencies |
-| tool-usage-patterns.md | Tool selection, Bash safety rules, build resolution |
-| file-operations.md | File discovery, existence checks, content validation |
-| search-operations.md | Content search, pattern matching, result parsing |
+| tool-usage-patterns.md | Tool selection, file operations, content search, Bash safety, build resolution |
