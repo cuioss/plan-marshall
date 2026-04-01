@@ -321,7 +321,7 @@
           "path": "skills/lint-config",
           "type": "skill",
           "description": "ESLint v10, Prettier, and Stylelint configuration and rule standards for JavaScript projects"
-        },
+        }
       },
       "dependencies": [],
       "stats": {
