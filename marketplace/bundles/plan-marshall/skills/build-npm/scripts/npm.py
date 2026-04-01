@@ -28,24 +28,15 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
-from _build_format import format_json, format_toon
 from _build_parse import (
     Issue,
     UnitTestSummary,
-    filter_warnings,
-    load_acceptable_warnings,
-    partition_issues,
 )
 from _build_result import (
-    ERROR_BUILD_FAILED,
-    ERROR_EXECUTION_FAILED,
-    ERROR_LOG_FILE_FAILED,
     DirectCommandResult,
     create_log_file,
-    error_result,
-    success_result,
-    timeout_result,
 )
+from _build_shared import cmd_run_common
 from _npm_parse_errors import parse_log as parse_npm_errors
 from _npm_parse_eslint import parse_log as parse_eslint
 from _npm_parse_jest import parse_log as parse_jest
@@ -253,9 +244,6 @@ def execute_direct(
 
 
 
-# get_bash_timeout imported from _build_shared
-
-
 # =============================================================================
 # Tool Detection
 # =============================================================================
@@ -351,27 +339,16 @@ def parse_with_detector(log_file: str, command: str) -> tuple[list[Issue], UnitT
 def cmd_run(args: argparse.Namespace) -> int:
     """Handle run subcommand - execute + auto-parse on failure.
 
-    Delegates to execute_direct() for all npm execution.
-
-    Supports:
-    - --format toon (default) or --format json
-    - --mode actionable (default), structured, or errors
+    Delegates to execute_direct() for execution and cmd_run_common() for result handling.
     """
     project_dir = getattr(args, 'project_dir', '.')
-    output_format = getattr(args, 'format', 'toon')
-    mode = getattr(args, 'mode', 'actionable')
-
-    # Select formatter based on output format
-    formatter = format_json if output_format == 'json' else format_toon
 
     # Build command key for timeout learning
-    # command-args is complete and self-contained (includes --workspace or --prefix if needed)
     command_args = args.command_args
     args_key = command_args.split()[0].replace(' ', '_').replace('-', '_') if command_args else 'default'
     command_key = f'npm:{args_key}'
 
     # Execute via execute_direct foundation layer
-    # command-args is complete and self-contained (includes workspace routing)
     result = execute_direct(
         args=command_args,
         command_key=command_key,
@@ -381,93 +358,15 @@ def cmd_run(args: argparse.Namespace) -> int:
         env_vars=args.env,
     )
 
-    log_file = result['log_file']
-    command_str = result['command']
-    print(f'[EXEC] {command_str}', file=sys.stderr)
-
-    # Handle execution errors (npm not found, log file creation failed)
-    if result['status'] == 'error' and result['exit_code'] == -1:
-        error_type = ERROR_EXECUTION_FAILED
-        if 'log file' in result.get('error', '').lower():
-            error_type = ERROR_LOG_FILE_FAILED
-
-        output = error_result(
-            error=error_type,
-            exit_code=-1,
-            duration_seconds=0,
-            log_file=log_file,
-            command=command_str,
-        )
-        print(formatter(output))
-        return 1
-
-    # Handle timeout
-    if result['status'] == 'timeout':
-        output = timeout_result(
-            timeout_used_seconds=result['timeout_used_seconds'],
-            duration_seconds=result['duration_seconds'],
-            log_file=log_file,
-            command=command_str,
-        )
-        print(formatter(output))
-        return 1
-
-    # Success case
-    if result['status'] == 'success':
-        output = success_result(
-            duration_seconds=result['duration_seconds'],
-            log_file=log_file,
-            command=command_str,
-        )
-        print(formatter(output))
-        return 0
-
-    # Build failed - parse the log file for errors
-    try:
-        issues, test_summary, build_status = parse_with_detector(log_file, command_str)
-
-        # Partition issues into errors and warnings
-        errors, warnings = partition_issues(issues)
-
-        # Load acceptable warnings and filter based on mode
-        patterns = load_acceptable_warnings(project_dir, 'npm')
-        filtered_warnings = filter_warnings(warnings, patterns, mode)
-
-        # Build result dict
-        output = error_result(
-            error=ERROR_BUILD_FAILED,
-            exit_code=result['exit_code'],
-            duration_seconds=result['duration_seconds'],
-            log_file=log_file,
-            command=command_str,
-        )
-
-        # Add errors if present
-        if errors:
-            output['errors'] = errors[:20]
-
-        # Add warnings if present (mode != errors already handled by filter_warnings)
-        if filtered_warnings:
-            output['warnings'] = filtered_warnings[:10]
-
-        # Add test summary if present
-        if test_summary:
-            output['tests'] = test_summary
-
-        print(formatter(output))
-
-    except Exception:
-        # If parsing fails, still return the build failure
-        output = error_result(
-            error=ERROR_BUILD_FAILED,
-            exit_code=result['exit_code'],
-            duration_seconds=result['duration_seconds'],
-            log_file=log_file,
-            command=command_str,
-        )
-        print(formatter(output))
-
-    return 1
+    return cmd_run_common(
+        result=result,
+        parser_fn=parse_with_detector,
+        tool_name='npm',
+        output_format=getattr(args, 'format', 'toon'),
+        mode=getattr(args, 'mode', 'actionable'),
+        project_dir=project_dir,
+        parser_needs_command=True,
+    )
 
 
 # =============================================================================

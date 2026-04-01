@@ -240,11 +240,11 @@ export CI=true
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:build-gradle:gradle run \
-    --targets "<tasks>" \
-    [--project <module>] \
+    --command-args "<tasks>" \
+    [--project-dir <path>] \
     [--format toon|json] \
     [--mode actionable|structured|errors] \
-    [--timeout <ms>]
+    [--timeout <seconds>]
 ```
 
 **Output format**: Tab-separated TOON (default) or JSON with `--format json`

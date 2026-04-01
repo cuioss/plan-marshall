@@ -42,7 +42,7 @@ Omit `{module}` to run against all modules.
 
 - **Unit**: Seconds
 - **Default**: 300 seconds (5 minutes)
-- **Minimum**: 30 seconds (enforced via `MIN_TIMEOUT`)
+- **Minimum**: 60 seconds (enforced via `MIN_TIMEOUT`)
 - **Adaptive learning**: On successful completion, actual duration is recorded. On timeout failure, the cached timeout is doubled for the next run.
 - **Command key format**: `python:{first_subcommand}` (e.g., `python:module_tests`)
 

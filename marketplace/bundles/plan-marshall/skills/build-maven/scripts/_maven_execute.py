@@ -22,25 +22,13 @@ Usage:
 """
 
 import subprocess
-import sys
 import time
 
-from _build_format import format_json, format_toon
-from _build_parse import (
-    filter_warnings,
-    load_acceptable_warnings,
-    partition_issues,
-)
 from _build_result import (
-    ERROR_BUILD_FAILED,
-    ERROR_EXECUTION_FAILED,
-    ERROR_LOG_FILE_FAILED,
     DirectCommandResult,
     create_log_file,
-    error_result,
-    success_result,
-    timeout_result,
 )
+from _build_shared import cmd_run_common
 from _build_wrapper import detect_wrapper as _detect_wrapper
 
 # Import parser (underscore prefix = private)
@@ -220,9 +208,6 @@ def execute_direct(
 
 
 
-# get_bash_timeout imported from _build_shared
-
-
 # =============================================================================
 # Run Subcommand (execute + auto-parse on failure)
 # =============================================================================
@@ -231,14 +216,9 @@ def execute_direct(
 def cmd_run(args):
     """Handle run subcommand - execute + auto-parse on failure.
 
-    Delegates to execute_direct() for all Maven execution.
+    Delegates to execute_direct() for execution and cmd_run_common() for result handling.
     """
     project_dir = getattr(args, 'project_dir', '.')
-    output_format = getattr(args, 'format', 'toon')
-    mode = getattr(args, 'mode', 'actionable')
-
-    # Select formatter based on output format
-    formatter = format_json if output_format == 'json' else format_toon
 
     # Build command key for timeout learning (use first goal as key)
     command_args = args.command_args
@@ -249,95 +229,15 @@ def cmd_run(args):
     timeout_seconds = getattr(args, 'timeout', None) or DEFAULT_TIMEOUT_SECONDS
 
     # Execute via direct_command foundation layer
-    # command-args is complete and self-contained (includes -pl, -P, etc.)
     result = execute_direct(
         args=command_args, command_key=command_key, default_timeout=timeout_seconds, project_dir=project_dir
     )
 
-    log_file = result['log_file']
-    command_str = result['command']
-    print(f'[EXEC] {command_str}', file=sys.stderr)
-
-    # Handle execution errors (wrapper not found, log file creation failed)
-    if result['status'] == 'error' and result['exit_code'] == -1:
-        error_type = ERROR_EXECUTION_FAILED
-        if 'log file' in result.get('error', '').lower():
-            error_type = ERROR_LOG_FILE_FAILED
-
-        output = error_result(
-            error=error_type,
-            exit_code=-1,
-            duration_seconds=0,
-            log_file=log_file,
-            command=command_str,
-        )
-        print(formatter(output))
-        return 1
-
-    # Handle timeout
-    if result['status'] == 'timeout':
-        output = timeout_result(
-            timeout_used_seconds=result['timeout_used_seconds'],
-            duration_seconds=result['duration_seconds'],
-            log_file=log_file,
-            command=command_str,
-        )
-        print(formatter(output))
-        return 1
-
-    # Success case
-    if result['status'] == 'success':
-        output = success_result(
-            duration_seconds=result['duration_seconds'],
-            log_file=log_file,
-            command=command_str,
-        )
-        print(formatter(output))
-        return 0
-
-    # Build failed - parse the log file for errors
-    try:
-        issues, test_summary, build_status = parse_log(log_file)
-
-        # Partition issues into errors and warnings
-        errors, warnings = partition_issues(issues)
-
-        # Load acceptable warnings and filter based on mode
-        patterns = load_acceptable_warnings(project_dir, 'maven')
-        filtered_warnings = filter_warnings(warnings, patterns, mode)
-
-        # Build result dict
-        output = error_result(
-            error=ERROR_BUILD_FAILED,
-            exit_code=result['exit_code'],
-            duration_seconds=result['duration_seconds'],
-            log_file=log_file,
-            command=command_str,
-        )
-
-        # Add errors if present
-        if errors:
-            output['errors'] = errors[:20]
-
-        # Add warnings if present (mode != errors already handled by filter_warnings)
-        if filtered_warnings:
-            output['warnings'] = filtered_warnings[:10]
-
-        # Add test summary if present
-        if test_summary:
-            output['tests'] = test_summary
-
-        print(formatter(output))
-
-    except Exception:
-        # If parsing fails, still return the build failure
-        output = error_result(
-            error=ERROR_BUILD_FAILED,
-            exit_code=result['exit_code'],
-            duration_seconds=result['duration_seconds'],
-            log_file=log_file,
-            command=command_str,
-        )
-        print(formatter(output))
-
-    return 1
+    return cmd_run_common(
+        result=result,
+        parser_fn=parse_log,
+        tool_name='maven',
+        output_format=getattr(args, 'format', 'toon'),
+        mode=getattr(args, 'mode', 'actionable'),
+        project_dir=project_dir,
+    )

@@ -231,17 +231,18 @@ PLAYWRIGHT_BASE_URL=http://localhost:3000 npm run test:e2e
 
 | Parameter | Required | Default | Description |
 |-----------|----------|---------|-------------|
-| `--targets` | Yes | - | Build targets to execute (e.g., "run test") |
-| `--workspace` | No | - | Workspace name for monorepo projects |
-| `--working-dir` | No | . | Working directory for command execution |
+| `--command-args` | Yes | - | Complete npm command arguments (e.g., "run test" or "run test --workspace=pkg") |
+| `--working-dir` | No | - | Working directory for command execution |
+| `--env` | No | - | Environment variables (e.g., "NODE_ENV=test CI=true") |
 | `--timeout` | No | 120 | Build timeout in seconds |
+| `--project-dir` | No | . | Project root directory |
 | `--mode` | No | actionable | Output mode: actionable, structured, errors |
 | `--format` | No | toon | Output format: toon or json |
 
 **Example:**
 ```bash
 python3 .plan/execute-script.py plan-marshall:build-npm:npm run \
-    --targets "run test" --timeout 180
+    --command-args "run test" --timeout 180
 ```
 
 ### Internal Functions
