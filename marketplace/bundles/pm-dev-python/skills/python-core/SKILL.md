@@ -1,6 +1,6 @@
 ---
 name: python-core
-description: "Use when writing, reviewing, or refactoring Python 3.10+ code — covers type annotations, data structures, error handling, resource management, async patterns, naming conventions, and imports. Activate for any Python production code task."
+description: "Use when writing, reviewing, or refactoring Python 3.10+ code — covers type annotations, data structures, error handling, resource management, async patterns, naming conventions, and imports. Activate for any Python production code task. Also use when working with pathlib, dataclass, pydantic, match statements, or structural pattern matching."
 user-invocable: false
 ---
 
@@ -35,7 +35,7 @@ Activate when:
 
 ## Available References
 
-**File**: `standards/python-core.md` (651 lines)
+**File**: `standards/python-core.md` (771 lines)
 
 Load progressively by section based on current task. **Never load the entire file at once.**
 
@@ -47,6 +47,8 @@ Load progressively by section based on current task. **Never load the entire fil
 | Resource Management | File I/O, context managers, custom resource cleanup |
 | Path Handling | File path operations, `pathlib.Path` usage, path security |
 | Async Programming | `asyncio` patterns, concurrency with `gather()`, rate limiting |
+| Structural Pattern Matching | `match` statements, destructuring, class patterns, guard clauses |
+| Modern Features (3.11-3.13) | Exception groups, `@override`, `itertools.batched()` |
 | Functions and Classes | Function design, class composition, mutable defaults |
 | Naming Conventions | Module/class/function/variable naming styles |
 | Imports | Import organization, grouping, and rules |
@@ -67,6 +69,7 @@ Read standards/python-core.md
 | Data structures | `dataclass` (default), `attrs` (performance), `pydantic` (API boundaries) |
 | Error handling | Specific exceptions only, minimal try scope, chain with `from` |
 | Resources | Always context managers; `pathlib.Path` for all file/path operations |
+| Pattern matching | `match`/`case` for structural destructuring; `if/elif` for simple comparisons |
 | Async | `asyncio.run()` entry point, `gather()` for concurrency, `Semaphore` for rate limiting |
 | Naming | `lower_with_under` (functions/modules), `CapWords` (classes), `CAPS_WITH_UNDER` (constants) |
 | Docstrings | Google style with Args/Returns/Raises sections |

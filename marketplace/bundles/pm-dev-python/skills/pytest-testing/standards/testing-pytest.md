@@ -187,6 +187,106 @@ def test_raises_on_invalid_input():
 assert result == pytest.approx(3.14159, rel=1e-3)
 ```
 
+## Output Capture
+
+### Capturing stdout/stderr
+
+```python
+def test_prints_summary(capsys):
+    generate_report(data)
+    captured = capsys.readouterr()
+    assert "Total: 42" in captured.out
+    assert captured.err == ""
+
+def test_file_descriptor_output(capfd):
+    # capfd captures at file descriptor level (includes subprocess output)
+    run_external_tool()
+    captured = capfd.readouterr()
+    assert "success" in captured.out
+```
+
+## Subprocess / Script Testing
+
+Tests that invoke Python scripts via `subprocess.run` are common for CLI tools and marketplace scripts.
+
+### Basic Pattern
+
+```python
+import subprocess
+from pathlib import Path
+
+def test_script_produces_valid_output(tmp_path):
+    # Arrange
+    input_file = tmp_path / "input.json"
+    input_file.write_text('{"key": "value"}')
+
+    # Act
+    result = subprocess.run(
+        ["python3", str(script_path), "subcommand", "--arg", str(input_file)],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+    # Assert
+    assert result.returncode == 0, f"Script failed: {result.stderr}"
+    assert "expected_output" in result.stdout
+```
+
+### Asserting on Structured Output
+
+When scripts emit structured output (JSON, TOON), parse and assert on the structure:
+
+```python
+import json
+
+def test_script_returns_structured_data():
+    result = subprocess.run(
+        ["python3", str(script_path), "list"],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0
+    data = json.loads(result.stdout)
+    assert data["status"] == "ok"
+    assert len(data["items"]) > 0
+```
+
+### PYTHONPATH for Shared Libraries
+
+Scripts that import shared modules (e.g., `toon_parser`) need PYTHONPATH set:
+
+```python
+import os
+
+def test_script_with_shared_imports():
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(shared_lib_dir)
+    result = subprocess.run(
+        ["python3", str(script_path), "run"],
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=30,
+    )
+    assert result.returncode == 0
+```
+
+### Error Path Testing
+
+```python
+def test_script_fails_on_missing_arg():
+    result = subprocess.run(
+        ["python3", str(script_path)],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode != 0
+    assert "usage" in result.stderr.lower() or "error" in result.stderr.lower()
+```
+
 ## Test Organization
 
 ### Shared Infrastructure

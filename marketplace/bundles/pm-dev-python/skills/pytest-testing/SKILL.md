@@ -35,7 +35,7 @@ Activate when:
 
 ## Available References
 
-**File**: `standards/testing-pytest.md` (231 lines)
+**File**: `standards/testing-pytest.md` (331 lines)
 
 **Load When**:
 - Writing or reviewing pytest test code
@@ -52,6 +52,8 @@ Activate when:
 - Parametrization
 - Mocking (module state, functions)
 - Assertions (basic, exceptions, approximate)
+- Output capture (`capsys`, `capfd`)
+- Subprocess / script testing patterns (structured output, PYTHONPATH, error paths)
 - Test organization (conftest, file structure)
 
 **Load Command**:
@@ -71,6 +73,8 @@ Read standards/testing-pytest.md
 | Parametrize | `@pytest.mark.parametrize` for input variations |
 | Exceptions | `pytest.raises(ExcType, match="pattern")` |
 | Approximate | `pytest.approx(value, rel=tolerance)` |
+| Output capture | `capsys` for Python, `capfd` for subprocess output |
+| Script testing | `subprocess.run` with `capture_output=True, text=True, timeout=30` |
 
 ## Running Tests
 

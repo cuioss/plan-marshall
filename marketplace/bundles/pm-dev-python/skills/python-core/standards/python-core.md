@@ -350,6 +350,126 @@ async def process_images(paths: list[Path]):
 
 ---
 
+## Structural Pattern Matching
+
+### Basic Match (Python 3.10+)
+
+```python
+def handle_command(command: str) -> str:
+    match command.split():
+        case ["quit"]:
+            return "Goodbye"
+        case ["go", direction]:
+            return f"Moving {direction}"
+        case ["get", item] if item != "sword":
+            return f"Picked up {item}"
+        case _:
+            return "Unknown command"
+```
+
+### Matching Data Structures
+
+```python
+def process_event(event: dict) -> None:
+    match event:
+        case {"type": "click", "position": (x, y)}:
+            handle_click(x, y)
+        case {"type": "keypress", "key": str(key)}:
+            handle_key(key)
+        case {"type": "error", "code": int(code)} if code >= 500:
+            handle_server_error(code)
+        case _:
+            log_unknown_event(event)
+```
+
+### Matching Classes
+
+```python
+from dataclasses import dataclass
+
+@dataclass
+class Point:
+    x: float
+    y: float
+
+def describe(shape) -> str:
+    match shape:
+        case Point(x=0, y=0):
+            return "Origin"
+        case Point(x, y) if x == y:
+            return f"On diagonal at {x}"
+        case Point(x, y):
+            return f"Point({x}, {y})"
+```
+
+### When to Use Match vs If/Elif
+
+- **Use `match`**: Destructuring complex data, multiple structural patterns, guard clauses on structure
+- **Use `if/elif`**: Simple value comparisons, boolean conditions, fewer than 3 branches
+
+---
+
+## Modern Features (3.11-3.13)
+
+### Exception Groups (3.11+)
+
+```python
+# Raise multiple exceptions together
+def validate_all(data: dict) -> None:
+    errors = []
+    if not data.get("name"):
+        errors.append(ValueError("name is required"))
+    if not data.get("email"):
+        errors.append(ValueError("email is required"))
+    if errors:
+        raise ExceptionGroup("validation failed", errors)
+
+# Catch specific exceptions from a group
+try:
+    validate_all(data)
+except* ValueError as eg:
+    for err in eg.exceptions:
+        print(f"Validation: {err}")
+except* TypeError as eg:
+    for err in eg.exceptions:
+        print(f"Type error: {err}")
+```
+
+### Override Decorator (3.12+)
+
+```python
+from typing import override
+
+class Base:
+    def get_color(self) -> str:
+        return "blue"
+
+class Child(Base):
+    @override
+    def get_color(self) -> str:  # Verified by type checkers
+        return "red"
+
+    @override
+    def get_colour(self) -> str:  # Type checker ERROR: no matching base method
+        return "red"
+```
+
+### Batched Iteration (3.12+)
+
+```python
+from itertools import batched
+
+# Process items in chunks
+for batch in batched(range(10), 3):
+    print(batch)  # (0, 1, 2), (3, 4, 5), (6, 7, 8), (9,)
+
+# Useful for bulk API calls, database inserts
+for chunk in batched(records, 100):
+    db.insert_many(chunk)
+```
+
+---
+
 ## Functions and Classes
 
 ### Function Design
